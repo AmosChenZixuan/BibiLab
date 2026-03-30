@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+dist/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# Codex
+.codex
+
+# Node
+node_modules/
+plugin/main.js
+plugin/main.js.map
+
+# Locus runtime
+.locus/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Internal Docs
+docs/internal/

@@ -1,0 +1,20 @@
+{
+  "name": "locus",
+  "version": "0.0.1",
+  "description": "Project Locus — video knowledge base for Obsidian",
+  "main": "main.js",
+  "scripts": {
+    "dev": "node esbuild.config.mjs",
+    "build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
+    "lint": "eslint src --ext .ts"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@typescript-eslint/eslint-plugin": "^7.0.0",
+    "@typescript-eslint/parser": "^7.0.0",
+    "esbuild": "^0.20.0",
+    "eslint": "^8.0.0",
+    "obsidian": "latest",
+    "typescript": "^5.0.0"
+  }
+}

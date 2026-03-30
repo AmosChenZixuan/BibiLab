@@ -1,0 +1,30 @@
+[project]
+name = "locus"
+version = "0.1.0"
+description = "Locus backend — personal video knowledge base"
+requires-python = ">=3.12"
+dependencies = [
+    "chromadb>=1.5.5",
+    "fastapi>=0.135.2",
+    "faster-whisper>=1.2.1",
+    "httpx>=0.28.1",
+    "pydantic-settings>=2.13.1",
+    "uvicorn[standard]>=0.42.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+    "pytest-asyncio>=1.3.0",
+    "ruff>=0.15.8",
+]
+
+[tool.ruff]
+src = ["src"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
