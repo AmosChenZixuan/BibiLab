@@ -153,6 +153,68 @@ async def get_pending_jobs() -> list[aiosqlite.Row]:
             return await cursor.fetchall()
 
 
+async def write_processing_log(
+    video_id: str,
+    platform: str,
+    list_id: str,
+    note_path: str,
+    transcript_path: str,
+    whisper_model: str,
+    ai_model: str,
+    vision_enabled: bool,
+    settings_snapshot: dict[str, Any],
+) -> None:
+    async with get_db() as db:
+        await db.execute(
+            """
+            INSERT INTO processing_log
+                (video_id, platform, list_id, note_path, transcript_path,
+                 whisper_model, ai_model, vision_enabled,
+                 processed_at, settings_snapshot)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(video_id) DO UPDATE SET
+                list_id=excluded.list_id,
+                note_path=excluded.note_path,
+                transcript_path=excluded.transcript_path,
+                whisper_model=excluded.whisper_model,
+                ai_model=excluded.ai_model,
+                vision_enabled=excluded.vision_enabled,
+                processed_at=excluded.processed_at,
+                settings_snapshot=excluded.settings_snapshot
+            """,
+            (
+                video_id,
+                platform,
+                list_id,
+                note_path,
+                transcript_path,
+                whisper_model,
+                ai_model,
+                int(vision_enabled),
+                _now(),
+                json.dumps(settings_snapshot),
+            ),
+        )
+        await db.commit()
+
+
+async def get_list_name(list_id: str) -> str | None:
+    """Return the list name for a given list_id, or None if not found."""
+    async with get_db() as db:
+        async with db.execute("SELECT name FROM lists WHERE id=?", (list_id,)) as cur:
+            row = await cur.fetchone()
+    return row["name"] if row else None
+
+
+async def get_processing_log_videos(list_id: str) -> list[aiosqlite.Row]:
+    async with get_db() as db:
+        async with db.execute(
+            "SELECT * FROM processing_log WHERE list_id=? ORDER BY processed_at ASC",
+            (list_id,),
+        ) as cur:
+            return await cur.fetchall()
+
+
 async def reset_stuck_jobs() -> None:
     """On worker startup, reset any in-progress jobs back to queued."""
     async with get_db() as db:
