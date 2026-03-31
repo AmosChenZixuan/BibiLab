@@ -1,9 +1,10 @@
 """Tests for job queue CRUD and state machine."""
 
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
+import pytest_asyncio
 from fastapi.testclient import TestClient
 
 
@@ -24,7 +25,7 @@ def client(tmp_locus_home: Path):
         yield c
 
 
-@pytest.fixture()
+@pytest_asyncio.fixture()
 async def seeded_job(tmp_locus_home: Path):  # noqa: ARG001
     """Bootstrap DB and insert a queued job (tmp_locus_home ensures patch is active)."""
     from locus.db import bootstrap_db, create_job
@@ -109,3 +110,64 @@ async def test_reset_stuck_jobs(tmp_locus_home: Path):
 
     row = await get_job(job_id)
     assert dict(row)["status"] == "queued"
+
+
+@pytest.mark.asyncio
+async def test_pipeline_fails_fast_when_list_deleted(tmp_locus_home: Path):
+    """Worker must fail the job if the target list no longer exists."""
+    from locus.db import bootstrap_db, create_job, get_job
+    from locus.worker import WorkerLoop
+
+    await bootstrap_db()
+    transcript_path = tmp_locus_home / "transcript.txt"
+    transcript_path.write_text("hello world", encoding="utf-8")
+
+    job_id = await create_job(
+        type="video",
+        source_url="https://www.bilibili.com/video/BV1abc123",
+        platform="bilibili",
+        meta={
+            "video_id": "BV1abc123",
+            "list_id": "nonexistent-list",
+            "title": "Test",
+            "cover_url": "",
+            "duration_seconds": 0,
+            "uploader": "",
+            "rerun": False,
+        },
+    )
+
+    job_row = dict(await get_job(job_id))
+    worker = WorkerLoop()
+
+    cfg = MagicMock()
+    cfg.accounts.bilibili.cookie = ""
+    cfg.transcription.model_size = "large-v3"
+    cfg.ai.model = "gpt-4o"
+    cfg.vision.enabled = False
+    cfg.obsidian.vault_path = str(tmp_locus_home / "vault")
+    cfg.model_dump.return_value = {}
+
+    with (
+        patch("locus.worker.load_config", return_value=cfg),
+        patch("locus.worker.BilibiliAdapter.download", return_value=tmp_locus_home / "video.mp4"),
+        patch("locus.worker.extract_audio", return_value=tmp_locus_home / "audio.wav"),
+        patch("locus.worker.transcribe", return_value=[]),
+        patch("locus.worker.write_transcript", return_value=transcript_path),
+        patch("locus.worker.chunk_segments", return_value=[]),
+        patch(
+            "locus.worker.extract_knowledge",
+            return_value=MagicMock(title="Test", summary="Summary"),
+        ),
+        patch("locus.worker.write_video_note", return_value=tmp_locus_home / "vault/note.md"),
+        patch("locus.worker.embed_chunks", return_value=None),
+        patch("locus.worker.write_processing_log", return_value=None),
+        patch("locus.worker.get_processing_log_videos", return_value=[]),
+        patch("locus.worker.generate_overview", return_value=[]),
+        patch("locus.worker.write_overview_note", return_value=None),
+    ):
+        await worker._run_job(job_row)
+
+    result = dict(await get_job(job_id))
+    assert result["status"] == "failed"
+    assert "list" in result["error"].lower()

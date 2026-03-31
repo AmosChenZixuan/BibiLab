@@ -134,7 +134,9 @@ class WorkerLoop:
         video_id: str = meta_raw["video_id"]
         list_id: str = meta_raw["list_id"]
 
-        list_name = await get_list_name(list_id) or "Unknown"
+        list_name = await get_list_name(list_id)
+        if list_name is None:
+            raise PipelineError(f"List {list_id!r} not found - it may have been deleted")
 
         video_meta = VideoMeta(
             video_id=video_id,
