@@ -107,11 +107,7 @@ def write_overview_note(
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
 
     frontmatter = (
-        "---\n"
-        f"locus_list_id: {list_id}\n"
-        f"video_count: {len(videos)}\n"
-        f"last_updated: {now}\n"
-        "---\n"
+        f"---\nlocus_list_id: {list_id}\nvideo_count: {len(videos)}\nlast_updated: {now}\n---\n"
     )
 
     video_links = "\n".join(
@@ -119,9 +115,7 @@ def write_overview_note(
         for m, ext in zip(videos, extraction_results)
     )
 
-    body = (
-        f"# {list_name} — Overview\n\n" f"## Outline\n{outline}\n\n" f"## Videos\n{video_links}\n"
-    )
+    body = f"# {list_name} — Overview\n\n## Outline\n{outline}\n\n## Videos\n{video_links}\n"
 
     tmp = note_path.with_suffix(".tmp")
     tmp.write_text(frontmatter + "\n" + body, encoding="utf-8")
