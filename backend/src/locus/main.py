@@ -11,6 +11,8 @@ from locus.routers.health import router as health_router
 from locus.routers.ingest import router as ingest_router
 from locus.routers.jobs import router as jobs_router
 from locus.routers.lists import router as lists_router
+from locus.routers.notes import router as notes_router
+from locus.routers.transcripts import router as transcripts_router
 from locus.worker import WorkerLoop
 
 
@@ -48,6 +50,8 @@ def create_app() -> FastAPI:
     app.include_router(jobs_router)
     app.include_router(lists_router)
     app.include_router(ingest_router)
+    app.include_router(notes_router)
+    app.include_router(transcripts_router)
 
     return app
 
