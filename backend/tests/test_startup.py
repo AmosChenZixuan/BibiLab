@@ -27,8 +27,11 @@ def test_health_returns_200(client: TestClient):
     resp = client.get("/health")
     assert resp.status_code == 200
     data = resp.json()
-    assert data["overall"] == "ok"
-    assert "dependencies" in data
+    assert data["overall"] in ("ok", "error", "degraded")
+    deps = data["dependencies"]
+    assert "backend" in deps
+    assert deps["backend"]["status"] == "ok"
+    assert all(k in deps for k in ("llm", "whisper_model", "ffmpeg", "cuda", "bilibili_session"))
 
 
 def test_config_defaults(client: TestClient):

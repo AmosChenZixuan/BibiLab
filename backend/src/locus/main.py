@@ -4,10 +4,12 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from locus.config import locus_home
+from locus.config import load_config, locus_home
 from locus.db import bootstrap_db
 from locus.routers.config_router import router as config_router
 from locus.routers.health import router as health_router
+from locus.routers.jobs import router as jobs_router
+from locus.worker import WorkerLoop
 
 
 @asynccontextmanager
@@ -19,7 +21,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     await bootstrap_db()
 
+    cfg = load_config()
+    worker = WorkerLoop(concurrency=cfg.backend.worker_concurrency)
+    app.state.worker = worker
+    await worker.start()
+
     yield
+
+    await worker.stop()
 
 
 def create_app() -> FastAPI:
@@ -34,6 +43,7 @@ def create_app() -> FastAPI:
 
     app.include_router(health_router)
     app.include_router(config_router)
+    app.include_router(jobs_router)
 
     return app
 

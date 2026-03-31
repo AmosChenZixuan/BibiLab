@@ -1,6 +1,10 @@
+import json
+import uuid
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 import aiosqlite
 
@@ -70,3 +74,98 @@ async def get_db() -> AsyncGenerator[aiosqlite.Connection, None]:
     async with aiosqlite.connect(get_db_path()) as db:
         db.row_factory = aiosqlite.Row
         yield db
+
+
+# ---------------------------------------------------------------------------
+# Job query helpers
+# ---------------------------------------------------------------------------
+
+def _now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+async def create_job(
+    type: str,
+    source_url: str,
+    platform: str,
+    meta: dict[str, Any],
+) -> str:
+    job_id = str(uuid.uuid4())
+    now = _now()
+    async with get_db() as db:
+        await db.execute(
+            """
+            INSERT INTO jobs (id, type, source_url, platform, status, progress,
+                              created_at, updated_at, meta)
+            VALUES (?, ?, ?, ?, 'queued', 0, ?, ?, ?)
+            """,
+            (job_id, type, source_url, platform, now, now, json.dumps(meta)),
+        )
+        await db.commit()
+    return job_id
+
+
+async def update_job_status(
+    job_id: str,
+    status: str,
+    progress: int = 0,
+    error: str | None = None,
+) -> None:
+    async with get_db() as db:
+        await db.execute(
+            """
+            UPDATE jobs SET status=?, progress=?, error=?, updated_at=?
+            WHERE id=?
+            """,
+            (status, progress, error, _now(), job_id),
+        )
+        await db.commit()
+
+
+async def get_job(job_id: str) -> aiosqlite.Row | None:
+    async with get_db() as db:
+        async with db.execute(
+            "SELECT * FROM jobs WHERE id=?", (job_id,)
+        ) as cursor:
+            return await cursor.fetchone()
+
+
+async def list_jobs() -> list[aiosqlite.Row]:
+    async with get_db() as db:
+        async with db.execute(
+            "SELECT * FROM jobs ORDER BY created_at DESC"
+        ) as cursor:
+            return await cursor.fetchall()
+
+
+async def delete_job(job_id: str) -> None:
+    async with get_db() as db:
+        await db.execute("DELETE FROM jobs WHERE id=?", (job_id,))
+        await db.commit()
+
+
+async def get_pending_jobs() -> list[aiosqlite.Row]:
+    """Return queued jobs and any in-progress jobs left from a prior crash."""
+    async with get_db() as db:
+        async with db.execute(
+            """
+            SELECT * FROM jobs
+            WHERE status IN ('queued', 'downloading', 'transcribing',
+                             'extracting', 'writing')
+            ORDER BY created_at ASC
+            """
+        ) as cursor:
+            return await cursor.fetchall()
+
+
+async def reset_stuck_jobs() -> None:
+    """On worker startup, reset any in-progress jobs back to queued."""
+    async with get_db() as db:
+        await db.execute(
+            """
+            UPDATE jobs SET status='queued', updated_at=?
+            WHERE status IN ('downloading', 'transcribing', 'extracting', 'writing')
+            """,
+            (_now(),),
+        )
+        await db.commit()

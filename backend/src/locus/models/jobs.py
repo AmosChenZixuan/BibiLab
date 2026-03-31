@@ -1,0 +1,45 @@
+from datetime import datetime
+from enum import StrEnum
+from typing import Any
+
+from pydantic import BaseModel
+
+
+class JobStatus(StrEnum):
+    QUEUED = "queued"
+    DOWNLOADING = "downloading"
+    TRANSCRIBING = "transcribing"
+    EXTRACTING = "extracting"
+    WRITING = "writing"
+    DONE = "done"
+    FAILED = "failed"
+    NEEDS_AUTH = "needs_auth"
+
+
+TERMINAL_STATUSES = {JobStatus.DONE, JobStatus.FAILED, JobStatus.NEEDS_AUTH}
+
+
+class JobRow(BaseModel):
+    id: str
+    type: str
+    source_url: str
+    platform: str
+    status: JobStatus
+    progress: int
+    error: str | None
+    created_at: datetime
+    updated_at: datetime
+    meta: dict[str, Any]
+
+
+class JobResponse(BaseModel):
+    id: str
+    type: str
+    source_url: str
+    platform: str
+    status: JobStatus
+    progress: int
+    error: str | None
+    created_at: str
+    updated_at: str
+    meta: dict[str, Any]
