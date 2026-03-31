@@ -69,3 +69,12 @@ def embed_chunks(
 
     collection.add(ids=ids, documents=documents, metadatas=metadatas)
     logger.info("Embedded %d chunks for %s", len(chunks), meta.video_id)
+
+
+def clear_embeddings_for_list(list_id: str, cfg: LocusConfig) -> None:
+    """Delete all ChromaDB chunks belonging to the given list."""
+    collection = _get_collection(cfg)
+    try:
+        collection.delete(where={"list_id": list_id})
+    except Exception:
+        pass

@@ -89,3 +89,44 @@ def test_delete_list_removes_row_when_inactive(client: TestClient, created_list_
     response = client.delete(f"/lists/{created_list_id}")
     assert response.status_code == 204
     assert client.get("/lists").json() == []
+
+
+@pytest.mark.asyncio
+async def test_delete_list_cascades_processing_log(client: TestClient, tmp_locus_home: Path):
+    import aiosqlite
+
+    response = client.post("/lists", json={"name": "ToDelete"})
+    assert response.status_code == 201
+    list_id = response.json()["id"]
+
+    db_path = tmp_locus_home / "locus.db"
+    async with aiosqlite.connect(db_path) as db:
+        await db.execute(
+            """
+            INSERT INTO processing_log
+              (video_id, platform, list_id, note_path, transcript_path,
+               whisper_model, ai_model, vision_enabled, processed_at, settings_snapshot)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "BV1test",
+                "bilibili",
+                list_id,
+                None,
+                None,
+                "large-v3",
+                "gpt-4o",
+                0,
+                "2026-01-01T00:00:00+00:00",
+                "{}",
+            ),
+        )
+        await db.commit()
+
+    response = client.delete(f"/lists/{list_id}")
+    assert response.status_code == 204
+
+    async with aiosqlite.connect(db_path) as db:
+        async with db.execute("SELECT 1 FROM processing_log WHERE list_id=?", (list_id,)) as cur:
+            row = await cur.fetchone()
+    assert row is None

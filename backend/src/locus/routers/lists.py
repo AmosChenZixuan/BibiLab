@@ -1,10 +1,13 @@
+import asyncio
 import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException
 
+from locus.config import load_config
 from locus.db import get_db
 from locus.models.lists import ListCreateRequest, ListNoteResponse, ListResponse
+from locus.pipeline.embed import clear_embeddings_for_list
 
 router = APIRouter()
 
@@ -95,5 +98,9 @@ async def delete_list(list_id: str) -> None:
                 detail="Cannot delete a list with active jobs",
             )
 
+        await db.execute("DELETE FROM processing_log WHERE list_id=?", (list_id,))
         await db.execute("DELETE FROM lists WHERE id=?", (list_id,))
         await db.commit()
+
+    cfg = load_config()
+    await asyncio.to_thread(clear_embeddings_for_list, list_id, cfg)
