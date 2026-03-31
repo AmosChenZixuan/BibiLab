@@ -1,0 +1,91 @@
+import json
+import os
+from pathlib import Path
+from typing import Any
+
+from pydantic import BaseModel
+
+
+def locus_home() -> Path:
+    return Path.home() / ".locus"
+
+
+def _config_path() -> Path:
+    return locus_home() / "config.json"
+
+
+class BilibiliAccountConfig(BaseModel):
+    cookie: str = ""
+    last_verified: str = ""
+
+
+class AccountsConfig(BaseModel):
+    bilibili: BilibiliAccountConfig = BilibiliAccountConfig()
+
+
+class AIConfig(BaseModel):
+    provider: str = "openai"  # openai | anthropic | ollama | custom
+    model: str = "gpt-4o"
+    api_key: str = ""
+    base_url: str | None = None
+
+
+class TranscriptionConfig(BaseModel):
+    engine: str = "faster-whisper"
+    model_size: str = "large-v3"
+    device: str = "cuda"  # cuda | cpu
+    language: str = "auto"  # auto | zh | en
+
+
+class VisionConfig(BaseModel):
+    enabled: bool = False
+    frame_sample_rate: int = 30
+    model: str | None = None
+
+
+class ObsidianConfig(BaseModel):
+    vault_path: str = ""
+    locus_folder: str = "Locus"
+
+
+class BackendConfig(BaseModel):
+    port: int = 8765
+    worker_concurrency: int = 1
+
+
+class LocusConfig(BaseModel):
+    accounts: AccountsConfig = AccountsConfig()
+    ai: AIConfig = AIConfig()
+    transcription: TranscriptionConfig = TranscriptionConfig()
+    vision: VisionConfig = VisionConfig()
+    obsidian: ObsidianConfig = ObsidianConfig()
+    backend: BackendConfig = BackendConfig()
+
+
+def load_config() -> LocusConfig:
+    home = locus_home()
+    home.mkdir(parents=True, exist_ok=True)
+    path = _config_path()
+    if not path.exists():
+        return LocusConfig()
+    with path.open() as f:
+        data = json.load(f)
+    return LocusConfig.model_validate(data)
+
+
+def save_config(cfg: LocusConfig) -> None:
+    path = _config_path()
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(cfg.model_dump_json(indent=2))
+    os.replace(tmp, path)
+
+
+def deep_merge(base: dict[str, Any], patch: dict[str, Any]) -> dict[str, Any]:
+    """Recursively merge patch into base, returning a new dict."""
+    result = dict(base)
+    for key, value in patch.items():
+        if isinstance(value, dict) and isinstance(result.get(key), dict):
+            result[key] = deep_merge(result[key], value)
+        elif value is not None:
+            result[key] = value
+    return result
