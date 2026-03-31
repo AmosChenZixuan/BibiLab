@@ -1,4 +1,3 @@
-from datetime import datetime
 from enum import StrEnum
 from typing import Any
 
@@ -17,19 +16,6 @@ class JobStatus(StrEnum):
 
 
 TERMINAL_STATUSES = {JobStatus.DONE, JobStatus.FAILED, JobStatus.NEEDS_AUTH}
-
-
-class JobRow(BaseModel):
-    id: str
-    type: str
-    source_url: str
-    platform: str
-    status: JobStatus
-    progress: int
-    error: str | None
-    created_at: datetime
-    updated_at: datetime
-    meta: dict[str, Any]
 
 
 class JobResponse(BaseModel):

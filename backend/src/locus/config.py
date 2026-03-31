@@ -77,15 +77,24 @@ def save_config(cfg: LocusConfig) -> None:
     path = _config_path()
     tmp = path.with_suffix(".tmp")
     tmp.write_text(cfg.model_dump_json(indent=2))
+    tmp.chmod(0o600)
     os.replace(tmp, path)
 
 
+_MISSING = object()
+
+
 def deep_merge(base: dict[str, Any], patch: dict[str, Any]) -> dict[str, Any]:
-    """Recursively merge patch into base, returning a new dict."""
+    """Recursively merge patch into base.
+
+    Explicit null values in patch overwrite the base value (allowing callers to
+    clear nullable fields). Only keys absent from patch entirely are preserved
+    unchanged.
+    """
     result = dict(base)
     for key, value in patch.items():
-        if isinstance(value, dict) and isinstance(result.get(key), dict):
+        if isinstance(value, dict) and isinstance(result.get(key, _MISSING), dict):
             result[key] = deep_merge(result[key], value)
-        elif value is not None:
+        else:
             result[key] = value
     return result

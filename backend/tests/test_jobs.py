@@ -25,9 +25,10 @@ def client(tmp_locus_home: Path):
 
 
 @pytest.fixture()
-async def seeded_job(tmp_locus_home: Path):
-    """Bootstrap DB and insert a queued job."""
+async def seeded_job(tmp_locus_home: Path):  # noqa: ARG001
+    """Bootstrap DB and insert a queued job (tmp_locus_home ensures patch is active)."""
     from locus.db import bootstrap_db, create_job
+
     await bootstrap_db()
     return await create_job(
         type="video",
@@ -92,7 +93,13 @@ async def test_state_transitions(tmp_locus_home: Path):
 
 @pytest.mark.asyncio
 async def test_reset_stuck_jobs(tmp_locus_home: Path):
-    from locus.db import bootstrap_db, create_job, get_job, reset_stuck_jobs, update_job_status
+    from locus.db import (
+        bootstrap_db,
+        create_job,
+        get_job,
+        reset_stuck_jobs,
+        update_job_status,
+    )
 
     await bootstrap_db()
     job_id = await create_job("video", "https://b.tv/BV1", "bilibili", {})

@@ -1,5 +1,4 @@
 import shutil
-from pathlib import Path
 
 import httpx
 from fastapi import APIRouter
@@ -41,13 +40,16 @@ async def _check_llm(cfg) -> dict:
 
 
 def _check_whisper(cfg) -> dict:
-    from huggingface_hub import try_to_load_from_cache
+    try:
+        from huggingface_hub import try_to_load_from_cache
+    except ImportError:
+        return {"status": "error", "message": "huggingface_hub not installed"}
 
     model_size = cfg.transcription.model_size
     # faster-whisper uses Systran/faster-whisper-{size} on HuggingFace
     repo_id = f"Systran/faster-whisper-{model_size}"
     result = try_to_load_from_cache(repo_id, "config.json")
-    if result is None or isinstance(result, type(None)):
+    if result is None:
         return {"status": "error", "message": f"Model {model_size!r} not downloaded"}
     return {"status": "ok", "message": ""}
 
@@ -61,11 +63,19 @@ def _check_ffmpeg() -> dict:
 def _check_cuda() -> dict:
     try:
         import torch
+
         if torch.cuda.is_available():
-            return {"status": "ok", "message": torch.cuda.get_device_name(0)}
-        return {"status": "unavailable", "message": "CUDA not available; CPU will be used"}
+            name = torch.cuda.get_device_name(0)
+            return {"status": "ok", "message": name}
+        return {
+            "status": "unavailable",
+            "message": "CUDA not available; CPU will be used",
+        }
     except ImportError:
-        return {"status": "unavailable", "message": "torch not installed; CPU will be used"}
+        return {
+            "status": "unavailable",
+            "message": "torch not installed; CPU will be used",
+        }
 
 
 def _check_bilibili(cfg) -> dict:
@@ -88,9 +98,7 @@ async def health() -> dict:
     }
 
     blocking = {"llm", "whisper_model", "ffmpeg"}
-    has_error = any(
-        v["status"] == "error" for k, v in deps.items() if k in blocking
-    )
+    has_error = any(v["status"] == "error" for k, v in deps.items() if k in blocking)
     overall = "error" if has_error else "ok"
 
     return {"overall": overall, "dependencies": deps}

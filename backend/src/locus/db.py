@@ -61,9 +61,7 @@ async def bootstrap_db() -> None:
         await db.execute(_CREATE_LISTS)
         # Idempotent migration: add list_id if missing (for existing installs)
         try:
-            await db.execute(
-                "ALTER TABLE processing_log ADD COLUMN list_id TEXT"
-            )
+            await db.execute("ALTER TABLE processing_log ADD COLUMN list_id TEXT")
         except aiosqlite.OperationalError:
             pass
         await db.commit()
@@ -79,6 +77,7 @@ async def get_db() -> AsyncGenerator[aiosqlite.Connection, None]:
 # ---------------------------------------------------------------------------
 # Job query helpers
 # ---------------------------------------------------------------------------
+
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -124,17 +123,13 @@ async def update_job_status(
 
 async def get_job(job_id: str) -> aiosqlite.Row | None:
     async with get_db() as db:
-        async with db.execute(
-            "SELECT * FROM jobs WHERE id=?", (job_id,)
-        ) as cursor:
+        async with db.execute("SELECT * FROM jobs WHERE id=?", (job_id,)) as cursor:
             return await cursor.fetchone()
 
 
 async def list_jobs() -> list[aiosqlite.Row]:
     async with get_db() as db:
-        async with db.execute(
-            "SELECT * FROM jobs ORDER BY created_at DESC"
-        ) as cursor:
+        async with db.execute("SELECT * FROM jobs ORDER BY created_at DESC") as cursor:
             return await cursor.fetchall()
 
 

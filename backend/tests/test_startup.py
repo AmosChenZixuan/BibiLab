@@ -31,7 +31,10 @@ def test_health_returns_200(client: TestClient):
     deps = data["dependencies"]
     assert "backend" in deps
     assert deps["backend"]["status"] == "ok"
-    assert all(k in deps for k in ("llm", "whisper_model", "ffmpeg", "cuda", "bilibili_session"))
+    assert all(
+        k in deps
+        for k in ("llm", "whisper_model", "ffmpeg", "cuda", "bilibili_session")
+    )
 
 
 def test_config_defaults(client: TestClient):
@@ -53,10 +56,13 @@ def test_config_deep_merge(client: TestClient):
 
 
 def test_config_masks_sensitive_fields(client: TestClient):
-    client.put("/config", json={
-        "ai": {"api_key": "sk-secret"},
-        "accounts": {"bilibili": {"cookie": "my-cookie"}},
-    })
+    client.put(
+        "/config",
+        json={
+            "ai": {"api_key": "sk-secret"},
+            "accounts": {"bilibili": {"cookie": "my-cookie"}},
+        },
+    )
     data = client.get("/config").json()
     assert data["ai"]["api_key"] == "***"
     assert data["accounts"]["bilibili"]["cookie"] == "***"

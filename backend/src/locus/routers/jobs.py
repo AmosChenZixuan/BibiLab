@@ -3,7 +3,7 @@ import json
 from fastapi import APIRouter, HTTPException, Request
 
 from locus.db import delete_job, get_job, list_jobs
-from locus.models.jobs import JobResponse, JobStatus, TERMINAL_STATUSES
+from locus.models.jobs import TERMINAL_STATUSES, JobResponse, JobStatus
 
 router = APIRouter()
 
