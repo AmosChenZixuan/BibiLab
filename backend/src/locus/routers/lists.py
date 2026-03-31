@@ -4,9 +4,17 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, HTTPException
 
 from locus.db import get_db
-from locus.models.lists import ListCreateRequest, ListResponse
+from locus.models.lists import ListCreateRequest, ListNoteResponse, ListResponse
 
 router = APIRouter()
+
+_ACTIVE_JOB_STATUSES = ("queued", "downloading", "transcribing", "extracting", "writing")
+
+
+async def _get_list_row(list_id: str):
+    async with get_db() as db:
+        async with db.execute("SELECT * FROM lists WHERE id=?", (list_id,)) as cur:
+            return await cur.fetchone()
 
 
 @router.post("/lists", status_code=201)
@@ -40,3 +48,52 @@ async def get_lists() -> list[ListResponse]:
         async with db.execute("SELECT * FROM lists ORDER BY created_at ASC") as cur:
             rows = await cur.fetchall()
     return [ListResponse.model_validate(dict(r)) for r in rows]
+
+
+@router.get("/lists/{list_id}/notes")
+async def get_list_notes(list_id: str) -> list[ListNoteResponse]:
+    if await _get_list_row(list_id) is None:
+        raise HTTPException(status_code=404, detail="List not found")
+
+    async with get_db() as db:
+        async with db.execute(
+            """
+            SELECT video_id, note_path, processed_at, platform
+            FROM processing_log
+            WHERE list_id=?
+            ORDER BY processed_at DESC
+            """,
+            (list_id,),
+        ) as cur:
+            rows = await cur.fetchall()
+
+    return [ListNoteResponse.model_validate(dict(row)) for row in rows]
+
+
+@router.delete("/lists/{list_id}", status_code=204)
+async def delete_list(list_id: str) -> None:
+    if await _get_list_row(list_id) is None:
+        raise HTTPException(status_code=404, detail="List not found")
+
+    placeholders = ",".join("?" * len(_ACTIVE_JOB_STATUSES))
+    async with get_db() as db:
+        async with db.execute(
+            f"""
+            SELECT 1
+            FROM jobs
+            WHERE json_extract(meta, '$.list_id') = ?
+              AND status IN ({placeholders})
+            LIMIT 1
+            """,
+            (list_id, *_ACTIVE_JOB_STATUSES),
+        ) as cur:
+            active_job = await cur.fetchone()
+
+        if active_job is not None:
+            raise HTTPException(
+                status_code=409,
+                detail="Cannot delete a list with active jobs",
+            )
+
+        await db.execute("DELETE FROM lists WHERE id=?", (list_id,))
+        await db.commit()
