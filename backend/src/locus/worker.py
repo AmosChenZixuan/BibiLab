@@ -38,12 +38,11 @@ class WorkerLoop:
     async def _loop(self) -> None:
         while self._running:
             if len(self._in_flight) < self._concurrency:
-                pending = await get_pending_jobs()
+                pending = [dict(j) for j in await get_pending_jobs()]
                 queued = [
-                    dict(j)
+                    j
                     for j in pending
-                    if dict(j)["status"] == "queued"
-                    and dict(j)["id"] not in self._in_flight
+                    if j["status"] == "queued" and j["id"] not in self._in_flight
                 ]
                 slots = self._concurrency - len(self._in_flight)
                 for job in queued[:slots]:
@@ -77,3 +76,4 @@ class WorkerLoop:
             await update_job_status(job_id, "failed", error=str(exc))
         finally:
             self._in_flight.discard(job_id)
+            self._cancelled.discard(job_id)  # clean up even if job was never dispatched

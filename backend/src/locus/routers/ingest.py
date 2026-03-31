@@ -1,0 +1,116 @@
+import logging
+
+from fastapi import APIRouter, HTTPException
+
+from locus.adapters.base import AuthRequiredError, VideoMeta
+from locus.adapters.bilibili import BilibiliAdapter
+from locus.config import load_config
+from locus.db import create_job, get_db
+from locus.models.ingest import IngestUrlRequest, IngestUrlResponse
+
+router = APIRouter()
+logger = logging.getLogger(__name__)
+
+
+async def _list_exists(list_id: str) -> bool:
+    async with get_db() as db:
+        async with db.execute("SELECT id FROM lists WHERE id=?", (list_id,)) as cur:
+            return await cur.fetchone() is not None
+
+
+async def _already_processed_batch(video_ids: list[str]) -> set[str]:
+    if not video_ids:
+        return set()
+    placeholders = ",".join("?" * len(video_ids))
+    async with get_db() as db:
+        async with db.execute(
+            f"SELECT video_id FROM processing_log WHERE video_id IN ({placeholders})",
+            video_ids,
+        ) as cur:
+            rows = await cur.fetchall()
+    return {row["video_id"] for row in rows}
+
+
+async def _queue_video(video: VideoMeta, list_id: str, rerun: bool = False) -> str:
+    return await create_job(
+        type="video",
+        source_url=video.source_url,
+        platform=video.platform,
+        meta={
+            "video_id": video.video_id,
+            "list_id": list_id,
+            "title": video.title,
+            "cover_url": video.cover_url,
+            "duration_seconds": video.duration_seconds,
+            "uploader": video.uploader,
+            "rerun": rerun,
+        },
+    )
+
+
+@router.post("/ingest/url")
+async def ingest_url(req: IngestUrlRequest) -> IngestUrlResponse:
+    if not await _list_exists(req.list_id):
+        raise HTTPException(status_code=404, detail="List not found")
+
+    cfg = load_config()
+
+    # Validate vault path before queuing — fail fast rather than mid-pipeline
+    if not cfg.obsidian.vault_path:
+        raise HTTPException(
+            status_code=400,
+            detail="obsidian.vault_path is not configured. Set it via PUT /config.",
+        )
+
+    adapter = BilibiliAdapter(cookie=cfg.accounts.bilibili.cookie)
+
+    try:
+        result = adapter.resolve(req.url)
+    except AuthRequiredError as exc:
+        raise HTTPException(
+            status_code=401,
+            detail={
+                "message": "Authentication required",
+                "resource_type": exc.resource_type,
+            },
+        ) from exc
+
+    videos = [result] if isinstance(result, VideoMeta) else result.videos
+
+    already_done = await _already_processed_batch([v.video_id for v in videos])
+    queued: list[str] = []
+    skipped: list[str] = []
+
+    for video in videos:
+        if video.video_id in already_done:
+            logger.info("Skipping already-processed video %s", video.video_id)
+            skipped.append(video.video_id)
+        else:
+            queued.append(await _queue_video(video, req.list_id))
+
+    return IngestUrlResponse(queued=queued, skipped=skipped)
+
+
+@router.post("/ingest/rerun/{video_id}")
+async def ingest_rerun(video_id: str) -> IngestUrlResponse:
+    async with get_db() as db:
+        async with db.execute(
+            "SELECT * FROM processing_log WHERE video_id=?", (video_id,)
+        ) as cur:
+            row = await cur.fetchone()
+
+    if row is None:
+        raise HTTPException(status_code=404, detail="Video not in processing log")
+
+    row = dict(row)
+    video = VideoMeta(
+        video_id=video_id,
+        title="",  # will be re-fetched by pipeline
+        platform=row["platform"],
+        source_url="",  # pipeline uses video_id to re-resolve
+        cover_url="",
+        duration_seconds=0,
+        uploader="",
+    )
+    job_id = await _queue_video(video, list_id=row.get("list_id", ""), rerun=True)
+    return IngestUrlResponse(queued=[job_id] if job_id else [], skipped=[])
