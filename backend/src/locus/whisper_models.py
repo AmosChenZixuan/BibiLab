@@ -1,3 +1,4 @@
+import shutil
 from pathlib import Path
 
 from locus.config import locus_home
@@ -13,6 +14,18 @@ SUPPORTED_WHISPER_MODELS = (
 
 def whisper_model_dir() -> Path:
     return locus_home() / "models" / "whisper"
+
+
+def _hf_cache_dir() -> Path:
+    return locus_home() / ".cache" / "huggingface"
+
+
+def _download_target_dir(model_size: str) -> Path:
+    return whisper_model_dir() / model_size
+
+
+def _cleanup_download_artifacts(target_dir: Path) -> None:
+    shutil.rmtree(target_dir / ".cache", ignore_errors=True)
 
 
 def _candidate_model_paths(model_size: str) -> list[Path]:
@@ -43,7 +56,7 @@ def is_whisper_model_downloaded(model_size: str) -> bool:
     result = try_to_load_from_cache(
         repo_id,
         "config.json",
-        cache_dir=whisper_model_dir(),
+        cache_dir=_hf_cache_dir(),
     )
     return result is not None
 
@@ -60,10 +73,15 @@ def download_whisper_model(model_size: str) -> Path:
 
     model_root = whisper_model_dir()
     model_root.mkdir(parents=True, exist_ok=True)
-    download_model(model_size, output_dir=str(model_root), cache_dir=str(model_root))
+    cache_root = _hf_cache_dir()
+    cache_root.mkdir(parents=True, exist_ok=True)
+    target_dir = _download_target_dir(model_size)
+    target_dir.mkdir(parents=True, exist_ok=True)
+    download_model(model_size, output_dir=str(target_dir), cache_dir=str(cache_root))
+    _cleanup_download_artifacts(target_dir)
 
     local_path = resolve_local_model_path(model_size)
     if local_path is not None:
         return local_path
 
-    return model_root
+    return target_dir

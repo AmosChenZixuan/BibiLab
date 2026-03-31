@@ -27,6 +27,7 @@ from locus.pipeline.extract import (
 )
 from locus.pipeline.notes import write_overview_note, write_video_note
 from locus.pipeline.transcribe import transcribe, write_transcript
+from locus.whisper_models import download_whisper_model
 
 logger = logging.getLogger(__name__)
 
@@ -80,6 +81,10 @@ class WorkerLoop:
                 await delete_job(job_id)
                 return
 
+            if job["type"] == "model_download":
+                await self._download_model_job(job)
+                return
+
             await self._pipeline(job)
 
         except AuthRequiredError as exc:
@@ -94,6 +99,32 @@ class WorkerLoop:
         finally:
             self._in_flight.discard(job_id)
             self._cancelled.discard(job_id)
+
+    async def _download_model_job(self, job: dict) -> None:
+        job_id = job["id"]
+        meta_raw = json.loads(job["meta"]) if isinstance(job["meta"], str) else job["meta"]
+        model_family = meta_raw.get("model_family", "")
+        model_size = meta_raw.get("model_size", "")
+
+        await update_job_status(job_id, "downloading", progress=10)
+        logger.info(
+            "Model download job %s started for %s:%s",
+            job_id,
+            model_family,
+            model_size,
+        )
+
+        if model_family != "whisper":
+            raise PipelineError(f"Unsupported model family {model_family!r}")
+
+        await asyncio.to_thread(download_whisper_model, model_size)
+        await update_job_status(job_id, "done", progress=100)
+        logger.info(
+            "Model download job %s completed for %s:%s",
+            job_id,
+            model_family,
+            model_size,
+        )
 
     async def _pipeline(self, job: dict) -> None:
         job_id = job["id"]

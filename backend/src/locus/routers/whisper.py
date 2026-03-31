@@ -1,16 +1,13 @@
-import asyncio
-
 from fastapi import APIRouter, HTTPException, status
 
 from locus.config import load_config
+from locus.db import create_job
 from locus.models.whisper import (
     WhisperModelDownloadRequest,
-    WhisperModelDownloadResponse,
     WhisperModelInfo,
 )
 from locus.whisper_models import (
     SUPPORTED_WHISPER_MODELS,
-    download_whisper_model,
     is_whisper_model_downloaded,
     resolve_local_model_path,
 )
@@ -38,9 +35,9 @@ async def list_whisper_models() -> list[WhisperModelInfo]:
 
 @router.post(
     "/models/whisper/download",
-    status_code=status.HTTP_201_CREATED,
+    status_code=status.HTTP_202_ACCEPTED,
 )
-async def download_whisper(req: WhisperModelDownloadRequest) -> WhisperModelDownloadResponse:
+async def download_whisper(req: WhisperModelDownloadRequest) -> dict:
     if req.model_size not in SUPPORTED_WHISPER_MODELS:
         raise HTTPException(
             status_code=400,
@@ -50,14 +47,18 @@ async def download_whisper(req: WhisperModelDownloadRequest) -> WhisperModelDown
             ),
         )
 
-    try:
-        path = await asyncio.to_thread(download_whisper_model, req.model_size)
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
-
-    selected_model = load_config().transcription.model_size
-    return WhisperModelDownloadResponse(
-        name=req.model_size,
-        path=str(path),
-        selected=req.model_size == selected_model,
+    job_id = await create_job(
+        type="model_download",
+        source_url="",
+        platform="local",
+        meta={
+            "model_family": "whisper",
+            "model_size": req.model_size,
+        },
     )
+    return {
+        "job_id": job_id,
+        "status": "queued",
+        "model_family": "whisper",
+        "model_size": req.model_size,
+    }
