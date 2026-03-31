@@ -4,6 +4,7 @@ import httpx
 from fastapi import APIRouter
 
 from locus.config import load_config
+from locus.whisper_models import is_whisper_model_downloaded, whisper_model_dir
 
 router = APIRouter()
 
@@ -40,17 +41,12 @@ async def _check_llm(cfg) -> dict:
 
 
 def _check_whisper(cfg) -> dict:
-    try:
-        from huggingface_hub import try_to_load_from_cache
-    except ImportError:
-        return {"status": "error", "message": "huggingface_hub not installed"}
-
     model_size = cfg.transcription.model_size
-    # faster-whisper uses Systran/faster-whisper-{size} on HuggingFace
-    repo_id = f"Systran/faster-whisper-{model_size}"
-    result = try_to_load_from_cache(repo_id, "config.json")
-    if result is None:
-        return {"status": "error", "message": f"Model {model_size!r} not downloaded"}
+    if not is_whisper_model_downloaded(model_size):
+        return {
+            "status": "error",
+            "message": (f"Model {model_size!r} not downloaded to {whisper_model_dir()}"),
+        }
     return {"status": "ok", "message": ""}
 
 

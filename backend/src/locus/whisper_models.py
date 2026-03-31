@@ -1,0 +1,67 @@
+from pathlib import Path
+
+SUPPORTED_WHISPER_MODELS = (
+    "tiny",
+    "base",
+    "small",
+    "medium",
+    "large-v3",
+)
+
+
+def whisper_model_dir() -> Path:
+    return Path(__file__).resolve().parents[2] / "models" / "whisper"
+
+
+def _candidate_model_paths(model_size: str) -> list[Path]:
+    root = whisper_model_dir()
+    legacy_name = root / "whisper" / f"whisper-{model_size}"
+    direct_name = root / model_size
+    repo_name = root / f"faster-whisper-{model_size}"
+    return [legacy_name, direct_name, repo_name]
+
+
+def resolve_local_model_path(model_size: str) -> Path | None:
+    for path in _candidate_model_paths(model_size):
+        if (path / "config.json").exists() and (path / "model.bin").exists():
+            return path
+    return None
+
+
+def is_whisper_model_downloaded(model_size: str) -> bool:
+    if resolve_local_model_path(model_size) is not None:
+        return True
+
+    try:
+        from huggingface_hub import try_to_load_from_cache
+    except ImportError:
+        return False
+
+    repo_id = f"Systran/faster-whisper-{model_size}"
+    result = try_to_load_from_cache(
+        repo_id,
+        "config.json",
+        cache_dir=whisper_model_dir(),
+    )
+    return result is not None
+
+
+def download_whisper_model(model_size: str) -> Path:
+    if model_size not in SUPPORTED_WHISPER_MODELS:
+        raise ValueError(f"Unsupported whisper model: {model_size}")
+
+    local_path = resolve_local_model_path(model_size)
+    if local_path is not None:
+        return local_path
+
+    from faster_whisper.utils import download_model  # noqa: PLC0415
+
+    model_root = whisper_model_dir()
+    model_root.mkdir(parents=True, exist_ok=True)
+    download_model(model_size, output_dir=str(model_root), cache_dir=str(model_root))
+
+    local_path = resolve_local_model_path(model_size)
+    if local_path is not None:
+        return local_path
+
+    return model_root

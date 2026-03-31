@@ -13,6 +13,7 @@ from locus.routers.jobs import router as jobs_router
 from locus.routers.lists import router as lists_router
 from locus.routers.notes import router as notes_router
 from locus.routers.transcripts import router as transcripts_router
+from locus.routers.whisper import router as whisper_router
 from locus.worker import WorkerLoop
 
 
@@ -52,6 +53,7 @@ def create_app() -> FastAPI:
     app.include_router(ingest_router)
     app.include_router(notes_router)
     app.include_router(transcripts_router)
+    app.include_router(whisper_router)
 
     return app
 

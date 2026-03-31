@@ -13,7 +13,11 @@ from locus.pipeline.extract import (
     _parse_response,
     extract_knowledge,
 )
-from locus.pipeline.transcribe import WhisperSegment, write_transcript
+from locus.pipeline.transcribe import (
+    WhisperSegment,
+    _compute_type_for_device,
+    write_transcript,
+)
 
 # ---------------------------------------------------------------------------
 # audio.py
@@ -85,6 +89,11 @@ def test_write_transcript_hours(tmp_path: Path):
         path = write_transcript(segs, "BV2xyz")
 
     assert path.read_text().strip() == "[01:01:01] Late segment"
+
+
+def test_compute_type_for_device():
+    assert _compute_type_for_device("cpu") == "int8"
+    assert _compute_type_for_device("cuda") == "float16"
 
 
 # ---------------------------------------------------------------------------

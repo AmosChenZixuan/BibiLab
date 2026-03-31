@@ -30,3 +30,6 @@ Thumbs.db
 
 # Internal Docs
 docs/internal/
+
+# Local Models
+backend/models/

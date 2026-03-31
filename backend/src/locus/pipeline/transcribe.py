@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from locus.config import TranscriptionConfig, locus_home
+from locus.whisper_models import download_whisper_model, resolve_local_model_path
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +22,10 @@ class WhisperSegment:
     text: str
 
 
+def _compute_type_for_device(device: str) -> str:
+    return "float16" if device == "cuda" else "int8"
+
+
 def _load_model(cfg: TranscriptionConfig):
     global _model, _model_key
 
@@ -28,8 +33,21 @@ def _load_model(cfg: TranscriptionConfig):
 
     key = (cfg.model_size, cfg.device)
     if _model is None or _model_key != key:
-        logger.info("Loading Whisper model %s on %s", cfg.model_size, cfg.device)
-        _model = WhisperModel(cfg.model_size, device=cfg.device, compute_type="float16")
+        local_path = resolve_local_model_path(cfg.model_size)
+        model_source = str(local_path) if local_path is not None else cfg.model_size
+        if local_path is None:
+            download_whisper_model(cfg.model_size)
+        logger.info(
+            "Loading Whisper model %s on %s from %s",
+            cfg.model_size,
+            cfg.device,
+            model_source,
+        )
+        _model = WhisperModel(
+            model_source,
+            device=cfg.device,
+            compute_type=_compute_type_for_device(cfg.device),
+        )
         _model_key = key
     return _model
 
