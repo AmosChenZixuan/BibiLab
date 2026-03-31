@@ -11,6 +11,17 @@ from locus.models.ingest import IngestUrlRequest, IngestUrlResponse
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
+_PLATFORM_URL_TEMPLATES: dict[str, str] = {
+    "bilibili": "https://www.bilibili.com/video/{video_id}",
+}
+
+
+def _canonical_url(video_id: str, platform: str) -> str:
+    template = _PLATFORM_URL_TEMPLATES.get(platform)
+    if template is None:
+        raise ValueError(f"No URL template for platform {platform!r}")
+    return template.format(video_id=video_id)
+
 
 async def _list_exists(list_id: str) -> bool:
     async with get_db() as db:
@@ -101,11 +112,17 @@ async def ingest_rerun(video_id: str) -> IngestUrlResponse:
         raise HTTPException(status_code=404, detail="Video not in processing log")
 
     row = dict(row)
+    platform = row["platform"]
+    try:
+        source_url = _canonical_url(video_id, platform)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
     video = VideoMeta(
         video_id=video_id,
         title="",  # will be re-fetched by pipeline
-        platform=row["platform"],
-        source_url="",  # pipeline uses video_id to re-resolve
+        platform=platform,
+        source_url=source_url,
         cover_url="",
         duration_seconds=0,
         uploader="",

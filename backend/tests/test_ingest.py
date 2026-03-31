@@ -161,3 +161,52 @@ def test_ingest_no_vault_configured(client: TestClient, mock_ydl_single):
     )
     assert resp.status_code == 400
     assert "vault_path" in resp.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_ingest_rerun_queues_job_with_valid_url(
+    client_with_vault: TestClient, tmp_locus_home: Path
+):
+    """Rerun must produce a job whose source_url is a valid Bilibili URL."""
+    import aiosqlite
+
+    db_path = tmp_locus_home / "locus.db"
+    async with aiosqlite.connect(db_path) as db:
+        await db.execute(
+            """
+            INSERT INTO processing_log
+              (video_id, platform, list_id, note_path, transcript_path,
+               whisper_model, ai_model, vision_enabled, processed_at, settings_snapshot)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "BV1abc123",
+                "bilibili",
+                "list-001",
+                "/vault/note.md",
+                "/transcripts/BV1abc123.txt",
+                "large-v3",
+                "gpt-4o",
+                0,
+                "2026-01-01T00:00:00+00:00",
+                "{}",
+            ),
+        )
+        await db.commit()
+
+    resp = client_with_vault.post("/ingest/rerun/BV1abc123")
+    assert resp.status_code == 200
+    job_ids = resp.json()["queued"]
+    assert len(job_ids) == 1
+
+    async with aiosqlite.connect(db_path) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("SELECT source_url FROM jobs WHERE id=?", (job_ids[0],)) as cur:
+            row = await cur.fetchone()
+    assert row is not None
+    assert row["source_url"].startswith("https://www.bilibili.com/video/BV1abc123")
+
+
+def test_ingest_rerun_404_for_unknown_video(client_with_vault: TestClient):
+    resp = client_with_vault.post("/ingest/rerun/nonexistent_id")
+    assert resp.status_code == 404
