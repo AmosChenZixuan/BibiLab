@@ -94,9 +94,7 @@ async def ingest_url(req: IngestUrlRequest) -> IngestUrlResponse:
 @router.post("/ingest/rerun/{video_id}")
 async def ingest_rerun(video_id: str) -> IngestUrlResponse:
     async with get_db() as db:
-        async with db.execute(
-            "SELECT * FROM processing_log WHERE video_id=?", (video_id,)
-        ) as cur:
+        async with db.execute("SELECT * FROM processing_log WHERE video_id=?", (video_id,)) as cur:
             row = await cur.fetchone()
 
     if row is None:

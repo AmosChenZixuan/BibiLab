@@ -31,10 +31,7 @@ def test_health_returns_200(client: TestClient):
     deps = data["dependencies"]
     assert "backend" in deps
     assert deps["backend"]["status"] == "ok"
-    assert all(
-        k in deps
-        for k in ("llm", "whisper_model", "ffmpeg", "cuda", "bilibili_session")
-    )
+    assert all(k in deps for k in ("llm", "whisper_model", "ffmpeg", "cuda", "bilibili_session"))
 
 
 def test_config_defaults(client: TestClient):

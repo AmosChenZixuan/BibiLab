@@ -117,9 +117,7 @@ def test_ingest_single_video(client_with_vault: TestClient, mock_ydl_single):
 
 
 @pytest.mark.asyncio
-async def test_ingest_dedup(
-    client_with_vault: TestClient, mock_ydl_single, tmp_locus_home: Path
-):
+async def test_ingest_dedup(client_with_vault: TestClient, mock_ydl_single, tmp_locus_home: Path):
     """Submitting the same video twice should skip on second attempt."""
     from locus.db import bootstrap_db, get_db
 
