@@ -3,7 +3,7 @@ import os
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 def locus_home() -> Path:
@@ -12,6 +12,10 @@ def locus_home() -> Path:
 
 def _config_path() -> Path:
     return locus_home() / "config.json"
+
+
+def _default_test_vault_path() -> str:
+    return str(locus_home() / "tmp" / "locus-test-vault")
 
 
 class BilibiliAccountConfig(BaseModel):
@@ -44,7 +48,7 @@ class VisionConfig(BaseModel):
 
 
 class ObsidianConfig(BaseModel):
-    vault_path: str = ""
+    vault_path: str = Field(default_factory=_default_test_vault_path)
     locus_folder: str = "Locus"
 
 

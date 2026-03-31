@@ -1,5 +1,7 @@
 from pathlib import Path
 
+from locus.config import locus_home
+
 SUPPORTED_WHISPER_MODELS = (
     "tiny",
     "base",
@@ -10,7 +12,7 @@ SUPPORTED_WHISPER_MODELS = (
 
 
 def whisper_model_dir() -> Path:
-    return Path(__file__).resolve().parents[2] / "models" / "whisper"
+    return locus_home() / "models" / "whisper"
 
 
 def _candidate_model_paths(model_size: str) -> list[Path]:

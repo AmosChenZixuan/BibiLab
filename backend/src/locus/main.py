@@ -21,7 +21,14 @@ from locus.worker import WorkerLoop
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Bootstrap ~/.locus/ directory layout
     home = locus_home()
-    for subdir in ("transcripts", "downloads", "chroma"):
+    for subdir in (
+        "transcripts",
+        "downloads",
+        "chroma",
+        "tmp",
+        "models/whisper",
+        "models/embedding",
+    ):
         (home / subdir).mkdir(parents=True, exist_ok=True)
 
     await bootstrap_db()
