@@ -34,6 +34,32 @@ def test_health_returns_200(client: TestClient):
     assert all(k in deps for k in ("llm", "whisper_model", "ffmpeg", "cuda", "bilibili_session"))
 
 
+def test_health_includes_embedding_model(client: TestClient, tmp_locus_home: Path):  # noqa: ARG001
+    resp = client.get("/health")
+    assert resp.status_code == 200
+    deps = resp.json()["dependencies"]
+    assert "embedding_model" in deps
+    assert deps["embedding_model"]["status"] in ("ok", "error")
+
+
+def test_is_embedding_model_downloaded_false_when_absent(tmp_path: Path):
+    from locus.pipeline.embed import is_embedding_model_downloaded
+
+    with patch("locus.pipeline.embed._embedding_model_dir", return_value=tmp_path):
+        assert is_embedding_model_downloaded() is False
+
+
+def test_is_embedding_model_downloaded_true_when_present(tmp_path: Path):
+    from locus.pipeline.embed import is_embedding_model_downloaded
+
+    model_file = tmp_path / "onnx" / "model.onnx"
+    model_file.parent.mkdir(parents=True)
+    model_file.write_bytes(b"fake")
+
+    with patch("locus.pipeline.embed._embedding_model_dir", return_value=tmp_path):
+        assert is_embedding_model_downloaded() is True
+
+
 def test_config_defaults(client: TestClient):
     resp = client.get("/config")
     assert resp.status_code == 200

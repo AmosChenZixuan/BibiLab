@@ -4,6 +4,7 @@ import httpx
 from fastapi import APIRouter
 
 from locus.config import load_config
+from locus.pipeline.embed import _embedding_model_dir, is_embedding_model_downloaded
 from locus.whisper_models import is_whisper_model_downloaded, whisper_model_dir
 
 router = APIRouter()
@@ -80,6 +81,18 @@ def _check_bilibili(cfg) -> dict:
     return {"status": "error", "message": "Bilibili cookie not configured"}
 
 
+def _check_embedding_model() -> dict:
+    if is_embedding_model_downloaded():
+        return {"status": "ok", "message": ""}
+    return {
+        "status": "error",
+        "message": (
+            f"Embedding model not found at {_embedding_model_dir() / 'onnx' / 'model.onnx'}. "
+            "It downloads automatically on the first pipeline run (~50 MB)."
+        ),
+    }
+
+
 @router.get("/health")
 async def health() -> dict:
     cfg = load_config()
@@ -91,6 +104,7 @@ async def health() -> dict:
         "ffmpeg": _check_ffmpeg(),
         "cuda": _check_cuda(),
         "bilibili_session": _check_bilibili(cfg),
+        "embedding_model": _check_embedding_model(),
     }
 
     blocking = {"llm", "whisper_model", "ffmpeg"}

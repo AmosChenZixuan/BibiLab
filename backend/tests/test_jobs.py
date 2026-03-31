@@ -1,7 +1,8 @@
 """Tests for job queue CRUD and state machine."""
 
+import logging
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 import pytest_asyncio
@@ -171,3 +172,71 @@ async def test_pipeline_fails_fast_when_list_deleted(tmp_locus_home: Path):
     result = dict(await get_job(job_id))
     assert result["status"] == "failed"
     assert "list" in result["error"].lower()
+
+
+@pytest.mark.asyncio
+async def test_pipeline_logs_when_embedding_model_missing(tmp_locus_home: Path, caplog):
+    from locus.worker import WorkerLoop
+
+    transcript_path = tmp_locus_home / "transcript.txt"
+    transcript_path.write_text("hello world", encoding="utf-8")
+
+    note_path = tmp_locus_home / "vault" / "note.md"
+    note_path.parent.mkdir(parents=True, exist_ok=True)
+    note_path.write_text("", encoding="utf-8")
+
+    cfg = MagicMock()
+    cfg.accounts.bilibili.cookie = ""
+    cfg.transcription.model_size = "large-v3"
+    cfg.ai.model = "gpt-4o"
+    cfg.vision.enabled = False
+    cfg.obsidian.vault_path = str(tmp_locus_home / "vault")
+    cfg.model_dump.return_value = {}
+
+    extraction = MagicMock()
+    extraction.title = "Test title"
+    extraction.summary = "Summary"
+
+    async def fake_to_thread(func, *args, **kwargs):
+        return func(*args, **kwargs)
+
+    job = {
+        "id": "test-job-id",
+        "type": "video",
+        "platform": "bilibili",
+        "source_url": "https://www.bilibili.com/video/BV1abc123",
+        "meta": {
+            "video_id": "BV1abc123",
+            "list_id": "list-001",
+            "title": "T",
+            "cover_url": "",
+            "duration_seconds": 0,
+            "uploader": "",
+            "rerun": False,
+        },
+    }
+
+    worker = WorkerLoop()
+    with (
+        patch("locus.worker.load_config", return_value=cfg),
+        patch("locus.worker.get_list_name", new=AsyncMock(return_value="MyList")),
+        patch("locus.worker.update_job_status", new=AsyncMock()),
+        patch("locus.worker.asyncio.to_thread", new=AsyncMock(side_effect=fake_to_thread)),
+        patch("locus.worker.BilibiliAdapter.download", return_value=tmp_locus_home / "video.mp4"),
+        patch("locus.worker.extract_audio", return_value=tmp_locus_home / "audio.wav"),
+        patch("locus.worker.transcribe", return_value=[]),
+        patch("locus.worker.write_transcript", return_value=transcript_path),
+        patch("locus.worker.chunk_segments", return_value=[]),
+        patch("locus.worker.extract_knowledge", return_value=extraction),
+        patch("locus.worker.write_video_note", return_value=note_path),
+        patch("locus.worker.embed_chunks", return_value=None),
+        patch("locus.worker.write_processing_log", new=AsyncMock()),
+        patch("locus.worker.get_processing_log_videos", new=AsyncMock(return_value=[])),
+        patch("locus.worker.generate_overview", return_value=[]),
+        patch("locus.worker.write_overview_note", return_value=None),
+        patch("locus.worker.is_embedding_model_downloaded", return_value=False),
+        caplog.at_level(logging.INFO, logger="locus.worker"),
+    ):
+        await worker._pipeline(job)
+
+    assert any("embedding model not found" in record.message.lower() for record in caplog.records)

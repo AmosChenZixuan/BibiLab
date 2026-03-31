@@ -16,6 +16,11 @@ def _embedding_model_dir() -> Path:
     return locus_home() / "models" / "embedding"
 
 
+def is_embedding_model_downloaded() -> bool:
+    """Return True if the ONNX embedding model files are present locally."""
+    return (_embedding_model_dir() / "onnx" / "model.onnx").exists()
+
+
 def _default_embedding_function():
     from chromadb.utils.embedding_functions import ONNXMiniLM_L6_V2  # noqa: PLC0415
 

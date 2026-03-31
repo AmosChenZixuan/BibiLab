@@ -19,7 +19,7 @@ from locus.db import (
 )
 from locus.pipeline.audio import PipelineError, extract_audio
 from locus.pipeline.chunk import chunk_segments
-from locus.pipeline.embed import embed_chunks
+from locus.pipeline.embed import embed_chunks, is_embedding_model_downloaded
 from locus.pipeline.extract import (
     ExtractionResult,
     extract_knowledge,
@@ -204,6 +204,12 @@ class WorkerLoop:
         note_path = await asyncio.to_thread(
             write_video_note, video_meta, extraction, list_name, list_id, cfg.obsidian
         )
+        if not is_embedding_model_downloaded():
+            logger.info(
+                "Job %s: embedding model not found - downloading (~50 MB). "
+                "Job will remain in 'writing' state until complete.",
+                job_id,
+            )
         await asyncio.to_thread(embed_chunks, chunks, video_meta, list_id, cfg)
 
         # ── 6. Write processing_log ───────────────────────────────────────────
