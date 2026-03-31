@@ -10,7 +10,6 @@ from locus.adapters.bilibili import BilibiliAdapter
 from locus.config import load_config, locus_home
 from locus.db import (
     delete_job,
-    get_list_name,
     get_pending_jobs,
     get_processing_log_videos,
     reset_stuck_jobs,
@@ -27,6 +26,7 @@ from locus.pipeline.extract import (
 )
 from locus.pipeline.notes import write_overview_note, write_video_note
 from locus.pipeline.transcribe import transcribe, write_transcript
+from locus.vault import get_list_name as _get_list_name_from_vault
 from locus.whisper_models import download_whisper_model
 
 logger = logging.getLogger(__name__)
@@ -134,7 +134,7 @@ class WorkerLoop:
         video_id: str = meta_raw["video_id"]
         list_id: str = meta_raw["list_id"]
 
-        list_name = await get_list_name(list_id)
+        list_name = _get_list_name_from_vault(list_id, cfg.obsidian)
         if list_name is None:
             raise PipelineError(f"List {list_id!r} not found - it may have been deleted")
 

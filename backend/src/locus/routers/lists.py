@@ -1,4 +1,5 @@
 import asyncio
+import shutil
 import uuid
 from datetime import datetime, timezone
 
@@ -8,16 +9,11 @@ from locus.config import load_config
 from locus.db import get_db
 from locus.models.lists import ListCreateRequest, ListNoteResponse, ListResponse
 from locus.pipeline.embed import clear_embeddings_for_list
+from locus.vault import get_list_by_id, locus_dir, scan_lists, write_list_overview
 
 router = APIRouter()
 
 _ACTIVE_JOB_STATUSES = ("queued", "downloading", "transcribing", "extracting", "writing")
-
-
-async def _get_list_row(list_id: str):
-    async with get_db() as db:
-        async with db.execute("SELECT * FROM lists WHERE id=?", (list_id,)) as cur:
-            return await cur.fetchone()
 
 
 @router.post("/lists", status_code=201)
@@ -26,36 +22,54 @@ async def create_list(req: ListCreateRequest) -> ListResponse:
     if not name:
         raise HTTPException(status_code=422, detail="List name cannot be empty")
 
-    list_id = str(uuid.uuid4())
-    created_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
-    async with get_db() as db:
-        try:
-            await db.execute(
-                "INSERT INTO lists (id, name, created_at) VALUES (?, ?, ?)",
-                (list_id, name, created_at),
-            )
-            await db.commit()
-        except Exception as exc:
-            if "UNIQUE constraint" in str(exc):
-                raise HTTPException(
-                    status_code=409, detail=f"List {name!r} already exists"
-                ) from exc
-            raise
+    cfg = load_config()
+    if not cfg.obsidian.vault_path:
+        raise HTTPException(
+            status_code=400,
+            detail="obsidian.vault_path is not configured. Set it via PUT /config.",
+        )
 
-    return ListResponse(id=list_id, name=name, created_at=created_at)
+    list_id = str(uuid.uuid4())
+    list_dir = locus_dir(cfg.obsidian) / name
+    try:
+        list_dir.mkdir(parents=True)
+    except FileExistsError as exc:
+        raise HTTPException(status_code=409, detail=f"List {name!r} already exists") from exc
+
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
+    try:
+        await asyncio.to_thread(
+            write_list_overview,
+            list_dir / "_overview.md",
+            list_id=list_id,
+            list_name=name,
+            created_at=now,
+        )
+    except Exception:
+        await asyncio.to_thread(shutil.rmtree, list_dir, True)
+        raise
+
+    return ListResponse(id=list_id, name=name, created_at=now)
 
 
 @router.get("/lists")
 async def get_lists() -> list[ListResponse]:
-    async with get_db() as db:
-        async with db.execute("SELECT * FROM lists ORDER BY created_at ASC") as cur:
-            rows = await cur.fetchall()
-    return [ListResponse.model_validate(dict(r)) for r in rows]
+    cfg = load_config()
+    if not cfg.obsidian.vault_path:
+        return []
+
+    lists = await asyncio.to_thread(scan_lists, cfg.obsidian)
+    return [ListResponse(id=item.id, name=item.name, created_at=item.created_at) for item in lists]
 
 
 @router.get("/lists/{list_id}/notes")
 async def get_list_notes(list_id: str) -> list[ListNoteResponse]:
-    if await _get_list_row(list_id) is None:
+    cfg = load_config()
+    if not cfg.obsidian.vault_path:
+        raise HTTPException(status_code=404, detail="List not found")
+
+    list_meta = await asyncio.to_thread(get_list_by_id, list_id, cfg.obsidian)
+    if list_meta is None:
         raise HTTPException(status_code=404, detail="List not found")
 
     async with get_db() as db:
@@ -75,7 +89,12 @@ async def get_list_notes(list_id: str) -> list[ListNoteResponse]:
 
 @router.delete("/lists/{list_id}", status_code=204)
 async def delete_list(list_id: str) -> None:
-    if await _get_list_row(list_id) is None:
+    cfg = load_config()
+    if not cfg.obsidian.vault_path:
+        raise HTTPException(status_code=404, detail="List not found")
+
+    list_meta = await asyncio.to_thread(get_list_by_id, list_id, cfg.obsidian)
+    if list_meta is None:
         raise HTTPException(status_code=404, detail="List not found")
 
     placeholders = ",".join("?" * len(_ACTIVE_JOB_STATUSES))
@@ -99,8 +118,7 @@ async def delete_list(list_id: str) -> None:
             )
 
         await db.execute("DELETE FROM processing_log WHERE list_id=?", (list_id,))
-        await db.execute("DELETE FROM lists WHERE id=?", (list_id,))
         await db.commit()
 
-    cfg = load_config()
     await asyncio.to_thread(clear_embeddings_for_list, list_id, cfg)
+    await asyncio.to_thread(shutil.rmtree, list_meta.path, True)

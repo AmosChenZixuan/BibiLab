@@ -104,13 +104,20 @@ POST   /lists                   # create a new list
 GET    /lists                   # all lists
 DELETE /lists/{id}              # delete list and its notes
 GET    /lists/{id}/notes        # notes in a list
-POST   /lists/{id}/chat         # multi-turn Q&A against a list's knowledge base
-POST   /notes/{id}/chat         # Q&A scoped to a single note
+POST   /lists/{id}/chat         # multi-turn Q&A against a list's knowledge base (v1)
+POST   /notes/{id}/chat         # Q&A scoped to a single note (v1)
 PATCH  /notes/{locus_id}/path  # update note_path in processing_log (vault sync)
+
+GET    /transcripts/{video_id}  # paginated transcript retrieval (?offset=0&limit=200)
+
+GET    /models/whisper          # list available Whisper models with download status
+POST   /models/whisper/download # queue a Whisper model download job
 
 GET    /health                  # dependency health check
 GET    /config                  # get config
 PUT    /config                  # update config
+
+POST   /ingest/freetext         # body: { list_id, query } — natural language → platform resolver (v3)
 ```
 
 **Plugin ingestion flow:** The user creates a list first (or selects an existing one), then submits a URL or free-text query into it. Ingestion without a list is not permitted — there is no "Uncategorized" default.
@@ -119,7 +126,9 @@ PUT    /config                  # update config
 
 ### 4.3 Job Queue & Processing Log
 
-SQLite serves two distinct purposes here — a transient job queue and a permanent processing log. These are kept in separate tables with different lifecycles.
+SQLite serves two purposes here — a transient job queue and a permanent processing log. These are kept in separate tables with different lifecycles.
+
+**Lists are not stored in SQLite.** A list is defined by the vault: creating a list means creating `{vault}/Locus/{list_name}/_overview.md` with a `locus_list_id` in its frontmatter. The backend discovers lists by scanning vault folders and reading overview frontmatter. This keeps the vault as the single source of truth and means a user renaming a list folder in Obsidian is automatically reflected — no separate sync required.
 
 **Job states:** `queued → downloading → transcribing → extracting → writing → done | failed`
 
@@ -144,6 +153,7 @@ CREATE TABLE jobs (
 CREATE TABLE processing_log (
     video_id            TEXT PRIMARY KEY,   -- platform-native ID (e.g. bvid)
     platform            TEXT,
+    list_id             TEXT,               -- matches locus_list_id in _overview.md frontmatter
     note_path           TEXT,               -- vault-relative path to the note file
     transcript_path     TEXT,               -- absolute path to ~/.locus/transcripts/{video_id}.txt
     whisper_model       TEXT,               -- e.g. large-v3
@@ -375,6 +385,7 @@ The `/health` endpoint checks all dependencies and returns a structured status. 
 | LLM API / Ollama | external | yes |
 | Faster Whisper model | local | yes |
 | FFmpeg binary | local | yes |
+| Embedding model (ONNX) | local | yes |
 | CUDA availability | local | no (falls back to CPU) |
 | Bilibili session | account | no (blocks course only) |
 
@@ -415,7 +426,7 @@ The `/health` endpoint checks all dependencies and returns a structured status. 
 | Decision | Choice | Rationale |
 |---|---|---|
 | Backend framework | FastAPI | Async-native, easy to expose SSE for job progress |
-| Job persistence | SQLite (two tables) | Zero-infra; `jobs` table is ephemeral queue, `processing_log` is permanent versioning history |
+| Job persistence | SQLite (two tables) | Zero-infra; `jobs` table is ephemeral queue, `processing_log` is permanent versioning history. Lists are vault-backed, not stored in SQLite. |
 | Vector store | ChromaDB | Local, no server process needed, Python-native |
 | Transcription | Faster Whisper | Best local quality/speed tradeoff, CUDA support |
 | Transcript storage | `~/.locus/transcripts/` (outside vault) | Invisible to Obsidian by default; readable as plain text or via plugin panel; decoupled from RAG chunk strategy |
@@ -433,3 +444,4 @@ The `/health` endpoint checks all dependencies and returns a structured status. 
 3. ~~**List assignment**~~ — Resolved: user always creates or selects a list before ingesting. No default list. Ingestion without a list is not permitted.
 4. ~~**Vault sync**~~ — Resolved: auto-reconciled in v0 via Obsidian vault events. See §4.1.
 5. ~~**Chunk strategy for RAG**~~ — Resolved: greedy merge of consecutive Whisper segments to ~300 token target. Raw segments stored separately as source of truth; re-chunking does not require re-transcription.
+6. ~~**List storage**~~ — Resolved: lists are vault-backed. A list is defined by `{vault}/Locus/{name}/_overview.md` with `locus_list_id` frontmatter. The backend scans vault folders to discover lists; no `lists` table in SQLite. Renaming a folder in Obsidian is automatically reflected without a separate sync step.

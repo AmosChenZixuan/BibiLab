@@ -1,3 +1,4 @@
+import asyncio
 import json
 import uuid
 from collections.abc import AsyncGenerator
@@ -8,7 +9,7 @@ from typing import Any
 
 import aiosqlite
 
-from locus.config import locus_home
+from locus.config import LocusConfig, locus_home
 
 
 def get_db_path() -> Path:
@@ -45,25 +46,44 @@ CREATE TABLE IF NOT EXISTS processing_log (
 )
 """
 
-_CREATE_LISTS = """
-CREATE TABLE IF NOT EXISTS lists (
-    id          TEXT PRIMARY KEY,
-    name        TEXT UNIQUE NOT NULL,
-    created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
-)
-"""
+
+async def _migrate_legacy_lists(db: aiosqlite.Connection, cfg: LocusConfig) -> None:
+    if not cfg.obsidian.vault_path:
+        return
+
+    async with db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='lists'") as cur:
+        if await cur.fetchone() is None:
+            return
+
+    async with db.execute("SELECT id, name, created_at FROM lists ORDER BY created_at ASC") as cur:
+        rows = await cur.fetchall()
+
+    from locus.vault import locus_dir, write_list_overview
+
+    for row in rows:
+        overview_path = locus_dir(cfg.obsidian) / row["name"] / "_overview.md"
+        await asyncio.to_thread(
+            write_list_overview,
+            overview_path,
+            list_id=row["id"],
+            list_name=row["name"],
+            created_at=row["created_at"] or "",
+        )
 
 
 async def bootstrap_db() -> None:
+    from locus.config import load_config
+
+    cfg = load_config()
     async with aiosqlite.connect(get_db_path()) as db:
+        db.row_factory = aiosqlite.Row
         await db.execute(_CREATE_JOBS)
         await db.execute(_CREATE_PROCESSING_LOG)
-        await db.execute(_CREATE_LISTS)
-        # Idempotent migration: add list_id if missing (for existing installs)
         try:
             await db.execute("ALTER TABLE processing_log ADD COLUMN list_id TEXT")
         except aiosqlite.OperationalError:
             pass
+        await _migrate_legacy_lists(db, cfg)
         await db.commit()
 
 
@@ -196,14 +216,6 @@ async def write_processing_log(
             ),
         )
         await db.commit()
-
-
-async def get_list_name(list_id: str) -> str | None:
-    """Return the list name for a given list_id, or None if not found."""
-    async with get_db() as db:
-        async with db.execute("SELECT name FROM lists WHERE id=?", (list_id,)) as cur:
-            row = await cur.fetchone()
-    return row["name"] if row else None
 
 
 async def get_processing_log_videos(list_id: str) -> list[aiosqlite.Row]:

@@ -219,7 +219,7 @@ async def test_pipeline_logs_when_embedding_model_missing(tmp_locus_home: Path, 
     worker = WorkerLoop()
     with (
         patch("locus.worker.load_config", return_value=cfg),
-        patch("locus.worker.get_list_name", new=AsyncMock(return_value="MyList")),
+        patch("locus.worker._get_list_name_from_vault", return_value="MyList"),
         patch("locus.worker.update_job_status", new=AsyncMock()),
         patch("locus.worker.asyncio.to_thread", new=AsyncMock(side_effect=fake_to_thread)),
         patch("locus.worker.BilibiliAdapter.download", return_value=tmp_locus_home / "video.mp4"),

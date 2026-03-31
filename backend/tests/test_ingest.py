@@ -29,8 +29,11 @@ def client_with_vault(tmp_locus_home: Path, tmp_path: Path):
     """Client with vault_path configured so ingest doesn't 400."""
     from locus.config import load_config, save_config
 
+    vault = tmp_path / "vault"
+    vault.mkdir()
+
     cfg = load_config()
-    cfg.obsidian.vault_path = str(tmp_path / "vault")
+    cfg.obsidian.vault_path = str(vault)
     save_config(cfg)
 
     from locus.main import create_app
@@ -45,33 +48,33 @@ def client_with_vault(tmp_locus_home: Path, tmp_path: Path):
 # ---------------------------------------------------------------------------
 
 
-def test_create_list(client: TestClient):
-    resp = client.post("/lists", json={"name": "ML Course"})
+def test_create_list(client_with_vault: TestClient):
+    resp = client_with_vault.post("/lists", json={"name": "ML Course"})
     assert resp.status_code == 201
     data = resp.json()
     assert data["name"] == "ML Course"
     assert "id" in data
 
 
-def test_create_list_empty_name(client: TestClient):
-    resp = client.post("/lists", json={"name": "  "})
+def test_create_list_empty_name(client_with_vault: TestClient):
+    resp = client_with_vault.post("/lists", json={"name": "  "})
     assert resp.status_code == 422
 
 
-def test_create_list_duplicate(client: TestClient):
-    client.post("/lists", json={"name": "Physics"})
-    resp = client.post("/lists", json={"name": "Physics"})
+def test_create_list_duplicate(client_with_vault: TestClient):
+    client_with_vault.post("/lists", json={"name": "Physics"})
+    resp = client_with_vault.post("/lists", json={"name": "Physics"})
     assert resp.status_code == 409
 
 
-def test_get_lists_empty(client: TestClient):
-    assert client.get("/lists").json() == []
+def test_get_lists_empty(client_with_vault: TestClient):
+    assert client_with_vault.get("/lists").json() == []
 
 
-def test_get_lists(client: TestClient):
-    client.post("/lists", json={"name": "List A"})
-    client.post("/lists", json={"name": "List B"})
-    names = [r["name"] for r in client.get("/lists").json()]
+def test_get_lists(client_with_vault: TestClient):
+    client_with_vault.post("/lists", json={"name": "List A"})
+    client_with_vault.post("/lists", json={"name": "List B"})
+    names = [r["name"] for r in client_with_vault.get("/lists").json()]
     assert names == ["List A", "List B"]
 
 
@@ -154,10 +157,9 @@ def test_ingest_unknown_list(client_with_vault: TestClient, mock_ydl_single):
 
 
 def test_ingest_no_vault_configured(client: TestClient, mock_ydl_single):
-    list_id = client.post("/lists", json={"name": "Test"}).json()["id"]
     resp = client.post(
         "/ingest/url",
-        json={"list_id": list_id, "url": "https://www.bilibili.com/video/BV1abc123"},
+        json={"list_id": "list-001", "url": "https://www.bilibili.com/video/BV1abc123"},
     )
     assert resp.status_code == 400
     assert "vault_path" in resp.json()["detail"]

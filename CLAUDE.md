@@ -60,9 +60,10 @@ backend/src/locus/
 ├── worker.py         # WorkerLoop — polls SQLite, dispatches pipeline jobs
 ├── db.py             # Schema bootstrap, query helpers
 ├── config.py         # Pydantic settings, persisted to ~/.locus/config.json
+├── vault.py          # Vault-backed list discovery (scan_lists, write_list_overview, parse_frontmatter)
 ├── adapters/         # Platform-specific download + resolution logic
 ├── pipeline/         # One file per pipeline stage (audio, transcribe, chunk, extract, notes, embed)
-├── routers/          # FastAPI route handlers (health, config, ingest, jobs, lists)
+├── routers/          # FastAPI route handlers (health, config, ingest, jobs, lists, notes, transcripts, whisper)
 └── models/           # Pydantic request/response models
 
 plugin/src/

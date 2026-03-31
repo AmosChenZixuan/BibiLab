@@ -95,3 +95,61 @@ def test_locus_dirs_bootstrapped(client: TestClient, tmp_locus_home: Path):
     for subdir in ("transcripts", "downloads", "chroma"):
         assert (tmp_locus_home / subdir).is_dir(), f"Missing {subdir}/"
     assert (tmp_locus_home / "locus.db").exists()
+
+
+@pytest.mark.asyncio
+async def test_bootstrap_db_does_not_create_lists_table(tmp_path: Path):
+    import aiosqlite
+
+    from locus.db import bootstrap_db
+
+    with patch("locus.db.locus_home", return_value=tmp_path):
+        await bootstrap_db()
+
+    async with aiosqlite.connect(tmp_path / "locus.db") as db:
+        async with db.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='lists'"
+        ) as cur:
+            row = await cur.fetchone()
+
+    assert row is None
+
+
+@pytest.mark.asyncio
+async def test_bootstrap_db_migrates_legacy_lists_into_overview_notes(tmp_path: Path):
+    import aiosqlite
+
+    from locus.config import load_config, save_config
+    from locus.db import bootstrap_db
+
+    vault = tmp_path / "vault"
+    db_path = tmp_path / "locus.db"
+
+    async with aiosqlite.connect(db_path) as db:
+        await db.execute(
+            """
+            CREATE TABLE lists (
+                id TEXT PRIMARY KEY,
+                name TEXT UNIQUE NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+        await db.execute(
+            "INSERT INTO lists (id, name, created_at) VALUES (?, ?, ?)",
+            ("legacy-list", "Legacy Course", "2026-03-01T00:00:00"),
+        )
+        await db.commit()
+
+    with patch("locus.config.locus_home", return_value=tmp_path):
+        with patch("locus.db.locus_home", return_value=tmp_path):
+            cfg = load_config()
+            cfg.obsidian.vault_path = str(vault)
+            save_config(cfg)
+            await bootstrap_db()
+
+    overview = vault / "Locus" / "Legacy Course" / "_overview.md"
+    assert overview.exists()
+    text = overview.read_text(encoding="utf-8")
+    assert "locus_list_id: legacy-list" in text
+    assert "created_at: 2026-03-01T00:00:00" in text

@@ -7,6 +7,7 @@ from locus.adapters.bilibili import BilibiliAdapter
 from locus.config import load_config
 from locus.db import create_job, get_db
 from locus.models.ingest import IngestUrlRequest, IngestUrlResponse
+from locus.vault import get_list_by_id
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -23,10 +24,10 @@ def _canonical_url(video_id: str, platform: str) -> str:
     return template.format(video_id=video_id)
 
 
-async def _list_exists(list_id: str) -> bool:
-    async with get_db() as db:
-        async with db.execute("SELECT id FROM lists WHERE id=?", (list_id,)) as cur:
-            return await cur.fetchone() is not None
+def _list_exists(list_id: str, vault_cfg) -> bool:
+    if not vault_cfg.vault_path:
+        return False
+    return get_list_by_id(list_id, vault_cfg) is not None
 
 
 async def _already_processed_batch(video_ids: list[str]) -> set[str]:
@@ -61,9 +62,6 @@ async def _queue_video(video: VideoMeta, list_id: str, rerun: bool = False) -> s
 
 @router.post("/ingest/url")
 async def ingest_url(req: IngestUrlRequest) -> IngestUrlResponse:
-    if not await _list_exists(req.list_id):
-        raise HTTPException(status_code=404, detail="List not found")
-
     cfg = load_config()
 
     # Validate vault path before queuing — fail fast rather than mid-pipeline
@@ -72,6 +70,9 @@ async def ingest_url(req: IngestUrlRequest) -> IngestUrlResponse:
             status_code=400,
             detail="obsidian.vault_path is not configured. Set it via PUT /config.",
         )
+
+    if not _list_exists(req.list_id, cfg.obsidian):
+        raise HTTPException(status_code=404, detail="List not found")
 
     adapter = BilibiliAdapter(cookie=cfg.accounts.bilibili.cookie)
 

@@ -11,6 +11,7 @@ import httpx
 from locus.adapters.base import VideoMeta
 from locus.config import ObsidianConfig
 from locus.pipeline.extract import ExtractionResult
+from locus.vault import parse_frontmatter
 
 logger = logging.getLogger(__name__)
 
@@ -105,9 +106,19 @@ def write_overview_note(
     note_path = list_dir / "_overview.md"
 
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
+    created_at = (
+        parse_frontmatter(note_path.read_text(encoding="utf-8")).get("created_at")
+        if note_path.exists()
+        else None
+    ) or now
 
     frontmatter = (
-        f"---\nlocus_list_id: {list_id}\nvideo_count: {len(videos)}\nlast_updated: {now}\n---\n"
+        f"---\n"
+        f"locus_list_id: {list_id}\n"
+        f"created_at: {created_at}\n"
+        f"video_count: {len(videos)}\n"
+        f"last_updated: {now}\n"
+        f"---\n"
     )
 
     video_links = "\n".join(
