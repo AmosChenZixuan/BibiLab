@@ -279,4 +279,43 @@ describe("list detail page", () => {
 
     expect(await screen.findByText("Authentication required")).toBeInTheDocument();
   });
+
+  test("shows route-level source loading errors inline", async () => {
+    installFetchMock(async (input, init) => {
+      const url = String(input);
+      const method = init?.method ?? "GET";
+
+      if (url.endsWith("/api/health") && method === "GET") {
+        return Response.json({
+          overall: "ok",
+          dependencies: {
+            backend: { status: "ok", message: "" },
+          },
+        });
+      }
+
+      if (url.endsWith("/api/lists") && method === "GET") {
+        return Response.json([
+          { id: "list-1", name: "Systems", created_at: "2026-03-31T19:00:00Z" },
+        ]);
+      }
+
+      if (url.endsWith("/api/lists/list-1/sources") && method === "GET") {
+        return Response.json({ detail: "List not found" }, { status: 404 });
+      }
+
+      if (url.endsWith("/api/jobs") && method === "GET") {
+        return Response.json([]);
+      }
+
+      throw new Error(`Unhandled ${method} ${url}`);
+    });
+
+    const router = createMemoryRouter(routes, { initialEntries: ["/lists/list-1"] });
+    render(<RouterProvider router={router} />);
+
+    expect(await screen.findByText("List not found")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /chat/i })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /studio/i })).toBeInTheDocument();
+  });
 });

@@ -1,13 +1,19 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { RouterProvider, createMemoryRouter } from "react-router-dom";
-import { describe, expect, test, vi } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 
 import { routes } from "../app/routes";
 
 function installFetchMock(handler: (input: RequestInfo | URL, init?: RequestInit) => Response | Promise<Response>) {
   vi.stubGlobal("fetch", vi.fn(handler));
 }
+
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
 
 describe("home page", () => {
   test("shows the floating shell, creates an untitled list from the first tile, and deletes an existing list", async () => {
@@ -128,5 +134,105 @@ describe("home page", () => {
     await router.navigate("/");
 
     expect(await screen.findByRole("heading", { name: "Distributed Systems" })).toBeInTheDocument();
+  });
+
+  test("supports navigation across home, list workspace, and settings routes", async () => {
+    installFetchMock(async (input, init) => {
+      const url = String(input);
+      const method = init?.method ?? "GET";
+
+      if (url.endsWith("/api/health") && method === "GET") {
+        return Response.json({
+          overall: "ok",
+          dependencies: {
+            backend: { status: "ok", message: "" },
+            llm: { status: "ok", message: "" },
+            whisper_model: { status: "ok", message: "" },
+            ffmpeg: { status: "ok", message: "" },
+            cuda: { status: "ok", message: "" },
+            bilibili_session: { status: "ok", message: "" },
+            embedding_model: { status: "ok", message: "" },
+          },
+        });
+      }
+
+      if (url.endsWith("/api/lists") && method === "GET") {
+        return Response.json([{ id: "list-1", name: "Systems", created_at: "2026-03-31T19:00:00Z" }]);
+      }
+
+      if (url.endsWith("/api/lists/list-1/sources") && method === "GET") {
+        return Response.json([]);
+      }
+
+      if (url.endsWith("/api/config") && method === "GET") {
+        return Response.json({
+          accounts: { bilibili: { cookie: "***", last_verified: "" } },
+          ai: { provider: "openai", model: "gpt-4o", api_key: "***", base_url: null },
+          transcription: {
+            engine: "faster-whisper",
+            model_size: "large-v3",
+            device: "cuda",
+            language: "auto",
+          },
+          vision: { enabled: false, frame_sample_rate: 30, model: null },
+          backend: { port: 8765, worker_concurrency: 1 },
+        });
+      }
+
+      if (url.endsWith("/api/models/whisper") && method === "GET") {
+        return Response.json([{ name: "large-v3", installed: true, path: "/tmp/large-v3", selected: true }]);
+      }
+
+      if (url.endsWith("/api/jobs") && method === "GET") {
+        return Response.json([]);
+      }
+
+      throw new Error(`Unhandled ${method} ${url}`);
+    });
+
+    const router = createMemoryRouter(routes, { initialEntries: ["/"] });
+    render(<RouterProvider router={router} />);
+
+    expect(await screen.findByRole("heading", { name: "Systems" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /no active jobs/i })).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: /open systems/i }));
+    expect(await screen.findByRole("heading", { name: /systems/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /no active jobs/i })).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("link", { name: /settings/i }));
+    expect(await screen.findByRole("heading", { name: /settings/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /no active jobs/i })).toBeInTheDocument();
+  });
+
+  test("shows list loading errors inline", async () => {
+    installFetchMock(async (input, init) => {
+      const url = String(input);
+      const method = init?.method ?? "GET";
+
+      if (url.endsWith("/api/health") && method === "GET") {
+        return Response.json({
+          overall: "ok",
+          dependencies: {
+            backend: { status: "ok", message: "" },
+          },
+        });
+      }
+
+      if (url.endsWith("/api/lists") && method === "GET") {
+        return Response.json({ detail: "Lists unavailable" }, { status: 503 });
+      }
+
+      if (url.endsWith("/api/jobs") && method === "GET") {
+        return Response.json([]);
+      }
+
+      throw new Error(`Unhandled ${method} ${url}`);
+    });
+
+    const router = createMemoryRouter(routes, { initialEntries: ["/"] });
+    render(<RouterProvider router={router} />);
+
+    expect(await screen.findByText("Lists unavailable")).toBeInTheDocument();
   });
 });

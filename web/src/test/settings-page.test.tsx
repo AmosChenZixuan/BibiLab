@@ -1,13 +1,19 @@
-import { render, screen } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { RouterProvider, createMemoryRouter } from "react-router-dom";
-import { describe, expect, test, vi } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 
 import { routes } from "../app/routes";
 
 function installFetchMock(handler: (input: RequestInfo | URL, init?: RequestInit) => Response | Promise<Response>) {
   vi.stubGlobal("fetch", vi.fn(handler));
 }
+
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
 
 describe("settings page", () => {
   test("loads config and health, saves a config patch, and queues a whisper model download", async () => {
@@ -105,5 +111,37 @@ describe("settings page", () => {
 
     await userEvent.click(screen.getByRole("button", { name: /download small/i }));
     expect(await screen.findByText(/queued whisper model download/i)).toBeInTheDocument();
+  });
+
+  test("shows initial settings load errors inline", async () => {
+    installFetchMock(async (input, init) => {
+      const url = String(input);
+      const method = init?.method ?? "GET";
+
+      if (url.endsWith("/api/config") && method === "GET") {
+        return Response.json({ detail: "Settings unavailable" }, { status: 503 });
+      }
+
+      if (url.endsWith("/api/health") && method === "GET") {
+        return Response.json({
+          overall: "ok",
+          dependencies: {
+            backend: { status: "ok", message: "" },
+          },
+        });
+      }
+
+      if (url.endsWith("/api/models/whisper") && method === "GET") {
+        return Response.json([]);
+      }
+
+      throw new Error(`Unhandled ${method} ${url}`);
+    });
+
+    const router = createMemoryRouter(routes, { initialEntries: ["/settings"] });
+    render(<RouterProvider router={router} />);
+
+    expect(await screen.findByRole("heading", { name: /settings/i })).toBeInTheDocument();
+    expect(screen.getByText("Settings unavailable")).toBeInTheDocument();
   });
 });

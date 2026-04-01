@@ -31,19 +31,27 @@ export function ListDetailPage() {
   const [editingName, setEditingName] = useState(false);
   const [draftName, setDraftName] = useState("");
   const [renameError, setRenameError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
 
     async function load() {
-      const [lists, nextSources] = await Promise.all([api.listLists(), api.listSources(listId)]);
-      if (cancelled) {
-        return;
+      try {
+        const [lists, nextSources] = await Promise.all([api.listLists(), api.listSources(listId)]);
+        if (cancelled) {
+          return;
+        }
+        const currentName = lists.find((entry) => entry.id === listId)?.name ?? "List workspace";
+        setListName(currentName);
+        setDraftName(currentName);
+        setSources(nextSources);
+        setLoadError(null);
+      } catch (error) {
+        if (!cancelled) {
+          setLoadError(toErrorMessage(error));
+        }
       }
-      const currentName = lists.find((entry) => entry.id === listId)?.name ?? "List workspace";
-      setListName(currentName);
-      setDraftName(currentName);
-      setSources(nextSources);
     }
 
     void load();
@@ -189,28 +197,37 @@ export function ListDetailPage() {
         {renameError ? <p className="status-message error">{renameError}</p> : null}
       </section>
       <div className="workspace-grid">
-        <SourcesPanel
-          activeTab={activeTab}
-          detailSource={detailSource}
-          ingestBusy={ingestBusy}
-          ingestError={ingestError}
-          ingestStatus={ingestStatus}
-          note={note}
-          onBack={() => {
-            setDetailSource(null);
-            setNote(null);
-            setTranscript(null);
-            setTranscriptError(null);
-          }}
-          onDelete={handleDelete}
-          onIngest={handleIngest}
-          onOpen={handleOpen}
-          onSelectTab={handleSelectTab}
-          sources={sources}
-          transcript={transcript}
-          transcriptError={transcriptError}
-          transcriptLoading={transcriptLoading}
-        />
+        {loadError ? (
+          <section className="workspace-panel">
+            <h2 className="workspace-panel__title">Sources</h2>
+            <div className="workspace-panel__body">
+              <p className="status-message error">{loadError}</p>
+            </div>
+          </section>
+        ) : (
+          <SourcesPanel
+            activeTab={activeTab}
+            detailSource={detailSource}
+            ingestBusy={ingestBusy}
+            ingestError={ingestError}
+            ingestStatus={ingestStatus}
+            note={note}
+            onBack={() => {
+              setDetailSource(null);
+              setNote(null);
+              setTranscript(null);
+              setTranscriptError(null);
+            }}
+            onDelete={handleDelete}
+            onIngest={handleIngest}
+            onOpen={handleOpen}
+            onSelectTab={handleSelectTab}
+            sources={sources}
+            transcript={transcript}
+            transcriptError={transcriptError}
+            transcriptLoading={transcriptLoading}
+          />
+        )}
         <ChatPanel />
         <StudioPanel
           busy={studioBusy}
