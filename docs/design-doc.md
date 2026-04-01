@@ -1,32 +1,31 @@
 # Project Locus — Technical Design Document
 
-> Version: 0.5 (Draft)
-> Last updated: 2026-03-30
+> Version: 0.6 (Draft)
+> Last updated: 2026-03-31
 
 ---
 
 ## 1. Overview
 
-**Project Locus** is a personal video knowledge base tool. It ingests videos from supported platforms, transcribes them locally, extracts structured knowledge using an LLM, and surfaces everything through Obsidian — an already-deployed local tool with a rich plugin ecosystem.
+**Project Locus** is a local, self-hosted video knowledge base. It ingests videos from supported platforms, transcribes them locally, extracts structured knowledge using an LLM, and surfaces everything through a purpose-built web UI — a local alternative to NotebookLM with full model selection.
 
-**One-line pitch:** Turn any video playlist into a searchable, AI-queryable set of Obsidian notes — entirely on your own machine.
+**One-line pitch:** Turn any video playlist into a searchable, AI-queryable knowledge base — entirely on your own machine, with your own models.
 
 ---
 
 ## 2. Goals & Non-Goals
 
 ### Goals
-- Process individual videos, playlists, and courses into structured Obsidian notes
+- Process individual videos, playlists, and courses into structured markdown notes
 - Support local-first transcription (Faster Whisper) and local or cloud LLMs
-- Enable AI Q&A grounded in your own video corpus, with transcript citations
-- Provide a list-level overview note that aggregates knowledge across videos in a series
+- Enable AI Q&A grounded in your own video corpus, with transcript citations (v1)
+- Provide a list-level overview that can be manually generated and downloaded
 - Progressively enhance with multimodal and generative features in later versions
 
 ### Non-Goals
 - Not a general-purpose video player
-- Not a cloud service — designed for single-user local deployment
+- Not a cloud service — designed for single-user local deployment (multi-user is a v-future concern)
 - Interactive timestamp seeking is not required for v0–v2 (timestamps appear as plain text references)
-- Not a replacement for Obsidian's own note-taking — Locus generates notes, the user manages them
 
 ---
 
@@ -34,22 +33,20 @@
 
 ```
 ┌─────────────────────────────────────────────────────┐
-│                    Obsidian                         │
-│  ┌─────────────────────────────────────────────┐   │
-│  │           Locus Obsidian Plugin             │   │
-│  │  - Ingestion UI (URL / free-text)           │   │
-│  │  - Job status panel                         │   │
-│  │  - AI Q&A panel (per-note, per-list)        │   │
-│  │  - Config panel                             │   │
-│  └────────────────────┬────────────────────────┘   │
+│              Locus Web UI (React + TypeScript)       │
+│                                                     │
+│  ┌──────────────┐  ┌────────────┐  ┌─────────────┐ │
+│  │  Sources     │  │    Chat    │  │   Studio    │ │
+│  │  (ingestion) │  │  (v1 RAG)  │  │  (overview) │ │
+│  └──────────────┘  └────────────┘  └─────────────┘ │
 └───────────────────────│─────────────────────────────┘
-                        │ HTTP (REST)
+                        │ HTTP (REST + SSE)
 ┌───────────────────────▼─────────────────────────────┐
 │                  Locus Backend (Python)              │
 │                                                     │
 │  ┌──────────┐  ┌──────────┐  ┌───────────────────┐ │
 │  │  Ingest  │  │ Process  │  │     Q&A / RAG     │ │
-│  │  Router  │  │ Pipeline │  │     Engine        │ │
+│  │  Router  │  │ Pipeline │  │     Engine (v1)   │ │
 │  └────┬─────┘  └────┬─────┘  └─────────┬─────────┘ │
 │       │             │                  │            │
 │  ┌────▼─────────────▼──────────────────▼─────────┐ │
@@ -72,43 +69,61 @@
 
 ## 4. Component Breakdown
 
-### 4.1 Obsidian Plugin
+### 4.1 Web UI (React + TypeScript)
 
-Responsibilities:
-- Render the ingestion form (URL input or free-text query)
-- Poll job status and display progress
-- Render the AI Q&A chat panel (per-note and per-list scope)
-- Host the global config UI (accounts, models, deployment health)
+A single-page application served by the FastAPI backend at `localhost:8765`. No Obsidian dependency.
 
-Communication: All plugin-to-backend calls are REST over `localhost`. The backend port is configurable (default: `8765`).
+**Pages:**
 
-**Vault sync (v0):** The plugin registers two vault event listeners on load:
+- `/` — Home: grid of Lists, create new list
+- `/lists/:id` — List detail: three-column layout (Sources | Chat | Studio)
+- `/settings` — Global config: AI provider, Whisper, accounts, health panel
 
-- `vault.on('rename', (file, oldPath))` — fires on both rename and move. If the file has a `locus_id` frontmatter field, calls `PATCH /notes/{locus_id}/path` with the new vault-relative path.
-- `vault.on('delete', (file))` — if the file has a `locus_id`, calls `PATCH /notes/{locus_id}/path` with `null` to mark the note as missing in `processing_log`. The processing record is preserved so rerun still works.
+**List detail layout:**
 
-On plugin load (e.g., Obsidian opened while plugin was off), a startup reconciliation scan walks the vault for all files containing `locus_id` frontmatter and patches any `processing_log` entries whose `note_path` doesn't match. This handles bulk moves that occurred while the plugin was inactive.
+```
+┌──────────────────┬──────────────────┬──────────────────┐
+│   Sources         │      Chat        │     Studio       │
+│                   │                  │                  │
+│ [Add URL input]   │  (v0: skeleton,  │ [Generate        │
+│                   │   v1: RAG chat)  │  Overview btn]   │
+│ ── Source A ──    │                  │                  │
+│ ── Source B ──    │                  │ ── Artifact ──   │
+│ ── Source C ──    │                  │ overview.md      │
+│                   │                  │ [Download]       │
+└──────────────────┴──────────────────┴──────────────────┘
+```
+
+Clicking a source replaces the entire left (Sources) panel with a detail view:
+- `← Back` returns to source list
+- **Note** tab: read-only LLM-generated note
+- **Transcript** tab: raw Whisper transcript
+
+Notes are **read-only** in the UI. The only export action is download as markdown.
+
+**Jobs:** Global floating badge (bottom-right) showing active job count. Clicking opens a side drawer with job list, status badges, progress bars, and cancel buttons. Auto-polls every 3s when open.
+
+**Dev setup:** Vite dev server on `:5173`, proxies `/api/*` to `:8765`. Windows browser reaches both directly over WSL network. Production: `npm run build` → `web/dist`, FastAPI mounts as static files after all `/api` routes.
 
 ### 4.2 Backend API (Python / FastAPI)
 
 Core routes:
 ```
 POST   /ingest/url              # body: { list_id, url } — single video, playlist, or course
-POST   /ingest/freetext         # body: { list_id, query } — natural language → platform resolver
-POST   /ingest/rerun/{video_id} # re-run full pipeline for an already-processed video
+                                # ?rerun=true overrides deduplication and re-runs the full pipeline
 GET    /jobs                    # list all jobs with status
 GET    /jobs/{id}               # single job status + progress
 DELETE /jobs/{id}               # cancel job
 
 POST   /lists                   # create a new list
 GET    /lists                   # all lists
-DELETE /lists/{id}              # delete list and its notes
-GET    /lists/{id}/notes        # notes in a list
-POST   /lists/{id}/chat         # multi-turn Q&A against a list's knowledge base (v1)
-POST   /notes/{id}/chat         # Q&A scoped to a single note (v1)
-PATCH  /notes/{locus_id}/path  # update note_path in processing_log (vault sync)
+DELETE /lists/{id}              # delete list and cascade: notes + processing_log + embeddings
+GET    /lists/{id}/sources      # sources (processing_log rows) for a list
+DELETE /lists/{id}/sources/{video_id}  # delete one source: note file + processing_log + embeddings
+POST   /lists/{id}/overview     # on-demand: generate overview markdown, return for download
 
-GET    /transcripts/{video_id}  # paginated transcript retrieval (?offset=0&limit=200)
+GET    /notes/{video_id}/content    # note markdown content
+GET    /notes/{video_id}/transcript # raw transcript text
 
 GET    /models/whisper          # list available Whisper models with download status
 POST   /models/whisper/download # queue a Whisper model download job
@@ -117,25 +132,37 @@ GET    /health                  # dependency health check
 GET    /config                  # get config
 PUT    /config                  # update config
 
-POST   /ingest/freetext         # body: { list_id, query } — natural language → platform resolver (v3)
+# v1
+POST   /lists/{id}/query        # SSE: multi-turn RAG Q&A scoped to a list
 ```
 
-**Plugin ingestion flow:** The user creates a list first (or selects an existing one), then submits a URL or free-text query into it. Ingestion without a list is not permitted — there is no "Uncategorized" default.
+**Ingestion flow:** The user creates a list first (or selects an existing one), then submits a URL into it. Ingestion without a list is not permitted.
 
-**Deduplication:** Before queuing a video, the backend checks `processing_log` for an existing `video_id`. If found, the job is skipped silently. The user can override this explicitly via `POST /ingest/rerun/{video_id}`, which re-runs the full pipeline and overwrites the existing note and ChromaDB entries.
+**Deduplication:** Before queuing a video, the backend checks the `sources` table for an existing `video_id`. If found, the job is skipped silently.
 
-### 4.3 Job Queue & Processing Log
+`DELETE /lists/{id}/sources/{video_id}` removes the note file, ChromaDB embeddings, and the `sources` row. After deletion, re-ingesting the same URL is treated as a fresh video.
 
-SQLite serves two purposes here — a transient job queue and a permanent processing log. These are kept in separate tables with different lifecycles.
+`POST /ingest/url?rerun=true` bypasses the deduplication check and re-runs the full pipeline in-place, overwriting the existing note and embeddings (use when re-processing with an upgraded model without deleting first).
 
-**Lists are not stored in SQLite.** A list is defined by the vault: creating a list means creating `{vault}/Locus/{list_name}/_overview.md` with a `locus_list_id` in its frontmatter. The backend discovers lists by scanning vault folders and reading overview frontmatter. This keeps the vault as the single source of truth and means a user renaming a list folder in Obsidian is automatically reflected — no separate sync required.
+### 4.3 Job Queue, Lists & Sources
+
+SQLite serves three purposes: a transient job queue, a list registry, and a source catalog.
+
+**Lists are stored in SQLite** (restored from vault-backed approach, which was tied to Obsidian and is now removed).
 
 **Job states:** `queued → downloading → transcribing → extracting → writing → done | failed`
 
-A background worker loop picks up queued jobs sequentially (or with configurable parallelism). Completed and failed job rows can be pruned after a retention window. The worker surviving restarts is guaranteed by reading `queued` and `in_progress` rows on startup.
+Jobs are ephemeral — they can be pruned after a retention window once complete. `sources` is the permanent catalog.
 
 ```sql
--- Ephemeral: pruned after completion
+-- List registry
+CREATE TABLE lists (
+    id         TEXT PRIMARY KEY,
+    name       TEXT NOT NULL UNIQUE,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Ephemeral queue: pruned after retention window
 CREATE TABLE jobs (
     id          TEXT PRIMARY KEY,
     type        TEXT,           -- 'video' | 'playlist' | 'course'
@@ -149,22 +176,22 @@ CREATE TABLE jobs (
     meta        JSON            -- platform-specific metadata
 );
 
--- Permanent: one row per successfully processed video
-CREATE TABLE processing_log (
+-- Active source catalog: one row per successfully processed video, deleted when source is removed
+CREATE TABLE sources (
     video_id            TEXT PRIMARY KEY,   -- platform-native ID (e.g. bvid)
     platform            TEXT,
-    list_id             TEXT,               -- matches locus_list_id in _overview.md frontmatter
-    note_path           TEXT,               -- vault-relative path to the note file
+    list_id             TEXT REFERENCES lists(id),
+    note_path           TEXT NOT NULL,      -- absolute path to ~/.locus/notes/{video_id}.md
     transcript_path     TEXT,               -- absolute path to ~/.locus/transcripts/{video_id}.txt
-    whisper_model       TEXT,               -- e.g. large-v3
-    ai_model            TEXT,               -- model used for extraction
+    whisper_model       TEXT,
+    ai_model            TEXT,
     vision_enabled      BOOLEAN,
     processed_at        DATETIME,
-    settings_snapshot   JSON                -- full config snapshot at time of processing
+    settings_snapshot   JSON
 );
 ```
 
-The `processing_log` table is what powers deduplication ("has this video been processed?") and re-processing decisions ("was this transcribed with an older model?"). It also decouples versioning history from the Obsidian vault — note metadata stays human-readable while pipeline metadata stays in the log.
+`sources` powers deduplication (is this video already processed?), source listing per list, and note path resolution.
 
 ### 4.4 Platform Adapters
 
@@ -180,7 +207,7 @@ class PlatformAdapter:
 **v0:** Bilibili adapter (single video `bvid`, playlist, course)
 **v3:** YouTube adapter, with free-text resolver
 
-Auth is handled per-adapter. Bilibili uses cookie-based session stored (encrypted) in config. When a download returns a 403, the adapter raises `AuthRequiredError` and the job transitions to a `needs_auth` state, prompting the user via the plugin.
+Auth is handled per-adapter. Bilibili uses cookie-based session stored in config. When a download returns a 403, the adapter raises `AuthRequiredError` and the job transitions to `needs_auth`, prompting the user via the UI.
 
 ### 4.5 Processing Pipeline
 
@@ -193,21 +220,22 @@ Per video, once downloaded:
 4. Merge consecutive segments into RAG chunks (~200-400 tokens each)
 5. LLM pass: extract title, summary, key points with timestamps
 6. (v1) If vision enabled: sample frames → multimodal LLM pass
-7. Write video note ({video_title}.md)
+7. Write video note (~/.locus/notes/{video_id}.md)
 8. Embed RAG chunks into ChromaDB vector store
-9. Update list overview note
-10. Write processing_log entry
+9. Write sources entry
 ```
 
-**Chunking strategy:** Whisper raw segments (~5–15s each) are merged greedily until the chunk reaches a target token count (~300 tokens). Each chunk stores `timestamp_start`, `timestamp_end`, and `sequence_index` in ChromaDB metadata. This decouples the transcript source of truth from the RAG chunk size — re-chunking or re-embedding never requires re-transcription.
+Note: List overview is **not** generated automatically during pipeline. It is generated on-demand via `POST /lists/{id}/overview` from the Studio panel.
+
+**Chunking strategy:** Whisper raw segments (~5–15s each) are merged greedily until the chunk reaches ~300 tokens. Each chunk stores `timestamp_start`, `timestamp_end`, and `sequence_index` in ChromaDB metadata.
 
 ### 4.6 Vector Store (ChromaDB)
 
-Used for RAG in the Q&A engine. Each chunk is a merge of consecutive Whisper segments, stored with metadata:
+Used for RAG in the Q&A engine (v1). Each chunk stored with metadata:
 
 ```json
 {
-  "note_id": "...",
+  "video_id": "...",
   "list_id": "...",
   "video_title": "...",
   "timestamp_start": 142,
@@ -217,82 +245,62 @@ Used for RAG in the Q&A engine. Each chunk is a merge of consecutive Whisper seg
 }
 ```
 
-Q&A queries are scoped by `list_id` (list-level chat) or `note_id` (single-note chat).
+Q&A queries are scoped by `list_id` (list-level) or `video_id` (single-source).
 
 ### 4.7 Transcript Storage & Serving
 
-Raw Whisper segments are stored outside the vault at `~/.locus/transcripts/{video_id}.txt`. This keeps them invisible to Obsidian's search, graph, and file explorer while remaining directly readable as plain text files.
-
-The backend exposes a paginated endpoint for the plugin's transcript viewer:
+Raw Whisper segments stored at `~/.locus/transcripts/{video_id}.txt`. Served via:
 
 ```
-GET /transcripts/{video_id}?offset=0&limit=200   # returns lines by segment index
+GET /notes/{video_id}/transcript
 ```
 
-The plugin renders transcript on demand in a read-only side panel — the user clicks "View Transcript" on a note to open it. Segments are loaded progressively on scroll.
+The web UI renders transcript in the Source viewer's transcript tab (read-only).
 
-`~/.locus/` directory layout:
+### 4.8 Free-Text Ingestion Resolver (v3)
+
+When the user submits a natural language query, the backend:
+
+1. Sends the query to the LLM to extract intent: platform hint, search terms, content type
+2. Dispatches to the matching platform's search skill
+3. Returns candidate playlists/videos for user confirmation before ingesting
+4. On confirmation, creates jobs as normal
+
+Always requires user confirmation before bulk ingestion.
+
+---
+
+## 5. Data Model — Notes
+
+### 5.1 Storage Layout
+
+Notes and transcripts are stored under `~/.locus/`, outside any Obsidian vault.
+
 ```
 ~/.locus/
-  locus.db                  # SQLite (jobs + processing_log)
+  locus.db                  # SQLite (lists + jobs + processing_log)
+  notes/
+    {video_id}.md           # LLM-generated note
+    attachments/
+      {video_id}_cover.jpg
   transcripts/
-    {video_id}.txt          # raw Whisper segments, one per line: [HH:MM:SS] text
+    {video_id}.txt          # raw Whisper segments: [HH:MM:SS] text
   chroma/                   # ChromaDB data directory
   downloads/                # temporary video files, cleaned up after processing
 ```
 
-### 4.7 Free-Text Ingestion Resolver (v3)
-
-When the user submits a natural language query like `"free AI lessons by Andrew Ng"`, the backend:
-
-1. Sends the query to the LLM with a structured prompt to extract intent: platform hint, search terms, content type
-2. Dispatches to the matching platform's search skill (one skill per platform)
-3. Returns a list of candidate playlists/videos for user confirmation before ingesting
-4. On confirmation, creates jobs as normal
-
-Each platform skill is a self-contained module:
-```python
-class BilibiliSearchSkill:
-    def search(self, query: str) -> list[SearchResult]
-
-class YouTubeSearchSkill:
-    def search(self, query: str) -> list[SearchResult]
-```
-
-The resolver always requires user confirmation before bulk ingestion — it never auto-starts jobs from free-text.
-
----
-
-## 5. Data Model — Obsidian Notes
-
-### 5.1 Vault Layout
-
-```
-{vault}/Locus/
-  {list_name}/
-    _overview.md
-    {video_title}.md
-    attachments/
-      {bvid}_cover.jpg
-```
-
-Transcripts are stored outside the vault entirely (see §4.7) and served via the backend API. The vault contains only human-facing notes.
-
 ### 5.2 Video Note
 
-Stored at: `{vault}/Locus/{list_name}/{video_title}.md`
-
-Human-facing. Contains only what's useful to read.
+Stored at: `~/.locus/notes/{video_id}.md`
 
 ```markdown
 ---
-locus_id: bv1abc123
+video_id: bv1abc123
 platform: bilibili
 source_url: https://www.bilibili.com/video/BV1abc123
-cover: Locus/{list_name}/attachments/bv1abc123_cover.jpg
-duration: 3842
 list_id: list_xyz
-processed_at: 2026-03-30T10:00:00
+duration: 3842
+processed_at: 2026-03-31T10:00:00
 ---
 
 # {Video Title}
@@ -308,29 +316,20 @@ processed_at: 2026-03-30T10:00:00
 - [00:21:03] {knowledge point}
 ```
 
-### 5.2 List Overview Note
+### 5.3 List Overview
 
-Stored at: `{vault}/Locus/{list_name}/_overview.md`
+Generated on-demand via `POST /lists/{id}/overview`. Returned as a markdown string in the API response body; the client triggers a browser download. Not stored on the filesystem.
 
 ```markdown
----
-locus_list_id: list_xyz
-video_count: 12
-last_updated: 2026-03-30T10:00:00
----
-
 # {List Name} — Overview
 
 ## Outline
-{LLM-generated outline synthesizing all videos in the list}
+{LLM-generated outline synthesizing all sources in the list}
 
-## Videos
-- [[Video Title 1]]
-- [[Video Title 2]]
+## Sources
+- {Video Title 1}
+- {Video Title 2}
 ...
-
-## Supplementary Notes
-{User-editable free-text area — v1}
 ```
 
 ---
@@ -355,16 +354,12 @@ last_updated: 2026-03-30T10:00:00
     "engine": "faster-whisper",
     "model_size": "large-v3",
     "device": "cuda | cpu",
-    "language": "auto"    // "auto" | "zh" | "en" — configurable per-vault in UI
+    "language": "auto"
   },
   "vision": {
     "enabled": false,
     "frame_sample_rate": 30,
     "model": null
-  },
-  "obsidian": {
-    "vault_path": "/path/to/vault",
-    "locus_folder": "Locus"
   },
   "backend": {
     "port": 8765,
@@ -377,7 +372,7 @@ last_updated: 2026-03-30T10:00:00
 
 ## 7. Deployment Health Checks
 
-The `/health` endpoint checks all dependencies and returns a structured status. The plugin displays this as a status panel.
+The `/health` endpoint checks all dependencies. Displayed inline in the Settings page.
 
 | Dependency | Type | Blocks ingestion? |
 |---|---|---|
@@ -393,26 +388,26 @@ The `/health` endpoint checks all dependencies and returns a structured status. 
 
 ## 8. Versioned Rollout
 
-### v0 — Core Pipeline
+### v0 — Core Pipeline + Web UI
 - Global config + deployment health
 - Bilibili ingestion: single video, playlist, course
 - Faster Whisper transcription
 - LLM-based note generation (summary + timestamped key points)
-- Obsidian note writing with frontmatter
-- List creation and management
-- List overview note
-- Job queue with status polling in plugin
-- Vault sync: automatic `note_path` reconciliation on rename, delete, and plugin load
+- Markdown note storage at `~/.locus/notes/`
+- List creation and management (DB-backed)
+- On-demand list overview generation (manual, Studio panel)
+- Job queue with status polling in web UI
+- Source viewer: read-only note + transcript toggle
 
 ### v1 — Enhanced Knowledge
-- Multimodal vision pass (opt-in per video, configurable frame sampling)
-- Per-list supplementary text area (user-editable, injected into RAG context)
-- Multi-turn AI Q&A (list and note scope) with transcript citation
+- Multimodal vision pass (opt-in, configurable frame sampling)
+- Multi-turn RAG Q&A (list scope) with transcript citation and timestamp references
+- Source truth panel: user-supplied corrections injected into RAG context
 
 ### v2 — Generative Outputs
 - TTS configuration
-- Mermaid mind map generation embedded in overview notes
-- Audio summary (single-voice, LLM script + TTS — scoped to list overview)
+- Mindmap generation (Mermaid)
+- Audio overview (LLM script + TTS, scoped to list)
 
 ### v3 — Expanded Sources
 - YouTube adapter
@@ -425,23 +420,29 @@ The `/health` endpoint checks all dependencies and returns a structured status. 
 
 | Decision | Choice | Rationale |
 |---|---|---|
-| Backend framework | FastAPI | Async-native, easy to expose SSE for job progress |
-| Job persistence | SQLite (two tables) | Zero-infra; `jobs` table is ephemeral queue, `processing_log` is permanent versioning history. Lists are vault-backed, not stored in SQLite. |
-| Vector store | ChromaDB | Local, no server process needed, Python-native |
+| Frontend | React + TypeScript SPA | Full control over UX; NotebookLM-style interface not achievable in Obsidian. SPA is cloud-ready without needing SSR. |
+| Serving | FastAPI serves React build as static files | Single port, no separate frontend server in production |
+| No Obsidian integration | Notes stored in `~/.locus/notes/` | Obsidian's free editing model conflicts with read-only note semantics; vault event hooks add unbounded complexity |
+| List storage | SQLite `lists` table | Vault-backed discovery was tied to Obsidian and is removed; DB is the natural source of truth |
+| Overview generation | On-demand via API, not in pipeline | Avoids silent LLM calls during ingestion; user controls when to generate and download |
+| Backend framework | FastAPI | Async-native, easy SSE for job progress and chat streaming |
+| DB schema | SQLite three tables: `lists`, `jobs`, `sources` | `jobs` is ephemeral queue (prunable); `sources` is the active catalog (dedup + note path); `lists` is the registry. Naming reflects purpose, not implementation. |
+| Vector store | ChromaDB | Local, no server process, Python-native |
 | Transcription | Faster Whisper | Best local quality/speed tradeoff, CUDA support |
-| Transcript storage | `~/.locus/transcripts/` (outside vault) | Invisible to Obsidian by default; readable as plain text or via plugin panel; decoupled from RAG chunk strategy |
-| RAG chunking | Greedy merge of Whisper segments (~300 tokens) | Balances embedding quality with timestamp granularity; source transcript is never modified |
-| Note format | Markdown + YAML frontmatter | Obsidian-native, queryable via Dataview plugin |
-| Plugin language | TypeScript | Required for Obsidian plugins |
-| Auth storage | Encrypted local config file | Keeps credentials off disk in plaintext |
+| Transcript storage | `~/.locus/transcripts/` | Decoupled from notes; re-chunking/re-embedding never requires re-transcription |
+| RAG chunking | Greedy merge of Whisper segments (~300 tokens) | Balances embedding quality with timestamp granularity |
+| Note format | Markdown + YAML frontmatter | Human-readable, downloadable, future-portable |
+| Auth storage | Local config file | Credentials stay off network |
 
 ---
 
 ## 10. Open Questions
 
-1. ~~**Whisper language detection**~~ — Resolved: UI dropdown with `auto / zh / en` options. Stored in config, applied globally.
-2. ~~**Note deduplication**~~ — Resolved: skip duplicate `video_id` silently on ingest. User can explicitly rerun via `POST /ingest/rerun/{video_id}`.
-3. ~~**List assignment**~~ — Resolved: user always creates or selects a list before ingesting. No default list. Ingestion without a list is not permitted.
-4. ~~**Vault sync**~~ — Resolved: auto-reconciled in v0 via Obsidian vault events. See §4.1.
-5. ~~**Chunk strategy for RAG**~~ — Resolved: greedy merge of consecutive Whisper segments to ~300 token target. Raw segments stored separately as source of truth; re-chunking does not require re-transcription.
-6. ~~**List storage**~~ — Resolved: lists are vault-backed. A list is defined by `{vault}/Locus/{name}/_overview.md` with `locus_list_id` frontmatter. The backend scans vault folders to discover lists; no `lists` table in SQLite. Renaming a folder in Obsidian is automatically reflected without a separate sync step.
+1. ~~**Whisper language detection**~~ — Resolved: UI dropdown with `auto / zh / en`. Stored in config, applied globally.
+2. ~~**Note deduplication**~~ — Resolved: check `sources` table for existing `video_id`. Skip silently if found. Override with `?rerun=true` (re-process in-place) or delete the source first (re-add fresh).
+3. ~~**List assignment**~~ — Resolved: user always selects a list before ingesting. No default list.
+4. ~~**Vault sync**~~ — Resolved: no longer needed. Notes are managed by the backend; the web UI is read-only.
+5. ~~**Chunk strategy for RAG**~~ — Resolved: greedy merge of Whisper segments to ~300 token target.
+6. ~~**List storage**~~ — Resolved: DB-backed (`lists` table in SQLite). Vault-backed discovery is removed along with the Obsidian integration.
+7. ~~**Frontend approach**~~ — Resolved: React + TypeScript SPA served by FastAPI. Obsidian plugin is abandoned.
+8. ~~**processing_log vs jobs**~~ — Resolved: `processing_log` renamed to `sources` (active catalog, mutable). `jobs` stays ephemeral. "Log" naming was misleading — it implied immutability, but the table is a catalog of active sources, not an audit trail.
