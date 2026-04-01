@@ -91,6 +91,32 @@ def test_config_masks_sensitive_fields(client: TestClient):
     assert data["accounts"]["bilibili"]["cookie"] == "***"
 
 
+def test_serves_built_spa_without_shadowing_api_routes(client: TestClient, tmp_path: Path):
+    spa_dist = tmp_path / "web-dist"
+    (spa_dist / "assets").mkdir(parents=True)
+    (spa_dist / "index.html").write_text("<!doctype html><html><body>locus web</body></html>")
+    (spa_dist / "assets" / "app.js").write_text("console.log('locus');")
+
+    with patch("locus.main.WEB_DIST", spa_dist):
+        from locus.main import create_app
+
+        app = create_app()
+
+    with TestClient(app, raise_server_exceptions=True) as spa_client:
+        root = spa_client.get("/")
+        assert root.status_code == 200
+        assert "text/html" in root.headers["content-type"]
+        assert "locus web" in root.text
+
+        asset = spa_client.get("/assets/app.js")
+        assert asset.status_code == 200
+        assert "console.log('locus');" in asset.text
+
+        health = spa_client.get("/health")
+        assert health.status_code == 200
+        assert health.json()["dependencies"]["backend"]["status"] == "ok"
+
+
 def test_locus_dirs_bootstrapped(client: TestClient, tmp_locus_home: Path):
     for subdir in ("notes", "transcripts", "downloads", "chroma"):
         assert (tmp_locus_home / subdir).is_dir(), f"Missing {subdir}/"
