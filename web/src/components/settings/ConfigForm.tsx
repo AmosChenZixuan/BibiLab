@@ -1,6 +1,18 @@
 import { useEffect, useState } from "react";
 
 import type { LocusConfig } from "../../lib/types";
+import {
+  appPanelClass,
+  checkboxRowClass,
+  fieldClass,
+  fieldLabelClass,
+  inputClass,
+  mutedTextClass,
+  primaryButtonClass,
+  sectionTitleClass,
+  statusSuccessClass,
+  textareaClass,
+} from "../../lib/ui";
 
 const MASK = "***";
 
@@ -88,18 +100,19 @@ export function ConfigForm({ config, onSave }: Props) {
   }
 
   return (
-    <section>
-      <div className="row">
+    <section className={`${appPanelClass} col-span-2 grid gap-4 max-[820px]:col-span-1`}>
+      <div className="flex flex-wrap items-center gap-3">
         <div>
-          <h2 className="list-card__title">Configuration</h2>
-          <p className="page-lede">Keep secrets local and patch only what changed.</p>
+          <h2 className={sectionTitleClass}>Configuration</h2>
+          <p className={mutedTextClass}>Keep secrets local and patch only what changed.</p>
         </div>
       </div>
-      <form className="form-stack" onSubmit={handleSubmit}>
-        <div className="settings-grid">
-          <label className="field">
-            <span>Bilibili cookie</span>
+      <form className="grid gap-4" onSubmit={handleSubmit}>
+        <div className="grid grid-cols-2 gap-4 max-[820px]:grid-cols-1">
+          <label className={fieldClass}>
+            <span className={fieldLabelClass}>Bilibili cookie</span>
             <textarea
+              className={textareaClass}
               onChange={(event) =>
                 setDraft((current) => ({
                   ...current,
@@ -115,9 +128,10 @@ export function ConfigForm({ config, onSave }: Props) {
               value={draft.accounts.bilibili.cookie}
             />
           </label>
-          <label className="field">
-            <span>AI provider</span>
+          <label className={fieldClass}>
+            <span className={fieldLabelClass}>AI provider</span>
             <select
+              className={inputClass}
               onChange={(event) =>
                 setDraft((current) => ({
                   ...current,
@@ -132,10 +146,11 @@ export function ConfigForm({ config, onSave }: Props) {
               <option value="custom">custom</option>
             </select>
           </label>
-          <label className="field">
-            <span>AI model</span>
+          <label className={fieldClass}>
+            <span className={fieldLabelClass}>AI model</span>
             <input
               aria-label="AI model"
+              className={inputClass}
               onChange={(event) =>
                 setDraft((current) => ({
                   ...current,
@@ -145,9 +160,10 @@ export function ConfigForm({ config, onSave }: Props) {
               value={draft.ai.model}
             />
           </label>
-          <label className="field">
-            <span>AI API key</span>
+          <label className={fieldClass}>
+            <span className={fieldLabelClass}>AI API key</span>
             <input
+              className={inputClass}
               onChange={(event) =>
                 setDraft((current) => ({
                   ...current,
@@ -157,9 +173,10 @@ export function ConfigForm({ config, onSave }: Props) {
               value={draft.ai.api_key}
             />
           </label>
-          <label className="field">
-            <span>AI base URL</span>
+          <label className={fieldClass}>
+            <span className={fieldLabelClass}>AI base URL</span>
             <input
+              className={inputClass}
               onChange={(event) =>
                 setDraft((current) => ({
                   ...current,
@@ -169,9 +186,10 @@ export function ConfigForm({ config, onSave }: Props) {
               value={draft.ai.base_url ?? ""}
             />
           </label>
-          <label className="field">
-            <span>Whisper model</span>
+          <label className={fieldClass}>
+            <span className={fieldLabelClass}>Whisper model</span>
             <input
+              className={inputClass}
               onChange={(event) =>
                 setDraft((current) => ({
                   ...current,
@@ -184,9 +202,10 @@ export function ConfigForm({ config, onSave }: Props) {
               value={draft.transcription.model_size}
             />
           </label>
-          <label className="field">
-            <span>Transcription device</span>
+          <label className={fieldClass}>
+            <span className={fieldLabelClass}>Transcription device</span>
             <select
+              className={inputClass}
               onChange={(event) =>
                 setDraft((current) => ({
                   ...current,
@@ -202,9 +221,10 @@ export function ConfigForm({ config, onSave }: Props) {
               <option value="cpu">cpu</option>
             </select>
           </label>
-          <label className="field">
-            <span>Language</span>
+          <label className={fieldClass}>
+            <span className={fieldLabelClass}>Language</span>
             <select
+              className={inputClass}
               onChange={(event) =>
                 setDraft((current) => ({
                   ...current,
@@ -221,9 +241,10 @@ export function ConfigForm({ config, onSave }: Props) {
               <option value="en">en</option>
             </select>
           </label>
-          <label className="field">
-            <span>Worker concurrency</span>
+          <label className={fieldClass}>
+            <span className={fieldLabelClass}>Worker concurrency</span>
             <input
+              className={inputClass}
               min={1}
               onChange={(event) =>
                 setDraft((current) => ({
@@ -238,9 +259,10 @@ export function ConfigForm({ config, onSave }: Props) {
               value={draft.backend.worker_concurrency}
             />
           </label>
-          <label className="field">
-            <span>Frame sample rate</span>
+          <label className={fieldClass}>
+            <span className={fieldLabelClass}>Frame sample rate</span>
             <input
+              className={inputClass}
               min={1}
               onChange={(event) =>
                 setDraft((current) => ({
@@ -255,9 +277,10 @@ export function ConfigForm({ config, onSave }: Props) {
               value={draft.vision.frame_sample_rate}
             />
           </label>
-          <label className="field">
-            <span>Vision model</span>
+          <label className={fieldClass}>
+            <span className={fieldLabelClass}>Vision model</span>
             <input
+              className={inputClass}
               onChange={(event) =>
                 setDraft((current) => ({
                   ...current,
@@ -270,7 +293,7 @@ export function ConfigForm({ config, onSave }: Props) {
               value={draft.vision.model ?? ""}
             />
           </label>
-          <label className="field-checkbox">
+          <label className={checkboxRowClass}>
             <input
               checked={draft.vision.enabled}
               onChange={(event) =>
@@ -287,11 +310,11 @@ export function ConfigForm({ config, onSave }: Props) {
             <span>Vision enabled</span>
           </label>
         </div>
-        <div className="inline-actions">
-          <button className="primary-button" disabled={saving} type="submit">
+        <div className="flex flex-wrap items-center gap-3">
+          <button className={primaryButtonClass} disabled={saving} type="submit">
             {saving ? "Saving..." : "Save settings"}
           </button>
-          {status ? <p className="status-message success">{status}</p> : null}
+          {status ? <p className={statusSuccessClass}>{status}</p> : null}
         </div>
       </form>
     </section>

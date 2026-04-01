@@ -1,6 +1,18 @@
 import { useState } from "react";
 
 import type { Source } from "../../lib/types";
+import {
+  checkboxRowClass,
+  fieldClass,
+  fieldLabelClass,
+  ghostButtonClass,
+  inputClass,
+  mutedTextClass,
+  primaryButtonClass,
+  statusErrorClass,
+  statusSuccessClass,
+  workspacePanelBodyClass,
+} from "../../lib/ui";
 
 type Props = {
   busy: boolean;
@@ -26,18 +38,19 @@ export function SourceList({ busy, error, ingestStatus, onDelete, onIngest, onOp
   }
 
   return (
-    <div className="workspace-panel__body">
-      <form className="form-stack" onSubmit={handleSubmit}>
-        <label className="field">
-          <span>Source URL</span>
+    <div className={workspacePanelBodyClass}>
+      <form className="grid gap-4" onSubmit={handleSubmit}>
+        <label className={fieldClass}>
+          <span className={fieldLabelClass}>Source URL</span>
           <input
             aria-label="Source URL"
+            className={inputClass}
             onChange={(event) => setUrl(event.target.value)}
             placeholder="https://www.bilibili.com/video/..."
             value={url}
           />
         </label>
-        <label className="checkbox-field">
+        <label className={checkboxRowClass}>
           <input
             aria-label="Re-run existing source"
             checked={rerun}
@@ -46,35 +59,38 @@ export function SourceList({ busy, error, ingestStatus, onDelete, onIngest, onOp
           />
           <span>Re-run existing source</span>
         </label>
-        <div className="inline-actions">
-          <button className="primary-button" disabled={busy} type="submit">
+        <div className="flex flex-wrap items-center gap-3">
+          <button className={primaryButtonClass} disabled={busy} type="submit">
             {busy ? "Queueing..." : "Queue source"}
           </button>
-          {ingestStatus ? <p className="status-message success">{ingestStatus}</p> : null}
+          {ingestStatus ? <p className={statusSuccessClass}>{ingestStatus}</p> : null}
         </div>
-        {error ? <p className="status-message error">{error}</p> : null}
+        {error ? <p className={statusErrorClass}>{error}</p> : null}
       </form>
 
-      <div className="source-list">
+      <div className="grid gap-3">
         {sources.length === 0 ? (
-          <div className="source-row source-row--empty">
-            <p className="page-lede">No sources yet. Queue a Bilibili URL to start building this notebook.</p>
+          <div className="flex justify-start rounded-[18px] border border-[rgba(106,147,198,0.12)] bg-[rgba(255,255,255,0.64)] px-4 py-[14px]">
+            <p className={mutedTextClass}>No sources yet. Queue a Bilibili URL to start building this notebook.</p>
           </div>
         ) : (
           sources.map((source) => (
-            <article className="source-row" key={source.video_id}>
+            <article
+              className="flex items-center justify-between gap-3 rounded-[18px] border border-[rgba(106,147,198,0.12)] bg-[rgba(255,255,255,0.64)] px-4 py-[14px]"
+              key={source.video_id}
+            >
               <button
                 aria-label={`Open ${source.title}`}
-                className="source-row__open"
+                className="grid gap-1 border-0 bg-transparent text-left text-inherit"
                 onClick={() => onOpen(source)}
                 type="button"
               >
                 <strong>{source.title}</strong>
-                <span className="page-lede">{source.platform}</span>
+                <span className={mutedTextClass}>{source.platform}</span>
               </button>
               <button
                 aria-label={`Delete ${source.title}`}
-                className="ghost-button"
+                className={ghostButtonClass}
                 onClick={() => void onDelete(source)}
                 type="button"
               >

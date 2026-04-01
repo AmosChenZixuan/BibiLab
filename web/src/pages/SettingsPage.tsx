@@ -5,6 +5,7 @@ import { HealthPanel } from "../components/settings/HealthPanel";
 import { WhisperModelsCard } from "../components/settings/WhisperModelsCard";
 import { api, notifyJobsChanged, toErrorMessage } from "../lib/api";
 import type { HealthResponse, LocusConfig, WhisperModel } from "../lib/types";
+import { appPanelClass, mutedTextClass, pageHeadingClass, statusErrorClass } from "../lib/ui";
 
 export function SettingsPage() {
   const [config, setConfig] = useState<LocusConfig | null>(null);
@@ -72,7 +73,7 @@ export function SettingsPage() {
 
   if (loading) {
     return (
-      <section className="panel">
+      <section className={appPanelClass}>
         <p>Loading settings...</p>
       </section>
     );
@@ -80,20 +81,20 @@ export function SettingsPage() {
 
   if (loadError || !config || !health) {
     return (
-      <section className="panel">
-        <h1 className="page-heading">Settings</h1>
-        <p className="status-message error">{loadError ?? "Request failed"}</p>
+      <section className={appPanelClass}>
+        <h1 className={pageHeadingClass}>Settings</h1>
+        <p className={statusErrorClass}>{loadError ?? "Request failed"}</p>
       </section>
     );
   }
 
   return (
-    <div className="form-stack">
+    <div className="grid gap-4">
       <section>
-        <h1 className="page-heading">Settings</h1>
-        <p className="page-lede">Configure accounts, model choices, local dependencies, and downloads.</p>
+        <h1 className={pageHeadingClass}>Settings</h1>
+        <p className={mutedTextClass}>Configure accounts, model choices, local dependencies, and downloads.</p>
       </section>
-      <div className="settings-grid">
+      <div className="grid grid-cols-2 gap-4 max-[820px]:grid-cols-1">
         <ConfigForm config={config} onSave={handleSave} />
         <HealthPanel health={health} onRefresh={refreshHealth} refreshing={refreshingHealth} />
         <WhisperModelsCard models={models} onDownload={handleDownload} />

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { JOBS_REFRESH_EVENT, api, toErrorMessage } from "../../lib/api";
 import type { Job } from "../../lib/types";
+import { ghostButtonClass, mutedTextClass, statusChipClass, statusErrorClass } from "../../lib/ui";
 
 const TERMINAL_STATUSES = new Set(["done", "failed"]);
 
@@ -84,38 +85,42 @@ export function JobsBadge() {
     <>
       <button
         type="button"
-        className="jobs-pill"
+        className="inline-flex items-center gap-2 rounded-full border border-[rgba(106,147,198,0.12)] bg-[rgba(255,255,255,0.76)] px-[14px] py-2.5 text-[#547094]"
         aria-label={formatActiveJobsLabel(activeJobs.length)}
         aria-expanded={isOpen}
         aria-controls="jobs-drawer"
         onClick={() => setIsOpen((open) => !open)}
       >
         <strong>Jobs</strong>
-        <span className="jobs-pill__count">{formatActiveJobsLabel(activeJobs.length)}</span>
+        <span className="text-[#8096b3]">{formatActiveJobsLabel(activeJobs.length)}</span>
       </button>
       {isOpen ? (
         <>
           <button
             type="button"
-            className="jobs-drawer-backdrop"
+            className="fixed inset-0 z-[19] border-0 bg-[rgba(96,123,163,0.14)]"
             aria-label="Close jobs drawer"
             onClick={() => setIsOpen(false)}
           />
-          <section id="jobs-drawer" className="jobs-drawer" aria-label="Jobs">
-            <div className="jobs-drawer__header">
+          <section
+            id="jobs-drawer"
+            className="fixed top-[92px] right-6 z-20 grid max-h-[calc(100vh-116px)] w-[min(420px,calc(100vw-24px))] gap-4 overflow-auto rounded-[28px] border border-[rgba(106,147,198,0.12)] bg-[rgba(255,255,255,0.92)] p-5 shadow-[0_22px_44px_rgba(116,148,194,0.12)] backdrop-blur-[18px] max-[820px]:top-[84px] max-[820px]:right-3 max-[820px]:w-[calc(100vw-24px)]"
+            aria-label="Jobs"
+          >
+            <div className="flex items-start justify-between gap-3">
               <div>
-                <h2 className="jobs-drawer__title">Jobs</h2>
-                <p className="muted">Background ingestion and model work.</p>
+                <h2 className='m-0 font-["Iowan_Old_Style","Palatino_Linotype",serif]'>Jobs</h2>
+                <p className={mutedTextClass}>Background ingestion and model work.</p>
               </div>
-              <button type="button" className="ghost-button" onClick={() => setIsOpen(false)}>
+              <button type="button" className={ghostButtonClass} onClick={() => setIsOpen(false)}>
                 Close
               </button>
             </div>
-            {errorMessage ? <p className="status-message error">{errorMessage}</p> : null}
-            <div className="jobs-list">
+            {errorMessage ? <p className={statusErrorClass}>{errorMessage}</p> : null}
+            <div className="grid gap-3">
               {jobs.length === 0 ? (
-                <div className="jobs-row jobs-row--empty">
-                  <p className="muted">No jobs yet.</p>
+                <div className="grid min-h-[120px] place-items-center rounded-[20px] border border-[rgba(106,147,198,0.12)] bg-[rgba(248,251,255,0.72)] p-4">
+                  <p className={mutedTextClass}>No jobs yet.</p>
                 </div>
               ) : (
                 jobs.map((job) => {
@@ -123,21 +128,24 @@ export function JobsBadge() {
                   const isTerminal = TERMINAL_STATUSES.has(job.status);
 
                   return (
-                    <article key={job.id} className="jobs-row">
-                      <div className="jobs-row__summary">
-                        <div className="row">
-                          <h3 className="jobs-row__title">{jobTitle}</h3>
-                          <span className={`status-chip ${job.status === "failed" ? "error" : job.status === "done" ? "ok" : "unavailable"}`}>
+                    <article
+                      key={job.id}
+                      className="grid gap-[14px] rounded-[20px] border border-[rgba(106,147,198,0.12)] bg-[rgba(248,251,255,0.72)] p-4"
+                    >
+                      <div className="grid gap-2">
+                        <div className="flex flex-wrap items-center gap-3">
+                          <h3 className='m-0 font-["Iowan_Old_Style","Palatino_Linotype",serif]'>{jobTitle}</h3>
+                          <span className={statusChipClass(job.status === "failed" ? "error" : job.status === "done" ? "ok" : "unavailable")}>
                             {job.status}
                           </span>
                         </div>
-                        <p className="muted">{job.progress}%</p>
-                        {job.error ? <p className="status-message error">{job.error}</p> : null}
+                        <p className={mutedTextClass}>{job.progress}%</p>
+                        {job.error ? <p className={statusErrorClass}>{job.error}</p> : null}
                       </div>
                       {!isTerminal ? (
                         <button
                           type="button"
-                          className="ghost-button"
+                          className={ghostButtonClass}
                           aria-label={`Cancel ${jobTitle}`}
                           disabled={cancellingJobId === job.id}
                           onClick={() => void handleCancel(job.id)}

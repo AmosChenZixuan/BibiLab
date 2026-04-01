@@ -7,6 +7,16 @@ import { SourcesPanel } from "../components/sources/SourcesPanel";
 import { api, notifyJobsChanged, toErrorMessage } from "../lib/api";
 import { downloadTextFile } from "../lib/download";
 import type { NoteContent, Source } from "../lib/types";
+import {
+  eyebrowClass,
+  ghostButtonClass,
+  mutedTextClass,
+  pageHeadingClass,
+  statusErrorClass,
+  workspacePanelBodyClass,
+  workspacePanelClass,
+  workspacePanelTitleClass,
+} from "../lib/ui";
 
 function formatCount(count: number, noun: string): string {
   return `${count} ${noun}${count === 1 ? "" : "s"}`;
@@ -152,16 +162,16 @@ export function ListDetailPage() {
   }
 
   return (
-    <div className="workspace">
-      <section className="workspace-hero">
-        <p className="home-hero__eyebrow">Notebook workspace</p>
+    <div className="grid gap-4">
+      <section className="grid gap-4">
+        <p className={eyebrowClass}>Notebook workspace</p>
         {editingName ? (
-          <label className="field workspace-hero__rename">
+          <label className="grid max-w-[560px] gap-1.5">
             <span className="sr-only">List name</span>
             <input
               aria-label="List name"
               autoFocus
-              className="workspace-hero__name-input"
+              className='w-full rounded-2xl border border-[rgba(106,147,198,0.12)] bg-[rgba(255,255,255,0.84)] px-[14px] py-3 font-["Iowan_Old_Style","Palatino_Linotype",serif] text-[clamp(2rem,4vw,3.5rem)] leading-[0.95] text-[#274970] outline-none'
               onBlur={() => void handleRenameCommit()}
               onChange={(event) => setDraftName(event.target.value)}
               onKeyDown={(event) => {
@@ -177,11 +187,11 @@ export function ListDetailPage() {
             />
           </label>
         ) : (
-          <div className="workspace-hero__title-row">
-            <h1 className="page-heading">{listName}</h1>
+          <div className="flex flex-wrap items-center gap-3">
+            <h1 className={pageHeadingClass}>{listName}</h1>
             <button
               aria-label="Edit list name"
-              className="ghost-button"
+              className={ghostButtonClass}
               onClick={() => {
                 setDraftName(listName);
                 setEditingName(true);
@@ -193,15 +203,15 @@ export function ListDetailPage() {
             </button>
           </div>
         )}
-        <p className="page-lede">Queue sources, inspect notes, and export a list overview from one reading surface.</p>
-        {renameError ? <p className="status-message error">{renameError}</p> : null}
+        <p className={mutedTextClass}>Queue sources, inspect notes, and export a list overview from one reading surface.</p>
+        {renameError ? <p className={statusErrorClass}>{renameError}</p> : null}
       </section>
-      <div className="workspace-grid">
+      <div className="grid grid-cols-[1.25fr_1fr_0.9fr] items-start gap-4 max-[820px]:grid-cols-1">
         {loadError ? (
-          <section className="workspace-panel">
-            <h2 className="workspace-panel__title">Sources</h2>
-            <div className="workspace-panel__body">
-              <p className="status-message error">{loadError}</p>
+          <section className={workspacePanelClass}>
+            <h2 className={workspacePanelTitleClass}>Sources</h2>
+            <div className={workspacePanelBodyClass}>
+              <p className={statusErrorClass}>{loadError}</p>
             </div>
           </section>
         ) : (
