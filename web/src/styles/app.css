@@ -173,6 +173,66 @@ button {
   padding-top: 4px;
 }
 
+.workspace,
+.workspace-hero {
+  display: grid;
+  gap: 16px;
+}
+
+.workspace-grid {
+  display: grid;
+  grid-template-columns: 1.25fr 1fr 0.9fr;
+  gap: 16px;
+  align-items: start;
+}
+
+.workspace-panel {
+  min-height: 560px;
+  border: 1px solid var(--line);
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.76);
+  box-shadow: 0 14px 28px rgba(116, 148, 194, 0.07);
+  overflow: hidden;
+}
+
+.workspace-panel__title {
+  margin: 0;
+  padding: 18px 20px;
+  border-bottom: 1px solid var(--line);
+  font-family: "Iowan Old Style", "Palatino Linotype", serif;
+  font-size: 1.35rem;
+}
+
+.workspace-panel__body {
+  display: grid;
+  gap: 16px;
+  padding: 18px 20px 20px;
+}
+
+.workspace-panel__body--centered {
+  align-content: center;
+  min-height: 490px;
+}
+
+.chat-skeleton {
+  display: grid;
+  gap: 10px;
+}
+
+.chat-skeleton__line {
+  height: 14px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(240, 139, 185, 0.14), rgba(125, 217, 255, 0.14));
+}
+
+.chat-skeleton__line--long {
+  width: 86%;
+}
+
+.chat-skeleton__line--short {
+  width: 54%;
+}
+
 .page-heading {
   margin: 0 0 8px;
   font-family: "Iowan Old Style", "Palatino Linotype", serif;
@@ -270,6 +330,70 @@ button {
   display: grid;
   gap: 12px;
   max-width: 780px;
+}
+
+.source-list {
+  display: grid;
+  gap: 12px;
+}
+
+.source-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.64);
+}
+
+.source-row--empty {
+  justify-content: flex-start;
+}
+
+.source-row__open {
+  display: grid;
+  gap: 4px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  color: inherit;
+}
+
+.source-detail__header {
+  display: grid;
+  gap: 12px;
+}
+
+.source-detail__title {
+  margin: 0;
+  font-family: "Iowan Old Style", "Palatino Linotype", serif;
+  font-size: 1.5rem;
+}
+
+.source-detail__tabs {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.markdown-panel,
+.transcript-panel {
+  min-height: 320px;
+  padding: 18px;
+  border-radius: 18px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.6);
+}
+
+.transcript-panel pre {
+  margin: 0;
+  white-space: pre-wrap;
+  font-family: "SFMono-Regular", Consolas, monospace;
+  color: #4e6485;
 }
 
 .row,
@@ -427,5 +551,13 @@ button {
 
   .settings-grid {
     grid-template-columns: 1fr;
+  }
+
+  .workspace-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .workspace-panel {
+    min-height: 0;
   }
 }

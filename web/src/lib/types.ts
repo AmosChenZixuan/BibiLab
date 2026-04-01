@@ -80,3 +80,19 @@ export type WhisperDownloadResponse = {
   model_family: string;
   model_size: string;
 };
+
+export type NoteContent = {
+  video_id: string;
+  title: string;
+  markdown: string;
+};
+
+export type NoteTranscript = {
+  video_id: string;
+  text: string;
+};
+
+export type OverviewDownload = {
+  filename: string;
+  content: string;
+};

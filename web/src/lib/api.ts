@@ -2,6 +2,9 @@ import type {
   HealthResponse,
   LocusConfig,
   LocusList,
+  NoteContent,
+  NoteTranscript,
+  OverviewDownload,
   Source,
   WhisperDownloadResponse,
   WhisperModel,
@@ -67,6 +70,24 @@ export const api = {
       method: "DELETE",
     }),
   listSources: (listId: string) => request<Source[]>(`/lists/${listId}/sources`),
+  deleteSource: (listId: string, videoId: string) =>
+    request<void>(`/lists/${listId}/sources/${videoId}`, {
+      method: "DELETE",
+    }),
+  ingestUrl: (listId: string, url: string, rerun = false) =>
+    request<{ queued: string[]; skipped: string[] }>(
+      `/ingest/url${rerun ? "?rerun=true" : ""}`,
+      {
+        method: "POST",
+        body: JSON.stringify({ list_id: listId, url }),
+      },
+    ),
+  getNoteContent: (videoId: string) => request<NoteContent>(`/notes/${videoId}/content`),
+  getNoteTranscript: (videoId: string) => request<NoteTranscript>(`/notes/${videoId}/transcript`),
+  generateOverview: (listId: string) =>
+    request<OverviewDownload>(`/lists/${listId}/overview`, {
+      method: "POST",
+    }),
   getConfig: () => request<LocusConfig>("/config"),
   putConfig: (patch: Partial<LocusConfig>) =>
     request<LocusConfig>("/config", {
