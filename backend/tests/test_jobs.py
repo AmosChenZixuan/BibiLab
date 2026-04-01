@@ -146,7 +146,6 @@ async def test_pipeline_fails_fast_when_list_deleted(tmp_locus_home: Path):
     cfg.transcription.model_size = "large-v3"
     cfg.ai.model = "gpt-4o"
     cfg.vision.enabled = False
-    cfg.obsidian.vault_path = str(tmp_locus_home / "vault")
     cfg.model_dump.return_value = {}
 
     with (
@@ -160,12 +159,8 @@ async def test_pipeline_fails_fast_when_list_deleted(tmp_locus_home: Path):
             "locus.worker.extract_knowledge",
             return_value=MagicMock(title="Test", summary="Summary"),
         ),
-        patch("locus.worker.write_video_note", return_value=tmp_locus_home / "vault/note.md"),
+        patch("locus.worker.write_video_note", return_value=tmp_locus_home / "note.md"),
         patch("locus.worker.embed_chunks", return_value=None),
-        patch("locus.worker.write_processing_log", return_value=None),
-        patch("locus.worker.get_processing_log_videos", return_value=[]),
-        patch("locus.worker.generate_overview", return_value=[]),
-        patch("locus.worker.write_overview_note", return_value=None),
     ):
         await worker._run_job(job_row)
 
@@ -190,7 +185,6 @@ async def test_pipeline_logs_when_embedding_model_missing(tmp_locus_home: Path, 
     cfg.transcription.model_size = "large-v3"
     cfg.ai.model = "gpt-4o"
     cfg.vision.enabled = False
-    cfg.obsidian.vault_path = str(tmp_locus_home / "vault")
     cfg.model_dump.return_value = {}
 
     extraction = MagicMock()
@@ -219,7 +213,7 @@ async def test_pipeline_logs_when_embedding_model_missing(tmp_locus_home: Path, 
     worker = WorkerLoop()
     with (
         patch("locus.worker.load_config", return_value=cfg),
-        patch("locus.worker._get_list_name_from_vault", return_value="MyList"),
+        patch("locus.worker.get_list", new=AsyncMock(return_value={"id": "list-001"})),
         patch("locus.worker.update_job_status", new=AsyncMock()),
         patch("locus.worker.asyncio.to_thread", new=AsyncMock(side_effect=fake_to_thread)),
         patch("locus.worker.BilibiliAdapter.download", return_value=tmp_locus_home / "video.mp4"),
@@ -230,10 +224,7 @@ async def test_pipeline_logs_when_embedding_model_missing(tmp_locus_home: Path, 
         patch("locus.worker.extract_knowledge", return_value=extraction),
         patch("locus.worker.write_video_note", return_value=note_path),
         patch("locus.worker.embed_chunks", return_value=None),
-        patch("locus.worker.write_processing_log", new=AsyncMock()),
-        patch("locus.worker.get_processing_log_videos", new=AsyncMock(return_value=[])),
-        patch("locus.worker.generate_overview", return_value=[]),
-        patch("locus.worker.write_overview_note", return_value=None),
+        patch("locus.worker.write_source", new=AsyncMock()),
         patch("locus.worker.is_embedding_model_downloaded", return_value=False),
         caplog.at_level(logging.INFO, logger="locus.worker"),
     ):

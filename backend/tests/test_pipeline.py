@@ -216,12 +216,8 @@ def test_extract_knowledge_retries_on_bad_json():
 
 def test_write_video_note(tmp_path: Path):
     from locus.adapters.base import VideoMeta
-    from locus.config import ObsidianConfig
     from locus.pipeline.notes import write_video_note
 
-    vault = tmp_path / "vault"
-    vault.mkdir()
-    cfg = ObsidianConfig(vault_path=str(vault), locus_folder="Locus")
     meta = VideoMeta("BV1abc", "Original Title", "bilibili", "https://x.com", "", 300, "uploader")
     extraction = ExtractionResult(
         title="Extracted Title",
@@ -229,30 +225,28 @@ def test_write_video_note(tmp_path: Path):
         key_points=[KeyPoint(timestamp="[00:01:00]", text="Key insight")],
     )
 
-    with patch("locus.pipeline.notes._download_cover", return_value=False):
-        path = write_video_note(meta, extraction, "ML Course", "list123", cfg)
+    with patch("locus.pipeline.notes.locus_home", return_value=tmp_path):
+        with patch("locus.pipeline.notes._download_cover", return_value=False):
+            path = write_video_note(meta, extraction, "list123")
 
+    assert path == tmp_path / "notes" / "BV1abc.md"
     assert path.exists()
-    content = path.read_text()
-    assert "locus_id: BV1abc" in content
+    content = path.read_text(encoding="utf-8")
+    assert "video_id: BV1abc" in content
     assert "# Extracted Title" in content
     assert "A good summary." in content
     assert "[00:01:00] Key insight" in content
 
 
-def test_write_video_note_unsafe_title(tmp_path: Path):
+def test_write_video_note_uses_video_id_filename(tmp_path: Path):
     from locus.adapters.base import VideoMeta
-    from locus.config import ObsidianConfig
     from locus.pipeline.notes import write_video_note
 
-    vault = tmp_path / "vault"
-    vault.mkdir()
-    cfg = ObsidianConfig(vault_path=str(vault), locus_folder="Locus")
     meta = VideoMeta("BV1", "Title: Bad/Chars", "bilibili", "https://x.com", "", 0, "")
     extraction = ExtractionResult(title="Title: Bad/Chars", summary="s", key_points=[])
 
-    with patch("locus.pipeline.notes._download_cover", return_value=False):
-        path = write_video_note(meta, extraction, "List", "lid", cfg)
+    with patch("locus.pipeline.notes.locus_home", return_value=tmp_path):
+        with patch("locus.pipeline.notes._download_cover", return_value=False):
+            path = write_video_note(meta, extraction, "lid")
 
-    assert ":" not in path.name
-    assert "/" not in path.name
+    assert path.name == "BV1.md"
