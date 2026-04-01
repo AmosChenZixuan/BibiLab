@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { NavLink, Outlet } from "react-router-dom";
 
+import { JobsBadge } from "../jobs/JobsBadge";
 import { api } from "../../lib/api";
 import type { HealthResponse } from "../../lib/types";
 
@@ -50,9 +51,10 @@ export function AppFrame() {
                 ? "System healthy"
                 : health?.overall === "error"
                   ? "System needs attention"
-                  : "Checking system"}
+                : "Checking system"}
             </span>
           </div>
+          <JobsBadge />
           <NavLink className={({ isActive }) => `nav-link${isActive ? " active" : ""}`} to="/settings">
             Settings
           </NavLink>

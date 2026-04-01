@@ -1,5 +1,6 @@
 import type {
   HealthResponse,
+  Job,
   LocusConfig,
   LocusList,
   NoteContent,
@@ -100,6 +101,11 @@ export const api = {
       body: JSON.stringify(patch),
     }),
   getHealth: () => request<HealthResponse>("/health"),
+  listJobs: () => request<Job[]>("/jobs"),
+  deleteJob: (jobId: string) =>
+    request<void>(`/jobs/${jobId}`, {
+      method: "DELETE",
+    }),
   listWhisperModels: () => request<WhisperModel[]>("/models/whisper"),
   downloadWhisperModel: (modelSize: string) =>
     request<WhisperDownloadResponse>("/models/whisper/download", {
