@@ -40,8 +40,8 @@ jobs:
         working-directory: backend
         run: uv run pytest
 
-  plugin-lint:
-    name: Plugin lint (eslint)
+  frontend-lint:
+    name: Frontend lint (eslint)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -49,8 +49,8 @@ jobs:
         with:
           node-version: "20"
       - name: Install dependencies
-        working-directory: plugin
+        working-directory: web
         run: npm install
       - name: Lint
-        working-directory: plugin
+        working-directory: web
         run: npm run lint
