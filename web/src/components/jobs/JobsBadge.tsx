@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 
-import { api, toErrorMessage } from "../../lib/api";
+import { JOBS_REFRESH_EVENT, api, toErrorMessage } from "../../lib/api";
 import type { Job } from "../../lib/types";
 
 const TERMINAL_STATUSES = new Set(["done", "failed"]);
@@ -44,12 +44,18 @@ export function JobsBadge() {
     }
 
     void loadJobs();
+    function handleRefresh() {
+      void loadJobs();
+    }
+
+    window.addEventListener(JOBS_REFRESH_EVENT, handleRefresh);
     const intervalId = window.setInterval(() => {
       void loadJobs();
     }, 5000);
 
     return () => {
       cancelled = true;
+      window.removeEventListener(JOBS_REFRESH_EVENT, handleRefresh);
       window.clearInterval(intervalId);
     };
   }, []);

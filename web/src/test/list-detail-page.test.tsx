@@ -1,7 +1,7 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { RouterProvider, createMemoryRouter } from "react-router-dom";
-import { describe, expect, test, vi } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 
 import { routes } from "../app/routes";
 
@@ -10,6 +10,13 @@ const downloadTextFile = vi.fn();
 vi.mock("../lib/download", () => ({
   downloadTextFile: (...args: unknown[]) => downloadTextFile(...args),
 }));
+
+afterEach(() => {
+  cleanup();
+  downloadTextFile.mockReset();
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
 
 function installFetchMock(
   handler: (input: RequestInfo | URL, init?: RequestInit) => Response | Promise<Response>,
@@ -134,5 +141,142 @@ describe("list detail page", () => {
     await waitFor(() => {
       expect(downloadTextFile).toHaveBeenCalledWith("overview-systems.md", "# Systems - Overview");
     });
+  });
+
+  test("supports ingest reruns and reports queued and skipped source counts", async () => {
+    const sources = [
+      {
+        video_id: "BV1old",
+        platform: "bilibili",
+        title: "Existing Source",
+        note_path: "/tmp/BV1old.md",
+        processed_at: "2026-03-31T20:00:00Z",
+      },
+    ];
+
+    installFetchMock(async (input, init) => {
+      const url = String(input);
+      const method = init?.method ?? "GET";
+
+      if (url.endsWith("/api/health") && method === "GET") {
+        return Response.json({
+          overall: "ok",
+          dependencies: {
+            backend: { status: "ok", message: "" },
+          },
+        });
+      }
+
+      if (url.endsWith("/api/lists") && method === "GET") {
+        return Response.json([
+          { id: "list-1", name: "Systems", created_at: "2026-03-31T19:00:00Z" },
+        ]);
+      }
+
+      if (url.endsWith("/api/lists/list-1/sources") && method === "GET") {
+        return Response.json(sources);
+      }
+
+      if (url.endsWith("/api/ingest/url") && method === "POST") {
+        const body = JSON.parse(String(init?.body));
+        expect(body).toEqual({ list_id: "list-1", url: "https://www.bilibili.com/video/BV1playlist" });
+        sources.push({
+          video_id: "BV1new-1",
+          platform: "bilibili",
+          title: "Partitioning Part 1",
+          note_path: "/tmp/BV1new-1.md",
+          processed_at: "2026-03-31T21:00:00Z",
+        });
+        sources.push({
+          video_id: "BV1new-2",
+          platform: "bilibili",
+          title: "Partitioning Part 2",
+          note_path: "/tmp/BV1new-2.md",
+          processed_at: "2026-03-31T21:05:00Z",
+        });
+        return Response.json({ queued: ["job-1", "job-2"], skipped: ["BV1old"] });
+      }
+
+      if (url.endsWith("/api/ingest/url?rerun=true") && method === "POST") {
+        const body = JSON.parse(String(init?.body));
+        expect(body).toEqual({ list_id: "list-1", url: "https://www.bilibili.com/video/BV1old" });
+        return Response.json({ queued: ["job-3"], skipped: [] });
+      }
+
+      if (url.endsWith("/api/jobs") && method === "GET") {
+        return Response.json([]);
+      }
+
+      throw new Error(`Unhandled ${method} ${url}`);
+    });
+
+    const router = createMemoryRouter(routes, { initialEntries: ["/lists/list-1"] });
+    render(<RouterProvider router={router} />);
+
+    expect(await screen.findByRole("heading", { name: /systems/i })).toBeInTheDocument();
+
+    await userEvent.type(screen.getByLabelText(/source url/i), "https://www.bilibili.com/video/BV1playlist");
+    await userEvent.click(screen.getByRole("button", { name: /queue source/i }));
+
+    expect(await screen.findByText(/queued 2 sources and skipped 1 source/i)).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /open partitioning part 1/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /open partitioning part 2/i })).toBeInTheDocument();
+
+    await userEvent.type(screen.getByLabelText(/source url/i), "https://www.bilibili.com/video/BV1old");
+    await userEvent.click(screen.getByLabelText(/re-run existing source/i));
+    await userEvent.click(screen.getByRole("button", { name: /queue source/i }));
+
+    expect(await screen.findByText(/queued 1 source/i)).toBeInTheDocument();
+  });
+
+  test("surfaces auth-required ingest failures with a readable message", async () => {
+    installFetchMock(async (input, init) => {
+      const url = String(input);
+      const method = init?.method ?? "GET";
+
+      if (url.endsWith("/api/health") && method === "GET") {
+        return Response.json({
+          overall: "ok",
+          dependencies: {
+            backend: { status: "ok", message: "" },
+          },
+        });
+      }
+
+      if (url.endsWith("/api/lists") && method === "GET") {
+        return Response.json([
+          { id: "list-1", name: "Systems", created_at: "2026-03-31T19:00:00Z" },
+        ]);
+      }
+
+      if (url.endsWith("/api/lists/list-1/sources") && method === "GET") {
+        return Response.json([]);
+      }
+
+      if (url.endsWith("/api/ingest/url") && method === "POST") {
+        return Response.json(
+          {
+            detail: { message: "Authentication required", resource_type: "course" },
+          },
+          { status: 401 },
+        );
+      }
+
+      if (url.endsWith("/api/jobs") && method === "GET") {
+        return Response.json([]);
+      }
+
+      throw new Error(`Unhandled ${method} ${url}`);
+    });
+
+    const router = createMemoryRouter(routes, { initialEntries: ["/lists/list-1"] });
+    render(<RouterProvider router={router} />);
+
+    expect(await screen.findByRole("heading", { name: /systems/i })).toBeInTheDocument();
+
+    await userEvent.type(screen.getByLabelText(/source url/i), "https://www.bilibili.com/video/BV1private");
+    await userEvent.click(screen.getByRole("button", { name: /queue source/i }));
+
+    expect(await screen.findByText("Authentication required")).toBeInTheDocument();
   });
 });

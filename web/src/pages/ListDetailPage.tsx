@@ -4,9 +4,13 @@ import { useParams } from "react-router-dom";
 import { ChatPanel } from "../components/chat/ChatPanel";
 import { StudioPanel } from "../components/studio/StudioPanel";
 import { SourcesPanel } from "../components/sources/SourcesPanel";
-import { api, toErrorMessage } from "../lib/api";
+import { api, notifyJobsChanged, toErrorMessage } from "../lib/api";
 import { downloadTextFile } from "../lib/download";
 import type { NoteContent, Source } from "../lib/types";
+
+function formatCount(count: number, noun: string): string {
+  return `${count} ${noun}${count === 1 ? "" : "s"}`;
+}
 
 export function ListDetailPage() {
   const { listId = "" } = useParams();
@@ -48,18 +52,18 @@ export function ListDetailPage() {
     };
   }, [listId]);
 
-  async function handleIngest(url: string) {
+  async function handleIngest(url: string, rerun: boolean) {
     setIngestBusy(true);
     setIngestError(null);
     setIngestStatus(null);
     try {
-      const result = await api.ingestUrl(listId, url);
-      const queued = result.queued.length;
-      const skipped = result.skipped.length;
-      setIngestStatus(
-        skipped > 0 ? `Queued ${queued} source and skipped ${skipped}.` : `Queued ${queued} source.`,
-      );
+      const result = await api.ingestUrl(listId, url, rerun);
+      const queuedSummary = `Queued ${formatCount(result.queued.length, "source")}`;
+      const skippedSummary =
+        result.skipped.length > 0 ? ` and skipped ${formatCount(result.skipped.length, "source")}` : "";
+      setIngestStatus(`${queuedSummary}${skippedSummary}.`);
       setSources(await api.listSources(listId));
+      notifyJobsChanged();
     } catch (error) {
       setIngestError(toErrorMessage(error));
     } finally {

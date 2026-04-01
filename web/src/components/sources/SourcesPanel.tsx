@@ -12,7 +12,7 @@ type Props = {
   note: NoteContent | null;
   onBack: () => void;
   onDelete: (source: Source) => Promise<void>;
-  onIngest: (url: string) => Promise<void>;
+  onIngest: (url: string, rerun: boolean) => Promise<void>;
   onOpen: (source: Source) => Promise<void>;
   onSelectTab: (tab: "note" | "transcript") => Promise<void>;
   sources: Source[];

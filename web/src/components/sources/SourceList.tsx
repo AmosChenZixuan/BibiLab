@@ -7,20 +7,21 @@ type Props = {
   error: string | null;
   ingestStatus: string | null;
   onDelete: (source: Source) => Promise<void>;
-  onIngest: (url: string) => Promise<void>;
+  onIngest: (url: string, rerun: boolean) => Promise<void>;
   onOpen: (source: Source) => void;
   sources: Source[];
 };
 
 export function SourceList({ busy, error, ingestStatus, onDelete, onIngest, onOpen, sources }: Props) {
   const [url, setUrl] = useState("");
+  const [rerun, setRerun] = useState(false);
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!url.trim()) {
       return;
     }
-    await onIngest(url.trim());
+    await onIngest(url.trim(), rerun);
     setUrl("");
   }
 
@@ -35,6 +36,15 @@ export function SourceList({ busy, error, ingestStatus, onDelete, onIngest, onOp
             placeholder="https://www.bilibili.com/video/..."
             value={url}
           />
+        </label>
+        <label className="checkbox-field">
+          <input
+            aria-label="Re-run existing source"
+            checked={rerun}
+            onChange={(event) => setRerun(event.target.checked)}
+            type="checkbox"
+          />
+          <span>Re-run existing source</span>
         </label>
         <div className="inline-actions">
           <button className="primary-button" disabled={busy} type="submit">

@@ -13,6 +13,8 @@ import type {
 
 type ApiErrorDetail = string | { message?: string };
 
+export const JOBS_REFRESH_EVENT = "locus:jobs:refresh";
+
 export class ApiError extends Error {
   detail: ApiErrorDetail;
   status: number;
@@ -48,6 +50,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export function toErrorMessage(error: unknown): string {
   if (error instanceof ApiError) {
+    if (error.status === 401 && typeof error.detail !== "string") {
+      return "Authentication required";
+    }
     if (typeof error.detail === "string") {
       return error.detail;
     }
@@ -57,6 +62,10 @@ export function toErrorMessage(error: unknown): string {
     return error.message;
   }
   return "Request failed";
+}
+
+export function notifyJobsChanged() {
+  window.dispatchEvent(new Event(JOBS_REFRESH_EVENT));
 }
 
 export const api = {
