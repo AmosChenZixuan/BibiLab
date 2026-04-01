@@ -1,9 +1,0 @@
-{
-  "id": "locus",
-  "name": "Locus",
-  "version": "0.0.1",
-  "minAppVersion": "1.0.0",
-  "description": "Turn video playlists into searchable Obsidian notes",
-  "author": "locus",
-  "isDesktopOnly": true
-}
