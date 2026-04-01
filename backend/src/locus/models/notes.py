@@ -1,5 +1,12 @@
 from pydantic import BaseModel
 
 
-class NotePathUpdateRequest(BaseModel):
-    path: str | None
+class NoteContentResponse(BaseModel):
+    video_id: str
+    title: str
+    markdown: str
+
+
+class NoteTranscriptResponse(BaseModel):
+    video_id: str
+    text: str

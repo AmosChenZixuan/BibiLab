@@ -151,3 +151,37 @@ def test_clear_embeddings_for_video_does_not_raise(tmp_path: Path):
     with patch("locus.pipeline.embed._get_collection", return_value=mock_col):
         clear_embeddings_for_video("BV1abc", LocusConfig())
     mock_col.delete.assert_called_once_with(where={"note_id": "BV1abc"})
+
+
+def test_write_video_note_to_locus_notes_dir(tmp_path: Path):
+    from locus.adapters.base import VideoMeta
+    from locus.pipeline.extract import ExtractionResult, KeyPoint
+    from locus.pipeline.notes import write_video_note
+
+    meta = VideoMeta(
+        video_id="BV1test",
+        title="Test Video",
+        platform="bilibili",
+        source_url="https://www.bilibili.com/video/BV1test",
+        cover_url="",
+        duration_seconds=120,
+        uploader="User",
+    )
+    extraction = ExtractionResult(
+        title="Test Video",
+        summary="A great video.",
+        key_points=[KeyPoint(timestamp="[00:00:01]", text="Key point")],
+    )
+
+    notes_dir = tmp_path / "notes"
+    notes_dir.mkdir()
+
+    with patch("locus.pipeline.notes.locus_home", return_value=tmp_path):
+        note_path = write_video_note(meta, extraction, "list-1")
+
+    assert note_path == notes_dir / "BV1test.md"
+    assert note_path.exists()
+    content = note_path.read_text(encoding="utf-8")
+    assert "video_id: BV1test" in content
+    assert "Test Video" in content
+    assert "A great video." in content
