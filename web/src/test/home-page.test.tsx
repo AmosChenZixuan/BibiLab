@@ -70,4 +70,63 @@ describe("home page", () => {
       expect(screen.queryByRole("heading", { name: "Systems" })).not.toBeInTheDocument();
     });
   });
+
+  test("shows a renamed list after navigating back from the list workspace", async () => {
+    let currentListName = "Systems";
+
+    installFetchMock(async (input, init) => {
+      const url = String(input);
+      const method = init?.method ?? "GET";
+
+      if (url.endsWith("/api/health") && method === "GET") {
+        return Response.json({
+          overall: "ok",
+          dependencies: {
+            backend: { status: "ok", message: "" },
+          },
+        });
+      }
+
+      if (url.endsWith("/api/lists") && method === "GET") {
+        return Response.json([
+          { id: "list-1", name: currentListName, created_at: "2026-03-31T19:00:00Z" },
+        ]);
+      }
+
+      if (url.endsWith("/api/lists/list-1/sources") && method === "GET") {
+        return Response.json([]);
+      }
+
+      if (url.endsWith("/api/lists/list-1") && method === "PATCH") {
+        const body = JSON.parse(String(init?.body));
+        currentListName = body.name;
+        return Response.json({
+          id: "list-1",
+          name: currentListName,
+          created_at: "2026-03-31T19:00:00Z",
+        });
+      }
+
+      throw new Error(`Unhandled ${method} ${url}`);
+    });
+
+    const router = createMemoryRouter(routes, { initialEntries: ["/"] });
+
+    render(<RouterProvider router={router} />);
+
+    await userEvent.click(await screen.findByRole("button", { name: /open systems/i }));
+    expect(await screen.findByRole("heading", { name: /systems/i })).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: /edit list name/i }));
+    const input = screen.getByLabelText(/list name/i);
+    await userEvent.clear(input);
+    await userEvent.type(input, "Distributed Systems");
+    await userEvent.tab();
+
+    expect(await screen.findByRole("heading", { name: /distributed systems/i })).toBeInTheDocument();
+
+    await router.navigate("/");
+
+    expect(await screen.findByRole("heading", { name: "Distributed Systems" })).toBeInTheDocument();
+  });
 });

@@ -18,7 +18,7 @@ function installFetchMock(
 }
 
 describe("list detail page", () => {
-  test("renders the three-panel workspace, supports ingest, source detail tabs, source deletion, and overview download", async () => {
+  test("renders the three-panel workspace, supports inline list rename on blur, source detail tabs, source deletion, and overview download", async () => {
     installFetchMock(async (input, init) => {
       const url = String(input);
       const method = init?.method ?? "GET";
@@ -48,6 +48,16 @@ describe("list detail page", () => {
             processed_at: "2026-03-31T20:00:00Z",
           },
         ]);
+      }
+
+      if (url.endsWith("/api/lists/list-1") && method === "PATCH") {
+        const body = JSON.parse(String(init?.body));
+        expect(body).toEqual({ name: "Distributed Systems" });
+        return Response.json({
+          id: "list-1",
+          name: "Distributed Systems",
+          created_at: "2026-03-31T19:00:00Z",
+        });
       }
 
       if (url.endsWith("/api/ingest/url") && method === "POST") {
@@ -95,6 +105,13 @@ describe("list detail page", () => {
     expect(screen.getByRole("heading", { name: /chat/i })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: /studio/i })).toBeInTheDocument();
     expect(screen.getByText(/chat arrives in v1/i)).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: /edit list name/i }));
+    const nameInput = screen.getByLabelText(/list name/i);
+    await userEvent.clear(nameInput);
+    await userEvent.type(nameInput, "Distributed Systems");
+    await userEvent.tab();
+    expect(await screen.findByRole("heading", { name: /distributed systems/i })).toBeInTheDocument();
 
     await userEvent.type(screen.getByLabelText(/source url/i), "https://www.bilibili.com/video/BV1new");
     await userEvent.click(screen.getByRole("button", { name: /queue source/i }));

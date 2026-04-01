@@ -20,8 +20,15 @@ from locus.db import (
     get_list,
     get_source,
     get_sources_for_list,
+    update_list_name,
 )
-from locus.models.lists import ListCreateRequest, ListResponse, OverviewResponse, SourceResponse
+from locus.models.lists import (
+    ListCreateRequest,
+    ListResponse,
+    ListUpdateRequest,
+    OverviewResponse,
+    SourceResponse,
+)
 from locus.pipeline.embed import clear_embeddings_for_list, clear_embeddings_for_video
 
 router = APIRouter()
@@ -44,6 +51,20 @@ async def create_list(req: ListCreateRequest) -> ListResponse:
 async def get_lists() -> list[ListResponse]:
     rows = await get_all_lists()
     return [ListResponse(id=r["id"], name=r["name"], created_at=r["created_at"]) for r in rows]
+
+
+@router.patch("/lists/{list_id}")
+async def update_list(list_id: str, req: ListUpdateRequest) -> ListResponse:
+    row = await get_list(list_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="List not found")
+
+    name = req.name.strip()
+    if not name:
+        raise HTTPException(status_code=422, detail="List name cannot be empty")
+
+    await update_list_name(list_id, name)
+    return ListResponse(id=row["id"], name=name, created_at=row["created_at"])
 
 
 @router.delete("/lists/{list_id}", status_code=204)

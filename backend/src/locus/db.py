@@ -115,6 +115,12 @@ async def delete_list(list_id: str) -> None:
         await db.commit()
 
 
+async def update_list_name(list_id: str, name: str) -> None:
+    async with get_db() as db:
+        await db.execute("UPDATE lists SET name=? WHERE id=?", (name, list_id))
+        await db.commit()
+
+
 async def write_source(
     video_id: str,
     platform: str,

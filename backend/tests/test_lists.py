@@ -56,6 +56,15 @@ def test_get_lists(client: TestClient):
     assert names == ["List A", "List B"]
 
 
+def test_rename_list(client: TestClient):
+    list_id = client.post("/lists", json={"name": "Before"}).json()["id"]
+    resp = client.patch(f"/lists/{list_id}", json={"name": "After"})
+    assert resp.status_code == 200
+    assert resp.json()["name"] == "After"
+    names = [r["name"] for r in client.get("/lists").json()]
+    assert names == ["After"]
+
+
 def test_delete_list(client: TestClient):
     list_id = client.post("/lists", json={"name": "ToDelete"}).json()["id"]
     resp = client.delete(f"/lists/{list_id}")

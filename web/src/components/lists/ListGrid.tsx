@@ -25,7 +25,12 @@ export function ListGrid({ lists, onDelete, onOpen, onCreate, busy }: Props) {
       </article>
       {lists.map((list) => (
         <article className="list-card" key={list.id}>
-          <button className="list-card__open" onClick={() => onOpen(list)} type="button">
+          <button
+            aria-label={`Open ${list.name}`}
+            className="list-card__open"
+            onClick={() => onOpen(list)}
+            type="button"
+          >
             <span className="list-card__eyebrow">Notebook</span>
             <span className="list-card__chevron">Open</span>
           </button>

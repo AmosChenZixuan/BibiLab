@@ -5,6 +5,10 @@ class ListCreateRequest(BaseModel):
     name: str
 
 
+class ListUpdateRequest(BaseModel):
+    name: str
+
+
 class ListResponse(BaseModel):
     id: str
     name: str

@@ -179,6 +179,37 @@ button {
   gap: 16px;
 }
 
+.workspace-hero__title-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.workspace-hero__rename {
+  max-width: 560px;
+}
+
+.workspace-hero__name-input {
+  font-family: "Iowan Old Style", "Palatino Linotype", serif;
+  font-size: clamp(2rem, 4vw, 3.5rem);
+  line-height: 0.95;
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.84);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 .workspace-grid {
   display: grid;
   grid-template-columns: 1.25fr 1fr 0.9fr;

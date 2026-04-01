@@ -24,6 +24,9 @@ export function ListDetailPage() {
   const [studioBusy, setStudioBusy] = useState(false);
   const [studioError, setStudioError] = useState<string | null>(null);
   const [studioStatus, setStudioStatus] = useState<string | null>(null);
+  const [editingName, setEditingName] = useState(false);
+  const [draftName, setDraftName] = useState("");
+  const [renameError, setRenameError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -33,7 +36,9 @@ export function ListDetailPage() {
       if (cancelled) {
         return;
       }
-      setListName(lists.find((entry) => entry.id === listId)?.name ?? "List workspace");
+      const currentName = lists.find((entry) => entry.id === listId)?.name ?? "List workspace";
+      setListName(currentName);
+      setDraftName(currentName);
       setSources(nextSources);
     }
 
@@ -116,12 +121,68 @@ export function ListDetailPage() {
     }
   }
 
+  async function handleRenameCommit() {
+    const trimmed = draftName.trim();
+    setEditingName(false);
+    if (!trimmed || trimmed === listName) {
+      setDraftName(listName);
+      return;
+    }
+    setRenameError(null);
+    try {
+      const updated = await api.updateList(listId, trimmed);
+      setListName(updated.name);
+      setDraftName(updated.name);
+    } catch (error) {
+      setDraftName(listName);
+      setRenameError(toErrorMessage(error));
+    }
+  }
+
   return (
     <div className="workspace">
       <section className="workspace-hero">
         <p className="home-hero__eyebrow">Notebook workspace</p>
-        <h1 className="page-heading">{listName}</h1>
+        {editingName ? (
+          <label className="field workspace-hero__rename">
+            <span className="sr-only">List name</span>
+            <input
+              aria-label="List name"
+              autoFocus
+              className="workspace-hero__name-input"
+              onBlur={() => void handleRenameCommit()}
+              onChange={(event) => setDraftName(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.currentTarget.blur();
+                }
+                if (event.key === "Escape") {
+                  setDraftName(listName);
+                  setEditingName(false);
+                }
+              }}
+              value={draftName}
+            />
+          </label>
+        ) : (
+          <div className="workspace-hero__title-row">
+            <h1 className="page-heading">{listName}</h1>
+            <button
+              aria-label="Edit list name"
+              className="ghost-button"
+              onClick={() => {
+                setDraftName(listName);
+                setEditingName(true);
+                setRenameError(null);
+              }}
+              type="button"
+            >
+              Rename
+            </button>
+          </div>
+        )}
         <p className="page-lede">Queue sources, inspect notes, and export a list overview from one reading surface.</p>
+        {renameError ? <p className="status-message error">{renameError}</p> : null}
       </section>
       <div className="workspace-grid">
         <SourcesPanel

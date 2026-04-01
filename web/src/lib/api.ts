@@ -65,6 +65,11 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ name }),
     }),
+  updateList: (listId: string, name: string) =>
+    request<LocusList>(`/lists/${listId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ name }),
+    }),
   deleteList: (listId: string) =>
     request<void>(`/lists/${listId}`, {
       method: "DELETE",
