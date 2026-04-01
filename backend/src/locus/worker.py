@@ -1,4 +1,4 @@
-"""Background worker loop. Picks up queued jobs and drives them through the pipeline."""
+"""Background worker loop."""
 
 import asyncio
 import json
@@ -10,23 +10,18 @@ from locus.adapters.bilibili import BilibiliAdapter
 from locus.config import load_config, locus_home
 from locus.db import (
     delete_job,
+    get_list,
     get_pending_jobs,
-    get_processing_log_videos,
     reset_stuck_jobs,
     update_job_status,
-    write_processing_log,
+    write_source,
 )
 from locus.pipeline.audio import PipelineError, extract_audio
 from locus.pipeline.chunk import chunk_segments
 from locus.pipeline.embed import embed_chunks, is_embedding_model_downloaded
-from locus.pipeline.extract import (
-    ExtractionResult,
-    extract_knowledge,
-    generate_overview,
-)
-from locus.pipeline.notes import write_overview_note, write_video_note
+from locus.pipeline.extract import ExtractionResult, extract_knowledge
+from locus.pipeline.notes import write_video_note
 from locus.pipeline.transcribe import transcribe, write_transcript
-from locus.vault import get_list_name as _get_list_name_from_vault
 from locus.whisper_models import download_whisper_model
 
 logger = logging.getLogger(__name__)
@@ -70,7 +65,6 @@ class WorkerLoop:
                 for job in queued[:slots]:
                     self._in_flight.add(job["id"])
                     asyncio.create_task(self._run_job(job))
-
             await asyncio.sleep(2)
 
     async def _run_job(self, job: dict) -> None:
@@ -107,24 +101,12 @@ class WorkerLoop:
         model_size = meta_raw.get("model_size", "")
 
         await update_job_status(job_id, "downloading", progress=10)
-        logger.info(
-            "Model download job %s started for %s:%s",
-            job_id,
-            model_family,
-            model_size,
-        )
-
         if model_family != "whisper":
             raise PipelineError(f"Unsupported model family {model_family!r}")
 
         await asyncio.to_thread(download_whisper_model, model_size)
         await update_job_status(job_id, "done", progress=100)
-        logger.info(
-            "Model download job %s completed for %s:%s",
-            job_id,
-            model_family,
-            model_size,
-        )
+        logger.info("Model download job %s completed for %s:%s", job_id, model_family, model_size)
 
     async def _pipeline(self, job: dict) -> None:
         job_id = job["id"]
@@ -134,8 +116,8 @@ class WorkerLoop:
         video_id: str = meta_raw["video_id"]
         list_id: str = meta_raw["list_id"]
 
-        list_name = _get_list_name_from_vault(list_id, cfg.obsidian)
-        if list_name is None:
+        list_row = await get_list(list_id)
+        if list_row is None:
             raise PipelineError(f"List {list_id!r} not found - it may have been deleted")
 
         video_meta = VideoMeta(
@@ -148,7 +130,7 @@ class WorkerLoop:
             uploader=meta_raw.get("uploader", ""),
         )
 
-        # ── 1. Download ──────────────────────────────────────────────────────
+        # 1. Download
         await update_job_status(job_id, "downloading", progress=10)
         if job_id in self._cancelled:
             self._cancelled.discard(job_id)
@@ -160,11 +142,11 @@ class WorkerLoop:
             adapter.download, video_id, video_meta.source_url
         )
 
-        # ── 2. Audio extraction ──────────────────────────────────────────────
+        # 2. Audio extraction
         await update_job_status(job_id, "transcribing", progress=25)
         wav_path: Path = await asyncio.to_thread(extract_audio, video_path)
 
-        # ── 3. Transcription ─────────────────────────────────────────────────
+        # 3. Transcription
         segments = await asyncio.to_thread(transcribe, wav_path, cfg.transcription)
         transcript_path = write_transcript(segments, video_id)
         wav_path.unlink(missing_ok=True)
@@ -174,7 +156,7 @@ class WorkerLoop:
             await delete_job(job_id)
             return
 
-        # ── 4. Chunking + extraction ─────────────────────────────────────────
+        # 4. Chunking + extraction
         await update_job_status(job_id, "extracting", progress=40)
         chunks = chunk_segments(segments)
         transcript_text = transcript_path.read_text(encoding="utf-8")
@@ -182,7 +164,6 @@ class WorkerLoop:
             extract_knowledge, transcript_text, video_meta, cfg.ai
         )
 
-        # Promote LLM-extracted title if available
         if extraction.title:
             video_meta = VideoMeta(
                 video_id=video_meta.video_id,
@@ -199,26 +180,21 @@ class WorkerLoop:
             await delete_job(job_id)
             return
 
-        # ── 5. Write note + embed ─────────────────────────────────────────────
+        # 5. Write note + embed
         await update_job_status(job_id, "writing", progress=70)
-        note_path = await asyncio.to_thread(
-            write_video_note, video_meta, extraction, list_name, list_id, cfg.obsidian
-        )
+        note_path = await asyncio.to_thread(write_video_note, video_meta, extraction, list_id)
         if not is_embedding_model_downloaded():
-            logger.info(
-                "Job %s: embedding model not found - downloading (~50 MB). "
-                "Job will remain in 'writing' state until complete.",
-                job_id,
-            )
+            logger.info("Job %s: embedding model not found - downloading (~50 MB).", job_id)
         await asyncio.to_thread(embed_chunks, chunks, video_meta, list_id, cfg)
 
-        # ── 6. Write processing_log ───────────────────────────────────────────
-        vault_rel = note_path.relative_to(Path(cfg.obsidian.vault_path))
-        await write_processing_log(
+        # 6. Persist processed source metadata
+        await write_source(
             video_id=video_id,
             platform=video_meta.platform,
             list_id=list_id,
-            note_path=str(vault_rel),
+            title=extraction.title or video_id,
+            summary=extraction.summary,
+            note_path=str(note_path),
             transcript_path=str(transcript_path),
             whisper_model=cfg.transcription.model_size,
             ai_model=cfg.ai.model,
@@ -226,52 +202,7 @@ class WorkerLoop:
             settings_snapshot=cfg.model_dump(),
         )
 
-        # ── 7. Regenerate overview note ───────────────────────────────────────
-        await update_job_status(job_id, "writing", progress=90)
-        log_rows = await get_processing_log_videos(list_id)
-
-        # Build {title, summary} list for LLM; only the current video has a real summary
-        overview_inputs: list[dict] = []
-        for r in log_rows:
-            if r["video_id"] == video_id:
-                overview_inputs.append(
-                    {
-                        "title": extraction.title or video_id,
-                        "summary": extraction.summary,
-                    }
-                )
-            else:
-                overview_inputs.append({"title": r["video_id"], "summary": ""})
-
-        outline = await asyncio.to_thread(generate_overview, overview_inputs, cfg.ai)
-
-        stub_metas = [
-            VideoMeta(
-                video_id=r["video_id"],
-                title="",
-                platform=r["platform"],
-                source_url="",
-                cover_url="",
-                duration_seconds=0,
-                uploader="",
-            )
-            for r in log_rows
-        ]
-        stub_extractions = [
-            ExtractionResult(title=v["title"], summary=v["summary"], key_points=[])
-            for v in overview_inputs
-        ]
-        await asyncio.to_thread(
-            write_overview_note,
-            list_id,
-            list_name,
-            stub_metas,
-            stub_extractions,
-            outline,
-            cfg.obsidian,
-        )
-
-        # ── 8. Cleanup downloads ──────────────────────────────────────────────
+        # 7. Cleanup downloads
         for path in (locus_home() / "downloads").glob(f"{video_id}.*"):
             path.unlink(missing_ok=True)
 

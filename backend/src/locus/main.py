@@ -12,16 +12,15 @@ from locus.routers.ingest import router as ingest_router
 from locus.routers.jobs import router as jobs_router
 from locus.routers.lists import router as lists_router
 from locus.routers.notes import router as notes_router
-from locus.routers.transcripts import router as transcripts_router
 from locus.routers.whisper import router as whisper_router
 from locus.worker import WorkerLoop
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
-    # Bootstrap ~/.locus/ directory layout
     home = locus_home()
     for subdir in (
+        "notes",
         "transcripts",
         "downloads",
         "chroma",
@@ -48,7 +47,12 @@ def create_app() -> FastAPI:
 
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["app://obsidian.md", "http://localhost", "http://127.0.0.1"],
+        allow_origins=[
+            "http://localhost",
+            "http://localhost:5173",
+            "http://127.0.0.1",
+            "http://127.0.0.1:5173",
+        ],
         allow_methods=["*"],
         allow_headers=["*"],
     )
@@ -59,7 +63,6 @@ def create_app() -> FastAPI:
     app.include_router(lists_router)
     app.include_router(ingest_router)
     app.include_router(notes_router)
-    app.include_router(transcripts_router)
     app.include_router(whisper_router)
 
     return app

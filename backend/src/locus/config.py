@@ -43,11 +43,6 @@ class VisionConfig(BaseModel):
     model: str | None = None
 
 
-class ObsidianConfig(BaseModel):
-    vault_path: str = ""
-    locus_folder: str = "Locus"
-
-
 class BackendConfig(BaseModel):
     port: int = 8765
     worker_concurrency: int = 1
@@ -58,7 +53,6 @@ class LocusConfig(BaseModel):
     ai: AIConfig = AIConfig()
     transcription: TranscriptionConfig = TranscriptionConfig()
     vision: VisionConfig = VisionConfig()
-    obsidian: ObsidianConfig = ObsidianConfig()
     backend: BackendConfig = BackendConfig()
 
 
@@ -85,12 +79,6 @@ _MISSING = object()
 
 
 def deep_merge(base: dict[str, Any], patch: dict[str, Any]) -> dict[str, Any]:
-    """Recursively merge patch into base.
-
-    Explicit null values in patch overwrite the base value (allowing callers to
-    clear nullable fields). Only keys absent from patch entirely are preserved
-    unchanged.
-    """
     result = dict(base)
     for key, value in patch.items():
         if isinstance(value, dict) and isinstance(result.get(key, _MISSING), dict):

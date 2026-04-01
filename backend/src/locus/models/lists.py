@@ -11,8 +11,14 @@ class ListResponse(BaseModel):
     created_at: str
 
 
-class ListNoteResponse(BaseModel):
+class SourceResponse(BaseModel):
     video_id: str
-    note_path: str | None
-    processed_at: str
     platform: str
+    title: str
+    note_path: str
+    processed_at: str
+
+
+class OverviewResponse(BaseModel):
+    content: str
+    filename: str

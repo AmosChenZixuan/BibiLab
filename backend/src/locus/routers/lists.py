@@ -1,15 +1,29 @@
 import asyncio
-import shutil
+import sqlite3
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
 
 from locus.config import load_config
-from locus.db import get_db
-from locus.models.lists import ListCreateRequest, ListNoteResponse, ListResponse
-from locus.pipeline.embed import clear_embeddings_for_list
-from locus.vault import get_list_by_id, locus_dir, scan_lists, write_list_overview
+from locus.db import (
+    create_list as db_create_list,
+)
+from locus.db import (
+    delete_list as db_delete_list,
+)
+from locus.db import (
+    delete_source,
+    delete_sources_for_list,
+    get_all_lists,
+    get_db,
+    get_list,
+    get_source,
+    get_sources_for_list,
+)
+from locus.models.lists import ListCreateRequest, ListResponse, OverviewResponse, SourceResponse
+from locus.pipeline.embed import clear_embeddings_for_list, clear_embeddings_for_video
 
 router = APIRouter()
 
@@ -21,104 +35,99 @@ async def create_list(req: ListCreateRequest) -> ListResponse:
     name = req.name.strip()
     if not name:
         raise HTTPException(status_code=422, detail="List name cannot be empty")
-
-    cfg = load_config()
-    if not cfg.obsidian.vault_path:
-        raise HTTPException(
-            status_code=400,
-            detail="obsidian.vault_path is not configured. Set it via PUT /config.",
-        )
-
     list_id = str(uuid.uuid4())
-    list_dir = locus_dir(cfg.obsidian) / name
+    now = datetime.now(timezone.utc).isoformat()
     try:
-        list_dir.mkdir(parents=True)
-    except FileExistsError as exc:
+        await db_create_list(list_id, name, now)
+    except sqlite3.IntegrityError as exc:
         raise HTTPException(status_code=409, detail=f"List {name!r} already exists") from exc
-
-    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
-    try:
-        await asyncio.to_thread(
-            write_list_overview,
-            list_dir / "_overview.md",
-            list_id=list_id,
-            list_name=name,
-            created_at=now,
-        )
-    except Exception:
-        await asyncio.to_thread(shutil.rmtree, list_dir, True)
-        raise
-
     return ListResponse(id=list_id, name=name, created_at=now)
 
 
 @router.get("/lists")
 async def get_lists() -> list[ListResponse]:
-    cfg = load_config()
-    if not cfg.obsidian.vault_path:
-        return []
-
-    lists = await asyncio.to_thread(scan_lists, cfg.obsidian)
-    return [ListResponse(id=item.id, name=item.name, created_at=item.created_at) for item in lists]
-
-
-@router.get("/lists/{list_id}/notes")
-async def get_list_notes(list_id: str) -> list[ListNoteResponse]:
-    cfg = load_config()
-    if not cfg.obsidian.vault_path:
-        raise HTTPException(status_code=404, detail="List not found")
-
-    list_meta = await asyncio.to_thread(get_list_by_id, list_id, cfg.obsidian)
-    if list_meta is None:
-        raise HTTPException(status_code=404, detail="List not found")
-
-    async with get_db() as db:
-        async with db.execute(
-            """
-            SELECT video_id, note_path, processed_at, platform
-            FROM processing_log
-            WHERE list_id=?
-            ORDER BY processed_at DESC
-            """,
-            (list_id,),
-        ) as cur:
-            rows = await cur.fetchall()
-
-    return [ListNoteResponse.model_validate(dict(row)) for row in rows]
+    rows = await get_all_lists()
+    return [ListResponse(id=r["id"], name=r["name"], created_at=r["created_at"]) for r in rows]
 
 
 @router.delete("/lists/{list_id}", status_code=204)
 async def delete_list(list_id: str) -> None:
-    cfg = load_config()
-    if not cfg.obsidian.vault_path:
-        raise HTTPException(status_code=404, detail="List not found")
-
-    list_meta = await asyncio.to_thread(get_list_by_id, list_id, cfg.obsidian)
-    if list_meta is None:
+    row = await get_list(list_id)
+    if row is None:
         raise HTTPException(status_code=404, detail="List not found")
 
     placeholders = ",".join("?" * len(_ACTIVE_JOB_STATUSES))
     async with get_db() as db:
         async with db.execute(
             f"""
-            SELECT 1
-            FROM jobs
+            SELECT 1 FROM jobs
             WHERE json_extract(meta, '$.list_id') = ?
               AND status IN ({placeholders})
             LIMIT 1
             """,
             (list_id, *_ACTIVE_JOB_STATUSES),
         ) as cur:
-            active_job = await cur.fetchone()
+            if await cur.fetchone() is not None:
+                raise HTTPException(status_code=409, detail="Cannot delete a list with active jobs")
 
-        if active_job is not None:
-            raise HTTPException(
-                status_code=409,
-                detail="Cannot delete a list with active jobs",
-            )
+    sources = await get_sources_for_list(list_id)
+    for source in sources:
+        Path(source["note_path"]).unlink(missing_ok=True)
 
-        await db.execute("DELETE FROM processing_log WHERE list_id=?", (list_id,))
-        await db.commit()
-
+    await delete_sources_for_list(list_id)
+    cfg = load_config()
     await asyncio.to_thread(clear_embeddings_for_list, list_id, cfg)
-    await asyncio.to_thread(shutil.rmtree, list_meta.path, True)
+    await db_delete_list(list_id)
+
+
+@router.get("/lists/{list_id}/sources")
+async def get_list_sources(list_id: str) -> list[SourceResponse]:
+    if await get_list(list_id) is None:
+        raise HTTPException(status_code=404, detail="List not found")
+    rows = await get_sources_for_list(list_id)
+    return [
+        SourceResponse(
+            video_id=r["video_id"],
+            platform=r["platform"],
+            title=r["title"],
+            note_path=r["note_path"],
+            processed_at=r["processed_at"] or "",
+        )
+        for r in rows
+    ]
+
+
+@router.delete("/lists/{list_id}/sources/{video_id}", status_code=204)
+async def delete_list_source(list_id: str, video_id: str) -> None:
+    source = await get_source(video_id)
+    if source is None or source["list_id"] != list_id:
+        raise HTTPException(status_code=404, detail="Source not found")
+
+    Path(source["note_path"]).unlink(missing_ok=True)
+    cfg = load_config()
+    await asyncio.to_thread(clear_embeddings_for_video, video_id, cfg)
+    await delete_source(video_id)
+
+
+@router.post("/lists/{list_id}/overview")
+async def generate_list_overview(list_id: str) -> OverviewResponse:
+    row = await get_list(list_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="List not found")
+
+    sources = await get_sources_for_list(list_id)
+    if not sources:
+        raise HTTPException(status_code=422, detail="List has no sources to summarise")
+
+    cfg = load_config()
+    from locus.pipeline.extract import generate_overview
+
+    list_videos = [{"title": s["title"], "summary": s["summary"]} for s in sources]
+    outline = await asyncio.to_thread(generate_overview, list_videos, cfg.ai)
+
+    list_name = row["name"]
+    source_lines = "\n".join(f"- {s['title']}" for s in sources)
+    content = f"# {list_name} - Overview\n\n## Outline\n{outline}\n\n## Sources\n{source_lines}\n"
+    filename = f"overview-{list_name.lower().replace(' ', '-')}.md"
+
+    return OverviewResponse(content=content, filename=filename)

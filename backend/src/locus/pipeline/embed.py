@@ -83,3 +83,12 @@ def clear_embeddings_for_list(list_id: str, cfg: LocusConfig) -> None:
         collection.delete(where={"list_id": list_id})
     except Exception:
         pass
+
+
+def clear_embeddings_for_video(video_id: str, cfg: LocusConfig) -> None:
+    """Delete all ChromaDB chunks belonging to the given video."""
+    collection = _get_collection(cfg)
+    try:
+        collection.delete(where={"note_id": video_id})
+    except Exception:
+        pass

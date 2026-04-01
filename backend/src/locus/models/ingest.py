@@ -7,5 +7,5 @@ class IngestUrlRequest(BaseModel):
 
 
 class IngestUrlResponse(BaseModel):
-    queued: list[str]  # job IDs created
-    skipped: list[str]  # video_ids already in processing_log
+    queued: list[str]
+    skipped: list[str]

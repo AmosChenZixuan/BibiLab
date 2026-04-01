@@ -1,4 +1,3 @@
-import asyncio
 import json
 import uuid
 from collections.abc import AsyncGenerator
@@ -9,12 +8,20 @@ from typing import Any
 
 import aiosqlite
 
-from locus.config import LocusConfig, locus_home
+from locus.config import locus_home
 
 
 def get_db_path() -> Path:
     return locus_home() / "locus.db"
 
+
+_CREATE_LISTS = """
+CREATE TABLE IF NOT EXISTS lists (
+    id         TEXT PRIMARY KEY,
+    name       TEXT NOT NULL UNIQUE,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)
+"""
 
 _CREATE_JOBS = """
 CREATE TABLE IF NOT EXISTS jobs (
@@ -31,12 +38,14 @@ CREATE TABLE IF NOT EXISTS jobs (
 )
 """
 
-_CREATE_PROCESSING_LOG = """
-CREATE TABLE IF NOT EXISTS processing_log (
+_CREATE_SOURCES = """
+CREATE TABLE IF NOT EXISTS sources (
     video_id            TEXT PRIMARY KEY,
-    platform            TEXT,
-    list_id             TEXT,
-    note_path           TEXT,
+    platform            TEXT NOT NULL,
+    list_id             TEXT NOT NULL REFERENCES lists(id),
+    title               TEXT NOT NULL DEFAULT '',
+    summary             TEXT NOT NULL DEFAULT '',
+    note_path           TEXT NOT NULL,
     transcript_path     TEXT,
     whisper_model       TEXT,
     ai_model            TEXT,
@@ -47,43 +56,12 @@ CREATE TABLE IF NOT EXISTS processing_log (
 """
 
 
-async def _migrate_legacy_lists(db: aiosqlite.Connection, cfg: LocusConfig) -> None:
-    if not cfg.obsidian.vault_path:
-        return
-
-    async with db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='lists'") as cur:
-        if await cur.fetchone() is None:
-            return
-
-    async with db.execute("SELECT id, name, created_at FROM lists ORDER BY created_at ASC") as cur:
-        rows = await cur.fetchall()
-
-    from locus.vault import locus_dir, write_list_overview
-
-    for row in rows:
-        overview_path = locus_dir(cfg.obsidian) / row["name"] / "_overview.md"
-        await asyncio.to_thread(
-            write_list_overview,
-            overview_path,
-            list_id=row["id"],
-            list_name=row["name"],
-            created_at=row["created_at"] or "",
-        )
-
-
 async def bootstrap_db() -> None:
-    from locus.config import load_config
-
-    cfg = load_config()
     async with aiosqlite.connect(get_db_path()) as db:
         db.row_factory = aiosqlite.Row
+        await db.execute(_CREATE_LISTS)
         await db.execute(_CREATE_JOBS)
-        await db.execute(_CREATE_PROCESSING_LOG)
-        try:
-            await db.execute("ALTER TABLE processing_log ADD COLUMN list_id TEXT")
-        except aiosqlite.OperationalError:
-            pass
-        await _migrate_legacy_lists(db, cfg)
+        await db.execute(_CREATE_SOURCES)
         await db.commit()
 
 
@@ -94,13 +72,132 @@ async def get_db() -> AsyncGenerator[aiosqlite.Connection, None]:
         yield db
 
 
-# ---------------------------------------------------------------------------
-# Job query helpers
-# ---------------------------------------------------------------------------
-
-
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+async def create_list(list_id: str, name: str, created_at: str) -> None:
+    async with get_db() as db:
+        await db.execute(
+            "INSERT INTO lists (id, name, created_at) VALUES (?, ?, ?)",
+            (list_id, name, created_at),
+        )
+        await db.commit()
+
+
+async def get_all_lists() -> list[aiosqlite.Row]:
+    async with get_db() as db:
+        async with db.execute("SELECT * FROM lists ORDER BY created_at ASC") as cur:
+            return await cur.fetchall()
+
+
+async def get_list(list_id: str) -> aiosqlite.Row | None:
+    async with get_db() as db:
+        async with db.execute("SELECT * FROM lists WHERE id=?", (list_id,)) as cur:
+            return await cur.fetchone()
+
+
+async def delete_list(list_id: str) -> None:
+    async with get_db() as db:
+        await db.execute("DELETE FROM lists WHERE id=?", (list_id,))
+        await db.commit()
+
+
+async def write_source(
+    video_id: str,
+    platform: str,
+    list_id: str,
+    title: str,
+    summary: str,
+    note_path: str,
+    transcript_path: str | None,
+    whisper_model: str,
+    ai_model: str,
+    vision_enabled: bool,
+    settings_snapshot: dict[str, Any],
+) -> None:
+    async with get_db() as db:
+        await db.execute(
+            """
+            INSERT INTO sources
+                (video_id, platform, list_id, title, summary, note_path,
+                 transcript_path, whisper_model, ai_model, vision_enabled,
+                 processed_at, settings_snapshot)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(video_id) DO UPDATE SET
+                platform=excluded.platform,
+                list_id=excluded.list_id,
+                title=excluded.title,
+                summary=excluded.summary,
+                note_path=excluded.note_path,
+                transcript_path=excluded.transcript_path,
+                whisper_model=excluded.whisper_model,
+                ai_model=excluded.ai_model,
+                vision_enabled=excluded.vision_enabled,
+                processed_at=excluded.processed_at,
+                settings_snapshot=excluded.settings_snapshot
+            """,
+            (
+                video_id,
+                platform,
+                list_id,
+                title,
+                summary,
+                note_path,
+                transcript_path,
+                whisper_model,
+                ai_model,
+                int(vision_enabled),
+                _now(),
+                json.dumps(settings_snapshot),
+            ),
+        )
+        await db.commit()
+
+
+async def get_source(video_id: str) -> aiosqlite.Row | None:
+    async with get_db() as db:
+        async with db.execute("SELECT * FROM sources WHERE video_id=?", (video_id,)) as cur:
+            return await cur.fetchone()
+
+
+async def get_sources_for_list(list_id: str) -> list[aiosqlite.Row]:
+    async with get_db() as db:
+        async with db.execute(
+            "SELECT * FROM sources WHERE list_id=? ORDER BY processed_at ASC",
+            (list_id,),
+        ) as cur:
+            return await cur.fetchall()
+
+
+async def delete_source(video_id: str) -> None:
+    async with get_db() as db:
+        await db.execute("DELETE FROM sources WHERE video_id=?", (video_id,))
+        await db.commit()
+
+
+async def delete_sources_for_list(list_id: str) -> None:
+    async with get_db() as db:
+        await db.execute("DELETE FROM sources WHERE list_id=?", (list_id,))
+        await db.commit()
+
+
+async def video_is_processed(video_id: str) -> bool:
+    row = await get_source(video_id)
+    return row is not None
+
+
+async def get_processed_video_ids(video_ids: list[str]) -> set[str]:
+    if not video_ids:
+        return set()
+    placeholders = ",".join("?" * len(video_ids))
+    async with get_db() as db:
+        async with db.execute(
+            f"SELECT video_id FROM sources WHERE video_id IN ({placeholders})",
+            video_ids,
+        ) as cur:
+            rows = await cur.fetchall()
+    return {row["video_id"] for row in rows}
 
 
 async def create_job(
@@ -132,10 +229,7 @@ async def update_job_status(
 ) -> None:
     async with get_db() as db:
         await db.execute(
-            """
-            UPDATE jobs SET status=?, progress=?, error=?, updated_at=?
-            WHERE id=?
-            """,
+            "UPDATE jobs SET status=?, progress=?, error=?, updated_at=? WHERE id=?",
             (status, progress, error, _now(), job_id),
         )
         await db.commit()
@@ -143,14 +237,14 @@ async def update_job_status(
 
 async def get_job(job_id: str) -> aiosqlite.Row | None:
     async with get_db() as db:
-        async with db.execute("SELECT * FROM jobs WHERE id=?", (job_id,)) as cursor:
-            return await cursor.fetchone()
+        async with db.execute("SELECT * FROM jobs WHERE id=?", (job_id,)) as cur:
+            return await cur.fetchone()
 
 
 async def list_jobs() -> list[aiosqlite.Row]:
     async with get_db() as db:
-        async with db.execute("SELECT * FROM jobs ORDER BY created_at DESC") as cursor:
-            return await cursor.fetchall()
+        async with db.execute("SELECT * FROM jobs ORDER BY created_at DESC") as cur:
+            return await cur.fetchall()
 
 
 async def delete_job(job_id: str) -> None:
@@ -160,75 +254,18 @@ async def delete_job(job_id: str) -> None:
 
 
 async def get_pending_jobs() -> list[aiosqlite.Row]:
-    """Return queued jobs and any in-progress jobs left from a prior crash."""
     async with get_db() as db:
         async with db.execute(
             """
             SELECT * FROM jobs
-            WHERE status IN ('queued', 'downloading', 'transcribing',
-                             'extracting', 'writing')
+            WHERE status IN ('queued', 'downloading', 'transcribing', 'extracting', 'writing')
             ORDER BY created_at ASC
             """
-        ) as cursor:
-            return await cursor.fetchall()
-
-
-async def write_processing_log(
-    video_id: str,
-    platform: str,
-    list_id: str,
-    note_path: str,
-    transcript_path: str,
-    whisper_model: str,
-    ai_model: str,
-    vision_enabled: bool,
-    settings_snapshot: dict[str, Any],
-) -> None:
-    async with get_db() as db:
-        await db.execute(
-            """
-            INSERT INTO processing_log
-                (video_id, platform, list_id, note_path, transcript_path,
-                 whisper_model, ai_model, vision_enabled,
-                 processed_at, settings_snapshot)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(video_id) DO UPDATE SET
-                list_id=excluded.list_id,
-                note_path=excluded.note_path,
-                transcript_path=excluded.transcript_path,
-                whisper_model=excluded.whisper_model,
-                ai_model=excluded.ai_model,
-                vision_enabled=excluded.vision_enabled,
-                processed_at=excluded.processed_at,
-                settings_snapshot=excluded.settings_snapshot
-            """,
-            (
-                video_id,
-                platform,
-                list_id,
-                note_path,
-                transcript_path,
-                whisper_model,
-                ai_model,
-                int(vision_enabled),
-                _now(),
-                json.dumps(settings_snapshot),
-            ),
-        )
-        await db.commit()
-
-
-async def get_processing_log_videos(list_id: str) -> list[aiosqlite.Row]:
-    async with get_db() as db:
-        async with db.execute(
-            "SELECT * FROM processing_log WHERE list_id=? ORDER BY processed_at ASC",
-            (list_id,),
         ) as cur:
             return await cur.fetchall()
 
 
 async def reset_stuck_jobs() -> None:
-    """On worker startup, reset any in-progress jobs back to queued."""
     async with get_db() as db:
         await db.execute(
             """
