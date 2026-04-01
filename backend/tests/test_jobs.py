@@ -176,7 +176,7 @@ async def test_pipeline_logs_when_embedding_model_missing(tmp_locus_home: Path, 
     transcript_path = tmp_locus_home / "transcript.txt"
     transcript_path.write_text("hello world", encoding="utf-8")
 
-    note_path = tmp_locus_home / "vault" / "note.md"
+    note_path = tmp_locus_home / "notes" / "note.md"
     note_path.parent.mkdir(parents=True, exist_ok=True)
     note_path.write_text("", encoding="utf-8")
 

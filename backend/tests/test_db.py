@@ -133,13 +133,6 @@ async def test_get_sources_for_list(tmp_locus_home: Path):
     assert len(rows) == 2
 
 
-def test_locus_config_has_no_obsidian_field():
-    from locus.config import LocusConfig
-
-    cfg = LocusConfig()
-    assert not hasattr(cfg, "obsidian")
-
-
 def test_clear_embeddings_for_video_does_not_raise(tmp_path: Path):
     from unittest.mock import MagicMock, patch
 

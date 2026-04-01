@@ -71,7 +71,7 @@
 
 ### 4.1 Web UI (React + TypeScript)
 
-A single-page application served by the FastAPI backend at `localhost:8765`. No Obsidian dependency.
+A single-page application served by the FastAPI backend at `localhost:8765`.
 
 **Pages:**
 
@@ -148,7 +148,7 @@ POST   /lists/{id}/query        # SSE: multi-turn RAG Q&A scoped to a list
 
 SQLite serves three purposes: a transient job queue, a list registry, and a source catalog.
 
-**Lists are stored in SQLite** (restored from vault-backed approach, which was tied to Obsidian and is now removed).
+**Lists are stored in SQLite** as the backend's source of truth.
 
 **Job states:** `queued → downloading → transcribing → extracting → writing → done | failed`
 
@@ -274,7 +274,7 @@ Always requires user confirmation before bulk ingestion.
 
 ### 5.1 Storage Layout
 
-Notes and transcripts are stored under `~/.locus/`, outside any Obsidian vault.
+Notes and transcripts are stored under `~/.locus/`.
 
 ```
 ~/.locus/
@@ -420,10 +420,10 @@ The `/health` endpoint checks all dependencies. Displayed inline in the Settings
 
 | Decision | Choice | Rationale |
 |---|---|---|
-| Frontend | React + TypeScript SPA | Full control over UX; NotebookLM-style interface not achievable in Obsidian. SPA is cloud-ready without needing SSR. |
+| Frontend | React + TypeScript SPA | Full control over UX for the product's three-panel interface, and deployable without SSR |
 | Serving | FastAPI serves React build as static files | Single port, no separate frontend server in production |
-| No Obsidian integration | Notes stored in `~/.locus/notes/` | Obsidian's free editing model conflicts with read-only note semantics; vault event hooks add unbounded complexity |
-| List storage | SQLite `lists` table | Vault-backed discovery was tied to Obsidian and is removed; DB is the natural source of truth |
+| Note storage | Notes stored in `~/.locus/notes/` | Keeps note generation, serving, and download behavior fully under backend control |
+| List storage | SQLite `lists` table | Database-backed registry is the natural source of truth for list lifecycle and routing |
 | Overview generation | On-demand via API, not in pipeline | Avoids silent LLM calls during ingestion; user controls when to generate and download |
 | Backend framework | FastAPI | Async-native, easy SSE for job progress and chat streaming |
 | DB schema | SQLite three tables: `lists`, `jobs`, `sources` | `jobs` is ephemeral queue (prunable); `sources` is the active catalog (dedup + note path); `lists` is the registry. Naming reflects purpose, not implementation. |
@@ -441,8 +441,8 @@ The `/health` endpoint checks all dependencies. Displayed inline in the Settings
 1. ~~**Whisper language detection**~~ — Resolved: UI dropdown with `auto / zh / en`. Stored in config, applied globally.
 2. ~~**Note deduplication**~~ — Resolved: check `sources` table for existing `video_id`. Skip silently if found. Override with `?rerun=true` (re-process in-place) or delete the source first (re-add fresh).
 3. ~~**List assignment**~~ — Resolved: user always selects a list before ingesting. No default list.
-4. ~~**Vault sync**~~ — Resolved: no longer needed. Notes are managed by the backend; the web UI is read-only.
+4. ~~**Note sync model**~~ — Resolved: notes are managed by the backend; the web UI is read-only.
 5. ~~**Chunk strategy for RAG**~~ — Resolved: greedy merge of Whisper segments to ~300 token target.
-6. ~~**List storage**~~ — Resolved: DB-backed (`lists` table in SQLite). Vault-backed discovery is removed along with the Obsidian integration.
-7. ~~**Frontend approach**~~ — Resolved: React + TypeScript SPA served by FastAPI. Obsidian plugin is abandoned.
+6. ~~**List storage**~~ — Resolved: DB-backed (`lists` table in SQLite).
+7. ~~**Frontend approach**~~ — Resolved: React + TypeScript SPA served by FastAPI.
 8. ~~**processing_log vs jobs**~~ — Resolved: `processing_log` renamed to `sources` (active catalog, mutable). `jobs` stays ephemeral. "Log" naming was misleading — it implied immutability, but the table is a catalog of active sources, not an audit trail.
