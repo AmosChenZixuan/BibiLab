@@ -18,7 +18,7 @@ def get_db_path() -> Path:
 _CREATE_LISTS = """
 CREATE TABLE IF NOT EXISTS lists (
     id         TEXT PRIMARY KEY,
-    name       TEXT NOT NULL UNIQUE,
+    name       TEXT NOT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 )
 """
@@ -59,6 +59,18 @@ CREATE TABLE IF NOT EXISTS sources (
 async def bootstrap_db() -> None:
     async with aiosqlite.connect(get_db_path()) as db:
         db.row_factory = aiosqlite.Row
+        async with db.execute("PRAGMA table_info(lists)") as cur:
+            columns = await cur.fetchall()
+        if columns:
+            await db.execute("ALTER TABLE lists RENAME TO lists_old")
+            await db.execute(_CREATE_LISTS)
+            await db.execute(
+                """
+                INSERT INTO lists (id, name, created_at)
+                SELECT id, name, created_at FROM lists_old
+                """
+            )
+            await db.execute("DROP TABLE lists_old")
         await db.execute(_CREATE_LISTS)
         await db.execute(_CREATE_JOBS)
         await db.execute(_CREATE_SOURCES)

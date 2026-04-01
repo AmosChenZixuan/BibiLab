@@ -1,5 +1,4 @@
 import asyncio
-import sqlite3
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -37,10 +36,7 @@ async def create_list(req: ListCreateRequest) -> ListResponse:
         raise HTTPException(status_code=422, detail="List name cannot be empty")
     list_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc).isoformat()
-    try:
-        await db_create_list(list_id, name, now)
-    except sqlite3.IntegrityError as exc:
-        raise HTTPException(status_code=409, detail=f"List {name!r} already exists") from exc
+    await db_create_list(list_id, name, now)
     return ListResponse(id=list_id, name=name, created_at=now)
 
 

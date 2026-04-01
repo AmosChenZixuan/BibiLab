@@ -38,10 +38,11 @@ def test_create_list_empty_name(client: TestClient):
     assert resp.status_code == 422
 
 
-def test_create_list_duplicate(client: TestClient):
+def test_create_list_allows_duplicate_names(client: TestClient):
     client.post("/lists", json={"name": "Physics"})
     resp = client.post("/lists", json={"name": "Physics"})
-    assert resp.status_code == 409
+    assert resp.status_code == 201
+    assert resp.json()["name"] == "Physics"
 
 
 def test_get_lists_empty(client: TestClient):
