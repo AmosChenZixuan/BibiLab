@@ -13,7 +13,7 @@ function installFetchMock(
 }
 
 describe("job spirit", () => {
-  test("stays hidden with no jobs, then appears for queued ingest work and can be dismissed after completion", async () => {
+  test("shows rehydrated ingest work and can be dismissed after completion", async () => {
     let sources = [
       {
         video_id: "BV1abc",
@@ -27,15 +27,18 @@ describe("job spirit", () => {
     let jobsResponse: Job[] = [
       {
         id: "job-1",
-        type: "video",
-        source_url: "https://www.bilibili.com/video/BV1new",
-        platform: "bilibili",
+        type: "ingest",
         status: "transcribing",
         progress: 48,
         error: null,
         created_at: "2026-03-31T20:00:00Z",
         updated_at: "2026-03-31T20:01:00Z",
-        meta: { title: "New Source", list_id: "list-1" },
+        meta: {
+          title: "New Source",
+          list_id: "list-1",
+          source_url: "https://www.bilibili.com/video/BV1new",
+          platform: "bilibili",
+        },
       },
     ];
 
@@ -89,30 +92,22 @@ describe("job spirit", () => {
     render(<RouterProvider router={router} />);
 
     expect(await screen.findByRole("heading", { name: /systems/i })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /job spirit/i })).not.toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /background jobs/i })).toBeInTheDocument();
 
     await userEvent.type(screen.getByLabelText(/source url/i), "https://www.bilibili.com/video/BV1new");
     await userEvent.click(screen.getByRole("button", { name: /queue source/i }));
 
     expect(await screen.findByText(/new source/i)).toBeInTheDocument();
-    expect(await screen.findByText(/transcribing/i)).toBeInTheDocument();
 
-    const spiritButton = await screen.findByRole("button", { name: /job spirit/i });
+    const spiritButton = await screen.findByRole("button", { name: /background jobs/i });
     await userEvent.click(spiritButton);
 
-    expect(await screen.findByRole("heading", { name: /background jobs/i })).toBeInTheDocument();
-    expect(screen.getAllByText(/48%/i).length).toBeGreaterThan(0);
+    expect(await screen.findByText(/1 running/i)).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: /cancel new source/i }));
 
     await waitFor(() => {
-      expect(screen.getAllByText(/cancelled by user/i).length).toBeGreaterThan(0);
-    });
-
-    await userEvent.click(screen.getAllByRole("button", { name: /dismiss new source/i })[0]);
-
-    await waitFor(() => {
-      expect(screen.queryByRole("button", { name: /job spirit/i })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /background jobs/i })).not.toBeInTheDocument();
     });
   });
 });

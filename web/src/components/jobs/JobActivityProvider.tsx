@@ -9,7 +9,7 @@ import {
 } from "react";
 
 import { api, toErrorMessage } from "../../lib/api";
-import type { Job } from "../../lib/types";
+import type { IngestJob, Job, ModelDownloadJob } from "../../lib/types";
 
 export const TERMINAL_JOB_STATUSES = new Set(["done", "failed", "needs_auth"]);
 
@@ -44,7 +44,7 @@ type JobActivityContextValue = {
   cancellingJobId: string | null;
   errorMessage: string | null;
   clearTerminalJobs: () => void;
-  dismissJob: (jobId: string) => void;
+  dismissJob: (jobId: string) => Promise<void>;
   cancelJob: (jobId: string) => Promise<void>;
   refreshNow: () => Promise<void>;
   setPanelOpen: (open: boolean) => void;
@@ -54,18 +54,64 @@ type JobActivityContextValue = {
 
 const JobActivityContext = createContext<JobActivityContextValue | null>(null);
 
-function createPlaceholderJob(id: string, label: string): Job {
+function createPlaceholderJob(id: string, meta: TrackedJobMeta): Job {
+  if (meta.producer === "whisper_download") {
+    return {
+      id,
+      type: "model_download",
+      status: "queued",
+      progress: 0,
+      error: null,
+      created_at: "",
+      updated_at: "",
+      meta: { model_family: "whisper", model_size: meta.label },
+    };
+  }
+
   return {
     id,
-    type: "tracked",
-    source_url: label,
-    platform: "local",
+    type: "ingest",
     status: "queued",
     progress: 0,
     error: null,
     created_at: "",
     updated_at: "",
-    meta: { title: label },
+    meta: {
+      title: meta.label,
+      list_id: meta.contextKey ?? undefined,
+      platform: "local",
+      source_url: meta.label,
+    },
+  };
+}
+
+function isIngestJob(job: Job): job is IngestJob {
+  return job.type === "ingest";
+}
+
+function isModelDownloadJob(job: Job): job is ModelDownloadJob {
+  return job.type === "model_download";
+}
+
+function inferTrackedMeta(job: Job): TrackedJobMeta {
+  if (isModelDownloadJob(job)) {
+    const modelSize = typeof job.meta.model_size === "string" ? job.meta.model_size : "model";
+    return {
+      producer: "whisper_download",
+      label: modelSize,
+      contextKey: modelSize,
+    };
+  }
+
+  const title = typeof job.meta.title === "string" && job.meta.title.trim()
+    ? job.meta.title
+    : typeof job.meta.source_url === "string"
+      ? job.meta.source_url
+      : "Queued source";
+  return {
+    producer: "ingest",
+    label: title,
+    contextKey: typeof job.meta.list_id === "string" ? job.meta.list_id : null,
   };
 }
 
@@ -74,11 +120,12 @@ function mergeJobs(
   trackedJobs: Record<string, TrackedJobMeta>,
   nextJobs: Job[],
 ) {
-  const byId = new Map(nextJobs.map((job) => [job.id, job]));
-  const merged: Record<string, Job> = {};
+  const merged: Record<string, Job> = Object.fromEntries(
+    nextJobs.map((job) => [job.id, job]),
+  );
 
   for (const [jobId, meta] of Object.entries(trackedJobs)) {
-    merged[jobId] = byId.get(jobId) ?? previous[jobId] ?? createPlaceholderJob(jobId, meta.label);
+    merged[jobId] = merged[jobId] ?? previous[jobId] ?? createPlaceholderJob(jobId, meta);
   }
 
   return merged;
@@ -95,18 +142,17 @@ function toActivityItem(job: Job, meta: TrackedJobMeta): JobActivityItem {
 }
 
 export function getJobTitle(job: Job, fallbackLabel: string): string {
-  const title = job.meta.title;
-  if (typeof title === "string" && title.trim()) {
-    return title;
+  if (isIngestJob(job)) {
+    if (typeof job.meta.title === "string" && job.meta.title.trim()) {
+      return job.meta.title;
+    }
+    if (typeof job.meta.source_url === "string" && job.meta.source_url.trim()) {
+      return job.meta.source_url;
+    }
   }
 
-  const modelSize = job.meta.model_size;
-  if (typeof modelSize === "string" && modelSize.trim()) {
-    return modelSize;
-  }
-
-  if (job.source_url.trim()) {
-    return job.source_url;
+  if (isModelDownloadJob(job) && typeof job.meta.model_size === "string" && job.meta.model_size.trim()) {
+    return job.meta.model_size;
   }
 
   return fallbackLabel;
@@ -160,10 +206,14 @@ export function JobActivityProvider({ children }: { children: React.ReactNode })
     return task;
   }, []);
 
+  useEffect(() => {
+    void refreshNow();
+  }, [refreshNow]);
+
   const visibleJobs = useMemo(() => {
-    return Object.entries(trackedJobs)
-      .filter(([jobId]) => !dismissedJobIds.includes(jobId))
-      .map(([jobId, meta]) => toActivityItem(jobsById[jobId] ?? createPlaceholderJob(jobId, meta.label), meta))
+    return Object.values(jobsById)
+      .filter((job) => !dismissedJobIds.includes(job.id))
+      .map((job) => toActivityItem(job, trackedJobs[job.id] ?? inferTrackedMeta(job)))
       .sort((left, right) => {
         if (left.isTerminal !== right.isTerminal) {
           return left.isTerminal ? 1 : -1;
@@ -212,7 +262,11 @@ export function JobActivityProvider({ children }: { children: React.ReactNode })
     setJobsById((current) => {
       const next = { ...current };
       for (const job of jobs) {
-        next[job.id] = current[job.id] ?? createPlaceholderJob(job.id, job.label);
+        next[job.id] = current[job.id] ?? createPlaceholderJob(job.id, {
+          producer: job.producer,
+          label: job.label,
+          contextKey: job.contextKey ?? null,
+        });
       }
       return next;
     });
@@ -220,7 +274,7 @@ export function JobActivityProvider({ children }: { children: React.ReactNode })
     void refreshNow();
   }, [refreshNow]);
 
-  const dismissJob = useCallback((jobId: string) => {
+  const removeJobLocally = useCallback((jobId: string) => {
     setDismissedJobIds((current) => (current.includes(jobId) ? current : [...current, jobId]));
     setTrackedJobs((current) => {
       const next = { ...current };
@@ -235,41 +289,36 @@ export function JobActivityProvider({ children }: { children: React.ReactNode })
     });
   }, []);
 
+  const dismissJob = useCallback(async (jobId: string) => {
+    try {
+      await api.deleteJob(jobId);
+      removeJobLocally(jobId);
+      setErrorMessage(null);
+    } catch (error) {
+      setErrorMessage(toErrorMessage(error));
+    }
+  }, [removeJobLocally]);
+
   const clearTerminalJobs = useCallback(() => {
     const terminalIds = visibleJobs.filter((job) => job.isTerminal).map((job) => job.job.id);
     if (terminalIds.length === 0) {
       return;
     }
 
-    setDismissedJobIds((current) => [...current, ...terminalIds.filter((jobId) => !current.includes(jobId))]);
-    setTrackedJobs((current) => {
-      const next = { ...current };
-      for (const jobId of terminalIds) {
-        delete next[jobId];
-      }
-      trackedJobsRef.current = next;
-      return next;
-    });
-    setJobsById((current) => {
-      const next = { ...current };
-      for (const jobId of terminalIds) {
-        delete next[jobId];
-      }
-      return next;
-    });
-  }, [visibleJobs]);
+    void Promise.all(terminalIds.map((jobId) => dismissJob(jobId)));
+  }, [dismissJob, visibleJobs]);
 
   const cancelJob = useCallback(async (jobId: string) => {
     setCancellingJobId(jobId);
     try {
       await api.deleteJob(jobId);
-      dismissJob(jobId);
+      removeJobLocally(jobId);
     } catch (error) {
       setErrorMessage(toErrorMessage(error));
     } finally {
       setCancellingJobId(null);
     }
-  }, [dismissJob]);
+  }, [removeJobLocally]);
 
   const getJobs = useCallback(
     (producer: JobProducer, contextKey?: string) => {

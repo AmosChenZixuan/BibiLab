@@ -106,20 +106,20 @@ describe("transcript tab", () => {
       model_family: "whisper",
       model_size: "large-v3",
     });
-    vi.mocked(api.listJobs).mockResolvedValue([
-      {
-        id: "job-download",
-        type: "model_download",
-        source_url: "",
-        platform: "local",
-        status: "downloading",
-        progress: 32,
-        error: null,
-        created_at: "2026-03-31T20:00:00Z",
-        updated_at: "2026-03-31T20:01:00Z",
-        meta: { model_family: "whisper", model_size: "large-v3" },
-      },
-    ]);
+    vi.mocked(api.listJobs)
+      .mockResolvedValueOnce([])
+      .mockResolvedValue([
+        {
+          id: "job-download",
+          type: "model_download",
+          status: "downloading",
+          progress: 32,
+          error: null,
+          created_at: "2026-03-31T20:00:00Z",
+          updated_at: "2026-03-31T20:01:00Z",
+          meta: { model_family: "whisper", model_size: "large-v3" },
+        },
+      ]);
 
     renderTab();
 

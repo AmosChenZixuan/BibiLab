@@ -210,27 +210,33 @@ describe("list detail page", () => {
           return Response.json([
             {
               id: "job-1",
-              type: "video",
-              source_url: "https://www.bilibili.com/video/BV1playlist",
-              platform: "bilibili",
+              type: "ingest",
               status: "done",
               progress: 100,
               error: null,
               created_at: "2026-03-31T21:00:00Z",
               updated_at: "2026-03-31T21:10:00Z",
-              meta: { title: "Partitioning Part 1", list_id: "list-1" },
+              meta: {
+                title: "Partitioning Part 1",
+                list_id: "list-1",
+                source_url: "https://www.bilibili.com/video/BV1playlist",
+                platform: "bilibili",
+              },
             },
             {
               id: "job-2",
-              type: "video",
-              source_url: "https://www.bilibili.com/video/BV1playlist",
-              platform: "bilibili",
+              type: "ingest",
               status: "done",
               progress: 100,
               error: null,
               created_at: "2026-03-31T21:01:00Z",
               updated_at: "2026-03-31T21:11:00Z",
-              meta: { title: "Partitioning Part 2", list_id: "list-1" },
+              meta: {
+                title: "Partitioning Part 2",
+                list_id: "list-1",
+                source_url: "https://www.bilibili.com/video/BV1playlist",
+                platform: "bilibili",
+              },
             },
           ]);
         }
@@ -238,15 +244,18 @@ describe("list detail page", () => {
         return Response.json([
           {
             id: "job-3",
-            type: "video",
-            source_url: "https://www.bilibili.com/video/BV1old",
-            platform: "bilibili",
+            type: "ingest",
             status: "done",
             progress: 100,
             error: null,
             created_at: "2026-03-31T21:12:00Z",
             updated_at: "2026-03-31T21:13:00Z",
-            meta: { title: "Existing Source", list_id: "list-1" },
+            meta: {
+              title: "Existing Source",
+              list_id: "list-1",
+              source_url: "https://www.bilibili.com/video/BV1old",
+              platform: "bilibili",
+            },
           },
         ]);
       }

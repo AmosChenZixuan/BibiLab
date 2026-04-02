@@ -12,7 +12,7 @@ type Props = {
   error: string | null;
   ingestStatus: string | null;
   ingestJobs: JobActivityItem[];
-  onDismissIngestJob: (jobId: string) => void;
+  onDismissIngestJob: (jobId: string) => Promise<void>;
   onDelete: (source: Source) => Promise<void>;
   onIngest: (url: string, rerun: boolean) => Promise<void>;
   onOpen: (source: Source) => void;
@@ -95,7 +95,7 @@ export function SourceList({
                       type="button"
                       className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-muted transition-colors hover:bg-border hover:text-ink"
                       aria-label={`Dismiss ${title}`}
-                      onClick={() => onDismissIngestJob(item.job.id)}
+                      onClick={() => void onDismissIngestJob(item.job.id)}
                     >
                       <MdClose size={12} />
                     </button>

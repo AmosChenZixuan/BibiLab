@@ -96,7 +96,7 @@ export function JobSpirit() {
                           disabled={cancellingJobId === item.job.id}
                           onClick={() =>
                             item.isTerminal
-                              ? dismissJob(item.job.id)
+                              ? void dismissJob(item.job.id)
                               : void cancelJob(item.job.id)
                           }
                         >

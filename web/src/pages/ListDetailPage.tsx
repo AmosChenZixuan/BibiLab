@@ -57,7 +57,7 @@ export function ListDetailPage() {
           refreshedCompletedJobsRef.current = [...refreshedCompletedJobsRef.current, ...completedJobIds];
           setSources(nextSources);
           for (const id of completedJobIds) {
-            dismissJob(id);
+            void dismissJob(id);
           }
         }
       } catch (error) {

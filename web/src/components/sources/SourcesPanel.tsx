@@ -12,7 +12,7 @@ type Props = {
   ingestError: string | null;
   ingestJobs: JobActivityItem[];
   ingestStatus: string | null;
-  onDismissIngestJob: (jobId: string) => void;
+  onDismissIngestJob: (jobId: string) => Promise<void>;
   note: NoteContent | null;
   onBack: () => void;
   onDelete: (source: Source) => Promise<void>;

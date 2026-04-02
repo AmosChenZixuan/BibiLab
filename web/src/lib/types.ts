@@ -12,18 +12,53 @@ export type Source = {
   processed_at: string;
 };
 
-export type Job = {
+export type JobStatus =
+  | "queued"
+  | "downloading"
+  | "transcribing"
+  | "extracting"
+  | "writing"
+  | "done"
+  | "failed"
+  | "needs_auth";
+
+type BaseJob = {
   id: string;
-  type: string;
-  source_url: string;
-  platform: string;
-  status: string;
+  status: JobStatus;
   progress: number;
   error: string | null;
   created_at: string;
   updated_at: string;
-  meta: Record<string, unknown>;
 };
+
+export type IngestMeta = {
+  list_id?: string;
+  source_url?: string;
+  platform?: string;
+  video_id?: string;
+  title?: string;
+  cover_url?: string;
+  duration_seconds?: number;
+  uploader?: string;
+  rerun?: boolean;
+};
+
+export type ModelDownloadMeta = {
+  model_family?: string;
+  model_size?: string;
+};
+
+export type IngestJob = BaseJob & {
+  type: "ingest";
+  meta: IngestMeta;
+};
+
+export type ModelDownloadJob = BaseJob & {
+  type: "model_download";
+  meta: ModelDownloadMeta;
+};
+
+export type Job = IngestJob | ModelDownloadJob;
 
 export type LocusConfig = {
   accounts: {
