@@ -139,8 +139,8 @@ export function SettingsPage() {
                 aria-selected={isActive}
                 className={`flex items-center gap-3 rounded-xl px-4 py-3 text-left transition ${
                   isActive
-                    ? "bg-[rgba(125,217,255,0.12)] font-semibold text-[#274970]"
-                    : "text-[#8096b3] hover:bg-[rgba(125,217,255,0.08)] hover:text-[#274970]"
+                    ? "bg-sky/12 font-semibold text-ink"
+                    : "text-muted hover:bg-sky/8 hover:text-ink"
                 }`}
                 title={healthMeta.label}
                 onClick={() => setActiveTab(tab.key)}
