@@ -4,6 +4,7 @@ import ReactMarkdown from "react-markdown";
 
 import { downloadTextFile } from "../../lib/download";
 import type { NoteContent, Source } from "../../lib/types";
+import { Button, PanelBody } from "../../components/ui";
 
 type Props = {
   activeTab: "note" | "transcript";
@@ -38,48 +39,48 @@ export function SourceDetail({
   }
 
   return (
-    <div className="workspace-panel__body">
-      <div className="source-detail__header">
-        <button className="ghost-button" onClick={onBack} type="button">
+    <PanelBody>
+      <div className="grid gap-3">
+        <Button variant="ghost" onClick={onBack} type="button">
           Back to sources
-        </button>
+        </Button>
         <div>
-          <h3 className="source-detail__title">{source.title}</h3>
-          <p className="page-lede">{source.platform}</p>
+          <h3 className="m-0 font-serif text-2xl">{source.title}</h3>
+          <p className="m-0 text-muted">{source.platform}</p>
         </div>
       </div>
 
-      <div className="source-detail__tabs">
+      <div className="flex flex-wrap items-center gap-2.5">
         <button
-          className={`nav-link${activeTab === "note" ? " active" : ""}`}
+          className={`rounded-full border px-3.5 py-2.5 transition ${activeTab === "note" ? "border-transparent bg-blue text-white" : "border-border bg-sky/10 text-muted/80"}`}
           onClick={() => void onSelectTab("note")}
           type="button"
         >
           Note
         </button>
         <button
-          className={`nav-link${activeTab === "transcript" ? " active" : ""}`}
+          className={`rounded-full border px-3.5 py-2.5 transition ${activeTab === "transcript" ? "border-transparent bg-blue text-white" : "border-border bg-sky/10 text-muted/80"}`}
           onClick={() => void onSelectTab("transcript")}
           type="button"
         >
           Transcript
         </button>
-        <button className="ghost-button" disabled={downloading || !note} onClick={handleDownload} type="button">
+        <Button variant="ghost" disabled={downloading || !note} onClick={handleDownload} type="button">
           Download note
-        </button>
+        </Button>
       </div>
 
       {activeTab === "note" ? (
-        <div className="markdown-panel">
+        <div className="min-h-[320px] rounded-2xl border border-border bg-white/60 p-4.5">
           <ReactMarkdown>{note?.markdown ?? ""}</ReactMarkdown>
         </div>
       ) : (
-        <div className="transcript-panel">
-          {transcriptLoading ? <p className="page-lede">Loading transcript...</p> : null}
-          {transcriptError ? <p className="status-message error">{transcriptError}</p> : null}
-          {transcript ? <pre>{transcript}</pre> : null}
+        <div className="min-h-[320px] rounded-2xl border border-border bg-white/60 p-4.5">
+          {transcriptLoading ? <p className="m-0 text-muted">Loading transcript...</p> : null}
+          {transcriptError ? <p className="m-0 text-sm text-danger">{transcriptError}</p> : null}
+          {transcript ? <pre className="m-0 whitespace-pre-wrap font-mono text-[#4e6485]">{transcript}</pre> : null}
         </div>
       )}
-    </div>
+    </PanelBody>
   );
 }

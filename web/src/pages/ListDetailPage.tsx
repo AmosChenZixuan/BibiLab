@@ -7,6 +7,7 @@ import { SourcesPanel } from "../components/sources/SourcesPanel";
 import { api, notifyJobsChanged, toErrorMessage } from "../lib/api";
 import { downloadTextFile } from "../lib/download";
 import type { NoteContent, Source } from "../lib/types";
+import { Button, Panel, PanelBody, PanelTitle } from "../components/ui";
 
 function formatCount(count: number, noun: string): string {
   return `${count} ${noun}${count === 1 ? "" : "s"}`;
@@ -152,16 +153,16 @@ export function ListDetailPage() {
   }
 
   return (
-    <div className="workspace">
-      <section className="workspace-hero">
-        <p className="home-hero__eyebrow">Notebook workspace</p>
+    <div className="grid gap-4">
+      <section className="grid gap-4">
+        <p className="text-xs uppercase tracking-[0.14em] text-pink">Notebook workspace</p>
         {editingName ? (
-          <label className="field workspace-hero__rename">
+          <label className="grid max-w-[560px] gap-1.5">
             <span className="sr-only">List name</span>
             <input
               aria-label="List name"
               autoFocus
-              className="workspace-hero__name-input"
+              className="w-full rounded-2xl border border-border bg-white/84 px-3.5 py-3 font-serif text-display leading-[0.95] text-ink outline-none"
               onBlur={() => void handleRenameCommit()}
               onChange={(event) => setDraftName(event.target.value)}
               onKeyDown={(event) => {
@@ -177,11 +178,11 @@ export function ListDetailPage() {
             />
           </label>
         ) : (
-          <div className="workspace-hero__title-row">
-            <h1 className="page-heading">{listName}</h1>
-            <button
+          <div className="flex flex-wrap items-center gap-3">
+            <h1 className="m-0 mb-2 font-serif text-display leading-[0.95]">{listName}</h1>
+            <Button
               aria-label="Edit list name"
-              className="ghost-button"
+              variant="ghost"
               onClick={() => {
                 setDraftName(listName);
                 setEditingName(true);
@@ -190,20 +191,20 @@ export function ListDetailPage() {
               type="button"
             >
               Rename
-            </button>
+            </Button>
           </div>
         )}
-        <p className="page-lede">Queue sources, inspect notes, and export a list overview from one reading surface.</p>
-        {renameError ? <p className="status-message error">{renameError}</p> : null}
+        <p className="m-0 text-muted">Queue sources, inspect notes, and export a list overview from one reading surface.</p>
+        {renameError ? <p className="m-0 text-sm text-danger">{renameError}</p> : null}
       </section>
-      <div className="workspace-grid">
+      <div className="grid grid-cols-[1.25fr_1fr_0.9fr] items-start gap-4 max-[820px]:grid-cols-1">
         {loadError ? (
-          <section className="workspace-panel">
-            <h2 className="workspace-panel__title">Sources</h2>
-            <div className="workspace-panel__body">
-              <p className="status-message error">{loadError}</p>
-            </div>
-          </section>
+          <Panel variant="workspace">
+            <PanelTitle>Sources</PanelTitle>
+            <PanelBody>
+              <p className="m-0 text-sm text-danger">{loadError}</p>
+            </PanelBody>
+          </Panel>
         ) : (
           <SourcesPanel
             activeTab={activeTab}

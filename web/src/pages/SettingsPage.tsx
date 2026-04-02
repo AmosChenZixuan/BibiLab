@@ -1,45 +1,73 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 
-import { ConfigForm } from "../components/settings/ConfigForm";
-import { HealthPanel } from "../components/settings/HealthPanel";
-import { WhisperModelsCard } from "../components/settings/WhisperModelsCard";
-import { api, notifyJobsChanged, toErrorMessage } from "../lib/api";
-import type { HealthResponse, LocusConfig, WhisperModel } from "../lib/types";
+import { LlmTab } from "../components/settings/LlmTab";
+import { OtherTab } from "../components/settings/OtherTab";
+import { TranscriptTab } from "../components/settings/TranscriptTab";
+import { api, notifyHealthChanged, toErrorMessage } from "../lib/api";
+import { deriveDependencyHealthTier, HEALTH_META } from "../lib/health";
+import type { HealthDependency, LocusConfig } from "../lib/types";
+import { Panel } from "../components/ui";
+
+type TabKey = "llm" | "transcript" | "other";
+
+const TABS: Array<{ key: TabKey; label: string; dependencyKeys: string[] }> = [
+  { key: "llm", label: "LLM", dependencyKeys: ["llm"] },
+  { key: "transcript", label: "Transcript", dependencyKeys: ["whisper_model", "cuda"] },
+  {
+    key: "other",
+    label: "Other",
+    dependencyKeys: ["backend", "ffmpeg", "embedding_model"],
+  },
+];
+
+function isTabKey(value: string | null): value is TabKey {
+  return value === "llm" || value === "transcript" || value === "other";
+}
+
+function hasConfigChanged(current: LocusConfig, next: LocusConfig) {
+  return JSON.stringify(current) !== JSON.stringify(next);
+}
+
+function shouldRefreshHealth(current: LocusConfig, next: LocusConfig) {
+  return (
+    current.ai.provider !== next.ai.provider ||
+    current.ai.model !== next.ai.model ||
+    current.ai.api_key !== next.ai.api_key ||
+    current.ai.base_url !== next.ai.base_url ||
+    current.transcription.model_size !== next.transcription.model_size ||
+    current.transcription.device !== next.transcription.device
+  );
+}
 
 export function SettingsPage() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [config, setConfig] = useState<LocusConfig | null>(null);
-  const [health, setHealth] = useState<HealthResponse | null>(null);
-  const [models, setModels] = useState<WhisperModel[]>([]);
+  const [dependencies, setDependencies] = useState<Record<string, HealthDependency>>({});
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [refreshingHealth, setRefreshingHealth] = useState(false);
+  const activeTab = useMemo<TabKey>(() => {
+    const tab = searchParams.get("tab");
+    return isTabKey(tab) ? tab : "llm";
+  }, [searchParams]);
 
-  async function refreshHealth() {
-    setRefreshingHealth(true);
-    try {
-      setHealth(await api.getHealth());
-    } finally {
-      setRefreshingHealth(false);
-    }
-  }
-
-  async function refreshModels() {
-    setModels(await api.listWhisperModels());
+  function setActiveTab(tab: TabKey) {
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.set("tab", tab);
+    setSearchParams(nextParams, { replace: true });
   }
 
   useEffect(() => {
     let cancelled = false;
     async function load() {
       try {
-        const [nextConfig, nextHealth, nextModels] = await Promise.all([
+        const [nextConfig, nextHealth] = await Promise.all([
           api.getConfig(),
           api.getHealth(),
-          api.listWhisperModels(),
         ]);
         if (!cancelled) {
           setConfig(nextConfig);
-          setHealth(nextHealth);
-          setModels(nextModels);
+          setDependencies(nextHealth.dependencies ?? {});
           setLoadError(null);
         }
       } catch (error) {
@@ -59,45 +87,85 @@ export function SettingsPage() {
     };
   }, []);
 
-  async function handleSave(patch: Partial<LocusConfig>) {
-    const nextConfig = await api.putConfig(patch);
-    setConfig(nextConfig);
-  }
+  async function handleSave(nextConfig: LocusConfig) {
+    if (!config || !hasConfigChanged(config, nextConfig)) {
+      return;
+    }
 
-  async function handleDownload(modelSize: string) {
-    await api.downloadWhisperModel(modelSize);
-    notifyJobsChanged();
-    await refreshModels();
+    const savedConfig = await api.putConfig(nextConfig);
+    setConfig(savedConfig);
+
+    if (shouldRefreshHealth(config, nextConfig)) {
+      const nextHealth = await api.getHealth();
+      setDependencies(nextHealth.dependencies ?? {});
+      notifyHealthChanged(nextHealth);
+    }
   }
 
   if (loading) {
     return (
-      <section className="panel">
+      <Panel variant="app">
         <p>Loading settings...</p>
-      </section>
+      </Panel>
     );
   }
 
-  if (loadError || !config || !health) {
+  if (loadError || !config) {
     return (
-      <section className="panel">
-        <h1 className="page-heading">Settings</h1>
-        <p className="status-message error">{loadError ?? "Request failed"}</p>
-      </section>
+      <Panel variant="app">
+        <h1 className="m-0 mb-2 font-serif text-display leading-[0.95]">Settings</h1>
+        <p className="m-0 text-sm text-danger">{loadError ?? "Request failed"}</p>
+      </Panel>
     );
   }
 
   return (
-    <div className="form-stack">
+    <div className="grid gap-4">
       <section>
-        <h1 className="page-heading">Settings</h1>
-        <p className="page-lede">Configure accounts, model choices, local dependencies, and downloads.</p>
+        <h1 className="m-0 mb-2 font-serif text-display leading-[0.95]">Settings</h1>
       </section>
-      <div className="settings-grid">
-        <ConfigForm config={config} onSave={handleSave} />
-        <HealthPanel health={health} onRefresh={refreshHealth} refreshing={refreshingHealth} />
-        <WhisperModelsCard models={models} onDownload={handleDownload} />
-      </div>
+
+      <section className="grid items-start gap-5 md:grid-cols-[180px_minmax(0,1fr)]">
+        <div className="flex flex-col gap-1">
+          {TABS.map((tab) => {
+            const healthTier = deriveDependencyHealthTier(dependencies, tab.dependencyKeys);
+            const isActive = activeTab === tab.key;
+            const healthMeta = HEALTH_META[healthTier];
+
+            return (
+              <button
+                key={tab.key}
+                role="tab"
+                aria-selected={isActive}
+                className={`flex items-center gap-3 rounded-xl px-4 py-3 text-left transition ${
+                  isActive
+                    ? "bg-sky/12 font-semibold text-ink"
+                    : "text-muted hover:bg-sky/8 hover:text-ink"
+                }`}
+                title={healthMeta.label}
+                onClick={() => setActiveTab(tab.key)}
+                type="button"
+              >
+                <span
+                  className={`h-2.5 w-2.5 rounded-full ${healthMeta.className}`}
+                  aria-hidden="true"
+                />
+                <span>{tab.label}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="min-w-0">
+          {activeTab === "llm" ? <LlmTab config={config} onBlur={handleSave} /> : null}
+          {activeTab === "transcript" ? (
+            <TranscriptTab config={config} dependencies={dependencies} onBlur={handleSave} />
+          ) : null}
+          {activeTab === "other" ? (
+            <OtherTab config={config} dependencies={dependencies} onBlur={handleSave} />
+          ) : null}
+        </div>
+      </section>
     </div>
   );
 }

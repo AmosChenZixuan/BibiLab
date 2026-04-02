@@ -1,0 +1,178 @@
+import { useEffect, useId, useState } from "react";
+
+import { api } from "../../lib/api";
+import type { HealthDependency, LocusConfig, WhisperModel } from "../../lib/types";
+import { Button, SettingsField } from "../../components/ui";
+
+type TranscriptTabProps = {
+  config: LocusConfig;
+  dependencies: Record<string, HealthDependency>;
+  onBlur: (updated: LocusConfig) => void;
+};
+
+export function TranscriptTab({ config, dependencies, onBlur }: TranscriptTabProps) {
+  const [localTranscription, setLocalTranscription] = useState(config.transcription);
+  const [models, setModels] = useState<WhisperModel[]>([]);
+  const [downloading, setDownloading] = useState<string | null>(null);
+  const modelSizeId = useId();
+  const deviceId = useId();
+  const languageId = useId();
+
+  useEffect(() => {
+    setLocalTranscription(config.transcription);
+  }, [config]);
+
+  async function refreshModels(cancelled = false) {
+    try {
+      const nextModels = await api.listWhisperModels();
+      if (!cancelled) {
+        setModels(nextModels);
+      }
+    } catch {
+      if (!cancelled) {
+        setModels([]);
+      }
+    }
+  }
+
+  useEffect(() => {
+    let cancelled = false;
+
+    void refreshModels(cancelled);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  function handleBlur() {
+    onBlur({ ...config, transcription: localTranscription });
+  }
+
+  async function handleDownload(modelName: string) {
+    setDownloading(modelName);
+    try {
+      await api.downloadWhisperModel(modelName);
+      await refreshModels();
+    } finally {
+      setDownloading(null);
+    }
+  }
+
+  const installedModels = models.filter((model) => model.installed);
+  const hasSelectedInstalledModel = installedModels.some(
+    (model) => model.name === localTranscription.model_size,
+  );
+  const cudaDependency = dependencies.cuda;
+  const cudaAvailable = cudaDependency?.status === "ok";
+  const deviceHint = cudaAvailable
+    ? "CUDA speeds up transcription. Without it, transcripts still run but take longer on CPU."
+    : cudaDependency?.message ?? "CUDA is unavailable, so transcription will run on CPU.";
+
+  return (
+    <div className="grid gap-4">
+      <div className="flex flex-col gap-3">
+        <SettingsField
+          label="Model Size"
+          hint="Required. Missing the Whisper model blocks transcript generation entirely."
+          htmlFor={modelSizeId}
+        >
+          <select
+            aria-label="Model Size"
+            className="w-full rounded-xl border border-border bg-white/92 px-3 py-2.5 text-ink outline-none transition focus:border-blue/45 focus:ring-2 focus:ring-sky/18 h-11 min-h-11"
+            id={modelSizeId}
+            onBlur={handleBlur}
+            onChange={(event) =>
+              setLocalTranscription((current) => ({ ...current, model_size: event.target.value }))
+            }
+            value={localTranscription.model_size}
+          >
+            {!hasSelectedInstalledModel ? (
+              <option disabled value={localTranscription.model_size}>
+                {localTranscription.model_size} (download required)
+              </option>
+            ) : null}
+            {installedModels.map((model) => (
+              <option key={model.name} value={model.name}>
+                {model.name}
+              </option>
+            ))}
+          </select>
+        </SettingsField>
+
+        <SettingsField label="Device" hint={deviceHint} htmlFor={deviceId}>
+          <select
+            aria-label="Device"
+            className="w-full rounded-xl border border-border bg-white/92 px-3 py-2.5 text-ink outline-none transition focus:border-blue/45 focus:ring-2 focus:ring-sky/18 h-11 min-h-11"
+            id={deviceId}
+            onBlur={handleBlur}
+            onChange={(event) =>
+              setLocalTranscription((current) => ({ ...current, device: event.target.value }))
+            }
+            value={localTranscription.device}
+          >
+            <option value="cpu">CPU</option>
+            {cudaAvailable && <option value="cuda">CUDA</option>}
+          </select>
+        </SettingsField>
+
+        <SettingsField
+          label="Language"
+          hint="Controls decoder accuracy. A wrong language setting can reduce transcript quality."
+          htmlFor={languageId}
+        >
+          <select
+            aria-label="Language"
+            className="w-full rounded-xl border border-border bg-white/92 px-3 py-2.5 text-ink outline-none transition focus:border-blue/45 focus:ring-2 focus:ring-sky/18 h-11 min-h-11"
+            id={languageId}
+            onBlur={handleBlur}
+            onChange={(event) =>
+              setLocalTranscription((current) => ({ ...current, language: event.target.value }))
+            }
+            value={localTranscription.language}
+          >
+            <option value="auto">Auto</option>
+            <option value="zh">Chinese</option>
+            <option value="en">English</option>
+          </select>
+        </SettingsField>
+      </div>
+
+      <div className="grid gap-3">
+        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted">
+          Model Downloads
+        </p>
+        <p className="text-sm leading-5 text-muted">Whisper model files are required. If missing, transcription cannot start until a model is downloaded.</p>
+        <div className="overflow-hidden rounded-2xl border border-border bg-white/64">
+          <table className="w-full border-collapse text-left">
+            <tbody>
+              {models.map((model) => (
+                <tr key={model.name} className="border-t border-border">
+                  <td className="px-4 py-3 font-semibold text-ink">{model.name}</td>
+                  <td className="px-4 py-3">
+                    <div className="flex items-center justify-end">
+                      {model.installed ? (
+                        <p className="text-right font-mono text-sm text-muted">
+                          {model.path}
+                        </p>
+                      ) : (
+                        <Button
+                          variant="secondary"
+                          aria-label={`Download ${model.name}`}
+                          disabled={downloading === model.name}
+                          onClick={() => void handleDownload(model.name)}
+                          type="button"
+                        >
+                          {downloading === model.name ? "Queued..." : `Download ${model.name}`}
+                        </Button>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}

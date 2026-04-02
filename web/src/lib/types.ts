@@ -36,7 +36,7 @@ export type LocusConfig = {
     provider: string;
     model: string;
     api_key: string;
-    base_url: string | null;
+    base_url: string;
   };
   transcription: {
     engine: string;

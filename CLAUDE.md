@@ -49,7 +49,7 @@ FastAPI Backend (Python)
 ```
 
 **Key design decisions:**
-- **Two-table DB strategy:** `jobs` (ephemeral queue) + `processing_log` (permanent history). Jobs restart-safe by re-queueing `queued`/`in_progress` rows on startup.
+- **Three-table DB strategy:** `lists` (registry) + `jobs` (ephemeral queue) + `sources` (active catalog). Jobs restart-safe by re-queueing `queued`/`in_progress` rows on startup.
 - **RAG chunking:** Greedy merge of Whisper segments to ~300 tokens. Source transcript never modified; stored at `~/.locus/transcripts/` (outside vault, invisible to Obsidian by default).
 - **Local-first:** No cloud services required. ChromaDB runs embedded, transcription via Faster Whisper (CUDA-capable), video download via yt-dlp.
 - **Platform adapters:** `adapters/base.py` defines the `PlatformAdapter` ABC; `bilibili.py` is the only current implementation.
@@ -72,10 +72,28 @@ backend/src/locus/
 web/src/
 ├── app/              # Router and shared app shell
 ├── components/       # Route-level UI sections (lists, sources, jobs, settings, studio)
+│   └── ui/           # Shared wrapper components: Button, Input, FormField, SettingsField, Panel, PanelTitle, PanelBody, StatusChip
 ├── pages/            # Home, list detail, settings
 ├── lib/              # Typed API wrappers, downloads, shared types
 └── test/             # Vitest + RTL coverage
 ```
+
+## Frontend Design System
+
+Tokens are defined in `web/src/styles/app.css` (`@theme` block). Use token utility classes — never arbitrary color, shadow, or radius values.
+
+Reusable components live in `web/src/components/ui/`:
+
+| Component | Usage |
+|---|---|
+| `Button` | `variant="primary\|secondary\|ghost\|danger"` |
+| `Input` | Text/number inputs; `inputSize="md"` (default) or `"sm"` (settings rows) |
+| `FormField` | Renders as `<label>` wrapping a single control with label + optional hint |
+| `SettingsField` | Two-column settings row: label+hint left, control right; `align="start\|center"` |
+| `Panel` | Card container; `variant="app"` (default) or `"workspace"` (three-panel layout) |
+| `PanelTitle` | Title bar for `variant="workspace"` panels (serif heading + bottom border) |
+| `PanelBody` | Content area for `variant="workspace"` panels (grid gap + padding) |
+| `StatusChip` | Inline status badge; `status="ok\|error\|unavailable\|neutral"` |
 
 ## Notes
 

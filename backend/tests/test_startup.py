@@ -4,6 +4,9 @@ from unittest.mock import patch
 import pytest
 from fastapi.testclient import TestClient
 
+from locus.config import AIConfig
+from locus.routers.health import _check_llm
+
 
 @pytest.fixture()
 def tmp_locus_home(tmp_path: Path):
@@ -31,7 +34,8 @@ def test_health_returns_200(client: TestClient):
     deps = data["dependencies"]
     assert "backend" in deps
     assert deps["backend"]["status"] == "ok"
-    assert all(k in deps for k in ("llm", "whisper_model", "ffmpeg", "cuda", "bilibili_session"))
+    assert all(k in deps for k in ("llm", "whisper_model", "ffmpeg", "cuda", "embedding_model"))
+    assert "bilibili_session" not in deps
 
 
 def test_health_includes_embedding_model(client: TestClient, tmp_locus_home: Path):  # noqa: ARG001
@@ -40,6 +44,88 @@ def test_health_includes_embedding_model(client: TestClient, tmp_locus_home: Pat
     deps = resp.json()["dependencies"]
     assert "embedding_model" in deps
     assert deps["embedding_model"]["status"] in ("ok", "error")
+
+
+def test_health_reports_ffmpeg_install_path(client: TestClient):
+    with patch("locus.routers.health.shutil.which", return_value="/usr/bin/ffmpeg"):
+        resp = client.get("/health")
+
+    assert resp.status_code == 200
+    assert resp.json()["dependencies"]["ffmpeg"] == {
+        "status": "ok",
+        "message": "/usr/bin/ffmpeg",
+    }
+
+
+def test_health_reports_embedding_model_install_path(tmp_locus_home: Path, client: TestClient):  # noqa: ARG001
+    model_file = tmp_locus_home / "models" / "embedding" / "onnx" / "model.onnx"
+    model_file.parent.mkdir(parents=True)
+    model_file.write_bytes(b"fake")
+
+    with (
+        patch(
+            "locus.routers.health._embedding_model_dir",
+            return_value=tmp_locus_home / "models" / "embedding",
+        ),
+        patch("locus.routers.health.is_embedding_model_downloaded", return_value=True),
+    ):
+        resp = client.get("/health")
+
+    assert resp.status_code == 200
+    assert resp.json()["dependencies"]["embedding_model"] == {
+        "status": "ok",
+        "message": str(model_file),
+    }
+
+
+@pytest.mark.asyncio
+async def test_llm_health_requires_base_url():
+    cfg = type(
+        "Cfg",
+        (),
+        {"ai": AIConfig(provider="openai", model="gpt-4o", api_key="sk-test", base_url="")},
+    )()
+
+    result = await _check_llm(cfg)
+
+    assert result == {"status": "error", "message": "base_url not configured"}
+
+
+@pytest.mark.asyncio
+async def test_llm_health_validates_openai_compatible_response_shape():
+    class DummyResponse:
+        status_code = 200
+
+        def json(self):
+            return {"unexpected": []}
+
+    class DummyClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return None
+
+        async def get(self, url, headers):
+            return DummyResponse()
+
+    cfg = type(
+        "Cfg",
+        (),
+        {
+            "ai": AIConfig(
+                provider="custom",
+                model="gpt-4o",
+                api_key="sk-test",
+                base_url="http://localhost:8000/v1",
+            )
+        },
+    )()
+
+    with patch("locus.routers.health.httpx.AsyncClient", return_value=DummyClient()):
+        result = await _check_llm(cfg)
+
+    assert result == {"status": "error", "message": "Invalid models response"}
 
 
 def test_is_embedding_model_downloaded_false_when_absent(tmp_path: Path):

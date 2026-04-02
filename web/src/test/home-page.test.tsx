@@ -61,8 +61,8 @@ describe("home page", () => {
     render(<RouterProvider router={router} />);
 
     expect(screen.getByText(/loading lists/i)).toBeInTheDocument();
-    expect(await screen.findByText(/system healthy/i)).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /settings/i })).toBeInTheDocument();
+    const settingsLink = await screen.findByTitle("Degraded");
+    expect(settingsLink).toHaveAccessibleName(/settings/i);
     expect(await screen.findByRole("heading", { name: "Systems" })).toBeInTheDocument();
 
     const createButtons = screen.getAllByRole("button", { name: /create new list/i });
@@ -167,7 +167,7 @@ describe("home page", () => {
       if (url.endsWith("/api/config") && method === "GET") {
         return Response.json({
           accounts: { bilibili: { cookie: "***", last_verified: "" } },
-          ai: { provider: "openai", model: "gpt-4o", api_key: "***", base_url: null },
+          ai: { provider: "openai", model: "gpt-4o", api_key: "***", base_url: "" },
           transcription: {
             engine: "faster-whisper",
             model_size: "large-v3",

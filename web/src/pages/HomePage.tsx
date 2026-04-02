@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { ListGrid } from "../components/lists/ListGrid";
 import { api, toErrorMessage } from "../lib/api";
 import type { LocusList } from "../lib/types";
+import { Panel } from "../components/ui";
 
 export function HomePage() {
   const navigate = useNavigate();
@@ -63,19 +64,19 @@ export function HomePage() {
   }
 
   return (
-    <div className="form-stack">
-      <section className="home-hero">
-        <p className="home-hero__eyebrow">Capture. Distill. Revisit.</p>
-        <h1 className="page-heading">Turn long-form video into a living, searchable notebook.</h1>
-        <p className="page-lede">
+    <div className="grid gap-4">
+      <section className="grid max-w-[780px] gap-3">
+        <p className="text-xs uppercase tracking-[0.14em] text-pink">Capture. Distill. Revisit.</p>
+        <h1 className="m-0 mb-2 font-serif text-display leading-[0.95]">Turn long-form video into a living, searchable notebook.</h1>
+        <p className="m-0 text-muted">
           Build private list-based workspaces for courses, playlists, and research threads.
         </p>
-        {error ? <p className="status-message error">{error}</p> : null}
+        {error ? <p className="m-0 text-sm text-danger">{error}</p> : null}
       </section>
       {loading ? (
-        <section className="panel">
+        <Panel variant="app">
           <p>Loading lists...</p>
-        </section>
+        </Panel>
       ) : (
         <ListGrid
           busy={busy}

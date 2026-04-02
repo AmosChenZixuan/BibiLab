@@ -1,5 +1,7 @@
 import { useState } from "react";
 
+import { Button, FormField, Input, Panel } from "../../components/ui";
+
 type Props = {
   busy: boolean;
   error: string | null;
@@ -20,30 +22,28 @@ export function CreateListForm({ busy, error, onCreate }: Props) {
   }
 
   return (
-    <section className="panel">
-      <div className="row">
+    <Panel variant="app">
+      <div className="flex flex-wrap items-center gap-3">
         <div>
-          <h2 className="list-card__title">Start a list</h2>
-          <p className="page-lede">Create a destination before you queue any source URLs.</p>
+          <h2 className="m-0 font-serif text-2xl">Start a list</h2>
+          <p className="m-0 text-muted">Create a destination before you queue any source URLs.</p>
         </div>
       </div>
-      <form className="form-stack" onSubmit={handleSubmit}>
-        <label className="field">
-          <span>List name</span>
-          <input
-            aria-label="List name"
+      <form className="mt-4 grid gap-4" onSubmit={handleSubmit}>
+        <FormField label="List name">
+          <Input
             onChange={(event) => setName(event.target.value)}
             placeholder="Systems, Research, History of Film"
             value={name}
           />
-        </label>
-        <div className="inline-actions">
-          <button className="primary-button" disabled={busy} type="submit">
+        </FormField>
+        <div className="flex flex-wrap items-center gap-3">
+          <Button variant="primary" disabled={busy} type="submit">
             {busy ? "Creating..." : "Create list"}
-          </button>
-          {error ? <p className="status-message error">{error}</p> : null}
+          </Button>
+          {error ? <p className="m-0 text-sm text-danger">{error}</p> : null}
         </div>
       </form>
-    </section>
+    </Panel>
   );
 }

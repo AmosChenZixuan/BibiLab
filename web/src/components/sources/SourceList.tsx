@@ -1,6 +1,7 @@
 import { useState } from "react";
 
 import type { Source } from "../../lib/types";
+import { Button, FormField, Input, PanelBody } from "../../components/ui";
 
 type Props = {
   busy: boolean;
@@ -26,18 +27,16 @@ export function SourceList({ busy, error, ingestStatus, onDelete, onIngest, onOp
   }
 
   return (
-    <div className="workspace-panel__body">
-      <form className="form-stack" onSubmit={handleSubmit}>
-        <label className="field">
-          <span>Source URL</span>
-          <input
-            aria-label="Source URL"
+    <PanelBody>
+      <form className="grid gap-4" onSubmit={handleSubmit}>
+        <FormField label="Source URL">
+          <Input
             onChange={(event) => setUrl(event.target.value)}
             placeholder="https://www.bilibili.com/video/..."
             value={url}
           />
-        </label>
-        <label className="checkbox-field">
+        </FormField>
+        <label className="inline-flex items-center gap-2.5">
           <input
             aria-label="Re-run existing source"
             checked={rerun}
@@ -46,44 +45,47 @@ export function SourceList({ busy, error, ingestStatus, onDelete, onIngest, onOp
           />
           <span>Re-run existing source</span>
         </label>
-        <div className="inline-actions">
-          <button className="primary-button" disabled={busy} type="submit">
+        <div className="flex flex-wrap items-center gap-3">
+          <Button variant="primary" disabled={busy} type="submit">
             {busy ? "Queueing..." : "Queue source"}
-          </button>
-          {ingestStatus ? <p className="status-message success">{ingestStatus}</p> : null}
+          </Button>
+          {ingestStatus ? <p className="m-0 text-sm text-success">{ingestStatus}</p> : null}
         </div>
-        {error ? <p className="status-message error">{error}</p> : null}
+        {error ? <p className="m-0 text-sm text-danger">{error}</p> : null}
       </form>
 
-      <div className="source-list">
+      <div className="grid gap-3">
         {sources.length === 0 ? (
-          <div className="source-row source-row--empty">
-            <p className="page-lede">No sources yet. Queue a Bilibili URL to start building this notebook.</p>
+          <div className="flex justify-start rounded-2xl border border-border bg-white/64 px-4 py-3.5">
+            <p className="m-0 text-muted">No sources yet. Queue a Bilibili URL to start building this notebook.</p>
           </div>
         ) : (
           sources.map((source) => (
-            <article className="source-row" key={source.video_id}>
+            <article
+              className="flex items-center justify-between gap-3 rounded-2xl border border-border bg-white/64 px-4 py-3.5"
+              key={source.video_id}
+            >
               <button
                 aria-label={`Open ${source.title}`}
-                className="source-row__open"
+                className="grid gap-1 border-0 bg-transparent text-left text-inherit"
                 onClick={() => onOpen(source)}
                 type="button"
               >
                 <strong>{source.title}</strong>
-                <span className="page-lede">{source.platform}</span>
+                <span className="m-0 text-muted">{source.platform}</span>
               </button>
-              <button
+              <Button
                 aria-label={`Delete ${source.title}`}
-                className="ghost-button"
+                variant="ghost"
                 onClick={() => void onDelete(source)}
                 type="button"
               >
                 Delete
-              </button>
+              </Button>
             </article>
           ))
         )}
       </div>
-    </div>
+    </PanelBody>
   );
 }
