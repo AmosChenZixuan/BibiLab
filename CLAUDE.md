@@ -72,10 +72,17 @@ backend/src/locus/
 web/src/
 ├── app/              # Router and shared app shell
 ├── components/       # Route-level UI sections (lists, sources, jobs, settings, studio)
+│   └── ui/           # Shared wrapper components: Button, Panel, FormField, StatusChip
 ├── pages/            # Home, list detail, settings
 ├── lib/              # Typed API wrappers, downloads, shared types
 └── test/             # Vitest + RTL coverage
 ```
+
+## Frontend Design System
+
+Tokens are defined in `web/src/styles/app.css` (`@theme` block). Use token utility classes — never arbitrary color, shadow, or radius values:
+
+Reusable components (`web/src/components/ui/`):
 
 ## Notes
 
