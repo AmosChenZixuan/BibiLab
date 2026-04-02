@@ -45,21 +45,21 @@ export function SourceDetail({
           Back to sources
         </button>
         <div>
-          <h3 className='m-0 font-["Iowan_Old_Style","Palatino_Linotype",serif] text-2xl'>{source.title}</h3>
+          <h3 className="m-0 font-serif text-2xl">{source.title}</h3>
           <p className={mutedTextClass}>{source.platform}</p>
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-[10px]">
+      <div className="flex flex-wrap items-center gap-2.5">
         <button
-          className={`rounded-full border px-[14px] py-2.5 transition ${activeTab === "note" ? "border-transparent bg-[#5b7faa] text-white" : "border-[rgba(106,147,198,0.12)] bg-[rgba(125,217,255,0.1)] text-[#547094]"}`}
+          className={`rounded-full border px-3.5 py-2.5 transition ${activeTab === "note" ? "border-transparent bg-blue text-white" : "border-border bg-sky/10 text-muted/80"}`}
           onClick={() => void onSelectTab("note")}
           type="button"
         >
           Note
         </button>
         <button
-          className={`rounded-full border px-[14px] py-2.5 transition ${activeTab === "transcript" ? "border-transparent bg-[#5b7faa] text-white" : "border-[rgba(106,147,198,0.12)] bg-[rgba(125,217,255,0.1)] text-[#547094]"}`}
+          className={`rounded-full border px-3.5 py-2.5 transition ${activeTab === "transcript" ? "border-transparent bg-blue text-white" : "border-border bg-sky/10 text-muted/80"}`}
           onClick={() => void onSelectTab("transcript")}
           type="button"
         >
@@ -71,14 +71,14 @@ export function SourceDetail({
       </div>
 
       {activeTab === "note" ? (
-        <div className="min-h-[320px] rounded-[18px] border border-[rgba(106,147,198,0.12)] bg-[rgba(255,255,255,0.6)] p-[18px]">
+        <div className="min-h-[320px] rounded-2xl border border-border bg-white/60 p-4.5">
           <ReactMarkdown>{note?.markdown ?? ""}</ReactMarkdown>
         </div>
       ) : (
-        <div className="min-h-[320px] rounded-[18px] border border-[rgba(106,147,198,0.12)] bg-[rgba(255,255,255,0.6)] p-[18px]">
+        <div className="min-h-[320px] rounded-2xl border border-border bg-white/60 p-4.5">
           {transcriptLoading ? <p className={mutedTextClass}>Loading transcript...</p> : null}
           {transcriptError ? <p className={statusErrorClass}>{transcriptError}</p> : null}
-          {transcript ? <pre className="m-0 whitespace-pre-wrap font-['SFMono-Regular',Consolas,monospace] text-[#4e6485]">{transcript}</pre> : null}
+          {transcript ? <pre className="m-0 whitespace-pre-wrap font-mono text-[#4e6485]">{transcript}</pre> : null}
         </div>
       )}
     </div>

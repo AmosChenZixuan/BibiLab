@@ -171,7 +171,7 @@ export function ListDetailPage() {
             <input
               aria-label="List name"
               autoFocus
-              className='w-full rounded-2xl border border-[rgba(106,147,198,0.12)] bg-[rgba(255,255,255,0.84)] px-[14px] py-3 font-["Iowan_Old_Style","Palatino_Linotype",serif] text-[clamp(2rem,4vw,3.5rem)] leading-[0.95] text-[#274970] outline-none'
+              className="w-full rounded-2xl border border-border bg-white/84 px-3.5 py-3 font-serif text-display leading-[0.95] text-ink outline-none"
               onBlur={() => void handleRenameCommit()}
               onChange={(event) => setDraftName(event.target.value)}
               onKeyDown={(event) => {
