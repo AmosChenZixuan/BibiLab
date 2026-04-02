@@ -3,10 +3,7 @@
 @layer base {
   :root {
     color: #1f3557;
-    background:
-      radial-gradient(circle at 12% 10%, rgba(255, 136, 182, 0.18), transparent 28%),
-      radial-gradient(circle at 88% 10%, rgba(74, 215, 255, 0.14), transparent 24%),
-      linear-gradient(180deg, #f8fbff 0%, #f1f7ff 100%);
+    background: #ffffff
     font-family: "Avenir Next", "Segoe UI", sans-serif;
   }
 

@@ -27,7 +27,7 @@ class AIConfig(BaseModel):
     provider: str = "openai"  # openai | anthropic | ollama | custom
     model: str = "gpt-4o"
     api_key: str = ""
-    base_url: str | None = None
+    base_url: str = "https://api.openai.com/v1"
 
 
 class TranscriptionConfig(BaseModel):

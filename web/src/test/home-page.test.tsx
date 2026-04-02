@@ -167,7 +167,7 @@ describe("home page", () => {
       if (url.endsWith("/api/config") && method === "GET") {
         return Response.json({
           accounts: { bilibili: { cookie: "***", last_verified: "" } },
-          ai: { provider: "openai", model: "gpt-4o", api_key: "***", base_url: null },
+          ai: { provider: "openai", model: "gpt-4o", api_key: "***", base_url: "" },
           transcription: {
             engine: "faster-whisper",
             model_size: "large-v3",

@@ -1,147 +1,172 @@
-import { cleanup, render, screen } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
-import { RouterProvider, createMemoryRouter } from "react-router-dom";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { MemoryRouter, useLocation } from "react-router-dom";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
-import { routes } from "../app/routes";
+import { LanguageProvider } from "../app/LanguageContext";
+import { api } from "../lib/api";
+import { SettingsPage } from "../pages/SettingsPage";
 
-function installFetchMock(handler: (input: RequestInfo | URL, init?: RequestInit) => Response | Promise<Response>) {
-  vi.stubGlobal("fetch", vi.fn(handler));
-}
+vi.mock("../lib/api", () => ({
+  api: {
+    getConfig: vi.fn().mockResolvedValue({
+      accounts: { bilibili: { cookie: "", last_verified: "" } },
+      ai: { provider: "openai", model: "gpt-4o", api_key: "", base_url: "" },
+      transcription: {
+        engine: "faster-whisper",
+        model_size: "base",
+        device: "cpu",
+        language: "auto",
+      },
+      vision: { enabled: false, model: "", frame_sample_rate: 60 },
+      backend: { port: 8765, worker_concurrency: 2 },
+    }),
+    putConfig: vi.fn().mockResolvedValue({}),
+    getHealth: vi.fn().mockResolvedValue({
+      overall: "ok",
+      dependencies: {
+        backend: { status: "ok", message: "" },
+        llm: { status: "ok", message: "" },
+        whisper_model: { status: "ok", message: "" },
+        ffmpeg: { status: "ok", message: "" },
+        cuda: { status: "unavailable", message: "CPU only" },
+        bilibili_session: { status: "error", message: "" },
+        embedding_model: { status: "ok", message: "" },
+      },
+    }),
+    listWhisperModels: vi.fn().mockResolvedValue([]),
+    downloadWhisperModel: vi.fn(),
+  },
+}));
 
 afterEach(() => {
   cleanup();
-  vi.restoreAllMocks();
-  vi.unstubAllGlobals();
+  vi.clearAllMocks();
 });
 
+function renderPage() {
+  return render(
+    <LanguageProvider>
+      <MemoryRouter>
+        <SettingsPage />
+      </MemoryRouter>
+    </LanguageProvider>,
+  );
+}
+
+function renderPageAt(entry: string) {
+  function LocationProbe() {
+    const location = useLocation();
+    return <div data-testid="location">{`${location.pathname}${location.search}`}</div>;
+  }
+
+  return render(
+    <LanguageProvider>
+      <MemoryRouter initialEntries={[entry]}>
+        <SettingsPage />
+        <LocationProbe />
+      </MemoryRouter>
+    </LanguageProvider>,
+  );
+}
+
 describe("settings page", () => {
-  test("loads config and health, saves a config patch, and queues a whisper model download", async () => {
-    installFetchMock(async (input, init) => {
-      const url = String(input);
-      const method = init?.method ?? "GET";
+  test("renders three tabs", async () => {
+    renderPage();
 
-      if (url.endsWith("/api/config") && method === "GET") {
-        return Response.json({
-          accounts: { bilibili: { cookie: "***", last_verified: "" } },
-          ai: { provider: "openai", model: "gpt-4o", api_key: "***", base_url: null },
-          transcription: {
-            engine: "faster-whisper",
-            model_size: "large-v3",
-            device: "cuda",
-            language: "auto",
-          },
-          vision: { enabled: false, frame_sample_rate: 30, model: null },
-          backend: { port: 8765, worker_concurrency: 1 },
-        });
-      }
-
-      if (url.endsWith("/api/health") && method === "GET") {
-        return Response.json({
-          overall: "ok",
-          dependencies: {
-            backend: { status: "ok", message: "" },
-            llm: { status: "ok", message: "" },
-            whisper_model: { status: "error", message: "missing" },
-            ffmpeg: { status: "ok", message: "" },
-            cuda: { status: "unavailable", message: "cpu" },
-            bilibili_session: { status: "error", message: "cookie missing" },
-            embedding_model: { status: "ok", message: "" },
-          },
-        });
-      }
-
-      if (url.endsWith("/api/models/whisper") && method === "GET") {
-        return Response.json([
-          { name: "small", installed: false, path: null, selected: false },
-          { name: "large-v3", installed: true, path: "/tmp/large-v3", selected: true },
-        ]);
-      }
-
-      if (url.endsWith("/api/config") && method === "PUT") {
-        const body = JSON.parse(String(init?.body));
-        return Response.json({
-          accounts: { bilibili: { cookie: "***", last_verified: "" } },
-          ai: {
-            provider: "openai",
-            model: body.ai?.model ?? "gpt-4o",
-            api_key: "***",
-            base_url: null,
-          },
-          transcription: {
-            engine: "faster-whisper",
-            model_size: "large-v3",
-            device: "cuda",
-            language: "auto",
-          },
-          vision: { enabled: false, frame_sample_rate: 30, model: null },
-          backend: { port: 8765, worker_concurrency: 1 },
-        });
-      }
-
-      if (url.endsWith("/api/models/whisper/download") && method === "POST") {
-        return Response.json(
-          {
-            job_id: "job-1",
-            status: "queued",
-            model_family: "whisper",
-            model_size: "small",
-          },
-          { status: 202 },
-        );
-      }
-
-      throw new Error(`Unhandled ${method} ${url}`);
-    });
-
-    const router = createMemoryRouter(routes, { initialEntries: ["/settings"] });
-
-    render(<RouterProvider router={router} />);
-
-    expect(await screen.findByRole("heading", { name: /settings/i })).toBeInTheDocument();
-    expect(screen.getByDisplayValue("gpt-4o")).toBeInTheDocument();
-    expect(screen.getByText(/overall status: ok/i)).toBeInTheDocument();
-    expect(screen.getByText(/^large-v3$/)).toBeInTheDocument();
-
-    const modelInput = screen.getByLabelText(/ai model/i);
-    await userEvent.clear(modelInput);
-    await userEvent.type(modelInput, "gpt-4.1");
-    await userEvent.click(screen.getByRole("button", { name: /save settings/i }));
-    expect(await screen.findByText(/settings saved/i)).toBeInTheDocument();
-
-    await userEvent.click(screen.getByRole("button", { name: /download small/i }));
-    expect(await screen.findByText(/queued whisper model download/i)).toBeInTheDocument();
+    expect(await screen.findByRole("tab", { name: /llm/i })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /transcript/i })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /other/i })).toBeInTheDocument();
   });
 
-  test("shows initial settings load errors inline", async () => {
-    installFetchMock(async (input, init) => {
-      const url = String(input);
-      const method = init?.method ?? "GET";
+  test("LLM tab is active by default and shows provider dropdown", async () => {
+    renderPage();
 
-      if (url.endsWith("/api/config") && method === "GET") {
-        return Response.json({ detail: "Settings unavailable" }, { status: 503 });
-      }
+    expect(await screen.findByLabelText(/provider/i)).toBeInTheDocument();
+  });
 
-      if (url.endsWith("/api/health") && method === "GET") {
-        return Response.json({
-          overall: "ok",
-          dependencies: {
-            backend: { status: "ok", message: "" },
-          },
-        });
-      }
+  test("clicking Transcript tab shows device dropdown", async () => {
+    renderPage();
 
-      if (url.endsWith("/api/models/whisper") && method === "GET") {
-        return Response.json([]);
-      }
+    fireEvent.click(await screen.findByRole("tab", { name: /transcript/i }));
+    expect(await screen.findByLabelText(/device/i)).toBeInTheDocument();
+  });
 
-      throw new Error(`Unhandled ${method} ${url}`);
+  test("clicking Other tab shows backend api section", async () => {
+    renderPage();
+
+    fireEvent.click(await screen.findByRole("tab", { name: /other/i }));
+    expect(await screen.findByText(/backend api/i)).toBeInTheDocument();
+  });
+
+  test("clicking a tab updates the url query", async () => {
+    renderPageAt("/settings");
+
+    fireEvent.click(await screen.findByRole("tab", { name: /other/i }));
+
+    expect(screen.getByTestId("location")).toHaveTextContent("/settings?tab=other");
+  });
+
+  test("reads active tab from the url query", async () => {
+    renderPageAt("/settings?tab=transcript");
+
+    expect(await screen.findByLabelText(/device/i)).toBeInTheDocument();
+    expect(screen.getByTestId("location")).toHaveTextContent("/settings?tab=transcript");
+  });
+
+  test("tab health indicators use the same tiers as the navbar health model", async () => {
+    renderPage();
+
+    expect(await screen.findByRole("tab", { name: /llm/i })).toHaveAttribute("title", "Operational");
+    expect(screen.getByRole("tab", { name: /transcript/i })).toHaveAttribute("title", "Degraded");
+    expect(screen.getByRole("tab", { name: /other/i })).toHaveAttribute("title", "Operational");
+  });
+
+  test("refreshes health after saving config", async () => {
+    vi.mocked(api.getHealth)
+      .mockResolvedValueOnce({
+        overall: "ok",
+        dependencies: {
+          backend: { status: "ok", message: "" },
+          llm: { status: "ok", message: "" },
+          whisper_model: { status: "ok", message: "" },
+          ffmpeg: { status: "ok", message: "" },
+          cuda: { status: "unavailable", message: "CPU only" },
+          bilibili_session: { status: "error", message: "" },
+          embedding_model: { status: "ok", message: "" },
+        },
+      })
+      .mockResolvedValueOnce({
+        overall: "ok",
+        dependencies: {
+          backend: { status: "ok", message: "" },
+          llm: { status: "error", message: "base_url not configured" },
+          whisper_model: { status: "ok", message: "" },
+          ffmpeg: { status: "ok", message: "" },
+          cuda: { status: "unavailable", message: "CPU only" },
+          bilibili_session: { status: "error", message: "" },
+          embedding_model: { status: "ok", message: "" },
+        },
+      });
+    vi.mocked(api.putConfig).mockResolvedValueOnce({
+      accounts: { bilibili: { cookie: "", last_verified: "" } },
+      ai: { provider: "openai", model: "gpt-4o", api_key: "", base_url: "" },
+      transcription: {
+        engine: "faster-whisper",
+        model_size: "base",
+        device: "cpu",
+        language: "auto",
+      },
+      vision: { enabled: false, model: "", frame_sample_rate: 60 },
+      backend: { port: 8765, worker_concurrency: 2 },
     });
 
-    const router = createMemoryRouter(routes, { initialEntries: ["/settings"] });
-    render(<RouterProvider router={router} />);
+    renderPage();
 
-    expect(await screen.findByRole("heading", { name: /settings/i })).toBeInTheDocument();
-    expect(screen.getByText("Settings unavailable")).toBeInTheDocument();
+    const modelInput = await screen.findByLabelText(/model/i);
+    fireEvent.change(modelInput, { target: { value: "gpt-4.1" } });
+    fireEvent.blur(modelInput);
+
+    expect(await screen.findByRole("tab", { name: /llm/i })).toHaveAttribute("title", "Unavailable");
+    expect(api.getHealth).toHaveBeenCalledTimes(2);
   });
 });

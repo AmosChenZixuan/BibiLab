@@ -13,30 +13,43 @@ router = APIRouter()
 async def _check_llm(cfg) -> dict:
     provider = cfg.ai.provider
     api_key = cfg.ai.api_key
-    base_url = cfg.ai.base_url
+    base_url = (cfg.ai.base_url or "").strip()
+
+    if not base_url:
+        return {"status": "error", "message": "base_url not configured"}
 
     if not api_key and provider not in ("ollama", "custom"):
         return {"status": "error", "message": "api_key not configured"}
 
     try:
         if provider == "openai":
-            url = "https://api.openai.com/v1/models"
+            url = f"{base_url.rstrip('/')}/models"
             headers = {"Authorization": f"Bearer {api_key}"}
         elif provider == "anthropic":
-            url = "https://api.anthropic.com/v1/models"
+            url = f"{base_url.rstrip('/')}/models"
             headers = {"x-api-key": api_key, "anthropic-version": "2023-06-01"}
-        elif provider in ("ollama", "custom"):
-            root = base_url or "http://localhost:11434"
-            url = f"{root.rstrip('/')}/api/tags"
+        elif provider == "ollama":
+            url = f"{base_url.rstrip('/')}/api/tags"
             headers = {}
+        elif provider == "custom":
+            url = f"{base_url.rstrip('/')}/models"
+            headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
         else:
             return {"status": "error", "message": f"Unknown provider: {provider}"}
 
         async with httpx.AsyncClient(timeout=5) as client:
             resp = await client.get(url, headers=headers)
-        if resp.status_code < 400:
-            return {"status": "ok", "message": ""}
-        return {"status": "error", "message": f"HTTP {resp.status_code}"}
+        if resp.status_code >= 400:
+            return {"status": "error", "message": f"HTTP {resp.status_code}"}
+
+        payload = resp.json()
+        if provider == "ollama":
+            if not isinstance(payload.get("models"), list):
+                return {"status": "error", "message": "Invalid tags response"}
+        elif not isinstance(payload.get("data"), list):
+            return {"status": "error", "message": "Invalid models response"}
+
+        return {"status": "ok", "message": base_url}
     except Exception as exc:
         return {"status": "error", "message": str(exc)}
 
@@ -52,8 +65,9 @@ def _check_whisper(cfg) -> dict:
 
 
 def _check_ffmpeg() -> dict:
-    if shutil.which("ffmpeg"):
-        return {"status": "ok", "message": ""}
+    ffmpeg_path = shutil.which("ffmpeg")
+    if ffmpeg_path:
+        return {"status": "ok", "message": ffmpeg_path}
     return {"status": "error", "message": "ffmpeg not found on PATH"}
 
 
@@ -75,15 +89,9 @@ def _check_cuda() -> dict:
         }
 
 
-def _check_bilibili(cfg) -> dict:
-    if cfg.accounts.bilibili.cookie:
-        return {"status": "ok", "message": "Cookie configured (not validated)"}
-    return {"status": "error", "message": "Bilibili cookie not configured"}
-
-
 def _check_embedding_model() -> dict:
     if is_embedding_model_downloaded():
-        return {"status": "ok", "message": ""}
+        return {"status": "ok", "message": str(_embedding_model_dir() / "onnx" / "model.onnx")}
     return {
         "status": "error",
         "message": (
@@ -103,7 +111,6 @@ async def health() -> dict:
         "whisper_model": _check_whisper(cfg),
         "ffmpeg": _check_ffmpeg(),
         "cuda": _check_cuda(),
-        "bilibili_session": _check_bilibili(cfg),
         "embedding_model": _check_embedding_model(),
     }
 
