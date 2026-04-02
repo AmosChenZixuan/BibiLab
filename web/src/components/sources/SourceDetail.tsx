@@ -4,7 +4,8 @@ import ReactMarkdown from "react-markdown";
 
 import { downloadTextFile } from "../../lib/download";
 import type { NoteContent, Source } from "../../lib/types";
-import { ghostButtonClass, mutedTextClass, statusErrorClass, workspacePanelBodyClass } from "../../lib/ui";
+import { mutedTextClass, statusErrorClass, workspacePanelBodyClass } from "../../lib/ui";
+import { Button } from "../../components/ui";
 
 type Props = {
   activeTab: "note" | "transcript";
@@ -41,9 +42,9 @@ export function SourceDetail({
   return (
     <div className={workspacePanelBodyClass}>
       <div className="grid gap-3">
-        <button className={ghostButtonClass} onClick={onBack} type="button">
+        <Button variant="ghost" onClick={onBack} type="button">
           Back to sources
-        </button>
+        </Button>
         <div>
           <h3 className="m-0 font-serif text-2xl">{source.title}</h3>
           <p className={mutedTextClass}>{source.platform}</p>
@@ -65,9 +66,9 @@ export function SourceDetail({
         >
           Transcript
         </button>
-        <button className={ghostButtonClass} disabled={downloading || !note} onClick={handleDownload} type="button">
+        <Button variant="ghost" disabled={downloading || !note} onClick={handleDownload} type="button">
           Download note
-        </button>
+        </Button>
       </div>
 
       {activeTab === "note" ? (

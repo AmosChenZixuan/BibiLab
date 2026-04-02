@@ -5,13 +5,13 @@ import type { HealthDependency, LocusConfig, WhisperModel } from "../../lib/type
 import {
   fieldHintClass,
   fieldLabelClass,
-  secondaryButtonClass,
   settingsControlClass,
   settingsFieldClass,
   settingsFieldMetaClass,
   settingsInputClass,
   settingsSelectClass,
 } from "../../lib/ui";
+import { Button } from "../../components/ui";
 
 type TranscriptTabProps = {
   config: LocusConfig;
@@ -177,15 +177,15 @@ export function TranscriptTab({ config, dependencies, onBlur }: TranscriptTabPro
                           {model.path}
                         </p>
                       ) : (
-                        <button
-                          className={secondaryButtonClass}
+                        <Button
+                          variant="secondary"
                           aria-label={`Download ${model.name}`}
                           disabled={downloading === model.name}
                           onClick={() => void handleDownload(model.name)}
                           type="button"
                         >
                           {downloading === model.name ? "Queued..." : `Download ${model.name}`}
-                        </button>
+                        </Button>
                       )}
                     </div>
                   </td>

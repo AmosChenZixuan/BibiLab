@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 
 import { JOBS_REFRESH_EVENT, api, toErrorMessage } from "../../lib/api";
 import type { Job } from "../../lib/types";
-import { ghostButtonClass, mutedTextClass, statusChipClass, statusErrorClass } from "../../lib/ui";
+import { mutedTextClass, statusErrorClass } from "../../lib/ui";
+import { Button, StatusChip } from "../../components/ui";
 
 const TERMINAL_STATUSES = new Set(["done", "failed"]);
 
@@ -112,9 +113,9 @@ export function JobsBadge() {
                 <h2 className="m-0 font-serif">Jobs</h2>
                 <p className={mutedTextClass}>Background ingestion and model work.</p>
               </div>
-              <button type="button" className={ghostButtonClass} onClick={() => setIsOpen(false)}>
+              <Button type="button" variant="ghost" onClick={() => setIsOpen(false)}>
                 Close
-              </button>
+              </Button>
             </div>
             {errorMessage ? <p className={statusErrorClass}>{errorMessage}</p> : null}
             <div className="grid gap-3">
@@ -135,23 +136,23 @@ export function JobsBadge() {
                       <div className="grid gap-2">
                         <div className="flex flex-wrap items-center gap-3">
                           <h3 className="m-0 font-serif">{jobTitle}</h3>
-                          <span className={statusChipClass(job.status === "failed" ? "error" : job.status === "done" ? "ok" : "unavailable")}>
+                          <StatusChip status={job.status === "failed" ? "error" : job.status === "done" ? "ok" : "unavailable"}>
                             {job.status}
-                          </span>
+                          </StatusChip>
                         </div>
                         <p className={mutedTextClass}>{job.progress}%</p>
                         {job.error ? <p className={statusErrorClass}>{job.error}</p> : null}
                       </div>
                       {!isTerminal ? (
-                        <button
+                        <Button
                           type="button"
-                          className={ghostButtonClass}
+                          variant="ghost"
                           aria-label={`Cancel ${jobTitle}`}
                           disabled={cancellingJobId === job.id}
                           onClick={() => void handleCancel(job.id)}
                         >
                           {cancellingJobId === job.id ? "Cancelling..." : "Cancel"}
-                        </button>
+                        </Button>
                       ) : null}
                     </article>
                   );

@@ -8,8 +8,8 @@ import {
   settingsFieldClass,
   settingsFieldMetaClass,
   settingsInputClass,
-  statusChipClass,
 } from "../../lib/ui";
+import { StatusChip } from "../../components/ui";
 
 type OtherTabProps = {
   config: LocusConfig;
@@ -56,9 +56,9 @@ export function OtherTab({ config, dependencies, onBlur }: OtherTabProps) {
         <div className={settingsFieldMetaClass}>
           <div className="flex flex-wrap items-center gap-2">
             <p className={fieldLabelClass}>Embedding Model</p>
-            <span className={statusChipClass(embeddingDependency?.status === "ok" ? "ok" : "error")}>
+            <StatusChip status={embeddingDependency?.status === "ok" ? "ok" : "error"}>
               {embeddingDependency?.status === "ok" ? "ready" : "missing"}
-            </span>
+            </StatusChip>
           </div>
           <p className={fieldHintClass}>If missing, the first processing run downloads embeddings before indexing, which makes startup slower.</p>
         </div>
@@ -78,9 +78,9 @@ export function OtherTab({ config, dependencies, onBlur }: OtherTabProps) {
       <div className="grid gap-x-5 gap-y-2 bg-white/36 px-4 py-3 md:grid-cols-[minmax(0,1fr)_320px]">
         <div className="flex flex-wrap items-center gap-2">
           <p className={fieldLabelClass}>Backend API</p>
-          <span className={statusChipClass(backendDependency?.status === "ok" ? "ok" : "error")}>
+          <StatusChip status={backendDependency?.status === "ok" ? "ok" : "error"}>
             {backendDependency?.status === "ok" ? "connected" : "offline"}
-          </span>
+          </StatusChip>
         </div>
         <div className="flex items-center justify-end">
           <p className={valueClass}>{backendUrl}</p>
@@ -119,12 +119,12 @@ export function OtherTab({ config, dependencies, onBlur }: OtherTabProps) {
         <div className={settingsFieldMetaClass}>
           <div className="flex flex-wrap items-center gap-2">
             <p className={fieldLabelClass}>FFmpeg</p>
-            <span
-              className={statusChipClass(ffmpegDependency?.status === "ok" ? "ok" : "error")}
+            <StatusChip
+              status={ffmpegDependency?.status === "ok" ? "ok" : "error"}
               title={ffmpegDependency?.status === "ok" ? "FFmpeg installed" : "FFmpeg not found"}
             >
               {ffmpegDependency?.status === "ok" ? "installed" : "missing"}
-            </span>
+            </StatusChip>
           </div>
           <p className={fieldHintClass}>Required. Without FFmpeg, media audio cannot be extracted, so ingestion fails.</p>
         </div>

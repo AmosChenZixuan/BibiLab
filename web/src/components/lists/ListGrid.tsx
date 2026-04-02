@@ -1,5 +1,6 @@
 import type { LocusList } from "../../lib/types";
-import { dangerButtonClass, eyebrowClass, mutedTextClass, sectionTitleClass } from "../../lib/ui";
+import { eyebrowClass, mutedTextClass, sectionTitleClass } from "../../lib/ui";
+import { Button } from "../../components/ui";
 
 type Props = {
   lists: LocusList[];
@@ -46,14 +47,14 @@ export function ListGrid({ lists, onDelete, onOpen, onCreate, busy }: Props) {
             <p className={mutedTextClass}>Created {new Date(list.created_at).toLocaleString()}</p>
           </div>
           <div className="flex flex-wrap items-center gap-3">
-            <button
+            <Button
               aria-label={`Delete ${list.name}`}
-              className={dangerButtonClass}
+              variant="danger"
               onClick={() => onDelete(list)}
               type="button"
             >
               Delete
-            </button>
+            </Button>
           </div>
         </article>
       ))}

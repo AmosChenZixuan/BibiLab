@@ -9,14 +9,13 @@ import { downloadTextFile } from "../lib/download";
 import type { NoteContent, Source } from "../lib/types";
 import {
   eyebrowClass,
-  ghostButtonClass,
   mutedTextClass,
   pageHeadingClass,
   statusErrorClass,
   workspacePanelBodyClass,
-  workspacePanelClass,
   workspacePanelTitleClass,
 } from "../lib/ui";
+import { Button, Panel } from "../components/ui";
 
 function formatCount(count: number, noun: string): string {
   return `${count} ${noun}${count === 1 ? "" : "s"}`;
@@ -189,9 +188,9 @@ export function ListDetailPage() {
         ) : (
           <div className="flex flex-wrap items-center gap-3">
             <h1 className={pageHeadingClass}>{listName}</h1>
-            <button
+            <Button
               aria-label="Edit list name"
-              className={ghostButtonClass}
+              variant="ghost"
               onClick={() => {
                 setDraftName(listName);
                 setEditingName(true);
@@ -200,7 +199,7 @@ export function ListDetailPage() {
               type="button"
             >
               Rename
-            </button>
+            </Button>
           </div>
         )}
         <p className={mutedTextClass}>Queue sources, inspect notes, and export a list overview from one reading surface.</p>
@@ -208,12 +207,12 @@ export function ListDetailPage() {
       </section>
       <div className="grid grid-cols-[1.25fr_1fr_0.9fr] items-start gap-4 max-[820px]:grid-cols-1">
         {loadError ? (
-          <section className={workspacePanelClass}>
+          <Panel variant="workspace">
             <h2 className={workspacePanelTitleClass}>Sources</h2>
             <div className={workspacePanelBodyClass}>
               <p className={statusErrorClass}>{loadError}</p>
             </div>
-          </section>
+          </Panel>
         ) : (
           <SourcesPanel
             activeTab={activeTab}

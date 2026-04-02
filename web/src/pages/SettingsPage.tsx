@@ -7,7 +7,8 @@ import { TranscriptTab } from "../components/settings/TranscriptTab";
 import { api, notifyHealthChanged, toErrorMessage } from "../lib/api";
 import { deriveDependencyHealthTier, HEALTH_META } from "../lib/health";
 import type { HealthDependency, LocusConfig } from "../lib/types";
-import { appPanelClass, mutedTextClass, pageHeadingClass, statusErrorClass } from "../lib/ui";
+import { mutedTextClass, pageHeadingClass, statusErrorClass } from "../lib/ui";
+import { Panel } from "../components/ui";
 
 type TabKey = "llm" | "transcript" | "other";
 
@@ -104,18 +105,18 @@ export function SettingsPage() {
 
   if (loading) {
     return (
-      <section className={appPanelClass}>
+      <Panel variant="app">
         <p>Loading settings...</p>
-      </section>
+      </Panel>
     );
   }
 
   if (loadError || !config) {
     return (
-      <section className={appPanelClass}>
+      <Panel variant="app">
         <h1 className={pageHeadingClass}>Settings</h1>
         <p className={statusErrorClass}>{loadError ?? "Request failed"}</p>
-      </section>
+      </Panel>
     );
   }
 

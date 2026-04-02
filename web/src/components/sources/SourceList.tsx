@@ -3,16 +3,13 @@ import { useState } from "react";
 import type { Source } from "../../lib/types";
 import {
   checkboxRowClass,
-  fieldClass,
-  fieldLabelClass,
-  ghostButtonClass,
   inputClass,
   mutedTextClass,
-  primaryButtonClass,
   statusErrorClass,
   statusSuccessClass,
   workspacePanelBodyClass,
 } from "../../lib/ui";
+import { Button, FormField } from "../../components/ui";
 
 type Props = {
   busy: boolean;
@@ -40,8 +37,7 @@ export function SourceList({ busy, error, ingestStatus, onDelete, onIngest, onOp
   return (
     <div className={workspacePanelBodyClass}>
       <form className="grid gap-4" onSubmit={handleSubmit}>
-        <label className={fieldClass}>
-          <span className={fieldLabelClass}>Source URL</span>
+        <FormField label="Source URL">
           <input
             aria-label="Source URL"
             className={inputClass}
@@ -49,7 +45,7 @@ export function SourceList({ busy, error, ingestStatus, onDelete, onIngest, onOp
             placeholder="https://www.bilibili.com/video/..."
             value={url}
           />
-        </label>
+        </FormField>
         <label className={checkboxRowClass}>
           <input
             aria-label="Re-run existing source"
@@ -60,9 +56,9 @@ export function SourceList({ busy, error, ingestStatus, onDelete, onIngest, onOp
           <span>Re-run existing source</span>
         </label>
         <div className="flex flex-wrap items-center gap-3">
-          <button className={primaryButtonClass} disabled={busy} type="submit">
+          <Button variant="primary" disabled={busy} type="submit">
             {busy ? "Queueing..." : "Queue source"}
-          </button>
+          </Button>
           {ingestStatus ? <p className={statusSuccessClass}>{ingestStatus}</p> : null}
         </div>
         {error ? <p className={statusErrorClass}>{error}</p> : null}
@@ -88,14 +84,14 @@ export function SourceList({ busy, error, ingestStatus, onDelete, onIngest, onOp
                 <strong>{source.title}</strong>
                 <span className={mutedTextClass}>{source.platform}</span>
               </button>
-              <button
+              <Button
                 aria-label={`Delete ${source.title}`}
-                className={ghostButtonClass}
+                variant="ghost"
                 onClick={() => void onDelete(source)}
                 type="button"
               >
                 Delete
-              </button>
+              </Button>
             </article>
           ))
         )}

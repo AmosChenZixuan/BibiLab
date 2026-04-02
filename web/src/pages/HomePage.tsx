@@ -4,7 +4,8 @@ import { useNavigate } from "react-router-dom";
 import { ListGrid } from "../components/lists/ListGrid";
 import { api, toErrorMessage } from "../lib/api";
 import type { LocusList } from "../lib/types";
-import { appPanelClass, eyebrowClass, mutedTextClass, pageHeadingClass, statusErrorClass } from "../lib/ui";
+import { eyebrowClass, mutedTextClass, pageHeadingClass, statusErrorClass } from "../lib/ui";
+import { Panel } from "../components/ui";
 
 export function HomePage() {
   const navigate = useNavigate();
@@ -74,9 +75,9 @@ export function HomePage() {
         {error ? <p className={statusErrorClass}>{error}</p> : null}
       </section>
       {loading ? (
-        <section className={appPanelClass}>
+        <Panel variant="app">
           <p>Loading lists...</p>
-        </section>
+        </Panel>
       ) : (
         <ListGrid
           busy={busy}

@@ -1,14 +1,11 @@
 import { useState } from "react";
 import {
-  appPanelClass,
-  fieldClass,
-  fieldLabelClass,
   inputClass,
-  primaryButtonClass,
   mutedTextClass,
   sectionTitleClass,
   statusErrorClass,
 } from "../../lib/ui";
+import { Button, FormField, Panel } from "../../components/ui";
 
 type Props = {
   busy: boolean;
@@ -30,7 +27,7 @@ export function CreateListForm({ busy, error, onCreate }: Props) {
   }
 
   return (
-    <section className={appPanelClass}>
+    <Panel variant="app">
       <div className="flex flex-wrap items-center gap-3">
         <div>
           <h2 className={sectionTitleClass}>Start a list</h2>
@@ -38,8 +35,7 @@ export function CreateListForm({ busy, error, onCreate }: Props) {
         </div>
       </div>
       <form className="mt-4 grid gap-4" onSubmit={handleSubmit}>
-        <label className={fieldClass}>
-          <span className={fieldLabelClass}>List name</span>
+        <FormField label="List name">
           <input
             aria-label="List name"
             className={inputClass}
@@ -47,14 +43,14 @@ export function CreateListForm({ busy, error, onCreate }: Props) {
             placeholder="Systems, Research, History of Film"
             value={name}
           />
-        </label>
+        </FormField>
         <div className="flex flex-wrap items-center gap-3">
-          <button className={primaryButtonClass} disabled={busy} type="submit">
+          <Button variant="primary" disabled={busy} type="submit">
             {busy ? "Creating..." : "Create list"}
-          </button>
+          </Button>
           {error ? <p className={statusErrorClass}>{error}</p> : null}
         </div>
       </form>
-    </section>
+    </Panel>
   );
 }

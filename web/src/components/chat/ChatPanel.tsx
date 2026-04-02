@@ -1,8 +1,9 @@
-import { mutedTextClass, workspacePanelBodyClass, workspacePanelClass, workspacePanelTitleClass } from "../../lib/ui";
+import { mutedTextClass, workspacePanelBodyClass, workspacePanelTitleClass } from "../../lib/ui";
+import { Panel } from "../../components/ui";
 
 export function ChatPanel() {
   return (
-    <section className={workspacePanelClass}>
+    <Panel variant="workspace">
       <h2 className={workspacePanelTitleClass}>Chat</h2>
       <div className={`${workspacePanelBodyClass} min-h-[490px] content-center`}>
         <div className="grid gap-2.5">
@@ -12,6 +13,6 @@ export function ChatPanel() {
         </div>
         <p className={mutedTextClass}>List-scoped chat arrives in v1. This panel stays intentionally quiet until then.</p>
       </div>
-    </section>
+    </Panel>
   );
 }
