@@ -1,57 +1,102 @@
+// ─── Surfaces & Layout ────────────────────────────────────────────────────────
+
+// Translucent warm-paper card used on home page, settings, and studio panels
 export const appPanelClass =
-  "rounded-[22px] border border-[rgba(106,147,198,0.12)] bg-[rgba(255,252,247,0.82)] p-5 shadow-[0_14px_28px_rgba(116,148,194,0.07)]";
+  "rounded-card border border-border bg-surface p-5 shadow-card";
 
+// Outer panel shell for the three list-detail workspace columns
 export const workspacePanelClass =
-  "overflow-hidden rounded-3xl border border-[rgba(106,147,198,0.12)] bg-[rgba(255,255,255,0.76)] shadow-[0_14px_28px_rgba(116,148,194,0.07)]";
+  "overflow-hidden rounded-3xl border border-border bg-white/76 shadow-card";
 
+// Workspace panel title bar (serif heading + bottom border)
 export const workspacePanelTitleClass =
-  'm-0 border-b border-[rgba(106,147,198,0.12)] px-5 py-[18px] font-["Iowan_Old_Style","Palatino_Linotype",serif] text-[1.35rem]';
+  "m-0 border-b border-border px-5 py-4.5 font-serif text-section";
 
-export const workspacePanelBodyClass = "grid gap-4 px-5 py-[18px] pb-5";
+// Workspace panel content area
+export const workspacePanelBodyClass = "grid gap-4 px-5 py-4.5";
 
+// ─── Typography ───────────────────────────────────────────────────────────────
+
+// Fluid page heading — scales from 2rem (narrow) to 3.5rem (wide)
 export const pageHeadingClass =
-  'm-0 mb-2 font-["Iowan_Old_Style","Palatino_Linotype",serif] text-[clamp(2rem,4vw,3.5rem)] leading-[0.95]';
+  "m-0 mb-2 font-serif text-display leading-[0.95]";
 
-export const sectionTitleClass =
-  'm-0 font-["Iowan_Old_Style","Palatino_Linotype",serif] text-2xl';
+export const sectionTitleClass = "m-0 font-serif text-2xl";
 
-export const mutedTextClass = "m-0 text-[#8096b3]";
+export const mutedTextClass = "m-0 text-muted";
 
+// Small all-caps label above a heading (pink accent, wide letter-spacing)
 export const eyebrowClass =
-  "text-[0.8rem] uppercase tracking-[0.14em] text-[#f08bb9]";
+  "text-xs uppercase tracking-[0.14em] text-pink";
 
-export const fieldClass = "grid gap-1.5";
-export const fieldLabelClass = "text-[0.92rem] font-semibold";
-export const fieldHintClass = "text-[0.82rem] leading-5 text-[#8096b3]";
-export const inputClass =
-  "w-full rounded-2xl border border-[rgba(106,147,198,0.12)] bg-[rgba(255,255,255,0.92)] px-[14px] py-3 text-[#274970] outline-none transition focus:border-[rgba(91,127,170,0.45)] focus:ring-2 focus:ring-[rgba(125,217,255,0.18)]";
-export const textareaClass = `${inputClass} min-h-[96px] resize-y`;
+// ─── Form Fields ──────────────────────────────────────────────────────────────
+
+export const fieldClass      = "grid gap-1.5";
+export const fieldLabelClass = "text-sm font-semibold";
+export const fieldHintClass  = "text-sm leading-5 text-muted";
+
+// Base shared by inputClass, textareaClass, settingsInputClass, settingsSelectClass
+const inputBase =
+  "w-full rounded-2xl border border-border bg-white/92 px-3.5 py-3 text-ink outline-none transition focus:border-blue/45 focus:ring-2 focus:ring-sky/18";
+
+export const inputClass    = inputBase;
+export const textareaClass = `${inputBase} min-h-[96px] resize-y`;
+
 export const checkboxRowClass = "inline-flex items-center gap-2.5";
+
+// ─── Settings Layout ──────────────────────────────────────────────────────────
+
+// Settings row: label+meta on the left, control on the right; wraps on mobile
 export const settingsFieldClass =
-  "flex flex-wrap items-start gap-x-5 gap-y-2 bg-[rgba(255,255,255,0.36)] px-4 py-3";
-export const settingsFieldMetaClass = "min-w-[190px] flex-1 basis-[240px] grid gap-1";
+  "flex flex-wrap items-start gap-x-5 gap-y-2 bg-white/36 px-4 py-3";
+
+// Left side of a settings row (label + hint paragraph)
+export const settingsFieldMetaClass =
+  "min-w-[190px] flex-1 basis-[240px] grid gap-1";
+
+// Right side: fixed-width control column, full-width on mobile
 export const settingsControlClass = "w-full min-w-[220px] flex-none md:w-[320px]";
-export const settingsInputClass = `${inputClass} h-11 min-h-11 px-3 py-2.5`;
+
+export const settingsInputClass  = `${inputBase} h-11 min-h-11 px-3 py-2.5`;
 export const settingsSelectClass =
-  "w-full min-w-[220px] flex-none rounded-xl border border-[rgba(106,147,198,0.12)] bg-[rgba(255,255,255,0.92)] px-3 py-2.5 text-[#274970] outline-none transition focus:border-[rgba(91,127,170,0.45)] focus:ring-2 focus:ring-[rgba(125,217,255,0.18)] h-11 min-h-11 md:w-[320px]";
+  "w-full min-w-[220px] flex-none rounded-xl border border-border bg-white/92 px-3 py-2.5 text-ink outline-none transition focus:border-blue/45 focus:ring-2 focus:ring-sky/18 h-11 min-h-11 md:w-[320px]";
 
+// ─── Buttons ──────────────────────────────────────────────────────────────────
+
+// Shared structure: layout, sizing, disabled state
+const buttonBase =
+  "inline-flex items-center justify-center rounded-2xl transition disabled:cursor-not-allowed disabled:opacity-60";
+
+// Pink→blue gradient — primary call to action
 export const primaryButtonClass =
-  "inline-flex items-center justify-center rounded-2xl border border-transparent bg-[linear-gradient(135deg,#f08bb9_0%,#5b7faa_100%)] px-4 py-[11px] text-[#fff8f1] transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-60";
+  `${buttonBase} border border-transparent bg-linear-to-br from-pink to-blue px-4 py-[11px] text-white hover:brightness-105`;
+
 export const secondaryButtonClass =
-  "inline-flex items-center justify-center rounded-2xl border border-[rgba(106,147,198,0.12)] bg-[rgba(255,255,255,0.92)] px-4 py-[11px] text-[#274970] transition hover:bg-[rgba(255,255,255,1)] disabled:cursor-not-allowed disabled:opacity-60";
+  `${buttonBase} border border-border bg-white/92 px-4 py-[11px] text-ink hover:bg-white`;
+
+// Outline style with sky hover — secondary in-context actions
 export const ghostButtonClass =
-  "inline-flex items-center justify-center rounded-2xl border border-[rgba(91,127,170,0.18)] bg-transparent px-4 py-[11px] text-[#5b7faa] transition hover:bg-[rgba(125,217,255,0.08)] disabled:cursor-not-allowed disabled:opacity-60";
+  `${buttonBase} border border-blue/18 bg-transparent px-4 py-[11px] text-blue hover:bg-sky/8`;
+
 export const dangerButtonClass =
-  "inline-flex items-center justify-center rounded-2xl border border-transparent bg-[#8d1d2c] px-4 py-[11px] text-[#fff7f6] transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-60";
+  `${buttonBase} border border-transparent bg-danger px-4 py-[11px] text-white hover:brightness-105`;
 
-export const statusSuccessClass = "m-0 text-[0.94rem] text-[#4ca9cf]";
-export const statusErrorClass = "m-0 text-[0.94rem] text-[#8d1d2c]";
+// ─── Status ───────────────────────────────────────────────────────────────────
 
-export function statusChipClass(status: "ok" | "error" | "unavailable" | "neutral" = "neutral") {
+export const statusSuccessClass = "m-0 text-sm text-success";
+export const statusErrorClass   = "m-0 text-sm text-danger";
+
+// Inline pill chip for dependency/health rows; color reflects operational status
+export function statusChipClass(
+  status: "ok" | "error" | "unavailable" | "neutral" = "neutral",
+) {
   const base =
-    "inline-flex items-center rounded-full border border-[rgba(106,147,198,0.12)] px-[10px] py-1.5 text-[0.82rem] capitalize";
-  if (status === "ok") return `${base} text-[#4ca9cf]`;
-  if (status === "error") return `${base} text-[#8d1d2c]`;
-  if (status === "unavailable") return `${base} text-[#b46088]`;
-  return `${base} text-[#5b7faa]`;
+    "inline-flex items-center rounded-full border border-border px-2.5 py-1.5 text-sm capitalize";
+  const colors: Record<typeof status, string> = {
+    ok:          "text-success",
+    error:       "text-danger",
+    unavailable: "text-warn",
+    neutral:     "text-blue",
+  };
+  return `${base} ${colors[status]}`;
 }
