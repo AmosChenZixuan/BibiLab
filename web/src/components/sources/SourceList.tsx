@@ -70,13 +70,13 @@ export function SourceList({ busy, error, ingestStatus, onDelete, onIngest, onOp
 
       <div className="grid gap-3">
         {sources.length === 0 ? (
-          <div className="flex justify-start rounded-[18px] border border-[rgba(106,147,198,0.12)] bg-[rgba(255,255,255,0.64)] px-4 py-[14px]">
+          <div className="flex justify-start rounded-2xl border border-border bg-white/64 px-4 py-3.5">
             <p className={mutedTextClass}>No sources yet. Queue a Bilibili URL to start building this notebook.</p>
           </div>
         ) : (
           sources.map((source) => (
             <article
-              className="flex items-center justify-between gap-3 rounded-[18px] border border-[rgba(106,147,198,0.12)] bg-[rgba(255,255,255,0.64)] px-4 py-[14px]"
+              className="flex items-center justify-between gap-3 rounded-2xl border border-border bg-white/64 px-4 py-3.5"
               key={source.video_id}
             >
               <button
