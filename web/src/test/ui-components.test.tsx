@@ -1,5 +1,5 @@
 import { cleanup, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, test, vi } from "vitest";
+import { afterEach, describe, expect, it, test, vi } from "vitest";
 
 afterEach(cleanup);
 import { Button } from "../components/ui/Button";
@@ -34,6 +34,11 @@ describe("Button", () => {
   test("forwards disabled prop", () => {
     render(<Button variant="primary" disabled>X</Button>);
     expect(screen.getByRole("button")).toBeDisabled();
+  });
+
+  it("applies sm size classes", () => {
+    render(<Button size="sm">Small</Button>);
+    expect(screen.getByRole("button").className).toContain("text-sm");
   });
 });
 
