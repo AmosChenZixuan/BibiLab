@@ -25,6 +25,21 @@ function isTabKey(value: string | null): value is TabKey {
   return value === "llm" || value === "transcript" || value === "other";
 }
 
+function hasConfigChanged(current: LocusConfig, next: LocusConfig) {
+  return JSON.stringify(current) !== JSON.stringify(next);
+}
+
+function shouldRefreshHealth(current: LocusConfig, next: LocusConfig) {
+  return (
+    current.ai.provider !== next.ai.provider ||
+    current.ai.model !== next.ai.model ||
+    current.ai.api_key !== next.ai.api_key ||
+    current.ai.base_url !== next.ai.base_url ||
+    current.transcription.model_size !== next.transcription.model_size ||
+    current.transcription.device !== next.transcription.device
+  );
+}
+
 export function SettingsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [config, setConfig] = useState<LocusConfig | null>(null);
@@ -72,13 +87,18 @@ export function SettingsPage() {
     };
   }, []);
 
-  async function handleSave(patch: Partial<LocusConfig>) {
-    const [nextConfig, nextHealth] = await Promise.all([
-      api.putConfig(patch),
-      api.getHealth(),
-    ]);
-    setConfig(nextConfig);
-    setDependencies(nextHealth.dependencies ?? {});
+  async function handleSave(nextConfig: LocusConfig) {
+    if (!config || !hasConfigChanged(config, nextConfig)) {
+      return;
+    }
+
+    const savedConfig = await api.putConfig(nextConfig);
+    setConfig(savedConfig);
+
+    if (shouldRefreshHealth(config, nextConfig)) {
+      const nextHealth = await api.getHealth();
+      setDependencies(nextHealth.dependencies ?? {});
+    }
   }
 
   if (loading) {

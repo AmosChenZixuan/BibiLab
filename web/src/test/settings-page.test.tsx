@@ -29,7 +29,6 @@ vi.mock("../lib/api", () => ({
         whisper_model: { status: "ok", message: "" },
         ffmpeg: { status: "ok", message: "" },
         cuda: { status: "unavailable", message: "CPU only" },
-        bilibili_session: { status: "error", message: "" },
         embedding_model: { status: "ok", message: "" },
       },
     }),
@@ -131,7 +130,6 @@ describe("settings page", () => {
           whisper_model: { status: "ok", message: "" },
           ffmpeg: { status: "ok", message: "" },
           cuda: { status: "unavailable", message: "CPU only" },
-          bilibili_session: { status: "error", message: "" },
           embedding_model: { status: "ok", message: "" },
         },
       })
@@ -143,7 +141,6 @@ describe("settings page", () => {
           whisper_model: { status: "ok", message: "" },
           ffmpeg: { status: "ok", message: "" },
           cuda: { status: "unavailable", message: "CPU only" },
-          bilibili_session: { status: "error", message: "" },
           embedding_model: { status: "ok", message: "" },
         },
       });
@@ -168,5 +165,39 @@ describe("settings page", () => {
 
     expect(await screen.findByRole("tab", { name: /llm/i })).toHaveAttribute("title", "Unavailable");
     expect(api.getHealth).toHaveBeenCalledTimes(2);
+  });
+
+  test("does not save when the config value did not change", async () => {
+    renderPage();
+
+    const modelInput = await screen.findByLabelText(/model/i);
+    fireEvent.blur(modelInput);
+
+    expect(api.putConfig).not.toHaveBeenCalled();
+    expect(api.getHealth).toHaveBeenCalledTimes(1);
+  });
+
+  test("does not refresh health for non-health-affecting config changes", async () => {
+    vi.mocked(api.putConfig).mockResolvedValueOnce({
+      accounts: { bilibili: { cookie: "", last_verified: "" } },
+      ai: { provider: "openai", model: "gpt-4o", api_key: "", base_url: "" },
+      transcription: {
+        engine: "faster-whisper",
+        model_size: "base",
+        device: "cpu",
+        language: "auto",
+      },
+      vision: { enabled: false, model: "", frame_sample_rate: 60 },
+      backend: { port: 8765, worker_concurrency: 3 },
+    });
+
+    renderPageAt("/settings?tab=other");
+
+    const workerInput = await screen.findByLabelText(/worker concurrency/i);
+    fireEvent.change(workerInput, { target: { value: "3" } });
+    fireEvent.blur(workerInput);
+
+    expect(api.putConfig).toHaveBeenCalledTimes(1);
+    expect(api.getHealth).toHaveBeenCalledTimes(1);
   });
 });
