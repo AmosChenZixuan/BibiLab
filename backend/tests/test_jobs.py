@@ -1,29 +1,13 @@
 """Tests for job queue CRUD and state machine."""
 
 import logging
+import sqlite3
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
 import pytest
 import pytest_asyncio
-from fastapi.testclient import TestClient
-
-
-@pytest.fixture()
-def tmp_locus_home(tmp_path: Path):
-    with patch("locus.config.locus_home", return_value=tmp_path):
-        with patch("locus.db.locus_home", return_value=tmp_path):
-            with patch("locus.main.locus_home", return_value=tmp_path):
-                yield tmp_path
-
-
-@pytest.fixture()
-def client(tmp_locus_home: Path):
-    from locus.main import create_app
-
-    app = create_app()
-    with TestClient(app, raise_server_exceptions=True) as c:
-        yield c
 
 
 @pytest_asyncio.fixture()
@@ -33,41 +17,49 @@ async def seeded_job(tmp_locus_home: Path):  # noqa: ARG001
 
     await bootstrap_db()
     return await create_job(
-        type="video",
-        source_url="https://bilibili.com/video/BV1test",
-        platform="bilibili",
-        meta={"video_id": "BV1test", "list_id": "list-1"},
+        type="ingest",
+        meta={
+            "video_id": "BV1test",
+            "list_id": "list-1",
+            "source_url": "https://bilibili.com/video/BV1test",
+            "platform": "bilibili",
+        },
     )
 
 
-def test_list_jobs_empty(client: TestClient):
-    resp = client.get("/jobs")
+@pytest.mark.asyncio
+async def test_list_jobs_empty(client: httpx.AsyncClient):
+    resp = await client.get("/jobs")
     assert resp.status_code == 200
     assert resp.json() == []
 
 
 @pytest.mark.asyncio
-async def test_get_job_by_id(client: TestClient, seeded_job: str):
-    resp = client.get(f"/jobs/{seeded_job}")
+async def test_get_job_by_id(client: httpx.AsyncClient, seeded_job: str):
+    resp = await client.get(f"/jobs/{seeded_job}")
     assert resp.status_code == 200
     data = resp.json()
     assert data["id"] == seeded_job
     assert data["status"] == "queued"
-    assert data["platform"] == "bilibili"
+    assert data["type"] == "ingest"
+    assert "platform" not in data
+    assert "source_url" not in data
+    assert data["meta"]["platform"] == "bilibili"
+    assert data["meta"]["source_url"] == "https://bilibili.com/video/BV1test"
 
 
 @pytest.mark.asyncio
-async def test_get_job_not_found(client: TestClient):
-    resp = client.get("/jobs/nonexistent-id")
+async def test_get_job_not_found(client: httpx.AsyncClient):
+    resp = await client.get("/jobs/nonexistent-id")
     assert resp.status_code == 404
 
 
 @pytest.mark.asyncio
-async def test_delete_queued_job(client: TestClient, seeded_job: str):
-    resp = client.delete(f"/jobs/{seeded_job}")
+async def test_delete_queued_job(client: httpx.AsyncClient, seeded_job: str):
+    resp = await client.delete(f"/jobs/{seeded_job}")
     assert resp.status_code == 204
     # Verify it's gone
-    assert client.get(f"/jobs/{seeded_job}").status_code == 404
+    assert (await client.get(f"/jobs/{seeded_job}")).status_code == 404
 
 
 @pytest.mark.asyncio
@@ -75,7 +67,7 @@ async def test_state_transitions(tmp_locus_home: Path):
     from locus.db import bootstrap_db, create_job, get_job, update_job_status
 
     await bootstrap_db()
-    job_id = await create_job("video", "https://b.tv/BV1", "bilibili", {})
+    job_id = await create_job("ingest", {"source_url": "https://b.tv/BV1", "platform": "bilibili"})
 
     row = await get_job(job_id)
     assert dict(row)["status"] == "queued"
@@ -104,7 +96,7 @@ async def test_reset_stuck_jobs(tmp_locus_home: Path):
     )
 
     await bootstrap_db()
-    job_id = await create_job("video", "https://b.tv/BV1", "bilibili", {})
+    job_id = await create_job("ingest", {"source_url": "https://b.tv/BV1", "platform": "bilibili"})
     await update_job_status(job_id, "transcribing", 40)
 
     await reset_stuck_jobs()
@@ -124,9 +116,7 @@ async def test_pipeline_fails_fast_when_list_deleted(tmp_locus_home: Path):
     transcript_path.write_text("hello world", encoding="utf-8")
 
     job_id = await create_job(
-        type="video",
-        source_url="https://www.bilibili.com/video/BV1abc123",
-        platform="bilibili",
+        type="ingest",
         meta={
             "video_id": "BV1abc123",
             "list_id": "nonexistent-list",
@@ -135,6 +125,8 @@ async def test_pipeline_fails_fast_when_list_deleted(tmp_locus_home: Path):
             "duration_seconds": 0,
             "uploader": "",
             "rerun": False,
+            "platform": "bilibili",
+            "source_url": "https://www.bilibili.com/video/BV1abc123",
         },
     )
 
@@ -196,9 +188,7 @@ async def test_pipeline_logs_when_embedding_model_missing(tmp_locus_home: Path, 
 
     job = {
         "id": "test-job-id",
-        "type": "video",
-        "platform": "bilibili",
-        "source_url": "https://www.bilibili.com/video/BV1abc123",
+        "type": "ingest",
         "meta": {
             "video_id": "BV1abc123",
             "list_id": "list-001",
@@ -207,6 +197,8 @@ async def test_pipeline_logs_when_embedding_model_missing(tmp_locus_home: Path, 
             "duration_seconds": 0,
             "uploader": "",
             "rerun": False,
+            "platform": "bilibili",
+            "source_url": "https://www.bilibili.com/video/BV1abc123",
         },
     }
 
@@ -231,3 +223,55 @@ async def test_pipeline_logs_when_embedding_model_missing(tmp_locus_home: Path, 
         await worker._pipeline(job)
 
     assert any("embedding model not found" in record.message.lower() for record in caplog.records)
+
+
+@pytest.mark.asyncio
+async def test_delete_job_cleans_up_ingest_artifacts(
+    client: httpx.AsyncClient, tmp_locus_home: Path
+):
+    from locus.db import bootstrap_db, create_job, get_job
+
+    await bootstrap_db()
+    video_id = "BV1cleanup"
+    transcript_path = tmp_locus_home / "transcripts" / f"{video_id}.txt"
+    note_path = tmp_locus_home / "notes" / f"{video_id}.md"
+    cover_path = tmp_locus_home / "notes" / "attachments" / f"{video_id}_cover.jpg"
+    download_path = tmp_locus_home / "downloads" / f"{video_id}.mp4"
+
+    transcript_path.parent.mkdir(parents=True, exist_ok=True)
+    note_path.parent.mkdir(parents=True, exist_ok=True)
+    cover_path.parent.mkdir(parents=True, exist_ok=True)
+    download_path.parent.mkdir(parents=True, exist_ok=True)
+
+    transcript_path.write_text("transcript", encoding="utf-8")
+    note_path.write_text("# note", encoding="utf-8")
+    cover_path.write_text("cover", encoding="utf-8")
+    download_path.write_text("video", encoding="utf-8")
+
+    job_id = await create_job(
+        type="ingest",
+        meta={
+            "video_id": video_id,
+            "list_id": "list-1",
+            "title": "Cleanup Me",
+            "platform": "bilibili",
+            "source_url": f"https://www.bilibili.com/video/{video_id}",
+        },
+    )
+
+    db_path = tmp_locus_home / "locus.db"
+    with sqlite3.connect(db_path) as db:
+        db.execute("UPDATE jobs SET status='failed' WHERE id=?", (job_id,))
+        db.commit()
+
+    with patch("locus.cleanup.clear_embeddings_for_video") as mock_clear:
+        resp = await client.delete(f"/jobs/{job_id}")
+
+    assert resp.status_code == 204
+    assert await get_job(job_id) is None
+    assert not transcript_path.exists()
+    assert not note_path.exists()
+    assert not cover_path.exists()
+    assert not download_path.exists()
+    mock_clear.assert_called_once()
+    assert mock_clear.call_args[0][0] == video_id

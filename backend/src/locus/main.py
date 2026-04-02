@@ -21,34 +21,40 @@ from locus.worker import WorkerLoop
 WEB_DIST = Path(__file__).resolve().parents[3] / "web" / "dist"
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
-    home = locus_home()
-    for subdir in (
-        "notes",
-        "transcripts",
-        "downloads",
-        "chroma",
-        "tmp",
-        "models/whisper",
-        "models/embedding",
-    ):
-        (home / subdir).mkdir(parents=True, exist_ok=True)
+def make_lifespan(*, start_worker: bool):
+    @asynccontextmanager
+    async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+        home = locus_home()
+        for subdir in (
+            "notes",
+            "transcripts",
+            "downloads",
+            "chroma",
+            "tmp",
+            "models/whisper",
+            "models/embedding",
+        ):
+            (home / subdir).mkdir(parents=True, exist_ok=True)
 
-    await bootstrap_db()
+        await bootstrap_db()
 
-    cfg = load_config()
-    worker = WorkerLoop(concurrency=cfg.backend.worker_concurrency)
-    app.state.worker = worker
-    await worker.start()
+        worker = None
+        if start_worker:
+            cfg = load_config()
+            worker = WorkerLoop(concurrency=cfg.backend.worker_concurrency)
+            await worker.start()
+        app.state.worker = worker
 
-    yield
+        yield
 
-    await worker.stop()
+        if worker is not None:
+            await worker.stop()
+
+    return lifespan
 
 
-def create_app() -> FastAPI:
-    app = FastAPI(title="Locus Backend", lifespan=lifespan)
+def create_app(*, start_worker: bool = True) -> FastAPI:
+    app = FastAPI(title="Locus Backend", lifespan=make_lifespan(start_worker=start_worker))
     web_dist = WEB_DIST
 
     app.add_middleware(

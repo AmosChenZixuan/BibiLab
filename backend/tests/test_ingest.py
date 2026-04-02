@@ -1,25 +1,8 @@
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import httpx
 import pytest
-from fastapi.testclient import TestClient
-
-
-@pytest.fixture()
-def tmp_locus_home(tmp_path: Path):
-    with patch("locus.config.locus_home", return_value=tmp_path):
-        with patch("locus.db.locus_home", return_value=tmp_path):
-            with patch("locus.main.locus_home", return_value=tmp_path):
-                yield tmp_path
-
-
-@pytest.fixture()
-def client(tmp_locus_home: Path):
-    from locus.main import create_app
-
-    app = create_app()
-    with TestClient(app, raise_server_exceptions=True) as c:
-        yield c
 
 
 def _make_video_info(bvid="BV1abc123", title="Test Video"):
@@ -45,9 +28,10 @@ def mock_ydl_single():
         yield info
 
 
-def test_ingest_single_video(client: TestClient, mock_ydl_single):
-    list_id = client.post("/lists", json={"name": "Test"}).json()["id"]
-    resp = client.post(
+@pytest.mark.asyncio
+async def test_ingest_single_video(client: httpx.AsyncClient, mock_ydl_single):
+    list_id = (await client.post("/lists", json={"name": "Test"})).json()["id"]
+    resp = await client.post(
         "/ingest/url",
         json={"list_id": list_id, "url": "https://www.bilibili.com/video/BV1abc123"},
     )
@@ -58,7 +42,7 @@ def test_ingest_single_video(client: TestClient, mock_ydl_single):
 
 
 @pytest.mark.asyncio
-async def test_ingest_dedup(client: TestClient, mock_ydl_single, tmp_locus_home: Path):
+async def test_ingest_dedup(client: httpx.AsyncClient, mock_ydl_single, tmp_locus_home: Path):
     """Submitting the same video twice should skip on second attempt."""
     from locus.db import bootstrap_db, create_list, write_source
 
@@ -77,7 +61,7 @@ async def test_ingest_dedup(client: TestClient, mock_ydl_single, tmp_locus_home:
         vision_enabled=False,
         settings_snapshot={},
     )
-    resp = client.post(
+    resp = await client.post(
         "/ingest/url",
         json={"list_id": "list-1", "url": "https://www.bilibili.com/video/BV1abc123"},
     )
@@ -89,7 +73,7 @@ async def test_ingest_dedup(client: TestClient, mock_ydl_single, tmp_locus_home:
 
 @pytest.mark.asyncio
 async def test_ingest_rerun_bypasses_dedup(
-    client: TestClient, mock_ydl_single, tmp_locus_home: Path
+    client: httpx.AsyncClient, mock_ydl_single, tmp_locus_home: Path
 ):
     """?rerun=true should queue even if source already exists."""
     from locus.db import bootstrap_db, create_list, write_source
@@ -109,7 +93,7 @@ async def test_ingest_rerun_bypasses_dedup(
         vision_enabled=False,
         settings_snapshot={},
     )
-    resp = client.post(
+    resp = await client.post(
         "/ingest/url?rerun=true",
         json={"list_id": "list-1", "url": "https://www.bilibili.com/video/BV1abc123"},
     )
@@ -119,15 +103,17 @@ async def test_ingest_rerun_bypasses_dedup(
     assert data["skipped"] == []
 
 
-def test_ingest_unknown_list(client: TestClient, mock_ydl_single):
-    resp = client.post(
+@pytest.mark.asyncio
+async def test_ingest_unknown_list(client: httpx.AsyncClient, mock_ydl_single):
+    resp = await client.post(
         "/ingest/url",
         json={"list_id": "nonexistent", "url": "https://www.bilibili.com/video/BV1abc123"},
     )
     assert resp.status_code == 404
 
 
-def test_ingest_rerun_endpoint_removed(client: TestClient):
+@pytest.mark.asyncio
+async def test_ingest_rerun_endpoint_removed(client: httpx.AsyncClient):
     """The old /ingest/rerun/{video_id} endpoint must no longer exist."""
-    resp = client.post("/ingest/rerun/BV1abc123")
+    resp = await client.post("/ingest/rerun/BV1abc123")
     assert resp.status_code == 404

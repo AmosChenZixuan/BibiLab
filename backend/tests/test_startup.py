@@ -1,33 +1,16 @@
 from pathlib import Path
 from unittest.mock import patch
 
+import httpx
 import pytest
-from fastapi.testclient import TestClient
 
 from locus.config import AIConfig
 from locus.routers.health import _check_llm
 
 
-@pytest.fixture()
-def tmp_locus_home(tmp_path: Path):
-    """Redirect ~/.locus/ to a temp directory for tests."""
-    with patch("locus.config.locus_home", return_value=tmp_path):
-        with patch("locus.db.locus_home", return_value=tmp_path):
-            with patch("locus.main.locus_home", return_value=tmp_path):
-                yield tmp_path
-
-
-@pytest.fixture()
-def client(tmp_locus_home: Path):
-    from locus.main import create_app
-
-    app = create_app()
-    with TestClient(app, raise_server_exceptions=True) as c:
-        yield c
-
-
-def test_health_returns_200(client: TestClient):
-    resp = client.get("/health")
+@pytest.mark.asyncio
+async def test_health_returns_200(client: httpx.AsyncClient):
+    resp = await client.get("/health")
     assert resp.status_code == 200
     data = resp.json()
     assert data["overall"] in ("ok", "error", "degraded")
@@ -38,17 +21,19 @@ def test_health_returns_200(client: TestClient):
     assert "bilibili_session" not in deps
 
 
-def test_health_includes_embedding_model(client: TestClient, tmp_locus_home: Path):  # noqa: ARG001
-    resp = client.get("/health")
+@pytest.mark.asyncio
+async def test_health_includes_embedding_model(client: httpx.AsyncClient, tmp_locus_home: Path):  # noqa: ARG001
+    resp = await client.get("/health")
     assert resp.status_code == 200
     deps = resp.json()["dependencies"]
     assert "embedding_model" in deps
     assert deps["embedding_model"]["status"] in ("ok", "error")
 
 
-def test_health_reports_ffmpeg_install_path(client: TestClient):
+@pytest.mark.asyncio
+async def test_health_reports_ffmpeg_install_path(client: httpx.AsyncClient):
     with patch("locus.routers.health.shutil.which", return_value="/usr/bin/ffmpeg"):
-        resp = client.get("/health")
+        resp = await client.get("/health")
 
     assert resp.status_code == 200
     assert resp.json()["dependencies"]["ffmpeg"] == {
@@ -57,7 +42,10 @@ def test_health_reports_ffmpeg_install_path(client: TestClient):
     }
 
 
-def test_health_reports_embedding_model_install_path(tmp_locus_home: Path, client: TestClient):  # noqa: ARG001
+@pytest.mark.asyncio
+async def test_health_reports_embedding_model_install_path(
+    tmp_locus_home: Path, client: httpx.AsyncClient
+):  # noqa: ARG001
     model_file = tmp_locus_home / "models" / "embedding" / "onnx" / "model.onnx"
     model_file.parent.mkdir(parents=True)
     model_file.write_bytes(b"fake")
@@ -69,7 +57,7 @@ def test_health_reports_embedding_model_install_path(tmp_locus_home: Path, clien
         ),
         patch("locus.routers.health.is_embedding_model_downloaded", return_value=True),
     ):
-        resp = client.get("/health")
+        resp = await client.get("/health")
 
     assert resp.status_code == 200
     assert resp.json()["dependencies"]["embedding_model"] == {
@@ -146,8 +134,9 @@ def test_is_embedding_model_downloaded_true_when_present(tmp_path: Path):
         assert is_embedding_model_downloaded() is True
 
 
-def test_config_defaults(client: TestClient):
-    resp = client.get("/config")
+@pytest.mark.asyncio
+async def test_config_defaults(client: httpx.AsyncClient):
+    resp = await client.get("/config")
     assert resp.status_code == 200
     data = resp.json()
     assert data["backend"]["port"] == 8765
@@ -155,8 +144,9 @@ def test_config_defaults(client: TestClient):
     assert data["transcription"]["model_size"] == "large-v3"
 
 
-def test_config_deep_merge(client: TestClient):
-    resp = client.put("/config", json={"ai": {"model": "gpt-4-turbo"}})
+@pytest.mark.asyncio
+async def test_config_deep_merge(client: httpx.AsyncClient):
+    resp = await client.put("/config", json={"ai": {"model": "gpt-4-turbo"}})
     assert resp.status_code == 200
     data = resp.json()
     assert data["ai"]["model"] == "gpt-4-turbo"
@@ -164,20 +154,22 @@ def test_config_deep_merge(client: TestClient):
     assert data["backend"]["port"] == 8765  # unrelated section preserved
 
 
-def test_config_masks_sensitive_fields(client: TestClient):
-    client.put(
+@pytest.mark.asyncio
+async def test_config_masks_sensitive_fields(client: httpx.AsyncClient):
+    await client.put(
         "/config",
         json={
             "ai": {"api_key": "sk-secret"},
             "accounts": {"bilibili": {"cookie": "my-cookie"}},
         },
     )
-    data = client.get("/config").json()
+    data = (await client.get("/config")).json()
     assert data["ai"]["api_key"] == "***"
     assert data["accounts"]["bilibili"]["cookie"] == "***"
 
 
-def test_serves_built_spa_without_shadowing_api_routes(client: TestClient, tmp_path: Path):
+@pytest.mark.asyncio
+async def test_serves_built_spa_without_shadowing_api_routes(tmp_path: Path):
     spa_dist = tmp_path / "web-dist"
     (spa_dist / "assets").mkdir(parents=True)
     (spa_dist / "index.html").write_text("<!doctype html><html><body>locus web</body></html>")
@@ -186,24 +178,30 @@ def test_serves_built_spa_without_shadowing_api_routes(client: TestClient, tmp_p
     with patch("locus.main.WEB_DIST", spa_dist):
         from locus.main import create_app
 
-        app = create_app()
+        app = create_app(start_worker=False)
 
-    with TestClient(app, raise_server_exceptions=True) as spa_client:
-        root = spa_client.get("/")
-        assert root.status_code == 200
-        assert "text/html" in root.headers["content-type"]
-        assert "locus web" in root.text
+    async with app.router.lifespan_context(app):
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(
+            transport=transport,
+            base_url="http://testserver",
+        ) as spa_client:
+            root = await spa_client.get("/")
+            assert root.status_code == 200
+            assert "text/html" in root.headers["content-type"]
+            assert "locus web" in root.text
 
-        asset = spa_client.get("/assets/app.js")
-        assert asset.status_code == 200
-        assert "console.log('locus');" in asset.text
+            asset = await spa_client.get("/assets/app.js")
+            assert asset.status_code == 200
+            assert "console.log('locus');" in asset.text
 
-        health = spa_client.get("/health")
-        assert health.status_code == 200
-        assert health.json()["dependencies"]["backend"]["status"] == "ok"
+            health = await spa_client.get("/health")
+            assert health.status_code == 200
+            assert health.json()["dependencies"]["backend"]["status"] == "ok"
 
 
-def test_locus_dirs_bootstrapped(client: TestClient, tmp_locus_home: Path):
+@pytest.mark.asyncio
+async def test_locus_dirs_bootstrapped(client: httpx.AsyncClient, tmp_locus_home: Path):
     for subdir in ("notes", "transcripts", "downloads", "chroma"):
         assert (tmp_locus_home / subdir).is_dir(), f"Missing {subdir}/"
     assert (tmp_locus_home / "locus.db").exists()
@@ -211,17 +209,16 @@ def test_locus_dirs_bootstrapped(client: TestClient, tmp_locus_home: Path):
 
 @pytest.mark.asyncio
 async def test_bootstrap_db_creates_lists_table(tmp_path: Path):
-    import aiosqlite
+    import sqlite3
 
     from locus.db import bootstrap_db
 
     with patch("locus.db.locus_home", return_value=tmp_path):
         await bootstrap_db()
 
-    async with aiosqlite.connect(tmp_path / "locus.db") as db:
-        async with db.execute(
+    with sqlite3.connect(tmp_path / "locus.db") as db:
+        row = db.execute(
             "SELECT name FROM sqlite_master WHERE type='table' AND name='lists'"
-        ) as cur:
-            row = await cur.fetchone()
+        ).fetchone()
 
     assert row is not None
