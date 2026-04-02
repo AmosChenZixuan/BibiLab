@@ -21,8 +21,6 @@ TERMINAL_STATUSES = {JobStatus.DONE, JobStatus.FAILED, JobStatus.NEEDS_AUTH}
 class JobResponse(BaseModel):
     id: str
     type: str
-    source_url: str
-    platform: str
     status: JobStatus
     progress: int
     error: str | None

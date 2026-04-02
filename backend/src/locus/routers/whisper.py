@@ -49,8 +49,6 @@ async def download_whisper(req: WhisperModelDownloadRequest) -> dict:
 
     job_id = await create_job(
         type="model_download",
-        source_url="",
-        platform="local",
         meta={
             "model_family": "whisper",
             "model_size": req.model_size,

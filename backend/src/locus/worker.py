@@ -7,6 +7,7 @@ from pathlib import Path
 
 from locus.adapters.base import AuthRequiredError, VideoMeta
 from locus.adapters.bilibili import BilibiliAdapter
+from locus.cleanup import cleanup_job_artifacts
 from locus.config import load_config, locus_home
 from locus.db import (
     delete_job,
@@ -25,6 +26,13 @@ from locus.pipeline.transcribe import transcribe, write_transcript
 from locus.whisper_models import download_whisper_model
 
 logger = logging.getLogger(__name__)
+
+
+def _parse_job_meta(job: dict) -> dict:
+    meta = job.get("meta", {})
+    if isinstance(meta, str):
+        return json.loads(meta or "{}")
+    return meta
 
 
 class WorkerLoop:
@@ -96,7 +104,7 @@ class WorkerLoop:
 
     async def _download_model_job(self, job: dict) -> None:
         job_id = job["id"]
-        meta_raw = json.loads(job["meta"]) if isinstance(job["meta"], str) else job["meta"]
+        meta_raw = _parse_job_meta(job)
         model_family = meta_raw.get("model_family", "")
         model_size = meta_raw.get("model_size", "")
 
@@ -110,7 +118,7 @@ class WorkerLoop:
 
     async def _pipeline(self, job: dict) -> None:
         job_id = job["id"]
-        meta_raw = json.loads(job["meta"]) if isinstance(job["meta"], str) else job["meta"]
+        meta_raw = _parse_job_meta(job)
         cfg = load_config()
 
         video_id: str = meta_raw["video_id"]
@@ -123,8 +131,8 @@ class WorkerLoop:
         video_meta = VideoMeta(
             video_id=video_id,
             title=meta_raw.get("title", ""),
-            platform=job["platform"],
-            source_url=job["source_url"],
+            platform=meta_raw.get("platform", ""),
+            source_url=meta_raw.get("source_url", ""),
             cover_url=meta_raw.get("cover_url", ""),
             duration_seconds=meta_raw.get("duration_seconds", 0),
             uploader=meta_raw.get("uploader", ""),
@@ -134,6 +142,7 @@ class WorkerLoop:
         await update_job_status(job_id, "downloading", progress=10)
         if job_id in self._cancelled:
             self._cancelled.discard(job_id)
+            await asyncio.to_thread(cleanup_job_artifacts, job)
             await delete_job(job_id)
             return
 
@@ -153,6 +162,7 @@ class WorkerLoop:
 
         if job_id in self._cancelled:
             self._cancelled.discard(job_id)
+            await asyncio.to_thread(cleanup_job_artifacts, job)
             await delete_job(job_id)
             return
 
@@ -177,15 +187,26 @@ class WorkerLoop:
 
         if job_id in self._cancelled:
             self._cancelled.discard(job_id)
+            await asyncio.to_thread(cleanup_job_artifacts, job)
             await delete_job(job_id)
             return
 
         # 5. Write note + embed
         await update_job_status(job_id, "writing", progress=70)
         note_path = await asyncio.to_thread(write_video_note, video_meta, extraction, list_id)
+        if job_id in self._cancelled:
+            self._cancelled.discard(job_id)
+            await asyncio.to_thread(cleanup_job_artifacts, job)
+            await delete_job(job_id)
+            return
         if not is_embedding_model_downloaded():
             logger.info("Job %s: embedding model not found - downloading (~50 MB).", job_id)
         await asyncio.to_thread(embed_chunks, chunks, video_meta, list_id, cfg)
+        if job_id in self._cancelled:
+            self._cancelled.discard(job_id)
+            await asyncio.to_thread(cleanup_job_artifacts, job)
+            await delete_job(job_id)
+            return
 
         # 6. Persist processed source metadata
         await write_source(

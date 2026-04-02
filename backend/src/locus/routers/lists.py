@@ -75,7 +75,7 @@ async def delete_list(list_id: str) -> None:
 
     placeholders = ",".join("?" * len(_ACTIVE_JOB_STATUSES))
     async with get_db() as db:
-        async with db.execute(
+        cur = db.execute(
             f"""
             SELECT 1 FROM jobs
             WHERE json_extract(meta, '$.list_id') = ?
@@ -83,9 +83,9 @@ async def delete_list(list_id: str) -> None:
             LIMIT 1
             """,
             (list_id, *_ACTIVE_JOB_STATUSES),
-        ) as cur:
-            if await cur.fetchone() is not None:
-                raise HTTPException(status_code=409, detail="Cannot delete a list with active jobs")
+        )
+        if cur.fetchone() is not None:
+            raise HTTPException(status_code=409, detail="Cannot delete a list with active jobs")
 
     sources = await get_sources_for_list(list_id)
     for source in sources:

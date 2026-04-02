@@ -14,9 +14,7 @@ logger = logging.getLogger(__name__)
 
 async def _queue_video(video: VideoMeta, list_id: str, rerun: bool = False) -> str:
     return await create_job(
-        type="video",
-        source_url=video.source_url,
-        platform=video.platform,
+        type="ingest",
         meta={
             "video_id": video.video_id,
             "list_id": list_id,
@@ -25,6 +23,8 @@ async def _queue_video(video: VideoMeta, list_id: str, rerun: bool = False) -> s
             "duration_seconds": video.duration_seconds,
             "uploader": video.uploader,
             "rerun": rerun,
+            "source_url": video.source_url,
+            "platform": video.platform,
         },
     )
 

@@ -17,10 +17,8 @@ async def test_lists_table_exists(tmp_locus_home: Path):
 
     await bootstrap_db()
     async with get_db() as db:
-        async with db.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='lists'"
-        ) as cur:
-            assert await cur.fetchone() is not None
+        cur = db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='lists'")
+        assert cur.fetchone() is not None
 
 
 @pytest.mark.asyncio
@@ -29,10 +27,21 @@ async def test_sources_table_exists(tmp_locus_home: Path):
 
     await bootstrap_db()
     async with get_db() as db:
-        async with db.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='sources'"
-        ) as cur:
-            assert await cur.fetchone() is not None
+        cur = db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='sources'")
+        assert cur.fetchone() is not None
+
+
+@pytest.mark.asyncio
+async def test_jobs_table_uses_meta_for_source_fields(tmp_locus_home: Path):
+    from locus.db import bootstrap_db, get_db
+
+    await bootstrap_db()
+    async with get_db() as db:
+        columns = [row[1] for row in db.execute("PRAGMA table_info(jobs)").fetchall()]
+
+    assert "meta" in columns
+    assert "source_url" not in columns
+    assert "platform" not in columns
 
 
 @pytest.mark.asyncio

@@ -1,11 +1,14 @@
 import json
+import logging
 
 from fastapi import APIRouter, HTTPException, Request
 
+from locus.cleanup import cleanup_job_artifacts
 from locus.db import delete_job, get_job, list_jobs
 from locus.models.jobs import TERMINAL_STATUSES, JobResponse, JobStatus
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 def _row_to_response(row) -> JobResponse:
@@ -13,8 +16,6 @@ def _row_to_response(row) -> JobResponse:
     return JobResponse(
         id=d["id"],
         type=d["type"],
-        source_url=d["source_url"],
-        platform=d["platform"],
         status=JobStatus(d["status"]),
         progress=d["progress"] or 0,
         error=d["error"],
@@ -44,12 +45,17 @@ async def cancel_or_delete_job(job_id: str, request: Request) -> None:
     if row is None:
         raise HTTPException(status_code=404, detail="Job not found")
 
-    status = JobStatus(dict(row)["status"])
+    job = dict(row)
+    status = JobStatus(job["status"])
 
-    if status == JobStatus.QUEUED or status in TERMINAL_STATUSES:
-        await delete_job(job_id)
-    else:
-        # In-progress: signal worker to stop; it will set status to failed
+    if status not in TERMINAL_STATUSES and status != JobStatus.QUEUED:
         worker = request.app.state.worker
         if worker:
             worker.cancel_job(job_id)
+
+    try:
+        cleanup_job_artifacts(job)
+    except Exception:
+        logger.exception("Failed to clean up artifacts for job %s", job_id)
+
+    await delete_job(job_id)
