@@ -32,23 +32,20 @@ No config file needed. No plugin. Tokens are co-located with the base layer in `
 
 | Token | Value | Replaces |
 |---|---|---|
-| `--color-ink` | `#274970` | `text-[#274970]` |
-| `--color-ink-dark` | `#1f3557` | `:root { color: ... }` |
-| `--color-muted` | `#8096b3` | `text-[#8096b3]` |
-| `--color-muted-mid` | `#547094` | `text-[#547094]` |
+| `--color-ink` | `#274970` | `text-[#274970]`; also replaces `#1f3557` (close enough, one call site) |
+| `--color-muted` | `#8096b3` | `text-[#8096b3]`; `#547094` → `text-muted/80` (opacity modifier) |
 | `--color-pink` | `#f08bb9` | `text-[#f08bb9]`, gradient stops |
 | `--color-blue` | `#5b7faa` | `text-[#5b7faa]`, `bg-[#5b7faa]` |
-| `--color-sky` | `#7dd9ff` | `rgba(125,217,255,...)` tints |
+| `--color-sky` | `#7dd9ff` | `rgba(125,217,255,...)` tints via opacity modifier |
 | `--color-success` | `#4ca9cf` | `text-[#4ca9cf]` |
 | `--color-danger` | `#8d1d2c` | `bg-[#8d1d2c]`, `text-[#8d1d2c]` |
 | `--color-warn` | `#b46088` | `text-[#b46088]` |
 | `--color-border` | `rgba(106,147,198,0.12)` | 15+ occurrences of this exact value |
-| `--color-surface-0` | `rgba(255,252,247,0.82)` | warm paper background |
-| `--color-surface-1` | `rgba(255,255,255,0.76)` | workspace panel |
-| `--color-surface-2` | `rgba(255,255,255,0.84)` | editable inputs |
-| `--color-surface-3` | `rgba(255,255,255,0.92)` | inputs, dropdowns |
+| `--color-surface` | `rgba(255,252,247,0.82)` | warm paper — the one non-white surface |
 
-Opacity tints (e.g. `bg-sky/8`, `border-blue/45`) use Tailwind's built-in opacity modifier syntax — no extra tokens needed for those.
+Pure-white surfaces use Tailwind's built-in opacity modifier: `bg-white/76`, `bg-white/84`, `bg-white/92`. Only the warm-paper surface needs a named token.
+
+Opacity tints (e.g. `bg-sky/8`, `border-blue/45`) use Tailwind's built-in opacity modifier syntax — no extra tokens needed.
 
 **Typography**
 
@@ -56,13 +53,11 @@ Opacity tints (e.g. `bg-sky/8`, `border-blue/45`) use Tailwind's built-in opacit
 |---|---|---|
 | `--font-serif` | `"Iowan Old Style","Palatino Linotype",serif` | `font-serif` on headings |
 | `--font-mono` | `SFMono-Regular,Consolas,monospace` | `font-mono` on code/transcript |
-| `--text-badge` | `0.5rem` | navbar language pip |
-| `--text-caption` | `0.72rem` | platform labels, transcript headers |
-| `--text-hint` | `0.82rem` | field hints, status chips |
+| `--text-badge` | `0.5rem` | navbar language pip (no equivalent in Tailwind scale) |
 | `--text-section` | `1.35rem` | panel/workspace titles |
 | `--text-display` | `clamp(2rem,4vw,3.5rem)` | page headings |
 
-All other sizes in the `0.82–0.94rem` cluster snap to Tailwind's built-in `text-sm` (0.875rem). `text-[0.8rem]` (eyebrow) snaps to `text-xs` (0.75rem).
+All sizes in the `0.72–0.94rem` cluster snap to built-in utilities: `text-xs` (0.75rem) for caption/eyebrow, `text-sm` (0.875rem) for hints, labels, status text.
 
 **Shadows**
 
@@ -78,9 +73,10 @@ All other sizes in the `0.82–0.94rem` cluster snap to Tailwind's built-in `tex
 |---|---|---|---|
 | `--radius-icon` | `10px` | `rounded-[10px]` | nav icon buttons |
 | `--radius-overlay` | `14px` | `rounded-[14px]` | identity panel, tooltips |
-| `--radius-card-sm` | `18px` | `rounded-[18px]` | smaller cards/panels |
 | `--radius-card` | `22px` | `rounded-[22px]` | list cards, app panels |
 | `--radius-drawer` | `28px` | `rounded-[28px]` | jobs drawer |
+
+`rounded-[18px]` (secondary panels) snaps to `rounded-2xl` (16px) — 2px difference, imperceptible in context.
 
 **Z-index**
 
@@ -121,7 +117,7 @@ Constants are grouped into five named sections with header comments. Shared base
 **Shared bases (unexported):**
 
 ```ts
-const inputBase = "w-full rounded-2xl border border-border bg-surface-3 px-3.5 py-3 text-ink outline-none transition focus:border-blue/45 focus:ring-2 focus:ring-sky/18";
+const inputBase = "w-full rounded-2xl border border-border bg-white/92 px-3.5 py-3 text-ink outline-none transition focus:border-blue/45 focus:ring-2 focus:ring-sky/18";
 
 const buttonBase = "inline-flex items-center justify-center rounded-2xl px-4 py-[11px] transition disabled:cursor-not-allowed disabled:opacity-60";
 ```
