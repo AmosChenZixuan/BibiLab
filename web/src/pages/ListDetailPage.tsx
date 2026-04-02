@@ -7,15 +7,7 @@ import { SourcesPanel } from "../components/sources/SourcesPanel";
 import { api, notifyJobsChanged, toErrorMessage } from "../lib/api";
 import { downloadTextFile } from "../lib/download";
 import type { NoteContent, Source } from "../lib/types";
-import {
-  eyebrowClass,
-  mutedTextClass,
-  pageHeadingClass,
-  statusErrorClass,
-  workspacePanelBodyClass,
-  workspacePanelTitleClass,
-} from "../lib/ui";
-import { Button, Panel } from "../components/ui";
+import { Button, Panel, PanelBody, PanelTitle } from "../components/ui";
 
 function formatCount(count: number, noun: string): string {
   return `${count} ${noun}${count === 1 ? "" : "s"}`;
@@ -163,7 +155,7 @@ export function ListDetailPage() {
   return (
     <div className="grid gap-4">
       <section className="grid gap-4">
-        <p className={eyebrowClass}>Notebook workspace</p>
+        <p className="text-xs uppercase tracking-[0.14em] text-pink">Notebook workspace</p>
         {editingName ? (
           <label className="grid max-w-[560px] gap-1.5">
             <span className="sr-only">List name</span>
@@ -187,7 +179,7 @@ export function ListDetailPage() {
           </label>
         ) : (
           <div className="flex flex-wrap items-center gap-3">
-            <h1 className={pageHeadingClass}>{listName}</h1>
+            <h1 className="m-0 mb-2 font-serif text-display leading-[0.95]">{listName}</h1>
             <Button
               aria-label="Edit list name"
               variant="ghost"
@@ -202,16 +194,16 @@ export function ListDetailPage() {
             </Button>
           </div>
         )}
-        <p className={mutedTextClass}>Queue sources, inspect notes, and export a list overview from one reading surface.</p>
-        {renameError ? <p className={statusErrorClass}>{renameError}</p> : null}
+        <p className="m-0 text-muted">Queue sources, inspect notes, and export a list overview from one reading surface.</p>
+        {renameError ? <p className="m-0 text-sm text-danger">{renameError}</p> : null}
       </section>
       <div className="grid grid-cols-[1.25fr_1fr_0.9fr] items-start gap-4 max-[820px]:grid-cols-1">
         {loadError ? (
           <Panel variant="workspace">
-            <h2 className={workspacePanelTitleClass}>Sources</h2>
-            <div className={workspacePanelBodyClass}>
-              <p className={statusErrorClass}>{loadError}</p>
-            </div>
+            <PanelTitle>Sources</PanelTitle>
+            <PanelBody>
+              <p className="m-0 text-sm text-danger">{loadError}</p>
+            </PanelBody>
           </Panel>
         ) : (
           <SourcesPanel

@@ -4,8 +4,7 @@ import ReactMarkdown from "react-markdown";
 
 import { downloadTextFile } from "../../lib/download";
 import type { NoteContent, Source } from "../../lib/types";
-import { mutedTextClass, statusErrorClass, workspacePanelBodyClass } from "../../lib/ui";
-import { Button } from "../../components/ui";
+import { Button, PanelBody } from "../../components/ui";
 
 type Props = {
   activeTab: "note" | "transcript";
@@ -40,14 +39,14 @@ export function SourceDetail({
   }
 
   return (
-    <div className={workspacePanelBodyClass}>
+    <PanelBody>
       <div className="grid gap-3">
         <Button variant="ghost" onClick={onBack} type="button">
           Back to sources
         </Button>
         <div>
           <h3 className="m-0 font-serif text-2xl">{source.title}</h3>
-          <p className={mutedTextClass}>{source.platform}</p>
+          <p className="m-0 text-muted">{source.platform}</p>
         </div>
       </div>
 
@@ -77,11 +76,11 @@ export function SourceDetail({
         </div>
       ) : (
         <div className="min-h-[320px] rounded-2xl border border-border bg-white/60 p-4.5">
-          {transcriptLoading ? <p className={mutedTextClass}>Loading transcript...</p> : null}
-          {transcriptError ? <p className={statusErrorClass}>{transcriptError}</p> : null}
+          {transcriptLoading ? <p className="m-0 text-muted">Loading transcript...</p> : null}
+          {transcriptError ? <p className="m-0 text-sm text-danger">{transcriptError}</p> : null}
           {transcript ? <pre className="m-0 whitespace-pre-wrap font-mono text-[#4e6485]">{transcript}</pre> : null}
         </div>
       )}
-    </div>
+    </PanelBody>
   );
 }

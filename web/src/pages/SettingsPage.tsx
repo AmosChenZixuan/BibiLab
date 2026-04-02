@@ -7,7 +7,6 @@ import { TranscriptTab } from "../components/settings/TranscriptTab";
 import { api, notifyHealthChanged, toErrorMessage } from "../lib/api";
 import { deriveDependencyHealthTier, HEALTH_META } from "../lib/health";
 import type { HealthDependency, LocusConfig } from "../lib/types";
-import { mutedTextClass, pageHeadingClass, statusErrorClass } from "../lib/ui";
 import { Panel } from "../components/ui";
 
 type TabKey = "llm" | "transcript" | "other";
@@ -114,8 +113,8 @@ export function SettingsPage() {
   if (loadError || !config) {
     return (
       <Panel variant="app">
-        <h1 className={pageHeadingClass}>Settings</h1>
-        <p className={statusErrorClass}>{loadError ?? "Request failed"}</p>
+        <h1 className="m-0 mb-2 font-serif text-display leading-[0.95]">Settings</h1>
+        <p className="m-0 text-sm text-danger">{loadError ?? "Request failed"}</p>
       </Panel>
     );
   }
@@ -123,7 +122,7 @@ export function SettingsPage() {
   return (
     <div className="grid gap-4">
       <section>
-        <h1 className={pageHeadingClass}>Settings</h1>
+        <h1 className="m-0 mb-2 font-serif text-display leading-[0.95]">Settings</h1>
       </section>
 
       <section className="grid items-start gap-5 md:grid-cols-[180px_minmax(0,1fr)]">

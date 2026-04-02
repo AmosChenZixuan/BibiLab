@@ -1,5 +1,4 @@
 import type { LocusList } from "../../lib/types";
-import { eyebrowClass, mutedTextClass, sectionTitleClass } from "../../lib/ui";
 import { Button } from "../../components/ui";
 
 type Props = {
@@ -39,12 +38,12 @@ export function ListGrid({ lists, onDelete, onOpen, onCreate, busy }: Props) {
             onClick={() => onOpen(list)}
             type="button"
           >
-            <span className={eyebrowClass}>Notebook</span>
+            <span className="text-xs uppercase tracking-[0.14em] text-pink">Notebook</span>
             <span className="rounded-full bg-sky/10 px-3 py-2 text-sm text-[#4e6f99]">Open</span>
           </button>
           <div>
-            <h2 className={sectionTitleClass}>{list.name}</h2>
-            <p className={mutedTextClass}>Created {new Date(list.created_at).toLocaleString()}</p>
+            <h2 className="m-0 font-serif text-2xl">{list.name}</h2>
+            <p className="m-0 text-muted">Created {new Date(list.created_at).toLocaleString()}</p>
           </div>
           <div className="flex flex-wrap items-center gap-3">
             <Button

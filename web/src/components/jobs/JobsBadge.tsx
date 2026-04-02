@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from "react";
 
 import { JOBS_REFRESH_EVENT, api, toErrorMessage } from "../../lib/api";
 import type { Job } from "../../lib/types";
-import { mutedTextClass, statusErrorClass } from "../../lib/ui";
 import { Button, StatusChip } from "../../components/ui";
 
 const TERMINAL_STATUSES = new Set(["done", "failed"]);
@@ -111,17 +110,17 @@ export function JobsBadge() {
             <div className="flex items-start justify-between gap-3">
               <div>
                 <h2 className="m-0 font-serif">Jobs</h2>
-                <p className={mutedTextClass}>Background ingestion and model work.</p>
+                <p className="m-0 text-muted">Background ingestion and model work.</p>
               </div>
               <Button type="button" variant="ghost" onClick={() => setIsOpen(false)}>
                 Close
               </Button>
             </div>
-            {errorMessage ? <p className={statusErrorClass}>{errorMessage}</p> : null}
+            {errorMessage ? <p className="m-0 text-sm text-danger">{errorMessage}</p> : null}
             <div className="grid gap-3">
               {jobs.length === 0 ? (
                 <div className="grid min-h-[120px] place-items-center rounded-3xl border border-border bg-[rgba(248,251,255,0.72)] /* sky-tinted card background */ p-4">
-                  <p className={mutedTextClass}>No jobs yet.</p>
+                  <p className="m-0 text-muted">No jobs yet.</p>
                 </div>
               ) : (
                 jobs.map((job) => {
@@ -140,8 +139,8 @@ export function JobsBadge() {
                             {job.status}
                           </StatusChip>
                         </div>
-                        <p className={mutedTextClass}>{job.progress}%</p>
-                        {job.error ? <p className={statusErrorClass}>{job.error}</p> : null}
+                        <p className="m-0 text-muted">{job.progress}%</p>
+                        {job.error ? <p className="m-0 text-sm text-danger">{job.error}</p> : null}
                       </div>
                       {!isTerminal ? (
                         <Button

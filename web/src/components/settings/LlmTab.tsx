@@ -1,15 +1,7 @@
 import { useEffect, useId, useState } from "react";
 
 import type { LocusConfig } from "../../lib/types";
-import {
-  fieldHintClass,
-  fieldLabelClass,
-  settingsControlClass,
-  settingsFieldClass,
-  settingsFieldMetaClass,
-  settingsInputClass,
-  settingsSelectClass,
-} from "../../lib/ui";
+import { Input, SettingsField } from "../../components/ui";
 
 type LlmTabProps = {
   config: LocusConfig;
@@ -54,21 +46,18 @@ export function LlmTab({ config, onBlur }: LlmTabProps) {
 
   return (
     <div className="grid gap-3">
-      <div className={settingsFieldClass}>
-        <div className={settingsFieldMetaClass}>
-          <label className={fieldLabelClass} htmlFor={providerId}>Provider</label>
-          <p className={fieldHintClass}>Required. Without a provider, LLM requests cannot start.</p>
-        </div>
+      <SettingsField
+        label="Provider"
+        hint="Required. Without a provider, LLM requests cannot start."
+        htmlFor={providerId}
+      >
         <select
           aria-label="Provider"
-          className={settingsSelectClass}
+          className="w-full rounded-xl border border-border bg-white/92 px-3 py-2.5 text-ink outline-none transition focus:border-blue/45 focus:ring-2 focus:ring-sky/18 h-11 min-h-11"
           id={providerId}
           onBlur={handleBlur}
           onChange={(event) =>
-            setLocalAi((current) => ({
-              ...current,
-              provider: event.target.value,
-            }))
+            setLocalAi((current) => ({ ...current, provider: event.target.value }))
           }
           value={localAi.provider}
         >
@@ -77,70 +66,61 @@ export function LlmTab({ config, onBlur }: LlmTabProps) {
           <option value="ollama">Ollama</option>
           <option value="custom">Custom</option>
         </select>
-      </div>
+      </SettingsField>
 
-      <div className={settingsFieldClass}>
-        <div className={settingsFieldMetaClass}>
-          <label className={fieldLabelClass} htmlFor={modelId}>Model</label>
-          <p className={fieldHintClass}>Required. Missing model selection breaks summary and chat generation.</p>
-        </div>
-        <input
+      <SettingsField
+        label="Model"
+        hint="Required. Missing model selection breaks summary and chat generation."
+        htmlFor={modelId}
+      >
+        <Input
           aria-label="Model"
-          className={`${settingsInputClass} ${settingsControlClass}`}
           id={modelId}
           onBlur={handleBlur}
           onChange={(event) =>
-            setLocalAi((current) => ({
-              ...current,
-              model: event.target.value,
-            }))
+            setLocalAi((current) => ({ ...current, model: event.target.value }))
           }
+          inputSize="sm"
           value={localAi.model}
         />
-      </div>
+      </SettingsField>
 
-      <div className={settingsFieldClass}>
-        <div className={settingsFieldMetaClass}>
-          <label className={fieldLabelClass} htmlFor={apiKeyId}>API Key</label>
-          <p className={fieldHintClass}>Required for hosted providers. Missing credentials break remote inference.</p>
-        </div>
-        <input
+      <SettingsField
+        label="API Key"
+        hint="Required for hosted providers. Missing credentials break remote inference."
+        htmlFor={apiKeyId}
+      >
+        <Input
           aria-label="API Key"
-          className={`${settingsInputClass} ${settingsControlClass}`}
           id={apiKeyId}
           onBlur={handleBlur}
           onChange={(event) =>
-            setLocalAi((current) => ({
-              ...current,
-              api_key: event.target.value,
-            }))
+            setLocalAi((current) => ({ ...current, api_key: event.target.value }))
           }
+          inputSize="sm"
           type="password"
           value={localAi.api_key}
         />
-      </div>
+      </SettingsField>
 
-      <div className={settingsFieldClass}>
-        <div className={settingsFieldMetaClass}>
-          <label className={fieldLabelClass} htmlFor={baseUrlId}>Base URL</label>
-          <p className={fieldHintClass}>{baseUrlMeta.hint}</p>
-        </div>
-        <input
+      <SettingsField
+        label="Base URL"
+        hint={baseUrlMeta.hint}
+        htmlFor={baseUrlId}
+      >
+        <Input
           aria-label="Base URL"
-          className={`${settingsInputClass} ${settingsControlClass}`}
           id={baseUrlId}
           onBlur={handleBlur}
           onChange={(event) =>
-            setLocalAi((current) => ({
-              ...current,
-              base_url: event.target.value,
-            }))
+            setLocalAi((current) => ({ ...current, base_url: event.target.value }))
           }
-          required
           placeholder={baseUrlMeta.placeholder}
+          required
+          inputSize="sm"
           value={localAi.base_url}
         />
-      </div>
+      </SettingsField>
     </div>
   );
 }

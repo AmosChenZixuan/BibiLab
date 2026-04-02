@@ -2,16 +2,7 @@ import { useEffect, useId, useState } from "react";
 
 import { api } from "../../lib/api";
 import type { HealthDependency, LocusConfig, WhisperModel } from "../../lib/types";
-import {
-  fieldHintClass,
-  fieldLabelClass,
-  settingsControlClass,
-  settingsFieldClass,
-  settingsFieldMetaClass,
-  settingsInputClass,
-  settingsSelectClass,
-} from "../../lib/ui";
-import { Button } from "../../components/ui";
+import { Button, SettingsField } from "../../components/ui";
 
 type TranscriptTabProps = {
   config: LocusConfig;
@@ -80,21 +71,18 @@ export function TranscriptTab({ config, dependencies, onBlur }: TranscriptTabPro
   return (
     <div className="grid gap-4">
       <div className="flex flex-col gap-3">
-        <div className={settingsFieldClass}>
-          <div className={settingsFieldMetaClass}>
-            <label className={fieldLabelClass} htmlFor={modelSizeId}>Model Size</label>
-            <p className={fieldHintClass}>Required. Missing the Whisper model blocks transcript generation entirely.</p>
-          </div>
+        <SettingsField
+          label="Model Size"
+          hint="Required. Missing the Whisper model blocks transcript generation entirely."
+          htmlFor={modelSizeId}
+        >
           <select
             aria-label="Model Size"
-            className={settingsSelectClass}
+            className="w-full rounded-xl border border-border bg-white/92 px-3 py-2.5 text-ink outline-none transition focus:border-blue/45 focus:ring-2 focus:ring-sky/18 h-11 min-h-11"
             id={modelSizeId}
             onBlur={handleBlur}
             onChange={(event) =>
-              setLocalTranscription((current) => ({
-                ...current,
-                model_size: event.target.value,
-              }))
+              setLocalTranscription((current) => ({ ...current, model_size: event.target.value }))
             }
             value={localTranscription.model_size}
           >
@@ -109,46 +97,36 @@ export function TranscriptTab({ config, dependencies, onBlur }: TranscriptTabPro
               </option>
             ))}
           </select>
-        </div>
+        </SettingsField>
 
-        <div className={settingsFieldClass}>
-          <div className={settingsFieldMetaClass}>
-            <label className={fieldLabelClass} htmlFor={deviceId}>Device</label>
-            <p className={fieldHintClass}>{deviceHint}</p>
-          </div>
+        <SettingsField label="Device" hint={deviceHint} htmlFor={deviceId}>
           <select
             aria-label="Device"
-            className={settingsSelectClass}
+            className="w-full rounded-xl border border-border bg-white/92 px-3 py-2.5 text-ink outline-none transition focus:border-blue/45 focus:ring-2 focus:ring-sky/18 h-11 min-h-11"
             id={deviceId}
             onBlur={handleBlur}
             onChange={(event) =>
-              setLocalTranscription((current) => ({
-                ...current,
-                device: event.target.value,
-              }))
+              setLocalTranscription((current) => ({ ...current, device: event.target.value }))
             }
             value={localTranscription.device}
           >
             <option value="cpu">CPU</option>
             {cudaAvailable && <option value="cuda">CUDA</option>}
           </select>
-        </div>
+        </SettingsField>
 
-        <div className={settingsFieldClass}>
-          <div className={settingsFieldMetaClass}>
-            <label className={fieldLabelClass} htmlFor={languageId}>Language</label>
-            <p className={fieldHintClass}>Controls decoder accuracy. A wrong language setting can reduce transcript quality.</p>
-          </div>
+        <SettingsField
+          label="Language"
+          hint="Controls decoder accuracy. A wrong language setting can reduce transcript quality."
+          htmlFor={languageId}
+        >
           <select
             aria-label="Language"
-            className={settingsSelectClass}
+            className="w-full rounded-xl border border-border bg-white/92 px-3 py-2.5 text-ink outline-none transition focus:border-blue/45 focus:ring-2 focus:ring-sky/18 h-11 min-h-11"
             id={languageId}
             onBlur={handleBlur}
             onChange={(event) =>
-              setLocalTranscription((current) => ({
-                ...current,
-                language: event.target.value,
-              }))
+              setLocalTranscription((current) => ({ ...current, language: event.target.value }))
             }
             value={localTranscription.language}
           >
@@ -156,14 +134,14 @@ export function TranscriptTab({ config, dependencies, onBlur }: TranscriptTabPro
             <option value="zh">Chinese</option>
             <option value="en">English</option>
           </select>
-        </div>
+        </SettingsField>
       </div>
 
       <div className="grid gap-3">
         <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted">
           Model Downloads
         </p>
-        <p className={fieldHintClass}>Whisper model files are required. If missing, transcription cannot start until a model is downloaded.</p>
+        <p className="text-sm leading-5 text-muted">Whisper model files are required. If missing, transcription cannot start until a model is downloaded.</p>
         <div className="overflow-hidden rounded-2xl border border-border bg-white/64">
           <table className="w-full border-collapse text-left">
             <tbody>

@@ -1,6 +1,5 @@
 import type { NoteContent, Source } from "../../lib/types";
-import { workspacePanelTitleClass } from "../../lib/ui";
-import { Panel } from "../../components/ui";
+import { Panel, PanelTitle } from "../../components/ui";
 
 import { SourceDetail } from "./SourceDetail";
 import { SourceList } from "./SourceList";
@@ -26,7 +25,7 @@ type Props = {
 export function SourcesPanel(props: Props) {
   return (
     <Panel variant="workspace">
-      <h2 className={workspacePanelTitleClass}>Sources</h2>
+      <PanelTitle>Sources</PanelTitle>
       {props.detailSource ? (
         <SourceDetail
           activeTab={props.activeTab}

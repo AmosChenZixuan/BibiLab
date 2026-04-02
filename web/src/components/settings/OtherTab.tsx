@@ -1,15 +1,7 @@
 import { useEffect, useId, useState } from "react";
 
 import type { HealthDependency, LocusConfig } from "../../lib/types";
-import {
-  fieldHintClass,
-  fieldLabelClass,
-  settingsControlClass,
-  settingsFieldClass,
-  settingsFieldMetaClass,
-  settingsInputClass,
-} from "../../lib/ui";
-import { StatusChip } from "../../components/ui";
+import { Input, StatusChip } from "../../components/ui";
 
 type OtherTabProps = {
   config: LocusConfig;
@@ -47,20 +39,19 @@ export function OtherTab({ config, dependencies, onBlur }: OtherTabProps) {
   const embeddingPath = embeddingDependency?.status === "ok" ? embeddingDependency.message : null;
   const ffmpegPath = ffmpegDependency?.status === "ok" ? ffmpegDependency.message : null;
 
-  const statusRowClass = `${settingsFieldClass} items-center`;
   const valueClass = "ml-auto text-right font-mono text-sm text-muted";
 
   return (
     <div className="grid gap-4">
-      <div className={statusRowClass}>
-        <div className={settingsFieldMetaClass}>
+      <div className="flex flex-wrap items-center gap-x-5 gap-y-2 bg-white/36 px-4 py-3">
+        <div className="min-w-[190px] flex-1 basis-[240px] grid gap-1">
           <div className="flex flex-wrap items-center gap-2">
-            <p className={fieldLabelClass}>Embedding Model</p>
+            <p className="text-sm font-semibold">Embedding Model</p>
             <StatusChip status={embeddingDependency?.status === "ok" ? "ok" : "error"}>
               {embeddingDependency?.status === "ok" ? "ready" : "missing"}
             </StatusChip>
           </div>
-          <p className={fieldHintClass}>If missing, the first processing run downloads embeddings before indexing, which makes startup slower.</p>
+          <p className="text-sm leading-5 text-muted">If missing, the first processing run downloads embeddings before indexing, which makes startup slower.</p>
         </div>
         <div className="flex min-w-[220px] flex-1 items-center justify-end gap-3 self-center">
           {embeddingDependency?.status === "ok" ? (
@@ -77,7 +68,7 @@ export function OtherTab({ config, dependencies, onBlur }: OtherTabProps) {
 
       <div className="grid gap-x-5 gap-y-2 bg-white/36 px-4 py-3 md:grid-cols-[minmax(0,1fr)_320px]">
         <div className="flex flex-wrap items-center gap-2">
-          <p className={fieldLabelClass}>Backend API</p>
+          <p className="text-sm font-semibold">Backend API</p>
           <StatusChip status={backendDependency?.status === "ok" ? "ok" : "error"}>
             {backendDependency?.status === "ok" ? "connected" : "offline"}
           </StatusChip>
@@ -86,19 +77,19 @@ export function OtherTab({ config, dependencies, onBlur }: OtherTabProps) {
           <p className={valueClass}>{backendUrl}</p>
         </div>
 
-        <p className={fieldHintClass}>Required. If the backend is offline, the web app cannot load or save configuration.</p>
+        <p className="text-sm leading-5 text-muted">Required. If the backend is offline, the web app cannot load or save configuration.</p>
         <div />
 
         <div className="border-l border-blue/18 pl-4">
           <div className="grid gap-2">
-            <label className={fieldLabelClass} htmlFor={workerConcurrencyId}>Worker Concurrency</label>
-            <p className={fieldHintClass}>Controls parallel jobs. Higher values improve throughput but increase local resource usage.</p>
+            <label className="text-sm font-semibold" htmlFor={workerConcurrencyId}>Worker Concurrency</label>
+            <p className="text-sm leading-5 text-muted">Controls parallel jobs. Higher values improve throughput but increase local resource usage.</p>
           </div>
         </div>
         <div className="flex items-center justify-end">
-          <input
+          <Input
             aria-label="Worker Concurrency"
-            className={`${settingsInputClass} ${settingsControlClass}`}
+            className="min-w-[220px] flex-none md:w-[320px]"
             id={workerConcurrencyId}
             max={8}
             min={1}
@@ -109,16 +100,17 @@ export function OtherTab({ config, dependencies, onBlur }: OtherTabProps) {
                 workerConcurrency: Number(event.target.value),
               }))
             }
+            inputSize="sm"
             type="number"
             value={local.workerConcurrency}
           />
         </div>
       </div>
 
-      <div className={statusRowClass}>
-        <div className={settingsFieldMetaClass}>
+      <div className="flex flex-wrap items-center gap-x-5 gap-y-2 bg-white/36 px-4 py-3">
+        <div className="min-w-[190px] flex-1 basis-[240px] grid gap-1">
           <div className="flex flex-wrap items-center gap-2">
-            <p className={fieldLabelClass}>FFmpeg</p>
+            <p className="text-sm font-semibold">FFmpeg</p>
             <StatusChip
               status={ffmpegDependency?.status === "ok" ? "ok" : "error"}
               title={ffmpegDependency?.status === "ok" ? "FFmpeg installed" : "FFmpeg not found"}
@@ -126,7 +118,7 @@ export function OtherTab({ config, dependencies, onBlur }: OtherTabProps) {
               {ffmpegDependency?.status === "ok" ? "installed" : "missing"}
             </StatusChip>
           </div>
-          <p className={fieldHintClass}>Required. Without FFmpeg, media audio cannot be extracted, so ingestion fails.</p>
+          <p className="text-sm leading-5 text-muted">Required. Without FFmpeg, media audio cannot be extracted, so ingestion fails.</p>
         </div>
         <div className="flex min-w-[220px] flex-1 items-center justify-end gap-3 self-center">
           {ffmpegDependency?.status === "ok" ? (

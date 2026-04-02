@@ -1,15 +1,7 @@
 import { useState } from "react";
 
 import type { Source } from "../../lib/types";
-import {
-  checkboxRowClass,
-  inputClass,
-  mutedTextClass,
-  statusErrorClass,
-  statusSuccessClass,
-  workspacePanelBodyClass,
-} from "../../lib/ui";
-import { Button, FormField } from "../../components/ui";
+import { Button, FormField, Input, PanelBody } from "../../components/ui";
 
 type Props = {
   busy: boolean;
@@ -35,17 +27,16 @@ export function SourceList({ busy, error, ingestStatus, onDelete, onIngest, onOp
   }
 
   return (
-    <div className={workspacePanelBodyClass}>
+    <PanelBody>
       <form className="grid gap-4" onSubmit={handleSubmit}>
         <FormField label="Source URL">
-          <input
-            className={inputClass}
+          <Input
             onChange={(event) => setUrl(event.target.value)}
             placeholder="https://www.bilibili.com/video/..."
             value={url}
           />
         </FormField>
-        <label className={checkboxRowClass}>
+        <label className="inline-flex items-center gap-2.5">
           <input
             aria-label="Re-run existing source"
             checked={rerun}
@@ -58,15 +49,15 @@ export function SourceList({ busy, error, ingestStatus, onDelete, onIngest, onOp
           <Button variant="primary" disabled={busy} type="submit">
             {busy ? "Queueing..." : "Queue source"}
           </Button>
-          {ingestStatus ? <p className={statusSuccessClass}>{ingestStatus}</p> : null}
+          {ingestStatus ? <p className="m-0 text-sm text-success">{ingestStatus}</p> : null}
         </div>
-        {error ? <p className={statusErrorClass}>{error}</p> : null}
+        {error ? <p className="m-0 text-sm text-danger">{error}</p> : null}
       </form>
 
       <div className="grid gap-3">
         {sources.length === 0 ? (
           <div className="flex justify-start rounded-2xl border border-border bg-white/64 px-4 py-3.5">
-            <p className={mutedTextClass}>No sources yet. Queue a Bilibili URL to start building this notebook.</p>
+            <p className="m-0 text-muted">No sources yet. Queue a Bilibili URL to start building this notebook.</p>
           </div>
         ) : (
           sources.map((source) => (
@@ -81,7 +72,7 @@ export function SourceList({ busy, error, ingestStatus, onDelete, onIngest, onOp
                 type="button"
               >
                 <strong>{source.title}</strong>
-                <span className={mutedTextClass}>{source.platform}</span>
+                <span className="m-0 text-muted">{source.platform}</span>
               </button>
               <Button
                 aria-label={`Delete ${source.title}`}
@@ -95,6 +86,6 @@ export function SourceList({ busy, error, ingestStatus, onDelete, onIngest, onOp
           ))
         )}
       </div>
-    </div>
+    </PanelBody>
   );
 }
