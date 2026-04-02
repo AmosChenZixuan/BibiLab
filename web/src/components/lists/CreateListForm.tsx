@@ -1,4 +1,5 @@
 import { useState } from "react";
+
 import {
   inputClass,
   mutedTextClass,
@@ -37,7 +38,6 @@ export function CreateListForm({ busy, error, onCreate }: Props) {
       <form className="mt-4 grid gap-4" onSubmit={handleSubmit}>
         <FormField label="List name">
           <input
-            aria-label="List name"
             className={inputClass}
             onChange={(event) => setName(event.target.value)}
             placeholder="Systems, Research, History of Film"

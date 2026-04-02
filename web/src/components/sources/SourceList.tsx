@@ -39,7 +39,6 @@ export function SourceList({ busy, error, ingestStatus, onDelete, onIngest, onOp
       <form className="grid gap-4" onSubmit={handleSubmit}>
         <FormField label="Source URL">
           <input
-            aria-label="Source URL"
             className={inputClass}
             onChange={(event) => setUrl(event.target.value)}
             placeholder="https://www.bilibili.com/video/..."
