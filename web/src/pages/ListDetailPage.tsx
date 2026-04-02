@@ -1,10 +1,11 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 
 import { ChatPanel } from "../components/chat/ChatPanel";
+import { useJobActivity } from "../components/jobs/JobActivityProvider";
 import { StudioPanel } from "../components/studio/StudioPanel";
 import { SourcesPanel } from "../components/sources/SourcesPanel";
-import { api, notifyJobsChanged, toErrorMessage } from "../lib/api";
+import { api, toErrorMessage } from "../lib/api";
 import { downloadTextFile } from "../lib/download";
 import type { NoteContent, Source } from "../lib/types";
 import { Button, Panel, PanelBody, PanelTitle } from "../components/ui";
@@ -15,6 +16,7 @@ function formatCount(count: number, noun: string): string {
 
 export function ListDetailPage() {
   const { listId = "" } = useParams();
+  const { dismissJob, getJobs, trackJobs } = useJobActivity();
   const [listName, setListName] = useState("List workspace");
   const [sources, setSources] = useState<Source[]>([]);
   const [detailSource, setDetailSource] = useState<Source | null>(null);
@@ -33,6 +35,43 @@ export function ListDetailPage() {
   const [draftName, setDraftName] = useState("");
   const [renameError, setRenameError] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const ingestJobs = getJobs("ingest", listId);
+  const refreshedCompletedJobsRef = useRef<string[]>([]);
+
+  useEffect(() => {
+    const completedJobIds = ingestJobs
+      .filter((job) => job.isTerminal && job.job.status === "done")
+      .map((job) => job.job.id)
+      .filter((jobId) => !refreshedCompletedJobsRef.current.includes(jobId));
+
+    if (completedJobIds.length === 0) {
+      return;
+    }
+
+    let cancelled = false;
+
+    async function refreshSources() {
+      try {
+        const nextSources = await api.listSources(listId);
+        if (!cancelled) {
+          refreshedCompletedJobsRef.current = [...refreshedCompletedJobsRef.current, ...completedJobIds];
+          setSources(nextSources);
+          for (const id of completedJobIds) {
+            dismissJob(id);
+          }
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setLoadError(toErrorMessage(error));
+        }
+      }
+    }
+
+    void refreshSources();
+    return () => {
+      cancelled = true;
+    };
+  }, [ingestJobs, listId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -71,8 +110,14 @@ export function ListDetailPage() {
       const skippedSummary =
         result.skipped.length > 0 ? ` and skipped ${formatCount(result.skipped.length, "source")}` : "";
       setIngestStatus(`${queuedSummary}${skippedSummary}.`);
-      setSources(await api.listSources(listId));
-      notifyJobsChanged();
+      trackJobs(
+        result.queued.map((jobId) => ({
+          id: jobId,
+          producer: "ingest" as const,
+          label: url,
+          contextKey: listId,
+        })),
+      );
     } catch (error) {
       setIngestError(toErrorMessage(error));
     } finally {
@@ -211,6 +256,7 @@ export function ListDetailPage() {
             detailSource={detailSource}
             ingestBusy={ingestBusy}
             ingestError={ingestError}
+            ingestJobs={ingestJobs}
             ingestStatus={ingestStatus}
             note={note}
             onBack={() => {
@@ -220,6 +266,7 @@ export function ListDetailPage() {
               setTranscriptError(null);
             }}
             onDelete={handleDelete}
+            onDismissIngestJob={dismissJob}
             onIngest={handleIngest}
             onOpen={handleOpen}
             onSelectTab={handleSelectTab}

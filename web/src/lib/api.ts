@@ -13,7 +13,6 @@ import type {
 
 type ApiErrorDetail = string | { message?: string };
 
-export const JOBS_REFRESH_EVENT = "locus:jobs:refresh";
 export const HEALTH_REFRESH_EVENT = "locus:health:refresh";
 
 export class ApiError extends Error {
@@ -63,10 +62,6 @@ export function toErrorMessage(error: unknown): string {
     return error.message;
   }
   return "Request failed";
-}
-
-export function notifyJobsChanged() {
-  window.dispatchEvent(new Event(JOBS_REFRESH_EVENT));
 }
 
 export function notifyHealthChanged(health: HealthResponse) {

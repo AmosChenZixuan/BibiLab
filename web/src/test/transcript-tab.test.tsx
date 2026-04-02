@@ -1,8 +1,10 @@
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
 import { TranscriptTab } from "../components/settings/TranscriptTab";
 import type { HealthDependency, LocusConfig } from "../lib/types";
+import { JobActivityProvider } from "../components/jobs/JobActivityProvider";
 
 vi.mock("../lib/api", () => ({
   api: {
@@ -11,8 +13,11 @@ vi.mock("../lib/api", () => ({
       { name: "large-v3", installed: false, path: null, selected: false },
     ]),
     downloadWhisperModel: vi.fn(),
+    listJobs: vi.fn().mockResolvedValue([]),
   },
 }));
+
+import { api } from "../lib/api";
 
 const baseConfig: LocusConfig = {
   accounts: { bilibili: { cookie: "", last_verified: "" } },
@@ -36,15 +41,23 @@ const healthDeps: Record<string, HealthDependency> = {
   cuda: { status: "unavailable", message: "CUDA not available; CPU will be used" },
 };
 
+function renderTab() {
+  return render(
+    <JobActivityProvider>
+      <TranscriptTab config={baseConfig} dependencies={healthDeps} onBlur={() => {}} />
+    </JobActivityProvider>,
+  );
+}
+
 describe("transcript tab", () => {
   test("renders transcription device dropdown", () => {
-    render(<TranscriptTab config={baseConfig} dependencies={healthDeps} onBlur={() => {}} />);
+    renderTab();
 
     expect(screen.getByLabelText(/device/i)).toBeInTheDocument();
   });
 
   test("shows installed path for downloaded model", async () => {
-    render(<TranscriptTab config={baseConfig} dependencies={healthDeps} onBlur={() => {}} />);
+    renderTab();
 
     expect(await screen.findByRole("table")).toBeInTheDocument();
     expect(await screen.findByRole("option", { name: "base" })).toBeInTheDocument();
@@ -52,27 +65,27 @@ describe("transcript tab", () => {
   });
 
   test("shows download button for missing model", async () => {
-    render(<TranscriptTab config={baseConfig} dependencies={healthDeps} onBlur={() => {}} />);
+    renderTab();
 
     expect(await screen.findByRole("button", { name: /download large-v3/i })).toBeInTheDocument();
   });
 
   test("shows impact messaging for cuda and missing whisper models", async () => {
-    render(<TranscriptTab config={baseConfig} dependencies={healthDeps} onBlur={() => {}} />);
+    renderTab();
 
     expect(screen.getByText(/cuda not available; cpu will be used/i)).toBeInTheDocument();
     expect(await screen.findByText(/transcription cannot start until a model is downloaded/i)).toBeInTheDocument();
   });
 
   test("model size dropdown only lists downloaded models", async () => {
-    render(<TranscriptTab config={baseConfig} dependencies={healthDeps} onBlur={() => {}} />);
+    renderTab();
 
     expect(await screen.findByRole("option", { name: "base" })).toBeInTheDocument();
     expect(screen.queryByRole("option", { name: "large-v3" })).not.toBeInTheDocument();
   });
 
   test("download table does not render status chips", async () => {
-    render(<TranscriptTab config={baseConfig} dependencies={healthDeps} onBlur={() => {}} />);
+    renderTab();
 
     expect(await screen.findByRole("table")).toBeInTheDocument();
     expect(screen.queryByText(/selected/i)).not.toBeInTheDocument();
@@ -81,8 +94,39 @@ describe("transcript tab", () => {
   });
 
   test("disables cuda when health reports it unavailable", () => {
-    render(<TranscriptTab config={baseConfig} dependencies={healthDeps} onBlur={() => {}} />);
+    renderTab();
 
     expect(screen.getByRole("option", { name: "CUDA" })).toBeDisabled();
+  });
+
+  test("shows inline progress for a tracked whisper download job", async () => {
+    vi.mocked(api.downloadWhisperModel).mockResolvedValue({
+      job_id: "job-download",
+      status: "queued",
+      model_family: "whisper",
+      model_size: "large-v3",
+    });
+    vi.mocked(api.listJobs).mockResolvedValue([
+      {
+        id: "job-download",
+        type: "model_download",
+        source_url: "",
+        platform: "local",
+        status: "downloading",
+        progress: 32,
+        error: null,
+        created_at: "2026-03-31T20:00:00Z",
+        updated_at: "2026-03-31T20:01:00Z",
+        meta: { model_family: "whisper", model_size: "large-v3" },
+      },
+    ]);
+
+    renderTab();
+
+    await userEvent.click(await screen.findByRole("button", { name: /download large-v3/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("status", { name: /downloading large-v3/i })).toBeInTheDocument();
+    });
   });
 });

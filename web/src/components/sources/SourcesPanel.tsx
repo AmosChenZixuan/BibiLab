@@ -1,4 +1,5 @@
 import type { NoteContent, Source } from "../../lib/types";
+import type { JobActivityItem } from "../jobs/JobActivityProvider";
 import { Panel, PanelTitle } from "../../components/ui";
 
 import { SourceDetail } from "./SourceDetail";
@@ -9,7 +10,9 @@ type Props = {
   detailSource: Source | null;
   ingestBusy: boolean;
   ingestError: string | null;
+  ingestJobs: JobActivityItem[];
   ingestStatus: string | null;
+  onDismissIngestJob: (jobId: string) => void;
   note: NoteContent | null;
   onBack: () => void;
   onDelete: (source: Source) => Promise<void>;
@@ -41,7 +44,9 @@ export function SourcesPanel(props: Props) {
         <SourceList
           busy={props.ingestBusy}
           error={props.ingestError}
+          ingestJobs={props.ingestJobs}
           ingestStatus={props.ingestStatus}
+          onDismissIngestJob={props.onDismissIngestJob}
           onDelete={props.onDelete}
           onIngest={props.onIngest}
           onOpen={(source) => void props.onOpen(source)}

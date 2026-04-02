@@ -153,6 +153,7 @@ describe("list detail page", () => {
         processed_at: "2026-03-31T20:00:00Z",
       },
     ];
+    let jobPollCount = 0;
 
     installFetchMock(async (input, init) => {
       const url = String(input);
@@ -204,7 +205,50 @@ describe("list detail page", () => {
       }
 
       if (url.endsWith("/api/jobs") && method === "GET") {
-        return Response.json([]);
+        jobPollCount += 1;
+        if (jobPollCount === 1) {
+          return Response.json([
+            {
+              id: "job-1",
+              type: "video",
+              source_url: "https://www.bilibili.com/video/BV1playlist",
+              platform: "bilibili",
+              status: "done",
+              progress: 100,
+              error: null,
+              created_at: "2026-03-31T21:00:00Z",
+              updated_at: "2026-03-31T21:10:00Z",
+              meta: { title: "Partitioning Part 1", list_id: "list-1" },
+            },
+            {
+              id: "job-2",
+              type: "video",
+              source_url: "https://www.bilibili.com/video/BV1playlist",
+              platform: "bilibili",
+              status: "done",
+              progress: 100,
+              error: null,
+              created_at: "2026-03-31T21:01:00Z",
+              updated_at: "2026-03-31T21:11:00Z",
+              meta: { title: "Partitioning Part 2", list_id: "list-1" },
+            },
+          ]);
+        }
+
+        return Response.json([
+          {
+            id: "job-3",
+            type: "video",
+            source_url: "https://www.bilibili.com/video/BV1old",
+            platform: "bilibili",
+            status: "done",
+            progress: 100,
+            error: null,
+            created_at: "2026-03-31T21:12:00Z",
+            updated_at: "2026-03-31T21:13:00Z",
+            meta: { title: "Existing Source", list_id: "list-1" },
+          },
+        ]);
       }
 
       throw new Error(`Unhandled ${method} ${url}`);

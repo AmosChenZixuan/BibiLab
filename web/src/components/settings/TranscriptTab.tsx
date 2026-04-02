@@ -1,8 +1,43 @@
 import { useEffect, useId, useState } from "react";
 
+import { useJobActivity } from "../jobs/JobActivityProvider";
+import type { JobActivityItem } from "../jobs/JobActivityProvider";
 import { api } from "../../lib/api";
 import type { HealthDependency, LocusConfig, WhisperModel } from "../../lib/types";
-import { Button, SettingsField } from "../../components/ui";
+import { MdDownload } from "react-icons/md";
+
+import { SettingsField, Spinner } from "../../components/ui";
+
+type ModelDownloadCellProps = {
+  modelName: string;
+  modelJob: JobActivityItem | null;
+  downloading: string | null;
+  onDownload: (name: string) => Promise<void>;
+};
+
+function ModelDownloadCell({ modelName, modelJob, downloading, onDownload }: ModelDownloadCellProps) {
+  if (modelJob && !modelJob.isTerminal) {
+    return (
+      <Spinner label={`Downloading ${modelName}`} />
+    );
+  }
+
+  if (modelJob?.job.status === "failed" || modelJob?.job.status === "needs_auth") {
+    return <span className="text-xs text-danger">{modelJob.job.error ?? "Failed"}</span>;
+  }
+
+  return (
+    <button
+      type="button"
+      className="flex items-center justify-center text-sky"
+      aria-label={`Download ${modelName}`}
+      disabled={downloading === modelName}
+      onClick={() => void onDownload(modelName)}
+    >
+      <MdDownload size={18} />
+    </button>
+  );
+}
 
 type TranscriptTabProps = {
   config: LocusConfig;
@@ -11,6 +46,7 @@ type TranscriptTabProps = {
 };
 
 export function TranscriptTab({ config, dependencies, onBlur }: TranscriptTabProps) {
+  const { dismissJob, getJobs, trackJobs } = useJobActivity();
   const [localTranscription, setLocalTranscription] = useState(config.transcription);
   const [models, setModels] = useState<WhisperModel[]>([]);
   const [downloading, setDownloading] = useState<string | null>(null);
@@ -44,6 +80,26 @@ export function TranscriptTab({ config, dependencies, onBlur }: TranscriptTabPro
     };
   }, []);
 
+  const modelJobs = getJobs("whisper_download");
+  const terminalModelJobCount = modelJobs.filter((j) => j.isTerminal).length;
+
+  useEffect(() => {
+    if (terminalModelJobCount === 0) {
+      return;
+    }
+
+    const terminalIds = modelJobs.filter((j) => j.isTerminal).map((j) => j.job.id);
+
+    async function refreshAndDismiss() {
+      await refreshModels();
+      for (const id of terminalIds) {
+        dismissJob(id);
+      }
+    }
+
+    void refreshAndDismiss();
+  }, [terminalModelJobCount]); // eslint-disable-line react-hooks/exhaustive-deps
+
   function handleBlur() {
     onBlur({ ...config, transcription: localTranscription });
   }
@@ -51,8 +107,15 @@ export function TranscriptTab({ config, dependencies, onBlur }: TranscriptTabPro
   async function handleDownload(modelName: string) {
     setDownloading(modelName);
     try {
-      await api.downloadWhisperModel(modelName);
-      await refreshModels();
+      const response = await api.downloadWhisperModel(modelName);
+      trackJobs([
+        {
+          id: response.job_id,
+          producer: "whisper_download",
+          label: response.model_size,
+          contextKey: response.model_size,
+        },
+      ]);
     } finally {
       setDownloading(null);
     }
@@ -111,7 +174,9 @@ export function TranscriptTab({ config, dependencies, onBlur }: TranscriptTabPro
             value={localTranscription.device}
           >
             <option value="cpu">CPU</option>
-            {cudaAvailable && <option value="cuda">CUDA</option>}
+            <option value="cuda" disabled={!cudaAvailable}>
+              CUDA
+            </option>
           </select>
         </SettingsField>
 
@@ -151,19 +216,14 @@ export function TranscriptTab({ config, dependencies, onBlur }: TranscriptTabPro
                   <td className="px-4 py-3">
                     <div className="flex items-center justify-end">
                       {model.installed ? (
-                        <p className="text-right font-mono text-sm text-muted">
-                          {model.path}
-                        </p>
+                        <p className="text-right font-mono text-sm text-muted">{model.path}</p>
                       ) : (
-                        <Button
-                          variant="secondary"
-                          aria-label={`Download ${model.name}`}
-                          disabled={downloading === model.name}
-                          onClick={() => void handleDownload(model.name)}
-                          type="button"
-                        >
-                          {downloading === model.name ? "Queued..." : `Download ${model.name}`}
-                        </Button>
+                        <ModelDownloadCell
+                          modelName={model.name}
+                          modelJob={modelJobs.find((job) => job.contextKey === model.name) ?? null}
+                          downloading={downloading}
+                          onDownload={handleDownload}
+                        />
                       )}
                     </div>
                   </td>

@@ -88,6 +88,20 @@ describe("app frame", () => {
     expect(await screen.findByLabelText(/language/i)).toBeInTheDocument();
   });
 
+  test("does not reserve navbar space for a jobs control", async () => {
+    renderFrame({
+      overall: "ok",
+      dependencies: {
+        cuda: { status: "ok", message: "" },
+        embedding_model: { status: "ok", message: "" },
+      },
+    });
+
+    expect(await screen.findByLabelText(/settings/i)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /jobs/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /active job/i })).not.toBeInTheDocument();
+  });
+
   test("updates navbar health when settings broadcasts refreshed health", async () => {
     renderFrame({
       overall: "ok",

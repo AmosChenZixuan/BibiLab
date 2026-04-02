@@ -3,6 +3,7 @@ import { MemoryRouter, useLocation } from "react-router-dom";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
 import { LanguageProvider } from "../app/LanguageContext";
+import { JobActivityProvider } from "../components/jobs/JobActivityProvider";
 import { api } from "../lib/api";
 import { SettingsPage } from "../pages/SettingsPage";
 
@@ -46,11 +47,13 @@ afterEach(() => {
 
 function renderPage() {
   return render(
-    <LanguageProvider>
-      <MemoryRouter>
-        <SettingsPage />
-      </MemoryRouter>
-    </LanguageProvider>,
+    <JobActivityProvider>
+      <LanguageProvider>
+        <MemoryRouter>
+          <SettingsPage />
+        </MemoryRouter>
+      </LanguageProvider>
+    </JobActivityProvider>,
   );
 }
 
@@ -61,12 +64,14 @@ function renderPageAt(entry: string) {
   }
 
   return render(
-    <LanguageProvider>
-      <MemoryRouter initialEntries={[entry]}>
-        <SettingsPage />
-        <LocationProbe />
-      </MemoryRouter>
-    </LanguageProvider>,
+    <JobActivityProvider>
+      <LanguageProvider>
+        <MemoryRouter initialEntries={[entry]}>
+          <SettingsPage />
+          <LocationProbe />
+        </MemoryRouter>
+      </LanguageProvider>
+    </JobActivityProvider>,
   );
 }
 

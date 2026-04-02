@@ -4,7 +4,8 @@ import { MdTranslate } from "react-icons/md";
 import { NavLink, Outlet } from "react-router-dom";
 
 import { useLanguage } from "../../app/LanguageContext";
-import { JobsBadge } from "../jobs/JobsBadge";
+import { JobActivityProvider } from "../jobs/JobActivityProvider";
+import { JobSpirit } from "../jobs/JobSpirit";
 import { api, HEALTH_REFRESH_EVENT } from "../../lib/api";
 import { deriveOverallHealthTier, HEALTH_META } from "../../lib/health";
 import type { HealthResponse } from "../../lib/types";
@@ -47,7 +48,7 @@ export function AppFrame() {
   const healthMeta = HEALTH_META[healthTier];
 
   return (
-    <>
+    <JobActivityProvider>
       <nav className="fixed inset-x-0 top-0 z-nav flex h-[52px] items-center justify-between px-[clamp(16px,3vw,48px)] /* fluid navbar padding */ bg-white">
         <NavLink className="inline-flex items-center" to="/" aria-label="Home">
           <span className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-[linear-gradient(135deg,#f3a9c9_0%,#f58bb9_58%,#a9e7ff_100%)] font-serif text-base font-bold text-[#fff9f4]">
@@ -69,7 +70,6 @@ export function AppFrame() {
               className={`absolute right-1 bottom-1 h-[9px] w-[9px] rounded-full border-2 border-white/92 ${healthMeta.className}`}
             />
           </NavLink>
-          <JobsBadge />
 
           <button
             type="button"
@@ -111,6 +111,7 @@ export function AppFrame() {
           <Outlet />
         </main>
       </div>
-    </>
+      <JobSpirit />
+    </JobActivityProvider>
   );
 }

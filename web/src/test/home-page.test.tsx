@@ -194,15 +194,15 @@ describe("home page", () => {
     render(<RouterProvider router={router} />);
 
     expect(await screen.findByRole("heading", { name: "Systems" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /no active jobs/i })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /job spirit/i })).not.toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: /open systems/i }));
     expect(await screen.findByRole("heading", { name: /systems/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /no active jobs/i })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /job spirit/i })).not.toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("link", { name: /settings/i }));
     expect(await screen.findByRole("heading", { name: /settings/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /no active jobs/i })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /job spirit/i })).not.toBeInTheDocument();
   });
 
   test("shows list loading errors inline", async () => {
