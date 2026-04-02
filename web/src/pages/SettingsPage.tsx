@@ -4,7 +4,7 @@ import { useSearchParams } from "react-router-dom";
 import { LlmTab } from "../components/settings/LlmTab";
 import { OtherTab } from "../components/settings/OtherTab";
 import { TranscriptTab } from "../components/settings/TranscriptTab";
-import { api, toErrorMessage } from "../lib/api";
+import { api, notifyHealthChanged, toErrorMessage } from "../lib/api";
 import { deriveDependencyHealthTier, HEALTH_META } from "../lib/health";
 import type { HealthDependency, LocusConfig } from "../lib/types";
 import { appPanelClass, mutedTextClass, pageHeadingClass, statusErrorClass } from "../lib/ui";
@@ -98,6 +98,7 @@ export function SettingsPage() {
     if (shouldRefreshHealth(config, nextConfig)) {
       const nextHealth = await api.getHealth();
       setDependencies(nextHealth.dependencies ?? {});
+      notifyHealthChanged(nextHealth);
     }
   }
 

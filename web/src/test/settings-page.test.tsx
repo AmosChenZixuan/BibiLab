@@ -35,6 +35,8 @@ vi.mock("../lib/api", () => ({
     listWhisperModels: vi.fn().mockResolvedValue([]),
     downloadWhisperModel: vi.fn(),
   },
+  notifyHealthChanged: vi.fn(),
+  toErrorMessage: (error: unknown) => (error instanceof Error ? error.message : "Request failed"),
 }));
 
 afterEach(() => {

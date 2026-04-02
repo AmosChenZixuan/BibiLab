@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
@@ -7,6 +7,7 @@ import { AppFrame } from "../components/layout/AppFrame";
 import type { HealthResponse } from "../lib/types";
 
 vi.mock("../lib/api", () => ({
+  HEALTH_REFRESH_EVENT: "locus:health:refresh",
   JOBS_REFRESH_EVENT: "locus:jobs:refresh",
   api: {
     getHealth: vi.fn(),
@@ -15,6 +16,7 @@ vi.mock("../lib/api", () => ({
 }));
 
 import { api } from "../lib/api";
+import { HEALTH_REFRESH_EVENT } from "../lib/api";
 
 afterEach(() => {
   cleanup();
@@ -84,5 +86,33 @@ describe("app frame", () => {
     });
 
     expect(await screen.findByLabelText(/language/i)).toBeInTheDocument();
+  });
+
+  test("updates navbar health when settings broadcasts refreshed health", async () => {
+    renderFrame({
+      overall: "ok",
+      dependencies: {
+        cuda: { status: "ok", message: "" },
+        embedding_model: { status: "ok", message: "" },
+      },
+    });
+
+    expect(await screen.findByTitle("Operational")).toBeInTheDocument();
+
+    window.dispatchEvent(
+      new CustomEvent(HEALTH_REFRESH_EVENT, {
+        detail: {
+          overall: "error",
+          dependencies: {
+            cuda: { status: "ok", message: "" },
+            embedding_model: { status: "ok", message: "" },
+          },
+        } satisfies HealthResponse,
+      }),
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTitle("Unavailable")).toBeInTheDocument();
+    });
   });
 });
