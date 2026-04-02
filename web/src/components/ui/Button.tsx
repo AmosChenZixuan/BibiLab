@@ -25,9 +25,10 @@ interface Props extends ComponentPropsWithoutRef<"button"> {
 }
 
 export const Button = forwardRef<HTMLButtonElement, Props>(
-  ({ variant = "secondary", size = "md", className = "", ...rest }, ref) => (
+  ({ variant = "secondary", size = "md", className = "", type = "button", ...rest }, ref) => (
     <button
       ref={ref}
+      type={type}
       className={`${base} ${variants[variant]} ${sizes[size]} ${className}`.trim()}
       {...rest}
     />

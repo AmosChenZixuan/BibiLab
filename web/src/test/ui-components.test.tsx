@@ -74,7 +74,7 @@ describe("Panel", () => {
 
   test("renders workspace variant", () => {
     const { container } = render(<Panel variant="workspace"><p>content</p></Panel>);
-    expect((container.firstChild as HTMLElement).className).toContain("bg-white");
+    expect((container.firstChild as HTMLElement).className).toContain("bg-white/76");
   });
 
   test("defaults to app variant", () => {
