@@ -35,7 +35,8 @@ export const fieldClass      = "grid gap-1.5";
 export const fieldLabelClass = "text-sm font-semibold";
 export const fieldHintClass  = "text-sm leading-5 text-muted";
 
-// Base shared by inputClass, textareaClass, settingsInputClass, settingsSelectClass
+// Base shared by inputClass, textareaClass, settingsInputClass
+// (settingsSelectClass uses rounded-xl instead of rounded-2xl — intentional design difference)
 const inputBase =
   "w-full rounded-2xl border border-border bg-white/92 px-3.5 py-3 text-ink outline-none transition focus:border-blue/45 focus:ring-2 focus:ring-sky/18";
 
