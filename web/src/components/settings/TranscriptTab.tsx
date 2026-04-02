@@ -160,20 +160,20 @@ export function TranscriptTab({ config, dependencies, onBlur }: TranscriptTabPro
       </div>
 
       <div className="grid gap-3">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#8096b3]">
+        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted">
           Model Downloads
         </p>
         <p className={fieldHintClass}>Whisper model files are required. If missing, transcription cannot start until a model is downloaded.</p>
-        <div className="overflow-hidden rounded-[18px] border border-[rgba(106,147,198,0.12)] bg-[rgba(255,255,255,0.64)]">
+        <div className="overflow-hidden rounded-2xl border border-border bg-white/64">
           <table className="w-full border-collapse text-left">
             <tbody>
               {models.map((model) => (
-                <tr key={model.name} className="border-t border-[rgba(106,147,198,0.12)]">
-                  <td className="px-4 py-3 font-semibold text-[#274970]">{model.name}</td>
+                <tr key={model.name} className="border-t border-border">
+                  <td className="px-4 py-3 font-semibold text-ink">{model.name}</td>
                   <td className="px-4 py-3">
                     <div className="flex items-center justify-end">
                       {model.installed ? (
-                        <p className="text-right font-mono text-[0.82rem] text-[#8096b3]">
+                        <p className="text-right font-mono text-sm text-muted">
                           {model.path}
                         </p>
                       ) : (

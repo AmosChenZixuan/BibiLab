@@ -48,7 +48,7 @@ export function OtherTab({ config, dependencies, onBlur }: OtherTabProps) {
   const ffmpegPath = ffmpegDependency?.status === "ok" ? ffmpegDependency.message : null;
 
   const statusRowClass = `${settingsFieldClass} items-center`;
-  const valueClass = "ml-auto text-right font-mono text-[0.82rem] text-[#8096b3]";
+  const valueClass = "ml-auto text-right font-mono text-sm text-muted";
 
   return (
     <div className="grid gap-4">
@@ -68,14 +68,14 @@ export function OtherTab({ config, dependencies, onBlur }: OtherTabProps) {
               {embeddingPath}
             </p>
           ) : (
-            <span className="max-w-[38rem] text-right text-[0.88rem] leading-6 text-[#5b7faa]">
+            <span className="max-w-[38rem] text-right text-sm leading-6 text-blue">
               {embeddingDependency?.message}
             </span>
           )}
         </div>
       </div>
 
-      <div className="grid gap-x-5 gap-y-2 bg-[rgba(255,255,255,0.36)] px-4 py-3 md:grid-cols-[minmax(0,1fr)_320px]">
+      <div className="grid gap-x-5 gap-y-2 bg-white/36 px-4 py-3 md:grid-cols-[minmax(0,1fr)_320px]">
         <div className="flex flex-wrap items-center gap-2">
           <p className={fieldLabelClass}>Backend API</p>
           <span className={statusChipClass(backendDependency?.status === "ok" ? "ok" : "error")}>
@@ -89,7 +89,7 @@ export function OtherTab({ config, dependencies, onBlur }: OtherTabProps) {
         <p className={fieldHintClass}>Required. If the backend is offline, the web app cannot load or save configuration.</p>
         <div />
 
-        <div className="border-l border-[rgba(106,147,198,0.18)] pl-4">
+        <div className="border-l border-blue/18 pl-4">
           <div className="grid gap-2">
             <label className={fieldLabelClass} htmlFor={workerConcurrencyId}>Worker Concurrency</label>
             <p className={fieldHintClass}>Controls parallel jobs. Higher values improve throughput but increase local resource usage.</p>
@@ -135,7 +135,7 @@ export function OtherTab({ config, dependencies, onBlur }: OtherTabProps) {
             </p>
           ) : (
             <a
-              className="text-[#5b7faa] underline"
+              className="text-blue underline"
               href="https://ffmpeg.org/download.html"
               rel="noreferrer"
               target="_blank"
