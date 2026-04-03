@@ -41,7 +41,15 @@ describe("list detail page", () => {
 
       if (url.endsWith("/api/lists") && method === "GET") {
         return Response.json([
-          { id: "list-1", name: "Systems", created_at: "2026-03-31T19:00:00Z" },
+          {
+            id: "list-1",
+            name: "Systems",
+            created_at: "2026-03-31T19:00:00Z",
+            thumbnail_source_id: null,
+            thumbnail_url: null,
+            source_count: 1,
+            updated_at: "2026-03-31T20:00:00Z",
+          },
         ]);
       }
 
@@ -64,6 +72,10 @@ describe("list detail page", () => {
           id: "list-1",
           name: "Distributed Systems",
           created_at: "2026-03-31T19:00:00Z",
+          thumbnail_source_id: null,
+          thumbnail_url: null,
+          source_count: 1,
+          updated_at: "2026-03-31T20:00:00Z",
         });
       }
 
@@ -170,7 +182,15 @@ describe("list detail page", () => {
 
       if (url.endsWith("/api/lists") && method === "GET") {
         return Response.json([
-          { id: "list-1", name: "Systems", created_at: "2026-03-31T19:00:00Z" },
+          {
+            id: "list-1",
+            name: "Systems",
+            created_at: "2026-03-31T19:00:00Z",
+            thumbnail_source_id: null,
+            thumbnail_url: null,
+            source_count: 1,
+            updated_at: "2026-03-31T20:00:00Z",
+          },
         ]);
       }
 
@@ -298,7 +318,15 @@ describe("list detail page", () => {
 
       if (url.endsWith("/api/lists") && method === "GET") {
         return Response.json([
-          { id: "list-1", name: "Systems", created_at: "2026-03-31T19:00:00Z" },
+          {
+            id: "list-1",
+            name: "Systems",
+            created_at: "2026-03-31T19:00:00Z",
+            thumbnail_source_id: null,
+            thumbnail_url: null,
+            source_count: 0,
+            updated_at: "2026-03-31T19:00:00Z",
+          },
         ]);
       }
 
@@ -349,7 +377,15 @@ describe("list detail page", () => {
 
       if (url.endsWith("/api/lists") && method === "GET") {
         return Response.json([
-          { id: "list-1", name: "Systems", created_at: "2026-03-31T19:00:00Z" },
+          {
+            id: "list-1",
+            name: "Systems",
+            created_at: "2026-03-31T19:00:00Z",
+            thumbnail_source_id: null,
+            thumbnail_url: null,
+            source_count: 0,
+            updated_at: "2026-03-31T19:00:00Z",
+          },
         ]);
       }
 

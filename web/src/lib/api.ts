@@ -3,6 +3,7 @@ import type {
   Job,
   LocusConfig,
   LocusList,
+  LocusListPatch,
   NoteContent,
   NoteTranscript,
   OverviewDownload,
@@ -75,10 +76,10 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ name }),
     }),
-  updateList: (listId: string, name: string) =>
+  updateList: (listId: string, patch: LocusListPatch) =>
     request<LocusList>(`/lists/${listId}`, {
       method: "PATCH",
-      body: JSON.stringify({ name }),
+      body: JSON.stringify(patch),
     }),
   deleteList: (listId: string) =>
     request<void>(`/lists/${listId}`, {

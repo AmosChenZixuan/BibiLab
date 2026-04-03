@@ -57,7 +57,15 @@ describe("job spirit", () => {
 
       if (url.endsWith("/api/lists") && method === "GET") {
         return Response.json([
-          { id: "list-1", name: "Systems", created_at: "2026-03-31T19:00:00Z" },
+          {
+            id: "list-1",
+            name: "Systems",
+            created_at: "2026-03-31T19:00:00Z",
+            thumbnail_source_id: null,
+            thumbnail_url: null,
+            source_count: 0,
+            updated_at: "2026-03-31T19:00:00Z",
+          },
         ]);
       }
 

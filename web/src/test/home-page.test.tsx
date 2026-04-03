@@ -18,7 +18,15 @@ afterEach(() => {
 describe("home page", () => {
   test("shows the floating shell, creates an untitled list from the first tile, and deletes an existing list", async () => {
     const lists = [
-      { id: "list-1", name: "Systems", created_at: "2026-03-31T19:00:00Z" },
+      {
+        id: "list-1",
+        name: "Systems",
+        created_at: "2026-03-31T19:00:00Z",
+        thumbnail_source_id: null,
+        thumbnail_url: null,
+        source_count: 0,
+        updated_at: "2026-03-31T19:00:00Z",
+      },
     ];
 
     installFetchMock(async (input, init) => {
@@ -45,6 +53,10 @@ describe("home page", () => {
           id: "list-2",
           name: body.name,
           created_at: "2026-03-31T19:01:00Z",
+          thumbnail_source_id: null,
+          thumbnail_url: null,
+          source_count: 0,
+          updated_at: "2026-03-31T19:01:00Z",
         });
       }
 
@@ -95,7 +107,15 @@ describe("home page", () => {
 
       if (url.endsWith("/api/lists") && method === "GET") {
         return Response.json([
-          { id: "list-1", name: currentListName, created_at: "2026-03-31T19:00:00Z" },
+          {
+            id: "list-1",
+            name: currentListName,
+            created_at: "2026-03-31T19:00:00Z",
+            thumbnail_source_id: null,
+            thumbnail_url: null,
+            source_count: 0,
+            updated_at: "2026-03-31T19:00:00Z",
+          },
         ]);
       }
 
@@ -110,6 +130,10 @@ describe("home page", () => {
           id: "list-1",
           name: currentListName,
           created_at: "2026-03-31T19:00:00Z",
+          thumbnail_source_id: null,
+          thumbnail_url: null,
+          source_count: 0,
+          updated_at: "2026-03-31T19:00:00Z",
         });
       }
 
@@ -157,7 +181,17 @@ describe("home page", () => {
       }
 
       if (url.endsWith("/api/lists") && method === "GET") {
-        return Response.json([{ id: "list-1", name: "Systems", created_at: "2026-03-31T19:00:00Z" }]);
+        return Response.json([
+          {
+            id: "list-1",
+            name: "Systems",
+            created_at: "2026-03-31T19:00:00Z",
+            thumbnail_source_id: null,
+            thumbnail_url: null,
+            source_count: 0,
+            updated_at: "2026-03-31T19:00:00Z",
+          },
+        ]);
       }
 
       if (url.endsWith("/api/lists/list-1/sources") && method === "GET") {

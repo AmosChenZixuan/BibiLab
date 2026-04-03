@@ -188,7 +188,7 @@ export function ListDetailPage() {
     }
     setRenameError(null);
     try {
-      const updated = await api.updateList(listId, trimmed);
+      const updated = await api.updateList(listId, { name: trimmed });
       setListName(updated.name);
       setDraftName(updated.name);
     } catch (error) {
