@@ -1,3 +1,5 @@
+import { createPortal } from "react-dom";
+
 type IdentityPanelProps = {
   onClose: () => void;
 };
@@ -5,7 +7,7 @@ type IdentityPanelProps = {
 const PLATFORMS = [{ key: "bilibili", label: "Bilibili", icon: "B" }];
 
 export default function IdentityPanel({ onClose }: IdentityPanelProps) {
-  return (
+  return createPortal(
     <>
       <button
         type="button"
@@ -33,6 +35,7 @@ export default function IdentityPanel({ onClose }: IdentityPanelProps) {
           ))}
         </div>
       </div>
-    </>
+    </>,
+    document.body,
   );
 }

@@ -1,4 +1,5 @@
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
@@ -128,5 +129,22 @@ describe("app frame", () => {
     await waitFor(() => {
       expect(screen.getByTitle("Unavailable")).toBeInTheDocument();
     });
+  });
+
+  test("renders identity panel outside the navbar stacking context", async () => {
+    const { container } = renderFrame({
+      overall: "ok",
+      dependencies: {
+        cuda: { status: "ok", message: "" },
+        embedding_model: { status: "ok", message: "" },
+      },
+    });
+
+    await userEvent.click(await screen.findByRole("button", { name: "Identity" }));
+
+    const nav = container.querySelector("nav");
+    const menu = screen.getByRole("menu", { name: "Identity" });
+
+    expect(nav).not.toContainElement(menu);
   });
 });
