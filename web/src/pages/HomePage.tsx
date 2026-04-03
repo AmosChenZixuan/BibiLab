@@ -1,17 +1,26 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
 
 import { ListGrid } from "../components/lists/ListGrid";
 import { api, toErrorMessage } from "../lib/api";
-import type { LocusList } from "../lib/types";
-import { Panel } from "../components/ui";
+import type { LocusList, Source } from "../lib/types";
+import { Button, Input, Modal, Panel } from "../components/ui";
 
 export function HomePage() {
-  const navigate = useNavigate();
   const [lists, setLists] = useState<LocusList[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<LocusList | null>(null);
+  const [renameTarget, setRenameTarget] = useState<LocusList | null>(null);
+  const [renameDraft, setRenameDraft] = useState("");
+  const [thumbnailTarget, setThumbnailTarget] = useState<LocusList | null>(null);
+  const [thumbnailSources, setThumbnailSources] = useState<Source[]>([]);
+  const [thumbnailLoading, setThumbnailLoading] = useState(false);
+  const dialogOpen = deleteTarget !== null || renameTarget !== null || thumbnailTarget !== null;
+
+  function updateLocalList(updated: LocusList) {
+    setLists((current) => current.map((entry) => (entry.id === updated.id ? updated : entry)));
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -51,13 +60,69 @@ export function HomePage() {
   }
 
   async function handleDelete(list: LocusList) {
-    if (!window.confirm(`Delete list "${list.name}"?`)) {
-      return;
-    }
     setError(null);
     try {
       await api.deleteList(list.id);
       setLists((current) => current.filter((entry) => entry.id !== list.id));
+      setDeleteTarget(null);
+    } catch (nextError) {
+      setError(toErrorMessage(nextError));
+    }
+  }
+
+  async function handleRenameCommit() {
+    if (!renameTarget) {
+      return;
+    }
+
+    const trimmed = renameDraft.trim();
+    if (!trimmed) {
+      setRenameDraft(renameTarget.name);
+      return;
+    }
+    if (trimmed === renameTarget.name) {
+      setRenameTarget(null);
+      return;
+    }
+
+    setError(null);
+    try {
+      const updated = await api.updateList(renameTarget.id, { name: trimmed });
+      updateLocalList(updated);
+      setRenameTarget(null);
+    } catch (nextError) {
+      setError(toErrorMessage(nextError));
+      setRenameDraft(renameTarget.name);
+    }
+  }
+
+  async function openThumbnailDialog(list: LocusList) {
+    setThumbnailTarget(list);
+    setThumbnailSources([]);
+    setThumbnailLoading(true);
+    setError(null);
+    try {
+      const sources = await api.listSources(list.id);
+      setThumbnailSources(sources);
+    } catch (nextError) {
+      setError(toErrorMessage(nextError));
+    } finally {
+      setThumbnailLoading(false);
+    }
+  }
+
+  async function handleThumbnailSelect(thumbnailSourceId: string | null) {
+    if (!thumbnailTarget) {
+      return;
+    }
+
+    setError(null);
+    try {
+      const updated = await api.updateList(thumbnailTarget.id, {
+        thumbnail_source_id: thumbnailSourceId,
+      });
+      updateLocalList(updated);
+      setThumbnailTarget(null);
     } catch (nextError) {
       setError(toErrorMessage(nextError));
     }
@@ -65,27 +130,165 @@ export function HomePage() {
 
   return (
     <div className="grid gap-4">
-      <section className="grid max-w-[780px] gap-3">
-        <p className="text-xs uppercase tracking-[0.14em] text-pink">Capture. Distill. Revisit.</p>
-        <h1 className="m-0 mb-2 font-serif text-display leading-[0.95]">Turn long-form video into a living, searchable notebook.</h1>
-        <p className="m-0 text-muted">
-          Build private list-based workspaces for courses, playlists, and research threads.
-        </p>
-        {error ? <p className="m-0 text-sm text-danger">{error}</p> : null}
-      </section>
-      {loading ? (
-        <Panel variant="app">
-          <p>Loading lists...</p>
-        </Panel>
-      ) : (
-        <ListGrid
-          busy={busy}
-          lists={lists}
-          onCreate={handleCreate}
-          onDelete={handleDelete}
-          onOpen={(list) => navigate(`/lists/${list.id}`)}
-        />
-      )}
+      <div
+        aria-hidden={dialogOpen}
+        data-testid="home-page-content"
+        className={dialogOpen ? "pointer-events-none select-none blur-sm transition" : "transition"}
+      >
+        <section className="grid gap-3">
+          <span className="text-[11.5px] font-semibold uppercase tracking-[0.2em] text-muted">My Lists</span>
+          {error ? <p className="m-0 text-sm text-danger">{error}</p> : null}
+        </section>
+        <div className="mt-4">
+          {loading ? (
+            <Panel variant="app">
+              <p>Loading lists...</p>
+            </Panel>
+          ) : (
+            <ListGrid
+              busy={busy}
+              lists={lists}
+              onChangeThumbnail={openThumbnailDialog}
+              onCreate={handleCreate}
+            onDelete={(list) => {
+              setDeleteTarget(list);
+            }}
+            onRename={(list) => {
+              setRenameTarget(list);
+              setRenameDraft(list.name);
+              }}
+            />
+          )}
+        </div>
+      </div>
+
+      <Modal
+        footer={
+          <>
+            <Button onClick={() => setDeleteTarget(null)} size="sm" variant="ghost">
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                if (deleteTarget) {
+                  void handleDelete(deleteTarget);
+                }
+              }}
+              size="sm"
+              variant="danger"
+            >
+              Delete
+            </Button>
+          </>
+        }
+        onClose={() => setDeleteTarget(null)}
+        open={deleteTarget !== null}
+        size="lg"
+        title="Delete list"
+      >
+        <div className="rounded-overlay border border-danger/20 bg-danger/5 p-4 text-sm text-danger">
+          <p className="m-0 text-[15px] font-semibold tracking-[-0.02em]">This cannot be undone</p>
+          <p className="mt-1.5 mb-0 leading-6">
+            {deleteTarget
+              ? `"${deleteTarget.name}" and its ${deleteTarget.source_count} sources will be permanently removed.`
+              : ""}
+          </p>
+        </div>
+      </Modal>
+
+      <Modal
+        footer={
+          <>
+            <Button
+              onClick={() => {
+                setRenameTarget(null);
+                setRenameDraft("");
+              }}
+              size="sm"
+              variant="ghost"
+            >
+              Cancel
+            </Button>
+            <Button onClick={() => void handleRenameCommit()} size="sm" variant="primary">
+              Save
+            </Button>
+          </>
+        }
+        onClose={() => setRenameTarget(null)}
+        open={renameTarget !== null}
+        size="lg"
+        title="Rename list"
+      >
+        <div className="relative h-60 overflow-hidden rounded-card bg-linear-to-br from-pink/85 to-sky/55 shadow-elevated">
+          {renameTarget?.thumbnail_url ? (
+            <div
+              className="absolute inset-0 bg-cover bg-center"
+              style={{ backgroundImage: `url("${renameTarget.thumbnail_url}")` }}
+            />
+          ) : null}
+          <div className="absolute inset-0 bg-linear-to-t from-black/65 via-black/20 to-transparent" />
+          <div className="absolute inset-x-6 bottom-6 z-10">
+            <span className="block text-[30px] leading-[1.02] font-semibold tracking-[-0.04em] text-white">
+              {renameDraft || renameTarget?.name || "Untitled list"}
+            </span>
+          </div>
+        </div>
+        <div className="">
+          <label className="grid gap-2">
+            <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted">List name</span>
+            <Input
+              aria-label="List name"
+              autoFocus
+              className="select-text rounded-overlay bg-white/92 px-4 py-3 text-[20px] leading-tight font-normal tracking-normal text-ink focus:border-blue/25 focus:ring-2 focus:ring-sky/10"
+              placeholder="Untitled list"
+              onChange={(event) => setRenameDraft(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  void handleRenameCommit();
+                }
+              }}
+              value={renameDraft}
+            />
+          </label>
+        </div>
+      </Modal>
+
+      <Modal
+        onClose={() => setThumbnailTarget(null)}
+        open={thumbnailTarget !== null}
+        size="xl"
+        title="Choose thumbnail"
+      >
+        {thumbnailLoading ? (
+          <p className="m-0 text-sm text-muted">Loading sources...</p>
+        ) : (
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+            <button
+              className="aspect-[16/10] rounded-overlay border border-border bg-linear-to-br from-pink/85 to-sky/55 p-3 text-left text-xs font-semibold text-white shadow-card transition hover:-translate-y-0.5 hover:shadow-elevated"
+              onClick={() => void handleThumbnailSelect(null)}
+              type="button"
+            >
+              No cover
+            </button>
+            {thumbnailSources.map((source) => (
+              <button
+                className="aspect-[16/10] overflow-hidden rounded-overlay border border-border bg-linear-to-br from-pink/85 to-sky/55 p-0 text-left shadow-card transition hover:-translate-y-0.5 hover:shadow-elevated"
+                key={source.video_id}
+                onClick={() => void handleThumbnailSelect(source.video_id)}
+                type="button"
+              >
+                <div
+                  className="flex h-full items-end bg-cover bg-center p-2"
+                  style={{ backgroundImage: `linear-gradient(to top, rgba(0,0,0,0.5), transparent), url("/api/covers/${source.video_id}")` }}
+                >
+                  <span className="block truncate text-[10.5px] font-semibold text-white">{source.title}</span>
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }

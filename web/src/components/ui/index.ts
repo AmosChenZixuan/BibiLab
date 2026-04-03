@@ -1,6 +1,6 @@
 export { Button } from "./Button";
 export { ContextMenu } from "./ContextMenu";
-export { Dialog } from "./Dialog";
+export { Modal } from "./Modal";
 export { FormField } from "./FormField";
 export { Input } from "./Input";
 export { Panel, PanelBody, PanelTitle } from "./Panel";

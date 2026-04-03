@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, test, vi } from "vitest";
 afterEach(cleanup);
 import { Button } from "../components/ui/Button";
 import { ContextMenu } from "../components/ui/ContextMenu";
-import { Dialog } from "../components/ui/Dialog";
+import { Modal } from "../components/ui/Modal";
 import { FormField } from "../components/ui/FormField";
 import { Panel } from "../components/ui/Panel";
 import { StatusChip } from "../components/ui/StatusChip";
@@ -119,29 +119,44 @@ describe("StatusChip", () => {
   });
 });
 
-// ── Dialog ───────────────────────────────────────────────────────────────────
-describe("Dialog", () => {
+// ── Modal ────────────────────────────────────────────────────────────────────
+describe("Modal", () => {
   test("renders when open and closes on escape or backdrop click", async () => {
     const onClose = vi.fn();
     render(
-      <Dialog open onClose={onClose} title="Delete list">
+      <Modal open onClose={onClose} title="Delete list">
         <p>Body</p>
-      </Dialog>,
+      </Modal>,
     );
 
     expect(screen.getByRole("dialog", { name: "Delete list" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /close dialog/i })).not.toBeInTheDocument();
     fireEvent.keyDown(document, { key: "Escape" });
     expect(onClose).toHaveBeenCalledTimes(1);
 
-    await userEvent.click(screen.getByTestId("dialog-backdrop"));
+    await userEvent.click(screen.getByTestId("modal-backdrop"));
     expect(onClose).toHaveBeenCalledTimes(2);
+  });
+
+  test("does not close when interaction starts inside the modal and ends on the backdrop", () => {
+    const onClose = vi.fn();
+    render(
+      <Modal open onClose={onClose} title="Rename list">
+        <input aria-label="List name" defaultValue="Systems" />
+      </Modal>,
+    );
+
+    fireEvent.mouseDown(screen.getByRole("dialog", { name: "Rename list" }));
+    fireEvent.click(screen.getByTestId("modal-backdrop"));
+
+    expect(onClose).not.toHaveBeenCalled();
   });
 
   test("does not render when closed", () => {
     render(
-      <Dialog open={false} onClose={() => {}} title="Closed">
+      <Modal open={false} onClose={() => {}} title="Closed">
         <p>Hidden</p>
-      </Dialog>,
+      </Modal>,
     );
 
     expect(screen.queryByRole("dialog", { name: "Closed" })).not.toBeInTheDocument();

@@ -16,7 +16,7 @@ afterEach(() => {
 });
 
 describe("home page", () => {
-  test("shows the floating shell, creates an untitled list from the first tile, and deletes an existing list", async () => {
+  test("shows the my lists shell, creates an untitled list from the first tile, and deletes an existing list through a dialog", async () => {
     const lists = [
       {
         id: "list-1",
@@ -67,7 +67,6 @@ describe("home page", () => {
       throw new Error(`Unhandled ${method} ${url}`);
     });
 
-    vi.stubGlobal("confirm", vi.fn(() => true));
     const router = createMemoryRouter(routes, { initialEntries: ["/"] });
 
     render(<RouterProvider router={router} />);
@@ -75,22 +74,27 @@ describe("home page", () => {
     expect(screen.getByText(/loading lists/i)).toBeInTheDocument();
     const settingsLink = await screen.findByTitle("Degraded");
     expect(settingsLink).toHaveAccessibleName(/settings/i);
+    expect(await screen.findByText("My Lists")).toBeInTheDocument();
     expect(await screen.findByRole("heading", { name: "Systems" })).toBeInTheDocument();
 
-    const createButtons = screen.getAllByRole("button", { name: /create new list/i });
-    await userEvent.click(createButtons[0]);
+    await userEvent.click(screen.getByRole("button", { name: /new list/i }));
 
     expect(await screen.findByRole("heading", { name: "Untitled list" })).toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole("button", { name: /delete systems/i }));
+    await userEvent.click(screen.getByRole("button", { name: /list actions for systems/i }));
+    await userEvent.click(screen.getByRole("menuitem", { name: /delete list/i }));
+    expect(await screen.findByRole("dialog", { name: /delete list/i })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /^delete$/i }));
 
     await waitFor(() => {
       expect(screen.queryByRole("heading", { name: "Systems" })).not.toBeInTheDocument();
     });
   });
 
-  test("shows a renamed list after navigating back from the list workspace", async () => {
+  test("renames a list and changes its thumbnail from the home page menus", async () => {
     let currentListName = "Systems";
+    let currentThumbnailSourceId: string | null = null;
+    let currentThumbnailUrl: string | null = null;
 
     installFetchMock(async (input, init) => {
       const url = String(input);
@@ -111,28 +115,49 @@ describe("home page", () => {
             id: "list-1",
             name: currentListName,
             created_at: "2026-03-31T19:00:00Z",
-            thumbnail_source_id: null,
-            thumbnail_url: null,
-            source_count: 0,
+            thumbnail_source_id: currentThumbnailSourceId,
+            thumbnail_url: currentThumbnailUrl,
+            source_count: 2,
             updated_at: "2026-03-31T19:00:00Z",
           },
         ]);
       }
 
       if (url.endsWith("/api/lists/list-1/sources") && method === "GET") {
-        return Response.json([]);
+        return Response.json([
+          {
+            video_id: "BV1cover",
+            platform: "bilibili",
+            title: "Systems Episode",
+            note_path: "/tmp/BV1cover.md",
+            processed_at: "2026-03-31T20:00:00Z",
+          },
+          {
+            video_id: "BV1extra",
+            platform: "bilibili",
+            title: "Feedback Loops",
+            note_path: "/tmp/BV1extra.md",
+            processed_at: "2026-03-31T20:10:00Z",
+          },
+        ]);
       }
 
       if (url.endsWith("/api/lists/list-1") && method === "PATCH") {
         const body = JSON.parse(String(init?.body));
-        currentListName = body.name;
+        if (typeof body.name === "string") {
+          currentListName = body.name;
+        }
+        if ("thumbnail_source_id" in body) {
+          currentThumbnailSourceId = body.thumbnail_source_id;
+          currentThumbnailUrl = body.thumbnail_source_id ? `http://testserver/covers/${body.thumbnail_source_id}` : null;
+        }
         return Response.json({
           id: "list-1",
           name: currentListName,
           created_at: "2026-03-31T19:00:00Z",
-          thumbnail_source_id: null,
-          thumbnail_url: null,
-          source_count: 0,
+          thumbnail_source_id: currentThumbnailSourceId,
+          thumbnail_url: currentThumbnailUrl,
+          source_count: 2,
           updated_at: "2026-03-31T19:00:00Z",
         });
       }
@@ -141,23 +166,35 @@ describe("home page", () => {
     });
 
     const router = createMemoryRouter(routes, { initialEntries: ["/"] });
-
     render(<RouterProvider router={router} />);
 
-    await userEvent.click(await screen.findByRole("button", { name: /open systems/i }));
-    expect(await screen.findByRole("heading", { name: /systems/i })).toBeInTheDocument();
+    await screen.findByRole("heading", { name: "Systems" });
 
-    await userEvent.click(screen.getByRole("button", { name: /edit list name/i }));
-    const input = screen.getByLabelText(/list name/i);
+    await userEvent.click(screen.getByRole("button", { name: /list actions for systems/i }));
+    await userEvent.click(screen.getByRole("menuitem", { name: /rename/i }));
+    expect(router.state.location.pathname).toBe("/");
+    expect(screen.getByTestId("home-page-content")).toHaveAttribute("aria-hidden", "true");
+    const input = await screen.findByLabelText(/list name/i);
     await userEvent.clear(input);
     await userEvent.type(input, "Distributed Systems");
-    await userEvent.tab();
-
-    expect(await screen.findByRole("heading", { name: /distributed systems/i })).toBeInTheDocument();
-
-    await router.navigate("/");
+    await userEvent.click(screen.getByRole("button", { name: /^save$/i }));
 
     expect(await screen.findByRole("heading", { name: "Distributed Systems" })).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: /list actions for distributed systems/i }));
+    await userEvent.click(screen.getByRole("menuitem", { name: /change thumbnail/i }));
+    expect(await screen.findByRole("dialog", { name: /choose thumbnail/i })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /systems episode/i }));
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog", { name: /choose thumbnail/i })).not.toBeInTheDocument();
+    });
+
+    await userEvent.click(screen.getByRole("button", { name: /list actions for distributed systems/i }));
+    await userEvent.click(screen.getByRole("menuitem", { name: /change thumbnail/i }));
+    await userEvent.click(await screen.findByRole("button", { name: /no cover/i }));
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog", { name: /choose thumbnail/i })).not.toBeInTheDocument();
+    });
   });
 
   test("supports navigation across home, list workspace, and settings routes", async () => {

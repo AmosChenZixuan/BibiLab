@@ -118,7 +118,9 @@ export function ContextMenu({ items, trigger }: ContextMenuProps) {
                     item.variant === "danger" ? "text-danger" : "text-ink"
                   }`}
                   key={item.label}
-                  onClick={() => {
+                  onClick={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
                     item.onClick();
                     setOpen(false);
                   }}
