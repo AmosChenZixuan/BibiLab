@@ -1,8 +1,11 @@
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, test, vi } from "vitest";
 
 afterEach(cleanup);
 import { Button } from "../components/ui/Button";
+import { ContextMenu } from "../components/ui/ContextMenu";
+import { Dialog } from "../components/ui/Dialog";
 import { FormField } from "../components/ui/FormField";
 import { Panel } from "../components/ui/Panel";
 import { StatusChip } from "../components/ui/StatusChip";
@@ -113,5 +116,97 @@ describe("StatusChip", () => {
   test("forwards className", () => {
     render(<StatusChip status="ok" className="ml-2">OK</StatusChip>);
     expect(screen.getByText("OK").className).toContain("ml-2");
+  });
+});
+
+// ── Dialog ───────────────────────────────────────────────────────────────────
+describe("Dialog", () => {
+  test("renders when open and closes on escape or backdrop click", async () => {
+    const onClose = vi.fn();
+    render(
+      <Dialog open onClose={onClose} title="Delete list">
+        <p>Body</p>
+      </Dialog>,
+    );
+
+    expect(screen.getByRole("dialog", { name: "Delete list" })).toBeInTheDocument();
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(onClose).toHaveBeenCalledTimes(1);
+
+    await userEvent.click(screen.getByTestId("dialog-backdrop"));
+    expect(onClose).toHaveBeenCalledTimes(2);
+  });
+
+  test("does not render when closed", () => {
+    render(
+      <Dialog open={false} onClose={() => {}} title="Closed">
+        <p>Hidden</p>
+      </Dialog>,
+    );
+
+    expect(screen.queryByRole("dialog", { name: "Closed" })).not.toBeInTheDocument();
+  });
+});
+
+// ── ContextMenu ──────────────────────────────────────────────────────────────
+describe("ContextMenu", () => {
+  test("opens from trigger, closes on outside click, and styles danger items", async () => {
+    const onDelete = vi.fn();
+
+    render(
+      <ContextMenu
+        items={[
+          { label: "Rename", onClick: () => {} },
+          { label: "Delete", onClick: onDelete, variant: "danger" },
+        ]}
+        trigger={({ open, toggle, triggerRef }) => (
+          <button
+            ref={triggerRef}
+            aria-expanded={open}
+            onClick={toggle}
+            type="button"
+          >
+            Menu
+          </button>
+        )}
+      />,
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "Menu" }));
+    expect(screen.getByRole("menu")).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "Delete" }).className).toContain("text-danger");
+
+    await userEvent.click(document.body);
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+  });
+
+  test("keeps only one instance open at a time", async () => {
+    function Example({ label }: { label: string }) {
+      return (
+        <ContextMenu
+          items={[{ label: "Rename", onClick: () => {} }]}
+          trigger={({ open, toggle, triggerRef }) => (
+            <button ref={triggerRef} aria-expanded={open} onClick={toggle} type="button">
+              {label}
+            </button>
+          )}
+        />
+      );
+    }
+
+    render(
+      <>
+        <Example label="Menu A" />
+        <Example label="Menu B" />
+      </>,
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "Menu A" }));
+    expect(screen.getAllByRole("menu")).toHaveLength(1);
+
+    await userEvent.click(screen.getByRole("button", { name: "Menu B" }));
+    expect(screen.getAllByRole("menu")).toHaveLength(1);
+    expect(screen.getByRole("button", { name: "Menu A" })).toHaveAttribute("aria-expanded", "false");
+    expect(screen.getByRole("button", { name: "Menu B" })).toHaveAttribute("aria-expanded", "true");
   });
 });
