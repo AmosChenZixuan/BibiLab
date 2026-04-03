@@ -1,7 +1,7 @@
 # Project Locus — Technical Design Document
 
 > Version: 0.6 (Draft)
-> Last updated: 2026-03-31
+> Last updated: 2026-04-03
 
 ---
 
@@ -75,7 +75,7 @@ A single-page application served by the FastAPI backend at `localhost:8765`.
 
 **Pages:**
 
-- `/` — Home: grid of Lists, create new list
+- `/` — Home: grid of Lists with thumbnails, create new list
 - `/lists/:id` — List detail: three-column layout (Sources | Chat | Studio)
 - `/settings` — Global config: AI provider, Whisper, accounts, health panel
 
@@ -116,11 +116,14 @@ GET    /jobs/{id}               # single job status + progress
 DELETE /jobs/{id}               # cancel job
 
 POST   /lists                   # create a new list
-GET    /lists                   # all lists
-DELETE /lists/{id}              # delete list and cascade: notes + processing_log + embeddings
-GET    /lists/{id}/sources      # sources (processing_log rows) for a list
-DELETE /lists/{id}/sources/{video_id}  # delete one source: note file + processing_log + embeddings
+GET    /lists                   # all lists (enriched: thumbnail_url, source_count, updated_at)
+PATCH  /lists/{id}              # update name and/or thumbnail_source_id
+DELETE /lists/{id}              # delete list and cascade: notes + sources + embeddings
+GET    /lists/{id}/sources      # sources for a list
+DELETE /lists/{id}/sources/{video_id}  # delete one source: note file + sources row + embeddings
 POST   /lists/{id}/overview     # on-demand: generate overview markdown, return for download
+
+GET    /covers/{video_id}       # serve cached cover image from ~/.locus/notes/attachments/
 
 GET    /notes/{video_id}/content    # note markdown content
 GET    /notes/{video_id}/transcript # raw transcript text
@@ -157,23 +160,23 @@ Jobs are ephemeral — they can be pruned after a retention window once complete
 ```sql
 -- List registry
 CREATE TABLE lists (
-    id         TEXT PRIMARY KEY,
-    name       TEXT NOT NULL UNIQUE,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    id                   TEXT PRIMARY KEY,
+    name                 TEXT NOT NULL,
+    thumbnail_source_id  TEXT REFERENCES sources(video_id),
+    created_at           DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Ephemeral queue: pruned after retention window
 CREATE TABLE jobs (
     id          TEXT PRIMARY KEY,
-    type        TEXT,           -- 'video' | 'playlist' | 'course'
-    source_url  TEXT,
-    platform    TEXT,
+    type        TEXT,           -- 'ingest' | 'playlist' | 'course' | 'model_download'
     status      TEXT,           -- queued | downloading | transcribing | extracting | writing | done | failed | needs_auth
     progress    INTEGER,        -- 0-100
     error       TEXT,
     created_at  DATETIME,
     updated_at  DATETIME,
-    meta        JSON            -- platform-specific metadata
+    meta        JSON            -- ingest: { list_id, source_url, platform, video_id, title, cover_url, duration_seconds, uploader, rerun }
+                                -- model_download: { model_family, model_size }
 );
 
 -- Active source catalog: one row per successfully processed video, deleted when source is removed
@@ -185,13 +188,16 @@ CREATE TABLE sources (
     transcript_path     TEXT,               -- absolute path to ~/.locus/transcripts/{video_id}.txt
     whisper_model       TEXT,
     ai_model            TEXT,
-    vision_enabled      BOOLEAN,
+    vision_enabled      INTEGER DEFAULT 0,
+    cover_url           TEXT,
     processed_at        DATETIME,
     settings_snapshot   JSON
 );
 ```
 
-`sources` powers deduplication (is this video already processed?), source listing per list, and note path resolution.
+`sources` powers deduplication (is this video already processed?), source listing per list, and note path resolution. The `cover_url` column stores the remote cover URL at ingest time; the cached file at `~/.locus/notes/attachments/{video_id}_cover.jpg` takes precedence when serving via `GET /covers/{video_id}`.
+
+`GET /lists` returns an enriched response per list: `thumbnail_url` (resolved from `thumbnail_source_id`, preferring cached local cover over remote URL), `source_count`, and `updated_at` (max `processed_at` of its sources, falling back to `created_at`). Lists are ordered by `updated_at DESC`.
 
 ### 4.4 Platform Adapters
 
@@ -427,6 +433,7 @@ The `/health` endpoint checks all dependencies. Displayed inline in the Settings
 | Overview generation | On-demand via API, not in pipeline | Avoids silent LLM calls during ingestion; user controls when to generate and download |
 | Backend framework | FastAPI | Async-native, easy SSE for job progress and chat streaming |
 | DB schema | SQLite three tables: `lists`, `jobs`, `sources` | `jobs` is ephemeral queue (prunable); `sources` is the active catalog (dedup + note path); `lists` is the registry. Naming reflects purpose, not implementation. |
+| Job meta | Ingest-specific fields (`source_url`, `platform`, `video_id`, etc.) stored in `meta` JSON | Keeps the `jobs` table schema stable across job types; per-type payload lives in the blob. |
 | Vector store | ChromaDB | Local, no server process, Python-native |
 | Transcription | Faster Whisper | Best local quality/speed tradeoff, CUDA support |
 | Transcript storage | `~/.locus/transcripts/` | Decoupled from notes; re-chunking/re-embedding never requires re-transcription |
