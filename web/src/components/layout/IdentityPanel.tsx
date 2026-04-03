@@ -9,20 +9,20 @@ export default function IdentityPanel({ onClose }: IdentityPanelProps) {
     <>
       <button
         type="button"
-        className="fixed inset-0 z-backdrop border-0 bg-transparent"
+        className="fixed inset-0 z-float border-0 bg-transparent"
         aria-label="Close identity panel"
         onClick={onClose}
       />
       <div
-        className="fixed top-[52px] /* below navbar */ right-[clamp(16px,3vw,48px)] z-overlay min-w-[180px] rounded-overlay border border-border bg-white/96 p-4 shadow-overlay backdrop-blur-[18px] /* glass blur — no matching Tailwind step */"
+        className="fixed right-4 top-14 z-float min-w-44 rounded-xl border border-border bg-white/96 p-4 shadow-lg backdrop-blur-md md:right-6 xl:right-12"
         role="menu"
         aria-label="Identity"
       >
         <div className="flex flex-wrap gap-3">
           {PLATFORMS.map((platform) => (
-            <div key={platform.key} className="flex w-[72px] flex-col items-center gap-1">
+            <div key={platform.key} className="flex w-18 flex-col items-center gap-1">
               <span
-                className="inline-flex h-8 w-8 items-center justify-center rounded-icon bg-pink/14 font-bold text-blue"
+                className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-pink/14 font-bold text-blue"
                 aria-hidden="true"
               >
                 {platform.icon}

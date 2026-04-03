@@ -200,14 +200,14 @@ export function ListDetailPage() {
   return (
     <div className="grid gap-4">
       <section className="grid gap-4">
-        <p className="text-xs uppercase tracking-[0.14em] text-pink">Notebook workspace</p>
+        <p className="text-xs uppercase tracking-widest text-pink">Notebook workspace</p>
         {editingName ? (
-          <label className="grid max-w-[560px] gap-1.5">
+          <label className="grid max-w-2xl gap-1.5">
             <span className="sr-only">List name</span>
             <input
               aria-label="List name"
               autoFocus
-              className="w-full rounded-2xl border border-border bg-white/84 px-3.5 py-3 font-serif text-display leading-[0.95] text-ink outline-none"
+              className="w-full rounded-2xl border border-border bg-white/84 px-3.5 py-3 font-serif text-4xl leading-none text-ink outline-none md:text-5xl xl:text-6xl"
               onBlur={() => void handleRenameCommit()}
               onChange={(event) => setDraftName(event.target.value)}
               onKeyDown={(event) => {
@@ -224,7 +224,7 @@ export function ListDetailPage() {
           </label>
         ) : (
           <div className="flex flex-wrap items-center gap-3">
-            <h1 className="m-0 mb-2 font-serif text-display leading-[0.95]">{listName}</h1>
+            <h1 className="m-0 mb-2 font-serif text-4xl leading-none md:text-5xl xl:text-6xl">{listName}</h1>
             <Button
               aria-label="Edit list name"
               variant="ghost"
@@ -240,14 +240,14 @@ export function ListDetailPage() {
           </div>
         )}
         <p className="m-0 text-muted">Queue sources, inspect notes, and export a list overview from one reading surface.</p>
-        {renameError ? <p className="m-0 text-sm text-danger">{renameError}</p> : null}
+        {renameError ? <p className="m-0 text-sm text-rose-900">{renameError}</p> : null}
       </section>
-      <div className="grid grid-cols-[1.25fr_1fr_0.9fr] items-start gap-4 max-[820px]:grid-cols-1">
+      <div className="grid items-start gap-4 xl:grid-cols-3">
         {loadError ? (
           <Panel variant="workspace">
             <PanelTitle>Sources</PanelTitle>
             <PanelBody>
-              <p className="m-0 text-sm text-danger">{loadError}</p>
+              <p className="m-0 text-sm text-rose-900">{loadError}</p>
             </PanelBody>
           </Panel>
         ) : (

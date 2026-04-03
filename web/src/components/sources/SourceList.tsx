@@ -65,9 +65,9 @@ export function SourceList({
           <Button variant="primary" disabled={busy} type="submit">
             {busy ? "Queueing..." : "Queue source"}
           </Button>
-          {ingestStatus ? <p className="m-0 text-sm text-success">{ingestStatus}</p> : null}
+          {ingestStatus ? <p className="m-0 text-sm text-sky-600">{ingestStatus}</p> : null}
         </div>
-        {error ? <p className="m-0 text-sm text-danger">{error}</p> : null}
+        {error ? <p className="m-0 text-sm text-rose-900">{error}</p> : null}
       </form>
 
       {ingestJobs.length > 0 ? (
@@ -78,8 +78,8 @@ export function SourceList({
             const accentColor = !item.isTerminal
               ? "border-l-blue/40"
               : tone === "ok"
-                ? "border-l-success/50"
-                : "border-l-danger/50";
+                ? "border-l-sky-400/50"
+                : "border-l-rose-400/50";
 
             return (
               <li
@@ -104,13 +104,13 @@ export function SourceList({
                 {!item.isTerminal ? (
                   <div className="h-px overflow-hidden bg-border">
                     <div
-                      className="h-full bg-blue/50 transition-[width] duration-700"
+                      className="h-full bg-blue/50 transition-all duration-700"
                       style={{ width: `${Math.max(item.job.progress, 4)}%` }}
                     />
                   </div>
                 ) : null}
                 {item.job.error ? (
-                  <p className="px-4 pb-3 text-xs text-danger">{item.job.error}</p>
+                  <p className="px-4 pb-3 text-xs text-rose-900">{item.job.error}</p>
                 ) : null}
               </li>
             );

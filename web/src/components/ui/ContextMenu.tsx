@@ -107,15 +107,15 @@ export function ContextMenu({ items, trigger }: ContextMenuProps) {
       {open
         ? createPortal(
             <div
-              className="fixed z-overlay min-w-[168px] rounded-[10px] border border-border bg-white p-[5px] shadow-overlay"
+              className="fixed z-float min-w-40 rounded-lg border border-border bg-white p-1 shadow-lg"
               ref={menuRef}
               role="menu"
               style={{ top: `${position.top}px`, left: `${position.left}px` }}
             >
               {items.map((item) => (
                 <button
-                  className={`flex w-full items-center gap-2 rounded-[7px] border-0 px-[10px] py-2 text-left text-[13px] font-medium transition hover:bg-black/5 ${
-                    item.variant === "danger" ? "text-danger" : "text-ink"
+                  className={`flex w-full items-center gap-2 rounded-md border-0 px-2.5 py-2 text-left text-sm font-medium transition hover:bg-black/5 ${
+                    item.variant === "danger" ? "text-rose-900" : "text-ink"
                   }`}
                   key={item.label}
                   onClick={(event) => {
@@ -127,7 +127,7 @@ export function ContextMenu({ items, trigger }: ContextMenuProps) {
                   role="menuitem"
                   type="button"
                 >
-                  {item.icon ? <span className="inline-flex h-[18px] w-[18px] items-center justify-center">{item.icon}</span> : null}
+                  {item.icon ? <span className="inline-flex size-4.5 items-center justify-center">{item.icon}</span> : null}
                   <span>{item.label}</span>
                 </button>
               ))}

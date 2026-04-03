@@ -1,7 +1,7 @@
 import { useEffect, useId, useState } from "react";
 
 import type { LocusConfig } from "../../lib/types";
-import { Input, SettingsField } from "../../components/ui";
+import { Input, Select, SettingsField } from "../../components/ui";
 
 type LlmTabProps = {
   config: LocusConfig;
@@ -51,9 +51,8 @@ export function LlmTab({ config, onBlur }: LlmTabProps) {
         hint="Required. Without a provider, LLM requests cannot start."
         htmlFor={providerId}
       >
-        <select
+        <Select
           aria-label="Provider"
-          className="w-full rounded-xl border border-border bg-white/92 px-3 py-2.5 text-ink outline-none transition focus:border-blue/45 focus:ring-2 focus:ring-sky/18 h-11 min-h-11"
           id={providerId}
           onBlur={handleBlur}
           onChange={(event) =>
@@ -65,7 +64,7 @@ export function LlmTab({ config, onBlur }: LlmTabProps) {
           <option value="anthropic">Anthropic</option>
           <option value="ollama">Ollama</option>
           <option value="custom">Custom</option>
-        </select>
+        </Select>
       </SettingsField>
 
       <SettingsField

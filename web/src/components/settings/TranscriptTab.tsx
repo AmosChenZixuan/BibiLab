@@ -6,7 +6,7 @@ import { api } from "../../lib/api";
 import type { HealthDependency, LocusConfig, WhisperModel } from "../../lib/types";
 import { MdDownload } from "react-icons/md";
 
-import { SettingsField, Spinner } from "../../components/ui";
+import { Select, SettingsField, Spinner } from "../../components/ui";
 
 type ModelDownloadCellProps = {
   modelName: string;
@@ -23,7 +23,7 @@ function ModelDownloadCell({ modelName, modelJob, downloading, onDownload }: Mod
   }
 
   if (modelJob?.job.status === "failed" || modelJob?.job.status === "needs_auth") {
-    return <span className="text-xs text-danger">{modelJob.job.error ?? "Failed"}</span>;
+    return <span className="text-xs text-rose-900">{modelJob.job.error ?? "Failed"}</span>;
   }
 
   return (
@@ -139,9 +139,8 @@ export function TranscriptTab({ config, dependencies, onBlur }: TranscriptTabPro
           hint="Required. Missing the Whisper model blocks transcript generation entirely."
           htmlFor={modelSizeId}
         >
-          <select
+          <Select
             aria-label="Model Size"
-            className="w-full rounded-xl border border-border bg-white/92 px-3 py-2.5 text-ink outline-none transition focus:border-blue/45 focus:ring-2 focus:ring-sky/18 h-11 min-h-11"
             id={modelSizeId}
             onBlur={handleBlur}
             onChange={(event) =>
@@ -159,13 +158,12 @@ export function TranscriptTab({ config, dependencies, onBlur }: TranscriptTabPro
                 {model.name}
               </option>
             ))}
-          </select>
+          </Select>
         </SettingsField>
 
         <SettingsField label="Device" hint={deviceHint} htmlFor={deviceId}>
-          <select
+          <Select
             aria-label="Device"
-            className="w-full rounded-xl border border-border bg-white/92 px-3 py-2.5 text-ink outline-none transition focus:border-blue/45 focus:ring-2 focus:ring-sky/18 h-11 min-h-11"
             id={deviceId}
             onBlur={handleBlur}
             onChange={(event) =>
@@ -177,7 +175,7 @@ export function TranscriptTab({ config, dependencies, onBlur }: TranscriptTabPro
             <option value="cuda" disabled={!cudaAvailable}>
               CUDA
             </option>
-          </select>
+          </Select>
         </SettingsField>
 
         <SettingsField
@@ -185,9 +183,8 @@ export function TranscriptTab({ config, dependencies, onBlur }: TranscriptTabPro
           hint="Controls decoder accuracy. A wrong language setting can reduce transcript quality."
           htmlFor={languageId}
         >
-          <select
+          <Select
             aria-label="Language"
-            className="w-full rounded-xl border border-border bg-white/92 px-3 py-2.5 text-ink outline-none transition focus:border-blue/45 focus:ring-2 focus:ring-sky/18 h-11 min-h-11"
             id={languageId}
             onBlur={handleBlur}
             onChange={(event) =>
@@ -198,12 +195,12 @@ export function TranscriptTab({ config, dependencies, onBlur }: TranscriptTabPro
             <option value="auto">Auto</option>
             <option value="zh">Chinese</option>
             <option value="en">English</option>
-          </select>
+          </Select>
         </SettingsField>
       </div>
 
       <div className="grid gap-3">
-        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted">
+        <p className="text-xs font-semibold uppercase tracking-widest text-muted">
           Model Downloads
         </p>
         <p className="text-sm leading-5 text-muted">Whisper model files are required. If missing, transcription cannot start until a model is downloaded.</p>

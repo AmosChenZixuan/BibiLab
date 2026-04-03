@@ -1,3 +1,4 @@
+import { FiPlus } from "react-icons/fi";
 import type { LocusList } from "../../lib/types";
 import { ListCard } from "./ListCard";
 
@@ -20,21 +21,22 @@ export function ListGrid({
 }: Props) {
   return (
     <section
-      className="grid grid-cols-[repeat(auto-fill,248px)] justify-start gap-5 max-[820px]:grid-cols-1"
+      className="grid justify-start gap-5 max-sm:justify-center"
       aria-label="List grid"
+      style={{ gridTemplateColumns: "repeat(auto-fill, 16rem)" }}
     >
-      <article className="h-[200px] w-[248px] rounded-[14px] border border-dashed border-[#c8c4bb] bg-white transition hover:border-pink hover:bg-[#fcf0f5] hover:text-[#c2607d] hover:shadow-card max-[820px]:w-full">
+      <article className="h-52 w-64 rounded-2xl border border-dashed border-stone-300 bg-white transition hover:border-pink hover:bg-pink/8 hover:text-rose-500 hover:shadow-lg">
         <button
           aria-label="New list"
-          className="flex h-full w-full flex-col items-center justify-center gap-2.5 border-0 bg-transparent text-[#6b6860]"
+          className="flex h-full w-full flex-col items-center justify-center gap-2.5 border-0 bg-transparent text-stone-500"
           disabled={busy}
           onClick={() => void onCreate()}
           type="button"
         >
-          <span className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-current text-[22px] leading-none">
-            +
+          <span className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-current">
+            <FiPlus className="size-5" aria-hidden="true" />
           </span>
-          <span className="text-[13.5px] font-medium tracking-[-0.01em]">New list</span>
+          <span className="text-sm font-medium tracking-tight">New list</span>
         </button>
       </article>
       {lists.map((list) => (

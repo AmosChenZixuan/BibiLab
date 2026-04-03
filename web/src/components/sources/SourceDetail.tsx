@@ -71,14 +71,14 @@ export function SourceDetail({
       </div>
 
       {activeTab === "note" ? (
-        <div className="min-h-[320px] rounded-2xl border border-border bg-white/60 p-4.5">
+        <div className="min-h-80 rounded-2xl border border-border bg-white/60 p-4.5">
           <ReactMarkdown>{note?.markdown ?? ""}</ReactMarkdown>
         </div>
       ) : (
-        <div className="min-h-[320px] rounded-2xl border border-border bg-white/60 p-4.5">
+        <div className="min-h-80 rounded-2xl border border-border bg-white/60 p-4.5">
           {transcriptLoading ? <p className="m-0 text-muted">Loading transcript...</p> : null}
-          {transcriptError ? <p className="m-0 text-sm text-danger">{transcriptError}</p> : null}
-          {transcript ? <pre className="m-0 whitespace-pre-wrap font-mono text-[#4e6485]">{transcript}</pre> : null}
+          {transcriptError ? <p className="m-0 text-sm text-rose-900">{transcriptError}</p> : null}
+          {transcript ? <pre className="m-0 whitespace-pre-wrap font-mono text-slate-600">{transcript}</pre> : null}
         </div>
       )}
     </PanelBody>

@@ -3,6 +3,7 @@ export { ContextMenu } from "./ContextMenu";
 export { Modal } from "./Modal";
 export { FormField } from "./FormField";
 export { Input } from "./Input";
+export { Select } from "./Select";
 export { Panel, PanelBody, PanelTitle } from "./Panel";
 export { SettingsField } from "./SettingsField";
 export { StatusChip } from "./StatusChip";

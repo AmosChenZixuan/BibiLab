@@ -113,8 +113,8 @@ export function SettingsPage() {
   if (loadError || !config) {
     return (
       <Panel variant="app">
-        <h1 className="m-0 mb-2 font-serif text-display leading-[0.95]">Settings</h1>
-        <p className="m-0 text-sm text-danger">{loadError ?? "Request failed"}</p>
+        <h1 className="m-0 mb-2 font-serif text-4xl leading-none md:text-5xl xl:text-6xl">Settings</h1>
+        <p className="m-0 text-sm text-rose-900">{loadError ?? "Request failed"}</p>
       </Panel>
     );
   }
@@ -122,11 +122,11 @@ export function SettingsPage() {
   return (
     <div className="grid gap-4">
       <section>
-        <h1 className="m-0 mb-2 font-serif text-display leading-[0.95]">Settings</h1>
+        <h1 className="m-0 mb-2 font-serif text-4xl leading-none md:text-5xl xl:text-6xl">Settings</h1>
       </section>
 
-      <section className="grid items-start gap-5 md:grid-cols-[180px_minmax(0,1fr)]">
-        <div className="flex flex-col gap-1">
+      <section className="grid items-start gap-5 md:grid-cols-5">
+        <div className="flex flex-col gap-1 md:col-span-1">
           {TABS.map((tab) => {
             const healthTier = deriveDependencyHealthTier(dependencies, tab.dependencyKeys);
             const isActive = activeTab === tab.key;
@@ -156,7 +156,7 @@ export function SettingsPage() {
           })}
         </div>
 
-        <div className="min-w-0">
+        <div className="min-w-0 md:col-span-4">
           {activeTab === "llm" ? <LlmTab config={config} onBlur={handleSave} /> : null}
           {activeTab === "transcript" ? (
             <TranscriptTab config={config} dependencies={dependencies} onBlur={handleSave} />

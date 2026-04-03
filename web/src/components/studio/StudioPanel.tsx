@@ -18,8 +18,8 @@ export function StudioPanel({ busy, error, status, onGenerate }: Props) {
         <Button variant="primary" disabled={busy} onClick={() => void onGenerate()} type="button">
           {busy ? "Generating..." : "Generate overview"}
         </Button>
-        {status ? <p className="m-0 text-sm text-success">{status}</p> : null}
-        {error ? <p className="m-0 text-sm text-danger">{error}</p> : null}
+        {status ? <p className="m-0 text-sm text-sky-600">{status}</p> : null}
+        {error ? <p className="m-0 text-sm text-rose-900">{error}</p> : null}
       </PanelBody>
     </Panel>
   );

@@ -14,7 +14,7 @@ function StatusDot({ item }: { item: JobActivityItem }) {
   }
   const tone = getJobTone(item.job);
   const color =
-    tone === "ok" ? "bg-success" : tone === "error" ? "bg-danger" : "bg-muted";
+    tone === "ok" ? "bg-sky-500" : tone === "error" ? "bg-rose-500" : "bg-muted";
   return (
     <span className={`inline-block h-1.5 w-1.5 shrink-0 rounded-full ${color}`} aria-hidden="true" />
   );
@@ -44,15 +44,15 @@ export function JobSpirit() {
       {isPanelOpen ? (
         <button
           type="button"
-          className="fixed inset-0 z-[189] border-0 bg-transparent"
+          className="fixed inset-0 z-float border-0 bg-transparent"
           aria-label="Close background jobs"
           onClick={() => setPanelOpen(false)}
         />
       ) : null}
-      <div className="fixed right-4 bottom-4 z-[190] flex flex-col items-end gap-2 max-[820px]:right-3 max-[820px]:bottom-3">
+      <div className="fixed bottom-4 right-4 z-float flex flex-col items-end gap-2 max-md:bottom-3 max-md:right-3">
         {isPanelOpen ? (
           <section
-            className="w-[min(340px,calc(100vw-24px))] overflow-hidden rounded-drawer border border-border bg-white/96 shadow-elevated backdrop-blur-[18px]"
+            className="w-80 overflow-hidden rounded-3xl border border-border bg-white/96 shadow-lg backdrop-blur-md"
             aria-label="Background jobs"
           >
             <div className="flex items-center justify-between border-b border-border px-4 py-3">
@@ -70,7 +70,7 @@ export function JobSpirit() {
               ) : null}
             </div>
             {errorMessage ? (
-              <p className="px-4 pt-3 text-xs text-danger">{errorMessage}</p>
+              <p className="px-4 pt-3 text-xs text-rose-900">{errorMessage}</p>
             ) : null}
             <ul className="divide-y divide-border">
               {visibleJobs.map((item) => {
@@ -107,13 +107,13 @@ export function JobSpirit() {
                     {!item.isTerminal ? (
                       <div className="h-px overflow-hidden rounded-full bg-border">
                         <div
-                          className="h-full bg-blue/50 transition-[width] duration-700"
+                          className="h-full bg-blue/50 transition-all duration-700"
                           style={{ width: `${Math.max(item.job.progress, 4)}%` }}
                         />
                       </div>
                     ) : null}
                     {item.job.error ? (
-                      <p className="text-xs text-danger">{item.job.error}</p>
+                      <p className="text-xs text-rose-900">{item.job.error}</p>
                     ) : null}
                   </li>
                 );
@@ -125,7 +125,7 @@ export function JobSpirit() {
         <button
           type="button"
           aria-label="Background jobs"
-          className="inline-flex items-center gap-2 rounded-full border border-border bg-white/94 px-3 py-1.5 text-sm text-ink shadow-card backdrop-blur-[18px] transition-shadow hover:shadow-elevated"
+          className="inline-flex items-center gap-2 rounded-full border border-border bg-white/94 px-3 py-1.5 text-sm text-ink shadow-lg backdrop-blur-md transition-shadow hover:shadow-lg"
           onClick={() => setPanelOpen(!isPanelOpen)}
         >
           <span

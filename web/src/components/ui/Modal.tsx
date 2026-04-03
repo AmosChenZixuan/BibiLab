@@ -60,7 +60,7 @@ export function Modal({ open, onClose, title, children, footer, size = "md" }: M
       <div
         aria-labelledby={titleId}
         aria-modal="true"
-        className={`w-full ${sizes[size]} rounded-drawer border border-white/60 bg-surface-strong shadow-elevated`}
+        className={`w-full ${sizes[size]} min-h-100 rounded-3xl border border-white/60 bg-white/95 shadow-lg`}
         role="dialog"
         onClick={(event) => event.stopPropagation()}
         onMouseDown={() => {
@@ -68,7 +68,7 @@ export function Modal({ open, onClose, title, children, footer, size = "md" }: M
         }}
       >
         <div className="px-8 pt-8">
-          <h2 className="m-0 text-[15px] font-semibold tracking-[-0.02em] text-ink" id={titleId}>
+          <h2 className="m-0 text-base font-semibold tracking-tight text-ink" id={titleId}>
             {title}
           </h2>
         </div>

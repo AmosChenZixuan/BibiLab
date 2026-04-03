@@ -136,8 +136,8 @@ export function HomePage() {
         className={dialogOpen ? "pointer-events-none select-none blur-sm transition" : "transition"}
       >
         <section className="grid gap-3">
-          <span className="text-[11.5px] font-semibold uppercase tracking-[0.2em] text-muted">My Lists</span>
-          {error ? <p className="m-0 text-sm text-danger">{error}</p> : null}
+          <span className="text-xs font-semibold uppercase tracking-widest text-muted">My Lists</span>
+          {error ? <p className="m-0 text-sm text-rose-900">{error}</p> : null}
         </section>
         <div className="mt-4">
           {loading ? (
@@ -186,8 +186,8 @@ export function HomePage() {
         size="lg"
         title="Delete list"
       >
-        <div className="rounded-overlay border border-danger/20 bg-danger/5 p-4 text-sm text-danger">
-          <p className="m-0 text-[15px] font-semibold tracking-[-0.02em]">This cannot be undone</p>
+        <div className="rounded-2xl border border-rose-300/50 bg-rose-50 p-4 text-sm text-rose-900">
+          <p className="m-0 text-base font-semibold tracking-tight">This cannot be undone</p>
           <p className="mt-1.5 mb-0 leading-6">
             {deleteTarget
               ? `"${deleteTarget.name}" and its ${deleteTarget.source_count} sources will be permanently removed.`
@@ -219,7 +219,7 @@ export function HomePage() {
         size="lg"
         title="Rename list"
       >
-        <div className="relative h-60 overflow-hidden rounded-card bg-linear-to-br from-pink/85 to-sky/55 shadow-elevated">
+        <div className="relative h-100 overflow-hidden rounded-3xl bg-linear-to-br from-pink/85 to-sky/55 shadow-lg">
           {renameTarget?.thumbnail_url ? (
             <div
               className="absolute inset-0 bg-cover bg-center"
@@ -228,18 +228,18 @@ export function HomePage() {
           ) : null}
           <div className="absolute inset-0 bg-linear-to-t from-black/65 via-black/20 to-transparent" />
           <div className="absolute inset-x-6 bottom-6 z-10">
-            <span className="block text-[30px] leading-[1.02] font-semibold tracking-[-0.04em] text-white">
+            <span className="block text-3xl font-semibold tracking-tighter leading-tight text-white">
               {renameDraft || renameTarget?.name || "Untitled list"}
             </span>
           </div>
         </div>
         <div className="">
           <label className="grid gap-2">
-            <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted">List name</span>
+            <span className="text-xs font-semibold uppercase tracking-widest text-muted">List name</span>
             <Input
               aria-label="List name"
               autoFocus
-              className="select-text rounded-overlay bg-white/92 px-4 py-3 text-[20px] leading-tight font-normal tracking-normal text-ink focus:border-blue/25 focus:ring-2 focus:ring-sky/10"
+              className="select-text rounded-2xl bg-white/92 px-4 py-3 text-2xl leading-tight font-normal tracking-normal text-ink focus:border-blue/25 focus:ring-2 focus:ring-sky/10"
               placeholder="Untitled list"
               onChange={(event) => setRenameDraft(event.target.value)}
               onKeyDown={(event) => {
@@ -257,7 +257,7 @@ export function HomePage() {
       <Modal
         onClose={() => setThumbnailTarget(null)}
         open={thumbnailTarget !== null}
-        size="xl"
+        size="lg"
         title="Choose thumbnail"
       >
         {thumbnailLoading ? (
@@ -265,7 +265,7 @@ export function HomePage() {
         ) : (
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
             <button
-              className="aspect-[16/10] rounded-overlay border border-border bg-linear-to-br from-pink/85 to-sky/55 p-3 text-left text-xs font-semibold text-white shadow-card transition hover:-translate-y-0.5 hover:shadow-elevated"
+              className="aspect-video rounded-2xl border border-border bg-linear-to-br from-pink/85 to-sky/55 p-3 text-left text-xs font-semibold text-white shadow-lg transition hover:-translate-y-0.5 hover:shadow-lg"
               onClick={() => void handleThumbnailSelect(null)}
               type="button"
             >
@@ -273,7 +273,7 @@ export function HomePage() {
             </button>
             {thumbnailSources.map((source) => (
               <button
-                className="aspect-[16/10] overflow-hidden rounded-overlay border border-border bg-linear-to-br from-pink/85 to-sky/55 p-0 text-left shadow-card transition hover:-translate-y-0.5 hover:shadow-elevated"
+                className="aspect-video overflow-hidden rounded-2xl border border-border bg-linear-to-br from-pink/85 to-sky/55 p-0 text-left shadow-lg transition hover:-translate-y-0.5 hover:shadow-lg"
                 key={source.video_id}
                 onClick={() => void handleThumbnailSelect(source.video_id)}
                 type="button"
@@ -282,7 +282,7 @@ export function HomePage() {
                   className="flex h-full items-end bg-cover bg-center p-2"
                   style={{ backgroundImage: `linear-gradient(to top, rgba(0,0,0,0.5), transparent), url("/api/covers/${source.video_id}")` }}
                 >
-                  <span className="block truncate text-[10.5px] font-semibold text-white">{source.title}</span>
+                  <span className="block truncate text-xs font-semibold text-white">{source.title}</span>
                 </div>
               </button>
             ))}

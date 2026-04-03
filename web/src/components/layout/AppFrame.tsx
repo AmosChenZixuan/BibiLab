@@ -49,9 +49,9 @@ export function AppFrame() {
 
   return (
     <JobActivityProvider>
-      <nav className="fixed inset-x-0 top-0 z-nav flex h-[52px] items-center justify-between px-[clamp(16px,3vw,48px)] /* fluid navbar padding */ bg-white">
+      <nav className="fixed inset-x-0 top-0 z-nav flex h-14 items-center justify-between bg-white px-4 md:px-6 xl:px-12">
         <NavLink className="inline-flex items-center" to="/" aria-label="Home">
-          <span className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-[linear-gradient(135deg,#f3a9c9_0%,#f58bb9_58%,#a9e7ff_100%)] font-serif text-base font-bold text-[#fff9f4]">
+          <span className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-linear-to-br from-pink via-pink to-sky font-serif text-base font-bold text-white/95">
             L
           </span>
         </NavLink>
@@ -59,30 +59,30 @@ export function AppFrame() {
         <div className="inline-flex items-center gap-2">
           <NavLink
             to="/settings"
-            className="relative inline-flex h-9 w-9 items-center justify-center rounded-icon transition hover:bg-sky/12"
+            className="relative inline-flex h-9 w-9 items-center justify-center rounded-lg transition hover:bg-sky/12"
             title={healthMeta.label}
             aria-label="Settings"
           >
-            <span className="inline-flex h-[18px] w-[18px] items-center justify-center text-blue/70" aria-hidden="true">
-              <FiSettings className="h-[18px] w-[18px]" />
+            <span className="inline-flex size-4.5 items-center justify-center text-blue/70" aria-hidden="true">
+              <FiSettings className="size-4.5" />
             </span>
             <span
-              className={`absolute right-1 bottom-1 h-[9px] w-[9px] rounded-full border-2 border-white/92 ${healthMeta.className}`}
+              className={`absolute bottom-1 right-1 size-2 rounded-full border-2 border-white/92 ${healthMeta.className}`}
             />
           </NavLink>
 
           <button
             type="button"
-            className="relative inline-flex h-9 w-9 items-center justify-center rounded-icon bg-transparent text-ink transition hover:bg-sky/12"
+            className="relative inline-flex h-9 w-9 items-center justify-center rounded-lg bg-transparent text-ink transition hover:bg-sky/12"
             aria-label={`Language: ${lang === "en" ? "English" : "Chinese"}`}
             title={lang === "en" ? "English" : "Chinese"}
             onClick={() => setLang(lang === "en" ? "zh" : "en")}
           >
-            <span className="inline-flex h-[18px] w-[18px] items-center justify-center text-blue/70" aria-hidden="true">
-              <MdTranslate className="h-[18px] w-[18px]" />
+            <span className="inline-flex size-4.5 items-center justify-center text-blue/70" aria-hidden="true">
+              <MdTranslate className="size-4.5" />
             </span>
             <span
-              className="absolute right-0.5 bottom-0.5 inline-flex h-3.5 min-w-3.5 items-center justify-center rounded-full border-2 border-white/92 bg-white/96 px-[3px] text-badge leading-none font-bold text-blue/70"
+              className="absolute bottom-0.5 right-0.5 inline-flex h-3.5 min-w-3.5 items-center justify-center rounded-full border-2 border-white/92 bg-white/96 px-1 text-xs leading-none font-bold text-blue/70"
               aria-hidden="true"
             >
               {lang === "en" ? "EN" : "中"}
@@ -91,14 +91,14 @@ export function AppFrame() {
 
           <button
             type="button"
-            className="inline-flex h-9 w-9 items-center justify-center rounded-icon bg-transparent text-ink transition hover:bg-sky/12"
+            className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-transparent text-ink transition hover:bg-sky/12"
             aria-label="Identity"
             aria-expanded={identityOpen}
             aria-haspopup="menu"
             onClick={() => setIdentityOpen((open) => !open)}
           >
-            <span className="inline-flex h-[18px] w-[18px] items-center justify-center text-blue/70" aria-hidden="true">
-              <FiUser className="h-[18px] w-[18px]" />
+            <span className="inline-flex size-4.5 items-center justify-center text-blue/70" aria-hidden="true">
+              <FiUser className="size-4.5" />
             </span>
           </button>
         </div>
@@ -106,7 +106,7 @@ export function AppFrame() {
         {identityOpen ? <IdentityPanel onClose={() => setIdentityOpen(false)} /> : null}
       </nav>
 
-      <div className="min-h-screen px-[clamp(16px,10vw,160px)] /* fluid content padding: clamps 16px..160px */ pt-[calc(52px+28px)] /* 52px nav + 28px breathing room */ pb-6 max-[820px]:px-3 max-[820px]:pt-[calc(52px+18px)] max-[820px]:pb-3">
+      <div className="min-h-screen px-4 pb-6 pt-20 md:px-10 md:pt-24 xl:px-24 2xl:px-40">
         <main>
           <Outlet />
         </main>

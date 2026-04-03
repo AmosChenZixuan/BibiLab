@@ -27,11 +27,11 @@ export function SettingsField({
       className={`flex flex-wrap ${alignments[align]} gap-x-5 gap-y-2 bg-white/36 px-4 py-3 ${className}`.trim()}
       {...rest}
     >
-      <div className="min-w-[190px] flex-1 basis-[240px] grid gap-1">
+      <div className="grid min-w-48 flex-1 basis-60 gap-1">
         <label className="text-sm font-semibold" htmlFor={htmlFor}>{label}</label>
         {hint ? <p className="text-sm leading-5 text-muted">{hint}</p> : null}
       </div>
-      <div className="w-full min-w-[220px] flex-none md:w-[320px]">
+      <div className="w-full min-w-56 flex-none md:w-80">
         {children}
       </div>
     </div>

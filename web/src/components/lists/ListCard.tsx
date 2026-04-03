@@ -35,10 +35,10 @@ export function ListCard({ list, onRename, onChangeThumbnail, onDelete }: Props)
   ];
 
   return (
-    <article className="group relative h-[200px] w-[248px] overflow-hidden rounded-[14px] shadow-card transition hover:-translate-y-0.5 hover:shadow-elevated max-[820px]:w-full">
+    <article className="group relative h-52 w-64 overflow-hidden rounded-2xl shadow-lg transition hover:-translate-y-0.5 hover:shadow-lg">
       <div
         aria-hidden="true"
-        className="absolute inset-0 bg-[linear-gradient(135deg,#f8b4c8_0%,#b3d9f0_100%)]"
+        className="absolute inset-0 bg-linear-to-br from-pink/75 to-sky/45"
         style={
           list.thumbnail_url
             ? {
@@ -51,11 +51,15 @@ export function ListCard({ list, onRename, onChangeThumbnail, onDelete }: Props)
       />
       <div
         aria-hidden="true"
-        className="absolute inset-0 bg-[linear-gradient(to_bottom,rgba(0,0,0,0)_25%,rgba(0,0,0,0.62)_100%)]"
+        className="absolute inset-0 bg-linear-to-b from-transparent via-transparent to-black/60"
       />
       <div
         aria-hidden="true"
-        className="absolute inset-0 bg-[repeating-linear-gradient(0deg,rgba(255,255,255,0.06)_0px,rgba(255,255,255,0.06)_1px,transparent_1px,transparent_32px),repeating-linear-gradient(90deg,rgba(255,255,255,0.06)_0px,rgba(255,255,255,0.06)_1px,transparent_1px,transparent_32px)]"
+        className="absolute inset-0"
+        style={{
+          backgroundImage:
+            "repeating-linear-gradient(0deg, rgba(255,255,255,0.06) 0px, rgba(255,255,255,0.06) 1px, transparent 1px, transparent 32px), repeating-linear-gradient(90deg, rgba(255,255,255,0.06) 0px, rgba(255,255,255,0.06) 1px, transparent 1px, transparent 32px)",
+        }}
       />
 
       <ContextMenu
@@ -86,13 +90,13 @@ export function ListCard({ list, onRename, onChangeThumbnail, onDelete }: Props)
         onClick={() => navigate(`/lists/${list.id}`)}
         type="button"
       >
-        <div className="absolute right-0 bottom-0 left-0 z-[2] grid gap-[5px] p-3">
-          <h2 className="m-0 line-clamp-2 text-[13.5px] font-semibold tracking-[-0.01em] text-white [text-shadow:0_1px_4px_rgba(0,0,0,0.25)]">
+        <div className="absolute inset-x-0 bottom-0 z-10 grid gap-1 p-3">
+          <h2 className="m-0 line-clamp-2 text-sm font-semibold tracking-tight text-white drop-shadow-sm">
             {list.name}
           </h2>
-          <div className="flex items-center gap-2 text-[11px] text-white/75">
+          <div className="flex items-center gap-2 text-xs text-white/75">
             <span>{formatUpdatedDate(list.updated_at)}</span>
-            <span className="h-[2.5px] w-[2.5px] rounded-full bg-white/40" />
+            <span className="size-1 rounded-full bg-white/40" />
             <span>{formatSourceCount(list.source_count)}</span>
           </div>
         </div>

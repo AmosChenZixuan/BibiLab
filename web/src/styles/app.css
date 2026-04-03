@@ -7,38 +7,16 @@
   --color-pink:    #f08bb9;       /* accent — gradient start, eyebrow */
   --color-blue:    #5b7faa;       /* accent — links, active states, gradient end */
   --color-sky:     #7dd9ff;       /* highlight tints via opacity modifier */
-  --color-success: #4ca9cf;       /* positive status */
-  --color-danger:  #8d1d2c;       /* destructive actions, error status */
-  --color-warn:    #b46088;       /* degraded / unavailable status */
   --color-border:  rgba(106, 147, 198, 0.12);  /* universal panel/input border */
-  --color-surface: rgba(255, 252, 247, 0.82);  /* warm paper — only non-white surface token */
-  --color-surface-strong: rgba(255, 252, 247, 0.96);
   --color-scrim: rgba(17, 35, 63, 0.3);
 
   /* ── Typography ──────────────────────────────────────────────────────────── */
   --font-serif: "Iowan Old Style", "Palatino Linotype", serif;
   --font-mono:  SFMono-Regular, Consolas, monospace;
 
-  /* Custom text sizes; standard sizes (xs=0.75rem, sm=0.875rem) cover the rest */
-  --text-badge:   0.5rem;                    /* navbar language pip */
-  --text-section: 1.35rem;                   /* panel / workspace titles */
-  --text-display: clamp(2rem, 4vw, 3.5rem);  /* fluid page headings */
-
-  /* ── Shadows ─────────────────────────────────────────────────────────────── */
-  --shadow-card:     0 14px 28px rgba(116, 148, 194, 0.07);  /* standard card elevation */
-  --shadow-elevated: 0 22px 44px rgba(116, 148, 194, 0.12);  /* drawers, modals */
-  --shadow-overlay:  0 8px 32px rgba(0, 0, 0, 0.12);          /* identity panel */
-
-  /* ── Border radius ───────────────────────────────────────────────────────── */
-  --radius-icon:    10px;  /* nav icon buttons */
-  --radius-overlay: 14px;  /* identity panel, tooltips */
-  --radius-card:    22px;  /* list cards, app panels */
-  --radius-drawer:  28px;  /* jobs drawer */
-
   /* ── Z-index ─────────────────────────────────────────────────────────────── */
   --z-nav:      100;  /* fixed navbar */
-  --z-backdrop: 199;  /* click-away overlay behind panels */
-  --z-overlay:  200;  /* floating panels (identity, etc.) */
+  --z-float:    200;  /* floating panels / transient UI */
   --z-modal:    240;  /* modal dialogs */
 }
 
@@ -56,6 +34,7 @@
     min-height: 100vh;
     margin: 0;
     color: theme(--color-ink);
+    font-family: "Avenir Next", "Segoe UI", sans-serif;
   }
 
   #root {
@@ -67,10 +46,6 @@
   select,
   textarea {
     font: inherit;
-  }
-
-  button {
-    cursor: pointer;
   }
 
   a {
