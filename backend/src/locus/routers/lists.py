@@ -3,7 +3,8 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import FileResponse
 
 from locus.config import load_config
 from locus.db import (
@@ -18,9 +19,11 @@ from locus.db import (
     get_all_lists,
     get_db,
     get_list,
+    get_list_with_display,
     get_source,
     get_sources_for_list,
     update_list_name,
+    update_list_thumbnail,
 )
 from locus.models.lists import (
     ListCreateRequest,
@@ -36,6 +39,33 @@ router = APIRouter()
 _ACTIVE_JOB_STATUSES = ("queued", "downloading", "transcribing", "extracting", "writing")
 
 
+def _cached_cover_path(video_id: str) -> Path:
+    from locus.config import locus_home
+
+    return locus_home() / "notes" / "attachments" / f"{video_id}_cover.jpg"
+
+
+async def _build_list_response(row, request: Request) -> ListResponse:
+    thumbnail_url = None
+    if row["thumbnail_source_id"]:
+        if _cached_cover_path(row["thumbnail_source_id"]).exists():
+            thumbnail_url = str(request.url_for("get_cover", video_id=row["thumbnail_source_id"]))
+        else:
+            source = await get_source(row["thumbnail_source_id"])
+            if source is not None and source["cover_url"]:
+                thumbnail_url = source["cover_url"]
+
+    return ListResponse(
+        id=row["id"],
+        name=row["name"],
+        created_at=row["created_at"],
+        thumbnail_source_id=row["thumbnail_source_id"],
+        thumbnail_url=thumbnail_url,
+        source_count=row["source_count"],
+        updated_at=row["updated_at"],
+    )
+
+
 @router.post("/lists", status_code=201)
 async def create_list(req: ListCreateRequest) -> ListResponse:
     name = req.name.strip()
@@ -44,27 +74,58 @@ async def create_list(req: ListCreateRequest) -> ListResponse:
     list_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc).isoformat()
     await db_create_list(list_id, name, now)
-    return ListResponse(id=list_id, name=name, created_at=now)
+    return ListResponse(
+        id=list_id,
+        name=name,
+        created_at=now,
+        thumbnail_source_id=None,
+        thumbnail_url=None,
+        source_count=0,
+        updated_at=now,
+    )
 
 
 @router.get("/lists")
-async def get_lists() -> list[ListResponse]:
+async def get_lists(request: Request) -> list[ListResponse]:
     rows = await get_all_lists()
-    return [ListResponse(id=r["id"], name=r["name"], created_at=r["created_at"]) for r in rows]
+    return [await _build_list_response(r, request) for r in rows]
 
 
 @router.patch("/lists/{list_id}")
-async def update_list(list_id: str, req: ListUpdateRequest) -> ListResponse:
+async def update_list(list_id: str, req: ListUpdateRequest, request: Request) -> ListResponse:
     row = await get_list(list_id)
     if row is None:
         raise HTTPException(status_code=404, detail="List not found")
 
-    name = req.name.strip()
-    if not name:
-        raise HTTPException(status_code=422, detail="List name cannot be empty")
+    if not req.model_fields_set:
+        raise HTTPException(status_code=422, detail="No fields to update")
 
-    await update_list_name(list_id, name)
-    return ListResponse(id=row["id"], name=name, created_at=row["created_at"])
+    if "name" in req.model_fields_set:
+        if req.name is None or not req.name.strip():
+            raise HTTPException(status_code=422, detail="List name cannot be empty")
+        await update_list_name(list_id, req.name.strip())
+
+    if "thumbnail_source_id" in req.model_fields_set:
+        if req.thumbnail_source_id is not None:
+            source = await get_source(req.thumbnail_source_id)
+            if source is None or source["list_id"] != list_id:
+                raise HTTPException(
+                    status_code=422, detail="Thumbnail source must belong to the list"
+                )
+        await update_list_thumbnail(list_id, req.thumbnail_source_id)
+
+    next_row = await get_list_with_display(list_id)
+    if next_row is None:
+        raise HTTPException(status_code=404, detail="List not found")
+    return await _build_list_response(next_row, request)
+
+
+@router.get("/covers/{video_id}")
+async def get_cover(video_id: str) -> FileResponse:
+    cover_path = _cached_cover_path(video_id)
+    if not cover_path.exists():
+        raise HTTPException(status_code=404, detail="Cover not found")
+    return FileResponse(cover_path)
 
 
 @router.delete("/lists/{list_id}", status_code=204)

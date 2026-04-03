@@ -221,6 +221,7 @@ class WorkerLoop:
             ai_model=cfg.ai.model,
             vision_enabled=cfg.vision.enabled,
             settings_snapshot=cfg.model_dump(),
+            cover_url=video_meta.cover_url,
         )
 
         # 7. Cleanup downloads

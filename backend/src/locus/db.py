@@ -16,9 +16,10 @@ def get_db_path() -> Path:
 
 _CREATE_LISTS = """
 CREATE TABLE IF NOT EXISTS lists (
-    id         TEXT PRIMARY KEY,
-    name       TEXT NOT NULL,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    id                   TEXT PRIMARY KEY,
+    name                 TEXT NOT NULL,
+    thumbnail_source_id  TEXT REFERENCES sources(video_id),
+    created_at           DATETIME DEFAULT CURRENT_TIMESTAMP
 )
 """
 
@@ -47,6 +48,7 @@ CREATE TABLE IF NOT EXISTS sources (
     whisper_model       TEXT,
     ai_model            TEXT,
     vision_enabled      INTEGER DEFAULT 0,
+    cover_url           TEXT,
     processed_at        DATETIME,
     settings_snapshot   TEXT
 )
@@ -55,14 +57,19 @@ CREATE TABLE IF NOT EXISTS sources (
 
 async def bootstrap_db() -> None:
     async with get_db() as db:
-        columns = db.execute("PRAGMA table_info(lists)").fetchall()
-        if columns:
+        list_columns = [row[1] for row in db.execute("PRAGMA table_info(lists)").fetchall()]
+        if list_columns and "thumbnail_source_id" not in list_columns:
+            thumbnail_select = (
+                "thumbnail_source_video_id"
+                if "thumbnail_source_video_id" in list_columns
+                else "NULL"
+            )
             db.execute("ALTER TABLE lists RENAME TO lists_old")
             db.execute(_CREATE_LISTS)
             db.execute(
-                """
-                INSERT INTO lists (id, name, created_at)
-                SELECT id, name, created_at FROM lists_old
+                f"""
+                INSERT INTO lists (id, name, thumbnail_source_id, created_at)
+                SELECT id, name, {thumbnail_select}, created_at FROM lists_old
                 """
             )
             db.execute("DROP TABLE lists_old")
@@ -93,6 +100,10 @@ async def bootstrap_db() -> None:
                 """
             )
             db.execute("DROP TABLE jobs_old")
+
+        source_columns = [row[1] for row in db.execute("PRAGMA table_info(sources)").fetchall()]
+        if source_columns and "cover_url" not in source_columns:
+            db.execute("ALTER TABLE sources ADD COLUMN cover_url TEXT")
         db.execute(_CREATE_LISTS)
         db.execute(_CREATE_JOBS)
         db.execute(_CREATE_SOURCES)
@@ -116,20 +127,42 @@ def _now() -> str:
 async def create_list(list_id: str, name: str, created_at: str) -> None:
     async with get_db() as db:
         db.execute(
-            "INSERT INTO lists (id, name, created_at) VALUES (?, ?, ?)",
-            (list_id, name, created_at),
+            "INSERT INTO lists (id, name, thumbnail_source_id, created_at) VALUES (?, ?, ?, ?)",
+            (list_id, name, None, created_at),
         )
         db.commit()
 
 
+_LIST_DISPLAY_QUERY = """
+SELECT
+    lists.id,
+    lists.name,
+    lists.created_at,
+    lists.thumbnail_source_id,
+    COALESCE(
+        (SELECT MAX(processed_at) FROM sources WHERE sources.list_id = lists.id),
+        lists.created_at
+    ) AS updated_at,
+    (SELECT COUNT(*) FROM sources WHERE sources.list_id = lists.id) AS source_count
+FROM lists
+"""
+
+
 async def get_all_lists() -> list[sqlite3.Row]:
     async with get_db() as db:
-        return db.execute("SELECT * FROM lists ORDER BY created_at ASC").fetchall()
+        return db.execute(
+            f"{_LIST_DISPLAY_QUERY} ORDER BY updated_at DESC, created_at DESC"
+        ).fetchall()
 
 
 async def get_list(list_id: str) -> sqlite3.Row | None:
     async with get_db() as db:
         return db.execute("SELECT * FROM lists WHERE id=?", (list_id,)).fetchone()
+
+
+async def get_list_with_display(list_id: str) -> sqlite3.Row | None:
+    async with get_db() as db:
+        return db.execute(f"{_LIST_DISPLAY_QUERY} WHERE lists.id=?", (list_id,)).fetchone()
 
 
 async def delete_list(list_id: str) -> None:
@@ -141,6 +174,15 @@ async def delete_list(list_id: str) -> None:
 async def update_list_name(list_id: str, name: str) -> None:
     async with get_db() as db:
         db.execute("UPDATE lists SET name=? WHERE id=?", (name, list_id))
+        db.commit()
+
+
+async def update_list_thumbnail(list_id: str, thumbnail_source_id: str | None) -> None:
+    async with get_db() as db:
+        db.execute(
+            "UPDATE lists SET thumbnail_source_id=? WHERE id=?",
+            (thumbnail_source_id, list_id),
+        )
         db.commit()
 
 
@@ -156,6 +198,7 @@ async def write_source(
     ai_model: str,
     vision_enabled: bool,
     settings_snapshot: dict[str, Any],
+    cover_url: str | None = None,
 ) -> None:
     async with get_db() as db:
         db.execute(
@@ -163,8 +206,8 @@ async def write_source(
             INSERT INTO sources
                 (video_id, platform, list_id, title, summary, note_path,
                  transcript_path, whisper_model, ai_model, vision_enabled,
-                 processed_at, settings_snapshot)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 cover_url, processed_at, settings_snapshot)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(video_id) DO UPDATE SET
                 platform=excluded.platform,
                 list_id=excluded.list_id,
@@ -175,6 +218,7 @@ async def write_source(
                 whisper_model=excluded.whisper_model,
                 ai_model=excluded.ai_model,
                 vision_enabled=excluded.vision_enabled,
+                cover_url=excluded.cover_url,
                 processed_at=excluded.processed_at,
                 settings_snapshot=excluded.settings_snapshot
             """,
@@ -189,6 +233,7 @@ async def write_source(
                 whisper_model,
                 ai_model,
                 int(vision_enabled),
+                cover_url,
                 _now(),
                 json.dumps(settings_snapshot),
             ),

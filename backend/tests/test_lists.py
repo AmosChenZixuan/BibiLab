@@ -39,7 +39,59 @@ async def test_get_lists(client: httpx.AsyncClient):
     await client.post("/lists", json={"name": "List A"})
     await client.post("/lists", json={"name": "List B"})
     names = [r["name"] for r in (await client.get("/lists")).json()]
-    assert names == ["List A", "List B"]
+    assert names == ["List B", "List A"]
+
+
+@pytest.mark.asyncio
+async def test_get_lists_returns_thumbnail_fields_and_prefers_cached_cover(
+    client: httpx.AsyncClient, tmp_locus_home: Path
+):
+    from locus.db import write_source
+
+    list_id = (await client.post("/lists", json={"name": "Annotated"})).json()["id"]
+    cover_path = tmp_locus_home / "notes" / "attachments" / "BV1cover_cover.jpg"
+    cover_path.parent.mkdir(parents=True, exist_ok=True)
+    cover_path.write_bytes(b"fake-image")
+
+    await write_source(
+        video_id="BV1cover",
+        platform="bilibili",
+        list_id=list_id,
+        title="Episode 1",
+        summary="A summary.",
+        note_path=str(tmp_locus_home / "notes" / "BV1cover.md"),
+        transcript_path=None,
+        whisper_model="large-v3",
+        ai_model="gpt-4o",
+        vision_enabled=False,
+        settings_snapshot={},
+        cover_url="https://example.com/remote-cover.jpg",
+    )
+
+    patch_resp = await client.patch(
+        f"/lists/{list_id}",
+        json={"name": "Annotated", "thumbnail_source_id": "BV1cover"},
+    )
+    assert patch_resp.status_code == 200
+    assert patch_resp.json()["thumbnail_source_id"] == "BV1cover"
+
+    list_resp = await client.get("/lists")
+    assert list_resp.status_code == 200
+    assert list_resp.json() == [
+        {
+            "id": list_id,
+            "name": "Annotated",
+            "created_at": patch_resp.json()["created_at"],
+            "thumbnail_source_id": "BV1cover",
+            "thumbnail_url": "http://testserver/covers/BV1cover",
+            "source_count": 1,
+            "updated_at": patch_resp.json()["updated_at"],
+        }
+    ]
+
+    cover_resp = await client.get("/covers/BV1cover")
+    assert cover_resp.status_code == 200
+    assert cover_resp.content == b"fake-image"
 
 
 @pytest.mark.asyncio

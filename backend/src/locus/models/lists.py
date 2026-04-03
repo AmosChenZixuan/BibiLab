@@ -6,13 +6,18 @@ class ListCreateRequest(BaseModel):
 
 
 class ListUpdateRequest(BaseModel):
-    name: str
+    name: str | None = None
+    thumbnail_source_id: str | None = None
 
 
 class ListResponse(BaseModel):
     id: str
     name: str
     created_at: str
+    thumbnail_source_id: str | None
+    thumbnail_url: str | None
+    source_count: int
+    updated_at: str
 
 
 class SourceResponse(BaseModel):
