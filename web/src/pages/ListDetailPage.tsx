@@ -3,6 +3,7 @@
  *
  * Slice 1: Page shell, resize, skeleton panels.
  * Slice 2: Navbar title portal + rename.
+ * Slice 3: Source list, URL bar, ingest, job rows, context menu.
  * Chat and Lab panels render as skeletons. Sources panel shows its header and
  * collapse toggle with an empty body. No API wiring yet.
  */
@@ -10,9 +11,21 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import { useParams } from "react-router-dom";
-import { MdChevronLeft, MdChevronRight } from "react-icons/md";
+import {
+  MdChevronLeft,
+  MdChevronRight,
+  MdMoreVert,
+  MdRefresh,
+  MdDeleteOutline,
+  MdClose,
+  MdArrowForward,
+  MdErrorOutline,
+} from "react-icons/md";
 
+import { ContextMenu } from "../components/ui/ContextMenu";
+import { useJobActivity } from "../components/jobs/JobActivityProvider";
 import { api, toErrorMessage } from "../lib/api";
+import type { Source } from "../lib/types";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -299,11 +312,297 @@ function NavbarTitle({
   );
 }
 
+// ─── Pipeline stages ──────────────────────────────────────────────────────────
+
+// 6-segment track per spec: queued → downloading → transcribing → extracting → writing → done
+const PIPELINE_STAGES = [
+  "queued",
+  "downloading",
+  "transcribing",
+  "extracting",
+  "writing",
+  "done",
+] as const;
+type PipelineStage = (typeof PIPELINE_STAGES)[number];
+
+const STAGE_LABELS: Record<PipelineStage, string> = {
+  queued:       "Queued",
+  downloading:  "Downloading",
+  transcribing: "Transcribing",
+  extracting:   "Extracting",
+  writing:      "Writing",
+  done:         "Done",
+};
+
+// ─── Source row ───────────────────────────────────────────────────────────────
+
+function SourceRow({
+  source,
+  onOpen,
+  onDelete,
+  onRerun,
+}: {
+  source: Source;
+  onOpen: () => void;
+  onDelete: () => Promise<void>;
+  onRerun: () => Promise<void>;
+}) {
+  return (
+    <div className="group flex items-center gap-2 rounded-2xl border border-border bg-white/64 px-4 py-3 transition hover:bg-white hover:shadow-sm">
+      <button
+        type="button"
+        aria-label={`Open ${source.title}`}
+        className="min-w-0 flex-1 border-0 bg-transparent text-left"
+        onClick={onOpen}
+      >
+        <p className="m-0 truncate text-sm font-medium text-ink">{source.title}</p>
+        <p className="m-0 mt-0.5 text-xs text-muted">{source.platform}</p>
+      </button>
+      <ContextMenu
+        items={[
+          { label: "Re-run", icon: <MdRefresh />, onClick: onRerun },
+          { label: "Delete", icon: <MdDeleteOutline />, onClick: onDelete, variant: "danger" },
+        ]}
+        trigger={({ toggle, triggerRef }) => (
+          <button
+            ref={triggerRef}
+            type="button"
+            aria-label="Source options"
+            onClick={toggle}
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-muted opacity-0 transition group-hover:opacity-100 hover:bg-border hover:text-ink"
+          >
+            <MdMoreVert size={16} />
+          </button>
+        )}
+      />
+    </div>
+  );
+}
+
+// ─── Ingesting source row ─────────────────────────────────────────────────────
+
+function IngestingSourceRow({
+  stage,
+  title,
+  onDismiss,
+}: {
+  stage: string;
+  title: string;
+  onDismiss: () => void;
+}) {
+  const isFailed = stage === "failed" || stage === "needs_auth";
+  const stageIdx = isFailed ? -1 : PIPELINE_STAGES.indexOf(stage as PipelineStage);
+  const displayStage = isFailed ? "failed" : (PIPELINE_STAGES[Math.max(0, stageIdx)] ?? "downloading");
+
+  if (isFailed) {
+    return (
+      <div className="flex items-start gap-3 rounded-2xl border border-pink/30 bg-pink/6 px-4 py-3">
+        <MdErrorOutline size={16} className="mt-0.5 shrink-0 text-pink" />
+        <div className="min-w-0 flex-1">
+          <p className="m-0 truncate text-sm font-medium text-ink">{title}</p>
+          <p className="m-0 mt-0.5 text-xs text-pink/80">Failed during {displayStage}</p>
+        </div>
+        <button
+          type="button"
+          onClick={onDismiss}
+          aria-label="Dismiss"
+          className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-muted transition hover:bg-border hover:text-ink"
+        >
+          <MdClose size={14} />
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-2.5 rounded-2xl border border-blue/20 bg-sky/6 px-4 py-3">
+      <div className="flex items-center gap-2">
+        {/* Animated dot */}
+        <span className="relative flex h-2 w-2 shrink-0">
+          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-blue/40" />
+          <span className="relative inline-flex h-2 w-2 rounded-full bg-blue/70" />
+        </span>
+        <p className="m-0 min-w-0 flex-1 truncate text-sm font-medium text-ink">{title}</p>
+        <button
+          type="button"
+          onClick={onDismiss}
+          aria-label="Cancel ingestion"
+          className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-muted transition hover:bg-border hover:text-ink"
+        >
+          <MdClose size={14} />
+        </button>
+      </div>
+      <div className="space-y-1.5">
+        <div className="flex items-center justify-between">
+          <span className="text-xs text-blue/80">{STAGE_LABELS[displayStage as PipelineStage] ?? stage}…</span>
+          <span className="text-xs tabular-nums text-muted/60">
+            {Math.max(1, stageIdx + 1)} / {PIPELINE_STAGES.length}
+          </span>
+        </div>
+        <div className="flex gap-0.5">
+          {PIPELINE_STAGES.map((s, i) => (
+            <div
+              key={s}
+              title={STAGE_LABELS[s]}
+              className={`h-1 flex-1 rounded-full transition-colors duration-500 ${
+                i < stageIdx
+                  ? "bg-blue/60"
+                  : i === stageIdx
+                    ? "animate-pulse bg-blue/90"
+                    : "bg-border"
+              }`}
+            />
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Sources list mode ─────────────────────────────────────────────────────────
+
+function SourcesListMode({
+  listId,
+  sources,
+  onOpenSource,
+}: {
+  listId: string;
+  sources: Source[];
+  onOpenSource: (source: Source) => void;
+}) {
+  const [url, setUrl] = useState("");
+  const { dismissJob, getJobs, trackJobs } = useJobActivity();
+  const ingestJobs = getJobs("ingest", listId);
+  const refreshedJobsRef = useRef<string[]>([]);
+
+  // Auto-refresh sources when a job completes
+  const [sourcesVersion, setSourcesVersion] = useState(0);
+  const [currentSources, setCurrentSources] = useState(sources);
+
+  // Sync external sources prop
+  useEffect(() => {
+    setCurrentSources(sources);
+  }, [sources, sourcesVersion]);
+
+  // When a job flips to done, refresh sources and dismiss
+  useEffect(() => {
+    const completed = ingestJobs.filter(
+      (j) => j.isTerminal && j.job.status === "done" && !refreshedJobsRef.current.includes(j.job.id),
+    );
+    if (completed.length === 0) return;
+
+    let cancelled = false;
+    async function refresh() {
+      try {
+        const next = await api.listSources(listId);
+        if (cancelled) return;
+        setCurrentSources(next);
+        for (const { job } of completed) {
+          refreshedJobsRef.current.push(job.id);
+          await dismissJob(job.id);
+        }
+      } catch {
+        // Non-critical: leave jobs in terminal state
+      }
+    }
+    void refresh();
+    return () => {
+      cancelled = true;
+    };
+  }, [ingestJobs, listId]);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    const trimmed = url.trim();
+    if (!trimmed) return;
+    setUrl("");
+    try {
+      const result = await api.ingestUrl(listId, trimmed, false);
+      trackJobs(
+        result.queued.map((id) => ({
+          id,
+          producer: "ingest" as const,
+          label: trimmed,
+          contextKey: listId,
+        })),
+      );
+    } catch {
+      // Error handled by parent if needed
+    }
+  }
+
+  async function handleDelete(source: Source) {
+    await api.deleteSource(listId, source.video_id);
+    setCurrentSources((prev) => prev.filter((s) => s.video_id !== source.video_id));
+  }
+
+  async function handleRerun(source: Source) {
+    const sourceUrl = `https://www.bilibili.com/video/${source.video_id}`;
+    const result = await api.ingestUrl(listId, sourceUrl, true);
+    trackJobs(
+      result.queued.map((id) => ({
+        id,
+        producer: "ingest" as const,
+        label: sourceUrl,
+        contextKey: listId,
+      })),
+    );
+  }
+
+  return (
+    <div className="flex h-full flex-col">
+      <div className="shrink-0 px-4 pt-4 pb-3">
+        <form className="relative" onSubmit={handleSubmit}>
+          <input
+            type="text"
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+            placeholder="Paste a Bilibili URL…"
+            className="w-full rounded-full border border-border bg-white/80 py-2.5 pr-10 pl-4 text-sm text-ink placeholder:text-muted/50 outline-none focus:border-blue/40 focus:bg-white transition"
+          />
+          <button
+            type="submit"
+            disabled={!url.trim()}
+            aria-label="Add source"
+            className="absolute right-1.5 top-1/2 -translate-y-1/2 flex h-7 w-7 items-center justify-center rounded-full text-muted transition disabled:opacity-0 enabled:hover:bg-blue enabled:hover:text-white enabled:hover:shadow-sm"
+          >
+            <MdArrowForward size={15} />
+          </button>
+        </form>
+      </div>
+
+      <div className="flex-1 space-y-2 overflow-y-auto px-4 pb-4">
+        {ingestJobs
+          .filter((j) => !j.isTerminal || j.job.status === "failed" || j.job.status === "needs_auth")
+          .map((item) => (
+            <IngestingSourceRow
+              key={item.job.id}
+              stage={item.job.status}
+              title={item.label}
+              onDismiss={() => void dismissJob(item.job.id)}
+            />
+          ))}
+        {currentSources.map((source) => (
+          <SourceRow
+            key={source.video_id}
+            source={source}
+            onOpen={() => onOpenSource(source)}
+            onDelete={() => handleDelete(source)}
+            onRerun={() => handleRerun(source)}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export function ListDetailPage() {
   const { listId = "" } = useParams();
   const [listName, setListName] = useState("");
+  const [sources, setSources] = useState<Source[]>([]);
+  const [detailSource, setDetailSource] = useState<Source | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [sourcesCollapsed, setSourcesCollapsed] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -318,10 +617,11 @@ export function ListDetailPage() {
 
     async function load() {
       try {
-        const lists = await api.listLists();
+        const [lists, nextSources] = await Promise.all([api.listLists(), api.listSources(listId)]);
         if (cancelled) return;
         const current = lists.find((l) => l.id === listId);
         setListName(current?.name ?? "List workspace");
+        setSources(nextSources);
         setLoadError(null);
       } catch (err) {
         if (!cancelled) {
@@ -335,6 +635,10 @@ export function ListDetailPage() {
       cancelled = true;
     };
   }, [listId]);
+
+  function handleOpenSource(source: Source) {
+    setDetailSource(source);
+  }
 
   async function handleRenameCommit(newName: string) {
     try {
@@ -380,8 +684,14 @@ export function ListDetailPage() {
 
           {!sourcesCollapsed && (
             <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-              {loadError && (
+              {loadError ? (
                 <p className="m-0 px-4 py-3 text-sm text-rose-900">{loadError}</p>
+              ) : (
+                <SourcesListMode
+                  listId={listId}
+                  sources={sources}
+                  onOpenSource={handleOpenSource}
+                />
               )}
             </div>
           )}
