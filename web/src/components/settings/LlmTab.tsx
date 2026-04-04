@@ -1,5 +1,6 @@
 import { useEffect, useId, useState } from "react";
 
+import { useLanguage } from "@/app/LanguageContext";
 import type { BibilabConfig } from "@/lib/types";
 import { Input, Select, SettingsField } from "@/components/ui";
 
@@ -8,37 +9,26 @@ type LlmTabProps = {
   onBlur: (updated: BibilabConfig) => void;
 };
 
-const BASE_URL_META: Record<string, { hint: string; placeholder: string }> = {
-  openai: {
-    hint: "Required. Use your OpenAI-compatible models endpoint, for example the official OpenAI v1 base URL.",
-    placeholder: "https://api.openai.com/v1",
-  },
-  anthropic: {
-    hint: "Required. Use the Anthropic API base URL that serves the models endpoint.",
-    placeholder: "https://api.anthropic.com/v1",
-  },
-  ollama: {
-    hint: "Required. Use your Ollama server root so health checks can reach /api/tags.",
-    placeholder: "http://localhost:11434",
-  },
-  custom: {
-    hint: "Required. Use your OpenAI-compatible provider base URL so health checks can reach /models.",
-    placeholder: "http://localhost:8000/v1",
-  },
+const BASE_URL_META: Record<string, { hintKey: string; placeholderKey: string }> = {
+  openai: { hintKey: "settings.openaiBaseUrlHint", placeholderKey: "settings.openaiBaseUrlPlaceholder" },
+  anthropic: { hintKey: "settings.anthropicBaseUrlHint", placeholderKey: "settings.anthropicBaseUrlPlaceholder" },
+  ollama: { hintKey: "settings.ollamaBaseUrlHint", placeholderKey: "settings.ollamaBaseUrlPlaceholder" },
+  custom: { hintKey: "settings.baseUrlHint", placeholderKey: "settings.baseUrlPlaceholder" },
 };
 
 export function LlmTab({ config, onBlur }: LlmTabProps) {
+  const { t } = useLanguage();
   const [localAi, setLocalAi] = useState(config.ai);
+  const baseUrlMeta = BASE_URL_META[localAi.provider] ?? BASE_URL_META.custom;
   const providerId = useId();
   const modelId = useId();
   const apiKeyId = useId();
   const baseUrlId = useId();
+  const outputLanguageId = useId();
 
   useEffect(() => {
     setLocalAi(config.ai);
   }, [config]);
-
-  const baseUrlMeta = BASE_URL_META[localAi.provider] ?? BASE_URL_META.custom;
 
   function handleBlur() {
     onBlur({ ...config, ai: localAi });
@@ -47,8 +37,8 @@ export function LlmTab({ config, onBlur }: LlmTabProps) {
   return (
     <div className="grid gap-3">
       <SettingsField
-        label="Provider"
-        hint="Required. Without a provider, LLM requests cannot start."
+        label={t("settings.provider")}
+        hint={t("settings.providerRequired")}
         htmlFor={providerId}
       >
         <Select
@@ -68,8 +58,8 @@ export function LlmTab({ config, onBlur }: LlmTabProps) {
       </SettingsField>
 
       <SettingsField
-        label="Model"
-        hint="Required. Missing model selection breaks summary and chat generation."
+        label={t("settings.model")}
+        hint={t("settings.modelRequired")}
         htmlFor={modelId}
       >
         <Input
@@ -85,8 +75,8 @@ export function LlmTab({ config, onBlur }: LlmTabProps) {
       </SettingsField>
 
       <SettingsField
-        label="API Key"
-        hint="Required for hosted providers. Missing credentials break remote inference."
+        label={t("settings.apiKey")}
+        hint={t("settings.apiKeyRequired")}
         htmlFor={apiKeyId}
       >
         <Input
@@ -103,8 +93,8 @@ export function LlmTab({ config, onBlur }: LlmTabProps) {
       </SettingsField>
 
       <SettingsField
-        label="Base URL"
-        hint={baseUrlMeta.hint}
+        label={t("settings.baseUrl")}
+        hint={t(baseUrlMeta.hintKey)}
         htmlFor={baseUrlId}
       >
         <Input
@@ -114,11 +104,31 @@ export function LlmTab({ config, onBlur }: LlmTabProps) {
           onChange={(event) =>
             setLocalAi((current) => ({ ...current, base_url: event.target.value }))
           }
-          placeholder={baseUrlMeta.placeholder}
+          placeholder={t(baseUrlMeta.placeholderKey)}
           required
           inputSize="sm"
           value={localAi.base_url}
         />
+      </SettingsField>
+
+      <SettingsField
+        label={t("settings.outputLanguage")}
+        hint={t("settings.outputLanguageDesc")}
+        htmlFor={outputLanguageId}
+      >
+        <Select
+          aria-label="Output Language"
+          id={outputLanguageId}
+          onBlur={handleBlur}
+          onChange={(event) =>
+            setLocalAi((current) => ({ ...current, output_language: event.target.value }))
+          }
+          value={localAi.output_language ?? "ui"}
+        >
+          <option value="ui">{t("settings.outputLanguageFollowUi")}</option>
+          <option value="en">{t("settings.outputLanguageEnglish")}</option>
+          <option value="zh">{t("settings.outputLanguageChinese")}</option>
+        </Select>
       </SettingsField>
     </div>
   );

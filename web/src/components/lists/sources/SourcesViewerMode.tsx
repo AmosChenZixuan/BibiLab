@@ -1,4 +1,6 @@
 import { MdClose } from "react-icons/md";
+
+import { useLanguage } from "@/app/LanguageContext";
 import type { NoteContent, Source } from "@/lib/types";
 import { NoteAccordion } from "@/components/lists/NoteAccordion";
 
@@ -15,6 +17,7 @@ export function SourcesViewerMode({
   transcriptError: string | null;
   onClose: () => void;
 }) {
+  const { t } = useLanguage();
   return (
     <div className="flex h-full flex-col">
       <div className="flex shrink-0 items-start gap-3 border-b border-border px-4 py-4">
@@ -41,7 +44,7 @@ export function SourcesViewerMode({
           )}
           {transcript && (
             <>
-              <p className="text-xs font-semibold uppercase tracking-wider text-muted/70">Transcript</p>
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted/70">{t("lists.transcript")}</p>
               <pre className="p-1 m-0 whitespace-pre-wrap font-mono text-xs text-muted leading-relaxed">
                 {transcript}
               </pre>

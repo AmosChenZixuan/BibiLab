@@ -46,6 +46,7 @@ export function AppFrame() {
   }, []);
 
   const healthMeta = HEALTH_META[healthTier];
+  const { t } = useLanguage();
 
   return (
     <JobActivityProvider>
@@ -60,7 +61,7 @@ export function AppFrame() {
           <NavLink
             to="/settings"
             className="relative inline-flex h-9 w-9 items-center justify-center rounded-lg transition hover:bg-sky-50"
-            title={healthMeta.label}
+            title={t("health." + healthTier)}
             aria-label="Settings"
           >
             <span className="inline-flex size-4.5 items-center justify-center text-blue/70" aria-hidden="true">
@@ -74,8 +75,8 @@ export function AppFrame() {
           <button
             type="button"
             className="relative inline-flex h-9 w-9 items-center justify-center rounded-lg bg-transparent text-ink transition hover:bg-sky-50"
-            aria-label={`Language: ${lang === "en" ? "English" : "Chinese"}`}
-            title={lang === "en" ? "English" : "Chinese"}
+            aria-label="Language"
+            title={t(lang === "en" ? "navbar.languageEn" : "navbar.languageZh")}
             onClick={() => setLang(lang === "en" ? "zh" : "en")}
           >
             <span className="inline-flex size-4.5 items-center justify-center text-blue/70" aria-hidden="true">

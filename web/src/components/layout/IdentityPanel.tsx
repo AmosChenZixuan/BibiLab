@@ -1,5 +1,7 @@
 import { createPortal } from "react-dom";
 
+import { useLanguage } from "@/app/LanguageContext";
+
 type IdentityPanelProps = {
   onClose: () => void;
 };
@@ -7,12 +9,13 @@ type IdentityPanelProps = {
 const PLATFORMS = [{ key: "bilibili", label: "Bilibili", icon: "B" }];
 
 export default function IdentityPanel({ onClose }: IdentityPanelProps) {
+  const { t } = useLanguage();
   return createPortal(
     <>
       <button
         type="button"
         className="fixed inset-0 z-float border-0 bg-transparent"
-        aria-label="Close identity panel"
+        aria-label="Close"
         onClick={onClose}
       />
       <div
@@ -30,7 +33,7 @@ export default function IdentityPanel({ onClose }: IdentityPanelProps) {
                 {platform.icon}
               </span>
               <span className="text-xs font-semibold text-ink">{platform.label}</span>
-              <span className="text-center text-xs text-muted">Not signed in</span>
+              <span className="text-center text-xs text-muted">{t("lists.notSignedIn")}</span>
             </div>
           ))}
         </div>

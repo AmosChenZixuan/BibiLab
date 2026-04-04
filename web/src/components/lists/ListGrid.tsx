@@ -1,4 +1,6 @@
 import { FiPlus } from "react-icons/fi";
+
+import { useLanguage } from "@/app/LanguageContext";
 import type { BibilabList } from "@/lib/types";
 import { ListCard } from "./ListCard";
 
@@ -19,10 +21,11 @@ export function ListGrid({
   onCreate,
   busy,
 }: Props) {
+  const { t } = useLanguage();
   return (
     <section
       className="grid justify-start gap-5 max-sm:justify-center"
-      aria-label="List grid"
+      aria-label="My Lists"
       style={{ gridTemplateColumns: "repeat(auto-fill, 16rem)" }}
     >
       <article className="h-52 w-64 rounded-2xl border border-dashed border-stone-300 bg-white transition hover:border-pink hover:bg-pink/8 hover:text-rose-500 hover:shadow-lg">
@@ -36,7 +39,7 @@ export function ListGrid({
           <span className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-current">
             <FiPlus className="size-5" aria-hidden="true" />
           </span>
-          <span className="text-sm font-medium tracking-tight">New list</span>
+          <span className="text-sm font-medium tracking-tight">{t("home.createList")}</span>
         </button>
       </article>
       {lists.map((list) => (

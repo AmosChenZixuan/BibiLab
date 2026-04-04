@@ -1,25 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 
+import { useLanguage } from "@/app/LanguageContext";
 import { LlmTab } from "@/components/settings/LlmTab";
 import { OtherTab } from "@/components/settings/OtherTab";
 import { TranscriptTab } from "@/components/settings/TranscriptTab";
-import { api, notifyHealthChanged, toErrorMessage } from "@/lib/api";
+import { api, notifyHealthChanged, toErrorMessageWithT } from "@/lib/api";
 import { deriveDependencyHealthTier, HEALTH_META } from "@/lib/health";
 import type { HealthDependency, BibilabConfig } from "@/lib/types";
 import { Panel } from "@/components/ui";
 
 type TabKey = "llm" | "transcript" | "other";
-
-const TABS: Array<{ key: TabKey; label: string; dependencyKeys: string[] }> = [
-  { key: "llm", label: "LLM", dependencyKeys: ["llm"] },
-  { key: "transcript", label: "Transcript", dependencyKeys: ["whisper_model", "cuda"] },
-  {
-    key: "other",
-    label: "Other",
-    dependencyKeys: ["backend", "ffmpeg", "embedding_model"],
-  },
-];
 
 function isTabKey(value: string | null): value is TabKey {
   return value === "llm" || value === "transcript" || value === "other";
@@ -41,6 +32,7 @@ function shouldRefreshHealth(current: BibilabConfig, next: BibilabConfig) {
 }
 
 export function SettingsPage() {
+  const { t } = useLanguage();
   const [searchParams, setSearchParams] = useSearchParams();
   const [config, setConfig] = useState<BibilabConfig | null>(null);
   const [dependencies, setDependencies] = useState<Record<string, HealthDependency>>({});
@@ -57,6 +49,12 @@ export function SettingsPage() {
     setSearchParams(nextParams, { replace: true });
   }
 
+  const TABS: Array<{ key: TabKey; labelKey: string; dependencyKeys: string[] }> = [
+    { key: "llm", labelKey: "settings.llm", dependencyKeys: ["llm"] },
+    { key: "transcript", labelKey: "settings.transcript", dependencyKeys: ["whisper_model", "cuda"] },
+    { key: "other", labelKey: "settings.other", dependencyKeys: ["backend", "ffmpeg", "embedding_model"] },
+  ];
+
   useEffect(() => {
     let cancelled = false;
     async function load() {
@@ -72,7 +70,7 @@ export function SettingsPage() {
         }
       } catch (error) {
         if (!cancelled) {
-          setLoadError(toErrorMessage(error));
+          setLoadError(toErrorMessageWithT(error, t));
         }
       } finally {
         if (!cancelled) {
@@ -105,7 +103,7 @@ export function SettingsPage() {
   if (loading) {
     return (
       <Panel variant="app">
-        <p>Loading settings...</p>
+        <p>{t("settings.loading")}</p>
       </Panel>
     );
   }
@@ -113,8 +111,8 @@ export function SettingsPage() {
   if (loadError || !config) {
     return (
       <Panel variant="app">
-        <h1 className="m-0 mb-2 font-semibold text-4xl leading-none md:text-5xl xl:text-6xl">Settings</h1>
-        <p className="m-0 text-sm text-rose-900">{loadError ?? "Request failed"}</p>
+        <h1 className="m-0 mb-2 font-semibold text-4xl leading-none md:text-5xl xl:text-6xl">{t("settings.title")}</h1>
+        <p className="m-0 text-sm text-rose-900">{loadError ?? t("errors.requestFailed")}</p>
       </Panel>
     );
   }
@@ -122,7 +120,7 @@ export function SettingsPage() {
   return (
     <div className="grid gap-4">
       <section>
-        <h1 className="m-0 mb-2 font-semibold text-4xl leading-none md:text-5xl xl:text-6xl">Settings</h1>
+        <h1 className="m-0 mb-2 font-semibold text-4xl leading-none md:text-5xl xl:text-6xl">{t("settings.title")}</h1>
       </section>
 
       <section className="grid items-start gap-5 md:grid-cols-5">
@@ -130,7 +128,6 @@ export function SettingsPage() {
           {TABS.map((tab) => {
             const healthTier = deriveDependencyHealthTier(dependencies, tab.dependencyKeys);
             const isActive = activeTab === tab.key;
-            const healthMeta = HEALTH_META[healthTier];
 
             return (
               <button
@@ -142,15 +139,15 @@ export function SettingsPage() {
                     ? "bg-sky-50 font-semibold text-ink"
                     : "text-muted hover:bg-sky-50 hover:text-ink"
                 }`}
-                title={healthMeta.label}
+                title={t("health." + healthTier)}
                 onClick={() => setActiveTab(tab.key)}
                 type="button"
               >
                 <span
-                  className={`h-2.5 w-2.5 rounded-full ${healthMeta.className}`}
+                  className={`h-2.5 w-2.5 rounded-full ${HEALTH_META[healthTier].className}`}
                   aria-hidden="true"
                 />
-                <span>{tab.label}</span>
+                <span>{t(tab.labelKey)}</span>
               </button>
             );
           })}

@@ -5,7 +5,8 @@ import {
   MdChevronRight,
 } from "react-icons/md";
 
-import { api, toErrorMessage } from "@/lib/api";
+import { useLanguage } from "@/app/LanguageContext";
+import { api, toErrorMessageWithT } from "@/lib/api";
 import type { NoteContent, Source } from "@/lib/types";
 
 import { usePanelResize, Resizer, MIN_PANEL, COLLAPSED_PANEL } from "@/components/lists/panel-resize";
@@ -32,6 +33,7 @@ function SkeletonPanel({ title, note }: { title: string; note: string }) {
 }
 
 export function ListDetailPage() {
+  const { t } = useLanguage();
   const { listId = "" } = useParams();
   const [listName, setListName] = useState("");
   const [sources, setSources] = useState<Source[]>([]);
@@ -54,11 +56,11 @@ export function ListDetailPage() {
     try {
       const [lists, nextSources] = await Promise.all([api.listLists(), api.listSources(listId)]);
       const current = lists.find((l) => l.id === listId);
-      setListName(current?.name ?? "List workspace");
+      setListName(current?.name ?? t("lists.listWorkspace"));
       setSources(nextSources);
       setLoadError(null);
     } catch (err) {
-      setLoadError(toErrorMessage(err));
+      setLoadError(toErrorMessageWithT(err, t));
     }
   }, [listId]);
 
@@ -89,7 +91,7 @@ export function ListDetailPage() {
         if (currentSourceIdRef.current !== source.video_id) return;
         setTranscript(res.text);
       })
-      .catch(() => { setTranscriptError("Failed to load transcript"); });
+      .catch(() => { setTranscriptError(t("errors.requestFailed")); });
   }
 
   async function handleRenameCommit(newName: string) {
@@ -122,12 +124,12 @@ export function ListDetailPage() {
         >
           <div className="flex shrink-0 items-center border-b border-border px-4 py-4">
             {!sourcesCollapsed && (
-              <h2 className="m-0 flex-1 font-serif text-lg text-ink">Sources</h2>
+              <h2 className="m-0 flex-1 font-serif text-lg text-ink">{t("lists.sources")}</h2>
             )}
             <button
               type="button"
               onClick={() => setSourcesCollapsed((v) => !v)}
-              aria-label={sourcesCollapsed ? "Expand sources" : "Collapse sources"}
+              aria-label={sourcesCollapsed ? t("lists.expandSources") : t("lists.collapseSources")}
               className={`flex h-7 w-7 items-center justify-center rounded-full text-muted transition hover:bg-border hover:text-ink ${sourcesCollapsed ? "mx-auto" : ""}`}
             >
               {sourcesCollapsed ? <MdChevronRight size={16} /> : <MdChevronLeft size={16} />}
