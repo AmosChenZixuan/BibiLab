@@ -113,7 +113,7 @@ export function SettingsPage() {
   if (loadError || !config) {
     return (
       <Panel variant="app">
-        <h1 className="m-0 mb-2 font-serif text-4xl leading-none md:text-5xl xl:text-6xl">Settings</h1>
+        <h1 className="m-0 mb-2 font-semibold text-4xl leading-none md:text-5xl xl:text-6xl">Settings</h1>
         <p className="m-0 text-sm text-rose-900">{loadError ?? "Request failed"}</p>
       </Panel>
     );
@@ -122,7 +122,7 @@ export function SettingsPage() {
   return (
     <div className="grid gap-4">
       <section>
-        <h1 className="m-0 mb-2 font-serif text-4xl leading-none md:text-5xl xl:text-6xl">Settings</h1>
+        <h1 className="m-0 mb-2 font-semibold text-4xl leading-none md:text-5xl xl:text-6xl">Settings</h1>
       </section>
 
       <section className="grid items-start gap-5 md:grid-cols-5">
@@ -139,8 +139,8 @@ export function SettingsPage() {
                 aria-selected={isActive}
                 className={`flex items-center gap-3 rounded-xl px-4 py-3 text-left transition ${
                   isActive
-                    ? "bg-sky/12 font-semibold text-ink"
-                    : "text-muted hover:bg-sky/8 hover:text-ink"
+                    ? "bg-sky-50 font-semibold text-ink"
+                    : "text-muted hover:bg-sky-50 hover:text-ink"
                 }`}
                 title={healthMeta.label}
                 onClick={() => setActiveTab(tab.key)}

@@ -4,7 +4,7 @@ import { useJobActivity } from "@/components/jobs/JobActivityProvider";
 import type { JobActivityItem } from "@/components/jobs/JobActivityProvider";
 import { api } from "@/lib/api";
 import type { HealthDependency, LocusConfig, WhisperModel } from "@/lib/types";
-import { MdDownload } from "react-icons/md";
+import { Download } from "lucide-react";
 
 import { Select, SettingsField, Spinner } from "@/components/ui";
 
@@ -34,7 +34,7 @@ function ModelDownloadCell({ modelName, modelJob, downloading, onDownload }: Mod
       disabled={downloading === modelName}
       onClick={() => void onDownload(modelName)}
     >
-      <MdDownload size={18} />
+      <Download size={18} />
     </button>
   );
 }

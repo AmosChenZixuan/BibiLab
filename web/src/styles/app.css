@@ -1,17 +1,18 @@
 @import "tailwindcss";
+@import url("https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap");
 
 @theme {
   /* ── Colors ──────────────────────────────────────────────────────────────── */
-  --color-ink:     #274970;       /* primary text */
-  --color-muted:   #8096b3;       /* secondary text; use muted/80 for #547094 */
+  --color-ink:     #334155;       /* primary text — slate-700 */
+  --color-muted:   #64748b;       /* secondary text — slate-500 */
   --color-pink:    #f08bb9;       /* accent — gradient start, eyebrow */
   --color-blue:    #5b7faa;       /* accent — links, active states, gradient end */
   --color-sky:     #7dd9ff;       /* highlight tints via opacity modifier */
-  --color-border:  rgba(106, 147, 198, 0.12);  /* universal panel/input border */
+  --color-border:  rgba(100, 116, 139, 0.18);  /* universal panel/input border — slate-500/18 */
   --color-scrim: rgba(17, 35, 63, 0.3);
 
   /* ── Typography ──────────────────────────────────────────────────────────── */
-  --font-serif: "Iowan Old Style", "Palatino Linotype", serif;
+  --font-sans: "Plus Jakarta Sans", "Segoe UI", sans-serif;
   --font-mono:  SFMono-Regular, Consolas, monospace;
 
   /* ── Z-index ─────────────────────────────────────────────────────────────── */
@@ -22,7 +23,7 @@
 
 @layer base {
   :root {
-    font-family: "Avenir Next", "Segoe UI", sans-serif;
+    font-family: var(--font-sans);
   }
 
   * {
@@ -34,7 +35,7 @@
     min-height: 100vh;
     margin: 0;
     color: theme(--color-ink);
-    font-family: "Avenir Next", "Segoe UI", sans-serif;
+    font-family: var(--font-sans);
   }
 
   #root {

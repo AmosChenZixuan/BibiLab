@@ -219,7 +219,7 @@ export function HomePage() {
         size="lg"
         title="Rename list"
       >
-        <div className="relative h-100 overflow-hidden rounded-3xl bg-linear-to-br from-pink/85 to-sky/55 shadow-lg">
+        <div className="relative h-100 overflow-hidden rounded-3xl bg-pink-100 shadow-lg">
           {renameTarget?.thumbnail_url ? (
             <div
               className="absolute inset-0 bg-cover bg-center"
@@ -265,15 +265,17 @@ export function HomePage() {
         ) : (
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
             <button
-              className="aspect-video rounded-2xl border border-border bg-linear-to-br from-pink/85 to-sky/55 p-3 text-left text-xs font-semibold text-white shadow-lg transition hover:-translate-y-0.5 hover:shadow-lg"
+              className="aspect-video overflow-hidden rounded-2xl border border-border bg-black/30 p-0 text-left shadow-lg transition hover:-translate-y-0.5 hover:shadow-lg"
               onClick={() => void handleThumbnailSelect(null)}
               type="button"
             >
-              No cover
+              <div className="flex h-full items-end bg-cover bg-center p-2">
+                <span className="block truncate text-xs font-semibold text-white">No cover</span>
+              </div>
             </button>
             {thumbnailSources.map((source) => (
               <button
-                className="aspect-video overflow-hidden rounded-2xl border border-border bg-linear-to-br from-pink/85 to-sky/55 p-0 text-left shadow-lg transition hover:-translate-y-0.5 hover:shadow-lg"
+                className="aspect-video overflow-hidden rounded-2xl border border-border bg-black/30 p-0 text-left shadow-lg transition hover:-translate-y-0.5 hover:shadow-lg"
                 key={source.video_id}
                 onClick={() => void handleThumbnailSelect(source.video_id)}
                 type="button"

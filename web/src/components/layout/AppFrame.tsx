@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { FiSettings, FiUser } from "react-icons/fi";
+import { Settings, User } from "lucide-react";
 import { MdTranslate } from "react-icons/md";
 import { NavLink, Outlet } from "react-router-dom";
 
@@ -50,8 +50,8 @@ export function AppFrame() {
   return (
     <JobActivityProvider>
       <nav className="fixed inset-x-0 top-0 z-nav flex h-14 items-center justify-between bg-white px-4 md:px-6 xl:px-12">
-        <NavLink className="inline-flex items-center" to="/" aria-label="Home">
-          <span className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-linear-to-br from-pink via-pink to-sky font-serif text-base font-bold text-white/95">
+        <NavLink className="inline-flex items-center gap-2" to="/" aria-label="Home">
+          <span className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-pink text-base font-bold text-white/95">
             L
           </span>
         </NavLink>
@@ -59,12 +59,12 @@ export function AppFrame() {
         <div className="inline-flex items-center gap-2">
           <NavLink
             to="/settings"
-            className="relative inline-flex h-9 w-9 items-center justify-center rounded-lg transition hover:bg-sky/12"
+            className="relative inline-flex h-9 w-9 items-center justify-center rounded-lg transition hover:bg-sky-50"
             title={healthMeta.label}
             aria-label="Settings"
           >
             <span className="inline-flex size-4.5 items-center justify-center text-blue/70" aria-hidden="true">
-              <FiSettings className="size-4.5" />
+              <Settings className="size-4.5" />
             </span>
             <span
               className={`absolute bottom-1 right-1 size-2 rounded-full border-2 border-white/92 ${healthMeta.className}`}
@@ -73,7 +73,7 @@ export function AppFrame() {
 
           <button
             type="button"
-            className="relative inline-flex h-9 w-9 items-center justify-center rounded-lg bg-transparent text-ink transition hover:bg-sky/12"
+            className="relative inline-flex h-9 w-9 items-center justify-center rounded-lg bg-transparent text-ink transition hover:bg-sky-50"
             aria-label={`Language: ${lang === "en" ? "English" : "Chinese"}`}
             title={lang === "en" ? "English" : "Chinese"}
             onClick={() => setLang(lang === "en" ? "zh" : "en")}
@@ -91,14 +91,14 @@ export function AppFrame() {
 
           <button
             type="button"
-            className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-transparent text-ink transition hover:bg-sky/12"
+            className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-transparent text-ink transition hover:bg-sky-50"
             aria-label="Identity"
             aria-expanded={identityOpen}
             aria-haspopup="menu"
             onClick={() => setIdentityOpen((open) => !open)}
           >
             <span className="inline-flex size-4.5 items-center justify-center text-blue/70" aria-hidden="true">
-              <FiUser className="size-4.5" />
+              <User className="size-4.5" />
             </span>
           </button>
         </div>

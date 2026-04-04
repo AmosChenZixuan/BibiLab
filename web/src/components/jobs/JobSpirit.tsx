@@ -1,4 +1,4 @@
-import { MdClose } from "react-icons/md";
+import { X } from "lucide-react";
 
 import type { JobActivityItem } from "./JobActivityProvider";
 import { getJobTitle, getJobTone, useJobActivity } from "./JobActivityProvider";
@@ -100,14 +100,14 @@ export function JobSpirit() {
                               : void cancelJob(item.job.id)
                           }
                         >
-                          <MdClose size={12} />
+                          <X size={12} />
                         </button>
                       ) : null}
                     </div>
                     {!item.isTerminal ? (
                       <div className="h-px overflow-hidden rounded-full bg-border">
                         <div
-                          className="h-full bg-blue/50 transition-all duration-700"
+                          className="h-full bg-blue-400 transition-all duration-700"
                           style={{ width: `${Math.max(item.job.progress, 4)}%` }}
                         />
                       </div>

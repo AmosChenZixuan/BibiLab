@@ -15,8 +15,7 @@ describe("Button", () => {
   test("renders primary variant", () => {
     render(<Button variant="primary">Save</Button>);
     const btn = screen.getByRole("button", { name: "Save" });
-    expect(btn.className).toContain("from-pink");
-    expect(btn.className).toContain("to-blue");
+    expect(btn.className).toContain("bg-pink");
   });
 
   test("renders ghost variant", () => {

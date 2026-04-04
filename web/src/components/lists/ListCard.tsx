@@ -11,6 +11,25 @@ type Props = {
   onDelete: (list: LocusList) => Promise<void> | void;
 };
 
+export const PASTEL_COLORS = [
+  "bg-pink-100",   // #fce7f3
+  "bg-sky-100",    // #e0f2fe
+  "bg-green-100",  // #dcfce7
+  "bg-amber-100",  // #fef3c7
+  "bg-violet-100", // #ede9fe
+  "bg-orange-100", // #ffedd5
+  "bg-teal-100",   // #f0fdf4
+  "bg-slate-100",  // #f1f5f9
+] as const;
+
+export function nameToPastelIndex(name: string): number {
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) {
+    hash = name.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  return Math.abs(hash) % PASTEL_COLORS.length;
+}
+
 function formatUpdatedDate(updatedAt: string) {
   return new Date(updatedAt).toLocaleDateString(undefined, {
     month: "short",
@@ -38,7 +57,7 @@ export function ListCard({ list, onRename, onChangeThumbnail, onDelete }: Props)
     <article className="group relative h-52 w-64 overflow-hidden rounded-2xl shadow-lg transition hover:-translate-y-0.5 hover:shadow-lg">
       <div
         aria-hidden="true"
-        className="absolute inset-0 bg-linear-to-br from-pink/75 to-sky/45"
+        className={`absolute inset-0 ${!list.thumbnail_url ? PASTEL_COLORS[nameToPastelIndex(list.name)] : ""}`}
         style={
           list.thumbnail_url
             ? {
