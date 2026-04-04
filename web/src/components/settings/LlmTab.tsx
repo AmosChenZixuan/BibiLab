@@ -1,11 +1,11 @@
 import { useEffect, useId, useState } from "react";
 
-import type { LocusConfig } from "@/lib/types";
+import type { BibilabConfig } from "@/lib/types";
 import { Input, Select, SettingsField } from "@/components/ui";
 
 type LlmTabProps = {
-  config: LocusConfig;
-  onBlur: (updated: LocusConfig) => void;
+  config: BibilabConfig;
+  onBlur: (updated: BibilabConfig) => void;
 };
 
 const BASE_URL_META: Record<string, { hint: string; placeholder: string }> = {

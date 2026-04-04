@@ -4,9 +4,9 @@ import { RouterProvider, createMemoryRouter } from "react-router-dom";
 import { describe, expect, test, vi } from "vitest";
 
 import { ListGrid } from "@/components/lists/ListGrid";
-import type { LocusList } from "@/lib/types";
+import type { BibilabList } from "@/lib/types";
 
-const list: LocusList = {
+const list: BibilabList = {
   id: "list-1",
   name: "Systems Thinking",
   created_at: "2026-03-31T19:00:00Z",

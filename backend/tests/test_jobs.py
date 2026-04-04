@@ -11,9 +11,9 @@ import pytest_asyncio
 
 
 @pytest_asyncio.fixture()
-async def seeded_job(tmp_locus_home: Path):  # noqa: ARG001
-    """Bootstrap DB and insert a queued job (tmp_locus_home ensures patch is active)."""
-    from locus.db import bootstrap_db, create_job
+async def seeded_job(tmp_bibilab_home: Path):  # noqa: ARG001
+    """Bootstrap DB and insert a queued job (tmp_bibilab_home ensures patch is active)."""
+    from bibilab.db import bootstrap_db, create_job
 
     await bootstrap_db()
     return await create_job(
@@ -63,8 +63,8 @@ async def test_delete_queued_job(client: httpx.AsyncClient, seeded_job: str):
 
 
 @pytest.mark.asyncio
-async def test_state_transitions(tmp_locus_home: Path):
-    from locus.db import bootstrap_db, create_job, get_job, update_job_status
+async def test_state_transitions(tmp_bibilab_home: Path):
+    from bibilab.db import bootstrap_db, create_job, get_job, update_job_status
 
     await bootstrap_db()
     job_id = await create_job("ingest", {"source_url": "https://b.tv/BV1", "platform": "bilibili"})
@@ -86,8 +86,8 @@ async def test_state_transitions(tmp_locus_home: Path):
 
 
 @pytest.mark.asyncio
-async def test_reset_stuck_jobs(tmp_locus_home: Path):
-    from locus.db import (
+async def test_reset_stuck_jobs(tmp_bibilab_home: Path):
+    from bibilab.db import (
         bootstrap_db,
         create_job,
         get_job,
@@ -106,13 +106,13 @@ async def test_reset_stuck_jobs(tmp_locus_home: Path):
 
 
 @pytest.mark.asyncio
-async def test_pipeline_fails_fast_when_list_deleted(tmp_locus_home: Path):
+async def test_pipeline_fails_fast_when_list_deleted(tmp_bibilab_home: Path):
     """Worker must fail the job if the target list no longer exists."""
-    from locus.db import bootstrap_db, create_job, get_job
-    from locus.worker import WorkerLoop
+    from bibilab.db import bootstrap_db, create_job, get_job
+    from bibilab.worker import WorkerLoop
 
     await bootstrap_db()
-    transcript_path = tmp_locus_home / "transcript.txt"
+    transcript_path = tmp_bibilab_home / "transcript.txt"
     transcript_path.write_text("hello world", encoding="utf-8")
 
     job_id = await create_job(
@@ -141,18 +141,20 @@ async def test_pipeline_fails_fast_when_list_deleted(tmp_locus_home: Path):
     cfg.model_dump.return_value = {}
 
     with (
-        patch("locus.worker.load_config", return_value=cfg),
-        patch("locus.worker.BilibiliAdapter.download", return_value=tmp_locus_home / "video.mp4"),
-        patch("locus.worker.extract_audio", return_value=tmp_locus_home / "audio.wav"),
-        patch("locus.worker.transcribe", return_value=[]),
-        patch("locus.worker.write_transcript", return_value=transcript_path),
-        patch("locus.worker.chunk_segments", return_value=[]),
+        patch("bibilab.worker.load_config", return_value=cfg),
         patch(
-            "locus.worker.extract_knowledge",
+            "bibilab.worker.BilibiliAdapter.download", return_value=tmp_bibilab_home / "video.mp4"
+        ),
+        patch("bibilab.worker.extract_audio", return_value=tmp_bibilab_home / "audio.wav"),
+        patch("bibilab.worker.transcribe", return_value=[]),
+        patch("bibilab.worker.write_transcript", return_value=transcript_path),
+        patch("bibilab.worker.chunk_segments", return_value=[]),
+        patch(
+            "bibilab.worker.extract_knowledge",
             return_value=MagicMock(title="Test", summary="Summary"),
         ),
-        patch("locus.worker.write_video_note", return_value=tmp_locus_home / "note.md"),
-        patch("locus.worker.embed_chunks", return_value=None),
+        patch("bibilab.worker.write_video_note", return_value=tmp_bibilab_home / "note.md"),
+        patch("bibilab.worker.embed_chunks", return_value=None),
     ):
         await worker._run_job(job_row)
 
@@ -162,13 +164,13 @@ async def test_pipeline_fails_fast_when_list_deleted(tmp_locus_home: Path):
 
 
 @pytest.mark.asyncio
-async def test_pipeline_logs_when_embedding_model_missing(tmp_locus_home: Path, caplog):
-    from locus.worker import WorkerLoop
+async def test_pipeline_logs_when_embedding_model_missing(tmp_bibilab_home: Path, caplog):
+    from bibilab.worker import WorkerLoop
 
-    transcript_path = tmp_locus_home / "transcript.txt"
+    transcript_path = tmp_bibilab_home / "transcript.txt"
     transcript_path.write_text("hello world", encoding="utf-8")
 
-    note_path = tmp_locus_home / "notes" / "note.md"
+    note_path = tmp_bibilab_home / "notes" / "note.md"
     note_path.parent.mkdir(parents=True, exist_ok=True)
     note_path.write_text("", encoding="utf-8")
 
@@ -204,21 +206,23 @@ async def test_pipeline_logs_when_embedding_model_missing(tmp_locus_home: Path, 
 
     worker = WorkerLoop()
     with (
-        patch("locus.worker.load_config", return_value=cfg),
-        patch("locus.worker.get_list", new=AsyncMock(return_value={"id": "list-001"})),
-        patch("locus.worker.update_job_status", new=AsyncMock()),
-        patch("locus.worker.asyncio.to_thread", new=AsyncMock(side_effect=fake_to_thread)),
-        patch("locus.worker.BilibiliAdapter.download", return_value=tmp_locus_home / "video.mp4"),
-        patch("locus.worker.extract_audio", return_value=tmp_locus_home / "audio.wav"),
-        patch("locus.worker.transcribe", return_value=[]),
-        patch("locus.worker.write_transcript", return_value=transcript_path),
-        patch("locus.worker.chunk_segments", return_value=[]),
-        patch("locus.worker.extract_knowledge", return_value=extraction),
-        patch("locus.worker.write_video_note", return_value=note_path),
-        patch("locus.worker.embed_chunks", return_value=None),
-        patch("locus.worker.write_source", new=AsyncMock()),
-        patch("locus.worker.is_embedding_model_downloaded", return_value=False),
-        caplog.at_level(logging.INFO, logger="locus.worker"),
+        patch("bibilab.worker.load_config", return_value=cfg),
+        patch("bibilab.worker.get_list", new=AsyncMock(return_value={"id": "list-001"})),
+        patch("bibilab.worker.update_job_status", new=AsyncMock()),
+        patch("bibilab.worker.asyncio.to_thread", new=AsyncMock(side_effect=fake_to_thread)),
+        patch(
+            "bibilab.worker.BilibiliAdapter.download", return_value=tmp_bibilab_home / "video.mp4"
+        ),
+        patch("bibilab.worker.extract_audio", return_value=tmp_bibilab_home / "audio.wav"),
+        patch("bibilab.worker.transcribe", return_value=[]),
+        patch("bibilab.worker.write_transcript", return_value=transcript_path),
+        patch("bibilab.worker.chunk_segments", return_value=[]),
+        patch("bibilab.worker.extract_knowledge", return_value=extraction),
+        patch("bibilab.worker.write_video_note", return_value=note_path),
+        patch("bibilab.worker.embed_chunks", return_value=None),
+        patch("bibilab.worker.write_source", new=AsyncMock()),
+        patch("bibilab.worker.is_embedding_model_downloaded", return_value=False),
+        caplog.at_level(logging.INFO, logger="bibilab.worker"),
     ):
         await worker._pipeline(job)
 
@@ -227,16 +231,16 @@ async def test_pipeline_logs_when_embedding_model_missing(tmp_locus_home: Path, 
 
 @pytest.mark.asyncio
 async def test_delete_job_cleans_up_ingest_artifacts(
-    client: httpx.AsyncClient, tmp_locus_home: Path
+    client: httpx.AsyncClient, tmp_bibilab_home: Path
 ):
-    from locus.db import bootstrap_db, create_job, get_job
+    from bibilab.db import bootstrap_db, create_job, get_job
 
     await bootstrap_db()
     video_id = "BV1cleanup"
-    transcript_path = tmp_locus_home / "transcripts" / f"{video_id}.txt"
-    note_path = tmp_locus_home / "notes" / f"{video_id}.md"
-    cover_path = tmp_locus_home / "notes" / "attachments" / f"{video_id}_cover.jpg"
-    download_path = tmp_locus_home / "downloads" / f"{video_id}.mp4"
+    transcript_path = tmp_bibilab_home / "transcripts" / f"{video_id}.txt"
+    note_path = tmp_bibilab_home / "notes" / f"{video_id}.md"
+    cover_path = tmp_bibilab_home / "notes" / "attachments" / f"{video_id}_cover.jpg"
+    download_path = tmp_bibilab_home / "downloads" / f"{video_id}.mp4"
 
     transcript_path.parent.mkdir(parents=True, exist_ok=True)
     note_path.parent.mkdir(parents=True, exist_ok=True)
@@ -259,12 +263,12 @@ async def test_delete_job_cleans_up_ingest_artifacts(
         },
     )
 
-    db_path = tmp_locus_home / "locus.db"
+    db_path = tmp_bibilab_home / "bibilab.db"
     with sqlite3.connect(db_path) as db:
         db.execute("UPDATE jobs SET status='failed' WHERE id=?", (job_id,))
         db.commit()
 
-    with patch("locus.cleanup.clear_embeddings_for_video") as mock_clear:
+    with patch("bibilab.cleanup.clear_embeddings_for_video") as mock_clear:
         resp = await client.delete(f"/jobs/{job_id}")
 
     assert resp.status_code == 204

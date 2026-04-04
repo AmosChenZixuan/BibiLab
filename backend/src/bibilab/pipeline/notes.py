@@ -1,4 +1,4 @@
-"""Note writing - writes to ~/.locus/notes/{video_id}.md."""
+"""Note writing - writes to ~/.bibilab/notes/{video_id}.md."""
 
 import logging
 import os
@@ -7,9 +7,9 @@ from pathlib import Path
 
 import httpx
 
-from locus.adapters.base import VideoMeta
-from locus.config import locus_home
-from locus.pipeline.extract import ExtractionResult
+from bibilab.adapters.base import VideoMeta
+from bibilab.config import bibilab_home
+from bibilab.pipeline.extract import ExtractionResult
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +35,7 @@ def write_video_note(
     extraction: ExtractionResult,
     list_id: str,
 ) -> Path:
-    notes_dir = locus_home() / "notes"
+    notes_dir = bibilab_home() / "notes"
     notes_dir.mkdir(parents=True, exist_ok=True)
 
     note_path = notes_dir / f"{meta.video_id}.md"

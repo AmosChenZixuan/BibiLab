@@ -8,8 +8,8 @@ import { AppFrame } from "@/components/layout/AppFrame";
 import type { HealthResponse } from "@/lib/types";
 
 vi.mock("../lib/api", () => ({
-  HEALTH_REFRESH_EVENT: "locus:health:refresh",
-  JOBS_REFRESH_EVENT: "locus:jobs:refresh",
+  HEALTH_REFRESH_EVENT: "bibilab:health:refresh",
+  JOBS_REFRESH_EVENT: "bibilab:jobs:refresh",
   api: {
     getHealth: vi.fn(),
     listJobs: vi.fn().mockResolvedValue([]),

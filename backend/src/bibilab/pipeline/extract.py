@@ -6,9 +6,9 @@ import logging
 import httpx
 from pydantic import BaseModel
 
-from locus.adapters.base import VideoMeta
-from locus.config import AIConfig
-from locus.pipeline.audio import PipelineError
+from bibilab.adapters.base import VideoMeta
+from bibilab.config import AIConfig
+from bibilab.pipeline.audio import PipelineError
 
 logger = logging.getLogger(__name__)
 

@@ -2,9 +2,9 @@ import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, test } from "vitest";
 
 import { OtherTab } from "@/components/settings/OtherTab";
-import type { HealthDependency, LocusConfig } from "@/lib/types";
+import type { HealthDependency, BibilabConfig } from "@/lib/types";
 
-const baseConfig: LocusConfig = {
+const baseConfig: BibilabConfig = {
   accounts: { bilibili: { cookie: "", last_verified: "" } },
   ai: { provider: "openai", model: "", api_key: "", base_url: "" },
   transcription: {
@@ -22,7 +22,7 @@ const healthDeps: Record<string, HealthDependency> = {
   ffmpeg: { status: "ok", message: "/usr/bin/ffmpeg" },
   embedding_model: {
     status: "ok",
-    message: "/home/test/.locus/chroma/onnx/model.onnx",
+    message: "/home/test/.bibilab/chroma/onnx/model.onnx",
   },
 };
 
@@ -50,7 +50,7 @@ describe("other tab", () => {
     render(<OtherTab config={baseConfig} dependencies={healthDeps} onBlur={() => {}} />);
 
     expect(screen.getByText(/^Embedding Model$/i)).toBeInTheDocument();
-    expect(screen.getByText(/\/home\/test\/\.locus\/chroma\/onnx\/model\.onnx/i)).toBeInTheDocument();
+    expect(screen.getByText(/\/home\/test\/\.bibilab\/chroma\/onnx\/model\.onnx/i)).toBeInTheDocument();
   });
 
   test("shows impact messaging for degraded and blocking dependencies", () => {

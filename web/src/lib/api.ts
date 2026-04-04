@@ -1,9 +1,9 @@
 import type {
   HealthResponse,
   Job,
-  LocusConfig,
-  LocusList,
-  LocusListPatch,
+  BibilabConfig,
+  BibilabList,
+  BibilabListPatch,
   NoteContent,
   NoteTranscript,
   OverviewDownload,
@@ -14,7 +14,7 @@ import type {
 
 type ApiErrorDetail = string | { message?: string };
 
-export const HEALTH_REFRESH_EVENT = "locus:health:refresh";
+export const HEALTH_REFRESH_EVENT = "bibilab:health:refresh";
 
 export class ApiError extends Error {
   detail: ApiErrorDetail;
@@ -70,14 +70,14 @@ export function notifyHealthChanged(health: HealthResponse) {
 }
 
 export const api = {
-  listLists: () => request<LocusList[]>("/lists"),
+  listLists: () => request<BibilabList[]>("/lists"),
   createList: (name: string) =>
-    request<LocusList>("/lists", {
+    request<BibilabList>("/lists", {
       method: "POST",
       body: JSON.stringify({ name }),
     }),
-  updateList: (listId: string, patch: LocusListPatch) =>
-    request<LocusList>(`/lists/${listId}`, {
+  updateList: (listId: string, patch: BibilabListPatch) =>
+    request<BibilabList>(`/lists/${listId}`, {
       method: "PATCH",
       body: JSON.stringify(patch),
     }),
@@ -104,9 +104,9 @@ export const api = {
     request<OverviewDownload>(`/lists/${listId}/overview`, {
       method: "POST",
     }),
-  getConfig: () => request<LocusConfig>("/config"),
-  putConfig: (patch: Partial<LocusConfig>) =>
-    request<LocusConfig>("/config", {
+  getConfig: () => request<BibilabConfig>("/config"),
+  putConfig: (patch: Partial<BibilabConfig>) =>
+    request<BibilabConfig>("/config", {
       method: "PUT",
       body: JSON.stringify(patch),
     }),

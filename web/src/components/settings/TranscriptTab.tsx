@@ -3,7 +3,7 @@ import { useEffect, useId, useState } from "react";
 import { useJobActivity } from "@/components/jobs/JobActivityProvider";
 import type { JobActivityItem } from "@/components/jobs/JobActivityProvider";
 import { api } from "@/lib/api";
-import type { HealthDependency, LocusConfig, WhisperModel } from "@/lib/types";
+import type { HealthDependency, BibilabConfig, WhisperModel } from "@/lib/types";
 import { Download } from "lucide-react";
 
 import { Select, SettingsField, Spinner } from "@/components/ui";
@@ -40,9 +40,9 @@ function ModelDownloadCell({ modelName, modelJob, downloading, onDownload }: Mod
 }
 
 type TranscriptTabProps = {
-  config: LocusConfig;
+  config: BibilabConfig;
   dependencies: Record<string, HealthDependency>;
-  onBlur: (updated: LocusConfig) => void;
+  onBlur: (updated: BibilabConfig) => void;
 };
 
 export function TranscriptTab({ config, dependencies, onBlur }: TranscriptTabProps) {

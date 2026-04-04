@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Project Is
 
-**Project Locus** transforms video content into searchable, AI-assisted private notebooks. A FastAPI backend runs the local processing pipeline (download → transcribe → chunk → extract → notes → embed), and a React + TypeScript SPA under `web/` provides the primary user interface for lists, ingestion, jobs, notes, transcripts, overview export, and settings.
+**Project Bibilab** transforms video content into searchable, AI-assisted private notebooks. A FastAPI backend runs the local processing pipeline (download → transcribe → chunk → extract → notes → embed), and a React + TypeScript SPA under `web/` provides the primary user interface for lists, ingestion, jobs, notes, transcripts, overview export, and settings.
 
 ## Commands
 
@@ -17,7 +17,7 @@ uv run ruff check .      # Lint
 uv run ruff format .     # Format
 uv run pytest            # All tests
 uv run pytest tests/test_ingest.py -v  # Single test file
-uv run python -m locus.main            # Start server (localhost:8765)
+uv run python -m bibilab.main            # Start server (localhost:8765)
 ```
 
 ### Web UI (React + TypeScript, managed with `npm`)
@@ -45,12 +45,12 @@ FastAPI Backend (Python)
     └── Storage
         ├── SQLite  — job queue + processing log
         ├── ChromaDB — vector embeddings (local, embedded)
-        └── ~/.locus/ — config, notes, transcripts, downloads, chroma data
+        └── ~/.bibilab/ — config, notes, transcripts, downloads, chroma data
 ```
 
 ## Code Layout
 
-**Backend** — `backend/src/locus/`
+**Backend** — `backend/src/bibilab/`
 
 ```
 routers/     — one APIRouter per module; aggregated in main.py
@@ -58,7 +58,7 @@ models/      — Pydantic request/response models
 pipeline/    — one file per stage (audio → transcribe → chunk → extract → notes → embed)
 adapters/    — platform-specific download + resolution
 db.py        — SQLite schema + query helpers
-config.py    — settings persisted to ~/.locus/config.json
+config.py    — settings persisted to ~/.bibilab/config.json
 worker.py    — SQLite-polling job dispatcher
 ```
 
@@ -98,4 +98,4 @@ app/            — router, language context
 - Technical specification, API contracts, DB schema in `docs/design-doc.md`; active specs in `docs/specs/`; plans in `docs/plans/`.
 - Pre-commit hooks enforce ruff lint/format on backend and trailing whitespace globally. Run `pre-commit install` once after cloning.
 - The legacy `plugin/` directory is not the active v0 interface.
-- Config lives at `~/.locus/config.json`; runtime state at `~/.locus/`.
+- Config lives at `~/.bibilab/config.json`; runtime state at `~/.bibilab/`.

@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, Query
 
-from locus.config import locus_home
-from locus.models.transcripts import TranscriptResponse
+from bibilab.config import bibilab_home
+from bibilab.models.transcripts import TranscriptResponse
 
 router = APIRouter()
 
@@ -12,7 +12,7 @@ async def get_transcript(
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=200, ge=1),
 ) -> TranscriptResponse:
-    transcript_path = locus_home() / "transcripts" / f"{video_id}.txt"
+    transcript_path = bibilab_home() / "transcripts" / f"{video_id}.txt"
     if not transcript_path.exists() or not transcript_path.is_file():
         raise HTTPException(status_code=404, detail="Transcript not found")
 

@@ -1,12 +1,12 @@
 from fastapi import APIRouter, HTTPException, status
 
-from locus.config import load_config
-from locus.db import create_job
-from locus.models.whisper import (
+from bibilab.config import load_config
+from bibilab.db import create_job
+from bibilab.models.whisper import (
     WhisperModelDownloadRequest,
     WhisperModelInfo,
 )
-from locus.whisper_models import (
+from bibilab.whisper_models import (
     SUPPORTED_WHISPER_MODELS,
     is_whisper_model_downloaded,
     resolve_local_model_path,

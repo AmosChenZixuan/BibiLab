@@ -5,11 +5,11 @@ import json
 import logging
 from pathlib import Path
 
-from locus.adapters.base import AuthRequiredError, VideoMeta
-from locus.adapters.bilibili import BilibiliAdapter
-from locus.cleanup import cleanup_job_artifacts
-from locus.config import load_config, locus_home
-from locus.db import (
+from bibilab.adapters.base import AuthRequiredError, VideoMeta
+from bibilab.adapters.bilibili import BilibiliAdapter
+from bibilab.cleanup import cleanup_job_artifacts
+from bibilab.config import bibilab_home, load_config
+from bibilab.db import (
     delete_job,
     get_list,
     get_pending_jobs,
@@ -17,13 +17,13 @@ from locus.db import (
     update_job_status,
     write_source,
 )
-from locus.pipeline.audio import PipelineError, extract_audio
-from locus.pipeline.chunk import chunk_segments
-from locus.pipeline.embed import embed_chunks, is_embedding_model_downloaded
-from locus.pipeline.extract import ExtractionResult, extract_knowledge
-from locus.pipeline.notes import write_video_note
-from locus.pipeline.transcribe import transcribe, write_transcript
-from locus.whisper_models import download_whisper_model
+from bibilab.pipeline.audio import PipelineError, extract_audio
+from bibilab.pipeline.chunk import chunk_segments
+from bibilab.pipeline.embed import embed_chunks, is_embedding_model_downloaded
+from bibilab.pipeline.extract import ExtractionResult, extract_knowledge
+from bibilab.pipeline.notes import write_video_note
+from bibilab.pipeline.transcribe import transcribe, write_transcript
+from bibilab.whisper_models import download_whisper_model
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +46,7 @@ class WorkerLoop:
     async def start(self) -> None:
         await reset_stuck_jobs()
         self._running = True
-        self._task = asyncio.create_task(self._loop(), name="locus-worker")
+        self._task = asyncio.create_task(self._loop(), name="bibilab-worker")
         logger.info("Worker loop started (concurrency=%d)", self._concurrency)
 
     async def stop(self) -> None:
@@ -225,7 +225,7 @@ class WorkerLoop:
         )
 
         # 7. Cleanup downloads
-        for path in (locus_home() / "downloads").glob(f"{video_id}.*"):
+        for path in (bibilab_home() / "downloads").glob(f"{video_id}.*"):
             path.unlink(missing_ok=True)
 
         await update_job_status(job_id, "done", progress=100)

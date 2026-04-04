@@ -1,4 +1,4 @@
-# Project Locus — Technical Design
+# Project Bibilab — Technical Design
 
 > Version: 0.7
 > Last updated: 2026-04-04
@@ -7,7 +7,7 @@
 
 ## 1. What This Is
 
-**Project Locus** transforms video content into searchable, AI-assisted private notebooks. A FastAPI backend runs the local processing pipeline (download → transcribe → chunk → extract → notes → embed), and a React + TypeScript SPA provides the primary user interface.
+**Project Bibilab** transforms video content into searchable, AI-assisted private notebooks. A FastAPI backend runs the local processing pipeline (download → transcribe → chunk → extract → notes → embed), and a React + TypeScript SPA provides the primary user interface.
 
 The web UI is the product. The backend exists to serve it.
 
@@ -34,7 +34,7 @@ The web UI is the product. The backend exists to serve it.
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
-│               Locus Web UI (React + TypeScript SPA)          │
+│               Bibilab Web UI (React + TypeScript SPA)          │
 │                                                              │
 │   /               Home: grid of lists                        │
 │   /lists/:id      List detail: Sources | Chat | Studio       │
@@ -42,7 +42,7 @@ The web UI is the product. The backend exists to serve it.
 └───────────────────────────│──────────────────────────────────┘
                             │ HTTP /api/*
 ┌───────────────────────────▼──────────────────────────────────┐
-│                   Locus Backend (Python/FastAPI)               │
+│                   Bibilab Backend (Python/FastAPI)               │
 │                                                              │
 │   Job Queue (SQLite) ──► WorkerLoop ──► Pipeline stages        │
 │                                                              │
@@ -54,8 +54,8 @@ The web UI is the product. The backend exists to serve it.
 │   │              │  │   notes, embed)   │  └──────────────┘   │
 │   └──────────────┘  └────────────────────┘                     │
 │                                                              │
-│   Storage: ~/.locus/                                          │
-│     locus.db         SQLite (lists, jobs, sources)            │
+│   Storage: ~/.bibilab/                                          │
+│     bibilab.db         SQLite (lists, jobs, sources)            │
 │     notes/           markdown notes + attachments             │
 │     transcripts/     raw Whisper output                       │
 │     chroma/          ChromaDB data                            │
@@ -70,9 +70,9 @@ The web UI is the product. The backend exists to serve it.
 ## 4. Storage Layout
 
 ```
-~/.locus/
+~/.bibilab/
 ├── config.json          Pydantic settings, credentials
-├── locus.db             SQLite
+├── bibilab.db             SQLite
 ├── notes/
 │   ├── {video_id}.md    LLM-generated markdown note
 │   └── attachments/
@@ -122,8 +122,8 @@ Three tables, three purposes:
 | `list_id` | FK to `lists.id` |
 | `title` | Denormalized from LLM output — enables list-level overview without reading files |
 | `summary` | Denormalized from LLM output — feeds `POST /lists/:id/overview` |
-| `note_path` | Absolute path to `~/.locus/notes/{video_id}.md` |
-| `transcript_path` | Absolute path to `~/.locus/transcripts/{video_id}.txt`, nullable |
+| `note_path` | Absolute path to `~/.bibilab/notes/{video_id}.md` |
+| `transcript_path` | Absolute path to `~/.bibilab/transcripts/{video_id}.txt`, nullable |
 | `whisper_model` | Model used for transcription |
 | `ai_model` | Model used for extraction |
 | `vision_enabled` | Boolean |
@@ -139,12 +139,12 @@ Three tables, three purposes:
 
 | Decision | Choice | Rationale |
 |---|---|---|
-| Note storage | Files in `~/.locus/notes/` | Decouples note lifecycle from DB; notes are human-readable, downloadable, and portable without DB access |
+| Note storage | Files in `~/.bibilab/notes/` | Decouples note lifecycle from DB; notes are human-readable, downloadable, and portable without DB access |
 | List storage | SQLite `lists` table | Natural source of truth for routing and list-level queries (overview, source count, ordering) |
 | Overview generation | On-demand via `POST /lists/:id/overview`, not in pipeline | Avoids silent LLM calls during ingestion; user controls when to generate |
 | Job vs source deduplication | `sources` is the dedup source; `jobs` is purely ephemeral | A video is "processed" if it has a `sources` row. Re-processing requires `?rerun=true` or explicit delete |
 | Overview reads `sources.title/summary` | Denormalized into `sources` at ingest time | Enables list-level synthesis without re-reading every note file |
-| Transcript storage | Files in `~/.locus/transcripts/`, not in DB | Re-chunking or re-embedding never requires re-transcription |
+| Transcript storage | Files in `~/.bibilab/transcripts/`, not in DB | Re-chunking or re-embedding never requires re-transcription |
 | `sources` table, not `processing_log` | Renamed from `processing_log` | The table is an active catalog (mutable), not an audit log (immutable). The old name was misleading. |
 | Backend serves SPA | FastAPI mounts `/assets` + catch-all `/{path}` → `index.html` | Single-port deployment; no separate frontend server needed |
 | SPA routing | Client-side (React Router) | FastAPI `/{full_path:path}` with `not_found` guard on `api/*` |
@@ -194,7 +194,7 @@ Per video, in order:
 3. transcribe      → Faster Whisper → raw segments with timestamps
 4. chunk           → merge segments into RAG-ready chunks (~300 tokens)
 5. extract         → LLM: title, summary, key_points with timestamps
-6. notes           → write ~/.locus/notes/{video_id}.md + cover image
+6. notes           → write ~/.bibilab/notes/{video_id}.md + cover image
 7. embed           → store chunks in ChromaDB with metadata
 8. write_source    → upsert row into sources table
 ```

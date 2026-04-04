@@ -5,15 +5,15 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from locus.pipeline.audio import PipelineError, extract_audio
-from locus.pipeline.chunk import RagChunk, chunk_segments
-from locus.pipeline.extract import (
+from bibilab.pipeline.audio import PipelineError, extract_audio
+from bibilab.pipeline.chunk import RagChunk, chunk_segments
+from bibilab.pipeline.extract import (
     ExtractionResult,
     KeyPoint,
     _parse_response,
     extract_knowledge,
 )
-from locus.pipeline.transcribe import (
+from bibilab.pipeline.transcribe import (
     WhisperSegment,
     _compute_type_for_device,
     write_transcript,
@@ -29,7 +29,7 @@ def test_extract_audio_success(tmp_path: Path):
     video.write_bytes(b"fake")
     wav = tmp_path / "video.wav"
 
-    with patch("locus.pipeline.audio.ffmpeg") as mock_ffmpeg:
+    with patch("bibilab.pipeline.audio.ffmpeg") as mock_ffmpeg:
         mock_chain = MagicMock()
         mock_ffmpeg.input.return_value = mock_chain
         mock_chain.output.return_value = mock_chain
@@ -50,7 +50,7 @@ def test_extract_audio_ffmpeg_error(tmp_path: Path):
     video = tmp_path / "video.mp4"
     video.write_bytes(b"fake")
 
-    with patch("locus.pipeline.audio.ffmpeg") as mock_ffmpeg:
+    with patch("bibilab.pipeline.audio.ffmpeg") as mock_ffmpeg:
         mock_chain = MagicMock()
         mock_ffmpeg.input.return_value = mock_chain
         mock_chain.output.return_value = mock_chain
@@ -73,7 +73,7 @@ def test_write_transcript(tmp_path: Path):
         WhisperSegment(start=0.0, end=5.0, text="Hello world"),
         WhisperSegment(start=5.0, end=10.0, text="Second segment"),
     ]
-    with patch("locus.pipeline.transcribe.locus_home", return_value=tmp_path):
+    with patch("bibilab.pipeline.transcribe.bibilab_home", return_value=tmp_path):
         (tmp_path / "transcripts").mkdir()
         path = write_transcript(segs, "BV1abc")
 
@@ -84,7 +84,7 @@ def test_write_transcript(tmp_path: Path):
 
 def test_write_transcript_hours(tmp_path: Path):
     segs = [WhisperSegment(start=3661.0, end=3665.0, text="Late segment")]
-    with patch("locus.pipeline.transcribe.locus_home", return_value=tmp_path):
+    with patch("bibilab.pipeline.transcribe.bibilab_home", return_value=tmp_path):
         (tmp_path / "transcripts").mkdir()
         path = write_transcript(segs, "BV2xyz")
 
@@ -173,8 +173,8 @@ def test_parse_response_strips_code_fence():
 
 
 def test_extract_knowledge_calls_llm(tmp_path: Path):
-    from locus.adapters.base import VideoMeta
-    from locus.config import AIConfig
+    from bibilab.adapters.base import VideoMeta
+    from bibilab.config import AIConfig
 
     meta = VideoMeta(
         video_id="BV1",
@@ -188,7 +188,7 @@ def test_extract_knowledge_calls_llm(tmp_path: Path):
     cfg = AIConfig(provider="openai", model="gpt-4o", api_key="fake")
     good_response = '{"title": "LLM Title", "summary": "Sum", "key_points": []}'
 
-    with patch("locus.pipeline.extract._call_llm", return_value=good_response):
+    with patch("bibilab.pipeline.extract._call_llm", return_value=good_response):
         result = extract_knowledge("some transcript", meta, cfg)
 
     assert result.title == "LLM Title"
@@ -196,14 +196,14 @@ def test_extract_knowledge_calls_llm(tmp_path: Path):
 
 
 def test_extract_knowledge_retries_on_bad_json():
-    from locus.adapters.base import VideoMeta
-    from locus.config import AIConfig
+    from bibilab.adapters.base import VideoMeta
+    from bibilab.config import AIConfig
 
     meta = VideoMeta("BV1", "T", "bilibili", "https://x.com", "", 0, "")
     cfg = AIConfig(provider="openai", model="gpt-4o", api_key="fake")
     good = '{"title": "T2", "summary": "S2", "key_points": []}'
 
-    with patch("locus.pipeline.extract._call_llm", side_effect=["not json at all", good]):
+    with patch("bibilab.pipeline.extract._call_llm", side_effect=["not json at all", good]):
         result = extract_knowledge("transcript", meta, cfg)
 
     assert result.title == "T2"
@@ -215,8 +215,8 @@ def test_extract_knowledge_retries_on_bad_json():
 
 
 def test_write_video_note(tmp_path: Path):
-    from locus.adapters.base import VideoMeta
-    from locus.pipeline.notes import write_video_note
+    from bibilab.adapters.base import VideoMeta
+    from bibilab.pipeline.notes import write_video_note
 
     meta = VideoMeta("BV1abc", "Original Title", "bilibili", "https://x.com", "", 300, "uploader")
     extraction = ExtractionResult(
@@ -225,8 +225,8 @@ def test_write_video_note(tmp_path: Path):
         key_points=[KeyPoint(timestamp="[00:01:00]", text="Key insight")],
     )
 
-    with patch("locus.pipeline.notes.locus_home", return_value=tmp_path):
-        with patch("locus.pipeline.notes._download_cover", return_value=False):
+    with patch("bibilab.pipeline.notes.bibilab_home", return_value=tmp_path):
+        with patch("bibilab.pipeline.notes._download_cover", return_value=False):
             path = write_video_note(meta, extraction, "list123")
 
     assert path == tmp_path / "notes" / "BV1abc.md"
@@ -239,14 +239,14 @@ def test_write_video_note(tmp_path: Path):
 
 
 def test_write_video_note_uses_video_id_filename(tmp_path: Path):
-    from locus.adapters.base import VideoMeta
-    from locus.pipeline.notes import write_video_note
+    from bibilab.adapters.base import VideoMeta
+    from bibilab.pipeline.notes import write_video_note
 
     meta = VideoMeta("BV1", "Title: Bad/Chars", "bilibili", "https://x.com", "", 0, "")
     extraction = ExtractionResult(title="Title: Bad/Chars", summary="s", key_points=[])
 
-    with patch("locus.pipeline.notes.locus_home", return_value=tmp_path):
-        with patch("locus.pipeline.notes._download_cover", return_value=False):
+    with patch("bibilab.pipeline.notes.bibilab_home", return_value=tmp_path):
+        with patch("bibilab.pipeline.notes._download_cover", return_value=False):
             path = write_video_note(meta, extraction, "lid")
 
     assert path.name == "BV1.md"

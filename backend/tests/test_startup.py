@@ -4,8 +4,8 @@ from unittest.mock import patch
 import httpx
 import pytest
 
-from locus.config import AIConfig
-from locus.routers.health import _check_llm
+from bibilab.config import AIConfig
+from bibilab.routers.health import _check_llm
 
 
 @pytest.mark.asyncio
@@ -22,7 +22,7 @@ async def test_health_returns_200(client: httpx.AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_health_includes_embedding_model(client: httpx.AsyncClient, tmp_locus_home: Path):  # noqa: ARG001
+async def test_health_includes_embedding_model(client: httpx.AsyncClient, tmp_bibilab_home: Path):  # noqa: ARG001
     resp = await client.get("/health")
     assert resp.status_code == 200
     deps = resp.json()["dependencies"]
@@ -32,7 +32,7 @@ async def test_health_includes_embedding_model(client: httpx.AsyncClient, tmp_lo
 
 @pytest.mark.asyncio
 async def test_health_reports_ffmpeg_install_path(client: httpx.AsyncClient):
-    with patch("locus.routers.health.shutil.which", return_value="/usr/bin/ffmpeg"):
+    with patch("bibilab.routers.health.shutil.which", return_value="/usr/bin/ffmpeg"):
         resp = await client.get("/health")
 
     assert resp.status_code == 200
@@ -44,18 +44,18 @@ async def test_health_reports_ffmpeg_install_path(client: httpx.AsyncClient):
 
 @pytest.mark.asyncio
 async def test_health_reports_embedding_model_install_path(
-    tmp_locus_home: Path, client: httpx.AsyncClient
+    tmp_bibilab_home: Path, client: httpx.AsyncClient
 ):  # noqa: ARG001
-    model_file = tmp_locus_home / "models" / "embedding" / "onnx" / "model.onnx"
+    model_file = tmp_bibilab_home / "models" / "embedding" / "onnx" / "model.onnx"
     model_file.parent.mkdir(parents=True)
     model_file.write_bytes(b"fake")
 
     with (
         patch(
-            "locus.routers.health._embedding_model_dir",
-            return_value=tmp_locus_home / "models" / "embedding",
+            "bibilab.routers.health._embedding_model_dir",
+            return_value=tmp_bibilab_home / "models" / "embedding",
         ),
-        patch("locus.routers.health.is_embedding_model_downloaded", return_value=True),
+        patch("bibilab.routers.health.is_embedding_model_downloaded", return_value=True),
     ):
         resp = await client.get("/health")
 
@@ -110,27 +110,27 @@ async def test_llm_health_validates_openai_compatible_response_shape():
         },
     )()
 
-    with patch("locus.routers.health.httpx.AsyncClient", return_value=DummyClient()):
+    with patch("bibilab.routers.health.httpx.AsyncClient", return_value=DummyClient()):
         result = await _check_llm(cfg)
 
     assert result == {"status": "error", "message": "Invalid models response"}
 
 
 def test_is_embedding_model_downloaded_false_when_absent(tmp_path: Path):
-    from locus.pipeline.embed import is_embedding_model_downloaded
+    from bibilab.pipeline.embed import is_embedding_model_downloaded
 
-    with patch("locus.pipeline.embed._embedding_model_dir", return_value=tmp_path):
+    with patch("bibilab.pipeline.embed._embedding_model_dir", return_value=tmp_path):
         assert is_embedding_model_downloaded() is False
 
 
 def test_is_embedding_model_downloaded_true_when_present(tmp_path: Path):
-    from locus.pipeline.embed import is_embedding_model_downloaded
+    from bibilab.pipeline.embed import is_embedding_model_downloaded
 
     model_file = tmp_path / "onnx" / "model.onnx"
     model_file.parent.mkdir(parents=True)
     model_file.write_bytes(b"fake")
 
-    with patch("locus.pipeline.embed._embedding_model_dir", return_value=tmp_path):
+    with patch("bibilab.pipeline.embed._embedding_model_dir", return_value=tmp_path):
         assert is_embedding_model_downloaded() is True
 
 
@@ -172,11 +172,11 @@ async def test_config_masks_sensitive_fields(client: httpx.AsyncClient):
 async def test_serves_built_spa_without_shadowing_api_routes(tmp_path: Path):
     spa_dist = tmp_path / "web-dist"
     (spa_dist / "assets").mkdir(parents=True)
-    (spa_dist / "index.html").write_text("<!doctype html><html><body>locus web</body></html>")
-    (spa_dist / "assets" / "app.js").write_text("console.log('locus');")
+    (spa_dist / "index.html").write_text("<!doctype html><html><body>bibilab web</body></html>")
+    (spa_dist / "assets" / "app.js").write_text("console.log('bibilab');")
 
-    with patch("locus.main.WEB_DIST", spa_dist):
-        from locus.main import create_app
+    with patch("bibilab.main.WEB_DIST", spa_dist):
+        from bibilab.main import create_app
 
         app = create_app(start_worker=False)
 
@@ -189,11 +189,11 @@ async def test_serves_built_spa_without_shadowing_api_routes(tmp_path: Path):
             root = await spa_client.get("/")
             assert root.status_code == 200
             assert "text/html" in root.headers["content-type"]
-            assert "locus web" in root.text
+            assert "bibilab web" in root.text
 
             asset = await spa_client.get("/assets/app.js")
             assert asset.status_code == 200
-            assert "console.log('locus');" in asset.text
+            assert "console.log('bibilab');" in asset.text
 
             health = await spa_client.get("/health")
             assert health.status_code == 200
@@ -201,22 +201,22 @@ async def test_serves_built_spa_without_shadowing_api_routes(tmp_path: Path):
 
 
 @pytest.mark.asyncio
-async def test_locus_dirs_bootstrapped(client: httpx.AsyncClient, tmp_locus_home: Path):
+async def test_bibilab_dirs_bootstrapped(client: httpx.AsyncClient, tmp_bibilab_home: Path):
     for subdir in ("notes", "transcripts", "downloads", "chroma"):
-        assert (tmp_locus_home / subdir).is_dir(), f"Missing {subdir}/"
-    assert (tmp_locus_home / "locus.db").exists()
+        assert (tmp_bibilab_home / subdir).is_dir(), f"Missing {subdir}/"
+    assert (tmp_bibilab_home / "bibilab.db").exists()
 
 
 @pytest.mark.asyncio
 async def test_bootstrap_db_creates_lists_table(tmp_path: Path):
     import sqlite3
 
-    from locus.db import bootstrap_db
+    from bibilab.db import bootstrap_db
 
-    with patch("locus.db.locus_home", return_value=tmp_path):
+    with patch("bibilab.db.bibilab_home", return_value=tmp_path):
         await bootstrap_db()
 
-    with sqlite3.connect(tmp_path / "locus.db") as db:
+    with sqlite3.connect(tmp_path / "bibilab.db") as db:
         row = db.execute(
             "SELECT name FROM sqlite_master WHERE type='table' AND name='lists'"
         ).fetchone()

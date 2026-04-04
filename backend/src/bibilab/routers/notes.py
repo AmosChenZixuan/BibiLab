@@ -3,8 +3,8 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
 
-from locus.db import get_source
-from locus.models.notes import NoteContentResponse, NoteTranscriptResponse
+from bibilab.db import get_source
+from bibilab.models.notes import NoteContentResponse, NoteTranscriptResponse
 
 router = APIRouter()
 

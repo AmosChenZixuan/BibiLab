@@ -7,19 +7,19 @@ import pytest_asyncio
 
 
 @pytest.fixture()
-def tmp_locus_home(tmp_path: Path):
-    with patch("locus.config.locus_home", return_value=tmp_path):
-        with patch("locus.db.locus_home", return_value=tmp_path):
-            with patch("locus.main.locus_home", return_value=tmp_path):
-                with patch("locus.cleanup.locus_home", return_value=tmp_path):
+def tmp_bibilab_home(tmp_path: Path):
+    with patch("bibilab.config.bibilab_home", return_value=tmp_path):
+        with patch("bibilab.db.bibilab_home", return_value=tmp_path):
+            with patch("bibilab.main.bibilab_home", return_value=tmp_path):
+                with patch("bibilab.cleanup.bibilab_home", return_value=tmp_path):
                     yield tmp_path
 
 
 @pytest_asyncio.fixture()
-async def client(tmp_locus_home: Path):  # noqa: ARG001
-    from locus.main import create_app
+async def client(tmp_bibilab_home: Path):  # noqa: ARG001
+    from bibilab.main import create_app
 
-    with patch("locus.main.WEB_DIST", tmp_locus_home / "web-dist-disabled"):
+    with patch("bibilab.main.WEB_DIST", tmp_bibilab_home / "web-dist-disabled"):
         app = create_app(start_worker=False)
         async with app.router.lifespan_context(app):
             transport = httpx.ASGITransport(app=app)

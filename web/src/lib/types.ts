@@ -1,4 +1,4 @@
-export type LocusList = {
+export type BibilabList = {
   id: string;
   name: string;
   created_at: string;
@@ -8,7 +8,7 @@ export type LocusList = {
   updated_at: string;
 };
 
-export type LocusListPatch = {
+export type BibilabListPatch = {
   name?: string;
   thumbnail_source_id?: string | null;
 };
@@ -69,7 +69,7 @@ export type ModelDownloadJob = BaseJob & {
 
 export type Job = IngestJob | ModelDownloadJob;
 
-export type LocusConfig = {
+export type BibilabConfig = {
   accounts: {
     bilibili: {
       cookie: string;

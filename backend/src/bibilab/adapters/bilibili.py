@@ -6,14 +6,14 @@ from pathlib import Path
 
 import yt_dlp
 
-from locus.adapters.base import (
+from bibilab.adapters.base import (
     AuthRequiredError,
     DownloadError,
     PlatformAdapter,
     PlaylistMeta,
     VideoMeta,
 )
-from locus.config import locus_home
+from bibilab.config import bibilab_home
 
 logger = logging.getLogger(__name__)
 
@@ -109,7 +109,7 @@ class BilibiliAdapter(PlatformAdapter):
         )
 
     def download(self, video_id: str, source_url: str) -> Path:
-        downloads_dir = locus_home() / "downloads"
+        downloads_dir = bibilab_home() / "downloads"
         output_template = str(downloads_dir / f"{video_id}.%(ext)s")
         opts = {
             **_ydl_opts(self._cookie, quiet=False),

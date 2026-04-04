@@ -7,11 +7,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from locus.config import locus_home
+from bibilab.config import bibilab_home
 
 
 def get_db_path() -> Path:
-    return locus_home() / "locus.db"
+    return bibilab_home() / "bibilab.db"
 
 
 _CREATE_LISTS = """

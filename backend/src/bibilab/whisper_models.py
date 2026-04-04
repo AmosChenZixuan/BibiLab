@@ -1,7 +1,7 @@
 import shutil
 from pathlib import Path
 
-from locus.config import locus_home
+from bibilab.config import bibilab_home
 
 SUPPORTED_WHISPER_MODELS = (
     "tiny",
@@ -13,11 +13,11 @@ SUPPORTED_WHISPER_MODELS = (
 
 
 def whisper_model_dir() -> Path:
-    return locus_home() / "models" / "whisper"
+    return bibilab_home() / "models" / "whisper"
 
 
 def _hf_cache_dir() -> Path:
-    return locus_home() / ".cache" / "huggingface"
+    return bibilab_home() / ".cache" / "huggingface"
 
 
 def _download_target_dir(model_size: str) -> Path:

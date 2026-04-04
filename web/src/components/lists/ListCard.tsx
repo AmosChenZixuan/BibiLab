@@ -1,14 +1,14 @@
 import { FiEdit2, FiImage, FiMoreVertical, FiTrash2 } from "react-icons/fi";
 import { useNavigate } from "react-router-dom";
 
-import type { LocusList } from "@/lib/types";
+import type { BibilabList } from "@/lib/types";
 import { ContextMenu } from "@/components/ui";
 
 type Props = {
-  list: LocusList;
-  onRename?: (list: LocusList) => void;
-  onChangeThumbnail?: (list: LocusList) => void;
-  onDelete: (list: LocusList) => Promise<void> | void;
+  list: BibilabList;
+  onRename?: (list: BibilabList) => void;
+  onChangeThumbnail?: (list: BibilabList) => void;
+  onDelete: (list: BibilabList) => Promise<void> | void;
 };
 
 export const PASTEL_COLORS = [

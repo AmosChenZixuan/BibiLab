@@ -13,7 +13,7 @@ async def test_list_whisper_models_marks_local_install(client: httpx.AsyncClient
     (model_dir / "config.json").write_text("{}", encoding="utf-8")
     (model_dir / "model.bin").write_bytes(b"bin")
 
-    with patch("locus.whisper_models.whisper_model_dir", return_value=whisper_root):
+    with patch("bibilab.whisper_models.whisper_model_dir", return_value=whisper_root):
         response = await client.get("/models/whisper")
 
     assert response.status_code == 200
@@ -53,10 +53,10 @@ def test_download_whisper_model_uses_model_subdirectory(tmp_path: Path):
         (Path(output_dir) / ".cache" / "huggingface").mkdir(parents=True, exist_ok=True)
 
     with (
-        patch("locus.whisper_models.locus_home", return_value=tmp_path),
+        patch("bibilab.whisper_models.bibilab_home", return_value=tmp_path),
         patch("faster_whisper.utils.download_model", side_effect=fake_download_model),
     ):
-        from locus.whisper_models import download_whisper_model
+        from bibilab.whisper_models import download_whisper_model
 
         path = download_whisper_model("medium")
 

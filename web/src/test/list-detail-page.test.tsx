@@ -85,8 +85,8 @@ function makeMockFetch() {
 // ─── API module mock ───────────────────────────────────────────────────────────
 
 vi.mock("../lib/api", () => ({
-  HEALTH_REFRESH_EVENT: "locus:health:refresh",
-  JOBS_REFRESH_EVENT: "locus:jobs:refresh",
+  HEALTH_REFRESH_EVENT: "bibilab:health:refresh",
+  JOBS_REFRESH_EVENT: "bibilab:jobs:refresh",
   api: {
     getHealth: vi.fn().mockResolvedValue({
       overall: "ok",

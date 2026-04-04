@@ -6,12 +6,12 @@ from typing import Any
 from pydantic import BaseModel
 
 
-def locus_home() -> Path:
-    return Path.home() / ".locus"
+def bibilab_home() -> Path:
+    return Path.home() / ".bibilab"
 
 
 def _config_path() -> Path:
-    return locus_home() / "config.json"
+    return bibilab_home() / "config.json"
 
 
 class BilibiliAccountConfig(BaseModel):
@@ -48,7 +48,7 @@ class BackendConfig(BaseModel):
     worker_concurrency: int = 1
 
 
-class LocusConfig(BaseModel):
+class BibilabConfig(BaseModel):
     accounts: AccountsConfig = AccountsConfig()
     ai: AIConfig = AIConfig()
     transcription: TranscriptionConfig = TranscriptionConfig()
@@ -56,18 +56,18 @@ class LocusConfig(BaseModel):
     backend: BackendConfig = BackendConfig()
 
 
-def load_config() -> LocusConfig:
-    home = locus_home()
+def load_config() -> BibilabConfig:
+    home = bibilab_home()
     home.mkdir(parents=True, exist_ok=True)
     path = _config_path()
     if not path.exists():
-        return LocusConfig()
+        return BibilabConfig()
     with path.open() as f:
         data = json.load(f)
-    return LocusConfig.model_validate(data)
+    return BibilabConfig.model_validate(data)
 
 
-def save_config(cfg: LocusConfig) -> None:
+def save_config(cfg: BibilabConfig) -> None:
     path = _config_path()
     tmp = path.with_suffix(".tmp")
     tmp.write_text(cfg.model_dump_json(indent=2))

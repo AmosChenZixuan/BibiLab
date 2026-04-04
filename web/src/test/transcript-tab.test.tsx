@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
 import { TranscriptTab } from "@/components/settings/TranscriptTab";
-import type { HealthDependency, LocusConfig } from "@/lib/types";
+import type { HealthDependency, BibilabConfig } from "@/lib/types";
 import { JobActivityProvider } from "@/components/jobs/JobActivityProvider";
 
 vi.mock("../lib/api", () => ({
@@ -19,7 +19,7 @@ vi.mock("../lib/api", () => ({
 
 import { api } from "@/lib/api";
 
-const baseConfig: LocusConfig = {
+const baseConfig: BibilabConfig = {
   accounts: { bilibili: { cookie: "", last_verified: "" } },
   ai: { provider: "openai", model: "", api_key: "", base_url: "" },
   transcription: {

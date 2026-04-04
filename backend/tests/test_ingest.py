@@ -24,7 +24,7 @@ def mock_ydl_single():
     mock.__enter__ = lambda s: mock
     mock.__exit__ = MagicMock(return_value=False)
     mock.extract_info = MagicMock(return_value=info)
-    with patch("locus.adapters.bilibili.yt_dlp.YoutubeDL", return_value=mock):
+    with patch("bibilab.adapters.bilibili.yt_dlp.YoutubeDL", return_value=mock):
         yield info
 
 
@@ -42,9 +42,9 @@ async def test_ingest_single_video(client: httpx.AsyncClient, mock_ydl_single):
 
 
 @pytest.mark.asyncio
-async def test_ingest_dedup(client: httpx.AsyncClient, mock_ydl_single, tmp_locus_home: Path):
+async def test_ingest_dedup(client: httpx.AsyncClient, mock_ydl_single, tmp_bibilab_home: Path):
     """Submitting the same video twice should skip on second attempt."""
-    from locus.db import bootstrap_db, create_list, write_source
+    from bibilab.db import bootstrap_db, create_list, write_source
 
     await bootstrap_db()
     await create_list("list-1", "Test", "2026-01-01T00:00:00")
@@ -73,10 +73,10 @@ async def test_ingest_dedup(client: httpx.AsyncClient, mock_ydl_single, tmp_locu
 
 @pytest.mark.asyncio
 async def test_ingest_rerun_bypasses_dedup(
-    client: httpx.AsyncClient, mock_ydl_single, tmp_locus_home: Path
+    client: httpx.AsyncClient, mock_ydl_single, tmp_bibilab_home: Path
 ):
     """?rerun=true should queue even if source already exists."""
-    from locus.db import bootstrap_db, create_list, write_source
+    from bibilab.db import bootstrap_db, create_list, write_source
 
     await bootstrap_db()
     await create_list("list-1", "Test", "2026-01-01T00:00:00")

@@ -7,16 +7,16 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from locus.config import load_config, locus_home
-from locus.db import bootstrap_db
-from locus.routers.config_router import router as config_router
-from locus.routers.health import router as health_router
-from locus.routers.ingest import router as ingest_router
-from locus.routers.jobs import router as jobs_router
-from locus.routers.lists import router as lists_router
-from locus.routers.notes import router as notes_router
-from locus.routers.whisper import router as whisper_router
-from locus.worker import WorkerLoop
+from bibilab.config import bibilab_home, load_config
+from bibilab.db import bootstrap_db
+from bibilab.routers.config_router import router as config_router
+from bibilab.routers.health import router as health_router
+from bibilab.routers.ingest import router as ingest_router
+from bibilab.routers.jobs import router as jobs_router
+from bibilab.routers.lists import router as lists_router
+from bibilab.routers.notes import router as notes_router
+from bibilab.routers.whisper import router as whisper_router
+from bibilab.worker import WorkerLoop
 
 WEB_DIST = Path(__file__).resolve().parents[3] / "web" / "dist"
 
@@ -24,7 +24,7 @@ WEB_DIST = Path(__file__).resolve().parents[3] / "web" / "dist"
 def make_lifespan(*, start_worker: bool):
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
-        home = locus_home()
+        home = bibilab_home()
         for subdir in (
             "notes",
             "transcripts",
@@ -54,7 +54,7 @@ def make_lifespan(*, start_worker: bool):
 
 
 def create_app(*, start_worker: bool = True) -> FastAPI:
-    app = FastAPI(title="Locus Backend", lifespan=make_lifespan(start_worker=start_worker))
+    app = FastAPI(title="Bibilab Backend", lifespan=make_lifespan(start_worker=start_worker))
     web_dist = WEB_DIST
 
     app.add_middleware(

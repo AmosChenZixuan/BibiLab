@@ -6,14 +6,14 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse
 
-from locus.config import load_config
-from locus.db import (
+from bibilab.config import load_config
+from bibilab.db import (
     create_list as db_create_list,
 )
-from locus.db import (
+from bibilab.db import (
     delete_list as db_delete_list,
 )
-from locus.db import (
+from bibilab.db import (
     delete_source,
     delete_sources_for_list,
     get_all_lists,
@@ -25,14 +25,14 @@ from locus.db import (
     update_list_name,
     update_list_thumbnail,
 )
-from locus.models.lists import (
+from bibilab.models.lists import (
     ListCreateRequest,
     ListResponse,
     ListUpdateRequest,
     OverviewResponse,
     SourceResponse,
 )
-from locus.pipeline.embed import clear_embeddings_for_list, clear_embeddings_for_video
+from bibilab.pipeline.embed import clear_embeddings_for_list, clear_embeddings_for_video
 
 router = APIRouter()
 
@@ -40,9 +40,9 @@ _ACTIVE_JOB_STATUSES = ("queued", "downloading", "transcribing", "extracting", "
 
 
 def _cached_cover_path(video_id: str) -> Path:
-    from locus.config import locus_home
+    from bibilab.config import bibilab_home
 
-    return locus_home() / "notes" / "attachments" / f"{video_id}_cover.jpg"
+    return bibilab_home() / "notes" / "attachments" / f"{video_id}_cover.jpg"
 
 
 async def _build_list_response(row, request: Request) -> ListResponse:
@@ -198,7 +198,7 @@ async def generate_list_overview(list_id: str) -> OverviewResponse:
         raise HTTPException(status_code=422, detail="List has no sources to summarise")
 
     cfg = load_config()
-    from locus.pipeline.extract import generate_overview
+    from bibilab.pipeline.extract import generate_overview
 
     list_videos = [{"title": s["title"], "summary": s["summary"]} for s in sources]
     outline = await asyncio.to_thread(generate_overview, list_videos, cfg.ai)

@@ -14,13 +14,13 @@ const LanguageContext = createContext<LanguageContextValue>({
 
 export function LanguageProvider({ children }: { children: ReactNode }) {
   const [lang, setLangState] = useState<Lang>(() => {
-    const stored = localStorage.getItem("locus-lang");
+    const stored = localStorage.getItem("bibilab-lang");
     return stored === "zh" ? "zh" : "en";
   });
 
   function setLang(nextLang: Lang) {
     setLangState(nextLang);
-    localStorage.setItem("locus-lang", nextLang);
+    localStorage.setItem("bibilab-lang", nextLang);
   }
 
   return <LanguageContext.Provider value={{ lang, setLang }}>{children}</LanguageContext.Provider>;

@@ -2,9 +2,9 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
 import { LlmTab } from "@/components/settings/LlmTab";
-import type { LocusConfig } from "@/lib/types";
+import type { BibilabConfig } from "@/lib/types";
 
-const baseConfig: LocusConfig = {
+const baseConfig: BibilabConfig = {
   accounts: { bilibili: { cookie: "", last_verified: "" } },
   ai: { provider: "openai", model: "gpt-4o", api_key: "", base_url: "" },
   transcription: {

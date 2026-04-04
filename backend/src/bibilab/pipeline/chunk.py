@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 import tiktoken
 
-from locus.pipeline.transcribe import WhisperSegment
+from bibilab.pipeline.transcribe import WhisperSegment
 
 _enc = tiktoken.get_encoding("cl100k_base")
 

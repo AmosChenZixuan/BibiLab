@@ -6,7 +6,7 @@ import { OtherTab } from "@/components/settings/OtherTab";
 import { TranscriptTab } from "@/components/settings/TranscriptTab";
 import { api, notifyHealthChanged, toErrorMessage } from "@/lib/api";
 import { deriveDependencyHealthTier, HEALTH_META } from "@/lib/health";
-import type { HealthDependency, LocusConfig } from "@/lib/types";
+import type { HealthDependency, BibilabConfig } from "@/lib/types";
 import { Panel } from "@/components/ui";
 
 type TabKey = "llm" | "transcript" | "other";
@@ -25,11 +25,11 @@ function isTabKey(value: string | null): value is TabKey {
   return value === "llm" || value === "transcript" || value === "other";
 }
 
-function hasConfigChanged(current: LocusConfig, next: LocusConfig) {
+function hasConfigChanged(current: BibilabConfig, next: BibilabConfig) {
   return JSON.stringify(current) !== JSON.stringify(next);
 }
 
-function shouldRefreshHealth(current: LocusConfig, next: LocusConfig) {
+function shouldRefreshHealth(current: BibilabConfig, next: BibilabConfig) {
   return (
     current.ai.provider !== next.ai.provider ||
     current.ai.model !== next.ai.model ||
@@ -42,7 +42,7 @@ function shouldRefreshHealth(current: LocusConfig, next: LocusConfig) {
 
 export function SettingsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const [config, setConfig] = useState<LocusConfig | null>(null);
+  const [config, setConfig] = useState<BibilabConfig | null>(null);
   const [dependencies, setDependencies] = useState<Record<string, HealthDependency>>({});
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -87,7 +87,7 @@ export function SettingsPage() {
     };
   }, []);
 
-  async function handleSave(nextConfig: LocusConfig) {
+  async function handleSave(nextConfig: BibilabConfig) {
     if (!config || !hasConfigChanged(config, nextConfig)) {
       return;
     }

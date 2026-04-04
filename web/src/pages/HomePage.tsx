@@ -2,23 +2,23 @@ import { useEffect, useState } from "react";
 
 import { ListGrid } from "@/components/lists/ListGrid";
 import { api, toErrorMessage } from "@/lib/api";
-import type { LocusList, Source } from "@/lib/types";
+import type { BibilabList, Source } from "@/lib/types";
 import { Button, Input, Modal, Panel } from "@/components/ui";
 
 export function HomePage() {
-  const [lists, setLists] = useState<LocusList[]>([]);
+  const [lists, setLists] = useState<BibilabList[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<LocusList | null>(null);
-  const [renameTarget, setRenameTarget] = useState<LocusList | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<BibilabList | null>(null);
+  const [renameTarget, setRenameTarget] = useState<BibilabList | null>(null);
   const [renameDraft, setRenameDraft] = useState("");
-  const [thumbnailTarget, setThumbnailTarget] = useState<LocusList | null>(null);
+  const [thumbnailTarget, setThumbnailTarget] = useState<BibilabList | null>(null);
   const [thumbnailSources, setThumbnailSources] = useState<Source[]>([]);
   const [thumbnailLoading, setThumbnailLoading] = useState(false);
   const dialogOpen = deleteTarget !== null || renameTarget !== null || thumbnailTarget !== null;
 
-  function updateLocalList(updated: LocusList) {
+  function updateLocalList(updated: BibilabList) {
     setLists((current) => current.map((entry) => (entry.id === updated.id ? updated : entry)));
   }
 
@@ -59,7 +59,7 @@ export function HomePage() {
     }
   }
 
-  async function handleDelete(list: LocusList) {
+  async function handleDelete(list: BibilabList) {
     setError(null);
     try {
       await api.deleteList(list.id);
@@ -96,7 +96,7 @@ export function HomePage() {
     }
   }
 
-  async function openThumbnailDialog(list: LocusList) {
+  async function openThumbnailDialog(list: BibilabList) {
     setThumbnailTarget(list);
     setThumbnailSources([]);
     setThumbnailLoading(true);

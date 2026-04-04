@@ -1,12 +1,12 @@
 import { useEffect, useId, useState } from "react";
 
-import type { HealthDependency, LocusConfig } from "@/lib/types";
+import type { HealthDependency, BibilabConfig } from "@/lib/types";
 import { Input, StatusChip } from "@/components/ui";
 
 type OtherTabProps = {
-  config: LocusConfig;
+  config: BibilabConfig;
   dependencies: Record<string, HealthDependency>;
-  onBlur: (updated: LocusConfig) => void;
+  onBlur: (updated: BibilabConfig) => void;
 };
 
 export function OtherTab({ config, dependencies, onBlur }: OtherTabProps) {

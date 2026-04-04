@@ -5,8 +5,8 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
-from locus.config import TranscriptionConfig, locus_home
-from locus.whisper_models import download_whisper_model, resolve_local_model_path
+from bibilab.config import TranscriptionConfig, bibilab_home
+from bibilab.whisper_models import download_whisper_model, resolve_local_model_path
 
 logger = logging.getLogger(__name__)
 
@@ -65,8 +65,8 @@ def transcribe(audio_path: Path, cfg: TranscriptionConfig) -> list[WhisperSegmen
 
 
 def write_transcript(segments: list[WhisperSegment], video_id: str) -> Path:
-    """Write segments to ~/.locus/transcripts/{video_id}.txt, one line per segment."""
-    transcripts_dir = locus_home() / "transcripts"
+    """Write segments to ~/.bibilab/transcripts/{video_id}.txt, one line per segment."""
+    transcripts_dir = bibilab_home() / "transcripts"
     out_path = transcripts_dir / f"{video_id}.txt"
     tmp = out_path.with_suffix(".tmp")
 

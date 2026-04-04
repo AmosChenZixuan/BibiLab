@@ -3,17 +3,17 @@
 import logging
 from pathlib import Path
 
-from locus.adapters.base import VideoMeta
-from locus.config import LocusConfig, locus_home
-from locus.pipeline.chunk import RagChunk
+from bibilab.adapters.base import VideoMeta
+from bibilab.config import BibilabConfig, bibilab_home
+from bibilab.pipeline.chunk import RagChunk
 
 logger = logging.getLogger(__name__)
 
-_COLLECTION_NAME = "locus_transcripts"
+_COLLECTION_NAME = "bibilab_transcripts"
 
 
 def _embedding_model_dir() -> Path:
-    return locus_home() / "models" / "embedding"
+    return bibilab_home() / "models" / "embedding"
 
 
 def is_embedding_model_downloaded() -> bool:
@@ -31,10 +31,10 @@ def _default_embedding_function():
     return LocalONNXMiniLM()
 
 
-def _get_collection(cfg: LocusConfig):
+def _get_collection(cfg: BibilabConfig):
     import chromadb  # noqa: PLC0415
 
-    client = chromadb.PersistentClient(path=str(locus_home() / "chroma"))
+    client = chromadb.PersistentClient(path=str(bibilab_home() / "chroma"))
     return client.get_or_create_collection(
         _COLLECTION_NAME,
         embedding_function=_default_embedding_function(),
@@ -45,7 +45,7 @@ def embed_chunks(
     chunks: list[RagChunk],
     meta: VideoMeta,
     list_id: str,
-    cfg: LocusConfig,
+    cfg: BibilabConfig,
 ) -> None:
     if not chunks:
         return
@@ -76,7 +76,7 @@ def embed_chunks(
     logger.info("Embedded %d chunks for %s", len(chunks), meta.video_id)
 
 
-def clear_embeddings_for_list(list_id: str, cfg: LocusConfig) -> None:
+def clear_embeddings_for_list(list_id: str, cfg: BibilabConfig) -> None:
     """Delete all ChromaDB chunks belonging to the given list."""
     collection = _get_collection(cfg)
     try:
@@ -85,7 +85,7 @@ def clear_embeddings_for_list(list_id: str, cfg: LocusConfig) -> None:
         pass
 
 
-def clear_embeddings_for_video(video_id: str, cfg: LocusConfig) -> None:
+def clear_embeddings_for_video(video_id: str, cfg: BibilabConfig) -> None:
     """Delete all ChromaDB chunks belonging to the given video."""
     collection = _get_collection(cfg)
     try:

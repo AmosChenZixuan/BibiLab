@@ -5,8 +5,8 @@ import pytest
 
 
 @pytest.mark.asyncio
-async def test_get_note_content(client: httpx.AsyncClient, tmp_locus_home: Path, tmp_path: Path):
-    from locus.db import bootstrap_db, create_list, write_source
+async def test_get_note_content(client: httpx.AsyncClient, tmp_bibilab_home: Path, tmp_path: Path):
+    from bibilab.db import bootstrap_db, create_list, write_source
 
     await bootstrap_db()
     await create_list("list-1", "ML", "2026-01-01T00:00:00")
@@ -37,16 +37,16 @@ async def test_get_note_content(client: httpx.AsyncClient, tmp_locus_home: Path,
 
 
 @pytest.mark.asyncio
-async def test_get_note_content_not_found(client: httpx.AsyncClient, tmp_locus_home: Path):
-    from locus.db import bootstrap_db
+async def test_get_note_content_not_found(client: httpx.AsyncClient, tmp_bibilab_home: Path):
+    from bibilab.db import bootstrap_db
 
     await bootstrap_db()
     assert (await client.get("/notes/nonexistent/content")).status_code == 404
 
 
 @pytest.mark.asyncio
-async def test_get_transcript(client: httpx.AsyncClient, tmp_locus_home: Path, tmp_path: Path):
-    from locus.db import bootstrap_db, create_list, write_source
+async def test_get_transcript(client: httpx.AsyncClient, tmp_bibilab_home: Path, tmp_path: Path):
+    from bibilab.db import bootstrap_db, create_list, write_source
 
     await bootstrap_db()
     await create_list("list-1", "ML", "2026-01-01T00:00:00")

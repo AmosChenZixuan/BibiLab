@@ -52,7 +52,7 @@ export function AppFrame() {
       <nav className="fixed inset-x-0 top-0 z-nav flex h-14 items-center justify-between bg-white px-4 md:px-6 xl:px-12">
         <NavLink className="inline-flex items-center gap-2" to="/" aria-label="Home">
           <span className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-pink text-base font-bold text-white/95">
-            L
+            B
           </span>
         </NavLink>
 

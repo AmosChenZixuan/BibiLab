@@ -3,9 +3,9 @@ import logging
 
 from fastapi import APIRouter, HTTPException, Request
 
-from locus.cleanup import cleanup_job_artifacts
-from locus.db import delete_job, get_job, list_jobs
-from locus.models.jobs import TERMINAL_STATUSES, JobResponse, JobStatus
+from bibilab.cleanup import cleanup_job_artifacts
+from bibilab.db import delete_job, get_job, list_jobs
+from bibilab.models.jobs import TERMINAL_STATUSES, JobResponse, JobStatus
 
 router = APIRouter()
 logger = logging.getLogger(__name__)

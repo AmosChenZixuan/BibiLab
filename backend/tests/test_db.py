@@ -5,15 +5,15 @@ import pytest
 
 
 @pytest.fixture()
-def tmp_locus_home(tmp_path: Path):
-    with patch("locus.config.locus_home", return_value=tmp_path):
-        with patch("locus.db.locus_home", return_value=tmp_path):
+def tmp_bibilab_home(tmp_path: Path):
+    with patch("bibilab.config.bibilab_home", return_value=tmp_path):
+        with patch("bibilab.db.bibilab_home", return_value=tmp_path):
             yield tmp_path
 
 
 @pytest.mark.asyncio
-async def test_lists_table_exists(tmp_locus_home: Path):
-    from locus.db import bootstrap_db, get_db
+async def test_lists_table_exists(tmp_bibilab_home: Path):
+    from bibilab.db import bootstrap_db, get_db
 
     await bootstrap_db()
     async with get_db() as db:
@@ -22,8 +22,8 @@ async def test_lists_table_exists(tmp_locus_home: Path):
 
 
 @pytest.mark.asyncio
-async def test_sources_table_exists(tmp_locus_home: Path):
-    from locus.db import bootstrap_db, get_db
+async def test_sources_table_exists(tmp_bibilab_home: Path):
+    from bibilab.db import bootstrap_db, get_db
 
     await bootstrap_db()
     async with get_db() as db:
@@ -32,8 +32,8 @@ async def test_sources_table_exists(tmp_locus_home: Path):
 
 
 @pytest.mark.asyncio
-async def test_jobs_table_uses_meta_for_source_fields(tmp_locus_home: Path):
-    from locus.db import bootstrap_db, get_db
+async def test_jobs_table_uses_meta_for_source_fields(tmp_bibilab_home: Path):
+    from bibilab.db import bootstrap_db, get_db
 
     await bootstrap_db()
     async with get_db() as db:
@@ -45,8 +45,8 @@ async def test_jobs_table_uses_meta_for_source_fields(tmp_locus_home: Path):
 
 
 @pytest.mark.asyncio
-async def test_create_and_get_list(tmp_locus_home: Path):
-    from locus.db import bootstrap_db, create_list, get_all_lists, get_list
+async def test_create_and_get_list(tmp_bibilab_home: Path):
+    from bibilab.db import bootstrap_db, create_list, get_all_lists, get_list
 
     await bootstrap_db()
     await create_list("list-1", "ML Course", "2026-01-01T00:00:00")
@@ -58,8 +58,8 @@ async def test_create_and_get_list(tmp_locus_home: Path):
 
 
 @pytest.mark.asyncio
-async def test_write_and_get_source(tmp_locus_home: Path):
-    from locus.db import (
+async def test_write_and_get_source(tmp_bibilab_home: Path):
+    from bibilab.db import (
         bootstrap_db,
         create_list,
         get_source,
@@ -75,8 +75,8 @@ async def test_write_and_get_source(tmp_locus_home: Path):
         list_id="list-1",
         title="Intro to ML",
         summary="A great intro.",
-        note_path="/home/user/.locus/notes/BV1abc.md",
-        transcript_path="/home/user/.locus/transcripts/BV1abc.txt",
+        note_path="/home/user/.bibilab/notes/BV1abc.md",
+        transcript_path="/home/user/.bibilab/transcripts/BV1abc.txt",
         whisper_model="large-v3",
         ai_model="gpt-4o",
         vision_enabled=False,
@@ -90,8 +90,8 @@ async def test_write_and_get_source(tmp_locus_home: Path):
 
 
 @pytest.mark.asyncio
-async def test_delete_source(tmp_locus_home: Path):
-    from locus.db import (
+async def test_delete_source(tmp_bibilab_home: Path):
+    from bibilab.db import (
         bootstrap_db,
         create_list,
         delete_source,
@@ -119,8 +119,8 @@ async def test_delete_source(tmp_locus_home: Path):
 
 
 @pytest.mark.asyncio
-async def test_get_sources_for_list(tmp_locus_home: Path):
-    from locus.db import bootstrap_db, create_list, get_sources_for_list, write_source
+async def test_get_sources_for_list(tmp_bibilab_home: Path):
+    from bibilab.db import bootstrap_db, create_list, get_sources_for_list, write_source
 
     await bootstrap_db()
     await create_list("list-1", "ML Course", "2026-01-01T00:00:00")
@@ -145,20 +145,20 @@ async def test_get_sources_for_list(tmp_locus_home: Path):
 def test_clear_embeddings_for_video_does_not_raise(tmp_path: Path):
     from unittest.mock import MagicMock, patch
 
-    from locus.config import LocusConfig
-    from locus.pipeline.embed import clear_embeddings_for_video
+    from bibilab.config import BibilabConfig
+    from bibilab.pipeline.embed import clear_embeddings_for_video
 
     mock_col = MagicMock()
     mock_col.delete.return_value = None
-    with patch("locus.pipeline.embed._get_collection", return_value=mock_col):
-        clear_embeddings_for_video("BV1abc", LocusConfig())
+    with patch("bibilab.pipeline.embed._get_collection", return_value=mock_col):
+        clear_embeddings_for_video("BV1abc", BibilabConfig())
     mock_col.delete.assert_called_once_with(where={"note_id": "BV1abc"})
 
 
-def test_write_video_note_to_locus_notes_dir(tmp_path: Path):
-    from locus.adapters.base import VideoMeta
-    from locus.pipeline.extract import ExtractionResult, KeyPoint
-    from locus.pipeline.notes import write_video_note
+def test_write_video_note_to_bibilab_notes_dir(tmp_path: Path):
+    from bibilab.adapters.base import VideoMeta
+    from bibilab.pipeline.extract import ExtractionResult, KeyPoint
+    from bibilab.pipeline.notes import write_video_note
 
     meta = VideoMeta(
         video_id="BV1test",
@@ -178,7 +178,7 @@ def test_write_video_note_to_locus_notes_dir(tmp_path: Path):
     notes_dir = tmp_path / "notes"
     notes_dir.mkdir()
 
-    with patch("locus.pipeline.notes.locus_home", return_value=tmp_path):
+    with patch("bibilab.pipeline.notes.bibilab_home", return_value=tmp_path):
         note_path = write_video_note(meta, extraction, "list-1")
 
     assert note_path == notes_dir / "BV1test.md"

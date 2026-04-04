@@ -1,12 +1,12 @@
 import { FiPlus } from "react-icons/fi";
-import type { LocusList } from "@/lib/types";
+import type { BibilabList } from "@/lib/types";
 import { ListCard } from "./ListCard";
 
 type Props = {
-  lists: LocusList[];
-  onDelete: (list: LocusList) => Promise<void> | void;
-  onRename?: (list: LocusList) => void;
-  onChangeThumbnail?: (list: LocusList) => void;
+  lists: BibilabList[];
+  onDelete: (list: BibilabList) => Promise<void> | void;
+  onRename?: (list: BibilabList) => void;
+  onChangeThumbnail?: (list: BibilabList) => void;
   onCreate: () => Promise<void>;
   busy: boolean;
 };

@@ -3,9 +3,9 @@ import shutil
 import httpx
 from fastapi import APIRouter
 
-from locus.config import load_config
-from locus.pipeline.embed import _embedding_model_dir, is_embedding_model_downloaded
-from locus.whisper_models import is_whisper_model_downloaded, whisper_model_dir
+from bibilab.config import load_config
+from bibilab.pipeline.embed import _embedding_model_dir, is_embedding_model_downloaded
+from bibilab.whisper_models import is_whisper_model_downloaded, whisper_model_dir
 
 router = APIRouter()
 

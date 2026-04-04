@@ -2,8 +2,8 @@ import json
 import logging
 from typing import Any
 
-from locus.config import load_config, locus_home
-from locus.pipeline.embed import clear_embeddings_for_video
+from bibilab.config import bibilab_home, load_config
+from bibilab.pipeline.embed import clear_embeddings_for_video
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +24,7 @@ def cleanup_job_artifacts(job: dict[str, Any]) -> None:
     if not isinstance(video_id, str) or not video_id:
         return
 
-    home = locus_home()
+    home = bibilab_home()
     paths = [
         home / "transcripts" / f"{video_id}.txt",
         home / "notes" / f"{video_id}.md",

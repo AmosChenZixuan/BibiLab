@@ -2,7 +2,7 @@ from typing import Any
 
 from fastapi import APIRouter
 
-from locus.config import LocusConfig, deep_merge, load_config, save_config
+from bibilab.config import BibilabConfig, deep_merge, load_config, save_config
 
 router = APIRouter()
 
@@ -37,6 +37,6 @@ async def get_config() -> dict:
 async def put_config(patch: dict[str, Any]) -> dict:
     cfg = load_config()
     merged = deep_merge(cfg.model_dump(), patch)
-    new_cfg = LocusConfig.model_validate(merged)
+    new_cfg = BibilabConfig.model_validate(merged)
     save_config(new_cfg)
     return _mask(new_cfg.model_dump())

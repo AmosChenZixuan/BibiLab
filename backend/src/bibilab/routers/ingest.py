@@ -2,11 +2,11 @@ import logging
 
 from fastapi import APIRouter, HTTPException
 
-from locus.adapters.base import AuthRequiredError, DownloadError, VideoMeta
-from locus.adapters.bilibili import BilibiliAdapter
-from locus.config import load_config
-from locus.db import create_job, get_list, get_processed_video_ids
-from locus.models.ingest import IngestUrlRequest, IngestUrlResponse
+from bibilab.adapters.base import AuthRequiredError, DownloadError, VideoMeta
+from bibilab.adapters.bilibili import BilibiliAdapter
+from bibilab.config import load_config
+from bibilab.db import create_job, get_list, get_processed_video_ids
+from bibilab.models.ingest import IngestUrlRequest, IngestUrlResponse
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
