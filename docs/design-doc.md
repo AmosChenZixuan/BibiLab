@@ -139,7 +139,7 @@ Three tables, three purposes:
 
 | Decision | Choice | Rationale |
 |---|---|---|
-| Path storage | Relative paths in DB, resolved at read time | Enables home directory migration without DB updates; legacy absolute paths in existing records are resolved directly (backward compatible) |
+| Path storage | Relative paths in DB, resolved at read time | Enables home directory migration without DB updates |
 | Note storage | Files in `~/.bibilab/notes/` | Decouples note lifecycle from DB; notes are human-readable, downloadable, and portable without DB access |
 | List storage | SQLite `lists` table | Natural source of truth for routing and list-level queries (overview, source count, ordering) |
 | Overview generation | On-demand via `POST /lists/:id/overview`, not in pipeline | Avoids silent LLM calls during ingestion; user controls when to generate |
@@ -148,6 +148,7 @@ Three tables, three purposes:
 | Transcript storage | Files in `~/.bibilab/transcripts/`, not in DB | Re-chunking or re-embedding never requires re-transcription |
 | `sources` table, not `processing_log` | Renamed from `processing_log` | The table is an active catalog (mutable), not an audit log (immutable). The old name was misleading. |
 | Backend serves SPA | FastAPI mounts `/assets` + catch-all `/{path}` → `index.html` | Single-port deployment; no separate frontend server needed |
+| Thumbnail auto-assign | First ingested source in a list automatically becomes the thumbnail | Avoids empty thumbnails on new lists; reassignable via settings |
 | SPA routing | Client-side (React Router) | FastAPI `/{full_path:path}` with `not_found` guard on `api/*` |
 | Worker concurrency | Configurable via `config.backend.worker_concurrency` | Default 1; users with GPU headroom can increase |
 | ChromaDB chunk metadata | `video_id`, `list_id`, `timestamp_start/end`, `sequence_index` | Enables both per-video and per-list RAG scope |
@@ -281,7 +282,8 @@ Transcript attachment paths in notes are rewritten at serving time — the file 
     "provider": "openai | anthropic | ollama | custom",
     "model": "gpt-4o",
     "api_key": "",
-    "base_url": null
+    "base_url": null,
+    "output_language": "ui"
   },
   "transcription": {
     "engine": "faster-whisper",
