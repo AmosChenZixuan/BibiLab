@@ -1,6 +1,6 @@
 # Project Bibilab — Technical Design
 
-> Version: 0.7
+> Version: 0.8
 > Last updated: 2026-04-04
 
 ---
@@ -122,8 +122,8 @@ Three tables, three purposes:
 | `list_id` | FK to `lists.id` |
 | `title` | Denormalized from LLM output — enables list-level overview without reading files |
 | `summary` | Denormalized from LLM output — feeds `POST /lists/:id/overview` |
-| `note_path` | Absolute path to `~/.bibilab/notes/{video_id}.md` |
-| `transcript_path` | Absolute path to `~/.bibilab/transcripts/{video_id}.txt`, nullable |
+| `note_path` | Relative path from `~/.bibilab/`, e.g. `notes/{video_id}.md` |
+| `transcript_path` | Relative path from `~/.bibilab/`, e.g. `transcripts/{video_id}.txt`, nullable |
 | `whisper_model` | Model used for transcription |
 | `ai_model` | Model used for extraction |
 | `vision_enabled` | Boolean |
@@ -139,6 +139,7 @@ Three tables, three purposes:
 
 | Decision | Choice | Rationale |
 |---|---|---|
+| Path storage | Relative paths in DB, resolved at read time | Enables home directory migration without DB updates; legacy absolute paths in existing records are resolved directly (backward compatible) |
 | Note storage | Files in `~/.bibilab/notes/` | Decouples note lifecycle from DB; notes are human-readable, downloadable, and portable without DB access |
 | List storage | SQLite `lists` table | Natural source of truth for routing and list-level queries (overview, source count, ordering) |
 | Overview generation | On-demand via `POST /lists/:id/overview`, not in pipeline | Avoids silent LLM calls during ingestion; user controls when to generate |

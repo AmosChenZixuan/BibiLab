@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from bibilab.config import bibilab_home, relative_to_bibilab_home
+from bibilab.config import bibilab_home
 
 
 def get_db_path() -> Path:
@@ -107,6 +107,32 @@ async def bootstrap_db() -> None:
         db.execute(_CREATE_LISTS)
         db.execute(_CREATE_JOBS)
         db.execute(_CREATE_SOURCES)
+
+        # Migrate absolute paths to relative
+        home = bibilab_home()
+        for row in db.execute(
+            "SELECT video_id, note_path, transcript_path FROM sources"
+        ).fetchall():
+            video_id, note_path, transcript_path = row
+            new_note = None
+            new_transcript = None
+            if note_path:
+                p = Path(note_path)
+                if p.is_absolute():
+                    new_note = str(p.relative_to(home))
+            if transcript_path:
+                p = Path(transcript_path)
+                if p.is_absolute():
+                    new_transcript = str(p.relative_to(home))
+            if new_note or new_transcript:
+                db.execute(
+                    "UPDATE sources SET note_path = ?, transcript_path = ? WHERE video_id = ?",
+                    (
+                        new_note or note_path,
+                        new_transcript or transcript_path,
+                        video_id,
+                    ),
+                )
         db.commit()
 
 
@@ -192,18 +218,14 @@ async def write_source(
     list_id: str,
     title: str,
     summary: str,
-    note_path: Path,
-    transcript_path: Path | None,
+    note_path: str,
+    transcript_path: str | None,
     whisper_model: str,
     ai_model: str,
     vision_enabled: bool,
     settings_snapshot: dict[str, Any],
     cover_url: str | None = None,
 ) -> None:
-    # Convert paths to relative strings for storage
-    note_path_str = relative_to_bibilab_home(note_path)
-    transcript_path_str = relative_to_bibilab_home(transcript_path) if transcript_path else None
-
     async with get_db() as db:
         # Check if this is a new source
         existing = db.execute(
@@ -249,8 +271,8 @@ async def write_source(
                 list_id,
                 title,
                 summary,
-                note_path_str,
-                transcript_path_str,
+                note_path,
+                transcript_path,
                 whisper_model,
                 ai_model,
                 int(vision_enabled),
