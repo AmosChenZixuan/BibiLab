@@ -29,6 +29,12 @@ class AuthRequiredError(Exception):
         super().__init__(f"Authentication required for {resource_type!r}")
 
 
+class DownloadError(Exception):
+    def __init__(self, message: str) -> None:
+        self.message = message
+        super().__init__(message)
+
+
 class PlatformAdapter(ABC):
     @abstractmethod
     def resolve(self, url: str) -> VideoMeta | PlaylistMeta:

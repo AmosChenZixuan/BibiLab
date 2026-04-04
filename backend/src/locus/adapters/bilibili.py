@@ -8,6 +8,7 @@ import yt_dlp
 
 from locus.adapters.base import (
     AuthRequiredError,
+    DownloadError,
     PlatformAdapter,
     PlaylistMeta,
     VideoMeta,
@@ -21,6 +22,9 @@ _PLAYLIST_RE = re.compile(
     r"bilibili\.com/medialist|space\.bilibili\.com/\d+/channel", re.IGNORECASE
 )
 _COURSE_RE = re.compile(r"bilibili\.com/cheese", re.IGNORECASE)
+
+# Strip ANSI escape codes from yt_dlp output
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 
 
 def _resource_type(url: str) -> str:
@@ -69,16 +73,22 @@ class BilibiliAdapter(PlatformAdapter):
         opts = _ydl_opts(self._cookie)
 
         if rtype == "video":
-            with yt_dlp.YoutubeDL(opts) as ydl:
-                info = ydl.extract_info(url, download=False)
+            try:
+                with yt_dlp.YoutubeDL(opts) as ydl:
+                    info = ydl.extract_info(url, download=False)
+            except yt_dlp.utils.DownloadError as exc:
+                raise DownloadError(_ANSI_RE.sub("", str(exc))) from exc
             return _info_to_video_meta(info)
 
         # Playlist or course: use flat extraction to get the list of entries
         # without downloading metadata for each video individually.
         # Full per-video metadata is fetched lazily during the pipeline.
         flat_opts = {**opts, "extract_flat": True}
-        with yt_dlp.YoutubeDL(flat_opts) as ydl:
-            info = ydl.extract_info(url, download=False)
+        try:
+            with yt_dlp.YoutubeDL(flat_opts) as ydl:
+                info = ydl.extract_info(url, download=False)
+        except yt_dlp.utils.DownloadError as exc:
+            raise DownloadError(_ANSI_RE.sub("", str(exc))) from exc
 
         playlist_id = info.get("id", url)
         title = info.get("title", "Untitled Playlist")

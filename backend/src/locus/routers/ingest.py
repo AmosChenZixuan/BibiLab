@@ -2,7 +2,7 @@ import logging
 
 from fastapi import APIRouter, HTTPException
 
-from locus.adapters.base import AuthRequiredError, VideoMeta
+from locus.adapters.base import AuthRequiredError, DownloadError, VideoMeta
 from locus.adapters.bilibili import BilibiliAdapter
 from locus.config import load_config
 from locus.db import create_job, get_list, get_processed_video_ids
@@ -44,6 +44,11 @@ async def ingest_url(req: IngestUrlRequest, rerun: bool = False) -> IngestUrlRes
         raise HTTPException(
             status_code=401,
             detail={"message": "Authentication required", "resource_type": exc.resource_type},
+        ) from exc
+    except DownloadError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail={"message": exc.message},
         ) from exc
 
     videos = [result] if isinstance(result, VideoMeta) else result.videos

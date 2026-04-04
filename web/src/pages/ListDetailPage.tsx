@@ -471,6 +471,7 @@ function SourcesListMode({
   onOpenSource: (source: Source) => void;
 }) {
   const [url, setUrl] = useState("");
+  const [error, setError] = useState<string | null>(null);
   const { dismissJob, getJobs, trackJobs } = useJobActivity();
   const ingestJobs = getJobs("ingest", listId);
   const refreshedJobsRef = useRef<string[]>([]);
@@ -516,6 +517,7 @@ function SourcesListMode({
     const trimmed = url.trim();
     if (!trimmed) return;
     setUrl("");
+    setError(null);
     try {
       const result = await api.ingestUrl(listId, trimmed, false);
       trackJobs(
@@ -526,8 +528,9 @@ function SourcesListMode({
           contextKey: listId,
         })),
       );
-    } catch {
-      // Error handled by parent if needed
+    } catch (err) {
+      setUrl(trimmed);
+      setError(err instanceof Error ? err.message : "Failed to submit URL");
     }
   }
 
@@ -556,7 +559,10 @@ function SourcesListMode({
           <input
             type="text"
             value={url}
-            onChange={(e) => setUrl(e.target.value)}
+            onChange={(e) => {
+              setUrl(e.target.value);
+              setError(null);
+            }}
             placeholder="Paste a Bilibili URL…"
             className="w-full rounded-full border border-border bg-white/80 py-2.5 pr-10 pl-4 text-sm text-ink placeholder:text-muted/50 outline-none focus:border-blue/40 focus:bg-white transition"
           />
@@ -569,6 +575,7 @@ function SourcesListMode({
             <MdArrowForward size={15} />
           </button>
         </form>
+        {error && <p className="mt-1.5 px-4 text-xs text-rose-700">{error}</p>}
       </div>
 
       <div className="flex-1 space-y-2 overflow-y-auto px-4 pb-4">
