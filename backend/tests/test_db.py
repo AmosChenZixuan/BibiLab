@@ -69,14 +69,20 @@ async def test_write_and_get_source(tmp_bibilab_home: Path):
 
     await bootstrap_db()
     await create_list("list-1", "ML Course", "2026-01-01T00:00:00")
+    note_file = tmp_bibilab_home / "notes" / "BV1abc.md"
+    note_file.parent.mkdir(parents=True, exist_ok=True)
+    note_file.write_text("# Intro to ML\n\nA great intro.", encoding="utf-8")
+    transcript_file = tmp_bibilab_home / "transcripts" / "BV1abc.txt"
+    transcript_file.parent.mkdir(parents=True, exist_ok=True)
+    transcript_file.write_text("Intro to ML transcript.", encoding="utf-8")
     await write_source(
         video_id="BV1abc",
         platform="bilibili",
         list_id="list-1",
         title="Intro to ML",
         summary="A great intro.",
-        note_path="/home/user/.bibilab/notes/BV1abc.md",
-        transcript_path="/home/user/.bibilab/transcripts/BV1abc.txt",
+        note_path=note_file,
+        transcript_path=transcript_file,
         whisper_model="large-v3",
         ai_model="gpt-4o",
         vision_enabled=False,
@@ -101,13 +107,16 @@ async def test_delete_source(tmp_bibilab_home: Path):
 
     await bootstrap_db()
     await create_list("list-1", "ML Course", "2026-01-01T00:00:00")
+    note_file = tmp_bibilab_home / "notes" / "BV1abc.md"
+    note_file.parent.mkdir(parents=True, exist_ok=True)
+    note_file.write_text("# Note", encoding="utf-8")
     await write_source(
         video_id="BV1abc",
         platform="bilibili",
         list_id="list-1",
         title="T",
         summary="S",
-        note_path="/tmp/note.md",
+        note_path=note_file,
         transcript_path=None,
         whisper_model="large-v3",
         ai_model="gpt-4o",
@@ -125,13 +134,16 @@ async def test_get_sources_for_list(tmp_bibilab_home: Path):
     await bootstrap_db()
     await create_list("list-1", "ML Course", "2026-01-01T00:00:00")
     for vid in ("BV1a", "BV1b"):
+        note_file = tmp_bibilab_home / "notes" / f"{vid}.md"
+        note_file.parent.mkdir(parents=True, exist_ok=True)
+        note_file.write_text(f"# {vid}", encoding="utf-8")
         await write_source(
             video_id=vid,
             platform="bilibili",
             list_id="list-1",
             title=vid,
             summary="",
-            note_path=f"/tmp/{vid}.md",
+            note_path=note_file,
             transcript_path=None,
             whisper_model="large-v3",
             ai_model="gpt-4o",

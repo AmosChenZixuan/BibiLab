@@ -54,7 +54,7 @@ async def test_ingest_dedup(client: httpx.AsyncClient, mock_ydl_single, tmp_bibi
         list_id="list-1",
         title="T",
         summary="S",
-        note_path="/tmp/note.md",
+        note_path=tmp_bibilab_home / "notes" / "BV1abc123.md",
         transcript_path=None,
         whisper_model="large-v3",
         ai_model="gpt-4o",
@@ -86,7 +86,7 @@ async def test_ingest_rerun_bypasses_dedup(
         list_id="list-1",
         title="T",
         summary="S",
-        note_path="/tmp/note.md",
+        note_path=tmp_bibilab_home / "notes" / "BV1abc123.md",
         transcript_path=None,
         whisper_model="large-v3",
         ai_model="gpt-4o",
@@ -117,3 +117,32 @@ async def test_ingest_rerun_endpoint_removed(client: httpx.AsyncClient):
     """The old /ingest/rerun/{video_id} endpoint must no longer exist."""
     resp = await client.post("/ingest/rerun/BV1abc123")
     assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_write_source_stores_relative_paths(tmp_bibilab_home: Path):
+    """After write_source, note_path and transcript_path are stored as relative paths."""
+    from bibilab.db import bootstrap_db, create_list, get_source, write_source
+
+    await bootstrap_db()
+    await create_list("list-1", "Test", "2026-01-01T00:00:00")
+
+    # Call write_source (the DB write happens here)
+    await write_source(
+        video_id="BV1relative",
+        platform="bilibili",
+        list_id="list-1",
+        title="Test",
+        summary="Test summary.",
+        note_path=tmp_bibilab_home / "notes" / "BV1relative.md",
+        transcript_path=tmp_bibilab_home / "transcripts" / "BV1relative.txt",
+        whisper_model="large-v3",
+        ai_model="gpt-4o",
+        vision_enabled=False,
+        settings_snapshot={},
+    )
+
+    # Read back and verify paths are stored as relative
+    row = await get_source("BV1relative")
+    assert row["note_path"] == "notes/BV1relative.md"
+    assert row["transcript_path"] == "transcripts/BV1relative.txt"

@@ -10,6 +10,17 @@ def bibilab_home() -> Path:
     return Path.home() / ".bibilab"
 
 
+def resolve_storage_path(stored: str) -> Path:
+    path = Path(stored)
+    if path.is_absolute():
+        return path
+    return bibilab_home() / stored
+
+
+def relative_to_bibilab_home(absolute: Path) -> str:
+    return str(absolute.relative_to(bibilab_home()))
+
+
 def _config_path() -> Path:
     return bibilab_home() / "config.json"
 

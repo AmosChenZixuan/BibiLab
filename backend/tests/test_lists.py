@@ -59,7 +59,7 @@ async def test_get_lists_returns_thumbnail_fields_and_prefers_cached_cover(
         list_id=list_id,
         title="Episode 1",
         summary="A summary.",
-        note_path=str(tmp_bibilab_home / "notes" / "BV1cover.md"),
+        note_path=tmp_bibilab_home / "notes" / "BV1cover.md",
         transcript_path=None,
         whisper_model="large-v3",
         ai_model="gpt-4o",
@@ -141,13 +141,16 @@ async def test_get_list_sources(client: httpx.AsyncClient, tmp_bibilab_home: Pat
     from bibilab.db import write_source
 
     list_id = (await client.post("/lists", json={"name": "ML"})).json()["id"]
+    note_file = tmp_bibilab_home / "notes" / "BV1abc.md"
+    note_file.parent.mkdir(parents=True, exist_ok=True)
+    note_file.write_text("# Note", encoding="utf-8")
     await write_source(
         video_id="BV1abc",
         platform="bilibili",
         list_id=list_id,
         title="Intro",
         summary="A summary.",
-        note_path="/tmp/BV1abc.md",
+        note_path=note_file,
         transcript_path=None,
         whisper_model="large-v3",
         ai_model="gpt-4o",
@@ -169,7 +172,8 @@ async def test_delete_source_from_list(
     from bibilab.db import get_source, write_source
 
     list_id = (await client.post("/lists", json={"name": "ML"})).json()["id"]
-    note_file = tmp_path / "BV1abc.md"
+    note_file = tmp_bibilab_home / "notes" / "BV1abc.md"
+    note_file.parent.mkdir(parents=True, exist_ok=True)
     note_file.write_text("# Note", encoding="utf-8")
     await write_source(
         video_id="BV1abc",
@@ -177,7 +181,7 @@ async def test_delete_source_from_list(
         list_id=list_id,
         title="Intro",
         summary="S",
-        note_path=str(note_file),
+        note_path=note_file,
         transcript_path=None,
         whisper_model="large-v3",
         ai_model="gpt-4o",
@@ -200,7 +204,8 @@ async def test_delete_source_clears_thumbnail_and_cover(
     from bibilab.db import get_list, write_source
 
     list_id = (await client.post("/lists", json={"name": "ML"})).json()["id"]
-    note_file = tmp_path / "BV1abc.md"
+    note_file = tmp_bibilab_home / "notes" / "BV1abc.md"
+    note_file.parent.mkdir(parents=True, exist_ok=True)
     note_file.write_text("# Note", encoding="utf-8")
     await write_source(
         video_id="BV1abc",
@@ -208,7 +213,7 @@ async def test_delete_source_clears_thumbnail_and_cover(
         list_id=list_id,
         title="Intro",
         summary="S",
-        note_path=str(note_file),
+        note_path=note_file,
         transcript_path=None,
         whisper_model="large-v3",
         ai_model="gpt-4o",
@@ -257,7 +262,7 @@ async def test_first_source_auto_assigned_as_thumbnail(
         list_id=list_id,
         title="First Video",
         summary="S",
-        note_path=str(tmp_bibilab_home / "notes" / "BVfirst.md"),
+        note_path=tmp_bibilab_home / "notes" / "BVfirst.md",
         transcript_path=None,
         whisper_model="large-v3",
         ai_model="gpt-4o",

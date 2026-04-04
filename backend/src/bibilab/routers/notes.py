@@ -1,8 +1,7 @@
-from pathlib import Path
-
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
 
+from bibilab.config import resolve_storage_path
 from bibilab.db import get_source
 from bibilab.models.notes import NoteContentResponse, NoteTranscriptResponse
 
@@ -14,7 +13,7 @@ async def get_note_content(video_id: str) -> NoteContentResponse:
     source = await get_source(video_id)
     if source is None:
         raise HTTPException(status_code=404, detail="Note not found")
-    path = Path(source["note_path"])
+    path = resolve_storage_path(source["note_path"])
     if not path.exists():
         raise HTTPException(status_code=404, detail="Note file not found on disk")
     return NoteContentResponse(
@@ -31,7 +30,7 @@ async def get_note_transcript(video_id: str) -> NoteTranscriptResponse:
         raise HTTPException(status_code=404, detail="Note not found")
     if not source["transcript_path"]:
         raise HTTPException(status_code=404, detail="No transcript for this note")
-    path = Path(source["transcript_path"])
+    path = resolve_storage_path(source["transcript_path"])
     if not path.exists():
         raise HTTPException(status_code=404, detail="Transcript file not found on disk")
     return NoteTranscriptResponse(
@@ -46,7 +45,7 @@ async def get_note_attachment(video_id: str, path: str):
     source = await get_source(video_id)
     if source is None:
         raise HTTPException(status_code=404, detail="Note not found")
-    note_path = Path(source["note_path"])
+    note_path = resolve_storage_path(source["note_path"])
     # attachments/ is a sibling of the note file
     attachment_path = note_path.parent / "attachments" / path
     if not attachment_path.exists() or not attachment_path.is_file():

@@ -11,7 +11,8 @@ async def test_get_note_content(client: httpx.AsyncClient, tmp_bibilab_home: Pat
     await bootstrap_db()
     await create_list("list-1", "ML", "2026-01-01T00:00:00")
 
-    note_file = tmp_path / "BV1abc.md"
+    note_file = tmp_bibilab_home / "notes" / "BV1abc.md"
+    note_file.parent.mkdir(parents=True, exist_ok=True)
     note_file.write_text("# Intro to ML\n\n## Summary\nGreat video.", encoding="utf-8")
 
     await write_source(
@@ -20,7 +21,7 @@ async def test_get_note_content(client: httpx.AsyncClient, tmp_bibilab_home: Pat
         list_id="list-1",
         title="Intro to ML",
         summary="Great video.",
-        note_path=str(note_file),
+        note_path=note_file,
         transcript_path=None,
         whisper_model="large-v3",
         ai_model="gpt-4o",
@@ -51,9 +52,11 @@ async def test_get_transcript(client: httpx.AsyncClient, tmp_bibilab_home: Path,
     await bootstrap_db()
     await create_list("list-1", "ML", "2026-01-01T00:00:00")
 
-    note_file = tmp_path / "BV1abc.md"
+    note_file = tmp_bibilab_home / "notes" / "BV1abc.md"
+    note_file.parent.mkdir(parents=True, exist_ok=True)
     note_file.write_text("# Note", encoding="utf-8")
-    transcript_file = tmp_path / "BV1abc.txt"
+    transcript_file = tmp_bibilab_home / "transcripts" / "BV1abc.txt"
+    transcript_file.parent.mkdir(parents=True, exist_ok=True)
     transcript_file.write_text("[00:00:01] Hello world", encoding="utf-8")
 
     await write_source(
@@ -62,8 +65,8 @@ async def test_get_transcript(client: httpx.AsyncClient, tmp_bibilab_home: Path,
         list_id="list-1",
         title="T",
         summary="S",
-        note_path=str(note_file),
-        transcript_path=str(transcript_file),
+        note_path=note_file,
+        transcript_path=transcript_file,
         whisper_model="large-v3",
         ai_model="gpt-4o",
         vision_enabled=False,

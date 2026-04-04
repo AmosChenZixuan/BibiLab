@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from bibilab.config import bibilab_home
+from bibilab.config import bibilab_home, relative_to_bibilab_home
 
 
 def get_db_path() -> Path:
@@ -192,14 +192,18 @@ async def write_source(
     list_id: str,
     title: str,
     summary: str,
-    note_path: str,
-    transcript_path: str | None,
+    note_path: Path,
+    transcript_path: Path | None,
     whisper_model: str,
     ai_model: str,
     vision_enabled: bool,
     settings_snapshot: dict[str, Any],
     cover_url: str | None = None,
 ) -> None:
+    # Convert paths to relative strings for storage
+    note_path_str = relative_to_bibilab_home(note_path)
+    transcript_path_str = relative_to_bibilab_home(transcript_path) if transcript_path else None
+
     async with get_db() as db:
         # Check if this is a new source
         existing = db.execute(
@@ -245,8 +249,8 @@ async def write_source(
                 list_id,
                 title,
                 summary,
-                note_path,
-                transcript_path,
+                note_path_str,
+                transcript_path_str,
                 whisper_model,
                 ai_model,
                 int(vision_enabled),

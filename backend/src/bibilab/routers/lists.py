@@ -6,7 +6,7 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse
 
-from bibilab.config import load_config
+from bibilab.config import load_config, resolve_storage_path
 from bibilab.db import (
     create_list as db_create_list,
 )
@@ -150,7 +150,7 @@ async def delete_list(list_id: str) -> None:
 
     sources = await get_sources_for_list(list_id)
     for source in sources:
-        Path(source["note_path"]).unlink(missing_ok=True)
+        resolve_storage_path(source["note_path"]).unlink(missing_ok=True)
         _cached_cover_path(source["video_id"]).unlink(missing_ok=True)
 
     await delete_sources_for_list(list_id)
@@ -169,7 +169,7 @@ async def get_list_sources(list_id: str) -> list[SourceResponse]:
             video_id=r["video_id"],
             platform=r["platform"],
             title=r["title"],
-            note_path=r["note_path"],
+            note_path=str(resolve_storage_path(r["note_path"])),
             processed_at=r["processed_at"] or "",
         )
         for r in rows
@@ -186,7 +186,7 @@ async def delete_list_source(list_id: str, video_id: str) -> None:
     if row is not None and row["thumbnail_source_id"] == video_id:
         await update_list_thumbnail(list_id, None)
 
-    Path(source["note_path"]).unlink(missing_ok=True)
+    resolve_storage_path(source["note_path"]).unlink(missing_ok=True)
     cfg = load_config()
     await asyncio.to_thread(clear_embeddings_for_video, video_id, cfg)
     await delete_source(video_id)
