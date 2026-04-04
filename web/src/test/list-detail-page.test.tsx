@@ -119,6 +119,12 @@ vi.mock("../lib/api", () => ({
     updateList: vi.fn().mockImplementation((_listId: string, _patch: object) =>
       Promise.resolve({ ...state.renameResult }),
     ),
+    getNoteContent: vi.fn().mockResolvedValue({
+      markdown: "# Key Insights\n\nSome content here",
+    }),
+    getNoteTranscript: vi.fn().mockResolvedValue({
+      transcript: "This is the transcript text...",
+    }),
   },
   toErrorMessage: vi.fn((e: unknown) => (e instanceof Error ? e.message : String(e))),
 }));
@@ -258,5 +264,65 @@ describe("list detail page", () => {
       url: "https://www.bilibili.com/video/BV1old",
       rerun: true,
     });
+  });
+
+  test("opens viewer on source click, lazy-loads transcript, close returns to list", async () => {
+    state.sources = [
+      {
+        video_id: "BV1old",
+        platform: "bilibili",
+        title: "Existing Source",
+        note_path: "/tmp/BV1old.md",
+        processed_at: "2026-03-31T20:00:00Z",
+      },
+    ];
+    makeMockFetch();
+    vi.mocked(api.listSources).mockResolvedValue([...state.sources]);
+    vi.mocked(api.getNoteContent).mockResolvedValue({
+      video_id: "BV1old",
+      title: "Existing Source",
+      markdown: "# Key Insights\n\nSome content here",
+    });
+    vi.mocked(api.getNoteTranscript).mockResolvedValue({
+      video_id: "BV1old",
+      text: "This is the transcript text...",
+    });
+
+    const router = createMemoryRouter(routes, { initialEntries: ["/lists/list-1"] });
+    render(<RouterProvider router={router} />);
+
+    // 1. Source row button is visible
+    const sourceBtn = await screen.findByRole("button", { name: /open existing source/i });
+    expect(sourceBtn).toBeInTheDocument();
+
+    // 2. Clicking fires GET /api/notes/{video_id}/content
+    await userEvent.click(sourceBtn);
+    expect(api.getNoteContent).toHaveBeenCalledWith("BV1old");
+
+    // 3. Panel switches to viewer mode — source title in viewer header, source rows gone
+    expect(await screen.findByText("Existing Source")).toBeInTheDocument(); // viewer header title
+    expect(screen.queryByRole("button", { name: /open existing source/i })).not.toBeInTheDocument();
+
+    // 4. NoteAccordion renders with "Note" header (collapsed by default)
+    const noteAccordion = screen.getByRole("button", { name: /^note$/i });
+    expect(noteAccordion).toBeInTheDocument();
+    // Note content is not yet visible (collapsed)
+    expect(screen.queryByText(/Key Insights/i)).not.toBeInTheDocument();
+
+    // 5. Clicking "Note" header expands it and shows markdown text
+    await userEvent.click(noteAccordion);
+    // Wait for the accordion to expand and show content
+    await expect.poll(() => screen.queryByText(/Key Insights/i)).toBeInTheDocument();
+
+    // 6. Transcript auto-loaded when viewer opened (no "Load transcript" button)
+    expect(api.getNoteTranscript).toHaveBeenCalledWith("BV1old");
+    // Transcript text appears directly (no button needed)
+    expect(await screen.findByText("This is the transcript text...")).toBeInTheDocument();
+    // "Transcript" label is visible
+    expect(screen.getByText(/^transcript$/i)).toBeInTheDocument();
+
+    // 8. Close button returns to list mode
+    await userEvent.click(screen.getByRole("button", { name: /close viewer/i }));
+    expect(screen.getByRole("button", { name: /open existing source/i })).toBeInTheDocument();
   });
 });

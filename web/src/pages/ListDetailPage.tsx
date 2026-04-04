@@ -11,6 +11,7 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import { useParams } from "react-router-dom";
+import ReactMarkdown from "react-markdown";
 import {
   MdChevronLeft,
   MdChevronRight,
@@ -20,12 +21,14 @@ import {
   MdClose,
   MdArrowForward,
   MdErrorOutline,
+  MdExpandLess,
+  MdExpandMore,
 } from "react-icons/md";
 
 import { ContextMenu } from "../components/ui/ContextMenu";
 import { useJobActivity } from "../components/jobs/JobActivityProvider";
 import { api, toErrorMessage } from "../lib/api";
-import type { Source } from "../lib/types";
+import type { NoteContent, Source } from "../lib/types";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -459,6 +462,87 @@ function IngestingSourceRow({
   );
 }
 
+// ─── Note accordion ───────────────────────────────────────────────────────────
+
+function NoteAccordion({ markdown }: { markdown: string }) {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <div className="overflow-hidden rounded-2xl border border-border bg-blue/25">
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        className="flex w-full items-center justify-between gap-3 border-0 bg-transparent px-4 py-3.5 text-left transition hover:bg-sky/6"
+      >
+        <span className="text-sm font-semibold text-ink">Note</span>
+        {expanded
+          ? <MdExpandLess size={18} className="shrink-0 text-muted" />
+          : <MdExpandMore size={18} className="shrink-0 text-muted" />}
+      </button>
+      {expanded && (
+        <div className="border-t border-border px-4 py-4 space-y-2 text-sm text-muted [&_p]:text-sm [&_p]:text-muted [&_p]:leading-relaxed [&_p]:mb-2 [&_strong]:font-semibold [&_strong]:text-ink [&_h1]:text-sm [&_h1]:font-semibold [&_h1]:text-ink [&_h2]:text-xs [&_h2]:font-semibold [&_h2]:text-muted [&_h2]:uppercase [&_h2]:tracking-wider [&_ul]:pl-4 [&_ul]:space-y-1 [&_li]:text-sm [&_li]:text-muted [&_blockquote]:border-l-2 [&_blockquote]:border-blue/25 [&_blockquote]:pl-3 [&_blockquote]:italic [&_img]:max-w-full [&_img]:rounded-lg [&_img]:my-2">
+          <ReactMarkdown>{markdown}</ReactMarkdown>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Sources viewer mode ───────────────────────────────────────────────────────
+
+function SourcesViewerMode({
+  source,
+  note,
+  transcript,
+  transcriptError,
+  onClose,
+}: {
+  source: Source;
+  note: NoteContent | null;
+  transcript: string | null;
+  transcriptError: string | null;
+  onClose: () => void;
+}) {
+  return (
+    <div className="flex h-full flex-col">
+      {/* Header */}
+      <div className="flex shrink-0 items-start gap-3 border-b border-border px-4 py-4">
+        <button
+          type="button"
+          onClick={onClose}
+          className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-muted transition hover:bg-border hover:text-ink"
+          aria-label="Close viewer"
+        >
+          <MdClose size={16} />
+        </button>
+        <div className="min-w-0 flex-1">
+          <p className="m-0 truncate text-sm font-medium text-ink">{source.title}</p>
+          <p className="m-0 mt-0.5 text-xs text-muted">{source.platform}</p>
+        </div>
+      </div>
+
+      {/* Doc viewer — scrollable */}
+      <div className="flex-1 space-y-3 overflow-y-auto px-4 py-4">
+        {note && <NoteAccordion markdown={note.markdown} />}
+
+        {/* Transcript — auto-loaded, shown directly */}
+        <div className="space-y-2">
+          {transcriptError && (
+            <p className="text-xs text-rose-700">{transcriptError}</p>
+          )}
+          {transcript && (
+            <>
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted/70">Transcript</p>
+              <pre className="p-1 m-0 whitespace-pre-wrap font-mono text-xs text-muted leading-relaxed">
+                {transcript}
+              </pre>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Sources list mode ─────────────────────────────────────────────────────────
 
 function SourcesListMode({
@@ -610,6 +694,9 @@ export function ListDetailPage() {
   const [listName, setListName] = useState("");
   const [sources, setSources] = useState<Source[]>([]);
   const [detailSource, setDetailSource] = useState<Source | null>(null);
+  const [note, setNote] = useState<NoteContent | null>(null);
+  const [transcript, setTranscript] = useState<string | null>(null);
+  const [transcriptError, setTranscriptError] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [sourcesCollapsed, setSourcesCollapsed] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -645,6 +732,25 @@ export function ListDetailPage() {
 
   function handleOpenSource(source: Source) {
     setDetailSource(source);
+    setNote(null);
+    setTranscript(null);
+    setTranscriptError(null);
+    // Load note and transcript in parallel; rewrite relative image URLs to absolute API paths
+    void api.getNoteContent(source.video_id).then((note) => {
+      const rewritten = note.markdown.replace(
+        /!\[([^\]]*)\]\(([^)]+)\)/g,
+        (_match: string, alt: string, src: string) => {
+          if (src.startsWith("http://") || src.startsWith("https://")) return _match;
+          // src is relative to the attachments dir, e.g. "attachments/foo.jpg" → strip prefix
+          const file = src.replace(/^attachments\//, "");
+          return `![${alt}](/api/notes/${source.video_id}/attachments/${file})`;
+        },
+      );
+      setNote({ ...note, markdown: rewritten });
+    }).catch(() => setNote({ video_id: source.video_id, title: source.title, markdown: "" }));
+    void api.getNoteTranscript(source.video_id)
+      .then((res) => { setTranscript(res.text); })
+      .catch(() => { setTranscriptError("Failed to load transcript"); });
   }
 
   async function handleRenameCommit(newName: string) {
@@ -693,6 +799,14 @@ export function ListDetailPage() {
             <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
               {loadError ? (
                 <p className="m-0 px-4 py-3 text-sm text-rose-900">{loadError}</p>
+              ) : detailSource ? (
+                <SourcesViewerMode
+                  source={detailSource}
+                  note={note}
+                  transcript={transcript}
+                  transcriptError={transcriptError}
+                  onClose={() => setDetailSource(null)}
+                />
               ) : (
                 <SourcesListMode
                   listId={listId}
