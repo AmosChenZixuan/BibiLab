@@ -1,287 +1,296 @@
-import { useEffect, useRef, useState } from "react";
+/**
+ * ListDetailPage — redesign per docs/specs/2026-04-03-list-detail-redesign.md
+ *
+ * Slice 1: Page shell, resize, skeleton panels.
+ * Chat and Lab panels render as skeletons. Sources panel shows its header and
+ * collapse toggle with an empty body. No API wiring yet.
+ */
+
+import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import { useParams } from "react-router-dom";
+import { MdChevronLeft, MdChevronRight } from "react-icons/md";
 
-import { ChatPanel } from "../components/chat/ChatPanel";
-import { useJobActivity } from "../components/jobs/JobActivityProvider";
-import { StudioPanel } from "../components/studio/StudioPanel";
-import { SourcesPanel } from "../components/sources/SourcesPanel";
-import { api, toErrorMessage } from "../lib/api";
-import { downloadTextFile } from "../lib/download";
-import type { NoteContent, Source } from "../lib/types";
-import { Button, Panel, PanelBody, PanelTitle } from "../components/ui";
+// ─── Constants ────────────────────────────────────────────────────────────────
 
-function formatCount(count: number, noun: string): string {
-  return `${count} ${noun}${count === 1 ? "" : "s"}`;
+const MIN_PANEL = 280;
+const COLLAPSED_PANEL = 48;
+const RESIZER_SIZE = 16;
+
+// ─── Panel resize manager ─────────────────────────────────────────────────────
+
+type ActiveResizer = "left" | "right" | null;
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
 }
+
+function getResizableWorkspaceWidth(containerWidth: number) {
+  return Math.max(0, containerWidth - RESIZER_SIZE * 2);
+}
+
+function getContainerContentWidth(
+  containerWidth: number,
+  paddingLeft: number,
+  paddingRight: number,
+) {
+  return Math.max(0, containerWidth - paddingLeft - paddingRight);
+}
+
+function clampSourcesWidth(
+  nextWidth: number,
+  workspaceWidth: number,
+  labWidth: number,
+  sourcesMinWidth: number,
+) {
+  const maxWidth = Math.max(sourcesMinWidth, workspaceWidth - labWidth - MIN_PANEL);
+  return clamp(nextWidth, sourcesMinWidth, maxWidth);
+}
+
+function clampLabWidth(nextWidth: number, workspaceWidth: number, sourcesWidth: number) {
+  const maxWidth = Math.max(MIN_PANEL, workspaceWidth - sourcesWidth - MIN_PANEL);
+  return clamp(nextWidth, MIN_PANEL, maxWidth);
+}
+
+function initialEqualPanelW() {
+  return Math.floor((window.innerWidth - 32 - RESIZER_SIZE * 2) / 3);
+}
+
+function usePanelResize(
+  containerRef: RefObject<HTMLDivElement | null>,
+  sourcesCollapsed: boolean,
+) {
+  const [sourcesW, setSourcesW] = useState(initialEqualPanelW);
+  const [labW, setLabW] = useState(initialEqualPanelW);
+  const [containerContentWidth, setContainerContentWidth] = useState(0);
+
+  const active = useRef<ActiveResizer>(null);
+  const startX = useRef(0);
+  const startSourcesW = useRef(288);
+  const startLabW = useRef(288);
+
+  const sourcesWRef = useRef(sourcesW);
+  const labWRef = useRef(labW);
+  sourcesWRef.current = sourcesW;
+  labWRef.current = labW;
+
+  const onMouseDownLeft = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    active.current = "left";
+    startX.current = e.clientX;
+    startSourcesW.current = sourcesWRef.current;
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+  }, []);
+
+  const onMouseDownRight = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    active.current = "right";
+    startX.current = e.clientX;
+    startLabW.current = labWRef.current;
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+  }, []);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const element = container;
+
+    function measure() {
+      const styles = window.getComputedStyle(element);
+      setContainerContentWidth(
+        getContainerContentWidth(
+          element.clientWidth,
+          Number.parseFloat(styles.paddingLeft) || 0,
+          Number.parseFloat(styles.paddingRight) || 0,
+        ),
+      );
+    }
+
+    measure();
+
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    window.addEventListener("resize", measure);
+
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", measure);
+    };
+  }, [containerRef]);
+
+  useEffect(() => {
+    const workspaceWidth = getResizableWorkspaceWidth(containerContentWidth);
+    if (!workspaceWidth) return;
+
+    const sourcesMinWidth = sourcesCollapsed ? COLLAPSED_PANEL : MIN_PANEL;
+    const nextSourcesW = clampSourcesWidth(sourcesW, workspaceWidth, labW, sourcesMinWidth);
+    const nextLabW = clampLabWidth(labW, workspaceWidth, nextSourcesW);
+
+    if (nextSourcesW !== sourcesW) {
+      setSourcesW(nextSourcesW);
+    }
+
+    if (nextLabW !== labW) {
+      setLabW(nextLabW);
+    }
+  }, [containerContentWidth, labW, sourcesCollapsed, sourcesW]);
+
+  useEffect(() => {
+    function onMove(e: MouseEvent) {
+      if (!active.current) return;
+      const delta = e.clientX - startX.current;
+      const workspaceWidth = getResizableWorkspaceWidth(containerContentWidth);
+      if (!workspaceWidth) return;
+      const sourcesMinWidth = sourcesCollapsed ? COLLAPSED_PANEL : MIN_PANEL;
+
+      if (active.current === "left") {
+        setSourcesW(
+          clampSourcesWidth(
+            startSourcesW.current + delta,
+            workspaceWidth,
+            labWRef.current,
+            sourcesMinWidth,
+          ),
+        );
+      } else {
+        setLabW(
+          clampLabWidth(
+            startLabW.current - delta,
+            workspaceWidth,
+            sourcesCollapsed ? COLLAPSED_PANEL : sourcesWRef.current,
+          ),
+        );
+      }
+    }
+
+    function onUp() {
+      if (!active.current) return;
+      active.current = null;
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    }
+
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+  }, [containerContentWidth, sourcesCollapsed]);
+
+  const workspaceWidth = getResizableWorkspaceWidth(containerContentWidth);
+  const sourcesWidth = sourcesCollapsed ? COLLAPSED_PANEL : sourcesW;
+  const chatW = Math.max(MIN_PANEL, workspaceWidth - sourcesWidth - labW);
+
+  return { sourcesW, labW, chatW, onMouseDownLeft, onMouseDownRight };
+}
+
+// ─── Resizer handle ───────────────────────────────────────────────────────────
+
+function Resizer({ onMouseDown }: { onMouseDown: (e: React.MouseEvent) => void }) {
+  return (
+    <div
+      className="shrink-0 cursor-col-resize self-stretch"
+      style={{ width: `${RESIZER_SIZE}px` }}
+      onMouseDown={onMouseDown}
+    />
+  );
+}
+
+// ─── Skeleton panel ──────────────────────────────────────────────────────────
+
+function SkeletonPanel({ title, note }: { title: string; note: string }) {
+  return (
+    <div className="flex h-full flex-col">
+      <div className="shrink-0 border-b border-border px-5 py-4">
+        <h2 className="m-0 font-serif text-lg text-ink">{title}</h2>
+      </div>
+      <div className="flex flex-1 flex-col items-center justify-center gap-4 px-6 py-8">
+        <div className="w-full space-y-2.5">
+          <div className="h-2.5 w-5/6 rounded-full bg-linear-to-r from-pink/12 to-sky/12" />
+          <div className="h-2.5 rounded-full bg-linear-to-r from-pink/12 to-sky/12" />
+          <div className="h-2.5 w-2/3 rounded-full bg-linear-to-r from-pink/12 to-sky/12" />
+        </div>
+        <p className="m-0 text-center text-sm text-muted/80">{note}</p>
+      </div>
+    </div>
+  );
+}
+
+// ─── Page ─────────────────────────────────────────────────────────────────────
 
 export function ListDetailPage() {
   const { listId = "" } = useParams();
-  const { dismissJob, getJobs, trackJobs } = useJobActivity();
-  const [listName, setListName] = useState("List workspace");
-  const [sources, setSources] = useState<Source[]>([]);
-  const [detailSource, setDetailSource] = useState<Source | null>(null);
-  const [note, setNote] = useState<NoteContent | null>(null);
-  const [transcript, setTranscript] = useState<string | null>(null);
-  const [transcriptLoading, setTranscriptLoading] = useState(false);
-  const [transcriptError, setTranscriptError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"note" | "transcript">("note");
-  const [ingestBusy, setIngestBusy] = useState(false);
-  const [ingestError, setIngestError] = useState<string | null>(null);
-  const [ingestStatus, setIngestStatus] = useState<string | null>(null);
-  const [studioBusy, setStudioBusy] = useState(false);
-  const [studioError, setStudioError] = useState<string | null>(null);
-  const [studioStatus, setStudioStatus] = useState<string | null>(null);
-  const [editingName, setEditingName] = useState(false);
-  const [draftName, setDraftName] = useState("");
-  const [renameError, setRenameError] = useState<string | null>(null);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const ingestJobs = getJobs("ingest", listId);
-  const refreshedCompletedJobsRef = useRef<string[]>([]);
+  const [sourcesCollapsed, setSourcesCollapsed] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    const completedJobIds = ingestJobs
-      .filter((job) => job.isTerminal && job.job.status === "done")
-      .map((job) => job.job.id)
-      .filter((jobId) => !refreshedCompletedJobsRef.current.includes(jobId));
+  const { sourcesW, labW, chatW, onMouseDownLeft, onMouseDownRight } = usePanelResize(
+    containerRef,
+    sourcesCollapsed,
+  );
 
-    if (completedJobIds.length === 0) {
-      return;
-    }
+  // Placeholder: list name loaded in Slice 2, sources loaded in Slice 3
+  void listId;
 
-    let cancelled = false;
-
-    async function refreshSources() {
-      try {
-        const nextSources = await api.listSources(listId);
-        if (!cancelled) {
-          refreshedCompletedJobsRef.current = [...refreshedCompletedJobsRef.current, ...completedJobIds];
-          setSources(nextSources);
-          for (const id of completedJobIds) {
-            void dismissJob(id);
-          }
-        }
-      } catch (error) {
-        if (!cancelled) {
-          setLoadError(toErrorMessage(error));
-        }
-      }
-    }
-
-    void refreshSources();
-    return () => {
-      cancelled = true;
-    };
-  }, [ingestJobs, listId]);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function load() {
-      try {
-        const [lists, nextSources] = await Promise.all([api.listLists(), api.listSources(listId)]);
-        if (cancelled) {
-          return;
-        }
-        const currentName = lists.find((entry) => entry.id === listId)?.name ?? "List workspace";
-        setListName(currentName);
-        setDraftName(currentName);
-        setSources(nextSources);
-        setLoadError(null);
-      } catch (error) {
-        if (!cancelled) {
-          setLoadError(toErrorMessage(error));
-        }
-      }
-    }
-
-    void load();
-    return () => {
-      cancelled = true;
-    };
-  }, [listId]);
-
-  async function handleIngest(url: string, rerun: boolean) {
-    setIngestBusy(true);
-    setIngestError(null);
-    setIngestStatus(null);
-    try {
-      const result = await api.ingestUrl(listId, url, rerun);
-      const queuedSummary = `Queued ${formatCount(result.queued.length, "source")}`;
-      const skippedSummary =
-        result.skipped.length > 0 ? ` and skipped ${formatCount(result.skipped.length, "source")}` : "";
-      setIngestStatus(`${queuedSummary}${skippedSummary}.`);
-      trackJobs(
-        result.queued.map((jobId) => ({
-          id: jobId,
-          producer: "ingest" as const,
-          label: url,
-          contextKey: listId,
-        })),
-      );
-    } catch (error) {
-      setIngestError(toErrorMessage(error));
-    } finally {
-      setIngestBusy(false);
-    }
-  }
-
-  async function handleOpen(source: Source) {
-    setDetailSource(source);
-    setActiveTab("note");
-    setTranscript(null);
-    setTranscriptError(null);
-    setNote(await api.getNoteContent(source.video_id));
-  }
-
-  async function handleDelete(source: Source) {
-    if (!window.confirm(`Delete source "${source.title}"?`)) {
-      return;
-    }
-    await api.deleteSource(listId, source.video_id);
-    const nextSources = sources.filter((entry) => entry.video_id !== source.video_id);
-    setSources(nextSources);
-    if (detailSource?.video_id === source.video_id) {
-      setDetailSource(null);
-      setNote(null);
-      setTranscript(null);
-      setTranscriptError(null);
-    }
-  }
-
-  async function handleSelectTab(tab: "note" | "transcript") {
-    setActiveTab(tab);
-    if (tab === "transcript" && detailSource && !transcript && !transcriptLoading) {
-      setTranscriptLoading(true);
-      setTranscriptError(null);
-      try {
-        const response = await api.getNoteTranscript(detailSource.video_id);
-        setTranscript(response.text);
-      } catch (error) {
-        setTranscriptError(toErrorMessage(error));
-      } finally {
-        setTranscriptLoading(false);
-      }
-    }
-  }
-
-  async function handleGenerateOverview() {
-    setStudioBusy(true);
-    setStudioError(null);
-    setStudioStatus(null);
-    try {
-      const overview = await api.generateOverview(listId);
-      downloadTextFile(overview.filename, overview.content);
-      setStudioStatus("Overview downloaded.");
-    } catch (error) {
-      setStudioError(toErrorMessage(error));
-    } finally {
-      setStudioBusy(false);
-    }
-  }
-
-  async function handleRenameCommit() {
-    const trimmed = draftName.trim();
-    setEditingName(false);
-    if (!trimmed || trimmed === listName) {
-      setDraftName(listName);
-      return;
-    }
-    setRenameError(null);
-    try {
-      const updated = await api.updateList(listId, { name: trimmed });
-      setListName(updated.name);
-      setDraftName(updated.name);
-    } catch (error) {
-      setDraftName(listName);
-      setRenameError(toErrorMessage(error));
-    }
-  }
+  const panelBase = "flex shrink-0 flex-col overflow-hidden rounded-3xl border border-border bg-white/76 shadow-lg";
 
   return (
-    <div className="grid gap-4">
-      <section className="grid gap-4">
-        <p className="text-xs uppercase tracking-widest text-pink">Notebook workspace</p>
-        {editingName ? (
-          <label className="grid max-w-2xl gap-1.5">
-            <span className="sr-only">List name</span>
-            <input
-              aria-label="List name"
-              autoFocus
-              className="w-full rounded-2xl border border-border bg-white/84 px-3.5 py-3 font-serif text-4xl leading-none text-ink outline-none md:text-5xl xl:text-6xl"
-              onBlur={() => void handleRenameCommit()}
-              onChange={(event) => setDraftName(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  event.currentTarget.blur();
-                }
-                if (event.key === "Escape") {
-                  setDraftName(listName);
-                  setEditingName(false);
-                }
-              }}
-              value={draftName}
-            />
-          </label>
-        ) : (
-          <div className="flex flex-wrap items-center gap-3">
-            <h1 className="m-0 mb-2 font-serif text-4xl leading-none md:text-5xl xl:text-6xl">{listName}</h1>
-            <Button
-              aria-label="Edit list name"
-              variant="ghost"
-              onClick={() => {
-                setDraftName(listName);
-                setEditingName(true);
-                setRenameError(null);
-              }}
-              type="button"
-            >
-              Rename
-            </Button>
-          </div>
+    <div
+      ref={containerRef}
+      className="fixed inset-x-0 top-14 bottom-0 z-0 box-border flex overflow-hidden px-4 pb-4"
+    >
+      {/* ── Sources panel ── */}
+      <div
+        style={
+          sourcesCollapsed
+            ? { width: `${COLLAPSED_PANEL}px`, minWidth: `${COLLAPSED_PANEL}px` }
+            : { width: `${sourcesW}px`, minWidth: `${MIN_PANEL}px` }
+        }
+        className={panelBase}
+      >
+        <div className="flex shrink-0 items-center border-b border-border px-4 py-4">
+          {!sourcesCollapsed && (
+            <h2 className="m-0 flex-1 font-serif text-lg text-ink">Sources</h2>
+          )}
+          <button
+            type="button"
+            onClick={() => setSourcesCollapsed((v) => !v)}
+            aria-label={sourcesCollapsed ? "Expand sources" : "Collapse sources"}
+            className={`flex h-7 w-7 items-center justify-center rounded-full text-muted transition hover:bg-border hover:text-ink ${sourcesCollapsed ? "mx-auto" : ""}`}
+          >
+            {sourcesCollapsed ? <MdChevronRight size={16} /> : <MdChevronLeft size={16} />}
+          </button>
+        </div>
+
+        {!sourcesCollapsed && (
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden" />
         )}
-        <p className="m-0 text-muted">Queue sources, inspect notes, and export a list overview from one reading surface.</p>
-        {renameError ? <p className="m-0 text-sm text-rose-900">{renameError}</p> : null}
-      </section>
-      <div className="grid items-start gap-4 xl:grid-cols-3">
-        {loadError ? (
-          <Panel variant="workspace">
-            <PanelTitle>Sources</PanelTitle>
-            <PanelBody>
-              <p className="m-0 text-sm text-rose-900">{loadError}</p>
-            </PanelBody>
-          </Panel>
-        ) : (
-          <SourcesPanel
-            activeTab={activeTab}
-            detailSource={detailSource}
-            ingestBusy={ingestBusy}
-            ingestError={ingestError}
-            ingestJobs={ingestJobs}
-            ingestStatus={ingestStatus}
-            note={note}
-            onBack={() => {
-              setDetailSource(null);
-              setNote(null);
-              setTranscript(null);
-              setTranscriptError(null);
-            }}
-            onDelete={handleDelete}
-            onDismissIngestJob={dismissJob}
-            onIngest={handleIngest}
-            onOpen={handleOpen}
-            onSelectTab={handleSelectTab}
-            sources={sources}
-            transcript={transcript}
-            transcriptError={transcriptError}
-            transcriptLoading={transcriptLoading}
-          />
-        )}
-        <ChatPanel />
-        <StudioPanel
-          busy={studioBusy}
-          error={studioError}
-          onGenerate={handleGenerateOverview}
-          status={studioStatus}
+      </div>
+
+      <Resizer onMouseDown={onMouseDownLeft} />
+
+      {/* ── Chat panel ── */}
+      <div
+        style={{ width: `${chatW}px`, minWidth: `${MIN_PANEL}px` }}
+        className={panelBase}
+      >
+        <SkeletonPanel
+          title="Chat"
+          note="List-scoped chat arrives in v1. This panel stays intentionally quiet until then."
+        />
+      </div>
+
+      <Resizer onMouseDown={onMouseDownRight} />
+
+      {/* ── Lab panel ── */}
+      <div
+        style={{ width: `${labW}px`, minWidth: `${MIN_PANEL}px` }}
+        className={panelBase}
+      >
+        <SkeletonPanel
+          title="Lab"
+          note="Synthesis tools and overview export arrive in v1."
         />
       </div>
     </div>
