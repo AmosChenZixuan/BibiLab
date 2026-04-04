@@ -167,8 +167,8 @@ export function ListDetailPage() {
           className={panelBase}
         >
           <SkeletonPanel
-            title="Chat"
-            note="List-scoped chat arrives in v1. This panel stays intentionally quiet until then."
+            title={t("lists.chat")}
+            note={t("lists.chatDesc")}
           />
         </div>
 
@@ -180,8 +180,8 @@ export function ListDetailPage() {
           className={panelBase}
         >
           <SkeletonPanel
-            title="Lab"
-            note="Synthesis tools and overview export arrive in v1."
+            title={t("lists.lab")}
+            note={t("lists.labDesc")}
           />
         </div>
       </div>

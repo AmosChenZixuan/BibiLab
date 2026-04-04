@@ -90,7 +90,7 @@ export function OtherTab({ config, dependencies, onBlur }: OtherTabProps) {
         </div>
         <div className="flex items-center justify-end md:col-span-2">
           <Input
-            aria-label="Worker Concurrency"
+            aria-label={t("settings.workerConcurrency")}
             className="min-w-56 flex-none md:w-80"
             id={workerConcurrencyId}
             max={8}
