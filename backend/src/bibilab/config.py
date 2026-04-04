@@ -32,6 +32,7 @@ class AIConfig(BaseModel):
     model: str = "gpt-4o"
     api_key: str = ""
     base_url: str = "https://api.openai.com/v1"
+    output_language: str = "ui"  # ui | zh | en | ...; "ui" means follow UI language
 
 
 class TranscriptionConfig(BaseModel):

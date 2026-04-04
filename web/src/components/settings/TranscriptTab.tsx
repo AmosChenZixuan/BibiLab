@@ -1,5 +1,6 @@
 import { useEffect, useId, useState } from "react";
 
+import { useLanguage } from "@/app/LanguageContext";
 import { useJobActivity } from "@/components/jobs/JobActivityProvider";
 import type { JobActivityItem } from "@/components/jobs/JobActivityProvider";
 import { api } from "@/lib/api";
@@ -13,24 +14,25 @@ type ModelDownloadCellProps = {
   modelJob: JobActivityItem | null;
   downloading: string | null;
   onDownload: (name: string) => Promise<void>;
+  t: (key: string, params?: Record<string, string | number>) => string;
 };
 
-function ModelDownloadCell({ modelName, modelJob, downloading, onDownload }: ModelDownloadCellProps) {
+function ModelDownloadCell({ modelName, modelJob, downloading, onDownload, t }: ModelDownloadCellProps) {
   if (modelJob && !modelJob.isTerminal) {
     return (
-      <Spinner label={`Downloading ${modelName}`} />
+      <Spinner label={t("common.downloading", { name: modelName })} />
     );
   }
 
   if (modelJob?.job.status === "failed" || modelJob?.job.status === "needs_auth") {
-    return <span className="text-xs text-rose-900">{modelJob.job.error ?? "Failed"}</span>;
+    return <span className="text-xs text-rose-900">{modelJob.job.error ?? t("common.failed")}</span>;
   }
 
   return (
     <button
       type="button"
       className="flex items-center justify-center text-sky"
-      aria-label={`Download ${modelName}`}
+      aria-label="Download"
       disabled={downloading === modelName}
       onClick={() => void onDownload(modelName)}
     >
@@ -46,6 +48,7 @@ type TranscriptTabProps = {
 };
 
 export function TranscriptTab({ config, dependencies, onBlur }: TranscriptTabProps) {
+  const { t } = useLanguage();
   const { dismissJob, getJobs, trackJobs } = useJobActivity();
   const [localTranscription, setLocalTranscription] = useState(config.transcription);
   const [models, setModels] = useState<WhisperModel[]>([]);
@@ -128,15 +131,15 @@ export function TranscriptTab({ config, dependencies, onBlur }: TranscriptTabPro
   const cudaDependency = dependencies.cuda;
   const cudaAvailable = cudaDependency?.status === "ok";
   const deviceHint = cudaAvailable
-    ? "CUDA speeds up transcription. Without it, transcripts still run but take longer on CPU."
-    : cudaDependency?.message ?? "CUDA is unavailable, so transcription will run on CPU.";
+    ? t("settings.cudaAvailable")
+    : cudaDependency?.message ?? t("settings.cudaUnavailable");
 
   return (
     <div className="grid gap-4">
       <div className="flex flex-col gap-3">
         <SettingsField
-          label="Model Size"
-          hint="Required. Missing the Whisper model blocks transcript generation entirely."
+          label={t("settings.modelSize")}
+          hint={t("settings.modelSizeRequired")}
           htmlFor={modelSizeId}
         >
           <Select
@@ -150,7 +153,7 @@ export function TranscriptTab({ config, dependencies, onBlur }: TranscriptTabPro
           >
             {!hasSelectedInstalledModel ? (
               <option disabled value={localTranscription.model_size}>
-                {localTranscription.model_size} (download required)
+                {localTranscription.model_size} {t("settings.downloadRequired")}
               </option>
             ) : null}
             {installedModels.map((model) => (
@@ -161,7 +164,7 @@ export function TranscriptTab({ config, dependencies, onBlur }: TranscriptTabPro
           </Select>
         </SettingsField>
 
-        <SettingsField label="Device" hint={deviceHint} htmlFor={deviceId}>
+        <SettingsField label={t("settings.device")} hint={deviceHint} htmlFor={deviceId}>
           <Select
             aria-label="Device"
             id={deviceId}
@@ -179,8 +182,8 @@ export function TranscriptTab({ config, dependencies, onBlur }: TranscriptTabPro
         </SettingsField>
 
         <SettingsField
-          label="Language"
-          hint="Controls decoder accuracy. A wrong language setting can reduce transcript quality."
+          label={t("settings.language")}
+          hint={t("settings.languageDesc")}
           htmlFor={languageId}
         >
           <Select
@@ -201,9 +204,9 @@ export function TranscriptTab({ config, dependencies, onBlur }: TranscriptTabPro
 
       <div className="grid gap-3">
         <p className="text-xs font-semibold uppercase tracking-widest text-muted">
-          Model Downloads
+          {t("settings.modelDownloads")}
         </p>
-        <p className="text-sm leading-5 text-muted">Whisper model files are required. If missing, transcription cannot start until a model is downloaded.</p>
+        <p className="text-sm leading-5 text-muted">{t("settings.modelDownloadsRequired")}</p>
         <div className="overflow-hidden rounded-2xl border border-border bg-white/64">
           <table className="w-full border-collapse text-left">
             <tbody>
@@ -220,6 +223,7 @@ export function TranscriptTab({ config, dependencies, onBlur }: TranscriptTabPro
                           modelJob={modelJobs.find((job) => job.contextKey === model.name) ?? null}
                           downloading={downloading}
                           onDownload={handleDownload}
+                          t={t}
                         />
                       )}
                     </div>

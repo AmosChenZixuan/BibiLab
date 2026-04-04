@@ -1,6 +1,6 @@
 import logging
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 
 from bibilab.adapters.base import AuthRequiredError, DownloadError, VideoMeta
 from bibilab.adapters.bilibili import BilibiliAdapter
@@ -12,7 +12,9 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
-async def _queue_video(video: VideoMeta, list_id: str, rerun: bool = False) -> str:
+async def _queue_video(
+    video: VideoMeta, list_id: str, rerun: bool = False, ui_lang: str = "en"
+) -> str:
     return await create_job(
         type="ingest",
         meta={
@@ -25,13 +27,24 @@ async def _queue_video(video: VideoMeta, list_id: str, rerun: bool = False) -> s
             "rerun": rerun,
             "source_url": video.source_url,
             "platform": video.platform,
+            "ui_lang": ui_lang,
         },
     )
 
 
 @router.post("/ingest/url")
-async def ingest_url(req: IngestUrlRequest, rerun: bool = False) -> IngestUrlResponse:
+async def ingest_url(
+    req: IngestUrlRequest, request: Request, rerun: bool = False
+) -> IngestUrlResponse:
     cfg = load_config()
+
+    # Resolve UI language
+    ui_lang_header = request.headers.get("X-UI-Lang", "en")
+    output_lang = cfg.ai.output_language
+    if output_lang == "ui":
+        resolved_lang = ui_lang_header
+    else:
+        resolved_lang = output_lang
 
     if await get_list(req.list_id) is None:
         raise HTTPException(status_code=404, detail="List not found")
@@ -62,6 +75,8 @@ async def ingest_url(req: IngestUrlRequest, rerun: bool = False) -> IngestUrlRes
             logger.info("Skipping already-processed video %s", video.video_id)
             skipped.append(video.video_id)
         else:
-            queued.append(await _queue_video(video, req.list_id, rerun=rerun))
+            queued.append(
+                await _queue_video(video, req.list_id, rerun=rerun, ui_lang=resolved_lang)
+            )
 
     return IngestUrlResponse(queued=queued, skipped=skipped)

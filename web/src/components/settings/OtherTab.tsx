@@ -1,5 +1,6 @@
 import { useEffect, useId, useState } from "react";
 
+import { useLanguage } from "@/app/LanguageContext";
 import type { HealthDependency, BibilabConfig } from "@/lib/types";
 import { Input, StatusChip } from "@/components/ui";
 
@@ -10,6 +11,7 @@ type OtherTabProps = {
 };
 
 export function OtherTab({ config, dependencies, onBlur }: OtherTabProps) {
+  const { t } = useLanguage();
   const [local, setLocal] = useState({
     workerConcurrency: config.backend.worker_concurrency,
   });
@@ -46,12 +48,12 @@ export function OtherTab({ config, dependencies, onBlur }: OtherTabProps) {
       <div className="flex flex-wrap items-center gap-x-5 gap-y-2 bg-white/36 px-4 py-3">
         <div className="grid min-w-48 flex-1 basis-60 gap-1">
           <div className="flex flex-wrap items-center gap-2">
-            <p className="text-sm font-semibold">Embedding Model</p>
+            <p className="text-sm font-semibold">{t("settings.embeddingModel")}</p>
             <StatusChip status={embeddingDependency?.status === "ok" ? "ok" : "error"}>
-              {embeddingDependency?.status === "ok" ? "ready" : "missing"}
+              {t(embeddingDependency?.status === "ok" ? "settings.ready" : "settings.missing")}
             </StatusChip>
           </div>
-          <p className="text-sm leading-5 text-muted">If missing, the first processing run downloads embeddings before indexing, which makes startup slower.</p>
+          <p className="text-sm leading-5 text-muted">{t("settings.embeddingModelMissing")}</p>
         </div>
         <div className="flex min-w-56 flex-1 items-center justify-end gap-3 self-center">
           {embeddingDependency?.status === "ok" ? (
@@ -68,27 +70,27 @@ export function OtherTab({ config, dependencies, onBlur }: OtherTabProps) {
 
       <div className="grid gap-x-5 gap-y-2 bg-white/36 px-4 py-3 md:grid-cols-5">
         <div className="flex flex-wrap items-center gap-2 md:col-span-3">
-          <p className="text-sm font-semibold">Backend API</p>
+          <p className="text-sm font-semibold">{t("settings.backendApi")}</p>
           <StatusChip status={backendDependency?.status === "ok" ? "ok" : "error"}>
-            {backendDependency?.status === "ok" ? "connected" : "offline"}
+            {t(backendDependency?.status === "ok" ? "settings.connected" : "settings.offline")}
           </StatusChip>
         </div>
         <div className="flex items-center justify-end md:col-span-2">
           <p className={valueClass}>{backendUrl}</p>
         </div>
 
-        <p className="text-sm leading-5 text-muted md:col-span-3">Required. If the backend is offline, the web app cannot load or save configuration.</p>
+        <p className="text-sm leading-5 text-muted md:col-span-3">{t("settings.backendRequired")}</p>
         <div />
 
         <div className="border-l border-blue/18 pl-4 md:col-span-3">
           <div className="grid gap-2">
-            <label className="text-sm font-semibold" htmlFor={workerConcurrencyId}>Worker Concurrency</label>
-            <p className="text-sm leading-5 text-muted">Controls parallel jobs. Higher values improve throughput but increase local resource usage.</p>
+            <label className="text-sm font-semibold" htmlFor={workerConcurrencyId}>{t("settings.workerConcurrency")}</label>
+            <p className="text-sm leading-5 text-muted">{t("settings.workerConcurrencyDesc")}</p>
           </div>
         </div>
         <div className="flex items-center justify-end md:col-span-2">
           <Input
-            aria-label="Worker Concurrency"
+            aria-label={t("settings.workerConcurrency")}
             className="min-w-56 flex-none md:w-80"
             id={workerConcurrencyId}
             max={8}
@@ -110,15 +112,15 @@ export function OtherTab({ config, dependencies, onBlur }: OtherTabProps) {
       <div className="flex flex-wrap items-center gap-x-5 gap-y-2 bg-white/36 px-4 py-3">
         <div className="grid min-w-48 flex-1 basis-60 gap-1">
           <div className="flex flex-wrap items-center gap-2">
-            <p className="text-sm font-semibold">FFmpeg</p>
+            <p className="text-sm font-semibold">{t("settings.ffmpeg")}</p>
             <StatusChip
               status={ffmpegDependency?.status === "ok" ? "ok" : "error"}
-              title={ffmpegDependency?.status === "ok" ? "FFmpeg installed" : "FFmpeg not found"}
+              title={ffmpegDependency?.status === "ok" ? t("settings.ffmpegInstalled") : t("settings.ffmpegNotFound")}
             >
-              {ffmpegDependency?.status === "ok" ? "installed" : "missing"}
+              {t(ffmpegDependency?.status === "ok" ? "settings.installed" : "settings.missing")}
             </StatusChip>
           </div>
-          <p className="text-sm leading-5 text-muted">Required. Without FFmpeg, media audio cannot be extracted, so ingestion fails.</p>
+          <p className="text-sm leading-5 text-muted">{t("settings.ffmpegRequired")}</p>
         </div>
         <div className="flex min-w-56 flex-1 items-center justify-end gap-3 self-center">
           {ffmpegDependency?.status === "ok" ? (
@@ -132,7 +134,7 @@ export function OtherTab({ config, dependencies, onBlur }: OtherTabProps) {
               rel="noreferrer"
               target="_blank"
             >
-              Download FFmpeg
+              {t("settings.downloadFfmpeg")}
             </a>
           )}
         </div>

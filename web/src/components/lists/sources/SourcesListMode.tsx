@@ -8,9 +8,10 @@ import {
   MdRefresh,
 } from "react-icons/md";
 
+import { useLanguage } from "@/app/LanguageContext";
 import { ContextMenu } from "@/components/ui/ContextMenu";
 import { useJobActivity } from "@/components/jobs/JobActivityProvider";
-import { api } from "@/lib/api";
+import { api, toErrorMessageWithT } from "@/lib/api";
 import type { Source } from "@/lib/types";
 
 export const PIPELINE_STAGES = [
@@ -23,25 +24,18 @@ export const PIPELINE_STAGES = [
 ] as const;
 export type PipelineStage = (typeof PIPELINE_STAGES)[number];
 
-const STAGE_LABELS: Record<PipelineStage, string> = {
-  queued:       "Queued",
-  downloading:  "Downloading",
-  transcribing: "Transcribing",
-  extracting:   "Extracting",
-  writing:      "Writing",
-  done:         "Done",
-};
-
 function SourceRow({
   source,
   onOpen,
   onDelete,
   onRerun,
+  t,
 }: {
   source: Source;
   onOpen: () => void;
   onDelete: () => Promise<void>;
   onRerun: () => Promise<void>;
+  t: (key: string, params?: Record<string, string | number>) => string;
 }) {
   return (
     <div className="group flex items-center gap-2 rounded-2xl border border-border bg-white/64 px-4 py-3 transition hover:bg-white hover:shadow-sm">
@@ -56,14 +50,14 @@ function SourceRow({
       </button>
       <ContextMenu
         items={[
-          { label: "Re-run", icon: <MdRefresh />, onClick: onRerun },
-          { label: "Delete", icon: <MdDeleteOutline />, onClick: onDelete, variant: "danger" },
+          { label: t("lists.reRun"), icon: <MdRefresh />, onClick: onRerun },
+          { label: t("lists.delete"), icon: <MdDeleteOutline />, onClick: onDelete, variant: "danger" },
         ]}
         trigger={({ toggle, triggerRef }) => (
           <button
             ref={triggerRef}
             type="button"
-            aria-label="Source options"
+            aria-label={t("lists.sourceOptions")}
             onClick={toggle}
             className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-muted opacity-0 transition group-hover:opacity-100 hover:bg-border hover:text-ink"
           >
@@ -79,14 +73,19 @@ function IngestingSourceRow({
   stage,
   title,
   onDismiss,
+  t,
 }: {
   stage: string;
   title: string;
   onDismiss: () => void;
+  t: (key: string, params?: Record<string, string | number>) => string;
 }) {
   const isFailed = stage === "failed" || stage === "needs_auth";
   const stageIdx = isFailed ? -1 : PIPELINE_STAGES.indexOf(stage as PipelineStage);
   const displayStage = isFailed ? "failed" : (PIPELINE_STAGES[Math.max(0, stageIdx)] ?? "downloading");
+
+  const getStageLabel = (s: string) =>
+    s === "failed" ? t("pipeline.failed") : t("pipeline." + s);
 
   if (isFailed) {
     return (
@@ -94,12 +93,12 @@ function IngestingSourceRow({
         <MdErrorOutline size={16} className="mt-0.5 shrink-0 text-pink" />
         <div className="min-w-0 flex-1">
           <p className="m-0 truncate text-sm font-medium text-ink">{title}</p>
-          <p className="m-0 mt-0.5 text-xs text-pink/80">Failed during {displayStage}</p>
+          <p className="m-0 mt-0.5 text-xs text-pink/80">{t("lists.failedDuring", { stage: getStageLabel(displayStage) })}</p>
         </div>
         <button
           type="button"
           onClick={onDismiss}
-          aria-label="Dismiss"
+          aria-label={t("lists.dismiss")}
           className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-muted transition hover:bg-border hover:text-ink"
         >
           <MdClose size={14} />
@@ -119,7 +118,7 @@ function IngestingSourceRow({
         <button
           type="button"
           onClick={onDismiss}
-          aria-label="Cancel ingestion"
+          aria-label={t("lists.cancelIngestion")}
           className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-muted transition hover:bg-border hover:text-ink"
         >
           <MdClose size={14} />
@@ -127,7 +126,7 @@ function IngestingSourceRow({
       </div>
       <div className="space-y-1.5">
         <div className="flex items-center justify-between">
-          <span className="text-xs text-blue/80">{STAGE_LABELS[displayStage as PipelineStage] ?? stage}…</span>
+          <span className="text-xs text-blue/80">{t("pipeline." + displayStage)}…</span>
           <span className="text-xs tabular-nums text-muted/60">
             {Math.max(1, stageIdx + 1)} / {PIPELINE_STAGES.length}
           </span>
@@ -136,7 +135,7 @@ function IngestingSourceRow({
           {PIPELINE_STAGES.map((s, i) => (
             <div
               key={s}
-              title={STAGE_LABELS[s]}
+              title={t("pipeline." + s)}
               className={`h-1 flex-1 rounded-full transition-colors duration-500 ${
                 i < stageIdx
                   ? "bg-blue/60"
@@ -161,6 +160,7 @@ export function SourcesListMode({
   sources: Source[];
   onOpenSource: (source: Source) => void;
 }) {
+  const { t } = useLanguage();
   const [url, setUrl] = useState("");
   const [error, setError] = useState<string | null>(null);
   const { dismissJob, getJobs, trackJobs } = useJobActivity();
@@ -218,7 +218,7 @@ export function SourcesListMode({
       );
     } catch (err) {
       setUrl(trimmed);
-      setError(err instanceof Error ? err.message : "Failed to submit URL");
+      setError(toErrorMessageWithT(err, t));
     }
   }
 
@@ -251,13 +251,13 @@ export function SourcesListMode({
               setUrl(e.target.value);
               setError(null);
             }}
-            placeholder="Paste a Bilibili URL…"
+            placeholder={t("lists.pasteUrl")}
             className="w-full rounded-full border border-border bg-white/80 py-2.5 pr-10 pl-4 text-sm text-ink placeholder:text-muted/50 outline-none focus:border-blue/40 focus:bg-white transition"
           />
           <button
             type="submit"
             disabled={!url.trim()}
-            aria-label="Add source"
+            aria-label={t("lists.addSource")}
             className="absolute right-1.5 top-1/2 -translate-y-1/2 flex h-7 w-7 items-center justify-center rounded-full text-muted transition disabled:opacity-0 enabled:hover:bg-blue enabled:hover:text-white enabled:hover:shadow-sm"
           >
             <MdArrowForward size={15} />
@@ -275,6 +275,7 @@ export function SourcesListMode({
               stage={item.job.status}
               title={item.label}
               onDismiss={() => void dismissJob(item.job.id)}
+              t={t}
             />
           ))}
         {currentSources.map((source) => (
@@ -284,6 +285,7 @@ export function SourcesListMode({
             onOpen={() => onOpenSource(source)}
             onDelete={() => handleDelete(source)}
             onRerun={() => handleRerun(source)}
+            t={t}
           />
         ))}
       </div>

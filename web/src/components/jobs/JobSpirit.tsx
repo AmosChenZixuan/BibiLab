@@ -1,5 +1,6 @@
 import { X } from "lucide-react";
 
+import { useLanguage } from "@/app/LanguageContext";
 import type { JobActivityItem } from "./JobActivityProvider";
 import { getJobTitle, getJobTone, useJobActivity } from "./JobActivityProvider";
 
@@ -21,6 +22,7 @@ function StatusDot({ item }: { item: JobActivityItem }) {
 }
 
 export function JobSpirit() {
+  const { t } = useLanguage();
   const {
     activeJobs,
     cancellingJobId,
@@ -45,7 +47,7 @@ export function JobSpirit() {
         <button
           type="button"
           className="fixed inset-0 z-float border-0 bg-transparent"
-          aria-label="Close background jobs"
+          aria-label="Close"
           onClick={() => setPanelOpen(false)}
         />
       ) : null}
@@ -53,11 +55,11 @@ export function JobSpirit() {
         {isPanelOpen ? (
           <section
             className="w-80 overflow-hidden rounded-3xl border border-border bg-white/96 shadow-lg backdrop-blur-md"
-            aria-label="Background jobs"
+            aria-label="Jobs"
           >
             <div className="flex items-center justify-between border-b border-border px-4 py-3">
               <span className="text-sm font-semibold text-ink">
-                {activeJobs.length > 0 ? `${activeJobs.length} running` : "Jobs"}
+                {activeJobs.length > 0 ? t("jobs.running", { count: activeJobs.length }) : t("jobs.jobs")}
               </span>
               {hasTerminal ? (
                 <button
@@ -65,7 +67,7 @@ export function JobSpirit() {
                   className="text-xs text-muted transition-colors hover:text-ink"
                   onClick={clearTerminalJobs}
                 >
-                  Clear done
+                  {t("jobs.clearDone")}
                 </button>
               ) : null}
             </div>
@@ -124,7 +126,7 @@ export function JobSpirit() {
 
         <button
           type="button"
-          aria-label="Background jobs"
+          aria-label="Jobs"
           className="inline-flex items-center gap-2 rounded-full border border-border bg-white/94 px-3 py-1.5 text-sm text-ink shadow-lg backdrop-blur-md transition-shadow hover:shadow-lg"
           onClick={() => setPanelOpen(!isPanelOpen)}
         >

@@ -52,17 +52,22 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 export function toErrorMessage(error: unknown): string {
   if (error instanceof ApiError) {
     if (error.status === 401 && typeof error.detail !== "string") {
-      return "Authentication required";
+      return "error.401";
     }
     if (typeof error.detail === "string") {
       return error.detail;
     }
-    return error.detail.message ?? "Request failed";
+    return error.detail?.message ?? "error.requestFailed";
   }
   if (error instanceof Error) {
     return error.message;
   }
-  return "Request failed";
+  return "error.requestFailed";
+}
+
+export function toErrorMessageWithT(error: unknown, t: (key: string) => string): string {
+  const key = toErrorMessage(error);
+  return t(key);
 }
 
 export function notifyHealthChanged(health: HealthResponse) {

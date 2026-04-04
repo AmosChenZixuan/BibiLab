@@ -15,6 +15,17 @@ logger = logging.getLogger(__name__)
 _TRANSCRIPT_TOKEN_WARN = 100_000
 _TRANSCRIPT_CHAR_LIMIT = 400_000  # ~100K tokens at ~4 chars/token
 
+_LANG_INSTRUCTION = {
+    "en": "Respond in English only. Do not use any other language.",
+    "zh": "请用中文回答。不要使用其他语言。",
+}
+
+
+def _resolved_lang(output_language: str, ui_lang: str | None) -> str:
+    if output_language == "ui":
+        return ui_lang or "en"
+    return output_language
+
 
 class KeyPoint(BaseModel):
     timestamp: str
@@ -100,12 +111,20 @@ def extract_knowledge(
     transcript_text: str,
     meta: VideoMeta,
     cfg: AIConfig,
+    output_language: str = "ui",
+    ui_lang: str | None = None,
 ) -> ExtractionResult:
+    lang = _resolved_lang(output_language, ui_lang)
+    lang_instruction = _LANG_INSTRUCTION.get(lang, _LANG_INSTRUCTION["en"])
     if len(transcript_text) > _TRANSCRIPT_CHAR_LIMIT:
         logger.warning("Transcript for %s exceeds ~100K tokens; truncating", meta.video_id)
         transcript_text = transcript_text[:_TRANSCRIPT_CHAR_LIMIT]
 
-    prompt = _EXTRACTION_PROMPT.format(title=meta.title, transcript=transcript_text)
+    prompt = (
+        lang_instruction
+        + "\n\n"
+        + _EXTRACTION_PROMPT.format(title=meta.title, transcript=transcript_text)
+    )
 
     raw = _call_llm(prompt, cfg)
     try:
@@ -133,8 +152,15 @@ Respond with only the outline text (no JSON, no headers).
 """
 
 
-def generate_overview(list_videos: list[dict], cfg: AIConfig) -> str:
+def generate_overview(
+    list_videos: list[dict],
+    cfg: AIConfig,
+    output_language: str = "ui",
+    ui_lang: str | None = None,
+) -> str:
     """Generate an overview outline from a list of {title, summary} dicts."""
+    lang = _resolved_lang(output_language, ui_lang)
+    lang_instruction = _LANG_INSTRUCTION.get(lang, _LANG_INSTRUCTION["en"])
     videos_text = "\n\n".join(f"### {v['title']}\n{v['summary']}" for v in list_videos)
-    prompt = _OVERVIEW_PROMPT.format(videos=videos_text)
+    prompt = lang_instruction + "\n\n" + _OVERVIEW_PROMPT.format(videos=videos_text)
     return _call_llm(prompt, cfg).strip()

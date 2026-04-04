@@ -171,7 +171,12 @@ class WorkerLoop:
         chunks = chunk_segments(segments)
         transcript_text = transcript_path.read_text(encoding="utf-8")
         extraction: ExtractionResult = await asyncio.to_thread(
-            extract_knowledge, transcript_text, video_meta, cfg.ai
+            extract_knowledge,
+            transcript_text,
+            video_meta,
+            cfg.ai,
+            cfg.ai.output_language,
+            meta_raw.get("ui_lang"),
         )
 
         if extraction.title:

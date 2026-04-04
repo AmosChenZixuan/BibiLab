@@ -1,6 +1,7 @@
 import { FiEdit2, FiImage, FiMoreVertical, FiTrash2 } from "react-icons/fi";
 import { useNavigate } from "react-router-dom";
 
+import { useLanguage } from "@/app/LanguageContext";
 import type { BibilabList } from "@/lib/types";
 import { ContextMenu } from "@/components/ui";
 
@@ -37,20 +38,17 @@ function formatUpdatedDate(updatedAt: string) {
   });
 }
 
-function formatSourceCount(sourceCount: number) {
-  return `${sourceCount} source${sourceCount === 1 ? "" : "s"}`;
-}
-
 export function ListCard({ list, onRename, onChangeThumbnail, onDelete }: Props) {
+  const { t } = useLanguage();
   const navigate = useNavigate();
   const menuItems = [
     ...(onRename
-      ? [{ label: "Rename", icon: <FiEdit2 />, onClick: () => onRename(list) }]
+      ? [{ label: t("lists.rename"), icon: <FiEdit2 />, onClick: () => onRename(list) }]
       : []),
     ...(onChangeThumbnail
-      ? [{ label: "Change thumbnail", icon: <FiImage />, onClick: () => onChangeThumbnail(list) }]
+      ? [{ label: t("lists.changeThumbnail"), icon: <FiImage />, onClick: () => onChangeThumbnail(list) }]
       : []),
-    { label: "Delete list", icon: <FiTrash2 />, onClick: () => onDelete(list), variant: "danger" as const },
+    { label: t("lists.deleteList"), icon: <FiTrash2 />, onClick: () => onDelete(list), variant: "danger" as const },
   ];
 
   return (
@@ -116,7 +114,7 @@ export function ListCard({ list, onRename, onChangeThumbnail, onDelete }: Props)
           <div className="flex items-center gap-2 text-xs text-white/75">
             <span>{formatUpdatedDate(list.updated_at)}</span>
             <span className="size-1 rounded-full bg-white/40" />
-            <span>{formatSourceCount(list.source_count)}</span>
+            <span>{list.source_count} {list.source_count === 1 ? "source" : "sources"}</span>
           </div>
         </div>
       </button>

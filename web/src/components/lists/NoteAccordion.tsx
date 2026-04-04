@@ -2,7 +2,10 @@ import { useState } from "react";
 import ReactMarkdown from "react-markdown";
 import { MdExpandLess, MdExpandMore } from "react-icons/md";
 
+import { useLanguage } from "@/app/LanguageContext";
+
 export function NoteAccordion({ markdown }: { markdown: string }) {
+  const { t } = useLanguage();
   const [expanded, setExpanded] = useState(false);
   return (
     <div className="overflow-hidden rounded-2xl border border-border bg-blue/25">
@@ -11,7 +14,7 @@ export function NoteAccordion({ markdown }: { markdown: string }) {
         onClick={() => setExpanded((v) => !v)}
         className="flex w-full items-center justify-between gap-3 border-0 bg-transparent px-4 py-3.5 text-left transition hover:bg-sky/6"
       >
-        <span className="text-sm font-semibold text-ink">Note</span>
+        <span className="text-sm font-semibold text-ink">{t("lists.note")}</span>
         {expanded
           ? <MdExpandLess size={18} className="shrink-0 text-muted" />
           : <MdExpandMore size={18} className="shrink-0 text-muted" />}

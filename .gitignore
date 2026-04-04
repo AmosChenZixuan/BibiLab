@@ -18,6 +18,9 @@ plugin/main.js.map
 .codex
 .superpowers/
 
+# Worktrees
+.worktrees/
+
 # OS
 .DS_Store
 Thumbs.db

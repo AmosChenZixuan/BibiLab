@@ -1,11 +1,13 @@
 import { useEffect, useState } from "react";
 
+import { useLanguage } from "@/app/LanguageContext";
 import { ListGrid } from "@/components/lists/ListGrid";
-import { api, toErrorMessage } from "@/lib/api";
+import { api, toErrorMessageWithT } from "@/lib/api";
 import type { BibilabList, Source } from "@/lib/types";
 import { Button, Input, Modal, Panel } from "@/components/ui";
 
 export function HomePage() {
+  const { t } = useLanguage();
   const [lists, setLists] = useState<BibilabList[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -32,7 +34,7 @@ export function HomePage() {
         }
       } catch (nextError) {
         if (!cancelled) {
-          setError(toErrorMessage(nextError));
+          setError(toErrorMessageWithT(nextError, t));
         }
       } finally {
         if (!cancelled) {
@@ -50,10 +52,10 @@ export function HomePage() {
     setBusy(true);
     setError(null);
     try {
-      const created = await api.createList("Untitled list");
+      const created = await api.createList(t("home.untitledList"));
       setLists((current) => [created, ...current]);
     } catch (nextError) {
-      setError(toErrorMessage(nextError));
+      setError(toErrorMessageWithT(nextError, t));
     } finally {
       setBusy(false);
     }
@@ -66,7 +68,7 @@ export function HomePage() {
       setLists((current) => current.filter((entry) => entry.id !== list.id));
       setDeleteTarget(null);
     } catch (nextError) {
-      setError(toErrorMessage(nextError));
+      setError(toErrorMessageWithT(nextError, t));
     }
   }
 
@@ -91,7 +93,7 @@ export function HomePage() {
       updateLocalList(updated);
       setRenameTarget(null);
     } catch (nextError) {
-      setError(toErrorMessage(nextError));
+      setError(toErrorMessageWithT(nextError, t));
       setRenameDraft(renameTarget.name);
     }
   }
@@ -105,7 +107,7 @@ export function HomePage() {
       const sources = await api.listSources(list.id);
       setThumbnailSources(sources);
     } catch (nextError) {
-      setError(toErrorMessage(nextError));
+      setError(toErrorMessageWithT(nextError, t));
     } finally {
       setThumbnailLoading(false);
     }
@@ -124,7 +126,7 @@ export function HomePage() {
       updateLocalList(updated);
       setThumbnailTarget(null);
     } catch (nextError) {
-      setError(toErrorMessage(nextError));
+      setError(toErrorMessageWithT(nextError, t));
     }
   }
 
@@ -136,13 +138,13 @@ export function HomePage() {
         className={dialogOpen ? "pointer-events-none select-none blur-sm transition" : "transition"}
       >
         <section className="grid gap-3">
-          <span className="text-xs font-semibold uppercase tracking-widest text-muted">My Lists</span>
+          <span className="text-xs font-semibold uppercase tracking-widest text-muted">{t("home.myLists")}</span>
           {error ? <p className="m-0 text-sm text-rose-900">{error}</p> : null}
         </section>
         <div className="mt-4">
           {loading ? (
             <Panel variant="app">
-              <p>Loading lists...</p>
+              <p>{t("home.loadingLists")}</p>
             </Panel>
           ) : (
             <ListGrid
@@ -166,7 +168,7 @@ export function HomePage() {
         footer={
           <>
             <Button onClick={() => setDeleteTarget(null)} size="sm" variant="ghost">
-              Cancel
+              {t("common.cancel")}
             </Button>
             <Button
               onClick={() => {
@@ -177,20 +179,20 @@ export function HomePage() {
               size="sm"
               variant="danger"
             >
-              Delete
+              {t("common.delete")}
             </Button>
           </>
         }
         onClose={() => setDeleteTarget(null)}
         open={deleteTarget !== null}
         size="lg"
-        title="Delete list"
+        title={t("home.deleteList")}
       >
         <div className="rounded-2xl border border-rose-300/50 bg-rose-50 p-4 text-sm text-rose-900">
-          <p className="m-0 text-base font-semibold tracking-tight">This cannot be undone</p>
+          <p className="m-0 text-base font-semibold tracking-tight">{t("home.cannotUndo")}</p>
           <p className="mt-1.5 mb-0 leading-6">
             {deleteTarget
-              ? `"${deleteTarget.name}" and its ${deleteTarget.source_count} sources will be permanently removed.`
+              ? t("home.deleteConfirm", { name: deleteTarget.name, count: deleteTarget.source_count })
               : ""}
           </p>
         </div>
@@ -207,17 +209,17 @@ export function HomePage() {
               size="sm"
               variant="ghost"
             >
-              Cancel
+              {t("common.cancel")}
             </Button>
             <Button onClick={() => void handleRenameCommit()} size="sm" variant="primary">
-              Save
+              {t("common.save")}
             </Button>
           </>
         }
         onClose={() => setRenameTarget(null)}
         open={renameTarget !== null}
         size="lg"
-        title="Rename list"
+        title={t("home.renameList")}
       >
         <div className="relative h-100 overflow-hidden rounded-3xl bg-pink-100 shadow-lg">
           {renameTarget?.thumbnail_url ? (
@@ -229,18 +231,18 @@ export function HomePage() {
           <div className="absolute inset-0 bg-linear-to-t from-black/65 via-black/20 to-transparent" />
           <div className="absolute inset-x-6 bottom-6 z-10">
             <span className="block text-3xl font-semibold tracking-tighter leading-tight text-white">
-              {renameDraft || renameTarget?.name || "Untitled list"}
+              {renameDraft || renameTarget?.name || t("home.untitledList")}
             </span>
           </div>
         </div>
         <div className="">
           <label className="grid gap-2">
-            <span className="text-xs font-semibold uppercase tracking-widest text-muted">List name</span>
+            <span className="text-xs font-semibold uppercase tracking-widest text-muted">{t("home.listName")}</span>
             <Input
-              aria-label="List name"
+              aria-label={t("home.listName")}
               autoFocus
               className="select-text rounded-2xl bg-white/92 px-4 py-3 text-2xl leading-tight font-normal tracking-normal text-ink focus:border-blue/25 focus:ring-2 focus:ring-sky/10"
-              placeholder="Untitled list"
+              placeholder={t("home.untitledList")}
               onChange={(event) => setRenameDraft(event.target.value)}
               onKeyDown={(event) => {
                 if (event.key === "Enter") {
@@ -258,10 +260,10 @@ export function HomePage() {
         onClose={() => setThumbnailTarget(null)}
         open={thumbnailTarget !== null}
         size="lg"
-        title="Choose thumbnail"
+        title={t("home.chooseThumbnail")}
       >
         {thumbnailLoading ? (
-          <p className="m-0 text-sm text-muted">Loading sources...</p>
+          <p className="m-0 text-sm text-muted">{t("home.loadingSources")}</p>
         ) : (
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
             <button
@@ -270,7 +272,7 @@ export function HomePage() {
               type="button"
             >
               <div className="flex h-full items-end bg-cover bg-center p-2">
-                <span className="block truncate text-xs font-semibold text-white">No cover</span>
+                <span className="block truncate text-xs font-semibold text-white">{t("home.noCover")}</span>
               </div>
             </button>
             {thumbnailSources.map((source) => (

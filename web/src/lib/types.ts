@@ -81,6 +81,7 @@ export type BibilabConfig = {
     model: string;
     api_key: string;
     base_url: string;
+    output_language?: string;
   };
   transcription: {
     engine: string;
