@@ -50,36 +50,52 @@ FastAPI Backend (Python)
 
 ## Code Layout
 
-```
-backend/src/locus/
-├── main.py           # FastAPI app creation, lifespan, route registration
-├── worker.py         # WorkerLoop — polls SQLite, dispatches pipeline jobs
-├── db.py             # Schema bootstrap, query helpers
-├── config.py         # Pydantic settings, persisted to ~/.locus/config.json
-├── adapters/         # Platform-specific download + resolution logic
-├── pipeline/         # One file per pipeline stage (audio, transcribe, chunk, extract, notes, embed)
-├── routers/          # FastAPI route handlers (health, config, ingest, jobs, lists, notes, transcripts, whisper)
-└── models/           # Pydantic request/response models
+**Backend** — `backend/src/locus/`
 
-web/src/
-├── app/              # Router and shared app shell
-├── components/       # Route-level UI sections (lists, sources, jobs, settings, studio)
-│   ├── layout/       # App shell components (AppFrame, IdentityPanel)
-│   └── ui/           # Shared primitives: Button, Input, Select, FormField, SettingsField, Panel, PanelTitle, PanelBody, StatusChip, Modal, ContextMenu, Spinner
-├── pages/            # Home, list detail, settings
-├── lib/              # Typed API wrappers, downloads, shared types
-└── test/             # Vitest + RTL coverage
+```
+routers/     — one APIRouter per module; aggregated in main.py
+models/      — Pydantic request/response models
+pipeline/    — one file per stage (audio → transcribe → chunk → extract → notes → embed)
+adapters/    — platform-specific download + resolution
+db.py        — SQLite schema + query helpers
+config.py    — settings persisted to ~/.locus/config.json
+worker.py    — SQLite-polling job dispatcher
 ```
 
-## Frontend Design System
+**Web** — `web/src/`
 
-Tokens are defined in `web/src/styles/app.css` (`@theme` block). Use token utility classes — never arbitrary color, shadow, or radius values.
+```
+components/ui/  — primitive components (Button, Modal, Panel, etc.)
+components/*/   — feature components (lists/, jobs/, layout/, settings/)
+pages/          — route-level page components
+lib/            — typed api client, types, utilities
+app/            — router, language context
+```
 
-Reusable components live in `web/src/components/ui/`.
+## Conventions
+
+### Backend
+
+- **Naming**: `snake_case` for files/functions/variables, `PascalCase` for classes and Pydantic models
+- **Pydantic models**: `{Operation}Request` / `{Operation}Response` suffix; enums use `PascalCase` name, `UPPERCASE` values
+- **Router pattern**: one `APIRouter` per file, handlers registered with explicit HTTP method decorator and `status_code=201` where appropriate
+- **DB**: `sqlite3` with `asynccontextmanager` get_db wrapper; all queries use `?` placeholders, never f-string interpolation
+- **Imports**: stdlib → third-party → local, with blank lines between groups
+- **Errors**: `HTTPException(status_code=N, detail=...)` for HTTP errors; custom exceptions (`AuthRequiredError`, `DownloadError`, `PipelineError`) for domain errors
+
+### Web
+
+- **Files**: `PascalCase` for components, `kebab-case` for utilities
+- **Components**: props interface above component, `ComponentPropsWithoutRef<"tag">` for root element props, `Record<Variant, string>` for variant maps
+- **Handlers**: named `handle{Action}`; event props use `on{Action}` prefix (`onDelete`, `onCreate`)
+- **State**: `useState` with `set` prefix; async operations use cancellation pattern via `let cancelled = false` guard in `useEffect`
+- **Imports**: use `@/*` alias (`@/components/ui`, `@/lib/api`, `@/lib/types`)
+- **API client**: single `api` object in `lib/api.ts` with typed `request<T>` wrapper; errors thrown as `ApiError`
+- **Design tokens**: use only tokens from `web/src/styles/app.css` (`--color-*`, `--z-*`, `--font-*`); no arbitrary values
 
 ## Notes
 
-- Full technical specification (API routes, DB schema, data models, config schema, rollout roadmap) lives in `docs/design-doc.md`.
+- Technical specification, API contracts, DB schema in `docs/design-doc.md`; active specs in `docs/specs/`; plans in `docs/plans/`.
 - Pre-commit hooks enforce ruff lint/format on backend and trailing whitespace globally. Run `pre-commit install` once after cloning.
-- The legacy `plugin/` directory remains in the repo but is not the active v0 interface.
-- Config is stored at `~/.locus/config.json`; runtime state at `~/.locus/` (db, notes, transcripts, downloads, chromadb, models).
+- The legacy `plugin/` directory is not the active v0 interface.
+- Config lives at `~/.locus/config.json`; runtime state at `~/.locus/`.

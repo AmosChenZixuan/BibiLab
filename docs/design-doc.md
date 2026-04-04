@@ -1,303 +1,213 @@
-# Project Locus — Technical Design Document
+# Project Locus — Technical Design
 
-> Version: 0.6 (Draft)
-> Last updated: 2026-04-03
+> Version: 0.7
+> Last updated: 2026-04-04
 
 ---
 
-## 1. Overview
+## 1. What This Is
 
-**Project Locus** is a local, self-hosted video knowledge base. It ingests videos from supported platforms, transcribes them locally, extracts structured knowledge using an LLM, and surfaces everything through a purpose-built web UI — a local alternative to NotebookLM with full model selection.
+**Project Locus** transforms video content into searchable, AI-assisted private notebooks. A FastAPI backend runs the local processing pipeline (download → transcribe → chunk → extract → notes → embed), and a React + TypeScript SPA provides the primary user interface.
 
-**One-line pitch:** Turn any video playlist into a searchable, AI-queryable knowledge base — entirely on your own machine, with your own models.
+The web UI is the product. The backend exists to serve it.
 
 ---
 
 ## 2. Goals & Non-Goals
 
 ### Goals
-- Process individual videos, playlists, and courses into structured markdown notes
-- Support local-first transcription (Faster Whisper) and local or cloud LLMs
-- Enable AI Q&A grounded in your own video corpus, with transcript citations (v1)
-- Provide a list-level overview that can be manually generated and downloaded
-- Progressively enhance with multimodal and generative features in later versions
+- Transform individual videos and playlists into structured markdown notes
+- Support local transcription (Faster Whisper) and local or cloud LLMs
+- Enable AI Q&A grounded in the video corpus with transcript citations (v1)
+- Provide on-demand list-level overview export
+- Run entirely on a single user's machine
 
 ### Non-Goals
 - Not a general-purpose video player
-- Not a cloud service — designed for single-user local deployment (multi-user is a v-future concern)
-- Interactive timestamp seeking is not required for v0–v2 (timestamps appear as plain text references)
+- Not a cloud or multi-user service
+- Interactive timestamp seeking is not required for v0–v2 (timestamps appear as text references in notes)
+- Not building a general search engine across arbitrary content
 
 ---
 
 ## 3. System Architecture
 
 ```
-┌─────────────────────────────────────────────────────┐
-│              Locus Web UI (React + TypeScript)       │
-│                                                     │
-│  ┌──────────────┐  ┌────────────┐  ┌─────────────┐ │
-│  │  Sources     │  │    Chat    │  │   Studio    │ │
-│  │  (ingestion) │  │  (v1 RAG)  │  │  (overview) │ │
-│  └──────────────┘  └────────────┘  └─────────────┘ │
-└───────────────────────│─────────────────────────────┘
-                        │ HTTP (REST + SSE)
-┌───────────────────────▼─────────────────────────────┐
-│                  Locus Backend (Python)              │
-│                                                     │
-│  ┌──────────┐  ┌──────────┐  ┌───────────────────┐ │
-│  │  Ingest  │  │ Process  │  │     Q&A / RAG     │ │
-│  │  Router  │  │ Pipeline │  │     Engine (v1)   │ │
-│  └────┬─────┘  └────┬─────┘  └─────────┬─────────┘ │
-│       │             │                  │            │
-│  ┌────▼─────────────▼──────────────────▼─────────┐ │
-│  │               Job Queue (SQLite)               │ │
-│  └────────────────────────────────────────────────┘ │
-│                                                     │
-│  ┌──────────────┐  ┌────────────┐  ┌─────────────┐ │
-│  │ Platform     │  │  Whisper   │  │ Vector Store│ │
-│  │ Adapters     │  │ (local)    │  │ (ChromaDB)  │ │
-│  └──────────────┘  └────────────┘  └─────────────┘ │
-└─────────────────────────────────────────────────────┘
-                        │
-          ┌─────────────┼──────────────┐
-          ▼             ▼              ▼
-       Bilibili      YouTube        (v3+)
-       Adapter       Adapter
+┌──────────────────────────────────────────────────────────────┐
+│               Locus Web UI (React + TypeScript SPA)          │
+│                                                              │
+│   /               Home: grid of lists                        │
+│   /lists/:id      List detail: Sources | Chat | Studio       │
+│   /settings       Global config, health, accounts             │
+└───────────────────────────│──────────────────────────────────┘
+                            │ HTTP /api/*
+┌───────────────────────────▼──────────────────────────────────┐
+│                   Locus Backend (Python/FastAPI)               │
+│                                                              │
+│   Job Queue (SQLite) ──► WorkerLoop ──► Pipeline stages        │
+│                                                              │
+│   ┌──────────────┐  ┌────────────────────┐  ┌──────────────┐   │
+│   │ Platform     │  │  Pipeline stages  │  │ Vector Store │   │
+│   │ Adapters     │  │  (audio,          │  │ (ChromaDB)   │   │
+│   │ (Bilibili)   │  │   transcribe,     │  │              │   │
+│   │              │  │   chunk, extract,  │  │              │   │
+│   │              │  │   notes, embed)   │  └──────────────┘   │
+│   └──────────────┘  └────────────────────┘                     │
+│                                                              │
+│   Storage: ~/.locus/                                          │
+│     locus.db         SQLite (lists, jobs, sources)            │
+│     notes/           markdown notes + attachments             │
+│     transcripts/     raw Whisper output                       │
+│     chroma/          ChromaDB data                            │
+│     downloads/       temp video files, cleaned after process  │
+└──────────────────────────────────────────────────────────────┘
 ```
+
+**Serving:** FastAPI serves the React build as static files in production (`/assets`, SPA catch-all). In dev, Vite runs on `:5173` with a proxy to the backend on `:8765`.
 
 ---
 
-## 4. Component Breakdown
-
-### 4.1 Web UI (React + TypeScript)
-
-A single-page application served by the FastAPI backend at `localhost:8765`.
-
-**Pages:**
-
-- `/` — Home: grid of Lists with thumbnails, create new list
-- `/lists/:id` — List detail: three-column layout (Sources | Chat | Studio)
-- `/settings` — Global config: AI provider, Whisper, accounts, health panel
-
-**List detail layout:**
-
-```
-┌──────────────────┬──────────────────┬──────────────────┐
-│   Sources         │      Chat        │     Studio       │
-│                   │                  │                  │
-│ [Add URL input]   │  (v0: skeleton,  │ [Generate        │
-│                   │   v1: RAG chat)  │  Overview btn]   │
-│ ── Source A ──    │                  │                  │
-│ ── Source B ──    │                  │ ── Artifact ──   │
-│ ── Source C ──    │                  │ overview.md      │
-│                   │                  │ [Download]       │
-└──────────────────┴──────────────────┴──────────────────┘
-```
-
-Clicking a source replaces the entire left (Sources) panel with a detail view:
-- `← Back` returns to source list
-- **Note** tab: read-only LLM-generated note
-- **Transcript** tab: raw Whisper transcript
-
-Notes are **read-only** in the UI. The only export action is download as markdown.
-
-**Jobs:** Global floating badge (bottom-right) showing active job count. Clicking opens a side drawer with job list, status badges, progress bars, and cancel buttons. Auto-polls every 3s when open.
-
-**Dev setup:** Vite dev server on `:5173`, proxies `/api/*` to `:8765`. Windows browser reaches both directly over WSL network. Production: `npm run build` → `web/dist`, FastAPI mounts as static files after all `/api` routes.
-
-### 4.2 Backend API (Python / FastAPI)
-
-Core routes:
-```
-POST   /ingest/url              # body: { list_id, url } — single video, playlist, or course
-                                # ?rerun=true overrides deduplication and re-runs the full pipeline
-GET    /jobs                    # list all jobs with status
-GET    /jobs/{id}               # single job status + progress
-DELETE /jobs/{id}               # cancel job
-
-POST   /lists                   # create a new list
-GET    /lists                   # all lists (enriched: thumbnail_url, source_count, updated_at)
-PATCH  /lists/{id}              # update name and/or thumbnail_source_id
-DELETE /lists/{id}              # delete list and cascade: notes + sources + embeddings
-GET    /lists/{id}/sources      # sources for a list
-DELETE /lists/{id}/sources/{video_id}  # delete one source: note file + sources row + embeddings
-POST   /lists/{id}/overview     # on-demand: generate overview markdown, return for download
-
-GET    /covers/{video_id}       # serve cached cover image from ~/.locus/notes/attachments/
-
-GET    /notes/{video_id}/content    # note markdown content
-GET    /notes/{video_id}/transcript # raw transcript text
-
-GET    /models/whisper          # list available Whisper models with download status
-POST   /models/whisper/download # queue a Whisper model download job
-
-GET    /health                  # dependency health check
-GET    /config                  # get config
-PUT    /config                  # update config
-
-# v1
-POST   /lists/{id}/query        # SSE: multi-turn RAG Q&A scoped to a list
-```
-
-**Ingestion flow:** The user creates a list first (or selects an existing one), then submits a URL into it. Ingestion without a list is not permitted.
-
-**Deduplication:** Before queuing a video, the backend checks the `sources` table for an existing `video_id`. If found, the job is skipped silently.
-
-`DELETE /lists/{id}/sources/{video_id}` removes the note file, ChromaDB embeddings, and the `sources` row. After deletion, re-ingesting the same URL is treated as a fresh video.
-
-`POST /ingest/url?rerun=true` bypasses the deduplication check and re-runs the full pipeline in-place, overwriting the existing note and embeddings (use when re-processing with an upgraded model without deleting first).
-
-### 4.3 Job Queue, Lists & Sources
-
-SQLite serves three purposes: a transient job queue, a list registry, and a source catalog.
-
-**Lists are stored in SQLite** as the backend's source of truth.
-
-**Job states:** `queued → downloading → transcribing → extracting → writing → done | failed`
-
-Jobs are ephemeral — they can be pruned after a retention window once complete. `sources` is the permanent catalog.
-
-```sql
--- List registry
-CREATE TABLE lists (
-    id                   TEXT PRIMARY KEY,
-    name                 TEXT NOT NULL,
-    thumbnail_source_id  TEXT REFERENCES sources(video_id),
-    created_at           DATETIME DEFAULT CURRENT_TIMESTAMP
-);
-
--- Ephemeral queue: pruned after retention window
-CREATE TABLE jobs (
-    id          TEXT PRIMARY KEY,
-    type        TEXT,           -- 'ingest' | 'playlist' | 'course' | 'model_download'
-    status      TEXT,           -- queued | downloading | transcribing | extracting | writing | done | failed | needs_auth
-    progress    INTEGER,        -- 0-100
-    error       TEXT,
-    created_at  DATETIME,
-    updated_at  DATETIME,
-    meta        JSON            -- ingest: { list_id, source_url, platform, video_id, title, cover_url, duration_seconds, uploader, rerun }
-                                -- model_download: { model_family, model_size }
-);
-
--- Active source catalog: one row per successfully processed video, deleted when source is removed
-CREATE TABLE sources (
-    video_id            TEXT PRIMARY KEY,   -- platform-native ID (e.g. bvid)
-    platform            TEXT,
-    list_id             TEXT REFERENCES lists(id),
-    note_path           TEXT NOT NULL,      -- absolute path to ~/.locus/notes/{video_id}.md
-    transcript_path     TEXT,               -- absolute path to ~/.locus/transcripts/{video_id}.txt
-    whisper_model       TEXT,
-    ai_model            TEXT,
-    vision_enabled      INTEGER DEFAULT 0,
-    cover_url           TEXT,
-    processed_at        DATETIME,
-    settings_snapshot   JSON
-);
-```
-
-`sources` powers deduplication (is this video already processed?), source listing per list, and note path resolution. The `cover_url` column stores the remote cover URL at ingest time; the cached file at `~/.locus/notes/attachments/{video_id}_cover.jpg` takes precedence when serving via `GET /covers/{video_id}`.
-
-`GET /lists` returns an enriched response per list: `thumbnail_url` (resolved from `thumbnail_source_id`, preferring cached local cover over remote URL), `source_count`, and `updated_at` (max `processed_at` of its sources, falling back to `created_at`). Lists are ordered by `updated_at DESC`.
-
-### 4.4 Platform Adapters
-
-Each adapter implements a common interface:
-
-```python
-class PlatformAdapter:
-    def resolve(self, url: str) -> VideoMeta | PlaylistMeta
-    def download(self, video_id: str, session: Session | None) -> Path
-    def requires_auth(self, resource_type: str) -> bool
-```
-
-**v0:** Bilibili adapter (single video `bvid`, playlist, course)
-**v3:** YouTube adapter, with free-text resolver
-
-Auth is handled per-adapter. Bilibili uses cookie-based session stored in config. When a download returns a 403, the adapter raises `AuthRequiredError` and the job transitions to `needs_auth`, prompting the user via the UI.
-
-### 4.5 Processing Pipeline
-
-Per video, once downloaded:
-
-```
-1. Extract audio (FFmpeg)
-2. Transcribe audio → raw Whisper segments (Faster Whisper)
-3. Write raw segments to transcript file (~/.locus/transcripts/{video_id}.txt)
-4. Merge consecutive segments into RAG chunks (~200-400 tokens each)
-5. LLM pass: extract title, summary, key points with timestamps
-6. (v1) If vision enabled: sample frames → multimodal LLM pass
-7. Write video note (~/.locus/notes/{video_id}.md)
-8. Embed RAG chunks into ChromaDB vector store
-9. Write sources entry
-```
-
-Note: List overview is **not** generated automatically during pipeline. It is generated on-demand via `POST /lists/{id}/overview` from the Studio panel.
-
-**Chunking strategy:** Whisper raw segments (~5–15s each) are merged greedily until the chunk reaches ~300 tokens. Each chunk stores `timestamp_start`, `timestamp_end`, and `sequence_index` in ChromaDB metadata.
-
-### 4.6 Vector Store (ChromaDB)
-
-Used for RAG in the Q&A engine (v1). Each chunk stored with metadata:
-
-```json
-{
-  "video_id": "...",
-  "list_id": "...",
-  "video_title": "...",
-  "timestamp_start": 142,
-  "timestamp_end": 198,
-  "sequence_index": 7,
-  "text": "..."
-}
-```
-
-Q&A queries are scoped by `list_id` (list-level) or `video_id` (single-source).
-
-### 4.7 Transcript Storage & Serving
-
-Raw Whisper segments stored at `~/.locus/transcripts/{video_id}.txt`. Served via:
-
-```
-GET /notes/{video_id}/transcript
-```
-
-The web UI renders transcript in the Source viewer's transcript tab (read-only).
-
-### 4.8 Free-Text Ingestion Resolver (v3)
-
-When the user submits a natural language query, the backend:
-
-1. Sends the query to the LLM to extract intent: platform hint, search terms, content type
-2. Dispatches to the matching platform's search skill
-3. Returns candidate playlists/videos for user confirmation before ingesting
-4. On confirmation, creates jobs as normal
-
-Always requires user confirmation before bulk ingestion.
-
----
-
-## 5. Data Model — Notes
-
-### 5.1 Storage Layout
-
-Notes and transcripts are stored under `~/.locus/`.
+## 4. Storage Layout
 
 ```
 ~/.locus/
-  locus.db                  # SQLite (lists + jobs + processing_log)
-  notes/
-    {video_id}.md           # LLM-generated note
-    attachments/
-      {video_id}_cover.jpg
-  transcripts/
-    {video_id}.txt          # raw Whisper segments: [HH:MM:SS] text
-  chroma/                   # ChromaDB data directory
-  downloads/                # temporary video files, cleaned up after processing
+├── config.json          Pydantic settings, credentials
+├── locus.db             SQLite
+├── notes/
+│   ├── {video_id}.md    LLM-generated markdown note
+│   └── attachments/
+│       └── {video_id}_cover.jpg   cached cover image
+├── transcripts/
+│   └── {video_id}.txt   raw Whisper segments: [HH:MM:SS] text
+├── chroma/              ChromaDB data directory
+└── downloads/           temp video files, cleaned after pipeline
 ```
 
-### 5.2 Video Note
+Notes and transcripts are **always written to disk**, not stored in SQLite. `sources` holds paths and denormalized metadata for fast listing.
 
-Stored at: `~/.locus/notes/{video_id}.md`
+---
+
+## 5. Database Schema
+
+Three tables, three purposes:
+
+### `lists` — List registry
+
+| Column | Notes |
+|---|---|
+| `id` | UUID, primary key |
+| `name` | User-visible name |
+| `thumbnail_source_id` | FK to `sources.video_id`, nullable |
+| `created_at` | ISO timestamp |
+
+### `jobs` — Ephemeral queue
+
+| Column | Notes |
+|---|---|
+| `id` | UUID, primary key |
+| `type` | `"ingest"` \| `"playlist"` \| `"course"` \| `"model_download"` |
+| `status` | `queued` → `downloading` → `transcribing` → `extracting` → `writing` → `done` \| `failed` \| `needs_auth` |
+| `progress` | 0–100 |
+| `error` | Error message, nullable |
+| `meta` | JSON blob: `{ list_id, video_id, title, cover_url, platform, source_url, rerun, ... }` |
+
+`jobs` is a transient queue — prune-able after completion. It is **not** the source of truth about what videos exist.
+
+### `sources` — Active video catalog
+
+| Column | Notes |
+|---|---|
+| `video_id` | Platform-native ID (e.g. `bvid`), primary key |
+| `platform` | Platform name |
+| `list_id` | FK to `lists.id` |
+| `title` | Denormalized from LLM output — enables list-level overview without reading files |
+| `summary` | Denormalized from LLM output — feeds `POST /lists/:id/overview` |
+| `note_path` | Absolute path to `~/.locus/notes/{video_id}.md` |
+| `transcript_path` | Absolute path to `~/.locus/transcripts/{video_id}.txt`, nullable |
+| `whisper_model` | Model used for transcription |
+| `ai_model` | Model used for extraction |
+| `vision_enabled` | Boolean |
+| `cover_url` | Remote cover URL at ingest time |
+| `processed_at` | ISO timestamp |
+| `settings_snapshot` | JSON blob of config at ingest time |
+
+`sources` is the authoritative record of processed videos. It drives deduplication, listing, and note path resolution.
+
+---
+
+## 6. Core Design Decisions
+
+| Decision | Choice | Rationale |
+|---|---|---|
+| Note storage | Files in `~/.locus/notes/` | Decouples note lifecycle from DB; notes are human-readable, downloadable, and portable without DB access |
+| List storage | SQLite `lists` table | Natural source of truth for routing and list-level queries (overview, source count, ordering) |
+| Overview generation | On-demand via `POST /lists/:id/overview`, not in pipeline | Avoids silent LLM calls during ingestion; user controls when to generate |
+| Job vs source deduplication | `sources` is the dedup source; `jobs` is purely ephemeral | A video is "processed" if it has a `sources` row. Re-processing requires `?rerun=true` or explicit delete |
+| Overview reads `sources.title/summary` | Denormalized into `sources` at ingest time | Enables list-level synthesis without re-reading every note file |
+| Transcript storage | Files in `~/.locus/transcripts/`, not in DB | Re-chunking or re-embedding never requires re-transcription |
+| `sources` table, not `processing_log` | Renamed from `processing_log` | The table is an active catalog (mutable), not an audit log (immutable). The old name was misleading. |
+| Backend serves SPA | FastAPI mounts `/assets` + catch-all `/{path}` → `index.html` | Single-port deployment; no separate frontend server needed |
+| SPA routing | Client-side (React Router) | FastAPI `/{full_path:path}` with `not_found` guard on `api/*` |
+| Worker concurrency | Configurable via `config.backend.worker_concurrency` | Default 1; users with GPU headroom can increase |
+| ChromaDB chunk metadata | `video_id`, `list_id`, `timestamp_start/end`, `sequence_index` | Enables both per-video and per-list RAG scope |
+
+---
+
+## 7. Ingestion Flow
+
+```
+User submits URL → POST /ingest/url
+                        │
+                    BilibiliAdapter.resolve(url)
+                        │
+              Returns VideoMeta or PlaylistMeta
+                        │
+              Check already_done via sources table
+                        │
+              For each unprocessed video:
+                  create_job(type=ingest, meta={...})
+                        │
+              WorkerLoop picks up job
+                        │
+              adapter.download(video_id) → temp file
+                        │
+              pipeline: audio → transcribe → chunk → extract → notes → embed
+                        │
+              write_source() — upserts into sources table
+                        │
+              Temp download file deleted
+```
+
+**Deduplication:** Checked at ingest time against `sources.video_id`. If found and `rerun=false` (default): skip silently, report in response. With `rerun=true`: re-runs full pipeline, overwrites note and embeddings in-place.
+
+**Delete flow:** `DELETE /lists/:id/sources/:video_id` removes the note file, ChromaDB embeddings, and the `sources` row. After deletion, the same URL can be re-ingested as a fresh video.
+
+---
+
+## 8. Processing Pipeline
+
+Per video, in order:
+
+```
+1. download        → temp video file
+2. audio           → strip audio to .wav via FFmpeg
+3. transcribe      → Faster Whisper → raw segments with timestamps
+4. chunk           → merge segments into RAG-ready chunks (~300 tokens)
+5. extract         → LLM: title, summary, key_points with timestamps
+6. notes           → write ~/.locus/notes/{video_id}.md + cover image
+7. embed           → store chunks in ChromaDB with metadata
+8. write_source    → upsert row into sources table
+```
+
+Note: List overview (`POST /lists/:id/overview`) is **not** in the pipeline — it reads `sources.title/summary` for all sources in a list and synthesizes on-demand.
+
+### Chunking strategy
+
+Whisper segments are ~5–15s each. Consecutive segments are merged greedily until the chunk reaches ~300 tokens. Each chunk stores `timestamp_start`, `timestamp_end`, and `sequence_index` in ChromaDB metadata. This balances embedding quality with timestamp granularity — large enough for context, small enough to keep citations precise.
+
+### Note format
+
+Markdown with YAML frontmatter:
 
 ```markdown
 ---
@@ -319,41 +229,57 @@ processed_at: 2026-03-31T10:00:00
 ## Key Points
 - [00:02:14] {knowledge point}
 - [00:08:45] {knowledge point}
-- [00:21:03] {knowledge point}
-```
-
-### 5.3 List Overview
-
-Generated on-demand via `POST /lists/{id}/overview`. Returned as a markdown string in the API response body; the client triggers a browser download. Not stored on the filesystem.
-
-```markdown
-# {List Name} — Overview
-
-## Outline
-{LLM-generated outline synthesizing all sources in the list}
-
-## Sources
-- {Video Title 1}
-- {Video Title 2}
-...
 ```
 
 ---
 
-## 6. Configuration Schema
+## 9. Platform Adapters
+
+```python
+class PlatformAdapter:
+    def resolve(self, url: str) -> VideoMeta | PlaylistMeta
+    def download(self, video_id: str, session: httpx.Session | None) -> Path
+    def requires_auth(self, resource_type: str) -> bool
+```
+
+**v0:** `BilibiliAdapter` — single video (`bvid`), playlist, course. Cookie-based session auth stored in config.
+
+When a download returns 403: adapter raises `AuthRequiredError`, job transitions to `needs_auth`, UI prompts the user.
+
+**v3:** YouTube adapter with free-text resolver.
+
+---
+
+## 10. List Detail Page — Sources Panel
+
+The Sources panel operates in two modes, toggled by user action:
+
+**List mode** — URL input + source rows:
+- Text input accepts a Bilibili URL
+- Job progress row shown for in-flight ingestions (animated stage indicator)
+- Source rows show title + platform; hover reveals context menu (Re-run, Delete)
+- Clicking a source row opens viewer mode
+
+**Viewer mode** — back button + content:
+- Back button returns to list mode
+- **Note** tab: renders the markdown note (cover image rewritten to `/api/notes/{video_id}/attachments/...`)
+- **Transcript** tab: renders raw Whisper transcript in monospace, read-only
+
+Transcript attachment paths in notes are rewritten at serving time — the file on disk uses relative `attachments/` paths; the API rewrites them to absolute `/api/notes/{video_id}/attachments/` so they load in the browser.
+
+---
+
+## 11. Configuration Schema
 
 ```json
 {
   "accounts": {
-    "bilibili": {
-      "cookie": "...",
-      "last_verified": "..."
-    }
+    "bilibili": { "cookie": "", "last_verified": "" }
   },
   "ai": {
     "provider": "openai | anthropic | ollama | custom",
     "model": "gpt-4o",
-    "api_key": "...",
+    "api_key": "",
     "base_url": null
   },
   "transcription": {
@@ -376,80 +302,20 @@ Generated on-demand via `POST /lists/{id}/overview`. Returned as a markdown stri
 
 ---
 
-## 7. Deployment Health Checks
+## 12. Open Questions
 
-The `/health` endpoint checks all dependencies. Displayed inline in the Settings page.
-
-| Dependency | Type | Blocks ingestion? |
-|---|---|---|
-| Backend API | self | yes |
-| LLM API / Ollama | external | yes |
-| Faster Whisper model | local | yes |
-| FFmpeg binary | local | yes |
-| Embedding model (ONNX) | local | yes |
-| CUDA availability | local | no (falls back to CPU) |
-| Bilibili session | account | no (blocks course only) |
-
----
-
-## 8. Versioned Rollout
-
-### v0 — Core Pipeline + Web UI
-- Global config + deployment health
-- Bilibili ingestion: single video, playlist, course
-- Faster Whisper transcription
-- LLM-based note generation (summary + timestamped key points)
-- Markdown note storage at `~/.locus/notes/`
-- List creation and management (DB-backed)
-- On-demand list overview generation (manual, Studio panel)
-- Job queue with status polling in web UI
-- Source viewer: read-only note + transcript toggle
-
-### v1 — Enhanced Knowledge
-- Multimodal vision pass (opt-in, configurable frame sampling)
-- Multi-turn RAG Q&A (list scope) with transcript citation and timestamp references
-- Source truth panel: user-supplied corrections injected into RAG context
-
-### v2 — Generative Outputs
-- TTS configuration
-- Mindmap generation (Mermaid)
-- Audio overview (LLM script + TTS, scoped to list)
-
-### v3 — Expanded Sources
-- YouTube adapter
-- Free-text ingestion resolver with per-platform search skills
-- User confirmation step before bulk ingestion from free-text
-
----
-
-## 9. Key Technical Decisions
-
-| Decision | Choice | Rationale |
-|---|---|---|
-| Frontend | React + TypeScript SPA | Full control over UX for the product's three-panel interface, and deployable without SSR |
-| Serving | FastAPI serves React build as static files | Single port, no separate frontend server in production |
-| Note storage | Notes stored in `~/.locus/notes/` | Keeps note generation, serving, and download behavior fully under backend control |
-| List storage | SQLite `lists` table | Database-backed registry is the natural source of truth for list lifecycle and routing |
-| Overview generation | On-demand via API, not in pipeline | Avoids silent LLM calls during ingestion; user controls when to generate and download |
-| Backend framework | FastAPI | Async-native, easy SSE for job progress and chat streaming |
-| DB schema | SQLite three tables: `lists`, `jobs`, `sources` | `jobs` is ephemeral queue (prunable); `sources` is the active catalog (dedup + note path); `lists` is the registry. Naming reflects purpose, not implementation. |
-| Job meta | Ingest-specific fields (`source_url`, `platform`, `video_id`, etc.) stored in `meta` JSON | Keeps the `jobs` table schema stable across job types; per-type payload lives in the blob. |
-| Vector store | ChromaDB | Local, no server process, Python-native |
-| Transcription | Faster Whisper | Best local quality/speed tradeoff, CUDA support |
-| Transcript storage | `~/.locus/transcripts/` | Decoupled from notes; re-chunking/re-embedding never requires re-transcription |
-| RAG chunking | Greedy merge of Whisper segments (~300 tokens) | Balances embedding quality with timestamp granularity |
-| Note format | Markdown + YAML frontmatter | Human-readable, downloadable, future-portable |
-| Auth storage | Local config file | Credentials stay off network |
-
----
-
-## 10. Open Questions
-
-1. ~~**Whisper language detection**~~ — Resolved: UI dropdown with `auto / zh / en`. Stored in config, applied globally.
-2. ~~**Note deduplication**~~ — Resolved: check `sources` table for existing `video_id`. Skip silently if found. Override with `?rerun=true` (re-process in-place) or delete the source first (re-add fresh).
-3. ~~**List assignment**~~ — Resolved: user always selects a list before ingesting. No default list.
-4. ~~**Note sync model**~~ — Resolved: notes are managed by the backend; the web UI is read-only.
-5. ~~**Chunk strategy for RAG**~~ — Resolved: greedy merge of Whisper segments to ~300 token target.
-6. ~~**List storage**~~ — Resolved: DB-backed (`lists` table in SQLite).
-7. ~~**Frontend approach**~~ — Resolved: React + TypeScript SPA served by FastAPI.
-8. ~~**processing_log vs jobs**~~ — Resolved: `processing_log` renamed to `sources` (active catalog, mutable). `jobs` stays ephemeral. "Log" naming was misleading — it implied immutability, but the table is a catalog of active sources, not an audit trail.
+1. ~~Whisper language detection~~ — UI dropdown (`auto / zh / en`), stored in config, applied globally.
+2. ~~Note deduplication~~ — `sources` table as dedup source; `?rerun=true` to re-process in-place.
+3. ~~List assignment~~ — User always selects a list before ingesting.
+4. ~~Note sync model~~ — Backend writes notes to disk; web UI is read-only.
+5. ~~Chunk strategy~~ — Greedy merge of Whisper segments to ~300 token target.
+6. ~~List storage~~ — SQLite `lists` table.
+7. ~~Frontend approach~~ — React + TypeScript SPA served by FastAPI.
+8. ~~processing_log naming~~ — Renamed to `sources`; table is a mutable catalog, not an immutable log.
+9. **v1 RAG Q&A** — List-scoped multi-turn chat with transcript citation and timestamp references. Open: how to scope citations (per-chunk or per-turn)? How to handle multi-source ranking?
+10. **v1 Multimodal vision** — Opt-in frame sampling pass. Open: which multimodal model? Does this run in pipeline or on-demand like overview?
+11. **v1 Source truth panel** — User-supplied corrections injected into RAG context. Open: stored as annotations on the note file, or a separate overlay table?
+12. **v2 Mindmap generation** — Mermaid output from LLM. Open: generated on-demand or stored alongside notes?
+13. **v2 Audio overview** — LLM script + TTS, scoped to list. Open: TTS engine choice (local or cloud)? Does this become a downloadable artifact or a playable inline player?
+14. **v3 YouTube adapter** — Adapter interface is already defined; YouTube-specific resolver and downloader are not implemented. Open: OAuth vs API key vs cookie auth?
+15. **v3 Free-text resolver** — Natural language → platform search → user confirmation → bulk ingest. Open: LLM for intent extraction vs heuristic? How to handle ambiguous queries?
