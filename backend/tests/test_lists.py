@@ -239,3 +239,32 @@ async def test_delete_source_clears_thumbnail_and_cover(
 async def test_delete_source_not_found(client: httpx.AsyncClient):
     list_id = (await client.post("/lists", json={"name": "ML"})).json()["id"]
     assert (await client.delete(f"/lists/{list_id}/sources/nonexistent")).status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_first_source_auto_assigned_as_thumbnail(
+    client: httpx.AsyncClient, tmp_bibilab_home: Path
+):
+    from bibilab.db import get_list_with_display, write_source
+
+    # Create an empty list
+    list_id = (await client.post("/lists", json={"name": "Empty"})).json()["id"]
+
+    # Write the first source (simulating first ingest completing)
+    await write_source(
+        video_id="BVfirst",
+        platform="bilibili",
+        list_id=list_id,
+        title="First Video",
+        summary="S",
+        note_path=str(tmp_bibilab_home / "notes" / "BVfirst.md"),
+        transcript_path=None,
+        whisper_model="large-v3",
+        ai_model="gpt-4o",
+        vision_enabled=False,
+        settings_snapshot={},
+    )
+
+    # List's thumbnail_source_id should be auto-assigned to the first source
+    row = await get_list_with_display(list_id)
+    assert row["thumbnail_source_id"] == "BVfirst"

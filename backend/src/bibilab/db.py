@@ -201,6 +201,23 @@ async def write_source(
     cover_url: str | None = None,
 ) -> None:
     async with get_db() as db:
+        # Check if this is a new source
+        existing = db.execute(
+            "SELECT video_id FROM sources WHERE video_id = ?", (video_id,)
+        ).fetchone()
+
+        # Auto-assign thumbnail if new source and list has none
+        if existing is None:
+            list_row = db.execute(
+                "SELECT thumbnail_source_id FROM lists WHERE id = ?", (list_id,)
+            ).fetchone()
+            if list_row is not None and list_row["thumbnail_source_id"] is None:
+                db.execute(
+                    "UPDATE lists SET thumbnail_source_id = ? WHERE id = ?",
+                    (video_id, list_id),
+                )
+
+        # Upsert source
         db.execute(
             """
             INSERT INTO sources
