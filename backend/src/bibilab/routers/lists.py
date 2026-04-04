@@ -151,6 +151,7 @@ async def delete_list(list_id: str) -> None:
     sources = await get_sources_for_list(list_id)
     for source in sources:
         Path(source["note_path"]).unlink(missing_ok=True)
+        _cached_cover_path(source["video_id"]).unlink(missing_ok=True)
 
     await delete_sources_for_list(list_id)
     cfg = load_config()
@@ -181,10 +182,15 @@ async def delete_list_source(list_id: str, video_id: str) -> None:
     if source is None or source["list_id"] != list_id:
         raise HTTPException(status_code=404, detail="Source not found")
 
+    row = await get_list(list_id)
+    if row is not None and row["thumbnail_source_id"] == video_id:
+        await update_list_thumbnail(list_id, None)
+
     Path(source["note_path"]).unlink(missing_ok=True)
     cfg = load_config()
     await asyncio.to_thread(clear_embeddings_for_video, video_id, cfg)
     await delete_source(video_id)
+    _cached_cover_path(video_id).unlink(missing_ok=True)
 
 
 @router.post("/lists/{list_id}/overview")

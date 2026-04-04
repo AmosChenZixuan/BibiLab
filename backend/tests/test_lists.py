@@ -194,6 +194,48 @@ async def test_delete_source_from_list(
 
 
 @pytest.mark.asyncio
+async def test_delete_source_clears_thumbnail_and_cover(
+    client: httpx.AsyncClient, tmp_bibilab_home: Path, tmp_path: Path
+):
+    from bibilab.db import get_list, write_source
+
+    list_id = (await client.post("/lists", json={"name": "ML"})).json()["id"]
+    note_file = tmp_path / "BV1abc.md"
+    note_file.write_text("# Note", encoding="utf-8")
+    await write_source(
+        video_id="BV1abc",
+        platform="bilibili",
+        list_id=list_id,
+        title="Intro",
+        summary="S",
+        note_path=str(note_file),
+        transcript_path=None,
+        whisper_model="large-v3",
+        ai_model="gpt-4o",
+        vision_enabled=False,
+        settings_snapshot={},
+    )
+
+    # Assign the source as the list's thumbnail
+    await client.patch(f"/lists/{list_id}", json={"thumbnail_source_id": "BV1abc"})
+    cover_file = tmp_bibilab_home / "notes" / "attachments" / "BV1abc_cover.jpg"
+    cover_file.parent.mkdir(parents=True, exist_ok=True)
+    cover_file.write_bytes(b"fake-image")
+    assert cover_file.exists()
+
+    with patch("bibilab.routers.lists.clear_embeddings_for_video"):
+        resp = await client.delete(f"/lists/{list_id}/sources/BV1abc")
+    assert resp.status_code == 204
+
+    # Thumbnail reference is cleared
+    row = await get_list(list_id)
+    assert row["thumbnail_source_id"] is None
+
+    # Cover file is deleted
+    assert not cover_file.exists()
+
+
+@pytest.mark.asyncio
 async def test_delete_source_not_found(client: httpx.AsyncClient):
     list_id = (await client.post("/lists", json={"name": "ML"})).json()["id"]
     assert (await client.delete(f"/lists/{list_id}/sources/nonexistent")).status_code == 404
