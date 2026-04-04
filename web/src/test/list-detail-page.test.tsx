@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { RouterProvider, createMemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
-import { routes } from "../app/routes";
+import { routes } from "@/app/routes";
 
 // ─── Per-test state (set inside each test) ───────────────────────────────────
 
@@ -129,7 +129,7 @@ vi.mock("../lib/api", () => ({
   toErrorMessage: vi.fn((e: unknown) => (e instanceof Error ? e.message : String(e))),
 }));
 
-import { api } from "../lib/api";
+import { api } from "@/lib/api";
 
 afterEach(() => {
   cleanup();

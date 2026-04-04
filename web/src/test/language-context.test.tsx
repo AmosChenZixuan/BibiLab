@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, test } from "vitest";
 
-import { LanguageProvider, useLanguage } from "../app/LanguageContext";
+import { LanguageProvider, useLanguage } from "@/app/LanguageContext";
 
 function Toggle() {
   const { lang, setLang } = useLanguage();

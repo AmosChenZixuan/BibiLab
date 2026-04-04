@@ -3,12 +3,12 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, test, vi } from "vitest";
 
 afterEach(cleanup);
-import { Button } from "../components/ui/Button";
-import { ContextMenu } from "../components/ui/ContextMenu";
-import { Modal } from "../components/ui/Modal";
-import { FormField } from "../components/ui/FormField";
-import { Panel } from "../components/ui/Panel";
-import { StatusChip } from "../components/ui/StatusChip";
+import { Button } from "@/components/ui/Button";
+import { ContextMenu } from "@/components/ui/ContextMenu";
+import { Modal } from "@/components/ui/Modal";
+import { FormField } from "@/components/ui/FormField";
+import { Panel } from "@/components/ui/Panel";
+import { StatusChip } from "@/components/ui/StatusChip";
 
 // ── Button ──────────────────────────────────────────────────────────────────
 describe("Button", () => {

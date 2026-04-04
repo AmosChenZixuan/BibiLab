@@ -1,6 +1,6 @@
 import { MdClose } from "react-icons/md";
-import type { NoteContent, Source } from "../../../lib/types";
-import { NoteAccordion } from "../NoteAccordion";
+import type { NoteContent, Source } from "@/lib/types";
+import { NoteAccordion } from "@/components/lists/NoteAccordion";
 
 export function SourcesViewerMode({
   source,

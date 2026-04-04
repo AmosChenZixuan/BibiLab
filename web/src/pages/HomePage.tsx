@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
 
-import { ListGrid } from "../components/lists/ListGrid";
-import { api, toErrorMessage } from "../lib/api";
-import type { LocusList, Source } from "../lib/types";
-import { Button, Input, Modal, Panel } from "../components/ui";
+import { ListGrid } from "@/components/lists/ListGrid";
+import { api, toErrorMessage } from "@/lib/api";
+import type { LocusList, Source } from "@/lib/types";
+import { Button, Input, Modal, Panel } from "@/components/ui";
 
 export function HomePage() {
   const [lists, setLists] = useState<LocusList[]>([]);

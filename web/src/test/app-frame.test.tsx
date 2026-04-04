@@ -3,9 +3,9 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
-import { LanguageProvider } from "../app/LanguageContext";
-import { AppFrame } from "../components/layout/AppFrame";
-import type { HealthResponse } from "../lib/types";
+import { LanguageProvider } from "@/app/LanguageContext";
+import { AppFrame } from "@/components/layout/AppFrame";
+import type { HealthResponse } from "@/lib/types";
 
 vi.mock("../lib/api", () => ({
   HEALTH_REFRESH_EVENT: "locus:health:refresh",
@@ -16,8 +16,8 @@ vi.mock("../lib/api", () => ({
   },
 }));
 
-import { api } from "../lib/api";
-import { HEALTH_REFRESH_EVENT } from "../lib/api";
+import { api } from "@/lib/api";
+import { HEALTH_REFRESH_EVENT } from "@/lib/api";
 
 afterEach(() => {
   cleanup();

@@ -5,13 +5,13 @@ import {
   MdChevronRight,
 } from "react-icons/md";
 
-import { api, toErrorMessage } from "../lib/api";
-import type { NoteContent, Source } from "../lib/types";
+import { api, toErrorMessage } from "@/lib/api";
+import type { NoteContent, Source } from "@/lib/types";
 
-import { usePanelResize, Resizer, MIN_PANEL, COLLAPSED_PANEL } from "../components/lists/panel-resize";
-import { NavbarTitle } from "../components/lists/NavbarTitle";
-import { SourcesViewerMode } from "../components/lists/sources/SourcesViewerMode";
-import { SourcesListMode } from "../components/lists/sources/SourcesListMode";
+import { usePanelResize, Resizer, MIN_PANEL, COLLAPSED_PANEL } from "@/components/lists/panel-resize";
+import { NavbarTitle } from "@/components/lists/NavbarTitle";
+import { SourcesViewerMode } from "@/components/lists/sources/SourcesViewerMode";
+import { SourcesListMode } from "@/components/lists/sources/SourcesListMode";
 
 function SkeletonPanel({ title, note }: { title: string; note: string }) {
   return (

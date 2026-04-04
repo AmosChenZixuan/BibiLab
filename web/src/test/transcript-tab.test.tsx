@@ -2,9 +2,9 @@ import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
-import { TranscriptTab } from "../components/settings/TranscriptTab";
-import type { HealthDependency, LocusConfig } from "../lib/types";
-import { JobActivityProvider } from "../components/jobs/JobActivityProvider";
+import { TranscriptTab } from "@/components/settings/TranscriptTab";
+import type { HealthDependency, LocusConfig } from "@/lib/types";
+import { JobActivityProvider } from "@/components/jobs/JobActivityProvider";
 
 vi.mock("../lib/api", () => ({
   api: {
@@ -17,7 +17,7 @@ vi.mock("../lib/api", () => ({
   },
 }));
 
-import { api } from "../lib/api";
+import { api } from "@/lib/api";
 
 const baseConfig: LocusConfig = {
   accounts: { bilibili: { cookie: "", last_verified: "" } },

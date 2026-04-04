@@ -3,8 +3,8 @@ import userEvent from "@testing-library/user-event";
 import { RouterProvider, createMemoryRouter } from "react-router-dom";
 import { describe, expect, test, vi } from "vitest";
 
-import { routes } from "../app/routes";
-import type { Job } from "../lib/types";
+import { routes } from "@/app/routes";
+import type { Job } from "@/lib/types";
 
 function installFetchMock(
   handler: (input: RequestInfo | URL, init?: RequestInit) => Response | Promise<Response>,

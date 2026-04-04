@@ -8,8 +8,8 @@ import {
   useState,
 } from "react";
 
-import { api, toErrorMessage } from "../../lib/api";
-import type { IngestJob, Job, ModelDownloadJob } from "../../lib/types";
+import { api, toErrorMessage } from "@/lib/api";
+import type { IngestJob, Job, ModelDownloadJob } from "@/lib/types";
 
 export const TERMINAL_JOB_STATUSES = new Set(["done", "failed", "needs_auth"]);
 

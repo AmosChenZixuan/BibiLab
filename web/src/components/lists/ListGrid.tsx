@@ -1,5 +1,5 @@
 import { FiPlus } from "react-icons/fi";
-import type { LocusList } from "../../lib/types";
+import type { LocusList } from "@/lib/types";
 import { ListCard } from "./ListCard";
 
 type Props = {

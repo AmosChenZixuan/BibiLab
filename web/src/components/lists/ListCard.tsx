@@ -1,8 +1,8 @@
 import { FiEdit2, FiImage, FiMoreVertical, FiTrash2 } from "react-icons/fi";
 import { useNavigate } from "react-router-dom";
 
-import type { LocusList } from "../../lib/types";
-import { ContextMenu } from "../ui";
+import type { LocusList } from "@/lib/types";
+import { ContextMenu } from "@/components/ui";
 
 type Props = {
   list: LocusList;

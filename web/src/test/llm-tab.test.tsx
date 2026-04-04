@@ -1,8 +1,8 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
-import { LlmTab } from "../components/settings/LlmTab";
-import type { LocusConfig } from "../lib/types";
+import { LlmTab } from "@/components/settings/LlmTab";
+import type { LocusConfig } from "@/lib/types";
 
 const baseConfig: LocusConfig = {
   accounts: { bilibili: { cookie: "", last_verified: "" } },

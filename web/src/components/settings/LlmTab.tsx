@@ -1,7 +1,7 @@
 import { useEffect, useId, useState } from "react";
 
-import type { LocusConfig } from "../../lib/types";
-import { Input, Select, SettingsField } from "../../components/ui";
+import type { LocusConfig } from "@/lib/types";
+import { Input, Select, SettingsField } from "@/components/ui";
 
 type LlmTabProps = {
   config: LocusConfig;

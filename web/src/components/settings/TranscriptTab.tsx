@@ -1,12 +1,12 @@
 import { useEffect, useId, useState } from "react";
 
-import { useJobActivity } from "../jobs/JobActivityProvider";
-import type { JobActivityItem } from "../jobs/JobActivityProvider";
-import { api } from "../../lib/api";
-import type { HealthDependency, LocusConfig, WhisperModel } from "../../lib/types";
+import { useJobActivity } from "@/components/jobs/JobActivityProvider";
+import type { JobActivityItem } from "@/components/jobs/JobActivityProvider";
+import { api } from "@/lib/api";
+import type { HealthDependency, LocusConfig, WhisperModel } from "@/lib/types";
 import { MdDownload } from "react-icons/md";
 
-import { Select, SettingsField, Spinner } from "../../components/ui";
+import { Select, SettingsField, Spinner } from "@/components/ui";
 
 type ModelDownloadCellProps = {
   modelName: string;

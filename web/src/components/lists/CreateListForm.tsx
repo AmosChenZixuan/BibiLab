@@ -1,6 +1,6 @@
 import { useState } from "react";
 
-import { Button, FormField, Input, Panel } from "../../components/ui";
+import { Button, FormField, Input, Panel } from "@/components/ui";
 
 type Props = {
   busy: boolean;

@@ -1,8 +1,8 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, test } from "vitest";
 
-import { OtherTab } from "../components/settings/OtherTab";
-import type { HealthDependency, LocusConfig } from "../lib/types";
+import { OtherTab } from "@/components/settings/OtherTab";
+import type { HealthDependency, LocusConfig } from "@/lib/types";
 
 const baseConfig: LocusConfig = {
   accounts: { bilibili: { cookie: "", last_verified: "" } },

@@ -1,7 +1,7 @@
 import { useEffect, useId, useState } from "react";
 
-import type { HealthDependency, LocusConfig } from "../../lib/types";
-import { Input, StatusChip } from "../../components/ui";
+import type { HealthDependency, LocusConfig } from "@/lib/types";
+import { Input, StatusChip } from "@/components/ui";
 
 type OtherTabProps = {
   config: LocusConfig;

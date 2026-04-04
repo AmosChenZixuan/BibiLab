@@ -2,8 +2,8 @@ import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
-import { JobActivityProvider, useJobActivity } from "../components/jobs/JobActivityProvider";
-import type { IngestJob, Job } from "../lib/types";
+import { JobActivityProvider, useJobActivity } from "@/components/jobs/JobActivityProvider";
+import type { IngestJob, Job } from "@/lib/types";
 
 vi.mock("../lib/api", () => ({
   api: {
@@ -13,7 +13,7 @@ vi.mock("../lib/api", () => ({
   toErrorMessage: (error: unknown) => (error instanceof Error ? error.message : "Request failed"),
 }));
 
-import { api } from "../lib/api";
+import { api } from "@/lib/api";
 
 function renderProvider() {
   return render(

@@ -8,10 +8,10 @@ import {
   MdRefresh,
 } from "react-icons/md";
 
-import { ContextMenu } from "../../ui/ContextMenu";
-import { useJobActivity } from "../../jobs/JobActivityProvider";
-import { api } from "../../../lib/api";
-import type { Source } from "../../../lib/types";
+import { ContextMenu } from "@/components/ui/ContextMenu";
+import { useJobActivity } from "@/components/jobs/JobActivityProvider";
+import { api } from "@/lib/api";
+import type { Source } from "@/lib/types";
 
 export const PIPELINE_STAGES = [
   "queued",

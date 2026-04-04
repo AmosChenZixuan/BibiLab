@@ -3,8 +3,8 @@ import userEvent from "@testing-library/user-event";
 import { RouterProvider, createMemoryRouter } from "react-router-dom";
 import { describe, expect, test, vi } from "vitest";
 
-import { ListGrid } from "../components/lists/ListGrid";
-import type { LocusList } from "../lib/types";
+import { ListGrid } from "@/components/lists/ListGrid";
+import type { LocusList } from "@/lib/types";
 
 const list: LocusList = {
   id: "list-1",
