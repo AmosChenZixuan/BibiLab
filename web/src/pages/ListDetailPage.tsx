@@ -2,13 +2,17 @@
  * ListDetailPage — redesign per docs/specs/2026-04-03-list-detail-redesign.md
  *
  * Slice 1: Page shell, resize, skeleton panels.
+ * Slice 2: Navbar title portal + rename.
  * Chat and Lab panels render as skeletons. Sources panel shows its header and
  * collapse toggle with an empty body. No API wiring yet.
  */
 
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
+import { createPortal } from "react-dom";
 import { useParams } from "react-router-dom";
 import { MdChevronLeft, MdChevronRight } from "react-icons/md";
+
+import { api, toErrorMessage } from "../lib/api";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -218,10 +222,89 @@ function SkeletonPanel({ title, note }: { title: string; note: string }) {
   );
 }
 
+// ─── Navbar title portal ──────────────────────────────────────────────────────
+
+function NavbarTitle({
+  name,
+  onCommit,
+}: {
+  name: string;
+  onCommit: (newName: string) => Promise<void>;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(name);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const navEl = document.querySelector("nav");
+
+  // Sync draft when name changes externally
+  useEffect(() => {
+    if (!editing) {
+      setDraft(name);
+    }
+  }, [name, editing]);
+
+  useEffect(() => {
+    if (editing) {
+      inputRef.current?.select();
+    }
+  }, [editing]);
+
+  function commit() {
+    const trimmed = draft.trim();
+    const next = trimmed || name;
+    setDraft(next);
+    setEditing(false);
+    if (trimmed && trimmed !== name) {
+      void onCommit(trimmed);
+    }
+  }
+
+  if (!navEl) return null;
+
+  return createPortal(
+    // Positioned right of the logo (~left-24 at px-4 spacing)
+    <div className="absolute left-24 top-1/2 -translate-y-1/2 flex items-center">
+      {editing ? (
+        <input
+          ref={inputRef}
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") commit();
+            if (e.key === "Escape") { setDraft(name); setEditing(false); }
+          }}
+          className="w-64 rounded-sm border border-blue/30 bg-sky/6 p-1 text-lg font-medium text-ink outline-none focus:border-blue/50 focus:bg-white transition"
+          autoFocus
+        />
+      ) : (
+        <span
+          role="button"
+          tabIndex={0}
+          onClick={() => { setDraft(name); setEditing(true); }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              setDraft(name);
+              setEditing(true);
+            }
+          }}
+          className="truncate cursor-text rounded-sm border border-transparent px-1 py-0.5 text-lg font-medium text-ink leading-normal transition hover:border-blue/30"
+        >
+          {name}
+        </span>
+      )}
+    </div>,
+    navEl,
+  );
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export function ListDetailPage() {
   const { listId = "" } = useParams();
+  const [listName, setListName] = useState("");
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [sourcesCollapsed, setSourcesCollapsed] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -230,69 +313,106 @@ export function ListDetailPage() {
     sourcesCollapsed,
   );
 
-  // Placeholder: list name loaded in Slice 2, sources loaded in Slice 3
-  void listId;
+  useEffect(() => {
+    let cancelled = false;
+
+    async function load() {
+      try {
+        const lists = await api.listLists();
+        if (cancelled) return;
+        const current = lists.find((l) => l.id === listId);
+        setListName(current?.name ?? "List workspace");
+        setLoadError(null);
+      } catch (err) {
+        if (!cancelled) {
+          setLoadError(toErrorMessage(err));
+        }
+      }
+    }
+
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [listId]);
+
+  async function handleRenameCommit(newName: string) {
+    try {
+      const updated = await api.updateList(listId, { name: newName });
+      setListName(updated.name);
+    } catch {
+      // On failure the portal reverts its own draft via the name prop
+    }
+  }
 
   const panelBase = "flex shrink-0 flex-col overflow-hidden rounded-3xl border border-border bg-white/76 shadow-lg";
 
   return (
-    <div
-      ref={containerRef}
-      className="fixed inset-x-0 top-14 bottom-0 z-0 box-border flex overflow-hidden px-4 pb-4"
-    >
-      {/* ── Sources panel ── */}
+    <>
+      <NavbarTitle name={listName} onCommit={handleRenameCommit} />
+
       <div
-        style={
-          sourcesCollapsed
-            ? { width: `${COLLAPSED_PANEL}px`, minWidth: `${COLLAPSED_PANEL}px` }
-            : { width: `${sourcesW}px`, minWidth: `${MIN_PANEL}px` }
-        }
-        className={panelBase}
+        ref={containerRef}
+        className="fixed inset-x-0 top-14 bottom-0 z-0 box-border flex overflow-hidden px-4 pb-4"
       >
-        <div className="flex shrink-0 items-center border-b border-border px-4 py-4">
+        {/* ── Sources panel ── */}
+        <div
+          style={
+            sourcesCollapsed
+              ? { width: `${COLLAPSED_PANEL}px`, minWidth: `${COLLAPSED_PANEL}px` }
+              : { width: `${sourcesW}px`, minWidth: `${MIN_PANEL}px` }
+          }
+          className={panelBase}
+        >
+          <div className="flex shrink-0 items-center border-b border-border px-4 py-4">
+            {!sourcesCollapsed && (
+              <h2 className="m-0 flex-1 font-serif text-lg text-ink">Sources</h2>
+            )}
+            <button
+              type="button"
+              onClick={() => setSourcesCollapsed((v) => !v)}
+              aria-label={sourcesCollapsed ? "Expand sources" : "Collapse sources"}
+              className={`flex h-7 w-7 items-center justify-center rounded-full text-muted transition hover:bg-border hover:text-ink ${sourcesCollapsed ? "mx-auto" : ""}`}
+            >
+              {sourcesCollapsed ? <MdChevronRight size={16} /> : <MdChevronLeft size={16} />}
+            </button>
+          </div>
+
           {!sourcesCollapsed && (
-            <h2 className="m-0 flex-1 font-serif text-lg text-ink">Sources</h2>
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+              {loadError && (
+                <p className="m-0 px-4 py-3 text-sm text-rose-900">{loadError}</p>
+              )}
+            </div>
           )}
-          <button
-            type="button"
-            onClick={() => setSourcesCollapsed((v) => !v)}
-            aria-label={sourcesCollapsed ? "Expand sources" : "Collapse sources"}
-            className={`flex h-7 w-7 items-center justify-center rounded-full text-muted transition hover:bg-border hover:text-ink ${sourcesCollapsed ? "mx-auto" : ""}`}
-          >
-            {sourcesCollapsed ? <MdChevronRight size={16} /> : <MdChevronLeft size={16} />}
-          </button>
         </div>
 
-        {!sourcesCollapsed && (
-          <div className="flex min-h-0 flex-1 flex-col overflow-hidden" />
-        )}
+        <Resizer onMouseDown={onMouseDownLeft} />
+
+        {/* ── Chat panel ── */}
+        <div
+          style={{ width: `${chatW}px`, minWidth: `${MIN_PANEL}px` }}
+          className={panelBase}
+        >
+          <SkeletonPanel
+            title="Chat"
+            note="List-scoped chat arrives in v1. This panel stays intentionally quiet until then."
+          />
+        </div>
+
+        <Resizer onMouseDown={onMouseDownRight} />
+
+        {/* ── Lab panel ── */}
+        <div
+          style={{ width: `${labW}px`, minWidth: `${MIN_PANEL}px` }}
+          className={panelBase}
+        >
+          <SkeletonPanel
+            title="Lab"
+            note="Synthesis tools and overview export arrive in v1."
+          />
+        </div>
       </div>
-
-      <Resizer onMouseDown={onMouseDownLeft} />
-
-      {/* ── Chat panel ── */}
-      <div
-        style={{ width: `${chatW}px`, minWidth: `${MIN_PANEL}px` }}
-        className={panelBase}
-      >
-        <SkeletonPanel
-          title="Chat"
-          note="List-scoped chat arrives in v1. This panel stays intentionally quiet until then."
-        />
-      </div>
-
-      <Resizer onMouseDown={onMouseDownRight} />
-
-      {/* ── Lab panel ── */}
-      <div
-        style={{ width: `${labW}px`, minWidth: `${MIN_PANEL}px` }}
-        className={panelBase}
-      >
-        <SkeletonPanel
-          title="Lab"
-          note="Synthesis tools and overview export arrive in v1."
-        />
-      </div>
-    </div>
+    </>
   );
 }
