@@ -1,3 +1,5 @@
+export type OutputLanguage = "ui" | "en" | "zh";
+
 export type BibilabList = {
   id: string;
   name: string;
@@ -81,7 +83,7 @@ export type BibilabConfig = {
     model: string;
     api_key: string;
     base_url: string;
-    output_language?: string;
+    output_language?: OutputLanguage;
   };
   transcription: {
     engine: string;

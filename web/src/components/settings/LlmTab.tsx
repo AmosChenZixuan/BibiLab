@@ -1,7 +1,7 @@
 import { useEffect, useId, useState } from "react";
 
 import { useLanguage } from "@/app/LanguageContext";
-import type { BibilabConfig } from "@/lib/types";
+import type { BibilabConfig, OutputLanguage } from "@/lib/types";
 import { Input, Select, SettingsField } from "@/components/ui";
 
 type LlmTabProps = {
@@ -121,7 +121,7 @@ export function LlmTab({ config, onBlur }: LlmTabProps) {
           id={outputLanguageId}
           onBlur={handleBlur}
           onChange={(event) =>
-            setLocalAi((current) => ({ ...current, output_language: event.target.value }))
+            setLocalAi((current) => ({ ...current, output_language: event.target.value as OutputLanguage }))
           }
           value={localAi.output_language ?? "ui"}
         >

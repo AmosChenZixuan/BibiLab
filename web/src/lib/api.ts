@@ -54,10 +54,7 @@ export function toErrorMessage(error: unknown): string {
     if (error.status === 401 && typeof error.detail !== "string") {
       return "error.401";
     }
-    if (typeof error.detail === "string") {
-      return error.detail;
-    }
-    return error.detail?.message ?? "error.requestFailed";
+    return "error.apiError";
   }
   if (error instanceof Error) {
     return error.message;

@@ -25,7 +25,7 @@ export function deriveOverallHealthTier(health: HealthResponse): HealthTier {
 
 export function deriveDependencyHealthTier(
   dependencies: Record<string, HealthDependency>,
-  dependencyKeys: string[],
+  dependencyKeys: readonly string[],
 ): HealthTier {
   const statuses = dependencyKeys.map((key) => dependencies[key]?.status).filter(Boolean);
 

@@ -103,7 +103,8 @@
     "queuedSource": "Queued source"
   },
   "errors": {
-    "requestFailed": "Request failed"
+    "requestFailed": "Request failed",
+    "apiError": "API error"
   },
   "health": {
     "operational": "Operational",

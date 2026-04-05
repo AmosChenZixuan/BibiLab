@@ -103,7 +103,8 @@
     "queuedSource": "排队中的来源"
   },
   "errors": {
-    "requestFailed": "请求失败"
+    "requestFailed": "请求失败",
+    "apiError": "API 错误"
   },
   "health": {
     "operational": "运行正常",

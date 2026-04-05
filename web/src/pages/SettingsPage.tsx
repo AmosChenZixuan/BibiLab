@@ -31,6 +31,12 @@ function shouldRefreshHealth(current: BibilabConfig, next: BibilabConfig) {
   );
 }
 
+const TABS: ReadonlyArray<{ key: TabKey; labelKey: string; dependencyKeys: readonly string[] }> = [
+  { key: "llm", labelKey: "settings.llm", dependencyKeys: ["llm"] as const },
+  { key: "transcript", labelKey: "settings.transcript", dependencyKeys: ["whisper_model", "cuda"] as const },
+  { key: "other", labelKey: "settings.other", dependencyKeys: ["backend", "ffmpeg", "embedding_model"] as const },
+];
+
 export function SettingsPage() {
   const { t } = useLanguage();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -48,12 +54,6 @@ export function SettingsPage() {
     nextParams.set("tab", tab);
     setSearchParams(nextParams, { replace: true });
   }
-
-  const TABS: Array<{ key: TabKey; labelKey: string; dependencyKeys: string[] }> = [
-    { key: "llm", labelKey: "settings.llm", dependencyKeys: ["llm"] },
-    { key: "transcript", labelKey: "settings.transcript", dependencyKeys: ["whisper_model", "cuda"] },
-    { key: "other", labelKey: "settings.other", dependencyKeys: ["backend", "ffmpeg", "embedding_model"] },
-  ];
 
   useEffect(() => {
     let cancelled = false;

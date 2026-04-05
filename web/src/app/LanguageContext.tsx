@@ -26,11 +26,13 @@ function getNestedValue(obj: Record<string, unknown>, path: string): string {
   return typeof result === "string" ? result : path;
 }
 
+const INTERPOLATE_RE = /%\{(\w+)\}/g;
+
 function interpolate(template: string, params?: Record<string, string | number>): string {
   if (!params) {
     return template;
   }
-  return template.replace(/%\{(\w+)\}/g, (_, key) => String(params[key] ?? "%{" + key + "}"));
+  return template.replace(INTERPOLATE_RE, (_, key) => String(params[key] ?? "%{" + key + "}"));
 }
 
 const LanguageContext = createContext<LanguageContextValue>({
