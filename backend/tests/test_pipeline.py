@@ -7,10 +7,6 @@ import pytest
 
 from bibilab.pipeline.audio import PipelineError, extract_audio
 from bibilab.pipeline.chunk import RagChunk, chunk_segments
-from bibilab.pipeline.extract import (
-    _parse_response,
-    extract_knowledge,
-)
 from bibilab.pipeline.transcribe import (
     WhisperSegment,
     _compute_type_for_device,
@@ -146,59 +142,3 @@ def test_chunk_timestamps_correct():
     chunks = chunk_segments(segs, target_tokens=1000)
     assert chunks[0].timestamp_start == 10.0
     assert chunks[0].timestamp_end == 30.0
-
-
-# ---------------------------------------------------------------------------
-# extract.py
-# ---------------------------------------------------------------------------
-
-
-def test_parse_response_clean_json():
-    raw = '{"title": "T", "summary": "S", "key_points": [{"timestamp": "[00:01:00]", "text": "A"}]}'
-    result = _parse_response(raw)
-    assert result.title == "T"
-    assert result.summary == "S"
-    assert result.key_points[0].timestamp == "[00:01:00]"
-
-
-def test_parse_response_strips_code_fence():
-    raw = '```json\n{"title": "T", "summary": "S", "key_points": []}\n```'
-    result = _parse_response(raw)
-    assert result.title == "T"
-
-
-def test_extract_knowledge_calls_llm(tmp_path: Path):
-    from bibilab.adapters.base import VideoMeta
-    from bibilab.config import AIConfig
-
-    meta = VideoMeta(
-        video_id="BV1",
-        title="Test Video",
-        platform="bilibili",
-        source_url="https://example.com",
-        cover_url="",
-        duration_seconds=100,
-        uploader="user",
-    )
-    cfg = AIConfig(provider="openai", model="gpt-4o", api_key="fake")
-    good_response = '{"title": "LLM Title", "summary": "Sum", "key_points": []}'
-
-    with patch("bibilab.pipeline.extract._call_llm", return_value=good_response):
-        result = extract_knowledge("some transcript", meta, cfg)
-
-    assert result.title == "LLM Title"
-    assert result.summary == "Sum"
-
-
-def test_extract_knowledge_retries_on_bad_json():
-    from bibilab.adapters.base import VideoMeta
-    from bibilab.config import AIConfig
-
-    meta = VideoMeta("BV1", "T", "bilibili", "https://x.com", "", 0, "")
-    cfg = AIConfig(provider="openai", model="gpt-4o", api_key="fake")
-    good = '{"title": "T2", "summary": "S2", "key_points": []}'
-
-    with patch("bibilab.pipeline.extract._call_llm", side_effect=["not json at all", good]):
-        result = extract_knowledge("transcript", meta, cfg)
-
-    assert result.title == "T2"

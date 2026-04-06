@@ -54,7 +54,7 @@ def embed_chunks(
 
     # Remove any existing chunks for this video (idempotent re-run)
     try:
-        collection.delete(where={"note_id": meta.video_id})
+        collection.delete(where={"video_id": meta.video_id})
     except Exception:
         pass  # collection may be empty
 
@@ -62,7 +62,7 @@ def embed_chunks(
     documents = [chunk.text for chunk in chunks]
     metadatas = [
         {
-            "note_id": meta.video_id,
+            "video_id": meta.video_id,
             "list_id": list_id,
             "video_title": meta.title,
             "timestamp_start": chunk.timestamp_start,
@@ -89,6 +89,6 @@ def clear_embeddings_for_video(video_id: str, cfg: BibilabConfig) -> None:
     """Delete all ChromaDB chunks belonging to the given video."""
     collection = _get_collection(cfg)
     try:
-        collection.delete(where={"note_id": video_id})
+        collection.delete(where={"video_id": video_id})
     except Exception:
         pass
