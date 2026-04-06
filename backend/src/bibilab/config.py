@@ -61,23 +61,33 @@ class BibilabConfig(BaseModel):
     backend: BackendConfig = BackendConfig()
 
 
+_config_cache: BibilabConfig | None = None
+
+
 def load_config() -> BibilabConfig:
+    global _config_cache
+    if _config_cache is not None:
+        return _config_cache
     home = bibilab_home()
     home.mkdir(parents=True, exist_ok=True)
     path = _config_path()
     if not path.exists():
-        return BibilabConfig()
+        _config_cache = BibilabConfig()
+        return _config_cache
     with path.open() as f:
         data = json.load(f)
-    return BibilabConfig.model_validate(data)
+    _config_cache = BibilabConfig.model_validate(data)
+    return _config_cache
 
 
 def save_config(cfg: BibilabConfig) -> None:
+    global _config_cache
     path = _config_path()
     tmp = path.with_suffix(".tmp")
     tmp.write_text(cfg.model_dump_json(indent=2))
     tmp.chmod(0o600)
     os.replace(tmp, path)
+    _config_cache = None
 
 
 _MISSING = object()
