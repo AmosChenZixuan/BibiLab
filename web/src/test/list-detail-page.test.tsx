@@ -260,43 +260,6 @@ describe("list detail page", () => {
     expect(screen.queryByRole("button", { name: /open existing source/i })).toBeNull();
   });
 
-  test("re-run context menu item calls ingestUrl with rerun=true", async () => {
-    state.sources = [
-      {
-        id: "source-old",
-        video_id: "BV1old",
-        platform: "bilibili",
-        title: "Existing Source",
-        summary: "",
-        keywords: [],
-        cover_url: null,
-        source_url: "https://www.bilibili.com/video/BV1old",
-        duration_seconds: 0,
-        uploader: "",
-        language: null,
-        processed_at: "2026-03-31T20:00:00Z",
-      },
-    ];
-    makeMockFetch();
-    vi.mocked(api.listSources).mockResolvedValue([...state.sources]);
-
-    const router = createMemoryRouter(routes, { initialEntries: ["/lists/list-1"] });
-    render(<RouterProvider router={router} />);
-
-    expect(await screen.findByRole("button", { name: /open existing source/i })).toBeInTheDocument();
-
-    const sourceRow = screen
-      .getByRole("button", { name: /open existing source/i })
-      .closest("[class*='group']") as HTMLElement;
-    await userEvent.hover(sourceRow);
-    await userEvent.click(screen.getByRole("button", { name: /source options/i }));
-    await userEvent.click(screen.getByText(/^re-run$/i));
-    expect(state.ingestCalls).toContainEqual({
-      url: "https://www.bilibili.com/video/BV1old",
-      rerun: true,
-    });
-  });
-
   test("opens viewer on source click, loads source content, shows Banner, DigestAccordion, and transcript", async () => {
     state.sources = [
       {

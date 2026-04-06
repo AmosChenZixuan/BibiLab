@@ -5,7 +5,6 @@ import {
   MdDeleteOutline,
   MdErrorOutline,
   MdMoreVert,
-  MdRefresh,
 } from "react-icons/md";
 
 import { useLanguage } from "@/app/LanguageContext";
@@ -27,13 +26,11 @@ function SourceRow({
   source,
   onOpen,
   onDelete,
-  onRerun,
   t,
 }: {
   source: Source;
   onOpen: () => void;
   onDelete: () => Promise<void>;
-  onRerun: () => Promise<void>;
   t: (key: string, params?: Record<string, string | number>) => string;
 }) {
   return (
@@ -49,7 +46,6 @@ function SourceRow({
       </button>
       <ContextMenu
         items={[
-          { label: t("lists.reRun"), icon: <MdRefresh />, onClick: onRerun },
           { label: t("lists.delete"), icon: <MdDeleteOutline />, onClick: onDelete, variant: "danger" },
         ]}
         trigger={({ toggle, triggerRef }) => (
@@ -226,19 +222,6 @@ export function SourcesListMode({
     setCurrentSources((prev) => prev.filter((s) => s.id !== source.id));
   }
 
-  async function handleRerun(source: Source) {
-    const sourceUrl = source.source_url;
-    const result = await api.ingestUrl(listId, sourceUrl, true);
-    trackJobs(
-      result.queued.map((id) => ({
-        id,
-        producer: "ingest" as const,
-        label: sourceUrl,
-        contextKey: listId,
-      })),
-    );
-  }
-
   return (
     <div className="flex h-full flex-col">
       <div className="shrink-0 px-4 pt-4 pb-3">
@@ -283,7 +266,6 @@ export function SourcesListMode({
             source={source}
             onOpen={() => onOpenSource(source)}
             onDelete={() => handleDelete(source)}
-            onRerun={() => handleRerun(source)}
             t={t}
           />
         ))}
