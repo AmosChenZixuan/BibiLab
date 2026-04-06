@@ -92,14 +92,16 @@ export const api = {
     request<void>(`/lists/${listId}/sources/${sourceId}`, {
       method: "DELETE",
     }),
-  ingestUrl: (listId: string, url: string, rerun = false) =>
+  ingestUrl: (listId: string, url: string) =>
     request<{ queued: string[]; skipped: string[] }>(
-      `/ingest/url${rerun ? "?rerun=true" : ""}`,
+      "/ingest/url",
       {
         method: "POST",
         body: JSON.stringify({ list_id: listId, url }),
       },
     ),
+  rerunDigest: (sourceId: string) =>
+    request<SourceContent>(`/sources/${sourceId}/rerun`, { method: "POST" }),
   generateOverview: (listId: string) =>
     request<OverviewDownload>(`/lists/${listId}/overview`, {
       method: "POST",

@@ -1,6 +1,7 @@
 import { MdClose } from "react-icons/md";
 
 import { useLanguage } from "@/app/LanguageContext";
+import { api } from "@/lib/api";
 import type { Source, SourceContent } from "@/lib/types";
 import { Banner } from "@/components/lists/Banner";
 import { DigestAccordion } from "@/components/lists/DigestAccordion";
@@ -9,12 +10,19 @@ export function SourcesViewerMode({
   source,
   sourceContent,
   onClose,
+  onRefresh,
 }: {
   source: Source;
   sourceContent: SourceContent | null;
   onClose: () => void;
+  onRefresh: () => void;
 }) {
   const { t } = useLanguage();
+
+  const handleRerunDigest = async (sourceId: string) => {
+    await api.rerunDigest(sourceId);
+    onRefresh();
+  };
   return (
     <div className="flex h-full flex-col">
       <div className="flex shrink-0 items-start gap-3 border-b border-border px-4 py-4">
@@ -43,8 +51,10 @@ export function SourcesViewerMode({
         )}
         {sourceContent && (
           <DigestAccordion
+            sourceId={source.id}
             summary={sourceContent.summary}
             keywords={sourceContent.keywords}
+            onRerun={handleRerunDigest}
           />
         )}
         {sourceContent?.transcript && (

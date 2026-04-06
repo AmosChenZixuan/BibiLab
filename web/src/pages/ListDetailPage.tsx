@@ -129,6 +129,14 @@ export function ListDetailPage() {
                   source={detailSource}
                   sourceContent={sourceContent}
                   onClose={() => setDetailSource(null)}
+                  onRefresh={() => {
+                    if (detailSource) {
+                      void api.getSource(detailSource.id).then((content) => {
+                        if (currentSourceIdRef.current !== detailSource.id) return;
+                        setSourceContent(content);
+                      });
+                    }
+                  }}
                 />
               ) : (
                 <SourcesListMode

@@ -89,6 +89,8 @@
     "failedDuring": "在 %{stage} 阶段失败",
     "transcript": "转录稿",
     "digest": "摘要",
+    "rerunDigest": "重新生成摘要",
+    "rerunning": "生成中...",
     "notSignedIn": "未登录"
   },
   "jobs": {

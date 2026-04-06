@@ -202,7 +202,7 @@ export function SourcesListMode({
     setUrl("");
     setError(null);
     try {
-      const result = await api.ingestUrl(listId, trimmed, false);
+      const result = await api.ingestUrl(listId, trimmed);
       trackJobs(
         result.queued.map((id) => ({
           id,

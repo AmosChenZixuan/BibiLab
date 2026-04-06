@@ -89,6 +89,8 @@
     "failedDuring": "Failed during %{stage}",
     "transcript": "Transcript",
     "digest": "Digest",
+    "rerunDigest": "Re-run digest",
+    "rerunning": "Re-running...",
     "notSignedIn": "Not signed in"
   },
   "jobs": {

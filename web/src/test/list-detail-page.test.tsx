@@ -22,7 +22,7 @@ const state = {
     language: string | null;
     processed_at: string;
   }>,
-  ingestCalls: [] as Array<{ url: string; rerun: boolean }>,
+  ingestCalls: [] as Array<{ url: string }>,
   deletedIds: [] as string[],
   renameResult: {
     id: "list-1",
@@ -66,7 +66,6 @@ function makeMockFetch() {
       return Promise.resolve(new Response(JSON.stringify([])));
     }
     if (url.includes("/api/ingest/url") && method === "POST") {
-      const rerun = url.includes("rerun=true");
       const bodyStr = init?.body as string | undefined;
       let urlFromBody = "";
       if (bodyStr) {
@@ -75,7 +74,7 @@ function makeMockFetch() {
           urlFromBody = body.url ?? "";
         } catch {}
       }
-      state.ingestCalls.push({ url: urlFromBody, rerun });
+      state.ingestCalls.push({ url: urlFromBody });
       return Promise.resolve(new Response(JSON.stringify({ queued: ["job-1"], skipped: [] })));
     }
     if (url.match(/\/api\/lists\/list-1\/sources\/source-old/) && method === "DELETE") {
@@ -115,8 +114,8 @@ vi.mock("../lib/api", () => ({
       },
     ]),
     listSources: vi.fn().mockImplementation(() => Promise.resolve([...state.sources])),
-    ingestUrl: vi.fn().mockImplementation((_listId: string, url: string, rerun: boolean) => {
-      state.ingestCalls.push({ url, rerun });
+    ingestUrl: vi.fn().mockImplementation((_listId: string, url: string) => {
+      state.ingestCalls.push({ url });
       return Promise.resolve({ queued: ["job-1"], skipped: [] });
     }),
     deleteSource: vi.fn().mockImplementation((_listId: string, sourceId: string) => {
@@ -247,7 +246,7 @@ describe("list detail page", () => {
     expect(input).toBeInTheDocument();
     await userEvent.type(input, "https://www.bilibili.com/video/BV1new");
     await userEvent.keyboard("{Enter}");
-    expect(state.ingestCalls).toContainEqual({ url: "https://www.bilibili.com/video/BV1new", rerun: false });
+    expect(state.ingestCalls).toContainEqual({ url: "https://www.bilibili.com/video/BV1new" });
     expect(input).toHaveValue("");
 
     const sourceRow = screen
