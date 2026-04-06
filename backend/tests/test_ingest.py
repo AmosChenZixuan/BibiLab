@@ -334,14 +334,14 @@ async def test_pipeline_creates_covers_and_transcripts(tmp_bibilab_home: Path):
         await worker._pipeline(job)
 
     # Verify cover was downloaded
-    assert (
-        tmp_bibilab_home / "covers" / f"{source_id}.jpg"
-    ).exists(), "cover should be saved as covers/{source_id}.jpg"
+    assert (tmp_bibilab_home / "covers" / f"{source_id}.jpg").exists(), (
+        "cover should be saved as covers/{source_id}.jpg"
+    )
 
     # Verify transcript was written
-    assert (
-        tmp_bibilab_home / "transcripts" / f"{source_id}.txt"
-    ).exists(), "transcript should be saved as transcripts/{source_id}.txt"
+    assert (tmp_bibilab_home / "transcripts" / f"{source_id}.txt").exists(), (
+        "transcript should be saved as transcripts/{source_id}.txt"
+    )
 
     # Verify source row in DB has UUID id
     source_row = await get_source(source_id)

@@ -28,7 +28,7 @@ class TestDigestResultShape:
         )
         transcript = "This is a test transcript."
 
-        mock_response = '{"summary": "A great video about ML.", ' '"keywords": ["machine learning", "neural nets"]}'
+        mock_response = '{"summary": "A great video about ML.", "keywords": ["machine learning", "neural nets"]}'
 
         with patch("bibilab.pipeline.digest._call_llm", return_value=mock_response):
             result = digest(transcript, video_meta, ai_cfg)

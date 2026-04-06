@@ -18,9 +18,7 @@ from bibilab.config import bibilab_home
 logger = logging.getLogger(__name__)
 
 # URL patterns for Bilibili resource types
-_PLAYLIST_RE = re.compile(
-    r"bilibili\.com/medialist|space\.bilibili\.com/\d+/channel", re.IGNORECASE
-)
+_PLAYLIST_RE = re.compile(r"bilibili\.com/medialist|space\.bilibili\.com/\d+/channel", re.IGNORECASE)
 _COURSE_RE = re.compile(r"bilibili\.com/cheese", re.IGNORECASE)
 
 # Strip ANSI escape codes from yt_dlp output
@@ -46,9 +44,7 @@ def _ydl_opts(cookie: str, quiet: bool = True) -> dict:
     return opts
 
 
-def _info_to_video_meta(
-    info: dict, platform: str = "bilibili", fallback_uploader: str = ""
-) -> VideoMeta:
+def _info_to_video_meta(info: dict, platform: str = "bilibili", fallback_uploader: str = "") -> VideoMeta:
     return VideoMeta(
         video_id=info.get("id", ""),
         title=info.get("title", "Untitled"),
@@ -94,11 +90,7 @@ class BilibiliAdapter(PlatformAdapter):
         title = info.get("title", "Untitled Playlist")
         entries = info.get("entries") or []
 
-        videos = [
-            _info_to_video_meta(e, fallback_uploader=info.get("uploader", ""))
-            for e in entries
-            if e.get("id")
-        ]
+        videos = [_info_to_video_meta(e, fallback_uploader=info.get("uploader", "")) for e in entries if e.get("id")]
 
         return PlaylistMeta(
             playlist_id=playlist_id,

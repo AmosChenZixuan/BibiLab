@@ -167,7 +167,7 @@ async def test_config_masks_sensitive_fields(client: httpx.AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_serves_built_spa_without_shadowing_api_routes(tmp_path: Path):
+async def test_serves_built_spa_without_shadowing_api_routes(tmp_bibilab_home: Path, tmp_path: Path):  # noqa: ARG001
     spa_dist = tmp_path / "web-dist"
     (spa_dist / "assets").mkdir(parents=True)
     (spa_dist / "index.html").write_text("<!doctype html><html><body>bibilab web</body></html>")

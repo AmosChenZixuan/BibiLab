@@ -22,11 +22,7 @@ async def list_whisper_models() -> list[WhisperModelInfo]:
         WhisperModelInfo(
             name=name,
             installed=is_whisper_model_downloaded(name),
-            path=(
-                str(resolve_local_model_path(name))
-                if resolve_local_model_path(name) is not None
-                else None
-            ),
+            path=(str(resolve_local_model_path(name)) if resolve_local_model_path(name) is not None else None),
             selected=name == selected_model,
         )
         for name in SUPPORTED_WHISPER_MODELS
@@ -41,10 +37,7 @@ async def download_whisper(req: WhisperModelDownloadRequest) -> dict:
     if req.model_size not in SUPPORTED_WHISPER_MODELS:
         raise HTTPException(
             status_code=400,
-            detail=(
-                f"Unsupported whisper model {req.model_size!r}. "
-                f"Supported: {', '.join(SUPPORTED_WHISPER_MODELS)}"
-            ),
+            detail=(f"Unsupported whisper model {req.model_size!r}. Supported: {', '.join(SUPPORTED_WHISPER_MODELS)}"),
         )
 
     job_id = await create_job(
