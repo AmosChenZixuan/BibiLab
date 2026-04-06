@@ -1,11 +1,14 @@
+import asyncio
 import json
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
 
-from bibilab.config import bibilab_home
-from bibilab.db import get_source
+from bibilab.adapters.base import VideoMeta
+from bibilab.config import bibilab_home, load_config
+from bibilab.db import get_source, update_source_digest
 from bibilab.models.sources import SourceContentResponse
+from bibilab.pipeline.digest import digest
 
 router = APIRouter()
 
@@ -41,3 +44,61 @@ async def get_source_cover(source_id: str) -> FileResponse:
     if not cover_path.exists():
         raise HTTPException(status_code=404, detail="Cover not found")
     return FileResponse(cover_path)
+
+
+@router.post("/sources/{source_id}/rerun", status_code=200)
+async def rerun_source(source_id: str) -> SourceContentResponse:
+    """Re-run digest on an existing source using its stored transcript."""
+    source = await get_source(source_id)
+    if source is None:
+        raise HTTPException(status_code=404, detail="Source not found")
+
+    if source["transcript_path"] is None:
+        raise HTTPException(status_code=404, detail="Source has no transcript")
+
+    transcript_path = bibilab_home() / source["transcript_path"]
+    if not transcript_path.exists():
+        raise HTTPException(status_code=404, detail="Transcript file not found")
+
+    transcript_text = transcript_path.read_text(encoding="utf-8")
+
+    video_meta = VideoMeta(
+        video_id=source["video_id"],
+        title=source["title"],
+        platform=source["platform"],
+        source_url=source["source_url"],
+        cover_url=source["cover_url"] or "",
+        duration_seconds=source["duration_seconds"],
+        uploader=source["uploader"],
+    )
+
+    cfg = load_config()
+    extraction = await asyncio.to_thread(
+        digest,
+        transcript_text,
+        video_meta,
+        cfg.ai,
+        cfg.ai.output_language,
+    )
+    await update_source_digest(source_id, extraction.summary, extraction.keywords)
+
+    # Re-read updated source to return fresh data
+    updated = await get_source(source_id)
+    assert updated is not None
+    updated_transcript = transcript_path.read_text(encoding="utf-8")
+    return SourceContentResponse(
+        id=updated["id"],
+        video_id=updated["video_id"],
+        platform=updated["platform"],
+        title=updated["title"],
+        source_url=updated["source_url"],
+        duration_seconds=updated["duration_seconds"],
+        uploader=updated["uploader"],
+        language=updated["language"],
+        processed_at=updated["processed_at"] or "",
+        summary=updated["summary"],
+        keywords=json.loads(updated["keywords"] or "[]"),
+        cover_url=updated["cover_url"],
+        transcript=updated_transcript,
+        settings_snapshot=json.loads(updated["settings_snapshot"] or "{}"),
+    )
