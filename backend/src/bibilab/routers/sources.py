@@ -1,5 +1,4 @@
 import asyncio
-import json
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
@@ -20,22 +19,7 @@ async def get_source_content(source_id: str) -> SourceContentResponse:
         raise HTTPException(status_code=404, detail="Source not found")
     transcript_path = bibilab_home() / source["transcript_path"]
     transcript = transcript_path.read_text(encoding="utf-8") if transcript_path.exists() else ""
-    return SourceContentResponse(
-        id=source["id"],
-        video_id=source["video_id"],
-        platform=source["platform"],
-        title=source["title"],
-        source_url=source["source_url"],
-        duration_seconds=source["duration_seconds"],
-        uploader=source["uploader"],
-        language=source["language"],
-        processed_at=source["processed_at"] or "",
-        summary=source["summary"],
-        keywords=json.loads(source["keywords"] or "[]"),
-        cover_url=source["cover_url"],
-        transcript=transcript,
-        settings_snapshot=json.loads(source["settings_snapshot"] or "{}"),
-    )
+    return SourceContentResponse.from_source(source, transcript)
 
 
 @router.get("/sources/{source_id}/cover")
@@ -62,15 +46,7 @@ async def rerun_source(source_id: str) -> SourceContentResponse:
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail="Transcript file not found")
 
-    video_meta = VideoMeta(
-        video_id=source["video_id"],
-        title=source["title"],
-        platform=source["platform"],
-        source_url=source["source_url"],
-        cover_url=source["cover_url"] or "",
-        duration_seconds=source["duration_seconds"],
-        uploader=source["uploader"],
-    )
+    video_meta = VideoMeta.from_source(source)
 
     cfg = load_config()
     extraction = await asyncio.to_thread(
@@ -82,19 +58,4 @@ async def rerun_source(source_id: str) -> SourceContentResponse:
     )
     await update_source_digest(source_id, extraction.summary, extraction.keywords)
 
-    return SourceContentResponse(
-        id=source["id"],
-        video_id=source["video_id"],
-        platform=source["platform"],
-        title=source["title"],
-        source_url=source["source_url"],
-        duration_seconds=source["duration_seconds"],
-        uploader=source["uploader"],
-        language=source["language"],
-        processed_at=source["processed_at"] or "",
-        summary=extraction.summary,
-        keywords=extraction.keywords,
-        cover_url=source["cover_url"],
-        transcript=transcript_text,
-        settings_snapshot=json.loads(source["settings_snapshot"] or "{}"),
-    )
+    return SourceContentResponse.from_source(source, transcript_text)

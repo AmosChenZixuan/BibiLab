@@ -150,15 +150,7 @@ class WorkerLoop:
         transcript_path = bibilab_home() / source["transcript_path"]
         transcript_text = transcript_path.read_text(encoding="utf-8")
 
-        video_meta = VideoMeta(
-            video_id=source["video_id"],
-            title=source["title"],
-            platform=source["platform"],
-            source_url=source["source_url"],
-            cover_url=source["cover_url"] or "",
-            duration_seconds=source["duration_seconds"],
-            uploader=source["uploader"],
-        )
+        video_meta = VideoMeta.from_source(source)
 
         if job_id in self._cancelled:
             self._cancelled.discard(job_id)

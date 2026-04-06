@@ -13,6 +13,18 @@ class VideoMeta:
     duration_seconds: int
     uploader: str
 
+    @classmethod
+    def from_source(cls, source: dict) -> "VideoMeta":
+        return cls(
+            video_id=source["video_id"],
+            title=source["title"],
+            platform=source["platform"],
+            source_url=source["source_url"],
+            cover_url=source["cover_url"] or "",
+            duration_seconds=source["duration_seconds"],
+            uploader=source["uploader"],
+        )
+
 
 @dataclass
 class PlaylistMeta:

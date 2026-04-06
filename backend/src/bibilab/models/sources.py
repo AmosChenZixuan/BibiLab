@@ -1,3 +1,4 @@
+import json
 from typing import Any
 
 from pydantic import BaseModel
@@ -18,3 +19,28 @@ class SourceContentResponse(BaseModel):
     cover_url: str | None
     transcript: str
     settings_snapshot: dict[str, Any]
+
+    @classmethod
+    def from_source(cls, source: dict, transcript: str) -> "SourceContentResponse":
+        keywords = source["keywords"]
+        if not isinstance(keywords, list):
+            keywords = json.loads(keywords or "[]")
+        settings = source["settings_snapshot"]
+        if not isinstance(settings, dict):
+            settings = json.loads(settings or "{}")
+        return cls(
+            id=source["id"],
+            video_id=source["video_id"],
+            platform=source["platform"],
+            title=source["title"],
+            source_url=source["source_url"],
+            duration_seconds=source["duration_seconds"],
+            uploader=source["uploader"],
+            language=source["language"],
+            processed_at=source["processed_at"] or "",
+            summary=source["summary"],
+            keywords=keywords,
+            cover_url=source["cover_url"],
+            transcript=transcript,
+            settings_snapshot=settings,
+        )
