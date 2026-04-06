@@ -57,10 +57,10 @@ async def rerun_source(source_id: str) -> SourceContentResponse:
         raise HTTPException(status_code=404, detail="Source has no transcript")
 
     transcript_path = bibilab_home() / source["transcript_path"]
-    if not transcript_path.exists():
+    try:
+        transcript_text = transcript_path.read_text(encoding="utf-8")
+    except FileNotFoundError:
         raise HTTPException(status_code=404, detail="Transcript file not found")
-
-    transcript_text = transcript_path.read_text(encoding="utf-8")
 
     video_meta = VideoMeta(
         video_id=source["video_id"],
@@ -82,23 +82,19 @@ async def rerun_source(source_id: str) -> SourceContentResponse:
     )
     await update_source_digest(source_id, extraction.summary, extraction.keywords)
 
-    # Re-read updated source to return fresh data
-    updated = await get_source(source_id)
-    assert updated is not None
-    updated_transcript = transcript_path.read_text(encoding="utf-8")
     return SourceContentResponse(
-        id=updated["id"],
-        video_id=updated["video_id"],
-        platform=updated["platform"],
-        title=updated["title"],
-        source_url=updated["source_url"],
-        duration_seconds=updated["duration_seconds"],
-        uploader=updated["uploader"],
-        language=updated["language"],
-        processed_at=updated["processed_at"] or "",
-        summary=updated["summary"],
-        keywords=json.loads(updated["keywords"] or "[]"),
-        cover_url=updated["cover_url"],
-        transcript=updated_transcript,
-        settings_snapshot=json.loads(updated["settings_snapshot"] or "{}"),
+        id=source["id"],
+        video_id=source["video_id"],
+        platform=source["platform"],
+        title=source["title"],
+        source_url=source["source_url"],
+        duration_seconds=source["duration_seconds"],
+        uploader=source["uploader"],
+        language=source["language"],
+        processed_at=source["processed_at"] or "",
+        summary=extraction.summary,
+        keywords=extraction.keywords,
+        cover_url=source["cover_url"],
+        transcript=transcript_text,
+        settings_snapshot=json.loads(source["settings_snapshot"] or "{}"),
     )
