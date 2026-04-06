@@ -167,7 +167,6 @@ async def get_list_sources(list_id: str) -> list[SourceResponse]:
             uploader=r["uploader"],
             language=r["language"],
             processed_at=r["processed_at"] or "",
-            settings_snapshot=json.loads(r["settings_snapshot"] or "{}"),
         )
         for r in rows
     ]

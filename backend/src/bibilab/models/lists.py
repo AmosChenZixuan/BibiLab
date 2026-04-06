@@ -1,5 +1,3 @@
-from typing import Any
-
 from pydantic import BaseModel
 
 
@@ -35,7 +33,6 @@ class SourceResponse(BaseModel):
     uploader: str
     language: str | None
     processed_at: str
-    settings_snapshot: dict[str, Any]
 
 
 class OverviewResponse(BaseModel):
