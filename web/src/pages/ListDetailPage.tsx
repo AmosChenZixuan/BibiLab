@@ -7,7 +7,7 @@ import {
 
 import { useLanguage } from "@/app/LanguageContext";
 import { api, toErrorMessageWithT } from "@/lib/api";
-import type { NoteContent, Source } from "@/lib/types";
+import type { Source, SourceContent } from "@/lib/types";
 
 import { usePanelResize, Resizer, MIN_PANEL, COLLAPSED_PANEL } from "@/components/lists/panel-resize";
 import { NavbarTitle } from "@/components/lists/NavbarTitle";
@@ -38,9 +38,7 @@ export function ListDetailPage() {
   const [listName, setListName] = useState("");
   const [sources, setSources] = useState<Source[]>([]);
   const [detailSource, setDetailSource] = useState<Source | null>(null);
-  const [note, setNote] = useState<NoteContent | null>(null);
-  const [transcript, setTranscript] = useState<string | null>(null);
-  const [transcriptError, setTranscriptError] = useState<string | null>(null);
+  const [sourceContent, setSourceContent] = useState<SourceContent | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [sourcesCollapsed, setSourcesCollapsed] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -69,29 +67,15 @@ export function ListDetailPage() {
   }, [load]);
 
   function handleOpenSource(source: Source) {
-    currentSourceIdRef.current = source.video_id;
+    currentSourceIdRef.current = source.id;
     setDetailSource(source);
-    setNote(null);
-    setTranscript(null);
-    setTranscriptError(null);
-    void api.getNoteContent(source.video_id).then((note) => {
-      if (currentSourceIdRef.current !== source.video_id) return;
-      const rewritten = note.markdown.replace(
-        /!\[([^\]]*)\]\(([^)]+)\)/g,
-        (_match: string, alt: string, src: string) => {
-          if (src.startsWith("http://") || src.startsWith("https://")) return _match;
-          const file = src.replace(/^attachments\//, "");
-          return `![${alt}](/api/notes/${source.video_id}/attachments/${file})`;
-        },
-      );
-      setNote({ ...note, markdown: rewritten });
-    }).catch(() => setNote({ video_id: source.video_id, title: source.title, markdown: "" }));
-    void api.getNoteTranscript(source.video_id)
-      .then((res) => {
-        if (currentSourceIdRef.current !== source.video_id) return;
-        setTranscript(res.text);
-      })
-      .catch(() => { setTranscriptError(t("errors.requestFailed")); });
+    setSourceContent(null);
+    void api.getSource(source.id).then((content) => {
+      if (currentSourceIdRef.current !== source.id) return;
+      setSourceContent(content);
+    }).catch(() => {
+      setSourceContent(null);
+    });
   }
 
   async function handleRenameCommit(newName: string) {
@@ -143,9 +127,7 @@ export function ListDetailPage() {
               ) : detailSource ? (
                 <SourcesViewerMode
                   source={detailSource}
-                  note={note}
-                  transcript={transcript}
-                  transcriptError={transcriptError}
+                  sourceContent={sourceContent}
                   onClose={() => setDetailSource(null)}
                 />
               ) : (

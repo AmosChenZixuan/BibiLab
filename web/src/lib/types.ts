@@ -16,19 +16,42 @@ export type BibilabListPatch = {
 };
 
 export type Source = {
+  id: string;
   video_id: string;
   platform: string;
   title: string;
-  note_path: string;
+  summary: string;
+  keywords: string[];
+  cover_url: string | null;
+  source_url: string;
+  duration_seconds: number;
+  uploader: string;
+  language: string | null;
   processed_at: string;
+};
+
+export type SourceContent = {
+  id: string;
+  video_id: string;
+  platform: string;
+  title: string;
+  source_url: string;
+  duration_seconds: number;
+  uploader: string;
+  language: string | null;
+  processed_at: string;
+  summary: string;
+  keywords: string[];
+  cover_url: string | null;
+  transcript: string;
+  settings_snapshot: Record<string, unknown>;
 };
 
 export type JobStatus =
   | "queued"
   | "downloading"
   | "transcribing"
-  | "extracting"
-  | "writing"
+  | "processing"
   | "done"
   | "failed"
   | "needs_auth";
@@ -126,17 +149,6 @@ export type WhisperDownloadResponse = {
   status: string;
   model_family: string;
   model_size: string;
-};
-
-export type NoteContent = {
-  video_id: string;
-  title: string;
-  markdown: string;
-};
-
-export type NoteTranscript = {
-  video_id: string;
-  text: string;
 };
 
 export type OverviewDownload = {

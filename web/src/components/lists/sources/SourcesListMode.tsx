@@ -18,8 +18,7 @@ export const PIPELINE_STAGES = [
   "queued",
   "downloading",
   "transcribing",
-  "extracting",
-  "writing",
+  "processing",
   "done",
 ] as const;
 export type PipelineStage = (typeof PIPELINE_STAGES)[number];
@@ -223,12 +222,12 @@ export function SourcesListMode({
   }
 
   async function handleDelete(source: Source) {
-    await api.deleteSource(listId, source.video_id);
-    setCurrentSources((prev) => prev.filter((s) => s.video_id !== source.video_id));
+    await api.deleteSource(listId, source.id);
+    setCurrentSources((prev) => prev.filter((s) => s.id !== source.id));
   }
 
   async function handleRerun(source: Source) {
-    const sourceUrl = `https://www.bilibili.com/video/${source.video_id}`;
+    const sourceUrl = source.source_url;
     const result = await api.ingestUrl(listId, sourceUrl, true);
     trackJobs(
       result.queued.map((id) => ({
@@ -280,7 +279,7 @@ export function SourcesListMode({
           ))}
         {currentSources.map((source) => (
           <SourceRow
-            key={source.video_id}
+            key={source.id}
             source={source}
             onOpen={() => onOpenSource(source)}
             onDelete={() => handleDelete(source)}

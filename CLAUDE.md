@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Project Is
 
-**Project Bibilab** transforms video content into searchable, AI-assisted private notebooks. A FastAPI backend runs the local processing pipeline (download → transcribe → chunk → extract → notes → embed), and a React + TypeScript SPA under `web/` provides the primary user interface for lists, ingestion, jobs, notes, transcripts, overview export, and settings.
+**Project Bibilab** transforms video content into searchable, AI-assisted private notebooks. A FastAPI backend runs the local processing pipeline (download → transcribe → chunk → digest ∥ embed), and a React + TypeScript SPA under `web/` provides the primary user interface for lists, ingestion, jobs, digests, transcripts, overview export, and settings.
 
 ## Commands
 
@@ -41,11 +41,11 @@ FastAPI Backend (Python)
     ├── Job Queue (SQLite polling, worker.py)
     ├── Platform Adapters (adapters/bilibili.py)
     ├── Processing Pipeline (pipeline/)
-    │   audio → transcribe → chunk → extract → notes → embed
+    │   audio → transcribe → chunk → digest ∥ embed
     └── Storage
         ├── SQLite  — job queue + processing log
         ├── ChromaDB — vector embeddings (local, embedded)
-        └── ~/.bibilab/ — config, notes, transcripts, downloads, chroma data
+        └── ~/.bibilab/ — config, covers, transcripts, downloads, chroma data
 ```
 
 ## Code Layout
@@ -55,7 +55,7 @@ FastAPI Backend (Python)
 ```
 routers/     — one APIRouter per module; aggregated in main.py
 models/      — Pydantic request/response models
-pipeline/    — one file per stage (audio → transcribe → chunk → extract → notes → embed)
+pipeline/    — one file per stage (audio → transcribe → chunk → digest → embed)
 adapters/    — platform-specific download + resolution
 db.py        — SQLite schema + query helpers
 config.py    — settings persisted to ~/.bibilab/config.json

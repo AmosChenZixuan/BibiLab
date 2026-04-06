@@ -7,18 +7,18 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from bibilab.config import bibilab_home
+import bibilab.config
 
 
 def get_db_path() -> Path:
-    return bibilab_home() / "bibilab.db"
+    return bibilab.config.bibilab_home() / "bibilab.db"
 
 
 _CREATE_LISTS = """
 CREATE TABLE IF NOT EXISTS lists (
     id                   TEXT PRIMARY KEY,
     name                 TEXT NOT NULL,
-    thumbnail_source_id  TEXT REFERENCES sources(video_id),
+    thumbnail_source_id  TEXT REFERENCES sources(id),
     created_at           DATETIME DEFAULT CURRENT_TIMESTAMP
 )
 """
@@ -38,19 +38,25 @@ CREATE TABLE IF NOT EXISTS jobs (
 
 _CREATE_SOURCES = """
 CREATE TABLE IF NOT EXISTS sources (
-    video_id            TEXT PRIMARY KEY,
-    platform            TEXT NOT NULL,
-    list_id             TEXT NOT NULL REFERENCES lists(id),
-    title               TEXT NOT NULL DEFAULT '',
-    summary             TEXT NOT NULL DEFAULT '',
-    note_path           TEXT NOT NULL,
-    transcript_path     TEXT,
-    whisper_model       TEXT,
-    ai_model            TEXT,
-    vision_enabled      INTEGER DEFAULT 0,
-    cover_url           TEXT,
-    processed_at        DATETIME,
-    settings_snapshot   TEXT
+    id                TEXT PRIMARY KEY,
+    video_id          TEXT NOT NULL,
+    platform          TEXT NOT NULL,
+    list_id           TEXT NOT NULL REFERENCES lists(id),
+    title             TEXT NOT NULL DEFAULT '',
+    summary           TEXT NOT NULL DEFAULT '',
+    keywords          TEXT NOT NULL DEFAULT '[]',
+    cover_url         TEXT,
+    transcript_path   TEXT,
+    source_url        TEXT NOT NULL DEFAULT '',
+    duration_seconds  INTEGER NOT NULL DEFAULT 0,
+    uploader          TEXT NOT NULL DEFAULT '',
+    language          TEXT,
+    whisper_model     TEXT,
+    ai_model          TEXT,
+    vision_enabled    INTEGER DEFAULT 0,
+    processed_at      DATETIME,
+    settings_snapshot TEXT,
+    UNIQUE (video_id, list_id)
 )
 """
 
@@ -59,11 +65,7 @@ async def bootstrap_db() -> None:
     async with get_db() as db:
         list_columns = [row[1] for row in db.execute("PRAGMA table_info(lists)").fetchall()]
         if list_columns and "thumbnail_source_id" not in list_columns:
-            thumbnail_select = (
-                "thumbnail_source_video_id"
-                if "thumbnail_source_video_id" in list_columns
-                else "NULL"
-            )
+            thumbnail_select = "thumbnail_source_video_id" if "thumbnail_source_video_id" in list_columns else "NULL"
             db.execute("ALTER TABLE lists RENAME TO lists_old")
             db.execute(_CREATE_LISTS)
             db.execute(
@@ -101,38 +103,13 @@ async def bootstrap_db() -> None:
             )
             db.execute("DROP TABLE jobs_old")
 
+        # Fresh-start sources migration: drop old table if schema lacks 'id' column
         source_columns = [row[1] for row in db.execute("PRAGMA table_info(sources)").fetchall()]
-        if source_columns and "cover_url" not in source_columns:
-            db.execute("ALTER TABLE sources ADD COLUMN cover_url TEXT")
+        if source_columns and "id" not in source_columns:
+            db.execute("DROP TABLE IF EXISTS sources")
         db.execute(_CREATE_LISTS)
         db.execute(_CREATE_JOBS)
         db.execute(_CREATE_SOURCES)
-
-        # Migrate absolute paths to relative
-        home = bibilab_home()
-        for row in db.execute(
-            "SELECT video_id, note_path, transcript_path FROM sources"
-        ).fetchall():
-            video_id, note_path, transcript_path = row
-            new_note = None
-            new_transcript = None
-            if note_path:
-                p = Path(note_path)
-                if p.is_absolute():
-                    new_note = str(p.relative_to(home))
-            if transcript_path:
-                p = Path(transcript_path)
-                if p.is_absolute():
-                    new_transcript = str(p.relative_to(home))
-            if new_note or new_transcript:
-                db.execute(
-                    "UPDATE sources SET note_path = ?, transcript_path = ? WHERE video_id = ?",
-                    (
-                        new_note or note_path,
-                        new_transcript or transcript_path,
-                        video_id,
-                    ),
-                )
         db.commit()
 
 
@@ -176,9 +153,7 @@ FROM lists
 
 async def get_all_lists() -> list[sqlite3.Row]:
     async with get_db() as db:
-        return db.execute(
-            f"{_LIST_DISPLAY_QUERY} ORDER BY updated_at DESC, created_at DESC"
-        ).fetchall()
+        return db.execute(f"{_LIST_DISPLAY_QUERY} ORDER BY updated_at DESC, created_at DESC").fetchall()
 
 
 async def get_list(list_id: str) -> sqlite3.Row | None:
@@ -213,70 +188,82 @@ async def update_list_thumbnail(list_id: str, thumbnail_source_id: str | None) -
 
 
 async def write_source(
+    source_id: str,
     video_id: str,
     platform: str,
     list_id: str,
     title: str,
     summary: str,
-    note_path: str,
+    keywords: list[str],
+    cover_url: str | None,
     transcript_path: str | None,
+    source_url: str,
+    duration_seconds: int,
+    uploader: str,
+    language: str | None,
     whisper_model: str,
     ai_model: str,
     vision_enabled: bool,
     settings_snapshot: dict[str, Any],
-    cover_url: str | None = None,
 ) -> None:
     async with get_db() as db:
         # Check if this is a new source
         existing = db.execute(
-            "SELECT video_id FROM sources WHERE video_id = ?", (video_id,)
+            "SELECT id FROM sources WHERE video_id = ? AND list_id = ?", (video_id, list_id)
         ).fetchone()
 
         # Auto-assign thumbnail if new source and list has none
         if existing is None:
-            list_row = db.execute(
-                "SELECT thumbnail_source_id FROM lists WHERE id = ?", (list_id,)
-            ).fetchone()
+            list_row = db.execute("SELECT thumbnail_source_id FROM lists WHERE id = ?", (list_id,)).fetchone()
             if list_row is not None and list_row["thumbnail_source_id"] is None:
                 db.execute(
                     "UPDATE lists SET thumbnail_source_id = ? WHERE id = ?",
-                    (video_id, list_id),
+                    (source_id, list_id),
                 )
 
-        # Upsert source
+        # Upsert source using INSERT OR IGNORE + ON CONFLICT DO UPDATE
         db.execute(
             """
             INSERT INTO sources
-                (video_id, platform, list_id, title, summary, note_path,
-                 transcript_path, whisper_model, ai_model, vision_enabled,
-                 cover_url, processed_at, settings_snapshot)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(video_id) DO UPDATE SET
+                (id, video_id, platform, list_id, title, summary, keywords,
+                 cover_url, transcript_path, source_url, duration_seconds, uploader,
+                 language, whisper_model, ai_model, vision_enabled,
+                 processed_at, settings_snapshot)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(video_id, list_id) DO UPDATE SET
                 platform=excluded.platform,
-                list_id=excluded.list_id,
                 title=excluded.title,
                 summary=excluded.summary,
-                note_path=excluded.note_path,
+                keywords=excluded.keywords,
+                cover_url=excluded.cover_url,
                 transcript_path=excluded.transcript_path,
+                source_url=excluded.source_url,
+                duration_seconds=excluded.duration_seconds,
+                uploader=excluded.uploader,
+                language=excluded.language,
                 whisper_model=excluded.whisper_model,
                 ai_model=excluded.ai_model,
                 vision_enabled=excluded.vision_enabled,
-                cover_url=excluded.cover_url,
                 processed_at=excluded.processed_at,
                 settings_snapshot=excluded.settings_snapshot
             """,
             (
+                source_id,
                 video_id,
                 platform,
                 list_id,
                 title,
                 summary,
-                note_path,
+                json.dumps(keywords),
+                cover_url,
                 transcript_path,
+                source_url,
+                duration_seconds,
+                uploader,
+                language,
                 whisper_model,
                 ai_model,
                 int(vision_enabled),
-                cover_url,
                 _now(),
                 json.dumps(settings_snapshot),
             ),
@@ -284,9 +271,23 @@ async def write_source(
         db.commit()
 
 
-async def get_source(video_id: str) -> sqlite3.Row | None:
+async def update_source_digest(source_id: str, summary: str, keywords: list[str]) -> None:
     async with get_db() as db:
-        return db.execute("SELECT * FROM sources WHERE video_id=?", (video_id,)).fetchone()
+        db.execute(
+            "UPDATE sources SET summary=?, keywords=?, processed_at=? WHERE id=?",
+            (summary, json.dumps(keywords), _now(), source_id),
+        )
+        db.commit()
+
+
+async def get_source(source_id: str) -> sqlite3.Row | None:
+    async with get_db() as db:
+        return db.execute("SELECT * FROM sources WHERE id=?", (source_id,)).fetchone()
+
+
+async def get_source_by_video_and_list(video_id: str, list_id: str) -> sqlite3.Row | None:
+    async with get_db() as db:
+        return db.execute("SELECT * FROM sources WHERE video_id=? AND list_id=?", (video_id, list_id)).fetchone()
 
 
 async def get_sources_for_list(list_id: str) -> list[sqlite3.Row]:
@@ -297,9 +298,9 @@ async def get_sources_for_list(list_id: str) -> list[sqlite3.Row]:
         ).fetchall()
 
 
-async def delete_source(video_id: str) -> None:
+async def delete_source(source_id: str) -> None:
     async with get_db() as db:
-        db.execute("DELETE FROM sources WHERE video_id=?", (video_id,))
+        db.execute("DELETE FROM sources WHERE id=?", (source_id,))
         db.commit()
 
 
@@ -309,18 +310,19 @@ async def delete_sources_for_list(list_id: str) -> None:
         db.commit()
 
 
-async def video_is_processed(video_id: str) -> bool:
-    row = await get_source(video_id)
+async def source_exists(video_id: str, list_id: str) -> bool:
+    row = await get_source_by_video_and_list(video_id, list_id)
     return row is not None
 
 
-async def get_processed_video_ids(video_ids: list[str]) -> set[str]:
+async def get_processed_video_ids(video_ids: list[str], list_id: str) -> set[str]:
     if not video_ids:
         return set()
     placeholders = ",".join("?" * len(video_ids))
     async with get_db() as db:
         rows = db.execute(
-            f"SELECT video_id FROM sources WHERE video_id IN ({placeholders})", video_ids
+            f"SELECT video_id FROM sources WHERE list_id=? AND video_id IN ({placeholders})",
+            [list_id] + video_ids,
         ).fetchall()
     return {row["video_id"] for row in rows}
 
@@ -378,7 +380,7 @@ async def get_pending_jobs() -> list[sqlite3.Row]:
         return db.execute(
             """
             SELECT * FROM jobs
-            WHERE status IN ('queued', 'downloading', 'transcribing', 'extracting', 'writing')
+            WHERE status IN ('queued', 'downloading', 'transcribing', 'processing')
             ORDER BY created_at ASC
             """
         ).fetchall()
@@ -389,7 +391,7 @@ async def reset_stuck_jobs() -> None:
         db.execute(
             """
             UPDATE jobs SET status='queued', updated_at=?
-            WHERE status IN ('downloading', 'transcribing', 'extracting', 'writing')
+            WHERE status IN ('downloading', 'transcribing', 'processing')
             """,
             (_now(),),
         )

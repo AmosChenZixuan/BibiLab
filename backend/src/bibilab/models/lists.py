@@ -1,3 +1,5 @@
+from typing import Any
+
 from pydantic import BaseModel
 
 
@@ -21,11 +23,19 @@ class ListResponse(BaseModel):
 
 
 class SourceResponse(BaseModel):
+    id: str
     video_id: str
     platform: str
     title: str
-    note_path: str
+    summary: str
+    keywords: list[str]
+    cover_url: str | None
+    source_url: str
+    duration_seconds: int
+    uploader: str
+    language: str | None
     processed_at: str
+    settings_snapshot: dict[str, Any]
 
 
 class OverviewResponse(BaseModel):

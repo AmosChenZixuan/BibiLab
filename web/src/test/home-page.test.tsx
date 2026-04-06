@@ -126,17 +126,31 @@ describe("home page", () => {
       if (url.endsWith("/api/lists/list-1/sources") && method === "GET") {
         return Response.json([
           {
+            id: "source-cover",
             video_id: "BV1cover",
             platform: "bilibili",
             title: "Systems Episode",
-            note_path: "/tmp/BV1cover.md",
+            summary: "",
+            keywords: [],
+            cover_url: null,
+            source_url: "https://www.bilibili.com/video/BV1cover",
+            duration_seconds: 0,
+            uploader: "",
+            language: null,
             processed_at: "2026-03-31T20:00:00Z",
           },
           {
+            id: "source-extra",
             video_id: "BV1extra",
             platform: "bilibili",
             title: "Feedback Loops",
-            note_path: "/tmp/BV1extra.md",
+            summary: "",
+            keywords: [],
+            cover_url: null,
+            source_url: "https://www.bilibili.com/video/BV1extra",
+            duration_seconds: 0,
+            uploader: "",
+            language: null,
             processed_at: "2026-03-31T20:10:00Z",
           },
         ]);

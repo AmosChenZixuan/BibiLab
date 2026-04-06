@@ -1,30 +1,22 @@
 """LLM knowledge extraction step."""
 
-import json
 import logging
 
-import httpx
 from pydantic import BaseModel
 
 from bibilab.adapters.base import VideoMeta
 from bibilab.config import AIConfig
+from bibilab.pipeline._shared import (
+    _LANG_INSTRUCTION,
+    _STRICT_SUFFIX,
+    _TRANSCRIPT_CHAR_LIMIT,
+    _call_llm,
+    _parse_llm_json_response,
+    _resolved_lang,
+)
 from bibilab.pipeline.audio import PipelineError
 
 logger = logging.getLogger(__name__)
-
-_TRANSCRIPT_TOKEN_WARN = 100_000
-_TRANSCRIPT_CHAR_LIMIT = 400_000  # ~100K tokens at ~4 chars/token
-
-_LANG_INSTRUCTION = {
-    "en": "Respond in English only. Do not use any other language.",
-    "zh": "请用中文回答。不要使用其他语言。",
-}
-
-
-def _resolved_lang(output_language: str, ui_lang: str | None) -> str:
-    if output_language == "ui":
-        return ui_lang or "en"
-    return output_language
 
 
 class KeyPoint(BaseModel):
@@ -56,55 +48,9 @@ Transcript:
 {transcript}
 """
 
-_STRICT_SUFFIX = "\nReturn ONLY valid JSON. Do not add any explanation or markdown fences."
-
-
-def _call_llm(prompt: str, cfg: AIConfig) -> str:
-    """Dispatch to the appropriate LLM provider. Returns raw text response."""
-    if cfg.provider == "anthropic":
-        import anthropic  # noqa: PLC0415
-
-        client = anthropic.Anthropic(api_key=cfg.api_key)
-        msg = client.messages.create(
-            model=cfg.model,
-            max_tokens=2048,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        return msg.content[0].text
-
-    if cfg.provider == "openai":
-        import openai  # noqa: PLC0415
-
-        client = openai.OpenAI(api_key=cfg.api_key, base_url=cfg.base_url or None)
-        resp = client.chat.completions.create(
-            model=cfg.model,
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=2048,
-        )
-        return resp.choices[0].message.content
-
-    # ollama / custom: plain HTTP
-    base = cfg.base_url or "http://localhost:11434"
-    r = httpx.post(
-        f"{base}/api/chat",
-        json={
-            "model": cfg.model,
-            "messages": [{"role": "user", "content": prompt}],
-            "stream": False,
-        },
-        timeout=120,
-    )
-    r.raise_for_status()
-    return r.json()["message"]["content"]
-
 
 def _parse_response(text: str) -> ExtractionResult:
-    text = text.strip()
-    # Strip markdown code fences if present
-    if text.startswith("```"):
-        lines = text.splitlines()
-        text = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:])
-    return ExtractionResult.model_validate(json.loads(text))
+    return _parse_llm_json_response(text, ExtractionResult)
 
 
 def extract_knowledge(
@@ -120,11 +66,7 @@ def extract_knowledge(
         logger.warning("Transcript for %s exceeds ~100K tokens; truncating", meta.video_id)
         transcript_text = transcript_text[:_TRANSCRIPT_CHAR_LIMIT]
 
-    prompt = (
-        lang_instruction
-        + "\n\n"
-        + _EXTRACTION_PROMPT.format(title=meta.title, transcript=transcript_text)
-    )
+    prompt = lang_instruction + "\n\n" + _EXTRACTION_PROMPT.format(title=meta.title, transcript=transcript_text)
 
     raw = _call_llm(prompt, cfg)
     try:
@@ -135,9 +77,7 @@ def extract_knowledge(
         try:
             return _parse_response(raw2)
         except Exception as exc:
-            raise PipelineError(
-                f"LLM extraction failed for {meta.video_id}: could not parse JSON"
-            ) from exc
+            raise PipelineError(f"LLM extraction failed for {meta.video_id}: could not parse JSON") from exc
 
 
 _OVERVIEW_PROMPT = """\

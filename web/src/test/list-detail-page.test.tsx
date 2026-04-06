@@ -9,10 +9,17 @@ import { routes } from "@/app/routes";
 
 const state = {
   sources: [] as Array<{
+    id: string;
     video_id: string;
     platform: string;
     title: string;
-    note_path: string;
+    summary: string;
+    keywords: string[];
+    cover_url: string | null;
+    source_url: string;
+    duration_seconds: number;
+    uploader: string;
+    language: string | null;
     processed_at: string;
   }>,
   ingestCalls: [] as Array<{ url: string; rerun: boolean }>,
@@ -71,8 +78,8 @@ function makeMockFetch() {
       state.ingestCalls.push({ url: urlFromBody, rerun });
       return Promise.resolve(new Response(JSON.stringify({ queued: ["job-1"], skipped: [] })));
     }
-    if (url.match(/\/api\/lists\/list-1\/sources\/BV1old/) && method === "DELETE") {
-      state.deletedIds.push("BV1old");
+    if (url.match(/\/api\/lists\/list-1\/sources\/source-old/) && method === "DELETE") {
+      state.deletedIds.push("source-old");
       return Promise.resolve(new Response(null, { status: 204 }));
     }
     if (url.endsWith("/api/lists/list-1") && method === "PATCH") {
@@ -112,18 +119,28 @@ vi.mock("../lib/api", () => ({
       state.ingestCalls.push({ url, rerun });
       return Promise.resolve({ queued: ["job-1"], skipped: [] });
     }),
-    deleteSource: vi.fn().mockImplementation((_listId: string, videoId: string) => {
-      state.deletedIds.push(videoId);
+    deleteSource: vi.fn().mockImplementation((_listId: string, sourceId: string) => {
+      state.deletedIds.push(sourceId);
       return Promise.resolve();
     }),
     updateList: vi.fn().mockImplementation((_listId: string, _patch: object) =>
       Promise.resolve({ ...state.renameResult }),
     ),
-    getNoteContent: vi.fn().mockResolvedValue({
-      markdown: "# Key Insights\n\nSome content here",
-    }),
-    getNoteTranscript: vi.fn().mockResolvedValue({
+    getSource: vi.fn().mockResolvedValue({
+      id: "source-old",
+      video_id: "BV1old",
+      platform: "bilibili",
+      title: "Existing Source",
+      source_url: "https://www.bilibili.com/video/BV1old",
+      duration_seconds: 600,
+      uploader: "",
+      language: null,
+      processed_at: "2026-03-31T20:00:00Z",
+      summary: "",
+      keywords: [],
+      cover_url: null,
       transcript: "This is the transcript text...",
+      settings_snapshot: {},
     }),
   },
   toErrorMessage: vi.fn((e: unknown) => (e instanceof Error ? e.message : String(e))),
@@ -204,10 +221,17 @@ describe("list detail page", () => {
   test("loads sources, submits URL, cancels ingestion, and deletes source via context menu", async () => {
     state.sources = [
       {
+        id: "source-old",
         video_id: "BV1old",
         platform: "bilibili",
         title: "Existing Source",
-        note_path: "/tmp/BV1old.md",
+        summary: "",
+        keywords: [],
+        cover_url: null,
+        source_url: "https://www.bilibili.com/video/BV1old",
+        duration_seconds: 0,
+        uploader: "",
+        language: null,
         processed_at: "2026-03-31T20:00:00Z",
       },
     ];
@@ -232,17 +256,24 @@ describe("list detail page", () => {
     await userEvent.hover(sourceRow);
     await userEvent.click(screen.getByRole("button", { name: /source options/i }));
     await userEvent.click(screen.getByText(/^delete$/i));
-    expect(state.deletedIds).toContain("BV1old");
+    expect(state.deletedIds).toContain("source-old");
     expect(screen.queryByRole("button", { name: /open existing source/i })).toBeNull();
   });
 
   test("re-run context menu item calls ingestUrl with rerun=true", async () => {
     state.sources = [
       {
+        id: "source-old",
         video_id: "BV1old",
         platform: "bilibili",
         title: "Existing Source",
-        note_path: "/tmp/BV1old.md",
+        summary: "",
+        keywords: [],
+        cover_url: null,
+        source_url: "https://www.bilibili.com/video/BV1old",
+        duration_seconds: 0,
+        uploader: "",
+        language: null,
         processed_at: "2026-03-31T20:00:00Z",
       },
     ];
@@ -266,26 +297,40 @@ describe("list detail page", () => {
     });
   });
 
-  test("opens viewer on source click, lazy-loads transcript, close returns to list", async () => {
+  test("opens viewer on source click, loads source content, shows Banner, DigestAccordion, and transcript", async () => {
     state.sources = [
       {
+        id: "src-uuid",
         video_id: "BV1old",
         platform: "bilibili",
         title: "Existing Source",
-        note_path: "/tmp/BV1old.md",
+        summary: "",
+        keywords: [],
+        cover_url: null,
+        source_url: "https://www.bilibili.com/video/BV1old",
+        duration_seconds: 0,
+        uploader: "",
+        language: null,
         processed_at: "2026-03-31T20:00:00Z",
       },
     ];
     makeMockFetch();
     vi.mocked(api.listSources).mockResolvedValue([...state.sources]);
-    vi.mocked(api.getNoteContent).mockResolvedValue({
+    vi.mocked(api.getSource).mockResolvedValue({
+      id: "src-uuid",
       video_id: "BV1old",
+      platform: "bilibili",
       title: "Existing Source",
-      markdown: "# Key Insights\n\nSome content here",
-    });
-    vi.mocked(api.getNoteTranscript).mockResolvedValue({
-      video_id: "BV1old",
-      text: "This is the transcript text...",
+      source_url: "https://www.bilibili.com/video/BV1old",
+      duration_seconds: 600,
+      uploader: "TestUploader",
+      language: null,
+      processed_at: "2026-03-31T20:00:00Z",
+      summary: "Great video",
+      keywords: ["ml", "ai"],
+      cover_url: null,
+      transcript: "hello transcript",
+      settings_snapshot: {},
     });
 
     const router = createMemoryRouter(routes, { initialEntries: ["/lists/list-1"] });
@@ -295,34 +340,36 @@ describe("list detail page", () => {
     const sourceBtn = await screen.findByRole("button", { name: /open existing source/i });
     expect(sourceBtn).toBeInTheDocument();
 
-    // 2. Clicking fires GET /api/notes/{video_id}/content
+    // 2. Clicking fires getSource
     await userEvent.click(sourceBtn);
-    expect(api.getNoteContent).toHaveBeenCalledWith("BV1old");
+    expect(api.getSource).toHaveBeenCalledWith("src-uuid");
 
     // 3. Panel switches to viewer mode — source title in viewer header, source rows gone
     expect(await screen.findByText("Existing Source")).toBeInTheDocument(); // viewer header title
     expect(screen.queryByRole("button", { name: /open existing source/i })).not.toBeInTheDocument();
 
-    // 4. NoteAccordion renders with "Note" header (collapsed by default)
-    const noteAccordion = screen.getByRole("button", { name: /^note$/i });
-    expect(noteAccordion).toBeInTheDocument();
-    // Note content is not yet visible (collapsed)
-    expect(screen.queryByText(/Key Insights/i)).not.toBeInTheDocument();
+    // 4. Banner is present (cover image area)
+    const banner = document.querySelector(".relative.h-36");
+    expect(banner).toBeInTheDocument();
 
-    // 5. Clicking "Note" header expands it and shows markdown text
-    await userEvent.click(noteAccordion);
-    // Wait for the accordion to expand and show content
-    await expect.poll(() => screen.queryByText(/Key Insights/i)).toBeInTheDocument();
+    // 5. DigestAccordion renders with "lists.digest" header (collapsed by default)
+    const digestAccordion = screen.getByRole("button", { name: /^lists\.digest$/i });
+    expect(digestAccordion).toBeInTheDocument();
 
-    // 6. Transcript auto-loaded when viewer opened (no "Load transcript" button)
-    expect(api.getNoteTranscript).toHaveBeenCalledWith("BV1old");
-    // Transcript text appears directly (no button needed)
-    expect(await screen.findByText("This is the transcript text...")).toBeInTheDocument();
-    // "Transcript" label is visible
-    expect(screen.getByText(/^transcript$/i)).toBeInTheDocument();
+    // 6. No ReactMarkdown output (no .prose class)
+    const proseElements = document.querySelectorAll(".prose");
+    expect(proseElements.length).toBe(0);
 
-    // 8. Close button returns to list mode
-    await userEvent.click(screen.getByRole("button", { name: /close viewer/i }));
+    // 7. Keyword chips for "ml" and "ai" are visible after expanding DigestAccordion
+    await userEvent.click(digestAccordion);
+    expect(await screen.findByText("ml")).toBeInTheDocument();
+    expect(screen.getByText("ai")).toBeInTheDocument();
+
+    // 8. Transcript text "hello transcript" is present
+    expect(screen.getByText("hello transcript")).toBeInTheDocument();
+
+    // 9. Close button returns to list mode
+    await userEvent.click(screen.getByRole("button", { name: /lists\.closeViewer/i }));
     expect(screen.getByRole("button", { name: /open existing source/i })).toBeInTheDocument();
   });
 });

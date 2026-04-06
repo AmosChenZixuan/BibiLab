@@ -1,12 +1,12 @@
 import asyncio
+import json
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import FileResponse
 
-from bibilab.config import load_config, resolve_storage_path
+from bibilab.config import bibilab_home, load_config
 from bibilab.db import (
     create_list as db_create_list,
 )
@@ -36,20 +36,18 @@ from bibilab.pipeline.embed import clear_embeddings_for_list, clear_embeddings_f
 
 router = APIRouter()
 
-_ACTIVE_JOB_STATUSES = ("queued", "downloading", "transcribing", "extracting", "writing")
+_ACTIVE_JOB_STATUSES = ("queued", "downloading", "transcribing", "processing")
 
 
-def _cached_cover_path(video_id: str) -> Path:
-    from bibilab.config import bibilab_home
-
-    return bibilab_home() / "notes" / "attachments" / f"{video_id}_cover.jpg"
+def _cover_path(source_id: str) -> Path:
+    return bibilab_home() / "covers" / f"{source_id}.jpg"
 
 
 async def _build_list_response(row, request: Request) -> ListResponse:
     thumbnail_url = None
     if row["thumbnail_source_id"]:
-        if _cached_cover_path(row["thumbnail_source_id"]).exists():
-            thumbnail_url = str(request.url_for("get_cover", video_id=row["thumbnail_source_id"]))
+        if _cover_path(row["thumbnail_source_id"]).exists():
+            thumbnail_url = str(request.url_for("get_source_cover", source_id=row["thumbnail_source_id"]))
         else:
             source = await get_source(row["thumbnail_source_id"])
             if source is not None and source["cover_url"]:
@@ -109,23 +107,13 @@ async def update_list(list_id: str, req: ListUpdateRequest, request: Request) ->
         if req.thumbnail_source_id is not None:
             source = await get_source(req.thumbnail_source_id)
             if source is None or source["list_id"] != list_id:
-                raise HTTPException(
-                    status_code=422, detail="Thumbnail source must belong to the list"
-                )
+                raise HTTPException(status_code=422, detail="Thumbnail source must belong to the list")
         await update_list_thumbnail(list_id, req.thumbnail_source_id)
 
     next_row = await get_list_with_display(list_id)
     if next_row is None:
         raise HTTPException(status_code=404, detail="List not found")
     return await _build_list_response(next_row, request)
-
-
-@router.get("/covers/{video_id}")
-async def get_cover(video_id: str) -> FileResponse:
-    cover_path = _cached_cover_path(video_id)
-    if not cover_path.exists():
-        raise HTTPException(status_code=404, detail="Cover not found")
-    return FileResponse(cover_path)
 
 
 @router.delete("/lists/{list_id}", status_code=204)
@@ -150,8 +138,9 @@ async def delete_list(list_id: str) -> None:
 
     sources = await get_sources_for_list(list_id)
     for source in sources:
-        resolve_storage_path(source["note_path"]).unlink(missing_ok=True)
-        _cached_cover_path(source["video_id"]).unlink(missing_ok=True)
+        _cover_path(source["id"]).unlink(missing_ok=True)
+        if source["transcript_path"]:
+            (bibilab_home() / source["transcript_path"]).unlink(missing_ok=True)
 
     await delete_sources_for_list(list_id)
     cfg = load_config()
@@ -166,31 +155,40 @@ async def get_list_sources(list_id: str) -> list[SourceResponse]:
     rows = await get_sources_for_list(list_id)
     return [
         SourceResponse(
+            id=r["id"],
             video_id=r["video_id"],
             platform=r["platform"],
             title=r["title"],
-            note_path=str(resolve_storage_path(r["note_path"])),
+            summary=r["summary"],
+            keywords=json.loads(r["keywords"] or "[]"),
+            cover_url=r["cover_url"],
+            source_url=r["source_url"],
+            duration_seconds=r["duration_seconds"],
+            uploader=r["uploader"],
+            language=r["language"],
             processed_at=r["processed_at"] or "",
+            settings_snapshot=json.loads(r["settings_snapshot"] or "{}"),
         )
         for r in rows
     ]
 
 
-@router.delete("/lists/{list_id}/sources/{video_id}", status_code=204)
-async def delete_list_source(list_id: str, video_id: str) -> None:
-    source = await get_source(video_id)
+@router.delete("/lists/{list_id}/sources/{source_id}", status_code=204)
+async def delete_list_source(list_id: str, source_id: str) -> None:
+    source = await get_source(source_id)
     if source is None or source["list_id"] != list_id:
         raise HTTPException(status_code=404, detail="Source not found")
 
     row = await get_list(list_id)
-    if row is not None and row["thumbnail_source_id"] == video_id:
+    if row is not None and row["thumbnail_source_id"] == source_id:
         await update_list_thumbnail(list_id, None)
 
-    resolve_storage_path(source["note_path"]).unlink(missing_ok=True)
+    _cover_path(source_id).unlink(missing_ok=True)
+    if source["transcript_path"]:
+        (bibilab_home() / source["transcript_path"]).unlink(missing_ok=True)
     cfg = load_config()
-    await asyncio.to_thread(clear_embeddings_for_video, video_id, cfg)
-    await delete_source(video_id)
-    _cached_cover_path(video_id).unlink(missing_ok=True)
+    await asyncio.to_thread(clear_embeddings_for_video, source["video_id"], cfg)
+    await delete_source(source_id)
 
 
 @router.post("/lists/{list_id}/overview")

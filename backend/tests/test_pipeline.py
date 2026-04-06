@@ -8,8 +8,6 @@ import pytest
 from bibilab.pipeline.audio import PipelineError, extract_audio
 from bibilab.pipeline.chunk import RagChunk, chunk_segments
 from bibilab.pipeline.extract import (
-    ExtractionResult,
-    KeyPoint,
     _parse_response,
     extract_knowledge,
 )
@@ -134,10 +132,7 @@ def test_chunk_oversized_segment_is_own_chunk():
 
 
 def test_chunk_sequence_indices_are_consecutive():
-    segs = [
-        _seg(f"sentence number {i} in the test", start=float(i), end=float(i + 1))
-        for i in range(30)
-    ]
+    segs = [_seg(f"sentence number {i} in the test", start=float(i), end=float(i + 1)) for i in range(30)]
     chunks = chunk_segments(segs, target_tokens=20)
     indices = [c.sequence_index for c in chunks]
     assert indices == list(range(len(chunks)))
@@ -207,46 +202,3 @@ def test_extract_knowledge_retries_on_bad_json():
         result = extract_knowledge("transcript", meta, cfg)
 
     assert result.title == "T2"
-
-
-# ---------------------------------------------------------------------------
-# notes.py
-# ---------------------------------------------------------------------------
-
-
-def test_write_video_note(tmp_path: Path):
-    from bibilab.adapters.base import VideoMeta
-    from bibilab.pipeline.notes import write_video_note
-
-    meta = VideoMeta("BV1abc", "Original Title", "bilibili", "https://x.com", "", 300, "uploader")
-    extraction = ExtractionResult(
-        title="Extracted Title",
-        summary="A good summary.",
-        key_points=[KeyPoint(timestamp="[00:01:00]", text="Key insight")],
-    )
-
-    with patch("bibilab.pipeline.notes.bibilab_home", return_value=tmp_path):
-        with patch("bibilab.pipeline.notes._download_cover", return_value=False):
-            path = write_video_note(meta, extraction, "list123")
-
-    assert path == tmp_path / "notes" / "BV1abc.md"
-    assert path.exists()
-    content = path.read_text(encoding="utf-8")
-    assert "video_id: BV1abc" in content
-    assert "# Extracted Title" in content
-    assert "A good summary." in content
-    assert "[00:01:00] Key insight" in content
-
-
-def test_write_video_note_uses_video_id_filename(tmp_path: Path):
-    from bibilab.adapters.base import VideoMeta
-    from bibilab.pipeline.notes import write_video_note
-
-    meta = VideoMeta("BV1", "Title: Bad/Chars", "bilibili", "https://x.com", "", 0, "")
-    extraction = ExtractionResult(title="Title: Bad/Chars", summary="s", key_points=[])
-
-    with patch("bibilab.pipeline.notes.bibilab_home", return_value=tmp_path):
-        with patch("bibilab.pipeline.notes._download_cover", return_value=False):
-            path = write_video_note(meta, extraction, "lid")
-
-    assert path.name == "BV1.md"

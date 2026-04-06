@@ -43,9 +43,7 @@ async def test_health_reports_ffmpeg_install_path(client: httpx.AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_health_reports_embedding_model_install_path(
-    tmp_bibilab_home: Path, client: httpx.AsyncClient
-):  # noqa: ARG001
+async def test_health_reports_embedding_model_install_path(tmp_bibilab_home: Path, client: httpx.AsyncClient):  # noqa: ARG001
     model_file = tmp_bibilab_home / "models" / "embedding" / "onnx" / "model.onnx"
     model_file.parent.mkdir(parents=True)
     model_file.write_bytes(b"fake")
@@ -202,7 +200,7 @@ async def test_serves_built_spa_without_shadowing_api_routes(tmp_path: Path):
 
 @pytest.mark.asyncio
 async def test_bibilab_dirs_bootstrapped(client: httpx.AsyncClient, tmp_bibilab_home: Path):
-    for subdir in ("notes", "transcripts", "downloads", "chroma"):
+    for subdir in ("covers", "transcripts", "downloads", "chroma"):
         assert (tmp_bibilab_home / subdir).is_dir(), f"Missing {subdir}/"
     assert (tmp_bibilab_home / "bibilab.db").exists()
 
@@ -213,12 +211,10 @@ async def test_bootstrap_db_creates_lists_table(tmp_path: Path):
 
     from bibilab.db import bootstrap_db
 
-    with patch("bibilab.db.bibilab_home", return_value=tmp_path):
+    with patch("bibilab.config.bibilab_home", return_value=tmp_path):
         await bootstrap_db()
 
     with sqlite3.connect(tmp_path / "bibilab.db") as db:
-        row = db.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='lists'"
-        ).fetchone()
+        row = db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='lists'").fetchone()
 
     assert row is not None

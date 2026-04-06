@@ -278,13 +278,13 @@ export function HomePage() {
             {thumbnailSources.map((source) => (
               <button
                 className="aspect-video overflow-hidden rounded-2xl border border-border bg-black/30 p-0 text-left shadow-lg transition hover:-translate-y-0.5 hover:shadow-lg"
-                key={source.video_id}
-                onClick={() => void handleThumbnailSelect(source.video_id)}
+                key={source.id}
+                onClick={() => void handleThumbnailSelect(source.id)}
                 type="button"
               >
                 <div
                   className="flex h-full items-end bg-cover bg-center p-2"
-                  style={{ backgroundImage: `linear-gradient(to top, rgba(0,0,0,0.5), transparent), url("/api/covers/${source.video_id}")` }}
+                  style={{ backgroundImage: `linear-gradient(to top, rgba(0,0,0,0.5), transparent), url("/api/sources/${source.id}/cover")` }}
                 >
                   <span className="block truncate text-xs font-semibold text-white">{source.title}</span>
                 </div>

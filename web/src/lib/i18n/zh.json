@@ -88,7 +88,7 @@
     "deleteList": "删除列表",
     "failedDuring": "在 %{stage} 阶段失败",
     "transcript": "转录稿",
-    "note": "笔记",
+    "digest": "摘要",
     "notSignedIn": "未登录"
   },
   "jobs": {
@@ -115,8 +115,7 @@
     "queued": "排队中",
     "downloading": "下载中",
     "transcribing": "转录中",
-    "extracting": "提取中",
-    "writing": "写入中",
+    "processing": "处理中",
     "done": "完成",
     "failed": "失败"
   },

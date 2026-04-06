@@ -52,16 +52,19 @@ def _load_model(cfg: TranscriptionConfig):
     return _model
 
 
-def transcribe(audio_path: Path, cfg: TranscriptionConfig) -> list[WhisperSegment]:
+def transcribe(audio_path: Path, cfg: TranscriptionConfig) -> tuple[list[WhisperSegment], str | None]:
+    """Transcribe audio to segments. Returns (segments, detected_language)."""
     model = _load_model(cfg)
     language = None if cfg.language == "auto" else cfg.language
-    segments, _ = model.transcribe(
+    segments, info = model.transcribe(
         str(audio_path),
         beam_size=5,
         vad_filter=True,
         language=language,
     )
-    return [WhisperSegment(start=s.start, end=s.end, text=s.text.strip()) for s in segments]
+    segment_list = [WhisperSegment(start=s.start, end=s.end, text=s.text.strip()) for s in segments]
+    detected_language: str | None = None if cfg.language != "auto" else info.language
+    return segment_list, detected_language
 
 
 def write_transcript(segments: list[WhisperSegment], video_id: str) -> Path:

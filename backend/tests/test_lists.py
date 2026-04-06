@@ -49,31 +49,37 @@ async def test_get_lists_returns_thumbnail_fields_and_prefers_cached_cover(
     from bibilab.db import write_source
 
     list_id = (await client.post("/lists", json={"name": "Annotated"})).json()["id"]
-    cover_path = tmp_bibilab_home / "notes" / "attachments" / "BV1cover_cover.jpg"
+    source_id = "BV1cover"
+    cover_path = tmp_bibilab_home / "covers" / f"{source_id}.jpg"
     cover_path.parent.mkdir(parents=True, exist_ok=True)
     cover_path.write_bytes(b"fake-image")
 
     await write_source(
+        source_id=source_id,
         video_id="BV1cover",
         platform="bilibili",
         list_id=list_id,
         title="Episode 1",
         summary="A summary.",
-        note_path=str(tmp_bibilab_home / "notes" / "BV1cover.md"),
+        keywords=[],
+        cover_url="https://example.com/remote-cover.jpg",
         transcript_path=None,
+        source_url="https://www.bilibili.com/video/BV1cover",
+        duration_seconds=0,
+        uploader="TestUploader",
+        language=None,
         whisper_model="large-v3",
         ai_model="gpt-4o",
         vision_enabled=False,
         settings_snapshot={},
-        cover_url="https://example.com/remote-cover.jpg",
     )
 
     patch_resp = await client.patch(
         f"/lists/{list_id}",
-        json={"name": "Annotated", "thumbnail_source_id": "BV1cover"},
+        json={"name": "Annotated", "thumbnail_source_id": source_id},
     )
     assert patch_resp.status_code == 200
-    assert patch_resp.json()["thumbnail_source_id"] == "BV1cover"
+    assert patch_resp.json()["thumbnail_source_id"] == source_id
 
     list_resp = await client.get("/lists")
     assert list_resp.status_code == 200
@@ -82,14 +88,14 @@ async def test_get_lists_returns_thumbnail_fields_and_prefers_cached_cover(
             "id": list_id,
             "name": "Annotated",
             "created_at": patch_resp.json()["created_at"],
-            "thumbnail_source_id": "BV1cover",
-            "thumbnail_url": "http://testserver/covers/BV1cover",
+            "thumbnail_source_id": source_id,
+            "thumbnail_url": f"http://testserver/sources/{source_id}/cover",
             "source_count": 1,
             "updated_at": patch_resp.json()["updated_at"],
         }
     ]
 
-    cover_resp = await client.get("/covers/BV1cover")
+    cover_resp = await client.get(f"/sources/{source_id}/cover")
     assert cover_resp.status_code == 200
     assert cover_resp.content == b"fake-image"
 
@@ -141,17 +147,21 @@ async def test_get_list_sources(client: httpx.AsyncClient, tmp_bibilab_home: Pat
     from bibilab.db import write_source
 
     list_id = (await client.post("/lists", json={"name": "ML"})).json()["id"]
-    note_file = tmp_bibilab_home / "notes" / "BV1abc.md"
-    note_file.parent.mkdir(parents=True, exist_ok=True)
-    note_file.write_text("# Note", encoding="utf-8")
+    source_id = "src-list-src"
     await write_source(
+        source_id=source_id,
         video_id="BV1abc",
         platform="bilibili",
         list_id=list_id,
         title="Intro",
         summary="A summary.",
-        note_path=str(note_file),
+        keywords=["ai"],
+        cover_url=None,
         transcript_path=None,
+        source_url="https://www.bilibili.com/video/BV1abc",
+        duration_seconds=0,
+        uploader="TestUploader",
+        language=None,
         whisper_model="large-v3",
         ai_model="gpt-4o",
         vision_enabled=False,
@@ -161,38 +171,44 @@ async def test_get_list_sources(client: httpx.AsyncClient, tmp_bibilab_home: Pat
     assert resp.status_code == 200
     sources = resp.json()
     assert len(sources) == 1
+    assert sources[0]["id"] == source_id
     assert sources[0]["video_id"] == "BV1abc"
     assert sources[0]["title"] == "Intro"
 
 
 @pytest.mark.asyncio
-async def test_delete_source_from_list(
-    client: httpx.AsyncClient, tmp_bibilab_home: Path, tmp_path: Path
-):
+async def test_delete_source_from_list(client: httpx.AsyncClient, tmp_bibilab_home: Path, tmp_path: Path):
     from bibilab.db import get_source, write_source
 
     list_id = (await client.post("/lists", json={"name": "ML"})).json()["id"]
-    note_file = tmp_bibilab_home / "notes" / "BV1abc.md"
-    note_file.parent.mkdir(parents=True, exist_ok=True)
-    note_file.write_text("# Note", encoding="utf-8")
+    source_id = "src-delete-src"
+    transcript_file = tmp_bibilab_home / "transcripts" / f"{source_id}.txt"
+    transcript_file.parent.mkdir(parents=True, exist_ok=True)
+    transcript_file.write_text("# Note", encoding="utf-8")
     await write_source(
+        source_id=source_id,
         video_id="BV1abc",
         platform="bilibili",
         list_id=list_id,
         title="Intro",
         summary="S",
-        note_path=str(note_file),
-        transcript_path=None,
+        keywords=[],
+        cover_url=None,
+        transcript_path=f"transcripts/{source_id}.txt",
+        source_url="https://www.bilibili.com/video/BV1abc",
+        duration_seconds=0,
+        uploader="TestUploader",
+        language=None,
         whisper_model="large-v3",
         ai_model="gpt-4o",
         vision_enabled=False,
         settings_snapshot={},
     )
     with patch("bibilab.routers.lists.clear_embeddings_for_video") as mock_clear:
-        resp = await client.delete(f"/lists/{list_id}/sources/BV1abc")
+        resp = await client.delete(f"/lists/{list_id}/sources/{source_id}")
     assert resp.status_code == 204
-    assert not note_file.exists()
-    assert await get_source("BV1abc") is None
+    assert not transcript_file.exists()
+    assert await get_source(source_id) is None
     mock_clear.assert_called_once()
     assert mock_clear.call_args[0][0] == "BV1abc"
 
@@ -204,17 +220,26 @@ async def test_delete_source_clears_thumbnail_and_cover(
     from bibilab.db import get_list, write_source
 
     list_id = (await client.post("/lists", json={"name": "ML"})).json()["id"]
-    note_file = tmp_bibilab_home / "notes" / "BV1abc.md"
-    note_file.parent.mkdir(parents=True, exist_ok=True)
-    note_file.write_text("# Note", encoding="utf-8")
+    source_id = "src-thumb-src"
+    cover_file = tmp_bibilab_home / "covers" / f"{source_id}.jpg"
+    cover_file.parent.mkdir(parents=True, exist_ok=True)
+    cover_file.write_bytes(b"fake-image")
+    assert cover_file.exists()
+
     await write_source(
+        source_id=source_id,
         video_id="BV1abc",
         platform="bilibili",
         list_id=list_id,
         title="Intro",
         summary="S",
-        note_path=str(note_file),
+        keywords=[],
+        cover_url=None,
         transcript_path=None,
+        source_url="https://www.bilibili.com/video/BV1abc",
+        duration_seconds=0,
+        uploader="TestUploader",
+        language=None,
         whisper_model="large-v3",
         ai_model="gpt-4o",
         vision_enabled=False,
@@ -222,14 +247,10 @@ async def test_delete_source_clears_thumbnail_and_cover(
     )
 
     # Assign the source as the list's thumbnail
-    await client.patch(f"/lists/{list_id}", json={"thumbnail_source_id": "BV1abc"})
-    cover_file = tmp_bibilab_home / "notes" / "attachments" / "BV1abc_cover.jpg"
-    cover_file.parent.mkdir(parents=True, exist_ok=True)
-    cover_file.write_bytes(b"fake-image")
-    assert cover_file.exists()
+    await client.patch(f"/lists/{list_id}", json={"thumbnail_source_id": source_id})
 
     with patch("bibilab.routers.lists.clear_embeddings_for_video"):
-        resp = await client.delete(f"/lists/{list_id}/sources/BV1abc")
+        resp = await client.delete(f"/lists/{list_id}/sources/{source_id}")
     assert resp.status_code == 204
 
     # Thumbnail reference is cleared
@@ -247,23 +268,28 @@ async def test_delete_source_not_found(client: httpx.AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_first_source_auto_assigned_as_thumbnail(
-    client: httpx.AsyncClient, tmp_bibilab_home: Path
-):
+async def test_first_source_auto_assigned_as_thumbnail(client: httpx.AsyncClient, tmp_bibilab_home: Path):
     from bibilab.db import get_list_with_display, write_source
 
     # Create an empty list
     list_id = (await client.post("/lists", json={"name": "Empty"})).json()["id"]
 
     # Write the first source (simulating first ingest completing)
+    source_id = "BVfirst"
     await write_source(
-        video_id="BVfirst",
+        source_id=source_id,
+        video_id="BVfirstVid",
         platform="bilibili",
         list_id=list_id,
         title="First Video",
         summary="S",
-        note_path=str(tmp_bibilab_home / "notes" / "BVfirst.md"),
+        keywords=[],
+        cover_url=None,
         transcript_path=None,
+        source_url="https://www.bilibili.com/video/BVfirstVid",
+        duration_seconds=0,
+        uploader="TestUploader",
+        language=None,
         whisper_model="large-v3",
         ai_model="gpt-4o",
         vision_enabled=False,
@@ -272,4 +298,4 @@ async def test_first_source_auto_assigned_as_thumbnail(
 
     # List's thumbnail_source_id should be auto-assigned to the first source
     row = await get_list_with_display(list_id)
-    assert row["thumbnail_source_id"] == "BVfirst"
+    assert row["thumbnail_source_id"] == source_id

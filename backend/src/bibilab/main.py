@@ -14,7 +14,7 @@ from bibilab.routers.health import router as health_router
 from bibilab.routers.ingest import router as ingest_router
 from bibilab.routers.jobs import router as jobs_router
 from bibilab.routers.lists import router as lists_router
-from bibilab.routers.notes import router as notes_router
+from bibilab.routers.sources import router as sources_router
 from bibilab.routers.whisper import router as whisper_router
 from bibilab.worker import WorkerLoop
 
@@ -26,7 +26,7 @@ def make_lifespan(*, start_worker: bool):
     async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         home = bibilab_home()
         for subdir in (
-            "notes",
+            "covers",
             "transcripts",
             "downloads",
             "chroma",
@@ -74,7 +74,7 @@ def create_app(*, start_worker: bool = True) -> FastAPI:
     app.include_router(jobs_router)
     app.include_router(lists_router)
     app.include_router(ingest_router)
-    app.include_router(notes_router)
+    app.include_router(sources_router)
     app.include_router(whisper_router)
 
     if web_dist.joinpath("index.html").exists():

@@ -1,20 +1,17 @@
 import { MdClose } from "react-icons/md";
 
 import { useLanguage } from "@/app/LanguageContext";
-import type { NoteContent, Source } from "@/lib/types";
-import { NoteAccordion } from "@/components/lists/NoteAccordion";
+import type { Source, SourceContent } from "@/lib/types";
+import { Banner } from "@/components/lists/Banner";
+import { DigestAccordion } from "@/components/lists/DigestAccordion";
 
 export function SourcesViewerMode({
   source,
-  note,
-  transcript,
-  transcriptError,
+  sourceContent,
   onClose,
 }: {
   source: Source;
-  note: NoteContent | null;
-  transcript: string | null;
-  transcriptError: string | null;
+  sourceContent: SourceContent | null;
   onClose: () => void;
 }) {
   const { t } = useLanguage();
@@ -36,21 +33,28 @@ export function SourcesViewerMode({
       </div>
 
       <div className="flex-1 space-y-3 overflow-y-auto px-4 py-4">
-        {note && <NoteAccordion markdown={note.markdown} />}
-
-        <div className="space-y-2">
-          {transcriptError && (
-            <p className="text-xs text-rose-700">{transcriptError}</p>
-          )}
-          {transcript && (
-            <>
-              <p className="text-xs font-semibold uppercase tracking-wider text-muted/70">{t("lists.transcript")}</p>
-              <pre className="p-1 m-0 whitespace-pre-wrap font-mono text-xs text-muted leading-relaxed">
-                {transcript}
-              </pre>
-            </>
-          )}
-        </div>
+        {sourceContent && (
+          <Banner
+            sourceId={source.id}
+            sourceUrl={sourceContent.source_url}
+            uploader={sourceContent.uploader}
+            durationSeconds={sourceContent.duration_seconds}
+          />
+        )}
+        {sourceContent && (
+          <DigestAccordion
+            summary={sourceContent.summary}
+            keywords={sourceContent.keywords}
+          />
+        )}
+        {sourceContent?.transcript && (
+          <>
+            <p className="text-xs font-semibold uppercase tracking-wider text-muted/70">{t("lists.transcript")}</p>
+            <pre className="p-1 m-0 whitespace-pre-wrap font-mono text-xs text-muted leading-relaxed">
+              {sourceContent.transcript}
+            </pre>
+          </>
+        )}
       </div>
     </div>
   );

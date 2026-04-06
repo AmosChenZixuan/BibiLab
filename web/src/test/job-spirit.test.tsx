@@ -16,10 +16,17 @@ describe("job spirit", () => {
   test("shows rehydrated ingest work and can be dismissed after completion", async () => {
     let sources = [
       {
+        id: "source-1",
         video_id: "BV1abc",
         platform: "bilibili",
         title: "Message Queues",
-        note_path: "/tmp/BV1abc.md",
+        summary: "",
+        keywords: [],
+        cover_url: null,
+        source_url: "https://www.bilibili.com/video/BV1abc",
+        duration_seconds: 0,
+        uploader: "",
+        language: null,
         processed_at: "2026-03-31T20:00:00Z",
       },
     ];

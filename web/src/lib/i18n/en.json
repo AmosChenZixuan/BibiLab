@@ -88,7 +88,7 @@
     "deleteList": "Delete list",
     "failedDuring": "Failed during %{stage}",
     "transcript": "Transcript",
-    "note": "Note",
+    "digest": "Digest",
     "notSignedIn": "Not signed in"
   },
   "jobs": {
@@ -115,8 +115,7 @@
     "queued": "Queued",
     "downloading": "Downloading",
     "transcribing": "Transcribing",
-    "extracting": "Extracting",
-    "writing": "Writing",
+    "processing": "Processing",
     "done": "Done",
     "failed": "Failed"
   },

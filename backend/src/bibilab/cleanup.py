@@ -27,8 +27,6 @@ def cleanup_job_artifacts(job: dict[str, Any]) -> None:
     home = bibilab_home()
     paths = [
         home / "transcripts" / f"{video_id}.txt",
-        home / "notes" / f"{video_id}.md",
-        home / "notes" / "attachments" / f"{video_id}_cover.jpg",
     ]
 
     for path in paths:

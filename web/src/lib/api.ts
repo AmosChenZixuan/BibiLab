@@ -4,10 +4,9 @@ import type {
   BibilabConfig,
   BibilabList,
   BibilabListPatch,
-  NoteContent,
-  NoteTranscript,
   OverviewDownload,
   Source,
+  SourceContent,
   WhisperDownloadResponse,
   WhisperModel,
 } from "./types";
@@ -88,8 +87,9 @@ export const api = {
       method: "DELETE",
     }),
   listSources: (listId: string) => request<Source[]>(`/lists/${listId}/sources`),
-  deleteSource: (listId: string, videoId: string) =>
-    request<void>(`/lists/${listId}/sources/${videoId}`, {
+  getSource: (sourceId: string) => request<SourceContent>(`/sources/${sourceId}`),
+  deleteSource: (listId: string, sourceId: string) =>
+    request<void>(`/lists/${listId}/sources/${sourceId}`, {
       method: "DELETE",
     }),
   ingestUrl: (listId: string, url: string, rerun = false) =>
@@ -100,8 +100,6 @@ export const api = {
         body: JSON.stringify({ list_id: listId, url }),
       },
     ),
-  getNoteContent: (videoId: string) => request<NoteContent>(`/notes/${videoId}/content`),
-  getNoteTranscript: (videoId: string) => request<NoteTranscript>(`/notes/${videoId}/transcript`),
   generateOverview: (listId: string) =>
     request<OverviewDownload>(`/lists/${listId}/overview`, {
       method: "POST",

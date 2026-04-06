@@ -3,7 +3,10 @@
 import asyncio
 import json
 import logging
+import uuid
 from pathlib import Path
+
+import httpx
 
 from bibilab.adapters.base import AuthRequiredError, VideoMeta
 from bibilab.adapters.bilibili import BilibiliAdapter
@@ -13,19 +16,31 @@ from bibilab.db import (
     delete_job,
     get_list,
     get_pending_jobs,
+    get_source,
     reset_stuck_jobs,
     update_job_status,
+    update_source_digest,
     write_source,
 )
 from bibilab.pipeline.audio import PipelineError, extract_audio
 from bibilab.pipeline.chunk import chunk_segments
-from bibilab.pipeline.embed import embed_chunks, is_embedding_model_downloaded
-from bibilab.pipeline.extract import ExtractionResult, extract_knowledge
-from bibilab.pipeline.notes import write_video_note
+from bibilab.pipeline.digest import DigestResult, digest
+from bibilab.pipeline.embed import embed_chunks
 from bibilab.pipeline.transcribe import transcribe, write_transcript
 from bibilab.whisper_models import download_whisper_model
 
 logger = logging.getLogger(__name__)
+
+
+def _download_cover(cover_url: str, dest: Path) -> bool:
+    """Download cover image from URL to dest path. Returns True on success."""
+    try:
+        resp = httpx.get(cover_url, timeout=30)
+        resp.raise_for_status()
+        dest.write_bytes(resp.content)
+        return True
+    except Exception:
+        return False
 
 
 def _parse_job_meta(job: dict) -> dict:
@@ -66,9 +81,7 @@ class WorkerLoop:
         while self._running:
             if len(self._in_flight) < self._concurrency:
                 pending = [dict(j) for j in await get_pending_jobs()]
-                queued = [
-                    j for j in pending if j["status"] == "queued" and j["id"] not in self._in_flight
-                ]
+                queued = [j for j in pending if j["status"] == "queued" and j["id"] not in self._in_flight]
                 slots = self._concurrency - len(self._in_flight)
                 for job in queued[:slots]:
                     self._in_flight.add(job["id"])
@@ -85,6 +98,11 @@ class WorkerLoop:
 
             if job["type"] == "model_download":
                 await self._download_model_job(job)
+                return
+
+            meta_raw = _parse_job_meta(job)
+            if meta_raw.get("stages") == ["digest"]:
+                await self._pipeline_digest_only(job)
                 return
 
             await self._pipeline(job)
@@ -116,11 +134,54 @@ class WorkerLoop:
         await update_job_status(job_id, "done", progress=100)
         logger.info("Model download job %s completed for %s:%s", job_id, model_family, model_size)
 
+    async def _pipeline_digest_only(self, job: dict) -> None:
+        job_id = job["id"]
+        meta_raw = _parse_job_meta(job)
+        source_id = meta_raw["source_id"]
+        cfg = load_config()
+
+        await update_job_status(job_id, "processing", progress=40)
+        source = await get_source(source_id)
+        if source is None:
+            raise PipelineError(f"Source {source_id!r} not found")
+        if source["transcript_path"] is None:
+            raise PipelineError(f"Source {source_id!r} has no transcript")
+
+        transcript_path = bibilab_home() / source["transcript_path"]
+        transcript_text = transcript_path.read_text(encoding="utf-8")
+
+        video_meta = VideoMeta(
+            video_id=source["video_id"],
+            title=source["title"],
+            platform=source["platform"],
+            source_url=source["source_url"],
+            cover_url=source["cover_url"] or "",
+            duration_seconds=source["duration_seconds"],
+            uploader=source["uploader"],
+        )
+
+        if job_id in self._cancelled:
+            self._cancelled.discard(job_id)
+            await delete_job(job_id)
+            return
+
+        extraction = await asyncio.to_thread(
+            digest,
+            transcript_text,
+            video_meta,
+            cfg.ai,
+            cfg.ai.output_language,
+            meta_raw.get("ui_lang"),
+        )
+        await update_source_digest(source_id, extraction.summary, extraction.keywords)
+        await update_job_status(job_id, "done", progress=100)
+
     async def _pipeline(self, job: dict) -> None:
         job_id = job["id"]
         meta_raw = _parse_job_meta(job)
         cfg = load_config()
 
+        source_id: str = meta_raw.get("source_id") or str(uuid.uuid4())
         video_id: str = meta_raw["video_id"]
         list_id: str = meta_raw["list_id"]
 
@@ -147,17 +208,24 @@ class WorkerLoop:
             return
 
         adapter = BilibiliAdapter(cookie=cfg.accounts.bilibili.cookie)
-        video_path: Path = await asyncio.to_thread(
-            adapter.download, video_id, video_meta.source_url
-        )
+        video_path: Path = await asyncio.to_thread(adapter.download, video_id, video_meta.source_url)
+
+        # Download cover
+        covers_dir = bibilab_home() / "covers"
+        covers_dir.mkdir(parents=True, exist_ok=True)
+        cover_dest = covers_dir / f"{source_id}.jpg"
+        try:
+            await asyncio.to_thread(_download_cover, video_meta.cover_url, cover_dest)
+        except Exception:
+            logger.warning("Job %s: failed to download cover, continuing without local cover", job_id)
 
         # 2. Audio extraction
         await update_job_status(job_id, "transcribing", progress=25)
         wav_path: Path = await asyncio.to_thread(extract_audio, video_path)
 
         # 3. Transcription
-        segments = await asyncio.to_thread(transcribe, wav_path, cfg.transcription)
-        transcript_path = write_transcript(segments, video_id)
+        segments, detected_language = await asyncio.to_thread(transcribe, wav_path, cfg.transcription)
+        transcript_path = write_transcript(segments, source_id)
         wav_path.unlink(missing_ok=True)
 
         if job_id in self._cancelled:
@@ -166,70 +234,55 @@ class WorkerLoop:
             await delete_job(job_id)
             return
 
-        # 4. Chunking + extraction
-        await update_job_status(job_id, "extracting", progress=40)
+        # 4. Chunking + parallel digest + embed
+        await update_job_status(job_id, "processing", progress=40)
         chunks = chunk_segments(segments)
         transcript_text = transcript_path.read_text(encoding="utf-8")
-        extraction: ExtractionResult = await asyncio.to_thread(
-            extract_knowledge,
-            transcript_text,
-            video_meta,
-            cfg.ai,
-            cfg.ai.output_language,
-            meta_raw.get("ui_lang"),
-        )
 
-        if extraction.title:
-            video_meta = VideoMeta(
-                video_id=video_meta.video_id,
-                title=extraction.title,
-                platform=video_meta.platform,
-                source_url=video_meta.source_url,
-                cover_url=video_meta.cover_url,
-                duration_seconds=video_meta.duration_seconds,
-                uploader=video_meta.uploader,
+        async def _digest():
+            return await asyncio.to_thread(
+                digest,
+                transcript_text,
+                video_meta,
+                cfg.ai,
+                cfg.ai.output_language,
+                meta_raw.get("ui_lang"),
             )
 
+        async def _embed():
+            await asyncio.to_thread(embed_chunks, chunks, video_meta, list_id, cfg)
+
+        extraction: DigestResult
+        extraction, _ = await asyncio.gather(_digest(), _embed())
+
         if job_id in self._cancelled:
             self._cancelled.discard(job_id)
             await asyncio.to_thread(cleanup_job_artifacts, job)
             await delete_job(job_id)
             return
 
-        # 5. Write note + embed
-        await update_job_status(job_id, "writing", progress=70)
-        note_path = await asyncio.to_thread(write_video_note, video_meta, extraction, list_id)
-        if job_id in self._cancelled:
-            self._cancelled.discard(job_id)
-            await asyncio.to_thread(cleanup_job_artifacts, job)
-            await delete_job(job_id)
-            return
-        if not is_embedding_model_downloaded():
-            logger.info("Job %s: embedding model not found - downloading (~50 MB).", job_id)
-        await asyncio.to_thread(embed_chunks, chunks, video_meta, list_id, cfg)
-        if job_id in self._cancelled:
-            self._cancelled.discard(job_id)
-            await asyncio.to_thread(cleanup_job_artifacts, job)
-            await delete_job(job_id)
-            return
-
-        # 6. Persist processed source metadata
+        # 5. Persist processed source metadata
         await write_source(
+            source_id=source_id,
             video_id=video_id,
             platform=video_meta.platform,
             list_id=list_id,
-            title=extraction.title or video_id,
+            title=video_meta.title,
             summary=extraction.summary,
-            note_path=str(note_path),
-            transcript_path=str(transcript_path),
+            keywords=extraction.keywords,
+            cover_url=video_meta.cover_url,
+            transcript_path=str(transcript_path.relative_to(bibilab_home())),
+            source_url=video_meta.source_url,
+            duration_seconds=video_meta.duration_seconds,
+            uploader=video_meta.uploader,
+            language=detected_language,
             whisper_model=cfg.transcription.model_size,
             ai_model=cfg.ai.model,
             vision_enabled=cfg.vision.enabled,
             settings_snapshot=cfg.model_dump(),
-            cover_url=video_meta.cover_url,
         )
 
-        # 7. Cleanup downloads
+        # 6. Cleanup downloads
         for path in (bibilab_home() / "downloads").glob(f"{video_id}.*"):
             path.unlink(missing_ok=True)
 
