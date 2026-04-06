@@ -67,10 +67,12 @@ async def ingest_url(req: IngestUrlRequest, request: Request) -> IngestUrlRespon
 
     already_done = await get_processed_video_ids([v.video_id for v in videos], req.list_id)
     queued: list[str] = []
+    skipped: list[str] = []
 
     for video in videos:
         if video.video_id in already_done:
-            raise HTTPException(status_code=409, detail="Source already exists")
+            skipped.append(video.video_id)
+            continue
         queued.append(
             await _queue_video(
                 video,
@@ -79,4 +81,4 @@ async def ingest_url(req: IngestUrlRequest, request: Request) -> IngestUrlRespon
             )
         )
 
-    return IngestUrlResponse(queued=queued, skipped=[])
+    return IngestUrlResponse(queued=queued, skipped=skipped)

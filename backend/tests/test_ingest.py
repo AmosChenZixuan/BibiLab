@@ -73,7 +73,10 @@ async def test_ingest_dedup(client: httpx.AsyncClient, mock_ydl_single, tmp_bibi
         "/ingest/url",
         json={"list_id": "list-1", "url": "https://www.bilibili.com/video/BV1abc123"},
     )
-    assert resp.status_code == 409
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["skipped"] == ["BV1abc123"]
+    assert data["queued"] == []
 
 
 @pytest.mark.asyncio
