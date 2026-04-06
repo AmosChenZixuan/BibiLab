@@ -15,10 +15,7 @@ logger = logging.getLogger(__name__)
 async def _queue_video(
     video: VideoMeta,
     list_id: str,
-    rerun: bool = False,
     ui_lang: str = "en",
-    source_id: str | None = None,
-    stages: list[str] | None = None,
 ) -> str:
     return await create_job(
         type="ingest",
@@ -29,24 +26,15 @@ async def _queue_video(
             "cover_url": video.cover_url,
             "duration_seconds": video.duration_seconds,
             "uploader": video.uploader,
-            "rerun": rerun,
             "source_url": video.source_url,
             "platform": video.platform,
             "ui_lang": ui_lang,
-            "source_id": source_id,
-            "stages": stages,
         },
     )
 
 
 @router.post("/ingest/url")
-async def ingest_url(req: IngestUrlRequest, request: Request, rerun: bool = False) -> IngestUrlResponse:
-    if rerun and req.source_id is None:
-        raise HTTPException(
-            status_code=422,
-            detail="source_id is required when rerun=True",
-        )
-
+async def ingest_url(req: IngestUrlRequest, request: Request) -> IngestUrlResponse:
     cfg = load_config()
 
     # Resolve UI language
@@ -79,22 +67,16 @@ async def ingest_url(req: IngestUrlRequest, request: Request, rerun: bool = Fals
 
     already_done = await get_processed_video_ids([v.video_id for v in videos], req.list_id)
     queued: list[str] = []
-    skipped: list[str] = []
 
     for video in videos:
-        if not rerun and video.video_id in already_done:
-            logger.info("Skipping already-processed video %s", video.video_id)
-            skipped.append(video.video_id)
-        else:
-            queued.append(
-                await _queue_video(
-                    video,
-                    req.list_id,
-                    rerun=rerun,
-                    ui_lang=resolved_lang,
-                    source_id=req.source_id,
-                    stages=req.stages,
-                )
+        if video.video_id in already_done:
+            raise HTTPException(status_code=409, detail="Source already exists")
+        queued.append(
+            await _queue_video(
+                video,
+                req.list_id,
+                ui_lang=resolved_lang,
             )
+        )
 
-    return IngestUrlResponse(queued=queued, skipped=skipped)
+    return IngestUrlResponse(queued=queued, skipped=[])

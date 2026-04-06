@@ -73,53 +73,7 @@ async def test_ingest_dedup(client: httpx.AsyncClient, mock_ydl_single, tmp_bibi
         "/ingest/url",
         json={"list_id": "list-1", "url": "https://www.bilibili.com/video/BV1abc123"},
     )
-    assert resp.status_code == 200
-    data = resp.json()
-    assert data["queued"] == []
-    assert "BV1abc123" in data["skipped"]
-
-
-@pytest.mark.asyncio
-async def test_ingest_rerun_bypasses_dedup(client: httpx.AsyncClient, mock_ydl_single, tmp_bibilab_home: Path):
-    """?rerun=true should queue even if source already exists."""
-    import uuid
-
-    from bibilab.db import bootstrap_db, create_list, write_source
-
-    await bootstrap_db()
-    await create_list("list-1", "Test", "2026-01-01T00:00:00")
-    source_id = str(uuid.uuid4())
-    await write_source(
-        source_id=source_id,
-        video_id="BV1abc123",
-        platform="bilibili",
-        list_id="list-1",
-        title="T",
-        summary="S",
-        keywords=[],
-        cover_url=None,
-        transcript_path=None,
-        source_url="https://www.bilibili.com/video/BV1abc123",
-        duration_seconds=0,
-        uploader="",
-        language=None,
-        whisper_model="large-v3",
-        ai_model="gpt-4o",
-        vision_enabled=False,
-        settings_snapshot={},
-    )
-    resp = await client.post(
-        "/ingest/url?rerun=true",
-        json={
-            "list_id": "list-1",
-            "url": "https://www.bilibili.com/video/BV1abc123",
-            "source_id": source_id,
-        },
-    )
-    assert resp.status_code == 200
-    data = resp.json()
-    assert len(data["queued"]) == 1
-    assert data["skipped"] == []
+    assert resp.status_code == 409
 
 
 @pytest.mark.asyncio
