@@ -88,7 +88,7 @@ function IngestingSourceRow({
         <MdErrorOutline size={16} className="mt-0.5 shrink-0 text-pink" />
         <div className="min-w-0 flex-1">
           <p className="m-0 truncate text-sm font-medium text-ink">{title}</p>
-          <p className="m-0 mt-0.5 text-xs text-pink/80">{t("lists.failedDuring", { stage: getStageLabel(displayStage) })}</p>
+          <p className="m-0 mt-0.5 text-xs text-pink">{t("lists.failedDuring", { stage: getStageLabel(displayStage) })}</p>
         </div>
         <button
           type="button"
@@ -246,7 +246,7 @@ export function SourcesListMode({
             <MdArrowForward size={15} />
           </button>
         </form>
-        {error && <p className="mt-1.5 px-4 text-xs text-rose-700">{error}</p>}
+        {error && <p className="mt-1.5 px-4 text-xs text-pink">{error}</p>}
       </div>
 
       <div className="flex-1 space-y-2 overflow-y-auto px-4 pb-4">

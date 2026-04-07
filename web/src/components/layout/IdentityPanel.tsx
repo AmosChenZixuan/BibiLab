@@ -27,7 +27,7 @@ export default function IdentityPanel({ onClose }: IdentityPanelProps) {
           {PLATFORMS.map((platform) => (
             <div key={platform.key} className="flex w-18 flex-col items-center gap-1">
               <span
-                className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-pink-50 font-bold text-blue"
+                className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-pink/10 font-bold text-blue"
                 aria-hidden="true"
               >
                 {platform.icon}

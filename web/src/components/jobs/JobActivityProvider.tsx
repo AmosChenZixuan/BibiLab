@@ -13,6 +13,8 @@ import type { IngestJob, Job, ModelDownloadJob } from "@/lib/types";
 
 export const TERMINAL_JOB_STATUSES = new Set(["done", "failed", "needs_auth"]);
 
+const POLL_INTERVAL_MS = 5_000;
+
 type JobProducer = "ingest" | "whisper_download";
 
 type JobRegistration = {
@@ -240,7 +242,7 @@ export function JobActivityProvider({ children }: { children: React.ReactNode })
     void refreshNow(controller.signal);
     const intervalId = window.setInterval(() => {
       void refreshNow(controller.signal);
-    }, 5000);
+    }, POLL_INTERVAL_MS);
 
     return () => {
       window.clearInterval(intervalId);

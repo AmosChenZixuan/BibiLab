@@ -130,7 +130,7 @@ export function ListDetailPage() {
           {!sourcesCollapsed && (
             <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
               {loadError ? (
-                <p className="m-0 px-4 py-3 text-sm text-rose-900">{loadError}</p>
+                <p className="m-0 px-4 py-3 text-sm text-pink">{loadError}</p>
               ) : detailSource ? (
                 <SourcesViewerMode
                   source={detailSource}

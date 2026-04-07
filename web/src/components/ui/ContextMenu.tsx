@@ -24,6 +24,9 @@ type Position = {
   left: number;
 };
 
+const MENU_OFFSET_PX = 8;
+const MENU_MIN_WIDTH = 168;
+
 // Module-level ref for close-other-menus coordination.
 // Uses a ref (not state) so mutations don't trigger re-renders.
 let closeOtherMenusRef: { current: (() => void) | undefined } = { current: undefined };
@@ -42,8 +45,8 @@ export function ContextMenu({ items, trigger }: ContextMenuProps) {
 
     const rect = triggerRef.current.getBoundingClientRect();
     setPosition({
-      top: rect.bottom + 8,
-      left: Math.max(8, rect.right - 168),
+      top: rect.bottom + MENU_OFFSET_PX,
+      left: Math.max(MENU_OFFSET_PX, rect.right - MENU_MIN_WIDTH),
     });
   }, [open]);
 
@@ -112,7 +115,7 @@ export function ContextMenu({ items, trigger }: ContextMenuProps) {
               {items.map((item) => (
                 <button
                   className={`flex w-full items-center gap-2 rounded-md border-0 px-2.5 py-2 text-left text-sm font-medium transition hover:bg-black/5 ${
-                    item.variant === "danger" ? "text-rose-900" : "text-ink"
+                    item.variant === "danger" ? "text-pink" : "text-ink"
                   }`}
                   key={item.label}
                   onClick={(event) => {

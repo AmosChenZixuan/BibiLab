@@ -3,9 +3,9 @@ import type { HealthDependency, HealthResponse } from "./types";
 export type HealthTier = "operational" | "degraded" | "unavailable";
 
 export const HEALTH_META: Record<HealthTier, { label: string; className: string }> = {
-  operational: { label: "Operational", className: "bg-sky-400" },
-  degraded: { label: "Degraded", className: "bg-amber-400" },
-  unavailable: { label: "Unavailable", className: "bg-rose-500" },
+  operational: { label: "Operational", className: "bg-blue" },
+  degraded: { label: "Degraded", className: "bg-muted" },
+  unavailable: { label: "Unavailable", className: "bg-pink" },
 };
 
 export function deriveOverallHealthTier(health: HealthResponse): HealthTier {

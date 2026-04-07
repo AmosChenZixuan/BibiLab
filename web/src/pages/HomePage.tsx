@@ -135,7 +135,7 @@ export function HomePage() {
       >
         <section className="grid gap-3">
           <span className="text-xs font-semibold uppercase tracking-widest text-muted">{t("home.myLists")}</span>
-          {error ? <p className="m-0 text-sm text-rose-900">{error}</p> : null}
+          {error ? <p className="m-0 text-sm text-pink">{error}</p> : null}
         </section>
         <div className="mt-4">
           {loading ? (
@@ -184,7 +184,7 @@ export function HomePage() {
         size="lg"
         title={t("home.deleteList")}
       >
-        <div className="rounded-2xl border border-rose-300/50 bg-rose-50 p-4 text-sm text-rose-900">
+        <div className="rounded-2xl border border-pink/50 bg-pink/10 p-4 text-sm text-pink">
           <p className="m-0 text-base font-semibold tracking-tight">{t("home.cannotUndo")}</p>
           <p className="mt-1.5 mb-0 leading-6">
             {deleteTarget
@@ -217,7 +217,7 @@ export function HomePage() {
         size="lg"
         title={t("home.renameList")}
       >
-        <div className="relative h-100 overflow-hidden rounded-3xl bg-pink-100 shadow-lg">
+        <div className="relative h-100 overflow-hidden rounded-3xl bg-pink/20 shadow-lg">
           {renameTarget?.thumbnail_url ? (
             <div
               className="absolute inset-0 bg-cover bg-center"

@@ -25,7 +25,7 @@ function ModelDownloadCell({ modelName, modelJob, downloading, onDownload, t }: 
   }
 
   if (modelJob?.job.status === "failed" || modelJob?.job.status === "needs_auth") {
-    return <span className="text-xs text-rose-900">{modelJob.job.error ?? t("common.failed")}</span>;
+    return <span className="text-xs text-pink">{modelJob.job.error ?? t("common.failed")}</span>;
   }
 
   return (
