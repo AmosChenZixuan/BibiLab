@@ -1,4 +1,4 @@
-import { ReactNode, useEffect, useId, useRef } from "react";
+import { ReactNode, useEffect, useId } from "react";
 import { createPortal } from "react-dom";
 
 type ModalProps = {
@@ -18,7 +18,6 @@ const sizes = {
 
 export function Modal({ open, onClose, title, children, footer, size = "md" }: ModalProps) {
   const titleId = useId();
-  const backdropPressStarted = useRef(false);
 
   useEffect(() => {
     if (!open) {
@@ -45,16 +44,12 @@ export function Modal({ open, onClose, title, children, footer, size = "md" }: M
     <div
       className="fixed inset-0 z-modal flex items-center justify-center bg-scrim px-4 py-8 backdrop-blur-sm"
       data-testid="modal-backdrop"
-      onClick={(event) => {
+      onClick={(event) => event.stopPropagation()}
+      onMouseUp={(event) => {
         event.stopPropagation();
-        if (backdropPressStarted.current && event.target === event.currentTarget) {
+        if (event.target === event.currentTarget) {
           onClose();
         }
-        backdropPressStarted.current = false;
-      }}
-      onMouseDown={(event) => {
-        event.stopPropagation();
-        backdropPressStarted.current = event.target === event.currentTarget;
       }}
     >
       <div
@@ -63,9 +58,6 @@ export function Modal({ open, onClose, title, children, footer, size = "md" }: M
         className={`w-full ${sizes[size]} min-h-100 rounded-3xl border border-white/60 bg-white/95 shadow-lg`}
         role="dialog"
         onClick={(event) => event.stopPropagation()}
-        onMouseDown={() => {
-          backdropPressStarted.current = false;
-        }}
       >
         <div className="px-8 pt-8">
           <h2 className="m-0 text-base font-semibold tracking-tight text-ink" id={titleId}>
