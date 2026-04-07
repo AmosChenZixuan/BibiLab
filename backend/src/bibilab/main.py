@@ -1,4 +1,4 @@
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Callable
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -21,7 +21,7 @@ from bibilab.worker import WorkerLoop
 WEB_DIST = Path(__file__).resolve().parents[3] / "web" / "dist"
 
 
-def make_lifespan(*, start_worker: bool):
+def make_lifespan(*, start_worker: bool) -> Callable[[], AsyncGenerator[None, None]]:
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         home = bibilab_home()

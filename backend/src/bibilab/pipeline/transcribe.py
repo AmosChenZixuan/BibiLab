@@ -1,9 +1,15 @@
 """Faster Whisper transcription step."""
 
+from __future__ import annotations
+
 import logging
 import os
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from faster_whisper import WhisperModel
 
 from bibilab.config import TranscriptionConfig, bibilab_home
 from bibilab.whisper_models import download_whisper_model, resolve_local_model_path
@@ -26,7 +32,7 @@ def _compute_type_for_device(device: str) -> str:
     return "float16" if device == "cuda" else "int8"
 
 
-def _load_model(cfg: TranscriptionConfig):
+def _load_model(cfg: TranscriptionConfig) -> "WhisperModel":
     global _model, _model_key
 
     from faster_whisper import WhisperModel  # noqa: PLC0415

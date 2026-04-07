@@ -11,7 +11,7 @@ import httpx
 from bibilab.adapters.base import AuthRequiredError, VideoMeta
 from bibilab.adapters.bilibili import BilibiliAdapter
 from bibilab.cleanup import cleanup_job_artifacts
-from bibilab.config import bibilab_home, load_config
+from bibilab.config import BibilabConfig, bibilab_home, load_config
 from bibilab.db import (
     delete_job,
     get_list,
@@ -27,7 +27,7 @@ from bibilab.pipeline.audio import PipelineError, extract_audio
 from bibilab.pipeline.chunk import chunk_segments
 from bibilab.pipeline.digest import DigestResult, digest
 from bibilab.pipeline.embed import embed_chunks
-from bibilab.pipeline.transcribe import transcribe, write_transcript
+from bibilab.pipeline.transcribe import WhisperSegment, transcribe, write_transcript
 from bibilab.whisper_models import download_whisper_model
 
 logger = logging.getLogger(__name__)
@@ -294,7 +294,7 @@ class WorkerLoop:
         job_id: str,
         wav_path: Path,
         source_id: str,
-        cfg,
+        cfg: BibilabConfig,
     ) -> tuple | None:
         """Stage 3: Transcribe audio and write transcript file."""
         await update_job_status(job_id, JobStatus.TRANSCRIBING.value, progress=30)
@@ -314,10 +314,10 @@ class WorkerLoop:
         self,
         job_id: str,
         job: dict,
-        segments,
+        segments: list[WhisperSegment],
         video_meta: VideoMeta,
         list_id: str,
-        cfg,
+        cfg: BibilabConfig,
         transcript_path: Path,
     ) -> DigestResult | None:
         """Stage 4: Chunk segments, run digest + embed in parallel."""
@@ -331,7 +331,7 @@ class WorkerLoop:
         meta_raw = _parse_job_meta(job)
         transcript_text = transcript_path.read_text(encoding="utf-8")
 
-        async def _digest():
+        async def _digest() -> DigestResult:
             return await asyncio.to_thread(
                 digest,
                 transcript_text,
@@ -343,7 +343,7 @@ class WorkerLoop:
                 llm_max_tokens=cfg.transcription.llm_max_tokens,
             )
 
-        async def _embed():
+        async def _embed() -> None:
             await asyncio.to_thread(embed_chunks, chunks, video_meta, list_id, cfg)
 
         extraction: DigestResult
@@ -366,7 +366,7 @@ class WorkerLoop:
         list_id: str,
         extraction: DigestResult,
         detected_language: str,
-        cfg,
+        cfg: BibilabConfig,
         transcript_path: Path,
     ) -> None:
         """Stage 5: Persist processed source metadata and cleanup downloads."""
