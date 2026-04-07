@@ -1,6 +1,16 @@
 from pydantic import BaseModel
 
 
+class PlatformResource(BaseModel):
+    """Shared base for source responses with common platform resource fields."""
+
+    id: str
+    title: str
+    source_url: str
+    cover_url: str | None
+    processed_at: str  # ISO 8601 string from DB
+
+
 class ListCreateRequest(BaseModel):
     name: str
 
@@ -20,19 +30,16 @@ class ListResponse(BaseModel):
     updated_at: str
 
 
-class SourceResponse(BaseModel):
-    id: str
+class SourceResponse(PlatformResource):
+    """Source response inheriting shared platform resource fields."""
+
     video_id: str
     platform: str
-    title: str
     summary: str
     keywords: list[str]
-    cover_url: str | None
-    source_url: str
     duration_seconds: int
     uploader: str
     language: str | None
-    processed_at: str
 
 
 class OverviewResponse(BaseModel):

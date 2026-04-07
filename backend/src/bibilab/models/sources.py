@@ -1,4 +1,5 @@
 import json
+from datetime import datetime
 
 from pydantic import BaseModel
 
@@ -12,7 +13,7 @@ class SourceContentResponse(BaseModel):
     duration_seconds: int
     uploader: str
     language: str | None
-    processed_at: str
+    processed_at: datetime | None
     summary: str
     keywords: list[str]
     cover_url: str | None
@@ -23,6 +24,13 @@ class SourceContentResponse(BaseModel):
         keywords = source["keywords"]
         if not isinstance(keywords, list):
             keywords = json.loads(keywords or "[]")
+        processed_at_str = source["processed_at"]
+        processed_at: datetime | None = None
+        if processed_at_str:
+            try:
+                processed_at = datetime.fromisoformat(processed_at_str)
+            except (ValueError, TypeError):
+                processed_at = None
         return cls(
             id=source["id"],
             video_id=source["video_id"],
@@ -32,7 +40,7 @@ class SourceContentResponse(BaseModel):
             duration_seconds=source["duration_seconds"],
             uploader=source["uploader"],
             language=source["language"],
-            processed_at=source["processed_at"] or "",
+            processed_at=processed_at,
             summary=source["summary"],
             keywords=keywords,
             cover_url=source["cover_url"],
