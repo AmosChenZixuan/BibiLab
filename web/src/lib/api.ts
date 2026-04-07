@@ -71,7 +71,7 @@ export function notifyHealthChanged(health: HealthResponse) {
 }
 
 export const api = {
-  listLists: () => request<BibilabList[]>("/lists"),
+  listLists: (opts?: { signal?: AbortSignal }) => request<BibilabList[]>("/lists", opts),
   createList: (name: string) =>
     request<BibilabList>("/lists", {
       method: "POST",
@@ -86,7 +86,7 @@ export const api = {
     request<void>(`/lists/${listId}`, {
       method: "DELETE",
     }),
-  listSources: (listId: string) => request<Source[]>(`/lists/${listId}/sources`),
+  listSources: (listId: string, opts?: { signal?: AbortSignal }) => request<Source[]>(`/lists/${listId}/sources`, opts),
   getSource: (sourceId: string) => request<SourceContent>(`/sources/${sourceId}`),
   deleteSource: (listId: string, sourceId: string) =>
     request<void>(`/lists/${listId}/sources/${sourceId}`, {
@@ -106,19 +106,19 @@ export const api = {
     request<OverviewDownload>(`/lists/${listId}/overview`, {
       method: "POST",
     }),
-  getConfig: () => request<BibilabConfig>("/config"),
+  getConfig: (opts?: { signal?: AbortSignal }) => request<BibilabConfig>("/config", opts),
   putConfig: (patch: Partial<BibilabConfig>) =>
     request<BibilabConfig>("/config", {
       method: "PUT",
       body: JSON.stringify(patch),
     }),
-  getHealth: () => request<HealthResponse>("/health"),
-  listJobs: () => request<Job[]>("/jobs"),
+  getHealth: (opts?: { signal?: AbortSignal }) => request<HealthResponse>("/health", opts),
+  listJobs: (opts?: { signal?: AbortSignal }) => request<Job[]>("/jobs", opts),
   deleteJob: (jobId: string) =>
     request<void>(`/jobs/${jobId}`, {
       method: "DELETE",
     }),
-  listWhisperModels: () => request<WhisperModel[]>("/models/whisper"),
+  listWhisperModels: (opts?: { signal?: AbortSignal }) => request<WhisperModel[]>("/models/whisper", opts),
   downloadWhisperModel: (modelSize: string) =>
     request<WhisperDownloadResponse>("/models/whisper/download", {
       method: "POST",
