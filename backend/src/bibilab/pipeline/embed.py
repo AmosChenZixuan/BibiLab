@@ -1,6 +1,14 @@
 """ChromaDB chunk embedding step."""
 
+from __future__ import annotations
+
 import logging
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import chromadb
+    from chromadb.utils.embedding_functions import ONNXMiniLM_L6_V2
+
 from pathlib import Path
 
 from bibilab.adapters.base import VideoMeta
@@ -19,7 +27,7 @@ def is_embedding_model_downloaded() -> bool:
     return (_embedding_model_dir() / "onnx" / "model.onnx").exists()
 
 
-def _default_embedding_function():
+def _default_embedding_function() -> "ONNXMiniLM_L6_V2":
     from chromadb.utils.embedding_functions import ONNXMiniLM_L6_V2  # noqa: PLC0415
 
     class LocalONNXMiniLM(ONNXMiniLM_L6_V2):
@@ -29,7 +37,7 @@ def _default_embedding_function():
     return LocalONNXMiniLM()
 
 
-def _get_collection(cfg: BibilabConfig):
+def _get_collection(cfg: BibilabConfig) -> "chromadb.Collection":
     import chromadb  # noqa: PLC0415
 
     client = chromadb.PersistentClient(path=str(bibilab_home() / "chroma"))

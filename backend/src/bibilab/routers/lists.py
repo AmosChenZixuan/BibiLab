@@ -1,5 +1,6 @@
 import asyncio
 import json
+import sqlite3
 import uuid
 from datetime import datetime, timezone
 
@@ -38,7 +39,7 @@ router = APIRouter()
 _ACTIVE_JOB_STATUSES = ("queued", "downloading", "transcribing", "processing")
 
 
-async def _build_list_response(row, request: Request) -> ListResponse:
+async def _build_list_response(row: sqlite3.Row, request: Request) -> ListResponse:
     thumbnail_url = None
     if row["thumbnail_source_id"]:
         if cover_path(row["thumbnail_source_id"]).exists():

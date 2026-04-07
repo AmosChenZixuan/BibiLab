@@ -10,7 +10,7 @@ from bibilab.whisper_models import is_whisper_model_downloaded, whisper_model_di
 router = APIRouter()
 
 
-async def _check_llm(cfg) -> dict:
+async def _check_llm(cfg: BibilabConfig) -> dict:
     provider = cfg.ai.provider
     api_key = cfg.ai.api_key
     base_url = (cfg.ai.base_url or "").strip()
@@ -54,7 +54,7 @@ async def _check_llm(cfg) -> dict:
         return {"status": "error", "message": str(exc)}
 
 
-def _check_whisper(cfg) -> dict:
+def _check_whisper(cfg: BibilabConfig) -> dict:
     model_size = cfg.transcription.model_size
     if not is_whisper_model_downloaded(model_size):
         return {

@@ -1,5 +1,6 @@
 import json
 import logging
+import sqlite3
 
 from fastapi import APIRouter, HTTPException, Request
 
@@ -11,7 +12,7 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
-def _row_to_response(row) -> JobResponse:
+def _row_to_response(row: sqlite3.Row) -> JobResponse:
     d = dict(row)
     return JobResponse(
         id=d["id"],
