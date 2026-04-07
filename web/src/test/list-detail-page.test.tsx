@@ -92,10 +92,8 @@ function makeMockFetch() {
 
 // ─── API module mock ───────────────────────────────────────────────────────────
 
-vi.mock("../lib/api", () => ({
-  HEALTH_REFRESH_EVENT: "bibilab:health:refresh",
-  JOBS_REFRESH_EVENT: "bibilab:jobs:refresh",
-  api: {
+vi.mock("../lib/api", () => {
+  const mockApi = {
     getHealth: vi.fn().mockResolvedValue({
       overall: "ok",
       dependencies: {
@@ -143,9 +141,22 @@ vi.mock("../lib/api", () => ({
       transcript: "This is the transcript text...",
       settings_snapshot: {},
     }),
-  },
-  toErrorMessage: vi.fn((e: unknown) => (e instanceof Error ? e.message : String(e))),
-}));
+    rerunDigest: vi.fn(),
+    deleteJob: vi.fn(),
+    createList: vi.fn(),
+    generateOverview: vi.fn(),
+    putConfig: vi.fn(),
+    downloadWhisperModel: vi.fn(),
+    listWhisperModels: vi.fn(),
+  };
+  return {
+    HEALTH_REFRESH_EVENT: "bibilab:health:refresh",
+    JOBS_REFRESH_EVENT: "bibilab:jobs:refresh",
+    createApiClient: () => mockApi,
+    api: mockApi,
+    toErrorMessage: vi.fn((e: unknown) => (e instanceof Error ? e.message : String(e))),
+  };
+});
 
 import { api } from "@/lib/api";
 

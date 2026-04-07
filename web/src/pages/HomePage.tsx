@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 
 import { useLanguage } from "@/app/LanguageContext";
 import { ListGrid } from "@/components/lists/ListGrid";
-import { api, toErrorMessageWithT } from "@/lib/api";
+import { createApiClient, toErrorMessageWithT } from "@/lib/api";
 import type { BibilabList, Source } from "@/lib/types";
 import { Button, Input, Modal, Panel } from "@/components/ui";
 
@@ -28,7 +28,7 @@ export function HomePage() {
     const controller = new AbortController();
     async function loadLists() {
       try {
-        const nextLists = await api.listLists({ signal: controller.signal });
+        const nextLists = await createApiClient().listLists({ signal: controller.signal });
         setLists(nextLists ?? []);
       } catch (nextError) {
         if (nextError instanceof Error && nextError.name === "AbortError") return;
@@ -45,7 +45,7 @@ export function HomePage() {
     setBusy(true);
     setError(null);
     try {
-      const created = await api.createList(t("home.untitledList"));
+      const created = await createApiClient().createList(t("home.untitledList"));
       if (!created) return;
       setLists((current) => [created, ...current]);
     } catch (nextError) {
@@ -58,7 +58,7 @@ export function HomePage() {
   async function handleDelete(list: BibilabList) {
     setError(null);
     try {
-      await api.deleteList(list.id);
+      await createApiClient().deleteList(list.id);
       setLists((current) => current.filter((entry) => entry.id !== list.id));
       setDeleteTarget(null);
     } catch (nextError) {
@@ -83,7 +83,7 @@ export function HomePage() {
 
     setError(null);
     try {
-      const updated = await api.updateList(renameTarget.id, { name: trimmed });
+      const updated = await createApiClient().updateList(renameTarget.id, { name: trimmed });
       if (!updated) return;
       updateLocalList(updated);
       setRenameTarget(null);
@@ -99,7 +99,7 @@ export function HomePage() {
     setThumbnailLoading(true);
     setError(null);
     try {
-      const sources = await api.listSources(list.id);
+      const sources = await createApiClient().listSources(list.id);
       setThumbnailSources(sources ?? []);
     } catch (nextError) {
       setError(toErrorMessageWithT(nextError, t));
@@ -115,7 +115,7 @@ export function HomePage() {
 
     setError(null);
     try {
-      const updated = await api.updateList(thumbnailTarget.id, {
+      const updated = await createApiClient().updateList(thumbnailTarget.id, {
         thumbnail_source_id: thumbnailSourceId,
       });
       if (!updated) return;

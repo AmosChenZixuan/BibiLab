@@ -4,7 +4,6 @@ import { api } from "@/lib/api";
 
 afterEach(() => {
   vi.restoreAllMocks();
-  vi.unstubAllGlobals();
 });
 
 describe("api.updateList", () => {
@@ -24,8 +23,9 @@ describe("api.updateList", () => {
 
     await api.updateList("list-1", { thumbnail_source_id: "source-1" });
 
+    // api singleton uses window.location.origin as base URL (http://localhost in Vitest)
     expect(fetchMock).toHaveBeenCalledWith(
-      "/api/lists/list-1",
+      expect.stringMatching(/\/api\/lists\/list-1$/),
       expect.objectContaining({
         method: "PATCH",
         body: JSON.stringify({ thumbnail_source_id: "source-1" }),

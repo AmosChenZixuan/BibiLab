@@ -2,7 +2,7 @@ import { MdChevronLeft, MdChevronRight } from "react-icons/md";
 
 import type { Source, SourceContent } from "@/lib/types";
 import { useLanguage } from "@/app/LanguageContext";
-import { api } from "@/lib/api";
+import { createApiClient } from "@/lib/api";
 import { SourcesViewerMode } from "@/components/lists/sources/SourcesViewerMode";
 import { SourcesListMode } from "@/components/lists/sources/SourcesListMode";
 import { COLLAPSED_PANEL, MIN_PANEL } from "@/components/lists/panel-resize";
@@ -41,7 +41,7 @@ export function SourcesPanel({
 
   function handleRefreshSource() {
     if (detailSource) {
-      void api.getSource(detailSource.id).then(() => {
+      void createApiClient().getSource(detailSource.id).then(() => {
         if (currentSourceIdRef.current !== detailSource.id) return;
         onRefreshSource();
       });

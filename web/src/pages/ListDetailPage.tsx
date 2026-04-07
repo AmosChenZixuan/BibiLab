@@ -6,7 +6,7 @@ import {
 } from "react-icons/md";
 
 import { useLanguage } from "@/app/LanguageContext";
-import { api, toErrorMessageWithT } from "@/lib/api";
+import { createApiClient, toErrorMessageWithT } from "@/lib/api";
 import type { Source, SourceContent } from "@/lib/types";
 
 import { usePanelResize, Resizer, MIN_PANEL, COLLAPSED_PANEL } from "@/components/lists/panel-resize";
@@ -53,8 +53,8 @@ export function ListDetailPage() {
   const load = useCallback(async (signal?: AbortSignal) => {
     try {
       const [lists, nextSources] = await Promise.all([
-        api.listLists({ signal }),
-        api.listSources(listId, { signal }),
+        createApiClient().listLists({ signal }),
+        createApiClient().listSources(listId, { signal }),
       ]);
       const current = lists?.find((l) => l.id === listId);
       setListName(current?.name ?? t("lists.listWorkspace"));
@@ -76,7 +76,7 @@ export function ListDetailPage() {
     currentSourceIdRef.current = source.id;
     setDetailSource(source);
     setSourceContent(null);
-    void api.getSource(source.id).then((content) => {
+    void createApiClient().getSource(source.id).then((content) => {
       if (currentSourceIdRef.current !== source.id) return;
       setSourceContent(content ?? null);
     }).catch(() => {
@@ -86,7 +86,7 @@ export function ListDetailPage() {
 
   async function handleRenameCommit(newName: string) {
     try {
-      const updated = await api.updateList(listId, { name: newName });
+      const updated = await createApiClient().updateList(listId, { name: newName });
       if (!updated) return;
       setListName(updated.name);
     } catch {
@@ -138,7 +138,7 @@ export function ListDetailPage() {
                   onClose={() => setDetailSource(null)}
                   onRefresh={() => {
                     if (detailSource) {
-                      void api.getSource(detailSource.id).then((content) => {
+                      void createApiClient().getSource(detailSource.id).then((content) => {
                         if (currentSourceIdRef.current !== detailSource.id) return;
                         setSourceContent(content ?? null);
                       });

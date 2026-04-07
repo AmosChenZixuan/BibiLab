@@ -5,7 +5,7 @@ import { useLanguage } from "@/app/LanguageContext";
 import { LlmTab } from "@/components/settings/LlmTab";
 import { OtherTab } from "@/components/settings/OtherTab";
 import { TranscriptTab } from "@/components/settings/TranscriptTab";
-import { api, notifyHealthChanged, toErrorMessageWithT } from "@/lib/api";
+import { createApiClient, notifyHealthChanged, toErrorMessageWithT } from "@/lib/api";
 import { deriveDependencyHealthTier, HEALTH_META } from "@/lib/health";
 import type { HealthDependency, BibilabConfig } from "@/lib/types";
 import { Panel } from "@/components/ui";
@@ -60,8 +60,8 @@ export function SettingsPage() {
     async function load() {
       try {
         const [nextConfig, nextHealth] = await Promise.all([
-          api.getConfig({ signal: controller.signal }),
-          api.getHealth({ signal: controller.signal }),
+          createApiClient().getConfig({ signal: controller.signal }),
+          createApiClient().getHealth({ signal: controller.signal }),
         ]);
         setConfig(nextConfig ?? null);
         if (nextHealth) {
@@ -85,12 +85,12 @@ export function SettingsPage() {
       return;
     }
 
-    const savedConfig = await api.putConfig(nextConfig);
+    const savedConfig = await createApiClient().putConfig(nextConfig);
     if (!savedConfig) return;
     setConfig(savedConfig);
 
     if (shouldRefreshHealth(config, nextConfig)) {
-      const nextHealth = await api.getHealth();
+      const nextHealth = await createApiClient().getHealth();
       if (nextHealth) {
         setDependencies(nextHealth.dependencies ?? {});
         notifyHealthChanged(nextHealth);

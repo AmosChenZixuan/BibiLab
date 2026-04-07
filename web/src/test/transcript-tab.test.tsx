@@ -7,16 +7,20 @@ import { TranscriptTab } from "@/components/settings/TranscriptTab";
 import type { HealthDependency, BibilabConfig } from "@/lib/types";
 import { JobActivityProvider } from "@/components/jobs/JobActivityProvider";
 
-vi.mock("../lib/api", () => ({
-  api: {
+vi.mock("../lib/api", () => {
+  const mockApi = {
     listWhisperModels: vi.fn().mockResolvedValue([
       { name: "base", installed: true, path: "/models/base", selected: true },
       { name: "large-v3", installed: false, path: null, selected: false },
     ]),
     downloadWhisperModel: vi.fn(),
     listJobs: vi.fn().mockResolvedValue([]),
-  },
-}));
+  };
+  return {
+    createApiClient: () => mockApi,
+    api: mockApi,
+  };
+});
 
 import { api } from "@/lib/api";
 

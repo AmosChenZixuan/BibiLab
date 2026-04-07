@@ -5,13 +5,17 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import { JobActivityProvider, useJobActivity } from "@/components/jobs/JobActivityProvider";
 import type { IngestJob, Job } from "@/lib/types";
 
-vi.mock("../lib/api", () => ({
-  api: {
+vi.mock("../lib/api", () => {
+  const mockApi = {
     deleteJob: vi.fn(),
     listJobs: vi.fn(),
-  },
-  toErrorMessage: (error: unknown) => (error instanceof Error ? error.message : "Request failed"),
-}));
+  };
+  return {
+    createApiClient: () => mockApi,
+    api: mockApi,
+    toErrorMessage: (error: unknown) => (error instanceof Error ? error.message : "Request failed"),
+  };
+});
 
 import { api } from "@/lib/api";
 

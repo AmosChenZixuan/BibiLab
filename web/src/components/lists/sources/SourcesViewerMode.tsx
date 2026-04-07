@@ -1,7 +1,7 @@
 import { MdClose } from "react-icons/md";
 
 import { useLanguage } from "@/app/LanguageContext";
-import { api } from "@/lib/api";
+import { createApiClient } from "@/lib/api";
 import type { Source, SourceContent } from "@/lib/types";
 import { Banner } from "@/components/lists/Banner";
 import { DigestAccordion } from "@/components/lists/DigestAccordion";
@@ -20,7 +20,7 @@ export function SourcesViewerMode({
   const { t } = useLanguage();
 
   const handleRerunDigest = async (sourceId: string) => {
-    await api.rerunDigest(sourceId);
+    await createApiClient().rerunDigest(sourceId);
     onRefresh();
   };
   return (

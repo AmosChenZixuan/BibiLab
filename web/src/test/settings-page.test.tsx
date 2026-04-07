@@ -7,8 +7,8 @@ import { JobActivityProvider } from "@/components/jobs/JobActivityProvider";
 import { api } from "@/lib/api";
 import { SettingsPage } from "@/pages/SettingsPage";
 
-vi.mock("../lib/api", () => ({
-  api: {
+vi.mock("../lib/api", () => {
+  const mockApi = {
     getConfig: vi.fn().mockResolvedValue({
       accounts: { bilibili: { cookie: "", last_verified: "" } },
       ai: { provider: "openai", model: "gpt-4o", api_key: "", base_url: "" },
@@ -35,10 +35,14 @@ vi.mock("../lib/api", () => ({
     }),
     listWhisperModels: vi.fn().mockResolvedValue([]),
     downloadWhisperModel: vi.fn(),
-  },
-  notifyHealthChanged: vi.fn(),
-  toErrorMessage: (error: unknown) => (error instanceof Error ? error.message : "Request failed"),
-}));
+  };
+  return {
+    createApiClient: () => mockApi,
+    api: mockApi,
+    notifyHealthChanged: vi.fn(),
+    toErrorMessage: (error: unknown) => (error instanceof Error ? error.message : "Request failed"),
+  };
+});
 
 afterEach(() => {
   cleanup();

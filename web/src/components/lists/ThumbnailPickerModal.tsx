@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 
 import type { BibilabList, Source } from "@/lib/types";
 import { useLanguage } from "@/app/LanguageContext";
-import { api } from "@/lib/api";
+import { createApiClient } from "@/lib/api";
 import { Modal } from "@/components/ui";
 
 interface ThumbnailPickerModalProps {
@@ -21,7 +21,7 @@ export function ThumbnailPickerModal({ list, open, onClose, onSelect }: Thumbnai
     if (!open || !list) return;
     setLoading(true);
     setSources([]);
-    api.listSources(list.id).then((next) => {
+    createApiClient().listSources(list.id).then((next) => {
       setSources(next ?? []);
     }).catch(() => {
       setSources([]);

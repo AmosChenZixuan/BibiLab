@@ -7,14 +7,18 @@ import { LanguageProvider } from "@/app/LanguageContext";
 import { AppFrame } from "@/components/layout/AppFrame";
 import type { HealthResponse } from "@/lib/types";
 
-vi.mock("../lib/api", () => ({
-  HEALTH_REFRESH_EVENT: "bibilab:health:refresh",
-  JOBS_REFRESH_EVENT: "bibilab:jobs:refresh",
-  api: {
+vi.mock("../lib/api", () => {
+  const mockApi = {
     getHealth: vi.fn(),
     listJobs: vi.fn().mockResolvedValue([]),
-  },
-}));
+  };
+  return {
+    HEALTH_REFRESH_EVENT: "bibilab:health:refresh",
+    JOBS_REFRESH_EVENT: "bibilab:jobs:refresh",
+    createApiClient: () => mockApi,
+    api: mockApi,
+  };
+});
 
 import { api } from "@/lib/api";
 import { HEALTH_REFRESH_EVENT } from "@/lib/api";
