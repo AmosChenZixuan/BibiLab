@@ -29,7 +29,12 @@ def _resolved_lang(output_language: str, ui_lang: str | None) -> str:
 _STRICT_SUFFIX = "\nReturn ONLY valid JSON. Do not add any explanation or markdown fences."
 
 
-def _call_llm(prompt: str, cfg: AIConfig) -> str:
+def _call_llm(
+    prompt: str,
+    cfg: AIConfig,
+    llm_timeout: int = 120,
+    llm_max_tokens: int = 2048,
+) -> str:
     """Dispatch to the appropriate LLM provider. Returns raw text response."""
     if cfg.provider == "anthropic":
         import anthropic  # noqa: PLC0415
@@ -37,7 +42,7 @@ def _call_llm(prompt: str, cfg: AIConfig) -> str:
         client = anthropic.Anthropic(api_key=cfg.api_key)
         msg = client.messages.create(
             model=cfg.model,
-            max_tokens=2048,
+            max_tokens=llm_max_tokens,
             messages=[{"role": "user", "content": prompt}],
         )
         return msg.content[0].text
@@ -49,7 +54,7 @@ def _call_llm(prompt: str, cfg: AIConfig) -> str:
         resp = client.chat.completions.create(
             model=cfg.model,
             messages=[{"role": "user", "content": prompt}],
-            max_tokens=2048,
+            max_tokens=llm_max_tokens,
         )
         return resp.choices[0].message.content
 
@@ -62,7 +67,7 @@ def _call_llm(prompt: str, cfg: AIConfig) -> str:
             "messages": [{"role": "user", "content": prompt}],
             "stream": False,
         },
-        timeout=120,
+        timeout=llm_timeout,
     )
     r.raise_for_status()
     return r.json()["message"]["content"]

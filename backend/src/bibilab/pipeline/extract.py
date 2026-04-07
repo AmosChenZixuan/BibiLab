@@ -29,10 +29,17 @@ def generate_overview(
     cfg: AIConfig,
     output_language: str = "ui",
     ui_lang: str | None = None,
+    llm_timeout: int = 120,
+    llm_max_tokens: int = 2048,
 ) -> str:
     """Generate an overview outline from a list of {title, summary} dicts."""
     lang = _resolved_lang(output_language, ui_lang)
     lang_instruction = _LANG_INSTRUCTION.get(lang, _LANG_INSTRUCTION["en"])
     videos_text = "\n\n".join(f"### {v['title']}\n{v['summary']}" for v in list_videos)
     prompt = lang_instruction + "\n\n" + _OVERVIEW_PROMPT.format(videos=videos_text)
-    return _call_llm(prompt, cfg).strip()
+    return _call_llm(
+        prompt,
+        cfg,
+        llm_timeout=llm_timeout,
+        llm_max_tokens=llm_max_tokens,
+    ).strip()

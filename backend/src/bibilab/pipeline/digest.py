@@ -52,6 +52,8 @@ def digest(
     cfg: AIConfig,
     output_language: str = "ui",
     ui_lang: str | None = None,
+    llm_timeout: int = 120,
+    llm_max_tokens: int = 2048,
 ) -> DigestResult:
     lang = _resolved_lang(output_language, ui_lang)
     lang_instruction = _LANG_INSTRUCTION.get(lang, _LANG_INSTRUCTION["en"])
@@ -63,7 +65,7 @@ def digest(
 
     for attempt in range(3):
         try:
-            raw = _call_llm(prompt, cfg)
+            raw = _call_llm(prompt, cfg, llm_timeout=llm_timeout, llm_max_tokens=llm_max_tokens)
             return _parse_response(raw)
         except Exception as exc:
             logger.warning(
@@ -74,7 +76,12 @@ def digest(
             )
             if attempt < 2:
                 try:
-                    raw2 = _call_llm(prompt + _STRICT_SUFFIX, cfg)
+                    raw2 = _call_llm(
+                        prompt + _STRICT_SUFFIX,
+                        cfg,
+                        llm_timeout=llm_timeout,
+                        llm_max_tokens=llm_max_tokens,
+                    )
                     return _parse_response(raw2)
                 except Exception as retry_exc:
                     logger.warning(

@@ -8,9 +8,6 @@ from bibilab.pipeline.transcribe import WhisperSegment
 
 _enc = tiktoken.get_encoding("cl100k_base")
 
-TARGET_TOKENS = 300
-MAX_TOKENS = 400
-
 
 @dataclass
 class RagChunk:
@@ -22,7 +19,8 @@ class RagChunk:
 
 def chunk_segments(
     segments: list[WhisperSegment],
-    target_tokens: int = TARGET_TOKENS,
+    target_tokens: int = 300,
+    chunk_max_tokens: int = 400,
 ) -> list[RagChunk]:
     chunks: list[RagChunk] = []
     buf_segs: list[WhisperSegment] = []
@@ -44,7 +42,7 @@ def chunk_segments(
     for seg in segments:
         seg_tokens = len(_enc.encode(seg.text))
 
-        if seg_tokens >= MAX_TOKENS:
+        if seg_tokens >= chunk_max_tokens:
             # Oversized segment — flush current buffer first, then emit as its own chunk
             if buf_segs:
                 flush(chunk_idx)

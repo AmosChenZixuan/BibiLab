@@ -54,6 +54,8 @@ async def rerun_source(source_id: str, cfg: BibilabConfig = Depends(get_config))
         video_meta,
         cfg.ai,
         cfg.ai.output_language,
+        llm_timeout=cfg.transcription.llm_timeout,
+        llm_max_tokens=cfg.transcription.llm_max_tokens,
     )
     await update_source_digest(source_id, extraction.summary, extraction.keywords)
 

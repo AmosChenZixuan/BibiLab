@@ -48,6 +48,14 @@ class TranscriptionConfig(BaseModel):
     model_size: str = "large-v3"
     device: str = "cuda"  # cuda | cpu
     language: str = "auto"  # auto | zh | en
+    # LLM call settings (used during summarization/synthesis steps)
+    llm_timeout: int = 120
+    llm_max_tokens: int = 2048
+    # Chunking
+    target_tokens: int = 300
+    chunk_max_tokens: int = 400
+    # Transcription
+    beam_size: int = 5
 
 
 class VisionConfig(BaseModel):
@@ -67,6 +75,8 @@ class BibilabConfig(BaseModel):
     transcription: TranscriptionConfig = TranscriptionConfig()
     vision: VisionConfig = VisionConfig()
     backend: BackendConfig = BackendConfig()
+    # ChromaDB
+    transcript_collection_name: str = "bibilab_transcripts"
 
 
 _config_cache: BibilabConfig | None = None

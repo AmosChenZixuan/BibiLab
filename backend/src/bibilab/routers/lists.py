@@ -196,7 +196,13 @@ async def generate_list_overview(list_id: str, cfg: BibilabConfig = Depends(get_
     from bibilab.pipeline.extract import generate_overview
 
     list_videos = [{"title": s["title"], "summary": s["summary"]} for s in sources]
-    outline = await asyncio.to_thread(generate_overview, list_videos, cfg.ai)
+    outline = await asyncio.to_thread(
+        generate_overview,
+        list_videos,
+        cfg.ai,
+        llm_timeout=cfg.transcription.llm_timeout,
+        llm_max_tokens=cfg.transcription.llm_max_tokens,
+    )
 
     list_name = row["name"]
     source_lines = "\n".join(f"- {s['title']}" for s in sources)
