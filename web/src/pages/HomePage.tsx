@@ -25,28 +25,21 @@ export function HomePage() {
   }
 
   useEffect(() => {
-    let cancelled = false;
+    const controller = new AbortController();
     async function loadLists() {
       try {
-        const nextLists = await api.listLists();
-        if (!cancelled) {
-          setLists(nextLists ?? []);
-        }
+        const nextLists = await api.listLists({ signal: controller.signal });
+        setLists(nextLists ?? []);
       } catch (nextError) {
-        if (!cancelled) {
-          setError(toErrorMessageWithT(nextError, t));
-        }
+        if (nextError instanceof Error && nextError.name === "AbortError") return;
+        setError(toErrorMessageWithT(nextError, t));
       } finally {
-        if (!cancelled) {
-          setLoading(false);
-        }
+        setLoading(false);
       }
     }
     void loadLists();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+    return () => controller.abort();
+  }, [t]);
 
   async function handleCreate() {
     setBusy(true);

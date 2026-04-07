@@ -50,20 +50,26 @@ export function ListDetailPage() {
 
   const currentSourceIdRef = useRef<string | null>(null);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (signal?: AbortSignal) => {
     try {
-      const [lists, nextSources] = await Promise.all([api.listLists(), api.listSources(listId)]);
+      const [lists, nextSources] = await Promise.all([
+        api.listLists({ signal }),
+        api.listSources(listId, { signal }),
+      ]);
       const current = lists?.find((l) => l.id === listId);
       setListName(current?.name ?? t("lists.listWorkspace"));
       setSources(nextSources ?? []);
       setLoadError(null);
     } catch (err) {
+      if (err instanceof Error && err.name === "AbortError") return;
       setLoadError(toErrorMessageWithT(err, t));
     }
-  }, [listId]);
+  }, [listId, t]);
 
   useEffect(() => {
-    void load();
+    const controller = new AbortController();
+    void load(controller.signal);
+    return () => controller.abort();
   }, [load]);
 
   function handleOpenSource(source: Source) {

@@ -61,26 +61,20 @@ export function TranscriptTab({ config, dependencies, onBlur }: TranscriptTabPro
     setLocalTranscription(config.transcription);
   }, [config]);
 
-  async function refreshModels(cancelled = false) {
+  async function refreshModels(signal?: AbortSignal) {
     try {
-      const nextModels = await api.listWhisperModels();
-      if (!cancelled) {
-        setModels(nextModels ?? []);
-      }
-    } catch {
-      if (!cancelled) {
-        setModels([]);
-      }
+      const nextModels = await api.listWhisperModels({ signal });
+      setModels(nextModels ?? []);
+    } catch (err) {
+      if (err instanceof Error && err.name === "AbortError") return;
+      setModels([]);
     }
   }
 
   useEffect(() => {
-    let cancelled = false;
-
-    void refreshModels(cancelled);
-    return () => {
-      cancelled = true;
-    };
+    const controller = new AbortController();
+    void refreshModels(controller.signal);
+    return () => controller.abort();
   }, []);
 
   const modelJobs = getJobs("whisper_download");

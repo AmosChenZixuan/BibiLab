@@ -185,17 +185,18 @@ export function JobActivityProvider({ children }: { children: React.ReactNode })
     trackedJobsRef.current = trackedJobs;
   }, [trackedJobs]);
 
-  const refreshNow = useCallback(async () => {
+  const refreshNow = useCallback(async (signal?: AbortSignal) => {
     if (refreshInFlight.current) {
       return refreshInFlight.current;
     }
 
     const task = (async () => {
       try {
-        const nextJobs = await api.listJobs();
+        const nextJobs = await api.listJobs({ signal });
         setJobsById((current) => mergeJobs(current, trackedJobsRef.current, nextJobs ?? []));
         setErrorMessage(null);
       } catch (error) {
+        if (error instanceof Error && error.name === "AbortError") return;
         setErrorMessage(toErrorMessage(error));
       } finally {
         refreshInFlight.current = null;
@@ -207,7 +208,9 @@ export function JobActivityProvider({ children }: { children: React.ReactNode })
   }, []);
 
   useEffect(() => {
-    void refreshNow();
+    const controller = new AbortController();
+    void refreshNow(controller.signal);
+    return () => controller.abort();
   }, [refreshNow]);
 
   const visibleJobs = useMemo(() => {
@@ -232,12 +235,17 @@ export function JobActivityProvider({ children }: { children: React.ReactNode })
       return;
     }
 
-    void refreshNow();
+    const controller = new AbortController();
+
+    void refreshNow(controller.signal);
     const intervalId = window.setInterval(() => {
-      void refreshNow();
+      void refreshNow(controller.signal);
     }, 5000);
 
-    return () => window.clearInterval(intervalId);
+    return () => {
+      window.clearInterval(intervalId);
+      controller.abort();
+    };
   }, [activeJobs.length, refreshNow]);
 
   const trackJobs = useCallback((jobs: JobRegistration[]) => {

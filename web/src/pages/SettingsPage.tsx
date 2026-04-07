@@ -56,36 +56,29 @@ export function SettingsPage() {
   }
 
   useEffect(() => {
-    let cancelled = false;
+    const controller = new AbortController();
     async function load() {
       try {
         const [nextConfig, nextHealth] = await Promise.all([
-          api.getConfig(),
-          api.getHealth(),
+          api.getConfig({ signal: controller.signal }),
+          api.getHealth({ signal: controller.signal }),
         ]);
-        if (!cancelled) {
-          setConfig(nextConfig ?? null);
-          if (nextHealth) {
-            setDependencies(nextHealth.dependencies ?? {});
-          }
-          setLoadError(null);
+        setConfig(nextConfig ?? null);
+        if (nextHealth) {
+          setDependencies(nextHealth.dependencies ?? {});
         }
+        setLoadError(null);
       } catch (error) {
-        if (!cancelled) {
-          setLoadError(toErrorMessageWithT(error, t));
-        }
+        if (error instanceof Error && error.name === "AbortError") return;
+        setLoadError(toErrorMessageWithT(error, t));
       } finally {
-        if (!cancelled) {
-          setLoading(false);
-        }
+        setLoading(false);
       }
     }
 
     void load();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+    return () => controller.abort();
+  }, [t]);
 
   async function handleSave(nextConfig: BibilabConfig) {
     if (!config || !hasConfigChanged(config, nextConfig)) {
