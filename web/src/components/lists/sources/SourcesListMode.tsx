@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   MdArrowForward,
   MdClose,
@@ -160,7 +160,7 @@ export function SourcesListMode({
   const [error, setError] = useState<string | null>(null);
   const { dismissJob, getJobs, trackJobs } = useJobActivity();
   const ingestJobs = getJobs("ingest", listId);
-  const refreshedJobsRef = useRef<string[]>([]);
+  const [refreshedJobs, setRefreshedJobs] = useState<string[]>([]);
 
   const [currentSources, setCurrentSources] = useState(sources);
 
@@ -171,7 +171,7 @@ export function SourcesListMode({
   // When a job flips to done, refresh sources and dismiss
   useEffect(() => {
     const completed = ingestJobs.filter(
-      (j) => j.isTerminal && j.job.status === "done" && !refreshedJobsRef.current.includes(j.job.id),
+      (j) => j.isTerminal && j.job.status === "done" && !refreshedJobs.includes(j.job.id),
     );
     if (completed.length === 0) return;
 
@@ -182,7 +182,7 @@ export function SourcesListMode({
         if (cancelled) return;
         setCurrentSources(next);
         for (const { job } of completed) {
-          refreshedJobsRef.current.push(job.id);
+          setRefreshedJobs((prev) => [...prev, job.id]);
           await dismissJob(job.id);
         }
       } catch {
@@ -193,7 +193,7 @@ export function SourcesListMode({
     return () => {
       cancelled = true;
     };
-  }, [ingestJobs, listId]);
+  }, [ingestJobs, listId, refreshedJobs]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
