@@ -50,8 +50,12 @@ async def _check_llm(cfg: BibilabConfig) -> dict:
             return {"status": "error", "message": "Invalid models response"}
 
         return {"status": "ok", "message": base_url}
-    except Exception as exc:
-        return {"status": "error", "message": str(exc)}
+    except httpx.TimeoutException as exc:
+        return {"status": "error", "message": f"Request timed out: {exc}"}
+    except (httpx.NetworkError, httpx.ProtocolError, httpx.HTTPError) as exc:
+        return {"status": "error", "message": f"HTTP error: {exc}"}
+    except OSError as exc:
+        return {"status": "error", "message": f"Network error: {exc}"}
 
 
 def _check_whisper(cfg: BibilabConfig) -> dict:

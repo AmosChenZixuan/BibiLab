@@ -50,7 +50,8 @@ def _download_cover(cover_url: str, dest: Path) -> bool:
         resp.raise_for_status()
         dest.write_bytes(resp.content)
         return True
-    except Exception:
+    except (httpx.HTTPError, OSError) as exc:
+        logger.warning("Job: failed to download cover from %s: %s", cover_url, exc)
         return False
 
 
@@ -276,10 +277,7 @@ class WorkerLoop:
         covers_dir = bibilab_home() / "covers"
         covers_dir.mkdir(parents=True, exist_ok=True)
         cover_dest = covers_dir / f"{source_id}.jpg"
-        try:
-            await asyncio.to_thread(_download_cover, video_meta.cover_url, cover_dest)
-        except Exception:
-            logger.warning("Job %s: failed to download cover, continuing without local cover", job_id)
+        await asyncio.to_thread(_download_cover, video_meta.cover_url, cover_dest)
 
         return video_path
 

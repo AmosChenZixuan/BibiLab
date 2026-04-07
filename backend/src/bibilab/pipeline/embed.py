@@ -61,8 +61,8 @@ def embed_chunks(
     # Remove any existing chunks for this video (idempotent re-run)
     try:
         collection.delete(where={"video_id": meta.video_id})
-    except Exception:
-        pass  # collection may be empty
+    except Exception as exc:
+        logger.warning("Failed to delete existing embeddings for video %s: %s", meta.video_id, exc)
 
     ids = [f"{meta.video_id}_{chunk.sequence_index}" for chunk in chunks]
     documents = [chunk.text for chunk in chunks]
@@ -87,8 +87,8 @@ def clear_embeddings_for_list(list_id: str, cfg: BibilabConfig) -> None:
     collection = _get_collection(cfg)
     try:
         collection.delete(where={"list_id": list_id})
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("Failed to delete embeddings for list %s: %s", list_id, exc)
 
 
 def clear_embeddings_for_video(video_id: str, cfg: BibilabConfig) -> None:
@@ -96,5 +96,5 @@ def clear_embeddings_for_video(video_id: str, cfg: BibilabConfig) -> None:
     collection = _get_collection(cfg)
     try:
         collection.delete(where={"video_id": video_id})
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("Failed to delete embeddings for video %s: %s", video_id, exc)

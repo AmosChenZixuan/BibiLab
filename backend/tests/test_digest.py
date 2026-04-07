@@ -2,8 +2,11 @@
 
 from unittest.mock import patch
 
+import pytest
+
 from bibilab.adapters.base import VideoMeta
 from bibilab.config import AIConfig
+from bibilab.pipeline.audio import PipelineError
 from bibilab.pipeline.digest import digest
 
 
@@ -71,8 +74,8 @@ class TestDigestResultShape:
         assert len(result.keywords) == 5
         assert result.keywords == ["a", "b", "c", "d", "e"]
 
-    def test_digest_llm_failure_returns_empty(self):
-        """On LLM failure (all retries exhausted), returns DigestResult with empty strings."""
+    def test_digest_llm_failure_raises_pipeline_error(self):
+        """On LLM failure (all retries exhausted), raises PipelineError instead of silent data loss."""
         video_meta = VideoMeta(
             video_id="test789",
             title="Test Video",
@@ -89,9 +92,9 @@ class TestDigestResultShape:
             base_url="https://api.openai.com/v1",
             output_language="en",
         )
+        # Use httpx.HTTPError which is a retriable exception
+        import httpx
 
-        with patch("bibilab.pipeline.digest._call_llm", side_effect=Exception("LLM down")):
-            result = digest("transcript", video_meta, ai_cfg)
-
-        assert result.summary == ""
-        assert result.keywords == []
+        with patch("bibilab.pipeline.digest._call_llm", side_effect=httpx.HTTPError("LLM down")):
+            with pytest.raises(PipelineError, match="LLM down"):
+                digest("transcript", video_meta, ai_cfg)

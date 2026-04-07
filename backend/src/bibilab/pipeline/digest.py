@@ -1,7 +1,9 @@
 """Digest generation - creates summary + keywords from transcript."""
 
+import json
 import logging
 
+import httpx
 from pydantic import BaseModel
 
 from bibilab.adapters.base import VideoMeta
@@ -9,11 +11,11 @@ from bibilab.config import AIConfig
 from bibilab.pipeline._shared import (
     _LANG_INSTRUCTION,
     _STRICT_SUFFIX,
-    _TRANSCRIPT_CHAR_LIMIT,
     _call_llm,
     _parse_llm_json_response,
     _resolved_lang,
 )
+from bibilab.pipeline.audio import PipelineError
 
 logger = logging.getLogger(__name__)
 
@@ -57,17 +59,20 @@ def digest(
 ) -> DigestResult:
     lang = _resolved_lang(output_language, ui_lang)
     lang_instruction = _LANG_INSTRUCTION.get(lang, _LANG_INSTRUCTION["en"])
-    if len(transcript_text) > _TRANSCRIPT_CHAR_LIMIT:
-        logger.warning("Transcript for %s exceeds ~100K tokens; truncating", meta.video_id)
-        transcript_text = transcript_text[:_TRANSCRIPT_CHAR_LIMIT]
+    char_limit = cfg.transcript_char_limit
+    if len(transcript_text) > char_limit:
+        logger.warning("Transcript for %s exceeds %d chars; truncating", meta.video_id, char_limit)
+        transcript_text = transcript_text[:char_limit]
 
     prompt = lang_instruction + "\n\n" + _DIGEST_PROMPT.format(title=meta.title, transcript=transcript_text)
 
+    last_exc: Exception | None = None
     for attempt in range(3):
         try:
             raw = _call_llm(prompt, cfg, llm_timeout=llm_timeout, llm_max_tokens=llm_max_tokens)
             return _parse_response(raw)
-        except Exception as exc:
+        except (httpx.HTTPError, json.JSONDecodeError) as exc:
+            last_exc = exc
             logger.warning(
                 "LLM digest failed for %s (attempt %d/3): %s",
                 meta.video_id,
@@ -83,7 +88,8 @@ def digest(
                         llm_max_tokens=llm_max_tokens,
                     )
                     return _parse_response(raw2)
-                except Exception as retry_exc:
+                except (httpx.HTTPError, json.JSONDecodeError) as retry_exc:
+                    last_exc = retry_exc
                     logger.warning(
                         "LLM digest retry failed for %s (attempt %d/3): %s",
                         meta.video_id,
@@ -91,12 +97,8 @@ def digest(
                         retry_exc,
                     )
                     continue
-            else:
-                # All 3 retries exhausted — return empty result instead of raising
-                logger.warning(
-                    "LLM digest exhausted all retries for %s; returning empty result",
-                    meta.video_id,
-                )
-                return DigestResult(summary="", keywords=[])
-    # Defensive fallback (should not reach here)
-    return DigestResult(summary="", keywords=[])
+
+    # All retries exhausted — raise PipelineError instead of silent data loss
+    error_msg = f"LLM digest exhausted all retries for {meta.video_id}: {last_exc}"
+    logger.error(error_msg)
+    raise PipelineError(error_msg)

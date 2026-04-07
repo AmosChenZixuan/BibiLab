@@ -45,6 +45,10 @@ async def rerun_source(source_id: str, cfg: BibilabConfig = Depends(get_config))
         transcript_text = _transcript_path.read_text(encoding="utf-8")
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail="Transcript file not found")
+    except PermissionError:
+        raise HTTPException(status_code=403, detail="Permission denied reading transcript file")
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail=f"Error reading transcript file: {exc}")
 
     video_meta = VideoMeta.from_source(source)
 
