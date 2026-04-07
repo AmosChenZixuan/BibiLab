@@ -1,18 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
-import {
-  MdChevronLeft,
-  MdChevronRight,
-} from "react-icons/md";
 
 import { useLanguage } from "@/app/LanguageContext";
 import { api, toErrorMessageWithT } from "@/lib/api";
 import type { Source, SourceContent } from "@/lib/types";
 
-import { usePanelResize, Resizer, MIN_PANEL, COLLAPSED_PANEL } from "@/components/lists/panel-resize";
+import { usePanelResize, Resizer, MIN_PANEL } from "@/components/lists/panel-resize";
 import { NavbarTitle } from "@/components/lists/NavbarTitle";
-import { SourcesViewerMode } from "@/components/lists/sources/SourcesViewerMode";
-import { SourcesListMode } from "@/components/lists/sources/SourcesListMode";
+import { SourcesPanel } from "@/components/lists/SourcesPanel";
 
 function SkeletonPanel({ title, note }: { title: string; note: string }) {
   return (
@@ -104,57 +99,20 @@ export function ListDetailPage() {
         ref={containerRef}
         className="fixed inset-x-0 top-14 bottom-0 z-0 box-border flex overflow-hidden px-4 pb-4"
       >
-        {/* ── Sources panel ── */}
-        <div
-          style={
-            sourcesCollapsed
-              ? { width: `${COLLAPSED_PANEL}px`, minWidth: `${COLLAPSED_PANEL}px` }
-              : { width: `${sourcesW}px`, minWidth: `${MIN_PANEL}px` }
-          }
-          className={panelBase}
-        >
-          <div className="flex shrink-0 items-center border-b border-border px-4 py-4">
-            {!sourcesCollapsed && (
-              <h2 className="m-0 flex-1 font-serif text-lg text-ink">{t("lists.sources")}</h2>
-            )}
-            <button
-              type="button"
-              onClick={() => setSourcesCollapsed((v) => !v)}
-              aria-label={sourcesCollapsed ? t("lists.expandSources") : t("lists.collapseSources")}
-              className={`flex h-7 w-7 items-center justify-center rounded-full text-muted transition hover:bg-border hover:text-ink ${sourcesCollapsed ? "mx-auto" : ""}`}
-            >
-              {sourcesCollapsed ? <MdChevronRight size={16} /> : <MdChevronLeft size={16} />}
-            </button>
-          </div>
-
-          {!sourcesCollapsed && (
-            <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-              {loadError ? (
-                <p className="m-0 px-4 py-3 text-sm text-rose-900">{loadError}</p>
-              ) : detailSource ? (
-                <SourcesViewerMode
-                  source={detailSource}
-                  sourceContent={sourceContent}
-                  onClose={() => setDetailSource(null)}
-                  onRefresh={() => {
-                    if (detailSource) {
-                      void api.getSource(detailSource.id).then((content) => {
-                        if (currentSourceIdRef.current !== detailSource.id) return;
-                        setSourceContent(content ?? null);
-                      });
-                    }
-                  }}
-                />
-              ) : (
-                <SourcesListMode
-                  listId={listId}
-                  sources={sources}
-                  onOpenSource={handleOpenSource}
-                />
-              )}
-            </div>
-          )}
-        </div>
+        <SourcesPanel
+          listId={listId}
+          sources={sources}
+          detailSource={detailSource}
+          sourceContent={sourceContent}
+          loadError={loadError}
+          sourcesCollapsed={sourcesCollapsed}
+          sourcesW={sourcesW}
+          onToggleCollapse={() => setSourcesCollapsed((v) => !v)}
+          onOpenSource={handleOpenSource}
+          onCloseSource={() => setDetailSource(null)}
+          onRefreshSource={() => setSourceContent((prev) => prev)}
+          currentSourceIdRef={currentSourceIdRef}
+        />
 
         <Resizer onMouseDown={onMouseDownLeft} />
 
