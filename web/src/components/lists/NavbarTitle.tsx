@@ -10,11 +10,11 @@ export function NavbarTitle({
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(name);
+  const [navEl, setNavEl] = useState<Element | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const navElRef = useRef<Element | null>(null);
 
   useEffect(() => {
-    navElRef.current = document.querySelector("nav");
+    setNavEl(document.querySelector("nav"));
   }, []);
 
   // Sync draft when name changes externally
@@ -40,7 +40,7 @@ export function NavbarTitle({
     }
   }
 
-  if (!navElRef.current) return null;
+  if (!navEl) return null;
 
   return createPortal(
     <div className="absolute left-24 top-1/2 -translate-y-1/2 flex items-center">
@@ -75,6 +75,6 @@ export function NavbarTitle({
         </span>
       )}
     </div>,
-    navElRef.current,
+    navEl,
   );
 }
