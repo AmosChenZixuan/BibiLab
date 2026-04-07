@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { RouterProvider, createMemoryRouter } from "react-router-dom";
 import { describe, expect, test, vi } from "vitest";
@@ -124,7 +124,9 @@ describe("job spirit", () => {
     await userEvent.click(spiritButton);
 
     expect(await screen.findByText(/1 running/i)).toBeInTheDocument();
-    expect(await screen.findByText(/new source/i)).toBeInTheDocument();
+    // scope to the Jobs panel to avoid matching other "New Source" text elsewhere on the page
+    const jobsPanel = document.querySelector('[aria-label="Jobs"]');
+    expect(within(jobsPanel as HTMLElement).getByText(/new source/i)).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: /cancel new source/i }));
 
