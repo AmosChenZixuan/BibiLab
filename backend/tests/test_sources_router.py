@@ -16,7 +16,7 @@ async def test_get_source_returns_digest_and_transcript(client: httpx.AsyncClien
 
     source_id = "src-abc123"
     video_id = "BVtest456"
-    transcript_path = f"transcripts/{source_id}.txt"
+    transcript_path = f"transcripts/{video_id}.txt"
 
     # Write the transcript file
     transcript_file = tmp_bibilab_home / transcript_path
@@ -124,7 +124,8 @@ async def test_rerun_source_success(client: httpx.AsyncClient, tmp_bibilab_home:
     await create_list("list-rerun-test", "Rerun Test", "2025-01-01T00:00:00Z")
 
     source_id = "src-rerun-001"
-    transcript_path = f"transcripts/{source_id}.txt"
+    video_id = "BVrerun001"
+    transcript_path = f"transcripts/{video_id}.txt"
     transcript_file = tmp_bibilab_home / transcript_path
     transcript_file.parent.mkdir(parents=True, exist_ok=True)
     transcript_file.write_text("original transcript text", encoding="utf-8")

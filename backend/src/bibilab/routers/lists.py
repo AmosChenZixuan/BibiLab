@@ -2,11 +2,10 @@ import asyncio
 import json
 import uuid
 from datetime import datetime, timezone
-from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 
-from bibilab.config import BibilabConfig, bibilab_home, get_config
+from bibilab.config import BibilabConfig, bibilab_home, cover_path, get_config
 from bibilab.db import (
     create_list as db_create_list,
 )
@@ -39,14 +38,10 @@ router = APIRouter()
 _ACTIVE_JOB_STATUSES = ("queued", "downloading", "transcribing", "processing")
 
 
-def _cover_path(source_id: str) -> Path:
-    return bibilab_home() / "covers" / f"{source_id}.jpg"
-
-
 async def _build_list_response(row, request: Request) -> ListResponse:
     thumbnail_url = None
     if row["thumbnail_source_id"]:
-        if _cover_path(row["thumbnail_source_id"]).exists():
+        if cover_path(row["thumbnail_source_id"]).exists():
             thumbnail_url = str(request.url_for("get_source_cover", source_id=row["thumbnail_source_id"]))
         else:
             source = await get_source(row["thumbnail_source_id"])
@@ -138,7 +133,7 @@ async def delete_list(list_id: str, cfg: BibilabConfig = Depends(get_config)) ->
 
     sources = await get_sources_for_list(list_id)
     for source in sources:
-        _cover_path(source["id"]).unlink(missing_ok=True)
+        cover_path(source["id"]).unlink(missing_ok=True)
         if source["transcript_path"]:
             (bibilab_home() / source["transcript_path"]).unlink(missing_ok=True)
 
@@ -181,7 +176,7 @@ async def delete_list_source(list_id: str, source_id: str, cfg: BibilabConfig = 
     if row is not None and row["thumbnail_source_id"] == source_id:
         await update_list_thumbnail(list_id, None)
 
-    _cover_path(source_id).unlink(missing_ok=True)
+    cover_path(source_id).unlink(missing_ok=True)
     if source["transcript_path"]:
         (bibilab_home() / source["transcript_path"]).unlink(missing_ok=True)
     await asyncio.to_thread(clear_embeddings_for_video, source["video_id"], cfg)

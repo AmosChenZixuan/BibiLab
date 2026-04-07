@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, Query
 
-from bibilab.config import bibilab_home
+from bibilab.config import transcript_path
 from bibilab.models.transcripts import TranscriptResponse
 
 router = APIRouter()
@@ -12,11 +12,11 @@ async def get_transcript(
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=200, ge=1),
 ) -> TranscriptResponse:
-    transcript_path = bibilab_home() / "transcripts" / f"{video_id}.txt"
-    if not transcript_path.exists() or not transcript_path.is_file():
+    _transcript_path = transcript_path(video_id)
+    if not _transcript_path.exists() or not _transcript_path.is_file():
         raise HTTPException(status_code=404, detail="Transcript not found")
 
-    lines = transcript_path.read_text(encoding="utf-8").splitlines()
+    lines = _transcript_path.read_text(encoding="utf-8").splitlines()
     return TranscriptResponse(
         video_id=video_id,
         total_lines=len(lines),

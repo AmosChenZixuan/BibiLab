@@ -10,6 +10,14 @@ def bibilab_home() -> Path:
     return Path.home() / ".bibilab"
 
 
+def cover_path(source_id: str) -> Path:
+    return bibilab_home() / "covers" / f"{source_id}.jpg"
+
+
+def transcript_path(video_id: str) -> Path:
+    return bibilab_home() / "transcripts" / f"{video_id}.txt"
+
+
 def resolve_storage_path(stored: str) -> Path:
     return bibilab_home() / stored
 
