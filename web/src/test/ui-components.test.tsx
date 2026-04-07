@@ -25,7 +25,7 @@ describe("Button", () => {
 
   test("renders danger variant", () => {
     render(<Button variant="danger">Delete</Button>);
-    expect(screen.getByRole("button").className).toContain("bg-rose-900");
+    expect(screen.getByRole("button").className).toContain("bg-ink");
   });
 
   test("forwards className prop", () => {
@@ -94,17 +94,17 @@ describe("Panel", () => {
 describe("StatusChip", () => {
   test("renders ok status color", () => {
     render(<StatusChip status="ok">OK</StatusChip>);
-    expect(screen.getByText("OK").className).toContain("text-sky-600");
+    expect(screen.getByText("OK").className).toContain("text-blue");
   });
 
   test("renders error status color", () => {
     render(<StatusChip status="error">Error</StatusChip>);
-    expect(screen.getByText("Error").className).toContain("text-rose-900");
+    expect(screen.getByText("Error").className).toContain("text-pink");
   });
 
   test("renders unavailable status color", () => {
     render(<StatusChip status="unavailable">Down</StatusChip>);
-    expect(screen.getByText("Down").className).toContain("text-amber-700");
+    expect(screen.getByText("Down").className).toContain("text-muted");
   });
 
   test("renders neutral status by default", () => {
@@ -188,7 +188,7 @@ describe("ContextMenu", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "Menu" }));
     expect(screen.getByRole("menu")).toBeInTheDocument();
-    expect(screen.getByRole("menuitem", { name: "Delete" }).className).toContain("text-rose-900");
+    expect(screen.getByRole("menuitem", { name: "Delete" }).className).toContain("text-pink");
 
     await userEvent.click(document.body);
     expect(screen.queryByRole("menu")).not.toBeInTheDocument();
