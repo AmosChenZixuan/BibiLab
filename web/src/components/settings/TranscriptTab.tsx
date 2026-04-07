@@ -101,7 +101,7 @@ export function TranscriptTab({ config, dependencies, onBlur }: TranscriptTabPro
     }
 
     void refreshAndDismiss();
-  }, [terminalModelJobCount]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [terminalModelJobCount]);
 
   function handleBlur() {
     onBlur({ ...config, transcription: localTranscription });
