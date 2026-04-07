@@ -28,10 +28,10 @@ export function ListGrid({
       aria-label="My Lists"
       style={{ gridTemplateColumns: "repeat(auto-fill, 16rem)" }}
     >
-      <article className="h-52 w-64 rounded-2xl border border-dashed border-stone-300 bg-white transition hover:border-pink hover:bg-pink/8 hover:text-rose-500 hover:shadow-lg">
+      <article className="h-52 w-64 rounded-2xl border border-dashed border-border bg-white transition hover:border-pink hover:bg-pink/8 hover:text-pink hover:shadow-lg">
         <button
           aria-label="New list"
-          className="flex h-full w-full flex-col items-center justify-center gap-2.5 border-0 bg-transparent text-stone-500"
+          className="flex h-full w-full flex-col items-center justify-center gap-2.5 border-0 bg-transparent text-muted"
           disabled={busy}
           onClick={() => void onCreate()}
           type="button"

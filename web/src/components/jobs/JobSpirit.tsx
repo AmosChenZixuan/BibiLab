@@ -15,7 +15,7 @@ function StatusDot({ item }: { item: JobActivityItem }) {
   }
   const tone = getJobTone(item.job);
   const color =
-    tone === "ok" ? "bg-sky-500" : tone === "error" ? "bg-rose-500" : "bg-muted";
+    tone === "ok" ? "bg-blue" : tone === "error" ? "bg-pink" : "bg-muted";
   return (
     <span className={`inline-block h-1.5 w-1.5 shrink-0 rounded-full ${color}`} aria-hidden="true" />
   );
@@ -72,7 +72,7 @@ export function JobSpirit() {
               ) : null}
             </div>
             {errorMessage ? (
-              <p className="px-4 pt-3 text-xs text-rose-900">{errorMessage}</p>
+              <p className="px-4 pt-3 text-xs text-pink">{errorMessage}</p>
             ) : null}
             <ul className="divide-y divide-border">
               {visibleJobs.map((item) => {
@@ -109,13 +109,13 @@ export function JobSpirit() {
                     {!item.isTerminal ? (
                       <div className="h-px overflow-hidden rounded-full bg-border">
                         <div
-                          className="h-full bg-blue-400 transition-all duration-700"
+                          className="h-full bg-blue transition-all duration-700"
                           style={{ width: `${Math.max(item.job.progress, 4)}%` }}
                         />
                       </div>
                     ) : null}
                     {item.job.error ? (
-                      <p className="text-xs text-rose-900">{item.job.error}</p>
+                      <p className="text-xs text-pink">{item.job.error}</p>
                     ) : null}
                   </li>
                 );

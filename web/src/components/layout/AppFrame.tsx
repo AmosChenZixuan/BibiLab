@@ -60,7 +60,7 @@ export function AppFrame() {
         <div className="inline-flex items-center gap-2">
           <NavLink
             to="/settings"
-            className="relative inline-flex h-9 w-9 items-center justify-center rounded-lg transition hover:bg-sky-50"
+            className="relative inline-flex h-9 w-9 items-center justify-center rounded-lg transition hover:bg-sky/10"
             title={t("health." + healthTier)}
             aria-label="Settings"
           >
@@ -74,7 +74,7 @@ export function AppFrame() {
 
           <button
             type="button"
-            className="relative inline-flex h-9 w-9 items-center justify-center rounded-lg bg-transparent text-ink transition hover:bg-sky-50"
+            className="relative inline-flex h-9 w-9 items-center justify-center rounded-lg bg-transparent text-ink transition hover:bg-sky/10"
             aria-label="Language"
             title={t(lang === "en" ? "navbar.languageEn" : "navbar.languageZh")}
             onClick={() => setLang(lang === "en" ? "zh" : "en")}
@@ -92,7 +92,7 @@ export function AppFrame() {
 
           <button
             type="button"
-            className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-transparent text-ink transition hover:bg-sky-50"
+            className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-transparent text-ink transition hover:bg-sky/10"
             aria-label="Identity"
             aria-expanded={identityOpen}
             aria-haspopup="menu"

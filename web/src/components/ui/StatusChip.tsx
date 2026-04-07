@@ -3,9 +3,9 @@ import { ComponentPropsWithoutRef } from "react";
 type Status = "ok" | "error" | "unavailable" | "neutral";
 
 const statusColors: Record<Status, string> = {
-  ok:          "text-sky-600",
-  error:       "text-rose-900",
-  unavailable: "text-amber-700",
+  ok:          "text-blue",
+  error:       "text-pink",
+  unavailable: "text-muted",
   neutral:     "text-blue",
 };
 

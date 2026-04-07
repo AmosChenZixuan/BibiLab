@@ -43,7 +43,7 @@ export function CreateListForm({ busy, error, onCreate }: Props) {
           <Button variant="primary" disabled={busy} type="submit">
             {busy ? t("common.creating") : t("common.createList")}
           </Button>
-          {error ? <p className="m-0 text-sm text-rose-900">{error}</p> : null}
+          {error ? <p className="m-0 text-sm text-pink">{error}</p> : null}
         </div>
       </form>
     </Panel>
