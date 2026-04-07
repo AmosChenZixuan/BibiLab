@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   MdArrowForward,
   MdClose,
@@ -195,7 +195,7 @@ export function SourcesListMode({
     };
   }, [ingestJobs, listId, refreshedJobs]);
 
-  async function handleSubmit(e: React.FormEvent) {
+  const handleSubmit = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
     const trimmed = url.trim();
     if (!trimmed) return;
@@ -207,7 +207,7 @@ export function SourcesListMode({
       trackJobs(
         result.queued.map((id) => ({
           id,
-          producer: "ingest" as const,
+          producer: "ingest",
           label: trimmed,
           contextKey: listId,
         })),
@@ -216,12 +216,12 @@ export function SourcesListMode({
       setUrl(trimmed);
       setError(toErrorMessageWithT(err, t));
     }
-  }
+  }, [listId, t, trackJobs]);
 
-  async function handleDelete(source: Source) {
+  const handleDelete = useCallback(async (source: Source) => {
     await api.deleteSource(listId, source.id);
     setCurrentSources((prev) => prev.filter((s) => s.id !== source.id));
-  }
+  }, [listId]);
 
   return (
     <div className="flex h-full flex-col">

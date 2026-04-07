@@ -95,7 +95,7 @@ export function TranscriptTab({ config, dependencies, onBlur }: TranscriptTabPro
     }
 
     void refreshAndDismiss();
-  }, [terminalModelJobCount]);
+  }, [modelJobs, terminalModelJobCount, dismissJob, refreshModels]);
 
   function handleBlur() {
     onBlur({ ...config, transcription: localTranscription });
