@@ -4,9 +4,9 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 
-from bibilab.config import bibilab_home, load_config
+from bibilab.config import BibilabConfig, bibilab_home, get_config
 from bibilab.db import (
     create_list as db_create_list,
 )
@@ -117,7 +117,7 @@ async def update_list(list_id: str, req: ListUpdateRequest, request: Request) ->
 
 
 @router.delete("/lists/{list_id}", status_code=204)
-async def delete_list(list_id: str) -> None:
+async def delete_list(list_id: str, cfg: BibilabConfig = Depends(get_config)) -> None:
     row = await get_list(list_id)
     if row is None:
         raise HTTPException(status_code=404, detail="List not found")
@@ -143,7 +143,6 @@ async def delete_list(list_id: str) -> None:
             (bibilab_home() / source["transcript_path"]).unlink(missing_ok=True)
 
     await delete_sources_for_list(list_id)
-    cfg = load_config()
     await asyncio.to_thread(clear_embeddings_for_list, list_id, cfg)
     await db_delete_list(list_id)
 
@@ -173,7 +172,7 @@ async def get_list_sources(list_id: str) -> list[SourceResponse]:
 
 
 @router.delete("/lists/{list_id}/sources/{source_id}", status_code=204)
-async def delete_list_source(list_id: str, source_id: str) -> None:
+async def delete_list_source(list_id: str, source_id: str, cfg: BibilabConfig = Depends(get_config)) -> None:
     source = await get_source(source_id)
     if source is None or source["list_id"] != list_id:
         raise HTTPException(status_code=404, detail="Source not found")
@@ -185,13 +184,12 @@ async def delete_list_source(list_id: str, source_id: str) -> None:
     _cover_path(source_id).unlink(missing_ok=True)
     if source["transcript_path"]:
         (bibilab_home() / source["transcript_path"]).unlink(missing_ok=True)
-    cfg = load_config()
     await asyncio.to_thread(clear_embeddings_for_video, source["video_id"], cfg)
     await delete_source(source_id)
 
 
 @router.post("/lists/{list_id}/overview")
-async def generate_list_overview(list_id: str) -> OverviewResponse:
+async def generate_list_overview(list_id: str, cfg: BibilabConfig = Depends(get_config)) -> OverviewResponse:
     row = await get_list(list_id)
     if row is None:
         raise HTTPException(status_code=404, detail="List not found")
@@ -200,7 +198,6 @@ async def generate_list_overview(list_id: str) -> OverviewResponse:
     if not sources:
         raise HTTPException(status_code=422, detail="List has no sources to summarise")
 
-    cfg = load_config()
     from bibilab.pipeline.extract import generate_overview
 
     list_videos = [{"title": s["title"], "summary": s["summary"]} for s in sources]

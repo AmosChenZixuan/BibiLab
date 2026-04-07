@@ -1,8 +1,8 @@
 from typing import Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
-from bibilab.config import BibilabConfig, deep_merge, load_config, save_config
+from bibilab.config import BibilabConfig, deep_merge, get_config, save_config
 
 router = APIRouter()
 
@@ -28,14 +28,12 @@ def _mask(cfg: dict[str, Any]) -> dict[str, Any]:
 
 
 @router.get("/config")
-async def get_config() -> dict:
-    cfg = load_config()
+async def get_config_handler(cfg: BibilabConfig = Depends(get_config)) -> dict:
     return _mask(cfg.model_dump())
 
 
 @router.put("/config")
-async def put_config(patch: dict[str, Any]) -> dict:
-    cfg = load_config()
+async def put_config(patch: dict[str, Any], cfg: BibilabConfig = Depends(get_config)) -> dict:
     merged = deep_merge(cfg.model_dump(), patch)
     new_cfg = BibilabConfig.model_validate(merged)
     save_config(new_cfg)

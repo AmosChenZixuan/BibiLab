@@ -1,10 +1,10 @@
 import logging
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 from bibilab.adapters.base import AuthRequiredError, DownloadError, VideoMeta
 from bibilab.adapters.bilibili import BilibiliAdapter
-from bibilab.config import load_config
+from bibilab.config import BibilabConfig, get_config
 from bibilab.db import create_job, get_list, get_processed_video_ids
 from bibilab.models.ingest import IngestUrlRequest, IngestUrlResponse
 
@@ -34,8 +34,11 @@ async def _queue_video(
 
 
 @router.post("/ingest/url")
-async def ingest_url(req: IngestUrlRequest, request: Request) -> IngestUrlResponse:
-    cfg = load_config()
+async def ingest_url(
+    req: IngestUrlRequest,
+    request: Request,
+    cfg: BibilabConfig = Depends(get_config),
+) -> IngestUrlResponse:
 
     # Resolve UI language
     ui_lang_header = request.headers.get("X-UI-Lang", "en")
@@ -48,10 +51,8 @@ async def ingest_url(req: IngestUrlRequest, request: Request) -> IngestUrlRespon
     if await get_list(req.list_id) is None:
         raise HTTPException(status_code=404, detail="List not found")
 
-    adapter = BilibiliAdapter(cookie=cfg.accounts.bilibili.cookie)
-
     try:
-        result = adapter.resolve(req.url)
+        result = BilibiliAdapter(cookie=cfg.accounts.bilibili.cookie).resolve(req.url)
     except AuthRequiredError as exc:
         raise HTTPException(
             status_code=401,
