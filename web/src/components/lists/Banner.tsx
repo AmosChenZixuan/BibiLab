@@ -1,17 +1,17 @@
 import { useState } from "react";
 
 export function Banner({
-  sourceId,
+  source,
   sourceUrl,
   uploader,
   durationSeconds,
 }: {
-  sourceId: string;
+  source: { id: string };
   sourceUrl?: string;
   uploader: string;
   durationSeconds: number;
 }) {
-  const [imgSrc, setImgSrc] = useState(`/api/sources/${sourceId}/cover`);
+  const [imgSrc, setImgSrc] = useState(`/api/sources/${source.id}/cover`);
 
   function handleError() {
     setImgSrc("/placeholder-cover.png");

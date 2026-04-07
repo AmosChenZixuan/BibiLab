@@ -43,7 +43,7 @@ export function SourcesViewerMode({
       <div className="flex-1 space-y-3 overflow-y-auto px-4 py-4">
         {sourceContent && (
           <Banner
-            sourceId={source.id}
+            source={source}
             sourceUrl={sourceContent.source_url}
             uploader={sourceContent.uploader}
             durationSeconds={sourceContent.duration_seconds}
@@ -51,7 +51,7 @@ export function SourcesViewerMode({
         )}
         {sourceContent && (
           <DigestAccordion
-            sourceId={source.id}
+            source={source}
             summary={sourceContent.summary}
             keywords={sourceContent.keywords}
             onRerun={handleRerunDigest}

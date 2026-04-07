@@ -9,7 +9,7 @@ describe("DigestAccordion", () => {
     render(
       <LanguageProvider>
         <DigestAccordion
-          sourceId="src-1"
+          source={{ id: "src-1" }}
           summary="foo bar"
           keywords={["alpha", "beta"]}
           onRerun={vi.fn()}

@@ -1,6 +1,19 @@
 @import "tailwindcss";
 @import url("https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap");
 
+/* DigestAccordion loading animation */
+@keyframes digest-loading-bounce {
+  0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
+  40% { transform: scale(1); opacity: 1; }
+}
+
+/* ListCard grid pattern overlay */
+.list-card-grid-pattern {
+  background-image:
+    repeating-linear-gradient(0deg, rgba(255,255,255,0.06) 0px, rgba(255,255,255,0.06) 1px, transparent 1px, transparent 32px),
+    repeating-linear-gradient(90deg, rgba(255,255,255,0.06) 0px, rgba(255,255,255,0.06) 1px, transparent 1px, transparent 32px);
+}
+
 @theme {
   /* ── Colors ──────────────────────────────────────────────────────────────── */
   --color-ink:     #334155;       /* primary text — slate-700 */
@@ -47,6 +60,11 @@
   select,
   textarea {
     font: inherit;
+  }
+
+  /* DigestAccordion loading dots animation class */
+  .digest-loading-dot {
+    animation: digest-loading-bounce 1.2s ease-in-out infinite;
   }
 
   a {

@@ -10,9 +10,8 @@ function LoadingDots() {
       {[0, 1, 2].map((i) => (
         <span
           key={i}
-          className="block h-1 w-1 rounded-full bg-current"
+          className="block h-1 w-1 rounded-full bg-current digest-loading-dot"
           style={{
-            animation: "digest-loading-bounce 1.2s ease-in-out infinite",
             animationDelay: `${i * 0.15}s`,
           }}
         />
@@ -22,12 +21,12 @@ function LoadingDots() {
 }
 
 export function DigestAccordion({
-  sourceId,
+  source,
   summary,
   keywords,
   onRerun,
 }: {
-  sourceId: string;
+  source: { id: string };
   summary: string;
   keywords: string[];
   onRerun: (sourceId: string) => void;
@@ -39,7 +38,7 @@ export function DigestAccordion({
   const handleRerun = async () => {
     setLoading(true);
     try {
-      await onRerun(sourceId);
+      await onRerun(source.id);
     } finally {
       setLoading(false);
     }
@@ -118,13 +117,6 @@ export function DigestAccordion({
           </div>
         </div>
       )}
-
-      <style>{`
-        @keyframes digest-loading-bounce {
-          0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
-          40% { transform: scale(1); opacity: 1; }
-        }
-      `}</style>
     </div>
   );
 }

@@ -72,11 +72,7 @@ export function ListCard({ list, onRename, onChangeThumbnail, onDelete }: Props)
       />
       <div
         aria-hidden="true"
-        className="absolute inset-0"
-        style={{
-          backgroundImage:
-            "repeating-linear-gradient(0deg, rgba(255,255,255,0.06) 0px, rgba(255,255,255,0.06) 1px, transparent 1px, transparent 32px), repeating-linear-gradient(90deg, rgba(255,255,255,0.06) 0px, rgba(255,255,255,0.06) 1px, transparent 1px, transparent 32px)",
-        }}
+        className="absolute inset-0 list-card-grid-pattern"
       />
 
       <ContextMenu
