@@ -11,9 +11,6 @@ from bibilab.config import AIConfig
 
 logger = logging.getLogger(__name__)
 
-_TRANSCRIPT_TOKEN_WARN = 100_000
-_TRANSCRIPT_CHAR_LIMIT = 400_000  # ~100K tokens at ~4 chars/token
-
 _LANG_INSTRUCTION = {
     "en": "Respond in English only. Do not use any other language.",
     "zh": "请用中文回答。不要使用其他语言。",
