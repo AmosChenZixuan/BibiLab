@@ -58,7 +58,7 @@ def transcribe(audio_path: Path, cfg: TranscriptionConfig) -> tuple[list[Whisper
     language = None if cfg.language == "auto" else cfg.language
     segments, info = model.transcribe(
         str(audio_path),
-        beam_size=5,
+        beam_size=cfg.beam_size,
         vad_filter=True,
         language=language,
     )

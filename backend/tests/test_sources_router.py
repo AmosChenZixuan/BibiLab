@@ -152,7 +152,7 @@ async def test_rerun_source_success(client: httpx.AsyncClient, tmp_bibilab_home:
     # Mock the LLM call to return new digest
     new_digest = '{"summary": "new summary from rerun", "keywords": ["new", "rerun", "test"]}'
 
-    def mock_call_llm(prompt, cfg):
+    def mock_call_llm(prompt, cfg, llm_timeout=120, llm_max_tokens=2048):
         return new_digest
 
     import bibilab.pipeline.digest as digest_module

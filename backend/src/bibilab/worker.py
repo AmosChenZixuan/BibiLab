@@ -322,7 +322,11 @@ class WorkerLoop:
     ) -> DigestResult | None:
         """Stage 4: Chunk segments, run digest + embed in parallel."""
         await update_job_status(job_id, JobStatus.PROCESSING.value, progress=40)
-        chunks = chunk_segments(segments)
+        chunks = chunk_segments(
+            segments,
+            target_tokens=cfg.transcription.target_tokens,
+            chunk_max_tokens=cfg.transcription.chunk_max_tokens,
+        )
 
         meta_raw = _parse_job_meta(job)
         transcript_text = transcript_path.read_text(encoding="utf-8")
@@ -335,6 +339,8 @@ class WorkerLoop:
                 cfg.ai,
                 cfg.ai.output_language,
                 meta_raw.get("ui_lang"),
+                llm_timeout=cfg.transcription.llm_timeout,
+                llm_max_tokens=cfg.transcription.llm_max_tokens,
             )
 
         async def _embed():

@@ -9,8 +9,6 @@ from bibilab.pipeline.chunk import RagChunk
 
 logger = logging.getLogger(__name__)
 
-_COLLECTION_NAME = "bibilab_transcripts"
-
 
 def _embedding_model_dir() -> Path:
     return bibilab_home() / "models" / "embedding"
@@ -36,7 +34,7 @@ def _get_collection(cfg: BibilabConfig):
 
     client = chromadb.PersistentClient(path=str(bibilab_home() / "chroma"))
     return client.get_or_create_collection(
-        _COLLECTION_NAME,
+        cfg.transcript_collection_name,
         embedding_function=_default_embedding_function(),
     )
 
