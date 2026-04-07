@@ -120,7 +120,7 @@ export function ListDetailPage() {
             <button
               type="button"
               onClick={() => setSourcesCollapsed((v) => !v)}
-              aria-label={sourcesCollapsed ? t("lists.expandSources") : t("lists.collapseSources")}
+              aria-label={sourcesCollapsed ? "expand sources" : "collapse sources"}
               className={`flex h-7 w-7 items-center justify-center rounded-full text-muted transition hover:bg-border hover:text-ink ${sourcesCollapsed ? "mx-auto" : ""}`}
             >
               {sourcesCollapsed ? <MdChevronRight size={16} /> : <MdChevronLeft size={16} />}
@@ -164,8 +164,8 @@ export function ListDetailPage() {
           className={panelBase}
         >
           <SkeletonPanel
-            title={t("lists.chat")}
-            note={t("lists.chatDesc")}
+            title="Chat"
+            note="list-scoped chat arrives in v1"
           />
         </div>
 
@@ -177,8 +177,8 @@ export function ListDetailPage() {
           className={panelBase}
         >
           <SkeletonPanel
-            title={t("lists.lab")}
-            note={t("lists.labDesc")}
+            title="Lab"
+            note="synthesis tools"
           />
         </div>
       </div>

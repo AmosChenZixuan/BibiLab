@@ -65,7 +65,7 @@ export function RenameListModal({ list, open, onClose, onCommit }: RenameListMod
         <label className="grid gap-2">
           <span className="text-xs font-semibold uppercase tracking-widest text-muted">{t("home.listName")}</span>
           <Input
-            aria-label={t("home.listName")}
+            aria-label="List name"
             autoFocus
             className="select-text rounded-2xl bg-white/92 px-4 py-3 text-2xl leading-tight font-normal tracking-normal text-ink focus:border-blue/25 focus:ring-2 focus:ring-sky/10"
             placeholder={t("home.untitledList")}

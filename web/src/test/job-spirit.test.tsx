@@ -114,23 +114,22 @@ describe("job spirit", () => {
       </JobActivityProvider>,
     );
 
-    expect(await screen.findByRole("heading", { name: /systems/i })).toBeInTheDocument();
-    expect(await screen.findByRole("button", { name: /background jobs/i })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: /sources/i })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /jobs/i })).toBeInTheDocument();
 
-    await userEvent.type(screen.getByLabelText(/source url/i), "https://www.bilibili.com/video/BV1new");
-    await userEvent.click(screen.getByRole("button", { name: /queue source/i }));
+    await userEvent.type(screen.getByPlaceholderText(/paste a bilibili url/i), "https://www.bilibili.com/video/BV1new");
+    await userEvent.click(screen.getByRole("button", { name: /add source/i }));
 
-    expect(await screen.findByText(/new source/i)).toBeInTheDocument();
-
-    const spiritButton = await screen.findByRole("button", { name: /background jobs/i });
+    const spiritButton = await screen.findByRole("button", { name: /jobs/i });
     await userEvent.click(spiritButton);
 
     expect(await screen.findByText(/1 running/i)).toBeInTheDocument();
+    expect(await screen.findByText(/new source/i)).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: /cancel new source/i }));
 
     await waitFor(() => {
-      expect(screen.queryByRole("button", { name: /background jobs/i })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /jobs/i })).not.toBeInTheDocument();
     });
   });
 });

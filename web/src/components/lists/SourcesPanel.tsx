@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { MdChevronLeft, MdChevronRight } from "react-icons/md";
 
 import type { Source, SourceContent } from "@/lib/types";
@@ -42,7 +41,7 @@ export function SourcesPanel({
 
   function handleRefreshSource() {
     if (detailSource) {
-      void api.getSource(detailSource.id).then((content) => {
+      void api.getSource(detailSource.id).then(() => {
         if (currentSourceIdRef.current !== detailSource.id) return;
         onRefreshSource();
       });
@@ -65,7 +64,7 @@ export function SourcesPanel({
         <button
           type="button"
           onClick={onToggleCollapse}
-          aria-label={sourcesCollapsed ? t("lists.expandSources") : t("lists.collapseSources")}
+          aria-label={sourcesCollapsed ? "expand sources" : "collapse sources"}
           className={`flex h-7 w-7 items-center justify-center rounded-full text-muted transition hover:bg-border hover:text-ink ${sourcesCollapsed ? "mx-auto" : ""}`}
         >
           {sourcesCollapsed ? <MdChevronRight size={16} /> : <MdChevronLeft size={16} />}

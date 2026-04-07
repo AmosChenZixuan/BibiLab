@@ -337,11 +337,11 @@ describe("list detail page", () => {
     expect(screen.queryByRole("button", { name: /open existing source/i })).not.toBeInTheDocument();
 
     // 4. Banner is present (cover image area)
-    const banner = document.querySelector(".relative.h-36");
+    const banner = document.querySelector(".relative.h-64");
     expect(banner).toBeInTheDocument();
 
-    // 5. DigestAccordion renders with "lists.digest" header (collapsed by default)
-    const digestAccordion = screen.getByRole("button", { name: /^lists\.digest$/i });
+    // 5. DigestAccordion renders with "Digest" header (expanded by default)
+    const digestAccordion = screen.getByText("Digest");
     expect(digestAccordion).toBeInTheDocument();
 
     // 6. No ReactMarkdown output (no .prose class)
@@ -357,7 +357,7 @@ describe("list detail page", () => {
     expect(screen.getByText("hello transcript")).toBeInTheDocument();
 
     // 9. Close button returns to list mode
-    await userEvent.click(screen.getByRole("button", { name: /lists\.closeViewer/i }));
+    await userEvent.click(screen.getByRole("button", { name: /close viewer/i }));
     expect(screen.getByRole("button", { name: /open existing source/i })).toBeInTheDocument();
   });
 });

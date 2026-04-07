@@ -302,7 +302,7 @@ describe("home page", () => {
     expect(screen.queryByRole("button", { name: /job spirit/i })).not.toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: /open systems/i }));
-    expect(await screen.findByRole("heading", { name: /systems/i })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: /sources/i })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /job spirit/i })).not.toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("link", { name: /settings/i }));

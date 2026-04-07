@@ -30,7 +30,7 @@ export function SourcesViewerMode({
           type="button"
           onClick={onClose}
           className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-muted transition hover:bg-border hover:text-ink"
-          aria-label={t("lists.closeViewer")}
+          aria-label="Close viewer"
         >
           <MdClose size={16} />
         </button>

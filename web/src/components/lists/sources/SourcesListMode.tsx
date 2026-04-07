@@ -52,7 +52,7 @@ function SourceRow({
           <button
             ref={triggerRef}
             type="button"
-            aria-label={t("lists.sourceOptions")}
+            aria-label="Source options"
             onClick={toggle}
             className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-muted opacity-0 transition group-hover:opacity-100 hover:bg-border hover:text-ink"
           >
@@ -93,7 +93,7 @@ function IngestingSourceRow({
         <button
           type="button"
           onClick={onDismiss}
-          aria-label={t("lists.dismiss")}
+          aria-label="Dismiss"
           className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-muted transition hover:bg-border hover:text-ink"
         >
           <MdClose size={14} />
@@ -113,7 +113,7 @@ function IngestingSourceRow({
         <button
           type="button"
           onClick={onDismiss}
-          aria-label={t("lists.cancelIngestion")}
+          aria-label="Cancel ingestion"
           className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-muted transition hover:bg-border hover:text-ink"
         >
           <MdClose size={14} />
@@ -240,7 +240,7 @@ export function SourcesListMode({
           <button
             type="submit"
             disabled={!url.trim()}
-            aria-label={t("lists.addSource")}
+            aria-label="Add source"
             className="absolute right-1.5 top-1/2 -translate-y-1/2 flex h-7 w-7 items-center justify-center rounded-full text-muted transition disabled:opacity-0 enabled:hover:bg-blue enabled:hover:text-white enabled:hover:shadow-sm"
           >
             <MdArrowForward size={15} />
