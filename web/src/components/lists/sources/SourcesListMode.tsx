@@ -216,7 +216,7 @@ export function SourcesListMode({
       setUrl(trimmed);
       setError(toErrorMessageWithT(err, t));
     }
-  }, [listId, t, trackJobs]);
+  }, [listId, t, trackJobs, url]);
 
   const handleDelete = useCallback(async (source: Source) => {
     await createApiClient().deleteSource(listId, source.id);
