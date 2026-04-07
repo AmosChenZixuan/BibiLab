@@ -1,4 +1,4 @@
-import { ReactNode, Ref, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { ReactNode, Ref, useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 type ContextMenuItem = {
@@ -24,8 +24,9 @@ type Position = {
   left: number;
 };
 
-let openMenuId: string | null = null;
-const menuListeners = new Map<string, () => void>();
+// Module-level ref for close-other-menus coordination.
+// Uses a ref (not state) so mutations don't trigger re-renders.
+let closeOtherMenusRef: { current: (() => void) | undefined } = { current: undefined };
 
 export function ContextMenu({ items, trigger }: ContextMenuProps) {
   const menuId = useId();
@@ -46,17 +47,15 @@ export function ContextMenu({ items, trigger }: ContextMenuProps) {
     });
   }, [open]);
 
+  const closeMenu = useCallback(() => setOpen(false), []);
+
   useEffect(() => {
     if (!open) {
-      menuListeners.delete(menuId);
-      if (openMenuId === menuId) {
-        openMenuId = null;
-      }
       return;
     }
 
-    const closeMenu = () => setOpen(false);
-    menuListeners.set(menuId, closeMenu);
+    // Register this menu's close function so other menus can close us
+    closeOtherMenusRef.current = closeMenu;
 
     function handlePointerDown(event: MouseEvent) {
       const target = event.target as Node | null;
@@ -80,12 +79,12 @@ export function ContextMenu({ items, trigger }: ContextMenuProps) {
     return () => {
       document.removeEventListener("mousedown", handlePointerDown);
       window.removeEventListener("keydown", handleKeyDown);
-      menuListeners.delete(menuId);
-      if (openMenuId === menuId) {
-        openMenuId = null;
+      // Only clear if we are still the registered closer (handles out-of-order unmount)
+      if (closeOtherMenusRef.current === closeMenu) {
+        closeOtherMenusRef.current = undefined;
       }
     };
-  }, [menuId, open]);
+  }, [open, closeMenu]);
 
   function toggle() {
     if (open) {
@@ -93,11 +92,9 @@ export function ContextMenu({ items, trigger }: ContextMenuProps) {
       return;
     }
 
-    if (openMenuId && openMenuId !== menuId) {
-      menuListeners.get(openMenuId)?.();
-    }
+    // Close any other open menu first
+    closeOtherMenusRef.current?.();
 
-    openMenuId = menuId;
     setOpen(true);
   }
 
