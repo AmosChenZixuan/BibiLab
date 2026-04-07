@@ -123,6 +123,9 @@ class WorkerLoop:
         except AuthRequiredError as exc:
             logger.warning("Job %s needs auth (%s)", job_id, exc.resource_type)
             await update_job_status(job_id, JobStatus.NEEDS_AUTH.value, error=exc.resource_type)
+        except asyncio.CancelledError:
+            # Re-raise CancelledError - don't swallow it as a job failure
+            raise
         except PipelineError as exc:
             logger.error("Job %s pipeline error: %s", job_id, exc)
             await update_job_status(job_id, JobStatus.FAILED.value, error=str(exc))

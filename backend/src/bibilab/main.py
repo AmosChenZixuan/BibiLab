@@ -54,17 +54,13 @@ def make_lifespan(*, start_worker: bool) -> Callable[[], AsyncGenerator[None, No
 
 
 def create_app(*, start_worker: bool = True) -> FastAPI:
+    cfg = load_config()
     app = FastAPI(title="Bibilab Backend", lifespan=make_lifespan(start_worker=start_worker))
     web_dist = WEB_DIST
 
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=[
-            "http://localhost",
-            "http://localhost:5173",
-            "http://127.0.0.1",
-            "http://127.0.0.1:5173",
-        ],
+        allow_origins=cfg.backend.cors_origins,
         allow_methods=["*"],
         allow_headers=["*"],
     )
@@ -100,4 +96,5 @@ app = create_app()
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run(app, host="0.0.0.0", port=8765)
+    cfg = load_config()
+    uvicorn.run(app, host="0.0.0.0", port=cfg.backend.port)

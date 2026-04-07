@@ -69,6 +69,12 @@ class VisionConfig(BaseModel):
 class BackendConfig(BaseModel):
     port: int = 8765
     worker_concurrency: int = 1
+    cors_origins: list[str] = [
+        "http://localhost",
+        "http://localhost:5173",
+        "http://127.0.0.1",
+        "http://127.0.0.1:5173",
+    ]
 
 
 class BibilabConfig(BaseModel):
