@@ -3,6 +3,8 @@ import userEvent from "@testing-library/user-event";
 import { RouterProvider, createMemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
+import { LanguageProvider } from "@/app/LanguageContext";
+import { JobActivityProvider } from "@/components/jobs/JobActivityProvider";
 import { routes } from "@/app/routes";
 
 // ─── Per-test state (set inside each test) ───────────────────────────────────
@@ -168,7 +170,13 @@ describe("list detail page", () => {
   test("renders three-panel workspace with correct panel headings and skeleton text", async () => {
     makeMockFetch();
     const router = createMemoryRouter(routes, { initialEntries: ["/lists/list-1"] });
-    render(<RouterProvider router={router} />);
+    render(
+      <JobActivityProvider>
+        <LanguageProvider>
+          <RouterProvider router={router} />
+        </LanguageProvider>
+      </JobActivityProvider>,
+    );
 
     expect(screen.getByRole("heading", { name: /sources/i })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: /chat/i })).toBeInTheDocument();
@@ -190,7 +198,13 @@ describe("list detail page", () => {
     vi.mocked(api.listJobs).mockResolvedValue([]);
 
     const router = createMemoryRouter(routes, { initialEntries: ["/lists/list-1"] });
-    render(<RouterProvider router={router} />);
+    render(
+      <JobActivityProvider>
+        <LanguageProvider>
+          <RouterProvider router={router} />
+        </LanguageProvider>
+      </JobActivityProvider>,
+    );
 
     const nav = document.querySelector("nav");
     expect(nav).toBeInTheDocument();
@@ -238,7 +252,13 @@ describe("list detail page", () => {
     vi.mocked(api.listSources).mockResolvedValue([...state.sources]);
 
     const router = createMemoryRouter(routes, { initialEntries: ["/lists/list-1"] });
-    render(<RouterProvider router={router} />);
+    render(
+      <JobActivityProvider>
+        <LanguageProvider>
+          <RouterProvider router={router} />
+        </LanguageProvider>
+      </JobActivityProvider>,
+    );
 
     expect(await screen.findByRole("button", { name: /open existing source/i })).toBeInTheDocument();
 
@@ -296,7 +316,13 @@ describe("list detail page", () => {
     });
 
     const router = createMemoryRouter(routes, { initialEntries: ["/lists/list-1"] });
-    render(<RouterProvider router={router} />);
+    render(
+      <JobActivityProvider>
+        <LanguageProvider>
+          <RouterProvider router={router} />
+        </LanguageProvider>
+      </JobActivityProvider>,
+    );
 
     // 1. Source row button is visible
     const sourceBtn = await screen.findByRole("button", { name: /open existing source/i });

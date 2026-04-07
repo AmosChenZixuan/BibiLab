@@ -3,6 +3,8 @@ import userEvent from "@testing-library/user-event";
 import { RouterProvider, createMemoryRouter } from "react-router-dom";
 import { describe, expect, test, vi } from "vitest";
 
+import { LanguageProvider } from "@/app/LanguageContext";
+import { JobActivityProvider } from "@/components/jobs/JobActivityProvider";
 import { ListGrid } from "@/components/lists/ListGrid";
 import type { BibilabList } from "@/lib/types";
 
@@ -45,7 +47,13 @@ describe("ListGrid", () => {
       { initialEntries: ["/"] },
     );
 
-    render(<RouterProvider router={router} />);
+    render(
+      <JobActivityProvider>
+        <LanguageProvider>
+          <RouterProvider router={router} />
+        </LanguageProvider>
+      </JobActivityProvider>,
+    );
 
     await userEvent.click(screen.getByRole("button", { name: /new list/i }));
     expect(onCreate).toHaveBeenCalledTimes(1);

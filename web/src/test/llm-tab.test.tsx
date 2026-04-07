@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
+import { LanguageProvider } from "@/app/LanguageContext";
 import { LlmTab } from "@/components/settings/LlmTab";
 import type { BibilabConfig } from "@/lib/types";
 
@@ -23,7 +24,11 @@ afterEach(() => {
 
 describe("llm tab", () => {
   test("renders provider dropdown", () => {
-    render(<LlmTab config={baseConfig} onBlur={() => {}} />);
+    render(
+      <LanguageProvider>
+        <LlmTab config={baseConfig} onBlur={() => {}} />
+      </LanguageProvider>,
+    );
 
     expect(screen.getByLabelText(/provider/i)).toBeInTheDocument();
   });
@@ -31,7 +36,11 @@ describe("llm tab", () => {
   test("calls onBlur with updated config when model changes", () => {
     const onBlur = vi.fn();
 
-    render(<LlmTab config={baseConfig} onBlur={onBlur} />);
+    render(
+      <LanguageProvider>
+        <LlmTab config={baseConfig} onBlur={onBlur} />
+      </LanguageProvider>,
+    );
 
     fireEvent.change(screen.getByLabelText(/model/i), {
       target: { value: "gpt-4-turbo" },
@@ -48,7 +57,11 @@ describe("llm tab", () => {
   test("treats base url as required text, not nullable", () => {
     const onBlur = vi.fn();
 
-    render(<LlmTab config={baseConfig} onBlur={onBlur} />);
+    render(
+      <LanguageProvider>
+        <LlmTab config={baseConfig} onBlur={onBlur} />
+      </LanguageProvider>,
+    );
 
     fireEvent.change(screen.getByLabelText(/base url/i), {
       target: { value: "https://api.openai.com/v1" },
@@ -63,9 +76,13 @@ describe("llm tab", () => {
   });
 
   test("updates base url hint and placeholder by provider", () => {
-    render(<LlmTab config={baseConfig} onBlur={() => {}} />);
+    render(
+      <LanguageProvider>
+        <LlmTab config={baseConfig} onBlur={() => {}} />
+      </LanguageProvider>,
+    );
 
-    expect(screen.getByText(/official openai v1 base url/i)).toBeInTheDocument();
+    expect(screen.getByText(/Required\. Use your OpenAI API base URL/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/base url/i)).toHaveAttribute("placeholder", "https://api.openai.com/v1");
 
     fireEvent.change(screen.getByLabelText(/provider/i), {

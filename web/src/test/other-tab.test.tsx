@@ -1,6 +1,7 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, test } from "vitest";
 
+import { LanguageProvider } from "@/app/LanguageContext";
 import { OtherTab } from "@/components/settings/OtherTab";
 import type { HealthDependency, BibilabConfig } from "@/lib/types";
 
@@ -31,8 +32,15 @@ afterEach(() => {
 });
 
 describe("other tab", () => {
+  const renderTab = (props = {}) =>
+    render(
+      <LanguageProvider>
+        <OtherTab config={baseConfig} dependencies={healthDeps} onBlur={() => {}} {...props} />
+      </LanguageProvider>,
+    );
+
   test("shows backend connected status and worker concurrency together", () => {
-    render(<OtherTab config={baseConfig} dependencies={healthDeps} onBlur={() => {}} />);
+    renderTab();
 
     expect(screen.getByText(/backend api/i)).toBeInTheDocument();
     expect(screen.getByText(/localhost:8765/i)).toBeInTheDocument();
@@ -40,34 +48,30 @@ describe("other tab", () => {
   });
 
   test("shows ffmpeg ok indicator when installed", () => {
-    render(<OtherTab config={baseConfig} dependencies={healthDeps} onBlur={() => {}} />);
+    renderTab();
 
     expect(screen.getByText(/^ffmpeg$/i)).toBeInTheDocument();
     expect(screen.getByTitle(/ffmpeg installed/i)).toBeInTheDocument();
   });
 
   test("shows embedding model install path when ready", () => {
-    render(<OtherTab config={baseConfig} dependencies={healthDeps} onBlur={() => {}} />);
+    renderTab();
 
     expect(screen.getByText(/^Embedding Model$/i)).toBeInTheDocument();
     expect(screen.getByText(/\/home\/test\/\.bibilab\/chroma\/onnx\/model\.onnx/i)).toBeInTheDocument();
   });
 
   test("shows impact messaging for degraded and blocking dependencies", () => {
-    render(
-      <OtherTab
-        config={baseConfig}
-        dependencies={{
-          ...healthDeps,
-          embedding_model: {
-            status: "error",
-            message:
-              "Embedding model not found at /path/onnx/model.onnx. It downloads automatically on the first pipeline run (~50 MB).",
-          },
-        }}
-        onBlur={() => {}}
-      />,
-    );
+    renderTab({
+      dependencies: {
+        ...healthDeps,
+        embedding_model: {
+          status: "error",
+          message:
+            "Embedding model not found at /path/onnx/model.onnx. It downloads automatically on the first pipeline run (~50 MB).",
+        },
+      },
+    });
 
     expect(screen.getByText(/first processing run downloads embeddings before indexing/i)).toBeInTheDocument();
     expect(screen.getByText(/backend is offline, the web app cannot load or save configuration/i)).toBeInTheDocument();
@@ -75,19 +79,19 @@ describe("other tab", () => {
   });
 
   test("shows ffmpeg install path when installed", () => {
-    render(<OtherTab config={baseConfig} dependencies={healthDeps} onBlur={() => {}} />);
+    renderTab();
 
     expect(screen.getByText(/\/usr\/bin\/ffmpeg/i)).toBeInTheDocument();
   });
 
   test("does not render a session cookie field", () => {
-    render(<OtherTab config={baseConfig} dependencies={healthDeps} onBlur={() => {}} />);
+    renderTab();
 
     expect(screen.queryByLabelText(/session cookie/i)).not.toBeInTheDocument();
   });
 
   test("does not render vision settings", () => {
-    render(<OtherTab config={baseConfig} dependencies={healthDeps} onBlur={() => {}} />);
+    renderTab();
 
     expect(screen.queryByText(/^vision$/i)).not.toBeInTheDocument();
     expect(screen.queryByLabelText(/vision model/i)).not.toBeInTheDocument();

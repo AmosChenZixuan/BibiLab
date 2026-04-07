@@ -3,6 +3,8 @@ import userEvent from "@testing-library/user-event";
 import { RouterProvider, createMemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
+import { LanguageProvider } from "@/app/LanguageContext";
+import { JobActivityProvider } from "@/components/jobs/JobActivityProvider";
 import { routes } from "@/app/routes";
 
 function installFetchMock(handler: (input: RequestInfo | URL, init?: RequestInit) => Response | Promise<Response>) {
@@ -69,7 +71,13 @@ describe("home page", () => {
 
     const router = createMemoryRouter(routes, { initialEntries: ["/"] });
 
-    render(<RouterProvider router={router} />);
+    render(
+      <JobActivityProvider>
+        <LanguageProvider>
+          <RouterProvider router={router} />
+        </LanguageProvider>
+      </JobActivityProvider>,
+    );
 
     expect(screen.getByText(/loading lists/i)).toBeInTheDocument();
     const settingsLink = await screen.findByTitle("Degraded");
@@ -180,7 +188,13 @@ describe("home page", () => {
     });
 
     const router = createMemoryRouter(routes, { initialEntries: ["/"] });
-    render(<RouterProvider router={router} />);
+    render(
+      <JobActivityProvider>
+        <LanguageProvider>
+          <RouterProvider router={router} />
+        </LanguageProvider>
+      </JobActivityProvider>,
+    );
 
     await screen.findByRole("heading", { name: "Systems" });
 
@@ -276,7 +290,13 @@ describe("home page", () => {
     });
 
     const router = createMemoryRouter(routes, { initialEntries: ["/"] });
-    render(<RouterProvider router={router} />);
+    render(
+      <JobActivityProvider>
+        <LanguageProvider>
+          <RouterProvider router={router} />
+        </LanguageProvider>
+      </JobActivityProvider>,
+    );
 
     expect(await screen.findByRole("heading", { name: "Systems" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /job spirit/i })).not.toBeInTheDocument();
@@ -316,8 +336,14 @@ describe("home page", () => {
     });
 
     const router = createMemoryRouter(routes, { initialEntries: ["/"] });
-    render(<RouterProvider router={router} />);
+    render(
+      <JobActivityProvider>
+        <LanguageProvider>
+          <RouterProvider router={router} />
+        </LanguageProvider>
+      </JobActivityProvider>,
+    );
 
-    expect(await screen.findByText("Lists unavailable")).toBeInTheDocument();
+    expect(await screen.findByText("error.apiError")).toBeInTheDocument();
   });
 });

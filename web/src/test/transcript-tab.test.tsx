@@ -2,6 +2,7 @@ import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
+import { LanguageProvider } from "@/app/LanguageContext";
 import { TranscriptTab } from "@/components/settings/TranscriptTab";
 import type { HealthDependency, BibilabConfig } from "@/lib/types";
 import { JobActivityProvider } from "@/components/jobs/JobActivityProvider";
@@ -44,7 +45,9 @@ const healthDeps: Record<string, HealthDependency> = {
 function renderTab() {
   return render(
     <JobActivityProvider>
-      <TranscriptTab config={baseConfig} dependencies={healthDeps} onBlur={() => {}} />
+      <LanguageProvider>
+        <TranscriptTab config={baseConfig} dependencies={healthDeps} onBlur={() => {}} />
+      </LanguageProvider>
     </JobActivityProvider>,
   );
 }
@@ -67,7 +70,7 @@ describe("transcript tab", () => {
   test("shows download button for missing model", async () => {
     renderTab();
 
-    expect(await screen.findByRole("button", { name: /download large-v3/i })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /^download$/i })).toBeInTheDocument();
   });
 
   test("shows impact messaging for cuda and missing whisper models", async () => {
@@ -123,7 +126,7 @@ describe("transcript tab", () => {
 
     renderTab();
 
-    await userEvent.click(await screen.findByRole("button", { name: /download large-v3/i }));
+    await userEvent.click(await screen.findByRole("button", { name: /^download$/i }));
 
     await waitFor(() => {
       expect(screen.getByRole("status", { name: /downloading large-v3/i })).toBeInTheDocument();

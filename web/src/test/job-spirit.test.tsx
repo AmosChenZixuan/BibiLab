@@ -3,6 +3,8 @@ import userEvent from "@testing-library/user-event";
 import { RouterProvider, createMemoryRouter } from "react-router-dom";
 import { describe, expect, test, vi } from "vitest";
 
+import { LanguageProvider } from "@/app/LanguageContext";
+import { JobActivityProvider } from "@/components/jobs/JobActivityProvider";
 import { routes } from "@/app/routes";
 import type { Job } from "@/lib/types";
 
@@ -104,7 +106,13 @@ describe("job spirit", () => {
     });
 
     const router = createMemoryRouter(routes, { initialEntries: ["/lists/list-1"] });
-    render(<RouterProvider router={router} />);
+    render(
+      <JobActivityProvider>
+        <LanguageProvider>
+          <RouterProvider router={router} />
+        </LanguageProvider>
+      </JobActivityProvider>,
+    );
 
     expect(await screen.findByRole("heading", { name: /systems/i })).toBeInTheDocument();
     expect(await screen.findByRole("button", { name: /background jobs/i })).toBeInTheDocument();
