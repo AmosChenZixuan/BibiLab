@@ -65,7 +65,7 @@ export function TranscriptTab({ config, dependencies, onBlur }: TranscriptTabPro
     try {
       const nextModels = await api.listWhisperModels();
       if (!cancelled) {
-        setModels(nextModels);
+        setModels(nextModels ?? []);
       }
     } catch {
       if (!cancelled) {
@@ -111,6 +111,7 @@ export function TranscriptTab({ config, dependencies, onBlur }: TranscriptTabPro
     setDownloading(modelName);
     try {
       const response = await api.downloadWhisperModel(modelName);
+      if (!response) return;
       trackJobs([
         {
           id: response.job_id,

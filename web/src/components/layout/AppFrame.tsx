@@ -22,7 +22,7 @@ export function AppFrame() {
     async function loadHealth() {
       try {
         const next = await api.getHealth();
-        if (!cancelled) {
+        if (!cancelled && next) {
           setHealthTier(deriveOverallHealthTier(next));
         }
       } catch {

@@ -53,9 +53,9 @@ export function ListDetailPage() {
   const load = useCallback(async () => {
     try {
       const [lists, nextSources] = await Promise.all([api.listLists(), api.listSources(listId)]);
-      const current = lists.find((l) => l.id === listId);
+      const current = lists?.find((l) => l.id === listId);
       setListName(current?.name ?? t("lists.listWorkspace"));
-      setSources(nextSources);
+      setSources(nextSources ?? []);
       setLoadError(null);
     } catch (err) {
       setLoadError(toErrorMessageWithT(err, t));
@@ -72,7 +72,7 @@ export function ListDetailPage() {
     setSourceContent(null);
     void api.getSource(source.id).then((content) => {
       if (currentSourceIdRef.current !== source.id) return;
-      setSourceContent(content);
+      setSourceContent(content ?? null);
     }).catch(() => {
       setSourceContent(null);
     });
@@ -81,6 +81,7 @@ export function ListDetailPage() {
   async function handleRenameCommit(newName: string) {
     try {
       const updated = await api.updateList(listId, { name: newName });
+      if (!updated) return;
       setListName(updated.name);
     } catch {
       // On failure the portal reverts its own draft via the name prop
@@ -133,7 +134,7 @@ export function ListDetailPage() {
                     if (detailSource) {
                       void api.getSource(detailSource.id).then((content) => {
                         if (currentSourceIdRef.current !== detailSource.id) return;
-                        setSourceContent(content);
+                        setSourceContent(content ?? null);
                       });
                     }
                   }}

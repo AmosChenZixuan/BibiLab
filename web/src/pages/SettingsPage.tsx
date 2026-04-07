@@ -64,8 +64,10 @@ export function SettingsPage() {
           api.getHealth(),
         ]);
         if (!cancelled) {
-          setConfig(nextConfig);
-          setDependencies(nextHealth.dependencies ?? {});
+          setConfig(nextConfig ?? null);
+          if (nextHealth) {
+            setDependencies(nextHealth.dependencies ?? {});
+          }
           setLoadError(null);
         }
       } catch (error) {
@@ -91,12 +93,15 @@ export function SettingsPage() {
     }
 
     const savedConfig = await api.putConfig(nextConfig);
+    if (!savedConfig) return;
     setConfig(savedConfig);
 
     if (shouldRefreshHealth(config, nextConfig)) {
       const nextHealth = await api.getHealth();
-      setDependencies(nextHealth.dependencies ?? {});
-      notifyHealthChanged(nextHealth);
+      if (nextHealth) {
+        setDependencies(nextHealth.dependencies ?? {});
+        notifyHealthChanged(nextHealth);
+      }
     }
   }
 

@@ -193,7 +193,7 @@ export function JobActivityProvider({ children }: { children: React.ReactNode })
     const task = (async () => {
       try {
         const nextJobs = await api.listJobs();
-        setJobsById((current) => mergeJobs(current, trackedJobsRef.current, nextJobs));
+        setJobsById((current) => mergeJobs(current, trackedJobsRef.current, nextJobs ?? []));
         setErrorMessage(null);
       } catch (error) {
         setErrorMessage(toErrorMessage(error));

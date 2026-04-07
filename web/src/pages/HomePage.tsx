@@ -30,7 +30,7 @@ export function HomePage() {
       try {
         const nextLists = await api.listLists();
         if (!cancelled) {
-          setLists(nextLists);
+          setLists(nextLists ?? []);
         }
       } catch (nextError) {
         if (!cancelled) {
@@ -53,6 +53,7 @@ export function HomePage() {
     setError(null);
     try {
       const created = await api.createList(t("home.untitledList"));
+      if (!created) return;
       setLists((current) => [created, ...current]);
     } catch (nextError) {
       setError(toErrorMessageWithT(nextError, t));
@@ -90,6 +91,7 @@ export function HomePage() {
     setError(null);
     try {
       const updated = await api.updateList(renameTarget.id, { name: trimmed });
+      if (!updated) return;
       updateLocalList(updated);
       setRenameTarget(null);
     } catch (nextError) {
@@ -105,7 +107,7 @@ export function HomePage() {
     setError(null);
     try {
       const sources = await api.listSources(list.id);
-      setThumbnailSources(sources);
+      setThumbnailSources(sources ?? []);
     } catch (nextError) {
       setError(toErrorMessageWithT(nextError, t));
     } finally {
@@ -123,6 +125,7 @@ export function HomePage() {
       const updated = await api.updateList(thumbnailTarget.id, {
         thumbnail_source_id: thumbnailSourceId,
       });
+      if (!updated) return;
       updateLocalList(updated);
       setThumbnailTarget(null);
     } catch (nextError) {

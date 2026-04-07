@@ -27,7 +27,7 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+async function request<T>(path: string, init?: RequestInit & { signal?: AbortSignal }): Promise<T | undefined> {
   const response = await fetch(`/api${path}`, {
     headers: {
       "Content-Type": "application/json",
@@ -37,12 +37,12 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   });
 
   if (!response.ok) {
-    const body = (await response.json().catch(() => ({}))) as { detail?: ApiErrorDetail };
-    throw new ApiError(response.status, body.detail ?? "Request failed");
+    const body = (await response.json().catch(() => null)) as { detail?: ApiErrorDetail } | null;
+    throw new ApiError(response.status, body?.detail ?? (response.statusText || "Request failed"));
   }
 
   if (response.status === 204) {
-    return undefined as T;
+    return undefined;
   }
 
   return response.json() as Promise<T>;

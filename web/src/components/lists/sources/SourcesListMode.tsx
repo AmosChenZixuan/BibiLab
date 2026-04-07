@@ -180,7 +180,7 @@ export function SourcesListMode({
       try {
         const next = await api.listSources(listId);
         if (cancelled) return;
-        setCurrentSources(next);
+        setCurrentSources(next ?? []);
         for (const { job } of completed) {
           setRefreshedJobs((prev) => [...prev, job.id]);
           await dismissJob(job.id);
@@ -203,6 +203,7 @@ export function SourcesListMode({
     setError(null);
     try {
       const result = await api.ingestUrl(listId, trimmed);
+      if (!result) return;
       trackJobs(
         result.queued.map((id) => ({
           id,
