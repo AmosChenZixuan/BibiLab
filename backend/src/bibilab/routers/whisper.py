@@ -1,6 +1,6 @@
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 
-from bibilab.config import load_config
+from bibilab.config import BibilabConfig, get_config
 from bibilab.db import create_job
 from bibilab.models.whisper import (
     WhisperModelDownloadRequest,
@@ -16,8 +16,8 @@ router = APIRouter()
 
 
 @router.get("/models/whisper")
-async def list_whisper_models() -> list[WhisperModelInfo]:
-    selected_model = load_config().transcription.model_size
+async def list_whisper_models(cfg: BibilabConfig = Depends(get_config)) -> list[WhisperModelInfo]:
+    selected_model = cfg.transcription.model_size
     return [
         WhisperModelInfo(
             name=name,

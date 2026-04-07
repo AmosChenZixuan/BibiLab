@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 import bibilab.config
+from bibilab.models.jobs import JobStatus
 
 
 def get_db_path() -> Path:
@@ -376,22 +377,31 @@ async def delete_job(job_id: str) -> None:
 
 
 async def get_pending_jobs() -> list[sqlite3.Row]:
+    active_statuses = (
+        f"'{JobStatus.QUEUED.value}', "
+        f"'{JobStatus.DOWNLOADING.value}', "
+        f"'{JobStatus.TRANSCRIBING.value}', "
+        f"'{JobStatus.PROCESSING.value}'"
+    )
     async with get_db() as db:
         return db.execute(
-            """
+            f"""
             SELECT * FROM jobs
-            WHERE status IN ('queued', 'downloading', 'transcribing', 'processing')
+            WHERE status IN ({active_statuses})
             ORDER BY created_at ASC
             """
         ).fetchall()
 
 
 async def reset_stuck_jobs() -> None:
+    stuck_statuses = (
+        f"'{JobStatus.DOWNLOADING.value}', '{JobStatus.TRANSCRIBING.value}', '{JobStatus.PROCESSING.value}'"
+    )
     async with get_db() as db:
         db.execute(
-            """
-            UPDATE jobs SET status='queued', updated_at=?
-            WHERE status IN ('downloading', 'transcribing', 'processing')
+            f"""
+            UPDATE jobs SET status='{JobStatus.QUEUED.value}', updated_at=?
+            WHERE status IN ({stuck_statuses})
             """,
             (_now(),),
         )

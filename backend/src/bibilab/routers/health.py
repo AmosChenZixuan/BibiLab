@@ -1,9 +1,9 @@
 import shutil
 
 import httpx
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
-from bibilab.config import load_config
+from bibilab.config import BibilabConfig, get_config
 from bibilab.pipeline.embed import _embedding_model_dir, is_embedding_model_downloaded
 from bibilab.whisper_models import is_whisper_model_downloaded, whisper_model_dir
 
@@ -102,8 +102,7 @@ def _check_embedding_model() -> dict:
 
 
 @router.get("/health")
-async def health() -> dict:
-    cfg = load_config()
+async def health(cfg: BibilabConfig = Depends(get_config)) -> dict:
 
     deps = {
         "backend": {"status": "ok", "message": ""},

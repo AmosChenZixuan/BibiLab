@@ -8,6 +8,7 @@ class JobStatus(StrEnum):
     QUEUED = "queued"
     DOWNLOADING = "downloading"
     TRANSCRIBING = "transcribing"
+    PROCESSING = "processing"
     EXTRACTING = "extracting"
     WRITING = "writing"
     DONE = "done"

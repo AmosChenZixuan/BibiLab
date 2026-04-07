@@ -22,6 +22,7 @@ from bibilab.db import (
     update_source_digest,
     write_source,
 )
+from bibilab.models.jobs import JobStatus
 from bibilab.pipeline.audio import PipelineError, extract_audio
 from bibilab.pipeline.chunk import chunk_segments
 from bibilab.pipeline.digest import DigestResult, digest
@@ -30,6 +31,16 @@ from bibilab.pipeline.transcribe import transcribe, write_transcript
 from bibilab.whisper_models import download_whisper_model
 
 logger = logging.getLogger(__name__)
+
+# Lazy singleton for BilibiliAdapter (avoids per-request instantiation)
+_bilibili_adapter: BilibiliAdapter | None = None
+
+
+def _get_bilibili_adapter() -> BilibiliAdapter:
+    global _bilibili_adapter
+    if _bilibili_adapter is None:
+        _bilibili_adapter = BilibiliAdapter(cookie=load_config().accounts.bilibili.cookie)
+    return _bilibili_adapter
 
 
 def _download_cover(cover_url: str, dest: Path) -> bool:
@@ -81,7 +92,9 @@ class WorkerLoop:
         while self._running:
             if len(self._in_flight) < self._concurrency:
                 pending = [dict(j) for j in await get_pending_jobs()]
-                queued = [j for j in pending if j["status"] == "queued" and j["id"] not in self._in_flight]
+                queued = [
+                    j for j in pending if j["status"] == JobStatus.QUEUED.value and j["id"] not in self._in_flight
+                ]
                 slots = self._concurrency - len(self._in_flight)
                 for job in queued[:slots]:
                     self._in_flight.add(job["id"])
@@ -109,13 +122,13 @@ class WorkerLoop:
 
         except AuthRequiredError as exc:
             logger.warning("Job %s needs auth (%s)", job_id, exc.resource_type)
-            await update_job_status(job_id, "needs_auth", error=exc.resource_type)
+            await update_job_status(job_id, JobStatus.NEEDS_AUTH.value, error=exc.resource_type)
         except PipelineError as exc:
             logger.error("Job %s pipeline error: %s", job_id, exc)
-            await update_job_status(job_id, "failed", error=str(exc))
+            await update_job_status(job_id, JobStatus.FAILED.value, error=str(exc))
         except Exception as exc:
             logger.exception("Job %s failed", job_id)
-            await update_job_status(job_id, "failed", error=str(exc))
+            await update_job_status(job_id, JobStatus.FAILED.value, error=str(exc))
         finally:
             self._in_flight.discard(job_id)
             self._cancelled.discard(job_id)
@@ -126,13 +139,17 @@ class WorkerLoop:
         model_family = meta_raw.get("model_family", "")
         model_size = meta_raw.get("model_size", "")
 
-        await update_job_status(job_id, "downloading", progress=10)
+        await update_job_status(job_id, JobStatus.DOWNLOADING.value, progress=10)
         if model_family != "whisper":
             raise PipelineError(f"Unsupported model family {model_family!r}")
 
         await asyncio.to_thread(download_whisper_model, model_size)
-        await update_job_status(job_id, "done", progress=100)
+        await update_job_status(job_id, JobStatus.DONE.value, progress=100)
         logger.info("Model download job %s completed for %s:%s", job_id, model_family, model_size)
+
+    # -------------------------------------------------------------------------
+    # Pipeline stages (digest-only)
+    # -------------------------------------------------------------------------
 
     async def _pipeline_digest_only(self, job: dict) -> None:
         job_id = job["id"]
@@ -140,7 +157,7 @@ class WorkerLoop:
         source_id = meta_raw["source_id"]
         cfg = load_config()
 
-        await update_job_status(job_id, "processing", progress=40)
+        await update_job_status(job_id, JobStatus.PROCESSING.value, progress=40)
         source = await get_source(source_id)
         if source is None:
             raise PipelineError(f"Source {source_id!r} not found")
@@ -166,7 +183,11 @@ class WorkerLoop:
             meta_raw.get("ui_lang"),
         )
         await update_source_digest(source_id, extraction.summary, extraction.keywords)
-        await update_job_status(job_id, "done", progress=100)
+        await update_job_status(job_id, JobStatus.DONE.value, progress=100)
+
+    # -------------------------------------------------------------------------
+    # Pipeline stages (full ingest)
+    # -------------------------------------------------------------------------
 
     async def _pipeline(self, job: dict) -> None:
         job_id = job["id"]
@@ -191,16 +212,62 @@ class WorkerLoop:
             uploader=meta_raw.get("uploader", ""),
         )
 
-        # 1. Download
-        await update_job_status(job_id, "downloading", progress=10)
+        # Stage 1: Download
+        video_path = await self._stage_download(job_id, video_meta, source_id)
+        if video_path is None:
+            return  # cancelled
+
+        # Stage 2: Audio extraction
+        wav_path = await self._stage_extract_audio(job_id, video_path)
+        if wav_path is None:
+            return  # cancelled
+
+        # Stage 3: Transcription
+        result = await self._stage_transcribe(job_id, wav_path, source_id, cfg)
+        if result is None:
+            return  # cancelled
+        segments, detected_language, transcript_path = result
+
+        # Stage 4: Chunk, digest + embed in parallel
+        extraction = await self._stage_process(job_id, job, segments, video_meta, list_id, cfg, transcript_path)
+        if extraction is None:
+            return  # cancelled
+
+        # Stage 5: Persist + cleanup
+        await self._stage_persist(
+            job_id,
+            source_id,
+            video_id,
+            video_meta,
+            list_id,
+            extraction,
+            detected_language,
+            cfg,
+            transcript_path,
+        )
+        await update_job_status(job_id, JobStatus.DONE.value, progress=100)
+        logger.info("Job %s completed for video %s", job_id, video_id)
+
+    async def _stage_download(
+        self,
+        job_id: str,
+        video_meta: VideoMeta,
+        source_id: str,
+    ) -> Path | None:
+        """Stage 1: Download video file and cover image."""
+        await update_job_status(job_id, JobStatus.DOWNLOADING.value, progress=10)
         if job_id in self._cancelled:
             self._cancelled.discard(job_id)
-            await asyncio.to_thread(cleanup_job_artifacts, job)
+            await asyncio.to_thread(cleanup_job_artifacts, {"id": job_id})
             await delete_job(job_id)
-            return
+            return None
 
-        adapter = BilibiliAdapter(cookie=cfg.accounts.bilibili.cookie)
-        video_path: Path = await asyncio.to_thread(adapter.download, video_id, video_meta.source_url)
+        adapter = _get_bilibili_adapter()
+        video_path: Path = await asyncio.to_thread(
+            adapter.download,
+            video_meta.video_id,
+            video_meta.source_url,
+        )
 
         # Download cover
         covers_dir = bibilab_home() / "covers"
@@ -211,24 +278,53 @@ class WorkerLoop:
         except Exception:
             logger.warning("Job %s: failed to download cover, continuing without local cover", job_id)
 
-        # 2. Audio extraction
-        await update_job_status(job_id, "transcribing", progress=25)
-        wav_path: Path = await asyncio.to_thread(extract_audio, video_path)
+        return video_path
 
-        # 3. Transcription
+    async def _stage_extract_audio(
+        self,
+        job_id: str,
+        video_path: Path,
+    ) -> Path | None:
+        """Stage 2: Extract audio from downloaded video."""
+        await update_job_status(job_id, JobStatus.TRANSCRIBING.value, progress=25)
+        return await asyncio.to_thread(extract_audio, video_path)
+
+    async def _stage_transcribe(
+        self,
+        job_id: str,
+        wav_path: Path,
+        source_id: str,
+        cfg,
+    ) -> tuple | None:
+        """Stage 3: Transcribe audio and write transcript file."""
+        await update_job_status(job_id, JobStatus.TRANSCRIBING.value, progress=30)
         segments, detected_language = await asyncio.to_thread(transcribe, wav_path, cfg.transcription)
         transcript_path = write_transcript(segments, source_id)
         wav_path.unlink(missing_ok=True)
 
         if job_id in self._cancelled:
             self._cancelled.discard(job_id)
-            await asyncio.to_thread(cleanup_job_artifacts, job)
+            await asyncio.to_thread(cleanup_job_artifacts, {"id": job_id})
             await delete_job(job_id)
-            return
+            return None
 
-        # 4. Chunking + parallel digest + embed
-        await update_job_status(job_id, "processing", progress=40)
+        return segments, detected_language, transcript_path
+
+    async def _stage_process(
+        self,
+        job_id: str,
+        job: dict,
+        segments,
+        video_meta: VideoMeta,
+        list_id: str,
+        cfg,
+        transcript_path: Path,
+    ) -> DigestResult | None:
+        """Stage 4: Chunk segments, run digest + embed in parallel."""
+        await update_job_status(job_id, JobStatus.PROCESSING.value, progress=40)
         chunks = chunk_segments(segments)
+
+        meta_raw = _parse_job_meta(job)
         transcript_text = transcript_path.read_text(encoding="utf-8")
 
         async def _digest():
@@ -251,9 +347,23 @@ class WorkerLoop:
             self._cancelled.discard(job_id)
             await asyncio.to_thread(cleanup_job_artifacts, job)
             await delete_job(job_id)
-            return
+            return None
 
-        # 5. Persist processed source metadata
+        return extraction
+
+    async def _stage_persist(
+        self,
+        job_id: str,
+        source_id: str,
+        video_id: str,
+        video_meta: VideoMeta,
+        list_id: str,
+        extraction: DigestResult,
+        detected_language: str,
+        cfg,
+        transcript_path: Path,
+    ) -> None:
+        """Stage 5: Persist processed source metadata and cleanup downloads."""
         await write_source(
             source_id=source_id,
             video_id=video_id,
@@ -274,9 +384,6 @@ class WorkerLoop:
             settings_snapshot=cfg.model_dump(),
         )
 
-        # 6. Cleanup downloads
+        # Cleanup downloads
         for path in (bibilab_home() / "downloads").glob(f"{video_id}.*"):
             path.unlink(missing_ok=True)
-
-        await update_job_status(job_id, "done", progress=100)
-        logger.info("Job %s completed for video %s", job_id, video_id)

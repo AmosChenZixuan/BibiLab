@@ -80,6 +80,11 @@ def load_config() -> BibilabConfig:
     return _config_cache
 
 
+def get_config() -> BibilabConfig:
+    """FastAPI dependency that returns the cached config."""
+    return load_config()
+
+
 def save_config(cfg: BibilabConfig) -> None:
     global _config_cache
     path = _config_path()
