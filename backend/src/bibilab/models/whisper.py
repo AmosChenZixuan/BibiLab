@@ -13,6 +13,9 @@ class WhisperModelDownloadRequest(BaseModel):
 
 
 class WhisperModelDownloadResponse(BaseModel):
-    name: str
-    path: str
-    selected: bool
+    """Response model for Whisper model download endpoint."""
+
+    job_id: str
+    status: str
+    model_family: str
+    model_size: str

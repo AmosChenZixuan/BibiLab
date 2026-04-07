@@ -5,6 +5,7 @@ import json
 import logging
 import uuid
 from pathlib import Path
+from typing import Any
 
 import httpx
 
@@ -55,7 +56,7 @@ def _download_cover(cover_url: str, dest: Path) -> bool:
         return False
 
 
-def _parse_job_meta(job: dict) -> dict:
+def _parse_job_meta(job: dict) -> dict[str, Any]:
     meta = job.get("meta", {})
     if isinstance(meta, str):
         return json.loads(meta or "{}")

@@ -4,6 +4,7 @@ from bibilab.config import BibilabConfig, get_config
 from bibilab.db import create_job
 from bibilab.models.whisper import (
     WhisperModelDownloadRequest,
+    WhisperModelDownloadResponse,
     WhisperModelInfo,
 )
 from bibilab.whisper_models import (
@@ -33,7 +34,7 @@ async def list_whisper_models(cfg: BibilabConfig = Depends(get_config)) -> list[
     "/models/whisper/download",
     status_code=status.HTTP_202_ACCEPTED,
 )
-async def download_whisper(req: WhisperModelDownloadRequest) -> dict:
+async def download_whisper(req: WhisperModelDownloadRequest) -> WhisperModelDownloadResponse:
     if req.model_size not in SUPPORTED_WHISPER_MODELS:
         raise HTTPException(
             status_code=400,
@@ -47,9 +48,9 @@ async def download_whisper(req: WhisperModelDownloadRequest) -> dict:
             "model_size": req.model_size,
         },
     )
-    return {
-        "job_id": job_id,
-        "status": "queued",
-        "model_family": "whisper",
-        "model_size": req.model_size,
-    }
+    return WhisperModelDownloadResponse(
+        job_id=job_id,
+        status="queued",
+        model_family="whisper",
+        model_size=req.model_size,
+    )
