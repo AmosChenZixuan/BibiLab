@@ -28,7 +28,7 @@ export function LlmTab({ config, onBlur }: LlmTabProps) {
 
   useEffect(() => {
     setLocalAi(config.ai);
-  }, [config]);
+  }, [config.ai]);
 
   function handleBlur() {
     onBlur({ ...config, ai: localAi });

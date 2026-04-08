@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useState, type ReactNode } from "react";
 
 import en from "@/lib/i18n/en.json";
 import zh from "@/lib/i18n/zh.json";
@@ -52,10 +52,13 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
     localStorage.setItem("bibilab-lang", nextLang);
   }
 
-  function t(key: string, params?: Record<string, string | number>): string {
-    const value = getNestedValue(dictionaries[lang], key);
-    return interpolate(value, params);
-  }
+  const t = useCallback(
+    (key: string, params?: Record<string, string | number>): string => {
+      const value = getNestedValue(dictionaries[lang], key);
+      return interpolate(value, params);
+    },
+    [lang],
+  );
 
   return <LanguageContext.Provider value={{ lang, setLang, t }}>{children}</LanguageContext.Provider>;
 }

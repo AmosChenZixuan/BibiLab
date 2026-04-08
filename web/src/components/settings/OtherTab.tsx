@@ -20,7 +20,7 @@ export function OtherTab({ config, dependencies, onBlur }: OtherTabProps) {
     setLocal({
       workerConcurrency: config.backend.worker_concurrency,
     });
-  }, [config]);
+  }, [config.backend.worker_concurrency]);
 
   function handleBlur() {
     onBlur({

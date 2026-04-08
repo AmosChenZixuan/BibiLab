@@ -1,4 +1,4 @@
-import { useEffect, useId, useState } from "react";
+import { useCallback, useEffect, useId, useState } from "react";
 
 import { useLanguage } from "@/app/LanguageContext";
 import { useJobActivity } from "@/components/jobs/JobActivityProvider";
@@ -59,9 +59,9 @@ export function TranscriptTab({ config, dependencies, onBlur }: TranscriptTabPro
 
   useEffect(() => {
     setLocalTranscription(config.transcription);
-  }, [config]);
+  }, [config.transcription]);
 
-  async function refreshModels(signal?: AbortSignal) {
+  const refreshModels = useCallback(async (signal?: AbortSignal) => {
     try {
       const nextModels = await createApiClient().listWhisperModels({ signal });
       setModels(nextModels ?? []);
@@ -69,7 +69,7 @@ export function TranscriptTab({ config, dependencies, onBlur }: TranscriptTabPro
       if (err instanceof Error && err.name === "AbortError") return;
       setModels([]);
     }
-  }
+  }, []);
 
   useEffect(() => {
     const controller = new AbortController();

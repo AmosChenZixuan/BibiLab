@@ -1,4 +1,4 @@
-import { ReactNode, useId, useRef, useEffect } from "react";
+import { ReactNode, useCallback, useId, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 
 type ModalProps = {
@@ -31,9 +31,9 @@ export function Modal({ open, onClose, title, children, footer, size = "md" }: M
   const previousActiveElement = useRef<HTMLElement | null>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
 
-  const getFocusableElements = (container: HTMLElement) => {
+  const getFocusableElements = useCallback((container: HTMLElement) => {
     return Array.from(container.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTORS));
-  };
+  }, []);
 
   // Handle ESC key and focus trap
   useEffect(() => {
