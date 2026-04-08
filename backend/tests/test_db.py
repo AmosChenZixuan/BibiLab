@@ -16,8 +16,9 @@ async def test_lists_table_exists(tmp_bibilab_home: Path):
 
     await bootstrap_db()
     async with get_db() as db:
-        cur = db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='lists'")
-        assert cur.fetchone() is not None
+        cursor = await db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='lists'")
+        row = await cursor.fetchone()
+        assert row is not None
 
 
 @pytest.mark.asyncio
@@ -26,8 +27,9 @@ async def test_sources_table_exists(tmp_bibilab_home: Path):
 
     await bootstrap_db()
     async with get_db() as db:
-        cur = db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='sources'")
-        assert cur.fetchone() is not None
+        cursor = await db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='sources'")
+        row = await cursor.fetchone()
+        assert row is not None
 
 
 @pytest.mark.asyncio
@@ -36,7 +38,9 @@ async def test_jobs_table_uses_meta_for_source_fields(tmp_bibilab_home: Path):
 
     await bootstrap_db()
     async with get_db() as db:
-        columns = [row[1] for row in db.execute("PRAGMA table_info(jobs)").fetchall()]
+        cursor = await db.execute("PRAGMA table_info(jobs)")
+        rows = await cursor.fetchall()
+        columns = [row[1] for row in rows]
 
     assert "meta" in columns
     assert "source_url" not in columns
@@ -195,7 +199,8 @@ async def test_sources_unique_constraint(tmp_bibilab_home: Path):
 
     # Verify two rows exist (one per list)
     async with get_db() as db:
-        rows = db.execute("SELECT * FROM sources WHERE video_id='BV1abc'").fetchall()
+        cursor = await db.execute("SELECT * FROM sources WHERE video_id='BV1abc'")
+        rows = await cursor.fetchall()
     assert len(rows) == 2
     source_ids = {row["id"] for row in rows}
     assert source_id_1 in source_ids
@@ -224,7 +229,8 @@ async def test_sources_unique_constraint(tmp_bibilab_home: Path):
     )
 
     async with get_db() as db:
-        rows = db.execute("SELECT * FROM sources WHERE video_id='BV1abc'").fetchall()
+        cursor = await db.execute("SELECT * FROM sources WHERE video_id='BV1abc'")
+        rows = await cursor.fetchall()
     assert len(rows) == 2  # Still only 2 rows
     # The first row (list-1) should be updated
     list1_row = next(row for row in rows if row["list_id"] == "list-1")
