@@ -162,11 +162,7 @@ export function SourcesListMode({
   const ingestJobs = getJobs("ingest", listId);
   const [refreshedJobs, setRefreshedJobs] = useState<string[]>([]);
 
-  const [currentSources, setCurrentSources] = useState(sources);
-
-  useEffect(() => {
-    setCurrentSources(sources);
-  }, [sources]);
+  const [currentSources, setCurrentSources] = useState<Source[]>(sources);
 
   // When a job flips to done, refresh sources and dismiss
   useEffect(() => {
