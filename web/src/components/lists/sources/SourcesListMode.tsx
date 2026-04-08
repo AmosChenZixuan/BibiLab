@@ -4,7 +4,7 @@ import { ArrowRight, X, Trash2, AlertCircle, MoreVertical } from "lucide-react";
 import { useLanguage } from "@/app/LanguageContext";
 import { ContextMenu } from "@/components/ui/ContextMenu";
 import { useJobActivity } from "@/components/jobs/JobActivityProvider";
-import { createApiClient, toErrorMessageWithT } from "@/lib/api";
+import { api, toErrorMessageWithT } from "@/lib/api";
 import type { Source } from "@/lib/types";
 
 export const PIPELINE_STAGES = [
@@ -172,7 +172,7 @@ export function SourcesListMode({
     let cancelled = false;
     async function refresh() {
       try {
-        const next = await createApiClient().listSources(listId);
+        const next = await api.listSources(listId);
         if (cancelled) return;
         setCurrentSources(next ?? []);
         for (const { job } of completed) {
@@ -196,7 +196,7 @@ export function SourcesListMode({
     setUrl("");
     setError(null);
     try {
-      const result = await createApiClient().ingestUrl(listId, trimmed);
+      const result = await api.ingestUrl(listId, trimmed);
       if (!result) return;
       trackJobs(
         result.queued.map((id) => ({
@@ -213,7 +213,7 @@ export function SourcesListMode({
   }, [listId, t, trackJobs, url]);
 
   const handleDelete = useCallback(async (source: Source) => {
-    await createApiClient().deleteSource(listId, source.id);
+    await api.deleteSource(listId, source.id);
     setCurrentSources((prev) => prev.filter((s) => s.id !== source.id));
   }, [listId]);
 

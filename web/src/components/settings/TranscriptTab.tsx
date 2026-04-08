@@ -3,7 +3,7 @@ import { useCallback, useEffect, useId, useState } from "react";
 import { useLanguage } from "@/app/LanguageContext";
 import { useJobActivity } from "@/components/jobs/JobActivityProvider";
 import type { JobActivityItem } from "@/components/jobs/JobActivityProvider";
-import { createApiClient } from "@/lib/api";
+import { api } from "@/lib/api";
 import type { HealthDependency, BibilabConfig, WhisperModel } from "@/lib/types";
 import { Download } from "lucide-react";
 
@@ -63,7 +63,7 @@ export function TranscriptTab({ config, dependencies, onBlur }: TranscriptTabPro
 
   const refreshModels = useCallback(async (signal?: AbortSignal) => {
     try {
-      const nextModels = await createApiClient().listWhisperModels({ signal });
+      const nextModels = await api.listWhisperModels({ signal });
       setModels(nextModels ?? []);
     } catch (err) {
       if (err instanceof Error && err.name === "AbortError") return;
@@ -104,7 +104,7 @@ export function TranscriptTab({ config, dependencies, onBlur }: TranscriptTabPro
   async function handleDownload(modelName: string) {
     setDownloading(modelName);
     try {
-      const response = await createApiClient().downloadWhisperModel(modelName);
+      const response = await api.downloadWhisperModel(modelName);
       if (!response) return;
       trackJobs([
         {

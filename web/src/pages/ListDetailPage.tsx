@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { Minimize2, ArrowLeftToLine, ArrowRightToLine} from 'lucide-react';
 import { useLanguage } from "@/app/LanguageContext";
-import { createApiClient, toErrorMessageWithT } from "@/lib/api";
+import { api, toErrorMessageWithT } from "@/lib/api";
 import type { Source, SourceContent } from "@/lib/types";
 
 import { usePanelResize, Resizer, COLLAPSED_PANEL } from "@/components/lists/panel-resize";
@@ -50,8 +50,8 @@ export function ListDetailPage() {
   const load = useCallback(async (signal?: AbortSignal) => {
     try {
       const [lists, nextSources] = await Promise.all([
-        createApiClient().listLists({ signal }),
-        createApiClient().listSources(listId, { signal }),
+        api.listLists({ signal }),
+        api.listSources(listId, { signal }),
       ]);
       const current = lists?.find((l) => l.id === listId);
       setListName(current?.name ?? t("lists.listWorkspace"));
@@ -86,7 +86,7 @@ export function ListDetailPage() {
     }
     const controller = new AbortController();
     openSourceControllerRef.current = controller;
-    void createApiClient().getSource(source.id, { signal: controller.signal }).then((content) => {
+    void api.getSource(source.id, { signal: controller.signal }).then((content) => {
       if (currentSourceIdRef.current !== source.id) return;
       setSourceContent(content ?? null);
     }).catch(() => {
@@ -96,7 +96,7 @@ export function ListDetailPage() {
 
   async function handleRenameCommit(newName: string) {
     try {
-      const updated = await createApiClient().updateList(listId, { name: newName });
+      const updated = await api.updateList(listId, { name: newName });
       if (!updated) return;
       setListName(updated.name);
     } catch {
@@ -147,7 +147,7 @@ export function ListDetailPage() {
                   sourceContent={sourceContent}
                   onRefresh={() => {
                     if (detailSource) {
-                      void createApiClient().getSource(detailSource.id).then((content) => {
+                      void api.getSource(detailSource.id).then((content) => {
                         if (currentSourceIdRef.current !== detailSource.id) return;
                         setSourceContent(content ?? null);
                       });
