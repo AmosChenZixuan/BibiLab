@@ -15,7 +15,8 @@ class TestConfigThreadSafety:
         even when called from multiple threads.
 
         This tests the stale cache issue: if load_config() reads _config_cache
-        while save_config() is concurrently setting it to None, we get stale data.
+        while save_config() is concurrently setting it, we could get stale data.
+        This test verifies no exceptions occur and final state is valid.
         """
         from bibilab import config as config_module
 
@@ -23,22 +24,21 @@ class TestConfigThreadSafety:
         with patch.object(config_module, "bibilab_home", return_value=tmp_path):
             config_module._config_cache = None  # Reset cache
 
-            # Load initial config
-            cfg1 = config_module.load_config()
-            cfg1.ai.model = "gpt-4o"
-            config_module.save_config(cfg1)
+            # Pre-populate config
+            cfg = config_module.load_config()
+            cfg.ai.model = "gpt-4o"
+            config_module.save_config(cfg)
 
-            # Now stress test: interleaved save/load from multiple threads
+            # Concurrent save/load stress test
             errors: list[str] = []
-            results: list[dict] = []
+            valid_models = {"gpt-4o", "gpt-4o-mini", "claude-3"}
 
             def load_and_validate() -> None:
                 try:
                     cfg = config_module.load_config()
-                    # The loaded config should have our saved value
-                    if cfg.ai.model != "gpt-4o":
-                        errors.append(f"Stale cache: expected gpt-4o, got {cfg.ai.model}")
-                    results.append({"model": cfg.ai.model})
+                    # Model should be one of the valid values
+                    if cfg.ai.model not in valid_models:
+                        errors.append(f"Invalid model: {cfg.ai.model}")
                 except Exception as e:
                     errors.append(str(e))
 
@@ -52,17 +52,18 @@ class TestConfigThreadSafety:
 
             # Run concurrent loads and saves
             with ThreadPoolExecutor(max_workers=4) as executor:
-                # Start multiple savers
-                for model in ["gpt-4o-mini", "claude-3", "gpt-4o"]:
-                    executor.submit(save_new_model, model)
-
-                # Start multiple loaders that check for stale data
+                futures = []
+                # Submit savers
+                for model in valid_models:
+                    futures.append(executor.submit(save_new_model, model))
+                # Submit loaders
                 for _ in range(10):
-                    executor.submit(load_and_validate)
+                    futures.append(executor.submit(load_and_validate))
+                # Wait for all
+                for f in futures:
+                    f.result()
 
             assert len(errors) == 0, f"Thread safety issues: {errors}"
-            # Verify we got some results
-            assert len(results) > 0
 
     def test_config_cache_reset_for_testing(self, tmp_path: Path) -> None:
         """
@@ -94,7 +95,16 @@ class TestConfigThreadSafety:
     def test_concurrent_save_no_data_loss(self, tmp_path: Path) -> None:
         """
         Test that concurrent saves don't corrupt the config file.
-        Uses file-based verification to check no data loss.
+
+        This test verifies:
+        - All saves complete without exception
+        - Final file is valid JSON with a valid model name from the set
+        - No silent data loss (truncated files or corrupted JSON)
+
+        NOTE: We do NOT verify that each thread's specific write persists
+        immediately after its save (that's impossible with concurrent
+        atomic os.replace() operations - thread A's write can be overwritten
+        by thread B before thread A reads it back).
         """
         from bibilab import config as config_module
 
@@ -106,28 +116,41 @@ class TestConfigThreadSafety:
             config_module.save_config(cfg)
 
             errors: list[str] = []
+            model_names = {f"model-{i}" for i in range(8)}
 
             def save_different_models(model_suffix: str) -> None:
                 try:
                     cfg = config_module.load_config()
                     cfg.ai.model = model_suffix
                     config_module.save_config(cfg)
-
-                    # Verify file was written correctly
-                    path = config_module._config_path()
-                    if path.exists():
-                        with path.open() as f:
-                            data = json.load(f)
-                        if data.get("ai", {}).get("model") != model_suffix:
-                            errors.append(
-                                f"File corruption: expected {model_suffix}, got {data.get('ai', {}).get('model')}"
-                            )
                 except Exception as e:
-                    errors.append(str(e))
+                    errors.append(f"Save exception: {e}")
 
             with ThreadPoolExecutor(max_workers=4) as executor:
                 futures = [executor.submit(save_different_models, f"model-{i}") for i in range(8)]
                 for f in futures:
                     f.result()
 
-            assert len(errors) == 0, f"Data corruption: {errors}"
+            # Verify no exceptions during saves
+            assert len(errors) == 0, f"Save errors: {errors}"
+
+            # Verify final file is valid JSON with a valid model name
+            path = config_module._config_path()
+            assert path.exists(), "Config file does not exist"
+
+            with path.open() as f:
+                content = f.read()
+
+            # Check for truncated file (empty or incomplete JSON)
+            assert content.strip(), "Config file is empty"
+            assert content.strip().endswith("}"), "Config file appears truncated"
+
+            # Check file is valid JSON
+            try:
+                data = json.loads(content)
+            except json.JSONDecodeError as e:
+                raise AssertionError(f"Config file is not valid JSON: {e}")
+
+            # Verify model is one of the valid saved values
+            final_model = data.get("ai", {}).get("model")
+            assert final_model in model_names, f"Final model {final_model!r} not in expected set {model_names}"

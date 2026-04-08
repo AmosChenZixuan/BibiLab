@@ -1,23 +1,20 @@
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { RouterProvider, createMemoryRouter } from "react-router-dom";
-import { Suspense } from "react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
 import { LanguageProvider } from "@/app/LanguageContext";
 import { JobActivityProvider } from "@/components/jobs/JobActivityProvider";
 import { routes } from "@/app/routes";
 
-/** Wrap RouterProvider in Suspense so lazy routes load properly in tests */
+/** Wrap RouterProvider */
 function withRouter(router: ReturnType<typeof createMemoryRouter>) {
   return (
-    <Suspense fallback={<div data-testid="router-loading">loading...</div>}>
-      <JobActivityProvider>
-        <LanguageProvider>
-          <RouterProvider router={router} />
-        </LanguageProvider>
-      </JobActivityProvider>
-    </Suspense>
+    <JobActivityProvider>
+      <LanguageProvider>
+        <RouterProvider router={router} />
+      </LanguageProvider>
+    </JobActivityProvider>
   );
 }
 
