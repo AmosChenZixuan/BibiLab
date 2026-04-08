@@ -219,9 +219,9 @@ describe("list detail page", () => {
     const router = createMemoryRouter(routes, { initialEntries: ["/lists/list-1"] });
     render(withRouter(router));
 
-    let nav: Element | null = null;
+    let nav: HTMLElement | null = null;
     await waitFor(() => {
-      nav = document.querySelector("nav");
+      nav = document.querySelector("nav") as HTMLElement | null;
       expect(nav).toBeInTheDocument();
     });
     expect(await screen.findByText("AI Reading List")).toBeInTheDocument();
