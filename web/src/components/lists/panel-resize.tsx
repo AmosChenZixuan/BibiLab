@@ -14,56 +14,32 @@ function getResizableWorkspaceWidth(containerWidth: number) {
   return Math.max(0, containerWidth - RESIZER_SIZE * 2);
 }
 
-function getContainerContentWidth(
-  containerWidth: number,
-  paddingLeft: number,
-  paddingRight: number,
-) {
-  return Math.max(0, containerWidth - paddingLeft - paddingRight);
-}
-
-function clampSourcesWidth(
-  nextWidth: number,
-  workspaceWidth: number,
-  labWidth: number,
-  sourcesMinWidth: number,
-) {
-  const maxWidth = Math.max(sourcesMinWidth, workspaceWidth - labWidth - MIN_PANEL);
-  return clamp(nextWidth, sourcesMinWidth, maxWidth);
-}
-
-function clampLabWidth(nextWidth: number, workspaceWidth: number, sourcesWidth: number) {
-  const maxWidth = Math.max(MIN_PANEL, workspaceWidth - sourcesWidth - MIN_PANEL);
-  return clamp(nextWidth, MIN_PANEL, maxWidth);
-}
-
-function initialEqualPanelW() {
-  return Math.floor((window.innerWidth - 32 - RESIZER_SIZE * 2) / 3);
-}
-
 export function usePanelResize(
   containerRef: RefObject<HTMLDivElement | null>,
   sourcesCollapsed: boolean,
 ) {
-  const [sourcesW, setSourcesW] = useState(initialEqualPanelW);
-  const [labW, setLabW] = useState(initialEqualPanelW);
-  const [containerContentWidth, setContainerContentWidth] = useState(0);
+  // ── Ratio refs (not pixel state) ─────────────────────────────────────────
+  const sourcesRatio = useRef<number>(1 / 3);
+  const labRatio = useRef<number>(1 / 3);
 
   const active = useRef<ActiveResizer>(null);
-  const startX = useRef(0);
-  const startSourcesW = useRef(288);
-  const startLabW = useRef(288);
+  const startX = useRef<number>(0);
+  const startSourcesRatio = useRef<number>(1 / 3);
+  const startLabRatio = useRef<number>(1 / 3);
+  const startWorkspaceWidth = useRef<number>(0);
 
-  const sourcesWRef = useRef(sourcesW);
-  const labWRef = useRef(labW);
-  sourcesWRef.current = sourcesW;
-  labWRef.current = labW;
+  // Container width — state so derived widths recompute reactively
+  const [containerContentWidth, setContainerContentWidth] = useState<number>(0);
+
+  // Incremented during drag to force re-renders (refs alone don't trigger React re-renders)
+  const [, forceRender] = useState<number>(0);
 
   const onMouseDownLeft = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
     active.current = "left";
     startX.current = e.clientX;
-    startSourcesW.current = sourcesWRef.current;
+    startSourcesRatio.current = sourcesRatio.current;
+    startWorkspaceWidth.current = getResizableWorkspaceWidth(containerContentWidth);
     document.body.style.cursor = "col-resize";
     document.body.style.userSelect = "none";
   }, []);
@@ -72,82 +48,76 @@ export function usePanelResize(
     e.preventDefault();
     active.current = "right";
     startX.current = e.clientX;
-    startLabW.current = labWRef.current;
+    startLabRatio.current = labRatio.current;
+    startWorkspaceWidth.current = getResizableWorkspaceWidth(containerContentWidth);
     document.body.style.cursor = "col-resize";
     document.body.style.userSelect = "none";
   }, []);
 
+  // ── Measure container size via ResizeObserver ─────────────────────────────
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
-    const element = container;
+
+    // Read padding once — it never changes for the lifetime of this container
+    const styles = window.getComputedStyle(container);
+    const paddingLeft = Number.parseFloat(styles.paddingLeft) || 0;
+    const paddingRight = Number.parseFloat(styles.paddingRight) || 0;
 
     function measure() {
-      const styles = window.getComputedStyle(element);
+      if (!container) return;
       setContainerContentWidth(
-        getContainerContentWidth(
-          element.clientWidth,
-          Number.parseFloat(styles.paddingLeft) || 0,
-          Number.parseFloat(styles.paddingRight) || 0,
-        ),
+        Math.max(0, container.clientWidth - paddingLeft - paddingRight),
       );
     }
 
     measure();
 
     const observer = new ResizeObserver(measure);
-    observer.observe(element);
-    window.addEventListener("resize", measure);
+    observer.observe(container);
 
     return () => {
       observer.disconnect();
-      window.removeEventListener("resize", measure);
     };
   }, [containerRef]);
 
+  // ── Drag handlers — update ratio refs ────────────────────────────────────
   useEffect(() => {
-    const workspaceWidth = getResizableWorkspaceWidth(containerContentWidth);
-    if (!workspaceWidth) return;
+    // Persists across effect re-runs (survives containerContentWidth changes mid-drag)
+    let lastRender = 0;
 
-    const sourcesMinWidth = sourcesCollapsed ? COLLAPSED_PANEL : MIN_PANEL;
-    const nextSourcesW = clampSourcesWidth(sourcesW, workspaceWidth, labW, sourcesMinWidth);
-    const nextLabW = clampLabWidth(labW, workspaceWidth, nextSourcesW);
-
-    if (nextSourcesW !== sourcesW) {
-      setSourcesW(nextSourcesW);
-    }
-
-    if (nextLabW !== labW) {
-      setLabW(nextLabW);
-    }
-  }, [containerContentWidth, labW, sourcesCollapsed, sourcesW]);
-
-  useEffect(() => {
     function onMove(e: MouseEvent) {
       if (!active.current) return;
       const delta = e.clientX - startX.current;
-      const workspaceWidth = getResizableWorkspaceWidth(containerContentWidth);
+      const workspaceWidth = startWorkspaceWidth.current;
       if (!workspaceWidth) return;
-      const sourcesMinWidth = sourcesCollapsed ? COLLAPSED_PANEL : MIN_PANEL;
+      const deltaRatio = delta / workspaceWidth;
 
       if (active.current === "left") {
-        setSourcesW(
-          clampSourcesWidth(
-            startSourcesW.current + delta,
-            workspaceWidth,
-            labWRef.current,
-            sourcesMinWidth,
-          ),
+        const minRatio = sourcesCollapsed ? COLLAPSED_PANEL / workspaceWidth : MIN_PANEL / workspaceWidth;
+        const maxRatio = 1 - labRatio.current - MIN_PANEL / workspaceWidth;
+        sourcesRatio.current = clamp(
+          startSourcesRatio.current + deltaRatio,
+          minRatio,
+          maxRatio,
         );
       } else {
-        setLabW(
-          clampLabWidth(
-            startLabW.current - delta,
-            workspaceWidth,
-            sourcesCollapsed ? COLLAPSED_PANEL : sourcesWRef.current,
-          ),
+        const minRatio = MIN_PANEL / workspaceWidth;
+        const maxRatio = 1 - sourcesRatio.current - MIN_PANEL / workspaceWidth;
+        labRatio.current = clamp(
+          startLabRatio.current - deltaRatio,
+          minRatio,
+          maxRatio,
         );
       }
+
+      // Throttle re-renders to ~60fps via requestAnimationFrame
+      requestAnimationFrame(() => {
+        if (Date.now() - lastRender >= 16) {
+          lastRender = Date.now();
+          forceRender((n) => n + 1);
+        }
+      });
     }
 
     function onUp() {
@@ -155,6 +125,7 @@ export function usePanelResize(
       active.current = null;
       document.body.style.cursor = "";
       document.body.style.userSelect = "";
+      forceRender((n) => n + 1);
     }
 
     window.addEventListener("mousemove", onMove);
@@ -163,13 +134,17 @@ export function usePanelResize(
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
     };
-  }, [containerContentWidth, sourcesCollapsed]);
+  }, [sourcesCollapsed]);
 
+  // ── Derived pixel widths (computed every render, not stored) ──────────────
   const workspaceWidth = getResizableWorkspaceWidth(containerContentWidth);
-  const sourcesWidth = sourcesCollapsed ? COLLAPSED_PANEL : sourcesW;
-  const chatW = Math.max(MIN_PANEL, workspaceWidth - sourcesWidth - labW);
+  const sourcesWidth = sourcesCollapsed
+    ? COLLAPSED_PANEL
+    : Math.round(sourcesRatio.current * workspaceWidth);
+  const labWidth = Math.round(labRatio.current * workspaceWidth);
+  const chatWidth = workspaceWidth - sourcesWidth - labWidth;
 
-  // Guard against unmount mid-drag (e.g. navigation away)
+  // Guard against unmount mid-drag
   useEffect(() => {
     return () => {
       document.body.style.cursor = "";
@@ -177,7 +152,13 @@ export function usePanelResize(
     };
   }, []);
 
-  return { sourcesW, labW, chatW, onMouseDownLeft, onMouseDownRight };
+  return {
+    sourcesW: sourcesWidth,
+    labW: labWidth,
+    chatW: chatWidth,
+    onMouseDownLeft,
+    onMouseDownRight,
+  };
 }
 
 export function Resizer({ onMouseDown }: { onMouseDown: (e: React.MouseEvent) => void }) {

@@ -9,7 +9,7 @@ import { useLanguage } from "@/app/LanguageContext";
 import { createApiClient, toErrorMessageWithT } from "@/lib/api";
 import type { Source, SourceContent } from "@/lib/types";
 
-import { usePanelResize, Resizer, MIN_PANEL, COLLAPSED_PANEL } from "@/components/lists/panel-resize";
+import { usePanelResize, Resizer, COLLAPSED_PANEL } from "@/components/lists/panel-resize";
 import { NavbarTitle } from "@/components/lists/NavbarTitle";
 import { SourcesViewerMode } from "@/components/lists/sources/SourcesViewerMode";
 import { SourcesListMode } from "@/components/lists/sources/SourcesListMode";
@@ -109,7 +109,7 @@ export function ListDetailPage() {
           style={
             sourcesCollapsed
               ? { width: `${COLLAPSED_PANEL}px`, minWidth: `${COLLAPSED_PANEL}px` }
-              : { width: `${sourcesW}px`, minWidth: `${MIN_PANEL}px` }
+              : { width: `${sourcesW}px` }
           }
           className={panelBase}
         >
@@ -160,7 +160,7 @@ export function ListDetailPage() {
 
         {/* ── Chat panel ── */}
         <div
-          style={{ width: `${chatW}px`, minWidth: `${MIN_PANEL}px` }}
+          style={{ width: `${chatW}px` }}
           className={panelBase}
         >
           <SkeletonPanel
@@ -173,7 +173,7 @@ export function ListDetailPage() {
 
         {/* ── Lab panel ── */}
         <div
-          style={{ width: `${labW}px`, minWidth: `${MIN_PANEL}px` }}
+          style={{ width: `${labW}px` }}
           className={panelBase}
         >
           <SkeletonPanel
