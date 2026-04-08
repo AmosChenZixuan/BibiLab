@@ -26,10 +26,12 @@ export function usePanelResize(
   const startX = useRef<number>(0);
   const startSourcesRatio = useRef<number>(1 / 3);
   const startLabRatio = useRef<number>(1 / 3);
-  const startWorkspaceWidth = useRef<number>(0);
 
   // Container width — state so derived widths recompute reactively
   const [containerContentWidth, setContainerContentWidth] = useState<number>(0);
+  // Ref to access current containerContentWidth inside non-react callbacks (mousemove)
+  const containerContentWidthRef = useRef<number>(0);
+  containerContentWidthRef.current = containerContentWidth;
 
   // Incremented during drag to force re-renders (refs alone don't trigger React re-renders)
   const [, forceRender] = useState<number>(0);
@@ -39,7 +41,6 @@ export function usePanelResize(
     active.current = "left";
     startX.current = e.clientX;
     startSourcesRatio.current = sourcesRatio.current;
-    startWorkspaceWidth.current = getResizableWorkspaceWidth(containerContentWidth);
     document.body.style.cursor = "col-resize";
     document.body.style.userSelect = "none";
   }, []);
@@ -49,7 +50,6 @@ export function usePanelResize(
     active.current = "right";
     startX.current = e.clientX;
     startLabRatio.current = labRatio.current;
-    startWorkspaceWidth.current = getResizableWorkspaceWidth(containerContentWidth);
     document.body.style.cursor = "col-resize";
     document.body.style.userSelect = "none";
   }, []);
@@ -89,7 +89,7 @@ export function usePanelResize(
     function onMove(e: MouseEvent) {
       if (!active.current) return;
       const delta = e.clientX - startX.current;
-      const workspaceWidth = startWorkspaceWidth.current;
+      const workspaceWidth = getResizableWorkspaceWidth(containerContentWidthRef.current);
       if (!workspaceWidth) return;
       const deltaRatio = delta / workspaceWidth;
 
