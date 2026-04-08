@@ -79,6 +79,8 @@
   },
   "lists": {
     "sources": "来源",
+    "sourceSingular": "%{count} 来源",
+    "sourcePlural": "%{count} 来源",
     "listWorkspace": "列表工作区",
     "pasteUrl": "粘贴 Bilibili 链接...",
     "reRun": "重新运行",

@@ -79,6 +79,8 @@
   },
   "lists": {
     "sources": "Sources",
+    "sourceSingular": "%{count} source",
+    "sourcePlural": "%{count} sources",
     "listWorkspace": "List workspace",
     "pasteUrl": "Paste a Bilibili URL...",
     "reRun": "Re-run",
