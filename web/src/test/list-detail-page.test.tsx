@@ -343,7 +343,7 @@ describe("list detail page", () => {
 
     // 2. Clicking fires getSource
     await userEvent.click(sourceBtn);
-    expect(api.getSource).toHaveBeenCalledWith("src-uuid");
+    expect(api.getSource).toHaveBeenCalledWith("src-uuid", expect.any(Object));
 
     // 3. Panel switches to viewer mode — source title in viewer header, source rows gone
     expect(await screen.findByText("Existing Source")).toBeInTheDocument(); // viewer header title

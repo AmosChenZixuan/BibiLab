@@ -130,8 +130,8 @@ export class SourcesClient {
     return this.request<Source[]>(this.baseUrl, `/lists/${listId}/sources`, opts);
   }
 
-  getSource(sourceId: string) {
-    return this.request<SourceContent>(this.baseUrl, `/sources/${sourceId}`);
+  getSource(sourceId: string, opts?: { signal?: AbortSignal }) {
+    return this.request<SourceContent>(this.baseUrl, `/sources/${sourceId}`, opts);
   }
 
   deleteSource(listId: string, sourceId: string) {
@@ -209,7 +209,7 @@ export interface ApiClient {
   deleteList(listId: string): Promise<void | undefined>;
   generateOverview(listId: string): Promise<OverviewDownload | undefined>;
   listSources(listId: string, opts?: { signal?: AbortSignal }): Promise<Source[] | undefined>;
-  getSource(sourceId: string): Promise<SourceContent | undefined>;
+  getSource(sourceId: string, opts?: { signal?: AbortSignal }): Promise<SourceContent | undefined>;
   deleteSource(listId: string, sourceId: string): Promise<void | undefined>;
   rerunDigest(sourceId: string): Promise<SourceContent | undefined>;
   ingestUrl(listId: string, url: string): Promise<{ queued: string[]; skipped: string[] } | undefined>;
@@ -250,7 +250,7 @@ export function createApiClient(baseUrl?: string): ApiClient {
     deleteList: (id) => lists.deleteList(id),
     generateOverview: (id) => lists.generateOverview(id),
     listSources: (id, opts) => sources.listSources(id, opts),
-    getSource: (id) => sources.getSource(id),
+    getSource: (id, opts) => sources.getSource(id, opts),
     deleteSource: (listId, sourceId) => sources.deleteSource(listId, sourceId),
     rerunDigest: (id) => sources.rerunDigest(id),
     ingestUrl: (listId, url) => sources.ingestUrl(listId, url),
