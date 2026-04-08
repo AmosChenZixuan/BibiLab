@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import type { BibilabList } from "@/lib/types";
 import { useLanguage } from "@/app/LanguageContext";
@@ -9,11 +9,19 @@ interface RenameListModalProps {
   open: boolean;
   onClose: () => void;
   onCommit: (newName: string) => Promise<void>;
+  initialValue?: string;
 }
 
-export function RenameListModal({ list, open, onClose, onCommit }: RenameListModalProps) {
+export function RenameListModal({ list, open, onClose, onCommit, initialValue }: RenameListModalProps) {
   const { t } = useLanguage();
-  const [draft, setDraft] = useState("");
+  const [draft, setDraft] = useState(initialValue ?? "");
+
+  // Sync draft when modal opens with a new initialValue
+  useEffect(() => {
+    if (open) {
+      setDraft(initialValue ?? "");
+    }
+  }, [open, initialValue]);
 
   function handleClose() {
     setDraft("");

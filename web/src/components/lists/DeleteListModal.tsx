@@ -22,7 +22,7 @@ export function DeleteListModal({ list, open, onClose, onConfirm }: DeleteListMo
           <Button
             onClick={() => {
               if (list) {
-                void onConfirm(list);
+                void onConfirm(list).then(() => onClose());
               }
             }}
             size="sm"

@@ -163,6 +163,10 @@ export function SourcesListMode({
   const [refreshedJobs, setRefreshedJobs] = useState<string[]>([]);
 
   const [currentSources, setCurrentSources] = useState<Source[]>(sources);
+  // Sync currentSources when sources prop changes (e.g., after initial load)
+  useEffect(() => {
+    setCurrentSources(sources);
+  }, [sources]);
 
   // When a job flips to done, refresh sources and dismiss
   useEffect(() => {
