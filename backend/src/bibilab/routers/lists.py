@@ -1,9 +1,9 @@
 import asyncio
 import json
-import sqlite3
 import uuid
 from datetime import datetime, timezone
 
+import aiosqlite
 from fastapi import APIRouter, Depends, HTTPException, Request
 
 from bibilab.config import BibilabConfig, bibilab_home, cover_path, get_config
@@ -39,7 +39,7 @@ router = APIRouter()
 _ACTIVE_JOB_STATUSES = ("queued", "downloading", "transcribing", "processing")
 
 
-async def _build_list_response(row: sqlite3.Row, request: Request) -> ListResponse:
+async def _build_list_response(row: aiosqlite.Row, request: Request) -> ListResponse:
     thumbnail_url = None
     if row["thumbnail_source_id"]:
         if cover_path(row["thumbnail_source_id"]).exists():
@@ -120,7 +120,7 @@ async def delete_list(list_id: str, cfg: BibilabConfig = Depends(get_config)) ->
 
     placeholders = ",".join("?" * len(_ACTIVE_JOB_STATUSES))
     async with get_db() as db:
-        cur = db.execute(
+        cursor = await db.execute_fetchall(
             f"""
             SELECT 1 FROM jobs
             WHERE json_extract(meta, '$.list_id') = ?
@@ -129,7 +129,7 @@ async def delete_list(list_id: str, cfg: BibilabConfig = Depends(get_config)) ->
             """,
             (list_id, *_ACTIVE_JOB_STATUSES),
         )
-        if cur.fetchone() is not None:
+        if len(cursor) > 0:
             raise HTTPException(status_code=409, detail="Cannot delete a list with active jobs")
 
     sources = await get_sources_for_list(list_id)

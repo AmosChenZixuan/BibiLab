@@ -1,11 +1,12 @@
 import json
-import sqlite3
 import uuid
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+import aiosqlite
 
 import bibilab.config
 from bibilab.models.jobs import JobStatus
@@ -64,24 +65,24 @@ CREATE TABLE IF NOT EXISTS sources (
 
 async def bootstrap_db() -> None:
     async with get_db() as db:
-        list_columns = [row[1] for row in db.execute("PRAGMA table_info(lists)").fetchall()]
+        list_columns = [row[1] for row in await db.execute_fetchall("PRAGMA table_info(lists)")]
         if list_columns and "thumbnail_source_id" not in list_columns:
             thumbnail_select = "thumbnail_source_video_id" if "thumbnail_source_video_id" in list_columns else "NULL"
-            db.execute("ALTER TABLE lists RENAME TO lists_old")
-            db.execute(_CREATE_LISTS)
-            db.execute(
+            await db.execute("ALTER TABLE lists RENAME TO lists_old")
+            await db.execute(_CREATE_LISTS)
+            await db.execute(
                 f"""
                 INSERT INTO lists (id, name, thumbnail_source_id, created_at)
                 SELECT id, name, {thumbnail_select}, created_at FROM lists_old
                 """
             )
-            db.execute("DROP TABLE lists_old")
+            await db.execute("DROP TABLE lists_old")
 
-        job_columns = [row[1] for row in db.execute("PRAGMA table_info(jobs)").fetchall()]
+        job_columns = [row[1] for row in await db.execute_fetchall("PRAGMA table_info(jobs)")]
         if "source_url" in job_columns or "platform" in job_columns:
-            db.execute("ALTER TABLE jobs RENAME TO jobs_old")
-            db.execute(_CREATE_JOBS)
-            db.execute(
+            await db.execute("ALTER TABLE jobs RENAME TO jobs_old")
+            await db.execute(_CREATE_JOBS)
+            await db.execute(
                 """
                 INSERT INTO jobs (id, type, status, progress, error, created_at, updated_at, meta)
                 SELECT
@@ -102,26 +103,26 @@ async def bootstrap_db() -> None:
                 FROM jobs_old
                 """
             )
-            db.execute("DROP TABLE jobs_old")
+            await db.execute("DROP TABLE jobs_old")
 
         # Fresh-start sources migration: drop old table if schema lacks 'id' column
-        source_columns = [row[1] for row in db.execute("PRAGMA table_info(sources)").fetchall()]
+        source_columns = [row[1] for row in await db.execute_fetchall("PRAGMA table_info(sources)")]
         if source_columns and "id" not in source_columns:
-            db.execute("DROP TABLE IF EXISTS sources")
-        db.execute(_CREATE_LISTS)
-        db.execute(_CREATE_JOBS)
-        db.execute(_CREATE_SOURCES)
-        db.commit()
+            await db.execute("DROP TABLE IF EXISTS sources")
+        await db.execute(_CREATE_LISTS)
+        await db.execute(_CREATE_JOBS)
+        await db.execute(_CREATE_SOURCES)
+        await db.commit()
 
 
 @asynccontextmanager
-async def get_db() -> AsyncGenerator[sqlite3.Connection, None]:
-    db = sqlite3.connect(get_db_path())
-    db.row_factory = sqlite3.Row
+async def get_db() -> AsyncGenerator[aiosqlite.Connection, None]:
+    db = await aiosqlite.connect(get_db_path())
+    db.row_factory = aiosqlite.Row
     try:
         yield db
     finally:
-        db.close()
+        await db.close()
 
 
 def _now() -> str:
@@ -130,11 +131,11 @@ def _now() -> str:
 
 async def create_list(list_id: str, name: str, created_at: str) -> None:
     async with get_db() as db:
-        db.execute(
+        await db.execute(
             "INSERT INTO lists (id, name, thumbnail_source_id, created_at) VALUES (?, ?, ?, ?)",
             (list_id, name, None, created_at),
         )
-        db.commit()
+        await db.commit()
 
 
 _LIST_DISPLAY_QUERY = """
@@ -152,40 +153,43 @@ FROM lists
 """
 
 
-async def get_all_lists() -> list[sqlite3.Row]:
+async def get_all_lists() -> list[aiosqlite.Row]:
     async with get_db() as db:
-        return db.execute(f"{_LIST_DISPLAY_QUERY} ORDER BY updated_at DESC, created_at DESC").fetchall()
+        cursor = await db.execute(f"{_LIST_DISPLAY_QUERY} ORDER BY updated_at DESC, created_at DESC")
+        return await cursor.fetchall()
 
 
-async def get_list(list_id: str) -> sqlite3.Row | None:
+async def get_list(list_id: str) -> aiosqlite.Row | None:
     async with get_db() as db:
-        return db.execute("SELECT * FROM lists WHERE id=?", (list_id,)).fetchone()
+        cursor = await db.execute("SELECT * FROM lists WHERE id=?", (list_id,))
+        return await cursor.fetchone()
 
 
-async def get_list_with_display(list_id: str) -> sqlite3.Row | None:
+async def get_list_with_display(list_id: str) -> aiosqlite.Row | None:
     async with get_db() as db:
-        return db.execute(f"{_LIST_DISPLAY_QUERY} WHERE lists.id=?", (list_id,)).fetchone()
+        cursor = await db.execute(f"{_LIST_DISPLAY_QUERY} WHERE lists.id=?", (list_id,))
+        return await cursor.fetchone()
 
 
 async def delete_list(list_id: str) -> None:
     async with get_db() as db:
-        db.execute("DELETE FROM lists WHERE id=?", (list_id,))
-        db.commit()
+        await db.execute("DELETE FROM lists WHERE id=?", (list_id,))
+        await db.commit()
 
 
 async def update_list_name(list_id: str, name: str) -> None:
     async with get_db() as db:
-        db.execute("UPDATE lists SET name=? WHERE id=?", (name, list_id))
-        db.commit()
+        await db.execute("UPDATE lists SET name=? WHERE id=?", (name, list_id))
+        await db.commit()
 
 
 async def update_list_thumbnail(list_id: str, thumbnail_source_id: str | None) -> None:
     async with get_db() as db:
-        db.execute(
+        await db.execute(
             "UPDATE lists SET thumbnail_source_id=? WHERE id=?",
             (thumbnail_source_id, list_id),
         )
-        db.commit()
+        await db.commit()
 
 
 async def write_source(
@@ -209,21 +213,21 @@ async def write_source(
 ) -> None:
     async with get_db() as db:
         # Check if this is a new source
-        existing = db.execute(
-            "SELECT id FROM sources WHERE video_id = ? AND list_id = ?", (video_id, list_id)
-        ).fetchone()
+        cursor = await db.execute("SELECT id FROM sources WHERE video_id = ? AND list_id = ?", (video_id, list_id))
+        existing = await cursor.fetchone()
 
         # Auto-assign thumbnail if new source and list has none
         if existing is None:
-            list_row = db.execute("SELECT thumbnail_source_id FROM lists WHERE id = ?", (list_id,)).fetchone()
+            cursor = await db.execute("SELECT thumbnail_source_id FROM lists WHERE id = ?", (list_id,))
+            list_row = await cursor.fetchone()
             if list_row is not None and list_row["thumbnail_source_id"] is None:
-                db.execute(
+                await db.execute(
                     "UPDATE lists SET thumbnail_source_id = ? WHERE id = ?",
                     (source_id, list_id),
                 )
 
         # Upsert source using INSERT OR IGNORE + ON CONFLICT DO UPDATE
-        db.execute(
+        await db.execute(
             """
             INSERT INTO sources
                 (id, video_id, platform, list_id, title, summary, keywords,
@@ -269,46 +273,49 @@ async def write_source(
                 json.dumps(settings_snapshot),
             ),
         )
-        db.commit()
+        await db.commit()
 
 
 async def update_source_digest(source_id: str, summary: str, keywords: list[str]) -> None:
     async with get_db() as db:
-        db.execute(
+        await db.execute(
             "UPDATE sources SET summary=?, keywords=?, processed_at=? WHERE id=?",
             (summary, json.dumps(keywords), _now(), source_id),
         )
-        db.commit()
+        await db.commit()
 
 
-async def get_source(source_id: str) -> sqlite3.Row | None:
+async def get_source(source_id: str) -> aiosqlite.Row | None:
     async with get_db() as db:
-        return db.execute("SELECT * FROM sources WHERE id=?", (source_id,)).fetchone()
+        cursor = await db.execute("SELECT * FROM sources WHERE id=?", (source_id,))
+        return await cursor.fetchone()
 
 
-async def get_source_by_video_and_list(video_id: str, list_id: str) -> sqlite3.Row | None:
+async def get_source_by_video_and_list(video_id: str, list_id: str) -> aiosqlite.Row | None:
     async with get_db() as db:
-        return db.execute("SELECT * FROM sources WHERE video_id=? AND list_id=?", (video_id, list_id)).fetchone()
+        cursor = await db.execute("SELECT * FROM sources WHERE video_id=? AND list_id=?", (video_id, list_id))
+        return await cursor.fetchone()
 
 
-async def get_sources_for_list(list_id: str) -> list[sqlite3.Row]:
+async def get_sources_for_list(list_id: str) -> list[aiosqlite.Row]:
     async with get_db() as db:
-        return db.execute(
+        cursor = await db.execute(
             "SELECT * FROM sources WHERE list_id=? ORDER BY processed_at ASC",
             (list_id,),
-        ).fetchall()
+        )
+        return await cursor.fetchall()
 
 
 async def delete_source(source_id: str) -> None:
     async with get_db() as db:
-        db.execute("DELETE FROM sources WHERE id=?", (source_id,))
-        db.commit()
+        await db.execute("DELETE FROM sources WHERE id=?", (source_id,))
+        await db.commit()
 
 
 async def delete_sources_for_list(list_id: str) -> None:
     async with get_db() as db:
-        db.execute("DELETE FROM sources WHERE list_id=?", (list_id,))
-        db.commit()
+        await db.execute("DELETE FROM sources WHERE list_id=?", (list_id,))
+        await db.commit()
 
 
 async def source_exists(video_id: str, list_id: str) -> bool:
@@ -321,10 +328,11 @@ async def get_processed_video_ids(video_ids: list[str], list_id: str) -> set[str
         return set()
     placeholders = ",".join("?" * len(video_ids))
     async with get_db() as db:
-        rows = db.execute(
+        cursor = await db.execute(
             f"SELECT video_id FROM sources WHERE list_id=? AND video_id IN ({placeholders})",
             [list_id] + video_ids,
-        ).fetchall()
+        )
+        rows = await cursor.fetchall()
     return {row["video_id"] for row in rows}
 
 
@@ -335,14 +343,14 @@ async def create_job(
     job_id = str(uuid.uuid4())
     now = _now()
     async with get_db() as db:
-        db.execute(
+        await db.execute(
             """
             INSERT INTO jobs (id, type, status, progress, created_at, updated_at, meta)
             VALUES (?, ?, 'queued', 0, ?, ?, ?)
             """,
             (job_id, type, now, now, json.dumps(meta)),
         )
-        db.commit()
+        await db.commit()
     return job_id
 
 
@@ -353,30 +361,32 @@ async def update_job_status(
     error: str | None = None,
 ) -> None:
     async with get_db() as db:
-        db.execute(
+        await db.execute(
             "UPDATE jobs SET status=?, progress=?, error=?, updated_at=? WHERE id=?",
             (status, progress, error, _now(), job_id),
         )
-        db.commit()
+        await db.commit()
 
 
-async def get_job(job_id: str) -> sqlite3.Row | None:
+async def get_job(job_id: str) -> aiosqlite.Row | None:
     async with get_db() as db:
-        return db.execute("SELECT * FROM jobs WHERE id=?", (job_id,)).fetchone()
+        cursor = await db.execute("SELECT * FROM jobs WHERE id=?", (job_id,))
+        return await cursor.fetchone()
 
 
-async def list_jobs() -> list[sqlite3.Row]:
+async def list_jobs() -> list[aiosqlite.Row]:
     async with get_db() as db:
-        return db.execute("SELECT * FROM jobs ORDER BY created_at DESC").fetchall()
+        cursor = await db.execute("SELECT * FROM jobs ORDER BY created_at DESC")
+        return await cursor.fetchall()
 
 
 async def delete_job(job_id: str) -> None:
     async with get_db() as db:
-        db.execute("DELETE FROM jobs WHERE id=?", (job_id,))
-        db.commit()
+        await db.execute("DELETE FROM jobs WHERE id=?", (job_id,))
+        await db.commit()
 
 
-async def get_pending_jobs() -> list[sqlite3.Row]:
+async def get_pending_jobs() -> list[aiosqlite.Row]:
     active_statuses = (
         f"'{JobStatus.QUEUED.value}', "
         f"'{JobStatus.DOWNLOADING.value}', "
@@ -384,13 +394,14 @@ async def get_pending_jobs() -> list[sqlite3.Row]:
         f"'{JobStatus.PROCESSING.value}'"
     )
     async with get_db() as db:
-        return db.execute(
+        cursor = await db.execute(
             f"""
             SELECT * FROM jobs
             WHERE status IN ({active_statuses})
             ORDER BY created_at ASC
             """
-        ).fetchall()
+        )
+        return await cursor.fetchall()
 
 
 async def reset_stuck_jobs() -> None:
@@ -398,11 +409,11 @@ async def reset_stuck_jobs() -> None:
         f"'{JobStatus.DOWNLOADING.value}', '{JobStatus.TRANSCRIBING.value}', '{JobStatus.PROCESSING.value}'"
     )
     async with get_db() as db:
-        db.execute(
+        await db.execute(
             f"""
             UPDATE jobs SET status='{JobStatus.QUEUED.value}', updated_at=?
             WHERE status IN ({stuck_statuses})
             """,
             (_now(),),
         )
-        db.commit()
+        await db.commit()
