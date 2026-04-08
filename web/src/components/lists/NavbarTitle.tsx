@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
+import { useNavTitleContext } from "@/components/layout/NavTitleContext";
+
 export function NavbarTitle({
   name,
   onCommit,
@@ -10,12 +12,8 @@ export function NavbarTitle({
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(name);
-  const [navEl, setNavEl] = useState<Element | null>(null);
+  const navEl = useNavTitleContext();
   const inputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    setNavEl(document.querySelector("nav"));
-  }, []);
 
   // Sync draft when name changes externally
   useEffect(() => {

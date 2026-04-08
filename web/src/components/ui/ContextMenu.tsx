@@ -27,9 +27,17 @@ type Position = {
 const MENU_OFFSET_PX = 8;
 const MENU_MIN_WIDTH = 168;
 
-// Module-level ref for close-other-menus coordination.
-// Uses a ref (not state) so mutations don't trigger re-renders.
-let closeOtherMenusRef: { current: (() => void) | undefined } = { current: undefined };
+// Set-based registry for close-other-menus coordination.
+// Allows multiple menus to be tracked simultaneously.
+const closeHandlers = new Set<() => void>();
+
+function closeAllOtherMenus(currentClose: () => void) {
+  for (const handler of closeHandlers) {
+    if (handler !== currentClose) {
+      handler();
+    }
+  }
+}
 
 export function ContextMenu({ items, trigger }: ContextMenuProps) {
   const menuId = useId();
@@ -57,8 +65,8 @@ export function ContextMenu({ items, trigger }: ContextMenuProps) {
       return;
     }
 
-    // Register this menu's close function so other menus can close us
-    closeOtherMenusRef.current = closeMenu;
+    // Register this menu's close handler
+    closeHandlers.add(closeMenu);
 
     function handlePointerDown(event: MouseEvent) {
       const target = event.target as Node | null;
@@ -82,10 +90,7 @@ export function ContextMenu({ items, trigger }: ContextMenuProps) {
     return () => {
       document.removeEventListener("mousedown", handlePointerDown);
       window.removeEventListener("keydown", handleKeyDown);
-      // Only clear if we are still the registered closer (handles out-of-order unmount)
-      if (closeOtherMenusRef.current === closeMenu) {
-        closeOtherMenusRef.current = undefined;
-      }
+      closeHandlers.delete(closeMenu);
     };
   }, [open, closeMenu]);
 
@@ -95,8 +100,8 @@ export function ContextMenu({ items, trigger }: ContextMenuProps) {
       return;
     }
 
-    // Close any other open menu first
-    closeOtherMenusRef.current?.();
+    // Close any other open menus first
+    closeAllOtherMenus(closeMenu);
 
     setOpen(true);
   }
