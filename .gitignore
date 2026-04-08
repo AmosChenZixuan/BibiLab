@@ -34,3 +34,4 @@ Thumbs.db
 docs/internal/
 docs/plans/
 docs/specs/
+.worktrees/
