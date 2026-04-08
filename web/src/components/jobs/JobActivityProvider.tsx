@@ -8,7 +8,7 @@ import {
   useState,
 } from "react";
 
-import { createApiClient, toErrorMessage } from "@/lib/api";
+import { api, toErrorMessage } from "@/lib/api";
 import type { IngestJob, Job, ModelDownloadJob } from "@/lib/types";
 
 export const TERMINAL_JOB_STATUSES = new Set(["done", "failed", "needs_auth"]);
@@ -194,7 +194,7 @@ export function JobActivityProvider({ children }: { children: React.ReactNode })
 
     const task = (async () => {
       try {
-        const nextJobs = await createApiClient().listJobs({ signal });
+        const nextJobs = await api.listJobs({ signal });
         setJobsById((current) => mergeJobs(current, trackedJobsRef.current, nextJobs ?? []));
         setErrorMessage(null);
       } catch (error) {
@@ -301,7 +301,7 @@ export function JobActivityProvider({ children }: { children: React.ReactNode })
 
   const dismissJob = useCallback(async (jobId: string) => {
     try {
-      await createApiClient().deleteJob(jobId);
+      await api.deleteJob(jobId);
       removeJobLocally(jobId);
       setErrorMessage(null);
     } catch (error) {
@@ -321,7 +321,7 @@ export function JobActivityProvider({ children }: { children: React.ReactNode })
   const cancelJob = useCallback(async (jobId: string) => {
     setCancellingJobId(jobId);
     try {
-      await createApiClient().deleteJob(jobId);
+      await api.deleteJob(jobId);
       removeJobLocally(jobId);
     } catch (error) {
       setErrorMessage(toErrorMessage(error));

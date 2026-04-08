@@ -6,7 +6,7 @@ import { NavLink, Outlet } from "react-router-dom";
 import { useLanguage } from "@/app/LanguageContext";
 import { JobActivityProvider } from "@/components/jobs/JobActivityProvider";
 import { JobSpirit } from "@/components/jobs/JobSpirit";
-import { createApiClient, HEALTH_REFRESH_EVENT } from "@/lib/api";
+import { api, HEALTH_REFRESH_EVENT } from "@/lib/api";
 import { deriveOverallHealthTier, HEALTH_META } from "@/lib/health";
 import type { HealthResponse } from "@/lib/types";
 import { NavTitleContext } from "./NavTitleContext";
@@ -23,7 +23,7 @@ export function AppFrame() {
 
     async function loadHealth() {
       try {
-        const next = await createApiClient().getHealth();
+        const next = await api.getHealth();
         if (!cancelled && next) {
           setHealthTier(deriveOverallHealthTier(next));
         }
