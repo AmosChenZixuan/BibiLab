@@ -110,7 +110,7 @@ export function ListCard({ list, onRename, onChangeThumbnail, onDelete }: Props)
           <div className="flex items-center gap-2 text-xs text-white/75">
             <span>{formatUpdatedDate(list.updated_at)}</span>
             <span className="size-1 rounded-full bg-white/40" />
-            <span>{list.source_count} {list.source_count === 1 ? "source" : "sources"}</span>
+            <span>{list.source_count === 1 ? t("lists.sourceSingular", { count: list.source_count }) : t("lists.sourcePlural", { count: list.source_count })}</span>
           </div>
         </div>
       </button>
