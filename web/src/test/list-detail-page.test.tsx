@@ -270,7 +270,11 @@ describe("list detail page", () => {
     const router = createMemoryRouter(routes, { initialEntries: ["/lists/list-1"] });
     render(withRouter(router));
 
-    expect(await screen.findByRole("button", { name: /open existing source/i })).toBeInTheDocument();
+    // Wait for sources to load before querying for source buttons
+    await screen.findByRole("heading", { name: /sources/i });
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /open existing source/i })).toBeInTheDocument();
+    });
 
     const input = screen.getByPlaceholderText(/paste a bilibili url/i);
     expect(input).toBeInTheDocument();
@@ -328,9 +332,14 @@ describe("list detail page", () => {
     const router = createMemoryRouter(routes, { initialEntries: ["/lists/list-1"] });
     render(withRouter(router));
 
-    // 1. Source row button is visible
-    const sourceBtn = await screen.findByRole("button", { name: /open existing source/i });
+    // Wait for sources to load before querying for source buttons
+    await screen.findByRole("heading", { name: /sources/i });
+    const sourceBtn = await waitFor(() => {
+      return screen.getByRole("button", { name: /open existing source/i });
+    });
     expect(sourceBtn).toBeInTheDocument();
+
+    // 2. Clicking fires getSource
 
     // 2. Clicking fires getSource
     await userEvent.click(sourceBtn);
