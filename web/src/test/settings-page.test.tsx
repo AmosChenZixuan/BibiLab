@@ -126,9 +126,9 @@ describe("settings page", () => {
   test("tab health indicators use the same tiers as the navbar health model", async () => {
     renderPage();
 
-    expect(await screen.findByRole("tab", { name: /llm/i })).toHaveAttribute("title", "Operational");
-    expect(screen.getByRole("tab", { name: /transcript/i })).toHaveAttribute("title", "Degraded");
-    expect(screen.getByRole("tab", { name: /other/i })).toHaveAttribute("title", "Operational");
+    expect(await screen.findByRole("tab", { name: /llm/i })).toHaveAttribute("title", "Healthy");
+    expect(screen.getByRole("tab", { name: /transcript/i })).toHaveAttribute("title", "Throttled");
+    expect(screen.getByRole("tab", { name: /other/i })).toHaveAttribute("title", "Healthy");
   });
 
   test("refreshes health after saving config", async () => {

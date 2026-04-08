@@ -80,7 +80,7 @@ describe("home page", () => {
     );
 
     expect(screen.getByText(/loading lists/i)).toBeInTheDocument();
-    const settingsLink = await screen.findByTitle("Degraded");
+    const settingsLink = await screen.findByTitle("Throttled");
     expect(settingsLink).toHaveAccessibleName(/settings/i);
     expect(await screen.findByText("My Lists")).toBeInTheDocument();
     expect(await screen.findByRole("heading", { name: "Systems" })).toBeInTheDocument();

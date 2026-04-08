@@ -12,7 +12,7 @@ import type { HealthResponse } from "@/lib/types";
 import IdentityPanel from "./IdentityPanel";
 
 export function AppFrame() {
-  const [healthTier, setHealthTier] = useState<keyof typeof HEALTH_META>("operational");
+  const [healthTier, setHealthTier] = useState<keyof typeof HEALTH_META>("healthy");
   const [identityOpen, setIdentityOpen] = useState(false);
   const { lang, setLang } = useLanguage();
 

@@ -109,8 +109,8 @@
     "apiError": "API error"
   },
   "health": {
-    "operational": "Operational",
-    "degraded": "Degraded",
+    "healthy": "Healthy",
+    "throttled": "Throttled",
     "unavailable": "Unavailable"
   },
   "pipeline": {

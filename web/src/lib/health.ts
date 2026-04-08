@@ -1,10 +1,10 @@
 import type { HealthDependency, HealthResponse } from "./types";
 
-export type HealthTier = "operational" | "degraded" | "unavailable";
+export type HealthTier = "healthy" | "throttled" | "unavailable";
 
 export const HEALTH_META: Record<HealthTier, { label: string; className: string }> = {
-  operational: { label: "Operational", className: "bg-sky-400" },
-  degraded: { label: "Degraded", className: "bg-amber-400" },
+  healthy: { label: "Healthy", className: "bg-sky-400" },
+  throttled: { label: "Throttled", className: "bg-amber-400" },
   unavailable: { label: "Unavailable", className: "bg-rose-500" },
 };
 
@@ -17,10 +17,10 @@ export function deriveOverallHealthTier(health: HealthResponse): HealthTier {
     health.dependencies.cuda?.status !== "ok" ||
     health.dependencies.embedding_model?.status !== "ok"
   ) {
-    return "degraded";
+    return "throttled";
   }
 
-  return "operational";
+  return "healthy";
 }
 
 export function deriveDependencyHealthTier(
@@ -34,8 +34,8 @@ export function deriveDependencyHealthTier(
   }
 
   if (statuses.some((status) => status !== "ok")) {
-    return "degraded";
+    return "throttled";
   }
 
-  return "operational";
+  return "healthy";
 }

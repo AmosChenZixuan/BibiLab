@@ -109,8 +109,8 @@
     "apiError": "API 错误"
   },
   "health": {
-    "operational": "运行正常",
-    "degraded": "性能下降",
+    "healthy": "运行正常",
+    "throttled": "有待优化",
     "unavailable": "不可用"
   },
   "pipeline": {

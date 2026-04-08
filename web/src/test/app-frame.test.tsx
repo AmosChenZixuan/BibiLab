@@ -54,7 +54,7 @@ describe("app frame", () => {
       },
     });
 
-    expect(await screen.findByTitle("Operational")).toBeInTheDocument();
+    expect(await screen.findByTitle("Healthy")).toBeInTheDocument();
   });
 
   test("shows degraded badge when cuda unavailable", async () => {
@@ -66,7 +66,7 @@ describe("app frame", () => {
       },
     });
 
-    expect(await screen.findByTitle("Degraded")).toBeInTheDocument();
+    expect(await screen.findByTitle("Throttled")).toBeInTheDocument();
   });
 
   test("shows unavailable badge when overall is error", async () => {
@@ -116,7 +116,7 @@ describe("app frame", () => {
       },
     });
 
-    expect(await screen.findByTitle("Operational")).toBeInTheDocument();
+    expect(await screen.findByTitle("Healthy")).toBeInTheDocument();
 
     window.dispatchEvent(
       new CustomEvent(HEALTH_REFRESH_EVENT, {
