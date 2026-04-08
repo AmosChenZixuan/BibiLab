@@ -84,7 +84,7 @@ describe("home page", () => {
 
     render(withRouter(router));
 
-    expect(await screen.findByText(/loading lists/i)).toBeInTheDocument();
+    expect(screen.getByText(/loading lists/i)).toBeInTheDocument();
     const settingsLink = await screen.findByTitle("Throttled");
     expect(settingsLink).toHaveAccessibleName(/settings/i);
     expect(await screen.findByText("My Lists")).toBeInTheDocument();
