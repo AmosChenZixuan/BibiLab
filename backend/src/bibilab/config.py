@@ -1,5 +1,6 @@
 import json
 import os
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -88,22 +89,31 @@ class BibilabConfig(BaseModel):
 
 
 _config_cache: BibilabConfig | None = None
+_config_lock = threading.Lock()
+
+
+def _reset_cache() -> None:
+    """Reset the config cache. For testing only."""
+    global _config_cache
+    with _config_lock:
+        _config_cache = None
 
 
 def load_config() -> BibilabConfig:
     global _config_cache
-    if _config_cache is not None:
+    with _config_lock:
+        if _config_cache is not None:
+            return _config_cache
+        home = bibilab_home()
+        home.mkdir(parents=True, exist_ok=True)
+        path = _config_path()
+        if not path.exists():
+            _config_cache = BibilabConfig()
+            return _config_cache
+        with path.open() as f:
+            data = json.load(f)
+        _config_cache = BibilabConfig.model_validate(data)
         return _config_cache
-    home = bibilab_home()
-    home.mkdir(parents=True, exist_ok=True)
-    path = _config_path()
-    if not path.exists():
-        _config_cache = BibilabConfig()
-        return _config_cache
-    with path.open() as f:
-        data = json.load(f)
-    _config_cache = BibilabConfig.model_validate(data)
-    return _config_cache
 
 
 def get_config() -> BibilabConfig:
@@ -114,11 +124,13 @@ def get_config() -> BibilabConfig:
 def save_config(cfg: BibilabConfig) -> None:
     global _config_cache
     path = _config_path()
-    tmp = path.with_suffix(".tmp")
+    # Use unique temp file per thread to avoid concurrent write collisions
+    tmp = path.with_suffix(f".{threading.current_thread().name}.tmp")
     tmp.write_text(cfg.model_dump_json(indent=2))
     tmp.chmod(0o600)
-    os.replace(tmp, path)
-    _config_cache = None
+    with _config_lock:
+        os.replace(tmp, path)
+        _config_cache = cfg
 
 
 _MISSING = object()
