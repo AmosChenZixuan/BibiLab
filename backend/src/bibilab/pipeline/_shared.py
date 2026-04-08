@@ -11,6 +11,9 @@ from bibilab.config import AIConfig
 
 logger = logging.getLogger(__name__)
 
+# Module-level client cache: key -> client instance
+_client_cache: dict[tuple[str, str, str], object] = {}
+
 _LANG_INSTRUCTION = {
     "en": "Respond in English only. Do not use any other language.",
     "zh": "请用中文回答。不要使用其他语言。",
@@ -33,10 +36,14 @@ def _call_llm(
     llm_max_tokens: int = 2048,
 ) -> str:
     """Dispatch to the appropriate LLM provider. Returns raw text response."""
+    cache_key = (cfg.provider, cfg.api_key, cfg.base_url)
+
     if cfg.provider == "anthropic":
         import anthropic  # noqa: PLC0415
 
-        client = anthropic.Anthropic(api_key=cfg.api_key)
+        if cache_key not in _client_cache:
+            _client_cache[cache_key] = anthropic.Anthropic(api_key=cfg.api_key)
+        client = _client_cache[cache_key]
         msg = client.messages.create(
             model=cfg.model,
             max_tokens=llm_max_tokens,
@@ -47,7 +54,9 @@ def _call_llm(
     if cfg.provider == "openai":
         import openai  # noqa: PLC0415
 
-        client = openai.OpenAI(api_key=cfg.api_key, base_url=cfg.base_url or None)
+        if cache_key not in _client_cache:
+            _client_cache[cache_key] = openai.OpenAI(api_key=cfg.api_key, base_url=cfg.base_url or None)
+        client = _client_cache[cache_key]
         resp = client.chat.completions.create(
             model=cfg.model,
             messages=[{"role": "user", "content": prompt}],
@@ -55,7 +64,7 @@ def _call_llm(
         )
         return resp.choices[0].message.content
 
-    # ollama / custom: plain HTTP
+    # ollama / custom: plain HTTP (no persistent client, always fresh httpx)
     base = cfg.base_url or "http://localhost:11434"
     r = httpx.post(
         f"{base}/api/chat",
