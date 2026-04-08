@@ -1,11 +1,25 @@
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { RouterProvider, createMemoryRouter } from "react-router-dom";
+import { Suspense } from "react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
 import { LanguageProvider } from "@/app/LanguageContext";
 import { JobActivityProvider } from "@/components/jobs/JobActivityProvider";
 import { routes } from "@/app/routes";
+
+/** Wrap RouterProvider in Suspense so lazy routes load properly in tests */
+function withRouter(router: ReturnType<typeof createMemoryRouter>) {
+  return (
+    <Suspense fallback={<div data-testid="router-loading">loading...</div>}>
+      <JobActivityProvider>
+        <LanguageProvider>
+          <RouterProvider router={router} />
+        </LanguageProvider>
+      </JobActivityProvider>
+    </Suspense>
+  );
+}
 
 // ─── Per-test state (set inside each test) ───────────────────────────────────
 
@@ -181,13 +195,7 @@ describe("list detail page", () => {
   test("renders three-panel workspace with correct panel headings and skeleton text", async () => {
     makeMockFetch();
     const router = createMemoryRouter(routes, { initialEntries: ["/lists/list-1"] });
-    render(
-      <JobActivityProvider>
-        <LanguageProvider>
-          <RouterProvider router={router} />
-        </LanguageProvider>
-      </JobActivityProvider>,
-    );
+    render(withRouter(router));
 
     expect(await screen.findByRole("heading", { name: /sources/i })).toBeInTheDocument();
     expect(await screen.findByRole("heading", { name: /chat/i })).toBeInTheDocument();
@@ -209,16 +217,13 @@ describe("list detail page", () => {
     vi.mocked(api.listJobs).mockResolvedValue([]);
 
     const router = createMemoryRouter(routes, { initialEntries: ["/lists/list-1"] });
-    render(
-      <JobActivityProvider>
-        <LanguageProvider>
-          <RouterProvider router={router} />
-        </LanguageProvider>
-      </JobActivityProvider>,
-    );
+    render(withRouter(router));
 
-    const nav = document.querySelector("nav");
-    expect(nav).toBeInTheDocument();
+    let nav: Element | null = null;
+    await waitFor(() => {
+      nav = document.querySelector("nav");
+      expect(nav).toBeInTheDocument();
+    });
     expect(await screen.findByText("AI Reading List")).toBeInTheDocument();
 
     await userEvent.click(screen.getByText("AI Reading List"));
@@ -263,13 +268,7 @@ describe("list detail page", () => {
     vi.mocked(api.listSources).mockResolvedValue([...state.sources]);
 
     const router = createMemoryRouter(routes, { initialEntries: ["/lists/list-1"] });
-    render(
-      <JobActivityProvider>
-        <LanguageProvider>
-          <RouterProvider router={router} />
-        </LanguageProvider>
-      </JobActivityProvider>,
-    );
+    render(withRouter(router));
 
     expect(await screen.findByRole("button", { name: /open existing source/i })).toBeInTheDocument();
 
@@ -327,13 +326,7 @@ describe("list detail page", () => {
     });
 
     const router = createMemoryRouter(routes, { initialEntries: ["/lists/list-1"] });
-    render(
-      <JobActivityProvider>
-        <LanguageProvider>
-          <RouterProvider router={router} />
-        </LanguageProvider>
-      </JobActivityProvider>,
-    );
+    render(withRouter(router));
 
     // 1. Source row button is visible
     const sourceBtn = await screen.findByRole("button", { name: /open existing source/i });

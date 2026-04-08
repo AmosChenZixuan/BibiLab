@@ -103,17 +103,17 @@ def load_config() -> BibilabConfig:
     global _config_cache
     with _config_lock:
         if _config_cache is not None:
-            return _config_cache.model_copy(deep=True)
+            return _config_cache
         home = bibilab_home()
         home.mkdir(parents=True, exist_ok=True)
         path = _config_path()
         if not path.exists():
             _config_cache = BibilabConfig()
-            return _config_cache.model_copy(deep=True)
+            return _config_cache
         with path.open() as f:
             data = json.load(f)
         _config_cache = BibilabConfig.model_validate(data)
-        return _config_cache.model_copy(deep=True)
+        return _config_cache
 
 
 def get_config() -> BibilabConfig:
@@ -124,14 +124,13 @@ def get_config() -> BibilabConfig:
 def save_config(cfg: BibilabConfig) -> None:
     global _config_cache
     path = _config_path()
+    # Use unique temp file per thread to avoid concurrent write collisions
+    tmp = path.with_suffix(f".{threading.current_thread().name}.tmp")
+    tmp.write_text(cfg.model_dump_json(indent=2))
+    tmp.chmod(0o600)
     with _config_lock:
-        # Snapshot cfg inside the lock — caller may mutate AI_CONFIG concurrently
-        cfg_snapshot = cfg.model_copy(deep=True)
-        tmp = path.with_suffix(f".{threading.current_thread().name}.tmp")
-        tmp.write_text(cfg_snapshot.model_dump_json(indent=2))
-        tmp.chmod(0o600)
         os.replace(tmp, path)
-        _config_cache = cfg_snapshot
+        _config_cache = cfg
 
 
 _MISSING = object()
