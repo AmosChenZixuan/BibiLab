@@ -289,7 +289,15 @@ class WorkerLoop:
     ) -> Path | None:
         """Stage 2: Extract audio from downloaded video."""
         await update_job_status(job_id, JobStatus.TRANSCRIBING.value, progress=25)
-        return await asyncio.to_thread(extract_audio, video_path)
+        wav_path = await asyncio.to_thread(extract_audio, video_path)
+
+        if job_id in self._cancelled:
+            self._cancelled.discard(job_id)
+            await asyncio.to_thread(cleanup_job_artifacts, {"id": job_id})
+            await delete_job(job_id)
+            return None
+
+        return wav_path
 
     async def _stage_transcribe(
         self,
