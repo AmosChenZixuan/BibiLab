@@ -1,10 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
-import {
-  MdChevronLeft,
-  MdChevronRight,
-} from "react-icons/md";
-
+import { Minimize2, ArrowLeftToLine, ArrowRightToLine} from 'lucide-react';
 import { useLanguage } from "@/app/LanguageContext";
 import { createApiClient, toErrorMessageWithT } from "@/lib/api";
 import type { Source, SourceContent } from "@/lib/types";
@@ -119,11 +115,11 @@ export function ListDetailPage() {
             )}
             <button
               type="button"
-              onClick={() => setSourcesCollapsed((v) => !v)}
-              aria-label={sourcesCollapsed ? "expand sources" : "collapse sources"}
+              onClick={detailSource ? () => setDetailSource(null) : () => setSourcesCollapsed((v) => !v)}
+              aria-label={detailSource ? "Close viewer" : sourcesCollapsed ? "Expand sources" : "Collapse sources"}
               className={`flex h-7 w-7 items-center justify-center rounded-full text-muted transition hover:bg-border hover:text-ink ${sourcesCollapsed ? "mx-auto" : ""}`}
             >
-              {sourcesCollapsed ? <MdChevronRight size={16} /> : <MdChevronLeft size={16} />}
+              {detailSource ? <Minimize2 size={16} /> : (sourcesCollapsed ? <ArrowRightToLine size={16} /> : <ArrowLeftToLine size={16} />)}
             </button>
           </div>
 
@@ -135,7 +131,6 @@ export function ListDetailPage() {
                 <SourcesViewerMode
                   source={detailSource}
                   sourceContent={sourceContent}
-                  onClose={() => setDetailSource(null)}
                   onRefresh={() => {
                     if (detailSource) {
                       void createApiClient().getSource(detailSource.id).then((content) => {

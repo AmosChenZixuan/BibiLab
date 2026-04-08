@@ -79,7 +79,6 @@ export function SourcesPanel({
             <SourcesViewerMode
               source={detailSource}
               sourceContent={sourceContent}
-              onClose={onCloseSource}
               onRefresh={handleRefreshSource}
             />
           ) : (

@@ -1,4 +1,3 @@
-import { MdClose } from "react-icons/md";
 
 import { useLanguage } from "@/app/LanguageContext";
 import { createApiClient } from "@/lib/api";
@@ -9,12 +8,10 @@ import { DigestAccordion } from "@/components/lists/DigestAccordion";
 export function SourcesViewerMode({
   source,
   sourceContent,
-  onClose,
   onRefresh,
 }: {
   source: Source;
   sourceContent: SourceContent | null;
-  onClose: () => void;
   onRefresh: () => void;
 }) {
   const { t } = useLanguage();
@@ -25,17 +22,9 @@ export function SourcesViewerMode({
   };
   return (
     <div className="flex h-full flex-col">
-      <div className="flex shrink-0 items-start gap-3 border-b border-border px-4 py-4">
-        <button
-          type="button"
-          onClick={onClose}
-          className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-muted transition hover:bg-border hover:text-ink"
-          aria-label="Close viewer"
-        >
-          <MdClose size={16} />
-        </button>
+      <div className="flex shrink-0 items-start px-4 py-4">
         <div className="min-w-0 flex-1">
-          <p className="m-0 truncate text-sm font-medium text-ink">{source.title}</p>
+          <p className="m-0 truncate text-lg font-medium text-ink">{source.title}</p>
           <p className="m-0 mt-0.5 text-xs text-muted">{source.platform}</p>
         </div>
       </div>
