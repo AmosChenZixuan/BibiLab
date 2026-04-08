@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import type { BibilabList, Source } from "@/lib/types";
 import { useLanguage } from "@/app/LanguageContext";
@@ -16,18 +16,25 @@ export function ThumbnailPickerModal({ list, open, onClose, onSelect }: Thumbnai
   const { t } = useLanguage();
   const [sources, setSources] = useState<Source[]>([]);
   const [loading, setLoading] = useState(false);
+  const controllerRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     if (!open || !list) return;
+    if (controllerRef.current) {
+      controllerRef.current.abort();
+    }
+    const controller = new AbortController();
+    controllerRef.current = controller;
     setLoading(true);
     setSources([]);
-    createApiClient().listSources(list.id).then((next) => {
+    createApiClient().listSources(list.id, { signal: controller.signal }).then((next) => {
       setSources(next ?? []);
     }).catch(() => {
       setSources([]);
     }).finally(() => {
       setLoading(false);
     });
+    return () => controller.abort();
   }, [open, list]);
 
   return (

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { ArrowRight, X, Trash2, AlertCircle, MoreVertical } from "lucide-react";
 
 import { useLanguage } from "@/app/LanguageContext";
@@ -153,7 +153,7 @@ export function SourcesListMode({
   const [url, setUrl] = useState("");
   const [error, setError] = useState<string | null>(null);
   const { dismissJob, getJobs, trackJobs } = useJobActivity();
-  const ingestJobs = getJobs("ingest", listId);
+  const ingestJobs = useMemo(() => getJobs("ingest", listId), [getJobs, listId]);
   const [refreshedJobs, setRefreshedJobs] = useState<string[]>([]);
 
   const [currentSources, setCurrentSources] = useState<Source[]>(sources);

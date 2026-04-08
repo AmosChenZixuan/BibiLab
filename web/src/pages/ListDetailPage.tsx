@@ -45,6 +45,7 @@ export function ListDetailPage() {
   );
 
   const currentSourceIdRef = useRef<string | null>(null);
+  const openSourceControllerRef = useRef<AbortController | null>(null);
 
   const load = useCallback(async (signal?: AbortSignal) => {
     try {
@@ -68,11 +69,24 @@ export function ListDetailPage() {
     return () => controller.abort();
   }, [load]);
 
+  useEffect(() => {
+    return () => {
+      if (openSourceControllerRef.current) {
+        openSourceControllerRef.current.abort();
+      }
+    };
+  }, []);
+
   function handleOpenSource(source: Source) {
     currentSourceIdRef.current = source.id;
     setDetailSource(source);
     setSourceContent(null);
-    void createApiClient().getSource(source.id).then((content) => {
+    if (openSourceControllerRef.current) {
+      openSourceControllerRef.current.abort();
+    }
+    const controller = new AbortController();
+    openSourceControllerRef.current = controller;
+    void createApiClient().getSource(source.id, { signal: controller.signal }).then((content) => {
       if (currentSourceIdRef.current !== source.id) return;
       setSourceContent(content ?? null);
     }).catch(() => {
