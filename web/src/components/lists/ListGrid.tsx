@@ -1,4 +1,4 @@
-import { FiPlus } from "react-icons/fi";
+import { Plus } from "lucide-react";
 
 import { useLanguage } from "@/app/LanguageContext";
 import type { BibilabList } from "@/lib/types";
@@ -37,7 +37,7 @@ export function ListGrid({
           type="button"
         >
           <span className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-current">
-            <FiPlus className="size-5" aria-hidden="true" />
+            <Plus className="size-5" aria-hidden="true" />
           </span>
           <span className="text-sm font-medium tracking-tight">{t("home.createList")}</span>
         </button>

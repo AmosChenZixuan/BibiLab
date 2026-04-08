@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Settings, User } from "lucide-react";
-import { MdTranslate } from "react-icons/md";
+import { Languages } from "lucide-react";
 import { NavLink, Outlet } from "react-router-dom";
 
 import { useLanguage } from "@/app/LanguageContext";
@@ -86,7 +86,7 @@ export function AppFrame() {
               onClick={() => setLang(lang === "en" ? "zh" : "en")}
             >
               <span className="inline-flex size-4.5 items-center justify-center text-blue/70" aria-hidden="true">
-                <MdTranslate className="size-4.5" />
+                <Languages className="size-4.5" />
               </span>
               <span
                 className="absolute bottom-0.5 right-0.5 inline-flex h-3.5 min-w-3.5 items-center justify-center rounded-full border-2 border-white/92 bg-white/96 px-1 text-xs leading-none font-bold text-blue/70"

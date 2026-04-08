@@ -1,5 +1,5 @@
 import { ComponentPropsWithoutRef } from "react";
-import { FiChevronDown } from "react-icons/fi";
+import { ChevronDown } from "lucide-react";
 
 interface Props extends ComponentPropsWithoutRef<"select"> {}
 
@@ -11,7 +11,7 @@ export function Select({ className = "", ...rest }: Props) {
         {...rest}
       />
       <span className="pointer-events-none absolute inset-y-0 right-3 inline-flex items-center text-muted">
-        <FiChevronDown className="size-4" aria-hidden="true" />
+        <ChevronDown className="size-4" aria-hidden="true" />
       </span>
     </div>
   );

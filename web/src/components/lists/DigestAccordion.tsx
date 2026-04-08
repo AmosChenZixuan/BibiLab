@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { MdExpandLess, MdExpandMore, MdMoreVert, MdReplay } from "react-icons/md";
+import { ChevronUp, ChevronDown, MoreVertical, RotateCcw } from "lucide-react";
 
 import { useLanguage } from "@/app/LanguageContext";
 import { ContextMenu } from "@/components/ui/ContextMenu";
@@ -59,7 +59,7 @@ export function DigestAccordion({
               items={[
                 {
                   label: t("lists.rerunDigest"),
-                  icon: <MdReplay size={14} />,
+                  icon: <RotateCcw size={14} />,
                   onClick: handleRerun,
                 },
               ]}
@@ -71,7 +71,7 @@ export function DigestAccordion({
                   onClick={toggle}
                   className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-muted transition hover:bg-border hover:text-ink"
                 >
-                  <MdMoreVert size={16} />
+                  <MoreVertical size={16} />
                 </button>
               )}
             />
@@ -82,7 +82,7 @@ export function DigestAccordion({
             aria-label={expanded ? "Collapse" : "Expand"}
             className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-muted transition hover:bg-border hover:text-ink"
           >
-            {expanded ? <MdExpandLess size={18} /> : <MdExpandMore size={18} />}
+            {expanded ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
           </button>
         </div>
       </div>

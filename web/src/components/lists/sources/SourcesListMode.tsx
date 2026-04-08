@@ -1,11 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import {
-  MdArrowForward,
-  MdClose,
-  MdDeleteOutline,
-  MdErrorOutline,
-  MdMoreVert,
-} from "react-icons/md";
+import { ArrowRight, X, Trash2, AlertCircle, MoreVertical } from "lucide-react";
 
 import { useLanguage } from "@/app/LanguageContext";
 import { ContextMenu } from "@/components/ui/ContextMenu";
@@ -46,7 +40,7 @@ function SourceRow({
       </button>
       <ContextMenu
         items={[
-          { label: t("lists.delete"), icon: <MdDeleteOutline />, onClick: onDelete, variant: "danger" },
+          { label: t("lists.delete"), icon: <Trash2 />, onClick: onDelete, variant: "danger" },
         ]}
         trigger={({ toggle, triggerRef }) => (
           <button
@@ -56,7 +50,7 @@ function SourceRow({
             onClick={toggle}
             className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-muted opacity-0 transition group-hover:opacity-100 hover:bg-border hover:text-ink"
           >
-            <MdMoreVert size={16} />
+            <MoreVertical size={16} />
           </button>
         )}
       />
@@ -85,7 +79,7 @@ function IngestingSourceRow({
   if (isFailed) {
     return (
       <div className="flex items-start gap-3 rounded-2xl border border-pink/30 bg-pink/6 px-4 py-3">
-        <MdErrorOutline size={16} className="mt-0.5 shrink-0 text-pink" />
+        <AlertCircle size={16} className="mt-0.5 shrink-0 text-pink" />
         <div className="min-w-0 flex-1">
           <p className="m-0 truncate text-sm font-medium text-ink">{title}</p>
           <p className="m-0 mt-0.5 text-xs text-pink">{t("lists.failedDuring", { stage: getStageLabel(displayStage) })}</p>
@@ -96,7 +90,7 @@ function IngestingSourceRow({
           aria-label="Dismiss"
           className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-muted transition hover:bg-border hover:text-ink"
         >
-          <MdClose size={14} />
+          <X size={14} />
         </button>
       </div>
     );
@@ -116,7 +110,7 @@ function IngestingSourceRow({
           aria-label="Cancel ingestion"
           className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-muted transition hover:bg-border hover:text-ink"
         >
-          <MdClose size={14} />
+          <X size={14} />
         </button>
       </div>
       <div className="space-y-1.5">
@@ -243,7 +237,7 @@ export function SourcesListMode({
             aria-label="Add source"
             className="absolute right-1.5 top-1/2 -translate-y-1/2 flex h-7 w-7 items-center justify-center rounded-full text-muted transition disabled:opacity-0 enabled:hover:bg-blue enabled:hover:text-white enabled:hover:shadow-sm"
           >
-            <MdArrowForward size={15} />
+            <ArrowRight size={15} />
           </button>
         </form>
         {error && <p className="mt-1.5 px-4 text-xs text-pink">{error}</p>}

@@ -1,4 +1,4 @@
-import { FiEdit2, FiImage, FiMoreVertical, FiTrash2 } from "react-icons/fi";
+import { Edit2, Image, MoreVertical, Trash2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
 import { useLanguage } from "@/app/LanguageContext";
@@ -43,12 +43,12 @@ export function ListCard({ list, onRename, onChangeThumbnail, onDelete }: Props)
   const navigate = useNavigate();
   const menuItems = [
     ...(onRename
-      ? [{ label: t("lists.rename"), icon: <FiEdit2 />, onClick: () => onRename(list) }]
+      ? [{ label: t("lists.rename"), icon: <Edit2 />, onClick: () => onRename(list) }]
       : []),
     ...(onChangeThumbnail
-      ? [{ label: t("lists.changeThumbnail"), icon: <FiImage />, onClick: () => onChangeThumbnail(list) }]
+      ? [{ label: t("lists.changeThumbnail"), icon: <Image />, onClick: () => onChangeThumbnail(list) }]
       : []),
-    { label: t("lists.deleteList"), icon: <FiTrash2 />, onClick: () => onDelete(list), variant: "danger" as const },
+    { label: t("lists.deleteList"), icon: <Trash2 />, onClick: () => onDelete(list), variant: "danger" as const },
   ];
 
   return (
@@ -92,7 +92,7 @@ export function ListCard({ list, onRename, onChangeThumbnail, onDelete }: Props)
             ref={triggerRef}
             type="button"
           >
-            <FiMoreVertical />
+            <MoreVertical />
           </button>
         )}
       />

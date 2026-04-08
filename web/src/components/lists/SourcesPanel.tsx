@@ -1,4 +1,4 @@
-import { MdChevronLeft, MdChevronRight } from "react-icons/md";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 
 import type { Source, SourceContent } from "@/lib/types";
 import { useLanguage } from "@/app/LanguageContext";
@@ -67,7 +67,7 @@ export function SourcesPanel({
           aria-label={sourcesCollapsed ? "expand sources" : "collapse sources"}
           className={`flex h-7 w-7 items-center justify-center rounded-full text-muted transition hover:bg-border hover:text-ink ${sourcesCollapsed ? "mx-auto" : ""}`}
         >
-          {sourcesCollapsed ? <MdChevronRight size={16} /> : <MdChevronLeft size={16} />}
+          {sourcesCollapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
         </button>
       </div>
 
