@@ -384,7 +384,7 @@ async def update_artifact_completed(
 ) -> None:
     async with get_db() as db:
         await db.execute(
-            "UPDATE artifacts SET name=?, content_path=?, status='completed' WHERE id=?",
+            "UPDATE artifacts SET name=?, content_path=?, status='done' WHERE id=?",
             (name, content_path, artifact_id),
         )
         await db.commit()
