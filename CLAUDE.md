@@ -1,103 +1,62 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
-
 ## What This Project Is
 
-**Project Bibilab** transforms video content into searchable, AI-assisted private notebooks. A FastAPI backend runs the local processing pipeline (download → transcribe → chunk → digest ∥ embed), and a React + TypeScript SPA under `web/` provides the primary user interface for lists, ingestion, jobs, digests, transcripts, overview export, Lab artifacts, and settings.
+**Project Bibilab** transforms video content into searchable, AI-assisted private notebooks. A FastAPI backend runs the local processing pipeline (download → transcribe → chunk → digest ∥ embed), and a React + TypeScript SPA under `web/` provides the primary user interface.
 
-## Commands
+Platform-specific context lives in `backend/CLAUDE.md` and `web/CLAUDE.md`.
 
-### Backend (Python, managed with `uv`)
+## Goals & Non-Goals
 
-```bash
-cd backend
-uv sync --dev            # Install all dependencies
-uv run ruff check .      # Lint
-uv run ruff format .     # Format
-uv run pytest            # All tests
-uv run pytest tests/test_ingest.py -v  # Single test file
-uv run python -m bibilab.main            # Start server (localhost:8765)
-```
+### Goals
+- Transform individual videos and playlists into structured AI digests
+- Support local transcription (Faster Whisper) and local or cloud LLMs
+- Enable AI Q&A grounded in the video corpus with transcript citations (v1)
+- Provide on-demand list-level overview export
+- Run entirely on a single user's machine
 
-### Web UI (React + TypeScript, managed with `npm`)
-
-```bash
-cd web
-npm install          # Install frontend dependencies
-npm run dev          # Start Vite dev server on :5173
-npm run build        # Production build to web/dist
-npm run test         # Frontend test suite
-npm run test -- list-detail-page   # Focused frontend tests
-npm run lint         # Type-check the frontend
-```
+### Non-Goals
+- Not a general-purpose video player
+- Not a cloud or multi-user service
+- Interactive timestamp seeking is not required for v0–v2
+- Not building a general search engine across arbitrary content
 
 ## Architecture
 
 ```
-React SPA (web/, Vite in dev, static files in prod)
-        ↕ REST/HTTP (/api in dev, localhost:8765 in prod)
-FastAPI Backend (Python)
-    ├── Job Queue (SQLite polling, worker.py)
-    ├── Platform Adapters (adapters/bilibili.py)
-    ├── Processing Pipeline (pipeline/)
-    │   audio → transcribe → chunk → digest ∥ embed
-    └── Storage
-        ├── SQLite  — job queue + processing log
-        ├── ChromaDB — vector embeddings (local, embedded)
-        └── ~/.bibilab/ — config, covers, transcripts, downloads, chroma data
+React SPA (web/)  ↔  REST /api/*  ↔  FastAPI Backend (backend/)
 ```
 
-## Code Layout
+Single-port deployment: FastAPI serves the React build as static files in production. In dev, Vite runs on `:5173` with a proxy to the backend on `:8765`.
 
-**Backend** — `backend/src/bibilab/`
-
-```
-routers/     — one APIRouter per module; aggregated in main.py
-models/      — Pydantic request/response models + domain errors
-pipeline/    — one file per stage (audio → transcribe → extract → chunk → digest → embed); _shared.py for common helpers
-adapters/    — platform-specific download + resolution (base + bilibili)
-db.py        — SQLite schema + query helpers
-config.py    — settings persisted to ~/.bibilab/config.json
-worker.py    — SQLite-polling job dispatcher
-cleanup.py   — resource cleanup utilities
-whisper_models.py — Whisper model management
-```
-
-**Web** — `web/src/`
+## Storage Layout
 
 ```
-components/ui/  — primitive components (Button, Modal, Panel, Select, Spinner, StatusChip, etc.)
-components/*/   — feature components (lists/, lists/lab/, jobs/, layout/, settings/)
-pages/          — route-level page components
-lib/            — typed api client, types, download helpers, health check
-app/            — router, language context
-test/           — Vitest test files + setup
+~/.bibilab/
+├── config.json        Pydantic settings, credentials
+├── bibilab.db         SQLite (lists, jobs, sources, artifacts)
+├── covers/            cached cover images
+├── transcripts/       raw Whisper segments
+├── artifacts/         generated artifact content
+├── chroma/            ChromaDB vector data
+└── downloads/         temp video files, cleaned after pipeline
 ```
 
-## Conventions
+## Core Design Decisions
 
-### Backend
-
-- **Naming**: `snake_case` for files/functions/variables, `PascalCase` for classes and Pydantic models
-- **Pydantic models**: `{Operation}Request` / `{Operation}Response` suffix; enums use `PascalCase` name, `UPPERCASE` values
-- **Router pattern**: one `APIRouter` per file, handlers registered with explicit HTTP method decorator and `status_code=201` where appropriate
-- **DB**: `sqlite3` with `asynccontextmanager` get_db wrapper; all queries use `?` placeholders, never f-string interpolation
-- **Imports**: stdlib → third-party → local, with blank lines between groups
-- **Errors**: `HTTPException(status_code=N, detail=...)` for HTTP errors; custom exceptions (`AuthRequiredError`, `DownloadError`, `PipelineError`) for domain errors
-
-### Web
-
-- **Files**: `PascalCase` for components, `kebab-case` for utilities
-- **Components**: props interface above component, `ComponentPropsWithoutRef<"tag">` for root element props, `Record<Variant, string>` for variant maps
-- **Handlers**: named `handle{Action}`; event props use `on{Action}` prefix (`onDelete`, `onCreate`)
-- **State**: `useState` with `set` prefix; async operations use cancellation pattern via `let cancelled = false` guard in `useEffect`
-- **Imports**: use `@/*` alias (`@/components/ui`, `@/lib/api`, `@/lib/types`)
-- **API client**: single `api` object in `lib/api.ts` with typed `request<T>` wrapper; errors thrown as `ApiError`
-- **Design tokens**: use only tokens from `web/src/styles/app.css` (`--color-*`, `--z-*`, `--font-*`); no arbitrary values
+| Decision | Choice | Rationale |
+|---|---|---|
+| Path storage | Relative paths in DB, resolved at read time | Enables home directory migration without DB updates |
+| Digest storage | Summary and keywords in `sources` table | No intermediate .md file needed |
+| Overview generation | On-demand `POST /lists/:id/overview` | User controls when to generate; no silent LLM calls in pipeline |
+| Job vs source dedup | `sources` is the dedup source; `jobs` is ephemeral | A video is "processed" if it has a `sources` row |
+| Transcript storage | Files on disk, not in DB | Re-chunking never requires re-transcription |
+| Artifact storage | Content on disk (`artifacts/{id}.md`), metadata in SQLite | Same pattern as transcripts |
+| Backend serves SPA | FastAPI mounts `/assets` + catch-all → `index.html` | Single-port; no separate frontend server |
+| Worker concurrency | Configurable via `config.backend.worker_concurrency` | Default 1 |
 
 ## Notes
 
-- Technical specification, API contracts, DB schema in `docs/design-doc.md`; active specs in `docs/specs/`; internal docs in `docs/internal/`.
+- Active specs in `docs/specs/`; internal docs in `docs/internal/`; roadmap in `docs/roadmap.md`.
 - Pre-commit hooks enforce ruff lint/format on backend and trailing whitespace globally. Run `pre-commit install` once after cloning.
 - Config lives at `~/.bibilab/config.json`; runtime state at `~/.bibilab/`.
