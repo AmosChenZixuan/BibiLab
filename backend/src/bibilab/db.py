@@ -62,6 +62,21 @@ CREATE TABLE IF NOT EXISTS sources (
 )
 """
 
+_CREATE_ARTIFACTS = """
+CREATE TABLE IF NOT EXISTS artifacts (
+    id            TEXT PRIMARY KEY,
+    list_id       TEXT NOT NULL REFERENCES lists(id),
+    name          TEXT,
+    type          TEXT NOT NULL,
+    prompt        TEXT NOT NULL,
+    source_ids    TEXT NOT NULL DEFAULT '[]',
+    status        TEXT NOT NULL DEFAULT 'generating',
+    content_path  TEXT,
+    error         TEXT,
+    created_at    DATETIME DEFAULT CURRENT_TIMESTAMP
+)
+"""
+
 
 async def bootstrap_db() -> None:
     async with get_db() as db:
@@ -112,6 +127,7 @@ async def bootstrap_db() -> None:
         await db.execute(_CREATE_LISTS)
         await db.execute(_CREATE_JOBS)
         await db.execute(_CREATE_SOURCES)
+        await db.execute(_CREATE_ARTIFACTS)
         await db.commit()
 
 
@@ -315,6 +331,77 @@ async def delete_source(source_id: str) -> None:
 async def delete_sources_for_list(list_id: str) -> None:
     async with get_db() as db:
         await db.execute("DELETE FROM sources WHERE list_id=?", (list_id,))
+        await db.commit()
+
+
+async def create_artifact(
+    artifact_id: str,
+    list_id: str,
+    name: str | None,
+    type: str,
+    prompt: str,
+    source_ids: list[str],
+    status: str,
+    content_path: str | None,
+    error: str | None = None,
+) -> None:
+    async with get_db() as db:
+        await db.execute(
+            """
+            INSERT INTO artifacts (id, list_id, name, type, prompt, source_ids, status, content_path, error)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (artifact_id, list_id, name, type, prompt, json.dumps(source_ids), status, content_path, error),
+        )
+        await db.commit()
+
+
+async def get_artifact(artifact_id: str) -> aiosqlite.Row | None:
+    async with get_db() as db:
+        cursor = await db.execute("SELECT * FROM artifacts WHERE id=?", (artifact_id,))
+        return await cursor.fetchone()
+
+
+async def get_artifacts_for_list(list_id: str) -> list[aiosqlite.Row]:
+    async with get_db() as db:
+        cursor = await db.execute(
+            "SELECT * FROM artifacts WHERE list_id=? ORDER BY created_at DESC",
+            (list_id,),
+        )
+        return await cursor.fetchall()
+
+
+async def update_artifact_name(artifact_id: str, name: str) -> None:
+    async with get_db() as db:
+        await db.execute("UPDATE artifacts SET name=? WHERE id=?", (name, artifact_id))
+        await db.commit()
+
+
+async def update_artifact_completed(
+    artifact_id: str,
+    name: str,
+    content_path: str,
+) -> None:
+    async with get_db() as db:
+        await db.execute(
+            "UPDATE artifacts SET name=?, content_path=?, status='completed' WHERE id=?",
+            (name, content_path, artifact_id),
+        )
+        await db.commit()
+
+
+async def update_artifact_error(artifact_id: str, error: str) -> None:
+    async with get_db() as db:
+        await db.execute(
+            "UPDATE artifacts SET status='failed', error=? WHERE id=?",
+            (error, artifact_id),
+        )
+        await db.commit()
+
+
+async def delete_artifact(artifact_id: str) -> None:
+    async with get_db() as db:
+        await db.execute("DELETE FROM artifacts WHERE id=?", (artifact_id,))
         await db.commit()
 
 

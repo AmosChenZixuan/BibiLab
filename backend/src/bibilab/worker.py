@@ -8,12 +8,14 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+from pydantic import BaseModel
 
 from bibilab.adapters.base import AuthRequiredError, VideoMeta
 from bibilab.adapters.bilibili import BilibiliAdapter
 from bibilab.cleanup import cleanup_job_artifacts
 from bibilab.config import BibilabConfig, bibilab_home, load_config
 from bibilab.db import (
+    create_artifact,
     delete_job,
     get_list,
     get_pending_jobs,
@@ -32,6 +34,14 @@ from bibilab.pipeline.transcribe import WhisperSegment, transcribe, write_transc
 from bibilab.whisper_models import download_whisper_model
 
 logger = logging.getLogger(__name__)
+
+
+class ArtifactResult(BaseModel):
+    """Result from LLM artifact generation."""
+
+    name: str
+    content: str
+
 
 # Lazy singleton for BilibiliAdapter (avoids per-request instantiation)
 _bilibili_adapter: BilibiliAdapter | None = None
@@ -111,6 +121,10 @@ class WorkerLoop:
                 await delete_job(job_id)
                 return
 
+            if job["type"] == "artifact":
+                await self._run_artifact_job(job)
+                return
+
             if job["type"] == "model_download":
                 await self._download_model_job(job)
                 return
@@ -151,6 +165,152 @@ class WorkerLoop:
         await asyncio.to_thread(download_whisper_model, model_size)
         await update_job_status(job_id, JobStatus.DONE.value, progress=100)
         logger.info("Model download job %s completed for %s:%s", job_id, model_family, model_size)
+
+    # -------------------------------------------------------------------------
+    # Artifact generation job
+    # -------------------------------------------------------------------------
+
+    async def _run_artifact_job(self, job: dict) -> None:
+        job_id = job["id"]
+        meta_raw = _parse_job_meta(job)
+        artifact_id = meta_raw["artifact_id"]
+        list_id = meta_raw["list_id"]
+        artifact_type = meta_raw["type"]
+        prompt = meta_raw["prompt"]
+        source_ids = meta_raw["source_ids"]
+        cfg = load_config()
+        error_message: str | None = None
+        artifact_result: ArtifactResult | None = None
+
+        try:
+            await update_job_status(job_id, JobStatus.PROCESSING.value, progress=10)
+
+            # Load transcripts for all source_ids
+            transcripts: list[str] = []
+            for source_id in source_ids:
+                source = await get_source(source_id)
+                if source is None:
+                    raise PipelineError(f"Source {source_id!r} not found")
+                if source["transcript_path"] is None:
+                    raise PipelineError(f"Source {source_id!r} has no transcript")
+                transcript_path = bibilab_home() / source["transcript_path"]
+                transcript_text = transcript_path.read_text(encoding="utf-8")
+                transcripts.append(f"=== Source: {source['title']} ===\n{transcript_text}")
+
+            combined_transcript = "\n\n".join(transcripts)
+
+            # Check for cancellation before LLM call
+            if job_id in self._cancelled:
+                self._cancelled.discard(job_id)
+                await delete_job(job_id)
+                return
+
+            await update_job_status(job_id, JobStatus.PROCESSING.value, progress=30)
+
+            # Call LLM to generate artifact
+            artifact_result = await self._generate_artifact(prompt, artifact_type, combined_transcript, cfg)
+
+            # Check for cancellation before writing file
+            if job_id in self._cancelled:
+                self._cancelled.discard(job_id)
+                await delete_job(job_id)
+                return
+
+            await update_job_status(job_id, JobStatus.PROCESSING.value, progress=80)
+
+            # Write artifact content to file
+            artifacts_dir = bibilab_home() / "artifacts" / list_id
+            artifacts_dir.mkdir(parents=True, exist_ok=True)
+            content_path = artifacts_dir / f"{artifact_id}.md"
+            content_path.write_text(artifact_result.content, encoding="utf-8")
+
+            # Create artifact record with success status
+            await create_artifact(
+                artifact_id=artifact_id,
+                list_id=list_id,
+                name=artifact_result.name,
+                type=artifact_type,
+                prompt=prompt,
+                source_ids=source_ids,
+                status="completed",
+                content_path=str(content_path.relative_to(bibilab_home())),
+                error=None,
+            )
+
+            await update_job_status(job_id, JobStatus.DONE.value, progress=100)
+            logger.info("Artifact job %s completed for artifact %s", job_id, artifact_id)
+
+        except PipelineError as exc:
+            error_message = str(exc)
+            logger.error("Artifact job %s failed: %s", job_id, error_message)
+            # Create artifact record with error status
+            await create_artifact(
+                artifact_id=artifact_id,
+                list_id=list_id,
+                name=None,
+                type=artifact_type,
+                prompt=prompt,
+                source_ids=source_ids,
+                status="failed",
+                content_path=None,
+                error=error_message,
+            )
+            await update_job_status(job_id, JobStatus.FAILED.value, error=error_message)
+
+    async def _generate_artifact(
+        self,
+        prompt: str,
+        artifact_type: str,
+        transcript_text: str,
+        cfg: BibilabConfig,
+    ) -> ArtifactResult:
+        """Call LLM to generate artifact content. Returns title and content."""
+        from bibilab.pipeline._shared import _call_llm, _parse_llm_json_response
+
+        # Truncate transcript if too long
+        char_limit = cfg.ai.transcript_char_limit
+        if len(transcript_text) > char_limit:
+            logger.warning("Transcript exceeds %d chars; truncating", char_limit)
+            transcript_text = transcript_text[:char_limit]
+
+        llm_prompt = f"""{prompt}
+
+Based on the following transcripts, generate the requested artifact content.
+
+Transcript:
+{transcript_text}
+
+Respond ONLY with valid JSON matching this schema:
+{{
+  "name": "string (a short title for this artifact)",
+  "content": "string (the main artifact content in markdown format)"
+}}"""
+
+        last_exc: Exception | None = None
+        for attempt in range(3):
+            try:
+                raw = await asyncio.to_thread(
+                    _call_llm,
+                    llm_prompt,
+                    cfg.ai,
+                    llm_timeout=cfg.transcription.llm_timeout,
+                    llm_max_tokens=cfg.transcription.llm_max_tokens,
+                )
+                return _parse_llm_json_response(raw, ArtifactResult)
+            except Exception as exc:  # noqa: BLE001
+                last_exc = exc
+                logger.warning(
+                    "LLM artifact generation failed (attempt %d/3): %s",
+                    attempt + 1,
+                    exc,
+                )
+                if attempt < 2:
+                    continue
+
+        error_msg = f"LLM artifact generation exhausted all retries: {last_exc}"
+        logger.error(error_msg)
+        # On failure, create artifact with error status
+        raise PipelineError(error_msg)
 
     # -------------------------------------------------------------------------
     # Pipeline stages (digest-only)

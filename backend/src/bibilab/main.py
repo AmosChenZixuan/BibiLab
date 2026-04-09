@@ -9,6 +9,7 @@ from fastapi.staticfiles import StaticFiles
 
 from bibilab.config import bibilab_home, load_config
 from bibilab.db import bootstrap_db
+from bibilab.routers.artifacts import router as artifacts_router
 from bibilab.routers.config_router import router as config_router
 from bibilab.routers.health import router as health_router
 from bibilab.routers.ingest import router as ingest_router
@@ -33,6 +34,7 @@ def make_lifespan(*, start_worker: bool) -> Callable[[], AsyncGenerator[None, No
             "tmp",
             "models/whisper",
             "models/embedding",
+            "artifacts",
         ):
             (home / subdir).mkdir(parents=True, exist_ok=True)
 
@@ -70,6 +72,7 @@ def create_app(*, start_worker: bool = True) -> FastAPI:
     app.include_router(jobs_router)
     app.include_router(lists_router)
     app.include_router(ingest_router)
+    app.include_router(artifacts_router)
     app.include_router(sources_router)
     app.include_router(whisper_router)
 
