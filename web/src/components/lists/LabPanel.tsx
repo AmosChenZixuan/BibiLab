@@ -7,6 +7,7 @@ import type { Artifact } from "@/lib/types";
 
 import { ArtifactList } from "./lab/ArtifactList";
 import { ArtifactViewer } from "./lab/ArtifactViewer";
+import { ToolSection } from "./lab/ToolSection";
 
 type LabMode = "tool-list" | "viewer" | "collapsed";
 
@@ -14,10 +15,11 @@ interface LabPanelProps {
   listId: string;
   labCollapsed: boolean;
   labW: number;
+  sourceIds: string[];
   onToggleCollapse: () => void;
 }
 
-export function LabPanel({ listId, labCollapsed, labW, onToggleCollapse }: LabPanelProps) {
+export function LabPanel({ listId, labCollapsed, labW, sourceIds, onToggleCollapse }: LabPanelProps) {
   const { t } = useLanguage();
   const panelBase = "flex shrink-0 flex-col overflow-hidden rounded-3xl border border-border bg-white/76 shadow-lg";
 
@@ -79,14 +81,10 @@ export function LabPanel({ listId, labCollapsed, labW, onToggleCollapse }: LabPa
       {!labCollapsed && (
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
           {labMode === "tool-list" ? (
-            <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-              <div className="border-b border-border px-4 py-3">
-                <p className="m-0 text-sm text-muted">Tool</p>
-              </div>
-              <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-                <ArtifactList listId={listId} onViewArtifact={handleViewArtifact} />
-              </div>
-            </div>
+            <>
+              <ToolSection listId={listId} sourceIds={sourceIds} />
+              <ArtifactList listId={listId} onViewArtifact={handleViewArtifact} />
+            </>
           ) : (
             selectedArtifact && <ArtifactViewer artifact={selectedArtifact} />
           )}

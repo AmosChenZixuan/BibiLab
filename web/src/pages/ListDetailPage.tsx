@@ -195,6 +195,7 @@ export function ListDetailPage() {
             listId={listId}
             labCollapsed={labCollapsed}
             labW={labW}
+            sourceIds={sources.map((s) => s.id)}
             onToggleCollapse={() => setLabCollapsed((v) => !v)}
           />
         </div>
