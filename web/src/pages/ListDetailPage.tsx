@@ -186,7 +186,7 @@ export function ListDetailPage() {
         <div
           style={
             labCollapsed
-              ? { width: `${COLLAPSED_PANEL}px`, minWidth: `${COLLAPSED_PANEL}px` }
+              ? { width: `${COLLAPSED_PANEL}px`, minWidth: `${COLLAPSED_PANEL}px`, marginLeft: "auto" }
               : { width: `${labW}px` }
           }
           className={panelBase}
