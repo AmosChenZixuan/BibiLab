@@ -3,6 +3,10 @@ import { ChevronLeft, ChevronRight, Minimize2 } from "lucide-react";
 
 import { useLanguage } from "@/app/LanguageContext";
 import { COLLAPSED_PANEL, MIN_PANEL } from "@/components/lists/panel-resize";
+import type { Artifact } from "@/lib/types";
+
+import { ArtifactList } from "./lab/ArtifactList";
+import { ArtifactViewer } from "./lab/ArtifactViewer";
 
 type LabMode = "tool-list" | "viewer" | "collapsed";
 
@@ -18,6 +22,12 @@ export function LabPanel({ listId, labCollapsed, labW, onToggleCollapse }: LabPa
   const panelBase = "flex shrink-0 flex-col overflow-hidden rounded-3xl border border-border bg-white/76 shadow-lg";
 
   const [labMode, setLabMode] = useState<LabMode>("tool-list");
+  const [selectedArtifact, setSelectedArtifact] = useState<Artifact | null>(null);
+
+  function handleViewArtifact(artifact: Artifact) {
+    setSelectedArtifact(artifact);
+    setLabMode("viewer");
+  }
 
   function getHeaderButton() {
     if (labCollapsed) {
@@ -68,26 +78,17 @@ export function LabPanel({ listId, labCollapsed, labW, onToggleCollapse }: LabPa
 
       {!labCollapsed && (
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-          {labMode === "tool-list" && (
+          {labMode === "tool-list" ? (
             <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
               <div className="border-b border-border px-4 py-3">
                 <p className="m-0 text-sm text-muted">Tool</p>
               </div>
               <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-                <button
-                  type="button"
-                  onClick={() => setLabMode("viewer")}
-                  className="m-0 flex h-full items-center justify-center px-4 py-3 text-sm text-muted transition hover:bg-border hover:text-ink"
-                >
-                  Artifact
-                </button>
+                <ArtifactList listId={listId} onViewArtifact={handleViewArtifact} />
               </div>
             </div>
-          )}
-          {labMode === "viewer" && (
-            <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-              <p className="m-0 px-4 py-3 text-sm text-muted">Artifact content</p>
-            </div>
+          ) : (
+            selectedArtifact && <ArtifactViewer artifact={selectedArtifact} />
           )}
         </div>
       )}
