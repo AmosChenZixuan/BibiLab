@@ -30,7 +30,7 @@ vi.mock("@/lib/api", () => ({
         type: "study_guide",
         prompt: "Generate a study guide",
         source_ids: ["source-1", "source-2", "source-3"],
-        status: "done",
+        status: "completed",
         created_at: "2026-04-08T12:00:00Z",
       },
     ]),
@@ -102,8 +102,8 @@ describe("LabPanel", () => {
     await waitFor(() => {
       expect(screen.getByText("Study Guide")).toBeInTheDocument();
     });
-    // Click the artifact card
-    const artifactCard = screen.getByText("Study Guide").closest("[class*='rounded-2xl']") as HTMLElement;
+    // Click the artifact card (clickable area is the inner cursor-pointer div)
+    const artifactCard = screen.getByText("Study Guide").closest("[class*='cursor-pointer']") as HTMLElement;
     await userEvent.click(artifactCard);
     // Wait for viewer mode to render (check for minimize button which is unique to viewer)
     await waitFor(() => {
@@ -120,7 +120,7 @@ describe("LabPanel", () => {
       expect(screen.getByText("Study Guide")).toBeInTheDocument();
     });
     // Click the artifact card to enter viewer mode
-    const artifactCard = screen.getByText("Study Guide").closest("[class*='rounded-2xl']") as HTMLElement;
+    const artifactCard = screen.getByText("Study Guide").closest("[class*='cursor-pointer']") as HTMLElement;
     await userEvent.click(artifactCard);
     // Wait for viewer mode
     await waitFor(() => {
@@ -143,7 +143,7 @@ describe("LabPanel", () => {
       expect(screen.getByText("Study Guide")).toBeInTheDocument();
     });
     // Enter viewer mode
-    const artifactCard = screen.getByText("Study Guide").closest("[class*='rounded-2xl']") as HTMLElement;
+    const artifactCard = screen.getByText("Study Guide").closest("[class*='cursor-pointer']") as HTMLElement;
     await userEvent.click(artifactCard);
     // Wait for viewer mode
     await waitFor(() => {
@@ -164,7 +164,7 @@ describe("LabPanel", () => {
       expect(screen.getByText("Study Guide")).toBeInTheDocument();
     });
     // Enter viewer mode
-    const artifactCard = screen.getByText("Study Guide").closest("[class*='rounded-2xl']") as HTMLElement;
+    const artifactCard = screen.getByText("Study Guide").closest("[class*='cursor-pointer']") as HTMLElement;
     await userEvent.click(artifactCard);
     // Wait for viewer mode
     await waitFor(() => {
@@ -181,7 +181,7 @@ describe("LabPanel", () => {
       expect(screen.getByText("Study Guide")).toBeInTheDocument();
     });
     // Enter viewer mode
-    const artifactCard = screen.getByText("Study Guide").closest("[class*='rounded-2xl']") as HTMLElement;
+    const artifactCard = screen.getByText("Study Guide").closest("[class*='cursor-pointer']") as HTMLElement;
     await userEvent.click(artifactCard);
     // Wait for viewer mode
     await waitFor(() => {
