@@ -78,6 +78,7 @@
     "modelDownloadsRequired": "Whisper model files are required. If missing, transcription cannot start until a model is downloaded."
   },
   "lists": {
+    "lab": "Lab",
     "sources": "Sources",
     "sourceSingular": "%{count} source",
     "sourcePlural": "%{count} sources",

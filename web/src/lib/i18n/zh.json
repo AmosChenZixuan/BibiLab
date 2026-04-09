@@ -78,6 +78,7 @@
     "modelDownloadsRequired": "需要 Whisper 模型文件。如果缺失，在下载模型之前无法开始转录。"
   },
   "lists": {
+    "lab": "实验室",
     "sources": "来源",
     "sourceSingular": "%{count} 来源",
     "sourcePlural": "%{count} 来源",
