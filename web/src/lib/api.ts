@@ -165,6 +165,24 @@ export class ArtifactsClient {
   listArtifacts(listId: string, opts?: { signal?: AbortSignal }) {
     return this.request<Artifact[]>(this.baseUrl, `/lists/${listId}/artifacts`, opts);
   }
+
+  getArtifactContent(artifactId: string, opts?: { signal?: AbortSignal }) {
+    return this.request<{ content: string }>(this.baseUrl, `/artifacts/${artifactId}/content`, {
+      method: "GET",
+      ...opts,
+    });
+  }
+
+  updateArtifact(artifactId: string, patch: { name?: string }) {
+    return this.request<Artifact>(this.baseUrl, `/artifacts/${artifactId}`, {
+      method: "PATCH",
+      body: JSON.stringify(patch),
+    });
+  }
+
+  deleteArtifact(artifactId: string) {
+    return this.request<void>(this.baseUrl, `/artifacts/${artifactId}`, { method: "DELETE" });
+  }
 }
 
 export class ConfigClient {
@@ -232,6 +250,9 @@ export interface ApiClient {
   rerunDigest(sourceId: string): Promise<SourceContent | undefined>;
   ingestUrl(listId: string, url: string): Promise<{ queued: string[]; skipped: string[] } | undefined>;
   listArtifacts(listId: string, opts?: { signal?: AbortSignal }): Promise<Artifact[] | undefined>;
+  getArtifactContent(artifactId: string, opts?: { signal?: AbortSignal }): Promise<{ content: string } | undefined>;
+  updateArtifact(artifactId: string, patch: { name?: string }): Promise<Artifact | undefined>;
+  deleteArtifact(artifactId: string): Promise<void | undefined>;
   getConfig(opts?: { signal?: AbortSignal }): Promise<BibilabConfig | undefined>;
   putConfig(patch: Partial<BibilabConfig>): Promise<BibilabConfig | undefined>;
   getHealth(opts?: { signal?: AbortSignal }): Promise<HealthResponse | undefined>;
@@ -276,6 +297,9 @@ export function createApiClient(baseUrl?: string): ApiClient {
     rerunDigest: (id) => sources.rerunDigest(id),
     ingestUrl: (listId, url) => sources.ingestUrl(listId, url),
     listArtifacts: (id, opts) => artifacts.listArtifacts(id, opts),
+    getArtifactContent: (id, opts) => artifacts.getArtifactContent(id, opts),
+    updateArtifact: (id, patch) => artifacts.updateArtifact(id, patch),
+    deleteArtifact: (id) => artifacts.deleteArtifact(id),
     getConfig: (opts) => config.getConfig(opts),
     putConfig: (patch) => config.putConfig(patch),
     getHealth: (opts) => health.getHealth(opts),

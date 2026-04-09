@@ -1,4 +1,5 @@
-import { AlertCircle, MoreVertical, X } from "lucide-react";
+import { AlertCircle, Download, FileText, MoreVertical, Pencil, Trash2, X } from "lucide-react";
+import { useRef, useState } from "react";
 
 import { ContextMenu } from "@/components/ui/ContextMenu";
 import type { Artifact } from "@/lib/types";
@@ -21,9 +22,24 @@ function formatDate(iso: string): string {
 interface ArtifactCardProps {
   artifact: Artifact;
   onDismiss?: (artifactId: string) => void;
+  onDownload?: (artifactId: string) => void;
+  onRename?: (artifactId: string, name: string) => void;
+  onViewPrompt?: (artifactId: string) => void;
+  onDelete?: (artifactId: string) => void;
 }
 
-export function ArtifactCard({ artifact, onDismiss }: ArtifactCardProps) {
+export function ArtifactCard({
+  artifact,
+  onDismiss,
+  onDownload,
+  onRename,
+  onViewPrompt,
+  onDelete,
+}: ArtifactCardProps) {
+  const [isRenaming, setIsRenaming] = useState(false);
+  const [renameValue, setRenameValue] = useState(artifact.name);
+  const inputRef = useRef<HTMLInputElement>(null);
+
   if (artifact.status === "generating") {
     return (
       <div className="flex flex-col gap-2.5 rounded-2xl border border-blue/20 bg-sky/6 px-4 py-3">
@@ -69,16 +85,93 @@ export function ArtifactCard({ artifact, onDismiss }: ArtifactCardProps) {
   }
 
   // done state
+  const doneItems = [
+    ...(onRename
+      ? [
+          {
+            label: "Rename",
+            icon: <Pencil size={14} />,
+            onClick: () => {
+              setRenameValue(artifact.name);
+              setIsRenaming(true);
+              // Focus input after render
+              setTimeout(() => inputRef.current?.select(), 0);
+            },
+          },
+        ]
+      : []),
+    ...(onDownload
+      ? [
+          {
+            label: "Download",
+            icon: <Download size={14} />,
+            onClick: () => onDownload(artifact.id),
+          },
+        ]
+      : []),
+    ...(onViewPrompt
+      ? [
+          {
+            label: "View Prompt",
+            icon: <FileText size={14} />,
+            onClick: () => onViewPrompt(artifact.id),
+          },
+        ]
+      : []),
+    ...(onDelete
+      ? [
+          {
+            label: "Delete",
+            icon: <Trash2 size={14} />,
+            onClick: () => onDelete(artifact.id),
+            variant: "danger" as const,
+          },
+        ]
+      : []),
+  ];
+
+  function handleRenameSubmit() {
+    const trimmed = renameValue.trim();
+    if (trimmed && trimmed !== artifact.name) {
+      onRename?.(artifact.id, trimmed);
+    }
+    setIsRenaming(false);
+  }
+
+  function handleRenameKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      handleRenameSubmit();
+    } else if (e.key === "Escape") {
+      setIsRenaming(false);
+      setRenameValue(artifact.name);
+    }
+  }
+
   return (
     <div className="group flex items-center gap-2 rounded-2xl border border-border bg-white/64 px-4 py-3 transition hover:bg-white hover:shadow-sm">
       <div className="min-w-0 flex-1">
-        <p className="m-0 truncate text-sm font-bold text-ink">{artifact.name}</p>
+        {isRenaming ? (
+          <input
+            ref={inputRef}
+            type="text"
+            value={renameValue}
+            onChange={(e) => setRenameValue(e.target.value)}
+            onBlur={handleRenameSubmit}
+            onKeyDown={handleRenameKeyDown}
+            className="m-0 w-full border border-border bg-white px-1 py-0 text-sm font-bold text-ink outline-none focus:border-blue"
+            autoFocus
+          />
+        ) : (
+          <p className="m-0 truncate text-sm font-bold text-ink">{artifact.name}</p>
+        )}
         <p className="m-0 mt-0.5 text-xs text-muted">
-          {artifact.type.replace(/_/g, " ")} · {artifact.source_ids.length} source{artifact.source_ids.length !== 1 ? "s" : ""} · {formatDate(artifact.created_at)}
+          {artifact.type.replace(/_/g, " ")} · {artifact.source_ids.length} source
+          {artifact.source_ids.length !== 1 ? "s" : ""} · {formatDate(artifact.created_at)}
         </p>
       </div>
       <ContextMenu
-        items={[]}
+        items={doneItems}
         trigger={({ toggle, triggerRef }) => (
           <button
             ref={triggerRef}
