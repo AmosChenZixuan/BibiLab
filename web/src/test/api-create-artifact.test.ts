@@ -1,0 +1,82 @@
+import { afterEach, describe, expect, test, vi } from "vitest";
+import { createApiClient, api } from "@/lib/api";
+
+// Mock fetch globally
+const mockFetch = vi.fn();
+global.fetch = mockFetch;
+
+describe("ListsClient.createArtifact", () => {
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  test("createArtifact is a function on ListsClient", () => {
+    const client = createApiClient("http://localhost:8765/api");
+    expect(typeof client.createArtifact).toBe("function");
+  });
+
+  test("createArtifact calls POST /api/lists/{listId}/artifacts with correct body", async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 201,
+      json: async () => ({
+        id: "job-123",
+        type: "ingest",
+        status: "queued",
+        progress: 0,
+        error: null,
+        created_at: "2026-04-08T00:00:00Z",
+        updated_at: "2026-04-08T00:00:00Z",
+        meta: { list_id: "list-1" },
+      }),
+    });
+
+    const client = createApiClient("http://localhost:8765/api");
+    const result = await client.createArtifact("list-1", {
+      type: "brief",
+      prompt: "Give me a brief",
+      source_ids: ["src-1", "src-2"],
+    });
+
+    expect(mockFetch).toHaveBeenCalledWith(
+      "http://localhost:8765/api/lists/list-1/artifacts",
+      expect.objectContaining({
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          type: "brief",
+          prompt: "Give me a brief",
+          source_ids: ["src-1", "src-2"],
+        }),
+      }),
+    );
+    expect(result).toMatchObject({ id: "job-123" });
+  });
+
+  test("createArtifact returns Promise<Job>", async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 201,
+      json: async () => ({
+        id: "job-456",
+        type: "ingest",
+        status: "queued",
+        progress: 0,
+        error: null,
+        created_at: "2026-04-08T00:00:00Z",
+        updated_at: "2026-04-08T00:00:00Z",
+        meta: { list_id: "list-1" },
+      }),
+    });
+
+    const client = createApiClient("http://localhost:8765/api");
+    const result = await client.createArtifact("list-1", {
+      type: "custom_report",
+      prompt: "Custom analysis",
+      source_ids: ["src-1"],
+    });
+
+    expect(result.id).toBe("job-456");
+    expect(result.status).toBe("queued");
+  });
+});
