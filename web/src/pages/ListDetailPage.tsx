@@ -7,6 +7,7 @@ import type { Source, SourceContent } from "@/lib/types";
 
 import { usePanelResize, Resizer, COLLAPSED_PANEL } from "@/components/lists/panel-resize";
 import { NavbarTitle } from "@/components/lists/NavbarTitle";
+import { LabPanel } from "@/components/lists/LabPanel";
 import { SourcesViewerMode } from "@/components/lists/sources/SourcesViewerMode";
 import { SourcesListMode } from "@/components/lists/sources/SourcesListMode";
 
@@ -37,6 +38,7 @@ export function ListDetailPage() {
   const [sourceContent, setSourceContent] = useState<SourceContent | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [sourcesCollapsed, setSourcesCollapsed] = useState(false);
+  const [labCollapsed, setLabCollapsed] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
   const { sourcesW, labW, chatW, onMouseDownLeft, onMouseDownRight } = usePanelResize(
@@ -182,12 +184,18 @@ export function ListDetailPage() {
 
         {/* ── Lab panel ── */}
         <div
-          style={{ width: `${labW}px` }}
+          style={
+            labCollapsed
+              ? { width: `${COLLAPSED_PANEL}px`, minWidth: `${COLLAPSED_PANEL}px` }
+              : { width: `${labW}px` }
+          }
           className={panelBase}
         >
-          <SkeletonPanel
-            title="Lab"
-            note="synthesis tools"
+          <LabPanel
+            listId={listId}
+            labCollapsed={labCollapsed}
+            labW={labW}
+            onToggleCollapse={() => setLabCollapsed((v) => !v)}
           />
         </div>
       </div>

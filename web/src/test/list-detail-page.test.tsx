@@ -201,7 +201,7 @@ describe("list detail page", () => {
     expect(await screen.findByRole("heading", { name: /chat/i })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: /lab/i })).toBeInTheDocument();
     expect(screen.getByText(/list-scoped chat arrives in v1/i)).toBeInTheDocument();
-    expect(screen.getByText(/synthesis tools/i)).toBeInTheDocument();
+    expect(screen.getByText(/artifact/i)).toBeInTheDocument();
 
     const collapseBtn = screen.getByRole("button", { name: /collapse sources/i });
     expect(collapseBtn).toBeInTheDocument();
