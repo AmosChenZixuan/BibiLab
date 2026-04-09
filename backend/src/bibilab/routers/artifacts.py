@@ -6,7 +6,6 @@ from fastapi.responses import FileResponse
 
 from bibilab.config import bibilab_home
 from bibilab.db import (
-    create_artifact,
     create_job,
     delete_artifact,
     get_artifact,
@@ -19,6 +18,7 @@ from bibilab.models.artifacts import (
     ArtifactPatchRequest,
     ArtifactResponse,
 )
+from bibilab.models.jobs import JobResponse, JobStatus
 
 router = APIRouter()
 
@@ -36,15 +36,15 @@ async def list_artifacts(list_id: str) -> list[ArtifactResponse]:
 async def create_artifact_endpoint(
     list_id: str,
     req: ArtifactCreateRequest,
-) -> ArtifactResponse:
+) -> JobResponse:
     row = await get_list(list_id)
     if row is None:
         raise HTTPException(status_code=404, detail="List not found")
 
     artifact_id = str(uuid.uuid4())
 
-    # Queue a job for artifact generation
-    await create_job(
+    # Queue a job for artifact generation (worker will create artifact record on success)
+    job_id = await create_job(
         type="artifact",
         meta={
             "artifact_id": artifact_id,
@@ -55,29 +55,22 @@ async def create_artifact_endpoint(
         },
     )
 
-    # Create artifact record immediately (worker will update it later)
-    await create_artifact(
-        artifact_id=artifact_id,
-        list_id=list_id,
-        name=None,
-        type=req.type,
-        prompt=req.prompt,
-        source_ids=req.source_ids,
-        status="generating",
-        content_path=None,
-    )
-
-    return ArtifactResponse(
-        id=artifact_id,
-        list_id=list_id,
-        name=None,
-        type=req.type,
-        prompt=req.prompt,
-        source_ids=req.source_ids,
-        status="generating",
-        content_path=None,
+    now = datetime.now(timezone.utc).isoformat()
+    return JobResponse(
+        id=job_id,
+        type="artifact",
+        status=JobStatus.QUEUED,
+        progress=0,
         error=None,
-        created_at=datetime.now(timezone.utc),
+        created_at=now,
+        updated_at=now,
+        meta={
+            "artifact_id": artifact_id,
+            "list_id": list_id,
+            "type": req.type,
+            "prompt": req.prompt,
+            "source_ids": req.source_ids,
+        },
     )
 
 

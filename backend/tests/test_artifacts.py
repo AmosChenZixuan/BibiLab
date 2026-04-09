@@ -31,16 +31,20 @@ async def test_create_artifact_queues_job(client: httpx.AsyncClient):
     )
     assert resp.status_code == 201
     data = resp.json()
-    assert data["list_id"] == list_id
-    assert data["type"] == "summary"
-    assert data["prompt"] == "Summarize the videos"
-    assert data["source_ids"] == ["src1", "src2"]
-    assert data["status"] == "generating"
-    assert data["name"] is None
-    assert data["content_path"] is None
+    # POST now returns job info, not artifact info
+    assert data["type"] == "artifact"
+    assert data["status"] == "queued"
+    assert data["progress"] == 0
     assert data["error"] is None
-    assert "id" in data
+    assert "id" in data  # job_id
     assert "created_at" in data
+    assert "updated_at" in data
+    # meta contains artifact info
+    assert data["meta"]["list_id"] == list_id
+    assert data["meta"]["type"] == "summary"
+    assert data["meta"]["prompt"] == "Summarize the videos"
+    assert data["meta"]["source_ids"] == ["src1", "src2"]
+    assert "artifact_id" in data["meta"]
 
 
 @pytest.mark.asyncio
