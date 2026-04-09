@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ChevronLeft, ChevronRight, Minimize2 } from "lucide-react";
+import { ArrowLeftToLine, ArrowRightToLine, Minimize2 } from "lucide-react";
 
 import { useLanguage } from "@/app/LanguageContext";
 import { COLLAPSED_PANEL, MIN_PANEL } from "@/components/lists/panel-resize";
@@ -35,14 +35,14 @@ export function LabPanel({ listId, labCollapsed, labW, sourceIds, onToggleCollap
     if (labCollapsed) {
       return {
         label: "expand",
-        icon: <ChevronRight size={16} />,
+        icon: <ArrowLeftToLine size={16} />,
         onClick: onToggleCollapse,
       };
     }
     if (labMode === "tool-list") {
       return {
         label: "collapse",
-        icon: <ChevronLeft size={16} />,
+        icon: <ArrowRightToLine size={16} />,
         onClick: onToggleCollapse,
       };
     }

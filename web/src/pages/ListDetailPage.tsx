@@ -44,6 +44,7 @@ export function ListDetailPage() {
   const { sourcesW, labW, chatW, onMouseDownLeft, onMouseDownRight } = usePanelResize(
     containerRef,
     sourcesCollapsed,
+    labCollapsed,
   );
 
   const currentSourceIdRef = useRef<string | null>(null);

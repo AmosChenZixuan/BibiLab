@@ -58,7 +58,7 @@ describe("usePanelResize", () => {
   test("sourcesW derives from ratio — initial at 1440px", () => {
     const div = makeDiv(1440);
     const { result } = renderHook(() =>
-      usePanelResize({ current: div } as React.RefObject<HTMLDivElement>, false),
+      usePanelResize({ current: div } as React.RefObject<HTMLDivElement>, false, false),
     );
 
     triggerResize(div, 1440);
@@ -75,7 +75,7 @@ describe("usePanelResize", () => {
   test("shrinking container scales sourcesW proportionally — ratio preserved", () => {
     const div = makeDiv(1440);
     const { result } = renderHook(() =>
-      usePanelResize({ current: div } as React.RefObject<HTMLDivElement>, false),
+      usePanelResize({ current: div } as React.RefObject<HTMLDivElement>, false, false),
     );
 
     triggerResize(div, 1440);
@@ -101,7 +101,7 @@ describe("usePanelResize", () => {
   test("returning to original size restores proportional widths", () => {
     const div = makeDiv(1440);
     const { result } = renderHook(() =>
-      usePanelResize({ current: div } as React.RefObject<HTMLDivElement>, false),
+      usePanelResize({ current: div } as React.RefObject<HTMLDivElement>, false, false),
     );
 
     triggerResize(div, 1440);
@@ -121,7 +121,7 @@ describe("usePanelResize", () => {
   test("chatW + sourcesW + labW === workspaceWidth at 1440px", () => {
     const div = makeDiv(1440);
     const { result } = renderHook(() =>
-      usePanelResize({ current: div } as React.RefObject<HTMLDivElement>, false),
+      usePanelResize({ current: div } as React.RefObject<HTMLDivElement>, false, false),
     );
 
     triggerResize(div, 1440);
@@ -134,7 +134,7 @@ describe("usePanelResize", () => {
   test("sum still holds after container shrink to 800px", () => {
     const div = makeDiv(800);
     const { result } = renderHook(() =>
-      usePanelResize({ current: div } as React.RefObject<HTMLDivElement>, false),
+      usePanelResize({ current: div } as React.RefObject<HTMLDivElement>, false, false),
     );
 
     triggerResize(div, 800);
@@ -147,7 +147,7 @@ describe("usePanelResize", () => {
   test("sum still holds at very small viewport (600px)", () => {
     const div = makeDiv(600);
     const { result } = renderHook(() =>
-      usePanelResize({ current: div } as React.RefObject<HTMLDivElement>, false),
+      usePanelResize({ current: div } as React.RefObject<HTMLDivElement>, false, false),
     );
 
     triggerResize(div, 600);
@@ -162,7 +162,7 @@ describe("usePanelResize", () => {
   test("sourcesCollapsed=true renders COLLAPSED_PANEL (48px)", () => {
     const div = makeDiv(1440);
     const { result } = renderHook(() =>
-      usePanelResize({ current: div } as React.RefObject<HTMLDivElement>, true),
+      usePanelResize({ current: div } as React.RefObject<HTMLDivElement>, true, false),
     );
 
     triggerResize(div, 1440);
@@ -175,7 +175,7 @@ describe("usePanelResize", () => {
   test("sourcesW, labW, chatW are numbers", () => {
     const div = makeDiv(1440);
     const { result } = renderHook(() =>
-      usePanelResize({ current: div } as React.RefObject<HTMLDivElement>, false),
+      usePanelResize({ current: div } as React.RefObject<HTMLDivElement>, false, false),
     );
     triggerResize(div, 1440);
     expect(typeof result.current.sourcesW).toBe("number");

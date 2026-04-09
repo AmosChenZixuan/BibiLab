@@ -17,6 +17,7 @@ function getResizableWorkspaceWidth(containerWidth: number) {
 export function usePanelResize(
   containerRef: RefObject<HTMLDivElement | null>,
   sourcesCollapsed: boolean,
+  labCollapsed: boolean,
 ) {
   // ── Ratio refs (not pixel state) ─────────────────────────────────────────
   const sourcesRatio = useRef<number>(1 / 3);
@@ -102,7 +103,7 @@ export function usePanelResize(
           maxRatio,
         );
       } else {
-        const minRatio = MIN_PANEL / workspaceWidth;
+        const minRatio = labCollapsed ? COLLAPSED_PANEL / workspaceWidth : MIN_PANEL / workspaceWidth;
         const maxRatio = 1 - sourcesRatio.current - MIN_PANEL / workspaceWidth;
         labRatio.current = clamp(
           startLabRatio.current - deltaRatio,
@@ -134,14 +135,16 @@ export function usePanelResize(
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
     };
-  }, [sourcesCollapsed]);
+  }, [sourcesCollapsed, labCollapsed]);
 
   // ── Derived pixel widths (computed every render, not stored) ──────────────
   const workspaceWidth = getResizableWorkspaceWidth(containerContentWidth);
   const sourcesWidth = sourcesCollapsed
     ? COLLAPSED_PANEL
     : Math.round(sourcesRatio.current * workspaceWidth);
-  const labWidth = Math.round(labRatio.current * workspaceWidth);
+  const labWidth = labCollapsed
+    ? COLLAPSED_PANEL
+    : Math.round(labRatio.current * workspaceWidth);
   const chatWidth = workspaceWidth - sourcesWidth - labWidth;
 
   // Guard against unmount mid-drag
