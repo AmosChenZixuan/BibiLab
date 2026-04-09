@@ -21,7 +21,7 @@ interface LabPanelProps {
 
 export function LabPanel({ listId, labCollapsed, labW, sourceIds, onToggleCollapse }: LabPanelProps) {
   const { t } = useLanguage();
-  const panelBase = "flex shrink-0 flex-col overflow-hidden rounded-3xl border border-border bg-white/76 shadow-lg";
+  const panelBase = "flex shrink-0 flex-col overflow-hidden";
 
   const [labMode, setLabMode] = useState<LabMode>("tool-list");
   const [selectedArtifact, setSelectedArtifact] = useState<Artifact | null>(null);
