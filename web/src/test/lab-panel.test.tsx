@@ -195,6 +195,7 @@ describe("LabPanel", () => {
             listId="list-1"
             labCollapsed={true}
             labW={300}
+            sourceIds={[]}
             onToggleCollapse={onToggleCollapse}
           />
         </LanguageProvider>
@@ -209,6 +210,7 @@ describe("LabPanel", () => {
             listId="list-1"
             labCollapsed={false}
             labW={300}
+            sourceIds={[]}
             onToggleCollapse={onToggleCollapse}
           />
         </LanguageProvider>
