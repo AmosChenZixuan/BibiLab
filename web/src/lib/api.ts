@@ -9,6 +9,7 @@ import type {
   SourceContent,
   WhisperDownloadResponse,
   WhisperModel,
+  ArtifactType,
 } from "./types";
 
 type ApiErrorDetail = string | { message?: string };
@@ -121,6 +122,13 @@ export class ListsClient {
   generateOverview(listId: string) {
     return this.request<OverviewDownload>(this.baseUrl, `/lists/${listId}/overview`, { method: "POST" });
   }
+
+  createArtifact(listId: string, body: { type: ArtifactType; prompt: string; source_ids: string[] }): Promise<Job> {
+    return this.request<Job>(this.baseUrl, `/lists/${listId}/artifacts`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }) as Promise<Job>;
+  }
 }
 
 export class SourcesClient {
@@ -208,6 +216,7 @@ export interface ApiClient {
   updateList(listId: string, patch: BibilabListPatch): Promise<BibilabList | undefined>;
   deleteList(listId: string): Promise<void | undefined>;
   generateOverview(listId: string): Promise<OverviewDownload | undefined>;
+  createArtifact(listId: string, body: { type: ArtifactType; prompt: string; source_ids: string[] }): Promise<Job>;
   listSources(listId: string, opts?: { signal?: AbortSignal }): Promise<Source[] | undefined>;
   getSource(sourceId: string, opts?: { signal?: AbortSignal }): Promise<SourceContent | undefined>;
   deleteSource(listId: string, sourceId: string): Promise<void | undefined>;
@@ -249,6 +258,7 @@ export function createApiClient(baseUrl?: string): ApiClient {
     updateList: (id, patch) => lists.updateList(id, patch),
     deleteList: (id) => lists.deleteList(id),
     generateOverview: (id) => lists.generateOverview(id),
+    createArtifact: (id, body) => lists.createArtifact(id, body),
     listSources: (id, opts) => sources.listSources(id, opts),
     getSource: (id, opts) => sources.getSource(id, opts),
     deleteSource: (listId, sourceId) => sources.deleteSource(listId, sourceId),
