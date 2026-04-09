@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Project Is
 
-**Project Bibilab** transforms video content into searchable, AI-assisted private notebooks. A FastAPI backend runs the local processing pipeline (download → transcribe → chunk → digest ∥ embed), and a React + TypeScript SPA under `web/` provides the primary user interface for lists, ingestion, jobs, digests, transcripts, overview export, and settings.
+**Project Bibilab** transforms video content into searchable, AI-assisted private notebooks. A FastAPI backend runs the local processing pipeline (download → transcribe → chunk → digest ∥ embed), and a React + TypeScript SPA under `web/` provides the primary user interface for lists, ingestion, jobs, digests, transcripts, overview export, Lab artifacts, and settings.
 
 ## Commands
 
@@ -54,22 +54,25 @@ FastAPI Backend (Python)
 
 ```
 routers/     — one APIRouter per module; aggregated in main.py
-models/      — Pydantic request/response models
-pipeline/    — one file per stage (audio → transcribe → chunk → digest → embed)
-adapters/    — platform-specific download + resolution
+models/      — Pydantic request/response models + domain errors
+pipeline/    — one file per stage (audio → transcribe → extract → chunk → digest → embed); _shared.py for common helpers
+adapters/    — platform-specific download + resolution (base + bilibili)
 db.py        — SQLite schema + query helpers
 config.py    — settings persisted to ~/.bibilab/config.json
 worker.py    — SQLite-polling job dispatcher
+cleanup.py   — resource cleanup utilities
+whisper_models.py — Whisper model management
 ```
 
 **Web** — `web/src/`
 
 ```
-components/ui/  — primitive components (Button, Modal, Panel, etc.)
-components/*/   — feature components (lists/, jobs/, layout/, settings/)
+components/ui/  — primitive components (Button, Modal, Panel, Select, Spinner, StatusChip, etc.)
+components/*/   — feature components (lists/, lists/lab/, jobs/, layout/, settings/)
 pages/          — route-level page components
-lib/            — typed api client, types, utilities
+lib/            — typed api client, types, download helpers, health check
 app/            — router, language context
+test/           — Vitest test files + setup
 ```
 
 ## Conventions
@@ -95,7 +98,6 @@ app/            — router, language context
 
 ## Notes
 
-- Technical specification, API contracts, DB schema in `docs/design-doc.md`; active specs in `docs/specs/`; plans in `docs/plans/`.
+- Technical specification, API contracts, DB schema in `docs/design-doc.md`; active specs in `docs/specs/`; internal docs in `docs/internal/`.
 - Pre-commit hooks enforce ruff lint/format on backend and trailing whitespace globally. Run `pre-commit install` once after cloning.
-- The legacy `plugin/` directory is not the active v0 interface.
 - Config lives at `~/.bibilab/config.json`; runtime state at `~/.bibilab/`.

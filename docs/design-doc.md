@@ -37,7 +37,7 @@ The web UI is the product. The backend exists to serve it.
 │               Bibilab Web UI (React + TypeScript SPA)          │
 │                                                              │
 │   /               Home: grid of lists                        │
-│   /lists/:id      List detail: Sources | Chat | Studio       │
+│   /lists/:id      List detail: Sources | Chat | Lab          │
 │   /settings       Global config, health, accounts             │
 └───────────────────────────│──────────────────────────────────┘
                             │ HTTP /api/*
@@ -55,7 +55,7 @@ The web UI is the product. The backend exists to serve it.
 │   └──────────────┘  └────────────────────┘                     │
 │                                                              │
 │   Storage: ~/.bibilab/                                          │
-│     bibilab.db         SQLite (lists, jobs, sources)            │
+│     bibilab.db         SQLite (lists, jobs, sources, artifacts) │
 │     covers/          thumbnail images                          │
 │     transcripts/     raw Whisper output                       │
 │     chroma/          ChromaDB data                            │
@@ -77,6 +77,7 @@ The web UI is the product. The backend exists to serve it.
 │   └── {video_id}.jpg   cached cover image
 ├── transcripts/
 │   └── {video_id}.txt   raw Whisper segments: [HH:MM:SS] text
+├── artifacts/           generated artifact content
 ├── chroma/              ChromaDB data directory
 └── downloads/           temp video files, cleaned after pipeline
 ```
@@ -87,7 +88,7 @@ Transcripts and covers are **always written to disk**, not stored in SQLite. `so
 
 ## 5. Database Schema
 
-Three tables, three purposes:
+Four tables:
 
 ### `lists` — List registry
 
@@ -103,7 +104,7 @@ Three tables, three purposes:
 | Column | Notes |
 |---|---|
 | `id` | UUID, primary key |
-| `type` | `"ingest"` \| `"playlist"` \| `"course"` \| `"model_download"` |
+| `type` | `"ingest"` \| `"playlist"` \| `"course"` \| `"model_download"` \| `"artifact"` |
 | `status` | `queued` → `downloading` → `transcribing` → `processing` → `done` \| `failed` \| `needs_auth` |
 | `progress` | 0–100 |
 | `error` | Error message, nullable |
@@ -135,6 +136,23 @@ Three tables, three purposes:
 
 `sources` is the authoritative record of processed videos. It drives deduplication, listing, and digest resolution.
 
+### `artifacts` — Lab-generated content
+
+| Column | Notes |
+|---|---|
+| `id` | UUID, primary key |
+| `list_id` | FK to `lists.id` |
+| `name` | User-visible name (initial = type label, renameable) |
+| `type` | `"brief"` \| `"study_guide"` \| `"blog_post"` \| `"custom_report"` |
+| `prompt` | Exact prompt string submitted |
+| `source_ids` | JSON array of source UUIDs |
+| `status` | `generating` → `done` \| `failed` |
+| `content_path` | Relative path from `~/.bibilab/`, e.g. `artifacts/{id}.md`, nullable |
+| `error` | Error message, nullable |
+| `created_at` | ISO timestamp |
+
+Artifacts use job type `"artifact"`. Content is stored on disk; metadata and status live in SQLite.
+
 ---
 
 ## 6. Core Design Decisions
@@ -154,6 +172,8 @@ Three tables, three purposes:
 | SPA routing | Client-side (React Router) | FastAPI `/{full_path:path}` with `not_found` guard on `api/*` |
 | Worker concurrency | Configurable via `config.backend.worker_concurrency` | Default 1; users with GPU headroom can increase |
 | ChromaDB chunk metadata | `video_id`, `list_id`, `timestamp_start/end`, `sequence_index` | Enables both per-video and per-list RAG scope |
+| Artifact storage | Content on disk (`artifacts/{id}.md`), metadata in SQLite | Same pattern as transcripts; avoids large text blobs in DB |
+| Lab panel naming | "Lab" (not "Studio") | Clearer metaphor for tool-based content generation |
 
 ---
 
