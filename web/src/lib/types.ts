@@ -185,5 +185,3 @@ export type OverviewDownload = {
   filename: string;
   content: string;
 };
-
-export type ArtifactType = "brief" | "study_guide" | "blog_post" | "custom_report";
