@@ -9,7 +9,7 @@ import {
 } from "react";
 
 import { api, toErrorMessage } from "@/lib/api";
-import type { IngestJob, Job, ModelDownloadJob } from "@/lib/types";
+import type { ArtifactJob, IngestJob, Job, ModelDownloadJob } from "@/lib/types";
 
 export const TERMINAL_JOB_STATUSES = new Set(["done", "failed", "needs_auth"]);
 
@@ -70,6 +70,23 @@ function createPlaceholderJob(id: string, meta: TrackedJobMeta): Job {
     };
   }
 
+  if (meta.producer === "artifact") {
+    return {
+      id,
+      type: "artifact",
+      status: "generating",
+      progress: 0,
+      error: null,
+      created_at: "",
+      updated_at: "",
+      meta: {
+        list_id: meta.contextKey ?? undefined,
+        artifact_id: id,
+        artifact_type: meta.label,
+      },
+    };
+  }
+
   return {
     id,
     type: "ingest",
@@ -95,6 +112,10 @@ function isModelDownloadJob(job: Job): job is ModelDownloadJob {
   return job.type === "model_download";
 }
 
+function isArtifactJob(job: Job): job is ArtifactJob {
+  return job.type === "artifact";
+}
+
 function inferTrackedMeta(job: Job): TrackedJobMeta {
   if (isModelDownloadJob(job)) {
     const modelSize = typeof job.meta.model_size === "string" ? job.meta.model_size : "model";
@@ -102,6 +123,15 @@ function inferTrackedMeta(job: Job): TrackedJobMeta {
       producer: "whisper_download",
       label: modelSize,
       contextKey: modelSize,
+    };
+  }
+
+  if (isArtifactJob(job)) {
+    const artifactType = typeof job.meta.artifact_type === "string" ? job.meta.artifact_type : "artifact";
+    return {
+      producer: "artifact",
+      label: artifactType,
+      contextKey: typeof job.meta.list_id === "string" ? job.meta.list_id : null,
     };
   }
 

@@ -9,7 +9,8 @@ import type {
   SourceContent,
   WhisperDownloadResponse,
   WhisperModel,
-  ArtifactType,
+ArtifactType,
+  Artifact,
 } from "./types";
 
 type ApiErrorDetail = string | { message?: string };
@@ -158,6 +159,14 @@ export class SourcesClient {
   }
 }
 
+export class ArtifactsClient {
+  constructor(private readonly baseUrl: string, private readonly request: RequestFn) {}
+
+  listArtifacts(listId: string, opts?: { signal?: AbortSignal }) {
+    return this.request<Artifact[]>(this.baseUrl, `/lists/${listId}/artifacts`, opts);
+  }
+}
+
 export class ConfigClient {
   constructor(private readonly baseUrl: string, private readonly request: RequestFn) {}
 
@@ -222,6 +231,7 @@ export interface ApiClient {
   deleteSource(listId: string, sourceId: string): Promise<void | undefined>;
   rerunDigest(sourceId: string): Promise<SourceContent | undefined>;
   ingestUrl(listId: string, url: string): Promise<{ queued: string[]; skipped: string[] } | undefined>;
+  listArtifacts(listId: string, opts?: { signal?: AbortSignal }): Promise<Artifact[] | undefined>;
   getConfig(opts?: { signal?: AbortSignal }): Promise<BibilabConfig | undefined>;
   putConfig(patch: Partial<BibilabConfig>): Promise<BibilabConfig | undefined>;
   getHealth(opts?: { signal?: AbortSignal }): Promise<HealthResponse | undefined>;
@@ -246,6 +256,7 @@ export function createApiClient(baseUrl?: string): ApiClient {
 
   const lists = new ListsClient(base, request);
   const sources = new SourcesClient(base, request);
+  const artifacts = new ArtifactsClient(base, request);
   const config = new ConfigClient(base, request);
   const health = new HealthClient(base, request);
   const jobs = new JobsClient(base, request);
@@ -264,6 +275,7 @@ export function createApiClient(baseUrl?: string): ApiClient {
     deleteSource: (listId, sourceId) => sources.deleteSource(listId, sourceId),
     rerunDigest: (id) => sources.rerunDigest(id),
     ingestUrl: (listId, url) => sources.ingestUrl(listId, url),
+    listArtifacts: (id, opts) => artifacts.listArtifacts(id, opts),
     getConfig: (opts) => config.getConfig(opts),
     putConfig: (patch) => config.putConfig(patch),
     getHealth: (opts) => health.getHealth(opts),

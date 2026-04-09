@@ -92,7 +92,37 @@ export type ModelDownloadJob = BaseJob & {
   meta: ModelDownloadMeta;
 };
 
-export type Job = IngestJob | ModelDownloadJob;
+export type ArtifactJob = {
+  id: string;
+  type: "artifact";
+  status: ArtifactStatus | JobStatus;
+  progress: number;
+  error: string | null;
+  created_at: string;
+  updated_at: string;
+  meta: {
+    list_id?: string;
+    artifact_id?: string;
+    artifact_type?: string;
+  };
+};
+
+export type Job = IngestJob | ModelDownloadJob | ArtifactJob;
+
+export type ArtifactType = "brief" | "study_guide" | "blog_post" | "custom_report";
+
+export type ArtifactStatus = "generating" | "done" | "error";
+
+export type Artifact = {
+  id: string;
+  name: string;
+  type: ArtifactType;
+  prompt: string;
+  source_ids: string[];
+  status: ArtifactStatus;
+  created_at: string;
+  error?: string;
+};
 
 export type BibilabConfig = {
   accounts: {
