@@ -46,6 +46,7 @@ function renderLabPanel(props?: Partial<React.ComponentProps<typeof LabPanel>>) 
           listId="list-1"
           labCollapsed={false}
           labW={300}
+          sourceIds={[]}
           onToggleCollapse={vi.fn()}
           {...props}
         />
@@ -69,9 +70,10 @@ describe("LabPanel", () => {
     expect(heading.className).toMatch(/text-ink/);
   });
 
-  test("renders tool section label in tool-list mode", () => {
-    renderLabPanel();
-    expect(screen.getByText(/tool/i)).toBeInTheDocument();
+  test("renders tool section with reports button in tool-list mode", () => {
+    renderLabPanel({ sourceIds: ["source-1"] });
+    expect(screen.getByTestId("tool-section")).toBeInTheDocument();
+    expect(screen.getByText("Reports")).toBeInTheDocument();
   });
 
   test("tool-list mode collapse button calls onToggleCollapse", async () => {
@@ -149,11 +151,11 @@ describe("LabPanel", () => {
     });
     // Click minimize
     await userEvent.click(screen.getByRole("button", { name: /minimize/i }));
-    // Back to tool-list, should show artifact list again
+    // Back to tool-list, should show artifact list and tool section
     await waitFor(() => {
       expect(screen.getByText("Study Guide")).toBeInTheDocument();
     });
-    expect(screen.getByText(/tool/i)).toBeInTheDocument();
+    expect(screen.getByTestId("tool-section")).toBeInTheDocument();
   });
 
   test("viewer mode does not show collapse button (shows minimize instead)", async () => {
@@ -193,6 +195,7 @@ describe("LabPanel", () => {
             listId="list-1"
             labCollapsed={true}
             labW={300}
+            sourceIds={[]}
             onToggleCollapse={onToggleCollapse}
           />
         </LanguageProvider>
@@ -207,6 +210,7 @@ describe("LabPanel", () => {
             listId="list-1"
             labCollapsed={false}
             labW={300}
+            sourceIds={[]}
             onToggleCollapse={onToggleCollapse}
           />
         </LanguageProvider>
