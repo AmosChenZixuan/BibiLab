@@ -1,8 +1,9 @@
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
 import { LanguageProvider } from "@/app/LanguageContext";
+import { JobActivityProvider } from "@/components/jobs/JobActivityProvider";
 import { LabPanel } from "@/components/lists/LabPanel";
 
 vi.mock("@/lib/api", () => ({
@@ -22,20 +23,34 @@ vi.mock("@/lib/api", () => ({
     putConfig: vi.fn(),
     downloadWhisperModel: vi.fn(),
     listWhisperModels: vi.fn(),
+    listArtifacts: vi.fn().mockResolvedValue([
+      {
+        id: "artifact-1",
+        name: "Study Guide",
+        type: "study_guide",
+        prompt: "Generate a study guide",
+        source_ids: ["source-1", "source-2", "source-3"],
+        status: "done",
+        created_at: "2026-04-08T12:00:00Z",
+      },
+    ]),
+    getArtifactContent: vi.fn().mockResolvedValue({ content: "# Study Guide\n\nContent here" }),
   },
 }));
 
 function renderLabPanel(props?: Partial<React.ComponentProps<typeof LabPanel>>) {
   return render(
-    <LanguageProvider>
-      <LabPanel
-        listId="list-1"
-        labCollapsed={false}
-        labW={300}
-        onToggleCollapse={vi.fn()}
-        {...props}
-      />
-    </LanguageProvider>,
+    <JobActivityProvider>
+      <LanguageProvider>
+        <LabPanel
+          listId="list-1"
+          labCollapsed={false}
+          labW={300}
+          onToggleCollapse={vi.fn()}
+          {...props}
+        />
+      </LanguageProvider>
+    </JobActivityProvider>,
   );
 }
 
@@ -54,10 +69,9 @@ describe("LabPanel", () => {
     expect(heading.className).toMatch(/text-ink/);
   });
 
-  test("renders tool-list mode content (Tool and Artifact sections) by default", () => {
+  test("renders tool section label in tool-list mode", () => {
     renderLabPanel();
     expect(screen.getByText(/tool/i)).toBeInTheDocument();
-    expect(screen.getByText(/artifact/i)).toBeInTheDocument();
   });
 
   test("tool-list mode collapse button calls onToggleCollapse", async () => {
@@ -80,53 +94,125 @@ describe("LabPanel", () => {
     expect(onToggleCollapse).toHaveBeenCalledTimes(1);
   });
 
-  test("minimize button in viewer mode returns to tool-list", async () => {
-    const { rerender } = renderLabPanel();
-    // Enter viewer mode by clicking the artifact button
-    const artifactText = screen.getByText("Artifact");
-    await userEvent.click(artifactText);
-    // Now minimize button should appear
-    expect(screen.getByRole("button", { name: /minimize/i })).toBeInTheDocument();
-    // Click minimize to return to tool-list
+  test("clicking done artifact card enters viewer mode with artifact name and source count", async () => {
+    renderLabPanel();
+    // Wait for artifact to load in ArtifactList
+    await waitFor(() => {
+      expect(screen.getByText("Study Guide")).toBeInTheDocument();
+    });
+    // Click the artifact card
+    const artifactCard = screen.getByText("Study Guide").closest("[class*='rounded-2xl']") as HTMLElement;
+    await userEvent.click(artifactCard);
+    // Wait for viewer mode to render (check for minimize button which is unique to viewer)
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /minimize/i })).toBeInTheDocument();
+    });
+    // Verify viewer header content
+    expect(screen.getByText(/based on 3 sources/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /copy/i })).toBeInTheDocument();
+  });
+
+  test("copy button in viewer mode copies markdown to clipboard", async () => {
+    renderLabPanel();
+    await waitFor(() => {
+      expect(screen.getByText("Study Guide")).toBeInTheDocument();
+    });
+    // Click the artifact card to enter viewer mode
+    const artifactCard = screen.getByText("Study Guide").closest("[class*='rounded-2xl']") as HTMLElement;
+    await userEvent.click(artifactCard);
+    // Wait for viewer mode
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /copy/i })).toBeInTheDocument();
+    });
+    const copyBtn = screen.getByRole("button", { name: /copy/i });
+    // Mock clipboard (jsdom doesn't have clipboard API)
+    const clipboardWrite = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText: clipboardWrite },
+      configurable: true,
+    });
+    await userEvent.click(copyBtn);
+    expect(clipboardWrite).toHaveBeenCalledWith("# Study Guide\n\nContent here");
+  });
+
+  test("minimize button in viewer mode returns to tool-list showing artifact list", async () => {
+    renderLabPanel();
+    await waitFor(() => {
+      expect(screen.getByText("Study Guide")).toBeInTheDocument();
+    });
+    // Enter viewer mode
+    const artifactCard = screen.getByText("Study Guide").closest("[class*='rounded-2xl']") as HTMLElement;
+    await userEvent.click(artifactCard);
+    // Wait for viewer mode
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /minimize/i })).toBeInTheDocument();
+    });
+    // Click minimize
     await userEvent.click(screen.getByRole("button", { name: /minimize/i }));
-    // Should be back in tool-list mode with tool + artifact sections
+    // Back to tool-list, should show artifact list again
+    await waitFor(() => {
+      expect(screen.getByText("Study Guide")).toBeInTheDocument();
+    });
     expect(screen.getByText(/tool/i)).toBeInTheDocument();
-    expect(screen.getByText(/artifact/i)).toBeInTheDocument();
+  });
+
+  test("viewer mode does not show collapse button (shows minimize instead)", async () => {
+    renderLabPanel();
+    await waitFor(() => {
+      expect(screen.getByText("Study Guide")).toBeInTheDocument();
+    });
+    // Enter viewer mode
+    const artifactCard = screen.getByText("Study Guide").closest("[class*='rounded-2xl']") as HTMLElement;
+    await userEvent.click(artifactCard);
+    // Wait for viewer mode
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /minimize/i })).toBeInTheDocument();
+    });
+    // Should show minimize, NOT collapse
+    expect(screen.queryByRole("button", { name: /collapse/i })).not.toBeInTheDocument();
   });
 
   test("collapsing does NOT reset labMode - stays in viewer after expand", async () => {
     const onToggleCollapse = vi.fn();
     const { rerender } = renderLabPanel({ labCollapsed: false, onToggleCollapse });
-    // Enter viewer mode by clicking artifact
-    const artifactText = screen.getByText("Artifact");
-    await userEvent.click(artifactText);
-    // Verify minimize button visible (in viewer mode)
-    expect(screen.getByRole("button", { name: /minimize/i })).toBeInTheDocument();
-    // Simulate collapse by re-rendering with labCollapsed=true
+    await waitFor(() => {
+      expect(screen.getByText("Study Guide")).toBeInTheDocument();
+    });
+    // Enter viewer mode
+    const artifactCard = screen.getByText("Study Guide").closest("[class*='rounded-2xl']") as HTMLElement;
+    await userEvent.click(artifactCard);
+    // Wait for viewer mode
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /minimize/i })).toBeInTheDocument();
+    });
+    // Simulate collapse
     rerender(
-      <LanguageProvider>
-        <LabPanel
-          listId="list-1"
-          labCollapsed={true}
-          labW={300}
-          onToggleCollapse={onToggleCollapse}
-        />
-      </LanguageProvider>,
+      <JobActivityProvider>
+        <LanguageProvider>
+          <LabPanel
+            listId="list-1"
+            labCollapsed={true}
+            labW={300}
+            onToggleCollapse={onToggleCollapse}
+          />
+        </LanguageProvider>
+      </JobActivityProvider>,
     );
-    // In collapsed state, should show expand button
     expect(screen.getByRole("button", { name: /expand/i })).toBeInTheDocument();
-    // Simulate expand by re-rendering with labCollapsed=false
+    // Simulate expand
     rerender(
-      <LanguageProvider>
-        <LabPanel
-          listId="list-1"
-          labCollapsed={false}
-          labW={300}
-          onToggleCollapse={onToggleCollapse}
-        />
-      </LanguageProvider>,
+      <JobActivityProvider>
+        <LanguageProvider>
+          <LabPanel
+            listId="list-1"
+            labCollapsed={false}
+            labW={300}
+            onToggleCollapse={onToggleCollapse}
+          />
+        </LanguageProvider>
+      </JobActivityProvider>,
     );
-    // Should still be in viewer mode (minimize button visible, artifact section gone)
+    // Should still be in viewer mode
     expect(screen.getByRole("button", { name: /minimize/i })).toBeInTheDocument();
   });
 });

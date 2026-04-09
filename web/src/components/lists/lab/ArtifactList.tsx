@@ -10,9 +10,10 @@ import { ViewPromptModal } from "./ViewPromptModal";
 
 interface ArtifactListProps {
   listId: string;
+  onViewArtifact?: (artifact: Artifact) => void;
 }
 
-export function ArtifactList({ listId }: ArtifactListProps) {
+export function ArtifactList({ listId, onViewArtifact }: ArtifactListProps) {
   const { getJobs, dismissJob } = useJobActivity();
   const artifactJobs = useMemo(() => getJobs("artifact", listId), [getJobs, listId]);
   const [refreshedJobs, setRefreshedJobs] = useState<string[]>([]);
@@ -125,6 +126,11 @@ export function ArtifactList({ listId }: ArtifactListProps) {
             onDownload={artifact.status === "done" ? handleDownload : undefined}
             onRename={artifact.status === "done" ? handleRename : undefined}
             onViewPrompt={artifact.status === "done" ? setViewPromptArtifactId : undefined}
+            onView={
+              artifact.status === "done" && onViewArtifact
+                ? (id) => onViewArtifact(artifacts.find((a) => a.id === id)!)
+                : undefined
+            }
             onDelete={artifact.status === "done" ? handleDelete : undefined}
           />
         ))}

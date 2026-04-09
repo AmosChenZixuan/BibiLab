@@ -25,6 +25,7 @@ interface ArtifactCardProps {
   onDownload?: (artifactId: string) => void;
   onRename?: (artifactId: string, name: string) => void;
   onViewPrompt?: (artifactId: string) => void;
+  onView?: (artifactId: string) => void;
   onDelete?: (artifactId: string) => void;
 }
 
@@ -34,6 +35,7 @@ export function ArtifactCard({
   onDownload,
   onRename,
   onViewPrompt,
+  onView,
   onDelete,
 }: ArtifactCardProps) {
   const [isRenaming, setIsRenaming] = useState(false);
@@ -149,7 +151,16 @@ export function ArtifactCard({
   }
 
   return (
-    <div className="group flex items-center gap-2 rounded-2xl border border-border bg-white/64 px-4 py-3 transition hover:bg-white hover:shadow-sm">
+    <div
+      className="group flex items-center gap-2 rounded-2xl border border-border bg-white/64 px-4 py-3 transition hover:bg-white hover:shadow-sm"
+      onClick={(e) => {
+        // Don't open viewer if clicking the context menu trigger or input elements
+        const target = e.target as HTMLElement;
+        if (target.closest("[aria-label='Artifact options']")) return;
+        if (target.tagName === "INPUT" || target.tagName === "BUTTON") return;
+        onView?.(artifact.id);
+      }}
+    >
       <div className="min-w-0 flex-1">
         {isRenaming ? (
           <input
