@@ -107,7 +107,7 @@ export function ListDetailPage() {
     }
   }
 
-  const panelBase = "flex shrink-0 flex-col overflow-hidden rounded-3xl border border-border bg-white/76 shadow-lg";
+  const panelBase = "flex h-full shrink-0 flex-col overflow-hidden rounded-3xl border border-border bg-white/76 shadow-lg";
 
   return (
     <>

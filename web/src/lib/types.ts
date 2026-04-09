@@ -111,7 +111,7 @@ export type Job = IngestJob | ModelDownloadJob | ArtifactJob;
 
 export type ArtifactType = "brief" | "study_guide" | "blog_post" | "custom_report";
 
-export type ArtifactStatus = "generating" | "done" | "error";
+export type ArtifactStatus = "generating" | "completed" | "failed";
 
 export type Artifact = {
   id: string;

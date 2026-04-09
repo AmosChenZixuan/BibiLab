@@ -21,7 +21,7 @@ interface LabPanelProps {
 
 export function LabPanel({ listId, labCollapsed, labW, sourceIds, onToggleCollapse }: LabPanelProps) {
   const { t } = useLanguage();
-  const panelBase = "flex shrink-0 flex-col overflow-hidden";
+  const panelBase = "flex h-full shrink-0 flex-col overflow-hidden";
 
   const [labMode, setLabMode] = useState<LabMode>("tool-list");
   const [selectedArtifact, setSelectedArtifact] = useState<Artifact | null>(null);
@@ -81,10 +81,12 @@ export function LabPanel({ listId, labCollapsed, labW, sourceIds, onToggleCollap
       {!labCollapsed && (
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
           {labMode === "tool-list" ? (
-            <>
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
               <ToolSection listId={listId} sourceIds={sourceIds} />
-              <ArtifactList listId={listId} onViewArtifact={handleViewArtifact} />
-            </>
+              <div className="flex min-h-0 flex-1 flex-col border-t border-border px-4 pt-4">
+                <ArtifactList listId={listId} onViewArtifact={handleViewArtifact} />
+              </div>
+            </div>
           ) : (
             selectedArtifact && <ArtifactViewer artifact={selectedArtifact} />
           )}

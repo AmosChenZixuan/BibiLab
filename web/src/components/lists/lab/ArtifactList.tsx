@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useJobActivity } from "@/components/jobs/JobActivityProvider";
 import { api } from "@/lib/api";
@@ -17,6 +17,7 @@ export function ArtifactList({ listId, onViewArtifact }: ArtifactListProps) {
   const { getJobs, dismissJob } = useJobActivity();
   const artifactJobs = useMemo(() => getJobs("artifact", listId), [getJobs, listId]);
   const [refreshedJobs, setRefreshedJobs] = useState<string[]>([]);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   const [artifacts, setArtifacts] = useState<Artifact[]>([]);
   const [viewPromptArtifactId, setViewPromptArtifactId] = useState<string | null>(null);
@@ -116,27 +117,36 @@ export function ArtifactList({ listId, onViewArtifact }: ArtifactListProps) {
     : null;
 
   return (
-    <>
-      <div className="space-y-2">
-        {artifacts.map((artifact) => (
-          <ArtifactCard
-            key={artifact.id}
-            artifact={artifact}
-            onDismiss={artifact.status === "error" ? handleDismiss : undefined}
-            onDownload={artifact.status === "done" ? handleDownload : undefined}
-            onRename={artifact.status === "done" ? handleRename : undefined}
-            onViewPrompt={artifact.status === "done" ? setViewPromptArtifactId : undefined}
-            onView={
-              artifact.status === "done" && onViewArtifact
-                ? (id) => onViewArtifact(artifacts.find((a) => a.id === id)!)
-                : undefined
-            }
-            onDelete={artifact.status === "done" ? handleDelete : undefined}
-          />
-        ))}
-        {artifacts.length === 0 && (
-          <p className="text-sm text-muted">No artifacts yet.</p>
-        )}
+    <div className="flex h-full flex-col">
+      <div
+        ref={scrollRef}
+        className="flex-1 overflow-y-auto"
+        style={{ minHeight: 0 }}
+      >
+        <div className="space-y-2 pb-2">
+          {artifacts.map((artifact) => (
+            <ArtifactCard
+              key={artifact.id}
+              artifact={artifact}
+              onDismiss={artifact.status === "failed" ? handleDismiss : undefined}
+              onDownload={artifact.status === "completed" ? handleDownload : undefined}
+              onRename={artifact.status === "completed" ? handleRename : undefined}
+              onViewPrompt={artifact.status === "completed" ? setViewPromptArtifactId : undefined}
+              onView={
+                artifact.status === "completed" && onViewArtifact
+                  ? (id: string) => {
+                      const a = artifacts.find((art) => art.id === id);
+                      if (a) onViewArtifact(a);
+                    }
+                  : undefined
+              }
+              onDelete={artifact.status === "completed" ? handleDelete : undefined}
+            />
+          ))}
+          {artifacts.length === 0 && (
+            <p className="text-sm text-muted">No artifacts yet.</p>
+          )}
+        </div>
       </div>
       {viewPromptArtifact && (
         <ViewPromptModal
@@ -145,8 +155,6 @@ export function ArtifactList({ listId, onViewArtifact }: ArtifactListProps) {
           prompt={viewPromptArtifact.prompt}
         />
       )}
-    </>
+    </div>
   );
 }
-
-// Import at bottom to avoid circular dependency

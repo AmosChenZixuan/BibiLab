@@ -80,7 +80,7 @@ describe("ArtifactCard", () => {
         type: "brief",
         prompt: "Generate a brief",
         source_ids: ["source-1", "source-2"],
-        status: "done",
+        status: "completed",
         created_at: "2026-04-08T12:00:00Z",
       };
 
@@ -101,7 +101,7 @@ describe("ArtifactCard", () => {
         type: "brief",
         prompt: "Generate a brief about AI",
         source_ids: ["source-1"],
-        status: "done",
+        status: "completed",
         created_at: "2026-04-08T12:00:00Z",
       };
       const onDownload = vi.fn();
@@ -129,7 +129,7 @@ describe("ArtifactCard", () => {
         type: "brief",
         prompt: "Generate a brief",
         source_ids: ["source-1"],
-        status: "done",
+        status: "completed",
         created_at: "2026-04-08T12:00:00Z",
       };
       const onDownload = vi.fn();
@@ -151,7 +151,7 @@ describe("ArtifactCard", () => {
         type: "brief",
         prompt: "Generate a brief about AI",
         source_ids: ["source-1"],
-        status: "done",
+        status: "completed",
         created_at: "2026-04-08T12:00:00Z",
       };
       const onViewPrompt = vi.fn();
@@ -173,7 +173,7 @@ describe("ArtifactCard", () => {
         type: "brief",
         prompt: "Generate a brief",
         source_ids: ["source-1"],
-        status: "done",
+        status: "completed",
         created_at: "2026-04-08T12:00:00Z",
       };
       const onDelete = vi.fn();
@@ -195,7 +195,7 @@ describe("ArtifactCard", () => {
         type: "brief",
         prompt: "Generate a brief",
         source_ids: ["source-1"],
-        status: "done",
+        status: "completed",
         created_at: "2026-04-08T12:00:00Z",
       };
       const onRename = vi.fn();
@@ -220,7 +220,7 @@ describe("ArtifactCard", () => {
         type: "brief",
         prompt: "Generate a brief",
         source_ids: ["source-1"],
-        status: "done",
+        status: "completed",
         created_at: "2026-04-08T12:00:00Z",
       };
       const onRename = vi.fn();
@@ -247,7 +247,7 @@ describe("ArtifactCard", () => {
         type: "brief",
         prompt: "Generate a brief",
         source_ids: ["source-1"],
-        status: "done",
+        status: "completed",
         created_at: "2026-04-08T12:00:00Z",
       };
       const onRename = vi.fn();
@@ -275,7 +275,7 @@ describe("ArtifactCard", () => {
         type: "brief",
         prompt: "Generate a brief",
         source_ids: ["source-1"],
-        status: "done",
+        status: "completed",
         created_at: "2026-04-08T12:00:00Z",
       };
       const onRename = vi.fn();
@@ -307,7 +307,7 @@ describe("ArtifactCard", () => {
         type: "blog_post",
         prompt: "Generate a blog post",
         source_ids: ["source-1"],
-        status: "error",
+        status: "failed",
         created_at: "2026-04-08T12:00:00Z",
         error: "Generation failed: model timeout",
       };

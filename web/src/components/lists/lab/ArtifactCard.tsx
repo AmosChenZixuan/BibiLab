@@ -1,4 +1,4 @@
-import { AlertCircle, Download, FileText, MoreVertical, Pencil, Trash2, X } from "lucide-react";
+import { AlertCircle, Download, Eye, FileText, MoreVertical, Pencil, Trash2, X } from "lucide-react";
 import { useRef, useState } from "react";
 
 import { ContextMenu } from "@/components/ui/ContextMenu";
@@ -62,7 +62,7 @@ export function ArtifactCard({
     );
   }
 
-  if (artifact.status === "error") {
+  if (artifact.status === "failed") {
     return (
       <div className="flex items-start gap-3 rounded-2xl border border-pink/30 bg-pink/6 px-4 py-3">
         <AlertCircle data-testid="alert-icon" size={16} className="mt-0.5 shrink-0 text-pink" />
@@ -87,50 +87,35 @@ export function ArtifactCard({
   }
 
   // done state
-  const doneItems = [
-    ...(onRename
-      ? [
-          {
-            label: "Rename",
-            icon: <Pencil size={14} />,
-            onClick: () => {
-              setRenameValue(artifact.name);
-              setIsRenaming(true);
-              // Focus input after render
-              setTimeout(() => inputRef.current?.select(), 0);
-            },
-          },
-        ]
-      : []),
-    ...(onDownload
-      ? [
-          {
-            label: "Download",
-            icon: <Download size={14} />,
-            onClick: () => onDownload(artifact.id),
-          },
-        ]
-      : []),
-    ...(onViewPrompt
-      ? [
-          {
-            label: "View Prompt",
-            icon: <FileText size={14} />,
-            onClick: () => onViewPrompt(artifact.id),
-          },
-        ]
-      : []),
-    ...(onDelete
-      ? [
-          {
-            label: "Delete",
-            icon: <Trash2 size={14} />,
-            onClick: () => onDelete(artifact.id),
-            variant: "danger" as const,
-          },
-        ]
-      : []),
-  ];
+  const doneItems: {
+    label: string;
+    icon: React.ReactNode;
+    onClick: () => void;
+    variant?: "danger";
+  }[] = [];
+  if (onView) {
+    doneItems.push({ label: "Open", icon: <Eye size={14} />, onClick: () => onView(artifact.id) });
+  }
+  if (onRename) {
+    doneItems.push({
+      label: "Rename",
+      icon: <Pencil size={14} />,
+      onClick: () => {
+        setRenameValue(artifact.name);
+        setIsRenaming(true);
+        setTimeout(() => inputRef.current?.select(), 0);
+      },
+    });
+  }
+  if (onDownload) {
+    doneItems.push({ label: "Download", icon: <Download size={14} />, onClick: () => onDownload(artifact.id) });
+  }
+  if (onViewPrompt) {
+    doneItems.push({ label: "View Prompt", icon: <FileText size={14} />, onClick: () => onViewPrompt(artifact.id) });
+  }
+  if (onDelete) {
+    doneItems.push({ label: "Delete", icon: <Trash2 size={14} />, onClick: () => onDelete(artifact.id), variant: "danger" });
+  }
 
   function handleRenameSubmit() {
     const trimmed = renameValue.trim();
@@ -150,18 +135,19 @@ export function ArtifactCard({
     }
   }
 
+  function handleCardClick() {
+    if (!isRenaming) {
+      onView?.(artifact.id);
+    }
+  }
+
   return (
-    <div
-      className="group flex items-center gap-2 rounded-2xl border border-border bg-white/64 px-4 py-3 transition hover:bg-white hover:shadow-sm"
-      onClick={(e) => {
-        // Don't open viewer if clicking the context menu trigger or input elements
-        const target = e.target as HTMLElement;
-        if (target.closest("[aria-label='Artifact options']")) return;
-        if (target.tagName === "INPUT" || target.tagName === "BUTTON") return;
-        onView?.(artifact.id);
-      }}
-    >
-      <div className="min-w-0 flex-1">
+    <div className="group flex items-center gap-2 rounded-2xl border border-border bg-white/64 px-4 py-3 transition hover:bg-white hover:shadow-sm">
+      {/* Clickable card content */}
+      <div
+        className="min-w-0 flex-1 cursor-pointer"
+        onClick={handleCardClick}
+      >
         {isRenaming ? (
           <input
             ref={inputRef}
@@ -172,6 +158,7 @@ export function ArtifactCard({
             onKeyDown={handleRenameKeyDown}
             className="m-0 w-full border border-border bg-white px-1 py-0 text-sm font-bold text-ink outline-none focus:border-blue"
             autoFocus
+            onClick={(e) => e.stopPropagation()}
           />
         ) : (
           <p className="m-0 truncate text-sm font-bold text-ink">{artifact.name}</p>
@@ -181,6 +168,8 @@ export function ArtifactCard({
           {artifact.source_ids.length !== 1 ? "s" : ""} · {formatDate(artifact.created_at)}
         </p>
       </div>
+
+      {/* Options button */}
       <ContextMenu
         items={doneItems}
         trigger={({ toggle, triggerRef }) => (
