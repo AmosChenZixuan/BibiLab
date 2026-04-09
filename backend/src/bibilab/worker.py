@@ -232,7 +232,7 @@ class WorkerLoop:
                 type=artifact_type,
                 prompt=prompt,
                 source_ids=source_ids,
-                status="done",
+                status="completed",
                 content_path=str(content_path.relative_to(bibilab_home())),
                 error=None,
             )
@@ -251,7 +251,7 @@ class WorkerLoop:
                 type=artifact_type,
                 prompt=prompt,
                 source_ids=source_ids,
-                status="error",
+                status="failed",
                 content_path=None,
                 error=error_message,
             )
