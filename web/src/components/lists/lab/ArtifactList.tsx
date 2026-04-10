@@ -11,10 +11,12 @@ import { Sparkles } from "lucide-react";
 import { ArtifactCard } from "./ArtifactCard";
 import { ViewPromptModal } from "./ViewPromptModal";
 
+type ArtifactsUpdater = (prev: Artifact[]) => Artifact[];
+
 interface ArtifactListProps {
   listId: string;
   artifacts: Artifact[];
-  onArtifactsChange: (artifacts: Artifact[]) => void;
+  onArtifactsChange: (updater: ArtifactsUpdater) => void;
   onViewArtifact?: (artifact: Artifact) => void;
 }
 
@@ -39,7 +41,7 @@ export function ArtifactList({ listId, artifacts, onArtifactsChange, onViewArtif
       try {
         const next = await api.listArtifacts(listId);
         if (cancelled) return;
-        onArtifactsChange(next ?? []);
+        onArtifactsChange(() => next ?? []);
         await Promise.all(completed.map(({ job }) => dismissJob(job.id)));
         setRefreshedJobs((prev) => [...prev, ...completed.map(({ job }) => job.id)]);
       } catch {
@@ -54,9 +56,9 @@ export function ArtifactList({ listId, artifacts, onArtifactsChange, onViewArtif
 
   const handleDismiss = useCallback(
     async (artifactId: string) => {
-      onArtifactsChange(artifacts.filter((a) => a.id !== artifactId));
+      onArtifactsChange((prev) => prev.filter((a) => a.id !== artifactId));
     },
-    [artifacts, onArtifactsChange],
+    [onArtifactsChange],
   );
 
   const handleDownload = useCallback(async (artifactId: string) => {
@@ -72,25 +74,28 @@ export function ArtifactList({ listId, artifacts, onArtifactsChange, onViewArtif
   }, [artifacts]);
 
   const handleRename = useCallback((artifactId: string, name: string) => {
-    const artifact = artifacts.find((a) => a.id === artifactId);
-    if (!artifact) return;
-    const previousName = artifact.name;
-    // Optimistic update
-    onArtifactsChange(artifacts.map((a) => (a.id === artifactId ? { ...a, name } : a)));
-    // Revert on failure
-    void api.updateArtifact(artifactId, { name }).catch(() => {
-      onArtifactsChange(artifacts.map((a) => (a.id === artifactId ? { ...a, name: previousName } : a)));
+    let previousName: string | undefined;
+    onArtifactsChange((prev) => {
+      const artifact = prev.find((a) => a.id === artifactId);
+      if (!artifact) return prev;
+      previousName = artifact.name;
+      return prev.map((a) => (a.id === artifactId ? { ...a, name } : a));
     });
-  }, [artifacts, onArtifactsChange]);
+    void api.updateArtifact(artifactId, { name }).catch(() => {
+      onArtifactsChange((prev) =>
+        prev.map((a) => (a.id === artifactId ? { ...a, name: previousName ?? a.name } : a)),
+      );
+    });
+  }, [onArtifactsChange]);
 
   const handleDelete = useCallback(async (artifactId: string) => {
     try {
       await api.deleteArtifact(artifactId);
-      onArtifactsChange(artifacts.filter((a) => a.id !== artifactId));
+      onArtifactsChange((prev) => prev.filter((a) => a.id !== artifactId));
     } catch {
       // Silent failure - card stays
     }
-  }, [artifacts, onArtifactsChange]);
+  }, [onArtifactsChange]);
 
   const viewPromptArtifact = viewPromptArtifactId
     ? artifacts.find((a) => a.id === viewPromptArtifactId) ?? null

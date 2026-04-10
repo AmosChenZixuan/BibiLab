@@ -64,12 +64,13 @@ async function request<T>(
   path: string,
   init?: RequestInit & { signal?: AbortSignal; responseType?: "json" | "text" },
 ): Promise<T | undefined> {
+  const { responseType, ...fetchInit } = init ?? {};
   const response = await fetch(`${baseUrl}${path}`, {
     headers: {
       "Content-Type": "application/json",
       ...(init?.headers ?? {}),
     },
-    ...init,
+    ...fetchInit,
   });
 
   if (!response.ok) {
@@ -89,7 +90,7 @@ async function request<T>(
     return undefined;
   }
 
-  if (init?.responseType === "text") {
+  if (responseType === "text") {
     const text = await response.text();
     return text as unknown as T;
   }

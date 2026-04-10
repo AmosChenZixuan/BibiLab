@@ -81,8 +81,7 @@ export function ReportsModal({ open, listId, sourceIds, onClose, onArtifactGener
       const trimmedPrompt = prompt.trim();
       if (!trimmedPrompt) return;
 
-      // Determine the artifact type
-      const artifactType: ArtifactType = selectedFormat === "custom" ? customFormatName.trim() : (selectedFormat as ArtifactType);
+      const artifactType: ArtifactType = selectedFormat === "custom" ? "custom_report" : (selectedFormat as ArtifactType);
 
       if (!artifactType) {
         // Show visible feedback instead of silent no-op

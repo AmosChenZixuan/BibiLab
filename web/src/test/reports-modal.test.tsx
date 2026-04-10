@@ -117,7 +117,7 @@ describe("ReportsModal", () => {
 
     await waitFor(() => {
       expect(api.createArtifact).toHaveBeenCalledWith("list-1", {
-        type: "Custom",
+        type: "custom_report",
         prompt: "Give me a detailed analysis",
         source_ids: ["src-1", "src-2"],
       });
