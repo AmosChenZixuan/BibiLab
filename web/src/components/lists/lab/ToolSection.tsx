@@ -7,9 +7,10 @@ import { ReportsModal } from "@/components/lists/lab/ReportsModal";
 interface ToolSectionProps {
   listId: string;
   sourceIds: string[];
+  onArtifactGenerated: (artifactId: string, type: import("@/lib/types").ArtifactType) => void;
 }
 
-export function ToolSection({ listId, sourceIds }: ToolSectionProps) {
+export function ToolSection({ listId, sourceIds, onArtifactGenerated }: ToolSectionProps) {
   const { t } = useLanguage();
   const [reportsOpen, setReportsOpen] = useState(false);
 
@@ -29,6 +30,7 @@ export function ToolSection({ listId, sourceIds }: ToolSectionProps) {
         listId={listId}
         sourceIds={sourceIds}
         onClose={() => setReportsOpen(false)}
+        onArtifactGenerated={onArtifactGenerated}
       />
     </div>
   );

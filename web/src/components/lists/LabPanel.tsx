@@ -19,9 +19,10 @@ interface LabPanelProps {
   artifacts: Artifact[];
   onArtifactsChange: (artifacts: Artifact[]) => void;
   onToggleCollapse: () => void;
+  onArtifactGenerated: (artifactId: string, type: Artifact["type"]) => void;
 }
 
-export function LabPanel({ listId, labCollapsed, labW, sourceIds, artifacts, onArtifactsChange, onToggleCollapse }: LabPanelProps) {
+export function LabPanel({ listId, labCollapsed, labW, sourceIds, artifacts, onArtifactsChange, onToggleCollapse, onArtifactGenerated }: LabPanelProps) {
   const { t } = useLanguage();
   const panelBase = "flex h-full shrink-0 flex-col overflow-hidden";
 
@@ -84,7 +85,7 @@ export function LabPanel({ listId, labCollapsed, labW, sourceIds, artifacts, onA
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
           {labMode === "tool-list" ? (
             <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-              <ToolSection listId={listId} sourceIds={sourceIds} />
+              <ToolSection listId={listId} sourceIds={sourceIds} onArtifactGenerated={onArtifactGenerated} />
               <div className="flex min-h-0 flex-1 flex-col border-t border-border px-4 pt-4">
                 <ArtifactList listId={listId} artifacts={artifacts} onArtifactsChange={onArtifactsChange} onViewArtifact={handleViewArtifact} />
               </div>

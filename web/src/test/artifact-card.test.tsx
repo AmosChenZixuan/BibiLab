@@ -48,15 +48,15 @@ describe("ArtifactCard", () => {
 
       renderCard(artifact);
 
-      // Should show type label as name (uppercase)
-      expect(screen.getByText("BRIEF")).toBeInTheDocument();
+      // Should show type label as name
+      expect(screen.getByText("Brief")).toBeInTheDocument();
       // Should have animate-pulse class (skeleton)
       expect(screen.getByTestId("artifact-skeleton")).toBeInTheDocument();
       // Should NOT have context menu
       expect(screen.queryByRole("button", { name: /options/i })).not.toBeInTheDocument();
     });
 
-    test("generating study_guide shows STUDY_GUIDE label", () => {
+    test("generating study_guide shows Study Guide label", () => {
       const artifact: Artifact = {
         id: "gen-study-1",
         name: "",
@@ -68,7 +68,7 @@ describe("ArtifactCard", () => {
       };
 
       renderCard(artifact);
-      expect(screen.getByText("STUDY_GUIDE")).toBeInTheDocument();
+      expect(screen.getByText("Study Guide")).toBeInTheDocument();
     });
   });
 
@@ -89,7 +89,7 @@ describe("ArtifactCard", () => {
       // Name should be bold
       expect(screen.getByText("My Artifact")).toBeInTheDocument();
       // Metadata line shows type · source count · date
-      expect(screen.getByText(/^brief · 2 sources · /)).toBeInTheDocument();
+      expect(screen.getByText(/^Brief · 2 sources · /)).toBeInTheDocument();
       // Context menu should be present
       expect(screen.getByRole("button", { name: /artifact options/i })).toBeInTheDocument();
     });

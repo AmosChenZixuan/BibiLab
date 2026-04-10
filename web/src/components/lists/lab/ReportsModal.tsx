@@ -5,7 +5,7 @@ import { useLanguage } from "@/app/LanguageContext";
 import { Modal } from "@/components/ui/Modal";
 import { useJobActivity } from "@/components/jobs/JobActivityProvider";
 import { api } from "@/lib/api";
-import type { ArtifactType } from "@/lib/types";
+import type { ArtifactJob, ArtifactType } from "@/lib/types";
 
 const SUGGESTED_PROMPTS: { type: ArtifactType; labelKey: string }[] = [
   { type: "brief", labelKey: "lab.reportsModal.brief" },
@@ -18,9 +18,10 @@ interface ReportsModalProps {
   listId: string;
   sourceIds: string[];
   onClose: () => void;
+  onArtifactGenerated: (artifactId: string, type: ArtifactType) => void;
 }
 
-export function ReportsModal({ open, listId, sourceIds, onClose }: ReportsModalProps) {
+export function ReportsModal({ open, listId, sourceIds, onClose, onArtifactGenerated }: ReportsModalProps) {
   const { t } = useLanguage();
   const [prompt, setPrompt] = useState("");
   const { trackJobs } = useJobActivity();
@@ -31,12 +32,13 @@ export function ReportsModal({ open, listId, sourceIds, onClose }: ReportsModalP
         type,
         prompt: promptText,
         source_ids: sourceIds,
-      });
+      }) as ArtifactJob;
       trackJobs([{ id: job.id, producer: "artifact", label: type, contextKey: listId }]);
+      onArtifactGenerated(job.meta.artifact_id ?? job.id, type);
       onClose();
       setPrompt("");
     },
-    [listId, sourceIds, onClose, trackJobs],
+    [listId, sourceIds, onClose, trackJobs, onArtifactGenerated],
   );
 
   const handleCustomSubmit = useCallback(

@@ -110,6 +110,25 @@ export function ListDetailPage() {
     }
   }
 
+  const handleArtifactGenerated = useCallback((artifactId: string, type: Artifact["type"]) => {
+    const nameMap: Record<Artifact["type"], string> = {
+      brief: "Brief",
+      study_guide: "Study Guide",
+      blog_post: "Blog Post",
+      custom_report: "Custom Report",
+    };
+    const placeholder: Artifact = {
+      id: artifactId,
+      name: nameMap[type] ?? "Report",
+      type,
+      prompt: "",
+      source_ids: sources.map((s) => s.id),
+      status: "generating",
+      created_at: new Date().toISOString(),
+    };
+    setArtifacts((prev) => [placeholder, ...prev]);
+  }, [sources]);
+
   const panelBase = "flex h-full shrink-0 flex-col overflow-hidden rounded-3xl border border-border bg-white/76 shadow-lg";
 
   return (
@@ -203,6 +222,7 @@ export function ListDetailPage() {
             artifacts={artifacts}
             onArtifactsChange={setArtifacts}
             onToggleCollapse={() => setLabCollapsed((v) => !v)}
+            onArtifactGenerated={handleArtifactGenerated}
           />
         </div>
       </div>

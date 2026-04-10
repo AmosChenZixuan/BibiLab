@@ -108,6 +108,6 @@ describe("ArtifactList", () => {
     await waitFor(() => {
       expect(screen.getByText("Brief One")).toBeInTheDocument();
     });
-    expect(screen.getByText("STUDY_GUIDE")).toBeInTheDocument();
+    expect(screen.getByText("Study Guide")).toBeInTheDocument();
   });
 });

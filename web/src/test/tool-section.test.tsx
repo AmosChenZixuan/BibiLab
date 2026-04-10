@@ -46,6 +46,7 @@ function renderToolSection(props?: Partial<React.ComponentProps<typeof ToolSecti
         <ToolSection
           listId="list-1"
           sourceIds={["src-1", "src-2"]}
+          onArtifactGenerated={vi.fn()}
           {...props}
         />
       </JobActivityProvider>
