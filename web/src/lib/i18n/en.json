@@ -122,8 +122,7 @@
       "blogPostDesc": "Article draft",
       "custom": "Custom",
       "customDesc": "Your own format",
-      "submit": "Generate",
-      "selectFormat": "Select a format above to fill the prompt"
+      "submit": "Generate"
     },
     "viewPromptModal": {
       "title": "Prompt",
