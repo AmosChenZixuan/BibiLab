@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { ArrowRight, BookOpen, PenLine, Plus, Zap } from "lucide-react";
 
 import { useLanguage } from "@/app/LanguageContext";
@@ -43,6 +43,16 @@ export function ReportsModal({ open, listId, sourceIds, onClose, onArtifactGener
   const [customFormatName, setCustomFormatName] = useState(() => t("lab.reportsModal.custom"));
   const [isEditingCustomName, setIsEditingCustomName] = useState(false);
 
+  // Reset state when modal opens
+  useEffect(() => {
+    if (open) {
+      setPrompt("");
+      setSelectedFormat("custom");
+      setIsEditingCustomName(false);
+      setCustomFormatName(t("lab.reportsModal.custom"));
+    }
+  }, [open, t]);
+
   const handleFormatSelect = useCallback(
     (format: ReportFormat) => {
       setSelectedFormat(format.type);
@@ -80,27 +90,13 @@ export function ReportsModal({ open, listId, sourceIds, onClose, onArtifactGener
       }) as ArtifactJob;
       trackJobs([{ id: job.id, producer: "artifact", label: artifactType, contextKey: listId }]);
       onArtifactGenerated(job.meta.artifact_id ?? job.id, artifactType);
-
-      // Reset state
       onClose();
-      setPrompt("");
-      setSelectedFormat("custom");
-      setCustomFormatName(t("lab.reportsModal.custom"));
-      setIsEditingCustomName(false);
     },
-    [listId, prompt, selectedFormat, customFormatName, sourceIds, onClose, trackJobs, onArtifactGenerated, t],
+    [listId, prompt, selectedFormat, customFormatName, sourceIds, onClose, trackJobs, onArtifactGenerated],
   );
 
-  const handleClose = useCallback(() => {
-    onClose();
-    setPrompt("");
-    setSelectedFormat("custom");
-    setCustomFormatName(t("lab.reportsModal.custom"));
-    setIsEditingCustomName(false);
-  }, [onClose, t]);
-
   return (
-    <Modal open={open} onClose={handleClose} title={t("lab.reportsModal.title")} size="lg">
+    <Modal open={open} onClose={onClose} title={t("lab.reportsModal.title")} size="lg">
       <form onSubmit={handleSubmit} className="grid gap-5">
         {/* Format options */}
         <div className="grid gap-2.5">
@@ -122,7 +118,9 @@ export function ReportsModal({ open, listId, sourceIds, onClose, onArtifactGener
                       <input
                         type="text"
                         value={customFormatName}
-                        onChange={(e) => setCustomFormatName(e.target.value.slice(0, MAX_FORMAT_NAME_LENGTH))}
+                        onChange={(e) => {
+                          setCustomFormatName(e.target.value.slice(0, MAX_FORMAT_NAME_LENGTH));
+                        }}
                         onBlur={() => setIsEditingCustomName(false)}
                         onKeyDown={(e) => {
                           if (e.key === "Enter") {
