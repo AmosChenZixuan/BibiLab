@@ -6,7 +6,7 @@ import { api } from "@/lib/api";
 import { downloadTextFile } from "@/lib/download";
 import type { Artifact } from "@/lib/types";
 
-import { Sparkles  } from "lucide-react";
+import { Sparkles } from "lucide-react";
 
 import { ArtifactCard } from "./ArtifactCard";
 import { ViewPromptModal } from "./ViewPromptModal";
@@ -23,26 +23,8 @@ export function ArtifactList({ listId, artifacts, onArtifactsChange, onViewArtif
   const { getJobs, dismissJob } = useJobActivity();
   const artifactJobs = useMemo(() => getJobs("artifact", listId), [getJobs, listId]);
   const [refreshedJobs, setRefreshedJobs] = useState<string[]>([]);
-  const scrollRef = useRef<HTMLDivElement>(null);
-
-  const [currentArtifacts, setCurrentArtifacts] = useState<Artifact[]>(artifacts);
   const [viewPromptArtifactId, setViewPromptArtifactId] = useState<string | null>(null);
-  const prevArtifactsRef = useRef<Artifact[] | null>(null);
-
-  // Sync currentArtifacts when artifacts prop content changes
-  useEffect(() => {
-    const prev = prevArtifactsRef.current;
-    // Skip if reference is same OR content is effectively the same (same length, same IDs)
-    if (prev === artifacts || (
-      prev &&
-      prev.length === artifacts.length &&
-      prev.every((p, i) => p.id === artifacts[i].id)
-    )) {
-      return;
-    }
-    prevArtifactsRef.current = artifacts;
-    setCurrentArtifacts(artifacts);
-  }, [artifacts]);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   // When a job flips to done, refresh artifacts and dismiss
   useEffect(() => {
@@ -57,7 +39,6 @@ export function ArtifactList({ listId, artifacts, onArtifactsChange, onViewArtif
       try {
         const next = await api.listArtifacts(listId);
         if (cancelled) return;
-        setCurrentArtifacts(next ?? []);
         onArtifactsChange(next ?? []);
         await Promise.all(completed.map(({ job }) => dismissJob(job.id)));
         setRefreshedJobs((prev) => [...prev, ...completed.map(({ job }) => job.id)]);
@@ -73,51 +54,46 @@ export function ArtifactList({ listId, artifacts, onArtifactsChange, onViewArtif
 
   const handleDismiss = useCallback(
     async (artifactId: string) => {
-      setCurrentArtifacts((prev) => prev.filter((a) => a.id !== artifactId));
+      onArtifactsChange(artifacts.filter((a) => a.id !== artifactId));
     },
-    [],
+    [artifacts, onArtifactsChange],
   );
 
   const handleDownload = useCallback(async (artifactId: string) => {
     try {
       const result = await api.getArtifactContent(artifactId);
       if (!result) return;
-      const artifact = currentArtifacts.find((a) => a.id === artifactId);
+      const artifact = artifacts.find((a) => a.id === artifactId);
       const filename = artifact ? `${artifact.name}.md` : "artifact.md";
       downloadTextFile(filename, result.content);
     } catch {
       // Silent failure - card stays
     }
-  }, [currentArtifacts]);
+  }, [artifacts]);
 
   const handleRename = useCallback((artifactId: string, name: string) => {
-    let previousName: string;
-    setCurrentArtifacts((prev) => {
-      const artifact = prev.find((a) => a.id === artifactId);
-      if (!artifact) return prev;
-      previousName = artifact.name;
-      return prev.map((a) => (a.id === artifactId ? { ...a, name } : a));
-    });
-    // API call (fire and forget, silent failure)
+    const artifact = artifacts.find((a) => a.id === artifactId);
+    if (!artifact) return;
+    const previousName = artifact.name;
+    // Optimistic update
+    onArtifactsChange(artifacts.map((a) => (a.id === artifactId ? { ...a, name } : a)));
+    // Revert on failure
     void api.updateArtifact(artifactId, { name }).catch(() => {
-      // Revert optimistic update on failure
-      setCurrentArtifacts((prev) =>
-        prev.map((a) => (a.id === artifactId ? { ...a, name: previousName } : a)),
-      );
+      onArtifactsChange(artifacts.map((a) => (a.id === artifactId ? { ...a, name: previousName } : a)));
     });
-  }, []);
+  }, [artifacts, onArtifactsChange]);
 
   const handleDelete = useCallback(async (artifactId: string) => {
     try {
       await api.deleteArtifact(artifactId);
-      setCurrentArtifacts((prev) => prev.filter((a) => a.id !== artifactId));
+      onArtifactsChange(artifacts.filter((a) => a.id !== artifactId));
     } catch {
       // Silent failure - card stays
     }
-  }, []);
+  }, [artifacts, onArtifactsChange]);
 
   const viewPromptArtifact = viewPromptArtifactId
-    ? currentArtifacts.find((a) => a.id === viewPromptArtifactId) ?? null
+    ? artifacts.find((a) => a.id === viewPromptArtifactId) ?? null
     : null;
 
   return (
@@ -128,7 +104,7 @@ export function ArtifactList({ listId, artifacts, onArtifactsChange, onViewArtif
         style={{ minHeight: 0 }}
       >
         <div className="space-y-2 pb-2">
-          {currentArtifacts.map((artifact) => (
+          {artifacts.map((artifact) => (
             <ArtifactCard
               key={artifact.id}
               artifact={artifact}
@@ -139,7 +115,7 @@ export function ArtifactList({ listId, artifacts, onArtifactsChange, onViewArtif
               onView={
                 artifact.status === "completed" && onViewArtifact
                   ? (id: string) => {
-                      const a = currentArtifacts.find((art) => art.id === id);
+                      const a = artifacts.find((art) => art.id === id);
                       if (a) onViewArtifact(a);
                     }
                   : undefined
@@ -147,7 +123,7 @@ export function ArtifactList({ listId, artifacts, onArtifactsChange, onViewArtif
               onDelete={artifact.status === "completed" ? handleDelete : undefined}
             />
           ))}
-          {currentArtifacts.length === 0 && (
+          {artifacts.length === 0 && (
             <div className="flex flex-col items-center justify-center gap-3 py-12 text-center">
               <Sparkles size={32} className="text-ink" strokeWidth={1.5} />
               <span className="text-[13px] font-medium text-ink">{t("lab.artifactList.emptyTitle")}</span>

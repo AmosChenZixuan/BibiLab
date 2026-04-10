@@ -3,7 +3,7 @@ import { useParams } from "react-router-dom";
 import { Minimize2, ArrowLeftToLine, ArrowRightToLine} from 'lucide-react';
 import { useLanguage } from "@/app/LanguageContext";
 import { api, toErrorMessageWithT } from "@/lib/api";
-import { ARTIFACT_TYPE_KEYS } from "@/components/lists/lab/ArtifactCard";
+import { ARTIFACT_TYPE_KEYS } from "@/lib/artifactTypes";
 import type { Artifact, Source, SourceContent } from "@/lib/types";
 
 import { usePanelResize, Resizer, COLLAPSED_PANEL } from "@/components/lists/panel-resize";
@@ -57,7 +57,7 @@ export function ListDetailPage() {
       const [lists, nextSources, nextArtifacts] = await Promise.all([
         api.listLists({ signal }),
         api.listSources(listId, { signal }),
-        api.listArtifacts(listId),
+        api.listArtifacts(listId, { signal }),
       ]);
       const current = lists?.find((l) => l.id === listId);
       setListName(current?.name ?? t("lists.listWorkspace"));

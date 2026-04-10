@@ -3,15 +3,8 @@ import { useRef, useState } from "react";
 
 import { useLanguage } from "@/app/LanguageContext";
 import { ContextMenu } from "@/components/ui/ContextMenu";
+import { ARTIFACT_TYPE_KEYS } from "@/lib/artifactTypes";
 import type { Artifact } from "@/lib/types";
-
-// Artifact type i18n keys - shared across ArtifactCard, JobSpirit, and ReportsModal
-export const ARTIFACT_TYPE_KEYS: Record<string, string> = {
-  brief: "lab.artifactType.brief",
-  study_guide: "lab.artifactType.studyGuide",
-  blog_post: "lab.artifactType.blogPost",
-  custom_report: "lab.artifactType.customReport",
-};
 
 function formatArtifactTypeLabel(type: Artifact["type"], t: (key: string) => string): string {
   const key = ARTIFACT_TYPE_KEYS[type];

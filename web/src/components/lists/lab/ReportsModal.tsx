@@ -5,7 +5,7 @@ import { useLanguage } from "@/app/LanguageContext";
 import { Modal } from "@/components/ui/Modal";
 import { useJobActivity } from "@/components/jobs/JobActivityProvider";
 import { api } from "@/lib/api";
-import { ARTIFACT_TYPE_KEYS } from "@/components/lists/lab/ArtifactCard";
+import { ARTIFACT_TYPE_KEYS } from "@/lib/artifactTypes";
 import { templates } from "@/lib/templates";
 import type { ArtifactJob, ArtifactType } from "@/lib/types";
 
@@ -45,15 +45,16 @@ export function ReportsModal({ open, listId, sourceIds, onClose, onArtifactGener
   const [customFormatName, setCustomFormatName] = useState(() => t("lab.reportsModal.custom"));
   const [isEditingCustomName, setIsEditingCustomName] = useState(false);
 
-  // Reset state when modal opens; re-sync customFormatName on language change
+  // Reset state when modal flips closed→open; customFormatName is sticky per session
   useEffect(() => {
     if (open) {
       setPrompt("");
       setSelectedFormat("custom");
       setIsEditingCustomName(false);
-      setCustomFormatName(t("lab.reportsModal.custom"));
+      // Only initialize customFormatName on first open (when it's empty), not on every open
+      setCustomFormatName((prev) => prev || t("lab.reportsModal.custom"));
     }
-  }, [open, t, lang]);
+  }, [open, t]);
 
   const handleFormatSelect = useCallback(
     (format: ReportFormat) => {
@@ -83,7 +84,11 @@ export function ReportsModal({ open, listId, sourceIds, onClose, onArtifactGener
       // Determine the artifact type
       const artifactType: ArtifactType = selectedFormat === "custom" ? customFormatName.trim() : (selectedFormat as ArtifactType);
 
-      if (!artifactType) return;
+      if (!artifactType) {
+        // Show visible feedback instead of silent no-op
+        setIsEditingCustomName(true);
+        return;
+      }
 
       const job = await api.createArtifact(listId, {
         type: artifactType,
@@ -113,9 +118,9 @@ export function ReportsModal({ open, listId, sourceIds, onClose, onArtifactGener
                 return (
                   <div
                     key={format.type}
-                    className="rounded-2xl border border-[#5b7faa] bg-white shadow-sm flex flex-col items-center gap-1.5 p-3.5 text-center"
+                    className="rounded-2xl border border-blue bg-white shadow-sm flex flex-col items-center gap-1.5 p-3.5 text-center"
                   >
-                    <span className="text-[#5b7faa]">{format.icon}</span>
+                    <span className="text-blue">{format.icon}</span>
                     {isEditingCustomName ? (
                       <input
                         type="text"
@@ -131,14 +136,14 @@ export function ReportsModal({ open, listId, sourceIds, onClose, onArtifactGener
                           }
                         }}
                         autoFocus
-                        className="max-w-[80px] bg-transparent text-[13px] text-ink outline-none text-center border border-[#5b7faa]"
+                        className="max-w-[80px] bg-transparent text-[13px] text-ink outline-none text-center border border-blue"
                         placeholder={t("lab.reportsModal.custom")}
                       />
                     ) : (
                       <button
                         type="button"
                         onClick={() => setIsEditingCustomName(true)}
-                        className="text-[13px] font-medium text-ink max-w-[80px] truncate hover:text-[#5b7faa]"
+                        className="text-[13px] font-medium text-ink max-w-[80px] truncate hover:text-blue"
                       >
                         {customFormatName}
                       </button>
@@ -155,11 +160,11 @@ export function ReportsModal({ open, listId, sourceIds, onClose, onArtifactGener
                   onClick={() => handleFormatSelect(format)}
                   className={`w-full flex flex-col items-center gap-1.5 rounded-2xl border p-3.5 text-center transition ${
                     selectedFormat === format.type
-                      ? "border-[#5b7faa] bg-white shadow-sm"
+                      ? "border-blue bg-white shadow-sm"
                       : "border-border/40 bg-white/64 hover:bg-white hover:shadow-sm"
                   }`}
                 >
-                  <span className="text-[#5b7faa]">{format.icon}</span>
+                  <span className="text-blue">{format.icon}</span>
                   <span className="text-[13px] font-medium text-ink">
                     {format.isCustom ? customFormatName : t(format.labelKey)}
                   </span>
@@ -185,9 +190,9 @@ export function ReportsModal({ open, listId, sourceIds, onClose, onArtifactGener
             />
             <button
               type="submit"
-              disabled={!prompt.trim() || !selectedFormat}
+              disabled={!prompt.trim() || (selectedFormat === "custom" && !customFormatName.trim())}
               aria-label="Submit"
-              className="absolute bottom-2.5 right-2.5 flex h-7 w-7 items-center justify-center rounded-full bg-[#5b7faa] text-white transition disabled:opacity-40 hover:bg-[#4a6d91]"
+              className="absolute bottom-2.5 right-2.5 flex h-7 w-7 items-center justify-center rounded-full bg-blue text-white transition disabled:opacity-40 hover:bg-blue/80"
             >
               <ArrowRight size={15} />
             </button>

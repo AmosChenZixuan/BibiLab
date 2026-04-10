@@ -56,13 +56,13 @@ export function notifyHealthChanged(health: HealthResponse) {
 type RequestFn = <T>(
   baseUrl: string,
   path: string,
-  init?: RequestInit & { signal?: AbortSignal },
+  init?: RequestInit & { signal?: AbortSignal; responseType?: "json" | "text" },
 ) => Promise<T | undefined>;
 
 async function request<T>(
   baseUrl: string,
   path: string,
-  init?: RequestInit & { signal?: AbortSignal },
+  init?: RequestInit & { signal?: AbortSignal; responseType?: "json" | "text" },
 ): Promise<T | undefined> {
   const response = await fetch(`${baseUrl}${path}`, {
     headers: {
@@ -87,6 +87,11 @@ async function request<T>(
 
   if (response.status === 204) {
     return undefined;
+  }
+
+  if (init?.responseType === "text") {
+    const text = await response.text();
+    return text as unknown as T;
   }
 
   const data = await response.json();
@@ -167,15 +172,13 @@ export class ArtifactsClient {
   }
 
   async getArtifactContent(artifactId: string, opts?: { signal?: AbortSignal }): Promise<{ content: string } | undefined> {
-    const response = await fetch(`${this.baseUrl}/artifacts/${artifactId}/content`, {
+    const text = await this.request<string>(this.baseUrl, `/artifacts/${artifactId}/content`, {
       method: "GET",
+      responseType: "text",
       ...opts,
     });
-    if (!response.ok) {
-      return undefined;
-    }
-    const content = await response.text();
-    return { content };
+    if (text === undefined) return undefined;
+    return { content: text };
   }
 
   updateArtifact(artifactId: string, patch: { name?: string }) {
