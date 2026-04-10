@@ -19,7 +19,7 @@ interface LabPanelProps {
   artifacts: Artifact[];
   onArtifactsChange: (updater: (prev: Artifact[]) => Artifact[]) => void;
   onToggleCollapse: () => void;
-  onArtifactGenerated: (artifactId: string, type: Artifact["type"]) => void;
+  onArtifactGenerated: (artifactId: string, type: Artifact["type"], sourceIds: string[]) => void;
 }
 
 export function LabPanel({ listId, labCollapsed, labW, sourceIds, artifacts, onArtifactsChange, onToggleCollapse, onArtifactGenerated }: LabPanelProps) {

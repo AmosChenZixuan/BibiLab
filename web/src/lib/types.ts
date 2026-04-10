@@ -109,9 +109,7 @@ export type ArtifactJob = {
 
 export type Job = IngestJob | ModelDownloadJob | ArtifactJob;
 
-// Artifact type — backend accepts "brief", "study_guide", "blog_post", "custom_report",
-// or any arbitrary custom string (e.g. user-entered format names)
-export type ArtifactType = string;
+export type ArtifactType = "brief" | "study_guide" | "blog_post" | "custom_report" | (string & {});
 
 export type ArtifactStatus = "generating" | "completed" | "failed";
 

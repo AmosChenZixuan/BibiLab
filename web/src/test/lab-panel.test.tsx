@@ -5,53 +5,39 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import { LanguageProvider } from "@/app/LanguageContext";
 import { JobActivityProvider } from "@/components/jobs/JobActivityProvider";
 import { LabPanel } from "@/components/lists/LabPanel";
+import { api } from "@/lib/api";
 
-const mockArtifacts = [
-  {
-    id: "artifact-1",
-    name: "Study Guide",
-    type: "study_guide" as const,
-    prompt: "Generate a study guide",
-    source_ids: ["source-1", "source-2", "source-3"],
-    status: "completed" as const,
-    created_at: "2026-04-08T12:00:00Z",
+const ARTIFACT_1 = {
+  id: "artifact-1",
+  name: "Study Guide",
+  type: "study_guide" as const,
+  prompt: "Generate a study guide",
+  source_ids: ["source-1", "source-2", "source-3"],
+  status: "completed" as const,
+  created_at: "2026-04-08T12:00:00Z",
+};
+
+vi.mock("@/lib/api", () => ({
+  api: {
+    getHealth: vi.fn().mockResolvedValue({}),
+    listJobs: vi.fn().mockResolvedValue([]),
+    listLists: vi.fn().mockResolvedValue([]),
+    listSources: vi.fn().mockResolvedValue([]),
+    ingestUrl: vi.fn().mockResolvedValue({ queued: [], skipped: [] }),
+    deleteSource: vi.fn().mockResolvedValue(undefined),
+    updateList: vi.fn().mockResolvedValue(undefined),
+    getSource: vi.fn().mockResolvedValue(undefined),
+    rerunDigest: vi.fn(),
+    deleteJob: vi.fn(),
+    createList: vi.fn(),
+    generateOverview: vi.fn(),
+    putConfig: vi.fn(),
+    downloadWhisperModel: vi.fn(),
+    listWhisperModels: vi.fn(),
+    listArtifacts: vi.fn().mockResolvedValue([]),
+    getArtifactContent: vi.fn().mockResolvedValue({ content: "# Study Guide\n\nContent here" }),
   },
-];
-
-vi.mock("@/lib/api", () => {
-  const artifacts = [
-    {
-      id: "artifact-1",
-      name: "Study Guide",
-      type: "study_guide",
-      prompt: "Generate a study guide",
-      source_ids: ["source-1", "source-2", "source-3"],
-      status: "completed",
-      created_at: "2026-04-08T12:00:00Z",
-    },
-  ];
-  return {
-    api: {
-      getHealth: vi.fn().mockResolvedValue({}),
-      listJobs: vi.fn().mockResolvedValue([]),
-      listLists: vi.fn().mockResolvedValue([]),
-      listSources: vi.fn().mockResolvedValue([]),
-      ingestUrl: vi.fn().mockResolvedValue({ queued: [], skipped: [] }),
-      deleteSource: vi.fn().mockResolvedValue(undefined),
-      updateList: vi.fn().mockResolvedValue(undefined),
-      getSource: vi.fn().mockResolvedValue(undefined),
-      rerunDigest: vi.fn(),
-      deleteJob: vi.fn(),
-      createList: vi.fn(),
-      generateOverview: vi.fn(),
-      putConfig: vi.fn(),
-      downloadWhisperModel: vi.fn(),
-      listWhisperModels: vi.fn(),
-      listArtifacts: vi.fn().mockResolvedValue(artifacts),
-      getArtifactContent: vi.fn().mockResolvedValue({ content: "# Study Guide\n\nContent here" }),
-    },
-  };
-});
+}));
 
 function renderLabPanel(props?: Partial<React.ComponentProps<typeof LabPanel>>) {
   return render(
@@ -115,7 +101,8 @@ describe("LabPanel", () => {
   });
 
   test("clicking done artifact card enters viewer mode with artifact name and source count", async () => {
-    renderLabPanel({ artifacts: mockArtifacts });
+    vi.mocked(api.listArtifacts).mockResolvedValue([ARTIFACT_1]);
+    renderLabPanel({ artifacts: [ARTIFACT_1] });
     // Wait for artifact to load in ArtifactList
     await waitFor(() => {
       expect(screen.getByText("Study Guide")).toBeInTheDocument();
@@ -133,7 +120,8 @@ describe("LabPanel", () => {
   });
 
   test("copy button in viewer mode copies markdown to clipboard", async () => {
-    renderLabPanel({ artifacts: mockArtifacts });
+    vi.mocked(api.listArtifacts).mockResolvedValue([ARTIFACT_1]);
+    renderLabPanel({ artifacts: [ARTIFACT_1] });
     await waitFor(() => {
       expect(screen.getByText("Study Guide")).toBeInTheDocument();
     });
@@ -156,7 +144,8 @@ describe("LabPanel", () => {
   });
 
   test("minimize button in viewer mode returns to tool-list showing artifact list", async () => {
-    renderLabPanel({ artifacts: mockArtifacts });
+    vi.mocked(api.listArtifacts).mockResolvedValue([ARTIFACT_1]);
+    renderLabPanel({ artifacts: [ARTIFACT_1] });
     await waitFor(() => {
       expect(screen.getByText("Study Guide")).toBeInTheDocument();
     });
@@ -177,7 +166,8 @@ describe("LabPanel", () => {
   });
 
   test("viewer mode does not show collapse button (shows minimize instead)", async () => {
-    renderLabPanel({ artifacts: mockArtifacts });
+    vi.mocked(api.listArtifacts).mockResolvedValue([ARTIFACT_1]);
+    renderLabPanel({ artifacts: [ARTIFACT_1] });
     await waitFor(() => {
       expect(screen.getByText("Study Guide")).toBeInTheDocument();
     });
@@ -193,8 +183,9 @@ describe("LabPanel", () => {
   });
 
   test("collapsing does NOT reset labMode - stays in viewer after expand", async () => {
+    vi.mocked(api.listArtifacts).mockResolvedValue([ARTIFACT_1]);
     const onToggleCollapse = vi.fn();
-    const { rerender } = renderLabPanel({ labCollapsed: false, artifacts: mockArtifacts, onToggleCollapse });
+    const { rerender } = renderLabPanel({ labCollapsed: false, artifacts: [ARTIFACT_1], onToggleCollapse });
     await waitFor(() => {
       expect(screen.getByText("Study Guide")).toBeInTheDocument();
     });
@@ -214,7 +205,7 @@ describe("LabPanel", () => {
             labCollapsed={true}
             labW={300}
             sourceIds={[]}
-            artifacts={mockArtifacts}
+            artifacts={[ARTIFACT_1]}
             onArtifactsChange={vi.fn()}
             onToggleCollapse={onToggleCollapse}
             onArtifactGenerated={vi.fn()}
@@ -232,7 +223,7 @@ describe("LabPanel", () => {
             labCollapsed={false}
             labW={300}
             sourceIds={[]}
-            artifacts={mockArtifacts}
+            artifacts={[ARTIFACT_1]}
             onArtifactsChange={vi.fn()}
             onToggleCollapse={onToggleCollapse}
             onArtifactGenerated={vi.fn()}

@@ -111,18 +111,18 @@ export function ListDetailPage() {
     }
   }
 
-  const handleArtifactGenerated = useCallback((artifactId: string, type: Artifact["type"]) => {
+  const handleArtifactGenerated = useCallback((artifactId: string, type: Artifact["type"], sourceIds: string[]) => {
     const placeholder: Artifact = {
       id: artifactId,
       name: t(ARTIFACT_TYPE_KEYS[type] ?? "lab.reportsModal.custom"),
       type,
       prompt: "",
-      source_ids: sources.map((s) => s.id),
+      source_ids: sourceIds,
       status: "generating",
       created_at: new Date().toISOString(),
     };
     setArtifacts((prev) => [placeholder, ...prev]);
-  }, [sources, t]);
+  }, [t]);
 
   const panelBase = "flex h-full shrink-0 flex-col overflow-hidden rounded-3xl border border-border bg-white/76 shadow-lg";
 

@@ -3,11 +3,12 @@ import { FileText } from "lucide-react";
 
 import { useLanguage } from "@/app/LanguageContext";
 import { ReportsModal } from "@/components/lists/lab/ReportsModal";
+import type { ArtifactType } from "@/lib/types";
 
 interface ToolSectionProps {
   listId: string;
   sourceIds: string[];
-  onArtifactGenerated: (artifactId: string, type: import("@/lib/types").ArtifactType) => void;
+  onArtifactGenerated: (artifactId: string, type: ArtifactType, sourceIds: string[]) => void;
 }
 
 export function ToolSection({ listId, sourceIds, onArtifactGenerated }: ToolSectionProps) {

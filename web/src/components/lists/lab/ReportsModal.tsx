@@ -33,7 +33,7 @@ interface ReportsModalProps {
   listId: string;
   sourceIds: string[];
   onClose: () => void;
-  onArtifactGenerated: (artifactId: string, type: ArtifactType) => void;
+  onArtifactGenerated: (artifactId: string, type: ArtifactType, sourceIds: string[]) => void;
 }
 
 export function ReportsModal({ open, listId, sourceIds, onClose, onArtifactGenerated }: ReportsModalProps) {
@@ -95,7 +95,7 @@ export function ReportsModal({ open, listId, sourceIds, onClose, onArtifactGener
         source_ids: sourceIds,
       }) as ArtifactJob;
       trackJobs([{ id: job.id, producer: "artifact", label: artifactType, contextKey: listId }]);
-      onArtifactGenerated(job.meta.artifact_id ?? job.id, artifactType);
+      onArtifactGenerated(job.meta.artifact_id ?? job.id, artifactType, sourceIds);
       onClose();
     },
     [listId, prompt, selectedFormat, customFormatName, sourceIds, onClose, trackJobs, onArtifactGenerated],
