@@ -3,6 +3,7 @@ import { useParams } from "react-router-dom";
 import { Minimize2, ArrowLeftToLine, ArrowRightToLine} from 'lucide-react';
 import { useLanguage } from "@/app/LanguageContext";
 import { api, toErrorMessageWithT } from "@/lib/api";
+import { ARTIFACT_TYPE_KEYS } from "@/components/lists/lab/ArtifactCard";
 import type { Artifact, Source, SourceContent } from "@/lib/types";
 
 import { usePanelResize, Resizer, COLLAPSED_PANEL } from "@/components/lists/panel-resize";
@@ -111,15 +112,9 @@ export function ListDetailPage() {
   }
 
   const handleArtifactGenerated = useCallback((artifactId: string, type: Artifact["type"]) => {
-    const nameMap: Record<Artifact["type"], string> = {
-      brief: "Brief",
-      study_guide: "Study Guide",
-      blog_post: "Blog Post",
-      custom_report: "Custom Report",
-    };
     const placeholder: Artifact = {
       id: artifactId,
-      name: nameMap[type] ?? "Report",
+      name: t(ARTIFACT_TYPE_KEYS[type] ?? "lab.reportsModal.custom"),
       type,
       prompt: "",
       source_ids: sources.map((s) => s.id),
@@ -127,7 +122,7 @@ export function ListDetailPage() {
       created_at: new Date().toISOString(),
     };
     setArtifacts((prev) => [placeholder, ...prev]);
-  }, [sources]);
+  }, [sources, t]);
 
   const panelBase = "flex h-full shrink-0 flex-col overflow-hidden rounded-3xl border border-border bg-white/76 shadow-lg";
 

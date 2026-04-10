@@ -9,8 +9,10 @@ import { ARTIFACT_TYPE_KEYS } from "@/components/lists/lab/ArtifactCard";
 import { templates } from "@/lib/templates";
 import type { ArtifactJob, ArtifactType } from "@/lib/types";
 
+type ReportFormatType = "custom" | "brief" | "study_guide" | "blog_post";
+
 interface ReportFormat {
-  type: string;
+  type: ReportFormatType;
   labelKey: string;
   descKey: string;
   icon: React.ReactNode;
@@ -38,12 +40,12 @@ export function ReportsModal({ open, listId, sourceIds, onClose, onArtifactGener
   const { t, lang } = useLanguage();
   const { trackJobs } = useJobActivity();
 
-  const [selectedFormat, setSelectedFormat] = useState<string>("custom");
+  const [selectedFormat, setSelectedFormat] = useState<ReportFormatType>("custom");
   const [prompt, setPrompt] = useState("");
   const [customFormatName, setCustomFormatName] = useState(() => t("lab.reportsModal.custom"));
   const [isEditingCustomName, setIsEditingCustomName] = useState(false);
 
-  // Reset state when modal opens
+  // Reset state when modal opens; re-sync customFormatName on language change
   useEffect(() => {
     if (open) {
       setPrompt("");
@@ -51,7 +53,7 @@ export function ReportsModal({ open, listId, sourceIds, onClose, onArtifactGener
       setIsEditingCustomName(false);
       setCustomFormatName(t("lab.reportsModal.custom"));
     }
-  }, [open, t]);
+  }, [open, t, lang]);
 
   const handleFormatSelect = useCallback(
     (format: ReportFormat) => {

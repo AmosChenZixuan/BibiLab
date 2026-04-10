@@ -27,16 +27,20 @@ export function ArtifactList({ listId, artifacts, onArtifactsChange, onViewArtif
 
   const [currentArtifacts, setCurrentArtifacts] = useState<Artifact[]>(artifacts);
   const [viewPromptArtifactId, setViewPromptArtifactId] = useState<string | null>(null);
+  const prevArtifactsRef = useRef<Artifact[] | null>(null);
 
-  // Sync currentArtifacts when artifacts prop changes (e.g., after initial load)
+  // Sync currentArtifacts when artifacts prop content changes (with shallow compare to skip no-op updates)
   useEffect(() => {
+    if (prevArtifactsRef.current === artifacts) return;
+    prevArtifactsRef.current = artifacts;
     setCurrentArtifacts(artifacts);
   }, [artifacts]);
 
   // When a job flips to done, refresh artifacts and dismiss
   useEffect(() => {
+    const refreshedSet = new Set(refreshedJobs);
     const completed = artifactJobs.filter(
-      (item) => item.isTerminal && item.job.status === "done" && !refreshedJobs.includes(item.job.id),
+      (item) => item.isTerminal && item.job.status === "done" && !refreshedSet.has(item.job.id),
     );
     if (completed.length === 0) return;
 
