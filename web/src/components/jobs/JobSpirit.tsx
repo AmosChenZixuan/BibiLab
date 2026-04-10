@@ -78,7 +78,7 @@ export function JobSpirit() {
             <ul className="divide-y divide-border">
               {visibleJobs.map((item) => {
                 const fallbackLabel = item.producer === "artifact"
-                  ? (ARTIFACT_TYPE_KEYS[item.label] ? t(ARTIFACT_TYPE_KEYS[item.label]!) : item.label)
+                  ? (ARTIFACT_TYPE_KEYS[item.label] ? t(ARTIFACT_TYPE_KEYS[item.label]) : item.label)
                   : item.label;
                 const title = getJobTitle(item.job, fallbackLabel);
                 return (

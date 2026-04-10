@@ -109,7 +109,9 @@ export type ArtifactJob = {
 
 export type Job = IngestJob | ModelDownloadJob | ArtifactJob;
 
-export type ArtifactType = string; // Allows any string: "brief", "study_guide", "blog_post", or custom types
+// Known artifact types with custom type support
+type KnownArtifactType = "brief" | "study_guide" | "blog_post" | "custom";
+export type ArtifactType = KnownArtifactType | string;
 
 export type ArtifactStatus = "generating" | "completed" | "failed";
 

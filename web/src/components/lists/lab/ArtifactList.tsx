@@ -29,9 +29,17 @@ export function ArtifactList({ listId, artifacts, onArtifactsChange, onViewArtif
   const [viewPromptArtifactId, setViewPromptArtifactId] = useState<string | null>(null);
   const prevArtifactsRef = useRef<Artifact[] | null>(null);
 
-  // Sync currentArtifacts when artifacts prop content changes (with shallow compare to skip no-op updates)
+  // Sync currentArtifacts when artifacts prop content changes
   useEffect(() => {
-    if (prevArtifactsRef.current === artifacts) return;
+    const prev = prevArtifactsRef.current;
+    // Skip if reference is same OR content is effectively the same (same length, same IDs)
+    if (prev === artifacts || (
+      prev &&
+      prev.length === artifacts.length &&
+      prev.every((p, i) => p.id === artifacts[i].id)
+    )) {
+      return;
+    }
     prevArtifactsRef.current = artifacts;
     setCurrentArtifacts(artifacts);
   }, [artifacts]);
