@@ -78,6 +78,6 @@ describe("ToolSection", () => {
     await userEvent.click(reportsCard);
     // Modal should open with dialog role and Reports as heading
     expect(screen.getByRole("dialog")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Reports" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Generate Report" })).toBeInTheDocument();
   });
 });

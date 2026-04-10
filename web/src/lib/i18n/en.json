@@ -106,19 +106,24 @@
       "brief": "Brief",
       "studyGuide": "Study Guide",
       "blogPost": "Blog Post",
-      "customReport": "Custom Report"
+      "customReport": "Custom Report",
+      "custom": "Custom"
     },
     "reportsModal": {
       "title": "Generate Report",
       "placeholder": "Summarize the key arguments and compare viewpoints across sources…",
-      "suggested": "Suggested",
+      "format": "Format",
       "customPrompt": "Or write your own prompt",
       "brief": "Brief",
       "briefDesc": "Quick summary",
       "studyGuide": "Study Guide",
       "studyGuideDesc": "Key concepts",
       "blogPost": "Blog Post",
-      "blogPostDesc": "Article draft"
+      "blogPostDesc": "Article draft",
+      "custom": "Custom",
+      "customDesc": "Your own format",
+      "submit": "Generate",
+      "selectFormat": "Select a format above to fill the prompt"
     },
     "viewPromptModal": {
       "title": "Prompt",

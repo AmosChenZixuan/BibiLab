@@ -6,13 +6,13 @@ import { ContextMenu } from "@/components/ui/ContextMenu";
 import type { Artifact } from "@/lib/types";
 
 function formatArtifactTypeLabel(type: Artifact["type"], t: (key: string) => string): string {
-  const labels: Record<Artifact["type"], string> = {
+  const labels: Record<string, string> = {
     brief: t("lab.artifactType.brief"),
     study_guide: t("lab.artifactType.studyGuide"),
     blog_post: t("lab.artifactType.blogPost"),
     custom_report: t("lab.artifactType.customReport"),
   };
-  return labels[type];
+  return labels[type] ?? type; // Fallback to type itself for custom types
 }
 
 function formatDate(iso: string): string {
