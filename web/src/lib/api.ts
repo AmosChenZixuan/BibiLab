@@ -166,11 +166,16 @@ export class ArtifactsClient {
     return this.request<Artifact[]>(this.baseUrl, `/lists/${listId}/artifacts`, opts);
   }
 
-  getArtifactContent(artifactId: string, opts?: { signal?: AbortSignal }) {
-    return this.request<{ content: string }>(this.baseUrl, `/artifacts/${artifactId}/content`, {
+  async getArtifactContent(artifactId: string, opts?: { signal?: AbortSignal }): Promise<{ content: string } | undefined> {
+    const response = await fetch(`${this.baseUrl}/artifacts/${artifactId}/content`, {
       method: "GET",
       ...opts,
     });
+    if (!response.ok) {
+      return undefined;
+    }
+    const content = await response.text();
+    return { content };
   }
 
   updateArtifact(artifactId: string, patch: { name?: string }) {
