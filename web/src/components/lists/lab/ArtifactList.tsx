@@ -6,6 +6,8 @@ import { api } from "@/lib/api";
 import { downloadTextFile } from "@/lib/download";
 import type { Artifact } from "@/lib/types";
 
+import { Sparkles  } from "lucide-react";
+
 import { ArtifactCard } from "./ArtifactCard";
 import { ViewPromptModal } from "./ViewPromptModal";
 
@@ -134,7 +136,11 @@ export function ArtifactList({ listId, artifacts, onArtifactsChange, onViewArtif
             />
           ))}
           {currentArtifacts.length === 0 && (
-            <p className="text-sm text-muted">{t("lab.artifactList.empty")}</p>
+            <div className="flex flex-col items-center justify-center gap-3 py-12 text-center">
+              <Sparkles size={32} className="text-ink" strokeWidth={1.5} />
+              <span className="text-[13px] font-medium text-ink">{t("lab.artifactList.emptyTitle")}</span>
+              <span className="text-[11px] text-muted">{t("lab.artifactList.emptyDesc")}</span>
+            </div>
           )}
         </div>
       </div>

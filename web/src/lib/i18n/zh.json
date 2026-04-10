@@ -87,7 +87,8 @@
       "reports": "报告"
     },
     "artifactList": {
-      "empty": "暂无产物"
+      "emptyTitle": "输出将保存在此处。",
+      "emptyDesc": "添加来源后再生成你的第一份报告。"
     },
     "artifactViewer": {
       "basedOnSingular": "基于 %{count} 个来源",

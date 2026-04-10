@@ -87,7 +87,8 @@
       "reports": "Reports"
     },
     "artifactList": {
-      "empty": "No artifacts yet."
+      "emptyTitle": "Output will be saved here.",
+      "emptyDesc": "Generate your first report after adding sources."
     },
     "artifactViewer": {
       "basedOnSingular": "based on %{count} source",
