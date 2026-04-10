@@ -77,6 +77,49 @@
     "modelDownloads": "模型下载",
     "modelDownloadsRequired": "需要 Whisper 模型文件。如果缺失，在下载模型之前无法开始转录。"
   },
+  "lab": {
+    "header": {
+      "expand": "展开",
+      "collapse": "收起",
+      "minimize": "最小化"
+    },
+    "toolSection": {
+      "reports": "报告"
+    },
+    "artifactList": {
+      "empty": "暂无产物"
+    },
+    "artifactViewer": {
+      "basedOnSingular": "基于 %{count} 个来源",
+      "basedOnPlural": "基于 %{count} 个来源",
+      "loading": "加载中..."
+    },
+    "artifactCard": {
+      "open": "打开",
+      "rename": "重命名",
+      "download": "下载",
+      "viewPrompt": "查看提示词",
+      "delete": "删除"
+    },
+    "artifactType": {
+      "brief": "简报",
+      "studyGuide": "学习指南",
+      "blogPost": "博客文章",
+      "customReport": "自定义报告"
+    },
+    "reportsModal": {
+      "title": "报告",
+      "placeholder": "描述你的需求...",
+      "brief": "简报",
+      "studyGuide": "学习指南",
+      "blogPost": "博客文章"
+    },
+    "viewPromptModal": {
+      "title": "提示词",
+      "close": "关闭",
+      "copy": "复制"
+    }
+  },
   "lists": {
     "lab": "实验室",
     "sources": "来源",

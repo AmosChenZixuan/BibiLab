@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { FileText } from "lucide-react";
 
+import { useLanguage } from "@/app/LanguageContext";
 import { ReportsModal } from "@/components/lists/lab/ReportsModal";
 
 interface ToolSectionProps {
@@ -9,6 +10,7 @@ interface ToolSectionProps {
 }
 
 export function ToolSection({ listId, sourceIds }: ToolSectionProps) {
+  const { t } = useLanguage();
   const [reportsOpen, setReportsOpen] = useState(false);
 
   return (
@@ -19,7 +21,7 @@ export function ToolSection({ listId, sourceIds }: ToolSectionProps) {
         className="flex flex-col items-center gap-1 rounded-xl border border-border bg-white/64 px-2 py-3 text-center transition hover:bg-white hover:shadow-sm"
       >
         <FileText size={16} className="text-muted" />
-        <span className="text-xs font-medium text-ink">Reports</span>
+        <span className="text-xs font-medium text-ink">{t("lab.toolSection.reports")}</span>
       </button>
 
       <ReportsModal

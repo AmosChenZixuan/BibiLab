@@ -77,6 +77,49 @@
     "modelDownloads": "Model Downloads",
     "modelDownloadsRequired": "Whisper model files are required. If missing, transcription cannot start until a model is downloaded."
   },
+  "lab": {
+    "header": {
+      "expand": "expand",
+      "collapse": "collapse",
+      "minimize": "minimize"
+    },
+    "toolSection": {
+      "reports": "Reports"
+    },
+    "artifactList": {
+      "empty": "No artifacts yet."
+    },
+    "artifactViewer": {
+      "basedOnSingular": "based on %{count} source",
+      "basedOnPlural": "based on %{count} sources",
+      "loading": "Loading..."
+    },
+    "artifactCard": {
+      "open": "Open",
+      "rename": "Rename",
+      "download": "Download",
+      "viewPrompt": "View Prompt",
+      "delete": "Delete"
+    },
+    "artifactType": {
+      "brief": "Brief",
+      "studyGuide": "Study Guide",
+      "blogPost": "Blog Post",
+      "customReport": "Custom Report"
+    },
+    "reportsModal": {
+      "title": "Reports",
+      "placeholder": "Describe what you need...",
+      "brief": "Brief",
+      "studyGuide": "Study Guide",
+      "blogPost": "Blog Post"
+    },
+    "viewPromptModal": {
+      "title": "Prompt",
+      "close": "Close",
+      "copy": "Copy"
+    }
+  },
   "lists": {
     "lab": "Lab",
     "sources": "Sources",

@@ -1,15 +1,16 @@
 import { useCallback, useState } from "react";
 import { ArrowRight } from "lucide-react";
 
+import { useLanguage } from "@/app/LanguageContext";
 import { Modal } from "@/components/ui/Modal";
 import { useJobActivity } from "@/components/jobs/JobActivityProvider";
 import { api } from "@/lib/api";
 import type { ArtifactType } from "@/lib/types";
 
-const SUGGESTED_PROMPTS: { type: ArtifactType; label: string }[] = [
-  { type: "brief", label: "Brief" },
-  { type: "study_guide", label: "Study Guide" },
-  { type: "blog_post", label: "Blog Post" },
+const SUGGESTED_PROMPTS: { type: ArtifactType; labelKey: string }[] = [
+  { type: "brief", labelKey: "lab.reportsModal.brief" },
+  { type: "study_guide", labelKey: "lab.reportsModal.studyGuide" },
+  { type: "blog_post", labelKey: "lab.reportsModal.blogPost" },
 ];
 
 interface ReportsModalProps {
@@ -20,6 +21,7 @@ interface ReportsModalProps {
 }
 
 export function ReportsModal({ open, listId, sourceIds, onClose }: ReportsModalProps) {
+  const { t } = useLanguage();
   const [prompt, setPrompt] = useState("");
   const { trackJobs } = useJobActivity();
 
@@ -48,17 +50,17 @@ export function ReportsModal({ open, listId, sourceIds, onClose }: ReportsModalP
   );
 
   return (
-    <Modal open={open} onClose={onClose} title="Reports" size="md">
+    <Modal open={open} onClose={onClose} title={t("lab.reportsModal.title")} size="md">
       <div className="grid gap-5">
         <div className="grid grid-cols-3 gap-3">
           {SUGGESTED_PROMPTS.map((s) => (
             <button
               key={s.type}
               type="button"
-              onClick={() => void handleSubmit(s.type, s.label)}
+              onClick={() => void handleSubmit(s.type, t(s.labelKey))}
               className="rounded-xl border border-border bg-white/64 px-3 py-3 text-center text-sm font-medium text-ink transition hover:bg-white hover:shadow-sm"
             >
-              {s.label}
+              {t(s.labelKey)}
             </button>
           ))}
         </div>
@@ -68,7 +70,7 @@ export function ReportsModal({ open, listId, sourceIds, onClose }: ReportsModalP
             type="text"
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
-            placeholder="Describe what you need..."
+            placeholder={t("lab.reportsModal.placeholder")}
             className="w-full rounded-full border border-border bg-white/80 py-2.5 pr-10 pl-4 text-sm text-ink placeholder:text-muted/50 outline-none focus:border-blue/40 focus:bg-white transition"
           />
           <button

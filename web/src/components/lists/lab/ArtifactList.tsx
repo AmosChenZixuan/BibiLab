@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { useLanguage } from "@/app/LanguageContext";
 import { useJobActivity } from "@/components/jobs/JobActivityProvider";
 import { api } from "@/lib/api";
 import { downloadTextFile } from "@/lib/download";
@@ -16,6 +17,7 @@ interface ArtifactListProps {
 }
 
 export function ArtifactList({ listId, artifacts, onArtifactsChange, onViewArtifact }: ArtifactListProps) {
+  const { t } = useLanguage();
   const { getJobs, dismissJob } = useJobActivity();
   const artifactJobs = useMemo(() => getJobs("artifact", listId), [getJobs, listId]);
   const [refreshedJobs, setRefreshedJobs] = useState<string[]>([]);
@@ -132,7 +134,7 @@ export function ArtifactList({ listId, artifacts, onArtifactsChange, onViewArtif
             />
           ))}
           {currentArtifacts.length === 0 && (
-            <p className="text-sm text-muted">No artifacts yet.</p>
+            <p className="text-sm text-muted">{t("lab.artifactList.empty")}</p>
           )}
         </div>
       </div>
