@@ -108,11 +108,16 @@
       "customReport": "Custom Report"
     },
     "reportsModal": {
-      "title": "Reports",
-      "placeholder": "Describe what you need...",
+      "title": "Generate Report",
+      "placeholder": "Summarize the key arguments and compare viewpoints across sources…",
+      "suggested": "Suggested",
+      "customPrompt": "Or write your own prompt",
       "brief": "Brief",
+      "briefDesc": "Quick summary",
       "studyGuide": "Study Guide",
-      "blogPost": "Blog Post"
+      "studyGuideDesc": "Key concepts",
+      "blogPost": "Blog Post",
+      "blogPostDesc": "Article draft"
     },
     "viewPromptModal": {
       "title": "Prompt",

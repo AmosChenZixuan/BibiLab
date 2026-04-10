@@ -1,5 +1,5 @@
 import { useCallback, useState } from "react";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, BookOpen, PenLine, Zap } from "lucide-react";
 
 import { useLanguage } from "@/app/LanguageContext";
 import { Modal } from "@/components/ui/Modal";
@@ -7,10 +7,15 @@ import { useJobActivity } from "@/components/jobs/JobActivityProvider";
 import { api } from "@/lib/api";
 import type { ArtifactJob, ArtifactType } from "@/lib/types";
 
-const SUGGESTED_PROMPTS: { type: ArtifactType; labelKey: string }[] = [
-  { type: "brief", labelKey: "lab.reportsModal.brief" },
-  { type: "study_guide", labelKey: "lab.reportsModal.studyGuide" },
-  { type: "blog_post", labelKey: "lab.reportsModal.blogPost" },
+const SUGGESTED_PROMPTS: {
+  type: ArtifactType;
+  labelKey: string;
+  descKey: string;
+  icon: React.ReactNode;
+}[] = [
+  { type: "brief", labelKey: "lab.reportsModal.brief", descKey: "lab.reportsModal.briefDesc", icon: <Zap size={20} /> },
+  { type: "study_guide", labelKey: "lab.reportsModal.studyGuide", descKey: "lab.reportsModal.studyGuideDesc", icon: <BookOpen size={20} /> },
+  { type: "blog_post", labelKey: "lab.reportsModal.blogPost", descKey: "lab.reportsModal.blogPostDesc", icon: <PenLine size={20} /> },
 ];
 
 interface ReportsModalProps {
@@ -54,36 +59,52 @@ export function ReportsModal({ open, listId, sourceIds, onClose, onArtifactGener
   return (
     <Modal open={open} onClose={onClose} title={t("lab.reportsModal.title")} size="md">
       <div className="grid gap-5">
-        <div className="grid grid-cols-3 gap-3">
-          {SUGGESTED_PROMPTS.map((s) => (
-            <button
-              key={s.type}
-              type="button"
-              onClick={() => void handleSubmit(s.type, t(s.labelKey))}
-              className="rounded-xl border border-border bg-white/64 px-3 py-3 text-center text-sm font-medium text-ink transition hover:bg-white hover:shadow-sm"
-            >
-              {t(s.labelKey)}
-            </button>
-          ))}
+        {/* Suggested prompts */}
+        <div className="grid gap-2.5">
+          <span className="text-[11px] font-semibold tracking-wide text-muted uppercase">
+            {t("lab.reportsModal.suggested")}
+          </span>
+          <div className="grid grid-cols-3 gap-2.5">
+            {SUGGESTED_PROMPTS.map((s) => (
+              <button
+                key={s.type}
+                type="button"
+                onClick={() => void handleSubmit(s.type, t(s.labelKey))}
+                className="flex flex-col items-center gap-1.5 rounded-2xl border border-border/40 bg-white/64 p-3.5 text-center transition hover:bg-white hover:shadow-sm"
+              >
+                <span className="text-[#5b7faa]">{s.icon}</span>
+                <span className="text-[13px] font-medium text-ink">{t(s.labelKey)}</span>
+                <span className="text-[11px] text-muted">{t(s.descKey)}</span>
+              </button>
+            ))}
+          </div>
         </div>
 
-        <form className="relative" onSubmit={handleCustomSubmit}>
-          <input
-            type="text"
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            placeholder={t("lab.reportsModal.placeholder")}
-            className="w-full rounded-full border border-border bg-white/80 py-2.5 pr-10 pl-4 text-sm text-ink placeholder:text-muted/50 outline-none focus:border-blue/40 focus:bg-white transition"
-          />
-          <button
-            type="submit"
-            disabled={!prompt.trim()}
-            aria-label="Submit"
-            className="absolute right-1.5 top-1/2 -translate-y-1/2 flex h-7 w-7 items-center justify-center rounded-full text-muted transition disabled:opacity-0 enabled:hover:bg-blue enabled:hover:text-white enabled:hover:shadow-sm"
-          >
-            <ArrowRight size={15} />
-          </button>
-        </form>
+        {/* Custom prompt */}
+        <div className="grid gap-2">
+          <span className="text-[11px] font-semibold tracking-wide text-muted uppercase">
+            {t("lab.reportsModal.customPrompt")}
+          </span>
+          <form onSubmit={handleCustomSubmit}>
+            <div className="relative rounded-2xl border border-border/40 bg-white/80 p-3 pr-10">
+              <textarea
+                value={prompt}
+                onChange={(e) => setPrompt(e.target.value)}
+                placeholder={t("lab.reportsModal.placeholder")}
+                rows={4}
+                className="w-full resize-none bg-transparent text-[13px] text-ink placeholder:text-muted/50 outline-none"
+              />
+              <button
+                type="submit"
+                disabled={!prompt.trim()}
+                aria-label="Submit"
+                className="absolute bottom-2.5 right-2.5 flex h-7 w-7 items-center justify-center rounded-full bg-[#5b7faa] text-white transition disabled:opacity-40 hover:bg-[#4a6d91]"
+              >
+                <ArrowRight size={15} />
+              </button>
+            </div>
+          </form>
+        </div>
       </div>
     </Modal>
   );
