@@ -13,7 +13,7 @@ const mockArtifacts = [
     type: "brief" as const,
     prompt: "Generate a brief",
     source_ids: ["source-1"],
-    status: "done" as const,
+    status: "completed" as const,
     created_at: "2026-04-08T12:00:00Z",
   },
   {
@@ -86,7 +86,12 @@ function renderArtifactList(props?: Partial<React.ComponentProps<typeof Artifact
   return render(
     <LanguageProvider>
       <JobActivityProvider>
-        <ArtifactList listId="list-1" {...props} />
+        <ArtifactList
+          listId="list-1"
+          artifacts={mockArtifacts}
+          onArtifactsChange={vi.fn()}
+          {...props}
+        />
       </JobActivityProvider>
     </LanguageProvider>,
   );
@@ -97,25 +102,12 @@ afterEach(() => {
 });
 
 describe("ArtifactList", () => {
-  test("renders all artifacts from API", async () => {
+  test("renders all artifacts from props", async () => {
     renderArtifactList();
 
     await waitFor(() => {
       expect(screen.getByText("Brief One")).toBeInTheDocument();
     });
     expect(screen.getByText("STUDY_GUIDE")).toBeInTheDocument();
-  });
-
-  test("polls for new artifacts on interval", async () => {
-    renderArtifactList();
-
-    // Wait for initial load
-    await waitFor(() => {
-      expect(screen.getByText("Brief One")).toBeInTheDocument();
-    });
-
-    // The polling is handled by JobActivityProvider, which is tested separately.
-    // Here we just verify initial load works.
-    expect(api.listArtifacts).toHaveBeenCalledTimes(1);
   });
 });

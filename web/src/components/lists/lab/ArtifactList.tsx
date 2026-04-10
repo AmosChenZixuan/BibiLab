@@ -10,35 +10,24 @@ import { ViewPromptModal } from "./ViewPromptModal";
 
 interface ArtifactListProps {
   listId: string;
+  artifacts: Artifact[];
+  onArtifactsChange: (artifacts: Artifact[]) => void;
   onViewArtifact?: (artifact: Artifact) => void;
 }
 
-export function ArtifactList({ listId, onViewArtifact }: ArtifactListProps) {
+export function ArtifactList({ listId, artifacts, onArtifactsChange, onViewArtifact }: ArtifactListProps) {
   const { getJobs, dismissJob } = useJobActivity();
   const artifactJobs = useMemo(() => getJobs("artifact", listId), [getJobs, listId]);
   const [refreshedJobs, setRefreshedJobs] = useState<string[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  const [artifacts, setArtifacts] = useState<Artifact[]>([]);
+  const [currentArtifacts, setCurrentArtifacts] = useState<Artifact[]>(artifacts);
   const [viewPromptArtifactId, setViewPromptArtifactId] = useState<string | null>(null);
 
-  // Initial load
+  // Sync currentArtifacts when artifacts prop changes (e.g., after initial load)
   useEffect(() => {
-    let cancelled = false;
-    async function load() {
-      try {
-        const result = await api.listArtifacts(listId);
-        if (cancelled) return;
-        setArtifacts(result ?? []);
-      } catch {
-        // Non-critical: show empty list on error
-      }
-    }
-    void load();
-    return () => {
-      cancelled = true;
-    };
-  }, [listId]);
+    setCurrentArtifacts(artifacts);
+  }, [artifacts]);
 
   // When a job flips to done, refresh artifacts and dismiss
   useEffect(() => {
@@ -52,11 +41,10 @@ export function ArtifactList({ listId, onViewArtifact }: ArtifactListProps) {
       try {
         const next = await api.listArtifacts(listId);
         if (cancelled) return;
-        setArtifacts(next ?? []);
-        for (const { job } of completed) {
-          setRefreshedJobs((prev) => [...prev, job.id]);
-          await dismissJob(job.id);
-        }
+        setCurrentArtifacts(next ?? []);
+        onArtifactsChange(next ?? []);
+        await Promise.all(completed.map(({ job }) => dismissJob(job.id)));
+        setRefreshedJobs((prev) => [...prev, ...completed.map(({ job }) => job.id)]);
       } catch {
         // Non-critical: leave jobs in terminal state
       }
@@ -65,11 +53,11 @@ export function ArtifactList({ listId, onViewArtifact }: ArtifactListProps) {
     return () => {
       cancelled = true;
     };
-  }, [artifactJobs, listId, refreshedJobs, dismissJob]);
+  }, [artifactJobs, listId, refreshedJobs, dismissJob, onArtifactsChange]);
 
   const handleDismiss = useCallback(
     async (artifactId: string) => {
-      setArtifacts((prev) => prev.filter((a) => a.id !== artifactId));
+      setCurrentArtifacts((prev) => prev.filter((a) => a.id !== artifactId));
     },
     [],
   );
@@ -78,17 +66,17 @@ export function ArtifactList({ listId, onViewArtifact }: ArtifactListProps) {
     try {
       const result = await api.getArtifactContent(artifactId);
       if (!result) return;
-      const artifact = artifacts.find((a) => a.id === artifactId);
+      const artifact = currentArtifacts.find((a) => a.id === artifactId);
       const filename = artifact ? `${artifact.name}.md` : "artifact.md";
       downloadTextFile(filename, result.content);
     } catch {
       // Silent failure - card stays
     }
-  }, [artifacts]);
+  }, [currentArtifacts]);
 
   const handleRename = useCallback((artifactId: string, name: string) => {
     let previousName: string;
-    setArtifacts((prev) => {
+    setCurrentArtifacts((prev) => {
       const artifact = prev.find((a) => a.id === artifactId);
       if (!artifact) return prev;
       previousName = artifact.name;
@@ -97,7 +85,7 @@ export function ArtifactList({ listId, onViewArtifact }: ArtifactListProps) {
     // API call (fire and forget, silent failure)
     void api.updateArtifact(artifactId, { name }).catch(() => {
       // Revert optimistic update on failure
-      setArtifacts((prev) =>
+      setCurrentArtifacts((prev) =>
         prev.map((a) => (a.id === artifactId ? { ...a, name: previousName } : a)),
       );
     });
@@ -106,14 +94,14 @@ export function ArtifactList({ listId, onViewArtifact }: ArtifactListProps) {
   const handleDelete = useCallback(async (artifactId: string) => {
     try {
       await api.deleteArtifact(artifactId);
-      setArtifacts((prev) => prev.filter((a) => a.id !== artifactId));
+      setCurrentArtifacts((prev) => prev.filter((a) => a.id !== artifactId));
     } catch {
       // Silent failure - card stays
     }
   }, []);
 
   const viewPromptArtifact = viewPromptArtifactId
-    ? artifacts.find((a) => a.id === viewPromptArtifactId) ?? null
+    ? currentArtifacts.find((a) => a.id === viewPromptArtifactId) ?? null
     : null;
 
   return (
@@ -124,7 +112,7 @@ export function ArtifactList({ listId, onViewArtifact }: ArtifactListProps) {
         style={{ minHeight: 0 }}
       >
         <div className="space-y-2 pb-2">
-          {artifacts.map((artifact) => (
+          {currentArtifacts.map((artifact) => (
             <ArtifactCard
               key={artifact.id}
               artifact={artifact}
@@ -135,7 +123,7 @@ export function ArtifactList({ listId, onViewArtifact }: ArtifactListProps) {
               onView={
                 artifact.status === "completed" && onViewArtifact
                   ? (id: string) => {
-                      const a = artifacts.find((art) => art.id === id);
+                      const a = currentArtifacts.find((art) => art.id === id);
                       if (a) onViewArtifact(a);
                     }
                   : undefined
@@ -143,7 +131,7 @@ export function ArtifactList({ listId, onViewArtifact }: ArtifactListProps) {
               onDelete={artifact.status === "completed" ? handleDelete : undefined}
             />
           ))}
-          {artifacts.length === 0 && (
+          {currentArtifacts.length === 0 && (
             <p className="text-sm text-muted">No artifacts yet.</p>
           )}
         </div>
