@@ -46,6 +46,7 @@ function renderToolSection(props?: Partial<React.ComponentProps<typeof ToolSecti
         <ToolSection
           listId="list-1"
           sourceIds={["src-1", "src-2"]}
+          onArtifactGenerated={vi.fn()}
           {...props}
         />
       </JobActivityProvider>
@@ -77,6 +78,6 @@ describe("ToolSection", () => {
     await userEvent.click(reportsCard);
     // Modal should open with dialog role and Reports as heading
     expect(screen.getByRole("dialog")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Reports" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Generate Report" })).toBeInTheDocument();
   });
 });

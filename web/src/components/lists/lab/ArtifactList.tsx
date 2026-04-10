@@ -1,49 +1,38 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { useLanguage } from "@/app/LanguageContext";
 import { useJobActivity } from "@/components/jobs/JobActivityProvider";
 import { api } from "@/lib/api";
 import { downloadTextFile } from "@/lib/download";
 import type { Artifact } from "@/lib/types";
 
+import { Sparkles } from "lucide-react";
+
 import { ArtifactCard } from "./ArtifactCard";
 import { ViewPromptModal } from "./ViewPromptModal";
 
+type ArtifactsUpdater = (prev: Artifact[]) => Artifact[];
+
 interface ArtifactListProps {
   listId: string;
+  artifacts: Artifact[];
+  onArtifactsChange: (updater: ArtifactsUpdater) => void;
   onViewArtifact?: (artifact: Artifact) => void;
 }
 
-export function ArtifactList({ listId, onViewArtifact }: ArtifactListProps) {
+export function ArtifactList({ listId, artifacts, onArtifactsChange, onViewArtifact }: ArtifactListProps) {
+  const { t } = useLanguage();
   const { getJobs, dismissJob } = useJobActivity();
   const artifactJobs = useMemo(() => getJobs("artifact", listId), [getJobs, listId]);
   const [refreshedJobs, setRefreshedJobs] = useState<string[]>([]);
-  const scrollRef = useRef<HTMLDivElement>(null);
-
-  const [artifacts, setArtifacts] = useState<Artifact[]>([]);
   const [viewPromptArtifactId, setViewPromptArtifactId] = useState<string | null>(null);
-
-  // Initial load
-  useEffect(() => {
-    let cancelled = false;
-    async function load() {
-      try {
-        const result = await api.listArtifacts(listId);
-        if (cancelled) return;
-        setArtifacts(result ?? []);
-      } catch {
-        // Non-critical: show empty list on error
-      }
-    }
-    void load();
-    return () => {
-      cancelled = true;
-    };
-  }, [listId]);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   // When a job flips to done, refresh artifacts and dismiss
   useEffect(() => {
+    const refreshedSet = new Set(refreshedJobs);
     const completed = artifactJobs.filter(
-      (item) => item.isTerminal && item.job.status === "done" && !refreshedJobs.includes(item.job.id),
+      (item) => item.isTerminal && item.job.status === "done" && !refreshedSet.has(item.job.id),
     );
     if (completed.length === 0) return;
 
@@ -52,11 +41,9 @@ export function ArtifactList({ listId, onViewArtifact }: ArtifactListProps) {
       try {
         const next = await api.listArtifacts(listId);
         if (cancelled) return;
-        setArtifacts(next ?? []);
-        for (const { job } of completed) {
-          setRefreshedJobs((prev) => [...prev, job.id]);
-          await dismissJob(job.id);
-        }
+        onArtifactsChange(() => next ?? []);
+        await Promise.all(completed.map(({ job }) => dismissJob(job.id)));
+        setRefreshedJobs((prev) => [...prev, ...completed.map(({ job }) => job.id)]);
       } catch {
         // Non-critical: leave jobs in terminal state
       }
@@ -65,13 +52,13 @@ export function ArtifactList({ listId, onViewArtifact }: ArtifactListProps) {
     return () => {
       cancelled = true;
     };
-  }, [artifactJobs, listId, refreshedJobs, dismissJob]);
+  }, [artifactJobs, listId, refreshedJobs, dismissJob, onArtifactsChange]);
 
   const handleDismiss = useCallback(
     async (artifactId: string) => {
-      setArtifacts((prev) => prev.filter((a) => a.id !== artifactId));
+      onArtifactsChange((prev) => prev.filter((a) => a.id !== artifactId));
     },
-    [],
+    [onArtifactsChange],
   );
 
   const handleDownload = useCallback(async (artifactId: string) => {
@@ -87,30 +74,28 @@ export function ArtifactList({ listId, onViewArtifact }: ArtifactListProps) {
   }, [artifacts]);
 
   const handleRename = useCallback((artifactId: string, name: string) => {
-    let previousName: string;
-    setArtifacts((prev) => {
+    let previousName: string | undefined;
+    onArtifactsChange((prev) => {
       const artifact = prev.find((a) => a.id === artifactId);
       if (!artifact) return prev;
       previousName = artifact.name;
       return prev.map((a) => (a.id === artifactId ? { ...a, name } : a));
     });
-    // API call (fire and forget, silent failure)
     void api.updateArtifact(artifactId, { name }).catch(() => {
-      // Revert optimistic update on failure
-      setArtifacts((prev) =>
-        prev.map((a) => (a.id === artifactId ? { ...a, name: previousName } : a)),
+      onArtifactsChange((prev) =>
+        prev.map((a) => (a.id === artifactId ? { ...a, name: previousName ?? a.name } : a)),
       );
     });
-  }, []);
+  }, [onArtifactsChange]);
 
   const handleDelete = useCallback(async (artifactId: string) => {
     try {
       await api.deleteArtifact(artifactId);
-      setArtifacts((prev) => prev.filter((a) => a.id !== artifactId));
+      onArtifactsChange((prev) => prev.filter((a) => a.id !== artifactId));
     } catch {
       // Silent failure - card stays
     }
-  }, []);
+  }, [onArtifactsChange]);
 
   const viewPromptArtifact = viewPromptArtifactId
     ? artifacts.find((a) => a.id === viewPromptArtifactId) ?? null
@@ -144,7 +129,11 @@ export function ArtifactList({ listId, onViewArtifact }: ArtifactListProps) {
             />
           ))}
           {artifacts.length === 0 && (
-            <p className="text-sm text-muted">No artifacts yet.</p>
+            <div className="flex flex-col items-center justify-center gap-3 py-12 text-center">
+              <Sparkles size={32} className="text-ink" strokeWidth={1.5} />
+              <span className="text-[13px] font-medium text-ink">{t("lab.artifactList.emptyTitle")}</span>
+              <span className="text-[11px] text-muted">{t("lab.artifactList.emptyDesc")}</span>
+            </div>
           )}
         </div>
       </div>

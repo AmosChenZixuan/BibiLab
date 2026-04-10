@@ -1,5 +1,6 @@
 import { Copy } from "lucide-react";
 
+import { useLanguage } from "@/app/LanguageContext";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 
@@ -10,6 +11,7 @@ interface ViewPromptModalProps {
 }
 
 export function ViewPromptModal({ open, onClose, prompt }: ViewPromptModalProps) {
+  const { t } = useLanguage();
   async function handleCopy() {
     try {
       await navigator.clipboard.writeText(prompt);
@@ -22,16 +24,16 @@ export function ViewPromptModal({ open, onClose, prompt }: ViewPromptModalProps)
     <Modal
       open={open}
       onClose={onClose}
-      title="Prompt"
+      title={t("lab.viewPromptModal.title")}
       size="lg"
       footer={
         <>
           <Button variant="secondary" onClick={onClose}>
-            Close
+            {t("lab.viewPromptModal.close")}
           </Button>
           <Button onClick={handleCopy}>
             <Copy size={14} />
-            Copy
+            {t("lab.viewPromptModal.copy")}
           </Button>
         </>
       }

@@ -77,6 +77,59 @@
     "modelDownloads": "模型下载",
     "modelDownloadsRequired": "需要 Whisper 模型文件。如果缺失，在下载模型之前无法开始转录。"
   },
+  "lab": {
+    "header": {
+      "expand": "展开",
+      "collapse": "收起",
+      "minimize": "最小化"
+    },
+    "toolSection": {
+      "reports": "报告"
+    },
+    "artifactList": {
+      "emptyTitle": "输出将保存在此处。",
+      "emptyDesc": "添加来源后再生成你的第一份报告。"
+    },
+    "artifactViewer": {
+      "basedOnSingular": "基于 %{count} 个来源",
+      "basedOnPlural": "基于 %{count} 个来源",
+      "loading": "加载中..."
+    },
+    "artifactCard": {
+      "open": "打开",
+      "rename": "重命名",
+      "download": "下载",
+      "viewPrompt": "查看提示词",
+      "delete": "删除"
+    },
+    "artifactType": {
+      "brief": "简报",
+      "studyGuide": "学习指南",
+      "blogPost": "博客文章",
+      "customReport": "自定义报告",
+      "custom": "自定义"
+    },
+    "reportsModal": {
+      "title": "生成报告",
+      "placeholder": "总结关键论点并比较各来源的观点…",
+      "format": "格式",
+      "customPrompt": "或输入自定义提示词",
+      "brief": "简报",
+      "briefDesc": "快速摘要",
+      "studyGuide": "学习指南",
+      "studyGuideDesc": "核心概念",
+      "blogPost": "博客文章",
+      "blogPostDesc": "文章草稿",
+      "custom": "自定义",
+      "customDesc": "自定义格式",
+      "submit": "生成"
+    },
+    "viewPromptModal": {
+      "title": "提示词",
+      "close": "关闭",
+      "copy": "复制"
+    }
+  },
   "lists": {
     "lab": "实验室",
     "sources": "来源",

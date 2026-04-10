@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import { Copy } from "lucide-react";
 
+import { useLanguage } from "@/app/LanguageContext";
 import { api } from "@/lib/api";
 import type { Artifact } from "@/lib/types";
 
@@ -10,6 +11,7 @@ interface ArtifactViewerProps {
 }
 
 export function ArtifactViewer({ artifact }: ArtifactViewerProps) {
+  const { t } = useLanguage();
   const [content, setContent] = useState<string | null>(null);
 
   useEffect(() => {
@@ -42,7 +44,7 @@ export function ArtifactViewer({ artifact }: ArtifactViewerProps) {
         <div className="min-w-0 flex-1">
           <p className="m-0 truncate font-serif text-base font-bold text-ink">{artifact.name}</p>
           <p className="m-0 text-xs text-muted">
-            based on {sourceCount} source{sourceCount !== 1 ? "s" : ""}
+            {t(sourceCount === 1 ? "lab.artifactViewer.basedOnSingular" : "lab.artifactViewer.basedOnPlural", { count: sourceCount })}
           </p>
         </div>
         <button
@@ -61,7 +63,7 @@ export function ArtifactViewer({ artifact }: ArtifactViewerProps) {
             <ReactMarkdown>{content}</ReactMarkdown>
           </div>
         ) : (
-          <p className="text-sm text-muted">Loading...</p>
+          <p className="text-sm text-muted">{t("lab.artifactViewer.loading")}</p>
         )}
       </div>
     </div>

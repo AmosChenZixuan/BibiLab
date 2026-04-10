@@ -5,6 +5,17 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import { LanguageProvider } from "@/app/LanguageContext";
 import { JobActivityProvider } from "@/components/jobs/JobActivityProvider";
 import { LabPanel } from "@/components/lists/LabPanel";
+import { api } from "@/lib/api";
+
+const ARTIFACT_1 = {
+  id: "artifact-1",
+  name: "Study Guide",
+  type: "study_guide" as const,
+  prompt: "Generate a study guide",
+  source_ids: ["source-1", "source-2", "source-3"],
+  status: "completed" as const,
+  created_at: "2026-04-08T12:00:00Z",
+};
 
 vi.mock("@/lib/api", () => ({
   api: {
@@ -23,17 +34,7 @@ vi.mock("@/lib/api", () => ({
     putConfig: vi.fn(),
     downloadWhisperModel: vi.fn(),
     listWhisperModels: vi.fn(),
-    listArtifacts: vi.fn().mockResolvedValue([
-      {
-        id: "artifact-1",
-        name: "Study Guide",
-        type: "study_guide",
-        prompt: "Generate a study guide",
-        source_ids: ["source-1", "source-2", "source-3"],
-        status: "completed",
-        created_at: "2026-04-08T12:00:00Z",
-      },
-    ]),
+    listArtifacts: vi.fn().mockResolvedValue([]),
     getArtifactContent: vi.fn().mockResolvedValue({ content: "# Study Guide\n\nContent here" }),
   },
 }));
@@ -47,7 +48,10 @@ function renderLabPanel(props?: Partial<React.ComponentProps<typeof LabPanel>>) 
           labCollapsed={false}
           labW={300}
           sourceIds={[]}
+          artifacts={[]}
+          onArtifactsChange={vi.fn()}
           onToggleCollapse={vi.fn()}
+          onArtifactGenerated={vi.fn()}
           {...props}
         />
       </LanguageProvider>
@@ -97,7 +101,8 @@ describe("LabPanel", () => {
   });
 
   test("clicking done artifact card enters viewer mode with artifact name and source count", async () => {
-    renderLabPanel();
+    vi.mocked(api.listArtifacts).mockResolvedValue([ARTIFACT_1]);
+    renderLabPanel({ artifacts: [ARTIFACT_1] });
     // Wait for artifact to load in ArtifactList
     await waitFor(() => {
       expect(screen.getByText("Study Guide")).toBeInTheDocument();
@@ -115,7 +120,8 @@ describe("LabPanel", () => {
   });
 
   test("copy button in viewer mode copies markdown to clipboard", async () => {
-    renderLabPanel();
+    vi.mocked(api.listArtifacts).mockResolvedValue([ARTIFACT_1]);
+    renderLabPanel({ artifacts: [ARTIFACT_1] });
     await waitFor(() => {
       expect(screen.getByText("Study Guide")).toBeInTheDocument();
     });
@@ -138,7 +144,8 @@ describe("LabPanel", () => {
   });
 
   test("minimize button in viewer mode returns to tool-list showing artifact list", async () => {
-    renderLabPanel();
+    vi.mocked(api.listArtifacts).mockResolvedValue([ARTIFACT_1]);
+    renderLabPanel({ artifacts: [ARTIFACT_1] });
     await waitFor(() => {
       expect(screen.getByText("Study Guide")).toBeInTheDocument();
     });
@@ -159,7 +166,8 @@ describe("LabPanel", () => {
   });
 
   test("viewer mode does not show collapse button (shows minimize instead)", async () => {
-    renderLabPanel();
+    vi.mocked(api.listArtifacts).mockResolvedValue([ARTIFACT_1]);
+    renderLabPanel({ artifacts: [ARTIFACT_1] });
     await waitFor(() => {
       expect(screen.getByText("Study Guide")).toBeInTheDocument();
     });
@@ -175,8 +183,9 @@ describe("LabPanel", () => {
   });
 
   test("collapsing does NOT reset labMode - stays in viewer after expand", async () => {
+    vi.mocked(api.listArtifacts).mockResolvedValue([ARTIFACT_1]);
     const onToggleCollapse = vi.fn();
-    const { rerender } = renderLabPanel({ labCollapsed: false, onToggleCollapse });
+    const { rerender } = renderLabPanel({ labCollapsed: false, artifacts: [ARTIFACT_1], onToggleCollapse });
     await waitFor(() => {
       expect(screen.getByText("Study Guide")).toBeInTheDocument();
     });
@@ -196,7 +205,10 @@ describe("LabPanel", () => {
             labCollapsed={true}
             labW={300}
             sourceIds={[]}
+            artifacts={[ARTIFACT_1]}
+            onArtifactsChange={vi.fn()}
             onToggleCollapse={onToggleCollapse}
+            onArtifactGenerated={vi.fn()}
           />
         </LanguageProvider>
       </JobActivityProvider>,
@@ -211,7 +223,10 @@ describe("LabPanel", () => {
             labCollapsed={false}
             labW={300}
             sourceIds={[]}
+            artifacts={[ARTIFACT_1]}
+            onArtifactsChange={vi.fn()}
             onToggleCollapse={onToggleCollapse}
+            onArtifactGenerated={vi.fn()}
           />
         </LanguageProvider>
       </JobActivityProvider>,

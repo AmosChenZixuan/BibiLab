@@ -109,7 +109,7 @@ export type ArtifactJob = {
 
 export type Job = IngestJob | ModelDownloadJob | ArtifactJob;
 
-export type ArtifactType = "brief" | "study_guide" | "blog_post" | "custom_report";
+export type ArtifactType = "brief" | "study_guide" | "blog_post" | "custom_report" | (string & {});
 
 export type ArtifactStatus = "generating" | "completed" | "failed";
 

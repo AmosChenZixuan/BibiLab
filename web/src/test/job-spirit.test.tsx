@@ -82,6 +82,10 @@ describe("job spirit", () => {
         return Response.json(sources);
       }
 
+      if (url.endsWith("/api/lists/list-1/artifacts") && method === "GET") {
+        return Response.json([]);
+      }
+
       if (url.endsWith("/api/ingest/url") && method === "POST") {
         return Response.json({ queued: ["job-1"], skipped: [] });
       }

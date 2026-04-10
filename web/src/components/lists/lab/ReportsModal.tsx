@@ -1,15 +1,28 @@
-import { useCallback, useState } from "react";
-import { ArrowRight } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { ArrowRight, BookOpen, PenLine, Plus, Zap } from "lucide-react";
 
+import { useLanguage } from "@/app/LanguageContext";
 import { Modal } from "@/components/ui/Modal";
 import { useJobActivity } from "@/components/jobs/JobActivityProvider";
 import { api } from "@/lib/api";
-import type { ArtifactType } from "@/lib/types";
+import { ARTIFACT_TYPE_KEYS } from "@/lib/artifactTypes";
+import { templates } from "@/lib/templates";
+import type { ArtifactJob, ArtifactType } from "@/lib/types";
 
-const SUGGESTED_PROMPTS: { type: ArtifactType; label: string }[] = [
-  { type: "brief", label: "Brief" },
-  { type: "study_guide", label: "Study Guide" },
-  { type: "blog_post", label: "Blog Post" },
+type ReportFormatType = "custom" | "brief" | "study_guide" | "blog_post";
+
+interface ReportFormat {
+  type: ReportFormatType;
+  labelKey: string;
+  descKey: string;
+  icon: React.ReactNode;
+}
+
+const FORMAT_OPTIONS: ReportFormat[] = [
+  { type: "custom", labelKey: "lab.reportsModal.custom", descKey: "lab.reportsModal.customDesc", icon: <Plus size={18} /> },
+  { type: "brief", labelKey: ARTIFACT_TYPE_KEYS.brief, descKey: "lab.reportsModal.briefDesc", icon: <Zap size={18} /> },
+  { type: "study_guide", labelKey: ARTIFACT_TYPE_KEYS.study_guide, descKey: "lab.reportsModal.studyGuideDesc", icon: <BookOpen size={18} /> },
+  { type: "blog_post", labelKey: ARTIFACT_TYPE_KEYS.blog_post, descKey: "lab.reportsModal.blogPostDesc", icon: <PenLine size={18} /> },
 ];
 
 interface ReportsModalProps {
@@ -17,70 +30,105 @@ interface ReportsModalProps {
   listId: string;
   sourceIds: string[];
   onClose: () => void;
+  onArtifactGenerated: (artifactId: string, type: ArtifactType, sourceIds: string[]) => void;
 }
 
-export function ReportsModal({ open, listId, sourceIds, onClose }: ReportsModalProps) {
-  const [prompt, setPrompt] = useState("");
+export function ReportsModal({ open, listId, sourceIds, onClose, onArtifactGenerated }: ReportsModalProps) {
+  const { t, lang } = useLanguage();
   const { trackJobs } = useJobActivity();
 
-  const handleSubmit = useCallback(
-    async (type: ArtifactType, promptText: string) => {
-      const job = await api.createArtifact(listId, {
-        type,
-        prompt: promptText,
-        source_ids: sourceIds,
-      });
-      trackJobs([{ id: job.id, producer: "artifact", label: type, contextKey: listId }]);
-      onClose();
+  const [selectedFormat, setSelectedFormat] = useState<ReportFormatType>("custom");
+  const [prompt, setPrompt] = useState("");
+
+  useEffect(() => {
+    if (open) {
       setPrompt("");
+      setSelectedFormat("custom");
+    }
+  }, [open]);
+
+  const handleFormatSelect = useCallback(
+    (format: ReportFormat) => {
+      setSelectedFormat(format.type);
+      const template = templates[format.type as keyof typeof templates];
+      if (template) {
+        setPrompt(template[lang === "zh" ? "zh" : "en"]);
+      }
     },
-    [listId, sourceIds, onClose, trackJobs],
+    [lang],
   );
 
-  const handleCustomSubmit = useCallback(
-    (e: React.FormEvent) => {
+  const handleSubmit = useCallback(
+    async (e: React.FormEvent) => {
       e.preventDefault();
-      const trimmed = prompt.trim();
-      if (!trimmed) return;
-      void handleSubmit("custom_report", trimmed);
+
+      const trimmedPrompt = prompt.trim();
+      if (!trimmedPrompt) return;
+
+      const artifactType: ArtifactType = selectedFormat === "custom" ? "custom_report" : selectedFormat;
+
+      const job = await api.createArtifact(listId, {
+        type: artifactType,
+        prompt: trimmedPrompt,
+        source_ids: sourceIds,
+      }) as ArtifactJob;
+      trackJobs([{ id: job.id, producer: "artifact", label: artifactType, contextKey: listId }]);
+      onArtifactGenerated(job.meta.artifact_id ?? job.id, artifactType, sourceIds);
+      onClose();
     },
-    [prompt, handleSubmit],
+    [listId, prompt, selectedFormat, sourceIds, onClose, trackJobs, onArtifactGenerated],
   );
 
   return (
-    <Modal open={open} onClose={onClose} title="Reports" size="md">
-      <div className="grid gap-5">
-        <div className="grid grid-cols-3 gap-3">
-          {SUGGESTED_PROMPTS.map((s) => (
-            <button
-              key={s.type}
-              type="button"
-              onClick={() => void handleSubmit(s.type, s.label)}
-              className="rounded-xl border border-border bg-white/64 px-3 py-3 text-center text-sm font-medium text-ink transition hover:bg-white hover:shadow-sm"
-            >
-              {s.label}
-            </button>
-          ))}
+    <Modal open={open} onClose={onClose} title={t("lab.reportsModal.title")} size="lg">
+      <form onSubmit={handleSubmit} className="grid gap-5">
+        <div className="grid gap-2.5">
+          <span className="text-[11px] font-semibold tracking-wide text-muted uppercase">
+            {t("lab.reportsModal.format")}
+          </span>
+          <div className="grid grid-cols-4 gap-2">
+            {FORMAT_OPTIONS.map((format) => (
+              <button
+                key={format.type}
+                type="button"
+                onClick={() => handleFormatSelect(format)}
+                className={`w-full flex flex-col items-center gap-1.5 rounded-2xl border p-3.5 text-center transition ${
+                  selectedFormat === format.type
+                    ? "border-blue bg-white shadow-sm"
+                    : "border-border/40 bg-white/64 hover:bg-white hover:shadow-sm"
+                }`}
+              >
+                <span className="text-blue">{format.icon}</span>
+                <span className="text-[13px] font-medium text-ink">{t(format.labelKey)}</span>
+                <span className="text-[11px] text-muted">{t(format.descKey)}</span>
+              </button>
+            ))}
+          </div>
         </div>
 
-        <form className="relative" onSubmit={handleCustomSubmit}>
-          <input
-            type="text"
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            placeholder="Describe what you need..."
-            className="w-full rounded-full border border-border bg-white/80 py-2.5 pr-10 pl-4 text-sm text-ink placeholder:text-muted/50 outline-none focus:border-blue/40 focus:bg-white transition"
-          />
-          <button
-            type="submit"
-            disabled={!prompt.trim()}
-            aria-label="Submit"
-            className="absolute right-1.5 top-1/2 -translate-y-1/2 flex h-7 w-7 items-center justify-center rounded-full text-muted transition disabled:opacity-0 enabled:hover:bg-blue enabled:hover:text-white enabled:hover:shadow-sm"
-          >
-            <ArrowRight size={15} />
-          </button>
-        </form>
-      </div>
+        <div className="grid gap-2">
+          <span className="text-[11px] font-semibold tracking-wide text-muted uppercase">
+            {t("lab.reportsModal.customPrompt")}
+          </span>
+          <div className="relative rounded-2xl border border-border/40 bg-white/80 p-3 pr-10">
+            <textarea
+              value={prompt}
+              onChange={(e) => setPrompt(e.target.value)}
+              placeholder={t("lab.reportsModal.placeholder")}
+              rows={12}
+              className="w-full pr-3 resize-none bg-transparent text-[13px] text-ink placeholder:text-muted/50 outline-none"
+            />
+            <button
+              type="submit"
+              disabled={!prompt.trim()}
+              aria-label="Submit"
+              className="absolute bottom-2.5 right-2.5 flex h-7 w-7 items-center justify-center rounded-full bg-blue text-white transition disabled:opacity-40 hover:bg-blue/80"
+            >
+              <ArrowRight size={15} />
+            </button>
+          </div>
+        </div>
+      </form>
     </Modal>
   );
 }

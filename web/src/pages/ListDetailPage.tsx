@@ -3,7 +3,8 @@ import { useParams } from "react-router-dom";
 import { Minimize2, ArrowLeftToLine, ArrowRightToLine} from 'lucide-react';
 import { useLanguage } from "@/app/LanguageContext";
 import { api, toErrorMessageWithT } from "@/lib/api";
-import type { Source, SourceContent } from "@/lib/types";
+import { ARTIFACT_TYPE_KEYS } from "@/lib/artifactTypes";
+import type { Artifact, Source, SourceContent } from "@/lib/types";
 
 import { usePanelResize, Resizer, COLLAPSED_PANEL } from "@/components/lists/panel-resize";
 import { NavbarTitle } from "@/components/lists/NavbarTitle";
@@ -37,6 +38,7 @@ export function ListDetailPage() {
   const [detailSource, setDetailSource] = useState<Source | null>(null);
   const [sourceContent, setSourceContent] = useState<SourceContent | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [artifacts, setArtifacts] = useState<Artifact[]>([]);
   const [sourcesCollapsed, setSourcesCollapsed] = useState(false);
   const [labCollapsed, setLabCollapsed] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -52,13 +54,15 @@ export function ListDetailPage() {
 
   const load = useCallback(async (signal?: AbortSignal) => {
     try {
-      const [lists, nextSources] = await Promise.all([
+      const [lists, nextSources, nextArtifacts] = await Promise.all([
         api.listLists({ signal }),
         api.listSources(listId, { signal }),
+        api.listArtifacts(listId, { signal }),
       ]);
       const current = lists?.find((l) => l.id === listId);
       setListName(current?.name ?? t("lists.listWorkspace"));
       setSources(nextSources ?? []);
+      setArtifacts(nextArtifacts ?? []);
       setLoadError(null);
     } catch (err) {
       if (err instanceof Error && err.name === "AbortError") return;
@@ -106,6 +110,19 @@ export function ListDetailPage() {
       // On failure the portal reverts its own draft via the name prop
     }
   }
+
+  const handleArtifactGenerated = useCallback((artifactId: string, type: Artifact["type"], sourceIds: string[]) => {
+    const placeholder: Artifact = {
+      id: artifactId,
+      name: t(ARTIFACT_TYPE_KEYS[type] ?? "lab.reportsModal.custom"),
+      type,
+      prompt: "",
+      source_ids: sourceIds,
+      status: "generating",
+      created_at: new Date().toISOString(),
+    };
+    setArtifacts((prev) => [placeholder, ...prev]);
+  }, [t]);
 
   const panelBase = "flex h-full shrink-0 flex-col overflow-hidden rounded-3xl border border-border bg-white/76 shadow-lg";
 
@@ -197,7 +214,10 @@ export function ListDetailPage() {
             labCollapsed={labCollapsed}
             labW={labW}
             sourceIds={sources.map((s) => s.id)}
+            artifacts={artifacts}
+            onArtifactsChange={setArtifacts}
             onToggleCollapse={() => setLabCollapsed((v) => !v)}
+            onArtifactGenerated={handleArtifactGenerated}
           />
         </div>
       </div>

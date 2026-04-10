@@ -33,6 +33,7 @@ function renderReportsModal(props?: Partial<React.ComponentProps<typeof ReportsM
           sourceIds={["src-1", "src-2"]}
           onClose={vi.fn()}
           open={true}
+          onArtifactGenerated={vi.fn()}
           {...props}
         />
       </JobActivityProvider>
@@ -46,49 +47,71 @@ describe("ReportsModal", () => {
     vi.clearAllMocks();
   });
 
-  test("renders modal with title 'Reports'", () => {
+  test("renders modal with title 'Generate Report'", () => {
     renderReportsModal({ open: true });
     expect(screen.getByRole("dialog")).toBeInTheDocument();
-    expect(screen.getByText("Reports")).toBeInTheDocument();
+    expect(screen.getByText("Generate Report")).toBeInTheDocument();
   });
 
-  test("renders 3 suggested prompt cards (Brief, Study Guide, Blog Post)", () => {
+  test("renders 4 format options (Brief, Study Guide, Blog Post, Custom)", () => {
     renderReportsModal({ open: true });
     expect(screen.getByText("Brief")).toBeInTheDocument();
     expect(screen.getByText("Study Guide")).toBeInTheDocument();
     expect(screen.getByText("Blog Post")).toBeInTheDocument();
+    expect(screen.getByText("Custom")).toBeInTheDocument();
   });
 
-  test("renders text input with placeholder", () => {
+  test("renders textarea with prompt placeholder when custom is selected", () => {
     renderReportsModal({ open: true });
-    const input = screen.getByPlaceholderText(/describe what you need/i);
-    expect(input).toBeInTheDocument();
+    // Custom is selected by default, shows prompt placeholder
+    expect(screen.getByPlaceholderText(/summarize the key arguments/i)).toBeInTheDocument();
   });
 
-  test("clicking suggested card calls createArtifact and closes modal", async () => {
+  test("clicking Brief format fills textarea with template", async () => {
+    renderReportsModal({ open: true });
+
+    const briefBtn = screen.getByRole("button", { name: /brief/i });
+    await userEvent.click(briefBtn);
+
+    // Textarea should now contain the Brief template
+    const textarea = screen.getByRole("textbox") as HTMLTextAreaElement;
+    expect(textarea.value).toContain("brief");
+  });
+
+  test("clicking format then submit calls createArtifact with format type", async () => {
     const onClose = vi.fn();
     renderReportsModal({ open: true, onClose });
 
-    const briefCard = screen.getByRole("button", { name: /brief/i });
-    await userEvent.click(briefCard);
+    // Select Brief format
+    const briefBtn = screen.getByRole("button", { name: /brief/i });
+    await userEvent.click(briefBtn);
+
+    // Submit
+    const submitBtn = screen.getByRole("button", { name: /submit/i });
+    await userEvent.click(submitBtn);
 
     await waitFor(() => {
       expect(api.createArtifact).toHaveBeenCalledWith("list-1", {
         type: "brief",
-        prompt: "Brief",
+        prompt: expect.stringContaining("Create a comprehensive briefing document"),
         source_ids: ["src-1", "src-2"],
       });
     });
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
-  test("typing custom prompt and submitting calls createArtifact with custom_report type", async () => {
+  test("custom format is selected by default and textarea is empty", async () => {
     const onClose = vi.fn();
     renderReportsModal({ open: true, onClose });
 
-    const input = screen.getByPlaceholderText(/describe what you need/i);
-    await userEvent.type(input, "Give me a detailed analysis");
+    // Custom is selected by default, textarea should be empty
+    const textarea = screen.getByRole("textbox");
+    expect(textarea).toHaveValue("");
 
+    // Type a custom prompt
+    await userEvent.type(textarea, "Give me a detailed analysis");
+
+    // Submit
     const submitBtn = screen.getByRole("button", { name: /submit/i });
     await userEvent.click(submitBtn);
 

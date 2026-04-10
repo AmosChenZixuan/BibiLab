@@ -9,7 +9,9 @@ afterEach(() => {
 describe("api.getArtifactContent", () => {
   test("fetches artifact content from GET /artifacts/{id}/content", async () => {
     const fetchMock = vi.fn(async () =>
-      Response.json({ content: "# Artifact Content\n\nHere is the content." }),
+      new Response("# Artifact Content\n\nHere is the content.", {
+        headers: { "Content-Type": "text/markdown" },
+      }),
     );
     vi.stubGlobal("fetch", fetchMock);
 

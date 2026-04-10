@@ -56,20 +56,21 @@ export function notifyHealthChanged(health: HealthResponse) {
 type RequestFn = <T>(
   baseUrl: string,
   path: string,
-  init?: RequestInit & { signal?: AbortSignal },
+  init?: RequestInit & { signal?: AbortSignal; responseType?: "json" | "text" },
 ) => Promise<T | undefined>;
 
 async function request<T>(
   baseUrl: string,
   path: string,
-  init?: RequestInit & { signal?: AbortSignal },
+  init?: RequestInit & { signal?: AbortSignal; responseType?: "json" | "text" },
 ): Promise<T | undefined> {
+  const { responseType, ...fetchInit } = init ?? {};
   const response = await fetch(`${baseUrl}${path}`, {
     headers: {
       "Content-Type": "application/json",
       ...(init?.headers ?? {}),
     },
-    ...init,
+    ...fetchInit,
   });
 
   if (!response.ok) {
@@ -87,6 +88,11 @@ async function request<T>(
 
   if (response.status === 204) {
     return undefined;
+  }
+
+  if (responseType === "text") {
+    const text = await response.text();
+    return text as unknown as T;
   }
 
   const data = await response.json();
@@ -166,11 +172,14 @@ export class ArtifactsClient {
     return this.request<Artifact[]>(this.baseUrl, `/lists/${listId}/artifacts`, opts);
   }
 
-  getArtifactContent(artifactId: string, opts?: { signal?: AbortSignal }) {
-    return this.request<{ content: string }>(this.baseUrl, `/artifacts/${artifactId}/content`, {
+  async getArtifactContent(artifactId: string, opts?: { signal?: AbortSignal }): Promise<{ content: string } | undefined> {
+    const text = await this.request<string>(this.baseUrl, `/artifacts/${artifactId}/content`, {
       method: "GET",
+      responseType: "text",
       ...opts,
     });
+    if (text === undefined) return undefined;
+    return { content: text };
   }
 
   updateArtifact(artifactId: string, patch: { name?: string }) {

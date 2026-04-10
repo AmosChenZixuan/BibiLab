@@ -77,6 +77,59 @@
     "modelDownloads": "Model Downloads",
     "modelDownloadsRequired": "Whisper model files are required. If missing, transcription cannot start until a model is downloaded."
   },
+  "lab": {
+    "header": {
+      "expand": "expand",
+      "collapse": "collapse",
+      "minimize": "minimize"
+    },
+    "toolSection": {
+      "reports": "Reports"
+    },
+    "artifactList": {
+      "emptyTitle": "Output will be saved here.",
+      "emptyDesc": "Generate your first report after adding sources."
+    },
+    "artifactViewer": {
+      "basedOnSingular": "based on %{count} source",
+      "basedOnPlural": "based on %{count} sources",
+      "loading": "Loading..."
+    },
+    "artifactCard": {
+      "open": "Open",
+      "rename": "Rename",
+      "download": "Download",
+      "viewPrompt": "View Prompt",
+      "delete": "Delete"
+    },
+    "artifactType": {
+      "brief": "Brief",
+      "studyGuide": "Study Guide",
+      "blogPost": "Blog Post",
+      "customReport": "Custom Report",
+      "custom": "Custom"
+    },
+    "reportsModal": {
+      "title": "Generate Report",
+      "placeholder": "Summarize the key arguments and compare viewpoints across sources…",
+      "format": "Format",
+      "customPrompt": "Or write your own prompt",
+      "brief": "Brief",
+      "briefDesc": "Quick summary",
+      "studyGuide": "Study Guide",
+      "studyGuideDesc": "Key concepts",
+      "blogPost": "Blog Post",
+      "blogPostDesc": "Article draft",
+      "custom": "Custom",
+      "customDesc": "Your own format",
+      "submit": "Generate"
+    },
+    "viewPromptModal": {
+      "title": "Prompt",
+      "close": "Close",
+      "copy": "Copy"
+    }
+  },
   "lists": {
     "lab": "Lab",
     "sources": "Sources",

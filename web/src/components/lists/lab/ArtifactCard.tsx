@@ -1,17 +1,14 @@
 import { AlertCircle, Download, Eye, FileText, MoreVertical, Pencil, Trash2, X } from "lucide-react";
 import { useRef, useState } from "react";
 
+import { useLanguage } from "@/app/LanguageContext";
 import { ContextMenu } from "@/components/ui/ContextMenu";
+import { ARTIFACT_TYPE_KEYS } from "@/lib/artifactTypes";
 import type { Artifact } from "@/lib/types";
 
-function formatArtifactTypeLabel(type: Artifact["type"]): string {
-  const labels: Record<Artifact["type"], string> = {
-    brief: "BRIEF",
-    study_guide: "STUDY_GUIDE",
-    blog_post: "BLOG_POST",
-    custom_report: "CUSTOM_REPORT",
-  };
-  return labels[type];
+function formatArtifactTypeLabel(type: Artifact["type"], t: (key: string) => string): string {
+  const key = ARTIFACT_TYPE_KEYS[type];
+  return key ? t(key) : type; // Fallback to type itself for custom types
 }
 
 function formatDate(iso: string): string {
@@ -38,6 +35,7 @@ export function ArtifactCard({
   onView,
   onDelete,
 }: ArtifactCardProps) {
+  const { t } = useLanguage();
   const [isRenaming, setIsRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState(artifact.name);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -51,7 +49,7 @@ export function ArtifactCard({
             <span className="relative inline-flex h-2 w-2 rounded-full bg-blue/70" />
           </span>
           <p className="m-0 min-w-0 flex-1 truncate text-sm font-medium text-ink">
-            {formatArtifactTypeLabel(artifact.type)}
+            {formatArtifactTypeLabel(artifact.type, t)}
           </p>
         </div>
         <div data-testid="artifact-skeleton" className="space-y-1.5">
@@ -94,11 +92,11 @@ export function ArtifactCard({
     variant?: "danger";
   }[] = [];
   if (onView) {
-    doneItems.push({ label: "Open", icon: <Eye size={14} />, onClick: () => onView(artifact.id) });
+    doneItems.push({ label: t("lab.artifactCard.open"), icon: <Eye size={14} />, onClick: () => onView(artifact.id) });
   }
   if (onRename) {
     doneItems.push({
-      label: "Rename",
+      label: t("lab.artifactCard.rename"),
       icon: <Pencil size={14} />,
       onClick: () => {
         setRenameValue(artifact.name);
@@ -108,13 +106,13 @@ export function ArtifactCard({
     });
   }
   if (onDownload) {
-    doneItems.push({ label: "Download", icon: <Download size={14} />, onClick: () => onDownload(artifact.id) });
+    doneItems.push({ label: t("lab.artifactCard.download"), icon: <Download size={14} />, onClick: () => onDownload(artifact.id) });
   }
   if (onViewPrompt) {
-    doneItems.push({ label: "View Prompt", icon: <FileText size={14} />, onClick: () => onViewPrompt(artifact.id) });
+    doneItems.push({ label: t("lab.artifactCard.viewPrompt"), icon: <FileText size={14} />, onClick: () => onViewPrompt(artifact.id) });
   }
   if (onDelete) {
-    doneItems.push({ label: "Delete", icon: <Trash2 size={14} />, onClick: () => onDelete(artifact.id), variant: "danger" });
+    doneItems.push({ label: t("lab.artifactCard.delete"), icon: <Trash2 size={14} />, onClick: () => onDelete(artifact.id), variant: "danger" });
   }
 
   function handleRenameSubmit() {
@@ -164,7 +162,7 @@ export function ArtifactCard({
           <p className="m-0 truncate text-sm font-bold text-ink">{artifact.name}</p>
         )}
         <p className="m-0 mt-0.5 text-xs text-muted">
-          {artifact.type.replace(/_/g, " ")} · {artifact.source_ids.length} source
+          {formatArtifactTypeLabel(artifact.type, t)} · {artifact.source_ids.length} source
           {artifact.source_ids.length !== 1 ? "s" : ""} · {formatDate(artifact.created_at)}
         </p>
       </div>
