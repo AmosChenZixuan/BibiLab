@@ -1,6 +1,7 @@
 import { X } from "lucide-react";
 
 import { useLanguage } from "@/app/LanguageContext";
+import { ARTIFACT_TYPE_KEYS } from "@/components/lists/lab/ArtifactCard";
 import type { JobActivityItem } from "./JobActivityProvider";
 import { getJobTitle, getJobTone, useJobActivity } from "./JobActivityProvider";
 
@@ -77,7 +78,7 @@ export function JobSpirit() {
             <ul className="divide-y divide-border">
               {visibleJobs.map((item) => {
                 const fallbackLabel = item.producer === "artifact"
-                  ? t(`lab.artifactType.${item.label.replace(/_([a-z])/g, (_, c) => c.toUpperCase())}`)
+                  ? (ARTIFACT_TYPE_KEYS[item.label] ? t(ARTIFACT_TYPE_KEYS[item.label]!) : item.label)
                   : item.label;
                 const title = getJobTitle(item.job, fallbackLabel);
                 return (

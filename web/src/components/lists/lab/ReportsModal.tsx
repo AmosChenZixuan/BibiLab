@@ -5,6 +5,7 @@ import { useLanguage } from "@/app/LanguageContext";
 import { Modal } from "@/components/ui/Modal";
 import { useJobActivity } from "@/components/jobs/JobActivityProvider";
 import { api } from "@/lib/api";
+import { ARTIFACT_TYPE_KEYS } from "@/components/lists/lab/ArtifactCard";
 import { templates } from "@/lib/templates";
 import type { ArtifactJob, ArtifactType } from "@/lib/types";
 
@@ -18,9 +19,9 @@ interface ReportFormat {
 
 const FORMAT_OPTIONS: ReportFormat[] = [
   { type: "custom", labelKey: "lab.reportsModal.custom", descKey: "lab.reportsModal.customDesc", icon: <Plus size={18} />, isCustom: true },
-  { type: "brief", labelKey: "lab.reportsModal.brief", descKey: "lab.reportsModal.briefDesc", icon: <Zap size={18} /> },
-  { type: "study_guide", labelKey: "lab.reportsModal.studyGuide", descKey: "lab.reportsModal.studyGuideDesc", icon: <BookOpen size={18} /> },
-  { type: "blog_post", labelKey: "lab.reportsModal.blogPost", descKey: "lab.reportsModal.blogPostDesc", icon: <PenLine size={18} /> },
+  { type: "brief", labelKey: ARTIFACT_TYPE_KEYS.brief, descKey: "lab.reportsModal.briefDesc", icon: <Zap size={18} /> },
+  { type: "study_guide", labelKey: ARTIFACT_TYPE_KEYS.study_guide, descKey: "lab.reportsModal.studyGuideDesc", icon: <BookOpen size={18} /> },
+  { type: "blog_post", labelKey: ARTIFACT_TYPE_KEYS.blog_post, descKey: "lab.reportsModal.blogPostDesc", icon: <PenLine size={18} /> },
 ];
 
 const MAX_FORMAT_NAME_LENGTH = 50;

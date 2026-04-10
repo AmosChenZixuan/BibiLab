@@ -5,14 +5,17 @@ import { useLanguage } from "@/app/LanguageContext";
 import { ContextMenu } from "@/components/ui/ContextMenu";
 import type { Artifact } from "@/lib/types";
 
+// Artifact type i18n keys - shared across ArtifactCard, JobSpirit, and ReportsModal
+export const ARTIFACT_TYPE_KEYS: Record<string, string> = {
+  brief: "lab.artifactType.brief",
+  study_guide: "lab.artifactType.studyGuide",
+  blog_post: "lab.artifactType.blogPost",
+  custom_report: "lab.artifactType.customReport",
+};
+
 function formatArtifactTypeLabel(type: Artifact["type"], t: (key: string) => string): string {
-  const labels: Record<string, string> = {
-    brief: t("lab.artifactType.brief"),
-    study_guide: t("lab.artifactType.studyGuide"),
-    blog_post: t("lab.artifactType.blogPost"),
-    custom_report: t("lab.artifactType.customReport"),
-  };
-  return labels[type] ?? type; // Fallback to type itself for custom types
+  const key = ARTIFACT_TYPE_KEYS[type];
+  return key ? t(key) : type; // Fallback to type itself for custom types
 }
 
 function formatDate(iso: string): string {
