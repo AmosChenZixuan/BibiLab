@@ -95,8 +95,8 @@ export function DigestAccordion({
               <p className="m-0 text-sm leading-relaxed text-muted">{summary}</p>
             ) : (
               <div className="space-y-1.5">
-                <div className="h-3 w-3/4 rounded bg-sky-blue/20" />
-                <div className="h-3 w-1/2 rounded bg-sky-blue/20" />
+                <div className="glimmer-placeholder h-3 w-3/4" />
+                <div className="glimmer-placeholder h-3 w-1/2" />
               </div>
             )}
           </div>

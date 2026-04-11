@@ -325,8 +325,8 @@ describe("design tokens — Meta Store (phase 2: Montserrat + @utility typograph
 
   test(".glimmer-placeholder is defined", () => {
     expect(css).toContain(".glimmer-placeholder");
-    expect(css).toContain("background-color: #979A9F");
-    expect(css).toContain("border-radius: 8px");
+    expect(css).toContain("background-color: var(--color-disabled-text)");
+    expect(css).toContain("border-radius: var(--radius-sm)");
     expect(css).toContain("animation: glimmer 1000ms steps(1) infinite");
   });
 

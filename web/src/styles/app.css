@@ -2,19 +2,16 @@
 @plugin "@tailwindcss/typography";
 @import url("https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600;700&display=swap");
 
-/* DigestAccordion loading animation */
 @keyframes digest-loading-bounce {
   0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
   40% { transform: scale(1); opacity: 1; }
 }
 
-/* Skeleton loading animation */
 @keyframes glimmer {
   0%, 100% { opacity: 0.25; }
   50%       { opacity: 1.0; }
 }
 
-/* ListCard grid pattern overlay */
 .list-card-grid-pattern {
   background-image:
     repeating-linear-gradient(0deg, rgba(255,255,255,0.03) 0px, rgba(255,255,255,0.03) 1px, transparent 1px, transparent 32px),
@@ -95,17 +92,6 @@
   /* ── Typography ─────────────────────────────────────────────────────────── */
   --font-sans: "Montserrat", "Helvetica Neue", Arial, sans-serif;
   --font-mono: SFMono-Regular, Consolas, monospace;
-
-  --text-display: 64px/500/1.16;
-  --text-h1:      36px/500/1.28;
-  --text-h2:      28px/300/1.21;
-  --text-h3:      18px/700/1.44;
-  --text-body:    18px/400/1.44;
-  --text-body-compact: 16px/500/1.50/-0.16px;
-  --text-caption-bold: 14px/700/1.43;
-  --text-caption:      14px/400/1.43/-0.14px;
-  --text-small:       12px/400/1.33;
-  --text-button:       14px/400/1.43/-0.14px;
 
   /* ── Spacing ───────────────────────────────────────────────────────────── */
   --space-1:  1px;
@@ -191,14 +177,12 @@
 @utility text-small       { font-size: 12px; font-weight: 400; line-height: 1.33; }
 @utility text-button      { font-size: 14px; font-weight: 400; line-height: 1.43; letter-spacing: -0.14px; }
 
-/* Skeleton loading placeholder */
 .glimmer-placeholder {
-  background-color: #979A9F;
-  border-radius: 8px;
+  background-color: var(--color-disabled-text);
+  border-radius: var(--radius-sm);
   animation: glimmer 1000ms steps(1) infinite;
 }
 
-/* Frosted glass effect */
 .glass {
   background-color: rgba(241, 244, 247, 0.8);
   backdrop-filter: blur(12px);
