@@ -3,10 +3,10 @@ import { ComponentPropsWithoutRef } from "react";
 type Status = "ok" | "error" | "unavailable" | "neutral";
 
 const statusColors: Record<Status, string> = {
-  ok:          "text-blue",
-  error:       "text-pink",
-  unavailable: "text-muted",
-  neutral:     "text-blue",
+  ok:          "bg-success text-white",
+  error:       "bg-error text-white",
+  unavailable: "bg-charcoal/20 text-charcoal",
+  neutral:     "bg-meta-blue text-white",
 };
 
 interface Props extends ComponentPropsWithoutRef<"span"> {

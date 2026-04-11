@@ -15,17 +15,17 @@ describe("Button", () => {
   test("renders primary variant", () => {
     render(<Button variant="primary">Save</Button>);
     const btn = screen.getByRole("button", { name: "Save" });
-    expect(btn.className).toContain("bg-pink");
+    expect(btn.className).toContain("bg-meta-blue");
   });
 
   test("renders ghost variant", () => {
     render(<Button variant="ghost">Cancel</Button>);
-    expect(screen.getByRole("button").className).toContain("border-blue");
+    expect(screen.getByRole("button").className).toContain("text-meta-blue");
   });
 
   test("renders danger variant", () => {
     render(<Button variant="danger">Delete</Button>);
-    expect(screen.getByRole("button").className).toContain("bg-ink");
+    expect(screen.getByRole("button").className).toContain("bg-error");
   });
 
   test("forwards className prop", () => {
@@ -40,7 +40,7 @@ describe("Button", () => {
 
   it("applies sm size classes", () => {
     render(<Button size="sm">Small</Button>);
-    expect(screen.getByRole("button").className).toContain("text-sm");
+    expect(screen.getByRole("button").className).toContain("px-3");
   });
 });
 
@@ -94,22 +94,22 @@ describe("Panel", () => {
 describe("StatusChip", () => {
   test("renders ok status color", () => {
     render(<StatusChip status="ok">OK</StatusChip>);
-    expect(screen.getByText("OK").className).toContain("text-blue");
+    expect(screen.getByText("OK").className).toContain("bg-success");
   });
 
   test("renders error status color", () => {
     render(<StatusChip status="error">Error</StatusChip>);
-    expect(screen.getByText("Error").className).toContain("text-pink");
+    expect(screen.getByText("Error").className).toContain("bg-error");
   });
 
   test("renders unavailable status color", () => {
     render(<StatusChip status="unavailable">Down</StatusChip>);
-    expect(screen.getByText("Down").className).toContain("text-muted");
+    expect(screen.getByText("Down").className).toContain("text-charcoal");
   });
 
   test("renders neutral status by default", () => {
     render(<StatusChip>Unknown</StatusChip>);
-    expect(screen.getByText("Unknown").className).toContain("text-blue");
+    expect(screen.getByText("Unknown").className).toContain("bg-meta-blue");
   });
 
   test("forwards className", () => {
@@ -188,7 +188,7 @@ describe("ContextMenu", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "Menu" }));
     expect(screen.getByRole("menu")).toBeInTheDocument();
-    expect(screen.getByRole("menuitem", { name: "Delete" }).className).toContain("text-pink");
+    expect(screen.getByRole("menuitem", { name: "Delete" }).className).toContain("text-error");
 
     await userEvent.click(document.body);
     expect(screen.queryByRole("menu")).not.toBeInTheDocument();

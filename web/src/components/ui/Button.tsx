@@ -4,18 +4,30 @@ type Variant = "primary" | "secondary" | "ghost" | "danger";
 type Size = "md" | "sm";
 
 const base =
-  "inline-flex items-center justify-center rounded-full text-sm font-medium tracking-tight transition disabled:cursor-not-allowed disabled:opacity-60";
+  "inline-flex items-center justify-center rounded-full text-button transition " +
+  "disabled:cursor-not-allowed " +
+  "focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-meta-blue focus-visible:ring-offset-2";
 
 const variants: Record<Variant, string> = {
-  primary:   "border border-transparent bg-pink text-white shadow-lg hover:-translate-y-px hover:brightness-105",
-  secondary: "border border-border bg-white/92 text-ink hover:bg-white",
-  ghost:     "border border-blue/18 bg-white/55 text-blue hover:bg-sky/8",
-  danger:    "border border-transparent bg-ink text-white shadow-lg hover:-translate-y-px hover:brightness-105",
+  primary:
+    "bg-meta-blue text-white border-transparent " +
+    "hover:bg-meta-blue-hover active:bg-meta-blue-pressed " +
+    "disabled:bg-[#DEE3E9] disabled:text-[#8595A4]",
+  secondary:
+    "bg-white/92 border border-[--color-divider-gray] text-charcoal/50 " +
+    "hover:bg-[--color-divider-gray] hover:text-white",
+  ghost:
+    "bg-white/55 border border-[--color-secondary-text]/18 text-meta-blue " +
+    "hover:bg-sky-blue-light",
+  danger:
+    "bg-error text-white border-transparent " +
+    "hover:brightness-95 " +
+    "disabled:bg-[#DEE3E9] disabled:text-[#8595A4]",
 };
 
 const sizes: Record<Size, string> = {
   md: "px-3.5 py-2.5",
-  sm: "px-3 py-1.5 text-sm",
+  sm: "px-3 py-1.5",
 };
 
 interface Props extends ComponentPropsWithoutRef<"button"> {

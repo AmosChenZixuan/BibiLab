@@ -113,7 +113,7 @@ export function Modal({ open, onClose, title, children, footer, size = "md" }: M
 
   return createPortal(
     <div
-      className="fixed inset-0 z-modal flex items-center justify-center bg-scrim px-4 py-8 backdrop-blur-sm"
+      className="fixed inset-0 z-modal flex items-center justify-center bg-overlay px-4 py-8 backdrop-blur-sm"
       data-testid="modal-backdrop"
       onClick={(event) => event.stopPropagation()}
       onMouseUp={(event) => {
@@ -140,7 +140,7 @@ export function Modal({ open, onClose, title, children, footer, size = "md" }: M
         }}
       >
         <div className="px-8 pt-8">
-          <h2 className="m-0 text-base font-semibold tracking-tight text-ink" id={titleId}>
+          <h2 className="m-0 text-base font-semibold tracking-tight text-charcoal" id={titleId}>
             {title}
           </h2>
         </div>
