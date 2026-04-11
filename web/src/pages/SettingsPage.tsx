@@ -101,7 +101,7 @@ export function SettingsPage() {
   if (loading) {
     return (
       <Panel variant="app">
-        <p>{t("settings.loading")}</p>
+        <p className="text-caption">{t("settings.loading")}</p>
       </Panel>
     );
   }
@@ -109,8 +109,8 @@ export function SettingsPage() {
   if (loadError || !config) {
     return (
       <Panel variant="app">
-        <h1 className="m-0 mb-2 font-semibold text-4xl leading-none md:text-5xl xl:text-6xl">{t("settings.title")}</h1>
-        <p className="m-0 text-sm text-pink">{loadError ?? t("errors.requestFailed")}</p>
+        <h1 className="m-0 mb-2 text-h1">{t("settings.title")}</h1>
+        <p className="m-0 text-caption text-pink">{loadError ?? t("errors.requestFailed")}</p>
       </Panel>
     );
   }
@@ -118,7 +118,7 @@ export function SettingsPage() {
   return (
     <div className="grid gap-4">
       <section>
-        <h1 className="m-0 mb-2 font-semibold text-4xl leading-none md:text-5xl xl:text-6xl">{t("settings.title")}</h1>
+        <h1 className="m-0 mb-2 text-h1">{t("settings.title")}</h1>
       </section>
 
       <section className="grid items-start gap-5 md:grid-cols-5">

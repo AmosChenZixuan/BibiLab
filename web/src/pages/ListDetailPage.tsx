@@ -16,7 +16,7 @@ function SkeletonPanel({ title, note }: { title: string; note: string }) {
   return (
     <div className="flex h-full flex-col">
       <div className="shrink-0 border-b border-border px-5 py-4">
-        <h2 className="m-0 font-serif text-lg text-ink">{title}</h2>
+        <h2 className="m-0 font-serif text-body text-ink">{title}</h2>
       </div>
       <div className="flex flex-1 flex-col items-center justify-center gap-4 px-6 py-8">
         <div className="w-full space-y-2.5">
@@ -24,7 +24,7 @@ function SkeletonPanel({ title, note }: { title: string; note: string }) {
           <div className="h-2.5 rounded-full bg-linear-to-r from-pink/12 to-sky/12" />
           <div className="h-2.5 w-2/3 rounded-full bg-linear-to-r from-pink/12 to-sky/12" />
         </div>
-        <p className="m-0 text-center text-sm text-muted/80">{note}</p>
+        <p className="m-0 text-center text-caption text-muted/80">{note}</p>
       </div>
     </div>
   );
@@ -145,7 +145,7 @@ export function ListDetailPage() {
         >
           <div className="flex shrink-0 items-center border-b border-border px-4 py-4">
             {!sourcesCollapsed && (
-              <h2 className="m-0 flex-1 font-serif text-lg text-ink">{t("lists.sources")}</h2>
+              <h2 className="m-0 flex-1 font-serif text-body text-ink">{t("lists.sources")}</h2>
             )}
             <button
               type="button"
@@ -160,7 +160,7 @@ export function ListDetailPage() {
           {!sourcesCollapsed && (
             <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
               {loadError ? (
-                <p className="m-0 px-4 py-3 text-sm text-pink">{loadError}</p>
+                <p className="m-0 px-4 py-3 text-caption text-pink">{loadError}</p>
               ) : detailSource ? (
                 <SourcesViewerMode
                   source={detailSource}

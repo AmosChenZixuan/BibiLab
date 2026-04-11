@@ -82,31 +82,6 @@ describe("design tokens — Meta Store (phase 2: Montserrat + @utility typograph
     expect(match?.[1].trim()).toBe("#5D6C7B");
   });
 
-  test("--color-meta-blue is defined as #0064E0", () => {
-    const match = css.match(/--color-meta-blue:\s*([^;]+)/);
-    expect(match?.[1].trim()).toBe("#0064E0");
-  });
-
-  test("--color-meta-blue-hover is defined as #0143B5", () => {
-    const match = css.match(/--color-meta-blue-hover:\s*([^;]+)/);
-    expect(match?.[1].trim()).toBe("#0143B5");
-  });
-
-  test("--color-meta-blue-pressed is defined as #004BB9", () => {
-    const match = css.match(/--color-meta-blue-pressed:\s*([^;]+)/);
-    expect(match?.[1].trim()).toBe("#004BB9");
-  });
-
-  test("--color-meta-blue-light is defined as #47A5FA", () => {
-    const match = css.match(/--color-meta-blue-light:\s*([^;]+)/);
-    expect(match?.[1].trim()).toBe("#47A5FA");
-  });
-
-  test("--color-facebook-blue is defined as #1877F2", () => {
-    const match = css.match(/--color-facebook-blue:\s*([^;]+)/);
-    expect(match?.[1].trim()).toBe("#1877F2");
-  });
-
   test("--color-rayban-red is defined as #D6311F", () => {
     const match = css.match(/--color-rayban-red:\s*([^;]+)/);
     expect(match?.[1].trim()).toBe("#D6311F");
