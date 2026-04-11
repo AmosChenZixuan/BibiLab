@@ -69,13 +69,13 @@ export function LabPanel({ listId, labCollapsed, labW, sourceIds, artifacts, onA
     >
       <div className="flex shrink-0 items-center border-b border-border px-4 py-4">
         {!labCollapsed && (
-          <h2 className="m-0 flex-1 font-serif text-lg text-ink">{t("lists.lab")}</h2>
+          <h2 className="m-0 flex-1 font-sans text-h3 text-charcoal">{t("lists.lab")}</h2>
         )}
         <button
           type="button"
           onClick={headerBtn.onClick}
           aria-label={headerBtn.label}
-          className={`flex h-7 w-7 items-center justify-center rounded-full text-muted transition hover:bg-border hover:text-ink ${labCollapsed ? "mx-auto" : ""}`}
+          className={`flex h-7 w-7 items-center justify-center rounded-full text-muted transition hover:bg-border hover:text-charcoal ${labCollapsed ? "mx-auto" : ""}`}
         >
           {headerBtn.icon}
         </button>

@@ -65,13 +65,13 @@ describe("LabPanel", () => {
     vi.clearAllMocks();
   });
 
-  test("renders Lab header with font-serif text-lg text-ink", () => {
+  test("renders Lab header with font-sans text-h3 text-charcoal", () => {
     renderLabPanel();
     const heading = screen.getByRole("heading", { name: /lab/i });
     expect(heading).toBeInTheDocument();
-    expect(heading.className).toMatch(/font-serif/);
-    expect(heading.className).toMatch(/text-lg/);
-    expect(heading.className).toMatch(/text-ink/);
+    expect(heading.className).toMatch(/font-sans/);
+    expect(heading.className).toMatch(/text-h3/);
+    expect(heading.className).toMatch(/text-charcoal/);
   });
 
   test("renders tool section with reports button in tool-list mode", () => {

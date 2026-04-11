@@ -34,8 +34,8 @@ describe("AppFrame icon migration", () => {
     expect(source).toMatch(userPattern);
   });
 
-  it("should use hover:bg-sky/10 on all three icon buttons", () => {
-    const hoverSkyPattern = /hover:bg-sky\//g;
+  it("should use hover:bg-sky-blue-light on all three icon buttons", () => {
+    const hoverSkyPattern = /hover:bg-sky-blue-light/g;
     const matches = source.match(hoverSkyPattern);
     expect(matches).toHaveLength(3);
   });
