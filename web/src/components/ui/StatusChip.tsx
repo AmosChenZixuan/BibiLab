@@ -5,8 +5,8 @@ type Status = "ok" | "error" | "unavailable" | "neutral";
 const statusColors: Record<Status, string> = {
   ok:          "bg-success text-white",
   error:       "bg-error text-white",
-  unavailable: "bg-[--color-soft-gray] text-[--color-secondary-text]",
-  neutral:     "bg-meta-blue text-white",
+  unavailable: "bg-soft-gray text-secondary-text",
+  neutral:     "bg-sky-blue text-white",
 };
 
 interface Props extends ComponentPropsWithoutRef<"span"> {

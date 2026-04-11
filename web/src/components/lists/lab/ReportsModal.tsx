@@ -83,7 +83,7 @@ export function ReportsModal({ open, listId, sourceIds, onClose, onArtifactGener
     <Modal open={open} onClose={onClose} title={t("lab.reportsModal.title")} size="lg">
       <form onSubmit={handleSubmit} className="grid gap-5">
         <div className="grid gap-2.5">
-          <span className="text-[11px] font-semibold tracking-wide text-muted uppercase">
+          <span className="text-xs font-semibold tracking-wide text-muted uppercase">
             {t("lab.reportsModal.format")}
           </span>
           <div className="grid grid-cols-4 gap-2">
@@ -99,15 +99,15 @@ export function ReportsModal({ open, listId, sourceIds, onClose, onArtifactGener
                 }`}
               >
                 <span className="text-blue">{format.icon}</span>
-                <span className="text-[13px] font-medium text-ink">{t(format.labelKey)}</span>
-                <span className="text-[11px] text-muted">{t(format.descKey)}</span>
+                <span className="text-sm font-medium text-ink">{t(format.labelKey)}</span>
+                <span className="text-xs text-muted">{t(format.descKey)}</span>
               </button>
             ))}
           </div>
         </div>
 
         <div className="grid gap-2">
-          <span className="text-[11px] font-semibold tracking-wide text-muted uppercase">
+          <span className="text-xs font-semibold tracking-wide text-muted uppercase">
             {t("lab.reportsModal.customPrompt")}
           </span>
           <div className="relative rounded-2xl border border-border/40 bg-white/80 p-3 pr-10">
@@ -116,7 +116,7 @@ export function ReportsModal({ open, listId, sourceIds, onClose, onArtifactGener
               onChange={(e) => setPrompt(e.target.value)}
               placeholder={t("lab.reportsModal.placeholder")}
               rows={12}
-              className="w-full pr-3 resize-none bg-transparent text-[13px] text-ink placeholder:text-muted/50 outline-none"
+              className="w-full pr-3 resize-none bg-transparent text-sm text-ink placeholder:text-muted/50 outline-none"
             />
             <button
               type="submit"

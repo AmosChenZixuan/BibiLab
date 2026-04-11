@@ -15,12 +15,12 @@ describe("Button", () => {
   test("renders primary variant", () => {
     render(<Button variant="primary">Save</Button>);
     const btn = screen.getByRole("button", { name: "Save" });
-    expect(btn.className).toContain("bg-meta-blue");
+    expect(btn.className).toContain("bg-pink");
   });
 
   test("renders ghost variant", () => {
     render(<Button variant="ghost">Cancel</Button>);
-    expect(screen.getByRole("button").className).toContain("text-meta-blue");
+    expect(screen.getByRole("button").className).toContain("text-link-blue");
   });
 
   test("renders danger variant", () => {
@@ -104,12 +104,12 @@ describe("StatusChip", () => {
 
   test("renders unavailable status color", () => {
     render(<StatusChip status="unavailable">Down</StatusChip>);
-    expect(screen.getByText("Down").className).toContain("text-[--color-secondary-text]");
+    expect(screen.getByText("Down").className).toContain("text-secondary-text");
   });
 
   test("renders neutral status by default", () => {
     render(<StatusChip>Unknown</StatusChip>);
-    expect(screen.getByText("Unknown").className).toContain("bg-meta-blue");
+    expect(screen.getByText("Unknown").className).toContain("bg-sky-blue");
   });
 
   test("forwards className", () => {
