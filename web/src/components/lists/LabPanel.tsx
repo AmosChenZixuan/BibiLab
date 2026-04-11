@@ -84,9 +84,9 @@ export function LabPanel({ listId, labCollapsed, labW, sourceIds, artifacts, onA
       {!labCollapsed && (
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
           {labMode === "tool-list" ? (
-            <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden pb-4">
               <ToolSection listId={listId} sourceIds={sourceIds} onArtifactGenerated={onArtifactGenerated} />
-              <div className="flex min-h-0 flex-1 flex-col border-t border-border px-4 pt-4">
+              <div className="flex min-h-0 flex-1 flex-col border-t border-border p-4 overflow-y-auto">
                 <ArtifactList listId={listId} artifacts={artifacts} onArtifactsChange={onArtifactsChange} onViewArtifact={handleViewArtifact} />
               </div>
             </div>

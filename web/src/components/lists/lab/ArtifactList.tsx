@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { useLanguage } from "@/app/LanguageContext";
 import { useJobActivity } from "@/components/jobs/JobActivityProvider";
@@ -26,7 +26,6 @@ export function ArtifactList({ listId, artifacts, onArtifactsChange, onViewArtif
   const artifactJobs = useMemo(() => getJobs("artifact", listId), [getJobs, listId]);
   const [refreshedJobs, setRefreshedJobs] = useState<string[]>([]);
   const [viewPromptArtifactId, setViewPromptArtifactId] = useState<string | null>(null);
-  const scrollRef = useRef<HTMLDivElement>(null);
 
   // When a job flips to done, refresh artifacts and dismiss
   useEffect(() => {
@@ -102,13 +101,8 @@ export function ArtifactList({ listId, artifacts, onArtifactsChange, onViewArtif
     : null;
 
   return (
-    <div className="flex h-full flex-col">
-      <div
-        ref={scrollRef}
-        className="flex-1 overflow-y-auto"
-        style={{ minHeight: 0 }}
-      >
-        <div className="space-y-2 pb-2">
+    <div className="flex h-full flex-col space-y-2">
+
           {artifacts.map((artifact) => (
             <ArtifactCard
               key={artifact.id}
@@ -135,8 +129,6 @@ export function ArtifactList({ listId, artifacts, onArtifactsChange, onViewArtif
               <span className="text-[11px] text-muted">{t("lab.artifactList.emptyDesc")}</span>
             </div>
           )}
-        </div>
-      </div>
       {viewPromptArtifact && (
         <ViewPromptModal
           open={true}
