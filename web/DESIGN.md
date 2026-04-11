@@ -4,15 +4,15 @@
 
 The Meta Store is a product-forward retail experience built to sell hardware — Quest VR headsets, Ray-Ban Meta smart glasses, and accessories. The design walks a tightrope between consumer electronics showroom and lifestyle editorial, deploying cinematic product photography against expansive white canvas to create a gallery-like sense of aspiration. Every design decision serves the merchandise: generous negative space frames hero product shots like museum pieces, while alternating light and dark surface sections create a visual rhythm that mimics the experience of walking through a physical retail space.
 
-The "Dolly" design system (Meta's internal name for the store layer) sits atop the broader FDS (Facebook Design System) foundation, inheriting its gray scale and semantic tokens while overlaying its own product-focused palette. The result is a system that feels distinctly Meta — the custom Optimistic typeface brings warmth and approachability to what could otherwise be cold tech retail — yet flexible enough to showcase wildly different product lines (from VR headsets to fashion eyewear) without feeling disjointed. The surface strategy is binary: pure white for browsing and information, rich dark for immersive product moments.
+The "Dolly" design system (Meta's internal name for the store layer) sits atop the broader FDS (Facebook Design System) foundation, inheriting its gray scale and semantic tokens while overlaying its own product-focused palette. The result is a system that feels distinctly Meta — the Montserrat typeface brings warmth and approachability to what could otherwise be cold tech retail — yet flexible enough to showcase wildly different product lines (from VR headsets to fashion eyewear) without feeling disjointed. The surface strategy is binary: pure white for browsing and information, rich dark for immersive product moments.
 
-The store's visual hierarchy is ruthlessly simple. Photography does the heavy lifting, supported by short, punchy headlines in Optimistic Medium and body text that stays brief and scannable. Calls to action are pill-shaped, unmistakable, and always Meta Blue. There is no visual noise, no decoration for decoration's sake — every element either sells or navigates.
+The store's visual hierarchy is ruthlessly simple. Photography does the heavy lifting, supported by short, punchy headlines in Optimistic Medium and body text that stays brief and scannable. Calls to action are pill-shaped, unmistakable, and always Primary Pink for primary actions and Sky Blue for secondary ones. There is no visual noise, no decoration for decoration's sake — every element either sells or navigates.
 
 **Key Characteristics:**
 - Photography-first retail design where products are the visual heroes, not UI
 - Binary surface strategy: pure white for information, deep dark for immersive product moments
-- Pill-shaped CTAs in saturated blue create unmistakable action points
-- Optimistic VF typeface with OpenType ss01/ss02 features brings geometric warmth
+- Pill-shaped CTAs in primary pink (primary) and sky blue (secondary) create unmistakable action points
+- Montserrat typeface with clean humanist geometry brings warmth
 - Generous whitespace frames products like gallery exhibits
 - 8px spacing grid with disciplined vertical rhythm
 - Alternating light/dark sections create a "walkthrough" retail cadence
@@ -21,13 +21,24 @@ The store's visual hierarchy is ruthlessly simple. Photography does the heavy li
 
 ### Primary
 
-- **Meta Blue** (`#0064E0`): Primary CTA background, interactive links, action-driving elements throughout the store
-- **Meta Blue Hover** (`#0143B5`): Darkened blue for hover states on primary buttons
-- **Meta Blue Pressed** (`#004BB9`): Deepest blue for active/pressed button states
-- **Meta Blue Light** (`#47A5FA`): Lighter blue variant used on dark backgrounds for CTAs
+- **Pink** (`#FF66BF`): Primary CTA background, interactive links, action-driving elements
+- **Pink Hover** (`#FF85C8`): Lighter pink for hover states on primary buttons
+- **Pink Pressed** (`#E050A8`): Deeper pink for active/pressed button states
+- **Pink Light** (`#FFD6ED`): Soft pink tint used on dark backgrounds for CTAs
+- **Sky Blue** (`#87CEEB`): Secondary CTA background, secondary interactive elements
+- **Sky Blue Hover** (`#6BB8DB`): Darker blue for hover states on secondary buttons
+- **Sky Blue Pressed** (`#4AA8CB`): Deepest blue for active/pressed secondary button states
+- **Sky Blue Light** (`#D6EDFA`): Light blue tint for secondary surfaces
+
+### Secondary & Accent (Meta-heritage, demoted)
+
+- **Meta Blue** (`#0064E0`): Legacy accent for deemphasized or informational elements
+- **Meta Blue Hover** (`#0143B5`): Hover for meta-blue elements
+- **Meta Blue Pressed** (`#004BB9`): Pressed state for meta-blue elements
+- **Meta Blue Light** (`#47A5FA`): Light variant for meta-blue on dark backgrounds
 - **Facebook Blue** (`#1877F2`): Legacy accent inherited from FDS, used for deemphasized button text and badges
 
-### Secondary & Accent
+### Product Accent
 
 - **Ray-Ban Red** (`#D6311F`): Product-specific accent for Ray-Ban Meta smart glasses sections
 - **Oculus Purple** (`#A121CE`): Quest/Oculus product accent for VR content
@@ -97,10 +108,10 @@ The store's visual hierarchy is ruthlessly simple. Photography does the heavy li
 
 ### Font Family
 
-**Primary:** Optimistic VF (variable font by Dalton Maag, commissioned by Meta)
-- Fallbacks: Montserrat, Helvetica, Arial, Noto Sans
-- OpenType features: `"ss01", "ss02"` — stylistic sets that activate Meta-specific alternate glyphs
-- Variable font with continuous weight axis (observed: 300, 400, 500, 700)
+**Primary:** Montserrat (Google Fonts)
+- Fallbacks: "Helvetica Neue", Arial, sans-serif
+- Loaded weights: 300, 400, 500, 600, 700
+- No OpenType stylistic sets required
 
 **Secondary:** Helvetica
 - Fallbacks: Arial
@@ -124,31 +135,31 @@ The store's visual hierarchy is ruthlessly simple. Photography does the heavy li
 
 ### Principles
 
-Optimistic VF is the cornerstone of Meta's typographic identity — a humanist sans-serif with geometric underpinnings that strikes a balance between Silicon Valley precision and consumer warmth. The "ss01" and "ss02" stylistic sets introduce alternate glyphs that give headlines a distinctive Meta character. Weight 500 (Medium) dominates headlines, creating a presence that commands without shouting, while the unexpected use of weight 300 (Light) at 28px adds an airy, editorial quality to subheadings. Negative letter-spacing at smaller sizes (-0.14px to -0.16px) tightens the optical rhythm for UI elements, keeping the reading experience crisp and efficient.
+Montserrat is the primary typeface — a geometric sans-serif with strong legibility and wide weight range. Weight 500 (Medium) dominates headlines, creating presence without heaviness, while weight 300 (Light) at 28px adds airy, editorial quality to subheadings. Negative letter-spacing at smaller sizes (-0.14px to -0.16px) tightens the optical rhythm for UI elements, keeping the reading experience crisp and efficient.
 
 ## 4. Component Stylings
 
 ### Buttons
 
 **Primary (Pill)**
-- Background: Meta Blue (`#0064E0`)
+- Background: Pink (`#FF66BF`)
 - Text: White (`#FFFFFF`)
 - Border: none
 - Border radius: fully rounded pill (100px)
 - Padding: 10px 22px
-- Font: Optimistic VF, 14px, regular, -0.14px tracking
-- Hover: darkens to `#0143B5`, scale(1.1) transform
-- Pressed: `#004BB9`, scale(0.9), opacity 0.5
+- Font: Montserrat, 14px, regular, -0.14px tracking
+- Hover: lightens to `#FF85C8`, scale(1.1) transform
+- Pressed: `#E050A8`, scale(0.9), opacity 0.5
 - Focus: 3px ring in accent color, outline auto 2px
 - Transition: background 200ms ease, transform 150ms ease
 
-**Secondary (Outlined Pill)**
-- Background: transparent
-- Text: Dark Charcoal (`#1C2B33`) at 50% opacity
-- Border: 2px solid `rgba(10, 19, 23, 0.12)`
+**Secondary (Outlined Pill) — Sky Blue**
+- Background: Sky Blue (`#87CEEB`) or transparent with sky-blue border
+- Text: White (`#FFFFFF`) on filled; Charcoal on outlined
+- Border: 2px solid `rgba(10, 19, 23, 0.12)` (outlined variant)
 - Border radius: fully rounded pill (100px)
 - Padding: 10px 22px
-- Hover: background shifts to `rgba(70, 90, 105, 0.7)`, text to white
+- Hover: darkens to `#6BB8DB`, text to white
 
 **Ghost/Link Button**
 - Background: transparent / `rgba(255, 255, 255, 0)`
@@ -281,7 +292,7 @@ The Meta Store favors a primarily flat elevation model. Most surface differentia
 - Use Optimistic VF with ss01 and ss02 features for all display text
 - Keep body copy brief and scannable — this is retail, not editorial
 - Use the dual-shadow pattern (ambient + direct) when elevation is needed
-- Apply Meta Blue (`#0064E0`) exclusively for actionable elements
+- Apply Primary Pink (`#FF66BF`) for primary CTA elements; Sky Blue (`#87CEEB`) for secondary interactive elements
 - Use generous whitespace (64-80px section padding) to convey premium feel
 - Apply gradient overlays on dark photography when placing text over images
 - Use the semantic color tokens (success, error, warning) consistently for status communication
@@ -293,7 +304,7 @@ The Meta Store favors a primarily flat elevation model. Most surface differentia
 - Don't add decorative borders or ornamental dividers — dividers are functional only
 - Don't place important text directly on photography without a gradient scrim
 - Don't use weight 300 for anything smaller than 28px — it becomes too thin
-- Don't use Facebook Blue (`#1877F2`) as a primary CTA color — use Meta Blue (`#0064E0`) instead
+- Don't use Meta Blue (`#0064E0`) or Facebook Blue (`#1877F2`) as primary CTA color — use Pink (`#FF66BF`) for primary and Sky Blue (`#87CEEB`) for secondary
 - Don't crowd product images — maintain generous padding around all photography
 - Don't use more than 2 levels of text hierarchy in a single card
 - Don't add drop shadows to cards in dark sections — rely on border and color separation
@@ -339,21 +350,23 @@ The Meta Store favors a primarily flat elevation model. Most surface differentia
 
 ### Quick Color Reference
 
-- Primary CTA: Meta Blue (`#0064E0`)
+- Primary CTA: Pink (`#FF66BF`)
+- Secondary CTA: Sky Blue (`#87CEEB`)
 - Background: White (`#FFFFFF`)
 - Heading text: Dark Charcoal (`#1C2B33`)
 - Body text: Slate Gray (`#5D6C7B`)
 - Border/divider: Divider Gray (`#DEE3E9`)
 - Secondary surface: Soft Gray (`#F1F4F7`)
 - Dark sections: Near Black (`#1C1E21`)
+- Legacy accent: Meta Blue (`#0064E0`) — deemphasized elements only
 
 ### Example Component Prompts
 
-- "Create a product hero section with a full-width cinematic image, `linear-gradient(rgba(0,0,0,0), rgba(0,0,0,0.6))` text overlay, Optimistic-style 64px/500 white headline, and a Meta Blue (`#0064E0`) pill button (100px radius, 10px 22px padding)"
+- "Create a product hero section with a full-width cinematic image, `linear-gradient(rgba(0,0,0,0), rgba(0,0,0,0.6))` text overlay, Montserrat 64px/500 white headline, and a Primary Pink (`#FF66BF`) pill button (100px radius, 10px 22px padding)"
 - "Design a 3-column product card grid with 20px rounded corners, white backgrounds, edge-to-edge product images at top, 18px/400 body text in Slate Gray (`#5D6C7B`), and 24px grid gap"
-- "Build a sticky navigation bar with white background, `rgba(241, 244, 247, 0.8)` frosted glass effect, 16px/500 dark text links, and a right-aligned Meta Blue pill CTA"
+- "Build a sticky navigation bar with white background, `rgba(241, 244, 247, 0.8)` frosted glass effect, 16px/500 dark text links, and a right-aligned Pink pill CTA"
 - "Create a dark product showcase section with `#1C1E21` background, white 48px/500 headline, `#5D6C7B` body text, and a secondary outlined pill button with `rgba(10, 19, 23, 0.12)` border"
-- "Design a feature comparison grid with Soft Gray (`#F1F4F7`) background, 24px rounded cards, Meta Blue checkmark icons, and 14px/700 bold labels"
+- "Design a feature comparison grid with Soft Gray (`#F1F4F7`) background, 24px rounded cards, Sky Blue (`#87CEEB`) checkmark icons, and 14px/700 bold labels"
 
 ### Iteration Guide
 
