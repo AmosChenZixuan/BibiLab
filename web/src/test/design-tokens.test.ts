@@ -7,26 +7,33 @@ const css = readFileSync(resolve(__dirname, "../styles/app.css"), "utf-8");
 const COLOR_PREFIXES = ["text-", "bg-", "border-", "divide-"];
 
 const TAILWIND_BUILT_IN_COLORS = new Set([
-  "pink", "sky", "blue", "indigo", "violet", "purple", "fuchsia",
+  "slate", "gray", "neutral", "stone", "zinc",
   "red", "orange", "amber", "yellow", "lime", "green", "emerald",
-  "teal", "cyan", "slate", "gray", "neutral", "stone",
-  "zinc", "black", "white", "transparent", "current", "inherit", "auto",
-  "error", "success", "warning", "info",
-  "rose", "fuchsia", "indigo", "cyan",
-  "primary", "secondary", "accent", "muted", "foreground", "background",
-  "destructive", "muted-foreground", "card-foreground", "popover-foreground",
-  "primary-foreground", "secondary-foreground", "destructive-foreground",
-  "accent-foreground", "chart", "sidebar", "sidebar-foreground",
-  "sidebar-primary", "sidebar-primary-foreground", "sidebar-accent",
-  "sidebar-accent-foreground", "sidebar-border", "sidebar-ring",
+  "teal", "cyan", "sky", "blue", "indigo", "violet", "purple", "fuchsia", "pink", "rose",
+  "black", "white", "transparent", "current", "inherit",
 ]);
 
 function extractTokensFromTheme(cssContent: string): Set<string> {
   const tokens = new Set<string>();
-  const themeMatch = cssContent.match(/@theme\s*\{([^}]+)\}/s);
+  const themeMatch = cssContent.match(/@theme\s*\{/);
   if (!themeMatch) return tokens;
 
-  const themeBody = themeMatch[1];
+  const startIdx = cssContent.indexOf("@theme");
+  const openBrace = cssContent.indexOf("{", startIdx);
+  if (openBrace === -1) return tokens;
+
+  let braceDepth = 0;
+  let i = openBrace + 1;
+  while (i < cssContent.length) {
+    const char = cssContent[i];
+    if (char === "{") braceDepth++;
+    else if (char === "}") {
+      if (braceDepth === 0) break;
+      braceDepth--;
+    }
+    i++;
+  }
+  const themeBody = cssContent.slice(openBrace + 1, i);
   const tokenMatches = themeBody.matchAll(/--[\w-]+:\s*([^;]+)/g);
   for (const match of tokenMatches) {
     const fullToken = match[0].split(":")[0].replace("--", "");
@@ -48,12 +55,12 @@ function extractColorTokensFromTSX(filePath: string): Set<string> {
   const content = readFileSync(filePath, "utf-8");
   const tokens = new Set<string>();
 
-  const classNameMatches = content.matchAll(/className=["']([^"']+)["']/g);
-  for (const match of classNameMatches) {
-    const classNames = match[1];
+  const stringLiteralMatches = content.matchAll(/["']([^"']*(?:bg-|text-|border-|divide-)[^"']*)["']/g);
+  for (const match of stringLiteralMatches) {
+    const str = match[1];
     for (const prefix of COLOR_PREFIXES) {
       const re = new RegExp(`${prefix}([a-zA-Z][a-zA-Z0-9-]*)`, "g");
-      const tokenMatches = classNames.matchAll(re);
+      const tokenMatches = str.matchAll(re);
       for (const tokenMatch of tokenMatches) {
         const value = tokenMatch[1];
         if (value.includes("[") || value.includes("]")) continue;
@@ -67,6 +74,12 @@ function extractColorTokensFromTSX(filePath: string): Set<string> {
   }
 
   return tokens;
+}
+
+function isBuiltInColor(token: string): boolean {
+  if (TAILWIND_BUILT_IN_COLORS.has(token)) return true;
+  const base = token.split("-")[0];
+  return TAILWIND_BUILT_IN_COLORS.has(base);
 }
 
 describe("design tokens — structural", () => {
@@ -138,7 +151,7 @@ describe("design tokens — cross-reference guard", () => {
           const undefinedTokens: string[] = [];
           for (const token of tsxTokens) {
             const isMultiWord = token.includes("-");
-            const isBuiltIn = TAILWIND_BUILT_IN_COLORS.has(token);
+            const isBuiltIn = isBuiltInColor(token);
             const isDefined = definedTokens.has(token);
             if (isMultiWord && !isBuiltIn && !isDefined) {
               undefinedTokens.push(token);

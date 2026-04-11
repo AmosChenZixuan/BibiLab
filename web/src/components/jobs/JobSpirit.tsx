@@ -16,7 +16,7 @@ function StatusDot({ item }: { item: JobActivityItem }) {
   }
   const tone = getJobTone(item.job);
   const color =
-    tone === "ok" ? "bg-sky-blue" : tone === "error" ? "bg-pink" : "bg-muted";
+    tone === "ok" ? "bg-sky-blue" : tone === "error" ? "bg-pink" : "bg-soft-gray";
   return (
     <span className={`inline-block h-1.5 w-1.5 shrink-0 rounded-full ${color}`} aria-hidden="true" />
   );

@@ -64,7 +64,7 @@ export function RenameListModal({ list, open, onClose, onCommit, initialValue }:
         ) : null}
         <div className="absolute inset-0 bg-linear-to-t from-black/65 via-black/20 to-transparent" />
         <div className="absolute inset-x-6 bottom-6 z-10">
-          <span className="block text-3xl font-semibold tracking-tighter leading-tight text-white">
+          <span className="block text-h1 font-semibold tracking-tighter leading-tight text-white">
             {draft || list?.name || t("home.untitledList")}
           </span>
         </div>
@@ -75,7 +75,7 @@ export function RenameListModal({ list, open, onClose, onCommit, initialValue }:
           <Input
             aria-label="List name"
             autoFocus
-            className="select-text rounded-2xl bg-white/92 px-4 py-3 text-2xl leading-tight font-normal tracking-normal text-charcoal focus:border-pink/50 focus:ring-2 focus:ring-pink/30"
+            className="select-text rounded-2xl bg-white/92 px-4 py-3 text-h2 leading-tight font-normal tracking-normal text-charcoal focus:border-pink/50 focus:ring-2 focus:ring-pink/30"
             placeholder={t("home.untitledList")}
             onChange={(event) => setDraft(event.target.value)}
             onKeyDown={(event) => {

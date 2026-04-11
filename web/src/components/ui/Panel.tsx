@@ -20,7 +20,7 @@ export function Panel({ variant = "app", className = "", ...rest }: Props) {
 export function PanelTitle({ className = "", ...rest }: ComponentPropsWithoutRef<"h2">) {
   return (
     <h2
-      className={`m-0 border-b border-divider px-5 py-4.5 font-sans text-2xl ${className}`.trim()}
+      className={`m-0 border-b border-divider px-5 py-4.5 font-sans text-h2 ${className}`.trim()}
       {...rest}
     />
   );

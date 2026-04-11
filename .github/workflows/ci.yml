@@ -51,23 +51,6 @@ jobs:
       - name: Install dependencies
         working-directory: web
         run: npm install
-      - name: Check for undefined design tokens
-        working-directory: web
-        run: |
-          CSS=$(cat src/styles/app.css)
-          THEME_TOKENS=$(echo "$CSS" | grep -oP '(?<=--)[a-zA-Z0-9_-]+(?=:)' | sort -u)
-          echo "Defined tokens: $THEME_TOKENS"
-          UNDEFINED=$(grep -rE 'className=["\'][^"\']*\b(text|border|bg|divide)-([a-zA-Z0-9_-]+)\b' src --include="*.tsx" | grep -oP '(text|border|bg|divide)-\K[a-zA-Z0-9_-]+' | sort -u | while read token; do
-            if ! echo "$THEME_TOKENS" | grep -qx "$token"; then
-              echo "$token"
-            fi
-          done)
-          if [ -n "$UNDEFINED" ]; then
-            echo "ERROR: Undefined design tokens found:"
-            echo "$UNDEFINED"
-            exit 1
-          fi
-          echo "All tokens defined"
       - name: Build
         working-directory: web
         run: npm run build
