@@ -1,6 +1,6 @@
 @import "tailwindcss";
 @plugin "@tailwindcss/typography";
-@import url("https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600;700&display=swap");
 
 /* DigestAccordion loading animation */
 @keyframes digest-loading-bounce {
@@ -72,7 +72,7 @@
   --color-cta-gray-border:    #CBD2D9;
   --color-dark-gray-border:   #909396;
 
-  /* ── Colors: Semantic ────────────────────────────────────────────────────── */
+  /* ── Colors: Semantic ───────────────────────────────────────────────────── */
   --color-success:        #31A24C;
   --color-store-success:  #007D1E;
   --color-error:          #E41E3F;
@@ -92,7 +92,7 @@
   --color-tomato:   #FB724B;
 
   /* ── Typography ─────────────────────────────────────────────────────────── */
-  --font-sans: "Plus Jakarta Sans", "Segoe UI", sans-serif;
+  --font-sans: "Montserrat", "Helvetica Neue", Arial, sans-serif;
   --font-mono: SFMono-Regular, Consolas, monospace;
 
   --text-display: 64px/500/1.16;
@@ -178,6 +178,17 @@
     text-decoration: none;
   }
 }
+
+@utility text-display     { font-size: 64px; font-weight: 500; line-height: 1.16; }
+@utility text-h1          { font-size: 36px; font-weight: 500; line-height: 1.28; }
+@utility text-h2          { font-size: 28px; font-weight: 300; line-height: 1.21; }
+@utility text-h3          { font-size: 18px; font-weight: 700; line-height: 1.44; }
+@utility text-body        { font-size: 18px; font-weight: 400; line-height: 1.44; }
+@utility text-body-compact { font-size: 16px; font-weight: 500; line-height: 1.50; letter-spacing: -0.16px; }
+@utility text-caption-bold { font-size: 14px; font-weight: 700; line-height: 1.43; }
+@utility text-caption     { font-size: 14px; font-weight: 400; line-height: 1.43; letter-spacing: -0.14px; }
+@utility text-small       { font-size: 12px; font-weight: 400; line-height: 1.33; }
+@utility text-button      { font-size: 14px; font-weight: 400; line-height: 1.43; letter-spacing: -0.14px; }
 
 /* Skeleton loading placeholder */
 .glimmer-placeholder {

@@ -4,14 +4,22 @@ import { resolve } from "path";
 
 const css = readFileSync(resolve(__dirname, "../styles/app.css"), "utf-8");
 
-describe("design tokens — Meta Store (phase 1: colors, spacing, shadow, radius, skeleton, glass)", () => {
-  test("Plus Jakarta Sans font is imported", () => {
-    expect(css).toContain("Plus Jakarta Sans");
+describe("design tokens — Meta Store (phase 2: Montserrat + @utility typography)", () => {
+  test("Montserrat font is imported", () => {
+    expect(css).toContain("Montserrat");
     expect(css).toContain("fonts.googleapis.com");
   });
 
-  test("--font-sans is defined with Plus Jakarta Sans", () => {
-    expect(css).toMatch(/--font-sans:\s*["']?Plus Jakarta Sans/i);
+  test("--font-sans is defined with Montserrat", () => {
+    expect(css).toMatch(/--font-sans:\s*["']?Montserrat/i);
+  });
+
+  test("@utility text-display is defined", () => {
+    expect(css).toContain("@utility text-display");
+  });
+
+  test("@utility text-button is defined", () => {
+    expect(css).toContain("@utility text-button");
   });
 
   test("--color-pink is defined as #FF66BF", () => {
