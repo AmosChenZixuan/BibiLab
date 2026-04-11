@@ -5,7 +5,7 @@ type Status = "ok" | "error" | "unavailable" | "neutral";
 const statusColors: Record<Status, string> = {
   ok:          "bg-success text-white",
   error:       "bg-error text-white",
-  unavailable: "bg-charcoal/20 text-charcoal",
+  unavailable: "bg-[--color-soft-gray] text-[--color-secondary-text]",
   neutral:     "bg-meta-blue text-white",
 };
 

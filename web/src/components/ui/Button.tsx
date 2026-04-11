@@ -14,8 +14,8 @@ const variants: Record<Variant, string> = {
     "hover:bg-meta-blue-hover active:bg-meta-blue-pressed " +
     "disabled:bg-[#DEE3E9] disabled:text-[#8595A4]",
   secondary:
-    "bg-white/92 border border-[--color-divider-gray] text-charcoal/50 " +
-    "hover:bg-[--color-divider-gray] hover:text-white",
+    "bg-white/92 border-2 border-[rgba(10,19,23,0.12)] text-charcoal/50 " +
+    "hover:border-[rgba(10,19,23,0.24)] hover:bg-[--color-divider-gray] hover:text-white",
   ghost:
     "bg-white/55 border border-[--color-secondary-text]/18 text-meta-blue " +
     "hover:bg-sky-blue-light",

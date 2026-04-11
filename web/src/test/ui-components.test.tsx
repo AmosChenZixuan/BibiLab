@@ -104,7 +104,7 @@ describe("StatusChip", () => {
 
   test("renders unavailable status color", () => {
     render(<StatusChip status="unavailable">Down</StatusChip>);
-    expect(screen.getByText("Down").className).toContain("text-charcoal");
+    expect(screen.getByText("Down").className).toContain("text-[--color-secondary-text]");
   });
 
   test("renders neutral status by default", () => {
