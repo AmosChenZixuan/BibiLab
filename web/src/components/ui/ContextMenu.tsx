@@ -112,14 +112,14 @@ export function ContextMenu({ items, trigger }: ContextMenuProps) {
       {open
         ? createPortal(
             <div
-              className="fixed z-float min-w-40 rounded-lg border border-border bg-white p-1 shadow-level-2"
+              className="fixed z-float min-w-40 rounded-lg border border-divider bg-white p-1 shadow-level-2"
               ref={menuRef}
               role="menu"
               style={{ top: `${position.top}px`, left: `${position.left}px` }}
             >
               {items.map((item) => (
                 <button
-                  className={`flex w-full items-center gap-2 rounded-md border-0 px-2.5 py-2 text-left text-sm font-medium transition hover:bg-black/5 ${
+                  className={`flex w-full items-center gap-2 rounded-md border-0 px-2.5 py-2 text-left text-caption font-medium transition hover:bg-black/5 ${
                     item.variant === "danger" ? "text-error" : "text-charcoal"
                   }`}
                   key={item.label}

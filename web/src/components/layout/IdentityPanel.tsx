@@ -19,7 +19,7 @@ export default function IdentityPanel({ onClose }: IdentityPanelProps) {
         onClick={onClose}
       />
       <div
-        className="fixed right-4 top-14 z-float min-w-44 rounded-xl border border-border bg-white/96 p-4 shadow-lg backdrop-blur-md md:right-6 xl:right-12"
+        className="fixed right-4 top-14 z-float min-w-44 rounded-xl border border-divider bg-white/96 p-4 shadow-lg backdrop-blur-md md:right-6 xl:right-12"
         role="menu"
         aria-label="Identity"
       >
@@ -32,8 +32,8 @@ export default function IdentityPanel({ onClose }: IdentityPanelProps) {
               >
                 {platform.icon}
               </span>
-              <span className="text-xs font-semibold text-charcoal">{platform.label}</span>
-              <span className="text-center text-xs text-muted">{t("lists.notSignedIn")}</span>
+              <span className="text-small font-semibold text-charcoal">{platform.label}</span>
+              <span className="text-center text-small text-secondary-text">{t("lists.notSignedIn")}</span>
             </div>
           ))}
         </div>

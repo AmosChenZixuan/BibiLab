@@ -134,8 +134,8 @@ export function SettingsPage() {
                 aria-selected={isActive}
                 className={`flex items-center gap-3 rounded-xl px-4 py-3 text-left transition ${
                   isActive
-                    ? "bg-sky/10 font-semibold text-ink"
-                    : "text-muted hover:bg-sky/10 hover:text-ink"
+                    ? "bg-sky/10 font-semibold text-charcoal"
+                    : "text-secondary-text hover:bg-sky/10 hover:text-charcoal"
                 }`}
                 title={t("health." + healthTier)}
                 onClick={() => setActiveTab(tab.key)}

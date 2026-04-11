@@ -25,7 +25,7 @@ function ModelDownloadCell({ modelName, modelJob, downloading, onDownload, t }: 
   }
 
   if (modelJob?.job.status === "failed" || modelJob?.job.status === "needs_auth") {
-    return <span className="text-xs text-pink">{modelJob.job.error ?? t("common.failed")}</span>;
+    return <span className="text-small text-pink">{modelJob.job.error ?? t("common.failed")}</span>;
   }
 
   return (
@@ -198,20 +198,20 @@ export function TranscriptTab({ config, dependencies, onBlur }: TranscriptTabPro
       </div>
 
       <div className="grid gap-3">
-        <p className="text-xs font-semibold uppercase tracking-widest text-muted">
+        <p className="text-small font-semibold uppercase tracking-widest text-secondary-text">
           {t("settings.modelDownloads")}
         </p>
-        <p className="text-sm leading-5 text-muted">{t("settings.modelDownloadsRequired")}</p>
-        <div className="overflow-hidden rounded-2xl border border-border bg-white/64">
+        <p className="text-caption leading-5 text-secondary-text">{t("settings.modelDownloadsRequired")}</p>
+        <div className="overflow-hidden rounded-2xl border border-divider bg-white/64">
           <table className="w-full border-collapse text-left">
             <tbody>
               {models.map((model) => (
-                <tr key={model.name} className="border-t border-border">
-                  <td className="px-4 py-3 font-semibold text-ink">{model.name}</td>
+                <tr key={model.name} className="border-t border-divider">
+                  <td className="px-4 py-3 font-semibold text-charcoal">{model.name}</td>
                   <td className="px-4 py-3">
                     <div className="flex items-center justify-end">
                       {model.installed ? (
-                        <p className="text-right font-mono text-sm text-muted">{model.path}</p>
+                        <p className="text-right font-mono text-caption text-secondary-text">{model.path}</p>
                       ) : (
                         <ModelDownloadCell
                           modelName={model.name}

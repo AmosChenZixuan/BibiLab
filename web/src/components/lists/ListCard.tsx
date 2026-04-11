@@ -100,10 +100,10 @@ export function ListCard({ list, onRename, onChangeThumbnail, onDelete }: Props)
         type="button"
       >
         <div className="absolute inset-x-0 bottom-0 z-10 grid gap-1 p-3">
-          <h2 className="m-0 line-clamp-2 text-sm font-semibold tracking-tight text-white drop-shadow-sm">
+          <h2 className="m-0 line-clamp-2 text-caption font-semibold tracking-tight text-white drop-shadow-sm">
             {list.name}
           </h2>
-          <div className="flex items-center gap-2 text-xs text-white/75">
+          <div className="flex items-center gap-2 text-small text-white/75">
             <span>{formatUpdatedDate(list.updated_at)}</span>
             <span className="size-1 rounded-full bg-white/40" />
             <span>{list.source_count === 1 ? t("lists.sourceSingular", { count: list.source_count }) : t("lists.sourcePlural", { count: list.source_count })}</span>

@@ -67,7 +67,7 @@ export function LabPanel({ listId, labCollapsed, labW, sourceIds, artifacts, onA
       }
       className={panelBase}
     >
-      <div className="flex shrink-0 items-center border-b border-border px-4 py-4">
+      <div className="flex shrink-0 items-center border-b border-divider px-4 py-4">
         {!labCollapsed && (
           <h2 className="m-0 flex-1 font-sans text-h3 text-charcoal">{t("lists.lab")}</h2>
         )}
@@ -75,7 +75,7 @@ export function LabPanel({ listId, labCollapsed, labW, sourceIds, artifacts, onA
           type="button"
           onClick={headerBtn.onClick}
           aria-label={headerBtn.label}
-          className={`flex h-7 w-7 items-center justify-center rounded-full text-muted transition hover:bg-border hover:text-charcoal ${labCollapsed ? "mx-auto" : ""}`}
+          className={`flex h-7 w-7 items-center justify-center rounded-full text-secondary-text transition hover:bg-divider hover:text-charcoal ${labCollapsed ? "mx-auto" : ""}`}
         >
           {headerBtn.icon}
         </button>
@@ -86,7 +86,7 @@ export function LabPanel({ listId, labCollapsed, labW, sourceIds, artifacts, onA
           {labMode === "tool-list" ? (
             <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
               <ToolSection listId={listId} sourceIds={sourceIds} onArtifactGenerated={onArtifactGenerated} />
-              <div className="flex min-h-0 flex-1 flex-col border-t border-border px-4 pt-4">
+              <div className="flex min-h-0 flex-1 flex-col border-t border-divider px-4 pt-4">
                 <ArtifactList listId={listId} artifacts={artifacts} onArtifactsChange={onArtifactsChange} onViewArtifact={handleViewArtifact} />
               </div>
             </div>

@@ -15,8 +15,8 @@ import { SourcesListMode } from "@/components/lists/sources/SourcesListMode";
 function SkeletonPanel({ title, note }: { title: string; note: string }) {
   return (
     <div className="flex h-full flex-col">
-      <div className="shrink-0 border-b border-border px-5 py-4">
-        <h2 className="m-0 font-serif text-body text-ink">{title}</h2>
+      <div className="shrink-0 border-b border-divider px-5 py-4">
+        <h2 className="m-0 font-serif text-body text-charcoal">{title}</h2>
       </div>
       <div className="flex flex-1 flex-col items-center justify-center gap-4 px-6 py-8">
         <div className="w-full space-y-2.5">
@@ -24,7 +24,7 @@ function SkeletonPanel({ title, note }: { title: string; note: string }) {
           <div className="h-2.5 rounded-full bg-linear-to-r from-pink/12 to-sky/12" />
           <div className="h-2.5 w-2/3 rounded-full bg-linear-to-r from-pink/12 to-sky/12" />
         </div>
-        <p className="m-0 text-center text-caption text-muted/80">{note}</p>
+        <p className="m-0 text-center text-caption text-secondary-text/80">{note}</p>
       </div>
     </div>
   );
@@ -124,7 +124,7 @@ export function ListDetailPage() {
     setArtifacts((prev) => [placeholder, ...prev]);
   }, [t]);
 
-  const panelBase = "flex h-full shrink-0 flex-col overflow-hidden rounded-3xl border border-border bg-white/76 shadow-lg";
+  const panelBase = "flex h-full shrink-0 flex-col overflow-hidden rounded-3xl border border-divider bg-white/76 shadow-lg";
 
   return (
     <>
@@ -143,15 +143,15 @@ export function ListDetailPage() {
           }
           className={panelBase}
         >
-          <div className="flex shrink-0 items-center border-b border-border px-4 py-4">
+          <div className="flex shrink-0 items-center border-b border-divider px-4 py-4">
             {!sourcesCollapsed && (
-              <h2 className="m-0 flex-1 font-serif text-body text-ink">{t("lists.sources")}</h2>
+              <h2 className="m-0 flex-1 font-serif text-body text-charcoal">{t("lists.sources")}</h2>
             )}
             <button
               type="button"
               onClick={detailSource ? () => setDetailSource(null) : () => setSourcesCollapsed((v) => !v)}
               aria-label={detailSource ? "Close viewer" : sourcesCollapsed ? "Expand sources" : "Collapse sources"}
-              className={`flex h-7 w-7 items-center justify-center rounded-full text-muted transition hover:bg-border hover:text-ink ${sourcesCollapsed ? "mx-auto" : ""}`}
+              className={`flex h-7 w-7 items-center justify-center rounded-full text-secondary-text transition hover:bg-divider hover:text-charcoal ${sourcesCollapsed ? "mx-auto" : ""}`}
             >
               {detailSource ? <Minimize2 size={16} /> : (sourcesCollapsed ? <ArrowRightToLine size={16} /> : <ArrowLeftToLine size={16} />)}
             </button>

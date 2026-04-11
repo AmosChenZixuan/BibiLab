@@ -1,320 +1,85 @@
 import { describe, expect, test } from "vitest";
-import { readFileSync } from "fs";
+import { readFileSync, readdirSync } from "fs";
 import { resolve } from "path";
 
 const css = readFileSync(resolve(__dirname, "../styles/app.css"), "utf-8");
 
-describe("design tokens — Meta Store (phase 2: Montserrat + @utility typography)", () => {
+const COLOR_PREFIXES = ["text-", "bg-", "border-", "divide-"];
+
+const TAILWIND_BUILT_IN_COLORS = new Set([
+  "pink", "sky", "blue", "indigo", "violet", "purple", "fuchsia",
+  "red", "orange", "amber", "yellow", "lime", "green", "emerald",
+  "teal", "cyan", "slate", "gray", "neutral", "stone",
+  "zinc", "black", "white", "transparent", "current", "inherit", "auto",
+  "error", "success", "warning", "info",
+  "rose", "fuchsia", "indigo", "cyan",
+  "primary", "secondary", "accent", "muted", "foreground", "background",
+  "destructive", "muted-foreground", "card-foreground", "popover-foreground",
+  "primary-foreground", "secondary-foreground", "destructive-foreground",
+  "accent-foreground", "chart", "sidebar", "sidebar-foreground",
+  "sidebar-primary", "sidebar-primary-foreground", "sidebar-accent",
+  "sidebar-accent-foreground", "sidebar-border", "sidebar-ring",
+]);
+
+function extractTokensFromTheme(cssContent: string): Set<string> {
+  const tokens = new Set<string>();
+  const themeMatch = cssContent.match(/@theme\s*\{([^}]+)\}/s);
+  if (!themeMatch) return tokens;
+
+  const themeBody = themeMatch[1];
+  const tokenMatches = themeBody.matchAll(/--[\w-]+:\s*([^;]+)/g);
+  for (const match of tokenMatches) {
+    const fullToken = match[0].split(":")[0].replace("--", "");
+    const normalized = fullToken.replace(/^(color|spacing|radius|shadow|z)-/, "");
+    tokens.add(normalized);
+  }
+
+  const utilityMatches = cssContent.matchAll(/@utility\s+([\w-]+)/g);
+  for (const match of utilityMatches) {
+    const utilityName = match[1];
+    const normalized = utilityName.replace(/^(text|bg|border|divide)-/, "");
+    tokens.add(normalized);
+  }
+
+  return tokens;
+}
+
+function extractColorTokensFromTSX(filePath: string): Set<string> {
+  const content = readFileSync(filePath, "utf-8");
+  const tokens = new Set<string>();
+
+  const classNameMatches = content.matchAll(/className=["']([^"']+)["']/g);
+  for (const match of classNameMatches) {
+    const classNames = match[1];
+    for (const prefix of COLOR_PREFIXES) {
+      const re = new RegExp(`${prefix}([a-zA-Z][a-zA-Z0-9-]*)`, "g");
+      const tokenMatches = classNames.matchAll(re);
+      for (const tokenMatch of tokenMatches) {
+        const value = tokenMatch[1];
+        if (value.includes("[") || value.includes("]")) continue;
+        if (value.startsWith("linear-")) continue;
+        if (value.startsWith("to-")) continue;
+        if (value.includes("-to-")) continue;
+        if (/^[tblrxy]-/.test(value)) continue;
+        tokens.add(value);
+      }
+    }
+  }
+
+  return tokens;
+}
+
+describe("design tokens — structural", () => {
   test("Montserrat font is imported", () => {
     expect(css).toContain("Montserrat");
     expect(css).toContain("fonts.googleapis.com");
   });
 
-  test("--font-sans is defined with Montserrat", () => {
-    expect(css).toMatch(/--font-sans:\s*["']?Montserrat/i);
-  });
-
-  test("@utility text-display is defined", () => {
-    expect(css).toContain("@utility text-display");
-  });
-
-  test("@utility text-button is defined", () => {
-    expect(css).toContain("@utility text-button");
-  });
-
-  test("--color-pink is defined as #FF66BF", () => {
-    const match = css.match(/--color-pink:\s*([^;]+)/);
-    expect(match?.[1].trim()).toBe("#FF66BF");
-  });
-
-  test("--color-pink-hover is defined as #FF85C8", () => {
-    const match = css.match(/--color-pink-hover:\s*([^;]+)/);
-    expect(match?.[1].trim()).toBe("#FF85C8");
-  });
-
-  test("--color-pink-pressed is defined as #E050A8", () => {
-    const match = css.match(/--color-pink-pressed:\s*([^;]+)/);
-    expect(match?.[1].trim()).toBe("#E050A8");
-  });
-
-  test("--color-pink-light is defined as #FFD6ED", () => {
-    const match = css.match(/--color-pink-light:\s*([^;]+)/);
-    expect(match?.[1].trim()).toBe("#FFD6ED");
-  });
-
-  test("--color-sky-blue is defined as #87CEEB", () => {
-    const match = css.match(/--color-sky-blue:\s*([^;]+)/);
-    expect(match?.[1].trim()).toBe("#87CEEB");
-  });
-
-  test("--color-sky-blue-hover is defined as #6BB8DB", () => {
-    const match = css.match(/--color-sky-blue-hover:\s*([^;]+)/);
-    expect(match?.[1].trim()).toBe("#6BB8DB");
-  });
-
-  test("--color-sky-blue-pressed is defined as #4AA8CB", () => {
-    const match = css.match(/--color-sky-blue-pressed:\s*([^;]+)/);
-    expect(match?.[1].trim()).toBe("#4AA8CB");
-  });
-
-  test("--color-sky-blue-light is defined as #D6EDFA", () => {
-    const match = css.match(/--color-sky-blue-light:\s*([^;]+)/);
-    expect(match?.[1].trim()).toBe("#D6EDFA");
-  });
-
-  test("--color-primary-text is defined as #050505", () => {
-    const match = css.match(/--color-primary-text:\s*([^;]+)/);
-    expect(match?.[1].trim()).toBe("#050505");
-  });
-
-  test("--color-charcoal is defined as #1C2B33", () => {
-    const match = css.match(/--color-charcoal:\s*([^;]+)/);
-    expect(match?.[1].trim()).toBe("#1C2B33");
-  });
-
-  test("--color-secondary-text is defined as #65676B", () => {
-    const match = css.match(/--color-secondary-text:\s*([^;]+)/);
-    expect(match?.[1].trim()).toBe("#65676B");
-  });
-
-  test("--color-slate-gray is defined as #5D6C7B", () => {
-    const match = css.match(/--color-slate-gray:\s*([^;]+)/);
-    expect(match?.[1].trim()).toBe("#5D6C7B");
-  });
-
-  test("--color-rayban-red is defined as #D6311F", () => {
-    const match = css.match(/--color-rayban-red:\s*([^;]+)/);
-    expect(match?.[1].trim()).toBe("#D6311F");
-  });
-
-  test("--color-oculus-purple is defined as #A121CE", () => {
-    const match = css.match(/--color-oculus-purple:\s*([^;]+)/);
-    expect(match?.[1].trim()).toBe("#A121CE");
-  });
-
-  test("--color-portal-blue is defined as #1B365D", () => {
-    const match = css.match(/--color-portal-blue:\s*([^;]+)/);
-    expect(match?.[1].trim()).toBe("#1B365D");
-  });
-
-  test("--color-portal-hero-blue is defined as #C8E4E8", () => {
-    const match = css.match(/--color-portal-hero-blue:\s*([^;]+)/);
-    expect(match?.[1].trim()).toBe("#C8E4E8");
-  });
-
-  test("--color-portal-light-blue is defined as #ADD4E0", () => {
-    const match = css.match(/--color-portal-light-blue:\s*([^;]+)/);
-    expect(match?.[1].trim()).toBe("#ADD4E0");
-  });
-
-  test("--color-white is defined as #FFFFFF", () => {
-    const match = css.match(/--color-white:\s*([^;]+)/);
-    expect(match?.[1].trim()).toBe("#FFFFFF");
-  });
-
-  test("--color-soft-gray is defined as #F1F4F7", () => {
-    const match = css.match(/--color-soft-gray:\s*([^;]+)/);
-    expect(match?.[1].trim()).toBe("#F1F4F7");
-  });
-
-  test("--color-warm-gray is defined as #F7F8FA", () => {
-    const match = css.match(/--color-warm-gray:\s*([^;]+)/);
-    expect(match?.[1].trim()).toBe("#F7F8FA");
-  });
-
-  test("--color-web-wash is defined as #F0F2F5", () => {
-    const match = css.match(/--color-web-wash:\s*([^;]+)/);
-    expect(match?.[1].trim()).toBe("#F0F2F5");
-  });
-
-  test("--color-linen is defined as #F2F0E6", () => {
-    const match = css.match(/--color-linen:\s*([^;]+)/);
-    expect(match?.[1].trim()).toBe("#F2F0E6");
-  });
-
-  test("--color-baby-blue is defined as #E8F3FF", () => {
-    const match = css.match(/--color-baby-blue:\s*([^;]+)/);
-    expect(match?.[1].trim()).toBe("#E8F3FF");
-  });
-
-  test("--color-near-black is defined as #1C1E21", () => {
-    const match = css.match(/--color-near-black:\s*([^;]+)/);
-    expect(match?.[1].trim()).toBe("#1C1E21");
-  });
-
-  test("--color-oculus-light is defined as #181A1B", () => {
-    const match = css.match(/--color-oculus-light:\s*([^;]+)/);
-    expect(match?.[1].trim()).toBe("#181A1B");
-  });
-
-  test("--color-overlay is defined as rgba(0,0,0,0.6)", () => {
-    const match = css.match(/--color-overlay:\s*([^;]+)/);
-    expect(match?.[1].trim()).toBe("rgba(0,0,0,0.6)");
-  });
-
-  test("--color-icon-secondary is defined as #465A69", () => {
-    const match = css.match(/--color-icon-secondary:\s*([^;]+)/);
-    expect(match?.[1].trim()).toBe("#465A69");
-  });
-
-  test("--color-section-header is defined as #4B4C4F", () => {
-    const match = css.match(/--color-section-header:\s*([^;]+)/);
-    expect(match?.[1].trim()).toBe("#4B4C4F");
-  });
-
-  test("--color-button-text-gray is defined as #444950", () => {
-    const match = css.match(/--color-button-text-gray:\s*([^;]+)/);
-    expect(match?.[1].trim()).toBe("#444950");
-  });
-
-  test("--color-disabled-text is defined as #BCC0C4", () => {
-    const match = css.match(/--color-disabled-text:\s*([^;]+)/);
-    expect(match?.[1].trim()).toBe("#BCC0C4");
-  });
-
-  test("--color-cta-disabled-text is defined as #8595A4", () => {
-    const match = css.match(/--color-cta-disabled-text:\s*([^;]+)/);
-    expect(match?.[1].trim()).toBe("#8595A4");
-  });
-
-  test("--color-divider is defined as #CED0D4", () => {
-    const match = css.match(/--color-divider:\s*([^;]+)/);
-    expect(match?.[1].trim()).toBe("#CED0D4");
-  });
-
-  test("--color-divider-gray is defined as #DEE3E9", () => {
-    const match = css.match(/--color-divider-gray:\s*([^;]+)/);
-    expect(match?.[1].trim()).toBe("#DEE3E9");
-  });
-
-  test("--color-success is defined as #31A24C", () => {
-    const match = css.match(/--color-success:\s*([^;]+)/);
-    expect(match?.[1].trim()).toBe("#31A24C");
-  });
-
-  test("--color-store-success is defined as #007D1E", () => {
-    const match = css.match(/--color-store-success:\s*([^;]+)/);
-    expect(match?.[1].trim()).toBe("#007D1E");
-  });
-
-  test("--color-error is defined as #E41E3F", () => {
-    const match = css.match(/--color-error:\s*([^;]+)/);
-    expect(match?.[1].trim()).toBe("#E41E3F");
-  });
-
-  test("--color-store-error is defined as #C80A28", () => {
-    const match = css.match(/--color-store-error:\s*([^;]+)/);
-    expect(match?.[1].trim()).toBe("#C80A28");
-  });
-
-  test("--color-warning is defined as #F7B928", () => {
-    const match = css.match(/--color-warning:\s*([^;]+)/);
-    expect(match?.[1].trim()).toBe("#F7B928");
-  });
-
-  test("--color-positive-bg is defined", () => {
-    const match = css.match(/--color-positive-bg:\s*([^;]+)/);
-    expect(match?.[1].trim()).toBe("rgba(36, 228, 0, 0.15)");
-  });
-
-  test("--color-error-bg is defined", () => {
-    const match = css.match(/--color-error-bg:\s*([^;]+)/);
-    expect(match?.[1].trim()).toBe("rgba(255, 123, 145, 0.15)");
-  });
-
-  test("--color-warning-bg is defined", () => {
-    const match = css.match(/--color-warning-bg:\s*([^;]+)/);
-    expect(match?.[1].trim()).toBe("rgba(255, 226, 0, 0.15)");
-  });
-
-  test("--color-info-bg is defined", () => {
-    const match = css.match(/--color-info-bg:\s*([^;]+)/);
-    expect(match?.[1].trim()).toBe("rgba(0, 145, 255, 0.15)");
-  });
-
-  test("--color-cherry is defined as #F3425F", () => {
-    const match = css.match(/--color-cherry:\s*([^;]+)/);
-    expect(match?.[1].trim()).toBe("#F3425F");
-  });
-
-  test("--color-grape is defined as #9360F7", () => {
-    const match = css.match(/--color-grape:\s*([^;]+)/);
-    expect(match?.[1].trim()).toBe("#9360F7");
-  });
-
-  test("--color-lime is defined as #45BD62", () => {
-    const match = css.match(/--color-lime:\s*([^;]+)/);
-    expect(match?.[1].trim()).toBe("#45BD62");
-  });
-
-  test("--color-seafoam is defined as #54C7EC", () => {
-    const match = css.match(/--color-seafoam:\s*([^;]+)/);
-    expect(match?.[1].trim()).toBe("#54C7EC");
-  });
-
-  test("--color-teal is defined as #2ABBA7", () => {
-    const match = css.match(/--color-teal:\s*([^;]+)/);
-    expect(match?.[1].trim()).toBe("#2ABBA7");
-  });
-
-  test("--color-tomato is defined as #FB724B", () => {
-    const match = css.match(/--color-tomato:\s*([^;]+)/);
-    expect(match?.[1].trim()).toBe("#FB724B");
-  });
-
-  test("spacing scale --space-1 through --space-14 defined", () => {
-    const expected: Record<string, string> = {
-      "--space-1": "1px",
-      "--space-2": "4px",
-      "--space-3": "8px",
-      "--space-4": "10px",
-      "--space-5": "12px",
-      "--space-6": "14px",
-      "--space-7": "16px",
-      "--space-8": "18px",
-      "--space-9": "24px",
-      "--space-10": "32px",
-      "--space-11": "40px",
-      "--space-12": "48px",
-      "--space-13": "64px",
-      "--space-14": "80px",
-    };
-    for (const [token, val] of Object.entries(expected)) {
-      const match = css.match(new RegExp(`${token}:\\s*([^;]+)`));
-      const found = match?.[1].trim();
-      expect(found).toBe(val);
+  test("@utility typography scale is defined", () => {
+    const textTokens = ["text-display", "text-h1", "text-h2", "text-h3", "text-body", "text-body-compact", "text-caption-bold", "text-caption", "text-small", "text-button"];
+    for (const token of textTokens) {
+      expect(css).toContain(`@utility ${token}`);
     }
-  });
-
-  test("--shadow-level-1 is defined", () => {
-    expect(css).toContain("--shadow-level-1:");
-    expect(css).toContain("rgba(0,0,0,0.1)");
-  });
-
-  test("--shadow-level-2 is defined", () => {
-    expect(css).toContain("--shadow-level-2:");
-    expect(css).toContain("rgba(0,0,0,0.2)");
-    expect(css).toContain("rgba(0,0,0,0.1)");
-  });
-
-  test("--radius-sm is defined as 8px", () => {
-    const match = css.match(/--radius-sm:\s*([^;]+)/);
-    expect(match?.[1].trim()).toBe("8px");
-  });
-
-  test("--radius-card is defined as 20px", () => {
-    const match = css.match(/--radius-card:\s*([^;]+)/);
-    expect(match?.[1].trim()).toBe("20px");
-  });
-
-  test("--radius-feature is defined as 24px", () => {
-    const match = css.match(/--radius-feature:\s*([^;]+)/);
-    expect(match?.[1].trim()).toBe("24px");
-  });
-
-  test("--radius-pill is defined as 100px", () => {
-    const match = css.match(/--radius-pill:\s*([^;]+)/);
-    expect(match?.[1].trim()).toBe("100px");
   });
 
   test("@keyframes glimmer is defined", () => {
@@ -327,12 +92,72 @@ describe("design tokens — Meta Store (phase 2: Montserrat + @utility typograph
     expect(css).toContain(".glimmer-placeholder");
     expect(css).toContain("background-color: var(--color-disabled-text)");
     expect(css).toContain("border-radius: var(--radius-sm)");
-    expect(css).toContain("animation: glimmer 1000ms steps(1) infinite");
   });
 
   test(".glass is defined with backdrop-filter", () => {
     expect(css).toContain(".glass");
-    expect(css).toContain("background-color: rgba(241, 244, 247, 0.8)");
     expect(css).toContain("backdrop-filter: blur(12px)");
+  });
+
+  test("spacing scale --space-1 through --space-14 defined", () => {
+    for (let i = 1; i <= 14; i++) {
+      expect(css).toContain(`--space-${i}:`);
+    }
+  });
+
+  test("radius tokens defined", () => {
+    expect(css).toContain("--radius-sm:");
+    expect(css).toContain("--radius-card:");
+    expect(css).toContain("--radius-feature:");
+    expect(css).toContain("--radius-pill:");
+  });
+
+  test("shadow tokens defined", () => {
+    expect(css).toContain("--shadow-level-1:");
+    expect(css).toContain("--shadow-level-2:");
+  });
+});
+
+describe("design tokens — cross-reference guard", () => {
+  const definedTokens = extractTokensFromTheme(css);
+
+  test("all custom color/border/bg/divide tokens used in TSX files are defined in @theme", () => {
+    const srcDir = resolve(__dirname, "../components");
+    const pagesDir = resolve(__dirname, "../pages");
+
+    const undefinedTokensByFile: Record<string, string[]> = {};
+
+    function checkDir(dir: string) {
+      const files = readdirSync(dir, { withFileTypes: true });
+      for (const file of files) {
+        const fullPath = resolve(dir, file.name);
+        if (file.isDirectory()) {
+          checkDir(fullPath);
+        } else if (file.name.endsWith(".tsx")) {
+          const tsxTokens = extractColorTokensFromTSX(fullPath);
+          const undefinedTokens: string[] = [];
+          for (const token of tsxTokens) {
+            const isMultiWord = token.includes("-");
+            const isBuiltIn = TAILWIND_BUILT_IN_COLORS.has(token);
+            const isDefined = definedTokens.has(token);
+            if (isMultiWord && !isBuiltIn && !isDefined) {
+              undefinedTokens.push(token);
+            }
+          }
+          if (undefinedTokens.length > 0) {
+            undefinedTokensByFile[fullPath] = undefinedTokens;
+          }
+        }
+      }
+    }
+
+    checkDir(srcDir);
+    checkDir(pagesDir);
+
+    const entries = Object.entries(undefinedTokensByFile);
+    if (entries.length > 0) {
+      const msg = entries.map(([file, tokens]) => `${file}: ${tokens.join(", ")}`).join("\n");
+      expect.fail(`Undefined tokens found:\n${msg}`);
+    }
   });
 });

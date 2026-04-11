@@ -71,7 +71,7 @@ export function RenameListModal({ list, open, onClose, onCommit, initialValue }:
       </div>
       <div className="">
         <label className="grid gap-2">
-          <span className="text-xs font-semibold uppercase tracking-widest text-muted">{t("home.listName")}</span>
+          <span className="text-small font-semibold uppercase tracking-widest text-secondary-text">{t("home.listName")}</span>
           <Input
             aria-label="List name"
             autoFocus

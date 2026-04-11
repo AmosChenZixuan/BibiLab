@@ -130,9 +130,9 @@ export function ArtifactList({ listId, artifacts, onArtifactsChange, onViewArtif
           ))}
           {artifacts.length === 0 && (
             <div className="flex flex-col items-center justify-center gap-3 py-12 text-center">
-              <Sparkles size={32} className="text-ink" strokeWidth={1.5} />
-              <span className="text-sm font-medium text-ink">{t("lab.artifactList.emptyTitle")}</span>
-              <span className="text-xs text-muted">{t("lab.artifactList.emptyDesc")}</span>
+              <Sparkles size={32} className="text-charcoal" strokeWidth={1.5} />
+              <span className="text-caption font-medium text-charcoal">{t("lab.artifactList.emptyTitle")}</span>
+              <span className="text-small text-secondary-text">{t("lab.artifactList.emptyDesc")}</span>
             </div>
           )}
         </div>

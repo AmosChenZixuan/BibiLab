@@ -55,17 +55,17 @@ export function JobSpirit() {
       <div className="fixed bottom-4 right-4 z-float flex flex-col items-end gap-2 max-md:bottom-3 max-md:right-3">
         {isPanelOpen ? (
           <section
-            className="w-80 overflow-hidden rounded-3xl border border-border bg-white/96 shadow-lg backdrop-blur-md"
+            className="w-80 overflow-hidden rounded-3xl border border-divider bg-white/96 shadow-lg backdrop-blur-md"
             aria-label="Jobs"
           >
-            <div className="flex items-center justify-between border-b border-border px-4 py-3">
-              <span className="text-sm font-semibold text-ink">
+            <div className="flex items-center justify-between border-b border-divider px-4 py-3">
+              <span className="text-caption font-semibold text-charcoal">
                 {activeJobs.length > 0 ? t("jobs.running", { count: activeJobs.length }) : t("jobs.jobs")}
               </span>
               {hasTerminal ? (
                 <button
                   type="button"
-                  className="text-xs text-muted transition-colors hover:text-ink"
+                  className="text-small text-secondary-text transition-colors hover:text-charcoal"
                   onClick={clearTerminalJobs}
                 >
                   {t("jobs.clearDone")}
@@ -73,9 +73,9 @@ export function JobSpirit() {
               ) : null}
             </div>
             {errorMessage ? (
-              <p className="px-4 pt-3 text-xs text-pink">{errorMessage}</p>
+              <p className="px-4 pt-3 text-small text-pink">{errorMessage}</p>
             ) : null}
-            <ul className="divide-y divide-border">
+            <ul className="divide-y divide-divider">
               {visibleJobs.map((item) => {
                 const fallbackLabel = item.producer === "artifact"
                   ? (ARTIFACT_TYPE_KEYS[item.label] ? t(ARTIFACT_TYPE_KEYS[item.label]) : item.label)
@@ -89,7 +89,7 @@ export function JobSpirit() {
                     <div className="flex items-center gap-2.5">
                       <StatusDot item={item} />
                       <span
-                        className="min-w-0 flex-1 truncate text-sm font-medium text-ink"
+                        className="min-w-0 flex-1 truncate text-caption font-medium text-charcoal"
                         title={title}
                       >
                         {title}
@@ -97,7 +97,7 @@ export function JobSpirit() {
                       {(item.isTerminal || item.producer === "ingest") ? (
                         <button
                           type="button"
-                          className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-muted transition-colors hover:bg-border hover:text-ink disabled:opacity-30"
+                          className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-secondary-text transition-colors hover:bg-divider hover:text-charcoal disabled:opacity-30"
                           aria-label={item.isTerminal ? `Dismiss ${title}` : `Cancel ${title}`}
                           disabled={cancellingJobId === item.job.id}
                           onClick={() =>
@@ -111,7 +111,7 @@ export function JobSpirit() {
                       ) : null}
                     </div>
                     {!item.isTerminal ? (
-                      <div className="h-px overflow-hidden rounded-full bg-border">
+                      <div className="h-px overflow-hidden rounded-full bg-divider">
                         <div
                           className="h-full bg-pink transition-all duration-700"
                           style={{ width: `${Math.max(item.job.progress, 4)}%` }}
@@ -119,7 +119,7 @@ export function JobSpirit() {
                       </div>
                     ) : null}
                     {item.job.error ? (
-                      <p className="text-xs text-pink">{item.job.error}</p>
+                      <p className="text-small text-pink">{item.job.error}</p>
                     ) : null}
                   </li>
                 );
@@ -131,7 +131,7 @@ export function JobSpirit() {
         <button
           type="button"
           aria-label="Jobs"
-          className="inline-flex items-center gap-2 rounded-full border border-border bg-white/94 px-3 py-1.5 text-sm text-ink shadow-lg backdrop-blur-md transition-shadow hover:shadow-lg"
+          className="inline-flex items-center gap-2 rounded-full border border-divider bg-white/94 px-3 py-1.5 text-caption text-charcoal shadow-lg backdrop-blur-md transition-shadow hover:shadow-lg"
           onClick={() => setPanelOpen(!isPanelOpen)}
         >
           <span

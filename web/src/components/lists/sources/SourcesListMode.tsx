@@ -28,15 +28,15 @@ function SourceRow({
   t: (key: string, params?: Record<string, string | number>) => string;
 }) {
   return (
-    <div className="group flex items-center gap-2 rounded-2xl border border-border bg-white/64 px-4 py-3 transition hover:bg-white hover:shadow-sm">
+    <div className="group flex items-center gap-2 rounded-2xl border border-divider bg-white/64 px-4 py-3 transition hover:bg-white hover:shadow-sm">
       <button
         type="button"
         aria-label={`Open ${source.title}`}
         className="min-w-0 flex-1 border-0 bg-transparent text-left"
         onClick={onOpen}
       >
-        <p className="m-0 truncate text-sm font-medium text-ink">{source.title}</p>
-        <p className="m-0 mt-0.5 text-xs text-muted">{source.platform}</p>
+        <p className="m-0 truncate text-caption font-medium text-charcoal">{source.title}</p>
+        <p className="m-0 mt-0.5 text-small text-secondary-text">{source.platform}</p>
       </button>
       <ContextMenu
         items={[
@@ -48,7 +48,7 @@ function SourceRow({
             type="button"
             aria-label="Source options"
             onClick={toggle}
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-muted opacity-0 transition group-hover:opacity-100 hover:bg-border hover:text-ink"
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-secondary-text opacity-0 transition group-hover:opacity-100 hover:bg-divider hover:text-charcoal"
           >
             <MoreVertical size={16} />
           </button>
@@ -81,14 +81,14 @@ function IngestingSourceRow({
       <div className="flex items-start gap-3 rounded-2xl border border-pink/30 bg-pink/6 px-4 py-3">
         <AlertCircle size={16} className="mt-0.5 shrink-0 text-pink" />
         <div className="min-w-0 flex-1">
-          <p className="m-0 truncate text-sm font-medium text-ink">{title}</p>
-          <p className="m-0 mt-0.5 text-xs text-pink">{t("lists.failedDuring", { stage: getStageLabel(displayStage) })}</p>
+          <p className="m-0 truncate text-caption font-medium text-charcoal">{title}</p>
+          <p className="m-0 mt-0.5 text-small text-pink">{t("lists.failedDuring", { stage: getStageLabel(displayStage) })}</p>
         </div>
         <button
           type="button"
           onClick={onDismiss}
           aria-label="Dismiss"
-          className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-muted transition hover:bg-border hover:text-ink"
+          className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-secondary-text transition hover:bg-divider hover:text-charcoal"
         >
           <X size={14} />
         </button>
@@ -103,20 +103,20 @@ function IngestingSourceRow({
           <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-sky-blue/40" />
           <span className="relative inline-flex h-2 w-2 rounded-full bg-sky-blue/70" />
         </span>
-        <p className="m-0 min-w-0 flex-1 truncate text-sm font-medium text-ink">{title}</p>
+        <p className="m-0 min-w-0 flex-1 truncate text-caption font-medium text-charcoal">{title}</p>
         <button
           type="button"
           onClick={onDismiss}
           aria-label="Cancel ingestion"
-          className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-muted transition hover:bg-border hover:text-ink"
+          className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-secondary-text transition hover:bg-divider hover:text-charcoal"
         >
           <X size={14} />
         </button>
       </div>
       <div className="space-y-1.5">
         <div className="flex items-center justify-between">
-          <span className="text-xs text-sky-blue/80">{t("pipeline." + displayStage)}…</span>
-          <span className="text-xs tabular-nums text-muted/60">
+          <span className="text-small text-sky-blue/80">{t("pipeline." + displayStage)}…</span>
+          <span className="text-small tabular-nums text-secondary-text/60">
             {Math.max(1, stageIdx + 1)} / {PIPELINE_STAGES.length}
           </span>
         </div>
@@ -130,7 +130,7 @@ function IngestingSourceRow({
                   ? "bg-sky-blue/60"
                   : i === stageIdx
                     ? "animate-pulse bg-sky-blue/90"
-                    : "bg-border"
+                    : "bg-divider"
               }`}
             />
           ))}
@@ -229,18 +229,18 @@ export function SourcesListMode({
               setError(null);
             }}
             placeholder={t("lists.pasteUrl")}
-            className="w-full rounded-full border border-border bg-white/80 py-2.5 pr-10 pl-4 text-sm text-ink placeholder:text-muted/50 outline-none focus:border-sky-blue/40 focus:bg-white transition"
+            className="w-full rounded-full border border-divider bg-white/80 py-2.5 pr-10 pl-4 text-caption text-charcoal placeholder:text-secondary-text/50 outline-none focus:border-sky-blue/40 focus:bg-white transition"
           />
           <button
             type="submit"
             disabled={!url.trim()}
             aria-label="Add source"
-            className="absolute right-1.5 top-1/2 -translate-y-1/2 flex h-7 w-7 items-center justify-center rounded-full text-muted transition disabled:opacity-0 enabled:hover:bg-sky-blue enabled:hover:text-white enabled:hover:shadow-sm"
+            className="absolute right-1.5 top-1/2 -translate-y-1/2 flex h-7 w-7 items-center justify-center rounded-full text-secondary-text transition disabled:opacity-0 enabled:hover:bg-sky-blue enabled:hover:text-white enabled:hover:shadow-sm"
           >
             <ArrowRight size={15} />
           </button>
         </form>
-        {error && <p className="mt-1.5 px-4 text-xs text-pink">{error}</p>}
+        {error && <p className="mt-1.5 px-4 text-small text-pink">{error}</p>}
       </div>
 
       <div className="flex-1 space-y-2 overflow-y-auto px-4 pb-4">

@@ -22,7 +22,7 @@ export function Banner({
   const durationLabel = `${minutes}:${String(seconds).padStart(2, "0")}`;
 
   const thumbnail = (
-    <div className="relative h-64 w-full overflow-hidden rounded-2xl bg-border">
+    <div className="relative h-64 w-full overflow-hidden rounded-2xl bg-divider">
       <img
         src={imgSrc}
         alt={uploader}

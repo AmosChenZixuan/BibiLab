@@ -52,7 +52,7 @@ export function NavbarTitle({
             if (e.key === "Enter") commit();
             if (e.key === "Escape") { setDraft(name); setEditing(false); }
           }}
-          className="w-64 rounded-sm border border-sky-blue/30 bg-white p-1 text-lg font-medium text-charcoal outline-none focus:border-sky-blue/50 focus:bg-white transition"
+          className="w-64 rounded-sm border border-sky-blue/30 bg-white p-1 text-body font-medium text-charcoal outline-none focus:border-sky-blue/50 focus:bg-white transition"
           autoFocus
         />
       ) : (
@@ -67,7 +67,7 @@ export function NavbarTitle({
               setEditing(true);
             }
           }}
-          className="truncate cursor-text rounded-sm border border-transparent px-1 py-0.5 text-lg font-medium text-charcoal leading-normal transition hover:border-sky-blue/30"
+          className="truncate cursor-text rounded-sm border border-transparent px-1 py-0.5 text-body font-medium text-charcoal leading-normal transition hover:border-sky-blue/30"
         >
           {name}
         </span>

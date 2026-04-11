@@ -48,7 +48,7 @@ export function ArtifactCard({
             <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-sky-blue/40" />
             <span className="relative inline-flex h-2 w-2 rounded-full bg-sky-blue/70" />
           </span>
-          <p className="m-0 min-w-0 flex-1 truncate text-sm font-medium text-ink">
+          <p className="m-0 min-w-0 flex-1 truncate text-caption font-medium text-charcoal">
             {formatArtifactTypeLabel(artifact.type, t)}
           </p>
         </div>
@@ -65,9 +65,9 @@ export function ArtifactCard({
       <div className="flex items-start gap-3 rounded-2xl border border-error/30 bg-error/6 px-4 py-3">
         <AlertCircle data-testid="alert-icon" size={16} className="mt-0.5 shrink-0 text-error" />
         <div className="min-w-0 flex-1">
-          <p className="m-0 truncate text-sm font-medium text-ink">{artifact.name}</p>
+          <p className="m-0 truncate text-caption font-medium text-charcoal">{artifact.name}</p>
           {artifact.error && (
-            <p className="m-0 mt-0.5 text-xs text-error">{artifact.error}</p>
+            <p className="m-0 mt-0.5 text-small text-error">{artifact.error}</p>
           )}
         </div>
         {onDismiss && (
@@ -75,7 +75,7 @@ export function ArtifactCard({
             type="button"
             onClick={() => onDismiss(artifact.id)}
             aria-label="Dismiss"
-            className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-muted transition hover:bg-border hover:text-ink"
+            className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-secondary-text transition hover:bg-divider hover:text-charcoal"
           >
             <X size={14} />
           </button>
@@ -140,7 +140,7 @@ export function ArtifactCard({
   }
 
   return (
-    <div className="group flex items-center gap-2 rounded-2xl border border-border bg-white/64 px-4 py-3 transition hover:bg-white hover:shadow-sm">
+    <div className="group flex items-center gap-2 rounded-2xl border border-divider bg-white/64 px-4 py-3 transition hover:bg-white hover:shadow-sm">
       {/* Clickable card content */}
       <div
         className="min-w-0 flex-1 cursor-pointer"
@@ -154,14 +154,14 @@ export function ArtifactCard({
             onChange={(e) => setRenameValue(e.target.value)}
             onBlur={handleRenameSubmit}
             onKeyDown={handleRenameKeyDown}
-            className="m-0 w-full border border-border bg-white px-1 py-0 text-sm font-bold text-ink outline-none focus:border-sky-blue"
+            className="m-0 w-full border border-divider bg-white px-1 py-0 text-caption font-bold text-charcoal outline-none focus:border-sky-blue"
             autoFocus
             onClick={(e) => e.stopPropagation()}
           />
         ) : (
-          <p className="m-0 truncate text-sm font-bold text-ink">{artifact.name}</p>
+          <p className="m-0 truncate text-caption font-bold text-charcoal">{artifact.name}</p>
         )}
-        <p className="m-0 mt-0.5 text-xs text-muted">
+        <p className="m-0 mt-0.5 text-small text-secondary-text">
           {formatArtifactTypeLabel(artifact.type, t)} · {artifact.source_ids.length} source
           {artifact.source_ids.length !== 1 ? "s" : ""} · {formatDate(artifact.created_at)}
         </p>
@@ -176,7 +176,7 @@ export function ArtifactCard({
             type="button"
             aria-label="Artifact options"
             onClick={toggle}
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-muted opacity-0 transition group-hover:opacity-100 hover:bg-border hover:text-ink"
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-secondary-text opacity-0 transition group-hover:opacity-100 hover:bg-divider hover:text-charcoal"
           >
             <MoreVertical size={16} />
           </button>

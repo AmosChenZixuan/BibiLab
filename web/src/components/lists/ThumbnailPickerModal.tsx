@@ -45,21 +45,21 @@ export function ThumbnailPickerModal({ list, open, onClose, onSelect }: Thumbnai
       title={t("home.chooseThumbnail")}
     >
       {loading ? (
-        <p className="m-0 text-sm text-muted">{t("home.loadingSources")}</p>
+        <p className="m-0 text-caption text-secondary-text">{t("home.loadingSources")}</p>
       ) : (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
           <button
-            className="aspect-video overflow-hidden rounded-2xl border border-border bg-black/30 p-0 text-left shadow-lg transition hover:-translate-y-0.5 hover:shadow-lg"
+            className="aspect-video overflow-hidden rounded-2xl border border-divider bg-black/30 p-0 text-left shadow-lg transition hover:-translate-y-0.5 hover:shadow-lg"
             onClick={() => void onSelect(null)}
             type="button"
           >
             <div className="flex h-full items-end bg-cover bg-center p-2">
-              <span className="block truncate text-xs font-semibold text-white">{t("home.noCover")}</span>
+              <span className="block truncate text-small font-semibold text-white">{t("home.noCover")}</span>
             </div>
           </button>
           {sources.map((source) => (
             <button
-              className="aspect-video overflow-hidden rounded-2xl border border-border bg-black/30 p-0 text-left shadow-lg transition hover:-translate-y-0.5 hover:shadow-lg"
+              className="aspect-video overflow-hidden rounded-2xl border border-divider bg-black/30 p-0 text-left shadow-lg transition hover:-translate-y-0.5 hover:shadow-lg"
               key={source.id}
               onClick={() => void onSelect(source.id)}
               type="button"
@@ -68,7 +68,7 @@ export function ThumbnailPickerModal({ list, open, onClose, onSelect }: Thumbnai
                 className="flex h-full items-end bg-cover bg-center p-2"
                 style={{ backgroundImage: `linear-gradient(to top, rgba(0,0,0,0.5), transparent), url("/api/sources/${source.id}/cover")` }}
               >
-                <span className="block truncate text-xs font-semibold text-white">{source.title}</span>
+                <span className="block truncate text-small font-semibold text-white">{source.title}</span>
               </div>
             </button>
           ))}

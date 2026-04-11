@@ -58,7 +58,7 @@ export function AppFrame() {
           className="fixed inset-x-0 top-0 z-nav flex h-14 items-center justify-between glass border-b border-black/10 px-4 md:px-6 xl:px-12"
         >
           <NavLink className="inline-flex items-center gap-2" to="/" aria-label="Home">
-            <span className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-pink text-base font-bold text-white/95">
+            <span className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-pink text-body-compact font-bold text-white/95">
               B
             </span>
           </NavLink>
@@ -89,7 +89,7 @@ export function AppFrame() {
                 <Languages className="size-4.5" />
               </span>
               <span
-                className="absolute bottom-0.5 right-0.5 inline-flex h-3.5 min-w-3.5 items-center justify-center rounded-full border-2 border-white/92 bg-white/96 px-1 text-xs leading-none font-bold text-sky-blue/70"
+                className="absolute bottom-0.5 right-0.5 inline-flex h-3.5 min-w-3.5 items-center justify-center rounded-full border-2 border-white/92 bg-white/96 px-1 text-small leading-none font-bold text-sky-blue/70"
                 aria-hidden="true"
               >
                 {lang === "en" ? "EN" : "中"}

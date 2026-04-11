@@ -16,7 +16,7 @@ interface Props extends ComponentPropsWithoutRef<"span"> {
 export function StatusChip({ status = "neutral", className = "", ...rest }: Props) {
   return (
     <span
-      className={`inline-flex items-center rounded-full border border-border px-2.5 py-1.5 text-sm capitalize ${statusColors[status]} ${className}`.trim()}
+      className={`inline-flex items-center rounded-full border border-divider px-2.5 py-1.5 text-caption capitalize ${statusColors[status]} ${className}`.trim()}
       {...rest}
     />
   );

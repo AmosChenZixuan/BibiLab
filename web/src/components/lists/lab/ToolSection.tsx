@@ -21,10 +21,10 @@ export function ToolSection({ listId, sourceIds, onArtifactGenerated }: ToolSect
         type="button"
         onClick={() => sourceIds.length > 0 && setReportsOpen(true)}
         disabled={sourceIds.length === 0}
-        className="flex flex-col items-center gap-1 rounded-xl border border-border bg-white/64 px-2 py-3 text-center transition hover:bg-white hover:shadow-sm disabled:cursor-not-allowed disabled:opacity-40"
+        className="flex flex-col items-center gap-1 rounded-xl border border-divider bg-white/64 px-2 py-3 text-center transition hover:bg-white hover:shadow-sm disabled:cursor-not-allowed disabled:opacity-40"
       >
-        <FileText size={16} className="text-muted" />
-        <span className="text-xs font-medium text-ink">{t("lab.toolSection.reports")}</span>
+        <FileText size={16} className="text-secondary-text" />
+        <span className="text-small font-medium text-charcoal">{t("lab.toolSection.reports")}</span>
       </button>
 
       <ReportsModal

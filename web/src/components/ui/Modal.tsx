@@ -140,7 +140,7 @@ export function Modal({ open, onClose, title, children, footer, size = "md" }: M
         }}
       >
         <div className="px-8 pt-8">
-          <h2 className="m-0 text-base font-semibold tracking-tight text-charcoal" id={titleId}>
+          <h2 className="m-0 text-body-compact font-semibold tracking-tight text-charcoal" id={titleId}>
             {title}
           </h2>
         </div>

@@ -40,10 +40,10 @@ export function ArtifactViewer({ artifact }: ArtifactViewerProps) {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-      <div className="flex shrink-0 items-center gap-2 border-b border-border px-4 py-3">
+      <div className="flex shrink-0 items-center gap-2 border-b border-divider px-4 py-3">
         <div className="min-w-0 flex-1">
-          <p className="m-0 truncate font-serif text-base font-bold text-ink">{artifact.name}</p>
-          <p className="m-0 text-xs text-muted">
+          <p className="m-0 truncate font-serif text-body-compact font-bold text-charcoal">{artifact.name}</p>
+          <p className="m-0 text-small text-secondary-text">
             {t(sourceCount === 1 ? "lab.artifactViewer.basedOnSingular" : "lab.artifactViewer.basedOnPlural", { count: sourceCount })}
           </p>
         </div>
@@ -52,7 +52,7 @@ export function ArtifactViewer({ artifact }: ArtifactViewerProps) {
           aria-label="Copy markdown"
           disabled={!content}
           onClick={handleCopy}
-          className="flex h-7 w-7 items-center justify-center rounded-full text-muted transition hover:bg-border hover:text-ink disabled:opacity-40"
+          className="flex h-7 w-7 items-center justify-center rounded-full text-secondary-text transition hover:bg-divider hover:text-charcoal disabled:opacity-40"
         >
           <Copy size={14} />
         </button>
@@ -63,7 +63,7 @@ export function ArtifactViewer({ artifact }: ArtifactViewerProps) {
             <ReactMarkdown>{content}</ReactMarkdown>
           </div>
         ) : (
-          <p className="text-sm text-muted">{t("lab.artifactViewer.loading")}</p>
+          <p className="text-caption text-secondary-text">{t("lab.artifactViewer.loading")}</p>
         )}
       </div>
     </div>

@@ -28,8 +28,8 @@ export function SettingsField({
       {...rest}
     >
       <div className="grid min-w-48 flex-1 basis-60 gap-1">
-        <label className="text-sm font-semibold text-charcoal" htmlFor={htmlFor}>{label}</label>
-        {hint ? <p className="text-sm leading-5 text-secondary-text">{hint}</p> : null}
+        <label className="text-caption font-semibold text-charcoal" htmlFor={htmlFor}>{label}</label>
+        {hint ? <p className="text-caption leading-5 text-secondary-text">{hint}</p> : null}
       </div>
       <div className="w-full min-w-56 flex-none md:w-80">
         {children}

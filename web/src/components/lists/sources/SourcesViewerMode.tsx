@@ -24,8 +24,8 @@ export function SourcesViewerMode({
     <div className="flex h-full flex-col">
       <div className="flex shrink-0 items-start px-4 py-4">
         <div className="min-w-0 flex-1">
-          <p className="m-0 truncate text-lg font-medium text-ink">{source.title}</p>
-          <p className="m-0 mt-0.5 text-xs text-muted">{source.platform}</p>
+          <p className="m-0 truncate text-body font-medium text-charcoal">{source.title}</p>
+          <p className="m-0 mt-0.5 text-small text-secondary-text">{source.platform}</p>
         </div>
       </div>
 
@@ -48,8 +48,8 @@ export function SourcesViewerMode({
         )}
         {sourceContent?.transcript && (
           <>
-            <p className="text-xs font-semibold uppercase tracking-wider text-muted/70">{t("lists.transcript")}</p>
-            <pre className="p-1 m-0 whitespace-pre-wrap font-mono text-xs text-muted leading-relaxed">
+            <p className="text-small font-semibold uppercase tracking-wider text-secondary-text/70">{t("lists.transcript")}</p>
+            <pre className="p-1 m-0 whitespace-pre-wrap font-mono text-small text-secondary-text leading-relaxed">
               {sourceContent.transcript}
             </pre>
           </>

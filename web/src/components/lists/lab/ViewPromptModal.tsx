@@ -38,7 +38,7 @@ export function ViewPromptModal({ open, onClose, prompt }: ViewPromptModalProps)
         </>
       }
     >
-      <pre className="whitespace-pre-wrap rounded-lg border border-border bg-white/64 p-4 text-sm text-ink">
+      <pre className="whitespace-pre-wrap rounded-lg border border-divider bg-white/64 p-4 text-caption text-charcoal">
         {prompt}
       </pre>
     </Modal>

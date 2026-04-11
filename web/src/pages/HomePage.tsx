@@ -134,7 +134,7 @@ export function HomePage() {
         className={dialogOpen ? "pointer-events-none select-none blur-sm transition" : "transition"}
       >
         <section className="grid gap-3">
-          <span className="text-small font-semibold uppercase tracking-widest text-muted">{t("home.myLists")}</span>
+          <span className="text-small font-semibold uppercase tracking-widest text-secondary-text">{t("home.myLists")}</span>
           {error ? <p className="m-0 text-caption text-pink">{error}</p> : null}
         </section>
         <div className="mt-4">
@@ -233,11 +233,11 @@ export function HomePage() {
         </div>
         <div className="">
           <label className="grid gap-2">
-            <span className="text-small font-semibold uppercase tracking-widest text-muted">{t("home.listName")}</span>
+            <span className="text-small font-semibold uppercase tracking-widest text-secondary-text">{t("home.listName")}</span>
             <Input
               aria-label={t("home.listName")}
               autoFocus
-              className="select-text rounded-2xl bg-white/92 px-4 py-3 text-h2 leading-tight font-normal tracking-normal text-ink focus:border-pink/25 focus:ring-2 focus:ring-sky/10"
+              className="select-text rounded-2xl bg-white/92 px-4 py-3 text-h2 leading-tight font-normal tracking-normal text-charcoal focus:border-pink/25 focus:ring-2 focus:ring-sky/10"
               placeholder={t("home.untitledList")}
               onChange={(event) => setRenameDraft(event.target.value)}
               onKeyDown={(event) => {
@@ -259,11 +259,11 @@ export function HomePage() {
         title={t("home.chooseThumbnail")}
       >
         {thumbnailLoading ? (
-          <p className="m-0 text-caption text-muted">{t("home.loadingSources")}</p>
+          <p className="m-0 text-caption text-secondary-text">{t("home.loadingSources")}</p>
         ) : (
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
             <button
-              className="aspect-video overflow-hidden rounded-2xl border border-border bg-black/30 p-0 text-left shadow-lg transition hover:-translate-y-0.5 hover:shadow-lg"
+              className="aspect-video overflow-hidden rounded-2xl border border-divider bg-black/30 p-0 text-left shadow-lg transition hover:-translate-y-0.5 hover:shadow-lg"
               onClick={() => void handleThumbnailSelect(null)}
               type="button"
             >
@@ -273,7 +273,7 @@ export function HomePage() {
             </button>
             {thumbnailSources.map((source) => (
               <button
-                className="aspect-video overflow-hidden rounded-2xl border border-border bg-black/30 p-0 text-left shadow-lg transition hover:-translate-y-0.5 hover:shadow-lg"
+                className="aspect-video overflow-hidden rounded-2xl border border-divider bg-black/30 p-0 text-left shadow-lg transition hover:-translate-y-0.5 hover:shadow-lg"
                 key={source.id}
                 onClick={() => void handleThumbnailSelect(source.id)}
                 type="button"

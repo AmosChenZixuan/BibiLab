@@ -37,8 +37,8 @@ export function DeleteListModal({ list, open, onClose, onConfirm }: DeleteListMo
       size="lg"
       title={t("home.deleteList")}
     >
-      <div className="rounded-2xl border border-error/40 bg-error/10 p-4 text-sm text-error">
-        <p className="m-0 text-base font-semibold tracking-tight">{t("home.cannotUndo")}</p>
+      <div className="rounded-2xl border border-error/40 bg-error/10 p-4 text-caption text-error">
+        <p className="m-0 text-body-compact font-semibold tracking-tight">{t("home.cannotUndo")}</p>
         <p className="mt-1.5 mb-0 leading-6">
           {list
             ? t("home.deleteConfirm", { name: list.name, count: list.source_count })
