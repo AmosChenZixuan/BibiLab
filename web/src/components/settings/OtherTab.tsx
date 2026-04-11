@@ -61,7 +61,7 @@ export function OtherTab({ config, dependencies, onBlur }: OtherTabProps) {
               {embeddingPath}
             </p>
           ) : (
-            <span className="max-w-3xl text-right text-sm leading-6 text-blue">
+            <span className="max-w-3xl text-right text-sm leading-6 text-sky-blue">
               {embeddingDependency?.message}
             </span>
           )}
@@ -82,7 +82,7 @@ export function OtherTab({ config, dependencies, onBlur }: OtherTabProps) {
         <p className="text-sm leading-5 text-muted md:col-span-3">{t("settings.backendRequired")}</p>
         <div />
 
-        <div className="border-l border-blue/18 pl-4 md:col-span-3">
+        <div className="border-l border-sky-blue/18 pl-4 md:col-span-3">
           <div className="grid gap-2">
             <label className="text-sm font-semibold" htmlFor={workerConcurrencyId}>{t("settings.workerConcurrency")}</label>
             <p className="text-sm leading-5 text-muted">{t("settings.workerConcurrencyDesc")}</p>
@@ -129,7 +129,7 @@ export function OtherTab({ config, dependencies, onBlur }: OtherTabProps) {
             </p>
           ) : (
             <a
-              className="text-blue underline"
+              className="text-sky-blue underline"
               href="https://ffmpeg.org/download.html"
               rel="noreferrer"
               target="_blank"

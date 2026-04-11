@@ -42,19 +42,19 @@ export function ArtifactCard({
 
   if (artifact.status === "generating") {
     return (
-      <div className="flex flex-col gap-2.5 rounded-2xl border border-blue/20 bg-sky/6 px-4 py-3">
+      <div className="flex flex-col gap-2.5 rounded-2xl border border-sky-blue/20 bg-sky/6 px-4 py-3">
         <div className="flex items-center gap-2">
           <span className="relative flex h-2 w-2 shrink-0">
-            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-blue/40" />
-            <span className="relative inline-flex h-2 w-2 rounded-full bg-blue/70" />
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-sky-blue/40" />
+            <span className="relative inline-flex h-2 w-2 rounded-full bg-sky-blue/70" />
           </span>
           <p className="m-0 min-w-0 flex-1 truncate text-sm font-medium text-ink">
             {formatArtifactTypeLabel(artifact.type, t)}
           </p>
         </div>
         <div data-testid="artifact-skeleton" className="space-y-1.5">
-          <div className="h-3 w-3/4 rounded bg-blue/20" />
-          <div className="h-3 w-1/2 rounded bg-blue/20" />
+          <div className="h-3 w-3/4 rounded glimmer-placeholder" />
+          <div className="h-3 w-1/2 rounded glimmer-placeholder" />
         </div>
       </div>
     );
@@ -62,12 +62,12 @@ export function ArtifactCard({
 
   if (artifact.status === "failed") {
     return (
-      <div className="flex items-start gap-3 rounded-2xl border border-pink/30 bg-pink/6 px-4 py-3">
-        <AlertCircle data-testid="alert-icon" size={16} className="mt-0.5 shrink-0 text-pink" />
+      <div className="flex items-start gap-3 rounded-2xl border border-error/30 bg-error/6 px-4 py-3">
+        <AlertCircle data-testid="alert-icon" size={16} className="mt-0.5 shrink-0 text-error" />
         <div className="min-w-0 flex-1">
           <p className="m-0 truncate text-sm font-medium text-ink">{artifact.name}</p>
           {artifact.error && (
-            <p className="m-0 mt-0.5 text-xs text-pink">{artifact.error}</p>
+            <p className="m-0 mt-0.5 text-xs text-error">{artifact.error}</p>
           )}
         </div>
         {onDismiss && (
@@ -154,7 +154,7 @@ export function ArtifactCard({
             onChange={(e) => setRenameValue(e.target.value)}
             onBlur={handleRenameSubmit}
             onKeyDown={handleRenameKeyDown}
-            className="m-0 w-full border border-border bg-white px-1 py-0 text-sm font-bold text-ink outline-none focus:border-blue"
+            className="m-0 w-full border border-border bg-white px-1 py-0 text-sm font-bold text-ink outline-none focus:border-sky-blue"
             autoFocus
             onClick={(e) => e.stopPropagation()}
           />

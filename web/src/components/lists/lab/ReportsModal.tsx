@@ -94,11 +94,11 @@ export function ReportsModal({ open, listId, sourceIds, onClose, onArtifactGener
                 onClick={() => handleFormatSelect(format)}
                 className={`w-full flex flex-col items-center gap-1.5 rounded-2xl border p-3.5 text-center transition ${
                   selectedFormat === format.type
-                    ? "border-blue bg-white shadow-sm"
+                    ? "border-pink bg-white shadow-sm"
                     : "border-border/40 bg-white/64 hover:bg-white hover:shadow-sm"
                 }`}
               >
-                <span className="text-blue">{format.icon}</span>
+                <span className="text-sky-blue">{format.icon}</span>
                 <span className="text-sm font-medium text-ink">{t(format.labelKey)}</span>
                 <span className="text-xs text-muted">{t(format.descKey)}</span>
               </button>
@@ -122,7 +122,7 @@ export function ReportsModal({ open, listId, sourceIds, onClose, onArtifactGener
               type="submit"
               disabled={!prompt.trim()}
               aria-label="Submit"
-              className="absolute bottom-2.5 right-2.5 flex h-7 w-7 items-center justify-center rounded-full bg-blue text-white transition disabled:opacity-40 hover:bg-blue/80"
+              className="absolute bottom-2.5 right-2.5 flex h-7 w-7 items-center justify-center rounded-full bg-pink text-white transition disabled:opacity-40 hover:bg-pink/80"
             >
               <ArrowRight size={15} />
             </button>
