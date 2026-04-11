@@ -14,9 +14,9 @@ describe("design tokens — Meta Store (phase 1: colors, spacing, shadow, radius
     expect(css).toMatch(/--font-sans:\s*["']?Plus Jakarta Sans/i);
   });
 
-  test("--color-pink remapped to Meta Blue (#0064E0)", () => {
+  test("--color-pink remapped to Meta Blue via alias", () => {
     const match = css.match(/--color-pink:\s*([^;]+)/);
-    expect(match?.[1].trim()).toBe("#0064E0");
+    expect(match?.[1].trim()).toBe("var(--color-meta-blue)");
   });
 
   test("--color-blue remapped to Slate Gray (#5D6C7B)", () => {
@@ -34,9 +34,9 @@ describe("design tokens — Meta Store (phase 1: colors, spacing, shadow, radius
     expect(match?.[1].trim()).toBe("#65676B");
   });
 
-  test("--color-sky updated to #E8F3FF", () => {
+  test("--color-sky remapped to Baby Blue via alias", () => {
     const match = css.match(/--color-sky:\s*([^;]+)/);
-    expect(match?.[1].trim()).toBe("#E8F3FF");
+    expect(match?.[1].trim()).toBe("var(--color-baby-blue)");
   });
 
   test("--color-border updated to #CED0D4", () => {
@@ -72,6 +72,11 @@ describe("design tokens — Meta Store (phase 1: colors, spacing, shadow, radius
   test("--color-charcoal is defined as #1C2B33", () => {
     const match = css.match(/--color-charcoal:\s*([^;]+)/);
     expect(match?.[1].trim()).toBe("#1C2B33");
+  });
+
+  test("--color-baby-blue is defined as #E8F3FF", () => {
+    const match = css.match(/--color-baby-blue:\s*([^;]+)/);
+    expect(match?.[1].trim()).toBe("#E8F3FF");
   });
 
   test("--color-facebook-blue is defined as #1877F2", () => {
