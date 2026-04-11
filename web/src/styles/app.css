@@ -1,6 +1,6 @@
 @import "tailwindcss";
 @plugin "@tailwindcss/typography";
-@import url("https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600;700&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap");
 
 /* DigestAccordion loading animation */
 @keyframes digest-loading-bounce {
@@ -51,7 +51,7 @@
   --color-secondary-border:  rgba(10,19,23,0.12);
 
   /* ── Typography ──────────────────────────────────────────────────────────── */
-  --font-sans: "Montserrat", "Segoe UI", sans-serif;
+  --font-sans: "Plus Jakarta Sans", "Segoe UI", sans-serif;
   --font-mono:  SFMono-Regular, Consolas, monospace;
 
   /* ── Spacing ─────────────────────────────────────────────────────────────── */
@@ -82,9 +82,9 @@
   --radius-pill:    100px;
 
   /* ── Z-index ─────────────────────────────────────────────────────────────── */
-  --z-nav:      100;
-  --z-float:    200;
-  --z-modal:    240;
+  --z-nav:      100;  /* fixed navbar */
+  --z-float:    200;  /* floating panels / transient UI */
+  --z-modal:    240;  /* modal dialogs */
 }
 
 @layer base {

@@ -5,13 +5,13 @@ import { resolve } from "path";
 const css = readFileSync(resolve(__dirname, "../styles/app.css"), "utf-8");
 
 describe("design tokens — Meta Store (phase 1: colors, spacing, shadow, radius, skeleton, glass)", () => {
-  test("Montserrat font is imported", () => {
-    expect(css).toContain("Montserrat");
+  test("Plus Jakarta Sans font is imported", () => {
+    expect(css).toContain("Plus Jakarta Sans");
     expect(css).toContain("fonts.googleapis.com");
   });
 
-  test("--font-sans is defined with Montserrat", () => {
-    expect(css).toMatch(/--font-sans:\s*["']?Montserrat/i);
+  test("--font-sans is defined with Plus Jakarta Sans", () => {
+    expect(css).toMatch(/--font-sans:\s*["']?Plus Jakarta Sans/i);
   });
 
   test("--color-pink remapped to Meta Blue (#0064E0)", () => {
@@ -213,8 +213,4 @@ describe("design tokens — Meta Store (phase 1: colors, spacing, shadow, radius
     expect(css).toContain("backdrop-filter: blur(12px)");
   });
 
-  test("Plus Jakarta Sans is fully removed", () => {
-    expect(css).not.toContain("Plus Jakarta Sans");
-    expect(css).not.toContain("Plus+Jakarta+Sans");
-  });
 });
