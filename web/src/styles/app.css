@@ -8,31 +8,136 @@
   40% { transform: scale(1); opacity: 1; }
 }
 
+/* Skeleton loading animation */
+@keyframes glimmer {
+  0%, 100% { opacity: 0.25; }
+  50%       { opacity: 1.0; }
+}
+
 /* ListCard grid pattern overlay */
 .list-card-grid-pattern {
   background-image:
-    repeating-linear-gradient(0deg, rgba(255,255,255,0.06) 0px, rgba(255,255,255,0.06) 1px, transparent 1px, transparent 32px),
-    repeating-linear-gradient(90deg, rgba(255,255,255,0.06) 0px, rgba(255,255,255,0.06) 1px, transparent 1px, transparent 32px);
+    repeating-linear-gradient(0deg, rgba(255,255,255,0.03) 0px, rgba(255,255,255,0.03) 1px, transparent 1px, transparent 32px),
+    repeating-linear-gradient(90deg, rgba(255,255,255,0.03) 0px, rgba(255,255,255,0.03) 1px, transparent 1px, transparent 32px);
 }
 
 @theme {
-  /* ── Colors ──────────────────────────────────────────────────────────────── */
-  --color-ink:     #334155;       /* primary text — slate-700 */
-  --color-muted:   #64748b;       /* secondary text — slate-500 */
-  --color-pink:    #f08bb9;       /* accent — gradient start, eyebrow */
-  --color-blue:    #5b7faa;       /* accent — links, active states, gradient end */
-  --color-sky:     #7dd9ff;       /* highlight tints via opacity modifier */
-  --color-border:  rgba(100, 116, 139, 0.18);  /* universal panel/input border — slate-500/18 */
-  --color-scrim: rgba(17, 35, 63, 0.3);
+  /* ── Colors: Primary (Pink & Sky Blue) ──────────────────────────────────── */
+  --color-pink:          #FF66BF;
+  --color-pink-hover:    #FF85C8;
+  --color-pink-pressed:  #E050A8;
+  --color-pink-light:    #FFD6ED;
+  --color-sky-blue:      #87CEEB;
+  --color-sky-blue-hover: #6BB8DB;
+  --color-sky-blue-pressed: #4AA8CB;
+  --color-sky-blue-light: #D6EDFA;
 
-  /* ── Typography ──────────────────────────────────────────────────────────── */
+  /* ── Colors: Secondary ─────────────────────────────────────────────────── */
+  --color-meta-blue:         #0064E0;
+  --color-meta-blue-hover:   #0143B5;
+  --color-meta-blue-pressed: #004BB9;
+  --color-meta-blue-light:   #47A5FA;
+  --color-facebook-blue:     #1877F2;
+  --color-rayban-red:       #D6311F;
+  --color-oculus-purple:    #A121CE;
+  --color-work-purple:       #6441D2;
+  --color-portal-blue:       #1B365D;
+  --color-portal-hero-blue:  #C8E4E8;
+  --color-portal-light-blue: #ADD4E0;
+
+  /* ── Colors: Surface & Background ──────────────────────────────────────── */
+  --color-white:       #FFFFFF;
+  --color-soft-gray:   #F1F4F7;
+  --color-warm-gray:   #F7F8FA;
+  --color-web-wash:    #F0F2F5;
+  --color-linen:       #F2F0E6;
+  --color-baby-blue:   #E8F3FF;
+  --color-near-black:  #1C1E21;
+  --color-oculus-light: #181A1B;
+  --color-oculus-dark:   #000000;
+  --color-overlay:       rgba(0,0,0,0.6);
+
+  /* ── Colors: Text & Neutrals ─────────────────────────────────────────────── */
+  --color-primary-text:      #050505;
+  --color-charcoal:          #1C2B33;
+  --color-icon-secondary:     #465A69;
+  --color-secondary-text:    #65676B;
+  --color-slate-gray:         #5D6C7B;
+  --color-section-header:     #4B4C4F;
+  --color-button-text-gray:   #444950;
+  --color-disabled-text:      #BCC0C4;
+  --color-cta-disabled-text:  #8595A4;
+  --color-divider:           #CED0D4;
+  --color-divider-gray:       #DEE3E9;
+  --color-cta-gray-border:    #CBD2D9;
+  --color-dark-gray-border:   #909396;
+
+  /* ── Colors: Semantic ────────────────────────────────────────────────────── */
+  --color-success:        #31A24C;
+  --color-store-success:  #007D1E;
+  --color-error:          #E41E3F;
+  --color-store-error:    #C80A28;
+  --color-warning:        #F7B928;
+  --color-positive-bg:    rgba(36, 228, 0, 0.15);
+  --color-error-bg:       rgba(255, 123, 145, 0.15);
+  --color-warning-bg:    rgba(255, 226, 0, 0.15);
+  --color-info-bg:        rgba(0, 145, 255, 0.15);
+
+  /* ── Colors: Base Spectrum ──────────────────────────────────────────────── */
+  --color-cherry:   #F3425F;
+  --color-grape:    #9360F7;
+  --color-lime:     #45BD62;
+  --color-seafoam:  #54C7EC;
+  --color-teal:     #2ABBA7;
+  --color-tomato:   #FB724B;
+
+  /* ── Typography ─────────────────────────────────────────────────────────── */
   --font-sans: "Plus Jakarta Sans", "Segoe UI", sans-serif;
-  --font-mono:  SFMono-Regular, Consolas, monospace;
+  --font-mono: SFMono-Regular, Consolas, monospace;
+
+  --text-display: 64px/500/1.16;
+  --text-h1:      36px/500/1.28;
+  --text-h2:      28px/300/1.21;
+  --text-h3:      18px/700/1.44;
+  --text-body:    18px/400/1.44;
+  --text-body-compact: 16px/500/1.50/-0.16px;
+  --text-caption-bold: 14px/700/1.43;
+  --text-caption:      14px/400/1.43/-0.14px;
+  --text-small:       12px/400/1.33;
+  --text-button:       14px/400/1.43/-0.14px;
+
+  /* ── Spacing ───────────────────────────────────────────────────────────── */
+  --space-1:  1px;
+  --space-2:  4px;
+  --space-3:  8px;
+  --space-4:  10px;
+  --space-5:  12px;
+  --space-6:  14px;
+  --space-7:  16px;
+  --space-8:  18px;
+  --space-9:  24px;
+  --space-10: 32px;
+  --space-11: 40px;
+  --space-12: 48px;
+  --space-13: 64px;
+  --space-14: 80px;
+
+  /* ── Shadows ────────────────────────────────────────────────────────────── */
+  --shadow-level-1: 0 2px 4px 0 rgba(0,0,0,0.1);
+  --shadow-level-2: 0 12px 28px 0 rgba(0,0,0,0.2), 0 2px 4px 0 rgba(0,0,0,0.1);
+  --shadow-overlay: rgba(0,0,0,0.6);
+  --shadow-inset:   rgba(255,255,255,0.5);
+
+  /* ── Radius ─────────────────────────────────────────────────────────────── */
+  --radius-sm:      8px;
+  --radius-card:    20px;
+  --radius-feature: 24px;
+  --radius-pill:    100px;
 
   /* ── Z-index ─────────────────────────────────────────────────────────────── */
-  --z-nav:      100;  /* fixed navbar */
-  --z-float:    200;  /* floating panels / transient UI */
-  --z-modal:    240;  /* modal dialogs */
+  --z-nav:   100;
+  --z-float: 200;
+  --z-modal: 240;
 }
 
 @layer base {
@@ -48,7 +153,7 @@
     min-width: 320px;
     min-height: 100vh;
     margin: 0;
-    color: theme(--color-ink);
+    color: var(--color-primary-text);
     font-family: var(--font-sans);
   }
 
@@ -72,4 +177,17 @@
     color: inherit;
     text-decoration: none;
   }
+}
+
+/* Skeleton loading placeholder */
+.glimmer-placeholder {
+  background-color: #979A9F;
+  border-radius: 8px;
+  animation: glimmer 1000ms steps(1) infinite;
+}
+
+/* Frosted glass effect */
+.glass {
+  background-color: rgba(241, 244, 247, 0.8);
+  backdrop-filter: blur(12px);
 }
