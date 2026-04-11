@@ -45,10 +45,10 @@ export function DigestAccordion({
   };
 
   return (
-    <div className="overflow-hidden rounded-2xl border border-border bg-blue/25">
+    <div className="overflow-hidden rounded-2xl border border-border bg-sky-blue/25">
       {/* Header */}
       <div className="flex w-full items-center justify-between gap-3 border-0 bg-transparent px-4 py-3.5">
-        <span className="text-sm font-semibold text-ink">{t("lists.digest")}</span>
+        <span className="text-sm font-semibold text-charcoal">{t("lists.digest")}</span>
 
         {/* Right side: context menu / loading, then expand arrow */}
         <div className="flex items-center gap-1">
@@ -69,7 +69,7 @@ export function DigestAccordion({
                   type="button"
                   aria-label="Digest options"
                   onClick={toggle}
-                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-muted transition hover:bg-border hover:text-ink"
+                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-muted transition hover:bg-border hover:text-charcoal"
                 >
                   <MoreVertical size={16} />
                 </button>
@@ -80,7 +80,7 @@ export function DigestAccordion({
             type="button"
             onClick={() => setExpanded((v) => !v)}
             aria-label={expanded ? "Collapse" : "Expand"}
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-muted transition hover:bg-border hover:text-ink"
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-muted transition hover:bg-border hover:text-charcoal"
           >
             {expanded ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
           </button>
@@ -95,8 +95,8 @@ export function DigestAccordion({
               <p className="m-0 text-sm leading-relaxed text-muted">{summary}</p>
             ) : (
               <div className="space-y-1.5">
-                <div className="h-3 w-3/4 rounded bg-blue/20" />
-                <div className="h-3 w-1/2 rounded bg-blue/20" />
+                <div className="h-3 w-3/4 rounded bg-sky-blue/20" />
+                <div className="h-3 w-1/2 rounded bg-sky-blue/20" />
               </div>
             )}
           </div>
@@ -107,7 +107,7 @@ export function DigestAccordion({
                 {keywords.map((kw) => (
                   <span
                     key={kw}
-                    className="inline-block rounded-full bg-blue/10 px-2.5 py-0.5 text-xs text-blue/80"
+                    className="inline-block rounded-full bg-sky-blue/10 px-2.5 py-0.5 text-xs text-sky-blue/80"
                   >
                     {kw}
                   </span>

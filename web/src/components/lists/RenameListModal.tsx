@@ -55,7 +55,7 @@ export function RenameListModal({ list, open, onClose, onCommit, initialValue }:
       size="lg"
       title={t("home.renameList")}
     >
-      <div className="relative h-100 overflow-hidden rounded-3xl bg-pink-100 shadow-lg">
+      <div className="relative h-100 overflow-hidden rounded-3xl bg-sky-blue-light shadow-lg">
         {list?.thumbnail_url ? (
           <div
             className="absolute inset-0 bg-cover bg-center"
@@ -75,7 +75,7 @@ export function RenameListModal({ list, open, onClose, onCommit, initialValue }:
           <Input
             aria-label="List name"
             autoFocus
-            className="select-text rounded-2xl bg-white/92 px-4 py-3 text-2xl leading-tight font-normal tracking-normal text-ink focus:border-blue/25 focus:ring-2 focus:ring-sky/10"
+            className="select-text rounded-2xl bg-white/92 px-4 py-3 text-2xl leading-tight font-normal tracking-normal text-charcoal focus:border-pink/50 focus:ring-2 focus:ring-pink/30"
             placeholder={t("home.untitledList")}
             onChange={(event) => setDraft(event.target.value)}
             onKeyDown={(event) => {

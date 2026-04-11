@@ -24,7 +24,7 @@ export function ListGrid({
   const { t } = useLanguage();
   return (
     <section
-      className="grid justify-start gap-5 max-sm:justify-center"
+      className="grid justify-start gap-6 max-sm:justify-center"
       aria-label="My Lists"
       style={{ gridTemplateColumns: "repeat(auto-fill, 16rem)" }}
     >

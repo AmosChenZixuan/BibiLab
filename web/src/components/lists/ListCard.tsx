@@ -52,7 +52,7 @@ export function ListCard({ list, onRename, onChangeThumbnail, onDelete }: Props)
   ];
 
   return (
-    <article className="group relative h-52 w-64 overflow-hidden rounded-2xl shadow-lg transition hover:-translate-y-0.5 hover:shadow-lg">
+    <article className="group relative h-52 w-64 overflow-hidden rounded-2xl bg-white shadow-lg transition hover:-translate-y-0.5">
       <div
         aria-hidden="true"
         className={`absolute inset-0 ${!list.thumbnail_url ? PASTEL_COLORS[nameToPastelIndex(list.name)] : ""}`}
@@ -68,10 +68,6 @@ export function ListCard({ list, onRename, onChangeThumbnail, onDelete }: Props)
       />
       <div
         aria-hidden="true"
-        className="absolute inset-0 bg-linear-to-b from-transparent via-transparent to-black/60"
-      />
-      <div
-        aria-hidden="true"
         className="absolute inset-0 list-card-grid-pattern"
       />
 
@@ -82,7 +78,7 @@ export function ListCard({ list, onRename, onChangeThumbnail, onDelete }: Props)
             aria-expanded={open}
             aria-label={`List actions for ${list.name}`}
             className={`absolute top-2 right-2 z-10 inline-flex h-7 w-7 items-center justify-center rounded-full border-0 text-white transition ${
-              open ? "bg-white/90 text-ink" : "bg-white/20 opacity-100 md:opacity-0 md:group-hover:opacity-100"
+              open ? "bg-white/90 text-charcoal" : "bg-white/20 opacity-100 md:opacity-0 md:group-hover:opacity-100"
             }`}
             onClick={(event) => {
               event.preventDefault();
