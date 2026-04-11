@@ -97,11 +97,11 @@ function IngestingSourceRow({
   }
 
   return (
-    <div className="flex flex-col gap-2.5 rounded-2xl border border-blue/20 bg-sky/6 px-4 py-3">
+    <div className="flex flex-col gap-2.5 rounded-2xl border border-sky-blue/20 bg-sky-blue/10 px-4 py-3">
       <div className="flex items-center gap-2">
         <span className="relative flex h-2 w-2 shrink-0">
-          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-blue/40" />
-          <span className="relative inline-flex h-2 w-2 rounded-full bg-blue/70" />
+          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-sky-blue/40" />
+          <span className="relative inline-flex h-2 w-2 rounded-full bg-sky-blue/70" />
         </span>
         <p className="m-0 min-w-0 flex-1 truncate text-sm font-medium text-ink">{title}</p>
         <button
@@ -115,7 +115,7 @@ function IngestingSourceRow({
       </div>
       <div className="space-y-1.5">
         <div className="flex items-center justify-between">
-          <span className="text-xs text-blue/80">{t("pipeline." + displayStage)}…</span>
+          <span className="text-xs text-sky-blue/80">{t("pipeline." + displayStage)}…</span>
           <span className="text-xs tabular-nums text-muted/60">
             {Math.max(1, stageIdx + 1)} / {PIPELINE_STAGES.length}
           </span>
@@ -127,9 +127,9 @@ function IngestingSourceRow({
               title={t("pipeline." + s)}
               className={`h-1 flex-1 rounded-full transition-colors duration-500 ${
                 i < stageIdx
-                  ? "bg-blue/60"
+                  ? "bg-sky-blue/60"
                   : i === stageIdx
-                    ? "animate-pulse bg-blue/90"
+                    ? "animate-pulse bg-sky-blue/90"
                     : "bg-border"
               }`}
             />
@@ -229,13 +229,13 @@ export function SourcesListMode({
               setError(null);
             }}
             placeholder={t("lists.pasteUrl")}
-            className="w-full rounded-full border border-border bg-white/80 py-2.5 pr-10 pl-4 text-sm text-ink placeholder:text-muted/50 outline-none focus:border-blue/40 focus:bg-white transition"
+            className="w-full rounded-full border border-border bg-white/80 py-2.5 pr-10 pl-4 text-sm text-ink placeholder:text-muted/50 outline-none focus:border-sky-blue/40 focus:bg-white transition"
           />
           <button
             type="submit"
             disabled={!url.trim()}
             aria-label="Add source"
-            className="absolute right-1.5 top-1/2 -translate-y-1/2 flex h-7 w-7 items-center justify-center rounded-full text-muted transition disabled:opacity-0 enabled:hover:bg-blue enabled:hover:text-white enabled:hover:shadow-sm"
+            className="absolute right-1.5 top-1/2 -translate-y-1/2 flex h-7 w-7 items-center justify-center rounded-full text-muted transition disabled:opacity-0 enabled:hover:bg-sky-blue enabled:hover:text-white enabled:hover:shadow-sm"
           >
             <ArrowRight size={15} />
           </button>

@@ -9,14 +9,14 @@ function StatusDot({ item }: { item: JobActivityItem }) {
   if (!item.isTerminal) {
     return (
       <span
-        className="inline-block h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-blue"
+        className="inline-block h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-sky-blue"
         aria-hidden="true"
       />
     );
   }
   const tone = getJobTone(item.job);
   const color =
-    tone === "ok" ? "bg-blue" : tone === "error" ? "bg-pink" : "bg-muted";
+    tone === "ok" ? "bg-sky-blue" : tone === "error" ? "bg-pink" : "bg-muted";
   return (
     <span className={`inline-block h-1.5 w-1.5 shrink-0 rounded-full ${color}`} aria-hidden="true" />
   );
@@ -113,7 +113,7 @@ export function JobSpirit() {
                     {!item.isTerminal ? (
                       <div className="h-px overflow-hidden rounded-full bg-border">
                         <div
-                          className="h-full bg-blue transition-all duration-700"
+                          className="h-full bg-pink transition-all duration-700"
                           style={{ width: `${Math.max(item.job.progress, 4)}%` }}
                         />
                       </div>
@@ -135,7 +135,7 @@ export function JobSpirit() {
           onClick={() => setPanelOpen(!isPanelOpen)}
         >
           <span
-            className={`inline-block h-1.5 w-1.5 rounded-full bg-blue transition-opacity ${activeJobs.length > 0 ? "animate-pulse" : "opacity-40"}`}
+            className={`inline-block h-1.5 w-1.5 rounded-full bg-sky-blue transition-opacity ${activeJobs.length > 0 ? "animate-pulse" : "opacity-40"}`}
             aria-hidden="true"
           />
           <span className="font-medium">
