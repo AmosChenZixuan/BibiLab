@@ -18,8 +18,8 @@ const variants: Record<Variant, string> = {
     "hover:bg-sky-blue-hover active:bg-sky-blue-pressed " +
     "disabled:bg-divider-gray disabled:text-cta-disabled-text",
   ghost:
-    "bg-white/55 border-secondary-text/18 text-link-blue " +
-    "hover:bg-sky-blue-light",
+    "bg-sky-blue/20 border-secondary-text/18 text-link-blue " +
+    "hover:bg-sky-blue/40",
   danger:
     "bg-error text-white border-transparent " +
     "hover:brightness-95 " +

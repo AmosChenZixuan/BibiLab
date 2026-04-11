@@ -59,7 +59,7 @@ export function ListCard({ list, onRename, onChangeThumbnail, onDelete }: Props)
         style={
           list.thumbnail_url
             ? {
-                backgroundImage: `linear-gradient(to bottom, rgba(17,17,17,0.02), rgba(17,17,17,0.02)), url("${list.thumbnail_url}")`,
+                backgroundImage: `linear-gradient(to bottom, transparent 30%, rgba(17,17,17,0.7) 100%), url("${list.thumbnail_url}")`,
                 backgroundPosition: "center",
                 backgroundSize: "cover",
               }
