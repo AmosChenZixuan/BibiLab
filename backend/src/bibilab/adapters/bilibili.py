@@ -124,8 +124,7 @@ class BilibiliAdapter(PlatformAdapter):
         for e in entries:
             if not e.get("id"):
                 continue
-            entry_id = e.get("id", "")
-            base_id, part_num = _split_video_id(entry_id)
+            base_id, part_num = _split_video_id(e.get("id", ""))
             if part_num is not None:
                 e["id"] = f"{base_id}_p{part_num}"
             videos.append(_info_to_video_meta(e, fallback_uploader=base_uploader))
