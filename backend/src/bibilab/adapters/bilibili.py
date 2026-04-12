@@ -154,7 +154,7 @@ class BilibiliAdapter(PlatformAdapter):
 
         try:
             with yt_dlp.YoutubeDL(opts) as ydl:
-                info = ydl.extract_info(source_url, download=True, extra_info=extra_info or None)
+                info = ydl.extract_info(source_url, download=True, extra_info=extra_info)
                 ext = info.get("ext", "mp4")
         except yt_dlp.utils.DownloadError as exc:
             msg = str(exc).lower()
