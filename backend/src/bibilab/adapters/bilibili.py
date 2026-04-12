@@ -53,18 +53,14 @@ def _split_video_id(video_id: str) -> tuple[str, int | None]:
 
 
 def _info_to_video_meta(info: dict, platform: str = "bilibili", fallback_uploader: str = "") -> VideoMeta:
-    video_id = info.get("id", "")
-    playlist_index = info.get("playlist_index")
-    part_label = f"P{playlist_index}" if playlist_index else None
     return VideoMeta(
-        video_id=video_id,
+        video_id=info.get("id", ""),
         title=info.get("title", "Untitled"),
         platform=platform,
         source_url=info.get("webpage_url", info.get("url", "")),
         cover_url=info.get("thumbnail", ""),
         duration_seconds=int(info.get("duration", 0) or 0),
         uploader=info.get("uploader", fallback_uploader),
-        part_label=part_label,
     )
 
 
