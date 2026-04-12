@@ -12,14 +12,9 @@ class VideoMeta:
     cover_url: str
     duration_seconds: int
     uploader: str
-    part_label: str | None = None
 
     @classmethod
     def from_source(cls, source: dict) -> "VideoMeta":
-        if isinstance(source, dict):
-            part_label = source.get("part_label")
-        else:
-            part_label = source["part_label"] if "part_label" in source.keys() else None
         return cls(
             video_id=source["video_id"],
             title=source["title"],
@@ -28,7 +23,6 @@ class VideoMeta:
             cover_url=source["cover_url"] or "",
             duration_seconds=source["duration_seconds"],
             uploader=source["uploader"],
-            part_label=part_label,
         )
 
 
