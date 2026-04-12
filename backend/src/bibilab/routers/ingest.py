@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from bibilab.adapters.base import AuthRequiredError, DownloadError, VideoMeta
 from bibilab.adapters.bilibili import BilibiliAdapter
 from bibilab.config import BibilabConfig, get_config
-from bibilab.db import create_job, get_list, get_processed_video_ids
+from bibilab.db import create_job, get_list, get_video_statuses
 from bibilab.models.ingest import IngestUrlRequest, IngestUrlResponse
 
 router = APIRouter()
@@ -39,7 +39,6 @@ async def ingest_url(
     request: Request,
     cfg: BibilabConfig = Depends(get_config),
 ) -> IngestUrlResponse:
-
     # Resolve UI language
     ui_lang_header = request.headers.get("X-UI-Lang", "en")
     output_lang = cfg.ai.output_language
@@ -66,12 +65,12 @@ async def ingest_url(
 
     videos = [result] if isinstance(result, VideoMeta) else result.videos
 
-    already_done = await get_processed_video_ids([v.video_id for v in videos], req.list_id)
+    statuses = await get_video_statuses([v.video_id for v in videos], req.list_id)
     queued: list[str] = []
     skipped: list[str] = []
 
     for video in videos:
-        if video.video_id in already_done:
+        if statuses.get(video.video_id) == "processed":
             skipped.append(video.video_id)
             continue
         queued.append(
