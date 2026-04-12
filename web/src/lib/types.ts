@@ -185,3 +185,28 @@ export type OverviewDownload = {
   filename: string;
   content: string;
 };
+
+export type VideoStatus = "new" | "processed" | "in_progress" | "needs_auth";
+
+export interface PreviewVideo {
+  video_id: string;
+  title: string;
+  cover_url: string;
+  duration_seconds: number;
+  uploader: string;
+  platform: string;
+  source_url: string;
+  part_label: string | null;
+  status: VideoStatus;
+}
+
+export interface PreviewResponse {
+  videos: PreviewVideo[];
+}
+
+export type IngestVideoIn = Omit<PreviewVideo, "status" | "part_label">;
+
+export interface IngestResult {
+  queued: string[];
+  skipped: string[];
+}
