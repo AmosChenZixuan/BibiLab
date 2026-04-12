@@ -12,6 +12,7 @@ class VideoMeta:
     cover_url: str
     duration_seconds: int
     uploader: str
+    part_label: str | None = None
 
     @classmethod
     def from_source(cls, source: dict) -> "VideoMeta":

@@ -123,7 +123,10 @@ class BilibiliAdapter(PlatformAdapter):
             base_id, part_num = _split_video_id(e.get("id", ""))
             if part_num is not None:
                 e["id"] = f"{base_id}_p{part_num}"
-            videos.append(_info_to_video_meta(e, fallback_uploader=base_uploader))
+            vm = _info_to_video_meta(e, fallback_uploader=base_uploader)
+            if part_num is not None:
+                vm.part_label = f"P{part_num}"
+            videos.append(vm)
 
         return PlaylistMeta(
             playlist_id=playlist_id,
