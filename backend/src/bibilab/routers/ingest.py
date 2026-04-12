@@ -6,10 +6,63 @@ from bibilab.adapters.base import AuthRequiredError, DownloadError, VideoMeta
 from bibilab.adapters.bilibili import BilibiliAdapter
 from bibilab.config import BibilabConfig, get_config
 from bibilab.db import create_job, get_list, get_video_statuses
-from bibilab.models.ingest import IngestUrlRequest, IngestUrlResponse
+from bibilab.models._enums import VideoStatus
+from bibilab.models.ingest import (
+    IngestPreviewRequest,
+    IngestPreviewResponse,
+    IngestUrlRequest,
+    IngestUrlResponse,
+    PreviewVideo,
+)
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+
+@router.post("/ingest/preview")
+async def ingest_preview(
+    req: IngestPreviewRequest,
+    cfg: BibilabConfig = Depends(get_config),
+) -> IngestPreviewResponse:
+    if await get_list(req.list_id) is None:
+        raise HTTPException(status_code=404, detail="List not found")
+
+    try:
+        result = BilibiliAdapter(cookie=cfg.accounts.bilibili.cookie).resolve(req.url)
+    except AuthRequiredError as exc:
+        raise HTTPException(
+            status_code=401,
+            detail={"message": "Authentication required", "resource_type": exc.resource_type},
+        ) from exc
+    except DownloadError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail={"message": exc.message},
+        ) from exc
+
+    videos = [result] if isinstance(result, VideoMeta) else result.videos
+
+    if not videos:
+        return IngestPreviewResponse(videos=[])
+
+    statuses = await get_video_statuses([v.video_id for v in videos], req.list_id)
+
+    preview_videos = [
+        PreviewVideo(
+            video_id=v.video_id,
+            title=v.title,
+            cover_url=v.cover_url,
+            duration_seconds=v.duration_seconds,
+            uploader=v.uploader,
+            platform=v.platform,
+            source_url=v.source_url,
+            part_label=v.part_label,
+            status=VideoStatus(statuses.get(v.video_id, "new")),
+        )
+        for v in videos
+    ]
+
+    return IngestPreviewResponse(videos=preview_videos)
 
 
 async def _queue_video(
@@ -39,13 +92,9 @@ async def ingest_url(
     request: Request,
     cfg: BibilabConfig = Depends(get_config),
 ) -> IngestUrlResponse:
-    # Resolve UI language
     ui_lang_header = request.headers.get("X-UI-Lang", "en")
     output_lang = cfg.ai.output_language
-    if output_lang == "ui":
-        resolved_lang = ui_lang_header
-    else:
-        resolved_lang = output_lang
+    resolved_lang = ui_lang_header if output_lang == "ui" else output_lang
 
     if await get_list(req.list_id) is None:
         raise HTTPException(status_code=404, detail="List not found")
