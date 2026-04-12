@@ -196,7 +196,8 @@ export function SourcesListMode({
     setUrl("");
     setError(null);
     try {
-      const result = await api.ingestUrl(listId, trimmed);
+      // TODO: F3 — replace with preview-then-ingest flow
+      const result = await api.ingestUrl(listId, []);
       if (!result) return;
       trackJobs(
         result.queued.map((id) => ({
