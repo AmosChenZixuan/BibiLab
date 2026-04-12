@@ -99,35 +99,26 @@ async def ingest_url(
     if await get_list(req.list_id) is None:
         raise HTTPException(status_code=404, detail="List not found")
 
-    try:
-        result = BilibiliAdapter(cookie=cfg.accounts.bilibili.cookie).resolve(req.url)
-    except AuthRequiredError as exc:
-        raise HTTPException(
-            status_code=401,
-            detail={"message": "Authentication required", "resource_type": exc.resource_type},
-        ) from exc
-    except DownloadError as exc:
-        raise HTTPException(
-            status_code=400,
-            detail={"message": exc.message},
-        ) from exc
+    statuses = await get_video_statuses([v.video_id for v in req.videos], req.list_id)
 
-    videos = [result] if isinstance(result, VideoMeta) else result.videos
-
-    statuses = await get_video_statuses([v.video_id for v in videos], req.list_id)
     queued: list[str] = []
     skipped: list[str] = []
 
-    for video in videos:
-        if statuses.get(video.video_id) == "processed":
-            skipped.append(video.video_id)
+    for video_in in req.videos:
+        status = statuses.get(video_in.video_id, "new")
+        if status != "new":
+            skipped.append(video_in.video_id)
             continue
-        queued.append(
-            await _queue_video(
-                video,
-                req.list_id,
-                ui_lang=resolved_lang,
-            )
+
+        video_meta = VideoMeta(
+            video_id=video_in.video_id,
+            title=video_in.title,
+            platform=video_in.platform,
+            source_url=video_in.source_url,
+            cover_url=video_in.cover_url,
+            duration_seconds=video_in.duration_seconds,
+            uploader=video_in.uploader,
         )
+        queued.append(await _queue_video(video_meta, req.list_id, ui_lang=resolved_lang))
 
     return IngestUrlResponse(queued=queued, skipped=skipped)

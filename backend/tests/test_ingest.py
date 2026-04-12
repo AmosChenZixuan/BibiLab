@@ -5,35 +5,24 @@ import httpx
 import pytest
 
 
-def _make_video_info(bvid="BV1abc123", title="Test Video"):
+def _video_payload(bvid="BV1abc123", title="Test Video", duration=3600):
     return {
-        "id": bvid,
+        "video_id": bvid,
         "title": title,
-        "webpage_url": f"https://www.bilibili.com/video/{bvid}",
-        "thumbnail": "https://example.com/cover.jpg",
-        "duration": 3600,
+        "cover_url": "https://example.com/cover.jpg",
+        "duration_seconds": duration,
         "uploader": "TestUser",
-        "ext": "mp4",
+        "platform": "bilibili",
+        "source_url": f"https://www.bilibili.com/video/{bvid}",
     }
 
 
-@pytest.fixture()
-def mock_ydl_single():
-    info = _make_video_info()
-    mock = MagicMock()
-    mock.__enter__ = lambda s: mock
-    mock.__exit__ = MagicMock(return_value=False)
-    mock.extract_info = MagicMock(return_value=info)
-    with patch("bibilab.adapters.bilibili.yt_dlp.YoutubeDL", return_value=mock):
-        yield info
-
-
 @pytest.mark.asyncio
-async def test_ingest_single_video(client: httpx.AsyncClient, mock_ydl_single):
+async def test_ingest_single_video(client: httpx.AsyncClient):
     list_id = (await client.post("/lists", json={"name": "Test"})).json()["id"]
     resp = await client.post(
         "/ingest/url",
-        json={"list_id": list_id, "url": "https://www.bilibili.com/video/BV1abc123"},
+        json={"list_id": list_id, "videos": [_video_payload()]},
     )
     assert resp.status_code == 200
     data = resp.json()
@@ -42,7 +31,7 @@ async def test_ingest_single_video(client: httpx.AsyncClient, mock_ydl_single):
 
 
 @pytest.mark.asyncio
-async def test_ingest_dedup(client: httpx.AsyncClient, mock_ydl_single, tmp_bibilab_home: Path):
+async def test_ingest_dedup(client: httpx.AsyncClient, tmp_bibilab_home: Path):
     """Submitting the same video twice should skip on second attempt."""
     import uuid
 
@@ -71,7 +60,7 @@ async def test_ingest_dedup(client: httpx.AsyncClient, mock_ydl_single, tmp_bibi
     )
     resp = await client.post(
         "/ingest/url",
-        json={"list_id": "list-1", "url": "https://www.bilibili.com/video/BV1abc123"},
+        json={"list_id": "list-1", "videos": [_video_payload()]},
     )
     assert resp.status_code == 200
     data = resp.json()
@@ -80,10 +69,10 @@ async def test_ingest_dedup(client: httpx.AsyncClient, mock_ydl_single, tmp_bibi
 
 
 @pytest.mark.asyncio
-async def test_ingest_unknown_list(client: httpx.AsyncClient, mock_ydl_single):
+async def test_ingest_unknown_list(client: httpx.AsyncClient):
     resp = await client.post(
         "/ingest/url",
-        json={"list_id": "nonexistent", "url": "https://www.bilibili.com/video/BV1abc123"},
+        json={"list_id": "nonexistent", "videos": [_video_payload()]},
     )
     assert resp.status_code == 404
 
