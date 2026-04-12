@@ -4,6 +4,8 @@ from unittest.mock import MagicMock, patch
 import httpx
 import pytest
 
+from bibilab.adapters.bilibili import BilibiliAdapter
+
 
 def _make_video_info(bvid="BV1abc123", title="Test Video"):
     return {
@@ -28,12 +30,24 @@ def mock_ydl_single():
         yield info
 
 
+def _video_payload(bvid="BV1abc123", title="Test Video"):
+    return {
+        "video_id": bvid,
+        "title": title,
+        "cover_url": "https://example.com/cover.jpg",
+        "duration_seconds": 3600,
+        "uploader": "TestUser",
+        "platform": "bilibili",
+        "source_url": f"https://www.bilibili.com/video/{bvid}",
+    }
+
+
 @pytest.mark.asyncio
 async def test_ingest_single_video(client: httpx.AsyncClient, mock_ydl_single):
     list_id = (await client.post("/lists", json={"name": "Test"})).json()["id"]
     resp = await client.post(
         "/ingest/url",
-        json={"list_id": list_id, "url": "https://www.bilibili.com/video/BV1abc123"},
+        json={"list_id": list_id, "videos": [_video_payload()]},
     )
     assert resp.status_code == 200
     data = resp.json()
@@ -71,7 +85,7 @@ async def test_ingest_dedup(client: httpx.AsyncClient, mock_ydl_single, tmp_bibi
     )
     resp = await client.post(
         "/ingest/url",
-        json={"list_id": "list-1", "url": "https://www.bilibili.com/video/BV1abc123"},
+        json={"list_id": "list-1", "videos": [_video_payload()]},
     )
     assert resp.status_code == 200
     data = resp.json()
@@ -83,9 +97,186 @@ async def test_ingest_dedup(client: httpx.AsyncClient, mock_ydl_single, tmp_bibi
 async def test_ingest_unknown_list(client: httpx.AsyncClient, mock_ydl_single):
     resp = await client.post(
         "/ingest/url",
-        json={"list_id": "nonexistent", "url": "https://www.bilibili.com/video/BV1abc123"},
+        json={"list_id": "nonexistent", "videos": [_video_payload()]},
     )
     assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_ingest_old_url_field_rejected(client: httpx.AsyncClient):
+    """Old {list_id, url} contract must be rejected with 422."""
+    list_id = (await client.post("/lists", json={"name": "Test"})).json()["id"]
+    resp = await client.post(
+        "/ingest/url",
+        json={"list_id": list_id, "url": "https://www.bilibili.com/video/BV1abc123"},
+    )
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_ingest_multiple_videos(client: httpx.AsyncClient, mock_ydl_single):
+    """Multiple new videos are all queued in input order."""
+    list_id = (await client.post("/lists", json={"name": "Test"})).json()["id"]
+    videos = [
+        _video_payload("BV111", "Video 1"),
+        _video_payload("BV222", "Video 2"),
+        _video_payload("BV333", "Video 3"),
+    ]
+    resp = await client.post(
+        "/ingest/url",
+        json={"list_id": list_id, "videos": videos},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data["queued"]) == 3
+    assert data["skipped"] == []
+
+
+@pytest.mark.asyncio
+async def test_ingest_all_non_new_skipped(client: httpx.AsyncClient, tmp_bibilab_home: Path):
+    """Videos that are processed, in_progress, or needs_auth are all skipped."""
+    import uuid
+
+    from bibilab.db import JobStatus, bootstrap_db, create_job, create_list, update_job_status, write_source
+
+    await bootstrap_db()
+    await create_list("list-skipped", "Test", "2026-01-01T00:00:00")
+
+    processed_id = str(uuid.uuid4())
+    await write_source(
+        source_id=processed_id,
+        video_id="BVprocessed",
+        platform="bilibili",
+        list_id="list-skipped",
+        title="Processed",
+        summary="S",
+        keywords=[],
+        cover_url=None,
+        transcript_path=None,
+        source_url="https://www.bilibili.com/video/BVprocessed",
+        duration_seconds=0,
+        uploader="",
+        language=None,
+        whisper_model="large-v3",
+        ai_model="gpt-4o",
+        vision_enabled=False,
+        settings_snapshot={},
+    )
+
+    job_id_1 = await create_job(
+        type="ingest",
+        meta={
+            "video_id": "BVinprogress",
+            "list_id": "list-skipped",
+            "title": "In Progress",
+            "cover_url": "",
+            "duration_seconds": 0,
+            "uploader": "",
+            "source_url": "https://www.bilibili.com/video/BVinprogress",
+            "platform": "bilibili",
+            "ui_lang": "en",
+        },
+    )
+    await update_job_status(job_id_1, JobStatus.DOWNLOADING)
+
+    await create_job(
+        type="ingest",
+        meta={
+            "video_id": "BVneedsauth",
+            "list_id": "list-skipped",
+            "title": "Needs Auth",
+            "cover_url": "",
+            "duration_seconds": 0,
+            "uploader": "",
+            "source_url": "https://www.bilibili.com/video/BVneedsauth",
+            "platform": "bilibili",
+            "ui_lang": "en",
+        },
+    )
+
+    videos = [
+        _video_payload("BVprocessed"),
+        _video_payload("BVinprogress"),
+        _video_payload("BVneedsauth"),
+        _video_payload("BVnew"),
+    ]
+    resp = await client.post(
+        "/ingest/url",
+        json={"list_id": "list-skipped", "videos": videos},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert set(data["skipped"]) == {"BVprocessed", "BVinprogress", "BVneedsauth"}
+    assert len(data["queued"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_ingest_race_condition_new_then_in_progress(client: httpx.AsyncClient, tmp_bibilab_home: Path):
+    """Race: video new at request time but in_progress at dedup check is skipped."""
+    from bibilab.db import JobStatus, bootstrap_db, create_job, create_list, update_job_status
+
+    await bootstrap_db()
+    await create_list("list-race", "Test", "2026-01-01T00:00:00")
+
+    job_id = await create_job(
+        type="ingest",
+        meta={
+            "video_id": "BVrace",
+            "list_id": "list-race",
+            "title": "Race Video",
+            "cover_url": "",
+            "duration_seconds": 0,
+            "uploader": "",
+            "source_url": "https://www.bilibili.com/video/BVrace",
+            "platform": "bilibili",
+            "ui_lang": "en",
+        },
+    )
+    await update_job_status(job_id, JobStatus.DOWNLOADING)
+
+    resp = await client.post(
+        "/ingest/url",
+        json={"list_id": "list-race", "videos": [_video_payload("BVrace")]},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["skipped"] == ["BVrace"]
+    assert data["queued"] == []
+
+
+@pytest.mark.asyncio
+async def test_ingest_resolve_not_called(client: httpx.AsyncClient, mock_ydl_single):
+    """POST /ingest/url must NOT call BilibiliAdapter.resolve()."""
+    list_id = (await client.post("/lists", json={"name": "Test"})).json()["id"]
+
+    with patch("bibilab.routers.ingest.BilibiliAdapter") as mock_adapter:
+        mock_adapter.return_value.resolve = MagicMock()
+        resp = await client.post(
+            "/ingest/url",
+            json={"list_id": list_id, "videos": [_video_payload()]},
+        )
+
+    assert mock_adapter.return_value.resolve.call_count == 0
+    assert resp.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_ingest_queued_order_matches_input(client: httpx.AsyncClient, mock_ydl_single):
+    """Queued job IDs appear in the same order as input videos."""
+    list_id = (await client.post("/lists", json={"name": "Test"})).json()["id"]
+    videos = [
+        _video_payload("BVfirst", "First"),
+        _video_payload("BVsecond", "Second"),
+        _video_payload("BVthird", "Third"),
+    ]
+    resp = await client.post(
+        "/ingest/url",
+        json={"list_id": list_id, "videos": videos},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data["queued"]) == 3
+    assert data["skipped"] == []
 
 
 @pytest.mark.asyncio
@@ -306,3 +497,307 @@ async def test_pipeline_creates_covers_and_transcripts(tmp_bibilab_home: Path):
     assert source_row["id"] == source_id, "source id should be the generated UUID"
     assert source_row["video_id"] == "BVtest123"
     assert source_row["list_id"] == list_id
+
+
+@pytest.fixture()
+def mock_resolve_single():
+    from bibilab.adapters.base import VideoMeta
+
+    def _make(video_id="BV1abc123", title="Test Video", part_label=None):
+        return VideoMeta(
+            video_id=video_id,
+            title=title,
+            platform="bilibili",
+            source_url=f"https://www.bilibili.com/video/{video_id}",
+            cover_url="https://example.com/cover.jpg",
+            duration_seconds=3600,
+            uploader="TestUser",
+            part_label=part_label,
+        )
+
+    with patch.object(
+        BilibiliAdapter,
+        "resolve",
+        return_value=_make(),
+    ) as mock:
+        yield mock
+
+
+@pytest.fixture()
+def mock_resolve_multi_part():
+    from bibilab.adapters.base import PlaylistMeta, VideoMeta
+
+    videos = [
+        VideoMeta(
+            video_id="BV1abc123_p1",
+            title="Part 1",
+            platform="bilibili",
+            source_url="https://www.bilibili.com/video/BV1abc123?p=1",
+            cover_url="https://example.com/cover.jpg",
+            duration_seconds=600,
+            uploader="TestUser",
+            part_label="P1",
+        ),
+        VideoMeta(
+            video_id="BV1abc123_p2",
+            title="Part 2",
+            platform="bilibili",
+            source_url="https://www.bilibili.com/video/BV1abc123?p=2",
+            cover_url="https://example.com/cover.jpg",
+            duration_seconds=900,
+            uploader="TestUser",
+            part_label="P2",
+        ),
+    ]
+    with patch.object(
+        BilibiliAdapter,
+        "resolve",
+        return_value=PlaylistMeta(
+            playlist_id="BV1abc123",
+            title="Multi-part Video",
+            platform="bilibili",
+            source_url="https://www.bilibili.com/video/BV1abc123",
+            videos=videos,
+        ),
+    ) as mock:
+        yield mock
+
+
+@pytest.fixture()
+def mock_resolve_medialist():
+    from bibilab.adapters.base import PlaylistMeta, VideoMeta
+
+    videos = [
+        VideoMeta(
+            video_id="BVxyz789",
+            title="Medialist Video 1",
+            platform="bilibili",
+            source_url="https://www.bilibili.com/video/BVxyz789",
+            cover_url="https://example.com/cover1.jpg",
+            duration_seconds=1800,
+            uploader="ChannelUser",
+            part_label=None,
+        ),
+        VideoMeta(
+            video_id="BVabc123",
+            title="Medialist Video 2",
+            platform="bilibili",
+            source_url="https://www.bilibili.com/video/BVabc123",
+            cover_url="https://example.com/cover2.jpg",
+            duration_seconds=2400,
+            uploader="ChannelUser",
+            part_label=None,
+        ),
+    ]
+    with patch.object(
+        BilibiliAdapter,
+        "resolve",
+        return_value=PlaylistMeta(
+            playlist_id="ml123",
+            title="My Medialist",
+            platform="bilibili",
+            source_url="https://bilibili.com/medialist/ml123",
+            videos=videos,
+        ),
+    ) as mock:
+        yield mock
+
+
+@pytest.mark.asyncio
+async def test_preview_single_video(client: httpx.AsyncClient, mock_resolve_single):
+    list_id = (await client.post("/lists", json={"name": "Test"})).json()["id"]
+    resp = await client.post(
+        "/ingest/preview",
+        json={"list_id": list_id, "url": "https://www.bilibili.com/video/BV1abc123"},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data["videos"]) == 1
+    assert data["videos"][0]["part_label"] is None
+    assert data["videos"][0]["status"] == "new"
+
+
+@pytest.mark.asyncio
+async def test_preview_multi_part_video(client: httpx.AsyncClient, mock_resolve_multi_part):
+    list_id = (await client.post("/lists", json={"name": "Test"})).json()["id"]
+    resp = await client.post(
+        "/ingest/preview",
+        json={"list_id": list_id, "url": "https://www.bilibili.com/video/BV1abc123"},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data["videos"]) == 2
+    assert data["videos"][0]["video_id"] == "BV1abc123_p1"
+    assert data["videos"][0]["part_label"] == "P1"
+    assert data["videos"][1]["video_id"] == "BV1abc123_p2"
+    assert data["videos"][1]["part_label"] == "P2"
+
+
+@pytest.mark.asyncio
+async def test_preview_medialist(client: httpx.AsyncClient, mock_resolve_medialist):
+    list_id = (await client.post("/lists", json={"name": "Test"})).json()["id"]
+    resp = await client.post(
+        "/ingest/preview",
+        json={"list_id": list_id, "url": "https://bilibili.com/medialist/ml123"},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data["videos"]) == 2
+    for v in data["videos"]:
+        assert v["part_label"] is None
+
+
+@pytest.mark.asyncio
+async def test_preview_processed_status(client: httpx.AsyncClient, mock_resolve_single, tmp_bibilab_home: Path):
+    import uuid
+
+    from bibilab.db import bootstrap_db, create_list, write_source
+
+    await bootstrap_db()
+    await create_list("list-1", "Test", "2026-01-01T00:00:00")
+    await write_source(
+        source_id=str(uuid.uuid4()),
+        video_id="BV1abc123",
+        platform="bilibili",
+        list_id="list-1",
+        title="T",
+        summary="S",
+        keywords=[],
+        cover_url=None,
+        transcript_path=None,
+        source_url="https://www.bilibili.com/video/BV1abc123",
+        duration_seconds=0,
+        uploader="",
+        language=None,
+        whisper_model="large-v3",
+        ai_model="gpt-4o",
+        vision_enabled=False,
+        settings_snapshot={},
+    )
+    resp = await client.post(
+        "/ingest/preview",
+        json={"list_id": "list-1", "url": "https://www.bilibili.com/video/BV1abc123"},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data["videos"]) == 1
+    assert data["videos"][0]["status"] == "processed"
+
+
+@pytest.mark.asyncio
+async def test_preview_in_progress_status(client: httpx.AsyncClient, mock_resolve_single, tmp_bibilab_home: Path):
+    from bibilab.db import bootstrap_db, create_job, create_list
+
+    await bootstrap_db()
+    await create_list("list-1", "Test", "2026-01-01T00:00:00")
+    await create_job(
+        type="ingest",
+        meta={
+            "video_id": "BV1abc123",
+            "list_id": "list-1",
+            "title": "Test",
+            "cover_url": "https://example.com/cover.jpg",
+            "duration_seconds": 3600,
+            "uploader": "TestUser",
+            "source_url": "https://www.bilibili.com/video/BV1abc123",
+            "platform": "bilibili",
+            "ui_lang": "en",
+        },
+    )
+    resp = await client.post(
+        "/ingest/preview",
+        json={"list_id": "list-1", "url": "https://www.bilibili.com/video/BV1abc123"},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data["videos"]) == 1
+    assert data["videos"][0]["status"] == "in_progress"
+
+
+@pytest.mark.asyncio
+async def test_preview_needs_auth_status(client: httpx.AsyncClient, mock_resolve_single, tmp_bibilab_home: Path):
+    from bibilab.db import bootstrap_db, create_job, create_list, update_job_status
+    from bibilab.models.jobs import JobStatus
+
+    await bootstrap_db()
+    await create_list("list-1", "Test", "2026-01-01T00:00:00")
+    job_id = await create_job(
+        type="ingest",
+        meta={
+            "video_id": "BV1abc123",
+            "list_id": "list-1",
+            "title": "Test",
+            "cover_url": "https://example.com/cover.jpg",
+            "duration_seconds": 3600,
+            "uploader": "TestUser",
+            "source_url": "https://www.bilibili.com/video/BV1abc123",
+            "platform": "bilibili",
+            "ui_lang": "en",
+        },
+    )
+    await update_job_status(job_id, JobStatus.NEEDS_AUTH)
+    resp = await client.post(
+        "/ingest/preview",
+        json={"list_id": "list-1", "url": "https://www.bilibili.com/video/BV1abc123"},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data["videos"]) == 1
+    assert data["videos"][0]["status"] == "needs_auth"
+
+
+@pytest.mark.asyncio
+async def test_preview_unknown_list(client: httpx.AsyncClient, mock_resolve_single):
+    resp = await client.post(
+        "/ingest/preview",
+        json={"list_id": "nonexistent", "url": "https://www.bilibili.com/video/BV1abc123"},
+    )
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_preview_auth_required(client: httpx.AsyncClient):
+    from bibilab.adapters.base import AuthRequiredError
+
+    with patch.object(BilibiliAdapter, "resolve", side_effect=AuthRequiredError("course")):
+        list_id = (await client.post("/lists", json={"name": "Test"})).json()["id"]
+        resp = await client.post(
+            "/ingest/preview",
+            json={"list_id": list_id, "url": "https://www.bilibili.com/cheese/course123"},
+        )
+    assert resp.status_code == 401
+    data = resp.json()["detail"]
+    assert data["resource_type"] == "course"
+
+
+@pytest.mark.asyncio
+async def test_preview_download_error(client: httpx.AsyncClient):
+    from bibilab.adapters.base import DownloadError
+
+    with patch.object(BilibiliAdapter, "resolve", side_effect=DownloadError("Video unavailable")):
+        list_id = (await client.post("/lists", json={"name": "Test"})).json()["id"]
+        resp = await client.post(
+            "/ingest/preview",
+            json={"list_id": list_id, "url": "https://www.bilibili.com/video/BVdeadbeef"},
+        )
+    assert resp.status_code == 400
+    assert "Video unavailable" in resp.json()["detail"]["message"]
+
+
+@pytest.mark.asyncio
+async def test_preview_no_sources_or_jobs_created(
+    client: httpx.AsyncClient,
+    mock_resolve_single,
+    tmp_bibilab_home: Path,
+):
+    from bibilab.db import bootstrap_db, get_pending_jobs
+
+    await bootstrap_db()
+    list_id = (await client.post("/lists", json={"name": "Test"})).json()["id"]
+    resp = await client.post(
+        "/ingest/preview",
+        json={"list_id": list_id, "url": "https://www.bilibili.com/video/BV1abc123"},
+    )
+    assert resp.status_code == 200
+    jobs = await get_pending_jobs()
+    assert len(jobs) == 0
