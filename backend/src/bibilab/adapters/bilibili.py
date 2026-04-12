@@ -44,6 +44,14 @@ def _ydl_opts(cookie: str, quiet: bool = True) -> dict:
     return opts
 
 
+def _split_video_id(video_id: str) -> tuple[str, int | None]:
+    """Split a video_id like 'BVxxx_p3' into ('BVxxx', 3). Returns (video_id, None) if no part."""
+    m = re.match(r"^(.+?)_p(\d+)$", video_id)
+    if m:
+        return m.group(1), int(m.group(2))
+    return video_id, None
+
+
 def _info_to_video_meta(info: dict, platform: str = "bilibili", fallback_uploader: str = "") -> VideoMeta:
     return VideoMeta(
         video_id=info.get("id", ""),
@@ -74,6 +82,8 @@ class BilibiliAdapter(PlatformAdapter):
                     info = ydl.extract_info(url, download=False)
             except yt_dlp.utils.DownloadError as exc:
                 raise DownloadError(_ANSI_RE.sub("", str(exc))) from exc
+            if info.get("_type") == "playlist":
+                return self._resolve_playlist(info)
             return _info_to_video_meta(info)
 
         # Playlist or course: use flat extraction to get the list of entries
@@ -100,6 +110,32 @@ class BilibiliAdapter(PlatformAdapter):
             videos=videos,
         )
 
+    def _resolve_playlist(self, info: dict) -> PlaylistMeta:
+        playlist_id = info.get("id", "")
+        title = info.get("title", "Untitled Playlist")
+        entries = info.get("entries") or []
+        base_uploader = info.get("uploader", "")
+
+        videos = []
+        for e in entries:
+            if not e.get("id"):
+                continue
+            base_id, part_num = _split_video_id(e.get("id", ""))
+            if part_num is not None:
+                e["id"] = f"{base_id}_p{part_num}"
+            vm = _info_to_video_meta(e, fallback_uploader=base_uploader)
+            if part_num is not None:
+                vm.part_label = f"P{part_num}"
+            videos.append(vm)
+
+        return PlaylistMeta(
+            playlist_id=playlist_id,
+            title=title,
+            platform="bilibili",
+            source_url=info.get("webpage_url", ""),
+            videos=videos,
+        )
+
     def download(self, video_id: str, source_url: str) -> Path:
         downloads_dir = bibilab_home() / "downloads"
         output_template = str(downloads_dir / f"{video_id}.%(ext)s")
@@ -109,9 +145,14 @@ class BilibiliAdapter(PlatformAdapter):
             "format": "bestvideo+bestaudio/best",
         }
 
+        _, part_num = _split_video_id(video_id)
+        extra_info = {}
+        if part_num is not None:
+            extra_info["playlist_items"] = str(part_num)
+
         try:
             with yt_dlp.YoutubeDL(opts) as ydl:
-                info = ydl.extract_info(source_url, download=True)
+                info = ydl.extract_info(source_url, download=True, extra_info=extra_info)
                 ext = info.get("ext", "mp4")
         except yt_dlp.utils.DownloadError as exc:
             msg = str(exc).lower()
