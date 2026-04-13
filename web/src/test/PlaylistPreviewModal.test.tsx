@@ -123,7 +123,7 @@ describe("PlaylistPreviewModal", () => {
   it("hides Already-in-list section when all videos are new", () => {
     const videos = [makeVideo({ status: "new" }), makeVideo({ status: "new" })];
     renderModal(videos);
-    expect(screen.queryByText("lists.preview.alreadyInList")).not.toBeInTheDocument();
+    expect(screen.queryByText("Already in list")).not.toBeInTheDocument();
   });
 
   it("shows Already-in-list section when mixed statuses", () => {
@@ -132,26 +132,26 @@ describe("PlaylistPreviewModal", () => {
       makeVideo({ video_id: "v2", status: "processed" }),
     ];
     renderModal(videos);
-    expect(screen.getByText("lists.preview.alreadyInList")).toBeInTheDocument();
+    expect(screen.getByText("Already in list")).toBeInTheDocument();
   });
 
   // ── 4. Status badges ───────────────────────────────────────────────────────
   it("renders processed badge for processed videos", () => {
     const videos = [makeVideo({ video_id: "v1", status: "processed" })];
     renderModal(videos);
-    expect(screen.getByText("lists.preview.status.processed")).toBeInTheDocument();
+    expect(screen.getByText("Processed")).toBeInTheDocument();
   });
 
   it("renders in_progress badge for in_progress videos", () => {
     const videos = [makeVideo({ video_id: "v1", status: "in_progress" })];
     renderModal(videos);
-    expect(screen.getByText("lists.preview.status.inProgress")).toBeInTheDocument();
+    expect(screen.getByText("In progress")).toBeInTheDocument();
   });
 
   it("renders needs_auth badge for needs_auth videos", () => {
     const videos = [makeVideo({ video_id: "v1", status: "needs_auth" })];
     renderModal(videos);
-    expect(screen.getByText("lists.preview.status.needsAuth")).toBeInTheDocument();
+    expect(screen.getByText("Needs auth")).toBeInTheDocument();
   });
 
   // ── 5. part_label badge ────────────────────────────────────────────────────
@@ -178,7 +178,7 @@ describe("PlaylistPreviewModal", () => {
     const { onSubmit } = renderModal(videos);
     const rows = rowCheckboxes();
     await user.click(rows[1]); // uncheck second video
-    const submitBtn = screen.getByRole("button", { name: "lists.preview.submit" });
+    const submitBtn = screen.getByRole("button", { name: "Add selected" });
     await user.click(submitBtn);
     expect(onSubmit).toHaveBeenCalledTimes(1);
     const [[payload]] = onSubmit.mock.calls;
@@ -196,14 +196,14 @@ describe("PlaylistPreviewModal", () => {
     renderModal(videos);
     const master = masterCheckbox();
     fireEvent.click(master); // uncheck all
-    const submitBtn = screen.getByRole("button", { name: "lists.preview.submit" });
+    const submitBtn = screen.getByRole("button", { name: "Add selected" });
     expect(submitBtn).toBeDisabled();
   });
 
   it("submit disabled when submitting=true", () => {
     const videos = [makeVideo({ video_id: "v1" })];
     renderModal(videos, true);
-    const submitBtn = screen.getByRole("button", { name: /submit/i });
+    const submitBtn = screen.getByRole("button", { name: /add selected/i });
     expect(submitBtn).toBeDisabled();
   });
 
@@ -212,7 +212,7 @@ describe("PlaylistPreviewModal", () => {
     const user = userEvent.setup();
     const videos = [makeVideo({ video_id: "v1" })];
     const { onCancel, onSubmit } = renderModal(videos);
-    const cancelBtn = screen.getByRole("button", { name: "lists.preview.cancel" });
+    const cancelBtn = screen.getByRole("button", { name: "Cancel" });
     await user.click(cancelBtn);
     expect(onCancel).toHaveBeenCalledTimes(1);
     expect(onSubmit).not.toHaveBeenCalled();

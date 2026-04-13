@@ -38,7 +38,7 @@ const state = {
     language: string | null;
     processed_at: string;
   }>,
-  ingestCalls: [] as Array<{ url: string }>,
+  ingestCalls: [] as Array<{ listId: string; videos: unknown[] }>,
   deletedIds: [] as string[],
   renameResult: {
     id: "list-1",
@@ -82,15 +82,6 @@ function makeMockFetch() {
       return Promise.resolve(new Response(JSON.stringify([])));
     }
     if (url.includes("/api/ingest/url") && method === "POST") {
-      const bodyStr = init?.body as string | undefined;
-      let urlFromBody = "";
-      if (bodyStr) {
-        try {
-          const body = JSON.parse(bodyStr);
-          urlFromBody = body.url ?? "";
-        } catch {}
-      }
-      state.ingestCalls.push({ url: urlFromBody });
       return Promise.resolve(new Response(JSON.stringify({ queued: ["job-1"], skipped: [] })));
     }
     if (url.match(/\/api\/lists\/list-1\/sources\/source-old/) && method === "DELETE") {
@@ -128,10 +119,11 @@ vi.mock("../lib/api", () => {
       },
     ]),
     listSources: vi.fn().mockImplementation(() => Promise.resolve([...state.sources])),
-    ingestUrl: vi.fn().mockImplementation((_listId: string, url: string) => {
-      state.ingestCalls.push({ url });
+    ingestUrl: vi.fn().mockImplementation((_listId: string, videos: unknown[]) => {
+      state.ingestCalls.push({ listId: _listId, videos });
       return Promise.resolve({ queued: ["job-1"], skipped: [] });
     }),
+    previewPlaylist: vi.fn(),
     deleteSource: vi.fn().mockImplementation((_listId: string, sourceId: string) => {
       state.deletedIds.push(sourceId);
       return Promise.resolve();
@@ -170,6 +162,7 @@ vi.mock("../lib/api", () => {
     createApiClient: () => mockApi,
     api: mockApi,
     toErrorMessage: vi.fn((e: unknown) => (e instanceof Error ? e.message : String(e))),
+    toErrorMessageWithT: vi.fn((e: unknown) => (e instanceof Error ? e.message : String(e))),
   };
 });
 
@@ -279,9 +272,31 @@ describe("list detail page", () => {
 
     const input = screen.getByPlaceholderText(/paste a bilibili url/i);
     expect(input).toBeInTheDocument();
+
+    vi.mocked(api.previewPlaylist).mockResolvedValue({
+      videos: [
+        {
+          video_id: "BV1new",
+          title: "New Video",
+          cover_url: "https://example.com/cover.jpg",
+          duration_seconds: 180,
+          uploader: "New Author",
+          platform: "bilibili",
+          source_url: "https://www.bilibili.com/video/BV1new",
+          part_label: null,
+          status: "new" as const,
+        },
+      ],
+    });
+
     await userEvent.type(input, "https://www.bilibili.com/video/BV1new");
     await userEvent.keyboard("{Enter}");
-    expect(state.ingestCalls).toContainEqual({ url: "https://www.bilibili.com/video/BV1new" });
+    expect(state.ingestCalls).toContainEqual({
+      listId: "list-1",
+      videos: expect.arrayContaining([
+        expect.objectContaining({ video_id: "BV1new" }),
+      ]),
+    });
     expect(input).toHaveValue("");
 
     const sourceRow = screen
