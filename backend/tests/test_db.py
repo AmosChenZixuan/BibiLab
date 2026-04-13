@@ -269,7 +269,7 @@ async def test_get_sources_for_list(tmp_bibilab_home: Path):
 
 
 @pytest.mark.asyncio
-async def test_get_video_statuses_empty() -> None:
+async def test_get_video_statuses_empty(tmp_bibilab_home: Path) -> None:
     from bibilab.db import bootstrap_db, get_video_statuses
 
     await bootstrap_db()
