@@ -23,6 +23,7 @@ function makeVideo(overrides: Partial<PreviewVideo> = {}): PreviewVideo {
 
 const state = {
   previewResponse: null as PreviewResponse | null,
+  metadataResponse: null as { videos: Record<string, { title: string; cover_url: string; duration_seconds: number; uploader: string; source_url: string }> } | null,
   ingestResult: { queued: [] as string[], skipped: [] as string[] },
   ingestCalls: [] as Array<{ listId: string; videos: unknown[] }>,
 };
@@ -30,6 +31,9 @@ const state = {
 vi.mock("@/lib/api", () => {
   const mockPreviewPlaylist = vi.fn((listId: string, url: string) => {
     return Promise.resolve(state.previewResponse ?? { videos: [] });
+  });
+  const mockPreviewPlaylistMetadata = vi.fn((videoIds: string[]) => {
+    return Promise.resolve(state.metadataResponse ?? { videos: {} });
   });
   const mockIngestUrl = vi.fn((listId: string, videos: unknown[]) => {
     state.ingestCalls.push({ listId, videos });
@@ -42,12 +46,14 @@ vi.mock("@/lib/api", () => {
   return {
     api: {
       previewPlaylist: mockPreviewPlaylist,
+      previewPlaylistMetadata: mockPreviewPlaylistMetadata,
       ingestUrl: mockIngestUrl,
       listSources: mockListSources,
       deleteSource: vi.fn().mockResolvedValue(undefined),
     },
     createApiClient: () => ({
       previewPlaylist: mockPreviewPlaylist,
+      previewPlaylistMetadata: mockPreviewPlaylistMetadata,
       ingestUrl: mockIngestUrl,
       listSources: mockListSources,
       deleteSource: vi.fn().mockResolvedValue(undefined),
@@ -56,6 +62,7 @@ vi.mock("@/lib/api", () => {
     toErrorMessage: vi.fn((e: unknown) => (e instanceof Error ? e.message : String(e))),
     default: {
       previewPlaylist: mockPreviewPlaylist,
+      previewPlaylistMetadata: mockPreviewPlaylistMetadata,
       ingestUrl: mockIngestUrl,
       listSources: mockListSources,
       deleteSource: vi.fn().mockResolvedValue(undefined),
@@ -88,6 +95,7 @@ afterEach(() => {
   cleanup();
   vi.clearAllMocks();
   state.previewResponse = null;
+  state.metadataResponse = null;
   state.ingestResult = { queued: ["job-1"], skipped: [] };
   state.ingestCalls = [];
 });
@@ -264,6 +272,66 @@ describe("SourcesListMode preview flow", () => {
 
     await waitFor(() => {
       expect(screen.getByText(/1 of 2 queued/i)).toBeInTheDocument();
+    });
+  });
+
+  it("test_preview_loads_metadata_after_flat", async () => {
+    state.previewResponse = {
+      videos: [
+        makeVideo({ video_id: "BV1", title: "Video 1", cover_url: "", duration_seconds: 0, uploader: "" }),
+        makeVideo({ video_id: "BV2", title: "Video 2", cover_url: "", duration_seconds: 0, uploader: "" }),
+      ],
+    };
+    state.metadataResponse = {
+      videos: {
+        BV1: { title: "Video 1", cover_url: "https://example.com/c1.jpg", duration_seconds: 120, uploader: "Author1", source_url: "https://bilibili.com/video/BV1" },
+        BV2: { title: "Video 2", cover_url: "https://example.com/c2.jpg", duration_seconds: 240, uploader: "Author2", source_url: "https://bilibili.com/video/BV2" },
+      },
+    };
+    renderMode();
+
+    const input = screen.getByPlaceholderText(/paste a bilibili url/i);
+    await userEvent.type(input, "https://bilibili.com/playlist/BVlist");
+    await userEvent.keyboard("{Enter}");
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: /preview playlist/i })).toBeInTheDocument();
+    });
+
+    await waitFor(() => {
+      expect(api.previewPlaylist).toHaveBeenCalledWith("list-1", "https://bilibili.com/playlist/BVlist");
+    });
+
+    await waitFor(() => {
+      expect(api.previewPlaylistMetadata).toHaveBeenCalledWith(["BV1", "BV2"]);
+    });
+  });
+
+  it("metadata endpoint called with array of video IDs", async () => {
+    state.previewResponse = {
+      videos: [
+        makeVideo({ video_id: "BV1", title: "V1" }),
+        makeVideo({ video_id: "BV2", title: "V2" }),
+      ],
+    };
+    state.metadataResponse = {
+      videos: {
+        BV1: { title: "V1", cover_url: "c.jpg", duration_seconds: 100, uploader: "U", source_url: "" },
+        BV2: { title: "V2", cover_url: "c.jpg", duration_seconds: 200, uploader: "U", source_url: "" },
+      },
+    };
+    renderMode();
+
+    const input = screen.getByPlaceholderText(/paste a bilibili url/i);
+    await userEvent.type(input, "https://bilibili.com/playlist/BVlist");
+    await userEvent.keyboard("{Enter}");
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: /preview playlist/i })).toBeInTheDocument();
+    });
+
+    await waitFor(() => {
+      expect(api.previewPlaylistMetadata).toHaveBeenCalledWith(["BV1", "BV2"]);
     });
   });
 });

@@ -13,6 +13,9 @@ from bibilab.models.ingest import (
     IngestUrlRequest,
     IngestUrlResponse,
     PreviewVideo,
+    VideoMetadata,
+    VideoMetadataMapResponse,
+    VideoMetadataRequest,
 )
 
 router = APIRouter()
@@ -28,7 +31,7 @@ async def ingest_preview(
         raise HTTPException(status_code=404, detail="List not found")
 
     try:
-        result = BilibiliAdapter(cookie=cfg.accounts.bilibili.cookie).resolve(req.url)
+        result = BilibiliAdapter(cookie=cfg.accounts.bilibili.cookie).resolve_flat(req.url)
     except AuthRequiredError as exc:
         raise HTTPException(
             status_code=401,
@@ -40,7 +43,7 @@ async def ingest_preview(
             detail={"message": exc.message},
         ) from exc
 
-    videos = [result] if isinstance(result, VideoMeta) else result.videos
+    videos = result.videos
 
     if not videos:
         return IngestPreviewResponse(videos=[])
@@ -63,6 +66,37 @@ async def ingest_preview(
     ]
 
     return IngestPreviewResponse(videos=preview_videos)
+
+
+@router.post("/ingest/preview/metadata")
+async def ingest_preview_metadata(
+    req: VideoMetadataRequest,
+    cfg: BibilabConfig = Depends(get_config),
+) -> VideoMetadataMapResponse:
+    video_ids = req.video_ids
+    if not video_ids:
+        return VideoMetadataMapResponse(videos={})
+
+    try:
+        metadata_map = await BilibiliAdapter(cookie=cfg.accounts.bilibili.cookie).get_videos_metadata(video_ids)
+    except DownloadError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail={"message": exc.message},
+        ) from exc
+
+    videos = {
+        video_id: VideoMetadata(
+            title=v.title,
+            cover_url=v.cover_url,
+            duration_seconds=v.duration_seconds,
+            uploader=v.uploader,
+            source_url=v.source_url,
+        )
+        for video_id, v in metadata_map.items()
+    }
+
+    return VideoMetadataMapResponse(videos=videos)
 
 
 async def _queue_video(

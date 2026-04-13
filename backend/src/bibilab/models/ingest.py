@@ -42,3 +42,19 @@ class PreviewVideo(BaseModel):
 
 class IngestPreviewResponse(BaseModel):
     videos: list[PreviewVideo]
+
+
+class VideoMetadata(BaseModel):
+    title: str
+    cover_url: str
+    duration_seconds: int
+    uploader: str
+    source_url: str
+
+
+class VideoMetadataRequest(BaseModel):
+    video_ids: list[str]
+
+
+class VideoMetadataMapResponse(BaseModel):
+    videos: dict[str, VideoMetadata]

@@ -10,6 +10,18 @@ interface PlaylistPreviewModalProps {
   onSubmit: (selected: IngestVideoIn[]) => void;
   onCancel: () => void;
   submitting?: boolean;
+  isLoading?: boolean;
+}
+
+function VideoThumbnail({ src }: { src: string }) {
+  const proxied = src ? `/proxy/cover?url=${encodeURIComponent(src)}` : "";
+  return (
+    <img
+      src={proxied}
+      alt=""
+      className="h-12 w-20 flex-shrink-0 rounded object-cover"
+    />
+  );
 }
 
 function formatDuration(seconds: number): string {
@@ -30,11 +42,25 @@ const STATUS_CHIP_MAP: Record<Exclude<VideoStatus, "new">, "ok" | "error" | "una
   needs_auth: "error",
 };
 
+function VideoRowSkeleton() {
+  return (
+    <div className="flex items-center gap-3">
+      <div className="h-4 w-4 flex-shrink-0 rounded bg-border" />
+      <div className="h-12 w-20 flex-shrink-0 rounded bg-border animate-pulse" />
+      <div className="min-w-0 flex-1 space-y-1.5">
+        <div className="h-4 w-3/4 rounded bg-border animate-pulse" />
+        <div className="h-3 w-1/2 rounded bg-border animate-pulse" />
+      </div>
+    </div>
+  );
+}
+
 export function PlaylistPreviewModal({
   videos,
   onSubmit,
   onCancel,
   submitting = false,
+  isLoading = false,
 }: PlaylistPreviewModalProps) {
   const { t } = useLanguage();
   const newVideos = useMemo(() => videos.filter((v) => v.status === "new"), [videos]);
@@ -91,13 +117,14 @@ export function PlaylistPreviewModal({
 
   const showNewSection = newVideos.length > 0;
   const showAlreadySection = nonNewVideos.length > 0;
-  const canSubmit = selected.size > 0 && !submitting;
+  const canSubmit = selected.size > 0 && !submitting && !isLoading;
 
   return (
     <Modal
       open={true}
       onClose={onCancel}
       title={t("lists.preview.title")}
+      size="lg"
       footer={
         <>
           <button
@@ -119,7 +146,8 @@ export function PlaylistPreviewModal({
         </>
       }
     >
-      {showNewSection && (
+      <div className="h-96 overflow-y-auto">
+        {showNewSection && (
         <section>
           <div className="mb-3 flex items-center gap-3">
             <input
@@ -136,38 +164,36 @@ export function PlaylistPreviewModal({
             </span>
           </div>
 
-          <div className="flex flex-col gap-3 overflow-y-auto">
-            {newVideos.map((video) => (
-              <label key={video.video_id} className="flex cursor-pointer items-center gap-3">
-                <input
-                  type="checkbox"
-                  className="h-4 w-4"
-                  checked={selected.has(video.video_id)}
-                  onChange={() => handleRowToggle(video.video_id)}
-                  data-testid={`row-checkbox-${video.video_id}`}
-                />
-                <img
-                  src={video.cover_url}
-                  alt=""
-                  className="h-12 w-20 flex-shrink-0 rounded object-cover"
-                />
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="truncate text-sm font-medium text-ink">{video.title}</span>
-                    {video.part_label && (
-                      <span className="inline-flex flex-shrink-0 rounded-full bg-blue/10 px-2 py-0.5 text-xs text-blue">
-                        {video.part_label}
-                      </span>
-                    )}
+          <div className="flex flex-col gap-3">
+            {isLoading
+              ? newVideos.map((video) => <VideoRowSkeleton key={video.video_id} />)
+              : newVideos.map((video) => (
+                <label key={video.video_id} className="flex cursor-pointer items-center gap-3">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4"
+                    checked={selected.has(video.video_id)}
+                    onChange={() => handleRowToggle(video.video_id)}
+                    data-testid={`row-checkbox-${video.video_id}`}
+                  />
+                  <VideoThumbnail src={video.cover_url} />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="truncate text-sm font-medium text-ink">{video.title}</span>
+                      {video.part_label && (
+                        <span className="inline-flex flex-shrink-0 rounded-full bg-blue/10 px-2 py-0.5 text-xs text-blue">
+                          {video.part_label}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2 text-xs text-muted">
+                      <span>{video.uploader}</span>
+                      <span>·</span>
+                      <span>{formatDuration(video.duration_seconds)}</span>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2 text-xs text-muted">
-                    <span>{video.uploader}</span>
-                    <span>·</span>
-                    <span>{formatDuration(video.duration_seconds)}</span>
-                  </div>
-                </div>
-              </label>
-            ))}
+                </label>
+              ))}
           </div>
         </section>
       )}
@@ -177,17 +203,13 @@ export function PlaylistPreviewModal({
           <div className="mb-3">
             <span className="text-sm font-medium text-muted">{t("lists.preview.alreadyInList")}</span>
           </div>
-          <div className="flex flex-col gap-3 overflow-y-auto">
+          <div className="flex flex-col gap-3">
             {nonNewVideos.map((video) => (
               <div
                 key={video.video_id}
                 className="flex items-center gap-3 opacity-60"
               >
-                <img
-                  src={video.cover_url}
-                  alt=""
-                  className="h-12 w-20 flex-shrink-0 rounded object-cover"
-                />
+                <VideoThumbnail src={video.cover_url} />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
                     <span className="truncate text-sm text-ink">{video.title}</span>
@@ -211,6 +233,7 @@ export function PlaylistPreviewModal({
           </div>
         </section>
       )}
+      </div>
     </Modal>
   );
 }

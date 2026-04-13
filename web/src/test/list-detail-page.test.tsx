@@ -123,7 +123,8 @@ vi.mock("../lib/api", () => {
       state.ingestCalls.push({ listId: _listId, videos });
       return Promise.resolve({ queued: ["job-1"], skipped: [] });
     }),
-    previewPlaylist: vi.fn(),
+    previewPlaylist: vi.fn().mockResolvedValue({ videos: [] }),
+    previewPlaylistMetadata: vi.fn().mockResolvedValue({ videos: {} }),
     deleteSource: vi.fn().mockImplementation((_listId: string, sourceId: string) => {
       state.deletedIds.push(sourceId);
       return Promise.resolve();

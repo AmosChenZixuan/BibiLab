@@ -299,7 +299,7 @@ async def test_pipeline_creates_covers_and_transcripts(tmp_bibilab_home: Path):
 
 @pytest.fixture()
 def mock_resolve_single():
-    from bibilab.adapters.base import VideoMeta
+    from bibilab.adapters.base import PlaylistMeta, VideoMeta
     from bibilab.adapters.bilibili import BilibiliAdapter
 
     def _make(video_id="BV1abc123", title="Test Video", part_label=None):
@@ -316,8 +316,14 @@ def mock_resolve_single():
 
     with patch.object(
         BilibiliAdapter,
-        "resolve",
-        return_value=_make(),
+        "resolve_flat",
+        return_value=PlaylistMeta(
+            playlist_id="BV1abc123",
+            title="Test Video",
+            platform="bilibili",
+            source_url="https://www.bilibili.com/video/BV1abc123",
+            videos=[_make()],
+        ),
     ) as mock:
         yield mock
 
@@ -351,7 +357,7 @@ def mock_resolve_multi_part():
     ]
     with patch.object(
         BilibiliAdapter,
-        "resolve",
+        "resolve_flat",
         return_value=PlaylistMeta(
             playlist_id="BV1abc123",
             title="Multi-part Video",
@@ -392,7 +398,7 @@ def mock_resolve_medialist():
     ]
     with patch.object(
         BilibiliAdapter,
-        "resolve",
+        "resolve_flat",
         return_value=PlaylistMeta(
             playlist_id="ml123",
             title="My Medialist",
@@ -561,7 +567,7 @@ async def test_preview_auth_required(client: httpx.AsyncClient):
     from bibilab.adapters.base import AuthRequiredError
     from bibilab.adapters.bilibili import BilibiliAdapter
 
-    with patch.object(BilibiliAdapter, "resolve", side_effect=AuthRequiredError("course")):
+    with patch.object(BilibiliAdapter, "resolve_flat", side_effect=AuthRequiredError("course")):
         list_id = (await client.post("/lists", json={"name": "Test"})).json()["id"]
         resp = await client.post(
             "/ingest/preview",
@@ -577,7 +583,7 @@ async def test_preview_download_error(client: httpx.AsyncClient):
     from bibilab.adapters.base import DownloadError
     from bibilab.adapters.bilibili import BilibiliAdapter
 
-    with patch.object(BilibiliAdapter, "resolve", side_effect=DownloadError("Video unavailable")):
+    with patch.object(BilibiliAdapter, "resolve_flat", side_effect=DownloadError("Video unavailable")):
         list_id = (await client.post("/lists", json={"name": "Test"})).json()["id"]
         resp = await client.post(
             "/ingest/preview",
@@ -604,3 +610,77 @@ async def test_preview_no_sources_or_jobs_created(
     assert resp.status_code == 200
     jobs = await get_pending_jobs()
     assert len(jobs) == 0
+
+
+@pytest.fixture()
+def mock_resolve_flat_medialist():
+    from bibilab.adapters.base import PlaylistMeta, VideoMeta
+    from bibilab.adapters.bilibili import BilibiliAdapter
+
+    videos = [
+        VideoMeta(
+            video_id="BVxyz789",
+            title="Medialist Video 1",
+            platform="bilibili",
+            source_url="https://www.bilibili.com/video/BVxyz789",
+            cover_url="",  # empty — flat resolve may not have thumbnails
+            duration_seconds=0,  # zero — flat resolve may not have durations
+            uploader="",  # empty — flat resolve may not have uploader
+            part_label=None,
+        ),
+        VideoMeta(
+            video_id="BVabc123",
+            title="Medialist Video 2",
+            platform="bilibili",
+            source_url="https://www.bilibili.com/video/BVabc123",
+            cover_url="",
+            duration_seconds=0,
+            uploader="",
+            part_label=None,
+        ),
+    ]
+    with patch.object(
+        BilibiliAdapter,
+        "resolve_flat",
+        return_value=PlaylistMeta(
+            playlist_id="ml123",
+            title="My Medialist",
+            platform="bilibili",
+            source_url="https://bilibili.com/medialist/ml123",
+            videos=videos,
+        ),
+    ) as mock:
+        yield mock
+
+
+@pytest.mark.asyncio
+async def test_preview_flat_returns_video_list(client: httpx.AsyncClient, mock_resolve_flat_medialist):
+    """POST /ingest/preview returns video list from resolve_flat without downloading full metadata."""
+    list_id = (await client.post("/lists", json={"name": "Test"})).json()["id"]
+    resp = await client.post(
+        "/ingest/preview",
+        json={"list_id": list_id, "url": "https://bilibili.com/medialist/ml123"},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data["videos"]) == 2
+    video_ids = {v["video_id"] for v in data["videos"]}
+    assert video_ids == {"BVxyz789", "BVabc123"}
+    titles = {v["title"] for v in data["videos"]}
+    assert titles == {"Medialist Video 1", "Medialist Video 2"}
+    # Flat resolve does not provide full metadata
+    for v in data["videos"]:
+        assert v["cover_url"] == ""
+        assert v["duration_seconds"] == 0
+        assert v["uploader"] == ""
+        assert v["status"] == "new"
+
+
+@pytest.mark.asyncio
+async def test_preview_flat_unknown_list(client: httpx.AsyncClient, mock_resolve_flat_medialist):
+    """POST /ingest/preview returns 404 for unknown list."""
+    resp = await client.post(
+        "/ingest/preview",
+        json={"list_id": "nonexistent", "url": "https://bilibili.com/medialist/ml123"},
+    )
+    assert resp.status_code == 404

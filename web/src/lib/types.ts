@@ -210,3 +210,13 @@ export interface IngestResult {
   queued: string[];
   skipped: string[];
 }
+
+export interface VideoMetadataMap {
+  videos: Record<string, {
+    title: string;
+    cover_url: string;
+    duration_seconds: number;
+    uploader: string;
+    source_url: string;
+  }>;
+}

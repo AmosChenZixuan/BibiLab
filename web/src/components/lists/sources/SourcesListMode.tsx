@@ -154,6 +154,7 @@ export function SourcesListMode({
   const [url, setUrl] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [previewVideos, setPreviewVideos] = useState<PreviewVideo[] | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const { dismissJob, getJobs, trackJobs } = useJobActivity();
   const ingestJobs = useMemo(() => getJobs("ingest", listId), [getJobs, listId]);
@@ -237,13 +238,13 @@ export function SourcesListMode({
       if (!trimmed) return;
       setError(null);
       try {
-        const response = await api.previewPlaylist(listId, trimmed);
-        if (!response) return;
+        const flatResponse = await api.previewPlaylist(listId, trimmed);
+        if (!flatResponse) return;
 
-        const newVideos = response.videos.filter((v) => v.status === "new");
+        const newVideos = flatResponse.videos.filter((v) => v.status === "new");
 
-        if (response.videos.length === 1) {
-          const video = response.videos[0];
+        if (flatResponse.videos.length === 1) {
+          const video = flatResponse.videos[0];
           if (video.status !== "new") {
             setError(t("lists.ingest.alreadyInList"));
             return;
@@ -262,22 +263,43 @@ export function SourcesListMode({
         }
 
         if (newVideos.length === 0) {
-          const hasNeedsAuth = response.videos.some((v) => v.status === "needs_auth");
+          const hasNeedsAuth = flatResponse.videos.some((v) => v.status === "needs_auth");
           if (hasNeedsAuth) {
             setError(
               t("lists.ingest.playlistAllQueuedNeedsAuth", {
-                count: response.videos.length,
-                authCount: response.videos.filter((v) => v.status === "needs_auth").length,
+                count: flatResponse.videos.length,
+                authCount: flatResponse.videos.filter((v) => v.status === "needs_auth").length,
               }),
             );
           } else {
-            setError(t("lists.ingest.playlistAllProcessed", { count: response.videos.length }));
+            setError(t("lists.ingest.playlistAllProcessed", { count: flatResponse.videos.length }));
           }
           return;
         }
 
-        setPreviewVideos(response.videos);
+        setPreviewVideos(flatResponse.videos);
+        setPreviewLoading(true);
+
+        const metadataResponse = await api.previewPlaylistMetadata(flatResponse.videos.map((v) => v.video_id));
+        if (metadataResponse) {
+          const enriched = flatResponse.videos.map((v) => {
+            const meta = metadataResponse.videos[v.video_id];
+            if (meta) {
+              return {
+                ...v,
+                title: meta.title,
+                cover_url: meta.cover_url,
+                duration_seconds: meta.duration_seconds,
+                uploader: meta.uploader,
+              };
+            }
+            return v;
+          });
+          setPreviewVideos(enriched);
+        }
+        setPreviewLoading(false);
       } catch (err) {
+        setPreviewLoading(false);
         setUrl(trimmed);
         setError(toErrorMessageWithT(err, t));
       }
@@ -344,8 +366,12 @@ export function SourcesListMode({
         <PlaylistPreviewModal
           videos={previewVideos}
           onSubmit={(selected) => submitSelection(selected, url)}
-          onCancel={() => setPreviewVideos(null)}
+          onCancel={() => {
+            setPreviewVideos(null);
+            setPreviewLoading(false);
+          }}
           submitting={submitting}
+          isLoading={previewLoading}
         />
       )}
     </>
