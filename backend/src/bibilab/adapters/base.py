@@ -12,6 +12,7 @@ class VideoMeta:
     cover_url: str
     duration_seconds: int
     uploader: str
+    part_label: str | None = None
 
     @classmethod
     def from_source(cls, source: dict) -> "VideoMeta":
@@ -51,6 +52,14 @@ class PlatformAdapter(ABC):
     @abstractmethod
     def resolve(self, url: str) -> VideoMeta | PlaylistMeta:
         """Resolve a URL to video or playlist metadata without downloading."""
+
+    @abstractmethod
+    def resolve_flat(self, url: str) -> PlaylistMeta:
+        """Resolve a playlist URL using extract_flat for fast enumeration without per-video metadata."""
+
+    @abstractmethod
+    async def get_videos_metadata(self, video_ids: list[str]) -> dict[str, VideoMeta]:
+        """Batch-fetch full metadata (cover, duration, uploader) for a list of video IDs."""
 
     @abstractmethod
     def download(self, video_id: str, source_url: str) -> Path:

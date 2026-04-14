@@ -4,7 +4,7 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import aiosqlite
 
@@ -410,17 +410,62 @@ async def source_exists(video_id: str, list_id: str) -> bool:
     return row is not None
 
 
-async def get_processed_video_ids(video_ids: list[str], list_id: str) -> set[str]:
+async def get_video_statuses(
+    video_ids: list[str], list_id: str
+) -> dict[str, Literal["new", "processed", "in_progress", "needs_auth"]]:
     if not video_ids:
-        return set()
+        return {}
     placeholders = ",".join("?" * len(video_ids))
+
     async with get_db() as db:
+        cursor = await db.execute(
+            f"""
+            SELECT json_extract(meta, '$.video_id') AS video_id, status FROM jobs
+            WHERE json_extract(meta, '$.list_id') = ?
+            AND json_extract(meta, '$.video_id') IN ({placeholders})
+            """,
+            [list_id] + video_ids,
+        )
+        job_rows = await cursor.fetchall()
+
         cursor = await db.execute(
             f"SELECT video_id FROM sources WHERE list_id=? AND video_id IN ({placeholders})",
             [list_id] + video_ids,
         )
-        rows = await cursor.fetchall()
-    return {row["video_id"] for row in rows}
+        source_rows = await cursor.fetchall()
+
+    processed = {row["video_id"] for row in source_rows}
+    statuses: dict[str, Literal["new", "processed", "in_progress", "needs_auth"]] = {}
+
+    needs_auth_videos: set[str] = set()
+    in_progress_videos: set[str] = set()
+
+    for row in job_rows:
+        vid = row["video_id"]
+        st = row["status"]
+        if st == JobStatus.NEEDS_AUTH.value:
+            needs_auth_videos.add(vid)
+        elif st in (
+            JobStatus.QUEUED.value,
+            JobStatus.DOWNLOADING.value,
+            JobStatus.TRANSCRIBING.value,
+            JobStatus.PROCESSING.value,
+            JobStatus.EXTRACTING.value,
+            JobStatus.WRITING.value,
+        ):
+            in_progress_videos.add(vid)
+
+    for vid in video_ids:
+        if vid in needs_auth_videos:
+            statuses[vid] = "needs_auth"
+        elif vid in in_progress_videos:
+            statuses[vid] = "in_progress"
+        elif vid in processed:
+            statuses[vid] = "processed"
+        else:
+            statuses[vid] = "new"
+
+    return statuses
 
 
 async def create_job(

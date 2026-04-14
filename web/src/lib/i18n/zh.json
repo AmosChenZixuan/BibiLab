@@ -147,7 +147,25 @@
     "digest": "摘要",
     "rerunDigest": "重新生成摘要",
     "rerunning": "生成中...",
-    "notSignedIn": "未登录"
+    "notSignedIn": "未登录",
+    "ingest": {
+      "alreadyInList": "已在此列表中",
+      "playlistAllProcessed": "全部 %{count} 个视频已在此列表中",
+      "playlistAllQueuedNeedsAuth": "全部 %{count} 个视频已排队 — %{authCount} 个需要认证。请查看任务面板。",
+      "playlistPartiallySkipped": "已排队 %{queued}/%{total}。%{skipped} 个已在列表中。"
+    },
+    "preview": {
+      "title": "预览播放列表",
+      "alreadyInList": "已在列表中",
+      "selectAll": "全选",
+      "submit": "添加所选",
+      "cancel": "取消",
+      "status": {
+        "processed": "已处理",
+        "inProgress": "处理中",
+        "needsAuth": "需要认证"
+      }
+    }
   },
   "jobs": {
     "running": "%{count} 个运行中",

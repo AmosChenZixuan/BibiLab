@@ -15,6 +15,7 @@ from bibilab.routers.health import router as health_router
 from bibilab.routers.ingest import router as ingest_router
 from bibilab.routers.jobs import router as jobs_router
 from bibilab.routers.lists import router as lists_router
+from bibilab.routers.proxy import router as proxy_router
 from bibilab.routers.sources import router as sources_router
 from bibilab.routers.whisper import router as whisper_router
 from bibilab.worker import WorkerLoop
@@ -73,6 +74,7 @@ def create_app(*, start_worker: bool = True) -> FastAPI:
     app.include_router(lists_router)
     app.include_router(ingest_router)
     app.include_router(artifacts_router)
+    app.include_router(proxy_router)
     app.include_router(sources_router)
     app.include_router(whisper_router)
 

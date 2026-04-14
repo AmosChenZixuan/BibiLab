@@ -9,8 +9,12 @@ import type {
   SourceContent,
   WhisperDownloadResponse,
   WhisperModel,
-ArtifactType,
+  ArtifactType,
   Artifact,
+  PreviewResponse,
+  IngestVideoIn,
+  IngestResult,
+  VideoMetadataMap,
 } from "./types";
 
 type ApiErrorDetail = string | { message?: string };
@@ -156,11 +160,29 @@ export class SourcesClient {
   rerunDigest(sourceId: string) {
     return this.request<SourceContent>(this.baseUrl, `/sources/${sourceId}/rerun`, { method: "POST" });
   }
+}
 
-  ingestUrl(listId: string, url: string) {
-    return this.request<{ queued: string[]; skipped: string[] }>(this.baseUrl, "/ingest/url", {
+export class IngestClient {
+  constructor(private readonly baseUrl: string, private readonly request: RequestFn) {}
+
+  previewPlaylist(listId: string, url: string): Promise<PreviewResponse | undefined> {
+    return this.request<PreviewResponse>(this.baseUrl, "/ingest/preview", {
       method: "POST",
       body: JSON.stringify({ list_id: listId, url }),
+    });
+  }
+
+  previewPlaylistMetadata(videoIds: string[]): Promise<VideoMetadataMap | undefined> {
+    return this.request<VideoMetadataMap>(this.baseUrl, "/ingest/preview/metadata", {
+      method: "POST",
+      body: JSON.stringify({ video_ids: videoIds }),
+    });
+  }
+
+  ingestUrl(listId: string, videos: IngestVideoIn[]): Promise<IngestResult | undefined> {
+    return this.request<IngestResult>(this.baseUrl, "/ingest/url", {
+      method: "POST",
+      body: JSON.stringify({ list_id: listId, videos }),
     });
   }
 }
@@ -257,7 +279,9 @@ export interface ApiClient {
   getSource(sourceId: string, opts?: { signal?: AbortSignal }): Promise<SourceContent | undefined>;
   deleteSource(listId: string, sourceId: string): Promise<void | undefined>;
   rerunDigest(sourceId: string): Promise<SourceContent | undefined>;
-  ingestUrl(listId: string, url: string): Promise<{ queued: string[]; skipped: string[] } | undefined>;
+  previewPlaylist(listId: string, url: string): Promise<PreviewResponse | undefined>;
+  previewPlaylistMetadata(videoIds: string[]): Promise<VideoMetadataMap | undefined>;
+  ingestUrl(listId: string, videos: IngestVideoIn[]): Promise<IngestResult | undefined>;
   listArtifacts(listId: string, opts?: { signal?: AbortSignal }): Promise<Artifact[] | undefined>;
   getArtifactContent(artifactId: string, opts?: { signal?: AbortSignal }): Promise<{ content: string } | undefined>;
   updateArtifact(artifactId: string, patch: { name?: string }): Promise<Artifact | undefined>;
@@ -291,6 +315,7 @@ export function createApiClient(baseUrl?: string): ApiClient {
   const health = new HealthClient(base, request);
   const jobs = new JobsClient(base, request);
   const models = new ModelsClient(base, request);
+  const ingest = new IngestClient(base, request);
 
   // Flat ApiClient surface — delegates to focused clients
   return {
@@ -304,7 +329,9 @@ export function createApiClient(baseUrl?: string): ApiClient {
     getSource: (id, opts) => sources.getSource(id, opts),
     deleteSource: (listId, sourceId) => sources.deleteSource(listId, sourceId),
     rerunDigest: (id) => sources.rerunDigest(id),
-    ingestUrl: (listId, url) => sources.ingestUrl(listId, url),
+    previewPlaylist: (listId, url) => ingest.previewPlaylist(listId, url),
+    previewPlaylistMetadata: (videoIds) => ingest.previewPlaylistMetadata(videoIds),
+    ingestUrl: (listId, videos) => ingest.ingestUrl(listId, videos),
     listArtifacts: (id, opts) => artifacts.listArtifacts(id, opts),
     getArtifactContent: (id, opts) => artifacts.getArtifactContent(id, opts),
     updateArtifact: (id, patch) => artifacts.updateArtifact(id, patch),

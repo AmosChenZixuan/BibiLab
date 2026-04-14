@@ -1,0 +1,377 @@
+"""Tests for BilibiliAdapter multi-part video handling."""
+
+from unittest.mock import MagicMock, patch
+
+import pytest
+
+from bibilab.adapters.bilibili import BilibiliAdapter
+
+
+def _make_video_info(bvid="BV1abc123", title="Test Video", duration=3600):
+    return {
+        "id": bvid,
+        "title": title,
+        "webpage_url": f"https://www.bilibili.com/video/{bvid}",
+        "thumbnail": "https://example.com/cover.jpg",
+        "duration": duration,
+        "uploader": "TestUser",
+        "ext": "mp4",
+    }
+
+
+def _make_multipart_info(bvid="BV1abc123", title="Multi-Part Video", num_parts=3):
+    """Simulate yt-dlp returning playlist structure for multi-part video."""
+    entries = []
+    for i in range(1, num_parts + 1):
+        entries.append(
+            {
+                "id": f"{bvid}_p{i}",
+                "title": f"{title} - P{i}",
+                "webpage_url": f"https://www.bilibili.com/video/{bvid}",
+                "thumbnail": "https://example.com/cover.jpg",
+                "duration": 1200,
+                "uploader": "TestUser",
+                "playlist": title,
+                "playlist_index": i,
+                "ext": "mp4",
+            }
+        )
+    return {
+        "_type": "playlist",
+        "id": bvid,
+        "title": title,
+        "webpage_url": f"https://www.bilibili.com/video/{bvid}",
+        "entries": entries,
+    }
+
+
+class TestResolveMultiPart:
+    """Test resolve() correctly handles multi-part videos."""
+
+    def test_resolve_multipart_returns_playlist_meta(self):
+        """Multi-part video resolve should return PlaylistMeta with N VideoMeta."""
+        adapter = BilibiliAdapter()
+        info = _make_multipart_info(bvid="BV1multi", title="Multi Part", num_parts=3)
+
+        mock = MagicMock()
+        mock.__enter__ = lambda s: mock
+        mock.__exit__ = MagicMock(return_value=False)
+        mock.extract_info = MagicMock(return_value=info)
+
+        with patch("bibilab.adapters.bilibili.yt_dlp.YoutubeDL", return_value=mock):
+            result = adapter.resolve("https://www.bilibili.com/video/BV1multi")
+
+        assert result.__class__.__name__ == "PlaylistMeta"
+        assert len(result.videos) == 3
+        assert result.playlist_id == "BV1multi"
+
+    def test_resolve_multipart_video_ids_correct(self):
+        """Each VideoMeta should have video_id in BVxxx_p{i} format."""
+        adapter = BilibiliAdapter()
+        info = _make_multipart_info(bvid="BV1test", title="Test", num_parts=3)
+
+        mock = MagicMock()
+        mock.__enter__ = lambda s: mock
+        mock.__exit__ = MagicMock(return_value=False)
+        mock.extract_info = MagicMock(return_value=info)
+
+        with patch("bibilab.adapters.bilibili.yt_dlp.YoutubeDL", return_value=mock):
+            result = adapter.resolve("https://www.bilibili.com/video/BV1test")
+
+        assert result.videos[0].video_id == "BV1test_p1"
+        assert result.videos[1].video_id == "BV1test_p2"
+        assert result.videos[2].video_id == "BV1test_p3"
+
+    def test_resolve_multipart_part_labels_correct(self):
+        """Each VideoMeta should have part_label in P{i} format."""
+        adapter = BilibiliAdapter()
+        info = _make_multipart_info(bvid="BV1test", title="Test", num_parts=3)
+
+        mock = MagicMock()
+        mock.__enter__ = lambda s: mock
+        mock.__exit__ = MagicMock(return_value=False)
+        mock.extract_info = MagicMock(return_value=info)
+
+        with patch("bibilab.adapters.bilibili.yt_dlp.YoutubeDL", return_value=mock):
+            result = adapter.resolve("https://www.bilibili.com/video/BV1test")
+
+        assert result.videos[0].part_label == "P1"
+        assert result.videos[1].part_label == "P2"
+        assert result.videos[2].part_label == "P3"
+
+    def test_resolve_single_part_video_has_no_part_label(self):
+        """Single video resolve should return VideoMeta with part_label=None."""
+        adapter = BilibiliAdapter()
+        info = _make_video_info(bvid="BV1single", title="Single Video")
+
+        mock = MagicMock()
+        mock.__enter__ = lambda s: mock
+        mock.__exit__ = MagicMock(return_value=False)
+        mock.extract_info = MagicMock(return_value=info)
+
+        with patch("bibilab.adapters.bilibili.yt_dlp.YoutubeDL", return_value=mock):
+            result = adapter.resolve("https://www.bilibili.com/video/BV1single")
+
+        assert result.__class__.__name__ == "VideoMeta"
+        assert result.video_id == "BV1single"
+        assert result.part_label is None
+
+
+def _make_mock_ydl(captured_opts: list):
+    class MockYDL:
+        def __init__(self, opts):
+            captured_opts.append(opts)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+        def extract_info(self, url, download=False):
+            return {"ext": "mp4"}
+
+    return MockYDL
+
+
+class TestDownloadMultiPart:
+    """Test download() correctly handles multi-part video IDs."""
+
+    def test_download_multipart_passes_playlist_items(self, tmp_path):
+        adapter = BilibiliAdapter(cookie="test_cookie")
+        captured_opts: list = []
+
+        with patch("bibilab.adapters.bilibili.yt_dlp.YoutubeDL", _make_mock_ydl(captured_opts)):
+            with patch("bibilab.adapters.bilibili.bibilab_home", return_value=tmp_path):
+                adapter.download("BV1test_p3", "https://www.bilibili.com/video/BV1test")
+
+        assert captured_opts[0]["playlist_items"] == "3"
+
+    def test_download_regular_video_no_playlist_items(self, tmp_path):
+        adapter = BilibiliAdapter(cookie="test_cookie")
+        captured_opts: list = []
+
+        with patch("bibilab.adapters.bilibili.yt_dlp.YoutubeDL", _make_mock_ydl(captured_opts)):
+            with patch("bibilab.adapters.bilibili.bibilab_home", return_value=tmp_path):
+                adapter.download("BV1test", "https://www.bilibili.com/video/BV1test")
+
+        assert "playlist_items" not in captured_opts[0]
+
+
+class TestSplitVideoId:
+    """Test _split_video_id helper."""
+
+    def test_split_video_id_with_part(self):
+        """_split_video_id('BV1test_p3') returns ('BV1test', 3)."""
+        from bibilab.adapters.bilibili import _split_video_id
+
+        base, part = _split_video_id("BV1test_p3")
+        assert base == "BV1test"
+        assert part == 3
+
+    def test_split_video_id_without_part(self):
+        """_split_video_id('BV1test') returns ('BV1test', None)."""
+        from bibilab.adapters.bilibili import _split_video_id
+
+        base, part = _split_video_id("BV1test")
+        assert base == "BV1test"
+        assert part is None
+
+
+class TestResolveFlat:
+    """Test resolve_flat() correctly branches on resource type."""
+
+    def test_resolve_flat_single_video_returns_one_item_playlist(self):
+        """Single-video URL returns PlaylistMeta with one video."""
+        adapter = BilibiliAdapter(cookie="test_cookie")
+
+        info = _make_video_info("BV1single", "Single Video", 1800)
+
+        with patch("yt_dlp.YoutubeDL") as mock_ydl:
+            mock_instance = MagicMock()
+            mock_instance.extract_info.return_value = info
+            mock_ydl.return_value.__enter__.return_value = mock_instance
+
+            result = adapter.resolve_flat("https://www.bilibili.com/video/BV1single")
+
+        assert len(result.videos) == 1
+        assert result.videos[0].video_id == "BV1single"
+        assert result.videos[0].title == "Single Video"
+        assert result.videos[0].cover_url == "https://example.com/cover.jpg"
+        assert result.videos[0].duration_seconds == 1800
+        assert result.videos[0].uploader == "TestUser"
+        assert result.title == "Single Video"
+
+    def test_resolve_flat_course_raises_auth_required(self):
+        """Course URL raises AuthRequiredError."""
+        from bibilab.adapters.base import AuthRequiredError
+
+        adapter = BilibiliAdapter(cookie="test_cookie")
+
+        with pytest.raises(AuthRequiredError):
+            adapter.resolve_flat("https://www.bilibili.com/cheese/")
+
+    def test_resolve_flat_playlist_uses_flat_extraction(self):
+        """Playlist URL passes extract_flat='in_playlist' to yt-dlp."""
+        adapter = BilibiliAdapter(cookie="test_cookie")
+
+        with patch("yt_dlp.YoutubeDL") as mock_ydl:
+            mock_instance = MagicMock()
+            mock_instance.extract_info.return_value = {"id": "ml", "title": "Playlist", "entries": []}
+            mock_ydl.return_value.__enter__.return_value = mock_instance
+
+            adapter.resolve_flat("https://space.bilibili.com/123/channel/")
+
+        call_kwargs = mock_instance.extract_info.call_args.kwargs
+        assert call_kwargs.get("download") is False
+
+
+class TestGetVideosMetadataConcurrency:
+    """Test get_videos_metadata respects concurrency limit."""
+
+    @pytest.mark.asyncio
+    async def test_get_videos_metadata_respects_concurrency_limit(self):
+        """Semaphore limits in-flight requests."""
+        import asyncio
+
+        from bibilab.adapters.bilibili import BilibiliAdapter
+
+        concurrency_seen = []
+
+        class MockResponse:
+            def __init__(self, status_code=200, json_data=None):
+                self.status_code = status_code
+                self._json_data = json_data or {
+                    "data": {"title": "V", "pic": "", "duration": 0, "owner": {"name": "U"}}
+                }
+
+            def json(self):
+                return self._json_data
+
+        async def fake_get(url):
+            bvid = url.split("?bvid=")[1]
+            concurrency_seen.append(bvid)
+            await asyncio.sleep(0.02)
+            return MockResponse()
+
+        class SlowClient:
+            async def get(self, url):
+                return await fake_get(url)
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                pass
+
+        with patch("httpx.AsyncClient") as mock_client:
+            mock_client.return_value.__aenter__.return_value = SlowClient()
+
+            adapter = BilibiliAdapter(cookie="test")
+            bvid_list = [f"BV{i:02d}" for i in range(12)]
+            await adapter.get_videos_metadata(bvid_list)
+
+        assert len(concurrency_seen) == 12
+
+
+class TestGetVideosMetadataDedup:
+    """Test get_videos_metadata dedupes BVIDs before making API calls."""
+
+    @pytest.mark.asyncio
+    async def test_get_videos_metadata_dedups_bvids(self):
+        """Input [BV1_p1, BV1_p2, BV2] should result in exactly 2 API calls."""
+        from bibilab.adapters.bilibili import BilibiliAdapter
+
+        adapter = BilibiliAdapter(cookie="test_cookie")
+        fetched_bvids = []
+
+        class MockResponse:
+            def __init__(self, bvid):
+                self.status_code = 200
+                self._bvid = bvid
+
+            def json(self):
+                return {
+                    "data": {
+                        "title": f"Video {self._bvid}",
+                        "pic": f"https://example.com/{self._bvid}.jpg",
+                        "duration": 3600,
+                        "owner": {"name": f"Uploader{self._bvid}"},
+                    }
+                }
+
+        class TrackingClient:
+            async def get(self, url):
+                bvid = url.split("?bvid=")[1]
+                fetched_bvids.append(bvid)
+                return MockResponse(bvid)
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                pass
+
+        with patch("httpx.AsyncClient") as mock_client:
+            mock_client.return_value.__aenter__.return_value = TrackingClient()
+
+            result = await adapter.get_videos_metadata(["BV1xxx_p1", "BV1xxx_p2", "BV2yyy"])
+
+        assert len(fetched_bvids) == 2, f"Expected 2 API calls, got {len(fetched_bvids)}"
+        assert set(fetched_bvids) == {"BV1xxx", "BV2yyy"}
+        assert "BV1xxx_p1" in result
+        assert "BV1xxx_p2" in result
+        assert "BV2yyy" in result
+        assert result["BV1xxx_p1"].title == "Video BV1xxx"
+        assert result["BV1xxx_p2"].title == "Video BV1xxx"
+        assert result["BV2yyy"].title == "Video BV2yyy"
+
+    @pytest.mark.asyncio
+    async def test_get_videos_metadata_missing_video_not_in_result(self):
+        """If API returns no data for a BVID, that key is absent and other entries are unaffected."""
+        from bibilab.adapters.bilibili import BilibiliAdapter
+
+        adapter = BilibiliAdapter(cookie="test_cookie")
+
+        class MockResponse:
+            def __init__(self, has_data=True):
+                self.status_code = 200 if has_data else 404
+                self._has_data = has_data
+
+            def json(self):
+                if not self._has_data:
+                    return {"code": -404, "message": "not found"}
+                return {
+                    "data": {
+                        "title": "Found Video",
+                        "pic": "https://example.com/pic.jpg",
+                        "duration": 1800,
+                        "owner": {"name": "Uploader"},
+                    }
+                }
+
+        class TrackingClient:
+            def __init__(self):
+                self.calls = []
+
+            async def get(self, url):
+                bvid = url.split("?bvid=")[1]
+                self.calls.append(bvid)
+                if bvid == "BVnotfound":
+                    return MockResponse(has_data=False)
+                return MockResponse(has_data=True)
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                pass
+
+        with patch("httpx.AsyncClient") as mock_client:
+            mock_client.return_value.__aenter__.return_value = TrackingClient()
+
+            result = await adapter.get_videos_metadata(["BV1abc123", "BVnotfound"])
+
+        assert "BV1abc123" in result
+        assert "BVnotfound" not in result
+        assert result["BV1abc123"].title == "Found Video"

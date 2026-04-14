@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { Thumbnail } from "@/components/ui/Thumbnail";
+import { formatDuration } from "@/lib/utils";
 
 export function Banner({
   source,
@@ -6,28 +7,19 @@ export function Banner({
   uploader,
   durationSeconds,
 }: {
-  source: { id: string };
+  source: { id: string; cover_url: string | null };
   sourceUrl?: string;
   uploader: string;
   durationSeconds: number;
 }) {
-  const [imgSrc, setImgSrc] = useState(`/api/sources/${source.id}/cover`);
-
-  function handleError() {
-    setImgSrc("/placeholder-cover.png");
-  }
-
-  const minutes = Math.floor(durationSeconds / 60);
-  const seconds = durationSeconds % 60;
-  const durationLabel = `${minutes}:${String(seconds).padStart(2, "0")}`;
+  const durationLabel = formatDuration(durationSeconds);
 
   const thumbnail = (
     <div className="relative h-64 w-full overflow-hidden rounded-xl bg-border">
-      <img
-        src={imgSrc}
+      <Thumbnail
+        source={source}
         alt={uploader}
-        onError={handleError}
-        className="h-full w-full object-cover transition-all duration-300 hover:brightness-110"
+        className="h-64 w-full"
       />
       {/* Gradient footer — floats over the bottom of the image */}
       <div className="absolute inset-x-0 bottom-0 h-10 bg-gradient-to-t from-black/70 to-transparent" />

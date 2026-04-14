@@ -86,7 +86,7 @@ export function JobSpirit() {
                     key={item.job.id}
                     className={`grid gap-2 px-4 py-3 transition-opacity ${item.isTerminal ? "opacity-50" : ""}`}
                   >
-                    <div className="flex items-center gap-2.5">
+                    <div className="flex items-center gap-2.5 overflow-hidden">
                       <StatusDot item={item} />
                       <span
                         className="min-w-0 flex-1 truncate text-sm font-medium text-ink"
