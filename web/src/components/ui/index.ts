@@ -8,3 +8,4 @@ export { Panel, PanelBody, PanelTitle } from "./Panel";
 export { SettingsField } from "./SettingsField";
 export { StatusChip } from "./StatusChip";
 export { Spinner } from "./Spinner";
+export { Thumbnail } from "./Thumbnail";

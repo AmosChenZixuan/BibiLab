@@ -3,6 +3,7 @@ import type { IngestVideoIn, PreviewVideo, VideoStatus } from "@/lib/types";
 import { Modal } from "@/components/ui/Modal";
 import { Spinner } from "@/components/ui/Spinner";
 import { StatusChip } from "@/components/ui/StatusChip";
+import { Thumbnail } from "@/components/ui/Thumbnail";
 import { useLanguage } from "@/app/LanguageContext";
 
 interface PlaylistPreviewModalProps {
@@ -11,17 +12,6 @@ interface PlaylistPreviewModalProps {
   onCancel: () => void;
   submitting?: boolean;
   isLoading?: boolean;
-}
-
-function VideoThumbnail({ src }: { src: string }) {
-  const proxied = src ? `/proxy/cover?url=${encodeURIComponent(src)}` : "";
-  return (
-    <img
-      src={proxied}
-      alt=""
-      className="h-12 w-20 flex-shrink-0 rounded object-cover"
-    />
-  );
 }
 
 function formatDuration(seconds: number): string {
@@ -42,10 +32,63 @@ const STATUS_CHIP_MAP: Record<Exclude<VideoStatus, "new">, "ok" | "error" | "una
   needs_auth: "error",
 };
 
-function VideoRowSkeleton() {
+function VideoRow({
+  video,
+  selectable,
+  selected,
+  onToggle,
+}: {
+  video: PreviewVideo;
+  selectable?: boolean;
+  selected?: boolean;
+  onToggle?: () => void;
+}) {
+  const { t } = useLanguage();
+  const isProcessed = video.status !== "new";
+
+  return (
+    <div className={`flex items-center gap-3 ${isProcessed ? "opacity-60" : ""}`}>
+      {selectable && (
+        <input
+          type="checkbox"
+          className="h-4 w-4"
+          checked={selected}
+          onChange={onToggle}
+          data-testid={`row-checkbox-${video.video_id}`}
+        />
+      )}
+      <Thumbnail
+        remoteUrl={video.cover_url}
+        className="h-12 w-20 flex-shrink-0 rounded"
+      />
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <span className="truncate text-sm font-medium text-ink">{video.title}</span>
+          {video.part_label && (
+            <span className="inline-flex flex-shrink-0 rounded-full bg-blue/10 px-2 py-0.5 text-xs text-blue">
+              {video.part_label}
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-2 text-xs text-muted">
+          <span>{video.uploader}</span>
+          <span>·</span>
+          <span>{formatDuration(video.duration_seconds)}</span>
+          {isProcessed && (
+            <StatusChip status={STATUS_CHIP_MAP[video.status as Exclude<VideoStatus, "new">]}>
+              {t(STATUS_LABEL_KEY[video.status as Exclude<VideoStatus, "new">])}
+            </StatusChip>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function VideoRowSkeleton({ selectable }: { selectable?: boolean }) {
   return (
     <div className="flex items-center gap-3">
-      <div className="h-4 w-4 flex-shrink-0 rounded bg-border" />
+      {selectable && <div className="h-4 w-4 flex-shrink-0 rounded bg-border" />}
       <div className="h-12 w-20 flex-shrink-0 rounded bg-border animate-pulse" />
       <div className="min-w-0 flex-1 space-y-1.5">
         <div className="h-4 w-3/4 rounded bg-border animate-pulse" />
@@ -90,9 +133,7 @@ export function PlaylistPreviewModal({
 
   const handleMasterToggle = useCallback(() => {
     setSelected((prev) => {
-      if (prev.size === newVideos.length) {
-        return new Set();
-      }
+      if (prev.size === newVideos.length) return new Set();
       return new Set(newVideos.map((v) => v.video_id));
     });
   }, [newVideos]);
@@ -115,8 +156,6 @@ export function PlaylistPreviewModal({
     onSubmit(payload);
   }, [videos, selected, onSubmit]);
 
-  const showNewSection = newVideos.length > 0;
-  const showAlreadySection = nonNewVideos.length > 0;
   const canSubmit = selected.size > 0 && !submitting && !isLoading;
 
   return (
@@ -146,93 +185,50 @@ export function PlaylistPreviewModal({
         </>
       }
     >
-      <div className="h-96 overflow-y-auto">
-        {showNewSection && (
-        <section>
-          <div className="mb-3 flex items-center gap-3">
-            <input
-              ref={masterRef}
-              type="checkbox"
-              className="h-4 w-4"
-              onChange={handleMasterToggle}
-              aria-label={t("lists.preview.selectAll")}
-              data-testid="master-checkbox"
-            />
-            <span className="text-sm font-medium text-ink">{t("lists.preview.selectAll")}</span>
-            <span className="text-sm text-muted">
-              ({selected.size} / {newVideos.length})
-            </span>
-          </div>
+      <div className="h-96 overflow-y-auto space-y-6">
+        {newVideos.length > 0 && (
+          <section>
+            <div className="mb-3 flex items-center gap-3">
+              <input
+                ref={masterRef}
+                type="checkbox"
+                className="h-4 w-4"
+                onChange={handleMasterToggle}
+                aria-label={t("lists.preview.selectAll")}
+                data-testid="master-checkbox"
+              />
+              <span className="text-sm font-medium text-ink">{t("lists.preview.selectAll")}</span>
+              <span className="text-sm text-muted">({selected.size} / {newVideos.length})</span>
+            </div>
+            <div className="flex flex-col gap-3">
+              {isLoading
+                ? newVideos.map((v) => <VideoRowSkeleton key={v.video_id} selectable />)
+                : newVideos.map((v) => (
+                    <label key={v.video_id} className="cursor-pointer">
+                      <VideoRow
+                        video={v}
+                        selectable
+                        selected={selected.has(v.video_id)}
+                        onToggle={() => handleRowToggle(v.video_id)}
+                      />
+                    </label>
+                  ))}
+            </div>
+          </section>
+        )}
 
-          <div className="flex flex-col gap-3">
-            {isLoading
-              ? newVideos.map((video) => <VideoRowSkeleton key={video.video_id} />)
-              : newVideos.map((video) => (
-                <label key={video.video_id} className="flex cursor-pointer items-center gap-3">
-                  <input
-                    type="checkbox"
-                    className="h-4 w-4"
-                    checked={selected.has(video.video_id)}
-                    onChange={() => handleRowToggle(video.video_id)}
-                    data-testid={`row-checkbox-${video.video_id}`}
-                  />
-                  <VideoThumbnail src={video.cover_url} />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="truncate text-sm font-medium text-ink">{video.title}</span>
-                      {video.part_label && (
-                        <span className="inline-flex flex-shrink-0 rounded-full bg-blue/10 px-2 py-0.5 text-xs text-blue">
-                          {video.part_label}
-                        </span>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-2 text-xs text-muted">
-                      <span>{video.uploader}</span>
-                      <span>·</span>
-                      <span>{formatDuration(video.duration_seconds)}</span>
-                    </div>
-                  </div>
-                </label>
-              ))}
-          </div>
-        </section>
-      )}
-
-      {showAlreadySection && (
-        <section className={showNewSection ? "mt-6 border-t border-border pt-6" : ""}>
-          <div className="mb-3">
-            <span className="text-sm font-medium text-muted">{t("lists.preview.alreadyInList")}</span>
-          </div>
-          <div className="flex flex-col gap-3">
-            {nonNewVideos.map((video) => (
-              <div
-                key={video.video_id}
-                className="flex items-center gap-3 opacity-60"
-              >
-                <VideoThumbnail src={video.cover_url} />
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="truncate text-sm text-ink">{video.title}</span>
-                    {video.part_label && (
-                      <span className="inline-flex flex-shrink-0 rounded-full bg-blue/10 px-2 py-0.5 text-xs text-blue">
-                        {video.part_label}
-                      </span>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2 text-xs text-muted">
-                    <span>{video.uploader}</span>
-                    <span>·</span>
-                    <span>{formatDuration(video.duration_seconds)}</span>
-                    <StatusChip status={STATUS_CHIP_MAP[video.status as Exclude<VideoStatus, "new">]}>
-                      {t(STATUS_LABEL_KEY[video.status as Exclude<VideoStatus, "new">])}
-                    </StatusChip>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </section>
-      )}
+        {nonNewVideos.length > 0 && (
+          <section className="border-t border-border pt-6">
+            <div className="mb-3 text-sm font-medium text-muted">
+              {t("lists.preview.alreadyInList")}
+            </div>
+            <div className="flex flex-col gap-3">
+              {isLoading
+                ? nonNewVideos.map((v) => <VideoRowSkeleton key={v.video_id} />)
+                : nonNewVideos.map((v) => <VideoRow key={v.video_id} video={v} />)}
+            </div>
+          </section>
+        )}
       </div>
     </Modal>
   );
