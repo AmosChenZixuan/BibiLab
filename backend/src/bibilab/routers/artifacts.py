@@ -1,10 +1,10 @@
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse
 
-from bibilab.config import bibilab_home
+from bibilab.config import BibilabConfig, bibilab_home, get_config
 from bibilab.db import (
     create_job,
     delete_artifact,
@@ -36,12 +36,18 @@ async def list_artifacts(list_id: str) -> list[ArtifactResponse]:
 async def create_artifact_endpoint(
     list_id: str,
     req: ArtifactCreateRequest,
+    request: Request,
+    cfg: BibilabConfig = Depends(get_config),
 ) -> JobResponse:
     row = await get_list(list_id)
     if row is None:
         raise HTTPException(status_code=404, detail="List not found")
 
     artifact_id = str(uuid.uuid4())
+
+    ui_lang_header = request.headers.get("X-UI-Lang", "en")
+    output_lang = cfg.ai.output_language
+    resolved_lang = ui_lang_header if output_lang == "ui" else output_lang
 
     # Queue a job for artifact generation (worker will create artifact record on success)
     job_id = await create_job(
@@ -52,6 +58,7 @@ async def create_artifact_endpoint(
             "type": req.type,
             "prompt": req.prompt,
             "source_ids": req.source_ids,
+            "ui_lang": resolved_lang,
         },
     )
 

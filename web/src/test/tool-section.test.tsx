@@ -22,6 +22,7 @@ vi.mock("@/lib/api", () => ({
     listJobs: vi.fn().mockResolvedValue([]),
     deleteJob: vi.fn().mockResolvedValue(undefined),
   },
+  setCurrentLang: vi.fn(),
   toErrorMessage: (error: unknown) => (error instanceof Error ? error.message : "Request failed"),
   createApiClient: () => ({
     listJobs: vi.fn().mockResolvedValue([]),

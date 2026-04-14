@@ -26,6 +26,7 @@ from bibilab.db import (
     write_source,
 )
 from bibilab.models.jobs import JobStatus
+from bibilab.pipeline._shared import _LANG_INSTRUCTION, _LANG_NAME, _call_llm, _parse_llm_json_response, _resolved_lang
 from bibilab.pipeline.audio import PipelineError, extract_audio
 from bibilab.pipeline.chunk import chunk_segments
 from bibilab.pipeline.digest import DigestResult, digest
@@ -208,7 +209,9 @@ class WorkerLoop:
             await update_job_status(job_id, JobStatus.PROCESSING.value, progress=30)
 
             # Call LLM to generate artifact
-            artifact_result = await self._generate_artifact(prompt, artifact_type, combined_transcript, cfg)
+            artifact_result = await self._generate_artifact(
+                prompt, artifact_type, combined_transcript, cfg, meta_raw.get("ui_lang")
+            )
 
             # Check for cancellation before writing file
             if job_id in self._cancelled:
@@ -263,9 +266,11 @@ class WorkerLoop:
         artifact_type: str,
         transcript_text: str,
         cfg: BibilabConfig,
+        ui_lang: str | None = None,
     ) -> ArtifactResult:
         """Call LLM to generate artifact content. Returns title and content."""
-        from bibilab.pipeline._shared import _call_llm, _parse_llm_json_response
+        lang = _resolved_lang(cfg.ai.output_language, ui_lang)
+        lang_instruction = _LANG_INSTRUCTION.get(lang, _LANG_INSTRUCTION["en"])
 
         # Truncate transcript if too long
         char_limit = cfg.ai.transcript_char_limit
@@ -273,18 +278,22 @@ class WorkerLoop:
             logger.warning("Transcript exceeds %d chars; truncating", char_limit)
             transcript_text = transcript_text[:char_limit]
 
-        llm_prompt = f"""{prompt}
+        llm_prompt = f"""{lang_instruction}
+
+{prompt}
 
 Based on the following transcripts, generate the requested artifact content.
 
 Transcript:
 {transcript_text}
 
+{lang_instruction}
 Respond ONLY with valid JSON matching this schema:
 {{
   "name": "string (a short title for this artifact)",
   "content": "string (the main artifact content in markdown format)"
-}}"""
+}}
+All output fields MUST be written in {_LANG_NAME.get(lang, "English")}."""
 
         last_exc: Exception | None = None
         for attempt in range(3):

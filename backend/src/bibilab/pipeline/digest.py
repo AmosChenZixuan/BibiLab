@@ -10,6 +10,7 @@ from bibilab.adapters.base import VideoMeta
 from bibilab.config import AIConfig
 from bibilab.pipeline._shared import (
     _LANG_INSTRUCTION,
+    _LANG_NAME,
     _STRICT_SUFFIX,
     _call_llm,
     _parse_llm_json_response,
@@ -64,7 +65,12 @@ def digest(
         logger.warning("Transcript for %s exceeds %d chars; truncating", meta.video_id, char_limit)
         transcript_text = transcript_text[:char_limit]
 
-    prompt = lang_instruction + "\n\n" + _DIGEST_PROMPT.format(title=meta.title, transcript=transcript_text)
+    prompt = (
+        lang_instruction
+        + "\n\n"
+        + _DIGEST_PROMPT.format(title=meta.title, transcript=transcript_text)
+        + f"\n\n{lang_instruction}\nAll output fields MUST be written in {_LANG_NAME.get(lang, 'English')}."
+    )
 
     last_exc: Exception | None = None
     for attempt in range(3):

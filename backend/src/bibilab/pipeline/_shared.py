@@ -19,6 +19,11 @@ _LANG_INSTRUCTION = {
     "zh": "请用中文回答。不要使用其他语言。",
 }
 
+_LANG_NAME = {
+    "en": "English",
+    "zh": "Chinese",
+}
+
 
 def _resolved_lang(output_language: str, ui_lang: str | None) -> str:
     if output_language == "ui":

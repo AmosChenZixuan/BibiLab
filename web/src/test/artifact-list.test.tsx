@@ -77,6 +77,7 @@ vi.mock("@/lib/api", () => {
       listJobs: vi.fn().mockResolvedValue([]),
       deleteJob: vi.fn(),
     }),
+    setCurrentLang: vi.fn(),
   };
 });
 

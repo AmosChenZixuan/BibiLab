@@ -215,3 +215,141 @@ def test_generate_overview_respects_output_language(tmp_path: Path):
     call_args = mock_call.call_args
     prompt = call_args[0][0]
     assert "请用中文回答" in prompt
+
+
+# ---------------------------------------------------------------------------
+# worker._generate_artifact language instruction
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_generate_artifact_includes_zh_lang_instruction(tmp_path: Path, monkeypatch):
+    """_generate_artifact prepends Chinese language instruction when ui_lang=zh."""
+    from unittest.mock import MagicMock
+
+    from bibilab.config import AIConfig
+    from bibilab.worker import WorkerLoop
+
+    worker = WorkerLoop()
+
+    captured_prompt = None
+
+    def mock_call_llm(prompt, cfg, llm_timeout=120, llm_max_tokens=2048):
+        nonlocal captured_prompt
+        captured_prompt = prompt
+        return '{"name": "Test", "content": "# Test"}'
+
+    monkeypatch.setattr("bibilab.worker._call_llm", mock_call_llm)
+
+    cfg = MagicMock()
+    cfg.ai = AIConfig(
+        provider="openai",
+        model="gpt-4o-mini",
+        api_key="sk-test",
+        base_url="https://api.openai.com/v1",
+        output_language="ui",
+    )
+    cfg.transcription.llm_timeout = 120
+    cfg.transcription.llm_max_tokens = 2048
+    cfg.ai.transcript_char_limit = 100000
+
+    result = await worker._generate_artifact(
+        prompt="Generate a summary",
+        artifact_type="summary",
+        transcript_text="This is a test transcript.",
+        cfg=cfg,
+        ui_lang="zh",
+    )
+
+    assert captured_prompt is not None
+    assert captured_prompt.startswith("请用中文回答")
+    assert "All output fields MUST be written in Chinese" in captured_prompt
+    assert result.name == "Test"
+
+
+@pytest.mark.asyncio
+async def test_generate_artifact_includes_en_lang_instruction(tmp_path: Path, monkeypatch):
+    """_generate_artifact prepends English language instruction when output_language=en."""
+    from unittest.mock import MagicMock
+
+    from bibilab.config import AIConfig
+    from bibilab.worker import WorkerLoop
+
+    worker = WorkerLoop()
+
+    captured_prompt = None
+
+    def mock_call_llm(prompt, cfg, llm_timeout=120, llm_max_tokens=2048):
+        nonlocal captured_prompt
+        captured_prompt = prompt
+        return '{"name": "Test", "content": "# Test"}'
+
+    monkeypatch.setattr("bibilab.worker._call_llm", mock_call_llm)
+
+    cfg = MagicMock()
+    cfg.ai = AIConfig(
+        provider="openai",
+        model="gpt-4o-mini",
+        api_key="sk-test",
+        base_url="https://api.openai.com/v1",
+        output_language="en",
+    )
+    cfg.transcription.llm_timeout = 120
+    cfg.transcription.llm_max_tokens = 2048
+    cfg.ai.transcript_char_limit = 100000
+
+    await worker._generate_artifact(
+        prompt="Generate a summary",
+        artifact_type="summary",
+        transcript_text="This is a test transcript.",
+        cfg=cfg,
+        ui_lang=None,
+    )
+
+    assert captured_prompt is not None
+    assert captured_prompt.startswith("Respond in English only")
+    assert "All output fields MUST be written in English" in captured_prompt
+
+
+@pytest.mark.asyncio
+async def test_generate_artifact_unknown_lang_falls_back_to_english(tmp_path: Path, monkeypatch):
+    """_generate_artifact with unrecognized output_language falls back to English."""
+    from unittest.mock import MagicMock
+
+    from bibilab.config import AIConfig
+    from bibilab.worker import WorkerLoop
+
+    worker = WorkerLoop()
+
+    captured_prompt = None
+
+    def mock_call_llm(prompt, cfg, llm_timeout=120, llm_max_tokens=2048):
+        nonlocal captured_prompt
+        captured_prompt = prompt
+        return '{"name": "Test", "content": "# Test"}'
+
+    monkeypatch.setattr("bibilab.worker._call_llm", mock_call_llm)
+
+    cfg = MagicMock()
+    cfg.ai = AIConfig(
+        provider="openai",
+        model="gpt-4o-mini",
+        api_key="sk-test",
+        base_url="https://api.openai.com/v1",
+        output_language="fr",
+    )
+    cfg.transcription.llm_timeout = 120
+    cfg.transcription.llm_max_tokens = 2048
+    cfg.ai.transcript_char_limit = 100000
+
+    await worker._generate_artifact(
+        prompt="Generate a summary",
+        artifact_type="summary",
+        transcript_text="French biased transcript",
+        cfg=cfg,
+        ui_lang=None,
+    )
+
+    assert captured_prompt is not None
+    assert captured_prompt.startswith("Respond in English only")
+    assert "All output fields MUST be written in English" in captured_prompt

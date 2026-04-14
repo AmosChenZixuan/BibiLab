@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { createApiClient, api } from "@/lib/api";
+import { createApiClient, api, setCurrentLang } from "@/lib/api";
 
 // Mock fetch globally
 const mockFetch = vi.fn();
@@ -42,7 +42,7 @@ describe("ListsClient.createArtifact", () => {
       "http://localhost:8765/api/lists/list-1/artifacts",
       expect.objectContaining({
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: expect.objectContaining({ "Content-Type": "application/json", "X-UI-Lang": "en" }),
         body: JSON.stringify({
           type: "brief",
           prompt: "Give me a brief",
@@ -78,5 +78,39 @@ describe("ListsClient.createArtifact", () => {
 
     expect(result.id).toBe("job-456");
     expect(result.status).toBe("queued");
+  });
+
+  test("setCurrentLang('zh') updates X-UI-Lang header to zh", async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 201,
+      json: async () => ({
+        id: "job-789",
+        type: "artifact",
+        status: "queued",
+        progress: 0,
+        error: null,
+        created_at: "2026-04-08T00:00:00Z",
+        updated_at: "2026-04-08T00:00:00Z",
+        meta: {},
+      }),
+    });
+
+    setCurrentLang("zh");
+    const client = createApiClient("http://localhost:8765/api");
+    await client.createArtifact("list-1", {
+      type: "brief",
+      prompt: "Brief",
+      source_ids: ["src-1"],
+    });
+
+    expect(mockFetch).toHaveBeenCalledWith(
+      "http://localhost:8765/api/lists/list-1/artifacts",
+      expect.objectContaining({
+        headers: expect.objectContaining({ "X-UI-Lang": "zh" }),
+      }),
+    );
+
+    setCurrentLang("en");
   });
 });

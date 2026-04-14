@@ -5,6 +5,7 @@ import logging
 from bibilab.config import AIConfig
 from bibilab.pipeline._shared import (
     _LANG_INSTRUCTION,
+    _LANG_NAME,
     _call_llm,
     _resolved_lang,
 )
@@ -36,7 +37,12 @@ def generate_overview(
     lang = _resolved_lang(output_language, ui_lang)
     lang_instruction = _LANG_INSTRUCTION.get(lang, _LANG_INSTRUCTION["en"])
     videos_text = "\n\n".join(f"### {v['title']}\n{v['summary']}" for v in list_videos)
-    prompt = lang_instruction + "\n\n" + _OVERVIEW_PROMPT.format(videos=videos_text)
+    prompt = (
+        lang_instruction
+        + "\n\n"
+        + _OVERVIEW_PROMPT.format(videos=videos_text)
+        + f"\n\n{lang_instruction}\nThe outline MUST be written in {_LANG_NAME.get(lang, 'English')}."
+    )
     return _call_llm(
         prompt,
         cfg,

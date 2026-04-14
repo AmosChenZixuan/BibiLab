@@ -22,6 +22,7 @@ vi.mock("@/lib/api", () => ({
     listJobs: vi.fn().mockResolvedValue([]),
     deleteJob: vi.fn().mockResolvedValue(undefined),
   },
+  setCurrentLang: vi.fn(),
 }));
 
 function renderReportsModal(props?: Partial<React.ComponentProps<typeof ReportsModal>>) {

@@ -37,6 +37,7 @@ vi.mock("@/lib/api", () => ({
     listArtifacts: vi.fn().mockResolvedValue([]),
     getArtifactContent: vi.fn().mockResolvedValue({ content: "# Study Guide\n\nContent here" }),
   },
+  setCurrentLang: vi.fn(),
 }));
 
 function renderLabPanel(props?: Partial<React.ComponentProps<typeof LabPanel>>) {

@@ -241,3 +241,27 @@ async def test_create_artifact_missing_fields(client: httpx.AsyncClient):
         json={"prompt": "Summarize", "source_ids": []},
     )
     assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_create_artifact_stores_ui_lang_in_job_meta(client: httpx.AsyncClient):
+    """POST /lists/{list_id}/artifacts stores resolved ui_lang in job meta."""
+    import json as json_module
+
+    from bibilab.db import get_job
+
+    list_id = (await client.post("/lists", json={"name": "Test List"})).json()["id"]
+    resp = await client.post(
+        f"/lists/{list_id}/artifacts",
+        json={
+            "type": "summary",
+            "prompt": "Summarize the videos",
+            "source_ids": ["src1"],
+        },
+        headers={"X-UI-Lang": "zh"},
+    )
+    assert resp.status_code == 201
+    job_id = resp.json()["id"]
+    job_row = await get_job(job_id)
+    meta = json_module.loads(job_row["meta"])
+    assert meta["ui_lang"] == "zh"

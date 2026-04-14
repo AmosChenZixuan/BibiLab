@@ -17,6 +17,7 @@ vi.mock("../lib/api", () => {
     JOBS_REFRESH_EVENT: "bibilab:jobs:refresh",
     createApiClient: () => mockApi,
     api: mockApi,
+    setCurrentLang: vi.fn(),
   };
 });
 

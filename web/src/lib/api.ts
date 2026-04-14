@@ -16,6 +16,7 @@ import type {
   IngestResult,
   VideoMetadataMap,
 } from "./types";
+import type { Lang } from "@/app/LanguageContext";
 
 type ApiErrorDetail = string | { message?: string };
 
@@ -55,6 +56,14 @@ export function notifyHealthChanged(health: HealthResponse) {
   window.dispatchEvent(new CustomEvent<HealthResponse>(HEALTH_REFRESH_EVENT, { detail: health }));
 }
 
+// ─── Current UI language ──────────────────────────────────────────────────────
+
+let _currentLang: Lang = (localStorage.getItem("bibilab-lang") as Lang | null) ?? "en";
+
+export function setCurrentLang(lang: Lang) {
+  _currentLang = lang;
+}
+
 // ─── Request helper ───────────────────────────────────────────────────────────
 
 type RequestFn = <T>(
@@ -72,6 +81,7 @@ async function request<T>(
   const response = await fetch(`${baseUrl}${path}`, {
     headers: {
       "Content-Type": "application/json",
+      "X-UI-Lang": _currentLang,
       ...(init?.headers ?? {}),
     },
     ...fetchInit,
@@ -305,8 +315,6 @@ export interface ApiClient {
  */
 export function createApiClient(baseUrl?: string): ApiClient {
   const base = baseUrl ?? `${window.location.origin}/api`;
-  // Bind request once so each client gets the correct baseUrl baked in
-  const req = (path: string, init?: RequestInit & { signal?: AbortSignal }) => request(base, path, init);
 
   const lists = new ListsClient(base, request);
   const sources = new SourcesClient(base, request);

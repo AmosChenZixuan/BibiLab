@@ -1,6 +1,6 @@
 import asyncio
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse
 
 from bibilab.adapters.base import VideoMeta
@@ -31,7 +31,9 @@ async def get_source_cover(source_id: str) -> FileResponse:
 
 
 @router.post("/sources/{source_id}/rerun", status_code=200)
-async def rerun_source(source_id: str, cfg: BibilabConfig = Depends(get_config)) -> SourceContentResponse:
+async def rerun_source(
+    source_id: str, request: Request, cfg: BibilabConfig = Depends(get_config)
+) -> SourceContentResponse:
     """Re-run digest on an existing source using its stored transcript."""
     source = await get_source(source_id)
     if source is None:
@@ -58,6 +60,7 @@ async def rerun_source(source_id: str, cfg: BibilabConfig = Depends(get_config))
         video_meta,
         cfg.ai,
         cfg.ai.output_language,
+        request.headers.get("X-UI-Lang"),
         llm_timeout=cfg.transcription.llm_timeout,
         llm_max_tokens=cfg.transcription.llm_max_tokens,
     )

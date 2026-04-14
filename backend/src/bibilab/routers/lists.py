@@ -185,7 +185,9 @@ async def delete_list_source(list_id: str, source_id: str, cfg: BibilabConfig = 
 
 
 @router.post("/lists/{list_id}/overview")
-async def generate_list_overview(list_id: str, cfg: BibilabConfig = Depends(get_config)) -> OverviewResponse:
+async def generate_list_overview(
+    list_id: str, request: Request, cfg: BibilabConfig = Depends(get_config)
+) -> OverviewResponse:
     row = await get_list(list_id)
     if row is None:
         raise HTTPException(status_code=404, detail="List not found")
@@ -201,6 +203,8 @@ async def generate_list_overview(list_id: str, cfg: BibilabConfig = Depends(get_
         generate_overview,
         list_videos,
         cfg.ai,
+        cfg.ai.output_language,
+        request.headers.get("X-UI-Lang"),
         llm_timeout=cfg.transcription.llm_timeout,
         llm_max_tokens=cfg.transcription.llm_max_tokens,
     )

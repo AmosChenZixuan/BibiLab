@@ -51,6 +51,7 @@ vi.mock("@/lib/api", () => {
       listSources: mockListSources,
       deleteSource: vi.fn().mockResolvedValue(undefined),
     },
+    setCurrentLang: vi.fn(),
     createApiClient: () => ({
       previewPlaylist: mockPreviewPlaylist,
       previewPlaylistMetadata: mockPreviewPlaylistMetadata,

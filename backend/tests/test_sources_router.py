@@ -170,3 +170,53 @@ async def test_rerun_source_success(client: httpx.AsyncClient, tmp_bibilab_home:
 
     # Verify transcript file was not modified
     assert transcript_file.read_text(encoding="utf-8") == "original transcript text"
+
+
+@pytest.mark.asyncio
+async def test_rerun_source_respects_ui_lang_header(client: httpx.AsyncClient, tmp_bibilab_home: Path, monkeypatch):
+    """POST /sources/{source_id}/rerun with X-UI-Lang:zh passes Chinese lang instruction to LLM."""
+    from bibilab.db import create_list, write_source
+
+    await create_list("list-lang-test", "Lang Test", "2025-01-01T00:00:00Z")
+
+    source_id = "src-lang-001"
+    transcript_path = f"transcripts/{source_id}.txt"
+    transcript_file = tmp_bibilab_home / transcript_path
+    transcript_file.parent.mkdir(parents=True, exist_ok=True)
+    transcript_file.write_text("test transcript", encoding="utf-8")
+
+    await write_source(
+        source_id=source_id,
+        video_id="BVlang001",
+        platform="bilibili",
+        list_id="list-lang-test",
+        title="Lang Test Video",
+        summary="old",
+        keywords=[],
+        cover_url=None,
+        transcript_path=transcript_path,
+        source_url="https://www.bilibili.com/video/BVlang001",
+        duration_seconds=60,
+        uploader="TestUser",
+        language="en",
+        whisper_model="base",
+        ai_model="gpt-4o",
+        vision_enabled=False,
+        settings_snapshot={},
+    )
+
+    captured_prompt = None
+
+    def mock_call_llm(prompt, cfg, llm_timeout=120, llm_max_tokens=2048):
+        nonlocal captured_prompt
+        captured_prompt = prompt
+        return '{"summary": "new summary", "keywords": []}'
+
+    import bibilab.pipeline.digest as digest_module
+
+    monkeypatch.setattr(digest_module, "_call_llm", mock_call_llm)
+
+    resp = await client.post(f"/sources/{source_id}/rerun", headers={"X-UI-Lang": "zh"})
+    assert resp.status_code == 200
+    assert captured_prompt is not None
+    assert "请用中文回答" in captured_prompt
