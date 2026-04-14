@@ -194,7 +194,7 @@ export function SourcesListMode({
   }, [ingestJobs, listId, refreshedJobs]);
 
   const submitSelection = useCallback(
-    async (selected: IngestVideoIn[], label: string) => {
+    async (selected: IngestVideoIn[]) => {
       if (selected.length === 0) return;
       setSubmitting(true);
       setError(null);
@@ -212,10 +212,10 @@ export function SourcesListMode({
         }
         if (result.queued.length > 0) {
           trackJobs(
-            result.queued.map((id) => ({
+            result.queued.map((id, idx) => ({
               id,
               producer: "ingest",
-              label,
+              label: selected[idx].title,
               contextKey: listId,
             })),
           );
@@ -258,7 +258,7 @@ export function SourcesListMode({
             platform: video.platform,
             source_url: video.source_url,
           };
-          await submitSelection([payload], trimmed);
+          await submitSelection([payload]);
           return;
         }
 
@@ -365,7 +365,7 @@ export function SourcesListMode({
       {previewVideos !== null && (
         <PlaylistPreviewModal
           videos={previewVideos}
-          onSubmit={(selected) => submitSelection(selected, url)}
+          onSubmit={(selected) => submitSelection(selected)}
           onCancel={() => {
             setPreviewVideos(null);
             setPreviewLoading(false);
