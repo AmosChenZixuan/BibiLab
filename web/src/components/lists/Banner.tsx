@@ -1,4 +1,5 @@
 import { Thumbnail } from "@/components/ui/Thumbnail";
+import { formatDuration } from "@/lib/utils";
 
 export function Banner({
   source,
@@ -11,9 +12,7 @@ export function Banner({
   uploader: string;
   durationSeconds: number;
 }) {
-  const minutes = Math.floor(durationSeconds / 60);
-  const seconds = durationSeconds % 60;
-  const durationLabel = `${minutes}:${String(seconds).padStart(2, "0")}`;
+  const durationLabel = formatDuration(durationSeconds);
 
   const thumbnail = (
     <div className="relative h-64 w-full overflow-hidden rounded-xl bg-border">

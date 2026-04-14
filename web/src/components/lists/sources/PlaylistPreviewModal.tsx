@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { IngestVideoIn, PreviewVideo, VideoStatus } from "@/lib/types";
+import { formatDuration } from "@/lib/utils";
 import { Modal } from "@/components/ui/Modal";
 import { Spinner } from "@/components/ui/Spinner";
 import { StatusChip } from "@/components/ui/StatusChip";
@@ -12,12 +13,6 @@ interface PlaylistPreviewModalProps {
   onCancel: () => void;
   submitting?: boolean;
   isLoading?: boolean;
-}
-
-function formatDuration(seconds: number): string {
-  const m = Math.floor(seconds / 60);
-  const s = seconds % 60;
-  return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
 const STATUS_LABEL_KEY: Record<Exclude<VideoStatus, "new">, string> = {
