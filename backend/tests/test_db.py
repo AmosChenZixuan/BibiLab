@@ -415,6 +415,18 @@ async def test_get_video_statuses_job_list_id_isolation(tmp_bibilab_home: Path) 
 
 
 @pytest.mark.asyncio
+async def test_get_video_statuses_job_video_id_isolation(tmp_bibilab_home: Path) -> None:
+    """A job for a different video_id in the same list must not affect the result."""
+    from bibilab.db import bootstrap_db, create_job, create_list, get_video_statuses
+
+    await bootstrap_db()
+    await create_list("list-1", "Test", "2026-01-01T00:00:00")
+    await create_job("ingest", {"video_id": "BV_other", "list_id": "list-1"})
+    result = await get_video_statuses(["BV1"], "list-1")
+    assert result == {"BV1": "new"}
+
+
+@pytest.mark.asyncio
 async def test_get_video_statuses_precedence_needs_auth_over_processed(tmp_bibilab_home: Path) -> None:
     from bibilab.db import bootstrap_db, create_job, create_list, get_db, get_video_statuses, write_source
 

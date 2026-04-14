@@ -419,11 +419,12 @@ async def get_video_statuses(
 
     async with get_db() as db:
         cursor = await db.execute(
-            """
+            f"""
             SELECT json_extract(meta, '$.video_id') AS video_id, status FROM jobs
             WHERE json_extract(meta, '$.list_id') = ?
+            AND json_extract(meta, '$.video_id') IN ({placeholders})
             """,
-            (list_id,),
+            [list_id] + video_ids,
         )
         job_rows = await cursor.fetchall()
 
@@ -438,13 +439,10 @@ async def get_video_statuses(
 
     needs_auth_videos: set[str] = set()
     in_progress_videos: set[str] = set()
-    video_ids_set = set(video_ids)
 
     for row in job_rows:
         vid = row["video_id"]
         st = row["status"]
-        if vid not in video_ids_set:
-            continue
         if st == JobStatus.NEEDS_AUTH.value:
             needs_auth_videos.add(vid)
         elif st in (

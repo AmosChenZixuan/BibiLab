@@ -67,3 +67,19 @@ async def test_proxy_cover_rejects_oversized_response(client: httpx.AsyncClient)
         response = await client.get("/proxy/cover?url=https://i0.hdslb.com/bfs/archive/img.jpg")
         assert response.status_code == 502
         assert "too large" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_proxy_cover_does_not_follow_redirect_to_malicious_host(client: httpx.AsyncClient):
+    """A 302 redirect to a malicious host (169.254.169.254) should be rejected, not followed."""
+    with patch("bibilab.routers.proxy.httpx.AsyncClient") as mock_client:
+        mock_response = AsyncMock()
+        mock_response.status_code = 302
+        mock_response.headers = {"location": "http://169.254.169.254/latest/meta-data/"}
+
+        mock_get = AsyncMock(return_value=mock_response)
+        mock_client.return_value.__aenter__.return_value.get = mock_get
+
+        response = await client.get("/proxy/cover?url=https://i0.hdslb.com/bfs/archive/img.jpg")
+        assert response.status_code == 502
+        assert "Upstream returned 302" in response.json()["detail"]

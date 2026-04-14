@@ -211,13 +211,12 @@ class BilibiliAdapter(PlatformAdapter):
         }
 
         _, part_num = _split_video_id(video_id)
-        extra_info = {}
         if part_num is not None:
-            extra_info["playlist_items"] = str(part_num)
+            opts["playlist_items"] = str(part_num)
 
         try:
             with yt_dlp.YoutubeDL(opts) as ydl:
-                info = ydl.extract_info(source_url, download=True, extra_info=extra_info)
+                info = ydl.extract_info(source_url, download=True)
                 ext = info.get("ext", "mp4")
         except yt_dlp.utils.DownloadError as exc:
             msg = str(exc).lower()
@@ -230,6 +229,13 @@ class BilibiliAdapter(PlatformAdapter):
     async def get_videos_metadata(self, video_ids: list[str]) -> dict[str, VideoMeta]:
         if not video_ids:
             return {}
+
+        unique_bvids: dict[str, list[str]] = {}
+        for vid in video_ids:
+            bvid, _ = _split_video_id(vid)
+            if bvid not in unique_bvids:
+                unique_bvids[bvid] = []
+            unique_bvids[bvid].append(vid)
 
         headers: dict[str, str] = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
@@ -270,6 +276,14 @@ class BilibiliAdapter(PlatformAdapter):
                         ),
                     )
 
-            results = await asyncio.gather(*[fetch_one(bvid) for bvid in video_ids])
+            bvids_to_fetch = list(unique_bvids.keys())
+            results = await asyncio.gather(*[fetch_one(bvid) for bvid in bvids_to_fetch])
 
-        return {bvid: meta for bvid, meta in results if meta is not None}
+        bvid_to_meta = {bvid: meta for bvid, meta in results if meta is not None}
+        result: dict[str, VideoMeta] = {}
+        for bvid, original_ids in unique_bvids.items():
+            if bvid in bvid_to_meta:
+                meta = bvid_to_meta[bvid]
+                for orig_id in original_ids:
+                    result[orig_id] = meta
+        return result

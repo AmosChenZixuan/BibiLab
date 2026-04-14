@@ -25,14 +25,14 @@ async def proxy_cover(url: str = Query(..., description="URL to proxy")):
         "Referer": "https://www.bilibili.com/",
     }
 
-    async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
+    async with httpx.AsyncClient(timeout=30, follow_redirects=False) as client:
         try:
             resp = await client.get(url, headers=headers)
         except httpx.RequestError as exc:
             raise HTTPException(status_code=502, detail=f"Failed to fetch: {exc}")
 
-    if resp.status_code != 200:
-        raise HTTPException(status_code=resp.status_code, detail=f"Upstream returned {resp.status_code}")
+    if resp.status_code >= 300:
+        raise HTTPException(status_code=502, detail=f"Upstream returned {resp.status_code}")
 
     if len(resp.content) > MAX_RESPONSE_SIZE:
         raise HTTPException(status_code=502, detail="Response too large (max 5MB)")
