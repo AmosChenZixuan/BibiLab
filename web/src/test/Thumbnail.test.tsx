@@ -14,26 +14,26 @@ describe("Thumbnail", () => {
   });
 
   it("renders_img_with_local_source_url_when_source_provided", () => {
-    render(<Thumbnail source={{ id: "abc", cover_url: "https://example.com/c.jpg" }} alt="test" />);
+    render(<Thumbnail source={{ id: "abc", cover_url: "https://i0.hdslb.com/bfs/archive/c.jpg" }} alt="test" />);
     const img = screen.getByTestId("thumbnail-img");
     expect(img).toHaveAttribute("src", "/api/sources/abc/cover");
     expect(img).toHaveClass("opacity-0");
   });
 
   it("transitions_to_opacity_100_on_load", () => {
-    render(<Thumbnail source={{ id: "abc", cover_url: "https://example.com/c.jpg" }} alt="test" />);
+    render(<Thumbnail source={{ id: "abc", cover_url: "https://i0.hdslb.com/bfs/archive/c.jpg" }} alt="test" />);
     const img = screen.getByTestId("thumbnail-img");
     fireEvent.load(img);
     expect(img).toHaveClass("opacity-100");
   });
 
   it("falls_back_to_remote_proxy_on_local_error", () => {
-    render(<Thumbnail source={{ id: "abc", cover_url: "https://example.com/c.jpg" }} alt="test" />);
+    render(<Thumbnail source={{ id: "abc", cover_url: "https://i0.hdslb.com/bfs/archive/c.jpg" }} alt="test" />);
     const img = screen.getByTestId("thumbnail-img");
     fireEvent.error(img);
     expect(img).toHaveAttribute(
       "src",
-      "/api/proxy/cover?url=https%3A%2F%2Fexample.com%2Fc.jpg"
+      "/api/proxy/cover?url=https%3A%2F%2Fi0.hdslb.com%2Fbfs%2Farchive%2Fc.jpg"
     );
   });
 
@@ -43,16 +43,16 @@ describe("Thumbnail", () => {
   });
 
   it("remote_only_mode_uses_proxy_url", () => {
-    render(<Thumbnail remoteUrl="https://example.com/r.jpg" alt="test" />);
+    render(<Thumbnail remoteUrl="https://i0.hdslb.com/bfs/archive/r.jpg" alt="test" />);
     const img = screen.getByTestId("thumbnail-img");
     expect(img).toHaveAttribute(
       "src",
-      "/api/proxy/cover?url=https%3A%2F%2Fexample.com%2Fr.jpg"
+      "/api/proxy/cover?url=https%3A%2F%2Fi0.hdslb.com%2Fbfs%2Farchive%2Fr.jpg"
     );
   });
 
   it("remote_only_error_stays_on_placeholder", () => {
-    render(<Thumbnail remoteUrl="https://example.com/r.jpg" alt="test" />);
+    render(<Thumbnail remoteUrl="https://i0.hdslb.com/bfs/archive/r.jpg" alt="test" />);
     const img = screen.getByTestId("thumbnail-img");
     fireEvent.error(img);
     expect(screen.queryByTestId("thumbnail-img")).not.toBeInTheDocument();
@@ -71,7 +71,7 @@ describe("Thumbnail", () => {
   });
 
   it("className_applies_to_wrapper_div_not_img", () => {
-    render(<Thumbnail remoteUrl="r.jpg" className="custom-wrapper" alt="test" />);
+    render(<Thumbnail remoteUrl="https://i0.hdslb.com/bfs/archive/r.jpg" className="custom-wrapper" alt="test" />);
     const wrapper = screen.getByTestId("thumbnail-wrapper");
     expect(wrapper).toHaveClass("custom-wrapper");
     const img = screen.getByTestId("thumbnail-img");
@@ -80,7 +80,7 @@ describe("Thumbnail", () => {
 
   it("caller_cannot_override_internal_onError", () => {
     const callerOnError = vi.fn();
-    render(<Thumbnail remoteUrl="r.jpg" onError={callerOnError} alt="test" />);
+    render(<Thumbnail remoteUrl="https://i0.hdslb.com/bfs/archive/r.jpg" onError={callerOnError} alt="test" />);
     const img = screen.getByTestId("thumbnail-img");
     fireEvent.error(img);
     expect(callerOnError).toHaveBeenCalled();
