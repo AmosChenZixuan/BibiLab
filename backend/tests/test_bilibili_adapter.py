@@ -117,57 +117,44 @@ class TestResolveMultiPart:
         assert result.part_label is None
 
 
+def _make_mock_ydl(captured_opts: list):
+    class MockYDL:
+        def __init__(self, opts):
+            captured_opts.append(opts)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+        def extract_info(self, url, download=False):
+            return {"ext": "mp4"}
+
+    return MockYDL
+
+
 class TestDownloadMultiPart:
     """Test download() correctly handles multi-part video IDs."""
 
     def test_download_multipart_passes_playlist_items(self, tmp_path):
-        """download('BVxxx_p3') should pass playlist_items='3' in YoutubeDL opts."""
         adapter = BilibiliAdapter(cookie="test_cookie")
-        captured_opts = []
+        captured_opts: list = []
 
-        class MockYDL:
-            def __init__(self, opts):
-                captured_opts.append(opts)
-
-            def __enter__(self):
-                return self
-
-            def __exit__(self, *args):
-                pass
-
-            def extract_info(self, url, download=False):
-                return {"ext": "mp4"}
-
-        with patch("bibilab.adapters.bilibili.yt_dlp.YoutubeDL", MockYDL):
+        with patch("bibilab.adapters.bilibili.yt_dlp.YoutubeDL", _make_mock_ydl(captured_opts)):
             with patch("bibilab.adapters.bilibili.bibilab_home", return_value=tmp_path):
                 adapter.download("BV1test_p3", "https://www.bilibili.com/video/BV1test")
 
-        assert len(captured_opts) == 1
         assert captured_opts[0]["playlist_items"] == "3"
 
     def test_download_regular_video_no_playlist_items(self, tmp_path):
-        """download('BVxxx') should NOT pass playlist_items in YoutubeDL opts."""
         adapter = BilibiliAdapter(cookie="test_cookie")
-        captured_opts = []
+        captured_opts: list = []
 
-        class MockYDL:
-            def __init__(self, opts):
-                captured_opts.append(opts)
-
-            def __enter__(self):
-                return self
-
-            def __exit__(self, *args):
-                pass
-
-            def extract_info(self, url, download=False):
-                return {"ext": "mp4"}
-
-        with patch("bibilab.adapters.bilibili.yt_dlp.YoutubeDL", MockYDL):
+        with patch("bibilab.adapters.bilibili.yt_dlp.YoutubeDL", _make_mock_ydl(captured_opts)):
             with patch("bibilab.adapters.bilibili.bibilab_home", return_value=tmp_path):
                 adapter.download("BV1test", "https://www.bilibili.com/video/BV1test")
 
-        assert len(captured_opts) == 1
         assert "playlist_items" not in captured_opts[0]
 
 

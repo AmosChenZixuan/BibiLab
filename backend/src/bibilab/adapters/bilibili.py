@@ -233,9 +233,7 @@ class BilibiliAdapter(PlatformAdapter):
         unique_bvids: dict[str, list[str]] = {}
         for vid in video_ids:
             bvid, _ = _split_video_id(vid)
-            if bvid not in unique_bvids:
-                unique_bvids[bvid] = []
-            unique_bvids[bvid].append(vid)
+            unique_bvids.setdefault(bvid, []).append(vid)
 
         headers: dict[str, str] = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
@@ -276,14 +274,11 @@ class BilibiliAdapter(PlatformAdapter):
                         ),
                     )
 
-            bvids_to_fetch = list(unique_bvids.keys())
-            results = await asyncio.gather(*[fetch_one(bvid) for bvid in bvids_to_fetch])
+            results = await asyncio.gather(*[fetch_one(bvid) for bvid in unique_bvids])
 
-        bvid_to_meta = {bvid: meta for bvid, meta in results if meta is not None}
         result: dict[str, VideoMeta] = {}
-        for bvid, original_ids in unique_bvids.items():
-            if bvid in bvid_to_meta:
-                meta = bvid_to_meta[bvid]
-                for orig_id in original_ids:
+        for bvid, meta in results:
+            if meta is not None:
+                for orig_id in unique_bvids[bvid]:
                     result[orig_id] = meta
         return result
