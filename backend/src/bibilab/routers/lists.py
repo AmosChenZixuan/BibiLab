@@ -11,12 +11,11 @@ from bibilab.db import (
     create_list as db_create_list,
 )
 from bibilab.db import (
-    delete_list as db_delete_list,
-)
-from bibilab.db import (
+    delete_artifacts_for_list,
     delete_source,
     delete_sources_for_list,
     get_all_lists,
+    get_artifacts_for_list,
     get_db,
     get_list,
     get_list_with_display,
@@ -24,6 +23,9 @@ from bibilab.db import (
     get_sources_for_list,
     update_list_name,
     update_list_thumbnail,
+)
+from bibilab.db import (
+    delete_list as db_delete_list,
 )
 from bibilab.models.lists import (
     ListCreateRequest,
@@ -37,6 +39,12 @@ from bibilab.pipeline.embed import clear_embeddings_for_list, clear_embeddings_f
 router = APIRouter()
 
 _ACTIVE_JOB_STATUSES = ("queued", "downloading", "transcribing", "processing")
+
+
+def _purge_source_resources(source_id: str, transcript_path: str | None) -> None:
+    cover_path(source_id).unlink(missing_ok=True)
+    if transcript_path:
+        (bibilab_home() / transcript_path).unlink(missing_ok=True)
 
 
 async def _build_list_response(row: aiosqlite.Row, request: Request) -> ListResponse:
@@ -132,11 +140,15 @@ async def delete_list(list_id: str, cfg: BibilabConfig = Depends(get_config)) ->
         if len(cursor) > 0:
             raise HTTPException(status_code=409, detail="Cannot delete a list with active jobs")
 
+    artifacts = await get_artifacts_for_list(list_id)
+    for artifact in artifacts:
+        if artifact["content_path"]:
+            (bibilab_home() / artifact["content_path"]).unlink(missing_ok=True)
+    await delete_artifacts_for_list(list_id)
+
     sources = await get_sources_for_list(list_id)
     for source in sources:
-        cover_path(source["id"]).unlink(missing_ok=True)
-        if source["transcript_path"]:
-            (bibilab_home() / source["transcript_path"]).unlink(missing_ok=True)
+        _purge_source_resources(source["id"], source["transcript_path"])
 
     await delete_sources_for_list(list_id)
     await asyncio.to_thread(clear_embeddings_for_list, list_id, cfg)
@@ -173,13 +185,26 @@ async def delete_list_source(list_id: str, source_id: str, cfg: BibilabConfig = 
     if source is None or source["list_id"] != list_id:
         raise HTTPException(status_code=404, detail="Source not found")
 
+    placeholders = ",".join("?" * len(_ACTIVE_JOB_STATUSES))
+    async with get_db() as db:
+        cursor = await db.execute_fetchall(
+            f"""
+            SELECT 1 FROM jobs
+            WHERE json_extract(meta, '$.video_id') = ?
+              AND json_extract(meta, '$.list_id') = ?
+              AND status IN ({placeholders})
+            LIMIT 1
+            """,
+            (source["video_id"], list_id, *_ACTIVE_JOB_STATUSES),
+        )
+        if len(cursor) > 0:
+            raise HTTPException(status_code=409, detail="Cannot delete a source with active jobs")
+
     row = await get_list(list_id)
     if row is not None and row["thumbnail_source_id"] == source_id:
         await update_list_thumbnail(list_id, None)
 
-    cover_path(source_id).unlink(missing_ok=True)
-    if source["transcript_path"]:
-        (bibilab_home() / source["transcript_path"]).unlink(missing_ok=True)
+    _purge_source_resources(source_id, source["transcript_path"])
     await asyncio.to_thread(clear_embeddings_for_video, source["video_id"], cfg)
     await delete_source(source_id)
 

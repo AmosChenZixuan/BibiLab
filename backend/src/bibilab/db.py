@@ -405,6 +405,12 @@ async def delete_artifact(artifact_id: str) -> None:
         await db.commit()
 
 
+async def delete_artifacts_for_list(list_id: str) -> None:
+    async with get_db() as db:
+        await db.execute("DELETE FROM artifacts WHERE list_id=?", (list_id,))
+        await db.commit()
+
+
 async def source_exists(video_id: str, list_id: str) -> bool:
     row = await get_source_by_video_and_list(video_id, list_id)
     return row is not None
