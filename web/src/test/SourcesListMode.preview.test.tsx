@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { PreviewResponse, PreviewVideo } from "@/lib/types";
+import type { PreviewResponse, PreviewVideo, Source } from "@/lib/types";
 import { LanguageProvider } from "@/app/LanguageContext";
 import { JobActivityProvider } from "@/components/jobs/JobActivityProvider";
 import { SourcesListMode } from "@/components/lists/sources/SourcesListMode";
@@ -77,6 +77,7 @@ function renderMode(sources: Parameters<typeof SourcesListMode>[0]["sources"] = 
   const trackJobs = vi.fn();
   const getJobs = vi.fn().mockReturnValue([]);
   const dismissJob = vi.fn().mockResolvedValue(undefined);
+  const [selectedSourceIds, setSelectedSourceIds] = [sources.map((s) => s.id), vi.fn()];
 
   const result = render(
     <LanguageProvider>
@@ -84,6 +85,8 @@ function renderMode(sources: Parameters<typeof SourcesListMode>[0]["sources"] = 
         <SourcesListMode
           listId="list-1"
           sources={sources}
+          selectedSourceIds={selectedSourceIds}
+          onSelectedSourcesChange={setSelectedSourceIds}
           onOpenSource={vi.fn()}
         />
       </JobActivityProvider>
