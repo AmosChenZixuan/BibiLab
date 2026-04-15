@@ -41,7 +41,7 @@ function SourceRow({
   }, [selectedSourceIds, source.id, onSelectedSourcesChange]);
 
   return (
-    <div className="group flex items-center gap-2 rounded-2xl border border-border bg-white/64 px-4 py-3 transition hover:bg-white hover:shadow-sm">
+    <div className="group flex items-center gap-3 rounded-2xl border border-border bg-white/64 px-4 py-3 transition hover:bg-white hover:shadow-sm">
       <input
         type="checkbox"
         checked={selectedSourceIds.includes(source.id)}
@@ -402,7 +402,7 @@ export function SourcesListMode({
               />
             ))}
           {currentSources.length > 0 && (
-            <div className="flex items-center gap-2 px-1">
+            <div className="flex items-center gap-2 px-4">
               <input
                 type="checkbox"
                 ref={selectAllRef}
@@ -411,7 +411,7 @@ export function SourcesListMode({
                 aria-label="Select all"
                 className="h-4 w-4 rounded border-border text-blue focus:ring-blue"
               />
-              <span className="text-xs text-muted">Select all</span>
+              <span className="text-sm font-medium text-muted">{t("lists.preview.selectAll")}</span>
             </div>
           )}
           {currentSources.map((source) => (
