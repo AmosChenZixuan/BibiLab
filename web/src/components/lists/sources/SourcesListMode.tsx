@@ -19,33 +19,25 @@ export type PipelineStage = (typeof PIPELINE_STAGES)[number];
 
 function SourceRow({
   source,
-  selectedSourceIds,
-  onSelectedSourcesChange,
+  selected,
+  onToggle,
   onOpen,
   onDelete,
   t,
 }: {
   source: Source;
-  selectedSourceIds: string[];
-  onSelectedSourcesChange: (ids: string[]) => void;
+  selected: boolean;
+  onToggle: (id: string) => void;
   onOpen: () => void;
   onDelete: () => Promise<void>;
   t: (key: string, params?: Record<string, string | number>) => string;
 }) {
-  const handleToggle = useCallback(() => {
-    if (selectedSourceIds.includes(source.id)) {
-      onSelectedSourcesChange(selectedSourceIds.filter((id) => id !== source.id));
-    } else {
-      onSelectedSourcesChange([...selectedSourceIds, source.id]);
-    }
-  }, [selectedSourceIds, source.id, onSelectedSourcesChange]);
-
   return (
     <div className="group flex items-center gap-3 rounded-2xl border border-border bg-white/64 px-4 py-3 transition hover:bg-white hover:shadow-sm">
       <input
         type="checkbox"
-        checked={selectedSourceIds.includes(source.id)}
-        onChange={handleToggle}
+        checked={selected}
+        onChange={() => onToggle(source.id)}
         aria-label={`Select ${source.title}`}
         className="h-4 w-4 rounded border-border text-blue focus:ring-blue"
       />
@@ -190,31 +182,35 @@ export function SourcesListMode({
     setCurrentSources(sources);
   }, [sources]);
 
+  const allSelected = currentSources.length > 0 && selectedSourceIds.length === currentSources.length;
+  const someSelected = selectedSourceIds.length > 0 && !allSelected;
+
   useEffect(() => {
-    const input = selectAllRef.current;
-    if (!input) return;
-    if (currentSources.length === 0) {
-      input.checked = false;
-      input.indeterminate = false;
-    } else if (selectedSourceIds.length === 0) {
-      input.checked = false;
-      input.indeterminate = false;
-    } else if (selectedSourceIds.length === currentSources.length) {
-      input.checked = true;
-      input.indeterminate = false;
-    } else {
-      input.checked = false;
-      input.indeterminate = true;
+    if (selectAllRef.current) {
+      selectAllRef.current.indeterminate = someSelected;
     }
-  }, [selectedSourceIds, currentSources]);
+  }, [someSelected]);
+
+  const selectedSet = useMemo(() => new Set(selectedSourceIds), [selectedSourceIds]);
+
+  const handleToggleSource = useCallback(
+    (id: string) => {
+      if (selectedSet.has(id)) {
+        onSelectedSourcesChange(selectedSourceIds.filter((sid) => sid !== id));
+      } else {
+        onSelectedSourcesChange([...selectedSourceIds, id]);
+      }
+    },
+    [selectedSet, selectedSourceIds, onSelectedSourcesChange],
+  );
 
   const handleSelectAll = useCallback(() => {
-    if (selectedSourceIds.length === currentSources.length) {
+    if (allSelected) {
       onSelectedSourcesChange([]);
     } else {
       onSelectedSourcesChange(currentSources.map((s) => s.id));
     }
-  }, [selectedSourceIds, currentSources, onSelectedSourcesChange]);
+  }, [allSelected, currentSources, onSelectedSourcesChange]);
 
   // When a job flips to done, refresh sources and dismiss
   useEffect(() => {
@@ -406,7 +402,7 @@ export function SourcesListMode({
               <input
                 type="checkbox"
                 ref={selectAllRef}
-                checked={selectedSourceIds.length === currentSources.length && currentSources.length > 0}
+                checked={allSelected}
                 onChange={handleSelectAll}
                 aria-label="Select all"
                 className="h-4 w-4 rounded border-border text-blue focus:ring-blue"
@@ -418,8 +414,8 @@ export function SourcesListMode({
             <SourceRow
               key={source.id}
               source={source}
-              selectedSourceIds={selectedSourceIds}
-              onSelectedSourcesChange={onSelectedSourcesChange}
+              selected={selectedSet.has(source.id)}
+              onToggle={handleToggleSource}
               onOpen={() => onOpenSource(source)}
               onDelete={() => handleDelete(source)}
               t={t}
