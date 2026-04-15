@@ -222,7 +222,7 @@ export function ListDetailPage() {
             listId={listId}
             labCollapsed={labCollapsed}
             labW={labW}
-            sourceIds={selectedSourceIds}
+            selectedSourceIds={selectedSourceIds}
             artifacts={artifacts}
             onArtifactsChange={setArtifacts}
             onToggleCollapse={() => setLabCollapsed((v) => !v)}
