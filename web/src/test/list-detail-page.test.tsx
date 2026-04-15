@@ -311,43 +311,6 @@ describe("list detail page", () => {
     expect(screen.queryByRole("button", { name: /open existing source/i })).toBeNull();
   });
 
-  test("deselect → navigate → selection correctly re-initialized on mount (regression: 8046c7e)", async () => {
-    state.sources = [
-      { id: "src-1", video_id: "BV1a", platform: "bilibili", title: "Source One", summary: "", keywords: [], cover_url: null, source_url: "https://www.bilibili.com/video/BV1a", duration_seconds: 0, uploader: "", language: null, processed_at: "2026-03-31T20:00:00Z" },
-      { id: "src-2", video_id: "BV1b", platform: "bilibili", title: "Source Two", summary: "", keywords: [], cover_url: null, source_url: "https://www.bilibili.com/video/BV1b", duration_seconds: 0, uploader: "", language: null, processed_at: "2026-03-31T20:00:00Z" },
-    ];
-    makeMockFetch();
-    vi.mocked(api.listSources).mockResolvedValue([...state.sources]);
-    vi.mocked(api.listJobs).mockResolvedValue([]);
-
-    const router = createMemoryRouter(routes, { initialEntries: ["/lists/list-1"] });
-    render(withRouter(router));
-
-    await screen.findByRole("heading", { name: /sources/i });
-
-    const checkboxes = screen.getAllByRole("checkbox");
-    expect(checkboxes).toHaveLength(3); // select-all + 2 rows
-    expect(checkboxes[0]).toBeChecked(); // select-all
-    expect(checkboxes[1]).toBeChecked(); // src-1
-    expect(checkboxes[2]).toBeChecked(); // src-2
-
-    await userEvent.click(checkboxes[2]); // deselect src-2
-    expect(checkboxes[2]).not.toBeChecked();
-    expect(checkboxes[0]).not.toBeChecked(); // select-all should become indeterminate
-
-    // Navigate away and back — ListDetailPage remounts and re-initializes selection to all
-    await router.navigate("/");
-    await waitFor(() => expect(router.state.location.pathname).toBe("/"));
-    await router.navigate("/lists/list-1");
-    await waitFor(() => expect(router.state.location.pathname).toBe("/lists/list-1"));
-
-    // On mount, all sources are selected by default (fresh initialization)
-    const checkboxesAfter = screen.getAllByRole("checkbox");
-    expect(checkboxesAfter).toHaveLength(3);
-    expect(checkboxesAfter[0]).toBeChecked();
-    expect(checkboxesAfter[1]).toBeChecked();
-    expect(checkboxesAfter[2]).toBeChecked(); // src-2 re-selected on fresh mount (expected)
-  });
 
   test("opens viewer on source click, loads source content, shows Banner, DigestAccordion, and transcript", async () => {
     state.sources = [

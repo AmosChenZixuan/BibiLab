@@ -44,20 +44,11 @@ export function ListDetailPage() {
   const [selectedSourceIds, setSelectedSourceIds] = useState<string[]>([]);
 
   useEffect(() => {
-    setSelectedSourceIds((prev) => {
-      const sourceIds = sources.map((s) => s.id);
-      if (prev.length === 0) return sourceIds;
-      const known = new Set(sourceIds);
-      const kept = prev.filter((id) => known.has(id));
-      const keptSet = new Set(kept);
-      const added = sourceIds.filter((id) => !keptSet.has(id));
-      const next = [...kept, ...added];
-      if (next.length === prev.length && next.every((id, i) => id === prev[i])) {
-        return prev;
-      }
-      return next;
-    });
+    if (sources.length > 0) {
+      setSelectedSourceIds(sources.map((s) => s.id));
+    }
   }, [sources]);
+
   const containerRef = useRef<HTMLDivElement>(null);
 
   const { sourcesW, labW, chatW, onMouseDownLeft, onMouseDownRight } = usePanelResize(
