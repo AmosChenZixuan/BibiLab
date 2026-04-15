@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowRight, X, Trash2, AlertCircle, MoreVertical } from "lucide-react";
 
 import { useLanguage } from "@/app/LanguageContext";
@@ -19,17 +19,28 @@ export type PipelineStage = (typeof PIPELINE_STAGES)[number];
 
 function SourceRow({
   source,
+  selected,
+  onToggle,
   onOpen,
   onDelete,
   t,
 }: {
   source: Source;
+  selected: boolean;
+  onToggle: (id: string) => void;
   onOpen: () => void;
   onDelete: () => Promise<void>;
   t: (key: string, params?: Record<string, string | number>) => string;
 }) {
   return (
-    <div className="group flex items-center gap-2 rounded-2xl border border-border bg-white/64 px-4 py-3 transition hover:bg-white hover:shadow-sm">
+    <div className="group flex items-center gap-3 rounded-2xl border border-border bg-white/64 px-4 py-3 transition hover:bg-white hover:shadow-sm">
+      <input
+        type="checkbox"
+        checked={selected}
+        onChange={() => onToggle(source.id)}
+        aria-label={`Select ${source.title}`}
+        className="h-4 w-4 rounded border-border text-blue focus:ring-blue"
+      />
       <button
         type="button"
         aria-label={`Open ${source.title}`}
@@ -144,10 +155,14 @@ function IngestingSourceRow({
 export function SourcesListMode({
   listId,
   sources,
+  selectedSourceIds,
+  onSelectedSourcesChange,
   onOpenSource,
 }: {
   listId: string;
   sources: Source[];
+  selectedSourceIds: string[];
+  onSelectedSourcesChange: (ids: string[]) => void;
   onOpenSource: (source: Source) => void;
 }) {
   const { t } = useLanguage();
@@ -161,10 +176,41 @@ export function SourcesListMode({
   const [refreshedJobs, setRefreshedJobs] = useState<string[]>([]);
 
   const [currentSources, setCurrentSources] = useState<Source[]>(sources);
+  const selectAllRef = useRef<HTMLInputElement>(null);
   // Sync currentSources when sources prop changes (e.g., after initial load)
   useEffect(() => {
     setCurrentSources(sources);
   }, [sources]);
+
+  const allSelected = currentSources.length > 0 && selectedSourceIds.length === currentSources.length;
+  const someSelected = selectedSourceIds.length > 0 && !allSelected;
+
+  useEffect(() => {
+    if (selectAllRef.current) {
+      selectAllRef.current.indeterminate = someSelected;
+    }
+  }, [someSelected]);
+
+  const selectedSet = useMemo(() => new Set(selectedSourceIds), [selectedSourceIds]);
+
+  const handleToggleSource = useCallback(
+    (id: string) => {
+      if (selectedSet.has(id)) {
+        onSelectedSourcesChange(selectedSourceIds.filter((sid) => sid !== id));
+      } else {
+        onSelectedSourcesChange([...selectedSourceIds, id]);
+      }
+    },
+    [selectedSet, selectedSourceIds, onSelectedSourcesChange],
+  );
+
+  const handleSelectAll = useCallback(() => {
+    if (allSelected) {
+      onSelectedSourcesChange([]);
+    } else {
+      onSelectedSourcesChange(currentSources.map((s) => s.id));
+    }
+  }, [allSelected, currentSources, onSelectedSourcesChange]);
 
   // When a job flips to done, refresh sources and dismiss
   useEffect(() => {
@@ -351,10 +397,25 @@ export function SourcesListMode({
                 t={t}
               />
             ))}
+          {currentSources.length > 0 && (
+            <div className="flex items-center gap-2 px-4">
+              <input
+                type="checkbox"
+                ref={selectAllRef}
+                checked={allSelected}
+                onChange={handleSelectAll}
+                aria-label="Select all"
+                className="h-4 w-4 rounded border-border text-blue focus:ring-blue"
+              />
+              <span className="text-sm font-medium text-muted">{t("lists.preview.selectAll")}</span>
+            </div>
+          )}
           {currentSources.map((source) => (
             <SourceRow
               key={source.id}
               source={source}
+              selected={selectedSet.has(source.id)}
+              onToggle={handleToggleSource}
               onOpen={() => onOpenSource(source)}
               onDelete={() => handleDelete(source)}
               t={t}

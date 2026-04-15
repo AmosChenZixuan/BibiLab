@@ -311,6 +311,7 @@ describe("list detail page", () => {
     expect(screen.queryByRole("button", { name: /open existing source/i })).toBeNull();
   });
 
+
   test("opens viewer on source click, loads source content, shows Banner, DigestAccordion, and transcript", async () => {
     state.sources = [
       {

@@ -48,7 +48,7 @@ function renderLabPanel(props?: Partial<React.ComponentProps<typeof LabPanel>>) 
           listId="list-1"
           labCollapsed={false}
           labW={300}
-          sourceIds={[]}
+          selectedSourceIds={[]}
           artifacts={[]}
           onArtifactsChange={vi.fn()}
           onToggleCollapse={vi.fn()}
@@ -76,7 +76,7 @@ describe("LabPanel", () => {
   });
 
   test("renders tool section with reports button in tool-list mode", () => {
-    renderLabPanel({ sourceIds: ["source-1"] });
+    renderLabPanel({ selectedSourceIds: ["source-1"] });
     expect(screen.getByTestId("tool-section")).toBeInTheDocument();
     expect(screen.getByText("Reports")).toBeInTheDocument();
   });
@@ -205,7 +205,7 @@ describe("LabPanel", () => {
             listId="list-1"
             labCollapsed={true}
             labW={300}
-            sourceIds={[]}
+            selectedSourceIds={[]}
             artifacts={[ARTIFACT_1]}
             onArtifactsChange={vi.fn()}
             onToggleCollapse={onToggleCollapse}
@@ -223,7 +223,7 @@ describe("LabPanel", () => {
             listId="list-1"
             labCollapsed={false}
             labW={300}
-            sourceIds={[]}
+            selectedSourceIds={[]}
             artifacts={[ARTIFACT_1]}
             onArtifactsChange={vi.fn()}
             onToggleCollapse={onToggleCollapse}
