@@ -46,6 +46,7 @@ function SourceRow({
         type="checkbox"
         checked={selectedSourceIds.includes(source.id)}
         onChange={handleToggle}
+        aria-label={`Select ${source.title}`}
         className="h-4 w-4 rounded border-border text-blue focus:ring-blue"
       />
       <button
@@ -407,6 +408,7 @@ export function SourcesListMode({
                 ref={selectAllRef}
                 checked={selectedSourceIds.length === currentSources.length && currentSources.length > 0}
                 onChange={handleSelectAll}
+                aria-label="Select all"
                 className="h-4 w-4 rounded border-border text-blue focus:ring-blue"
               />
               <span className="text-xs text-muted">Select all</span>

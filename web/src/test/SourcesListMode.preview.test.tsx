@@ -21,6 +21,24 @@ function makeVideo(overrides: Partial<PreviewVideo> = {}): PreviewVideo {
   };
 }
 
+function makeSource(overrides: Partial<Source> = {}): Source {
+  return {
+    id: "src-1",
+    video_id: "BVtest",
+    platform: "bilibili",
+    title: "Test Source",
+    summary: "",
+    keywords: [],
+    cover_url: "https://example.com/cover.jpg",
+    source_url: "https://bilibili.com/video/BVtest",
+    duration_seconds: 180,
+    uploader: "Test Author",
+    language: null,
+    processed_at: "2024-01-01T00:00:00Z",
+    ...overrides,
+  };
+}
+
 const state = {
   previewResponse: null as PreviewResponse | null,
   metadataResponse: null as { videos: Record<string, { title: string; cover_url: string; duration_seconds: number; uploader: string; source_url: string }> } | null,
@@ -73,11 +91,14 @@ vi.mock("@/lib/api", () => {
 
 import { api } from "@/lib/api";
 
-function renderMode(sources: Parameters<typeof SourcesListMode>[0]["sources"] = []) {
+function renderMode(
+  sources: Parameters<typeof SourcesListMode>[0]["sources"] = [],
+  selectedSourceIds: string[] = [],
+  onSelectedSourcesChange: (ids: string[]) => void = vi.fn(),
+) {
   const trackJobs = vi.fn();
   const getJobs = vi.fn().mockReturnValue([]);
   const dismissJob = vi.fn().mockResolvedValue(undefined);
-  const [selectedSourceIds, setSelectedSourceIds] = [sources.map((s) => s.id), vi.fn()];
 
   const result = render(
     <LanguageProvider>
@@ -86,7 +107,7 @@ function renderMode(sources: Parameters<typeof SourcesListMode>[0]["sources"] = 
           listId="list-1"
           sources={sources}
           selectedSourceIds={selectedSourceIds}
-          onSelectedSourcesChange={setSelectedSourceIds}
+          onSelectedSourcesChange={onSelectedSourcesChange}
           onOpenSource={vi.fn()}
         />
       </JobActivityProvider>
@@ -337,5 +358,68 @@ describe("SourcesListMode preview flow", () => {
     await waitFor(() => {
       expect(api.previewPlaylistMetadata).toHaveBeenCalledWith(["BV1", "BV2"]);
     });
+  });
+});
+
+describe("SourcesListMode source selection checkboxes", () => {
+  const sources = [
+    makeSource({ id: "src-1", title: "Source 1" }),
+    makeSource({ id: "src-2", title: "Source 2" }),
+    makeSource({ id: "src-3", title: "Source 3" }),
+  ];
+
+  it("select-all: all checked when all sources selected", () => {
+    const onChange = vi.fn();
+    renderMode(sources, ["src-1", "src-2", "src-3"], onChange);
+
+    const selectAll = screen.getByRole("checkbox", { name: /select all/i });
+    expect(selectAll).toBeChecked();
+  });
+
+  it("select-all: unchecked when no sources selected", () => {
+    const onChange = vi.fn();
+    renderMode(sources, [], onChange);
+
+    const selectAll = screen.getByRole("checkbox", { name: /select all/i });
+    expect(selectAll).not.toBeChecked();
+  });
+
+  it("select-all: indeterminate when partially selected", () => {
+    const onChange = vi.fn();
+    renderMode(sources, ["src-1"], onChange);
+
+    const selectAll = screen.getByRole("checkbox", { name: /select all/i });
+    expect(selectAll).not.toBeChecked();
+    expect(selectAll).toHaveProperty("indeterminate", true);
+  });
+
+  it("select-all click: selects all when none selected", () => {
+    const onChange = vi.fn();
+    renderMode(sources, [], onChange);
+
+    const selectAll = screen.getByRole("checkbox", { name: /select all/i });
+    fireEvent.click(selectAll);
+
+    expect(onChange).toHaveBeenCalledWith(["src-1", "src-2", "src-3"]);
+  });
+
+  it("select-all click: deselects all when all selected", () => {
+    const onChange = vi.fn();
+    renderMode(sources, ["src-1", "src-2", "src-3"], onChange);
+
+    const selectAll = screen.getByRole("checkbox", { name: /select all/i });
+    fireEvent.click(selectAll);
+
+    expect(onChange).toHaveBeenCalledWith([]);
+  });
+
+  it("row checkbox: toggles individual source", () => {
+    const onChange = vi.fn();
+    renderMode(sources, ["src-1", "src-2"], onChange);
+
+    const rowCheckbox = screen.getByRole("checkbox", { name: /Select Source 3/i });
+    fireEvent.click(rowCheckbox);
+
+    expect(onChange).toHaveBeenCalledWith(["src-1", "src-2", "src-3"]);
   });
 });
