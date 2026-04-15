@@ -41,6 +41,13 @@ export function ListDetailPage() {
   const [artifacts, setArtifacts] = useState<Artifact[]>([]);
   const [sourcesCollapsed, setSourcesCollapsed] = useState(false);
   const [labCollapsed, setLabCollapsed] = useState(false);
+  const [selectedSourceIds, setSelectedSourceIds] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (sources.length > 0) {
+      setSelectedSourceIds(sources.map((s) => s.id));
+    }
+  }, [sources]);
   const containerRef = useRef<HTMLDivElement>(null);
 
   const { sourcesW, labW, chatW, onMouseDownLeft, onMouseDownRight } = usePanelResize(
@@ -178,6 +185,8 @@ export function ListDetailPage() {
                 <SourcesListMode
                   listId={listId}
                   sources={sources}
+                  selectedSourceIds={selectedSourceIds}
+                  onSelectedSourcesChange={setSelectedSourceIds}
                   onOpenSource={handleOpenSource}
                 />
               )}
@@ -213,7 +222,7 @@ export function ListDetailPage() {
             listId={listId}
             labCollapsed={labCollapsed}
             labW={labW}
-            sourceIds={sources.map((s) => s.id)}
+            sourceIds={selectedSourceIds}
             artifacts={artifacts}
             onArtifactsChange={setArtifacts}
             onToggleCollapse={() => setLabCollapsed((v) => !v)}
