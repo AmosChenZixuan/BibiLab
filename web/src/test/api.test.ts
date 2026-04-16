@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 
-import { api } from "@/lib/api";
+import { api, ApiError, toErrorMessage } from "@/lib/api";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -90,5 +90,37 @@ describe("api.updateList", () => {
         body: JSON.stringify({ thumbnail_source_id: "source-1" }),
       }),
     );
+  });
+});
+
+describe("toErrorMessage", () => {
+  test("returns string detail when ApiError has a non-empty string detail", () => {
+    const error = new ApiError(400, "Unsupported URL: https://example.com/video");
+    expect(toErrorMessage(error)).toBe("Unsupported URL: https://example.com/video");
+  });
+
+  test("returns detail.message when ApiError has object detail with message", () => {
+    const error = new ApiError(400, { message: "'12' is not a valid URL" });
+    expect(toErrorMessage(error)).toBe("'12' is not a valid URL");
+  });
+
+  test("returns errors.apiError when ApiError detail is empty object", () => {
+    const error = new ApiError(500, {});
+    expect(toErrorMessage(error)).toBe("errors.apiError");
+  });
+
+  test("returns error.apiError when ApiError detail is empty string", () => {
+    const error = new ApiError(400, "");
+    expect(toErrorMessage(error)).toBe("errors.apiError");
+  });
+
+  test("returns errors.401 when ApiError is 401 with object detail", () => {
+    const error = new ApiError(401, { message: "Unauthorized" });
+    expect(toErrorMessage(error)).toBe("errors.401");
+  });
+
+  test("returns string detail when ApiError is 401 with string detail", () => {
+    const error = new ApiError(401, "Token expired");
+    expect(toErrorMessage(error)).toBe("Token expired");
   });
 });

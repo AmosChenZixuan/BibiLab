@@ -180,7 +180,8 @@
   },
   "errors": {
     "requestFailed": "请求失败",
-    "apiError": "API 错误"
+    "apiError": "API 错误",
+    "401": "未授权"
   },
   "health": {
     "healthy": "运行正常",

@@ -331,6 +331,6 @@ describe("home page", () => {
     const router = createMemoryRouter(routes, { initialEntries: ["/"] });
     render(withRouter(router));
 
-    expect(await screen.findByText("error.apiError")).toBeInTheDocument();
+    expect(await screen.findByText("Lists unavailable")).toBeInTheDocument();
   });
 });

@@ -180,7 +180,8 @@
   },
   "errors": {
     "requestFailed": "Request failed",
-    "apiError": "API error"
+    "apiError": "API error",
+    "401": "Unauthorized"
   },
   "health": {
     "healthy": "Healthy",

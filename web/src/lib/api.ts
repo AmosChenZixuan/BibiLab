@@ -37,14 +37,20 @@ export class ApiError extends Error {
 export function toErrorMessage(error: unknown): string {
   if (error instanceof ApiError) {
     if (error.status === 401 && typeof error.detail !== "string") {
-      return "error.401";
+      return "errors.401";
     }
-    return "error.apiError";
+    if (typeof error.detail === "string" && error.detail.length > 0) {
+      return error.detail;
+    }
+    if (typeof error.detail === "object" && error.detail?.message) {
+      return error.detail.message;
+    }
+    return "errors.apiError";
   }
   if (error instanceof Error) {
     return error.message;
   }
-  return "error.requestFailed";
+  return "errors.requestFailed";
 }
 
 export function toErrorMessageWithT(error: unknown, t: (key: string) => string): string {
