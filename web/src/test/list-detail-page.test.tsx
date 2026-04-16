@@ -4,7 +4,7 @@ import { RouterProvider, createMemoryRouter } from "react-router-dom";
 import { Suspense } from "react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
-import { LanguageProvider } from "@/app/LanguageContext";
+import { LanguageProvider, useLanguage } from "@/app/LanguageContext";
 import { JobActivityProvider } from "@/components/jobs/JobActivityProvider";
 import { routes } from "@/app/routes";
 
@@ -391,5 +391,77 @@ describe("list detail page", () => {
     // 9. Close button returns to list mode
     await userEvent.click(screen.getByRole("button", { name: /close viewer/i }));
     expect(screen.getByRole("button", { name: /open existing source/i })).toBeInTheDocument();
+  });
+
+  test("deselection persists after language switch", async () => {
+    state.sources = [
+      {
+        id: "src-1",
+        video_id: "BV1first",
+        platform: "bilibili",
+        title: "Source One",
+        summary: "",
+        keywords: [],
+        cover_url: null,
+        source_url: "https://www.bilibili.com/video/BV1first",
+        duration_seconds: 0,
+        uploader: "",
+        language: null,
+        processed_at: "2026-03-31T20:00:00Z",
+      },
+      {
+        id: "src-2",
+        video_id: "BV1second",
+        platform: "bilibili",
+        title: "Source Two",
+        summary: "",
+        keywords: [],
+        cover_url: null,
+        source_url: "https://www.bilibili.com/video/BV1second",
+        duration_seconds: 0,
+        uploader: "",
+        language: null,
+        processed_at: "2026-03-31T20:00:00Z",
+      },
+    ];
+    makeMockFetch();
+    vi.mocked(api.listSources).mockResolvedValue([...state.sources]);
+
+    function LangToggle() {
+      const { lang, setLang } = useLanguage();
+      return (
+        <button type="button" onClick={() => setLang(lang === "en" ? "zh" : "en")}>
+          Toggle Lang ({lang})
+        </button>
+      );
+    }
+
+    const router = createMemoryRouter(routes, { initialEntries: ["/lists/list-1"] });
+    render(
+      <Suspense fallback={<div data-testid="router-loading">loading...</div>}>
+        <JobActivityProvider>
+          <LanguageProvider>
+            <RouterProvider router={router} />
+            <LangToggle />
+          </LanguageProvider>
+        </JobActivityProvider>
+      </Suspense>,
+    );
+
+    await screen.findByRole("heading", { name: /sources/i });
+
+    const source1Checkbox = document.querySelectorAll('input[type="checkbox"]')[1];
+    expect(source1Checkbox).toBeChecked();
+    await userEvent.click(source1Checkbox);
+    expect(source1Checkbox).not.toBeChecked();
+
+    await userEvent.click(screen.getByRole("button", { name: /toggle lang/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /toggle lang \(zh\)/i })).toBeInTheDocument();
+    });
+
+    const source1CheckboxAfterLangSwitch = document.querySelectorAll('input[type="checkbox"]')[1];
+    expect(source1CheckboxAfterLangSwitch).not.toBeChecked();
   });
 });

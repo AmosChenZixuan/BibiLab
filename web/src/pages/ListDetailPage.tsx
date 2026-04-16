@@ -42,6 +42,8 @@ export function ListDetailPage() {
   const [sourcesCollapsed, setSourcesCollapsed] = useState(false);
   const [labCollapsed, setLabCollapsed] = useState(false);
   const [selectedSourceIds, setSelectedSourceIds] = useState<string[]>([]);
+  const tRef = useRef(t);
+  tRef.current = t;
 
   useEffect(() => {
     if (sources.length > 0) {
@@ -68,15 +70,15 @@ export function ListDetailPage() {
         api.listArtifacts(listId, { signal }),
       ]);
       const current = lists?.find((l) => l.id === listId);
-      setListName(current?.name ?? t("lists.listWorkspace"));
+      setListName(current?.name ?? tRef.current("lists.listWorkspace"));
       setSources(nextSources ?? []);
       setArtifacts(nextArtifacts ?? []);
       setLoadError(null);
     } catch (err) {
       if (err instanceof Error && err.name === "AbortError") return;
-      setLoadError(toErrorMessageWithT(err, t));
+      setLoadError(toErrorMessageWithT(err, tRef.current));
     }
-  }, [listId, t]);
+  }, [listId]);
 
   useEffect(() => {
     const controller = new AbortController();
