@@ -570,3 +570,13 @@ class TestGetVideosMetadataExpansion:
         assert result["BV1emptypart_p1"].part_label == "P1"
         assert result["BV1emptypart_p2"].part_label == "P2"
         assert result["BV1emptypart_p1"].title == "Multi Part Video"
+
+
+class TestResourceType:
+    """Test _resource_type() correctly classifies Bilibili URLs."""
+
+    def test_favlist_url_classified_as_playlist(self):
+        from bibilab.adapters.bilibili import _resource_type
+
+        assert _resource_type("https://space.bilibili.com/25503580/favlist?fid=2807438580&ftype=create") == "playlist"
+        assert _resource_type("https://space.bilibili.com/123/favlist?fid=456") == "playlist"

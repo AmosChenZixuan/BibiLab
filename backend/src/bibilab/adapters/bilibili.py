@@ -21,7 +21,8 @@ logger = logging.getLogger(__name__)
 
 # URL patterns for Bilibili resource types
 _PLAYLIST_RE = re.compile(
-    r"bilibili\.com/medialist|space\.bilibili\.com/\d+/channel|space\.bilibili\.com/\d+/lists", re.IGNORECASE
+    r"bilibili\.com/medialist|space\.bilibili\.com/\d+/channel|space\.bilibili\.com/\d+/lists|space\.bilibili\.com/\d+/favlist",
+    re.IGNORECASE,
 )
 _COURSE_RE = re.compile(r"bilibili\.com/cheese", re.IGNORECASE)
 
