@@ -123,6 +123,9 @@ class BilibiliAdapter(PlatformAdapter):
             except yt_dlp.utils.DownloadError as exc:
                 raise DownloadError(_ANSI_RE.sub("", str(exc))) from exc
 
+            if info.get("_type") == "playlist":
+                return self._resolve_playlist(info)
+
             playlist_id = info.get("id", url)
             title = info.get("title", "Untitled")
             vm = _info_to_video_meta(info)
@@ -226,9 +229,9 @@ class BilibiliAdapter(PlatformAdapter):
 
         return downloads_dir / f"{video_id}.{ext}"
 
-    async def get_videos_metadata(self, video_ids: list[str]) -> dict[str, VideoMeta]:
+    async def get_videos_metadata(self, video_ids: list[str]) -> tuple[dict[str, VideoMeta], dict[str, list[str]]]:
         if not video_ids:
-            return {}
+            return ({}, {})
 
         unique_bvids: dict[str, list[str]] = {}
         for vid in video_ids:
@@ -246,7 +249,7 @@ class BilibiliAdapter(PlatformAdapter):
 
         async with httpx.AsyncClient(timeout=10.0, headers=headers) as client:
 
-            async def fetch_one(bvid: str) -> tuple[str, VideoMeta | None]:
+            async def fetch_one(bvid: str) -> tuple[str, dict | None]:
                 async with semaphore:
                     url = f"https://api.bilibili.com/x/web-interface/view?bvid={bvid}"
                     try:
@@ -261,24 +264,55 @@ class BilibiliAdapter(PlatformAdapter):
                     if not isinstance(data, dict):
                         return (bvid, None)
 
-                    return (
-                        bvid,
-                        VideoMeta(
-                            video_id=bvid,
-                            title=data.get("title", "Untitled") or "Untitled",
-                            platform="bilibili",
-                            source_url=data.get("short_link_v1", f"https://bilibili.com/video/{bvid}"),
-                            cover_url=data.get("pic", "") or "",
-                            duration_seconds=int(data.get("duration", 0) or 0),
-                            uploader=data.get("owner", {}).get("name", "") or "",
-                        ),
-                    )
+                    return (bvid, data)
 
-            results = await asyncio.gather(*[fetch_one(bvid) for bvid in unique_bvids])
+            raw_results = await asyncio.gather(*[fetch_one(bvid) for bvid in unique_bvids])
 
         result: dict[str, VideoMeta] = {}
-        for bvid, meta in results:
-            if meta is not None:
-                for orig_id in unique_bvids[bvid]:
+        expanded: dict[str, list[str]] = {}
+
+        for bvid, data in raw_results:
+            if data is None:
+                continue
+
+            pages = data.get("pages") or []
+            base_title = data.get("title", "Untitled") or "Untitled"
+            base_url = f"https://www.bilibili.com/video/{bvid}"
+            cover_url = data.get("pic", "") or ""
+            uploader = data.get("owner", {}).get("name", "") or ""
+
+            orig_ids = unique_bvids[bvid]
+            already_has_parts = any(_split_video_id(vid)[1] is not None for vid in orig_ids)
+
+            if len(pages) > 1 and not already_has_parts:
+                part_ids = []
+                for page in pages:
+                    p_num = page.get("page", 1)
+                    part_id = f"{bvid}_p{p_num}"
+                    part_ids.append(part_id)
+                    result[part_id] = VideoMeta(
+                        video_id=part_id,
+                        title=base_title,
+                        platform="bilibili",
+                        source_url=f"{base_url}?p={p_num}",
+                        cover_url=cover_url,
+                        duration_seconds=int(page.get("duration", 0) or 0),
+                        uploader=uploader,
+                        part_label=f"P{p_num}: {page['part']}" if page.get("part") else f"P{p_num}",
+                    )
+                for orig_id in orig_ids:
+                    expanded[orig_id] = part_ids
+            else:
+                meta = VideoMeta(
+                    video_id=bvid,
+                    title=base_title,
+                    platform="bilibili",
+                    source_url=data.get("short_link_v1", base_url),
+                    cover_url=cover_url,
+                    duration_seconds=int(data.get("duration", 0) or 0),
+                    uploader=uploader,
+                )
+                for orig_id in orig_ids:
                     result[orig_id] = meta
-        return result
+
+        return result, expanded

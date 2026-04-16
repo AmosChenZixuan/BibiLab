@@ -202,6 +202,26 @@ class TestResolveFlat:
         assert result.videos[0].uploader == "TestUser"
         assert result.title == "Single Video"
 
+    def test_resolve_flat_multipart_video_returns_all_parts(self):
+        """Multi-part video URL returns PlaylistMeta with one entry per part."""
+        adapter = BilibiliAdapter(cookie="test_cookie")
+        info = _make_multipart_info(bvid="BV1multi", title="Multi Part", num_parts=3)
+
+        with patch("yt_dlp.YoutubeDL") as mock_ydl:
+            mock_instance = MagicMock()
+            mock_instance.extract_info.return_value = info
+            mock_ydl.return_value.__enter__.return_value = mock_instance
+
+            result = adapter.resolve_flat("https://www.bilibili.com/video/BV1multi")
+
+        assert len(result.videos) == 3
+        assert result.videos[0].video_id == "BV1multi_p1"
+        assert result.videos[1].video_id == "BV1multi_p2"
+        assert result.videos[2].video_id == "BV1multi_p3"
+        assert result.videos[0].part_label == "P1"
+        assert result.videos[1].part_label == "P2"
+        assert result.videos[2].part_label == "P3"
+
     def test_resolve_flat_course_raises_auth_required(self):
         """Course URL raises AuthRequiredError."""
         from bibilab.adapters.base import AuthRequiredError
@@ -315,7 +335,7 @@ class TestGetVideosMetadataDedup:
         with patch("httpx.AsyncClient") as mock_client:
             mock_client.return_value.__aenter__.return_value = TrackingClient()
 
-            result = await adapter.get_videos_metadata(["BV1xxx_p1", "BV1xxx_p2", "BV2yyy"])
+            result, _ = await adapter.get_videos_metadata(["BV1xxx_p1", "BV1xxx_p2", "BV2yyy"])
 
         assert len(fetched_bvids) == 2, f"Expected 2 API calls, got {len(fetched_bvids)}"
         assert set(fetched_bvids) == {"BV1xxx", "BV2yyy"}
@@ -370,8 +390,183 @@ class TestGetVideosMetadataDedup:
         with patch("httpx.AsyncClient") as mock_client:
             mock_client.return_value.__aenter__.return_value = TrackingClient()
 
-            result = await adapter.get_videos_metadata(["BV1abc123", "BVnotfound"])
+            result, _ = await adapter.get_videos_metadata(["BV1abc123", "BVnotfound"])
 
         assert "BV1abc123" in result
         assert "BVnotfound" not in result
         assert result["BV1abc123"].title == "Found Video"
+
+
+class TestGetVideosMetadataExpansion:
+    """Test get_videos_metadata expands multi-part videos from playlist context."""
+
+    @pytest.mark.asyncio
+    async def test_multipart_video_expanded_into_parts(self):
+        """A bare BVID with pages > 1 should expand into per-part entries."""
+        adapter = BilibiliAdapter(cookie="test_cookie")
+
+        class MockResponse:
+            def __init__(self):
+                self.status_code = 200
+
+            def json(self):
+                return {
+                    "data": {
+                        "title": "Multi Part Video",
+                        "pic": "https://example.com/cover.jpg",
+                        "duration": 3600,
+                        "owner": {"name": "Author"},
+                        "pages": [
+                            {"page": 1, "part": "Intro", "duration": 600},
+                            {"page": 2, "part": "Main", "duration": 1800},
+                            {"page": 3, "part": "Outro", "duration": 300},
+                        ],
+                    }
+                }
+
+        class MockClient:
+            async def get(self, url):
+                return MockResponse()
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                pass
+
+        with patch("httpx.AsyncClient") as mock_client:
+            mock_client.return_value.__aenter__.return_value = MockClient()
+
+            result, expanded = await adapter.get_videos_metadata(["BV1multi"])
+
+        assert "BV1multi" not in result
+        assert "BV1multi" in expanded
+        assert expanded["BV1multi"] == ["BV1multi_p1", "BV1multi_p2", "BV1multi_p3"]
+        assert result["BV1multi_p1"].title == "Multi Part Video"
+        assert result["BV1multi_p1"].part_label == "P1: Intro"
+        assert result["BV1multi_p1"].duration_seconds == 600
+        assert result["BV1multi_p2"].title == "Multi Part Video"
+        assert result["BV1multi_p3"].title == "Multi Part Video"
+
+    @pytest.mark.asyncio
+    async def test_single_page_video_not_expanded(self):
+        """A BVID with pages == 1 should NOT expand."""
+        adapter = BilibiliAdapter(cookie="test_cookie")
+
+        class MockResponse:
+            def __init__(self):
+                self.status_code = 200
+
+            def json(self):
+                return {
+                    "data": {
+                        "title": "Single Video",
+                        "pic": "https://example.com/cover.jpg",
+                        "duration": 1800,
+                        "owner": {"name": "Author"},
+                        "pages": [{"page": 1, "part": "Single Video", "duration": 1800}],
+                    }
+                }
+
+        class MockClient:
+            async def get(self, url):
+                return MockResponse()
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                pass
+
+        with patch("httpx.AsyncClient") as mock_client:
+            mock_client.return_value.__aenter__.return_value = MockClient()
+
+            result, expanded = await adapter.get_videos_metadata(["BV1single"])
+
+        assert "BV1single" in result
+        assert expanded == {}
+        assert result["BV1single"].title == "Single Video"
+
+    @pytest.mark.asyncio
+    async def test_already_has_parts_not_expanded(self):
+        """IDs with _p suffix (already expanded) should not re-expand."""
+        adapter = BilibiliAdapter(cookie="test_cookie")
+
+        class MockResponse:
+            def __init__(self):
+                self.status_code = 200
+
+            def json(self):
+                return {
+                    "data": {
+                        "title": "Multi Part Video",
+                        "pic": "https://example.com/cover.jpg",
+                        "duration": 3600,
+                        "owner": {"name": "Author"},
+                        "pages": [
+                            {"page": 1, "part": "Intro", "duration": 600},
+                            {"page": 2, "part": "Main", "duration": 1800},
+                        ],
+                    }
+                }
+
+        class MockClient:
+            async def get(self, url):
+                return MockResponse()
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                pass
+
+        with patch("httpx.AsyncClient") as mock_client:
+            mock_client.return_value.__aenter__.return_value = MockClient()
+
+            result, expanded = await adapter.get_videos_metadata(["BV1test_p1", "BV1test_p2"])
+
+        assert expanded == {}
+        assert "BV1test_p1" in result
+        assert "BV1test_p2" in result
+
+    @pytest.mark.asyncio
+    async def test_multipart_video_empty_part_name_no_trailing_colon(self):
+        """Empty page.part should produce 'P1' not 'P1: '."""
+        adapter = BilibiliAdapter(cookie="test_cookie")
+
+        class MockResponse:
+            def __init__(self):
+                self.status_code = 200
+
+            def json(self):
+                return {
+                    "data": {
+                        "title": "Multi Part Video",
+                        "pic": "https://example.com/cover.jpg",
+                        "duration": 3600,
+                        "owner": {"name": "Author"},
+                        "pages": [
+                            {"page": 1, "part": "", "duration": 600},
+                            {"page": 2, "part": "", "duration": 1800},
+                        ],
+                    }
+                }
+
+        class MockClient:
+            async def get(self, url):
+                return MockResponse()
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                pass
+
+        with patch("httpx.AsyncClient") as mock_client:
+            mock_client.return_value.__aenter__.return_value = MockClient()
+
+            result, expanded = await adapter.get_videos_metadata(["BV1emptypart"])
+
+        assert result["BV1emptypart_p1"].part_label == "P1"
+        assert result["BV1emptypart_p2"].part_label == "P2"
+        assert result["BV1emptypart_p1"].title == "Multi Part Video"

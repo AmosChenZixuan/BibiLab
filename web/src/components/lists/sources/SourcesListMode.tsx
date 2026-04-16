@@ -328,19 +328,40 @@ export function SourcesListMode({
 
         const metadataResponse = await api.previewPlaylistMetadata(flatResponse.videos.map((v) => v.video_id));
         if (metadataResponse) {
-          const enriched = flatResponse.videos.map((v) => {
-            const meta = metadataResponse.videos[v.video_id];
-            if (meta) {
-              return {
-                ...v,
-                title: meta.title,
-                cover_url: meta.cover_url,
-                duration_seconds: meta.duration_seconds,
-                uploader: meta.uploader,
-              };
+          const enriched: PreviewVideo[] = [];
+          for (const v of flatResponse.videos) {
+            const partIds = metadataResponse.expanded[v.video_id];
+            if (partIds) {
+              for (const partId of partIds) {
+                const meta = metadataResponse.videos[partId];
+                if (meta) {
+                  enriched.push({
+                    ...v,
+                    video_id: partId,
+                    title: meta.title,
+                    cover_url: meta.cover_url,
+                    duration_seconds: meta.duration_seconds,
+                    uploader: meta.uploader,
+                    source_url: meta.source_url,
+                    part_label: meta.part_label,
+                  });
+                }
+              }
+            } else {
+              const meta = metadataResponse.videos[v.video_id];
+              if (meta) {
+                enriched.push({
+                  ...v,
+                  title: meta.title,
+                  cover_url: meta.cover_url,
+                  duration_seconds: meta.duration_seconds,
+                  uploader: meta.uploader,
+                });
+              } else {
+                enriched.push(v);
+              }
             }
-            return v;
-          });
+          }
           setPreviewVideos(enriched);
         }
         setPreviewLoading(false);

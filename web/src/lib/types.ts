@@ -218,5 +218,7 @@ export interface VideoMetadataMap {
     duration_seconds: number;
     uploader: string;
     source_url: string;
+    part_label: string | null;
   }>;
+  expanded: Record<string, string[]>;
 }

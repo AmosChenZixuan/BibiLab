@@ -50,6 +50,7 @@ class VideoMetadata(BaseModel):
     duration_seconds: int
     uploader: str
     source_url: str
+    part_label: str | None = None
 
 
 class VideoMetadataRequest(BaseModel):
@@ -58,3 +59,4 @@ class VideoMetadataRequest(BaseModel):
 
 class VideoMetadataMapResponse(BaseModel):
     videos: dict[str, VideoMetadata]
+    expanded: dict[str, list[str]] = {}

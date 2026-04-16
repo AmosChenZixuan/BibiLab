@@ -58,8 +58,9 @@ class PlatformAdapter(ABC):
         """Resolve a playlist URL using extract_flat for fast enumeration without per-video metadata."""
 
     @abstractmethod
-    async def get_videos_metadata(self, video_ids: list[str]) -> dict[str, VideoMeta]:
-        """Batch-fetch full metadata (cover, duration, uploader) for a list of video IDs."""
+    async def get_videos_metadata(self, video_ids: list[str]) -> tuple[dict[str, VideoMeta], dict[str, list[str]]]:
+        """Batch-fetch full metadata.
+        Returns (metadata_map, expanded_map) where expanded maps original IDs to part IDs."""
 
     @abstractmethod
     def download(self, video_id: str, source_url: str) -> Path:

@@ -78,7 +78,9 @@ async def ingest_preview_metadata(
         return VideoMetadataMapResponse(videos={})
 
     try:
-        metadata_map = await BilibiliAdapter(cookie=cfg.accounts.bilibili.cookie).get_videos_metadata(video_ids)
+        metadata_map, expanded = await BilibiliAdapter(cookie=cfg.accounts.bilibili.cookie).get_videos_metadata(
+            video_ids
+        )
     except DownloadError as exc:
         raise HTTPException(
             status_code=400,
@@ -92,11 +94,12 @@ async def ingest_preview_metadata(
             duration_seconds=v.duration_seconds,
             uploader=v.uploader,
             source_url=v.source_url,
+            part_label=v.part_label,
         )
         for video_id, v in metadata_map.items()
     }
 
-    return VideoMetadataMapResponse(videos=videos)
+    return VideoMetadataMapResponse(videos=videos, expanded=expanded)
 
 
 async def _queue_video(
