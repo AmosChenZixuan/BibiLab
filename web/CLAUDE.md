@@ -17,9 +17,10 @@ npm run lint             # Type-check the frontend
 
 ```
 components/ui/    — primitive components (Button, Modal, Panel, Select, Spinner, StatusChip, etc.)
+components/auth/  — platform auth modals (BilibiliQrModal)
 components/*/     — feature components (lists/, lists/lab/, jobs/, layout/, settings/)
 pages/            — route-level page components
-lib/              — typed api client, types, download helpers, health check
+lib/              — typed api client, types, artifact types, templates, download helpers, health check, utils
 app/              — router, language context
 test/             — Vitest test files + setup
 ```
@@ -42,3 +43,4 @@ test/             — Vitest test files + setup
 - **API client**: single `api` object in `lib/api.ts` with typed `request<T>` wrapper; errors thrown as `ApiError`
 - **i18n**: `useLanguage()` → `t("key.path")` for lookup; `%{name}` placeholders with `t("key", { name: value })` for interpolation. String tables in `lib/i18n/{en,zh}.json` must stay in sync
 - **Styling**: Tailwind utility classes only; no CSS modules. Inline `style` only for dynamic computed values (widths, positions, URLs). No arbitrary bracket values (e.g. `mt-[10px]`) — use Tailwind's built-in scale or CSS custom properties from `src/styles/app.css` (`--color-*`, `--z-*`, `--font-*`)
+- **Cross-component auth sync**: When auth state changes (login/logout), call `notifyBilibiliAuthChanged()` from `lib/api.ts`. Components that need to react listen for `BILIBILI_AUTH_REFRESH_EVENT` via `window.addEventListener`. Do not prop-drill auth state through unrelated components.
