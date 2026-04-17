@@ -26,7 +26,7 @@ vi.mock("../lib/api", () => {
 import { api } from "@/lib/api";
 
 const baseConfig: BibilabConfig = {
-  accounts: { bilibili: { cookie: "", last_verified: "" } },
+  accounts: { bilibili: { cookie: "", last_verified: "", username: "", avatar_url: "" } },
   ai: { provider: "openai", model: "", api_key: "", base_url: "" },
   transcription: {
     engine: "faster-whisper",

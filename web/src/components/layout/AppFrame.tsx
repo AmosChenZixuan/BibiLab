@@ -17,6 +17,8 @@ export function AppFrame() {
   const [healthTier, setHealthTier] = useState<keyof typeof HEALTH_META>("healthy");
   const [identityOpen, setIdentityOpen] = useState(false);
   const [bilibiliCookie, setBilibiliCookie] = useState("");
+  const [bilibiliUsername, setBilibiliUsername] = useState("");
+  const [bilibiliAvatarUrl, setBilibiliAvatarUrl] = useState("");
   const [qrModalOpen, setQrModalOpen] = useState(false);
   const { lang, setLang } = useLanguage();
   const [navElement, setNavElement] = useState<HTMLElement | null>(null);
@@ -50,11 +52,13 @@ export function AppFrame() {
     };
   }, []);
 
-  async function refreshBilibiliCookie() {
+  async function refreshBilibiliIdentity() {
     try {
       const config = await api.getConfig();
       if (config) {
         setBilibiliCookie(config.accounts.bilibili.cookie);
+        setBilibiliUsername(config.accounts.bilibili.username);
+        setBilibiliAvatarUrl(config.accounts.bilibili.avatar_url);
       }
     } catch {
       // non-critical for navbar display
@@ -62,10 +66,10 @@ export function AppFrame() {
   }
 
   useEffect(() => {
-    void refreshBilibiliCookie();
+    void refreshBilibiliIdentity();
 
     function handleAuthRefresh() {
-      void refreshBilibiliCookie();
+      void refreshBilibiliIdentity();
     }
 
     window.addEventListener(BILIBILI_AUTH_REFRESH_EVENT, handleAuthRefresh);
@@ -154,6 +158,8 @@ export function AppFrame() {
           {identityOpen ? (
             <IdentityPanel
               bilibiliCookie={bilibiliCookie}
+              bilibiliUsername={bilibiliUsername}
+              bilibiliAvatarUrl={bilibiliAvatarUrl}
               onClose={() => setIdentityOpen(false)}
               onLogin={() => setQrModalOpen(true)}
               onLogout={handleLogout}

@@ -124,3 +124,29 @@ describe("toErrorMessage", () => {
     expect(toErrorMessage(error)).toBe("Token expired");
   });
 });
+
+describe("api.getConfig", () => {
+  test("getConfig returns username and avatar_url for bilibili account", async () => {
+    const fetchMock = vi.fn(async () =>
+      Response.json({
+        accounts: {
+          bilibili: {
+            cookie: "***",
+            last_verified: "2025-01-01T00:00:00Z",
+            username: "test_user",
+            avatar_url: "https://i0.hdslb.com/bfs/face/abc.jpg",
+          },
+        },
+        ai: { provider: "openai", model: "gpt-4o", api_key: "***", base_url: "", output_language: "ui" },
+        transcription: { engine: "faster-whisper", model_size: "large-v3", device: "cpu", language: "auto" },
+        vision: { enabled: false, frame_sample_rate: 30, model: null },
+        backend: { port: 8765, worker_concurrency: 1 },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const config = await api.getConfig();
+    expect(config?.accounts.bilibili.username).toBe("test_user");
+    expect(config?.accounts.bilibili.avatar_url).toBe("https://i0.hdslb.com/bfs/face/abc.jpg");
+  });
+});

@@ -10,7 +10,7 @@ import { SettingsPage } from "@/pages/SettingsPage";
 vi.mock("../lib/api", () => {
   const mockApi = {
     getConfig: vi.fn().mockResolvedValue({
-      accounts: { bilibili: { cookie: "", last_verified: "" } },
+      accounts: { bilibili: { cookie: "", last_verified: "", username: "", avatar_url: "" } },
       ai: { provider: "openai", model: "gpt-4o", api_key: "", base_url: "" },
       transcription: {
         engine: "faster-whisper",
@@ -157,7 +157,7 @@ describe("settings page", () => {
         },
       });
     vi.mocked(api.putConfig).mockResolvedValueOnce({
-      accounts: { bilibili: { cookie: "", last_verified: "" } },
+      accounts: { bilibili: { cookie: "", last_verified: "", username: "", avatar_url: "" } },
       ai: { provider: "openai", model: "gpt-4o", api_key: "", base_url: "" },
       transcription: {
         engine: "faster-whisper",
@@ -191,7 +191,7 @@ describe("settings page", () => {
 
   test("does not refresh health for non-health-affecting config changes", async () => {
     vi.mocked(api.putConfig).mockResolvedValueOnce({
-      accounts: { bilibili: { cookie: "", last_verified: "" } },
+      accounts: { bilibili: { cookie: "", last_verified: "", username: "", avatar_url: "" } },
       ai: { provider: "openai", model: "gpt-4o", api_key: "", base_url: "" },
       transcription: {
         engine: "faster-whisper",

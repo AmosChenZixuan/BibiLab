@@ -41,7 +41,7 @@ function renderFrame(healthPayload: HealthResponse, configPayload?: BibilabConfi
   vi.mocked(api.getHealth).mockResolvedValue(healthPayload);
   vi.mocked(api.getConfig).mockResolvedValue(
     configPayload ?? ({
-      accounts: { bilibili: { cookie: "", last_verified: "" } },
+      accounts: { bilibili: { cookie: "", last_verified: "", username: "", avatar_url: "" } },
       ai: { provider: "", model: "", api_key: "", base_url: "" },
       transcription: { engine: "", model_size: "", device: "", language: "" },
       vision: { enabled: false, frame_sample_rate: 0, model: null },
@@ -168,5 +168,38 @@ describe("app frame", () => {
     const menu = screen.getByRole("menu", { name: "Identity" });
 
     expect(nav).not.toContainElement(menu);
+  });
+
+  test("opens identity panel with signed-in state when config has username and avatar_url", async () => {
+    renderFrame(
+      {
+        overall: "ok",
+        dependencies: {
+          cuda: { status: "ok", message: "" },
+          embedding_model: { status: "ok", message: "" },
+        },
+      },
+      {
+        accounts: {
+          bilibili: {
+            cookie: "SESSDATA=abc",
+            last_verified: "2025-01-01T00:00:00Z",
+            username: "test_user",
+            avatar_url: "https://i0.hdslb.com/bfs/face/abc.jpg",
+          },
+        },
+        ai: { provider: "openai", model: "gpt-4o", api_key: "", base_url: "" },
+        transcription: { engine: "faster-whisper", model_size: "base", device: "cpu", language: "auto" },
+        vision: { enabled: false, frame_sample_rate: 30, model: null },
+        backend: { port: 8765, worker_concurrency: 1 },
+      },
+    );
+
+    await userEvent.click(await screen.findByRole("button", { name: /identity/i }));
+
+    const menu = screen.getByRole("menu", { name: "Identity" });
+    expect(menu).toBeInTheDocument();
+    expect(screen.getByText("test_user")).toBeInTheDocument();
+    expect(screen.getByLabelText("Sign out")).toBeInTheDocument();
   });
 });

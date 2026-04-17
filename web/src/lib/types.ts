@@ -129,6 +129,8 @@ export type BibilabConfig = {
     bilibili: {
       cookie: string;
       last_verified: string;
+      username: string;
+      avatar_url: string;
     };
   };
   ai: {

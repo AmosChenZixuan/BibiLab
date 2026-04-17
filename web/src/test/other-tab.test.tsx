@@ -6,7 +6,7 @@ import { OtherTab } from "@/components/settings/OtherTab";
 import type { HealthDependency, BibilabConfig } from "@/lib/types";
 
 const baseConfig: BibilabConfig = {
-  accounts: { bilibili: { cookie: "", last_verified: "" } },
+  accounts: { bilibili: { cookie: "", last_verified: "", username: "", avatar_url: "" } },
   ai: { provider: "openai", model: "", api_key: "", base_url: "" },
   transcription: {
     engine: "faster-whisper",

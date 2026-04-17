@@ -116,6 +116,16 @@ function isArtifactJob(job: Job): job is ArtifactJob {
   return job.type === "artifact";
 }
 
+function extractIngestTitle(meta: Job["meta"]): string {
+  if ("title" in meta && typeof meta.title === "string" && meta.title.trim()) {
+    return meta.title;
+  }
+  if ("source_url" in meta && typeof meta.source_url === "string" && meta.source_url.trim()) {
+    return meta.source_url;
+  }
+  return "Queued source";
+}
+
 function inferTrackedMeta(job: Job): TrackedJobMeta {
   if (isModelDownloadJob(job)) {
     const modelSize = typeof job.meta.model_size === "string" ? job.meta.model_size : "model";
@@ -135,15 +145,10 @@ function inferTrackedMeta(job: Job): TrackedJobMeta {
     };
   }
 
-  const title = typeof job.meta.title === "string" && job.meta.title.trim()
-    ? job.meta.title
-    : typeof job.meta.source_url === "string"
-      ? job.meta.source_url
-      : "Queued source";
   return {
     producer: "ingest",
-    label: title,
-    contextKey: typeof job.meta.list_id === "string" ? job.meta.list_id : null,
+    label: isIngestJob(job) ? extractIngestTitle(job.meta) : "Queued source",
+    contextKey: isIngestJob(job) && typeof job.meta.list_id === "string" ? job.meta.list_id : null,
   };
 }
 
@@ -175,11 +180,9 @@ function toActivityItem(job: Job, meta: TrackedJobMeta): JobActivityItem {
 
 export function getJobTitle(job: Job, fallbackLabel: string): string {
   if (isIngestJob(job)) {
-    if (typeof job.meta.title === "string" && job.meta.title.trim()) {
-      return job.meta.title;
-    }
-    if (typeof job.meta.source_url === "string" && job.meta.source_url.trim()) {
-      return job.meta.source_url;
+    const title = extractIngestTitle(job.meta);
+    if (title !== "Queued source") {
+      return title;
     }
   }
 
@@ -298,7 +301,8 @@ export function JobActivityProvider({ children }: { children: React.ReactNode })
       return next;
     });
 
-    setDismissedJobIds((current) => current.filter((jobId) => !jobs.some((job) => job.id === jobId)));
+    const newJobIds = new Set(jobs.map((job) => job.id));
+    setDismissedJobIds((current) => current.filter((jobId) => !newJobIds.has(jobId)));
     setJobsById((current) => {
       const next = { ...current };
       for (const job of jobs) {

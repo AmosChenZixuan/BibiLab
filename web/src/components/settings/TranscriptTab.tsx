@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useState } from "react";
 
 import { useLanguage } from "@/app/LanguageContext";
 import { useJobActivity } from "@/components/jobs/JobActivityProvider";
@@ -119,9 +119,13 @@ export function TranscriptTab({ config, dependencies, onBlur }: TranscriptTabPro
     }
   }
 
-  const installedModels = models.filter((model) => model.installed);
-  const hasSelectedInstalledModel = installedModels.some(
-    (model) => model.name === localTranscription.model_size,
+  const installedModels = useMemo(
+    () => models.filter((model) => model.installed),
+    [models],
+  );
+  const hasSelectedInstalledModel = useMemo(
+    () => installedModels.some((model) => model.name === localTranscription.model_size),
+    [installedModels, localTranscription.model_size],
   );
   const cudaDependency = dependencies.cuda;
   const cudaAvailable = cudaDependency?.status === "ok";

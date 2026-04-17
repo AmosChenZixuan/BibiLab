@@ -8,6 +8,9 @@ import pytest_asyncio
 
 @pytest.fixture()
 def tmp_bibilab_home(tmp_path: Path):
+    from bibilab.config import _reset_cache
+
+    _reset_cache()
     with patch("bibilab.config.bibilab_home", return_value=tmp_path):
         with patch("bibilab.main.bibilab_home", return_value=tmp_path):
             with patch("bibilab.cleanup.bibilab_home", return_value=tmp_path):
