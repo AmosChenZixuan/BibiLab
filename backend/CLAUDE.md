@@ -6,6 +6,7 @@ Python/FastAPI backend. Managed with `uv`.
 
 ```bash
 uv sync --dev                        # Install all dependencies
+uv sync --extra cuda                 # Enable GPU acceleration (installs torch ~2GB)
 uv run ruff check .                  # Lint
 uv run ruff format .                 # Format
 uv run pytest                        # All tests

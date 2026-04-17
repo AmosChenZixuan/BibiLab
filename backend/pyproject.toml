@@ -23,6 +23,9 @@ dependencies = [
     "yt-dlp>=2026.3.17",
 ]
 
+[project.optional-dependencies]
+cuda = ["torch"]
+
 [dependency-groups]
 dev = [
     "pytest>=9.0.2",
