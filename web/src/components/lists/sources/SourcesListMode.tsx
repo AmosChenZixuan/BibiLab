@@ -176,7 +176,6 @@ export function SourcesListMode({
   const ingestJobs = useMemo(() => getJobs("ingest", listId), [getJobs, listId]);
   const [refreshedJobs, setRefreshedJobs] = useState<string[]>([]);
   const [showQrModal, setShowQrModal] = useState(false);
-  const [pendingRetryUrl, setPendingRetryUrl] = useState("");
 
   const [currentSources, setCurrentSources] = useState<Source[]>(sources);
   const selectAllRef = useRef<HTMLInputElement>(null);
@@ -371,7 +370,6 @@ export function SourcesListMode({
       } catch (err) {
         setPreviewLoading(false);
         if (err instanceof ApiError && err.status === 401) {
-          setPendingRetryUrl(trimmed);
           setShowQrModal(true);
           return;
         }
@@ -389,13 +387,11 @@ export function SourcesListMode({
 
   const handleQrModalSuccess = useCallback(() => {
     setShowQrModal(false);
-    setPendingRetryUrl("");
     void handleSubmit({ preventDefault: () => {} } as React.FormEvent);
   }, [handleSubmit]);
 
   const handleQrModalClose = useCallback(() => {
     setShowQrModal(false);
-    setPendingRetryUrl("");
   }, []);
 
   return (
