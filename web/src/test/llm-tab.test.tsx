@@ -86,10 +86,10 @@ describe("llm tab", () => {
     expect(screen.getByLabelText(/base url/i)).toHaveAttribute("placeholder", "https://api.openai.com/v1");
 
     fireEvent.change(screen.getByLabelText(/provider/i), {
-      target: { value: "ollama" },
+      target: { value: "anthropic" },
     });
 
-    expect(screen.getByText(/ollama server root/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/base url/i)).toHaveAttribute("placeholder", "http://localhost:11434");
+    expect(screen.getByText(/Anthropic API base URL/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/base url/i)).toHaveAttribute("placeholder", "https://api.anthropic.com/v1");
   });
 });
