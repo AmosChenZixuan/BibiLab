@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { QRCodeSVG } from "qrcode.react";
 import { useLanguage } from "@/app/LanguageContext";
-import { Button, Modal } from "@/components/ui";
+import { Modal } from "@/components/ui";
 import { api, type BilibiliQrStatus } from "@/lib/api";
 
 type BilibiliQrModalProps = {
@@ -90,16 +90,6 @@ export function BilibiliQrModal({ open, onClose, onSuccess }: BilibiliQrModalPro
     onClose();
   }
 
-  async function handleSignOut() {
-    try {
-      await api.auth.deleteBilibiliAuth();
-      onSuccess();
-      handleClose();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to sign out");
-    }
-  }
-
   const statusMessage = (() => {
     switch (status) {
       case "waiting":
@@ -119,16 +109,6 @@ export function BilibiliQrModal({ open, onClose, onSuccess }: BilibiliQrModalPro
       onClose={handleClose}
       title={t("auth.bilibili.title")}
       size="md"
-      footer={
-        <div className="flex w-full justify-between">
-          <Button variant="ghost" size="sm" onClick={handleSignOut}>
-            {t("auth.bilibili.signOut")}
-          </Button>
-          <Button variant="ghost" size="sm" onClick={handleClose}>
-            {t("common.cancel")}
-          </Button>
-        </div>
-      }
     >
       <div className="flex flex-col items-center gap-4">
         {loading && (

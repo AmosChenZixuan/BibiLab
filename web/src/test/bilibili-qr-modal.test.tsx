@@ -87,23 +87,4 @@ describe("BilibiliQrModal", () => {
     });
     expect(screen.getByText("Scan the QR code with the Bilibili app")).toBeInTheDocument();
   });
-
-  test("calls deleteBilibiliAuth when sign out is clicked", async () => {
-    renderModal({ open: true });
-    await waitFor(() => {
-      expect(screen.queryByText("Creating...")).not.toBeInTheDocument();
-    });
-    await userEvent.click(screen.getByRole("button", { name: /sign out/i }));
-    expect(mockDeleteBilibiliAuth).toHaveBeenCalled();
-  });
-
-  test("closes modal when cancel is clicked", async () => {
-    const onClose = vi.fn();
-    renderModal({ open: true, onClose });
-    await waitFor(() => {
-      expect(screen.queryByText("Creating...")).not.toBeInTheDocument();
-    });
-    await userEvent.click(screen.getByRole("button", { name: /cancel/i }));
-    expect(onClose).toHaveBeenCalled();
-  });
 });
