@@ -205,5 +205,16 @@
     "download": "下载",
     "downloading": "正在下载 %{name}",
     "failed": "失败"
+  },
+  "auth": {
+    "bilibili": {
+      "title": "登录哔哩哔哩",
+      "waiting": "请使用哔哩哔哩 App 扫描二维码",
+      "scanned": "已确认 — 等待授权",
+      "expired": "二维码已过期",
+      "success": "登录成功",
+      "expiredTip": "请重试",
+      "signOut": "退出登录"
+    }
   }
 }

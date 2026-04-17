@@ -205,5 +205,16 @@
     "download": "Download",
     "downloading": "Downloading %{name}",
     "failed": "Failed"
+  },
+  "auth": {
+    "bilibili": {
+      "title": "Sign in to Bilibili",
+      "waiting": "Scan the QR code with the Bilibili app",
+      "scanned": "Confirmed — waiting for authorization",
+      "expired": "QR code expired",
+      "success": "Signed in successfully",
+      "expiredTip": "Please try again",
+      "signOut": "Sign out"
+    }
   }
 }
