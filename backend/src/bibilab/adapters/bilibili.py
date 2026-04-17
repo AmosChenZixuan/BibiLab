@@ -31,6 +31,7 @@ _ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 _AUTH_RE = re.compile(r"log\s*in|sign\s*in|403", re.IGNORECASE)
 
 _METADATA_CONCURRENCY = 8
+_cookie_file_cache: tuple[str, Path] | None = None
 
 
 def _resource_type(url: str) -> str:
@@ -44,14 +45,17 @@ def _resource_type(url: str) -> str:
 def _cookie_file(cookie: str) -> str | None:
     if not cookie:
         return None
+    global _cookie_file_cache
+    if _cookie_file_cache is not None and _cookie_file_cache[0] == cookie:
+        return str(_cookie_file_cache[1])
     path = bibilab_home() / "bilibili_cookies.txt"
-    path.parent.mkdir(parents=True, exist_ok=True)
     lines = ["# Netscape HTTP Cookie File"]
     for pair in cookie.split("; "):
         key, _, val = pair.partition("=")
         if key:
             lines.append(f".bilibili.com\tTRUE\t/\tFALSE\t0\t{key}\t{val}")
     path.write_text("\n".join(lines) + "\n")
+    _cookie_file_cache = (cookie, path)
     return str(path)
 
 
@@ -169,7 +173,7 @@ class BilibiliAdapter(PlatformAdapter):
             msg = str(exc).lower()
             if _AUTH_RE.search(msg):
                 raise AuthRequiredError("playlist") from exc
-            raise DownloadError(_ANSI_RE.sub("", msg)) from exc
+            raise DownloadError(_ANSI_RE.sub("", str(exc))) from exc
 
         playlist_id = info.get("id", url)
         title = info.get("title", "Untitled Playlist")

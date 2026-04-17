@@ -283,14 +283,12 @@ export function SourcesListMode({
     [listId, t, trackJobs],
   );
 
-  const handleSubmit = useCallback(
-    async (e: React.FormEvent) => {
-      e.preventDefault();
-      const trimmed = url.trim();
-      if (!trimmed) return;
+  const doSubmit = useCallback(
+    async (trimmedUrl: string) => {
+      if (!trimmedUrl) return;
       setError(null);
       try {
-        const flatResponse = await api.previewPlaylist(listId, trimmed);
+        const flatResponse = await api.previewPlaylist(listId, trimmedUrl);
         if (!flatResponse) return;
 
         const newVideos = flatResponse.videos.filter((v) => v.status === "new");
@@ -377,11 +375,19 @@ export function SourcesListMode({
           setShowQrModal(true);
           return;
         }
-        setUrl(trimmed);
+        setUrl(trimmedUrl);
         setError(toErrorMessageWithT(err, t));
       }
     },
-    [listId, submitSelection, t, url],
+    [listId, submitSelection, t],
+  );
+
+  const handleSubmit = useCallback(
+    async (e: React.FormEvent) => {
+      e.preventDefault();
+      void doSubmit(url.trim());
+    },
+    [doSubmit, url],
   );
 
   const handleDelete = useCallback(async (source: Source) => {
@@ -392,8 +398,9 @@ export function SourcesListMode({
   const handleQrModalSuccess = useCallback(() => {
     setShowQrModal(false);
     notifyBilibiliAuthChanged();
-    void handleSubmit({ preventDefault: () => {} } as React.FormEvent);
-  }, [handleSubmit]);
+    const trimmed = url.trim();
+    if (trimmed) void doSubmit(trimmed);
+  }, [doSubmit, url]);
 
   const handleQrModalClose = useCallback(() => {
     setShowQrModal(false);

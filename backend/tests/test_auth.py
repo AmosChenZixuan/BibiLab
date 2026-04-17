@@ -51,7 +51,7 @@ async def test_qr_status_waiting(client: httpx.AsyncClient):
     mock_resp = _make_mock_response({"data": {"code": 86101}})
 
     with _patch_bilibili_httpx(mock_resp):
-        resp = await client.get("/auth/bilibili/qr/some-key/status")
+        resp = await client.get("/auth/bilibili/qr/status?key=some-key")
 
     assert resp.status_code == 200
     assert resp.json()["status"] == "waiting"
@@ -62,7 +62,7 @@ async def test_qr_status_scanned(client: httpx.AsyncClient):
     mock_resp = _make_mock_response({"data": {"code": 86090}})
 
     with _patch_bilibili_httpx(mock_resp):
-        resp = await client.get("/auth/bilibili/qr/some-key/status")
+        resp = await client.get("/auth/bilibili/qr/status?key=some-key")
 
     assert resp.status_code == 200
     assert resp.json()["status"] == "scanned"
@@ -73,7 +73,7 @@ async def test_qr_status_expired(client: httpx.AsyncClient):
     mock_resp = _make_mock_response({"data": {"code": 86038}})
 
     with _patch_bilibili_httpx(mock_resp):
-        resp = await client.get("/auth/bilibili/qr/some-key/status")
+        resp = await client.get("/auth/bilibili/qr/status?key=some-key")
 
     assert resp.status_code == 200
     assert resp.json()["status"] == "expired"
@@ -91,7 +91,7 @@ async def test_qr_status_success_saves_cookie(client: httpx.AsyncClient, tmp_bib
     )
 
     with _patch_bilibili_httpx(mock_resp):
-        resp = await client.get("/auth/bilibili/qr/some-key/status")
+        resp = await client.get("/auth/bilibili/qr/status?key=some-key")
 
     assert resp.status_code == 200
     assert resp.json()["status"] == "success"

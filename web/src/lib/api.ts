@@ -285,7 +285,7 @@ export class AuthClient {
   }
 
   pollBilibiliQr(key: string) {
-    return this.request<{ status: BilibiliQrStatus }>(this.baseUrl, `/auth/bilibili/qr/${key}/status`);
+    return this.request<{ status: BilibiliQrStatus }>(this.baseUrl, `/auth/bilibili/qr/status?key=${key}`);
   }
 
   deleteBilibiliAuth() {

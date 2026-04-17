@@ -33,7 +33,7 @@ async def generate_qr() -> dict:
         return {"url": data["data"]["url"], "key": data["data"]["qrcode_key"]}
 
 
-@router.get("/auth/bilibili/qr/{key}/status")
+@router.get("/auth/bilibili/qr/status")
 async def qr_status(key: str, cfg: BibilabConfig = Depends(get_config)) -> dict:
     async with httpx.AsyncClient(timeout=10, headers=BILIBILI_HEADERS) as client:
         resp = await client.get(BILIBILI_POLL_URL, params={"qrcode_key": key})
