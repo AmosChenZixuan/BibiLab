@@ -16,7 +16,7 @@ uv run python -m bibilab.main       # Start server (localhost:8765)
 ## Code Layout — `src/bibilab/`
 
 ```
-routers/          — one APIRouter per module; aggregated in main.py
+routers/          — one APIRouter per module; aggregated in main.py (`auth.py` covers `/auth/bilibili/*`)
 models/           — Pydantic request/response models + domain errors
 pipeline/         — one file per stage; _shared.py for common LLM helpers
 adapters/         — platform-specific download + resolution (base + bilibili)
@@ -118,6 +118,10 @@ class PlatformAdapter:
 
 v0: `BilibiliAdapter` — single video, playlist, course. Cookie-based auth in config.
 403 → `AuthRequiredError` → job `needs_auth` → UI prompts user.
+
+**QR login flow**: `POST /auth/bilibili/qr` → get `{url, key}` → UI polls `GET /auth/bilibili/qr/status?key=...` (query param, not path param — avoids key in server logs) → on success, cookie saved to config.
+
+**Cookie file**: `_cookie_file()` converts the raw cookie string to Netscape HTTP Cookie File format (yt-dlp requirement). A module-level `_cookie_file_cache` skips the disk write when the cookie string is unchanged.
 
 ## Configuration Schema
 
