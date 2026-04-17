@@ -4,13 +4,10 @@ import httpx
 import pytest
 
 
-def _make_mock_response(json_data, status_code=200, cookie_headers=None):
+def _make_mock_response(json_data, status_code=200):
     mock_resp = MagicMock()
     mock_resp.status_code = status_code
     mock_resp.json = MagicMock(return_value=json_data)
-    headers_mock = MagicMock()
-    headers_mock.get_list.return_value = cookie_headers or []
-    mock_resp.headers = headers_mock
     return mock_resp
 
 
@@ -26,7 +23,7 @@ async def test_generate_qr_returns_url_and_key(client: httpx.AsyncClient):
     )
 
     mock_http_client = MagicMock()
-    mock_http_client.post = AsyncMock(return_value=mock_resp)
+    mock_http_client.get = AsyncMock(return_value=mock_resp)
     mock_http_client.aclose = AsyncMock()
 
     with patch("bibilab.routers.auth.httpx.AsyncClient") as mock_client_cls:
@@ -106,7 +103,12 @@ async def test_qr_status_expired(client: httpx.AsyncClient):
 @pytest.mark.asyncio
 async def test_qr_status_success_saves_cookie(client: httpx.AsyncClient, tmp_bibilab_home):
     mock_resp = _make_mock_response(
-        {"data": {"code": 0}}, cookie_headers=["SESSDATA=abc123; Path=/", "BILI_JCT=def456; Path=/"]
+        {
+            "data": {
+                "code": 0,
+                "url": "https://passport.bilibili.com/crossDomain?SESSDATA=abc%2C1234567890%2Cxyz&bili_jct=def456&DedeUserID=999&gourl=https%3A%2F%2Fwww.bilibili.com",
+            }
+        }
     )
 
     mock_http_client = MagicMock()
@@ -127,8 +129,9 @@ async def test_qr_status_success_saves_cookie(client: httpx.AsyncClient, tmp_bib
     from bibilab.config import load_config
 
     cfg = load_config()
-    assert "SESSDATA=abc123" in cfg.accounts.bilibili.cookie
-    assert "BILI_JCT=def456" in cfg.accounts.bilibili.cookie
+    assert "SESSDATA=abc%2C1234567890%2Cxyz" in cfg.accounts.bilibili.cookie
+    assert "bili_jct=def456" in cfg.accounts.bilibili.cookie
+    assert "gourl" not in cfg.accounts.bilibili.cookie
     assert cfg.accounts.bilibili.last_verified != ""
 
 

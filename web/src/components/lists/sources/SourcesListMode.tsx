@@ -270,14 +270,18 @@ export function SourcesListMode({
           setUrl("");
         }
         setPreviewVideos(null);
-      } catch (err) {
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        setShowQrModal(true);
+      } else {
         setError(toErrorMessageWithT(err, t));
-      } finally {
-        setSubmitting(false);
       }
-    },
-    [listId, t, trackJobs],
-  );
+    } finally {
+      setSubmitting(false);
+    }
+  },
+  [listId, t, trackJobs],
+);
 
   const handleSubmit = useCallback(
     async (e: React.FormEvent) => {

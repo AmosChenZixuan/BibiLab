@@ -28,6 +28,7 @@ _COURSE_RE = re.compile(r"bilibili\.com/cheese", re.IGNORECASE)
 
 # Strip ANSI escape codes from yt_dlp output
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
+_AUTH_RE = re.compile(r"log\s*in|sign\s*in|403", re.IGNORECASE)
 
 _METADATA_CONCURRENCY = 8
 
@@ -40,14 +41,29 @@ def _resource_type(url: str) -> str:
     return "video"
 
 
+def _cookie_file(cookie: str) -> str | None:
+    if not cookie:
+        return None
+    path = bibilab_home() / "bilibili_cookies.txt"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lines = ["# Netscape HTTP Cookie File"]
+    for pair in cookie.split("; "):
+        key, _, val = pair.partition("=")
+        if key:
+            lines.append(f".bilibili.com\tTRUE\t/\tFALSE\t0\t{key}\t{val}")
+    path.write_text("\n".join(lines) + "\n")
+    return str(path)
+
+
 def _ydl_opts(cookie: str, quiet: bool = True, extract_flat: bool | str = False) -> dict:
     opts: dict = {
         "quiet": quiet,
         "no_warnings": quiet,
         "extract_flat": extract_flat,
     }
-    if cookie:
-        opts["http_headers"] = {"Cookie": cookie}
+    cf = _cookie_file(cookie)
+    if cf:
+        opts["cookiefile"] = cf
     return opts
 
 
@@ -122,6 +138,9 @@ class BilibiliAdapter(PlatformAdapter):
                 with yt_dlp.YoutubeDL(opts) as ydl:
                     info = ydl.extract_info(url, download=False)
             except yt_dlp.utils.DownloadError as exc:
+                msg = str(exc).lower()
+                if _AUTH_RE.search(msg):
+                    raise AuthRequiredError("video") from exc
                 raise DownloadError(_ANSI_RE.sub("", str(exc))) from exc
 
             if info.get("_type") == "playlist":
@@ -148,7 +167,7 @@ class BilibiliAdapter(PlatformAdapter):
                 info = ydl.extract_info(url, download=False)
         except yt_dlp.utils.DownloadError as exc:
             msg = str(exc).lower()
-            if "login" in msg or "sign in" in msg or "403" in msg:
+            if _AUTH_RE.search(msg):
                 raise AuthRequiredError("playlist") from exc
             raise DownloadError(_ANSI_RE.sub("", msg)) from exc
 
@@ -227,7 +246,7 @@ class BilibiliAdapter(PlatformAdapter):
                 ext = info.get("ext", "mp4")
         except yt_dlp.utils.DownloadError as exc:
             msg = str(exc).lower()
-            if "login" in msg or "sign in" in msg or "403" in msg:
+            if _AUTH_RE.search(msg):
                 raise AuthRequiredError("video") from exc
             raise
 
