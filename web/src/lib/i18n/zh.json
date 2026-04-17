@@ -5,7 +5,10 @@
     "language": "语言：中文",
     "languageEn": "英文",
     "languageZh": "中文",
-    "identity": "身份"
+    "identity": "身份",
+    "signedIn": "已登录",
+    "signedOut": "未登录",
+    "signIn": "登录"
   },
   "home": {
     "myLists": "我的列表",

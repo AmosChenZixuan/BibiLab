@@ -1,15 +1,21 @@
 import { createPortal } from "react-dom";
 
 import { useLanguage } from "@/app/LanguageContext";
+import { Button } from "@/components/ui";
 
 type IdentityPanelProps = {
+  bilibiliCookie: string;
   onClose: () => void;
+  onLogin: () => void;
+  onLogout: () => void;
 };
 
 const PLATFORMS = [{ key: "bilibili", label: "Bilibili", icon: "B" }];
 
-export default function IdentityPanel({ onClose }: IdentityPanelProps) {
+export default function IdentityPanel({ bilibiliCookie, onClose, onLogin, onLogout }: IdentityPanelProps) {
   const { t } = useLanguage();
+  const isSignedIn = bilibiliCookie.length > 0;
+
   return createPortal(
     <>
       <button
@@ -33,7 +39,16 @@ export default function IdentityPanel({ onClose }: IdentityPanelProps) {
                 {platform.icon}
               </span>
               <span className="text-xs font-semibold text-ink">{platform.label}</span>
-              <span className="text-center text-xs text-muted">{t("lists.notSignedIn")}</span>
+              <span className="text-center text-xs text-muted">
+                {isSignedIn ? t("navbar.signedIn") : t("navbar.signedOut")}
+              </span>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => (isSignedIn ? onLogout() : onLogin())}
+              >
+                {isSignedIn ? t("auth.bilibili.signOut") : t("navbar.signIn")}
+              </Button>
             </div>
           ))}
         </div>

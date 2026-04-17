@@ -3,6 +3,7 @@ import { Settings, User } from "lucide-react";
 import { Languages } from "lucide-react";
 import { NavLink, Outlet } from "react-router-dom";
 
+import { BilibiliQrModal } from "@/components/auth/BilibiliQrModal";
 import { useLanguage } from "@/app/LanguageContext";
 import { JobActivityProvider } from "@/components/jobs/JobActivityProvider";
 import { JobSpirit } from "@/components/jobs/JobSpirit";
@@ -15,6 +16,8 @@ import IdentityPanel from "./IdentityPanel";
 export function AppFrame() {
   const [healthTier, setHealthTier] = useState<keyof typeof HEALTH_META>("healthy");
   const [identityOpen, setIdentityOpen] = useState(false);
+  const [bilibiliCookie, setBilibiliCookie] = useState("");
+  const [qrModalOpen, setQrModalOpen] = useState(false);
   const { lang, setLang } = useLanguage();
   const [navElement, setNavElement] = useState<HTMLElement | null>(null);
 
@@ -46,6 +49,50 @@ export function AppFrame() {
       window.removeEventListener(HEALTH_REFRESH_EVENT, handleHealthRefresh);
     };
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadConfig() {
+      try {
+        const config = await api.getConfig();
+        if (!cancelled && config) {
+          setBilibiliCookie(config.accounts.bilibili.cookie);
+        }
+      } catch {
+        // config fetch failure is non-critical for navbar display
+      }
+    }
+
+    void loadConfig();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  async function handleLoginSuccess() {
+    try {
+      const config = await api.getConfig();
+      if (config) {
+        setBilibiliCookie(config.accounts.bilibili.cookie);
+      }
+    } catch {
+      // refresh failure is non-critical
+    }
+    setQrModalOpen(false);
+  }
+
+  async function handleLogout() {
+    try {
+      await api.auth.deleteBilibiliAuth();
+      const config = await api.getConfig();
+      if (config) {
+        setBilibiliCookie(config.accounts.bilibili.cookie);
+      }
+    } catch {
+      // logout failure is non-critical
+    }
+  }
 
   const healthMeta = HEALTH_META[healthTier];
   const { t } = useLanguage();
@@ -110,8 +157,21 @@ export function AppFrame() {
             </button>
           </div>
 
-          {identityOpen ? <IdentityPanel onClose={() => setIdentityOpen(false)} /> : null}
+          {identityOpen ? (
+            <IdentityPanel
+              bilibiliCookie={bilibiliCookie}
+              onClose={() => setIdentityOpen(false)}
+              onLogin={() => setQrModalOpen(true)}
+              onLogout={handleLogout}
+            />
+          ) : null}
         </nav>
+
+        <BilibiliQrModal
+          open={qrModalOpen}
+          onClose={() => setQrModalOpen(false)}
+          onSuccess={handleLoginSuccess}
+        />
 
         <div className="min-h-screen px-4 pb-6 pt-20 md:px-10 md:pt-24 xl:px-24 2xl:px-40">
           <main>

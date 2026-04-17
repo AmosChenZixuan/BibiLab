@@ -5,7 +5,10 @@
     "language": "Language: English",
     "languageEn": "English",
     "languageZh": "Chinese",
-    "identity": "Identity"
+    "identity": "Identity",
+    "signedIn": "Signed in",
+    "signedOut": "Not signed in",
+    "signIn": "Sign in"
   },
   "home": {
     "myLists": "My Lists",
