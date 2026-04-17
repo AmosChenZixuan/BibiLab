@@ -78,6 +78,11 @@ vi.mock("@/lib/api", () => {
       ingestUrl: mockIngestUrl,
       listSources: mockListSources,
       deleteSource: vi.fn().mockResolvedValue(undefined),
+      auth: {
+        generateBilibiliQr: vi.fn().mockResolvedValue(null),
+        pollBilibiliQr: vi.fn().mockResolvedValue(null),
+        deleteBilibiliAuth: vi.fn().mockResolvedValue(undefined),
+      },
     },
     ApiError: MockApiError,
     setCurrentLang: vi.fn(),
@@ -100,7 +105,7 @@ vi.mock("@/lib/api", () => {
   };
 });
 
-import { api } from "@/lib/api";
+import { api, ApiError } from "@/lib/api";
 
 function renderMode(
   sources: Parameters<typeof SourcesListMode>[0]["sources"] = [],
@@ -226,6 +231,22 @@ describe("SourcesListMode preview flow", () => {
     await waitFor(() => {
       expect(screen.getByText(/need authentication/i)).toBeInTheDocument();
     });
+  });
+
+  it("opens QR modal when preview returns 401", async () => {
+    vi.mocked(api.previewPlaylist).mockRejectedValueOnce(
+      new ApiError(401, "Unauthorized")
+    );
+    renderMode();
+
+    const input = screen.getByPlaceholderText(/paste a bilibili url/i);
+    await userEvent.type(input, "https://space.bilibili.com/123/favlist?fid=456");
+    await userEvent.keyboard("{Enter}");
+
+    await waitFor(() => {
+      expect(screen.getByText("Sign in to Bilibili")).toBeInTheDocument();
+    });
+    expect(screen.queryByText(/failed/i)).not.toBeInTheDocument();
   });
 
   it("modal submit calls ingestUrl with selected videos", async () => {

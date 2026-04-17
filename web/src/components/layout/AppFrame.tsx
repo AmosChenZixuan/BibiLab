@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Settings, User } from "lucide-react";
 import { Languages } from "lucide-react";
 import { NavLink, Outlet } from "react-router-dom";
@@ -74,19 +74,19 @@ export function AppFrame() {
     };
   }, []);
 
-  function handleLoginSuccess() {
+  const handleLoginSuccess = useCallback(() => {
     notifyBilibiliAuthChanged();
     setQrModalOpen(false);
-  }
+  }, []);
 
-  async function handleLogout() {
+  const handleLogout = useCallback(async () => {
     try {
       await api.auth.deleteBilibiliAuth();
     } catch {
       // non-critical
     }
     notifyBilibiliAuthChanged();
-  }
+  }, []);
 
   const healthMeta = HEALTH_META[healthTier];
   const { t } = useLanguage();

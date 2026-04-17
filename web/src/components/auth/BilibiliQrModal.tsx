@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { QRCodeSVG } from "qrcode.react";
 import { useLanguage } from "@/app/LanguageContext";
+import { Button } from "@/components/ui";
 import { Modal } from "@/components/ui";
 import { api, type BilibiliQrStatus } from "@/lib/api";
 
@@ -22,9 +23,7 @@ export function BilibiliQrModal({ open, onClose, onSuccess }: BilibiliQrModalPro
   const pollTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const cancelled = useRef(false);
 
-  useEffect(() => {
-    if (!open) return;
-
+  function generateQr() {
     cancelled.current = false;
     setStatus("waiting");
     setError(null);
@@ -43,6 +42,12 @@ export function BilibiliQrModal({ open, onClose, onSuccess }: BilibiliQrModalPro
         setError(err instanceof Error ? err.message : "Failed to generate QR code");
         setLoading(false);
       });
+  }
+
+  useEffect(() => {
+    if (!open) return;
+
+    generateQr();
 
     return () => {
       cancelled.current = true;
@@ -128,8 +133,9 @@ export function BilibiliQrModal({ open, onClose, onSuccess }: BilibiliQrModalPro
             <div className="relative">
               <QRCodeSVG value={qr.url} size={192} level="M" />
               {status === "expired" && (
-                <div className="absolute inset-0 flex items-center justify-center bg-white/80">
+                <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-white/80">
                   <span className="text-sm font-semibold text-red">{t("auth.bilibili.expiredTip")}</span>
+                  <Button variant="ghost" size="sm" onClick={generateQr}>{t("common.retry")}</Button>
                 </div>
               )}
             </div>

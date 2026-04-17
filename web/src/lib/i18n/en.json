@@ -207,7 +207,8 @@
     "createList": "Create list",
     "download": "Download",
     "downloading": "Downloading %{name}",
-    "failed": "Failed"
+    "failed": "Failed",
+    "retry": "Retry"
   },
   "auth": {
     "bilibili": {
