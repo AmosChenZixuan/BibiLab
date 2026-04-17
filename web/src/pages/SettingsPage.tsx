@@ -22,7 +22,7 @@ function hasConfigChanged(current: BibilabConfig, next: BibilabConfig) {
 
 function shouldRefreshHealth(current: BibilabConfig, next: BibilabConfig) {
   return (
-    current.ai.provider !== next.ai.provider ||
+    current.ai.protocol !== next.ai.protocol ||
     current.ai.model !== next.ai.model ||
     current.ai.api_key !== next.ai.api_key ||
     current.ai.base_url !== next.ai.base_url ||

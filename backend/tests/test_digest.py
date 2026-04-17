@@ -24,7 +24,7 @@ def _make_video_meta(title="Test Video") -> VideoMeta:
 
 def _make_ai_cfg(output_language="en") -> AIConfig:
     return AIConfig(
-        provider="openai",
+        protocol="openai",
         model="gpt-4o-mini",
         api_key="sk-test",
         base_url="https://api.openai.com/v1",
@@ -96,7 +96,7 @@ class TestDigestResultShape:
             uploader="TestUploader",
         )
         ai_cfg = AIConfig(
-            provider="openai",
+            protocol="openai",
             model="gpt-4o-mini",
             api_key="sk-test",
             base_url="https://api.openai.com/v1",
@@ -132,7 +132,7 @@ class TestDigestResultShape:
             uploader="TestUploader",
         )
         ai_cfg = AIConfig(
-            provider="openai",
+            protocol="openai",
             model="gpt-4o-mini",
             api_key="sk-test",
             base_url="https://api.openai.com/v1",
@@ -159,7 +159,7 @@ class TestDigestResultShape:
             uploader="TestUploader",
         )
         ai_cfg = AIConfig(
-            provider="openai",
+            protocol="openai",
             model="gpt-4o-mini",
             api_key="sk-test",
             base_url="https://api.openai.com/v1",

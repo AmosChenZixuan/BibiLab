@@ -7,7 +7,7 @@ import type { BibilabConfig } from "@/lib/types";
 
 const baseConfig: BibilabConfig = {
   accounts: { bilibili: { cookie: "", last_verified: "", username: "", avatar_url: "" } },
-  ai: { provider: "openai", model: "gpt-4o", api_key: "", base_url: "" },
+  ai: { protocol: "openai", model: "gpt-4o", api_key: "", base_url: "" },
   transcription: {
     engine: "faster-whisper",
     model_size: "base",
@@ -82,7 +82,7 @@ describe("llm tab", () => {
       </LanguageProvider>,
     );
 
-    expect(screen.getByText(/Required\. Use your OpenAI API base URL/i)).toBeInTheDocument();
+    expect(screen.getByText(/Required\. OpenAI, DeepSeek, Ollama, and other OpenAI-compatible providers/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/base url/i)).toHaveAttribute("placeholder", "https://api.openai.com/v1");
 
     fireEvent.change(screen.getByLabelText(/provider/i), {

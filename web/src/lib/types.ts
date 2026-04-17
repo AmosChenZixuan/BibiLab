@@ -134,7 +134,7 @@ export type BibilabConfig = {
     };
   };
   ai: {
-    provider: string;
+    protocol: string;
     model: string;
     api_key: string;
     base_url: string;
