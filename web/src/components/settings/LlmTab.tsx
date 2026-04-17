@@ -12,14 +12,12 @@ type LlmTabProps = {
 const BASE_URL_META: Record<string, { hintKey: string; placeholderKey: string }> = {
   openai: { hintKey: "settings.openaiBaseUrlHint", placeholderKey: "settings.openaiBaseUrlPlaceholder" },
   anthropic: { hintKey: "settings.anthropicBaseUrlHint", placeholderKey: "settings.anthropicBaseUrlPlaceholder" },
-  ollama: { hintKey: "settings.ollamaBaseUrlHint", placeholderKey: "settings.ollamaBaseUrlPlaceholder" },
-  custom: { hintKey: "settings.baseUrlHint", placeholderKey: "settings.baseUrlPlaceholder" },
 };
 
 export function LlmTab({ config, onBlur }: LlmTabProps) {
   const { t } = useLanguage();
   const [localAi, setLocalAi] = useState(config.ai);
-  const baseUrlMeta = BASE_URL_META[localAi.protocol] ?? BASE_URL_META.custom;
+  const baseUrlMeta = BASE_URL_META[localAi.protocol] ?? BASE_URL_META.anthropic;
   const providerId = useId();
   const modelId = useId();
   const apiKeyId = useId();
@@ -50,10 +48,8 @@ export function LlmTab({ config, onBlur }: LlmTabProps) {
           }
           value={localAi.protocol}
         >
-          <option value="openai">OpenAI</option>
-          <option value="anthropic">Anthropic</option>
-          <option value="ollama">Ollama</option>
-          <option value="custom">Custom</option>
+          <option value="openai">OpenAI-compatible</option>
+          <option value="anthropic">Anthropic-compatible</option>
         </Select>
       </SettingsField>
 
