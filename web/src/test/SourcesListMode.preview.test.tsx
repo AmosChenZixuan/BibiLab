@@ -61,6 +61,16 @@ vi.mock("@/lib/api", () => {
   const mockListSources = vi.fn().mockResolvedValue([]);
   const mockDismissJob = vi.fn().mockResolvedValue(undefined);
   const mockGetJobs = vi.fn().mockReturnValue([]);
+  class MockApiError extends Error {
+    status: number;
+    detail: unknown;
+    constructor(status: number, detail: unknown) {
+      super(typeof detail === "string" ? detail : "Request failed");
+      this.name = "ApiError";
+      this.status = status;
+      this.detail = detail;
+    }
+  }
   return {
     api: {
       previewPlaylist: mockPreviewPlaylist,
@@ -69,6 +79,7 @@ vi.mock("@/lib/api", () => {
       listSources: mockListSources,
       deleteSource: vi.fn().mockResolvedValue(undefined),
     },
+    ApiError: MockApiError,
     setCurrentLang: vi.fn(),
     createApiClient: () => ({
       previewPlaylist: mockPreviewPlaylist,
