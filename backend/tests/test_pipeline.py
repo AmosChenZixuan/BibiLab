@@ -174,7 +174,7 @@ def test_generate_overview_returns_overview_text(tmp_path: Path):
     from bibilab.config import AIConfig
 
     ai_cfg = AIConfig(
-        provider="openai",
+        protocol="openai",
         model="gpt-4o-mini",
         api_key="sk-test",
         base_url="https://api.openai.com/v1",
@@ -201,7 +201,7 @@ def test_generate_overview_respects_output_language(tmp_path: Path):
     from bibilab.config import AIConfig
 
     ai_cfg = AIConfig(
-        provider="openai",
+        protocol="openai",
         model="gpt-4o-mini",
         api_key="sk-test",
         base_url="https://api.openai.com/v1",
@@ -243,7 +243,7 @@ async def test_generate_artifact_includes_zh_lang_instruction(tmp_path: Path, mo
 
     cfg = MagicMock()
     cfg.ai = AIConfig(
-        provider="openai",
+        protocol="openai",
         model="gpt-4o-mini",
         api_key="sk-test",
         base_url="https://api.openai.com/v1",
@@ -288,7 +288,7 @@ async def test_generate_artifact_includes_en_lang_instruction(tmp_path: Path, mo
 
     cfg = MagicMock()
     cfg.ai = AIConfig(
-        provider="openai",
+        protocol="openai",
         model="gpt-4o-mini",
         api_key="sk-test",
         base_url="https://api.openai.com/v1",
@@ -332,7 +332,7 @@ async def test_generate_artifact_unknown_lang_falls_back_to_english(tmp_path: Pa
 
     cfg = MagicMock()
     cfg.ai = AIConfig(
-        provider="openai",
+        protocol="openai",
         model="gpt-4o-mini",
         api_key="sk-test",
         base_url="https://api.openai.com/v1",

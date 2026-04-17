@@ -39,7 +39,7 @@ class AccountsConfig(BaseModel):
 
 
 class AIConfig(BaseModel):
-    provider: str = "openai"  # openai | anthropic | ollama | custom
+    protocol: str = "openai"  # openai | anthropic
     model: str = "gpt-4o"
     api_key: str = ""
     base_url: str = "https://api.openai.com/v1"
