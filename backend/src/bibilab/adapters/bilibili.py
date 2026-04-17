@@ -147,7 +147,10 @@ class BilibiliAdapter(PlatformAdapter):
             with yt_dlp.YoutubeDL(opts) as ydl:
                 info = ydl.extract_info(url, download=False)
         except yt_dlp.utils.DownloadError as exc:
-            raise DownloadError(_ANSI_RE.sub("", str(exc))) from exc
+            msg = str(exc).lower()
+            if "login" in msg or "sign in" in msg or "403" in msg:
+                raise AuthRequiredError("playlist") from exc
+            raise DownloadError(_ANSI_RE.sub("", msg)) from exc
 
         playlist_id = info.get("id", url)
         title = info.get("title", "Untitled Playlist")

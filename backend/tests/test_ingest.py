@@ -579,6 +579,23 @@ async def test_preview_auth_required(client: httpx.AsyncClient):
 
 
 @pytest.mark.asyncio
+async def test_preview_private_playlist_returns_401(client: httpx.AsyncClient):
+    """Private Bilibili favorites list without cookie returns 401 with resource_type=playlist."""
+    from bibilab.adapters.base import AuthRequiredError
+    from bibilab.adapters.bilibili import BilibiliAdapter
+
+    with patch.object(BilibiliAdapter, "resolve_flat", side_effect=AuthRequiredError("playlist")):
+        list_id = (await client.post("/lists", json={"name": "Test"})).json()["id"]
+        resp = await client.post(
+            "/ingest/preview",
+            json={"list_id": list_id, "url": "https://space.bilibili.com/123/favlist?fid=456"},
+        )
+    assert resp.status_code == 401
+    data = resp.json()["detail"]
+    assert data["resource_type"] == "playlist"
+
+
+@pytest.mark.asyncio
 async def test_preview_download_error(client: httpx.AsyncClient):
     from bibilab.adapters.base import DownloadError
     from bibilab.adapters.bilibili import BilibiliAdapter
