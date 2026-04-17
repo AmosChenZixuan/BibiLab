@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from urllib.parse import urlparse
 
 import httpx
@@ -16,9 +17,14 @@ BILIBILI_HEADERS = {
 }
 _BILIBILI_COOKIE_KEYS = {"SESSDATA", "bili_jct", "DedeUserID", "DedeUserID__ckMd5", "sid"}
 
+_QR_WAITING = 86101
+_QR_SCANNED = 86090
+_QR_EXPIRED = 86038
+_QR_SUCCESS = 0
+
 
 @router.post("/auth/bilibili/qr")
-async def generate_qr(cfg: BibilabConfig = Depends(get_config)) -> dict:
+async def generate_qr() -> dict:
     async with httpx.AsyncClient(timeout=10, headers=BILIBILI_HEADERS) as client:
         resp = await client.get(BILIBILI_GENERATE_URL)
         if resp.status_code != 200:
@@ -36,13 +42,13 @@ async def qr_status(key: str, cfg: BibilabConfig = Depends(get_config)) -> dict:
     data = resp.json()
     code = data["data"]["code"]
 
-    if code == 86101:
+    if code == _QR_WAITING:
         return {"status": "waiting"}
-    if code == 86090:
+    if code == _QR_SCANNED:
         return {"status": "scanned"}
-    if code == 86038:
+    if code == _QR_EXPIRED:
         return {"status": "expired"}
-    if code == 0:
+    if code == _QR_SUCCESS:
         pairs = urlparse(data["data"]["url"]).query.split("&")
         cookie_str = "; ".join(p for p in pairs if p.split("=", 1)[0] in _BILIBILI_COOKIE_KEYS)
         cfg.accounts.bilibili.cookie = cookie_str
@@ -62,6 +68,4 @@ async def delete_bilibili_auth(cfg: BibilabConfig = Depends(get_config)) -> Resp
 
 
 def _iso_now() -> str:
-    from datetime import datetime, timezone
-
     return datetime.now(timezone.utc).isoformat()

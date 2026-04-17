@@ -63,8 +63,10 @@ export function BilibiliQrModal({ open, onClose, onSuccess }: BilibiliQrModalPro
         .then((data) => {
           if (cancelled.current || !data) return;
           setStatus(data.status);
-          if (data.status === "success") {
+          if (data.status === "success" || data.status === "expired") {
             if (pollTimer.current) clearInterval(pollTimer.current);
+          }
+          if (data.status === "success") {
             onSuccess();
           }
         })

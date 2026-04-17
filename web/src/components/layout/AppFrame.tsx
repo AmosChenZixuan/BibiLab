@@ -50,40 +50,22 @@ export function AppFrame() {
     };
   }, []);
 
-  useEffect(() => {
-    let cancelled = false;
-
-    async function loadConfig() {
-      try {
-        const config = await api.getConfig();
-        if (!cancelled && config) {
-          setBilibiliCookie(config.accounts.bilibili.cookie);
-        }
-      } catch {
-        // config fetch failure is non-critical for navbar display
+  async function refreshBilibiliCookie() {
+    try {
+      const config = await api.getConfig();
+      if (config) {
+        setBilibiliCookie(config.accounts.bilibili.cookie);
       }
+    } catch {
+      // non-critical for navbar display
     }
-
-    void loadConfig();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  }
 
   useEffect(() => {
-    async function refreshCookie() {
-      try {
-        const config = await api.getConfig();
-        if (config) {
-          setBilibiliCookie(config.accounts.bilibili.cookie);
-        }
-      } catch {
-        // non-critical
-      }
-    }
+    void refreshBilibiliCookie();
 
     function handleAuthRefresh() {
-      void refreshCookie();
+      void refreshBilibiliCookie();
     }
 
     window.addEventListener(BILIBILI_AUTH_REFRESH_EVENT, handleAuthRefresh);
@@ -92,15 +74,7 @@ export function AppFrame() {
     };
   }, []);
 
-  async function handleLoginSuccess() {
-    try {
-      const config = await api.getConfig();
-      if (config) {
-        setBilibiliCookie(config.accounts.bilibili.cookie);
-      }
-    } catch {
-      // refresh failure is non-critical
-    }
+  function handleLoginSuccess() {
     notifyBilibiliAuthChanged();
     setQrModalOpen(false);
   }
@@ -108,12 +82,8 @@ export function AppFrame() {
   async function handleLogout() {
     try {
       await api.auth.deleteBilibiliAuth();
-      const config = await api.getConfig();
-      if (config) {
-        setBilibiliCookie(config.accounts.bilibili.cookie);
-      }
     } catch {
-      // logout failure is non-critical
+      // non-critical
     }
     notifyBilibiliAuthChanged();
   }

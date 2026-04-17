@@ -1,3 +1,4 @@
+from contextlib import contextmanager
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
@@ -11,6 +12,20 @@ def _make_mock_response(json_data, status_code=200):
     return mock_resp
 
 
+@contextmanager
+def _patch_bilibili_httpx(mock_resp):
+    mock_http_client = MagicMock()
+    mock_http_client.get = AsyncMock(return_value=mock_resp)
+    mock_http_client.aclose = AsyncMock()
+
+    with patch("bibilab.routers.auth.httpx.AsyncClient") as mock_client_cls:
+        instance = MagicMock()
+        instance.__aenter__ = AsyncMock(return_value=mock_http_client)
+        instance.__aexit__ = AsyncMock()
+        mock_client_cls.return_value = instance
+        yield
+
+
 @pytest.mark.asyncio
 async def test_generate_qr_returns_url_and_key(client: httpx.AsyncClient):
     mock_resp = _make_mock_response(
@@ -22,16 +37,7 @@ async def test_generate_qr_returns_url_and_key(client: httpx.AsyncClient):
         }
     )
 
-    mock_http_client = MagicMock()
-    mock_http_client.get = AsyncMock(return_value=mock_resp)
-    mock_http_client.aclose = AsyncMock()
-
-    with patch("bibilab.routers.auth.httpx.AsyncClient") as mock_client_cls:
-        instance = MagicMock()
-        instance.__aenter__ = AsyncMock(return_value=mock_http_client)
-        instance.__aexit__ = AsyncMock()
-        mock_client_cls.return_value = instance
-
+    with _patch_bilibili_httpx(mock_resp):
         resp = await client.post("/auth/bilibili/qr")
 
     assert resp.status_code == 200
@@ -44,16 +50,7 @@ async def test_generate_qr_returns_url_and_key(client: httpx.AsyncClient):
 async def test_qr_status_waiting(client: httpx.AsyncClient):
     mock_resp = _make_mock_response({"data": {"code": 86101}})
 
-    mock_http_client = MagicMock()
-    mock_http_client.get = AsyncMock(return_value=mock_resp)
-    mock_http_client.aclose = AsyncMock()
-
-    with patch("bibilab.routers.auth.httpx.AsyncClient") as mock_client_cls:
-        instance = MagicMock()
-        instance.__aenter__ = AsyncMock(return_value=mock_http_client)
-        instance.__aexit__ = AsyncMock()
-        mock_client_cls.return_value = instance
-
+    with _patch_bilibili_httpx(mock_resp):
         resp = await client.get("/auth/bilibili/qr/some-key/status")
 
     assert resp.status_code == 200
@@ -64,16 +61,7 @@ async def test_qr_status_waiting(client: httpx.AsyncClient):
 async def test_qr_status_scanned(client: httpx.AsyncClient):
     mock_resp = _make_mock_response({"data": {"code": 86090}})
 
-    mock_http_client = MagicMock()
-    mock_http_client.get = AsyncMock(return_value=mock_resp)
-    mock_http_client.aclose = AsyncMock()
-
-    with patch("bibilab.routers.auth.httpx.AsyncClient") as mock_client_cls:
-        instance = MagicMock()
-        instance.__aenter__ = AsyncMock(return_value=mock_http_client)
-        instance.__aexit__ = AsyncMock()
-        mock_client_cls.return_value = instance
-
+    with _patch_bilibili_httpx(mock_resp):
         resp = await client.get("/auth/bilibili/qr/some-key/status")
 
     assert resp.status_code == 200
@@ -84,16 +72,7 @@ async def test_qr_status_scanned(client: httpx.AsyncClient):
 async def test_qr_status_expired(client: httpx.AsyncClient):
     mock_resp = _make_mock_response({"data": {"code": 86038}})
 
-    mock_http_client = MagicMock()
-    mock_http_client.get = AsyncMock(return_value=mock_resp)
-    mock_http_client.aclose = AsyncMock()
-
-    with patch("bibilab.routers.auth.httpx.AsyncClient") as mock_client_cls:
-        instance = MagicMock()
-        instance.__aenter__ = AsyncMock(return_value=mock_http_client)
-        instance.__aexit__ = AsyncMock()
-        mock_client_cls.return_value = instance
-
+    with _patch_bilibili_httpx(mock_resp):
         resp = await client.get("/auth/bilibili/qr/some-key/status")
 
     assert resp.status_code == 200
@@ -111,16 +90,7 @@ async def test_qr_status_success_saves_cookie(client: httpx.AsyncClient, tmp_bib
         }
     )
 
-    mock_http_client = MagicMock()
-    mock_http_client.get = AsyncMock(return_value=mock_resp)
-    mock_http_client.aclose = AsyncMock()
-
-    with patch("bibilab.routers.auth.httpx.AsyncClient") as mock_client_cls:
-        instance = MagicMock()
-        instance.__aenter__ = AsyncMock(return_value=mock_http_client)
-        instance.__aexit__ = AsyncMock()
-        mock_client_cls.return_value = instance
-
+    with _patch_bilibili_httpx(mock_resp):
         resp = await client.get("/auth/bilibili/qr/some-key/status")
 
     assert resp.status_code == 200
