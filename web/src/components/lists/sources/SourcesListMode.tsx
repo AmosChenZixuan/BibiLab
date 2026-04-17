@@ -3,9 +3,10 @@ import { ArrowRight, X, Trash2, AlertCircle, MoreVertical } from "lucide-react";
 
 import { useLanguage } from "@/app/LanguageContext";
 import { ContextMenu } from "@/components/ui/ContextMenu";
+import { BilibiliQrModal } from "@/components/auth/BilibiliQrModal";
 import { PlaylistPreviewModal } from "@/components/lists/sources/PlaylistPreviewModal";
 import { useJobActivity } from "@/components/jobs/JobActivityProvider";
-import { api, toErrorMessageWithT } from "@/lib/api";
+import { api, ApiError, toErrorMessageWithT, notifyBilibiliAuthChanged } from "@/lib/api";
 import type { IngestVideoIn, PreviewVideo, Source } from "@/lib/types";
 
 export const PIPELINE_STAGES = [
@@ -174,6 +175,7 @@ export function SourcesListMode({
   const { dismissJob, getJobs, trackJobs } = useJobActivity();
   const ingestJobs = useMemo(() => getJobs("ingest", listId), [getJobs, listId]);
   const [refreshedJobs, setRefreshedJobs] = useState<string[]>([]);
+  const [showQrModal, setShowQrModal] = useState(false);
 
   const [currentSources, setCurrentSources] = useState<Source[]>(sources);
   const selectAllRef = useRef<HTMLInputElement>(null);
@@ -269,7 +271,11 @@ export function SourcesListMode({
         }
         setPreviewVideos(null);
       } catch (err) {
-        setError(toErrorMessageWithT(err, t));
+        if (err instanceof ApiError && err.status === 401) {
+          setShowQrModal(true);
+        } else {
+          setError(toErrorMessageWithT(err, t));
+        }
       } finally {
         setSubmitting(false);
       }
@@ -277,14 +283,12 @@ export function SourcesListMode({
     [listId, t, trackJobs],
   );
 
-  const handleSubmit = useCallback(
-    async (e: React.FormEvent) => {
-      e.preventDefault();
-      const trimmed = url.trim();
-      if (!trimmed) return;
+  const doSubmit = useCallback(
+    async (trimmedUrl: string) => {
+      if (!trimmedUrl) return;
       setError(null);
       try {
-        const flatResponse = await api.previewPlaylist(listId, trimmed);
+        const flatResponse = await api.previewPlaylist(listId, trimmedUrl);
         if (!flatResponse) return;
 
         const newVideos = flatResponse.videos.filter((v) => v.status === "new");
@@ -367,17 +371,40 @@ export function SourcesListMode({
         setPreviewLoading(false);
       } catch (err) {
         setPreviewLoading(false);
-        setUrl(trimmed);
+        if (err instanceof ApiError && err.status === 401) {
+          setShowQrModal(true);
+          return;
+        }
+        setUrl(trimmedUrl);
         setError(toErrorMessageWithT(err, t));
       }
     },
-    [listId, submitSelection, t, url],
+    [listId, submitSelection, t],
+  );
+
+  const handleSubmit = useCallback(
+    async (e: React.FormEvent) => {
+      e.preventDefault();
+      void doSubmit(url.trim());
+    },
+    [doSubmit, url],
   );
 
   const handleDelete = useCallback(async (source: Source) => {
     await api.deleteSource(listId, source.id);
     setCurrentSources((prev) => prev.filter((s) => s.id !== source.id));
   }, [listId]);
+
+  const handleQrModalSuccess = useCallback(() => {
+    setShowQrModal(false);
+    notifyBilibiliAuthChanged();
+    const trimmed = url.trim();
+    if (trimmed) void doSubmit(trimmed);
+  }, [doSubmit, url]);
+
+  const handleQrModalClose = useCallback(() => {
+    setShowQrModal(false);
+  }, []);
 
   return (
     <>
@@ -456,6 +483,11 @@ export function SourcesListMode({
           isLoading={previewLoading}
         />
       )}
+      <BilibiliQrModal
+        open={showQrModal}
+        onClose={handleQrModalClose}
+        onSuccess={handleQrModalSuccess}
+      />
     </>
   );
 }

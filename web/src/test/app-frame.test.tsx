@@ -5,16 +5,24 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 
 import { LanguageProvider } from "@/app/LanguageContext";
 import { AppFrame } from "@/components/layout/AppFrame";
-import type { HealthResponse } from "@/lib/types";
+import type { BibilabConfig, HealthResponse } from "@/lib/types";
 
 vi.mock("../lib/api", () => {
   const mockApi = {
     getHealth: vi.fn(),
+    getConfig: vi.fn(),
     listJobs: vi.fn().mockResolvedValue([]),
+    auth: {
+      generateBilibiliQr: vi.fn(),
+      pollBilibiliQr: vi.fn(),
+      deleteBilibiliAuth: vi.fn(),
+    },
   };
   return {
     HEALTH_REFRESH_EVENT: "bibilab:health:refresh",
+    BILIBILI_AUTH_REFRESH_EVENT: "bibilab:auth:bilibili:refresh",
     JOBS_REFRESH_EVENT: "bibilab:jobs:refresh",
+    notifyBilibiliAuthChanged: vi.fn(),
     createApiClient: () => mockApi,
     api: mockApi,
     setCurrentLang: vi.fn(),
@@ -29,8 +37,17 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-function renderFrame(healthPayload: HealthResponse) {
+function renderFrame(healthPayload: HealthResponse, configPayload?: BibilabConfig) {
   vi.mocked(api.getHealth).mockResolvedValue(healthPayload);
+  vi.mocked(api.getConfig).mockResolvedValue(
+    configPayload ?? ({
+      accounts: { bilibili: { cookie: "", last_verified: "" } },
+      ai: { provider: "", model: "", api_key: "", base_url: "" },
+      transcription: { engine: "", model_size: "", device: "", language: "" },
+      vision: { enabled: false, frame_sample_rate: 0, model: null },
+      backend: { port: 8765, worker_concurrency: 1 },
+    }),
+  );
 
   return render(
     <LanguageProvider>

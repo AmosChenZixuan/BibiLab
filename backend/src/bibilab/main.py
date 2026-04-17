@@ -10,6 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from bibilab.config import bibilab_home, load_config
 from bibilab.db import bootstrap_db
 from bibilab.routers.artifacts import router as artifacts_router
+from bibilab.routers.auth import router as auth_router
 from bibilab.routers.config_router import router as config_router
 from bibilab.routers.health import router as health_router
 from bibilab.routers.ingest import router as ingest_router
@@ -69,6 +70,7 @@ def create_app(*, start_worker: bool = True) -> FastAPI:
     )
 
     app.include_router(health_router)
+    app.include_router(auth_router)
     app.include_router(config_router)
     app.include_router(jobs_router)
     app.include_router(lists_router)

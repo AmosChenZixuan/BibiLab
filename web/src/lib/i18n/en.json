@@ -5,7 +5,10 @@
     "language": "Language: English",
     "languageEn": "English",
     "languageZh": "Chinese",
-    "identity": "Identity"
+    "identity": "Identity",
+    "signedIn": "Signed in",
+    "signedOut": "Not signed in",
+    "signIn": "Sign in"
   },
   "home": {
     "myLists": "My Lists",
@@ -204,6 +207,18 @@
     "createList": "Create list",
     "download": "Download",
     "downloading": "Downloading %{name}",
-    "failed": "Failed"
+    "failed": "Failed",
+    "retry": "Retry"
+  },
+  "auth": {
+    "bilibili": {
+      "title": "Sign in to Bilibili",
+      "waiting": "Scan the QR code with the Bilibili app",
+      "scanned": "Confirmed — waiting for authorization",
+      "expired": "QR code expired",
+      "success": "Signed in successfully",
+      "expiredTip": "Please try again",
+      "signOut": "Sign out"
+    }
   }
 }

@@ -5,7 +5,10 @@
     "language": "语言：中文",
     "languageEn": "英文",
     "languageZh": "中文",
-    "identity": "身份"
+    "identity": "身份",
+    "signedIn": "已登录",
+    "signedOut": "未登录",
+    "signIn": "登录"
   },
   "home": {
     "myLists": "我的列表",
@@ -204,6 +207,18 @@
     "createList": "创建列表",
     "download": "下载",
     "downloading": "正在下载 %{name}",
-    "failed": "失败"
+    "failed": "失败",
+    "retry": "重试"
+  },
+  "auth": {
+    "bilibili": {
+      "title": "登录哔哩哔哩",
+      "waiting": "请使用哔哩哔哩 App 扫描二维码",
+      "scanned": "已确认 — 等待授权",
+      "expired": "二维码已过期",
+      "success": "登录成功",
+      "expiredTip": "请重试",
+      "signOut": "退出登录"
+    }
   }
 }

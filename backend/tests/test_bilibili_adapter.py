@@ -245,6 +245,44 @@ class TestResolveFlat:
         call_kwargs = mock_instance.extract_info.call_args.kwargs
         assert call_kwargs.get("download") is False
 
+    def test_resolve_flat_playlist_private_raises_auth_required(self):
+        """Private playlist URL without cookie raises AuthRequiredError (401)."""
+        import yt_dlp
+
+        from bibilab.adapters.base import AuthRequiredError
+
+        adapter = BilibiliAdapter(cookie="")
+
+        with patch("yt_dlp.YoutubeDL") as mock_ydl:
+            mock_instance = MagicMock()
+            mock_instance.extract_info.side_effect = yt_dlp.utils.DownloadError(
+                "This video is private. Please login to access"
+            )
+            mock_ydl.return_value.__enter__.return_value = mock_instance
+
+            with pytest.raises(AuthRequiredError) as exc_info:
+                adapter.resolve_flat("https://space.bilibili.com/123/favlist?fid=456")
+
+            assert exc_info.value.resource_type == "playlist"
+
+    def test_resolve_flat_playlist_403_raises_auth_required(self):
+        """Playlist URL returning 403 error raises AuthRequiredError (401)."""
+        import yt_dlp
+
+        from bibilab.adapters.base import AuthRequiredError
+
+        adapter = BilibiliAdapter(cookie="")
+
+        with patch("yt_dlp.YoutubeDL") as mock_ydl:
+            mock_instance = MagicMock()
+            mock_instance.extract_info.side_effect = yt_dlp.utils.DownloadError("ERROR: [Bilibili] 403 Forbidden")
+            mock_ydl.return_value.__enter__.return_value = mock_instance
+
+            with pytest.raises(AuthRequiredError) as exc_info:
+                adapter.resolve_flat("https://space.bilibili.com/123/favlist?fid=456")
+
+            assert exc_info.value.resource_type == "playlist"
+
 
 class TestGetVideosMetadataConcurrency:
     """Test get_videos_metadata respects concurrency limit."""

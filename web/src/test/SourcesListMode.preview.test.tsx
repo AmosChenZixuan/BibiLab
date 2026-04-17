@@ -61,6 +61,16 @@ vi.mock("@/lib/api", () => {
   const mockListSources = vi.fn().mockResolvedValue([]);
   const mockDismissJob = vi.fn().mockResolvedValue(undefined);
   const mockGetJobs = vi.fn().mockReturnValue([]);
+  class MockApiError extends Error {
+    status: number;
+    detail: unknown;
+    constructor(status: number, detail: unknown) {
+      super(typeof detail === "string" ? detail : "Request failed");
+      this.name = "ApiError";
+      this.status = status;
+      this.detail = detail;
+    }
+  }
   return {
     api: {
       previewPlaylist: mockPreviewPlaylist,
@@ -68,7 +78,13 @@ vi.mock("@/lib/api", () => {
       ingestUrl: mockIngestUrl,
       listSources: mockListSources,
       deleteSource: vi.fn().mockResolvedValue(undefined),
+      auth: {
+        generateBilibiliQr: vi.fn().mockResolvedValue(null),
+        pollBilibiliQr: vi.fn().mockResolvedValue(null),
+        deleteBilibiliAuth: vi.fn().mockResolvedValue(undefined),
+      },
     },
+    ApiError: MockApiError,
     setCurrentLang: vi.fn(),
     createApiClient: () => ({
       previewPlaylist: mockPreviewPlaylist,
@@ -89,7 +105,7 @@ vi.mock("@/lib/api", () => {
   };
 });
 
-import { api } from "@/lib/api";
+import { api, ApiError } from "@/lib/api";
 
 function renderMode(
   sources: Parameters<typeof SourcesListMode>[0]["sources"] = [],
@@ -215,6 +231,22 @@ describe("SourcesListMode preview flow", () => {
     await waitFor(() => {
       expect(screen.getByText(/need authentication/i)).toBeInTheDocument();
     });
+  });
+
+  it("opens QR modal when preview returns 401", async () => {
+    vi.mocked(api.previewPlaylist).mockRejectedValueOnce(
+      new ApiError(401, "Unauthorized")
+    );
+    renderMode();
+
+    const input = screen.getByPlaceholderText(/paste a bilibili url/i);
+    await userEvent.type(input, "https://space.bilibili.com/123/favlist?fid=456");
+    await userEvent.keyboard("{Enter}");
+
+    await waitFor(() => {
+      expect(screen.getByText("Sign in to Bilibili")).toBeInTheDocument();
+    });
+    expect(screen.queryByText(/failed/i)).not.toBeInTheDocument();
   });
 
   it("modal submit calls ingestUrl with selected videos", async () => {

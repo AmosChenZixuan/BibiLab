@@ -62,6 +62,12 @@ export function notifyHealthChanged(health: HealthResponse) {
   window.dispatchEvent(new CustomEvent<HealthResponse>(HEALTH_REFRESH_EVENT, { detail: health }));
 }
 
+export const BILIBILI_AUTH_REFRESH_EVENT = "bibilab:auth:bilibili:refresh";
+
+export function notifyBilibiliAuthChanged() {
+  window.dispatchEvent(new CustomEvent(BILIBILI_AUTH_REFRESH_EVENT));
+}
+
 // ─── Current UI language ──────────────────────────────────────────────────────
 
 let _currentLang: Lang = (localStorage.getItem("bibilab-lang") as Lang | null) ?? "en";
@@ -267,6 +273,26 @@ export class JobsClient {
   }
 }
 
+export type BilibiliQrStatus = "waiting" | "scanned" | "expired" | "success";
+
+export class AuthClient {
+  constructor(private readonly baseUrl: string, private readonly request: RequestFn) {}
+
+  generateBilibiliQr() {
+    return this.request<{ url: string; key: string }>(this.baseUrl, "/auth/bilibili/qr", {
+      method: "POST",
+    });
+  }
+
+  pollBilibiliQr(key: string) {
+    return this.request<{ status: BilibiliQrStatus }>(this.baseUrl, `/auth/bilibili/qr/status?key=${key}`);
+  }
+
+  deleteBilibiliAuth() {
+    return this.request<void>(this.baseUrl, "/auth/bilibili", { method: "DELETE" });
+  }
+}
+
 export class ModelsClient {
   constructor(private readonly baseUrl: string, private readonly request: RequestFn) {}
 
@@ -309,6 +335,11 @@ export interface ApiClient {
   deleteJob(jobId: string): Promise<void | undefined>;
   listWhisperModels(opts?: { signal?: AbortSignal }): Promise<WhisperModel[] | undefined>;
   downloadWhisperModel(modelSize: string): Promise<WhisperDownloadResponse | undefined>;
+  auth: {
+    generateBilibiliQr(): Promise<{ url: string; key: string } | undefined>;
+    pollBilibiliQr(key: string): Promise<{ status: BilibiliQrStatus } | undefined>;
+    deleteBilibiliAuth(): Promise<void | undefined>;
+  };
 }
 
 // ─── Factory ─────────────────────────────────────────────────────────────────
@@ -330,6 +361,7 @@ export function createApiClient(baseUrl?: string): ApiClient {
   const jobs = new JobsClient(base, request);
   const models = new ModelsClient(base, request);
   const ingest = new IngestClient(base, request);
+  const auth = new AuthClient(base, request);
 
   // Flat ApiClient surface — delegates to focused clients
   return {
@@ -357,6 +389,7 @@ export function createApiClient(baseUrl?: string): ApiClient {
     deleteJob: (id) => jobs.deleteJob(id),
     listWhisperModels: (opts) => models.listWhisperModels(opts),
     downloadWhisperModel: (modelSize) => models.downloadWhisperModel(modelSize),
+    auth,
   };
 }
 
