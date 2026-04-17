@@ -7,7 +7,7 @@ import { BilibiliQrModal } from "@/components/auth/BilibiliQrModal";
 import { useLanguage } from "@/app/LanguageContext";
 import { JobActivityProvider } from "@/components/jobs/JobActivityProvider";
 import { JobSpirit } from "@/components/jobs/JobSpirit";
-import { api, HEALTH_REFRESH_EVENT } from "@/lib/api";
+import { api, HEALTH_REFRESH_EVENT, BILIBILI_AUTH_REFRESH_EVENT, notifyBilibiliAuthChanged } from "@/lib/api";
 import { deriveOverallHealthTier, HEALTH_META } from "@/lib/health";
 import type { HealthResponse } from "@/lib/types";
 import { NavTitleContext } from "./NavTitleContext";
@@ -70,6 +70,28 @@ export function AppFrame() {
     };
   }, []);
 
+  useEffect(() => {
+    async function refreshCookie() {
+      try {
+        const config = await api.getConfig();
+        if (config) {
+          setBilibiliCookie(config.accounts.bilibili.cookie);
+        }
+      } catch {
+        // non-critical
+      }
+    }
+
+    function handleAuthRefresh() {
+      void refreshCookie();
+    }
+
+    window.addEventListener(BILIBILI_AUTH_REFRESH_EVENT, handleAuthRefresh);
+    return () => {
+      window.removeEventListener(BILIBILI_AUTH_REFRESH_EVENT, handleAuthRefresh);
+    };
+  }, []);
+
   async function handleLoginSuccess() {
     try {
       const config = await api.getConfig();
@@ -79,6 +101,7 @@ export function AppFrame() {
     } catch {
       // refresh failure is non-critical
     }
+    notifyBilibiliAuthChanged();
     setQrModalOpen(false);
   }
 
@@ -92,6 +115,7 @@ export function AppFrame() {
     } catch {
       // logout failure is non-critical
     }
+    notifyBilibiliAuthChanged();
   }
 
   const healthMeta = HEALTH_META[healthTier];

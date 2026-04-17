@@ -62,6 +62,12 @@ export function notifyHealthChanged(health: HealthResponse) {
   window.dispatchEvent(new CustomEvent<HealthResponse>(HEALTH_REFRESH_EVENT, { detail: health }));
 }
 
+export const BILIBILI_AUTH_REFRESH_EVENT = "bibilab:auth:bilibili:refresh";
+
+export function notifyBilibiliAuthChanged() {
+  window.dispatchEvent(new CustomEvent(BILIBILI_AUTH_REFRESH_EVENT));
+}
+
 // ─── Current UI language ──────────────────────────────────────────────────────
 
 let _currentLang: Lang = (localStorage.getItem("bibilab-lang") as Lang | null) ?? "en";

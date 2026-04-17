@@ -6,7 +6,7 @@ import { ContextMenu } from "@/components/ui/ContextMenu";
 import { BilibiliQrModal } from "@/components/auth/BilibiliQrModal";
 import { PlaylistPreviewModal } from "@/components/lists/sources/PlaylistPreviewModal";
 import { useJobActivity } from "@/components/jobs/JobActivityProvider";
-import { api, ApiError, toErrorMessageWithT } from "@/lib/api";
+import { api, ApiError, toErrorMessageWithT, notifyBilibiliAuthChanged } from "@/lib/api";
 import type { IngestVideoIn, PreviewVideo, Source } from "@/lib/types";
 
 export const PIPELINE_STAGES = [
@@ -391,6 +391,7 @@ export function SourcesListMode({
 
   const handleQrModalSuccess = useCallback(() => {
     setShowQrModal(false);
+    notifyBilibiliAuthChanged();
     void handleSubmit({ preventDefault: () => {} } as React.FormEvent);
   }, [handleSubmit]);
 

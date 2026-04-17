@@ -20,7 +20,9 @@ vi.mock("../lib/api", () => {
   };
   return {
     HEALTH_REFRESH_EVENT: "bibilab:health:refresh",
+    BILIBILI_AUTH_REFRESH_EVENT: "bibilab:auth:bilibili:refresh",
     JOBS_REFRESH_EVENT: "bibilab:jobs:refresh",
+    notifyBilibiliAuthChanged: vi.fn(),
     createApiClient: () => mockApi,
     api: mockApi,
     setCurrentLang: vi.fn(),
