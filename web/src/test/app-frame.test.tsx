@@ -42,7 +42,7 @@ function renderFrame(healthPayload: HealthResponse, configPayload?: BibilabConfi
   vi.mocked(api.getConfig).mockResolvedValue(
     configPayload ?? ({
       accounts: { bilibili: { cookie: "", last_verified: "", username: "", avatar_url: "" } },
-      ai: { provider: "", model: "", api_key: "", base_url: "" },
+      ai: { protocol: "", model: "", api_key: "", base_url: "" },
       transcription: { engine: "", model_size: "", device: "", language: "" },
       vision: { enabled: false, frame_sample_rate: 0, model: null },
       backend: { port: 8765, worker_concurrency: 1 },
@@ -188,7 +188,7 @@ describe("app frame", () => {
             avatar_url: "https://i0.hdslb.com/bfs/face/abc.jpg",
           },
         },
-        ai: { provider: "openai", model: "gpt-4o", api_key: "", base_url: "" },
+        ai: { protocol: "openai", model: "gpt-4o", api_key: "", base_url: "" },
         transcription: { engine: "faster-whisper", model_size: "base", device: "cpu", language: "auto" },
         vision: { enabled: false, frame_sample_rate: 30, model: null },
         backend: { port: 8765, worker_concurrency: 1 },

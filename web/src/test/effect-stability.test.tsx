@@ -37,7 +37,7 @@ vi.mock("@/lib/api", () => {
 
 const baseConfig: BibilabConfig = {
   accounts: { bilibili: { cookie: "", last_verified: "", username: "", avatar_url: "" } },
-  ai: { provider: "openai", model: "gpt-4o", api_key: "", base_url: "" },
+  ai: { protocol: "openai", model: "gpt-4o", api_key: "", base_url: "" },
   transcription: {
     engine: "faster-whisper",
     model_size: "base",
