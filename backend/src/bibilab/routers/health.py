@@ -18,7 +18,8 @@ async def _check_llm(cfg: BibilabConfig) -> dict:
     if not base_url:
         return {"status": "error", "message": "base_url not configured"}
 
-    if not api_key and base_url == "https://api.openai.com/v1":
+    hosted = base_url in ("https://api.openai.com/v1", "https://api.anthropic.com/v1")
+    if not api_key and hosted:
         return {"status": "error", "message": "api_key not configured"}
 
     try:

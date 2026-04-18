@@ -46,7 +46,7 @@ def _call_llm(
 
     if cfg.protocol == "anthropic":
         if cache_key not in _client_cache:
-            _client_cache[cache_key] = anthropic.Anthropic(api_key=cfg.api_key)
+            _client_cache[cache_key] = anthropic.Anthropic(api_key=cfg.api_key, base_url=cfg.base_url or None)
         client: anthropic.Anthropic = _client_cache[cache_key]
         msg = client.messages.create(
             model=cfg.model,
