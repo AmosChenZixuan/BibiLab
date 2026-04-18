@@ -69,7 +69,7 @@ async def test_llm_health_requires_base_url():
     cfg = type(
         "Cfg",
         (),
-        {"ai": AIConfig(provider="openai", model="gpt-4o", api_key="sk-test", base_url="")},
+        {"ai": AIConfig(protocol="openai", model="gpt-4o", api_key="sk-test", base_url="")},
     )()
 
     result = await _check_llm(cfg)
@@ -100,7 +100,7 @@ async def test_llm_health_validates_openai_compatible_response_shape():
         (),
         {
             "ai": AIConfig(
-                provider="custom",
+                protocol="openai",
                 model="gpt-4o",
                 api_key="sk-test",
                 base_url="http://localhost:8000/v1",
@@ -138,7 +138,7 @@ async def test_config_defaults(client: httpx.AsyncClient):
     assert resp.status_code == 200
     data = resp.json()
     assert data["backend"]["port"] == 8765
-    assert data["ai"]["provider"] == "openai"
+    assert data["ai"]["protocol"] == "openai"
     assert data["transcription"]["model_size"] == "large-v3"
 
 
@@ -148,7 +148,7 @@ async def test_config_deep_merge(client: httpx.AsyncClient):
     assert resp.status_code == 200
     data = resp.json()
     assert data["ai"]["model"] == "gpt-4-turbo"
-    assert data["ai"]["provider"] == "openai"  # sibling preserved
+    assert data["ai"]["protocol"] == "openai"  # sibling preserved
     assert data["backend"]["port"] == 8765  # unrelated section preserved
 
 

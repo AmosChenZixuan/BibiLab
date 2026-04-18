@@ -6,6 +6,7 @@ Python/FastAPI backend. Managed with `uv`.
 
 ```bash
 uv sync --dev                        # Install all dependencies
+uv sync --extra cuda                 # Enable GPU acceleration (installs torch ~2GB)
 uv run ruff check .                  # Lint
 uv run ruff format .                 # Format
 uv run pytest                        # All tests
@@ -128,7 +129,7 @@ v0: `BilibiliAdapter` — single video, playlist, course. Cookie-based auth in c
 ```json
 {
   "accounts": { "bilibili": { "cookie": "", "last_verified": "" } },
-  "ai": { "provider": "openai|anthropic|ollama|custom", "model": "", "api_key": "", "base_url": null, "output_language": "ui" },
+  "ai": { "protocol": "openai|anthropic", "model": "", "api_key": "", "base_url": null, "output_language": "ui" },
   "transcription": { "engine": "faster-whisper", "model_size": "large-v3", "device": "cuda|cpu", "language": "auto" },
   "vision": { "enabled": false, "frame_sample_rate": 30, "model": null },
   "backend": { "port": 8765, "worker_concurrency": 1 }

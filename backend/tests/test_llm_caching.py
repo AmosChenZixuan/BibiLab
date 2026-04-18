@@ -2,6 +2,9 @@
 
 from unittest.mock import MagicMock, patch
 
+import anthropic
+import openai
+
 from bibilab.config import AIConfig
 
 
@@ -13,28 +16,24 @@ class TestAnthropicClientCaching:
         from bibilab.pipeline._shared import _call_llm
 
         cfg = AIConfig(
-            provider="anthropic",
+            protocol="anthropic",
             model="claude-sonnet-4-20250514",
             api_key="sk-ant-test",
             base_url="",
             output_language="en",
         )
 
-        mock_anthropic = MagicMock()
         mock_client_instance = MagicMock()
-        mock_anthropic.Anthropic.return_value = mock_client_instance
         mock_client_instance.messages.create.return_value = MagicMock(content=[MagicMock(text="test response")])
 
-        with patch.dict("sys.modules", {"anthropic": mock_anthropic}):
+        with patch.object(anthropic, "Anthropic", return_value=mock_client_instance) as mock_anthropic_cls:
             # First call
             result1 = _call_llm("prompt 1", cfg)
             # Second call
             result2 = _call_llm("prompt 2", cfg)
 
         # Client should be created only once and reused
-        assert mock_anthropic.Anthropic.call_count == 1, (
-            f"Expected 1 client creation, got {mock_anthropic.Anthropic.call_count}"
-        )
+        assert mock_anthropic_cls.call_count == 1, f"Expected 1 client creation, got {mock_anthropic_cls.call_count}"
         # Both calls should use the same client instance
         assert result1 == "test response"
         assert result2 == "test response"
@@ -48,28 +47,26 @@ class TestOpenAIClientCaching:
         from bibilab.pipeline._shared import _call_llm
 
         cfg = AIConfig(
-            provider="openai",
+            protocol="openai",
             model="gpt-4o-mini",
             api_key="sk-test",
             base_url="https://api.openai.com/v1",
             output_language="en",
         )
 
-        mock_openai = MagicMock()
         mock_client_instance = MagicMock()
-        mock_openai.OpenAI.return_value = mock_client_instance
         mock_client_instance.chat.completions.create.return_value = MagicMock(
             choices=[MagicMock(message=MagicMock(content="test response"))]
         )
 
-        with patch.dict("sys.modules", {"openai": mock_openai}):
+        with patch.object(openai, "OpenAI", return_value=mock_client_instance) as mock_openai_cls:
             # First call
             result1 = _call_llm("prompt 1", cfg)
             # Second call
             result2 = _call_llm("prompt 2", cfg)
 
         # Client should be created only once and reused
-        assert mock_openai.OpenAI.call_count == 1, f"Expected 1 client creation, got {mock_openai.OpenAI.call_count}"
+        assert mock_openai_cls.call_count == 1, f"Expected 1 client creation, got {mock_openai_cls.call_count}"
         # Both calls should use the same client instance
         assert result1 == "test response"
         assert result2 == "test response"

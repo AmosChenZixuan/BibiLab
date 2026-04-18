@@ -7,7 +7,7 @@ import type { BibilabConfig } from "@/lib/types";
 
 const baseConfig: BibilabConfig = {
   accounts: { bilibili: { cookie: "", last_verified: "", username: "", avatar_url: "" } },
-  ai: { provider: "openai", model: "gpt-4o", api_key: "", base_url: "" },
+  ai: { protocol: "openai", model: "gpt-4o", api_key: "", base_url: "" },
   transcription: {
     engine: "faster-whisper",
     model_size: "base",
@@ -82,14 +82,14 @@ describe("llm tab", () => {
       </LanguageProvider>,
     );
 
-    expect(screen.getByText(/Required\. Use your OpenAI API base URL/i)).toBeInTheDocument();
+    expect(screen.getByText(/Required\. OpenAI, DeepSeek, GLM, Ollama, and other OpenAI-compatible providers/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/base url/i)).toHaveAttribute("placeholder", "https://api.openai.com/v1");
 
     fireEvent.change(screen.getByLabelText(/provider/i), {
-      target: { value: "ollama" },
+      target: { value: "anthropic" },
     });
 
-    expect(screen.getByText(/ollama server root/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/base url/i)).toHaveAttribute("placeholder", "http://localhost:11434");
+    expect(screen.getByText(/Anthropic API base URL/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/base url/i)).toHaveAttribute("placeholder", "https://api.anthropic.com/v1");
   });
 });

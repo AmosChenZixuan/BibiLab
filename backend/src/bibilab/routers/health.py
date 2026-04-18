@@ -11,31 +11,25 @@ router = APIRouter()
 
 
 async def _check_llm(cfg: BibilabConfig) -> dict:
-    provider = cfg.ai.provider
+    protocol = cfg.ai.protocol
     api_key = cfg.ai.api_key
     base_url = (cfg.ai.base_url or "").strip()
 
     if not base_url:
         return {"status": "error", "message": "base_url not configured"}
 
-    if not api_key and provider not in ("ollama", "custom"):
+    hosted = base_url in ("https://api.openai.com/v1", "https://api.anthropic.com/v1")
+    if not api_key and hosted:
         return {"status": "error", "message": "api_key not configured"}
 
     try:
-        if provider == "openai":
-            url = f"{base_url.rstrip('/')}/models"
-            headers = {"Authorization": f"Bearer {api_key}"}
-        elif provider == "anthropic":
+        if protocol == "anthropic":
             url = f"{base_url.rstrip('/')}/models"
             headers = {"x-api-key": api_key, "anthropic-version": "2023-06-01"}
-        elif provider == "ollama":
-            url = f"{base_url.rstrip('/')}/api/tags"
-            headers = {}
-        elif provider == "custom":
+        else:
+            # openai and OpenAI-compatible providers
             url = f"{base_url.rstrip('/')}/models"
             headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
-        else:
-            return {"status": "error", "message": f"Unknown provider: {provider}"}
 
         async with httpx.AsyncClient(timeout=5) as client:
             resp = await client.get(url, headers=headers)
@@ -43,10 +37,7 @@ async def _check_llm(cfg: BibilabConfig) -> dict:
             return {"status": "error", "message": f"HTTP {resp.status_code}"}
 
         payload = resp.json()
-        if provider == "ollama":
-            if not isinstance(payload.get("models"), list):
-                return {"status": "error", "message": "Invalid tags response"}
-        elif not isinstance(payload.get("data"), list):
+        if not isinstance(payload.get("data"), list):
             return {"status": "error", "message": "Invalid models response"}
 
         return {"status": "ok", "message": base_url}
@@ -82,14 +73,11 @@ def _check_cuda() -> dict:
         if torch.cuda.is_available():
             name = torch.cuda.get_device_name(0)
             return {"status": "ok", "message": name}
-        return {
-            "status": "unavailable",
-            "message": "CUDA not available; CPU will be used",
-        }
+        return {"status": "unavailable", "message": "CUDA not available; CPU will be used"}
     except ImportError:
         return {
             "status": "unavailable",
-            "message": "torch not installed; CPU will be used",
+            "message": "torch not installed; run 'uv sync --extra cuda' to enable GPU acceleration",
         }
 
 
