@@ -52,6 +52,7 @@ def _call_llm(
             model=cfg.model,
             max_tokens=llm_max_tokens,
             messages=[{"role": "user", "content": prompt}],
+            timeout=llm_timeout,
         )
         return msg.content[0].text
 
@@ -63,6 +64,7 @@ def _call_llm(
         model=cfg.model,
         messages=[{"role": "user", "content": prompt}],
         max_tokens=llm_max_tokens,
+        timeout=llm_timeout,
     )
     return resp.choices[0].message.content
 
