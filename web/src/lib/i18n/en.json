@@ -42,7 +42,7 @@
     "baseUrl": "Base URL",
     "protocolOpenai": "OpenAI-compatible",
     "protocolAnthropic": "Anthropic-compatible",
-    "openaiBaseUrlHint": "Required. OpenAI, DeepSeek, Ollama, and other OpenAI-compatible providers — base URL must end with /v1.",
+    "openaiBaseUrlHint": "Required. OpenAI, DeepSeek, GLM, 豆包, Ollama, and other OpenAI-compatible providers — base URL should point to the API endpoint.",
     "openaiBaseUrlPlaceholder": "https://api.openai.com/v1",
     "anthropicBaseUrlHint": "Required. Use the Anthropic API base URL so health checks can reach /models.",
     "anthropicBaseUrlPlaceholder": "https://api.anthropic.com/v1",
