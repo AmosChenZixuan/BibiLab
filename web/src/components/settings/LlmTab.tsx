@@ -48,8 +48,8 @@ export function LlmTab({ config, onBlur }: LlmTabProps) {
           }
           value={localAi.protocol}
         >
-          <option value="openai">OpenAI-compatible</option>
-          <option value="anthropic">Anthropic-compatible</option>
+          <option value="openai">{t("settings.protocolOpenai")}</option>
+          <option value="anthropic">{t("settings.protocolAnthropic")}</option>
         </Select>
       </SettingsField>
 

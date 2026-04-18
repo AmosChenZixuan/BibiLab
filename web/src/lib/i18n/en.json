@@ -40,6 +40,8 @@
     "apiKey": "API Key",
     "apiKeyRequired": "Required for hosted providers. Missing credentials break remote inference.",
     "baseUrl": "Base URL",
+    "protocolOpenai": "OpenAI-compatible",
+    "protocolAnthropic": "Anthropic-compatible",
     "openaiBaseUrlHint": "Required. OpenAI, DeepSeek, Ollama, and other OpenAI-compatible providers — base URL must end with /v1.",
     "openaiBaseUrlPlaceholder": "https://api.openai.com/v1",
     "anthropicBaseUrlHint": "Required. Use the Anthropic API base URL so health checks can reach /models.",
