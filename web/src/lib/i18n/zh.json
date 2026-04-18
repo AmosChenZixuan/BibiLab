@@ -42,7 +42,7 @@
     "baseUrl": "基础 URL",
     "protocolOpenai": "OpenAI 兼容",
     "protocolAnthropic": "Anthropic 兼容",
-    "openaiBaseUrlHint": "必填。OpenAI、DeepSeek、GLM、豆包、Ollama 及其他 OpenAI 兼容提供商 — 基础 URL 应指向 API 端点。",
+    "openaiBaseUrlHint": "必填。OpenAI、DeepSeek、GLM、Ollama 及其他 OpenAI 兼容提供商 — 基础 URL 应指向 API 端点。",
     "openaiBaseUrlPlaceholder": "https://api.openai.com/v1",
     "anthropicBaseUrlHint": "必填。使用 Anthropic API 基础 URL，以便健康检查可以访问 /models。",
     "anthropicBaseUrlPlaceholder": "https://api.anthropic.com/v1",

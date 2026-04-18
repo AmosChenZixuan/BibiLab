@@ -82,7 +82,7 @@ describe("llm tab", () => {
       </LanguageProvider>,
     );
 
-    expect(screen.getByText(/Required\. OpenAI, DeepSeek, Ollama, and other OpenAI-compatible providers/i)).toBeInTheDocument();
+    expect(screen.getByText(/Required\. OpenAI, DeepSeek, GLM, Ollama, and other OpenAI-compatible providers/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/base url/i)).toHaveAttribute("placeholder", "https://api.openai.com/v1");
 
     fireEvent.change(screen.getByLabelText(/provider/i), {
