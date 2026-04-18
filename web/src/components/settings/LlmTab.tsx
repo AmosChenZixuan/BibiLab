@@ -17,7 +17,7 @@ const BASE_URL_META: Record<string, { hintKey: string; placeholderKey: string }>
 export function LlmTab({ config, onBlur }: LlmTabProps) {
   const { t } = useLanguage();
   const [localAi, setLocalAi] = useState(config.ai);
-  const baseUrlMeta = BASE_URL_META[localAi.protocol] ?? BASE_URL_META.anthropic;
+  const baseUrlMeta = BASE_URL_META[localAi.protocol] ?? BASE_URL_META.openai;
   const providerId = useId();
   const modelId = useId();
   const apiKeyId = useId();

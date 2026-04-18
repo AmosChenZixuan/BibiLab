@@ -72,18 +72,11 @@ def _check_cuda() -> dict:
         if torch.cuda.is_available():
             name = torch.cuda.get_device_name(0)
             return {"status": "ok", "message": name}
-        return {
-            "status": "unavailable",
-            "message": "CUDA not available; CPU will be used. To enable GPU: install torch with 'uv sync --extra cuda'",
-        }
+        return {"status": "unavailable", "message": "CUDA not available; CPU will be used"}
     except ImportError:
         return {
             "status": "unavailable",
-            "message": (
-                "torch not installed. GPU acceleration unavailable. "
-                "Run 'uv sync --extra cuda' to install (requires NVIDIA GPU). "
-                "Without a GPU, set device to 'cpu' in config to silence this warning."
-            ),
+            "message": "torch not installed; run 'uv sync --extra cuda' to enable GPU acceleration",
         }
 
 
