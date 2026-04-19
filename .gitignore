@@ -7,12 +7,14 @@ dist/
 *.egg-info/
 .pytest_cache/
 .ruff_cache/
+.coverage
 
 # Node
 node_modules/
 *.tsbuildinfo
 plugin/main.js
 plugin/main.js.map
+coverage/
 
 # Agents
 .codex

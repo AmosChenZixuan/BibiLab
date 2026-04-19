@@ -253,11 +253,11 @@ async def test_pipeline_creates_covers_and_transcripts(tmp_bibilab_home: Path):
         },
     }
 
-    worker = WorkerLoop(concurrency=1)
-
     # Set up mocks before the patch block
     mock_adapter = MagicMock()
     mock_adapter.download = MagicMock(return_value=tmp_video)
+
+    worker = WorkerLoop(concurrency=1, adapter=mock_adapter, home=tmp_bibilab_home)
 
     mock_extract_audio = MagicMock(return_value=tmp_wav)
 
@@ -270,7 +270,6 @@ async def test_pipeline_creates_covers_and_transcripts(tmp_bibilab_home: Path):
     mock_dl_cover = MagicMock(side_effect=lambda url, dest: dest.write_bytes(b"fake cover data") or True)
 
     with (
-        patch("bibilab.worker.BilibiliAdapter", return_value=mock_adapter),
         patch("bibilab.worker.extract_audio", mock_extract_audio),
         patch("bibilab.worker.transcribe", mock_transcribe_fn),
         patch("bibilab.worker._download_cover", mock_dl_cover),

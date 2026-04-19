@@ -66,14 +66,14 @@ async def test_extract_audio_cancellation_stops_pipeline(setup_pipeline_test: Pa
     tmp_wav = setup_pipeline_test / "downloads" / "BVcancel123.wav"
     tmp_wav.write_bytes(b"fake wav")
 
-    worker = WorkerLoop(concurrency=1)
-
     # Track which stages were called
     stages_called = []
 
     # Mock adapter and functions
     mock_adapter = MagicMock()
     mock_adapter.download = MagicMock(return_value=tmp_video)
+
+    worker = WorkerLoop(concurrency=1, adapter=mock_adapter, home=setup_pipeline_test)
 
     def mock_extract_audio(path):
         stages_called.append("extract_audio")
@@ -91,7 +91,6 @@ async def test_extract_audio_cancellation_stops_pipeline(setup_pipeline_test: Pa
     worker.cancel_job(job_id)
 
     with (
-        patch("bibilab.worker.BilibiliAdapter", return_value=mock_adapter),
         patch("bibilab.worker.extract_audio", mock_extract_audio),
         patch("bibilab.worker.transcribe", mock_transcribe),
         patch("bibilab.worker._download_cover", mock_dl_cover),
@@ -148,10 +147,10 @@ async def test_pipeline_stage_process_cleanup_called_on_cancellation(setup_pipel
     tmp_wav = setup_pipeline_test / "downloads" / "BVcleanup123.wav"
     tmp_wav.write_bytes(b"fake wav")
 
-    worker = WorkerLoop(concurrency=1)
-
     mock_adapter = MagicMock()
     mock_adapter.download = MagicMock(return_value=tmp_video)
+
+    worker = WorkerLoop(concurrency=1, adapter=mock_adapter, home=setup_pipeline_test)
 
     mock_extract_audio = MagicMock(return_value=tmp_wav)
     mock_transcribe = MagicMock(return_value=([], None))
@@ -168,7 +167,6 @@ async def test_pipeline_stage_process_cleanup_called_on_cancellation(setup_pipel
     worker.cancel_job(job_id)
 
     with (
-        patch("bibilab.worker.BilibiliAdapter", return_value=mock_adapter),
         patch("bibilab.worker.extract_audio", mock_extract_audio),
         patch("bibilab.worker.transcribe", mock_transcribe),
         patch("bibilab.worker._download_cover", mock_dl_cover),

@@ -11,7 +11,6 @@ import httpx
 from pydantic import BaseModel
 
 from bibilab.adapters.base import AuthRequiredError, VideoMeta
-from bibilab.adapters.bilibili import BilibiliAdapter
 from bibilab.cleanup import cleanup_job_artifacts
 from bibilab.config import BibilabConfig, bibilab_home, load_config
 from bibilab.db import (
@@ -44,17 +43,6 @@ class ArtifactResult(BaseModel):
     content: str
 
 
-# Lazy singleton for BilibiliAdapter (avoids per-request instantiation)
-_bilibili_adapter: BilibiliAdapter | None = None
-
-
-def _get_bilibili_adapter() -> BilibiliAdapter:
-    global _bilibili_adapter
-    if _bilibili_adapter is None:
-        _bilibili_adapter = BilibiliAdapter(cookie=load_config().accounts.bilibili.cookie)
-    return _bilibili_adapter
-
-
 def _download_cover(cover_url: str, dest: Path) -> bool:
     """Download cover image from URL to dest path. Returns True on success."""
     try:
@@ -75,7 +63,16 @@ def _parse_job_meta(job: dict) -> dict[str, Any]:
 
 
 class WorkerLoop:
-    def __init__(self, concurrency: int = 1) -> None:
+    def __init__(
+        self,
+        concurrency: int = 1,
+        config: BibilabConfig | None = None,
+        adapter: Any = None,
+        home: Path | None = None,
+    ) -> None:
+        self._config = config
+        self._adapter = adapter
+        self._bibilab_home = home if home is not None else bibilab_home()
         self._concurrency = concurrency
         self._task: asyncio.Task | None = None
         self._running = False
@@ -100,6 +97,20 @@ class WorkerLoop:
 
     def cancel_job(self, job_id: str) -> None:
         self._cancelled.add(job_id)
+
+    def _get_adapter(self) -> Any:
+        if self._adapter is not None:
+            return self._adapter
+        cfg = self._get_config()
+        from bibilab.adapters.bilibili import BilibiliAdapter
+
+        return BilibiliAdapter(cookie=cfg.accounts.bilibili.cookie)
+
+    def _get_config(self) -> BibilabConfig:
+        if self._config is not None:
+            return self._config
+        self._config = load_config()
+        return self._config
 
     async def _loop(self) -> None:
         while self._running:
@@ -179,7 +190,7 @@ class WorkerLoop:
         artifact_type = meta_raw["type"]
         prompt = meta_raw["prompt"]
         source_ids = meta_raw["source_ids"]
-        cfg = load_config()
+        cfg = self._get_config()
         error_message: str | None = None
         artifact_result: ArtifactResult | None = None
 
@@ -194,7 +205,7 @@ class WorkerLoop:
                     raise PipelineError(f"Source {source_id!r} not found")
                 if source["transcript_path"] is None:
                     raise PipelineError(f"Source {source_id!r} has no transcript")
-                transcript_path = bibilab_home() / source["transcript_path"]
+                transcript_path = self._bibilab_home / source["transcript_path"]
                 transcript_text = transcript_path.read_text(encoding="utf-8")
                 transcripts.append(f"=== Source: {source['title']} ===\n{transcript_text}")
 
@@ -222,7 +233,7 @@ class WorkerLoop:
             await update_job_status(job_id, JobStatus.PROCESSING.value, progress=80)
 
             # Write artifact content to file
-            artifacts_dir = bibilab_home() / "artifacts" / list_id
+            artifacts_dir = self._bibilab_home / "artifacts" / list_id
             artifacts_dir.mkdir(parents=True, exist_ok=True)
             content_path = artifacts_dir / f"{artifact_id}.md"
             content_path.write_text(artifact_result.content, encoding="utf-8")
@@ -236,7 +247,7 @@ class WorkerLoop:
                 prompt=prompt,
                 source_ids=source_ids,
                 status="completed",
-                content_path=str(content_path.relative_to(bibilab_home())),
+                content_path=str(content_path.relative_to(self._bibilab_home)),
                 error=None,
             )
 
@@ -329,7 +340,7 @@ All output fields MUST be written in {_LANG_NAME.get(lang, "English")}."""
         job_id = job["id"]
         meta_raw = _parse_job_meta(job)
         source_id = meta_raw["source_id"]
-        cfg = load_config()
+        cfg = self._get_config()
 
         await update_job_status(job_id, JobStatus.PROCESSING.value, progress=40)
         source = await get_source(source_id)
@@ -338,7 +349,7 @@ All output fields MUST be written in {_LANG_NAME.get(lang, "English")}."""
         if source["transcript_path"] is None:
             raise PipelineError(f"Source {source_id!r} has no transcript")
 
-        transcript_path = bibilab_home() / source["transcript_path"]
+        transcript_path = self._bibilab_home / source["transcript_path"]
         transcript_text = transcript_path.read_text(encoding="utf-8")
 
         video_meta = VideoMeta.from_source(source)
@@ -366,7 +377,7 @@ All output fields MUST be written in {_LANG_NAME.get(lang, "English")}."""
     async def _pipeline(self, job: dict) -> None:
         job_id = job["id"]
         meta_raw = _parse_job_meta(job)
-        cfg = load_config()
+        cfg = self._get_config()
 
         source_id: str = meta_raw.get("source_id") or str(uuid.uuid4())
         video_id: str = meta_raw["video_id"]
@@ -436,15 +447,14 @@ All output fields MUST be written in {_LANG_NAME.get(lang, "English")}."""
             await delete_job(job_id)
             return None
 
-        adapter = _get_bilibili_adapter()
         video_path: Path = await asyncio.to_thread(
-            adapter.download,
+            self._get_adapter().download,
             video_meta.video_id,
             video_meta.source_url,
         )
 
         # Download cover
-        covers_dir = bibilab_home() / "covers"
+        covers_dir = self._bibilab_home / "covers"
         covers_dir.mkdir(parents=True, exist_ok=True)
         cover_dest = covers_dir / f"{source_id}.jpg"
         await asyncio.to_thread(_download_cover, video_meta.cover_url, cover_dest)
@@ -558,7 +568,7 @@ All output fields MUST be written in {_LANG_NAME.get(lang, "English")}."""
             summary=extraction.summary,
             keywords=extraction.keywords,
             cover_url=video_meta.cover_url,
-            transcript_path=str(transcript_path.relative_to(bibilab_home())),
+            transcript_path=str(transcript_path.relative_to(self._bibilab_home)),
             source_url=video_meta.source_url,
             duration_seconds=video_meta.duration_seconds,
             uploader=video_meta.uploader,
@@ -570,5 +580,5 @@ All output fields MUST be written in {_LANG_NAME.get(lang, "English")}."""
         )
 
         # Cleanup downloads
-        for path in (bibilab_home() / "downloads").glob(f"{video_id}.*"):
+        for path in (self._bibilab_home / "downloads").glob(f"{video_id}.*"):
             path.unlink(missing_ok=True)
