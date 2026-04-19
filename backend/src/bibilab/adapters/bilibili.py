@@ -95,44 +95,6 @@ class BilibiliAdapter(PlatformAdapter):
     def __init__(self, cookie: str = "") -> None:
         self._cookie = cookie
 
-    def requires_auth(self, resource_type: str) -> bool:
-        return resource_type == "course"
-
-    def resolve(self, url: str) -> VideoMeta | PlaylistMeta:
-        rtype = _resource_type(url)
-
-        opts = _ydl_opts(self._cookie)
-
-        if rtype == "video":
-            try:
-                with yt_dlp.YoutubeDL(opts) as ydl:
-                    info = ydl.extract_info(url, download=False)
-            except yt_dlp.utils.DownloadError as exc:
-                raise DownloadError(_ANSI_RE.sub("", str(exc))) from exc
-            if info.get("_type") == "playlist":
-                return self._resolve_playlist(info)
-            return _info_to_video_meta(info)
-
-        try:
-            with yt_dlp.YoutubeDL(opts) as ydl:
-                info = ydl.extract_info(url, download=False)
-        except yt_dlp.utils.DownloadError as exc:
-            raise DownloadError(_ANSI_RE.sub("", str(exc))) from exc
-
-        playlist_id = info.get("id", url)
-        title = info.get("title", "Untitled Playlist")
-        entries = info.get("entries") or []
-
-        videos = [_info_to_video_meta(e, fallback_uploader=info.get("uploader", "")) for e in entries if e.get("id")]
-
-        return PlaylistMeta(
-            playlist_id=playlist_id,
-            title=title,
-            platform="bilibili",
-            source_url=url,
-            videos=videos,
-        )
-
     def resolve_flat(self, url: str) -> PlaylistMeta:
         rtype = _resource_type(url)
 

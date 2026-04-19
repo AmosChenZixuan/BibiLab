@@ -6,7 +6,6 @@ afterEach(cleanup);
 import { Button } from "@/components/ui/Button";
 import { ContextMenu } from "@/components/ui/ContextMenu";
 import { Modal } from "@/components/ui/Modal";
-import { FormField } from "@/components/ui/FormField";
 import { Panel } from "@/components/ui/Panel";
 import { StatusChip } from "@/components/ui/StatusChip";
 
@@ -41,29 +40,6 @@ describe("Button", () => {
   it("applies sm size classes", () => {
     render(<Button size="sm">Small</Button>);
     expect(screen.getByRole("button").className).toContain("text-sm");
-  });
-});
-
-// ── FormField ────────────────────────────────────────────────────────────────
-describe("FormField", () => {
-  test("renders label", () => {
-    render(<FormField label="Email"><input /></FormField>);
-    expect(screen.getByText("Email")).toBeInTheDocument();
-  });
-
-  test("renders hint when provided", () => {
-    render(<FormField label="Name" hint="Required"><input /></FormField>);
-    expect(screen.getByText("Required")).toBeInTheDocument();
-  });
-
-  test("does not render hint when omitted", () => {
-    render(<FormField label="Name"><input /></FormField>);
-    expect(screen.queryByText("Required")).not.toBeInTheDocument();
-  });
-
-  test("forwards className", () => {
-    const { container } = render(<FormField label="X" className="mt-2"><input /></FormField>);
-    expect(container.firstChild as HTMLElement).toHaveClass("mt-2");
   });
 });
 

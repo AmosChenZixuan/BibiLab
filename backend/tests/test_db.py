@@ -66,7 +66,6 @@ async def test_write_and_get_source(tmp_bibilab_home: Path):
         bootstrap_db,
         create_list,
         get_source,
-        source_exists,
         write_source,
     )
 
@@ -98,8 +97,6 @@ async def test_write_and_get_source(tmp_bibilab_home: Path):
     source = await get_source(source_id)
     assert source is not None
     assert source["title"] == "Intro to ML"
-    assert await source_exists("BV1abc", "list-1") is True
-    assert await source_exists("BV1xyz", "list-1") is False
 
 
 @pytest.mark.asyncio

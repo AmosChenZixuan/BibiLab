@@ -50,10 +50,6 @@ class DownloadError(Exception):
 
 class PlatformAdapter(ABC):
     @abstractmethod
-    def resolve(self, url: str) -> VideoMeta | PlaylistMeta:
-        """Resolve a URL to video or playlist metadata without downloading."""
-
-    @abstractmethod
     def resolve_flat(self, url: str) -> PlaylistMeta:
         """Resolve a playlist URL using extract_flat for fast enumeration without per-video metadata."""
 
@@ -65,7 +61,3 @@ class PlatformAdapter(ABC):
     @abstractmethod
     def download(self, video_id: str, source_url: str) -> Path:
         """Download a video and return the path to the local file."""
-
-    @abstractmethod
-    def requires_auth(self, resource_type: str) -> bool:
-        """Return True if the given resource type requires authentication."""

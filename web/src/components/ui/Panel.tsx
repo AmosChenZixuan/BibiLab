@@ -16,18 +16,3 @@ export function Panel({ variant = "app", className = "", ...rest }: Props) {
     <div className={`${variants[variant]} ${className}`.trim()} {...rest} />
   );
 }
-
-export function PanelTitle({ className = "", ...rest }: ComponentPropsWithoutRef<"h2">) {
-  return (
-    <h2
-      className={`m-0 border-b border-border px-5 py-4.5 font-serif text-2xl ${className}`.trim()}
-      {...rest}
-    />
-  );
-}
-
-export function PanelBody({ className = "", ...rest }: ComponentPropsWithoutRef<"div">) {
-  return (
-    <div className={`grid gap-4 px-5 py-4.5 ${className}`.trim()} {...rest} />
-  );
-}

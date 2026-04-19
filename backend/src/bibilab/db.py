@@ -307,12 +307,6 @@ async def get_source(source_id: str) -> aiosqlite.Row | None:
         return await cursor.fetchone()
 
 
-async def get_source_by_video_and_list(video_id: str, list_id: str) -> aiosqlite.Row | None:
-    async with get_db() as db:
-        cursor = await db.execute("SELECT * FROM sources WHERE video_id=? AND list_id=?", (video_id, list_id))
-        return await cursor.fetchone()
-
-
 async def get_sources_for_list(list_id: str) -> list[aiosqlite.Row]:
     async with get_db() as db:
         cursor = await db.execute(
@@ -377,28 +371,6 @@ async def update_artifact_name(artifact_id: str, name: str) -> None:
         await db.commit()
 
 
-async def update_artifact_completed(
-    artifact_id: str,
-    name: str,
-    content_path: str,
-) -> None:
-    async with get_db() as db:
-        await db.execute(
-            "UPDATE artifacts SET name=?, content_path=?, status='done' WHERE id=?",
-            (name, content_path, artifact_id),
-        )
-        await db.commit()
-
-
-async def update_artifact_error(artifact_id: str, error: str) -> None:
-    async with get_db() as db:
-        await db.execute(
-            "UPDATE artifacts SET status='failed', error=? WHERE id=?",
-            (error, artifact_id),
-        )
-        await db.commit()
-
-
 async def delete_artifact(artifact_id: str) -> None:
     async with get_db() as db:
         await db.execute("DELETE FROM artifacts WHERE id=?", (artifact_id,))
@@ -409,11 +381,6 @@ async def delete_artifacts_for_list(list_id: str) -> None:
     async with get_db() as db:
         await db.execute("DELETE FROM artifacts WHERE list_id=?", (list_id,))
         await db.commit()
-
-
-async def source_exists(video_id: str, list_id: str) -> bool:
-    row = await get_source_by_video_and_list(video_id, list_id)
-    return row is not None
 
 
 async def get_video_statuses(
@@ -456,8 +423,6 @@ async def get_video_statuses(
             JobStatus.DOWNLOADING.value,
             JobStatus.TRANSCRIBING.value,
             JobStatus.PROCESSING.value,
-            JobStatus.EXTRACTING.value,
-            JobStatus.WRITING.value,
         ):
             in_progress_videos.add(vid)
 
