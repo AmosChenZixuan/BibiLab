@@ -11,6 +11,7 @@ uv run ruff check .                  # Lint
 uv run ruff format .                 # Format
 uv run pytest                        # All tests
 uv run pytest tests/test_ingest.py -v  # Single test file
+uv run pytest --cov=bibilab --cov-report=term-missing  # Coverage (requires pytest-cov)
 uv run python -m bibilab.main       # Start server (localhost:8765)
 ```
 
@@ -23,7 +24,7 @@ pipeline/         — one file per stage; _shared.py for common LLM helpers
 adapters/         — platform-specific download + resolution (base + bilibili)
 db.py             — SQLite schema + query helpers
 config.py         — settings persisted to ~/.bibilab/config.json
-worker.py         — SQLite-polling job dispatcher
+worker.py         — SQLite-polling job dispatcher; accepts config/adapter/home via constructor for testability
 cleanup.py        — resource cleanup utilities
 whisper_models.py — Whisper model management
 ```
@@ -53,7 +54,7 @@ whisper_models.py — Whisper model management
 | Column | Notes |
 |---|---|
 | `id` | UUID, primary key |
-| `type` | `"ingest"` \| `"playlist"` \| `"course"` \| `"model_download"` \| `"artifact"` |
+| `type` | `"ingest"` \| `"model_download"` \| `"artifact"` |
 | `status` | `queued` → `downloading` → `transcribing` → `processing` → `done` \| `failed` \| `needs_auth` |
 | `progress` | 0–100 |
 | `error` | Error message, nullable |
@@ -112,12 +113,12 @@ POST /ingest/url → resolve → dedup check → create job(s)
 
 ```python
 class PlatformAdapter:
-    def resolve(url) -> VideoMeta | PlaylistMeta
-    def download(video_id, session) -> Path
-    def requires_auth(resource_type) -> bool
+    def resolve_flat(url) -> PlaylistMeta
+    async def get_videos_metadata(video_ids) -> tuple[dict[str, VideoMeta], dict[str, list[str]]]
+    def download(video_id, source_url) -> Path
 ```
 
-v0: `BilibiliAdapter` — single video, playlist, course. Cookie-based auth in config.
+v0: `BilibiliAdapter` — single video. Cookie-based auth in config.
 403 → `AuthRequiredError` → job `needs_auth` → UI prompts user.
 
 **QR login flow**: `POST /auth/bilibili/qr` → get `{url, key}` → UI polls `GET /auth/bilibili/qr/status?key=...` (query param, not path param — avoids key in server logs) → on success, cookie saved to config.

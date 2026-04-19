@@ -11,12 +11,13 @@ npm run build            # Production build to web/dist
 npm run test             # Frontend test suite
 npm run test -- list-detail-page   # Focused frontend tests
 npm run lint             # Type-check the frontend
+npx vitest run --coverage          # Coverage (requires @vitest/coverage-v8)
 ```
 
 ## Code Layout — `src/`
 
 ```
-components/ui/    — primitive components (Button, Modal, Panel, Select, Spinner, StatusChip, etc.)
+components/ui/    — primitive components (Button, Modal, Panel, Input, Select, Spinner, StatusChip, SettingsField, Thumbnail, ContextMenu)
 components/auth/  — platform auth modals (BilibiliQrModal)
 components/*/     — feature components (lists/, lists/lab/, jobs/, layout/, settings/)
 pages/            — route-level page components
