@@ -24,12 +24,12 @@ async def test_list_whisper_models_marks_local_install(client: httpx.AsyncClient
 
 @pytest.mark.asyncio
 async def test_download_whisper_model_calls_downloader(client: httpx.AsyncClient, tmp_path: Path):
-    response = await client.post("/models/whisper/download", json={"model_size": "small"})
+    response = await client.post("/models/whisper/download", json={"model_size": "base"})
 
     assert response.status_code == 202
     assert response.json()["status"] == "queued"
     assert response.json()["model_family"] == "whisper"
-    assert response.json()["model_size"] == "small"
+    assert response.json()["model_size"] == "base"
     assert "job_id" in response.json()
 
 

@@ -1,11 +1,14 @@
 import shutil
 from pathlib import Path
 
-import faster_whisper
-
 from bibilab.config import bibilab_home
 
-SUPPORTED_WHISPER_MODELS: tuple[str, ...] = tuple(faster_whisper.available_models())
+SUPPORTED_WHISPER_MODELS: tuple[str, ...] = (
+    "base",
+    "medium",
+    "large-v3",
+    "large-v3-turbo",
+)
 
 
 def whisper_model_dir() -> Path:
