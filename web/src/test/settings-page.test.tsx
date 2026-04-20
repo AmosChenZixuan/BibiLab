@@ -128,7 +128,7 @@ describe("settings page", () => {
     renderPage();
 
     expect(await screen.findByRole("tab", { name: /llm/i })).toHaveAttribute("title", "Healthy");
-    expect(screen.getByRole("tab", { name: /transcript/i })).toHaveAttribute("title", "Throttled");
+    expect(screen.getByRole("tab", { name: /transcript/i })).toHaveAttribute("title", "Healthy");
     expect(screen.getByRole("tab", { name: /other/i })).toHaveAttribute("title", "Healthy");
   });
 

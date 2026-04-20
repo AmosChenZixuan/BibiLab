@@ -33,7 +33,7 @@ function shouldRefreshHealth(current: BibilabConfig, next: BibilabConfig) {
 
 const TABS: ReadonlyArray<{ key: TabKey; labelKey: string; dependencyKeys: readonly string[] }> = [
   { key: "llm", labelKey: "settings.llm", dependencyKeys: ["llm"] as const },
-  { key: "transcript", labelKey: "settings.transcript", dependencyKeys: ["whisper_model", "cuda"] as const },
+  { key: "transcript", labelKey: "settings.transcript", dependencyKeys: ["whisper_model"] as const },
   { key: "other", labelKey: "settings.other", dependencyKeys: ["backend", "ffmpeg", "embedding_model"] as const },
 ];
 
@@ -93,7 +93,7 @@ export function SettingsPage() {
       const nextHealth = await api.getHealth();
       if (nextHealth) {
         setDependencies(nextHealth.dependencies ?? {});
-        notifyHealthChanged(nextHealth);
+        notifyHealthChanged(nextHealth, savedConfig.transcription.device);
       }
     }
   }
@@ -124,7 +124,15 @@ export function SettingsPage() {
       <section className="grid items-start gap-5 md:grid-cols-5">
         <div className="flex flex-col gap-1 md:col-span-1">
           {TABS.map((tab) => {
-            const healthTier = deriveDependencyHealthTier(dependencies, tab.dependencyKeys);
+            let healthTier = deriveDependencyHealthTier(dependencies, tab.dependencyKeys);
+            if (
+              tab.key === "transcript" &&
+              healthTier === "healthy" &&
+              dependencies.cuda?.status === "ok" &&
+              config?.transcription.device !== "cuda"
+            ) {
+              healthTier = "throttled";
+            }
             const isActive = activeTab === tab.key;
 
             return (

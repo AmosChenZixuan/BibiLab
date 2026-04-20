@@ -128,10 +128,8 @@ export function TranscriptTab({ config, dependencies, onBlur }: TranscriptTabPro
     [installedModels, localTranscription.model_size],
   );
   const cudaDependency = dependencies.cuda;
-  const cudaAvailable = cudaDependency?.status === "ok";
-  const deviceHint = cudaAvailable
-    ? t("settings.cudaAvailable")
-    : cudaDependency?.message ?? t("settings.cudaUnavailable");
+  const cudaSupported = cudaDependency?.status === "ok";
+  const deviceHint = cudaSupported ? t("settings.cudaAvailable") : t("settings.cudaUnavailable");
 
   return (
     <div className="grid gap-4">
@@ -174,7 +172,7 @@ export function TranscriptTab({ config, dependencies, onBlur }: TranscriptTabPro
             value={localTranscription.device}
           >
             <option value="cpu">CPU</option>
-            <option value="cuda" disabled={!cudaAvailable}>
+            <option value="cuda" disabled={!cudaSupported}>
               CUDA
             </option>
           </Select>

@@ -58,8 +58,10 @@ export function toErrorMessageWithT(error: unknown, t: (key: string) => string):
   return t(key);
 }
 
-export function notifyHealthChanged(health: HealthResponse) {
-  window.dispatchEvent(new CustomEvent<HealthResponse>(HEALTH_REFRESH_EVENT, { detail: health }));
+export type HealthRefreshDetail = HealthResponse & { device?: string };
+
+export function notifyHealthChanged(health: HealthResponse, device?: string) {
+  window.dispatchEvent(new CustomEvent<HealthRefreshDetail>(HEALTH_REFRESH_EVENT, { detail: { ...health, device } }));
 }
 
 export const BILIBILI_AUTH_REFRESH_EVENT = "bibilab:auth:bilibili:refresh";

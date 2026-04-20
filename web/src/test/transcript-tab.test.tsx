@@ -81,7 +81,7 @@ describe("transcript tab", () => {
   test("shows impact messaging for cuda and missing whisper models", async () => {
     renderTab();
 
-    expect(screen.getByText(/cuda not available; cpu will be used/i)).toBeInTheDocument();
+    expect(screen.getByText(/cuda is unavailable, so transcription will run on cpu/i)).toBeInTheDocument();
     expect(await screen.findByText(/transcription cannot start until a model is downloaded/i)).toBeInTheDocument();
   });
 

@@ -43,7 +43,7 @@ function renderFrame(healthPayload: HealthResponse, configPayload?: BibilabConfi
     configPayload ?? ({
       accounts: { bilibili: { cookie: "", last_verified: "", username: "", avatar_url: "" } },
       ai: { protocol: "", model: "", api_key: "", base_url: "" },
-      transcription: { engine: "", model_size: "", device: "", language: "" },
+      transcription: { engine: "", model_size: "", device: "cuda", language: "" },
       vision: { enabled: false, frame_sample_rate: 0, model: null },
       backend: { port: 8765, worker_concurrency: 1 },
     }),
@@ -75,7 +75,7 @@ describe("app frame", () => {
     expect(await screen.findByTitle("Healthy")).toBeInTheDocument();
   });
 
-  test("shows degraded badge when cuda unavailable", async () => {
+  test("shows healthy badge when cuda unavailable (no GPU hardware)", async () => {
     renderFrame({
       overall: "ok",
       dependencies: {
@@ -83,6 +83,27 @@ describe("app frame", () => {
         embedding_model: { status: "ok", message: "" },
       },
     });
+
+    expect(await screen.findByTitle("Healthy")).toBeInTheDocument();
+  });
+
+  test("shows degraded badge when cuda available but device is cpu", async () => {
+    renderFrame(
+      {
+        overall: "ok",
+        dependencies: {
+          cuda: { status: "ok", message: "" },
+          embedding_model: { status: "ok", message: "" },
+        },
+      },
+      {
+        accounts: { bilibili: { cookie: "", last_verified: "", username: "", avatar_url: "" } },
+        ai: { protocol: "", model: "", api_key: "", base_url: "" },
+        transcription: { engine: "", model_size: "", device: "cpu", language: "" },
+        vision: { enabled: false, frame_sample_rate: 0, model: null },
+        backend: { port: 8765, worker_concurrency: 1 },
+      },
+    );
 
     expect(await screen.findByTitle("Throttled")).toBeInTheDocument();
   });

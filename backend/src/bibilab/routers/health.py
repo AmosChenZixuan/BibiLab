@@ -68,17 +68,12 @@ def _check_ffmpeg() -> dict:
 
 def _check_cuda() -> dict:
     try:
-        import torch
+        import ctranslate2
 
-        if torch.cuda.is_available():
-            name = torch.cuda.get_device_name(0)
-            return {"status": "ok", "message": name}
+        ctranslate2.get_supported_compute_types("cuda")
+        return {"status": "ok", "message": "CUDA available (CTranslate2)"}
+    except Exception:
         return {"status": "unavailable", "message": "CUDA not available; CPU will be used"}
-    except ImportError:
-        return {
-            "status": "unavailable",
-            "message": "torch not installed; run 'uv sync --extra cuda' to enable GPU acceleration",
-        }
 
 
 def _check_embedding_model() -> dict:
