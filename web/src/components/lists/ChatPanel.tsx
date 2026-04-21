@@ -81,6 +81,14 @@ function formatTimestamp(iso: string): string {
   return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
+function updateTextareaHeight(ta: HTMLTextAreaElement) {
+  const maxHeight = 200;
+  ta.style.height = "0";
+  const scrollHeight = ta.scrollHeight;
+  ta.style.height = `${Math.min(scrollHeight, maxHeight)}px`;
+  ta.style.overflowY = scrollHeight > maxHeight ? "auto" : "hidden";
+}
+
 export function ChatPanel({
   selectedSourceIds,
   sources,
@@ -130,19 +138,18 @@ export function ChatPanel({
   useEffect(() => {
     const ta = textareaRef.current;
     if (!ta) return;
-
-    const maxHeight = 88;
-    const updateHeight = () => {
-      ta.style.height = "0";
-      const scrollHeight = ta.scrollHeight;
-      ta.style.height = `${Math.min(scrollHeight, maxHeight)}px`;
-      ta.style.overflowY = scrollHeight > maxHeight ? "auto" : "hidden";
-    };
-
-    updateHeight();
-    ta.addEventListener("input", updateHeight);
-    return () => ta.removeEventListener("input", updateHeight);
+    updateTextareaHeight(ta);
+    ta.addEventListener("input", () => updateTextareaHeight(ta));
+    return () => ta.removeEventListener("input", () => updateTextareaHeight(ta));
   }, []);
+
+  useEffect(() => {
+    if (!isLoadingHistory && messages.length > 0) {
+      const ta = textareaRef.current;
+      if (ta) updateTextareaHeight(ta);
+      scrollToBottom();
+    }
+  }, [isLoadingHistory, messages]);
 
   useEffect(() => {
     const list = messageListRef.current;
