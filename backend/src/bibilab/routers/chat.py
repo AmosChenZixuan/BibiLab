@@ -75,18 +75,20 @@ def _format_rag_context(chunks: list, query: str) -> str:
     for chunk in chunks:
         ts_start = int(chunk.timestamp_start)
         ts_end = int(chunk.timestamp_end)
-        parts.append(f'- [{chunk.video_title}] @ {ts_start}s-{ts_end}s: "{chunk.content}"')
+        parts.append(f'- [{chunk.video_title} @ {ts_start}s-{ts_end}s]: "{chunk.content}"')
     return "\n".join(parts)
 
 
 GROUNDING_SYSTEM_PROMPT = (
-    "You are a helpful assistant answering questions about video content. "
-    "Answer based on the provided transcript excerpts when available. "
-    "Cite specific timestamps when referencing content from transcripts using the format [video_title @ Ts-Ts]. "
-    "Use the generate_report tool when the user asks for summaries, study guides, blog posts, or custom reports. "
-    "Stay focused: only discuss topics directly related to the sources and the user's question. "
-    "Do not ask follow-up questions, suggest next steps, or offer unsolicited advice. "
-    "Be concise and direct."
+    "You are a helpful assistant answering questions strictly based on the provided transcript excerpts. "
+    "CRITICAL RULES:\n"
+    "1. ONLY use information from the transcript excerpts provided below. Never use your own knowledge.\n"
+    '2. If the excerpts do not contain the answer, say "The provided transcripts do not cover this topic."\n'
+    "3. Quote or closely paraphrase the transcript — do not reinterpret, editorialize, or add external context.\n"
+    "4. Cite sources using EXACTLY this format: [video_title @ Ns-Ns] — e.g. [My Video @ 120s-145s].\n"
+    "5. Use the generate_report tool when the user asks for summaries, study guides, blog posts, or custom reports.\n"
+    "6. Do not ask follow-up questions, suggest next steps, or offer unsolicited advice.\n"
+    "7. Be concise and direct. Answer in 1-3 sentences when possible."
 )
 
 

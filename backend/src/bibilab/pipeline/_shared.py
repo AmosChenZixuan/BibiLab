@@ -176,9 +176,13 @@ async def stream_llm(
 
         tool_params = [_to_openai_tool(t) for t in tools] if tools else None
 
+        full_messages = messages
+        if system:
+            full_messages = [{"role": "system", "content": system}, *messages]
+
         response = await client.chat.completions.create(
             model=cfg.model,
-            messages=messages,
+            messages=full_messages,
             tools=tool_params,
             max_tokens=llm_max_tokens,
             timeout=llm_timeout,
