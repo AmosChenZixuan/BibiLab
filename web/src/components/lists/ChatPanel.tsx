@@ -17,12 +17,6 @@ import { useJobActivity } from "@/components/jobs/JobActivityProvider";
 import type { Source } from "@/lib/types";
 import { api } from "@/lib/api";
 
-const SUGGESTION_CHIPS = [
-  "What's the intuition behind backprop?",
-  "Compare gradient descent and Adam.",
-  "Summarize the diffusion pipeline.",
-];
-
 function formatDuration(seconds: number): string {
   if (seconds < 60) return `${seconds}s`;
   const h = Math.floor(seconds / 3600);
@@ -62,9 +56,10 @@ interface ChatPanelProps {
   onArtifactGenerated: (artifactId: string, type: string, sourceIds: string[]) => void;
 }
 
-function parseCitations(text: string): Citation[] {
+function parseCitations(text: string): { citations: Citation[]; cleanContent: string } {
   const citations: Citation[] = [];
   const regex = /\[([^\]]+?) @ (\d+)s-(\d+)s\]/g;
+  let cleanContent = text;
   let match;
   while ((match = regex.exec(text)) !== null) {
     citations.push({
@@ -72,8 +67,9 @@ function parseCitations(text: string): Citation[] {
       timestamp_start: parseInt(match[2], 10),
       timestamp_end: parseInt(match[3], 10),
     });
+    cleanContent = cleanContent.replace(match[0], "");
   }
-  return citations;
+  return { citations, cleanContent };
 }
 
 function formatTimestamp(iso: string): string {
@@ -174,16 +170,19 @@ export function ChatPanel({
       .then((data) => {
         if (cancelled || !data) return;
         if (data.messages.length === 0) return;
-        const loaded: MessageUI[] = data.messages.map((m) => ({
-          id: m.id,
-          role: m.role as "user" | "assistant",
-          content: m.content,
-          isStreaming: false,
-          citations: parseCitations(m.content),
-          toolCall: null,
-          error: null,
-          timestamp: formatTimestamp(m.created_at),
-        }));
+        const loaded: MessageUI[] = data.messages.map((m) => {
+          const { citations, cleanContent } = parseCitations(m.content);
+          return {
+            id: m.id,
+            role: m.role as "user" | "assistant",
+            content: cleanContent,
+            isStreaming: false,
+            citations,
+            toolCall: null,
+            error: null,
+            timestamp: formatTimestamp(m.created_at),
+          };
+        });
         setMessages(loaded);
       })
       .catch(() => {})
@@ -300,11 +299,11 @@ export function ChatPanel({
           );
         } else if (event.type === "done") {
           setMessages((prev) =>
-            prev.map((m) =>
-              m.id === assistantMsgIdRef
-                ? { ...m, isStreaming: false, citations: parseCitations(m.content) }
-                : m,
-            ),
+            prev.map((m) => {
+              if (m.id !== assistantMsgIdRef) return m;
+              const { citations, cleanContent } = parseCitations(m.content);
+              return { ...m, isStreaming: false, content: cleanContent, citations };
+            }),
           );
           setIsStreaming(false);
         } else if (event.type === "error") {
@@ -483,20 +482,6 @@ export function ChatPanel({
             <p className="m-0 max-w-[260px] text-sm text-muted">
               {t("chat.empty.noHistory.hint")}
             </p>
-
-            <div className="mt-2 grid w-full max-w-[280px] gap-1.5">
-              {SUGGESTION_CHIPS.map((text) => (
-                <button
-                  key={text}
-                  type="button"
-                  onClick={() => handleSuggestionClick(text)}
-                  className="text-left text-xs text-ink bg-white/64 border border-border rounded-xl px-3 py-2 transition hover:bg-white hover:border-blue/25"
-                >
-                  <span className="mr-1.5 text-blue font-mono text-xs">→</span>
-                  {text}
-                </button>
-              ))}
-            </div>
           </div>
         ) : (
           <div className="flex flex-col gap-3.5">
