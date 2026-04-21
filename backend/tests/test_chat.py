@@ -183,3 +183,24 @@ async def test_delete_conversation_no_op(client):
     list_id = (await client.post("/lists", json={"name": "Test List"})).json()["id"]
     resp = await client.delete(f"/lists/{list_id}/conversation")
     assert resp.status_code == 204
+
+
+@pytest.mark.asyncio
+async def test_get_or_create_conversation_creates_new(tmp_bibilab_home):
+    from bibilab.db import bootstrap_db, create_list, get_or_create_conversation
+
+    await bootstrap_db()
+    await create_list("list-1", "Test", "2026-01-01T00:00:00")
+    conv_id = await get_or_create_conversation("list-1")
+    assert conv_id is not None
+
+
+@pytest.mark.asyncio
+async def test_get_or_create_conversation_returns_existing(tmp_bibilab_home):
+    from bibilab.db import bootstrap_db, create_conversation, create_list, get_or_create_conversation
+
+    await bootstrap_db()
+    await create_list("list-1", "Test", "2026-01-01T00:00:00")
+    existing_id = await create_conversation("list-1")
+    result_id = await get_or_create_conversation("list-1")
+    assert result_id == existing_id

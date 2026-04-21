@@ -8,7 +8,7 @@ async def test_query_chunks_empty_source_ids(tmp_bibilab_home):
     from bibilab.config import BibilabConfig, RagConfig
     from bibilab.pipeline.embed import query_chunks
 
-    cfg = BibilabConfig(rag=RagConfig(relevance_floor=0.3))
+    cfg = BibilabConfig(rag=RagConfig(max_distance=0.3))
 
     result = await query_chunks("test query", [], cfg)
 
@@ -20,7 +20,7 @@ async def test_query_chunks_no_video_ids_found(tmp_bibilab_home):
     from bibilab.config import BibilabConfig, RagConfig
     from bibilab.pipeline.embed import query_chunks
 
-    cfg = BibilabConfig(rag=RagConfig(relevance_floor=0.3))
+    cfg = BibilabConfig(rag=RagConfig(max_distance=0.3))
 
     with patch(
         "bibilab.pipeline.embed.get_video_ids_for_sources",
@@ -39,7 +39,7 @@ async def test_query_chunks_filters_by_video_id(tmp_bibilab_home):
     from bibilab.config import BibilabConfig, RagConfig
     from bibilab.pipeline.embed import query_chunks
 
-    cfg = BibilabConfig(rag=RagConfig(relevance_floor=0.3))
+    cfg = BibilabConfig(rag=RagConfig(max_distance=0.3))
 
     mock_collection = MagicMock()
     mock_collection.query.return_value = {
@@ -84,7 +84,7 @@ async def test_query_chunks_applies_relevance_floor(tmp_bibilab_home):
     from bibilab.config import BibilabConfig, RagConfig
     from bibilab.pipeline.embed import query_chunks
 
-    cfg = BibilabConfig(rag=RagConfig(relevance_floor=0.3))
+    cfg = BibilabConfig(rag=RagConfig(max_distance=0.3))
 
     mock_collection = MagicMock()
     mock_collection.query.return_value = {
@@ -121,7 +121,7 @@ async def test_query_chunks_returns_chunk_metadata(tmp_bibilab_home):
     from bibilab.config import BibilabConfig, RagConfig
     from bibilab.pipeline.embed import query_chunks
 
-    cfg = BibilabConfig(rag=RagConfig(relevance_floor=0.3))
+    cfg = BibilabConfig(rag=RagConfig(max_distance=0.3))
 
     mock_collection = MagicMock()
     mock_collection.query.return_value = {
@@ -165,7 +165,7 @@ async def test_query_chunks_sorts_by_distance_ascending(tmp_bibilab_home):
     from bibilab.config import BibilabConfig, RagConfig
     from bibilab.pipeline.embed import query_chunks
 
-    cfg = BibilabConfig(rag=RagConfig(relevance_floor=0.3))
+    cfg = BibilabConfig(rag=RagConfig(max_distance=0.3))
 
     mock_collection = MagicMock()
     mock_collection.query.return_value = {
@@ -204,7 +204,7 @@ async def test_query_chunks_chroma_error_returns_empty(tmp_bibilab_home, caplog)
     from bibilab.config import BibilabConfig, RagConfig
     from bibilab.pipeline.embed import query_chunks
 
-    cfg = BibilabConfig(rag=RagConfig(relevance_floor=0.3))
+    cfg = BibilabConfig(rag=RagConfig(max_distance=0.3))
 
     mock_collection = MagicMock()
     mock_collection.query.side_effect = Exception("ChromaDB connection error")

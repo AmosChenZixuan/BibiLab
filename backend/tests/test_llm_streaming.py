@@ -1,8 +1,7 @@
 """Tests for LLM streaming and tool calling abstraction."""
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
-import anthropic
 import openai
 import pytest
 
@@ -106,12 +105,17 @@ class TestOpenAIStreaming:
         mock_chunk3.choices = [MagicMock(delta=MagicMock(content=".", tool_calls=None), index=0)]
 
         mock_response = MagicMock()
-        mock_response.__iter__ = lambda self: iter([mock_chunk1, mock_chunk2, mock_chunk3])
+        mock_response.__aiter__ = lambda self: self
+        mock_response.__anext__ = AsyncMock(side_effect=[mock_chunk1, mock_chunk2, mock_chunk3, StopAsyncIteration()])
 
         mock_client = MagicMock()
-        mock_client.chat.completions.create.return_value = mock_response
 
-        with patch.object(openai, "OpenAI", return_value=mock_client):
+        async def mock_create(*args, **kwargs):
+            return mock_response
+
+        mock_client.chat.completions.create = mock_create
+
+        with patch("bibilab.pipeline._shared.AsyncOpenAI", return_value=mock_client):
             events = [e async for e in stream_llm([{"role": "user", "content": "hi"}], cfg)]
 
         deltas = [e for e in events if e.type == "delta"]
@@ -169,15 +173,22 @@ class TestOpenAIStreaming:
         ]
 
         mock_response = MagicMock()
-        mock_response.__iter__ = lambda self: iter([mock_text_chunk, mock_tool_delta1, mock_tool_delta2])
+        mock_response.__aiter__ = lambda self: self
+        mock_response.__anext__ = AsyncMock(
+            side_effect=[mock_text_chunk, mock_tool_delta1, mock_tool_delta2, StopAsyncIteration()]
+        )
 
         mock_client = MagicMock()
-        mock_client.chat.completions.create.return_value = mock_response
+
+        async def mock_create(*args, **kwargs):
+            return mock_response
+
+        mock_client.chat.completions.create = mock_create
 
         tool_def = MagicMock()
         tool_def.name = "generate_report"
 
-        with patch.object(openai, "OpenAI", return_value=mock_client):
+        with patch("bibilab.pipeline._shared.AsyncOpenAI", return_value=mock_client):
             events = [e async for e in stream_llm([{"role": "user", "content": "hi"}], cfg, tools=[tool_def])]
 
         deltas = [e for e in events if e.type == "delta"]
@@ -217,15 +228,25 @@ class TestAnthropicStreaming:
         mock_message_event.type = "message_stop"
 
         mock_stream = MagicMock()
-        mock_stream.__iter__ = lambda self: iter([mock_text_event1, mock_text_event2, mock_message_event])
+        mock_stream.__aiter__ = lambda self: self
+        mock_stream.__anext__ = AsyncMock(
+            side_effect=[mock_text_event1, mock_text_event2, mock_message_event, StopAsyncIteration()]
+        )
 
         mock_client = MagicMock()
+
+        async def mock_aenter(self):
+            return mock_stream
+
+        async def mock_aexit(self, *args):
+            return None
+
         mock_cm = MagicMock()
-        mock_cm.__enter__ = MagicMock(return_value=mock_stream)
-        mock_cm.__exit__ = MagicMock(return_value=None)
+        mock_cm.__aenter__ = mock_aenter
+        mock_cm.__aexit__ = mock_aexit
         mock_client.messages.stream.return_value = mock_cm
 
-        with patch.object(anthropic, "Anthropic", return_value=mock_client):
+        with patch("bibilab.pipeline._shared.AsyncAnthropic", return_value=mock_client):
             events = [e async for e in stream_llm([{"role": "user", "content": "hi"}], cfg)]
 
         deltas = [e for e in events if e.type == "delta"]
@@ -263,18 +284,28 @@ class TestAnthropicStreaming:
         mock_message_event.type = "message_stop"
 
         mock_stream = MagicMock()
-        mock_stream.__iter__ = lambda self: iter([mock_text_event, mock_tool_event, mock_message_event])
+        mock_stream.__aiter__ = lambda self: self
+        mock_stream.__anext__ = AsyncMock(
+            side_effect=[mock_text_event, mock_tool_event, mock_message_event, StopAsyncIteration()]
+        )
 
         mock_client = MagicMock()
+
+        async def mock_aenter(self):
+            return mock_stream
+
+        async def mock_aexit(self, *args):
+            return None
+
         mock_cm = MagicMock()
-        mock_cm.__enter__ = MagicMock(return_value=mock_stream)
-        mock_cm.__exit__ = MagicMock(return_value=None)
+        mock_cm.__aenter__ = mock_aenter
+        mock_cm.__aexit__ = mock_aexit
         mock_client.messages.stream.return_value = mock_cm
 
         tool_def = MagicMock()
         tool_def.name = "generate_report"
 
-        with patch.object(anthropic, "Anthropic", return_value=mock_client):
+        with patch("bibilab.pipeline._shared.AsyncAnthropic", return_value=mock_client):
             events = [e async for e in stream_llm([{"role": "user", "content": "hi"}], cfg, tools=[tool_def])]
 
         deltas = [e for e in events if e.type == "delta"]
@@ -303,10 +334,130 @@ class TestStreamLlMErrorHandling:
         )
 
         mock_client = MagicMock()
-        mock_client.chat.completions.create.side_effect = openai.APIError(
-            message="rate limited", request=MagicMock(), body=None
-        )
 
-        with patch.object(openai, "OpenAI", return_value=mock_client):
+        async def mock_create(*args, **kwargs):
+            raise openai.APIError(message="rate limited", request=MagicMock(), body=None)
+
+        mock_client.chat.completions.create = mock_create
+
+        with patch("bibilab.pipeline._shared.AsyncOpenAI", return_value=mock_client):
             with pytest.raises(openai.APIError):
                 [e async for e in stream_llm([{"role": "user", "content": "hi"}], cfg)]
+
+
+class TestStreamLlMDoneEvent:
+    """stream_llm yields a done event after the stream completes."""
+
+    @pytest.mark.asyncio
+    async def test_stream_llm_openai_yields_done_event(self, tmp_bibilab_home):
+        from bibilab.config import AIConfig
+        from bibilab.pipeline._shared import stream_llm
+
+        cfg = AIConfig(
+            protocol="openai",
+            model="gpt-4o-mini",
+            api_key="sk-test-done",
+            base_url="https://api.openai.com/v1",
+            output_language="en",
+        )
+
+        mock_chunk = MagicMock()
+        mock_chunk.choices = [MagicMock(delta=MagicMock(content="Hi", tool_calls=None), index=0)]
+        mock_response = MagicMock()
+        mock_response.__aiter__ = lambda self: self
+        mock_response.__anext__ = AsyncMock(side_effect=[mock_chunk, StopAsyncIteration()])
+        mock_client = MagicMock()
+
+        async def mock_create(*args, **kwargs):
+            return mock_response
+
+        mock_client.chat.completions.create = mock_create
+
+        with patch("bibilab.pipeline._shared.AsyncOpenAI", return_value=mock_client):
+            events = [e async for e in stream_llm([{"role": "user", "content": "hi"}], cfg)]
+
+        assert any(e.type == "done" for e in events)
+
+    @pytest.mark.asyncio
+    async def test_stream_llm_anthropic_yields_done_event(self, tmp_bibilab_home):
+        from bibilab.config import AIConfig
+        from bibilab.pipeline._shared import stream_llm
+
+        cfg = AIConfig(
+            protocol="anthropic",
+            model="claude-sonnet-4-20250514",
+            api_key="sk-ant-done",
+            base_url="",
+            output_language="en",
+        )
+
+        mock_text_event = MagicMock()
+        mock_text_event.type = "content_block_delta"
+        mock_text_event.delta = MagicMock(type="text_delta", text="Hi")
+
+        mock_message_event = MagicMock()
+        mock_message_event.type = "message_stop"
+
+        mock_stream = MagicMock()
+        mock_stream.__aiter__ = lambda self: self
+        mock_stream.__anext__ = AsyncMock(side_effect=[mock_text_event, mock_message_event, StopAsyncIteration()])
+
+        mock_client = MagicMock()
+
+        async def mock_aenter(self):
+            return mock_stream
+
+        async def mock_aexit(self, *args):
+            return None
+
+        mock_cm = MagicMock()
+        mock_cm.__aenter__ = mock_aenter
+        mock_cm.__aexit__ = mock_aexit
+        mock_client.messages.stream.return_value = mock_cm
+
+        with patch("bibilab.pipeline._shared.AsyncAnthropic", return_value=mock_client):
+            events = [e async for e in stream_llm([{"role": "user", "content": "hi"}], cfg)]
+
+        assert any(e.type == "done" for e in events)
+
+
+class TestStreamLlMConcurrency:
+    """stream_llm does not block the event loop under concurrent requests."""
+
+    @pytest.mark.asyncio
+    async def test_stream_llm_concurrent_requests_run_in_parallel(self, tmp_bibilab_home):
+        import asyncio
+        import time
+
+        from bibilab.config import AIConfig
+        from bibilab.pipeline._shared import stream_llm
+
+        cfg = AIConfig(
+            protocol="openai",
+            model="gpt-4o-mini",
+            api_key="sk-test-concurrent",
+            base_url="https://api.openai.com/v1",
+            output_language="en",
+        )
+
+        async def consume_stream():
+            mock_chunk = MagicMock()
+            mock_chunk.choices = [MagicMock(delta=MagicMock(content="x", tool_calls=None), index=0)]
+            mock_response = MagicMock()
+            mock_response.__aiter__ = lambda self: self
+            mock_response.__anext__ = AsyncMock(side_effect=[mock_chunk, StopAsyncIteration()])
+            mock_client = MagicMock()
+
+            async def mock_create(*args, **kwargs):
+                return mock_response
+
+            mock_client.chat.completions.create = mock_create
+
+            with patch("bibilab.pipeline._shared.AsyncOpenAI", return_value=mock_client):
+                events = [e async for e in stream_llm([{"role": "user", "content": "x"}], cfg)]
+                _ = [e for e in events]
+
+        start = time.monotonic()
+        await asyncio.gather(consume_stream(), consume_stream())
+        elapsed = time.monotonic() - start
+        assert elapsed < 0.18, f"took {elapsed:.2f}s — sync blocking suspected"

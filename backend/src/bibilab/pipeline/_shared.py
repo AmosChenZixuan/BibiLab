@@ -7,6 +7,8 @@ from typing import AsyncGenerator, TypeVar
 
 import anthropic
 import openai
+from anthropic import AsyncAnthropic
+from openai import AsyncOpenAI
 from pydantic import BaseModel
 
 from bibilab.config import AIConfig
@@ -14,7 +16,10 @@ from bibilab.config import AIConfig
 logger = logging.getLogger(__name__)
 
 # Module-level client cache: key -> client instance
-_client_cache: dict[tuple[str, str, str], object] = {}
+_client_cache: dict[tuple[str, str, str | None], object] = {}
+
+# Async client cache: key -> async client instance
+_async_client_cache: dict[tuple[str, str, str | None], object] = {}
 
 _LANG_INSTRUCTION = {
     "en": "Respond in English only. Do not use any other language.",
@@ -128,106 +133,117 @@ async def stream_llm(
     tools: list[ToolDefinition] | None = None,
     llm_timeout: int = 120,
     llm_max_tokens: int = 2048,
+    system: str | None = None,
 ) -> AsyncGenerator[StreamEvent, None]:
     cache_key = (cfg.protocol, cfg.api_key, cfg.base_url)
 
     if cfg.protocol == "anthropic":
-        if cache_key not in _client_cache:
-            _client_cache[cache_key] = anthropic.Anthropic(api_key=cfg.api_key, base_url=cfg.base_url or None)
-        client: anthropic.Anthropic = _client_cache[cache_key]
+        if cache_key not in _async_client_cache:
+            _async_client_cache[cache_key] = AsyncAnthropic(api_key=cfg.api_key, base_url=cfg.base_url or None)
+        client: AsyncAnthropic = _async_client_cache[cache_key]
 
         tool_params = [_to_anthropic_tool(t) for t in tools] if tools else None
-        with client.messages.stream(
-            model=cfg.model,
-            max_tokens=llm_max_tokens,
-            messages=messages,
-            tools=tool_params,
-            timeout=llm_timeout,
-        ) as stream:
-            for event in stream:
-                if event.type == "content_block_delta":
-                    if event.delta.type == "text_delta":
-                        yield StreamEvent(type="delta", content=event.delta.text)
-                elif event.type == "content_block_stop":
-                    block = event.content_block
-                    if block.type == "tool_use":
-                        yield StreamEvent(
-                            type="tool_call",
-                            tool_call=ToolCall(
-                                id=block.id,
-                                name=block.name,
-                                arguments=block.input,
-                            ),
-                        )
+
+        try:
+            async with client.messages.stream(
+                model=cfg.model,
+                max_tokens=llm_max_tokens,
+                messages=messages,
+                tools=tool_params,
+                system=system,
+                timeout=llm_timeout,
+            ) as stream:
+                async for event in stream:
+                    if event.type == "content_block_delta":
+                        if event.delta.type == "text_delta":
+                            yield StreamEvent(type="delta", content=event.delta.text)
+                    elif event.type == "content_block_stop":
+                        block = event.content_block
+                        if block.type == "tool_use":
+                            yield StreamEvent(
+                                type="tool_call",
+                                tool_call=ToolCall(
+                                    id=block.id,
+                                    name=block.name,
+                                    arguments=block.input,
+                                ),
+                            )
+        except Exception as exc:
+            raise exc
+
+        yield StreamEvent(type="done")
     else:
-        if cache_key not in _client_cache:
-            _client_cache[cache_key] = openai.OpenAI(api_key=cfg.api_key, base_url=cfg.base_url or None)
-        client: openai.OpenAI = _client_cache[cache_key]
+        if cache_key not in _async_client_cache:
+            _async_client_cache[cache_key] = AsyncOpenAI(api_key=cfg.api_key, base_url=cfg.base_url or None)
+        client: AsyncOpenAI = _async_client_cache[cache_key]
 
         tool_params = [_to_openai_tool(t) for t in tools] if tools else None
 
-        response = client.chat.completions.create(
-            model=cfg.model,
-            messages=messages,
-            tools=tool_params,
-            max_tokens=llm_max_tokens,
-            timeout=llm_timeout,
-            stream=True,
-        )
+        try:
+            response = await client.chat.completions.create(
+                model=cfg.model,
+                messages=messages,
+                tools=tool_params,
+                max_tokens=llm_max_tokens,
+                timeout=llm_timeout,
+                stream=True,
+            )
 
-        pending: dict[int, dict] = {}
+            pending: dict[int, dict] = {}
 
-        for chunk in response:
-            if not chunk.choices:
-                continue
-            choice = chunk.choices[0]
+            async for chunk in response:
+                if not chunk.choices:
+                    continue
+                choice = chunk.choices[0]
 
-            if choice.delta.content:
-                # Flush pending tool calls before yielding text delta
-                for info in pending.values():
-                    args_str = info["args_str"]
-                    if args_str:
-                        try:
-                            info["arguments"] = json.loads(args_str)
-                        except json.JSONDecodeError:
-                            pass
-                    if info["name"]:
-                        yield StreamEvent(
-                            type="tool_call",
-                            tool_call=ToolCall(
-                                id=info["id"],
-                                name=info["name"],
-                                arguments=info.get("arguments", {}),
-                            ),
-                        )
-                pending.clear()
-                yield StreamEvent(type="delta", content=choice.delta.content)
+                if choice.delta.content:
+                    for info in pending.values():
+                        args_str = info["args_str"]
+                        if args_str:
+                            try:
+                                info["arguments"] = json.loads(args_str)
+                            except json.JSONDecodeError:
+                                pass
+                        if info["name"]:
+                            yield StreamEvent(
+                                type="tool_call",
+                                tool_call=ToolCall(
+                                    id=info["id"],
+                                    name=info["name"],
+                                    arguments=info.get("arguments", {}),
+                                ),
+                            )
+                    pending.clear()
+                    yield StreamEvent(type="delta", content=choice.delta.content)
 
-            if choice.delta.tool_calls:
-                for tc_delta in choice.delta.tool_calls:
-                    idx = tc_delta.index
-                    info = pending.setdefault(idx, {"id": "", "name": "", "args_str": "", "arguments": {}})
-                    if tc_delta.id:
-                        info["id"] = tc_delta.id
-                    if tc_delta.function.name:
-                        info["name"] = tc_delta.function.name
-                    if tc_delta.function.arguments:
-                        info["args_str"] += tc_delta.function.arguments
+                if choice.delta.tool_calls:
+                    for tc_delta in choice.delta.tool_calls:
+                        idx = tc_delta.index
+                        info = pending.setdefault(idx, {"id": "", "name": "", "args_str": "", "arguments": {}})
+                        if tc_delta.id:
+                            info["id"] = tc_delta.id
+                        if tc_delta.function.name:
+                            info["name"] = tc_delta.function.name
+                        if tc_delta.function.arguments:
+                            info["args_str"] += tc_delta.function.arguments
 
-        # Flush any remaining tool calls at end of stream
-        for info in pending.values():
-            args_str = info["args_str"]
-            if args_str:
-                try:
-                    info["arguments"] = json.loads(args_str)
-                except json.JSONDecodeError:
-                    pass
-            if info["name"]:
-                yield StreamEvent(
-                    type="tool_call",
-                    tool_call=ToolCall(
-                        id=info["id"],
-                        name=info["name"],
-                        arguments=info.get("arguments", {}),
-                    ),
-                )
+            for info in pending.values():
+                args_str = info["args_str"]
+                if args_str:
+                    try:
+                        info["arguments"] = json.loads(args_str)
+                    except json.JSONDecodeError:
+                        pass
+                if info["name"]:
+                    yield StreamEvent(
+                        type="tool_call",
+                        tool_call=ToolCall(
+                            id=info["id"],
+                            name=info["name"],
+                            arguments=info.get("arguments", {}),
+                        ),
+                    )
+        except Exception as exc:
+            raise exc
+
+        yield StreamEvent(type="done")

@@ -59,6 +59,10 @@ class ConversationResponse(BaseModel):
         )
 
 
+class ChatRequest(BaseModel):
+    message: str
+
+
 class GetConversationResponse(BaseModel):
     conversation: ConversationResponse | None
     messages: list[MessageResponse]

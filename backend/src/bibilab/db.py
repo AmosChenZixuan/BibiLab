@@ -596,6 +596,14 @@ async def get_conversation_by_list(list_id: str) -> aiosqlite.Row | None:
         return await cursor.fetchone()
 
 
+async def get_or_create_conversation(list_id: str) -> str:
+    """Return existing conversation ID for list_id, or create a new one."""
+    existing = await get_conversation_by_list(list_id)
+    if existing is not None:
+        return existing["id"]
+    return await create_conversation(list_id)
+
+
 async def create_message(
     conversation_id: str,
     role: str,

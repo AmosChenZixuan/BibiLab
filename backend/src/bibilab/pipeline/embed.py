@@ -159,7 +159,7 @@ async def query_chunks(
     if not documents[0]:
         return []
 
-    floor = cfg.rag.relevance_floor
+    floor = cfg.rag.max_distance
 
     # ChromaDB returns results sorted by distance ascending; preserve order
     return [
