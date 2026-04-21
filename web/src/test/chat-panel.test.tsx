@@ -96,46 +96,13 @@ describe("chat panel", () => {
     expect(screen.getByPlaceholderText(/select sources to start chatting/i)).toBeInTheDocument();
   });
 
-  test("shows 'Ask your sources' empty state + suggestion chips when sources selected but no conversation", async () => {
+  test("shows 'Ask your sources' empty state when sources selected but no conversation", async () => {
     renderChatPanel({ selectedSourceIds: ["src-1"], sources: [SOURCE_1] });
 
     await waitFor(() => {
       expect(screen.getByText("Ask your sources")).toBeInTheDocument();
     });
     expect(screen.getByText(/questions are answered from the transcripts/i)).toBeInTheDocument();
-    const chips = screen.getAllByRole("button", { name: /^→/ });
-    expect(chips).toHaveLength(3);
-  });
-
-  test("clicking a suggestion chip sends it as a message", async () => {
-    vi.spyOn(window, "fetch").mockImplementation(() =>
-      Promise.resolve(
-        new Response(
-          new ReadableStream({
-            start(c) {
-              c.enqueue(new TextEncoder().encode('data: {"type":"done"}\n\n'));
-              c.close();
-            },
-          }),
-          { headers: { "Content-Type": "text/event-stream" } },
-        ),
-      ),
-    );
-
-    renderChatPanel({ selectedSourceIds: ["src-1"], sources: [SOURCE_1] });
-
-    await waitFor(() => {
-      expect(screen.getByText("Ask your sources")).toBeInTheDocument();
-    });
-
-    const chips = screen.getAllByRole("button", { name: /^→/ });
-    await userEvent.click(chips[0]);
-
-    await waitFor(() => {
-      // Message appears in the message list region, not just anywhere
-      const region = screen.getByRole("region", { name: /chat messages/i });
-      expect(within(region).getByText("What's the intuition behind backprop?")).toBeInTheDocument();
-    });
   });
 
   test("header shows source count and total duration", () => {

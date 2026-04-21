@@ -59,16 +59,14 @@ interface ChatPanelProps {
 function parseCitations(text: string): { citations: Citation[]; cleanContent: string } {
   const citations: Citation[] = [];
   const regex = /\[([^\]]+?) @ (\d+)s-(\d+)s\]/g;
-  let cleanContent = text;
-  let match;
-  while ((match = regex.exec(text)) !== null) {
+  const cleanContent = text.replace(regex, (_, title, start, end) => {
     citations.push({
-      source_title: match[1],
-      timestamp_start: parseInt(match[2], 10),
-      timestamp_end: parseInt(match[3], 10),
+      source_title: title,
+      timestamp_start: parseInt(start, 10),
+      timestamp_end: parseInt(end, 10),
     });
-    cleanContent = cleanContent.replace(match[0], "");
-  }
+    return "";
+  });
   return { citations, cleanContent };
 }
 
@@ -103,7 +101,6 @@ export function ChatPanel({
   const messageListRef = useRef<HTMLDivElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const lastUserMessageRef = useRef<string>("");
-  const streamingMsgIdRef = useRef<string | null>(null);
   const toolCallRef = useRef<ToolCallData | null>(null);
 
   const hasSources = selectedSourceIds.length > 0;
@@ -200,12 +197,6 @@ export function ChatPanel({
     const id = setTimeout(() => scrollToBottom(), 0);
     return () => clearTimeout(id);
   }, [isStreaming, messages]);
-
-  useEffect(() => {
-    if (!isLoadingHistory && messages.length > 0) {
-      scrollToBottom();
-    }
-  }, [isLoadingHistory, messages]);
 
   async function handleSend(overrideText?: string) {
     const text = (overrideText ?? inputValue).trim();
@@ -389,11 +380,6 @@ export function ChatPanel({
       e.preventDefault();
       isStreaming ? handleStop() : handleSend();
     }
-  }
-
-  function handleSuggestionClick(text: string) {
-    if (!hasSources || isStreaming) return;
-    void handleSend(text);
   }
 
   async function handleClearConfirm() {
