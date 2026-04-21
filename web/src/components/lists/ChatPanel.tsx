@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import ReactMarkdown from "react-markdown";
 import {
   AlertCircle,
   ChevronDown,
@@ -406,7 +407,7 @@ export function ChatPanel({
             </button>
 
             {showClearPopover && (
-              <div className="absolute right-0 top-9 z-30 w-60 rounded-xl border border-border bg-white p-3.5 shadow-lg">
+              <div className="popover absolute right-0 top-9 z-30 w-60 rounded-xl border border-border bg-white p-3.5 shadow-lg">
                 <p className="mb-1 text-sm font-semibold text-ink">{t("chat.clearConfirm.title")}</p>
                 <p className="mb-3 text-xs text-muted">{t("chat.clearConfirm.body")}</p>
                 <div className="flex justify-end gap-1.5">
@@ -485,14 +486,24 @@ export function ChatPanel({
               <div key={msg.id} className={`msg ${msg.role}`}>
                 {msg.role === "user" ? (
                   <>
-                    <div className="bubble user">{msg.content}</div>
+                    <div className="bubble bubble-user">{msg.content}</div>
                     <span className="ts">{msg.timestamp}</span>
                   </>
                 ) : (
                   <>
-                    <div className="bubble assistant">
-                      {msg.content}
-                      {msg.isStreaming && <span className="chat-cursor" />}
+                    <div className="bubble bubble-assistant">
+                      {msg.isStreaming && !msg.content ? (
+                        <span className="chat-typing-indicator">
+                          <span className="chat-typing-dot" />
+                          <span className="chat-typing-dot" />
+                          <span className="chat-typing-dot" />
+                        </span>
+                      ) : (
+                        <>
+                          <ReactMarkdown>{msg.content}</ReactMarkdown>
+                          {msg.isStreaming && <span className="chat-cursor" />}
+                        </>
+                      )}
                     </div>
                     {msg.citations.length > 0 && (
                       <div className="cites">
@@ -542,7 +553,7 @@ export function ChatPanel({
             type="button"
             onClick={scrollToBottom}
             aria-label="Scroll to bottom"
-            className="absolute bottom-14 left-1/2 flex h-8 w-8 -translate-x-1/2 items-center justify-center rounded-full border border-border bg-white shadow-lg transition hover:-translate-x-1/2 hover:-translate-y-px"
+            className="stb absolute bottom-14 left-1/2 flex h-8 w-8 -translate-x-1/2 items-center justify-center rounded-full border border-border bg-white shadow-lg transition hover:-translate-x-1/2 hover:-translate-y-px"
           >
             <ChevronDown size={16} className="text-ink" />
           </button>
@@ -550,9 +561,9 @@ export function ChatPanel({
       </div>
 
       {/* Input bar */}
-      <div className="shrink-0 border-t border-border bg-white/55 px-3.5 py-3">
+      <div className="shrink-0 border-t border-border bg-white/55 px-3.5 py-5">
         <div className="relative">
-          <div className="relative border border-border bg-white/90 rounded-2xl transition focus-within:border-blue/25 focus-within:ring-2 focus-within:ring-sky/18">
+          <div className={`input-wrap${!hasSources || isStreaming ? " disabled" : ""}`}>
             <textarea
               ref={textareaRef}
               value={inputValue}
@@ -561,8 +572,7 @@ export function ChatPanel({
               placeholder={placeholder}
               disabled={!hasSources || isStreaming}
               rows={1}
-              className="w-full resize-none border-0 bg-transparent px-3.5 py-2.5 pr-11 text-sm text-ink placeholder:text-muted focus:outline-none disabled:cursor-not-allowed disabled:bg-surface/70 disabled:text-muted"
-              style={{ maxHeight: "88px" }}
+              className="w-full resize-none border-0 bg-transparent py-3 text-sm text-ink placeholder:text-muted focus:outline-none disabled:cursor-not-allowed disabled:text-muted"
             />
 
             <button
@@ -570,20 +580,16 @@ export function ChatPanel({
               onClick={isStreaming ? handleStop : () => void handleSend()}
               disabled={!hasSources || (!isStreaming && !inputValue.trim())}
               aria-label={isStreaming ? "Stop" : "Send"}
-              className={`absolute bottom-1 right-1 flex h-7 w-7 items-center justify-center rounded-full text-white transition ${
+              className={`absolute bottom-1.5 right-1.5 flex items-center justify-center rounded-full text-white transition ${
                 isStreaming
                   ? "bg-pink hover:brightness-110"
                   : "bg-blue hover:brightness-105 disabled:bg-border disabled:cursor-not-allowed"
               }`}
+              style={{ width: "30px", height: "30px" }}
             >
               {isStreaming ? <Square size={12} fill="currentColor" /> : <SendHorizontal size={14} />}
             </button>
           </div>
-        </div>
-
-        <div className="mt-1.5 flex justify-between px-0.5 font-mono text-xs text-muted">
-          <span>{t("chat.input.hint.enter")}</span>
-          <span>{t("chat.input.hint.shiftEnter")}</span>
         </div>
       </div>
     </div>

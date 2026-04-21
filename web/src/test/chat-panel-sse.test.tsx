@@ -351,4 +351,99 @@ describe("chat panel — conversation history (phase 6.3)", () => {
     const messageList = screen.getByRole("region");
     expect(messageList).toHaveClass(/opacity-50/);
   });
+
+  test("assistant message renders markdown as HTML (bold, code, lists)", async () => {
+    vi.spyOn(window, "fetch").mockImplementation(() =>
+      Promise.resolve(
+        makeSseStream([
+          'data: {"type":"delta","content":"The chain rule is **fundamental**.\\n\\nTwo components:\\n- Local gradient\\n- Upstream gradient\\n\\nCode: `x = 1`"}',
+          '\n\n',
+          'data: {"type":"done"}\n\n',
+        ]),
+      ),
+    );
+
+    renderChatPanel({
+      selectedSourceIds: ["src-1"],
+      sources: [SOURCE_1],
+      listId: "list-1",
+    });
+
+    const textarea = screen.getByRole("textbox");
+    await userEvent.type(textarea, "Explain backprop");
+    await userEvent.keyboard("{Enter}");
+
+    await waitFor(() => {
+      const strong = screen.getByText("fundamental");
+      expect(strong.tagName).toBe("STRONG");
+    });
+
+    const code = screen.getByText("x = 1");
+    expect(code.tagName).toBe("CODE");
+
+    expect(screen.getByText("Local gradient")).toBeInTheDocument();
+  });
+
+  test("citations render as cite chips outside bubble with correct class", async () => {
+    vi.spyOn(window, "fetch").mockImplementation(() =>
+      Promise.resolve(
+        makeSseStream([
+          'data: {"type":"delta","content":"Backprop uses the chain rule. [3Blue1Brown @ 118s-154s]"}',
+          '\n\n',
+          'data: {"type":"done"}\n\n',
+        ]),
+      ),
+    );
+
+    renderChatPanel({
+      selectedSourceIds: ["src-1"],
+      sources: [SOURCE_1],
+      listId: "list-1",
+    });
+
+    const textarea = screen.getByRole("textbox");
+    await userEvent.type(textarea, "What is backprop?");
+    await userEvent.keyboard("{Enter}");
+
+    await waitFor(() => {
+      const citeChip = document.querySelector(".cite");
+      expect(citeChip).not.toBeNull();
+      expect(citeChip).toHaveTextContent("3Blue1Brown");
+      expect(citeChip).toHaveTextContent("1:58–2:34");
+    });
+  });
+
+  test("bubble uses bubble-user for user and bubble-assistant for assistant", async () => {
+    vi.spyOn(window, "fetch").mockImplementation(() =>
+      Promise.resolve(
+        makeSseStream([
+          'data: {"type":"delta","content":"Answer."}',
+          '\n\n',
+          'data: {"type":"done"}\n\n',
+        ]),
+      ),
+    );
+
+    renderChatPanel({
+      selectedSourceIds: ["src-1"],
+      sources: [SOURCE_1],
+      listId: "list-1",
+    });
+
+    const textarea = screen.getByRole("textbox");
+    await userEvent.type(textarea, "Hello");
+    await userEvent.keyboard("{Enter}");
+
+    await waitFor(() => {
+      const userBubble = document.querySelector(".bubble-user");
+      expect(userBubble).not.toBeNull();
+      expect(userBubble).toHaveTextContent("Hello");
+    });
+
+    await waitFor(() => {
+      const assistantBubble = document.querySelector(".bubble-assistant");
+      expect(assistantBubble).not.toBeNull();
+      expect(assistantBubble).toHaveTextContent("Answer.");
+    });
+  });
 });
