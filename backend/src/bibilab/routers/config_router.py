@@ -34,7 +34,20 @@ async def get_config_handler(cfg: BibilabConfig = Depends(get_config)) -> dict:
 
 @router.put("/config")
 async def put_config(patch: dict[str, Any], cfg: BibilabConfig = Depends(get_config)) -> dict:
+    _unmask_patch(patch)
     merged = deep_merge(cfg.model_dump(), patch)
     new_cfg = BibilabConfig.model_validate(merged)
     save_config(new_cfg)
     return _mask(new_cfg.model_dump())
+
+
+def _unmask_patch(patch: dict[str, Any]) -> None:
+    """Remove masked sentinel values from patch so they don't overwrite real values."""
+    ai = patch.get("ai")
+    if ai and ai.get("api_key") == _MASKED:
+        ai.pop("api_key", None)
+    accounts = patch.get("accounts")
+    if accounts:
+        bilibili = accounts.get("bilibili")
+        if bilibili and bilibili.get("cookie") == _MASKED:
+            bilibili.pop("cookie", None)
