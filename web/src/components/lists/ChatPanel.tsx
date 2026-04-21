@@ -567,7 +567,7 @@ export function ChatPanel({
 
             <button
               type="button"
-              onClick={isStreaming ? handleStop : handleSend}
+              onClick={isStreaming ? handleStop : () => void handleSend()}
               disabled={!hasSources || (!isStreaming && !inputValue.trim())}
               aria-label={isStreaming ? "Stop" : "Send"}
               className={`absolute bottom-1 right-1 flex h-7 w-7 items-center justify-center rounded-full text-white transition ${
