@@ -142,16 +142,17 @@ async def stream_llm(
             _async_client_cache[cache_key] = AsyncAnthropic(api_key=cfg.api_key, base_url=cfg.base_url or None)
         client: AsyncAnthropic = _async_client_cache[cache_key]
 
-        tool_params = [_to_anthropic_tool(t) for t in tools] if tools else None
-
-        async with client.messages.stream(
+        kwargs = dict(
             model=cfg.model,
             max_tokens=llm_max_tokens,
             messages=messages,
-            tools=tool_params,
             system=system,
             timeout=llm_timeout,
-        ) as stream:
+        )
+        if tools:
+            kwargs["tools"] = [_to_anthropic_tool(t) for t in tools]
+
+        async with client.messages.stream(**kwargs) as stream:
             async for event in stream:
                 if event.type == "content_block_delta":
                     if event.delta.type == "text_delta":
@@ -218,10 +219,11 @@ async def stream_llm(
                         info = pending.setdefault(idx, {"id": "", "name": "", "args_str": "", "arguments": {}})
                         if tc_delta.id:
                             info["id"] = tc_delta.id
-                        if tc_delta.function.name:
-                            info["name"] = tc_delta.function.name
-                        if tc_delta.function.arguments:
-                            info["args_str"] += tc_delta.function.arguments
+                        if tc_delta.function:
+                            if tc_delta.function.name:
+                                info["name"] = tc_delta.function.name
+                            if tc_delta.function.arguments:
+                                info["args_str"] += tc_delta.function.arguments
 
             for info in pending.values():
                 args_str = info["args_str"]

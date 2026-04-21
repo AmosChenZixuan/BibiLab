@@ -1,5 +1,6 @@
 """Conversation summary compression — roll up old messages into a summary."""
 
+import asyncio
 import logging
 
 from bibilab.config import BibilabConfig
@@ -60,7 +61,8 @@ async def maybe_compress_conversation(
         )
 
     try:
-        new_summary = _call_llm(
+        new_summary = await asyncio.to_thread(
+            _call_llm,
             prompt=compression_prompt,
             cfg=cfg.ai,
             llm_max_tokens=SUMMARY_MAX_TOKENS,

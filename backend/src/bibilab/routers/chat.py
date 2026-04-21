@@ -14,6 +14,9 @@ from bibilab.db import (
     get_recent_messages,
     get_sources_for_list,
 )
+from bibilab.db import (
+    get_conversation as get_conv_row,
+)
 from bibilab.models.chat import (
     ChatRequest,
     ConversationResponse,
@@ -97,6 +100,9 @@ async def chat_endpoint(
 
     conversation_id = await get_or_create_conversation(list_id)
 
+    conv_row = await get_conv_row(conversation_id)
+    existing_summary = conv_row["summary"] if conv_row else None
+
     history_rows = await get_recent_messages(conversation_id, limit=100)
     history = [{"role": row["role"], "content": row["content"]} for row in history_rows]
 
@@ -115,6 +121,10 @@ async def chat_endpoint(
         rag_context = _format_rag_context(rag_chunks, request.message)
 
     system_parts = [GROUNDING_SYSTEM_PROMPT]
+    if existing_summary:
+        system_parts.append(
+            f"\n\nEarlier conversation summary:\n{existing_summary}",
+        )
     if rag_context:
         system_parts.append("\n\n" + rag_context)
     system_message = "\n".join(system_parts)
