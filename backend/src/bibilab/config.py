@@ -80,12 +80,17 @@ class BackendConfig(BaseModel):
     ]
 
 
+class RagConfig(BaseModel):
+    relevance_floor: float = 0.3
+
+
 class BibilabConfig(BaseModel):
     accounts: AccountsConfig = AccountsConfig()
     ai: AIConfig = AIConfig()
     transcription: TranscriptionConfig = TranscriptionConfig()
     vision: VisionConfig = VisionConfig()
     backend: BackendConfig = BackendConfig()
+    rag: RagConfig = RagConfig()
     # ChromaDB
     transcript_collection_name: str = "bibilab_transcripts"
 
