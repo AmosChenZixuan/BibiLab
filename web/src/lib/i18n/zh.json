@@ -230,7 +230,12 @@
       "clear": "清空"
     },
     "interrupted": "回答被中断",
-    "retry": "重试"
+    "retry": "重试",
+    "subtitle": {
+      "source": "source",
+      "sources": "sources",
+      "total": "total"
+    }
   },
   "common": {
     "cancel": "取消",

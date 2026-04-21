@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import {
   AlertCircle,
@@ -25,9 +25,9 @@ function formatDuration(seconds: number): string {
   return `${m}m`;
 }
 
-function formatSubtitle(sourceCount: number, totalSeconds: number): string {
-  const srcLabel = sourceCount === 1 ? "source" : "sources";
-  return `${sourceCount} ${srcLabel} · ${formatDuration(totalSeconds)} total`;
+function formatSubtitle(t: (key: string) => string, sourceCount: number, totalSeconds: number): string {
+  const srcLabel = sourceCount === 1 ? t("chat.subtitle.source") : t("chat.subtitle.sources");
+  return `${sourceCount} ${srcLabel} · ${formatDuration(totalSeconds)} ${t("chat.subtitle.total")}`;
 }
 
 type Citation = { source_title: string; timestamp_start: number; timestamp_end: number };
@@ -132,8 +132,9 @@ export function ChatPanel({
     const ta = textareaRef.current;
     if (!ta) return;
     updateTextareaHeight(ta);
-    ta.addEventListener("input", () => updateTextareaHeight(ta));
-    return () => ta.removeEventListener("input", () => updateTextareaHeight(ta));
+    const handler = () => updateTextareaHeight(ta);
+    ta.addEventListener("input", handler);
+    return () => ta.removeEventListener("input", handler);
   }, []);
 
   useEffect(() => {
@@ -366,7 +367,6 @@ export function ChatPanel({
   function handleStop() {
     abortControllerRef.current?.abort();
     abortControllerRef.current = null;
-    setIsStreaming(false);
   }
 
   function handleRetry() {
@@ -436,7 +436,7 @@ export function ChatPanel({
 
         {hasSources && (
           <div className="mt-0.5 text-xs text-muted font-sans">
-            {formatSubtitle(selectedSourceIds.length, totalDuration)}
+            {formatSubtitle(t, selectedSourceIds.length, totalDuration)}
           </div>
         )}
       </div>

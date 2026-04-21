@@ -1,7 +1,7 @@
 import json
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 def _parse_datetime(value: str | datetime) -> datetime:
@@ -53,7 +53,7 @@ class ConversationResponse(BaseModel):
 
 
 class ChatRequest(BaseModel):
-    message: str
+    message: str = Field(..., max_length=10000)
     source_ids: list[str] | None = None
 
 

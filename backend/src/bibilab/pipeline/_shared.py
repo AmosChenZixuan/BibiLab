@@ -197,23 +197,6 @@ async def stream_llm(
             choice = chunk.choices[0]
 
             if choice.delta.content:
-                for info in pending.values():
-                    args_str = info["args_str"]
-                    if args_str:
-                        try:
-                            info["arguments"] = json.loads(args_str)
-                        except json.JSONDecodeError:
-                            pass
-                    if info["name"]:
-                        yield StreamEvent(
-                            type="tool_call",
-                            tool_call=ToolCall(
-                                id=info["id"],
-                                name=info["name"],
-                                arguments=info.get("arguments", {}),
-                            ),
-                        )
-                pending.clear()
                 yield StreamEvent(type="delta", content=choice.delta.content)
 
             if choice.delta.tool_calls:

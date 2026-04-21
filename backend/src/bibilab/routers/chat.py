@@ -8,6 +8,7 @@ from bibilab.config import BibilabConfig, get_config
 from bibilab.db import (
     create_message,
     delete_conversation,
+    delete_messages_by_ids,
     get_conversation_by_list,
     get_list,
     get_or_create_conversation,
@@ -141,12 +142,13 @@ async def chat_endpoint(
 
     ui_lang = http_request.headers.get("X-UI-Lang", "en")
 
-    await create_message(
+    user_msg_row = await create_message(
         conversation_id=conversation_id,
         role="user",
         content=request.message,
         metadata=None,
     )
+    user_msg_id = user_msg_row["id"]
 
     first_response_deltas: list[str] = []
     tool_calls: list = []
@@ -154,19 +156,24 @@ async def chat_endpoint(
     async def event_generator():
         nonlocal first_response_deltas, tool_calls
 
-        async for event in stream_llm(
-            messages=messages_for_llm,
-            cfg=cfg.ai,
-            tools=[GENERATE_REPORT_TOOL],
-            system=system_message if system_message.strip() else None,
-        ):
-            if event.type == "delta":
-                first_response_deltas.append(event.content or "")
-                yield f"data: {json.dumps({'type': 'delta', 'content': event.content})}\n\n"
-            elif event.type == "tool_call":
-                tool_calls.append(event.tool_call)
-            elif event.type == "done":
-                yield f"data: {json.dumps({'type': 'done'})}\n\n"
+        try:
+            async for event in stream_llm(
+                messages=messages_for_llm,
+                cfg=cfg.ai,
+                tools=[GENERATE_REPORT_TOOL],
+                system=system_message if system_message.strip() else None,
+            ):
+                if event.type == "delta":
+                    first_response_deltas.append(event.content or "")
+                    yield f"data: {json.dumps({'type': 'delta', 'content': event.content})}\n\n"
+                elif event.type == "tool_call":
+                    tool_calls.append(event.tool_call)
+                elif event.type == "done":
+                    yield f"data: {json.dumps({'type': 'done'})}\n\n"
+        except Exception as exc:
+            await delete_messages_by_ids([user_msg_id])
+            yield f"data: {json.dumps({'type': 'error', 'message': str(exc)})}\n\n"
+            return
 
         if not tool_calls:
             full_response = "".join(first_response_deltas)

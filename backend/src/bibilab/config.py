@@ -81,7 +81,7 @@ class BackendConfig(BaseModel):
 
 
 class RagConfig(BaseModel):
-    max_distance: float = 1.0
+    max_distance: float = 0.3
 
 
 class BibilabConfig(BaseModel):

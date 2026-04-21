@@ -230,7 +230,12 @@
       "clear": "Clear"
     },
     "interrupted": "Response interrupted",
-    "retry": "Retry"
+    "retry": "Retry",
+    "subtitle": {
+      "source": "source",
+      "sources": "sources",
+      "total": "total"
+    }
   },
   "common": {
     "cancel": "Cancel",

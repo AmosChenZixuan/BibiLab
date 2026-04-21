@@ -163,6 +163,7 @@ async def bootstrap_db() -> None:
 async def get_db() -> AsyncGenerator[aiosqlite.Connection, None]:
     db = await aiosqlite.connect(get_db_path())
     db.row_factory = aiosqlite.Row
+    await db.execute("PRAGMA foreign_keys = ON")
     try:
         yield db
     finally:
@@ -217,15 +218,6 @@ async def get_list_with_display(list_id: str) -> aiosqlite.Row | None:
 
 async def delete_list(list_id: str) -> None:
     async with get_db() as db:
-        cursor = await db.execute(
-            "SELECT id FROM conversations WHERE list_id=?",
-            (list_id,),
-        )
-        conv_row = await cursor.fetchone()
-        if conv_row is not None:
-            conv_id = conv_row["id"]
-            await db.execute("DELETE FROM messages WHERE conversation_id=?", (conv_id,))
-            await db.execute("DELETE FROM conversations WHERE id=?", (conv_id,))
         await db.execute("DELETE FROM lists WHERE id=?", (list_id,))
         await db.commit()
 
