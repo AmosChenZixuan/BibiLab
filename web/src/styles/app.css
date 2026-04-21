@@ -8,6 +8,15 @@
   40% { transform: scale(1); opacity: 1; }
 }
 
+@keyframes chat-typing-bounce {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+  30% { transform: translateY(-3px); opacity: 1; }
+}
+
+@keyframes chat-cursor-blink {
+  50% { opacity: 0; }
+}
+
 /* ListCard grid pattern overlay */
 .list-card-grid-pattern {
   background-image:
@@ -22,6 +31,7 @@
   --color-pink:    #f08bb9;       /* accent — gradient start, eyebrow */
   --color-blue:    #5b7faa;       /* accent — links, active states, gradient end */
   --color-sky:     #7dd9ff;       /* highlight tints via opacity modifier */
+  --color-sky-35:  rgba(125, 217, 255, 0.35);  /* user bubble border */
   --color-border:  rgba(100, 116, 139, 0.18);  /* universal panel/input border — slate-500/18 */
   --color-scrim: rgba(17, 35, 63, 0.3);
   --color-surface: #e2e8f0;       /* placeholder backgrounds — slate-200 */
@@ -67,6 +77,39 @@
   /* DigestAccordion loading dots animation class */
   .digest-loading-dot {
     animation: digest-loading-bounce 1.2s ease-in-out infinite;
+  }
+
+  /* Chat bubble tail overrides — 6px on the bubble's "tail" corner */
+  .bubble-user {
+    border-bottom-right-radius: 6px;
+  }
+
+  .bubble-assistant {
+    border-bottom-left-radius: 6px;
+  }
+
+  /* Chat typing indicator dot animation */
+  .chat-typing-dot {
+    animation: chat-typing-bounce 1.2s ease-in-out infinite;
+  }
+
+  .chat-typing-dot:nth-child(2) {
+    animation-delay: 0.15s;
+  }
+
+  .chat-typing-dot:nth-child(3) {
+    animation-delay: 0.3s;
+  }
+
+  /* Chat streaming cursor */
+  .chat-cursor {
+    display: inline-block;
+    width: 2px;
+    height: 14px;
+    background: var(--color-blue);
+    vertical-align: text-bottom;
+    margin-left: 2px;
+    animation: chat-cursor-blink 1s step-end infinite;
   }
 
   a {
