@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 
 import { useLanguage } from "@/app/LanguageContext";
+import { useJobActivity } from "@/components/jobs/JobActivityProvider";
 import type { Source } from "@/lib/types";
 import { api } from "@/lib/api";
 
@@ -36,7 +37,7 @@ function formatSubtitle(sourceCount: number, totalSeconds: number): string {
 }
 
 type Citation = { source_title: string; timestamp_start: number; timestamp_end: number };
-type ToolResult = { artifact_id: string; name: string; type: string };
+type ToolResult = { artifact_id: string; job_id?: string; name: string; type: string };
 
 interface ToolCallData {
   name: string;
@@ -87,6 +88,7 @@ export function ChatPanel({
   onArtifactGenerated,
 }: ChatPanelProps) {
   const { t } = useLanguage();
+  const { trackJobs } = useJobActivity();
   const [inputValue, setInputValue] = useState("");
   const [messages, setMessages] = useState<MessageUI[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
@@ -129,10 +131,10 @@ export function ChatPanel({
     const ta = textareaRef.current;
     if (!ta) return;
 
+    const maxHeight = 88;
     const updateHeight = () => {
-      ta.style.height = "auto";
+      ta.style.height = "0";
       const scrollHeight = ta.scrollHeight;
-      const maxHeight = 88;
       ta.style.height = `${Math.min(scrollHeight, maxHeight)}px`;
       ta.style.overflowY = scrollHeight > maxHeight ? "auto" : "hidden";
     };
@@ -192,6 +194,12 @@ export function ChatPanel({
     const id = setTimeout(() => scrollToBottom(), 0);
     return () => clearTimeout(id);
   }, [isStreaming, messages]);
+
+  useEffect(() => {
+    if (!isLoadingHistory && messages.length > 0) {
+      scrollToBottom();
+    }
+  }, [isLoadingHistory, messages]);
 
   async function handleSend(overrideText?: string) {
     const text = (overrideText ?? inputValue).trim();
@@ -272,6 +280,9 @@ export function ChatPanel({
         } else if (event.type === "tool_result") {
           const result = event.result as ToolResult;
           toolCallRef.current = { name: "generate_report", result };
+          if (result.job_id) {
+            trackJobs([{ id: result.job_id, producer: "artifact", label: result.type, contextKey: listId }]);
+          }
           onArtifactGenerated(result.artifact_id, result.type, selectedSourceIds);
           setMessages((prev) =>
             prev.map((m) =>

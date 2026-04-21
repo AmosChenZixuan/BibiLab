@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
 import { LanguageProvider } from "@/app/LanguageContext";
+import { JobActivityProvider } from "@/components/jobs/JobActivityProvider";
 import { ChatPanel } from "@/components/lists/ChatPanel";
 import type { Source } from "@/lib/types";
 
@@ -56,13 +57,15 @@ function makeSseStream(events: string[]) {
 function renderChatPanel(props?: Partial<React.ComponentProps<typeof ChatPanel>>) {
   return render(
     <LanguageProvider>
-      <ChatPanel
-        selectedSourceIds={[]}
-        sources={[]}
-        listId="list-1"
-        onArtifactGenerated={vi.fn()}
-        {...props}
-      />
+      <JobActivityProvider>
+        <ChatPanel
+          selectedSourceIds={[]}
+          sources={[]}
+          listId="list-1"
+          onArtifactGenerated={vi.fn()}
+          {...props}
+        />
+      </JobActivityProvider>
     </LanguageProvider>,
   );
 }

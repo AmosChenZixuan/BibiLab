@@ -39,7 +39,7 @@ async def execute_generate_report(
     ui_lang: str,
 ) -> dict:
     artifact_id = str(uuid.uuid4())
-    await create_job(
+    job_id = await create_job(
         type="artifact",
         meta={
             "artifact_id": artifact_id,
@@ -52,6 +52,7 @@ async def execute_generate_report(
     )
     return {
         "artifact_id": artifact_id,
+        "job_id": job_id,
         "name": artifact_type,
         "type": artifact_type,
     }
