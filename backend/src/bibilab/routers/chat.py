@@ -2,6 +2,7 @@ import json
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
+from starlette.background import BackgroundTask
 
 from bibilab.config import BibilabConfig, get_config
 from bibilab.db import (
@@ -20,6 +21,7 @@ from bibilab.models.chat import (
     MessageResponse,
 )
 from bibilab.pipeline._shared import stream_llm
+from bibilab.pipeline.chat_summary import maybe_compress_conversation
 from bibilab.pipeline.chat_tools import GENERATE_REPORT_TOOL, execute_tool
 from bibilab.pipeline.embed import query_chunks
 
@@ -218,4 +220,5 @@ async def chat_endpoint(
         event_generator(),
         media_type="text/event-stream",
         headers={"X-Accel-Buffering": "no"},
+        background=BackgroundTask(maybe_compress_conversation, conversation_id, cfg),
     )

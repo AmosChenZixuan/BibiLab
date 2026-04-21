@@ -16,6 +16,10 @@ def get_db_path() -> Path:
     return bibilab.config.bibilab_home() / "bibilab.db"
 
 
+def _in_placeholders(ids: list[str]) -> str:
+    return ",".join("?" * len(ids)) if ids else ""
+
+
 _CREATE_LISTS = """
 CREATE TABLE IF NOT EXISTS lists (
     id                   TEXT PRIMARY KEY,
@@ -357,7 +361,7 @@ async def get_video_ids_for_sources(source_ids: list[str]) -> dict[str, str]:
     if not source_ids:
         return {}
     async with get_db() as db:
-        placeholders = ",".join("?" * len(source_ids))
+        placeholders = _in_placeholders(source_ids)
         cursor = await db.execute(
             f"SELECT id, video_id FROM sources WHERE id IN ({placeholders})",
             source_ids,
@@ -438,7 +442,7 @@ async def get_video_statuses(
 ) -> dict[str, Literal["new", "processed", "in_progress", "needs_auth"]]:
     if not video_ids:
         return {}
-    placeholders = ",".join("?" * len(video_ids))
+    placeholders = _in_placeholders(video_ids)
 
     async with get_db() as db:
         cursor = await db.execute(
@@ -695,6 +699,58 @@ async def update_message_metadata(message_id: str, metadata: dict[str, Any]) -> 
             (json.dumps(metadata), message_id),
         )
         await db.commit()
+
+
+async def get_message_count(conversation_id: str) -> int:
+    async with get_db() as db:
+        cursor = await db.execute(
+            "SELECT COUNT(*) FROM messages WHERE conversation_id=?",
+            (conversation_id,),
+        )
+        row = await cursor.fetchone()
+        return row[0]
+
+
+async def get_messages_beyond_window(
+    conversation_id: str,
+    window_size: int,
+) -> list[aiosqlite.Row]:
+    async with get_db() as db:
+        cursor = await db.execute(
+            """
+            SELECT id, conversation_id, role, content, metadata, created_at
+            FROM (
+                SELECT *, ROW_NUMBER() OVER (ORDER BY created_at DESC, id DESC) AS _rn
+                FROM messages
+                WHERE conversation_id=?
+            )
+            WHERE _rn > ?
+            ORDER BY created_at ASC, id ASC
+            """,
+            (conversation_id, window_size),
+        )
+        return list(await cursor.fetchall())
+
+
+async def delete_messages_by_ids(message_ids: list[str]) -> None:
+    if not message_ids:
+        return
+    async with get_db() as db:
+        placeholders = _in_placeholders(message_ids)
+        await db.execute(
+            f"DELETE FROM messages WHERE id IN ({placeholders})",
+            message_ids,
+        )
+        await db.commit()
+
+
+async def get_conversation(conversation_id: str) -> aiosqlite.Row | None:
+    async with get_db() as db:
+        cursor = await db.execute(
+            "SELECT id, list_id, summary, created_at, updated_at FROM conversations WHERE id=?",
+            (conversation_id,),
+        )
+        return await cursor.fetchone()
 
 
 async def delete_conversation(conversation_id: str) -> None:
