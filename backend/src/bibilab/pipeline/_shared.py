@@ -16,10 +16,10 @@ from bibilab.config import AIConfig
 logger = logging.getLogger(__name__)
 
 # Module-level client cache: key -> client instance
-_client_cache: dict[tuple[str, str, str | None], object] = {}
+_client_cache: dict[tuple[str, str, str, str | None], object] = {}
 
 # Async client cache: key -> async client instance
-_async_client_cache: dict[tuple[str, str, str | None], object] = {}
+_async_client_cache: dict[tuple[str, str, str, str | None], object] = {}
 
 _LANG_INSTRUCTION = {
     "en": "Respond in English only. Do not use any other language.",
@@ -48,7 +48,7 @@ def _call_llm(
     llm_max_tokens: int = 2048,
 ) -> str:
     """Dispatch to the appropriate LLM protocol. Returns raw text response."""
-    cache_key = (cfg.protocol, cfg.api_key, cfg.base_url)
+    cache_key = (cfg.protocol, cfg.api_key, cfg.model, cfg.base_url)
 
     if cfg.protocol == "anthropic":
         if cache_key not in _client_cache:
@@ -135,7 +135,7 @@ async def stream_llm(
     llm_max_tokens: int = 2048,
     system: str | None = None,
 ) -> AsyncGenerator[StreamEvent, None]:
-    cache_key = (cfg.protocol, cfg.api_key, cfg.base_url)
+    cache_key = (cfg.protocol, cfg.api_key, cfg.model, cfg.base_url)
 
     if cfg.protocol == "anthropic":
         if cache_key not in _async_client_cache:
@@ -144,33 +144,29 @@ async def stream_llm(
 
         tool_params = [_to_anthropic_tool(t) for t in tools] if tools else None
 
-        try:
-            async with client.messages.stream(
-                model=cfg.model,
-                max_tokens=llm_max_tokens,
-                messages=messages,
-                tools=tool_params,
-                system=system,
-                timeout=llm_timeout,
-            ) as stream:
-                async for event in stream:
-                    if event.type == "content_block_delta":
-                        if event.delta.type == "text_delta":
-                            yield StreamEvent(type="delta", content=event.delta.text)
-                    elif event.type == "content_block_stop":
-                        block = event.content_block
-                        if block.type == "tool_use":
-                            yield StreamEvent(
-                                type="tool_call",
-                                tool_call=ToolCall(
-                                    id=block.id,
-                                    name=block.name,
-                                    arguments=block.input,
-                                ),
-                            )
-        except Exception as exc:
-            raise exc
-
+        async with client.messages.stream(
+            model=cfg.model,
+            max_tokens=llm_max_tokens,
+            messages=messages,
+            tools=tool_params,
+            system=system,
+            timeout=llm_timeout,
+        ) as stream:
+            async for event in stream:
+                if event.type == "content_block_delta":
+                    if event.delta.type == "text_delta":
+                        yield StreamEvent(type="delta", content=event.delta.text)
+                elif event.type == "content_block_stop":
+                    block = event.content_block
+                    if block.type == "tool_use":
+                        yield StreamEvent(
+                            type="tool_call",
+                            tool_call=ToolCall(
+                                id=block.id,
+                                name=block.name,
+                                arguments=block.input,
+                            ),
+                        )
         yield StreamEvent(type="done")
     else:
         if cache_key not in _async_client_cache:
@@ -243,7 +239,7 @@ async def stream_llm(
                             arguments=info.get("arguments", {}),
                         ),
                     )
-        except Exception as exc:
-            raise exc
+        except Exception:
+            raise
 
         yield StreamEvent(type="done")

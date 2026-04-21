@@ -597,11 +597,28 @@ async def get_conversation_by_list(list_id: str) -> aiosqlite.Row | None:
 
 
 async def get_or_create_conversation(list_id: str) -> str:
-    """Return existing conversation ID for list_id, or create a new one."""
-    existing = await get_conversation_by_list(list_id)
-    if existing is not None:
-        return existing["id"]
-    return await create_conversation(list_id)
+    """Return existing conversation ID for list_id, or create a new one.
+
+    Uses INSERT ... ON CONFLICT to avoid a TOCTOU race between concurrent callers.
+    """
+    conversation_id = str(uuid.uuid4())
+    now = _now()
+    async with get_db() as db:
+        await db.execute(
+            """
+            INSERT INTO conversations (id, list_id, summary, created_at, updated_at)
+            VALUES (?, ?, NULL, ?, ?)
+            ON CONFLICT(list_id) DO UPDATE SET updated_at=updated_at
+            """,
+            (conversation_id, list_id, now, now),
+        )
+        await db.commit()
+        cursor = await db.execute(
+            "SELECT id FROM conversations WHERE list_id=?",
+            (list_id,),
+        )
+        row = await cursor.fetchone()
+        return row["id"]
 
 
 async def create_message(
@@ -638,11 +655,11 @@ async def get_recent_messages(
         if before_id is not None:
             cursor = await db.execute(
                 """
-                SELECT * FROM messages
-                WHERE conversation_id=? AND rowid < (
-                    SELECT rowid FROM messages WHERE id=?
+                SELECT id, conversation_id, role, content, metadata, created_at FROM messages
+                WHERE conversation_id=? AND (created_at, id) < (
+                    SELECT created_at, id FROM messages WHERE id=?
                 )
-                ORDER BY rowid DESC
+                ORDER BY created_at DESC, id DESC
                 LIMIT ?
                 """,
                 (conversation_id, before_id, limit),
@@ -650,9 +667,9 @@ async def get_recent_messages(
         else:
             cursor = await db.execute(
                 """
-                SELECT * FROM messages
+                SELECT id, conversation_id, role, content, metadata, created_at FROM messages
                 WHERE conversation_id=?
-                ORDER BY rowid DESC
+                ORDER BY created_at DESC, id DESC
                 LIMIT ?
                 """,
                 (conversation_id, limit),
