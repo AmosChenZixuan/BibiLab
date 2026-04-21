@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertCircle,
   ChevronDown,
+  FileText,
   MessageSquare,
   MessageSquareOff,
   RotateCcw,
@@ -12,6 +13,7 @@ import {
 
 import { useLanguage } from "@/app/LanguageContext";
 import type { Source } from "@/lib/types";
+import { api } from "@/lib/api";
 
 const SUGGESTION_CHIPS = [
   "What's the intuition behind backprop?",
@@ -32,29 +34,80 @@ function formatSubtitle(sourceCount: number, totalSeconds: number): string {
   return `${sourceCount} ${srcLabel} · ${formatDuration(totalSeconds)} total`;
 }
 
+type Citation = { source_title: string; timestamp_start: number; timestamp_end: number };
+type ToolResult = { artifact_id: string; name: string; type: string };
+
+interface ToolCallData {
+  name: string;
+  result: ToolResult;
+}
+
+export interface MessageUI {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  isStreaming: boolean;
+  citations: Citation[];
+  toolCall: ToolCallData | null;
+  error: string | null;
+  timestamp: string;
+}
+
 interface ChatPanelProps {
   selectedSourceIds: string[];
   sources: Source[];
-  onSendMessage: (message: string) => void;
+  listId: string;
+  onArtifactGenerated: (artifactId: string, type: string, sourceIds: string[]) => void;
 }
 
-export function ChatPanel({ selectedSourceIds, sources, onSendMessage }: ChatPanelProps) {
+function parseCitations(text: string): Citation[] {
+  const citations: Citation[] = [];
+  const regex = /\[([^\]]+?) @ (\d+)s-(\d+)s\]/g;
+  let match;
+  while ((match = regex.exec(text)) !== null) {
+    citations.push({
+      source_title: match[1],
+      timestamp_start: parseInt(match[2], 10),
+      timestamp_end: parseInt(match[3], 10),
+    });
+  }
+  return citations;
+}
+
+function formatTimestamp(iso: string): string {
+  const d = new Date(iso);
+  return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+export function ChatPanel({
+  selectedSourceIds,
+  sources,
+  listId,
+  onArtifactGenerated,
+}: ChatPanelProps) {
   const { t } = useLanguage();
   const [inputValue, setInputValue] = useState("");
+  const [messages, setMessages] = useState<MessageUI[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
-  const [hasConversation, setHasConversation] = useState(false);
   const [showClearPopover, setShowClearPopover] = useState(false);
   const [showScrollButton, setShowScrollButton] = useState(false);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const messageListRef = useRef<HTMLDivElement>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const lastUserMessageRef = useRef<string>("");
+  const streamingMsgIdRef = useRef<string | null>(null);
+  const toolCallRef = useRef<ToolCallData | null>(null);
 
   const hasSources = selectedSourceIds.length > 0;
+  const hasConversation = messages.length > 0;
+  const selectedSourceIdsSet = useMemo(() => new Set(selectedSourceIds), [selectedSourceIds]);
   const totalDuration = useMemo(
     () =>
       sources
-        .filter((s) => selectedSourceIds.includes(s.id))
+        .filter((s) => selectedSourceIdsSet.has(s.id))
         .reduce((acc, s) => acc + (s.duration_seconds ?? 0), 0),
-    [sources, selectedSourceIds],
+    [sources, selectedSourceIdsSet],
   );
 
   const placeholder = !hasSources
@@ -64,6 +117,12 @@ export function ChatPanel({ selectedSourceIds, sources, onSendMessage }: ChatPan
       : isStreaming
         ? t("chat.input.placeholder.streaming")
         : t("chat.input.placeholder.followUp");
+
+  function scrollToBottom() {
+    const list = messageListRef.current;
+    if (!list) return;
+    list.scrollTop = list.scrollHeight;
+  }
 
   useEffect(() => {
     const ta = textareaRef.current;
@@ -95,40 +154,241 @@ export function ChatPanel({ selectedSourceIds, sources, onSendMessage }: ChatPan
     return () => list.removeEventListener("scroll", onScroll);
   }, []);
 
-  function scrollToBottom() {
-    const list = messageListRef.current;
-    if (!list) return;
-    list.scrollTop = list.scrollHeight;
-  }
+  useEffect(() => {
+    if (!listId || !hasSources) return;
+    let cancelled = false;
+    setIsLoadingHistory(true);
 
-  function handleSend() {
+    api
+      .getConversation(listId)
+      .then((data) => {
+        if (cancelled || !data) return;
+        if (data.messages.length === 0) return;
+        const loaded: MessageUI[] = data.messages.map((m) => ({
+          id: m.id,
+          role: m.role as "user" | "assistant",
+          content: m.content,
+          isStreaming: false,
+          citations: parseCitations(m.content),
+          toolCall: null,
+          error: null,
+          timestamp: formatTimestamp(m.created_at),
+        }));
+        setMessages(loaded);
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) setIsLoadingHistory(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [listId, hasSources]);
+
+  useEffect(() => {
+    if (!isStreaming) return;
+    const id = setTimeout(() => scrollToBottom(), 0);
+    return () => clearTimeout(id);
+  }, [isStreaming, messages]);
+
+  async function handleSend() {
     const text = inputValue.trim();
     if (!text || !hasSources || isStreaming) return;
-    onSendMessage(text);
     setInputValue("");
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";
       textareaRef.current.style.overflowY = "hidden";
+    }
+
+    lastUserMessageRef.current = text;
+    const userMsgId = `user-${Date.now()}`;
+    const assistantMsgId = `assistant-${Date.now()}`;
+
+    const userMsg: MessageUI = {
+      id: userMsgId,
+      role: "user",
+      content: text,
+      isStreaming: false,
+      citations: [],
+      toolCall: null,
+      error: null,
+      timestamp: formatTimestamp(new Date().toISOString()),
+    };
+
+    const assistantMsg: MessageUI = {
+      id: assistantMsgId,
+      role: "assistant",
+      content: "",
+      isStreaming: true,
+      citations: [],
+      toolCall: null,
+      error: null,
+      timestamp: formatTimestamp(new Date().toISOString()),
+    };
+
+    setMessages((prev) => [...prev, userMsg, assistantMsg]);
+    setIsStreaming(true);
+    scrollToBottom();
+
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
+    try {
+      const response = await fetch(`/api/lists/${listId}/chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-UI-Lang": localStorage.getItem("bibilab-lang") ?? "en" },
+        body: JSON.stringify({ message: text, source_ids: selectedSourceIds }),
+        signal: controller.signal,
+      });
+
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+      const reader = response.body!.getReader();
+      const decoder = new TextDecoder();
+      let incomplete = "";
+
+      const assistantMsgIdRef = assistantMsgId;
+
+      const processLine = (raw: string) => {
+        if (!raw) return;
+        let event: { type: string; [key: string]: unknown };
+        try {
+          event = JSON.parse(raw);
+        } catch {
+          return;
+        }
+
+        if (event.type === "delta") {
+          const content = event.content as string;
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === assistantMsgIdRef
+                ? { ...m, content: m.content + content }
+                : m,
+            ),
+          );
+        } else if (event.type === "tool_result") {
+          const result = event.result as ToolResult;
+          toolCallRef.current = { name: "generate_report", result };
+          onArtifactGenerated(result.artifact_id, result.type, selectedSourceIds);
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === assistantMsgIdRef
+                ? { ...m, toolCall: toolCallRef.current }
+                : m,
+            ),
+          );
+        } else if (event.type === "done") {
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === assistantMsgIdRef
+                ? { ...m, isStreaming: false, citations: parseCitations(m.content) }
+                : m,
+            ),
+          );
+          setIsStreaming(false);
+        } else if (event.type === "error") {
+          const errorMsg = event.message as string;
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === assistantMsgIdRef
+                ? { ...m, isStreaming: false, error: errorMsg }
+                : m,
+            ),
+          );
+          setIsStreaming(false);
+        }
+      };
+
+      while (true) {
+        const { done, value } = await reader.read();
+        const chunkText = decoder.decode(value, { stream: !done });
+        const hasNewline = chunkText.includes("\n");
+
+        if (hasNewline) {
+          const combined = incomplete + chunkText;
+          const lines = combined.split("\n");
+          incomplete = lines.pop() ?? "";
+          for (const line of lines) {
+            if (line.startsWith("data: ")) {
+              processLine(line.slice(6).trim());
+            }
+          }
+        } else {
+          incomplete += chunkText;
+        }
+
+        if (done) {
+          if (incomplete) {
+            if (incomplete.startsWith("data: ")) {
+              processLine(incomplete.slice(6).trim());
+            }
+          }
+          break;
+        }
+      }
+
+      setIsStreaming(false);
+    } catch (err) {
+      if (err instanceof Error && err.name === "AbortError") {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === assistantMsgId
+              ? { ...m, isStreaming: false, error: t("chat.interrupted") }
+              : m,
+          ),
+        );
+      } else {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === assistantMsgId
+              ? { ...m, isStreaming: false, error: String(err) }
+              : m,
+          ),
+        );
+      }
+      setIsStreaming(false);
+    } finally {
+      abortControllerRef.current = null;
+    }
+  }
+
+  function handleStop() {
+    abortControllerRef.current?.abort();
+    abortControllerRef.current = null;
+    setIsStreaming(false);
+  }
+
+  function handleRetry() {
+    if (lastUserMessageRef.current) {
+      setInputValue(lastUserMessageRef.current);
+      void handleSend();
     }
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      handleSend();
+      isStreaming ? handleStop() : handleSend();
     }
   }
 
   function handleSuggestionClick(text: string) {
     if (!hasSources || isStreaming) return;
     setInputValue(text);
-    onSendMessage(text);
-    setInputValue("");
+    lastUserMessageRef.current = text;
+    void handleSend();
   }
 
-  function handleClearConfirm() {
+  async function handleClearConfirm() {
     setShowClearPopover(false);
-    setHasConversation(false);
+    try {
+      await api.deleteConversation(listId);
+    } catch {
+      // non-fatal
+    }
+    setMessages([]);
   }
 
   return (
@@ -183,7 +443,9 @@ export function ChatPanel({ selectedSourceIds, sources, onSendMessage }: ChatPan
       {/* Message list */}
       <div
         ref={messageListRef}
-        className="flex flex-1 flex-col gap-3.5 overflow-y-auto px-4.5 py-4"
+        role="region"
+        aria-label="Chat messages"
+        className={`flex flex-1 flex-col gap-3.5 overflow-y-auto px-4.5 py-4 ${showClearPopover ? "opacity-50" : ""}`}
         style={{ scrollbarWidth: "thin", scrollbarColor: "var(--color-border) transparent" }}
       >
         {!hasSources ? (
@@ -196,7 +458,7 @@ export function ChatPanel({ selectedSourceIds, sources, onSendMessage }: ChatPan
               {t("chat.empty.noSources.hint")}
             </p>
           </div>
-        ) : !hasConversation ? (
+        ) : !hasConversation && !isLoadingHistory ? (
           <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
             <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-pink/20 to-sky/18 text-blue">
               <MessageSquare size={26} />
@@ -220,7 +482,62 @@ export function ChatPanel({ selectedSourceIds, sources, onSendMessage }: ChatPan
               ))}
             </div>
           </div>
-        ) : null}
+        ) : (
+          <div className="flex flex-col gap-3.5">
+            {messages.map((msg) => (
+              <div key={msg.id} className={`msg ${msg.role}`}>
+                {msg.role === "user" ? (
+                  <>
+                    <div className="bubble user">{msg.content}</div>
+                    <span className="ts">{msg.timestamp}</span>
+                  </>
+                ) : (
+                  <>
+                    <div className="bubble assistant">
+                      {msg.content}
+                      {msg.isStreaming && <span className="chat-cursor" />}
+                    </div>
+                    {msg.citations.length > 0 && (
+                      <div className="cites">
+                        {msg.citations.map((c, i) => (
+                          <span key={i} className="cite">
+                            <span className="src">{c.source_title}</span>
+                            <span className="tspan">
+                              {Math.floor(c.timestamp_start / 60)}:
+                              {String(c.timestamp_start % 60).padStart(2, "0")}
+                              –
+                              {Math.floor(c.timestamp_end / 60)}:
+                              {String(c.timestamp_end % 60).padStart(2, "0")}
+                            </span>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    {msg.toolCall && (
+                      <div className="toolcall">
+                        <span className="ic"><FileText size={14} /></span>
+                        Created report: <strong>{msg.toolCall.result.name}</strong>
+                        <span className="badge">{msg.toolCall.result.type.toUpperCase().replace("_", " ")}</span>
+                      </div>
+                    )}
+                    {msg.error && (
+                      <div className="interrupted">
+                        <span className="ic"><AlertCircle size={14} /></span>
+                        <span>{t("chat.interrupted")}</span>
+                        <button type="button" onClick={handleRetry} className="retry">
+                          <RotateCcw size={12} />{t("chat.retry")}
+                        </button>
+                      </div>
+                    )}
+                    {!msg.isStreaming && !msg.error && (
+                      <span className="ts">{msg.timestamp}</span>
+                    )}
+                  </>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* Scroll-to-bottom button */}
         {showScrollButton && (
@@ -253,7 +570,7 @@ export function ChatPanel({ selectedSourceIds, sources, onSendMessage }: ChatPan
 
             <button
               type="button"
-              onClick={isStreaming ? () => setIsStreaming(false) : handleSend}
+              onClick={isStreaming ? handleStop : handleSend}
               disabled={!hasSources || (!isStreaming && !inputValue.trim())}
               aria-label={isStreaming ? "Stop" : "Send"}
               className={`absolute bottom-1 right-1 flex h-7 w-7 items-center justify-center rounded-full text-white transition ${

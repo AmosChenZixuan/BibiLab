@@ -15,6 +15,8 @@ import type {
   IngestVideoIn,
   IngestResult,
   VideoMetadataMap,
+  Conversation,
+  Message,
 } from "./types";
 import type { Lang } from "@/app/LanguageContext";
 
@@ -275,6 +277,27 @@ export class JobsClient {
   }
 }
 
+export type GetConversationResponse = {
+  conversation: Conversation | null;
+  messages: Message[];
+};
+
+export class ConversationsClient {
+  constructor(private readonly baseUrl: string, private readonly request: RequestFn) {}
+
+  getConversation(listId: string, opts?: { signal?: AbortSignal; before?: string; limit?: number }) {
+    const params = new URLSearchParams();
+    if (opts?.before) params.set("before", opts.before);
+    if (opts?.limit) params.set("limit", String(opts.limit));
+    const query = params.toString() ? `?${params.toString()}` : "";
+    return this.request<GetConversationResponse>(this.baseUrl, `/lists/${listId}/conversation${query}`, opts);
+  }
+
+  deleteConversation(listId: string) {
+    return this.request<void>(this.baseUrl, `/lists/${listId}/conversation`, { method: "DELETE" });
+  }
+}
+
 export type BilibiliQrStatus = "waiting" | "scanned" | "expired" | "success";
 
 export class AuthClient {
@@ -337,6 +360,8 @@ export interface ApiClient {
   deleteJob(jobId: string): Promise<void | undefined>;
   listWhisperModels(opts?: { signal?: AbortSignal }): Promise<WhisperModel[] | undefined>;
   downloadWhisperModel(modelSize: string): Promise<WhisperDownloadResponse | undefined>;
+  getConversation(listId: string, opts?: { signal?: AbortSignal; before?: string; limit?: number }): Promise<GetConversationResponse | undefined>;
+  deleteConversation(listId: string): Promise<void | undefined>;
   auth: {
     generateBilibiliQr(): Promise<{ url: string; key: string } | undefined>;
     pollBilibiliQr(key: string): Promise<{ status: BilibiliQrStatus } | undefined>;
@@ -364,6 +389,7 @@ export function createApiClient(baseUrl?: string): ApiClient {
   const models = new ModelsClient(base, request);
   const ingest = new IngestClient(base, request);
   const auth = new AuthClient(base, request);
+  const conversations = new ConversationsClient(base, request);
 
   // Flat ApiClient surface — delegates to focused clients
   return {
@@ -391,6 +417,8 @@ export function createApiClient(baseUrl?: string): ApiClient {
     deleteJob: (id) => jobs.deleteJob(id),
     listWhisperModels: (opts) => models.listWhisperModels(opts),
     downloadWhisperModel: (modelSize) => models.downloadWhisperModel(modelSize),
+    getConversation: (listId, opts) => conversations.getConversation(listId, opts),
+    deleteConversation: (listId) => conversations.deleteConversation(listId),
     auth,
   };
 }

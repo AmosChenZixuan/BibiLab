@@ -156,6 +156,8 @@ vi.mock("../lib/api", () => {
     downloadWhisperModel: vi.fn(),
     listWhisperModels: vi.fn(),
     listArtifacts: vi.fn().mockResolvedValue([]),
+    getConversation: vi.fn().mockResolvedValue({ conversation: null, messages: [] }),
+    deleteConversation: vi.fn().mockResolvedValue(undefined),
   };
   return {
     HEALTH_REFRESH_EVENT: "bibilab:health:refresh",

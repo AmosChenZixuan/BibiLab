@@ -213,6 +213,22 @@ export interface IngestResult {
   skipped: string[];
 }
 
+export type Conversation = {
+  id: string;
+  list_id: string;
+  summary: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type Message = {
+  id: string;
+  role: "user" | "assistant" | "tool";
+  content: string;
+  metadata: Record<string, unknown> | null;
+  created_at: string;
+};
+
 export interface VideoMetadataMap {
   videos: Record<string, {
     title: string;

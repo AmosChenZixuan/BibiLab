@@ -190,7 +190,8 @@ export function ListDetailPage() {
           <ChatPanel
             selectedSourceIds={selectedSourceIds}
             sources={sources}
-            onSendMessage={() => {}}
+            listId={listId}
+            onArtifactGenerated={handleArtifactGenerated}
           />
         </div>
 

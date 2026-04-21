@@ -106,8 +106,11 @@ async def chat_endpoint(
     history_rows = await get_recent_messages(conversation_id, limit=100)
     history = [{"role": row["role"], "content": row["content"]} for row in history_rows]
 
-    source_rows = await get_sources_for_list(list_id)
-    source_ids = [row["id"] for row in source_rows]
+    if request.source_ids:
+        source_ids = request.source_ids
+    else:
+        source_rows = await get_sources_for_list(list_id)
+        source_ids = [row["id"] for row in source_rows]
 
     rag_chunks = []
     rag_context = ""

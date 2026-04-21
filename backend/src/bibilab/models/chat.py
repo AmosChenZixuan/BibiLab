@@ -54,6 +54,7 @@ class ConversationResponse(BaseModel):
 
 class ChatRequest(BaseModel):
     message: str
+    source_ids: list[str] | None = None
 
 
 class GetConversationResponse(BaseModel):
