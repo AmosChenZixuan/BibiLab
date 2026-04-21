@@ -255,8 +255,6 @@ export function ChatPanel({
       const decoder = new TextDecoder();
       let incomplete = "";
 
-      const assistantMsgIdRef = assistantMsgId;
-
       const processLine = (raw: string) => {
         if (!raw) return;
         let event: { type: string; [key: string]: unknown };
@@ -270,29 +268,29 @@ export function ChatPanel({
           const content = event.content as string;
           setMessages((prev) =>
             prev.map((m) =>
-              m.id === assistantMsgIdRef
+              m.id === assistantMsgId
                 ? { ...m, content: m.content + content }
                 : m,
             ),
           );
         } else if (event.type === "tool_result") {
           const result = event.result as ToolResult;
-          toolCallRef.current = { name: "generate_report", result };
+          const toolCallData = { name: "generate_report", result };
           if (result.job_id) {
             trackJobs([{ id: result.job_id, producer: "artifact", label: result.type, contextKey: listId }]);
           }
           onArtifactGenerated(result.artifact_id, result.type, selectedSourceIds);
           setMessages((prev) =>
             prev.map((m) =>
-              m.id === assistantMsgIdRef
-                ? { ...m, toolCall: toolCallRef.current }
+              m.id === assistantMsgId
+                ? { ...m, toolCall: toolCallData }
                 : m,
             ),
           );
         } else if (event.type === "done") {
           setMessages((prev) =>
             prev.map((m) => {
-              if (m.id !== assistantMsgIdRef) return m;
+              if (m.id !== assistantMsgId) return m;
               const { citations, cleanContent } = parseCitations(m.content);
               return { ...m, isStreaming: false, content: cleanContent, citations };
             }),
@@ -302,7 +300,7 @@ export function ChatPanel({
           const errorMsg = event.message as string;
           setMessages((prev) =>
             prev.map((m) =>
-              m.id === assistantMsgIdRef
+              m.id === assistantMsgId
                 ? { ...m, isStreaming: false, error: errorMsg }
                 : m,
             ),
@@ -455,7 +453,7 @@ export function ChatPanel({
               <MessageSquareOff size={26} />
             </div>
             <h3 className="m-0 font-serif text-lg text-ink">{t("chat.empty.noSources.title")}</h3>
-            <p className="m-0 max-w-[260px] text-sm text-muted">
+            <p className="m-0 max-w-xs text-sm text-muted">
               {t("chat.empty.noSources.hint")}
             </p>
           </div>
@@ -465,7 +463,7 @@ export function ChatPanel({
               <MessageSquare size={26} />
             </div>
             <h3 className="m-0 font-serif text-lg text-ink">{t("chat.empty.noHistory.title")}</h3>
-            <p className="m-0 max-w-[260px] text-sm text-muted">
+            <p className="m-0 max-w-xs text-sm text-muted">
               {t("chat.empty.noHistory.hint")}
             </p>
           </div>

@@ -131,12 +131,10 @@ async def chat_endpoint(
 
     system_parts = [GROUNDING_SYSTEM_PROMPT]
     if existing_summary:
-        system_parts.append(
-            f"\n\nEarlier conversation summary:\n{existing_summary}",
-        )
+        system_parts.append(f"\n\nEarlier conversation summary:\n{existing_summary}")
     if rag_context:
-        system_parts.append("\n\n" + rag_context)
-    system_message = "\n".join(system_parts)
+        system_parts.append(rag_context)
+    system_message = "\n\n".join(system_parts)
 
     messages_for_llm = history + [{"role": "user", "content": request.message}]
 
