@@ -192,8 +192,8 @@ export function ChatPanel({
     return () => clearTimeout(id);
   }, [isStreaming, messages]);
 
-  async function handleSend() {
-    const text = inputValue.trim();
+  async function handleSend(overrideText?: string) {
+    const text = (overrideText ?? inputValue).trim();
     if (!text || !hasSources || isStreaming) return;
     setInputValue("");
     if (textareaRef.current) {
@@ -362,8 +362,7 @@ export function ChatPanel({
 
   function handleRetry() {
     if (lastUserMessageRef.current) {
-      setInputValue(lastUserMessageRef.current);
-      void handleSend();
+      void handleSend(lastUserMessageRef.current);
     }
   }
 
@@ -376,9 +375,7 @@ export function ChatPanel({
 
   function handleSuggestionClick(text: string) {
     if (!hasSources || isStreaming) return;
-    setInputValue(text);
-    lastUserMessageRef.current = text;
-    void handleSend();
+    void handleSend(text);
   }
 
   async function handleClearConfirm() {

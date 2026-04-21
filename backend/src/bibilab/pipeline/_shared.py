@@ -176,72 +176,69 @@ async def stream_llm(
 
         tool_params = [_to_openai_tool(t) for t in tools] if tools else None
 
-        try:
-            response = await client.chat.completions.create(
-                model=cfg.model,
-                messages=messages,
-                tools=tool_params,
-                max_tokens=llm_max_tokens,
-                timeout=llm_timeout,
-                stream=True,
-            )
+        response = await client.chat.completions.create(
+            model=cfg.model,
+            messages=messages,
+            tools=tool_params,
+            max_tokens=llm_max_tokens,
+            timeout=llm_timeout,
+            stream=True,
+        )
 
-            pending: dict[int, dict] = {}
+        pending: dict[int, dict] = {}
 
-            async for chunk in response:
-                if not chunk.choices:
-                    continue
-                choice = chunk.choices[0]
+        async for chunk in response:
+            if not chunk.choices:
+                continue
+            choice = chunk.choices[0]
 
-                if choice.delta.content:
-                    for info in pending.values():
-                        args_str = info["args_str"]
-                        if args_str:
-                            try:
-                                info["arguments"] = json.loads(args_str)
-                            except json.JSONDecodeError:
-                                pass
-                        if info["name"]:
-                            yield StreamEvent(
-                                type="tool_call",
-                                tool_call=ToolCall(
-                                    id=info["id"],
-                                    name=info["name"],
-                                    arguments=info.get("arguments", {}),
-                                ),
-                            )
-                    pending.clear()
-                    yield StreamEvent(type="delta", content=choice.delta.content)
+            if choice.delta.content:
+                for info in pending.values():
+                    args_str = info["args_str"]
+                    if args_str:
+                        try:
+                            info["arguments"] = json.loads(args_str)
+                        except json.JSONDecodeError:
+                            pass
+                    if info["name"]:
+                        yield StreamEvent(
+                            type="tool_call",
+                            tool_call=ToolCall(
+                                id=info["id"],
+                                name=info["name"],
+                                arguments=info.get("arguments", {}),
+                            ),
+                        )
+                pending.clear()
+                yield StreamEvent(type="delta", content=choice.delta.content)
 
-                if choice.delta.tool_calls:
-                    for tc_delta in choice.delta.tool_calls:
-                        idx = tc_delta.index
-                        info = pending.setdefault(idx, {"id": "", "name": "", "args_str": "", "arguments": {}})
-                        if tc_delta.id:
-                            info["id"] = tc_delta.id
-                        if tc_delta.function:
-                            if tc_delta.function.name:
-                                info["name"] = tc_delta.function.name
-                            if tc_delta.function.arguments:
-                                info["args_str"] += tc_delta.function.arguments
+            if choice.delta.tool_calls:
+                for tc_delta in choice.delta.tool_calls:
+                    idx = tc_delta.index
+                    info = pending.setdefault(idx, {"id": "", "name": "", "args_str": "", "arguments": {}})
+                    if tc_delta.id:
+                        info["id"] = tc_delta.id
+                    if tc_delta.function:
+                        if tc_delta.function.name:
+                            info["name"] = tc_delta.function.name
+                        if tc_delta.function.arguments:
+                            info["args_str"] += tc_delta.function.arguments
 
-            for info in pending.values():
-                args_str = info["args_str"]
-                if args_str:
-                    try:
-                        info["arguments"] = json.loads(args_str)
-                    except json.JSONDecodeError:
-                        pass
-                if info["name"]:
-                    yield StreamEvent(
-                        type="tool_call",
-                        tool_call=ToolCall(
-                            id=info["id"],
-                            name=info["name"],
-                            arguments=info.get("arguments", {}),
-                        ),
-                    )
-        except Exception:
-            raise
+        for info in pending.values():
+            args_str = info["args_str"]
+            if args_str:
+                try:
+                    info["arguments"] = json.loads(args_str)
+                except json.JSONDecodeError:
+                    pass
+            if info["name"]:
+                yield StreamEvent(
+                    type="tool_call",
+                    tool_call=ToolCall(
+                        id=info["id"],
+                        name=info["name"],
+                        arguments=info.get("arguments", {}),
+                    ),
+                )
 
         yield StreamEvent(type="done")
