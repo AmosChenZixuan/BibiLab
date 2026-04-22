@@ -290,7 +290,7 @@ export class ConversationsClient {
     if (opts?.before) params.set("before", opts.before);
     if (opts?.limit !== undefined) params.set("limit", String(opts.limit));
     const query = params.toString() ? `?${params.toString()}` : "";
-    return this.request<GetConversationResponse>(this.baseUrl, `/lists/${listId}/conversation${query}`, opts);
+    return this.request<GetConversationResponse>(this.baseUrl, `/lists/${listId}/conversation${query}`, { signal: opts?.signal });
   }
 
   deleteConversation(listId: string) {

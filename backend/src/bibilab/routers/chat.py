@@ -237,6 +237,14 @@ async def chat_endpoint(
                     yield f"data: {json.dumps({'type': 'done'})}\n\n"
         except Exception:
             logger.exception("LLM streaming failed (second pass)")
+            await create_message(
+                conversation_id=conversation_id,
+                role="assistant",
+                content="",
+                metadata={
+                    "tool_calls": [{"id": tc.id, "name": tc.name, "arguments": tc.arguments} for tc in tool_calls]
+                },
+            )
             await delete_messages_by_ids([user_msg_id])
             yield f"data: {json.dumps({'type': 'error', 'message': 'An internal error occurred'})}\n\n"
             return

@@ -141,15 +141,16 @@ async def query_chunks(
 
     video_ids = list(id_to_video_id.values())
 
-    collection = _get_collection(cfg)
-
-    try:
-        results = await asyncio.to_thread(
-            collection.query,
+    def _sync_query() -> dict:
+        collection = _get_collection(cfg)
+        return collection.query(
             query_texts=[query_text],
             n_results=top_k,
             where={"video_id": {"$in": video_ids}},
         )
+
+    try:
+        results = await asyncio.to_thread(_sync_query)
     except Exception as exc:  # noqa: BLE001 - ChromaDB errors vary by version
         logger.warning("ChromaDB query failed: %s", exc)
         return []
