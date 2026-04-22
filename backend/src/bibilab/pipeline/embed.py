@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
@@ -143,7 +144,8 @@ async def query_chunks(
     collection = _get_collection(cfg)
 
     try:
-        results = collection.query(
+        results = await asyncio.to_thread(
+            collection.query,
             query_texts=[query_text],
             n_results=top_k,
             where={"video_id": {"$in": video_ids}},
