@@ -288,7 +288,7 @@ export class ConversationsClient {
   getConversation(listId: string, opts?: { signal?: AbortSignal; before?: string; limit?: number }) {
     const params = new URLSearchParams();
     if (opts?.before) params.set("before", opts.before);
-    if (opts?.limit) params.set("limit", String(opts.limit));
+    if (opts?.limit !== undefined) params.set("limit", String(opts.limit));
     const query = params.toString() ? `?${params.toString()}` : "";
     return this.request<GetConversationResponse>(this.baseUrl, `/lists/${listId}/conversation${query}`, opts);
   }

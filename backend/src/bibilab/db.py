@@ -741,19 +741,18 @@ async def compress_conversation(
     message_ids_to_delete: list[str],
 ) -> None:
     """Atomically update summary and delete old messages in one transaction."""
-    if not message_ids_to_delete:
-        return
     now = _now()
     async with get_db() as db:
         await db.execute(
             "UPDATE conversations SET summary=?, updated_at=? WHERE id=?",
             (summary, now, conversation_id),
         )
-        placeholders = _in_placeholders(message_ids_to_delete)
-        await db.execute(
-            f"DELETE FROM messages WHERE id IN ({placeholders})",
-            message_ids_to_delete,
-        )
+        if message_ids_to_delete:
+            placeholders = _in_placeholders(message_ids_to_delete)
+            await db.execute(
+                f"DELETE FROM messages WHERE id IN ({placeholders})",
+                message_ids_to_delete,
+            )
         await db.commit()
 
 

@@ -375,12 +375,12 @@ describe("chat panel — conversation history (phase 6.3)", () => {
     await waitFor(() => {
       const strong = screen.getByText("fundamental");
       expect(strong.tagName).toBe("STRONG");
+
+      const code = screen.getByText("x = 1");
+      expect(code.tagName).toBe("CODE");
+
+      expect(screen.getByText("Local gradient")).toBeInTheDocument();
     });
-
-    const code = screen.getByText("x = 1");
-    expect(code.tagName).toBe("CODE");
-
-    expect(screen.getByText("Local gradient")).toBeInTheDocument();
   });
 
   test("citations render as cite chips outside bubble with correct class", async () => {

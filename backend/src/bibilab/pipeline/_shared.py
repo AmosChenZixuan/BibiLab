@@ -181,14 +181,17 @@ async def stream_llm(
         if system:
             full_messages = [{"role": "system", "content": system}, *messages]
 
-        response = await client.chat.completions.create(
-            model=cfg.model,
-            messages=full_messages,
-            tools=tool_params,
-            max_tokens=llm_max_tokens,
-            timeout=llm_timeout,
-            stream=True,
-        )
+        kwargs = {
+            "model": cfg.model,
+            "messages": full_messages,
+            "max_tokens": llm_max_tokens,
+            "timeout": llm_timeout,
+            "stream": True,
+        }
+        if tool_params is not None:
+            kwargs["tools"] = tool_params
+
+        response = await client.chat.completions.create(**kwargs)
 
         pending: dict[int, dict] = {}
 
@@ -219,6 +222,7 @@ async def stream_llm(
                     info["arguments"] = json.loads(args_str)
                 except json.JSONDecodeError:
                     logger.warning("Failed to parse tool call arguments: %s", args_str)
+                    continue
             if info["name"]:
                 yield StreamEvent(
                     type="tool_call",

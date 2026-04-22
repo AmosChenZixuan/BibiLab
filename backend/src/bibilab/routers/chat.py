@@ -1,4 +1,5 @@
 import json
+import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
@@ -28,6 +29,8 @@ from bibilab.pipeline._shared import stream_llm
 from bibilab.pipeline.chat_summary import maybe_compress_conversation
 from bibilab.pipeline.chat_tools import GENERATE_REPORT_TOOL, execute_tool
 from bibilab.pipeline.embed import query_chunks
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -168,9 +171,10 @@ async def chat_endpoint(
                     tool_calls.append(event.tool_call)
                 elif event.type == "done":
                     yield f"data: {json.dumps({'type': 'done'})}\n\n"
-        except Exception as exc:
+        except Exception:
+            logger.exception("LLM streaming failed")
             await delete_messages_by_ids([user_msg_id])
-            yield f"data: {json.dumps({'type': 'error', 'message': str(exc)})}\n\n"
+            yield f"data: {json.dumps({'type': 'error', 'message': 'An internal error occurred'})}\n\n"
             return
 
         if not tool_calls:
@@ -231,8 +235,10 @@ async def chat_endpoint(
                     yield f"data: {json.dumps({'type': 'delta', 'content': event.content})}\n\n"
                 elif event.type == "done":
                     yield f"data: {json.dumps({'type': 'done'})}\n\n"
-        except Exception as exc:
-            yield f"data: {json.dumps({'type': 'error', 'message': str(exc)})}\n\n"
+        except Exception:
+            logger.exception("LLM streaming failed (second pass)")
+            await delete_messages_by_ids([user_msg_id])
+            yield f"data: {json.dumps({'type': 'error', 'message': 'An internal error occurred'})}\n\n"
             return
 
         full_response = "".join(second_deltas)
