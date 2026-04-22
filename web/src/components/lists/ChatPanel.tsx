@@ -101,7 +101,6 @@ export function ChatPanel({
   const messageListRef = useRef<HTMLDivElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const lastUserMessageRef = useRef<string>("");
-  const toolCallRef = useRef<ToolCallData | null>(null);
 
   const hasSources = selectedSourceIds.length > 0;
   const hasConversation = messages.length > 0;

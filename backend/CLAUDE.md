@@ -176,6 +176,6 @@ v0: `BilibiliAdapter` — single video. Cookie-based auth in config.
   "transcription": { "engine": "faster-whisper", "model_size": "large-v3", "device": "cuda|cpu", "language": "auto" },
   "vision": { "enabled": false, "frame_sample_rate": 30, "model": null },
   "backend": { "port": 8765, "worker_concurrency": 1 },
-  "rag": { "max_distance": 0.3 }
+  "rag": { "max_distance": 0.8 }
 }
 ```
