@@ -11,6 +11,7 @@ from bibilab.config import bibilab_home, load_config
 from bibilab.db import bootstrap_db
 from bibilab.routers.artifacts import router as artifacts_router
 from bibilab.routers.auth import router as auth_router
+from bibilab.routers.chat import router as chat_router
 from bibilab.routers.config_router import router as config_router
 from bibilab.routers.health import router as health_router
 from bibilab.routers.ingest import router as ingest_router
@@ -76,6 +77,7 @@ def create_app(*, start_worker: bool = True) -> FastAPI:
     app.include_router(lists_router)
     app.include_router(ingest_router)
     app.include_router(artifacts_router)
+    app.include_router(chat_router)
     app.include_router(proxy_router)
     app.include_router(sources_router)
     app.include_router(whisper_router)

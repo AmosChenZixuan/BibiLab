@@ -9,26 +9,9 @@ import type { Artifact, Source, SourceContent } from "@/lib/types";
 import { usePanelResize, Resizer, COLLAPSED_PANEL } from "@/components/lists/panel-resize";
 import { NavbarTitle } from "@/components/lists/NavbarTitle";
 import { LabPanel } from "@/components/lists/LabPanel";
+import { ChatPanel } from "@/components/lists/ChatPanel";
 import { SourcesViewerMode } from "@/components/lists/sources/SourcesViewerMode";
 import { SourcesListMode } from "@/components/lists/sources/SourcesListMode";
-
-function SkeletonPanel({ title, note }: { title: string; note: string }) {
-  return (
-    <div className="flex h-full flex-col">
-      <div className="shrink-0 border-b border-border px-5 py-4">
-        <h2 className="m-0 font-serif text-lg text-ink">{title}</h2>
-      </div>
-      <div className="flex flex-1 flex-col items-center justify-center gap-4 px-6 py-8">
-        <div className="w-full space-y-2.5">
-          <div className="h-2.5 w-5/6 rounded-full bg-linear-to-r from-pink/12 to-sky/12" />
-          <div className="h-2.5 rounded-full bg-linear-to-r from-pink/12 to-sky/12" />
-          <div className="h-2.5 w-2/3 rounded-full bg-linear-to-r from-pink/12 to-sky/12" />
-        </div>
-        <p className="m-0 text-center text-sm text-muted/80">{note}</p>
-      </div>
-    </div>
-  );
-}
 
 export function ListDetailPage() {
   const { t } = useLanguage();
@@ -204,9 +187,11 @@ export function ListDetailPage() {
           style={{ width: `${chatW}px` }}
           className={panelBase}
         >
-          <SkeletonPanel
-            title="Chat"
-            note="list-scoped chat arrives in v1"
+          <ChatPanel
+            selectedSourceIds={selectedSourceIds}
+            sources={sources}
+            listId={listId}
+            onArtifactGenerated={handleArtifactGenerated}
           />
         </div>
 

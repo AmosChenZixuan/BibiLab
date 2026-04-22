@@ -80,12 +80,17 @@ class BackendConfig(BaseModel):
     ]
 
 
+class RagConfig(BaseModel):
+    max_distance: float = 0.8
+
+
 class BibilabConfig(BaseModel):
     accounts: AccountsConfig = AccountsConfig()
     ai: AIConfig = AIConfig()
     transcription: TranscriptionConfig = TranscriptionConfig()
     vision: VisionConfig = VisionConfig()
     backend: BackendConfig = BackendConfig()
+    rag: RagConfig = RagConfig()
     # ChromaDB
     transcript_collection_name: str = "bibilab_transcripts"
 

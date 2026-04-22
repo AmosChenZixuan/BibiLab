@@ -11,7 +11,7 @@ Platform-specific context lives in `backend/CLAUDE.md` and `web/CLAUDE.md`.
 ### Goals
 - Transform individual videos and playlists into structured AI digests
 - Support local transcription (Faster Whisper) and local or cloud LLMs
-- Enable AI Q&A grounded in the video corpus with transcript citations (v1)
+- Per-list RAG chat with transcript citations, streaming responses, and tool calling
 - Provide on-demand list-level overview export
 - Run entirely on a single user's machine
 
@@ -54,6 +54,9 @@ Single-port deployment: FastAPI serves the React build as static files in produc
 | Artifact storage | Content on disk (`artifacts/{id}.md`), metadata in SQLite | Same pattern as transcripts |
 | Backend serves SPA | FastAPI mounts `/assets` + catch-all → `index.html` | Single-port; no separate frontend server |
 | Worker concurrency | Configurable via `config.backend.worker_concurrency` | Default 1 |
+| Chat conversations | One conversation per list, auto-created on first message | `get_or_create_conversation` with `ON CONFLICT` upsert |
+| Chat streaming | SSE via `StreamingResponse`; RAG context in system prompt | Citations parsed client-side from `[title @ Ts-Ts]` format |
+| Conversation compression | Background summary after 30+ messages, sliding window of 20 | Keeps recent context; old messages deleted after summarization |
 
 ## Notes
 

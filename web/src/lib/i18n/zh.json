@@ -197,6 +197,50 @@
     "done": "完成",
     "failed": "失败"
   },
+  "chat": {
+    "header": {
+      "title": "聊天"
+    },
+    "empty": {
+      "noSources": {
+        "title": "未选择来源",
+        "hint": "在左侧面板选择来源以开始聊天。聊天始终限定于当前选择。"
+      },
+      "noHistory": {
+        "title": "向来源提问",
+        "hint": "问题将基于所选来源的转录稿回答，并附带时间戳引用。"
+      }
+    },
+    "input": {
+      "placeholder": {
+        "noSources": "选择来源以开始聊天...",
+        "noHistory": "向来源提问...",
+        "followUp": "继续提问...",
+        "streaming": "回答中..."
+      },
+      "hint": {
+        "enter": "回车发送",
+        "shiftEnter": "Shift+回车换行"
+      }
+    },
+    "clearConfirm": {
+      "title": "清空对话？",
+      "body": "此聊天中的所有消息将被删除。实验室中的报告将保留。",
+      "cancel": "取消",
+      "clear": "清空"
+    },
+    "interrupted": "回答被中断",
+    "retry": "重试",
+    "stop": "停止",
+    "send": "发送",
+    "scrollToBottom": "滚动到底部",
+    "createdReport": "已生成报告：",
+    "subtitle": {
+      "source": "个来源",
+      "sources": "个来源",
+      "total": "共"
+    }
+  },
   "common": {
     "cancel": "取消",
     "delete": "删除",

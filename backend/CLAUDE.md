@@ -18,9 +18,15 @@ uv run python -m bibilab.main       # Start server (localhost:8765)
 ## Code Layout — `src/bibilab/`
 
 ```
-routers/          — one APIRouter per module; aggregated in main.py (`auth.py` covers `/auth/bilibili/*`)
+routers/          — one APIRouter per module; aggregated in main.py
+  auth.py           /auth/bilibili/* (QR login, cookie management)
+  chat.py           /lists/:id/chat (SSE streaming), /lists/:id/conversation (CRUD)
 models/           — Pydantic request/response models + domain errors
-pipeline/         — one file per stage; _shared.py for common LLM helpers
+  chat.py           ChatRequest, MessageResponse, ConversationResponse
+pipeline/         — one file per stage
+  _shared.py        sync _call_llm + async stream_llm (OpenAI/Anthropic), tool/stream dataclasses
+  chat_tools.py     tool definitions (generate_report) + execution dispatcher
+  chat_summary.py   conversation compression (sliding window + LLM summary)
 adapters/         — platform-specific download + resolution (base + bilibili)
 db.py             — SQLite schema + query helpers
 config.py         — settings persisted to ~/.bibilab/config.json
@@ -89,6 +95,27 @@ whisper_models.py — Whisper model management
 | `error` | Error message, nullable |
 | `created_at` | ISO timestamp |
 
+### `conversations` — one per list
+
+| Column | Notes |
+|---|---|
+| `id` | UUID, primary key |
+| `list_id` | FK to `lists.id`, UNIQUE, ON DELETE CASCADE |
+| `summary` | Rolling LLM-generated summary, nullable |
+| `created_at` | ISO timestamp |
+| `updated_at` | ISO timestamp |
+
+### `messages` — chat history
+
+| Column | Notes |
+|---|---|
+| `id` | UUID, primary key |
+| `conversation_id` | FK to `conversations.id`, ON DELETE CASCADE, indexed |
+| `role` | `"user"` \| `"assistant"` \| `"tool"` |
+| `content` | Message text |
+| `metadata` | JSON blob (tool_calls, citations), nullable |
+| `created_at` | ISO timestamp |
+
 ## Ingestion Pipeline
 
 ```
@@ -108,6 +135,21 @@ POST /ingest/url → resolve → dedup check → create job(s)
 5. **digest** → LLM: summary, keywords → denormalized into `sources` (parallel with embed)
 6. **embed** → store chunks in ChromaDB with per-video and per-list scope (parallel with digest)
 7. **write_source** → upsert row into `sources`
+
+## Chat Pipeline
+
+```
+POST /lists/:id/chat (SSE)
+  → get_or_create_conversation → load history → RAG query_chunks
+  → stream_llm (system prompt + RAG context + history)
+  → yield delta/tool_result/done events
+  → persist assistant message → BackgroundTask: maybe_compress_conversation
+```
+
+- `stream_llm` supports both OpenAI and Anthropic protocols via `AsyncOpenAI`/`AsyncAnthropic`
+- Tool calling: LLM can invoke `generate_report` → creates artifact job
+- Compression: triggered when message count > 30; keeps sliding window of 20; summarizes older messages via `_call_llm` in `asyncio.to_thread`
+- Summary injected into system prompt on subsequent requests
 
 ## Platform Adapters
 
@@ -133,6 +175,7 @@ v0: `BilibiliAdapter` — single video. Cookie-based auth in config.
   "ai": { "protocol": "openai|anthropic", "model": "", "api_key": "", "base_url": null, "output_language": "ui" },
   "transcription": { "engine": "faster-whisper", "model_size": "large-v3", "device": "cuda|cpu", "language": "auto" },
   "vision": { "enabled": false, "frame_sample_rate": 30, "model": null },
-  "backend": { "port": 8765, "worker_concurrency": 1 }
+  "backend": { "port": 8765, "worker_concurrency": 1 },
+  "rag": { "max_distance": 0.8 }
 }
 ```

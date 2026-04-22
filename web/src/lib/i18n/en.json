@@ -197,6 +197,50 @@
     "done": "Done",
     "failed": "Failed"
   },
+  "chat": {
+    "header": {
+      "title": "Chat"
+    },
+    "empty": {
+      "noSources": {
+        "title": "Nothing selected",
+        "hint": "Select sources in the left panel to start chatting. Chat is always scoped to your current selection."
+      },
+      "noHistory": {
+        "title": "Ask your sources",
+        "hint": "Questions are answered from the transcripts of your selected sources. Responses cite timestamps."
+      }
+    },
+    "input": {
+      "placeholder": {
+        "noSources": "Select sources to start chatting...",
+        "noHistory": "Ask about your sources...",
+        "followUp": "Ask a follow-up...",
+        "streaming": "Responding..."
+      },
+      "hint": {
+        "enter": "Enter to send",
+        "shiftEnter": "Shift+Enter for newline"
+      }
+    },
+    "clearConfirm": {
+      "title": "Clear conversation?",
+      "body": "All messages in this chat will be removed. Reports in the Lab are kept.",
+      "cancel": "Cancel",
+      "clear": "Clear"
+    },
+    "interrupted": "Response interrupted",
+    "retry": "Retry",
+    "stop": "Stop",
+    "send": "Send",
+    "scrollToBottom": "Scroll to bottom",
+    "createdReport": "Created report:",
+    "subtitle": {
+      "source": "source",
+      "sources": "sources",
+      "total": "total"
+    }
+  },
   "common": {
     "cancel": "Cancel",
     "delete": "Delete",
