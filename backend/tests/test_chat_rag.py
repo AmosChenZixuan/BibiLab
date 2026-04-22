@@ -233,6 +233,10 @@ async def test_get_video_ids_for_sources(tmp_bibilab_home):
 
     async with get_db() as db:
         await db.execute(
+            "INSERT INTO lists (id, name, created_at) VALUES (?, ?, ?)",
+            ("list-1", "Test List", "2026-01-01T00:00:00"),
+        )
+        await db.execute(
             "INSERT INTO sources (id, video_id, platform, list_id, title, source_url) VALUES (?, ?, ?, ?, ?, ?)",
             ("src-a", "bv123", "bilibili", "list-1", "Test", "https://example.com"),
         )

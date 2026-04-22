@@ -257,21 +257,9 @@ async def write_source(
     settings_snapshot: dict[str, Any],
 ) -> None:
     async with get_db() as db:
-        # Check if this is a new source
         cursor = await db.execute("SELECT id FROM sources WHERE video_id = ? AND list_id = ?", (video_id, list_id))
         existing = await cursor.fetchone()
 
-        # Auto-assign thumbnail if new source and list has none
-        if existing is None:
-            cursor = await db.execute("SELECT thumbnail_source_id FROM lists WHERE id = ?", (list_id,))
-            list_row = await cursor.fetchone()
-            if list_row is not None and list_row["thumbnail_source_id"] is None:
-                await db.execute(
-                    "UPDATE lists SET thumbnail_source_id = ? WHERE id = ?",
-                    (source_id, list_id),
-                )
-
-        # Upsert source using INSERT OR IGNORE + ON CONFLICT DO UPDATE
         await db.execute(
             """
             INSERT INTO sources
@@ -318,6 +306,16 @@ async def write_source(
                 json.dumps(settings_snapshot),
             ),
         )
+
+        if existing is None:
+            cursor = await db.execute("SELECT thumbnail_source_id FROM lists WHERE id = ?", (list_id,))
+            list_row = await cursor.fetchone()
+            if list_row is not None and list_row["thumbnail_source_id"] is None:
+                await db.execute(
+                    "UPDATE lists SET thumbnail_source_id = ? WHERE id = ?",
+                    (source_id, list_id),
+                )
+
         await db.commit()
 
 
@@ -364,6 +362,7 @@ async def get_video_ids_for_sources(source_ids: list[str]) -> dict[str, str]:
 
 async def delete_source(source_id: str) -> None:
     async with get_db() as db:
+        await db.execute("UPDATE lists SET thumbnail_source_id = NULL WHERE thumbnail_source_id = ?", (source_id,))
         await db.execute("DELETE FROM sources WHERE id=?", (source_id,))
         await db.commit()
 
