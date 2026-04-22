@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
@@ -110,7 +110,7 @@ describe("chat panel — SSE streaming (phase 6.2)", () => {
     );
   });
 
-  test("streaming shows typing indicator before first token", async () => {
+  test("streaming delivers content to assistant bubble", async () => {
     vi.spyOn(window, "fetch").mockImplementation(() =>
       Promise.resolve(
         makeSseStream([
@@ -163,7 +163,7 @@ describe("chat panel — SSE streaming (phase 6.2)", () => {
     });
   });
 
-  test("error event shows 'Response interrupted' + Retry button", async () => {
+  test("error event shows error message + Retry button", async () => {
     vi.spyOn(window, "fetch").mockImplementation(() =>
       Promise.resolve(
         makeSseStream([
@@ -188,7 +188,7 @@ describe("chat panel — SSE streaming (phase 6.2)", () => {
     });
 
     await waitFor(() => {
-      expect(screen.getByText(/response interrupted/i)).toBeInTheDocument();
+      expect(screen.getByText("Connection closed")).toBeInTheDocument();
     });
 
     const retryBtn = screen.getByRole("button", { name: /retry/i });
@@ -308,11 +308,7 @@ describe("chat panel — conversation history (phase 6.3)", () => {
     await waitFor(() => screen.getByText("Hello"));
 
     await userEvent.click(screen.getByRole("button", { name: /clear conversation/i }));
-    // Within the popover, click "Clear" (not the header button)
-    const popover = document.querySelector(".absolute.right-0.top-9") as HTMLElement | null;
-    if (popover) {
-      await userEvent.click(within(popover).getByRole("button", { name: /^clear$/i }));
-    }
+    await userEvent.click(screen.getByRole("button", { name: /^clear$/i }));
 
     await waitFor(() => {
       expect(deleteCalled).toBe(true);

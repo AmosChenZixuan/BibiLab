@@ -5,11 +5,10 @@ import logging
 
 from bibilab.config import BibilabConfig
 from bibilab.db import (
-    delete_messages_by_ids,
+    compress_conversation,
     get_conversation,
     get_message_count,
     get_messages_beyond_window,
-    update_conversation_summary,
 )
 from bibilab.pipeline._shared import _call_llm
 
@@ -71,7 +70,5 @@ async def maybe_compress_conversation(
         logger.exception("Failed to compress conversation %s", conversation_id)
         return
 
-    await update_conversation_summary(conversation_id, new_summary)
-
     ids_to_delete = [row["id"] for row in to_compress]
-    await delete_messages_by_ids(ids_to_delete)
+    await compress_conversation(conversation_id, new_summary, ids_to_delete)

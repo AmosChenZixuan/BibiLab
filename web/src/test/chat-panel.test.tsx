@@ -63,8 +63,11 @@ function makeConversationMock() {
   });
 }
 
-function renderChatPanel(props?: Partial<React.ComponentProps<typeof ChatPanel>>) {
-  makeConversationMock();
+function renderChatPanel(
+  props?: Partial<React.ComponentProps<typeof ChatPanel>>,
+  { skipMock = false }: { skipMock?: boolean } = {},
+) {
+  if (!skipMock) makeConversationMock();
   return render(
     <LanguageProvider>
       <JobActivityProvider>
@@ -135,20 +138,6 @@ describe("chat panel", () => {
   });
 
   test("Enter submits message, Shift+Enter creates newline", async () => {
-    vi.spyOn(window, "fetch").mockImplementation(() =>
-      Promise.resolve(
-        new Response(
-          new ReadableStream({
-            start(c) {
-              c.enqueue(new TextEncoder().encode('data: {"type":"done"}\n\n'));
-              c.close();
-            },
-          }),
-          { headers: { "Content-Type": "text/event-stream" } },
-        ),
-      ),
-    );
-
     renderChatPanel({ selectedSourceIds: ["src-1"], sources: [SOURCE_1] });
 
     const textarea = screen.getByRole("textbox");
@@ -164,20 +153,6 @@ describe("chat panel", () => {
   });
 
   test("Shift+Enter inserts newline without submitting", async () => {
-    vi.spyOn(window, "fetch").mockImplementation(() =>
-      Promise.resolve(
-        new Response(
-          new ReadableStream({
-            start(c) {
-              c.enqueue(new TextEncoder().encode('data: {"type":"done"}\n\n'));
-              c.close();
-            },
-          }),
-          { headers: { "Content-Type": "text/event-stream" } },
-        ),
-      ),
-    );
-
     renderChatPanel({ selectedSourceIds: ["src-1"], sources: [SOURCE_1] });
 
     const textarea = screen.getByRole("textbox");

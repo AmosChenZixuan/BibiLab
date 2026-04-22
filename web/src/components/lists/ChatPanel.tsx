@@ -250,7 +250,8 @@ export function ChatPanel({
 
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
-      const reader = response.body!.getReader();
+      if (!response.body) throw new Error("Response body is null");
+      const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let incomplete = "";
 
@@ -400,7 +401,7 @@ export function ChatPanel({
               type="button"
               onClick={() => setShowClearPopover((v) => !v)}
               disabled={!hasConversation}
-              aria-label="Clear conversation"
+              aria-label={t("chat.clearConfirm.title")}
               className="flex h-7 w-7 items-center justify-center rounded-lg text-muted transition hover:bg-border disabled:cursor-not-allowed disabled:opacity-30 hover:disabled:bg-transparent"
             >
               <Trash2 size={14} />
@@ -442,7 +443,7 @@ export function ChatPanel({
       <div
         ref={messageListRef}
         role="region"
-        aria-label="Chat messages"
+        aria-label={t("chat.header.title")}
         className={`flex flex-1 flex-col gap-3.5 overflow-y-auto px-4.5 py-4 ${showClearPopover ? "opacity-50" : ""}`}
         style={{ scrollbarWidth: "thin", scrollbarColor: "var(--color-border) transparent" }}
       >
@@ -510,14 +511,14 @@ export function ChatPanel({
                     {msg.toolCall && (
                       <div className="toolcall">
                         <span className="ic"><FileText size={14} /></span>
-                        Created report: <strong>{msg.toolCall.result.name}</strong>
+                        {t("chat.createdReport")} <strong>{msg.toolCall.result.name}</strong>
                         <span className="badge">{msg.toolCall.result.type.toUpperCase().replace("_", " ")}</span>
                       </div>
                     )}
                     {msg.error && (
                       <div className="interrupted">
                         <span className="ic"><AlertCircle size={14} /></span>
-                        <span>{t("chat.interrupted")}</span>
+                        <span>{msg.error}</span>
                         <button type="button" onClick={handleRetry} className="retry">
                           <RotateCcw size={12} />{t("chat.retry")}
                         </button>
@@ -538,7 +539,7 @@ export function ChatPanel({
           <button
             type="button"
             onClick={scrollToBottom}
-            aria-label="Scroll to bottom"
+            aria-label={t("chat.scrollToBottom")}
             className="stb absolute bottom-14 left-1/2 flex h-8 w-8 -translate-x-1/2 items-center justify-center rounded-full border border-border bg-white shadow-lg transition hover:-translate-x-1/2 hover:-translate-y-px"
           >
             <ChevronDown size={16} className="text-ink" />
@@ -565,7 +566,7 @@ export function ChatPanel({
               type="button"
               onClick={isStreaming ? handleStop : () => void handleSend()}
               disabled={!hasSources || (!isStreaming && !inputValue.trim())}
-              aria-label={isStreaming ? "Stop" : "Send"}
+              aria-label={isStreaming ? t("chat.stop") : t("chat.send")}
               className={`absolute bottom-1.5 right-1.5 flex items-center justify-center rounded-full text-white transition ${
                 isStreaming
                   ? "bg-pink hover:brightness-110"

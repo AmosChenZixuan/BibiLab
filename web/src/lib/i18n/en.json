@@ -208,7 +208,7 @@
       },
       "noHistory": {
         "title": "Ask your sources",
-        "hint": "Questions are answered from the transcripts of your selected videos. Responses cite timestamps."
+        "hint": "Questions are answered from the transcripts of your selected sources. Responses cite timestamps."
       }
     },
     "input": {
@@ -231,6 +231,10 @@
     },
     "interrupted": "Response interrupted",
     "retry": "Retry",
+    "stop": "Stop",
+    "send": "Send",
+    "scrollToBottom": "Scroll to bottom",
+    "createdReport": "Created report:",
     "subtitle": {
       "source": "source",
       "sources": "sources",

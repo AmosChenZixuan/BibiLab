@@ -220,16 +220,20 @@ async def chat_endpoint(
 
         second_deltas: list[str] = []
 
-        async for event in stream_llm(
-            messages=second_messages,
-            cfg=cfg.ai,
-            system=system_message if system_message.strip() else None,
-        ):
-            if event.type == "delta":
-                second_deltas.append(event.content or "")
-                yield f"data: {json.dumps({'type': 'delta', 'content': event.content})}\n\n"
-            elif event.type == "done":
-                yield f"data: {json.dumps({'type': 'done'})}\n\n"
+        try:
+            async for event in stream_llm(
+                messages=second_messages,
+                cfg=cfg.ai,
+                system=system_message if system_message.strip() else None,
+            ):
+                if event.type == "delta":
+                    second_deltas.append(event.content or "")
+                    yield f"data: {json.dumps({'type': 'delta', 'content': event.content})}\n\n"
+                elif event.type == "done":
+                    yield f"data: {json.dumps({'type': 'done'})}\n\n"
+        except Exception as exc:
+            yield f"data: {json.dumps({'type': 'error', 'message': str(exc)})}\n\n"
+            return
 
         full_response = "".join(second_deltas)
         await create_message(

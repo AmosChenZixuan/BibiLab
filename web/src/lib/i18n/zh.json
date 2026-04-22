@@ -208,7 +208,7 @@
       },
       "noHistory": {
         "title": "向来源提问",
-        "hint": "问题将基于所选视频的转录稿回答，并附带时间戳引用。"
+        "hint": "问题将基于所选来源的转录稿回答，并附带时间戳引用。"
       }
     },
     "input": {
@@ -231,10 +231,14 @@
     },
     "interrupted": "回答被中断",
     "retry": "重试",
+    "stop": "停止",
+    "send": "发送",
+    "scrollToBottom": "滚动到底部",
+    "createdReport": "已生成报告：",
     "subtitle": {
-      "source": "source",
-      "sources": "sources",
-      "total": "total"
+      "source": "个来源",
+      "sources": "个来源",
+      "total": "共"
     }
   },
   "common": {

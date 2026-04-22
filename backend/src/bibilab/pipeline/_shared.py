@@ -146,9 +146,10 @@ async def stream_llm(
             model=cfg.model,
             max_tokens=llm_max_tokens,
             messages=messages,
-            system=system,
             timeout=llm_timeout,
         )
+        if system is not None:
+            kwargs["system"] = system
         if tools:
             kwargs["tools"] = [_to_anthropic_tool(t) for t in tools]
 
@@ -217,7 +218,7 @@ async def stream_llm(
                 try:
                     info["arguments"] = json.loads(args_str)
                 except json.JSONDecodeError:
-                    pass
+                    logger.warning("Failed to parse tool call arguments: %s", args_str)
             if info["name"]:
                 yield StreamEvent(
                     type="tool_call",

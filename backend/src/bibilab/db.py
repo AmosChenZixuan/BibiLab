@@ -735,6 +735,28 @@ async def delete_messages_by_ids(message_ids: list[str]) -> None:
         await db.commit()
 
 
+async def compress_conversation(
+    conversation_id: str,
+    summary: str,
+    message_ids_to_delete: list[str],
+) -> None:
+    """Atomically update summary and delete old messages in one transaction."""
+    if not message_ids_to_delete:
+        return
+    now = _now()
+    async with get_db() as db:
+        await db.execute(
+            "UPDATE conversations SET summary=?, updated_at=? WHERE id=?",
+            (summary, now, conversation_id),
+        )
+        placeholders = _in_placeholders(message_ids_to_delete)
+        await db.execute(
+            f"DELETE FROM messages WHERE id IN ({placeholders})",
+            message_ids_to_delete,
+        )
+        await db.commit()
+
+
 async def get_conversation(conversation_id: str) -> aiosqlite.Row | None:
     async with get_db() as db:
         cursor = await db.execute(

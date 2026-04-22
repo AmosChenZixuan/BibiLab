@@ -289,6 +289,11 @@
     text-decoration: underline;
   }
 
+  .retry:focus-visible {
+    outline: 2px solid var(--color-blue);
+    outline-offset: 2px;
+  }
+
   /* Timestamp */
   .ts {
     font-size: 10px;
@@ -318,6 +323,11 @@
 
   .stb:hover {
     transform: translateX(-50%) translateY(-1px);
+  }
+
+  .stb:focus-visible {
+    outline: 2px solid var(--color-blue);
+    outline-offset: 2px;
   }
 
   /* Clear confirm popover */
