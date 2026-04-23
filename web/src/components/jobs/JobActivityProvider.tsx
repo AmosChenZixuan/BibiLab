@@ -213,7 +213,6 @@ export function JobActivityProvider({ children }: { children: React.ReactNode })
   const [isPanelOpen, setIsPanelOpen] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [cancellingJobId, setCancellingJobId] = useState<string | null>(null);
-  const refreshInFlight = useRef<Promise<void> | null>(null);
   const trackedJobsRef = useRef<Record<string, TrackedJobMeta>>({});
 
   useEffect(() => {
@@ -221,25 +220,14 @@ export function JobActivityProvider({ children }: { children: React.ReactNode })
   }, [trackedJobs]);
 
   const refreshNow = useCallback(async (signal?: AbortSignal) => {
-    if (refreshInFlight.current) {
-      return refreshInFlight.current;
+    try {
+      const nextJobs = await api.listJobs({ signal });
+      setJobsById((current) => mergeJobs(current, trackedJobsRef.current, nextJobs ?? []));
+      setErrorMessage(null);
+    } catch (error) {
+      if (error instanceof Error && error.name === "AbortError") return;
+      setErrorMessage(toErrorMessage(error));
     }
-
-    const task = (async () => {
-      try {
-        const nextJobs = await api.listJobs({ signal });
-        setJobsById((current) => mergeJobs(current, trackedJobsRef.current, nextJobs ?? []));
-        setErrorMessage(null);
-      } catch (error) {
-        if (error instanceof Error && error.name === "AbortError") return;
-        setErrorMessage(toErrorMessage(error));
-      } finally {
-        refreshInFlight.current = null;
-      }
-    })();
-
-    refreshInFlight.current = task;
-    return task;
   }, []);
 
   useEffect(() => {
