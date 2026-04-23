@@ -767,6 +767,5 @@ async def get_conversation(conversation_id: str) -> aiosqlite.Row | None:
 
 async def delete_conversation(conversation_id: str) -> None:
     async with get_db() as db:
-        await db.execute("DELETE FROM messages WHERE conversation_id=?", (conversation_id,))
         await db.execute("DELETE FROM conversations WHERE id=?", (conversation_id,))
         await db.commit()
