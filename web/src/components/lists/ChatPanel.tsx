@@ -75,12 +75,16 @@ function formatTimestamp(iso: string): string {
   return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
-function updateTextareaHeight(ta: HTMLTextAreaElement) {
-  const maxHeight = 200;
-  ta.style.height = "0";
-  const scrollHeight = ta.scrollHeight;
-  ta.style.height = `${Math.min(scrollHeight, maxHeight)}px`;
-  ta.style.overflowY = scrollHeight > maxHeight ? "auto" : "hidden";
+function autoResize(ta: HTMLTextAreaElement) {
+  if (!ta.value) {
+    ta.style.height = "auto";
+    ta.style.overflowY = "hidden";
+  } else {
+    const maxHeight = 200;
+    ta.style.height = "0";
+    ta.style.height = `${Math.min(ta.scrollHeight, maxHeight)}px`;
+    ta.style.overflowY = ta.scrollHeight > maxHeight ? "auto" : "hidden";
+  }
 }
 
 export function ChatPanel({
@@ -128,18 +132,7 @@ export function ChatPanel({
   }
 
   useEffect(() => {
-    const ta = textareaRef.current;
-    if (!ta) return;
-    updateTextareaHeight(ta);
-    const handler = () => updateTextareaHeight(ta);
-    ta.addEventListener("input", handler);
-    return () => ta.removeEventListener("input", handler);
-  }, []);
-
-  useEffect(() => {
     if (!isLoadingHistory && messages.length > 0) {
-      const ta = textareaRef.current;
-      if (ta) updateTextareaHeight(ta);
       scrollToBottom();
     }
   }, [isLoadingHistory, messages]);
@@ -554,7 +547,10 @@ export function ChatPanel({
             <textarea
               ref={textareaRef}
               value={inputValue}
-              onChange={(e) => setInputValue(e.target.value)}
+              onChange={(e) => {
+                setInputValue(e.target.value);
+                autoResize(e.target);
+              }}
               onKeyDown={handleKeyDown}
               placeholder={placeholder}
               disabled={!hasSources || isStreaming}
