@@ -5,7 +5,7 @@ set -e
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 
-echo "Starting backend (uv run python -m bibilab.main)..."
+echo "Starting backend (uv run uvicorn bibilab.main --reload)..."
 echo "Starting web (npm run dev)..."
 echo ""
 echo "Press Ctrl+C to stop both."
@@ -16,7 +16,7 @@ trap 'kill 0' INT
 
 (
   cd "$ROOT/backend"
-  PYTHONUNBUFFERED=1 uv run python -m bibilab.main 2>&1
+  PYTHONUNBUFFERED=1 uv run uvicorn bibilab.main:app --host 0.0.0.0 --port 8765 --reload 2>&1
 ) | sed -u 's/^/[backend] /' &
 
 (

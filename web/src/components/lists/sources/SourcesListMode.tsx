@@ -74,11 +74,13 @@ function SourceRow({
 function IngestingSourceRow({
   stage,
   title,
+  error,
   onDismiss,
   t,
 }: {
   stage: string;
   title: string;
+  error?: string | null;
   onDismiss: () => void;
   t: (key: string, params?: Record<string, string | number>) => string;
 }) {
@@ -89,13 +91,17 @@ function IngestingSourceRow({
   const getStageLabel = (s: string) =>
     s === "failed" ? t("pipeline.failed") : t("pipeline." + s);
 
+  const failedStage = isFailed && error ? error.match(/^\[(.+?)\] /)?.[1] ?? "failed" : displayStage;
+
   if (isFailed) {
     return (
       <div className="flex items-start gap-3 rounded-2xl border border-pink/30 bg-pink/6 px-4 py-3">
         <AlertCircle size={16} className="mt-0.5 shrink-0 text-pink" />
         <div className="min-w-0 flex-1">
           <p className="m-0 truncate text-sm font-medium text-ink">{title}</p>
-          <p className="m-0 mt-0.5 text-xs text-pink">{t("lists.failedDuring", { stage: getStageLabel(displayStage) })}</p>
+          <p className="m-0 mt-0.5 text-xs text-pink">
+            {t("lists.failedDuring", { stage: getStageLabel(failedStage) })}
+          </p>
         </div>
         <button
           type="button"
@@ -441,6 +447,7 @@ export function SourcesListMode({
                 key={item.job.id}
                 stage={item.job.status}
                 title={item.label}
+                error={item.job.error}
                 onDismiss={() => void dismissJob(item.job.id)}
                 t={t}
               />

@@ -25,6 +25,9 @@ dependencies = [
     "yt-dlp>=2026.3.17",
 ]
 
+[project.optional-dependencies]
+cuda = ["nvidia-cublas-cu12"]
+
 
 [dependency-groups]
 dev = [

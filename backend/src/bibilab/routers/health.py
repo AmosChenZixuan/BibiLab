@@ -68,12 +68,22 @@ def _check_ffmpeg() -> dict:
 
 def _check_cuda() -> dict:
     try:
-        import ctranslate2
+        import ctypes
+        from pathlib import Path
 
-        ctranslate2.get_supported_compute_types("cuda")
-        return {"status": "ok", "message": "CUDA available (CTranslate2)"}
-    except Exception:
-        return {"status": "unavailable", "message": "CUDA not available; CPU will be used"}
+        try:
+            import nvidia.cublas
+
+            lib_path = Path(nvidia.cublas.__path__[0]) / "lib" / "libcublas.so.12"
+            ctypes.CDLL(str(lib_path))
+        except ImportError:
+            ctypes.CDLL("libcublas.so.12")
+        return {"status": "ok", "message": "CUDA available"}
+    except OSError as exc:
+        return {
+            "status": "unavailable",
+            "message": (f"CUDA libraries not available: {exc}. Install with: uv sync --extra cuda"),
+        }
 
 
 def _check_embedding_model() -> dict:

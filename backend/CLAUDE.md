@@ -6,6 +6,7 @@ Python/FastAPI backend. Managed with `uv`.
 
 ```bash
 uv sync --dev                        # Install all dependencies
+uv sync --extra cuda                 # Install optional CUDA libs (nvidia-cublas-cu12)
 uv run python -c "import ctranslate2; print(ctranslate2.get_supported_compute_types('cuda'))"  # Verify CUDA
 uv run ruff check .                  # Lint
 uv run ruff format .                 # Format

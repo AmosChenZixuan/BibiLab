@@ -398,38 +398,53 @@ All output fields MUST be written in {_LANG_NAME.get(lang, "English")}."""
         )
 
         # Stage 1: Download
-        video_path = await self._stage_download(job_id, video_meta, source_id)
+        try:
+            video_path = await self._stage_download(job_id, video_meta, source_id)
+        except Exception as exc:
+            raise PipelineError(f"[downloading] {exc}") from exc
         if video_path is None:
             return  # cancelled
 
         # Stage 2: Audio extraction
-        wav_path = await self._stage_extract_audio(job_id, video_path)
+        try:
+            wav_path = await self._stage_extract_audio(job_id, video_path)
+        except Exception as exc:
+            raise PipelineError(f"[transcribing] {exc}") from exc
         if wav_path is None:
             return  # cancelled
 
         # Stage 3: Transcription
-        result = await self._stage_transcribe(job_id, wav_path, source_id, cfg)
+        try:
+            result = await self._stage_transcribe(job_id, wav_path, source_id, cfg)
+        except Exception as exc:
+            raise PipelineError(f"[transcribing] {exc}") from exc
         if result is None:
             return  # cancelled
         segments, detected_language, transcript_path = result
 
         # Stage 4: Chunk, digest + embed in parallel
-        extraction = await self._stage_process(job_id, job, segments, video_meta, list_id, cfg, transcript_path)
+        try:
+            extraction = await self._stage_process(job_id, job, segments, video_meta, list_id, cfg, transcript_path)
+        except Exception as exc:
+            raise PipelineError(f"[processing] {exc}") from exc
         if extraction is None:
             return  # cancelled
 
         # Stage 5: Persist + cleanup
-        await self._stage_persist(
-            job_id,
-            source_id,
-            video_id,
-            video_meta,
-            list_id,
-            extraction,
-            detected_language,
-            cfg,
-            transcript_path,
-        )
+        try:
+            await self._stage_persist(
+                job_id,
+                source_id,
+                video_id,
+                video_meta,
+                list_id,
+                extraction,
+                detected_language,
+                cfg,
+                transcript_path,
+            )
+        except Exception as exc:
+            raise PipelineError(f"[processing] {exc}") from exc
         await update_job_status(job_id, JobStatus.DONE.value, progress=100)
         logger.info("Job %s completed for video %s", job_id, video_id)
 
