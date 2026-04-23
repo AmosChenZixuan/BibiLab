@@ -11,7 +11,6 @@ router = APIRouter()
 
 
 async def _check_llm(cfg: BibilabConfig) -> dict:
-    protocol = cfg.ai.protocol
     api_key = cfg.ai.api_key
     base_url = (cfg.ai.base_url or "").strip()
 
@@ -23,21 +22,18 @@ async def _check_llm(cfg: BibilabConfig) -> dict:
         return {"status": "error", "message": "api_key not configured"}
 
     try:
-        if protocol == "anthropic":
-            url = f"{base_url.rstrip('/')}/models"
-            headers = {"x-api-key": api_key, "anthropic-version": "2023-06-01"}
-        else:
-            # openai and OpenAI-compatible providers
-            url = f"{base_url.rstrip('/')}/models"
-            headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.get(base_url.rstrip("/"), follow_redirects=True)
 
-        async with httpx.AsyncClient(timeout=5) as client:
-            resp = await client.get(url, headers=headers)
-        if resp.status_code >= 400:
+        if resp.status_code >= 500:
             return {"status": "error", "message": f"HTTP {resp.status_code}"}
 
-        payload = resp.json()
-        if not isinstance(payload.get("data"), list):
+        try:
+            data = resp.json()
+        except Exception:
+            return {"status": "error", "message": "Invalid models response"}
+
+        if not isinstance(data, dict) or "object" not in data:
             return {"status": "error", "message": "Invalid models response"}
 
         return {"status": "ok", "message": base_url}

@@ -92,7 +92,7 @@ async def test_llm_health_validates_openai_compatible_response_shape():
         async def __aexit__(self, exc_type, exc, tb):
             return None
 
-        async def get(self, url, headers):
+        async def get(self, url, headers=None, follow_redirects=True):
             return DummyResponse()
 
     cfg = type(
