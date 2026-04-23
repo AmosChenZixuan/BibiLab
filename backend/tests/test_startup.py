@@ -162,7 +162,7 @@ async def test_config_masks_sensitive_fields(client: httpx.AsyncClient):
         },
     )
     data = (await client.get("/config")).json()
-    assert data["ai"]["api_key"] == "***"
+    assert data["ai"]["api_key"] == "sk-secret"
     assert data["accounts"]["bilibili"]["cookie"] == "***"
 
 

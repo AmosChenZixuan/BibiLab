@@ -1,5 +1,7 @@
 import { useEffect, useId, useState } from "react";
 
+import { Eye, EyeOff } from "lucide-react";
+
 import { useLanguage } from "@/app/LanguageContext";
 import type { BibilabConfig, OutputLanguage } from "@/lib/types";
 import { Input, Select, SettingsField } from "@/components/ui";
@@ -17,6 +19,7 @@ const BASE_URL_META: Record<string, { hintKey: string; placeholderKey: string }>
 export function LlmTab({ config, onBlur }: LlmTabProps) {
   const { t } = useLanguage();
   const [localAi, setLocalAi] = useState(config.ai);
+  const [showApiKey, setShowApiKey] = useState(false);
   const baseUrlMeta = BASE_URL_META[localAi.protocol] ?? BASE_URL_META.openai;
   const providerId = useId();
   const modelId = useId();
@@ -75,17 +78,28 @@ export function LlmTab({ config, onBlur }: LlmTabProps) {
         hint={t("settings.apiKeyRequired")}
         htmlFor={apiKeyId}
       >
-        <Input
-          aria-label="API Key"
-          id={apiKeyId}
-          onBlur={handleBlur}
-          onChange={(event) =>
-            setLocalAi((current) => ({ ...current, api_key: event.target.value }))
-          }
-          inputSize="sm"
-          type="password"
-          value={localAi.api_key}
-        />
+        <div className="relative">
+          <Input
+            aria-label="API Key"
+            id={apiKeyId}
+            onBlur={handleBlur}
+            onChange={(event) =>
+              setLocalAi((current) => ({ ...current, api_key: event.target.value }))
+            }
+            inputSize="sm"
+            type={showApiKey ? "text" : "password"}
+            value={localAi.api_key}
+            className="pr-9"
+          />
+          <button
+            type="button"
+            aria-label={showApiKey ? "Hide API key" : "Reveal API key"}
+            className="absolute right-0 top-0 flex h-full items-center justify-center px-3 text-ink/40 hover:text-ink"
+            onClick={() => setShowApiKey((v) => !v)}
+          >
+            {showApiKey ? <EyeOff size={16} /> : <Eye size={16} />}
+          </button>
+        </div>
       </SettingsField>
 
       <SettingsField

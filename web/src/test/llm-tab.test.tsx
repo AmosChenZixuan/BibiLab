@@ -92,4 +92,24 @@ describe("llm tab", () => {
     expect(screen.getByText(/Anthropic API base URL/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/base url/i)).toHaveAttribute("placeholder", "https://api.anthropic.com/v1");
   });
+
+  test("api_key input type toggles between password and text", () => {
+    const config = { ...baseConfig, ai: { ...baseConfig.ai, api_key: "sk-test123" } };
+    render(
+      <LanguageProvider>
+        <LlmTab config={config} onBlur={() => {}} />
+      </LanguageProvider>,
+    );
+
+    const apiKeyInput = screen.getByLabelText("API Key", { selector: "input" });
+    expect(apiKeyInput).toHaveAttribute("type", "password");
+
+    const toggleBtn = screen.getByRole("button", { name: /reveal/i });
+    fireEvent.click(toggleBtn);
+    expect(apiKeyInput).toHaveAttribute("type", "text");
+
+    const hideBtn = screen.getByRole("button", { name: /hide/i });
+    fireEvent.click(hideBtn);
+    expect(apiKeyInput).toHaveAttribute("type", "password");
+  });
 });
