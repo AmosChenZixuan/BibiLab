@@ -28,6 +28,7 @@ export function useSSEStream({
   trackJobs,
 }: UseSSEStreamOptions): UseSSEStreamReturn {
   const [isStreaming, setIsStreaming] = useState(false);
+  const isStreamingRef = useRef(false);
   const abortControllerRef = useRef<AbortController | null>(null);
   const lastUserMessageRef = useRef<string>("");
 
@@ -46,6 +47,7 @@ export function useSSEStream({
 
   async function sendMessage(text: string): Promise<void> {
     if (!text) return;
+    if (isStreamingRef.current) return;
 
     lastUserMessageRef.current = text;
     const userMsgId = `user-${Date.now()}`;
@@ -75,6 +77,7 @@ export function useSSEStream({
 
     setMessages((prev) => [...prev, userMsg, assistantMsg]);
     setIsStreaming(true);
+    isStreamingRef.current = true;
 
     const controller = new AbortController();
     abortControllerRef.current = controller;
@@ -113,6 +116,7 @@ export function useSSEStream({
           updateAssistantMsg(assistantMsgId, (m) => ({ content: m.content + content }));
         } else if (event.type === "tool_result") {
           const result = event.result as ToolResult;
+          if (!result) return;
           const toolCallData = { name: "generate_report", result };
           if (result.job_id && trackJobs) {
             trackJobs([{ id: result.job_id, producer: "artifact", label: result.type, contextKey: listId }]);
@@ -125,10 +129,12 @@ export function useSSEStream({
             return { isStreaming: false, content: cleanContent, citations };
           });
           setIsStreaming(false);
+          isStreamingRef.current = false;
         } else if (event.type === "error") {
           const errorMsg = event.message as string;
           updateAssistantMsg(assistantMsgId, { isStreaming: false, error: errorMsg });
           setIsStreaming(false);
+          isStreamingRef.current = false;
         }
       };
 
@@ -161,6 +167,7 @@ export function useSSEStream({
       }
 
       setIsStreaming(false);
+      isStreamingRef.current = false;
     } catch (err) {
       if (err instanceof Error && err.name === "AbortError") {
         updateAssistantMsg(assistantMsgId, { isStreaming: false, error: "Interrupted" });
@@ -168,6 +175,7 @@ export function useSSEStream({
         updateAssistantMsg(assistantMsgId, { isStreaming: false, error: String(err) });
       }
       setIsStreaming(false);
+      isStreamingRef.current = false;
     } finally {
       abortControllerRef.current = null;
     }
@@ -180,6 +188,7 @@ export function useSSEStream({
 
   function retryLastMessage() {
     if (lastUserMessageRef.current) {
+      stopStreaming();
       setMessages((prev) => prev.slice(0, -2));
       void sendMessage(lastUserMessageRef.current);
     }
