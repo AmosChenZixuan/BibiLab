@@ -16,6 +16,7 @@ import {
 
 import { useLanguage } from "@/app/LanguageContext";
 import { useJobActivity } from "@/components/jobs/JobActivityProvider";
+import { useConversationHistory } from "@/components/lists/hooks/useConversationHistory";
 import type { Source } from "@/lib/types";
 import { api } from "@/lib/api";
 import {
@@ -58,7 +59,11 @@ export function ChatPanel({
   const [messages, setMessages] = useState<MessageUI[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
   const [showClearPopover, setShowClearPopover] = useState(false);
+<<<<<<< HEAD
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+=======
+  const [showScrollButton, setShowScrollButton] = useState(false);
+>>>>>>> eabe85d (refactor | web | #170 extract useConversationHistory hook)
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const lastUserMessageRef = useRef<string>("");
@@ -70,6 +75,8 @@ export function ChatPanel({
   });
 
   const hasSources = selectedSourceIds.length > 0;
+  const { messages: historyMessages, isLoadingHistory } = useConversationHistory(listId, hasSources);
+
   const hasConversation = messages.length > 0;
   const selectedSourceIdsSet = useMemo(() => new Set(selectedSourceIds), [selectedSourceIds]);
   const totalDuration = useMemo(
@@ -89,46 +96,10 @@ export function ChatPanel({
         : t("chat.input.placeholder.followUp");
 
   useEffect(() => {
-    if (!listId || !hasSources) return;
-    let cancelled = false;
-    setIsLoadingHistory(true);
-    setMessages([]);
-
-    api
-      .getConversation(listId)
-      .then((data) => {
-        if (cancelled || !data) return;
-        if (data.messages.length === 0) return;
-        const loaded: MessageUI[] = data.messages.map((m) => {
-          const { citations, cleanContent } = parseCitations(m.content);
-          let toolCall: ToolCallData | null = null;
-          const tcList = m.metadata?.tool_calls as Array<{ name: string; result?: ToolResult }> | undefined;
-          const tc = tcList?.[0];
-          if (tc?.result) {
-            toolCall = { name: tc.name, result: tc.result };
-          }
-          return {
-            id: m.id,
-            role: m.role as "user" | "assistant",
-            content: cleanContent,
-            isStreaming: false,
-            citations,
-            toolCall,
-            error: null,
-            timestamp: formatTimestamp(m.created_at),
-          };
-        });
-        setMessages(loaded);
-      })
-      .catch(() => {})
-      .finally(() => {
-        if (!cancelled) setIsLoadingHistory(false);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [listId, hasSources]);
+    if (historyMessages.length > 0) {
+      setMessages(historyMessages);
+    }
+  }, [historyMessages]);
 
   async function handleSend(overrideText?: string) {
     const text = (overrideText ?? inputValue).trim();
