@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+
+import { useAutoScroll } from "@/components/lists/hooks/useAutoScroll";
 import ReactMarkdown from "react-markdown";
 import {
   AlertCircle,
@@ -56,12 +58,16 @@ export function ChatPanel({
   const [messages, setMessages] = useState<MessageUI[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
   const [showClearPopover, setShowClearPopover] = useState(false);
-  const [showScrollButton, setShowScrollButton] = useState(false);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const messageListRef = useRef<HTMLDivElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const lastUserMessageRef = useRef<string>("");
+
+  const { showScrollButton, messageListRef, scrollToBottom } = useAutoScroll({
+    isLoadingHistory,
+    isStreaming,
+    messages,
+  });
 
   const hasSources = selectedSourceIds.length > 0;
   const hasConversation = messages.length > 0;
@@ -81,31 +87,6 @@ export function ChatPanel({
       : isStreaming
         ? t("chat.input.placeholder.streaming")
         : t("chat.input.placeholder.followUp");
-
-  function scrollToBottom() {
-    const list = messageListRef.current;
-    if (!list) return;
-    list.scrollTop = list.scrollHeight;
-  }
-
-  useEffect(() => {
-    if (!isLoadingHistory && messages.length > 0) {
-      scrollToBottom();
-    }
-  }, [isLoadingHistory, messages]);
-
-  useEffect(() => {
-    const list = messageListRef.current;
-    if (!list) return;
-
-    function onScroll(this: HTMLDivElement) {
-      const { scrollTop, scrollHeight, clientHeight } = this;
-      setShowScrollButton(scrollHeight - scrollTop - clientHeight > 80);
-    }
-
-    list.addEventListener("scroll", onScroll, { passive: true });
-    return () => list.removeEventListener("scroll", onScroll);
-  }, []);
 
   useEffect(() => {
     if (!listId || !hasSources) return;
@@ -148,12 +129,6 @@ export function ChatPanel({
       cancelled = true;
     };
   }, [listId, hasSources]);
-
-  useEffect(() => {
-    if (!isStreaming) return;
-    const id = setTimeout(() => scrollToBottom(), 0);
-    return () => clearTimeout(id);
-  }, [isStreaming, messages]);
 
   async function handleSend(overrideText?: string) {
     const text = (overrideText ?? inputValue).trim();

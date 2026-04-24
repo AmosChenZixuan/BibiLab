@@ -7,3 +7,12 @@ class MockResizeObserver {
   unobserve() {}
 }
 globalThis.ResizeObserver = MockResizeObserver;
+
+// Mock Element.scrollTo (not polyfilled by jsdom)
+Element.prototype.scrollTo = function (options?: ScrollToOptions | number) {
+  if (typeof options === "number") {
+    this.scrollTop = options;
+  } else if (options) {
+    this.scrollTop = (options as ScrollToOptions).top ?? this.scrollTop;
+  }
+};
