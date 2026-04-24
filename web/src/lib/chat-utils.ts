@@ -5,7 +5,7 @@ export interface ToolCallData {
   result: ToolResult;
 }
 
-export function formatDuration(seconds: number): string {
+export function formatDurationHuman(seconds: number): string {
   if (seconds < 60) return `${seconds}s`;
   const h = Math.floor(seconds / 3600);
   const m = Math.floor((seconds % 3600) / 60);
@@ -15,7 +15,7 @@ export function formatDuration(seconds: number): string {
 
 export function formatSubtitle(t: (key: string) => string, sourceCount: number, totalSeconds: number): string {
   const srcLabel = sourceCount === 1 ? t("chat.subtitle.source") : t("chat.subtitle.sources");
-  return `${sourceCount} ${srcLabel} · ${formatDuration(totalSeconds)} ${t("chat.subtitle.total")}`;
+  return `${sourceCount} ${srcLabel} · ${formatDurationHuman(totalSeconds)} ${t("chat.subtitle.total")}`;
 }
 
 export function parseCitations(text: string): { citations: Citation[]; cleanContent: string } {
