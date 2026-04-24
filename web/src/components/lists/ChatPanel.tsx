@@ -154,6 +154,7 @@ export function ChatPanel({
     if (!listId || !hasSources) return;
     let cancelled = false;
     setIsLoadingHistory(true);
+    setMessages([]);
 
     api
       .getConversation(listId)
@@ -374,6 +375,7 @@ export function ChatPanel({
 
   function handleRetry() {
     if (lastUserMessageRef.current) {
+      setMessages((prev) => prev.slice(0, -2));
       void handleSend(lastUserMessageRef.current);
     }
   }
@@ -519,7 +521,7 @@ export function ChatPanel({
                       <div className="toolcall">
                         <span className="ic"><FileText size={14} /></span>
                         <span>{t("chat.createdReport")} <strong>{msg.toolCall.result.name}</strong></span>
-                        <span className="badge">{msg.toolCall.result.type.toUpperCase().replace("_", " ")}</span>
+                        <span className="badge">{msg.toolCall.result.type.toUpperCase().replace(/_/g, " ")}</span>
                       </div>
                     )}
                     {msg.error && (
