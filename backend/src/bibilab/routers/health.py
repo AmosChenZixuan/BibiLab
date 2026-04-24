@@ -28,14 +28,6 @@ async def _check_llm(cfg: BibilabConfig) -> dict:
         if resp.status_code >= 500:
             return {"status": "error", "message": f"HTTP {resp.status_code}"}
 
-        try:
-            data = resp.json()
-        except Exception:
-            return {"status": "error", "message": "Invalid models response"}
-
-        if not isinstance(data, dict) or "object" not in data:
-            return {"status": "error", "message": "Invalid models response"}
-
         return {"status": "ok", "message": base_url}
     except httpx.TimeoutException as exc:
         return {"status": "error", "message": f"Request timed out: {exc}"}

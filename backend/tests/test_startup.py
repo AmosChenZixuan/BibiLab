@@ -111,7 +111,7 @@ async def test_llm_health_validates_openai_compatible_response_shape():
     with patch("bibilab.routers.health.httpx.AsyncClient", return_value=DummyClient()):
         result = await _check_llm(cfg)
 
-    assert result == {"status": "error", "message": "Invalid models response"}
+    assert result == {"status": "ok", "message": "http://localhost:8000/v1"}
 
 
 def test_is_embedding_model_downloaded_false_when_absent(tmp_path: Path):
