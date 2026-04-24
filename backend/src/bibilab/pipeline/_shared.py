@@ -60,7 +60,8 @@ def _call_llm(
             messages=[{"role": "user", "content": prompt}],
             timeout=llm_timeout,
         )
-        return msg.content[0].text
+        text_block = next((block for block in msg.content if block.type == "text"), None)
+        return text_block.text if text_block else ""
 
     # openai (includes OpenAI-compatible providers via base_url)
     if cache_key not in _client_cache:

@@ -314,7 +314,7 @@ All output fields MUST be written in {_LANG_NAME.get(lang, "English")}."""
                     llm_prompt,
                     cfg.ai,
                     llm_timeout=cfg.transcription.llm_timeout,
-                    llm_max_tokens=cfg.transcription.llm_max_tokens,
+                    llm_max_tokens=max(cfg.transcription.llm_max_tokens, 8192),
                 )
                 return _parse_llm_json_response(raw, ArtifactResult)
             except Exception as exc:  # noqa: BLE001

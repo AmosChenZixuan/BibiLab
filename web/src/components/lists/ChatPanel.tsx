@@ -162,13 +162,19 @@ export function ChatPanel({
         if (data.messages.length === 0) return;
         const loaded: MessageUI[] = data.messages.map((m) => {
           const { citations, cleanContent } = parseCitations(m.content);
+          let toolCall: ToolCallData | null = null;
+          const tcList = m.metadata?.tool_calls as Array<{ name: string; result?: ToolResult }> | undefined;
+          const tc = tcList?.[0];
+          if (tc?.result) {
+            toolCall = { name: tc.name, result: tc.result };
+          }
           return {
             id: m.id,
             role: m.role as "user" | "assistant",
             content: cleanContent,
             isStreaming: false,
             citations,
-            toolCall: null,
+            toolCall,
             error: null,
             timestamp: formatTimestamp(m.created_at),
           };
@@ -257,7 +263,13 @@ export function ChatPanel({
           return;
         }
 
-        if (event.type === "delta") {
+        if (event.type === "clear_text") {
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === assistantMsgId ? { ...m, content: "" } : m,
+            ),
+          );
+        } else if (event.type === "delta") {
           const content = event.content as string;
           setMessages((prev) =>
             prev.map((m) =>
@@ -471,6 +483,7 @@ export function ChatPanel({
                   </>
                 ) : (
                   <>
+                    {(msg.content || msg.isStreaming) && (
                     <div className="bubble bubble-assistant">
                       {msg.isStreaming && !msg.content ? (
                         <span className="chat-typing-indicator">
@@ -485,6 +498,7 @@ export function ChatPanel({
                         </>
                       )}
                     </div>
+                    )}
                     {msg.citations.length > 0 && (
                       <div className="cites">
                         {msg.citations.map((c, i) => (
@@ -504,7 +518,7 @@ export function ChatPanel({
                     {msg.toolCall && (
                       <div className="toolcall">
                         <span className="ic"><FileText size={14} /></span>
-                        {t("chat.createdReport")} <strong>{msg.toolCall.result.name}</strong>
+                        <span>{t("chat.createdReport")} <strong>{msg.toolCall.result.name}</strong></span>
                         <span className="badge">{msg.toolCall.result.type.toUpperCase().replace("_", " ")}</span>
                       </div>
                     )}

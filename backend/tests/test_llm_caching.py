@@ -24,7 +24,9 @@ class TestAnthropicClientCaching:
         )
 
         mock_client_instance = MagicMock()
-        mock_client_instance.messages.create.return_value = MagicMock(content=[MagicMock(text="test response")])
+        mock_client_instance.messages.create.return_value = MagicMock(
+            content=[MagicMock(type="text", text="test response")]
+        )
 
         with patch.object(anthropic, "Anthropic", return_value=mock_client_instance) as mock_anthropic_cls:
             # First call

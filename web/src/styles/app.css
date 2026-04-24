@@ -218,17 +218,15 @@
 
   /* Tool-call card */
   .toolcall {
-    align-self: center;
-    display: inline-flex;
+    display: flex;
     align-items: center;
     gap: 8px;
     background: rgba(255, 255, 255, 0.7);
     border: 1px solid var(--color-border);
     border-radius: 12px;
-    padding: 6px 12px;
+    padding: 8px 14px;
     font-size: 12px;
     color: var(--color-muted);
-    max-width: 92%;
   }
 
   .toolcall .ic {

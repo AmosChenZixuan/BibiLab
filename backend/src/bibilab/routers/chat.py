@@ -187,7 +187,9 @@ async def chat_endpoint(
             )
             return
 
-        tool_messages = []
+        yield f"data: {json.dumps({'type': 'clear_text'})}\n\n"
+
+        tool_results = []
         for tc in tool_calls:
             try:
                 result = await execute_tool(
@@ -208,53 +210,21 @@ async def chat_endpoint(
                 )
                 return
 
-            tool_messages.append(
-                {
-                    "role": "tool",
-                    "tool_call_id": tc.id,
-                    "content": json.dumps({"name": tc.name, "result": result}),
-                }
-            )
+            tool_results.append({"tool_call_id": tc.id, "content": json.dumps({"name": tc.name, "result": result})})
             yield f"data: {json.dumps({'type': 'tool_result', 'tool_call_id': tc.id, 'result': result})}\n\n"
 
-        second_messages = messages_for_llm + [
-            {"role": "assistant", "content": "".join(first_response_deltas)},
-            *tool_messages,
-        ]
+        yield f"data: {json.dumps({'type': 'done'})}\n\n"
 
-        second_deltas: list[str] = []
+        tool_call_meta = []
+        for tc, tr in zip(tool_calls, tool_results):
+            result_data = json.loads(tr["content"])
+            tool_call_meta.append({"id": tc.id, "name": tc.name, "result": result_data.get("result")})
 
-        try:
-            async for event in stream_llm(
-                messages=second_messages,
-                cfg=cfg.ai,
-                system=system_message if system_message.strip() else None,
-            ):
-                if event.type == "delta":
-                    second_deltas.append(event.content or "")
-                    yield f"data: {json.dumps({'type': 'delta', 'content': event.content})}\n\n"
-                elif event.type == "done":
-                    yield f"data: {json.dumps({'type': 'done'})}\n\n"
-        except Exception:
-            logger.exception("LLM streaming failed (second pass)")
-            await create_message(
-                conversation_id=conversation_id,
-                role="assistant",
-                content="",
-                metadata={
-                    "tool_calls": [{"id": tc.id, "name": tc.name, "arguments": tc.arguments} for tc in tool_calls]
-                },
-            )
-            await delete_messages_by_ids([user_msg_id])
-            yield f"data: {json.dumps({'type': 'error', 'message': 'An internal error occurred'})}\n\n"
-            return
-
-        full_response = "".join(second_deltas)
         await create_message(
             conversation_id=conversation_id,
             role="assistant",
-            content=full_response,
-            metadata={"tool_calls": [{"id": tc.id, "name": tc.name, "arguments": tc.arguments} for tc in tool_calls]},
+            content="",
+            metadata={"tool_calls": tool_call_meta},
         )
 
     return StreamingResponse(

@@ -71,7 +71,7 @@ async def execute_tool(
         if not artifact_type or not prompt:
             raise ValueError("Missing required arguments: type and prompt")
         if artifact_type not in _VALID_ARTIFACT_TYPES:
-            raise ValueError(f"Invalid artifact type: {artifact_type}")
+            artifact_type = "custom_report"
         return await execute_generate_report(
             list_id=list_id,
             artifact_type=artifact_type,
