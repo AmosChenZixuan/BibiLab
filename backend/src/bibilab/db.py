@@ -683,15 +683,6 @@ async def update_conversation_summary(conversation_id: str, summary: str) -> Non
         await db.commit()
 
 
-async def update_message_metadata(message_id: str, metadata: dict[str, Any]) -> None:
-    async with get_db() as db:
-        await db.execute(
-            "UPDATE messages SET metadata=? WHERE id=?",
-            (json.dumps(metadata), message_id),
-        )
-        await db.commit()
-
-
 async def get_message_count(conversation_id: str) -> int:
     async with get_db() as db:
         cursor = await db.execute(
