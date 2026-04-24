@@ -1,16 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 
-interface MessageUI {
-  id: string;
-  role: "user" | "assistant";
-  content: string;
-  isStreaming: boolean;
-}
-
 interface UseAutoScrollOptions {
   isLoadingHistory: boolean;
   isStreaming: boolean;
-  messages: MessageUI[];
+  messages: unknown[];
 }
 
 interface UseAutoScrollReturn {
@@ -30,7 +23,7 @@ export function useAutoScroll({
   function scrollToBottom() {
     const list = messageListRef.current;
     if (!list) return;
-    list.scrollTop = list.scrollHeight;
+    list.scrollTo({ top: list.scrollHeight, behavior: "smooth" });
   }
 
   useEffect(() => {
