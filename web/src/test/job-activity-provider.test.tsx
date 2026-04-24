@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
 import { JobActivityProvider, useJobActivity } from "@/components/jobs/JobActivityProvider";
+import { LanguageProvider } from "@/app/LanguageContext";
 import type { IngestJob, Job } from "@/lib/types";
 
 vi.mock("../lib/api", () => {
@@ -14,6 +15,7 @@ vi.mock("../lib/api", () => {
     createApiClient: () => mockApi,
     api: mockApi,
     toErrorMessage: (error: unknown) => (error instanceof Error ? error.message : "Request failed"),
+    toErrorMessageWithT: (error: unknown) => (error instanceof Error ? error.message : "Request failed"),
     setCurrentLang: vi.fn(),
   };
 });
@@ -22,9 +24,11 @@ import { api } from "@/lib/api";
 
 function renderProvider() {
   return render(
-    <JobActivityProvider>
-      <Probe />
-    </JobActivityProvider>,
+    <LanguageProvider>
+      <JobActivityProvider>
+        <Probe />
+      </JobActivityProvider>
+    </LanguageProvider>,
   );
 }
 

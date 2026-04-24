@@ -428,30 +428,11 @@ async def delete_artifacts_for_list(list_id: str) -> None:
         await db.commit()
 
 
-async def get_video_statuses(
-    video_ids: list[str], list_id: str
+def derive_video_statuses(
+    video_ids: list[str],
+    job_rows: list[dict[str, str]],
+    source_rows: list[dict[str, str]],
 ) -> dict[str, Literal["new", "processed", "in_progress", "needs_auth"]]:
-    if not video_ids:
-        return {}
-    placeholders = _in_placeholders(video_ids)
-
-    async with get_db() as db:
-        cursor = await db.execute(
-            f"""
-            SELECT json_extract(meta, '$.video_id') AS video_id, status FROM jobs
-            WHERE json_extract(meta, '$.list_id') = ?
-            AND json_extract(meta, '$.video_id') IN ({placeholders})
-            """,
-            [list_id] + video_ids,
-        )
-        job_rows = await cursor.fetchall()
-
-        cursor = await db.execute(
-            f"SELECT video_id FROM sources WHERE list_id=? AND video_id IN ({placeholders})",
-            [list_id] + video_ids,
-        )
-        source_rows = await cursor.fetchall()
-
     processed = {row["video_id"] for row in source_rows}
     statuses: dict[str, Literal["new", "processed", "in_progress", "needs_auth"]] = {}
 
@@ -482,6 +463,33 @@ async def get_video_statuses(
             statuses[vid] = "new"
 
     return statuses
+
+
+async def get_video_statuses(
+    video_ids: list[str], list_id: str
+) -> dict[str, Literal["new", "processed", "in_progress", "needs_auth"]]:
+    if not video_ids:
+        return {}
+    placeholders = _in_placeholders(video_ids)
+
+    async with get_db() as db:
+        cursor = await db.execute(
+            f"""
+            SELECT json_extract(meta, '$.video_id') AS video_id, status FROM jobs
+            WHERE json_extract(meta, '$.list_id') = ?
+            AND json_extract(meta, '$.video_id') IN ({placeholders})
+            """,
+            [list_id] + video_ids,
+        )
+        job_rows = await cursor.fetchall()
+
+        cursor = await db.execute(
+            f"SELECT video_id FROM sources WHERE list_id=? AND video_id IN ({placeholders})",
+            [list_id] + video_ids,
+        )
+        source_rows = await cursor.fetchall()
+
+    return derive_video_statuses(video_ids, job_rows, source_rows)
 
 
 async def create_job(

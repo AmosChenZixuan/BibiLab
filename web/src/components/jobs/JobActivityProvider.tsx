@@ -327,9 +327,9 @@ export function JobActivityProvider({ children }: { children: React.ReactNode })
       removeJobLocally(jobId);
       setErrorMessage(null);
     } catch (error) {
-      setErrorMessage(toErrorMessage(error));
+      setErrorMessage(toErrorMessageWithT(error, t));
     }
-  }, [removeJobLocally]);
+  }, [removeJobLocally, t]);
 
   const clearTerminalJobs = useCallback(() => {
     const terminalIds = visibleJobs.filter((job) => job.isTerminal).map((job) => job.job.id);
@@ -346,11 +346,11 @@ export function JobActivityProvider({ children }: { children: React.ReactNode })
       await api.deleteJob(jobId);
       removeJobLocally(jobId);
     } catch (error) {
-      setErrorMessage(toErrorMessage(error));
+      setErrorMessage(toErrorMessageWithT(error, t));
     } finally {
       setCancellingJobId(null);
     }
-  }, [removeJobLocally]);
+  }, [removeJobLocally, t]);
 
   const getJobs = useCallback(
     (producer: JobProducer, contextKey?: string) => {
