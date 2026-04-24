@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useState, type ReactNode } from
 
 import en from "@/lib/i18n/en.json";
 import zh from "@/lib/i18n/zh.json";
+import { LANG_STORAGE_KEY } from "@/lib/utils";
 import { setCurrentLang } from "@/lib/api";
 
 export type Lang = "en" | "zh";
@@ -44,13 +45,13 @@ const LanguageContext = createContext<LanguageContextValue>({
 
 export function LanguageProvider({ children }: { children: ReactNode }) {
   const [lang, setLangState] = useState<Lang>(() => {
-    const stored = localStorage.getItem("bibilab-lang");
+    const stored = localStorage.getItem(LANG_STORAGE_KEY);
     return stored === "zh" ? "zh" : "en";
   });
 
   function setLang(nextLang: Lang) {
     setLangState(nextLang);
-    localStorage.setItem("bibilab-lang", nextLang);
+    localStorage.setItem(LANG_STORAGE_KEY, nextLang);
     setCurrentLang(nextLang);
   }
 

@@ -18,6 +18,7 @@ import type {
   Conversation,
   Message,
 } from "./types";
+import { LANG_STORAGE_KEY } from "./utils";
 import type { Lang } from "@/app/LanguageContext";
 
 type ApiErrorDetail = string | { message?: string };
@@ -74,7 +75,7 @@ export function notifyBilibiliAuthChanged() {
 
 // ─── Current UI language ──────────────────────────────────────────────────────
 
-let _currentLang: Lang = (localStorage.getItem("bibilab-lang") as Lang | null) ?? "en";
+let _currentLang: Lang = (localStorage.getItem(LANG_STORAGE_KEY) as Lang | null) ?? "en";
 
 export function setCurrentLang(lang: Lang) {
   _currentLang = lang;

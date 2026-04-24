@@ -1,3 +1,5 @@
+export const LANG_STORAGE_KEY = "bibilab-lang";
+
 export function formatDuration(seconds: number): string {
   const m = Math.floor(seconds / 60);
   const s = seconds % 60;
