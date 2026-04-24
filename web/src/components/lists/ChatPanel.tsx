@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import { LANG_STORAGE_KEY } from "@/lib/utils";
 import { useAutoScroll } from "@/components/lists/hooks/useAutoScroll";
 import ReactMarkdown from "react-markdown";
 import {
@@ -130,7 +131,7 @@ export function ChatPanel({
     try {
       const response = await fetch(`/api/lists/${listId}/chat`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", "X-UI-Lang": localStorage.getItem("bibilab-lang") ?? "en" },
+        headers: { "Content-Type": "application/json", "X-UI-Lang": localStorage.getItem(LANG_STORAGE_KEY) ?? "en" },
         body: JSON.stringify({ message: text, source_ids: selectedSourceIds }),
         signal: controller.signal,
       });

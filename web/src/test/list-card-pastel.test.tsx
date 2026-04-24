@@ -3,11 +3,12 @@ import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, test } from "vitest";
 import { nameToPastelIndex, PASTEL_COLORS, ListCard } from "@/components/lists/ListCard";
 import { LanguageProvider } from "@/app/LanguageContext";
+import { LANG_STORAGE_KEY } from "@/lib/utils";
 import { BibilabList } from "@/lib/types";
 
 afterEach(() => {
   cleanup();
-  localStorage.removeItem("bibilab-lang");
+  localStorage.removeItem(LANG_STORAGE_KEY);
 });
 
 function makeList(overrides: Partial<BibilabList> = {}): BibilabList {
@@ -53,7 +54,7 @@ describe("ListCard i18n source count", () => {
 
   test("uses i18n: renders Chinese '来源' instead of English 'source' when locale is zh", () => {
     // Pre-set localStorage so LanguageProvider initializes in zh mode
-    localStorage.setItem("bibilab-lang", "zh");
+    localStorage.setItem(LANG_STORAGE_KEY, "zh");
     const list = makeList({ source_count: 1, updated_at: "2026-03-31T20:00:00Z" });
     render(
       <MemoryRouter>
