@@ -48,23 +48,18 @@ export function ChatPanel({
   const [messages, setMessages] = useState<MessageUI[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
   const [showClearPopover, setShowClearPopover] = useState(false);
-<<<<<<< HEAD
-  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
-=======
-  const [showScrollButton, setShowScrollButton] = useState(false);
->>>>>>> eabe85d (refactor | web | #170 extract useConversationHistory hook)
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const lastUserMessageRef = useRef<string>("");
+
+  const hasSources = selectedSourceIds.length > 0;
+  const { messages: historyMessages, isLoadingHistory } = useConversationHistory(listId, hasSources);
 
   const { showScrollButton, messageListRef, scrollToBottom } = useAutoScroll({
     isLoadingHistory,
     isStreaming,
     messages,
   });
-
-  const hasSources = selectedSourceIds.length > 0;
-  const { messages: historyMessages, isLoadingHistory } = useConversationHistory(listId, hasSources);
 
   const hasConversation = messages.length > 0;
   const selectedSourceIdsSet = useMemo(() => new Set(selectedSourceIds), [selectedSourceIds]);
