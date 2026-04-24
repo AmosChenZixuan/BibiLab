@@ -8,8 +8,9 @@ import {
   useState,
 } from "react";
 
-import { api, toErrorMessage } from "@/lib/api";
+import { api, toErrorMessageWithT } from "@/lib/api";
 import type { ArtifactJob, IngestJob, Job, ModelDownloadJob } from "@/lib/types";
+import { useLanguage } from "@/app/LanguageContext";
 
 export const TERMINAL_JOB_STATUSES = new Set(["done", "failed", "needs_auth"]);
 
@@ -207,6 +208,7 @@ export function getJobTone(job: Job): "ok" | "error" | "unavailable" | "neutral"
 }
 
 export function JobActivityProvider({ children }: { children: React.ReactNode }) {
+  const { t } = useLanguage();
   const [jobsById, setJobsById] = useState<Record<string, Job>>({});
   const [trackedJobs, setTrackedJobs] = useState<Record<string, TrackedJobMeta>>({});
   const [dismissedJobIds, setDismissedJobIds] = useState<string[]>([]);
@@ -226,9 +228,9 @@ export function JobActivityProvider({ children }: { children: React.ReactNode })
       setErrorMessage(null);
     } catch (error) {
       if (error instanceof Error && error.name === "AbortError") return;
-      setErrorMessage(toErrorMessage(error));
+      setErrorMessage(toErrorMessageWithT(error, t));
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -327,9 +329,9 @@ export function JobActivityProvider({ children }: { children: React.ReactNode })
       removeJobLocally(jobId);
       setErrorMessage(null);
     } catch (error) {
-      setErrorMessage(toErrorMessage(error));
+      setErrorMessage(toErrorMessageWithT(error, t));
     }
-  }, [removeJobLocally]);
+  }, [removeJobLocally, t]);
 
   const clearTerminalJobs = useCallback(() => {
     const terminalIds = visibleJobs.filter((job) => job.isTerminal).map((job) => job.job.id);
@@ -346,11 +348,11 @@ export function JobActivityProvider({ children }: { children: React.ReactNode })
       await api.deleteJob(jobId);
       removeJobLocally(jobId);
     } catch (error) {
-      setErrorMessage(toErrorMessage(error));
+      setErrorMessage(toErrorMessageWithT(error, t));
     } finally {
       setCancellingJobId(null);
     }
-  }, [removeJobLocally]);
+  }, [removeJobLocally, t]);
 
   const getJobs = useCallback(
     (producer: JobProducer, contextKey?: string) => {
