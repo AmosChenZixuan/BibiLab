@@ -58,6 +58,17 @@ Single-port deployment: FastAPI serves the React build as static files in produc
 | Chat streaming | SSE via `StreamingResponse`; RAG context in system prompt | Citations parsed client-side from `[title @ Ts-Ts]` format |
 | Conversation compression | Background summary after 30+ messages, sliding window of 20 | Keeps recent context; old messages deleted after summarization |
 
+## Code Health Rules
+
+Every change — feature, fix, or refactor — must leave the codebase no worse than it found it. These rules exist because past fixes introduced dead code, duplicated logic, and magic strings. Do not repeat those mistakes.
+
+1. **No dead code.** Never commit a function, import, or variable that has zero callers. If you write a helper "for future use", delete it — add it in the PR that actually uses it.
+2. **No magic strings.** Repeated string literals (localStorage keys, header names, event names) must use a shared constant. Before introducing a new literal, grep for it — if it already appears elsewhere, use or create the constant.
+3. **No duplicated logic.** Before writing a utility function, check if one already exists in `lib/` (frontend) or `pipeline/` (backend). If a near-duplicate exists, extend it rather than creating a second version.
+4. **No business logic in the data layer.** `db.py` is for SQL queries, not status mapping or side effects. Domain rules belong in routers or service functions.
+5. **Scope discipline.** A bug fix changes only what's broken. A feature adds only what's specified. If you notice adjacent issues, file them — don't fix them in the same PR.
+6. **Verify before committing.** Run `uv run pytest` (backend) and `npm test && npm run lint` (frontend) before declaring work done.
+
 ## Notes
 
 - Active specs in `docs/specs/`; internal docs in `docs/internal/`; roadmap in `docs/roadmap.md`.
