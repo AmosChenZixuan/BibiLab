@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { LANG_STORAGE_KEY } from "@/lib/utils";
 import { useAutoScroll } from "@/components/lists/hooks/useAutoScroll";
+import { useSSEStream } from "@/components/lists/hooks/useSSEStream";
 import ReactMarkdown from "react-markdown";
 import {
   AlertCircle,
@@ -23,11 +24,6 @@ import { api } from "@/lib/api";
 import {
   autoResize,
   formatSubtitle,
-  formatTimestamp,
-  parseCitations,
-  type Citation,
-  type ToolCallData,
-  type ToolResult,
 } from "@/lib/chat-utils";
 
 interface ChatPanelProps {
@@ -47,14 +43,19 @@ export function ChatPanel({
   const { trackJobs } = useJobActivity();
   const [inputValue, setInputValue] = useState("");
   const [messages, setMessages] = useState<MessageUI[]>([]);
-  const [isStreaming, setIsStreaming] = useState(false);
   const [showClearPopover, setShowClearPopover] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const abortControllerRef = useRef<AbortController | null>(null);
-  const lastUserMessageRef = useRef<string>("");
 
   const hasSources = selectedSourceIds.length > 0;
   const { messages: historyMessages, isLoadingHistory } = useConversationHistory(listId, hasSources);
+
+  const { sendMessage, stopStreaming, retryLastMessage, isStreaming } = useSSEStream({
+    listId,
+    selectedSourceIds,
+    setMessages,
+    onArtifactGenerated,
+    trackJobs,
+  });
 
   const { showScrollButton, messageListRef, scrollToBottom } = useAutoScroll({
     isLoadingHistory,
@@ -86,6 +87,7 @@ export function ChatPanel({
     }
   }, [historyMessages]);
 
+<<<<<<< HEAD
   async function handleSend(overrideText?: string) {
     const text = (overrideText ?? inputValue).trim();
     if (!text || !hasSources || isStreaming) return;
@@ -271,8 +273,23 @@ export function ChatPanel({
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      isStreaming ? handleStop() : handleSend();
+      if (isStreaming) {
+        stopStreaming();
+      } else {
+        const text = inputValue.trim();
+        if (!text || !hasSources) return;
+        setInputValue("");
+        if (textareaRef.current) {
+          textareaRef.current.style.height = "auto";
+          textareaRef.current.style.overflowY = "hidden";
+        }
+        void sendMessage(text);
+      }
     }
+  }
+
+  function handleRetry() {
+    retryLastMessage();
   }
 
   async function handleClearConfirm() {
@@ -464,7 +481,20 @@ export function ChatPanel({
 
             <button
               type="button"
-              onClick={isStreaming ? handleStop : () => void handleSend()}
+              onClick={() => {
+                if (isStreaming) {
+                  stopStreaming();
+                } else {
+                  const text = inputValue.trim();
+                  if (!text || !hasSources) return;
+                  setInputValue("");
+                  if (textareaRef.current) {
+                    textareaRef.current.style.height = "auto";
+                    textareaRef.current.style.overflowY = "hidden";
+                  }
+                  void sendMessage(text);
+                }
+              }}
               disabled={!hasSources || (!isStreaming && !inputValue.trim())}
               aria-label={isStreaming ? t("chat.stop") : t("chat.send")}
               className={`absolute bottom-1.5 right-1.5 flex items-center justify-center rounded-full text-white transition ${
