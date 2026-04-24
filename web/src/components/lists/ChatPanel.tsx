@@ -16,7 +16,7 @@ import {
 
 import { useLanguage } from "@/app/LanguageContext";
 import { useJobActivity } from "@/components/jobs/JobActivityProvider";
-import { useConversationHistory } from "@/components/lists/hooks/useConversationHistory";
+import { useConversationHistory, type MessageUI } from "@/components/lists/hooks/useConversationHistory";
 import type { Source } from "@/lib/types";
 import { api } from "@/lib/api";
 import {
@@ -28,17 +28,6 @@ import {
   type ToolCallData,
   type ToolResult,
 } from "@/lib/chat-utils";
-
-export interface MessageUI {
-  id: string;
-  role: "user" | "assistant";
-  content: string;
-  isStreaming: boolean;
-  citations: Citation[];
-  toolCall: ToolCallData | null;
-  error: string | null;
-  timestamp: string;
-}
 
 interface ChatPanelProps {
   selectedSourceIds: string[];
