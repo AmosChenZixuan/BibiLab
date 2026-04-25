@@ -19,9 +19,9 @@ npx vitest run --coverage          # Coverage (requires @vitest/coverage-v8)
 ```
 components/ui/    — primitive components (Button, Modal, Panel, Input, Select, Spinner, StatusChip, SettingsField, Thumbnail, ContextMenu)
 components/auth/  — platform auth modals (BilibiliQrModal)
-components/*/     — feature components (lists/, lists/lab/, jobs/, layout/, settings/)
+components/*/     — feature components (lists/, lists/sources/, lists/lab/, jobs/, layout/, settings/)
 pages/            — route-level page components
-lib/              — typed api client, types, artifact types, templates, download helpers, health check, utils
+lib/              — typed api client, types, artifact types, templates, download helpers, health check, i18n, utils
 app/              — router, language context
 test/             — Vitest test files + setup
 ```
@@ -41,7 +41,10 @@ test/             — Vitest test files + setup
 - **Handlers**: named `handle{Action}`; event props use `on{Action}` prefix (`onDelete`, `onCreate`)
 - **State**: `useState` with `set` prefix; async operations use `let cancelled = false` guard in `useEffect`
 - **Imports**: use `@/*` alias (`@/components/ui`, `@/lib/api`, `@/lib/types`)
-- **API client**: single `api` object in `lib/api.ts` with typed `request<T>` wrapper; errors thrown as `ApiError`
+- **API client**: single `api` object in `lib/api.ts` with typed `request<T>` wrapper; errors thrown as `ApiError`. All HTTP requests must go through this client — do not use raw `fetch()` except for SSE streaming endpoints that require `ReadableStream` access.
+- **Error handling**: always use `toErrorMessageWithT(error, t)` for user-facing error messages, never the raw `toErrorMessage()`. This ensures errors display in the correct UI language.
 - **i18n**: `useLanguage()` → `t("key.path")` for lookup; `%{name}` placeholders with `t("key", { name: value })` for interpolation. String tables in `lib/i18n/{en,zh}.json` must stay in sync
+- **Constants**: localStorage keys, custom event names, and other repeated string literals must be defined as named constants in a shared location (e.g., `lib/utils.ts`). Never scatter the same magic string across multiple files.
+- **Utilities**: before writing a helper function inside a component, check `lib/utils.ts` for existing implementations. If a utility is pure (no React state), it belongs in `lib/`, not inline in a component.
 - **Styling**: Tailwind utility classes only; no CSS modules. Inline `style` only for dynamic computed values (widths, positions, URLs). No arbitrary bracket values (e.g. `mt-[10px]`) — use Tailwind's built-in scale or CSS custom properties from `src/styles/app.css` (`--color-*`, `--z-*`, `--font-*`)
 - **Cross-component auth sync**: When auth state changes (login/logout), call `notifyBilibiliAuthChanged()` from `lib/api.ts`. Components that need to react listen for `BILIBILI_AUTH_REFRESH_EVENT` via `window.addEventListener`. Do not prop-drill auth state through unrelated components.

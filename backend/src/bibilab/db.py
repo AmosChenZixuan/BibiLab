@@ -1,3 +1,4 @@
+import asyncio
 import json
 import uuid
 from collections.abc import AsyncGenerator
@@ -428,11 +429,9 @@ async def delete_artifacts_for_list(list_id: str) -> None:
         await db.commit()
 
 
-async def get_video_statuses(
-    video_ids: list[str], list_id: str
-) -> dict[str, Literal["new", "processed", "in_progress", "needs_auth"]]:
+async def get_jobs_for_video_ids(video_ids: list[str], list_id: str) -> list[dict[str, str]]:
     if not video_ids:
-        return {}
+        return []
     placeholders = _in_placeholders(video_ids)
 
     async with get_db() as db:
@@ -444,21 +443,32 @@ async def get_video_statuses(
             """,
             [list_id] + video_ids,
         )
-        job_rows = await cursor.fetchall()
+        return await cursor.fetchall()
 
+
+async def get_source_video_ids(video_ids: list[str], list_id: str) -> set[str]:
+    if not video_ids:
+        return set()
+    placeholders = _in_placeholders(video_ids)
+
+    async with get_db() as db:
         cursor = await db.execute(
             f"SELECT video_id FROM sources WHERE list_id=? AND video_id IN ({placeholders})",
             [list_id] + video_ids,
         )
-        source_rows = await cursor.fetchall()
+        rows = await cursor.fetchall()
+    return {row["video_id"] for row in rows}
 
-    processed = {row["video_id"] for row in source_rows}
-    statuses: dict[str, Literal["new", "processed", "in_progress", "needs_auth"]] = {}
 
+def derive_video_statuses(
+    video_ids: list[str],
+    jobs: list[dict[str, str]],
+    processed_ids: set[str],
+) -> dict[str, Literal["new", "processed", "in_progress", "needs_auth"]]:
     needs_auth_videos: set[str] = set()
     in_progress_videos: set[str] = set()
 
-    for row in job_rows:
+    for row in jobs:
         vid = row["video_id"]
         st = row["status"]
         if st == JobStatus.NEEDS_AUTH.value:
@@ -471,17 +481,28 @@ async def get_video_statuses(
         ):
             in_progress_videos.add(vid)
 
+    statuses: dict[str, Literal["new", "processed", "in_progress", "needs_auth"]] = {}
     for vid in video_ids:
         if vid in needs_auth_videos:
             statuses[vid] = "needs_auth"
         elif vid in in_progress_videos:
             statuses[vid] = "in_progress"
-        elif vid in processed:
+        elif vid in processed_ids:
             statuses[vid] = "processed"
         else:
             statuses[vid] = "new"
 
     return statuses
+
+
+async def get_video_statuses(
+    video_ids: list[str], list_id: str
+) -> dict[str, Literal["new", "processed", "in_progress", "needs_auth"]]:
+    jobs, processed_ids = await asyncio.gather(
+        get_jobs_for_video_ids(video_ids, list_id),
+        get_source_video_ids(video_ids, list_id),
+    )
+    return derive_video_statuses(video_ids, jobs, processed_ids)
 
 
 async def create_job(
@@ -679,15 +700,6 @@ async def update_conversation_summary(conversation_id: str, summary: str) -> Non
         await db.execute(
             "UPDATE conversations SET summary=?, updated_at=? WHERE id=?",
             (summary, now, conversation_id),
-        )
-        await db.commit()
-
-
-async def update_message_metadata(message_id: str, metadata: dict[str, Any]) -> None:
-    async with get_db() as db:
-        await db.execute(
-            "UPDATE messages SET metadata=? WHERE id=?",
-            (json.dumps(metadata), message_id),
         )
         await db.commit()
 

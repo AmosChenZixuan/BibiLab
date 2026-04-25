@@ -348,7 +348,7 @@ describe("chat panel — conversation history (phase 6.3)", () => {
     await userEvent.click(screen.getByRole("button", { name: /clear conversation/i }));
 
     const messageList = screen.getByRole("region");
-    expect(messageList).toHaveClass(/opacity-50/);
+    expect(messageList.className).toMatch(/opacity-50/);
   });
 
   test("assistant message renders markdown as HTML (bold, code, lists)", async () => {

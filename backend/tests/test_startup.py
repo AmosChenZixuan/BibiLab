@@ -162,8 +162,29 @@ async def test_config_masks_sensitive_fields(client: httpx.AsyncClient):
         },
     )
     data = (await client.get("/config")).json()
-    assert data["ai"]["api_key"] == "sk-secret"
+    assert data["ai"]["api_key"] == "***"
     assert data["accounts"]["bilibili"]["cookie"] == "***"
+
+
+@pytest.mark.asyncio
+async def test_put_config_with_masked_values_preserves_real_secrets(client: httpx.AsyncClient):
+    await client.put(
+        "/config",
+        json={
+            "ai": {"api_key": "sk-real-key"},
+            "accounts": {"bilibili": {"cookie": "real-cookie"}},
+        },
+    )
+    await client.put("/config", json={"ai": {"api_key": "***"}, "accounts": {"bilibili": {"cookie": "***"}}})
+    data = (await client.get("/config")).json()
+    assert data["ai"]["api_key"] == "***"
+    assert data["accounts"]["bilibili"]["cookie"] == "***"
+
+    from bibilab.config import get_config
+
+    real_cfg = get_config()
+    assert real_cfg.ai.api_key == "sk-real-key"
+    assert real_cfg.accounts.bilibili.cookie == "real-cookie"
 
 
 @pytest.mark.asyncio

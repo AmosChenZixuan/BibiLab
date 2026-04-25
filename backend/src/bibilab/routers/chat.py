@@ -170,7 +170,8 @@ async def chat_endpoint(
                 elif event.type == "tool_call":
                     tool_calls.append(event.tool_call)
                 elif event.type == "done":
-                    yield f"data: {json.dumps({'type': 'done'})}\n\n"
+                    if not tool_calls:
+                        yield f"data: {json.dumps({'type': 'done'})}\n\n"
         except Exception:
             logger.exception("LLM streaming failed")
             await delete_messages_by_ids([user_msg_id])

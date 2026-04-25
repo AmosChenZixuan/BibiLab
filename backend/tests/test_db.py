@@ -467,3 +467,122 @@ def test_clear_embeddings_for_video_does_not_raise(tmp_path: Path):
     with patch("bibilab.pipeline.embed._get_collection", return_value=mock_col):
         clear_embeddings_for_video("BV1abc", BibilabConfig())
     mock_col.delete.assert_called_once_with(where={"video_id": "BV1abc"})
+
+
+class TestDeriveVideoStatuses:
+    def test_all_new_when_no_jobs_no_processed(self):
+        from bibilab.db import derive_video_statuses
+
+        result = derive_video_statuses(["v1", "v2"], [], set())
+        assert result == {"v1": "new", "v2": "new"}
+
+    def test_all_new_when_empty_video_ids(self):
+        from bibilab.db import derive_video_statuses
+
+        result = derive_video_statuses([], [], set())
+        assert result == {}
+
+    def test_processed_when_in_sources(self):
+        from bibilab.db import derive_video_statuses
+
+        result = derive_video_statuses(["v1"], [], {"v1"})
+        assert result == {"v1": "processed"}
+
+    def test_processed_with_in_progress_job_shows_in_progress(self):
+        from bibilab.db import derive_video_statuses
+
+        jobs = [{"video_id": "v1", "status": "queued"}]
+        result = derive_video_statuses(["v1"], jobs, {"v1"})
+        assert result == {"v1": "in_progress"}
+
+    def test_in_progress_queued(self):
+        from bibilab.db import derive_video_statuses
+
+        result = derive_video_statuses(["v1"], [{"video_id": "v1", "status": "queued"}], set())
+        assert result == {"v1": "in_progress"}
+
+    def test_in_progress_downloading(self):
+        from bibilab.db import derive_video_statuses
+
+        result = derive_video_statuses(["v1"], [{"video_id": "v1", "status": "downloading"}], set())
+        assert result == {"v1": "in_progress"}
+
+    def test_in_progress_transcribing(self):
+        from bibilab.db import derive_video_statuses
+
+        result = derive_video_statuses(["v1"], [{"video_id": "v1", "status": "transcribing"}], set())
+        assert result == {"v1": "in_progress"}
+
+    def test_in_progress_processing(self):
+        from bibilab.db import derive_video_statuses
+
+        result = derive_video_statuses(["v1"], [{"video_id": "v1", "status": "processing"}], set())
+        assert result == {"v1": "in_progress"}
+
+    def test_in_progress_done_is_not_in_progress(self):
+        from bibilab.db import derive_video_statuses
+
+        result = derive_video_statuses(["v1"], [{"video_id": "v1", "status": "done"}], set())
+        assert result == {"v1": "new"}
+
+    def test_in_progress_failed_is_not_in_progress(self):
+        from bibilab.db import derive_video_statuses
+
+        result = derive_video_statuses(["v1"], [{"video_id": "v1", "status": "failed"}], set())
+        assert result == {"v1": "new"}
+
+    def test_needs_auth(self):
+        from bibilab.db import derive_video_statuses
+
+        result = derive_video_statuses(["v1"], [{"video_id": "v1", "status": "needs_auth"}], set())
+        assert result == {"v1": "needs_auth"}
+
+    def test_needs_auth_takes_precedence_over_in_progress(self):
+        from bibilab.db import derive_video_statuses
+
+        jobs = [
+            {"video_id": "v1", "status": "queued"},
+            {"video_id": "v1", "status": "needs_auth"},
+        ]
+        result = derive_video_statuses(["v1"], jobs, set())
+        assert result == {"v1": "needs_auth"}
+
+    def test_in_progress_takes_precedence_over_processed_job(self):
+        from bibilab.db import derive_video_statuses
+
+        jobs = [{"video_id": "v1", "status": "queued"}]
+        result = derive_video_statuses(["v1"], jobs, {"v1"})
+        assert result == {"v1": "in_progress"}
+
+    def test_mixed_statuses(self):
+        from bibilab.db import derive_video_statuses
+
+        jobs = [
+            {"video_id": "v1", "status": "needs_auth"},
+            {"video_id": "v2", "status": "downloading"},
+            {"video_id": "v3", "status": "queued"},
+        ]
+        result = derive_video_statuses(["v1", "v2", "v3", "v4"], jobs, {"v3"})
+        assert result == {
+            "v1": "needs_auth",
+            "v2": "in_progress",
+            "v3": "in_progress",
+            "v4": "new",
+        }
+
+    def test_job_for_different_video_not_considered(self):
+        from bibilab.db import derive_video_statuses
+
+        jobs = [{"video_id": "other", "status": "queued"}]
+        result = derive_video_statuses(["v1"], jobs, set())
+        assert result == {"v1": "new"}
+
+    def test_multiple_in_progress_jobs_same_video(self):
+        from bibilab.db import derive_video_statuses
+
+        jobs = [
+            {"video_id": "v1", "status": "queued"},
+            {"video_id": "v1", "status": "transcribing"},
+        ]
+        result = derive_video_statuses(["v1"], jobs, set())
+        assert result == {"v1": "in_progress"}

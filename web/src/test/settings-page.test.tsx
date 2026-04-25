@@ -7,6 +7,8 @@ import { JobActivityProvider } from "@/components/jobs/JobActivityProvider";
 import { api } from "@/lib/api";
 import { SettingsPage } from "@/pages/SettingsPage";
 
+const MOCK_ERROR_MESSAGE = "Request failed";
+
 vi.mock("../lib/api", () => {
   const mockApi = {
     getConfig: vi.fn().mockResolvedValue({
@@ -40,7 +42,8 @@ vi.mock("../lib/api", () => {
     createApiClient: () => mockApi,
     api: mockApi,
     notifyHealthChanged: vi.fn(),
-    toErrorMessage: (error: unknown) => (error instanceof Error ? error.message : "Request failed"),
+    toErrorMessage: (error: unknown) => (error instanceof Error ? error.message : MOCK_ERROR_MESSAGE),
+    toErrorMessageWithT: (error: unknown) => (error instanceof Error ? error.message : MOCK_ERROR_MESSAGE),
     setCurrentLang: vi.fn(),
   };
 });

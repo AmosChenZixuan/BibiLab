@@ -85,7 +85,7 @@ function renderChatPanel(
 
 afterEach(() => {
   cleanup();
-  vi.clearAllMocks();
+  vi.restoreAllMocks();
 });
 
 describe("chat panel", () => {

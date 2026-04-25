@@ -12,6 +12,10 @@ _MASKED = "***"
 def _mask(cfg: dict[str, Any]) -> dict[str, Any]:
     """Return config dict with sensitive fields masked."""
     masked = dict(cfg)
+    ai = dict(masked.get("ai", {}))
+    if ai.get("api_key"):
+        ai["api_key"] = _MASKED
+    masked["ai"] = ai
     accounts = dict(masked.get("accounts", {}))
     bilibili = dict(accounts.get("bilibili", {}))
     if bilibili.get("cookie"):
@@ -37,6 +41,9 @@ async def put_config(patch: dict[str, Any], cfg: BibilabConfig = Depends(get_con
 
 def _unmask_patch(patch: dict[str, Any]) -> None:
     """Remove masked sentinel values from patch so they don't overwrite real values."""
+    ai = patch.get("ai")
+    if ai and ai.get("api_key") == _MASKED:
+        ai.pop("api_key", None)
     accounts = patch.get("accounts")
     if accounts:
         bilibili = accounts.get("bilibili")
