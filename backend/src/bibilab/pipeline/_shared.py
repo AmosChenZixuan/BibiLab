@@ -223,7 +223,7 @@ async def stream_llm(
                     info["arguments"] = json.loads(args_str)
                 except json.JSONDecodeError:
                     logger.warning("Failed to parse tool call arguments: %s", args_str)
-                    info["arguments"] = {"_raw": args_str, "_parse_error": True}
+                    continue
             if info["name"]:
                 yield StreamEvent(
                     type="tool_call",

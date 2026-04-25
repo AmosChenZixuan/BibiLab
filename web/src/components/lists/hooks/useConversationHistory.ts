@@ -23,12 +23,14 @@ export interface MessageUI {
 export function useConversationHistory(listId: string | undefined, hasSources: boolean) {
   const [messages, setMessages] = useState<MessageUI[]>([]);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!listId || !hasSources) return;
     let cancelled = false;
     setIsLoadingHistory(true);
     setMessages([]);
+    setLoadError(null);
 
     api
       .getConversation(listId)
@@ -56,7 +58,9 @@ export function useConversationHistory(listId: string | undefined, hasSources: b
         });
         setMessages(loaded);
       })
-      .catch(() => {})
+      .catch((err) => {
+        if (!cancelled) setLoadError(String(err));
+      })
       .finally(() => {
         if (!cancelled) setIsLoadingHistory(false);
       });
@@ -66,5 +70,5 @@ export function useConversationHistory(listId: string | undefined, hasSources: b
     };
   }, [listId, hasSources]);
 
-  return { messages, isLoadingHistory };
+  return { messages, isLoadingHistory, loadError };
 }

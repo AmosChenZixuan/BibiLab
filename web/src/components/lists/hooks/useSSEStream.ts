@@ -191,9 +191,12 @@ export function useSSEStream({
 
   function retryLastMessage() {
     if (lastUserMessageRef.current) {
+      const text = lastUserMessageRef.current;
       stopStreaming();
+      setIsStreaming(false);
+      isStreamingRef.current = false;
       setMessages((prev) => prev.slice(0, -2));
-      void sendMessage(lastUserMessageRef.current);
+      void sendMessage(text);
     }
   }
 

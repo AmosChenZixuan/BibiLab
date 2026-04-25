@@ -46,7 +46,7 @@ export function ChatPanel({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const hasSources = selectedSourceIds.length > 0;
-  const { messages: historyMessages, isLoadingHistory } = useConversationHistory(listId, hasSources);
+  const { messages: historyMessages, isLoadingHistory, loadError } = useConversationHistory(listId, hasSources);
 
   const { sendMessage, stopStreaming, retryLastMessage, isStreaming } = useSSEStream({
     listId,
@@ -181,6 +181,13 @@ export function ChatPanel({
             <p className="m-0 max-w-xs text-sm text-muted">
               {t("chat.empty.noSources.hint")}
             </p>
+          </div>
+        ) : loadError && !hasConversation ? (
+          <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
+            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-surface text-muted">
+              <AlertCircle size={26} />
+            </div>
+            <p className="m-0 max-w-xs text-sm text-muted">{loadError}</p>
           </div>
         ) : !hasConversation && !isLoadingHistory ? (
           <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
