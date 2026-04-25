@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import { LANG_STORAGE_KEY } from "@/lib/utils";
 import { useAutoScroll } from "@/components/lists/hooks/useAutoScroll";
 import { useSSEStream } from "@/components/lists/hooks/useSSEStream";
 import ReactMarkdown from "react-markdown";
@@ -55,6 +54,7 @@ export function ChatPanel({
     setMessages,
     onArtifactGenerated,
     trackJobs,
+    interruptedLabel: t("chat.interrupted"),
   });
 
   const { showScrollButton, messageListRef, scrollToBottom } = useAutoScroll({
@@ -87,25 +87,21 @@ export function ChatPanel({
     }
   }, [historyMessages]);
 
-  function handleRetry() {
-    retryLastMessage();
+  function handleSend() {
+    const text = inputValue.trim();
+    if (!text || !hasSources || isStreaming) return;
+    setInputValue("");
+    if (textareaRef.current) {
+      textareaRef.current.style.height = "auto";
+      textareaRef.current.style.overflowY = "hidden";
+    }
+    void sendMessage(text);
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      if (isStreaming) {
-        stopStreaming();
-      } else {
-        const text = inputValue.trim();
-        if (!text || !hasSources) return;
-        setInputValue("");
-        if (textareaRef.current) {
-          textareaRef.current.style.height = "auto";
-          textareaRef.current.style.overflowY = "hidden";
-        }
-        void sendMessage(text);
-      }
+      isStreaming ? stopStreaming() : handleSend();
     }
   }
 
@@ -250,7 +246,7 @@ export function ChatPanel({
                       <div className="interrupted">
                         <span className="ic"><AlertCircle size={14} /></span>
                         <span>{msg.error}</span>
-                        <button type="button" onClick={handleRetry} className="retry">
+                        <button type="button" onClick={retryLastMessage} className="retry">
                           <RotateCcw size={12} />{t("chat.retry")}
                         </button>
                       </div>
@@ -298,20 +294,7 @@ export function ChatPanel({
 
             <button
               type="button"
-              onClick={() => {
-                if (isStreaming) {
-                  stopStreaming();
-                } else {
-                  const text = inputValue.trim();
-                  if (!text || !hasSources) return;
-                  setInputValue("");
-                  if (textareaRef.current) {
-                    textareaRef.current.style.height = "auto";
-                    textareaRef.current.style.overflowY = "hidden";
-                  }
-                  void sendMessage(text);
-                }
-              }}
+              onClick={isStreaming ? stopStreaming : handleSend}
               disabled={!hasSources || (!isStreaming && !inputValue.trim())}
               aria-label={isStreaming ? t("chat.stop") : t("chat.send")}
               className={`absolute bottom-1.5 right-1.5 flex items-center justify-center rounded-full text-white transition ${

@@ -18,7 +18,7 @@ const POLL_INTERVAL_MS = 5_000;
 
 type JobProducer = "ingest" | "whisper_download" | "artifact";
 
-type JobRegistration = {
+export type JobRegistration = {
   id: string;
   producer: JobProducer;
   label: string;

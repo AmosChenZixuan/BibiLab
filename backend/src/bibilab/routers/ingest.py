@@ -5,13 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from bibilab.adapters.base import AuthRequiredError, DownloadError, VideoMeta
 from bibilab.adapters.bilibili import BilibiliAdapter
 from bibilab.config import BibilabConfig, get_config
-from bibilab.db import (
-    create_job,
-    derive_video_statuses,
-    get_jobs_for_video_ids,
-    get_list,
-    get_source_video_ids,
-)
+from bibilab.db import create_job, get_list, get_video_statuses
 from bibilab.models._enums import VideoStatus
 from bibilab.models.ingest import (
     IngestPreviewRequest,
@@ -54,9 +48,7 @@ async def ingest_preview(
     if not videos:
         return IngestPreviewResponse(videos=[])
 
-    jobs = await get_jobs_for_video_ids([v.video_id for v in videos], req.list_id)
-    processed_ids = await get_source_video_ids([v.video_id for v in videos], req.list_id)
-    statuses = derive_video_statuses([v.video_id for v in videos], jobs, processed_ids)
+    statuses = await get_video_statuses([v.video_id for v in videos], req.list_id)
 
     preview_videos = [
         PreviewVideo(
@@ -144,9 +136,7 @@ async def ingest_url(
     if await get_list(req.list_id) is None:
         raise HTTPException(status_code=404, detail="List not found")
 
-    jobs = await get_jobs_for_video_ids([v.video_id for v in req.videos], req.list_id)
-    processed_ids = await get_source_video_ids([v.video_id for v in req.videos], req.list_id)
-    statuses = derive_video_statuses([v.video_id for v in req.videos], jobs, processed_ids)
+    statuses = await get_video_statuses([v.video_id for v in req.videos], req.list_id)
 
     queued: list[str] = []
     skipped: list[str] = []

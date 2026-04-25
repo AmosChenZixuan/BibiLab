@@ -1,16 +1,18 @@
 import { useRef, useState } from "react";
 
+import type { JobRegistration } from "@/components/jobs/JobActivityProvider";
 import type { MessageUI } from "@/components/lists/hooks/useConversationHistory";
 import { formatTimestamp, parseCitations } from "@/lib/chat-utils";
-import type { Citation, ToolResult } from "@/lib/chat-utils";
+import type { ToolResult } from "@/lib/chat-utils";
+import { LANG_STORAGE_KEY } from "@/lib/utils";
 
 interface UseSSEStreamOptions {
   listId: string;
   selectedSourceIds: string[];
   setMessages: React.Dispatch<React.SetStateAction<MessageUI[]>>;
   onArtifactGenerated?: (id: string, type: string, sourceIds: string[]) => void;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  trackJobs?: (...args: any[]) => void;
+  trackJobs?: (jobs: JobRegistration[]) => void;
+  interruptedLabel?: string;
 }
 
 interface UseSSEStreamReturn {
@@ -26,6 +28,7 @@ export function useSSEStream({
   setMessages,
   onArtifactGenerated,
   trackJobs,
+  interruptedLabel = "Interrupted",
 }: UseSSEStreamOptions): UseSSEStreamReturn {
   const [isStreaming, setIsStreaming] = useState(false);
   const isStreamingRef = useRef(false);
@@ -87,7 +90,7 @@ export function useSSEStream({
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "X-UI-Lang": localStorage.getItem("bibilab-lang") ?? "en",
+          "X-UI-Lang": localStorage.getItem(LANG_STORAGE_KEY) ?? "en",
         },
         body: JSON.stringify({ message: text, source_ids: selectedSourceIds }),
         signal: controller.signal,
@@ -170,7 +173,7 @@ export function useSSEStream({
       isStreamingRef.current = false;
     } catch (err) {
       if (err instanceof Error && err.name === "AbortError") {
-        updateAssistantMsg(assistantMsgId, { isStreaming: false, error: "Interrupted" });
+        updateAssistantMsg(assistantMsgId, { isStreaming: false, error: interruptedLabel });
       } else {
         updateAssistantMsg(assistantMsgId, { isStreaming: false, error: String(err) });
       }
