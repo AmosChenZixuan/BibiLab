@@ -12,8 +12,10 @@ _MASKED = "***"
 def _mask(cfg: dict[str, Any]) -> dict[str, Any]:
     """Return config dict with sensitive fields masked."""
     masked = dict(cfg)
-    if masked.get("ai", {}).get("api_key"):
-        masked["ai"]["api_key"] = _MASKED
+    ai = dict(masked.get("ai", {}))
+    if ai.get("api_key"):
+        ai["api_key"] = _MASKED
+    masked["ai"] = ai
     accounts = dict(masked.get("accounts", {}))
     bilibili = dict(accounts.get("bilibili", {}))
     if bilibili.get("cookie"):

@@ -1,3 +1,4 @@
+import asyncio
 import json
 import uuid
 from collections.abc import AsyncGenerator
@@ -497,8 +498,10 @@ def derive_video_statuses(
 async def get_video_statuses(
     video_ids: list[str], list_id: str
 ) -> dict[str, Literal["new", "processed", "in_progress", "needs_auth"]]:
-    jobs = await get_jobs_for_video_ids(video_ids, list_id)
-    processed_ids = await get_source_video_ids(video_ids, list_id)
+    jobs, processed_ids = await asyncio.gather(
+        get_jobs_for_video_ids(video_ids, list_id),
+        get_source_video_ids(video_ids, list_id),
+    )
     return derive_video_statuses(video_ids, jobs, processed_ids)
 
 

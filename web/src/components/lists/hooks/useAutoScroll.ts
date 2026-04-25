@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 
+import type { MessageUI } from "@/components/lists/hooks/useConversationHistory";
+
 interface UseAutoScrollOptions {
   isLoadingHistory: boolean;
   isStreaming: boolean;
-  messages: unknown[];
+  messages: MessageUI[];
 }
 
 interface UseAutoScrollReturn {
