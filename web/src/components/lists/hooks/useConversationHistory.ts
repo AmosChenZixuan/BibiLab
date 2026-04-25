@@ -36,7 +36,7 @@ export function useConversationHistory(listId: string | undefined, hasSources: b
       .getConversation(listId)
       .then((data) => {
         if (cancelled || !data) return;
-        if (data.messages.length === 0) return;
+        if (!data.messages?.length) return;
         const loaded: MessageUI[] = data.messages.map((m) => {
           const { citations, cleanContent } = parseCitations(m.content);
           let toolCall: ToolCallData | null = null;

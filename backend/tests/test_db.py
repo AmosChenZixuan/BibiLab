@@ -551,7 +551,7 @@ class TestDeriveVideoStatuses:
         from bibilab.db import derive_video_statuses
 
         jobs = [{"video_id": "v1", "status": "queued"}]
-        result = derive_video_statuses(["v1"], jobs, set())
+        result = derive_video_statuses(["v1"], jobs, {"v1"})
         assert result == {"v1": "in_progress"}
 
     def test_mixed_statuses(self):

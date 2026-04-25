@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import type { JobRegistration } from "@/components/jobs/JobActivityProvider";
 import type { MessageUI } from "@/components/lists/hooks/useConversationHistory";
@@ -34,11 +34,21 @@ export function useSSEStream({
   const isStreamingRef = useRef(false);
   const abortControllerRef = useRef<AbortController | null>(null);
   const lastUserMessageRef = useRef<string>("");
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      abortControllerRef.current?.abort();
+    };
+  }, []);
 
   function updateAssistantMsg(
     id: string,
     patchOrFn: Partial<MessageUI> | ((current: MessageUI) => Partial<MessageUI>),
   ) {
+    if (!mountedRef.current) return;
     setMessages((prev) =>
       prev.map((m) => {
         if (m.id !== id) return m;
@@ -46,6 +56,11 @@ export function useSSEStream({
         return { ...m, ...patch };
       }),
     );
+  }
+
+  function safeSetIsStreaming(val: boolean) {
+    if (!mountedRef.current) return;
+    setIsStreaming(val);
   }
 
   async function sendMessage(text: string): Promise<void> {
@@ -79,7 +94,7 @@ export function useSSEStream({
     };
 
     setMessages((prev) => [...prev, userMsg, assistantMsg]);
-    setIsStreaming(true);
+    safeSetIsStreaming(true);
     isStreamingRef.current = true;
 
     const controller = new AbortController();
@@ -124,19 +139,21 @@ export function useSSEStream({
           if (result.job_id && trackJobs) {
             trackJobs([{ id: result.job_id, producer: "artifact", label: result.type, contextKey: listId }]);
           }
-          onArtifactGenerated?.(result.artifact_id, result.type, selectedSourceIds);
+          if (result.artifact_id) {
+            onArtifactGenerated?.(result.artifact_id, result.type, selectedSourceIds);
+          }
           updateAssistantMsg(assistantMsgId, { toolCall: toolCallData });
         } else if (event.type === "done") {
           updateAssistantMsg(assistantMsgId, (m) => {
             const { citations, cleanContent } = parseCitations(m.content);
             return { isStreaming: false, content: cleanContent, citations };
           });
-          setIsStreaming(false);
+          safeSetIsStreaming(false);
           isStreamingRef.current = false;
         } else if (event.type === "error") {
           const errorMsg = event.message as string;
           updateAssistantMsg(assistantMsgId, { isStreaming: false, error: errorMsg });
-          setIsStreaming(false);
+          safeSetIsStreaming(false);
           isStreamingRef.current = false;
         }
       };
@@ -169,7 +186,7 @@ export function useSSEStream({
         }
       }
 
-      setIsStreaming(false);
+      safeSetIsStreaming(false);
       isStreamingRef.current = false;
     } catch (err) {
       if (err instanceof Error && err.name === "AbortError") {
@@ -177,7 +194,7 @@ export function useSSEStream({
       } else {
         updateAssistantMsg(assistantMsgId, { isStreaming: false, error: String(err) });
       }
-      setIsStreaming(false);
+      safeSetIsStreaming(false);
       isStreamingRef.current = false;
     } finally {
       abortControllerRef.current = null;
@@ -193,9 +210,11 @@ export function useSSEStream({
     if (lastUserMessageRef.current) {
       const text = lastUserMessageRef.current;
       stopStreaming();
-      setIsStreaming(false);
+      safeSetIsStreaming(false);
       isStreamingRef.current = false;
-      setMessages((prev) => prev.slice(0, -2));
+      if (mountedRef.current) {
+        setMessages((prev) => prev.slice(0, -2));
+      }
       void sendMessage(text);
     }
   }
