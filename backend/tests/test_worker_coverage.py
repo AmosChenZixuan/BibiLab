@@ -203,10 +203,12 @@ async def test_artifact_job_missing_source(tmp_bibilab_home: Path):
 
     async with get_db() as db:
         cursor = await db.execute("SELECT status, error FROM artifacts WHERE id=?", (artifact_id,))
-        row = await cursor.fetchone()
-    assert row is not None
-    assert row["status"] == "failed"
-    assert "not found" in row["error"]
+        artifact_row = await cursor.fetchone()
+        cursor = await db.execute("SELECT status, error FROM jobs WHERE id=?", (job_id,))
+        job_row = await cursor.fetchone()
+    assert artifact_row is None
+    assert job_row["status"] == "failed"
+    assert "not found" in job_row["error"]
 
 
 # ---------------------------------------------------------------------------

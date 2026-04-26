@@ -30,22 +30,24 @@ export function ArtifactList({ listId, artifacts, onArtifactsChange, onViewArtif
 
   const artifactIds = useMemo(() => new Set(artifacts.map((a) => a.id)), [artifacts]);
 
-  const generatingArtifacts = useMemo((): Artifact[] => {
+  const jobDerivedArtifacts = useMemo((): Artifact[] => {
     return artifactJobs
       .filter((item) => {
         const meta = item.job.meta as ArtifactJob["meta"];
         return !artifactIds.has(meta.artifact_id ?? "");
       })
-      .filter((item) => !item.isTerminal)
+      .filter((item) => !item.isTerminal || item.job.status === "failed")
       .map((item) => {
         const meta = item.job.meta as ArtifactJob["meta"];
+        const isFailed = item.job.status === "failed";
         return {
           id: meta.artifact_id ?? item.job.id,
           name: t(ARTIFACT_TYPE_KEYS[item.label] ?? "lab.reportsModal.custom"),
           type: item.label as Artifact["type"],
           prompt: "",
           source_ids: [],
-          status: "generating" as const,
+          status: isFailed ? ("failed" as const) : ("generating" as const),
+          error: item.job.error ?? undefined,
           created_at: item.job.created_at,
         };
       });
@@ -79,7 +81,6 @@ export function ArtifactList({ listId, artifacts, onArtifactsChange, onViewArtif
 
   const handleDismiss = useCallback(
     async (artifactId: string) => {
-      const isGenerating = generatingArtifacts.some((a) => a.id === artifactId);
       const job = artifactJobs.find((item) => {
         const meta = item.job.meta as ArtifactJob["meta"];
         return meta.artifact_id === artifactId;
@@ -87,12 +88,8 @@ export function ArtifactList({ listId, artifacts, onArtifactsChange, onViewArtif
       if (job) {
         await dismissJob(job.job.id);
       }
-      if (!isGenerating) {
-        await api.deleteArtifact(artifactId);
-      }
-      onArtifactsChange((prev) => prev.filter((a) => a.id !== artifactId));
     },
-    [artifactJobs, dismissJob, onArtifactsChange],
+    [artifactJobs, dismissJob],
   );
 
   const handleDownload = useCallback(async (artifactId: string) => {
@@ -132,8 +129,8 @@ export function ArtifactList({ listId, artifacts, onArtifactsChange, onViewArtif
   }, [onArtifactsChange]);
 
   const allArtifacts = useMemo(
-    () => [...generatingArtifacts, ...artifacts],
-    [generatingArtifacts, artifacts],
+    () => [...jobDerivedArtifacts, ...artifacts],
+    [jobDerivedArtifacts, artifacts],
   );
 
   const viewPromptArtifact = viewPromptArtifactId

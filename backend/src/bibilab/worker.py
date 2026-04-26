@@ -257,18 +257,6 @@ class WorkerLoop:
         except PipelineError as exc:
             error_message = str(exc)
             logger.error("Artifact job %s failed: %s", job_id, error_message)
-            # Create artifact record with error status
-            await create_artifact(
-                artifact_id=artifact_id,
-                list_id=list_id,
-                name=None,
-                type=artifact_type,
-                prompt=prompt,
-                source_ids=source_ids,
-                status="failed",
-                content_path=None,
-                error=error_message,
-            )
             await update_job_status(job_id, JobStatus.FAILED.value, error=error_message)
 
     async def _generate_artifact(
