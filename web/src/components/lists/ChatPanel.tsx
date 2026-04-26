@@ -18,6 +18,7 @@ import {
 import { useLanguage } from "@/app/LanguageContext";
 import { useJobActivity } from "@/components/jobs/JobActivityProvider";
 import { useConversationHistory, type MessageUI } from "@/components/lists/hooks/useConversationHistory";
+import { PulseRing } from "@/components/ui/PulseRing";
 import type { Source } from "@/lib/types";
 import { api } from "@/lib/api";
 import {
@@ -211,11 +212,7 @@ export function ChatPanel({
                 ) : (
                   <>
                     {msg.isStreaming && !msg.content ? (
-                      <span className="chat-pulse-ring">
-                        <span className="pr" />
-                        <span className="pr" />
-                        <span className="pr" />
-                      </span>
+                      <PulseRing />
                     ) : msg.content ? (
                       <div className="bubble bubble-assistant">
                         <ReactMarkdown>{msg.content}</ReactMarkdown>
