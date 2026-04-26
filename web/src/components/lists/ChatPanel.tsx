@@ -210,11 +210,11 @@ export function ChatPanel({
                   </>
                 ) : (
                   <>
-                    {true || msg.isStreaming && !msg.content ? (
+                    {msg.isStreaming && !msg.content ? (
                       <span className="chat-pulse-ring">
-                        <span className="p-ring" />
-                        <span className="p-ring" />
-                        <span className="p-ring" />
+                        <span className="pr" />
+                        <span className="pr" />
+                        <span className="pr" />
                       </span>
                     ) : msg.content ? (
                       <div className="bubble bubble-assistant">
