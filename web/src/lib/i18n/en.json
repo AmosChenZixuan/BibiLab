@@ -101,7 +101,9 @@
       "rename": "Rename",
       "download": "Download",
       "viewPrompt": "View Prompt",
-      "delete": "Delete"
+      "delete": "Delete",
+      "subtitleSingular": "%{typeLabel} · %{count} source · %{date}",
+      "subtitlePlural": "%{typeLabel} · %{count} sources · %{date}"
     },
     "artifactType": {
       "brief": "Brief",
@@ -238,7 +240,8 @@
     "subtitle": {
       "source": "source",
       "sources": "sources",
-      "total": "total"
+      "total": "total",
+      "template": "%{count} %{sources} · %{duration} %{total}"
     }
   },
   "common": {

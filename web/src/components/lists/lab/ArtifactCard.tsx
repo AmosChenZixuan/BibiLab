@@ -162,8 +162,16 @@ export function ArtifactCard({
           <p className="m-0 truncate text-sm font-bold text-ink">{artifact.name}</p>
         )}
         <p className="m-0 mt-0.5 text-xs text-muted">
-          {formatArtifactTypeLabel(artifact.type, t)} · {artifact.source_ids.length} source
-          {artifact.source_ids.length !== 1 ? "s" : ""} · {formatDate(artifact.created_at)}
+          {(() => {
+            const count = artifact.source_ids.length;
+            const typeLabel = formatArtifactTypeLabel(artifact.type, t);
+            const date = formatDate(artifact.created_at);
+            return t(count === 1 ? "lab.artifactCard.subtitleSingular" : "lab.artifactCard.subtitlePlural", {
+              typeLabel,
+              count,
+              date,
+            });
+          })()}
         </p>
       </div>
 

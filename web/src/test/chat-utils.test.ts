@@ -31,13 +31,16 @@ describe("formatDurationHuman", () => {
 });
 
 describe("formatSubtitle", () => {
-  const t = (key: string) => {
+  const t = (key: string, params?: Record<string, string | number>) => {
     const map: Record<string, string> = {
       "chat.subtitle.source": "source",
       "chat.subtitle.sources": "sources",
       "chat.subtitle.total": "total",
+      "chat.subtitle.template": "%{count} %{sources} · %{duration} %{total}",
     };
-    return map[key] ?? key;
+    const value = map[key] ?? key;
+    if (!params) return value;
+    return value.replace(/%\{(\w+)\}/g, (_, k) => String(params[k]));
   };
 
   test("single source", () => {

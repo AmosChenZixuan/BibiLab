@@ -101,7 +101,9 @@
       "rename": "重命名",
       "download": "下载",
       "viewPrompt": "查看提示词",
-      "delete": "删除"
+      "delete": "删除",
+      "subtitleSingular": "%{typeLabel} · %{count} 个来源 · %{date}",
+      "subtitlePlural": "%{typeLabel} · %{count} 个来源 · %{date}"
     },
     "artifactType": {
       "brief": "简报",
@@ -235,10 +237,11 @@
     "send": "发送",
     "scrollToBottom": "滚动到底部",
     "createdReport": "已生成报告：",
-    "subtitle": {
-      "source": "个来源",
-      "sources": "个来源",
-      "total": "共"
+"subtitle": {
+      "source": "来源",
+      "sources": "来源",
+      "total": "共",
+      "template": "%{total} %{count} %{sources} · %{duration}"
     }
   },
   "common": {
