@@ -18,6 +18,7 @@ import {
 import { useLanguage } from "@/app/LanguageContext";
 import { useJobActivity } from "@/components/jobs/JobActivityProvider";
 import { useConversationHistory, type MessageUI } from "@/components/lists/hooks/useConversationHistory";
+import { PulseRing } from "@/components/ui/PulseRing";
 import type { Source } from "@/lib/types";
 import { api } from "@/lib/api";
 import {
@@ -210,22 +211,14 @@ export function ChatPanel({
                   </>
                 ) : (
                   <>
-                    {(msg.content || msg.isStreaming) && (
-                    <div className="bubble bubble-assistant">
-                      {msg.isStreaming && !msg.content ? (
-                        <span className="chat-typing-indicator">
-                          <span className="chat-typing-dot" />
-                          <span className="chat-typing-dot" />
-                          <span className="chat-typing-dot" />
-                        </span>
-                      ) : (
-                        <>
-                          <ReactMarkdown>{msg.content}</ReactMarkdown>
-                          {msg.isStreaming && <span className="chat-cursor" />}
-                        </>
-                      )}
-                    </div>
-                    )}
+                    {msg.isStreaming && !msg.content ? (
+                      <PulseRing />
+                    ) : msg.content ? (
+                      <div className="bubble bubble-assistant">
+                        <ReactMarkdown>{msg.content}</ReactMarkdown>
+                        {msg.isStreaming && <span className="chat-cursor" />}
+                      </div>
+                    ) : null}
                     {msg.citations.length > 0 && (
                       <div className="cites">
                         {msg.citations.map((c, i) => (
