@@ -13,9 +13,12 @@ export function formatDurationHuman(seconds: number): string {
   return `${m}m`;
 }
 
-export function formatSubtitle(t: (key: string) => string, sourceCount: number, totalSeconds: number): string {
-  const srcLabel = sourceCount === 1 ? t("chat.subtitle.source") : t("chat.subtitle.sources");
-  return `${sourceCount} ${srcLabel} · ${formatDurationHuman(totalSeconds)} ${t("chat.subtitle.total")}`;
+export function formatSubtitle(t: (key: string, params?: Record<string, string | number>) => string, sourceCount: number, totalSeconds: number): string {
+  const key = sourceCount === 1 ? "chat.subtitle.templateSingular" : "chat.subtitle.templatePlural";
+  return t(key, {
+    count: sourceCount,
+    duration: formatDurationHuman(totalSeconds),
+  });
 }
 
 export function parseCitations(text: string): { citations: Citation[]; cleanContent: string } {

@@ -101,7 +101,9 @@
       "rename": "Rename",
       "download": "Download",
       "viewPrompt": "View Prompt",
-      "delete": "Delete"
+      "delete": "Delete",
+      "subtitleSingular": "%{typeLabel} · %{count} source · %{date}",
+      "subtitlePlural": "%{typeLabel} · %{count} sources · %{date}"
     },
     "artifactType": {
       "brief": "Brief",
@@ -236,9 +238,8 @@
     "scrollToBottom": "Scroll to bottom",
     "createdReport": "Created report:",
     "subtitle": {
-      "source": "source",
-      "sources": "sources",
-      "total": "total"
+      "templateSingular": "%{count} source · %{duration} total",
+      "templatePlural": "%{count} sources · %{duration} total"
     }
   },
   "common": {
