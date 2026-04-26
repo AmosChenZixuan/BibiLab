@@ -79,6 +79,7 @@ export function ArtifactList({ listId, artifacts, onArtifactsChange, onViewArtif
 
   const handleDismiss = useCallback(
     async (artifactId: string) => {
+      const isGenerating = generatingArtifacts.some((a) => a.id === artifactId);
       const job = artifactJobs.find((item) => {
         const meta = item.job.meta as ArtifactJob["meta"];
         return meta.artifact_id === artifactId;
@@ -86,10 +87,8 @@ export function ArtifactList({ listId, artifacts, onArtifactsChange, onViewArtif
       if (job) {
         await dismissJob(job.job.id);
       }
-      try {
+      if (!isGenerating) {
         await api.deleteArtifact(artifactId);
-      } catch {
-        // Non-critical: artifact may not exist in DB yet
       }
       onArtifactsChange((prev) => prev.filter((a) => a.id !== artifactId));
     },

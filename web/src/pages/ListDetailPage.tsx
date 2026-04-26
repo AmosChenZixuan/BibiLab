@@ -104,18 +104,9 @@ export function ListDetailPage() {
     }
   }
 
-  const handleArtifactGenerated = useCallback((artifactId: string, type: Artifact["type"], sourceIds: string[]) => {
-    const placeholder: Artifact = {
-      id: artifactId,
-      name: t(ARTIFACT_TYPE_KEYS[type] ?? "lab.reportsModal.custom"),
-      type,
-      prompt: "",
-      source_ids: sourceIds,
-      status: "generating",
-      created_at: new Date().toISOString(),
-    };
-    setArtifacts((prev) => [placeholder, ...prev]);
-  }, [t]);
+  const handleArtifactGenerated = useCallback((_artifactId: string, _type: Artifact["type"], _sourceIds: string[]) => {
+    // No-op: loading state is derived from JobActivityProvider in ArtifactList
+  }, []);
 
   const panelBase = "flex h-full shrink-0 flex-col overflow-hidden rounded-3xl border border-border bg-white/76 shadow-lg";
 
