@@ -210,22 +210,18 @@ export function ChatPanel({
                   </>
                 ) : (
                   <>
-                    {(msg.content || msg.isStreaming) && (
-                    <div className="bubble bubble-assistant">
-                      {msg.isStreaming && !msg.content ? (
-                        <span className="chat-typing-indicator">
-                          <span className="chat-typing-dot" />
-                          <span className="chat-typing-dot" />
-                          <span className="chat-typing-dot" />
-                        </span>
-                      ) : (
-                        <>
-                          <ReactMarkdown>{msg.content}</ReactMarkdown>
-                          {msg.isStreaming && <span className="chat-cursor" />}
-                        </>
-                      )}
-                    </div>
-                    )}
+                    {msg.isStreaming && !msg.content ? (
+                      <span className="chat-pulse-ring">
+                        <span className="ring" />
+                        <span className="ring" />
+                        <span className="ring" />
+                      </span>
+                    ) : msg.content ? (
+                      <div className="bubble bubble-assistant">
+                        <ReactMarkdown>{msg.content}</ReactMarkdown>
+                        {msg.isStreaming && <span className="chat-cursor" />}
+                      </div>
+                    ) : null}
                     {msg.citations.length > 0 && (
                       <div className="cites">
                         {msg.citations.map((c, i) => (

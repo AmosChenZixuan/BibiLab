@@ -8,9 +8,10 @@
   40% { transform: scale(1); opacity: 1; }
 }
 
-@keyframes chat-typing-bounce {
-  0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
-  30% { transform: translateY(-3px); opacity: 1; }
+@keyframes chat-pulse-ring {
+  0% { transform: scale(0.8); opacity: 0.7; }
+  50% { transform: scale(1.15); opacity: 0.2; }
+  100% { transform: scale(0.8); opacity: 0.7; }
 }
 
 @keyframes chat-cursor-blink {
@@ -92,24 +93,27 @@
     border-bottom-left-radius: 6px;
   }
 
-  /* Chat typing indicator container */
-  .chat-typing-indicator {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
+  /* Chat pulse ring — thinking state */
+  .chat-pulse-ring {
+    position: relative;
+    width: 32px;
+    height: 32px;
   }
 
-  /* Chat typing indicator dot animation */
-  .chat-typing-dot {
-    animation: chat-typing-bounce 1.2s ease-in-out infinite;
+  .chat-pulse-ring .ring {
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    box-shadow: 0 0 0 2px #94a3b8;
+    animation: chat-pulse-ring 1.4s ease-in-out infinite;
   }
 
-  .chat-typing-dot:nth-child(2) {
-    animation-delay: 0.15s;
-  }
-
-  .chat-typing-dot:nth-child(3) {
+  .chat-pulse-ring .ring:nth-child(2) {
     animation-delay: 0.3s;
+  }
+
+  .chat-pulse-ring .ring:nth-child(3) {
+    animation-delay: 0.6s;
   }
 
   /* Chat streaming cursor */
