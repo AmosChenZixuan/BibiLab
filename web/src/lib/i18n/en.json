@@ -238,10 +238,8 @@
     "scrollToBottom": "Scroll to bottom",
     "createdReport": "Created report:",
     "subtitle": {
-      "source": "source",
-      "sources": "sources",
-      "total": "total",
-      "template": "%{count} %{sources} · %{duration} %{total}"
+      "templateSingular": "%{count} source · %{duration} total",
+      "templatePlural": "%{count} sources · %{duration} total"
     }
   },
   "common": {

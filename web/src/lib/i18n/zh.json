@@ -237,11 +237,9 @@
     "send": "发送",
     "scrollToBottom": "滚动到底部",
     "createdReport": "已生成报告：",
-"subtitle": {
-      "source": "来源",
-      "sources": "来源",
-      "total": "共",
-      "template": "%{total} %{count} %{sources} · %{duration}"
+    "subtitle": {
+      "templateSingular": "共 %{count} 个来源 · %{duration}",
+      "templatePlural": "共 %{count} 个来源 · %{duration}"
     }
   },
   "common": {

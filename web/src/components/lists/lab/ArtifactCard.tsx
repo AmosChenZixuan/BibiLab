@@ -139,6 +139,14 @@ export function ArtifactCard({
     }
   }
 
+  const count = artifact.source_ids.length;
+  const subtitleKey = count === 1 ? "lab.artifactCard.subtitleSingular" : "lab.artifactCard.subtitlePlural";
+  const subtitle = t(subtitleKey, {
+    typeLabel: formatArtifactTypeLabel(artifact.type, t),
+    count,
+    date: formatDate(artifact.created_at),
+  });
+
   return (
     <div className="group flex items-center gap-2 rounded-2xl border border-border bg-white/64 px-4 py-3 transition hover:bg-white hover:shadow-sm">
       {/* Clickable card content */}
@@ -162,16 +170,7 @@ export function ArtifactCard({
           <p className="m-0 truncate text-sm font-bold text-ink">{artifact.name}</p>
         )}
         <p className="m-0 mt-0.5 text-xs text-muted">
-          {(() => {
-            const count = artifact.source_ids.length;
-            const typeLabel = formatArtifactTypeLabel(artifact.type, t);
-            const date = formatDate(artifact.created_at);
-            return t(count === 1 ? "lab.artifactCard.subtitleSingular" : "lab.artifactCard.subtitlePlural", {
-              typeLabel,
-              count,
-              date,
-            });
-          })()}
+          {subtitle}
         </p>
       </div>
 

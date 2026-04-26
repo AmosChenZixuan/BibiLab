@@ -14,12 +14,10 @@ export function formatDurationHuman(seconds: number): string {
 }
 
 export function formatSubtitle(t: (key: string, params?: Record<string, string | number>) => string, sourceCount: number, totalSeconds: number): string {
-  const srcLabel = sourceCount === 1 ? t("chat.subtitle.source") : t("chat.subtitle.sources");
-  return t("chat.subtitle.template", {
+  const key = sourceCount === 1 ? "chat.subtitle.templateSingular" : "chat.subtitle.templatePlural";
+  return t(key, {
     count: sourceCount,
-    sources: srcLabel,
     duration: formatDurationHuman(totalSeconds),
-    total: t("chat.subtitle.total"),
   });
 }
 

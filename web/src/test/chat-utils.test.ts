@@ -33,10 +33,8 @@ describe("formatDurationHuman", () => {
 describe("formatSubtitle", () => {
   const t = (key: string, params?: Record<string, string | number>) => {
     const map: Record<string, string> = {
-      "chat.subtitle.source": "source",
-      "chat.subtitle.sources": "sources",
-      "chat.subtitle.total": "total",
-      "chat.subtitle.template": "%{count} %{sources} · %{duration} %{total}",
+      "chat.subtitle.templateSingular": "%{count} source · %{duration} total",
+      "chat.subtitle.templatePlural": "%{count} sources · %{duration} total",
     };
     const value = map[key] ?? key;
     if (!params) return value;
