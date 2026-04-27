@@ -8,9 +8,8 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 
 from bibilab.config import BibilabConfig, bibilab_home, cover_path, get_config
 from bibilab.db import (
-    create_list as db_create_list,
-)
-from bibilab.db import (
+    clear_fts_for_list,
+    clear_fts_for_video,
     delete_artifacts_for_list,
     delete_source,
     delete_sources_for_list,
@@ -23,6 +22,9 @@ from bibilab.db import (
     get_sources_for_list,
     update_list_name,
     update_list_thumbnail,
+)
+from bibilab.db import (
+    create_list as db_create_list,
 )
 from bibilab.db import (
     delete_list as db_delete_list,
@@ -152,6 +154,7 @@ async def delete_list(list_id: str, cfg: BibilabConfig = Depends(get_config)) ->
 
     await delete_sources_for_list(list_id)
     await asyncio.to_thread(clear_embeddings_for_list, list_id, cfg)
+    await clear_fts_for_list(list_id)
     await db_delete_list(list_id)
 
 
@@ -206,6 +209,7 @@ async def delete_list_source(list_id: str, source_id: str, cfg: BibilabConfig = 
 
     _purge_source_resources(source_id, source["transcript_path"])
     await asyncio.to_thread(clear_embeddings_for_video, source["video_id"], cfg)
+    await clear_fts_for_video(source["video_id"])
     await delete_source(source_id)
 
 
