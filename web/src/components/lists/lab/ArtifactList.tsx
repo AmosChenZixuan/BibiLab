@@ -4,13 +4,17 @@ import { useLanguage } from "@/app/LanguageContext";
 import { useJobActivity } from "@/components/jobs/JobActivityProvider";
 import { api } from "@/lib/api";
 import { downloadTextFile } from "@/lib/download";
-import type { Artifact, ArtifactJob } from "@/lib/types";
+import type { Artifact, ArtifactJob, ArtifactStatus } from "@/lib/types";
 
 import { Sparkles } from "lucide-react";
 
 import { ARTIFACT_TYPE_KEYS } from "@/lib/artifactTypes";
 import { ArtifactCard } from "./ArtifactCard";
 import { ViewPromptModal } from "./ViewPromptModal";
+
+function getArtifactJobMeta(item: { job: { meta: unknown } }): ArtifactJob["meta"] {
+  return item.job.meta as ArtifactJob["meta"];
+}
 
 type ArtifactsUpdater = (prev: Artifact[]) => Artifact[];
 
@@ -31,26 +35,24 @@ export function ArtifactList({ listId, artifacts, onArtifactsChange, onViewArtif
   const artifactIds = useMemo(() => new Set(artifacts.map((a) => a.id)), [artifacts]);
 
   const jobDerivedArtifacts = useMemo((): Artifact[] => {
-    return artifactJobs
-      .filter((item) => {
-        const meta = item.job.meta as ArtifactJob["meta"];
-        return !artifactIds.has(meta.artifact_id ?? "");
-      })
-      .filter((item) => !item.isTerminal || item.job.status === "failed")
-      .map((item) => {
-        const meta = item.job.meta as ArtifactJob["meta"];
-        const isFailed = item.job.status === "failed";
-        return {
-          id: meta.artifact_id ?? item.job.id,
-          name: t(ARTIFACT_TYPE_KEYS[item.label] ?? "lab.reportsModal.custom"),
-          type: item.label as Artifact["type"],
-          prompt: "",
-          source_ids: [],
-          status: isFailed ? ("failed" as const) : ("generating" as const),
-          error: item.job.error ?? undefined,
-          created_at: item.job.created_at,
-        };
+    const result: Artifact[] = [];
+    for (const item of artifactJobs) {
+      const meta = getArtifactJobMeta(item);
+      if (artifactIds.has(meta.artifact_id ?? "")) continue;
+      if (item.isTerminal && item.job.status !== "failed") continue;
+      const status: ArtifactStatus = item.job.status === "failed" ? "failed" : "generating";
+      result.push({
+        id: meta.artifact_id ?? item.job.id,
+        name: t(ARTIFACT_TYPE_KEYS[item.label] ?? "lab.reportsModal.custom"),
+        type: item.label as Artifact["type"],
+        prompt: "",
+        source_ids: [],
+        status,
+        error: item.job.error ?? undefined,
+        created_at: item.job.created_at,
       });
+    }
+    return result;
   }, [artifactJobs, artifactIds, t]);
 
   // When a job flips to done, refresh artifacts and dismiss
@@ -81,10 +83,7 @@ export function ArtifactList({ listId, artifacts, onArtifactsChange, onViewArtif
 
   const handleDismiss = useCallback(
     async (artifactId: string) => {
-      const job = artifactJobs.find((item) => {
-        const meta = item.job.meta as ArtifactJob["meta"];
-        return meta.artifact_id === artifactId;
-      });
+      const job = artifactJobs.find((item) => getArtifactJobMeta(item).artifact_id === artifactId);
       if (job) {
         await dismissJob(job.job.id);
       }
@@ -129,7 +128,7 @@ export function ArtifactList({ listId, artifacts, onArtifactsChange, onViewArtif
   }, [onArtifactsChange]);
 
   const allArtifacts = useMemo(
-    () => [...jobDerivedArtifacts, ...artifacts],
+    () => jobDerivedArtifacts.concat(artifacts),
     [jobDerivedArtifacts, artifacts],
   );
 
