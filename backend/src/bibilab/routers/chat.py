@@ -75,6 +75,17 @@ async def delete_conversation_endpoint(list_id: str) -> None:
 def _format_rag_context(result: RetrievalResult, query: str) -> str:
     if not result.chunks:
         return ""
+    if result.mode == "broad":
+        parts = [
+            f"Query: {query}\n",
+            f"Concept appears in {result.sources_with_hits} of {result.sources_total} sources\n",
+            "Best excerpt per source:",
+        ]
+        for chunk in result.chunks:
+            ts_start = int(chunk.timestamp_start)
+            ts_end = int(chunk.timestamp_end)
+            parts.append(f'- [{chunk.video_title} @ {ts_start}s-{ts_end}s]: "{chunk.content}"')
+        return "\n".join(parts)
     parts = [f"Query: {query}\n\nRelevant transcript excerpts:"]
     for chunk in result.chunks:
         ts_start = int(chunk.timestamp_start)

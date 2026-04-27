@@ -342,3 +342,143 @@ async def test_retrieve_respects_mode_parameter(tmp_bibilab_home):
 
     assert result.mode == "broad"
     assert result.sources_total == 1
+
+
+# --- Source-aware aggregation tests ---
+
+
+@pytest.mark.asyncio
+async def test_retrieve_broad_mode_keeps_best_per_source(tmp_bibilab_home):
+    from bibilab.config import BibilabConfig, RagConfig
+    from bibilab.pipeline.embed import retrieve
+
+    cfg = BibilabConfig(rag=RagConfig(max_distance=0.5))
+
+    mock_collection = MagicMock()
+    mock_collection.query.return_value = {
+        "documents": [["c1", "c2", "c3", "c4", "c5", "c6"]],
+        "metadatas": [
+            [
+                {"video_id": "v1", "video_title": "Video 1", "timestamp_start": 0.0, "timestamp_end": 5.0},
+                {"video_id": "v1", "video_title": "Video 1", "timestamp_start": 5.0, "timestamp_end": 10.0},
+                {"video_id": "v2", "video_title": "Video 2", "timestamp_start": 0.0, "timestamp_end": 5.0},
+                {"video_id": "v2", "video_title": "Video 2", "timestamp_start": 5.0, "timestamp_end": 10.0},
+                {"video_id": "v3", "video_title": "Video 3", "timestamp_start": 0.0, "timestamp_end": 5.0},
+                {"video_id": "v3", "video_title": "Video 3", "timestamp_start": 5.0, "timestamp_end": 10.0},
+            ]
+        ],
+        "distances": [[0.05, 0.15, 0.10, 0.20, 0.12, 0.25]],
+    }
+
+    with (
+        patch("bibilab.pipeline.embed.get_video_ids_for_sources", new_callable=AsyncMock) as mock_map,
+        patch("bibilab.pipeline.embed._get_collection", return_value=mock_collection),
+    ):
+        mock_map.return_value = {"s1": "v1", "s2": "v2", "s3": "v3"}
+
+        result = await retrieve("test query", ["s1", "s2", "s3"], cfg, mode="broad")
+
+    # Only best chunk per source
+    assert len(result.chunks) == 3
+    video_ids = [c.video_id for c in result.chunks]
+    assert video_ids == ["v1", "v2", "v3"]
+    # Best distances per source
+    assert result.chunks[0].distance == 0.05
+    assert result.chunks[1].distance == 0.10
+    assert result.chunks[2].distance == 0.12
+    # candidates_evaluated reflects all chunks before aggregation
+    assert result.candidates_evaluated == 6
+
+
+@pytest.mark.asyncio
+async def test_retrieve_broad_mode_increases_top_k(tmp_bibilab_home):
+    from bibilab.config import BibilabConfig, RagConfig
+    from bibilab.pipeline.embed import retrieve
+
+    cfg = BibilabConfig(rag=RagConfig(max_distance=0.5))
+
+    with (
+        patch("bibilab.pipeline.embed.get_video_ids_for_sources", new_callable=AsyncMock) as mock_map,
+        patch("bibilab.pipeline.embed.query_chunks", new_callable=AsyncMock) as mock_qc,
+    ):
+        mock_map.return_value = {"s1": "v1"}
+        mock_qc.return_value = []
+
+        await retrieve("test query", ["s1"], cfg, mode="broad", top_k=10)
+
+        mock_qc.assert_called_once_with("test query", ["s1"], cfg, top_k=50)
+
+
+@pytest.mark.asyncio
+async def test_retrieve_focused_mode_returns_all_chunks(tmp_bibilab_home):
+    from bibilab.config import BibilabConfig, RagConfig
+    from bibilab.pipeline.embed import retrieve
+
+    cfg = BibilabConfig(rag=RagConfig(max_distance=0.5))
+
+    mock_collection = MagicMock()
+    mock_collection.query.return_value = {
+        "documents": [["c1", "c2", "c3"]],
+        "metadatas": [
+            [
+                {"video_id": "v1", "video_title": "Video 1", "timestamp_start": 0.0, "timestamp_end": 5.0},
+                {"video_id": "v1", "video_title": "Video 1", "timestamp_start": 5.0, "timestamp_end": 10.0},
+                {"video_id": "v1", "video_title": "Video 1", "timestamp_start": 10.0, "timestamp_end": 15.0},
+            ]
+        ],
+        "distances": [[0.1, 0.2, 0.3]],
+    }
+
+    with (
+        patch("bibilab.pipeline.embed.get_video_ids_for_sources", new_callable=AsyncMock) as mock_map,
+        patch("bibilab.pipeline.embed._get_collection", return_value=mock_collection),
+    ):
+        mock_map.return_value = {"s1": "v1"}
+
+        result = await retrieve("test query", ["s1"], cfg, mode="focused")
+
+    # Focused mode keeps all chunks, not just best per source
+    assert len(result.chunks) == 3
+    assert all(c.video_id == "v1" for c in result.chunks)
+
+
+@pytest.mark.asyncio
+async def test_format_rag_context_broad_mode(tmp_bibilab_home):
+    from bibilab.pipeline.embed import RetrievalResult, RetrievedChunk, SourceHit
+    from bibilab.routers.chat import _format_rag_context  # noqa: E402
+
+    result = RetrievalResult(
+        chunks=[
+            RetrievedChunk(
+                content="chunk about topic",
+                video_title="Video A",
+                timestamp_start=10.0,
+                timestamp_end=20.0,
+                video_id="v1",
+                distance=0.1,
+            ),
+            RetrievedChunk(
+                content="another chunk",
+                video_title="Video B",
+                timestamp_start=0.0,
+                timestamp_end=5.0,
+                video_id="v2",
+                distance=0.2,
+            ),
+        ],
+        mode="broad",
+        candidates_evaluated=8,
+        sources_with_hits=2,
+        sources_total=5,
+        source_coverage=[
+            SourceHit(video_id="v1", video_title="Video A", best_distance=0.1),
+            SourceHit(video_id="v2", video_title="Video B", best_distance=0.2),
+        ],
+    )
+
+    text = _format_rag_context(result, "my query")
+
+    assert "Concept appears in 2 of 5 sources" in text
+    assert "Best excerpt per source:" in text
+    assert '[Video A @ 10s-20s]: "chunk about topic"' in text
+    assert '[Video B @ 0s-5s]: "another chunk"' in text

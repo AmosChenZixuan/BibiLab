@@ -205,7 +205,8 @@ async def retrieve(
 ) -> RetrievalResult:
     """High-level retrieval that wraps query_chunks with metadata."""
     sources_total = len(source_ids)
-    chunks = await query_chunks(query_text, source_ids, cfg, top_k=top_k)
+    effective_top_k = 50 if mode == "broad" else top_k
+    chunks = await query_chunks(query_text, source_ids, cfg, top_k=effective_top_k)
 
     best_by_source: dict[str, RetrievedChunk] = {}
     for chunk in chunks:
@@ -222,8 +223,10 @@ async def retrieve(
         for c in sorted(best_by_source.values(), key=lambda c: c.distance)
     ]
 
+    result_chunks = sorted(best_by_source.values(), key=lambda c: c.distance) if mode == "broad" else chunks
+
     return RetrievalResult(
-        chunks=chunks,
+        chunks=result_chunks,
         mode=mode,
         candidates_evaluated=len(chunks),
         sources_with_hits=len(best_by_source),
