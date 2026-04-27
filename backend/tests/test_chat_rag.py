@@ -278,7 +278,7 @@ async def test_retrieve_returns_result_with_metadata(tmp_bibilab_home):
     from bibilab.config import BibilabConfig, RagConfig
     from bibilab.pipeline.embed import RetrievalResult, retrieve
 
-    cfg = BibilabConfig(rag=RagConfig(max_distance=0.5))
+    cfg = BibilabConfig(rag=RagConfig(max_distance=0.5, reranking_enabled=False))
 
     mock_collection = MagicMock()
     mock_collection.query.return_value = {
