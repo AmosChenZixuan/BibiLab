@@ -481,4 +481,272 @@ async def test_format_rag_context_broad_mode(tmp_bibilab_home):
     assert "Concept appears in 2 of 5 sources" in text
     assert "Best excerpt per source:" in text
     assert '[Video A @ 10s-20s]: "chunk about topic"' in text
-    assert '[Video B @ 0s-5s]: "another chunk"' in text
+
+
+# --- hybrid_search tests (issue #201) ---
+
+
+def _make_chunk(
+    content: str = "chunk",
+    video_id: str = "v1",
+    video_title: str = "Video 1",
+    ts_start: float = 0.0,
+    ts_end: float = 5.0,
+    distance: float = 0.5,
+):
+    from bibilab.pipeline.embed import RetrievedChunk
+
+    return RetrievedChunk(
+        content=content,
+        video_title=video_title,
+        timestamp_start=ts_start,
+        timestamp_end=ts_end,
+        video_id=video_id,
+        distance=distance,
+    )
+
+
+@pytest.mark.asyncio
+async def test_hybrid_search_runs_fts_and_vector_in_parallel(tmp_bibilab_home):
+    from bibilab.config import BibilabConfig, RagConfig
+    from bibilab.pipeline.embed import hybrid_search
+
+    cfg = BibilabConfig(rag=RagConfig(max_distance=1.0))
+
+    vector_chunks = [_make_chunk(content="vec chunk", video_id="v1")]
+    fts_chunks = [_make_chunk(content="fts chunk", video_id="v2")]
+
+    with (
+        patch(
+            "bibilab.pipeline.embed.query_chunks",
+            new_callable=AsyncMock,
+            return_value=vector_chunks,
+        ) as mock_vector,
+        patch(
+            "bibilab.pipeline.embed.query_fts",
+            new_callable=AsyncMock,
+            return_value=fts_chunks,
+        ) as mock_fts,
+    ):
+        result = await hybrid_search("test query", ["s1", "s2"], cfg, effective_top_k=30)
+
+    mock_vector.assert_called_once_with("test query", ["s1", "s2"], cfg, top_k=30)
+    mock_fts.assert_called_once_with("test query", ["s1", "s2"], cfg, top_k=30)
+    assert len(result) == 2
+
+
+@pytest.mark.asyncio
+async def test_hybrid_search_fallback_when_fts_returns_empty(tmp_bibilab_home):
+    from bibilab.config import BibilabConfig, RagConfig
+    from bibilab.pipeline.embed import hybrid_search
+
+    cfg = BibilabConfig(rag=RagConfig(max_distance=1.0))
+
+    vector_chunks = [_make_chunk(content="vec chunk", video_id="v1")]
+
+    with (
+        patch(
+            "bibilab.pipeline.embed.query_chunks",
+            new_callable=AsyncMock,
+            return_value=vector_chunks,
+        ) as _,
+        patch(
+            "bibilab.pipeline.embed.query_fts",
+            new_callable=AsyncMock,
+            return_value=[],
+        ) as _,
+    ):
+        result = await hybrid_search("test query", ["s1"], cfg, effective_top_k=30)
+
+    assert result == vector_chunks
+
+
+@pytest.mark.asyncio
+async def test_hybrid_search_fallback_when_fts_errors(tmp_bibilab_home):
+    from bibilab.config import BibilabConfig, RagConfig
+    from bibilab.pipeline.embed import hybrid_search
+
+    cfg = BibilabConfig(rag=RagConfig(max_distance=1.0))
+
+    vector_chunks = [_make_chunk(content="vec chunk", video_id="v1")]
+
+    with (
+        patch(
+            "bibilab.pipeline.embed.query_chunks",
+            new_callable=AsyncMock,
+            return_value=vector_chunks,
+        ) as _,
+        patch(
+            "bibilab.pipeline.embed.query_fts",
+            new_callable=AsyncMock,
+            side_effect=RuntimeError("FTS error"),
+        ) as _,
+    ):
+        result = await hybrid_search("test query", ["s1"], cfg, effective_top_k=30)
+
+    assert result == vector_chunks
+
+
+@pytest.mark.asyncio
+async def test_hybrid_search_deduplicates_same_chunk(tmp_bibilab_home):
+    from bibilab.config import BibilabConfig, RagConfig
+    from bibilab.pipeline.embed import hybrid_search
+
+    cfg = BibilabConfig(rag=RagConfig(max_distance=1.0))
+
+    same_chunk = _make_chunk(
+        content="same chunk",
+        video_id="v1",
+        video_title="Video 1",
+        ts_start=10.0,
+        ts_end=20.0,
+        distance=0.3,
+    )
+    vector_chunks = [same_chunk]
+    fts_chunks = [same_chunk]
+
+    with (
+        patch(
+            "bibilab.pipeline.embed.query_chunks",
+            new_callable=AsyncMock,
+            return_value=vector_chunks,
+        ),
+        patch(
+            "bibilab.pipeline.embed.query_fts",
+            new_callable=AsyncMock,
+            return_value=fts_chunks,
+        ),
+    ):
+        result = await hybrid_search("test query", ["s1"], cfg, effective_top_k=30)
+
+    assert len(result) == 1
+    assert result[0].content == "same chunk"
+
+
+@pytest.mark.asyncio
+async def test_retrieve_uses_hybrid_search(tmp_bibilab_home):
+    from bibilab.config import BibilabConfig, RagConfig
+    from bibilab.pipeline.embed import retrieve
+
+    cfg = BibilabConfig(rag=RagConfig(max_distance=1.0, reranking_enabled=False))
+
+    chunks = [_make_chunk(content="a", video_id="v1")]
+
+    with patch(
+        "bibilab.pipeline.embed.hybrid_search",
+        new_callable=AsyncMock,
+        return_value=chunks,
+    ) as mock_hybrid:
+        result = await retrieve("query", ["src1"], cfg, top_k=5)
+
+    mock_hybrid.assert_called_once_with("query", ["src1"], cfg, effective_top_k=5)
+    assert result.chunks == chunks
+
+
+@pytest.mark.asyncio
+async def test_retrieve_hybrid_disabled_skips_fts(tmp_bibilab_home):
+    from bibilab.config import BibilabConfig, RagConfig
+    from bibilab.pipeline.embed import retrieve
+
+    cfg = BibilabConfig(rag=RagConfig(max_distance=1.0, hybrid_enabled=False, reranking_enabled=False))
+
+    chunks = [_make_chunk(content="a", video_id="v1")]
+
+    with (
+        patch(
+            "bibilab.pipeline.embed.hybrid_search",
+            new_callable=AsyncMock,
+        ) as mock_hybrid,
+        patch(
+            "bibilab.pipeline.embed.query_chunks",
+            new_callable=AsyncMock,
+            return_value=chunks,
+        ) as mock_vector,
+    ):
+        result = await retrieve("query", ["src1"], cfg, top_k=5)
+
+    mock_hybrid.assert_not_called()
+    mock_vector.assert_called_once_with("query", ["src1"], cfg, top_k=5)
+    assert result.chunks == chunks
+
+
+def test_rrf_fuse_ranks_doc_in_both_lists_above_doc_in_one():
+    from bibilab.pipeline.embed import _rrf_fuse
+
+    doc_a = _make_chunk(content="a", video_id="v1", distance=0.1)
+    doc_b = _make_chunk(content="b", video_id="v2", distance=0.2)
+    doc_c = _make_chunk(content="c", video_id="v3", distance=0.3)
+
+    vec_list = [doc_a, doc_b, doc_c]
+    fts_list = [doc_a, doc_c]
+
+    result = _rrf_fuse(vec_list, fts_list, k=60)
+
+    assert result[0].content == "a"
+    assert result.index(doc_c) < result.index(doc_b)
+
+
+@pytest.mark.asyncio
+async def test_retrieve_broad_mode_keeps_highest_scoring_chunk_per_source(tmp_bibilab_home):
+    """Regression: when chunks have .score set, broad mode must keep the highest-scoring
+    chunk per source, not the lowest. _score() must negate score so that ascending sort
+    correctly puts most-relevant first."""
+    from bibilab.config import BibilabConfig, RagConfig
+    from bibilab.pipeline.embed import retrieve
+
+    cfg = BibilabConfig(rag=RagConfig(max_distance=1.0, reranking_enabled=False))
+
+    v1_low = _make_chunk(
+        content="v1 low",
+        video_id="v1",
+        video_title="Video 1",
+        ts_start=0.0,
+        ts_end=5.0,
+        distance=0.1,
+    )
+    v1_high = _make_chunk(
+        content="v1 high",
+        video_id="v1",
+        video_title="Video 1",
+        ts_start=10.0,
+        ts_end=15.0,
+        distance=0.2,
+    )
+    v2_low = _make_chunk(
+        content="v2 low",
+        video_id="v2",
+        video_title="Video 2",
+        ts_start=0.0,
+        ts_end=5.0,
+        distance=0.1,
+    )
+    v2_high = _make_chunk(
+        content="v2 high",
+        video_id="v2",
+        video_title="Video 2",
+        ts_start=10.0,
+        ts_end=15.0,
+        distance=0.3,
+    )
+
+    v1_low.score = 0.2
+    v1_high.score = 0.9
+    v2_low.score = 0.3
+    v2_high.score = 0.7
+
+    chunks = [v1_low, v1_high, v2_low, v2_high]
+
+    with patch(
+        "bibilab.pipeline.embed.hybrid_search",
+        new_callable=AsyncMock,
+        return_value=chunks,
+    ):
+        result = await retrieve("query", ["s1", "s2"], cfg, mode="broad", top_k=5)
+
+    assert len(result.chunks) == 2
+    chunk_by_video = {c.video_id: c for c in result.chunks}
+    assert chunk_by_video["v1"].content == "v1 high"
+    assert chunk_by_video["v2"].content == "v2 high"
+
+    assert result.source_coverage[0].video_id == "v1"
+    assert result.source_coverage[1].video_id == "v2"

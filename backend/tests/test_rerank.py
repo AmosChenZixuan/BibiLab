@@ -29,9 +29,9 @@ async def test_rerank_sorts_by_cross_encoder_score():
         result = await rerank("query", chunks, top_k=3)
 
     assert [c.content for c in result] == ["high", "mid", "low"]
-    assert result[0].distance == pytest.approx(0.9)
-    assert result[1].distance == pytest.approx(0.5)
-    assert result[2].distance == pytest.approx(0.1)
+    assert result[0].score == pytest.approx(0.9)
+    assert result[1].score == pytest.approx(0.5)
+    assert result[2].score == pytest.approx(0.1)
 
 
 @pytest.mark.asyncio
@@ -72,7 +72,7 @@ async def test_rerank_single_chunk():
 
     assert len(result) == 1
     assert result[0].content == "only"
-    assert result[0].distance == pytest.approx(0.8)
+    assert result[0].score == pytest.approx(0.8)
 
 
 @pytest.mark.asyncio

@@ -59,7 +59,7 @@ async def rerank(
 
     result = []
     for chunk, score in scored[:top_k]:
-        chunk.distance = float(score)
+        chunk.score = float(score)
         result.append(chunk)
 
     return result

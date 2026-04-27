@@ -30,6 +30,7 @@ class RetrievedChunk:
     timestamp_end: float
     video_id: str
     distance: float
+    score: float | None = None
 
 
 @dataclass
@@ -47,6 +48,42 @@ class RetrievalResult:
     sources_with_hits: int
     sources_total: int
     source_coverage: list[SourceHit]
+
+
+def _chunk_key(chunk: RetrievedChunk) -> str:
+    """Stable dedup key for a RetrievedChunk."""
+    return f"{chunk.video_id}_{chunk.timestamp_start}_{chunk.timestamp_end}"
+
+
+def _rrf_fuse(
+    a: list[RetrievedChunk],
+    b: list[RetrievedChunk],
+    k: int = 60,
+) -> list[RetrievedChunk]:
+    """Reciprocal Rank Fusion on two ranked RetrievedChunk lists.
+
+    RRF_score(d) = sum(1 / (k + rank_i(d)) for each list where d appears).
+    Returns fused list sorted by RRF score descending. Duplicates (same _chunk_key)
+    are merged into a single entry.
+    """
+    positions: dict[str, list[int]] = {}
+    key_to_chunk: dict[str, RetrievedChunk] = {}
+
+    for source in (a, b):
+        for rank, chunk in enumerate(source, start=1):
+            key = _chunk_key(chunk)
+            positions.setdefault(key, []).append(rank)
+            key_to_chunk.setdefault(key, chunk)
+
+    scored = []
+    for key, ranks in positions.items():
+        score = sum(1.0 / (k + r) for r in ranks)
+        chunk = key_to_chunk[key]
+        chunk.score = score
+        scored.append((score, chunk))
+
+    scored.sort(key=lambda x: x[0], reverse=True)
+    return [chunk for _, chunk in scored]
 
 
 def _embedding_model_dir() -> Path:
@@ -282,6 +319,34 @@ async def query_fts(
     ]
 
 
+async def hybrid_search(
+    query_text: str,
+    source_ids: list[str],
+    cfg: BibilabConfig,
+    effective_top_k: int,
+) -> list[RetrievedChunk]:
+    """Run vector and FTS5 BM25 retrieval in parallel, merge via RRF.
+
+    Falls back to vector-only if FTS returns empty or errors.
+    """
+    vec_task = query_chunks(query_text, source_ids, cfg, top_k=effective_top_k)
+    fts_task = query_fts(query_text, source_ids, cfg, top_k=effective_top_k)
+
+    results = await asyncio.gather(vec_task, fts_task, return_exceptions=True)
+    vec_chunks, fts_result = results[0], results[1]
+
+    if isinstance(fts_result, Exception):
+        logger.warning("FTS query failed in hybrid search, falling back to vector-only: %s", fts_result)
+        return vec_chunks
+
+    fts_chunks = fts_result
+
+    if not fts_chunks:
+        return vec_chunks
+
+    return _rrf_fuse(vec_chunks, fts_chunks, k=60)
+
+
 async def retrieve(
     query_text: str,
     source_ids: list[str],
@@ -289,32 +354,40 @@ async def retrieve(
     mode: str = "focused",
     top_k: int = 10,
 ) -> RetrievalResult:
-    """High-level retrieval that wraps query_chunks with metadata."""
+    """High-level retrieval that wraps hybrid search with metadata."""
     sources_total = len(source_ids)
     effective_top_k = 50 if mode == "broad" else top_k
-    chunks = await query_chunks(query_text, source_ids, cfg, top_k=effective_top_k)
+
+    if cfg.rag.hybrid_enabled:
+        chunks = await hybrid_search(query_text, source_ids, cfg, effective_top_k=effective_top_k)
+    else:
+        chunks = await query_chunks(query_text, source_ids, cfg, top_k=effective_top_k)
 
     if cfg.rag.reranking_enabled and chunks:
         from bibilab.pipeline.rerank import rerank  # noqa: PLC0415
 
         chunks = await rerank(query_text, chunks, top_k=top_k)
 
+    def _score(chunk: RetrievedChunk) -> float:
+        """Canonical relevance where lower = more relevant."""
+        return -chunk.score if chunk.score is not None else chunk.distance
+
     best_by_source: dict[str, RetrievedChunk] = {}
     for chunk in chunks:
         vid = chunk.video_id
-        if vid not in best_by_source or chunk.distance < best_by_source[vid].distance:
+        if vid not in best_by_source or _score(chunk) < _score(best_by_source[vid]):
             best_by_source[vid] = chunk
 
     source_coverage = [
         SourceHit(
             video_id=c.video_id,
             video_title=c.video_title,
-            best_distance=c.distance,
+            best_distance=_score(c),
         )
-        for c in sorted(best_by_source.values(), key=lambda c: c.distance)
+        for c in sorted(best_by_source.values(), key=_score)
     ]
 
-    result_chunks = sorted(best_by_source.values(), key=lambda c: c.distance) if mode == "broad" else chunks
+    result_chunks = sorted(best_by_source.values(), key=_score) if mode == "broad" else chunks
 
     return RetrievalResult(
         chunks=result_chunks,
