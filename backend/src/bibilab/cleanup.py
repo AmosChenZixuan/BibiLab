@@ -3,7 +3,7 @@ import logging
 from typing import Any
 
 from bibilab.config import bibilab_home, load_config
-from bibilab.pipeline.embed import clear_embeddings_for_video
+from bibilab.pipeline.embed import clear_embeddings_for_video, clear_fts_for_video_sync
 
 logger = logging.getLogger(__name__)
 
@@ -36,4 +36,5 @@ def cleanup_job_artifacts(job: dict[str, Any]) -> None:
         path.unlink(missing_ok=True)
 
     clear_embeddings_for_video(video_id, load_config())
+    clear_fts_for_video_sync(video_id)
     logger.info("Cleaned up artifacts for job %s (%s)", job.get("id", ""), video_id)

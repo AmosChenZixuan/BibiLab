@@ -11,11 +11,12 @@ if TYPE_CHECKING:
     import chromadb
     from chromadb.utils.embedding_functions import ONNXMiniLM_L6_V2
 
+import sqlite3
 from pathlib import Path
 
 from bibilab.adapters.base import VideoMeta
 from bibilab.config import BibilabConfig, bibilab_home
-from bibilab.db import get_video_ids_for_sources
+from bibilab.db import get_db_path, get_video_ids_for_sources, query_fts_rows
 from bibilab.pipeline.chunk import RagChunk
 
 logger = logging.getLogger(__name__)
@@ -111,6 +112,51 @@ def embed_chunks(
     collection.add(ids=ids, documents=documents, metadatas=metadatas)
     logger.info("Embedded %d chunks for %s", len(chunks), meta.video_id)
 
+    populate_fts(chunks, meta)
+
+
+def populate_fts(chunks: list[RagChunk], meta: VideoMeta) -> None:
+    """Insert transcript chunks into the FTS5 index (sync, called from embed thread)."""
+    if not chunks:
+        return
+    db_path = get_db_path()
+    conn = sqlite3.connect(str(db_path))
+    try:
+        # Clear existing FTS rows for this video (idempotent re-run)
+        conn.execute("DELETE FROM chunks_fts WHERE video_id = ?", (meta.video_id,))
+        conn.executemany(
+            "INSERT INTO chunks_fts (content, video_id, video_title, timestamp_start, timestamp_end, chunk_id) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            [
+                (
+                    chunk.text,
+                    meta.video_id,
+                    meta.title,
+                    chunk.timestamp_start,
+                    chunk.timestamp_end,
+                    f"{meta.video_id}_{chunk.sequence_index}",
+                )
+                for chunk in chunks
+            ],
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    logger.info("FTS indexed %d chunks for %s", len(chunks), meta.video_id)
+
+
+def clear_fts_for_video_sync(video_id: str) -> None:
+    """Delete all FTS rows for a video (sync, for use from worker threads)."""
+    db_path = get_db_path()
+    if not db_path.exists():
+        return
+    conn = sqlite3.connect(str(db_path))
+    try:
+        conn.execute("DELETE FROM chunks_fts WHERE video_id = ?", (video_id,))
+        conn.commit()
+    finally:
+        conn.close()
+
 
 def clear_embeddings_for_list(list_id: str, cfg: BibilabConfig) -> None:
     """Delete all ChromaDB chunks belonging to the given list."""
@@ -193,6 +239,46 @@ async def query_chunks(
         )
         for i in range(len(documents[0]))
         if distances[0][i] <= floor
+    ]
+
+
+async def query_fts(
+    query_text: str,
+    source_ids: list[str],
+    cfg: BibilabConfig,
+    top_k: int = 30,
+) -> list[RetrievedChunk]:
+    """Query FTS5 index for transcript chunks matching the query, filtered by source.
+
+    Returns list of RetrievedChunk with distance derived from BM25 rank.
+    FTS5 rank is negative (more negative = better match); we negate it to get
+    a positive distance-like score where lower = more relevant.
+    """
+    if not source_ids:
+        return []
+
+    id_to_video_id = await get_video_ids_for_sources(source_ids)
+    if not id_to_video_id:
+        return []
+
+    video_ids = list(id_to_video_id.values())
+
+    try:
+        rows = await query_fts_rows(query_text, video_ids, top_k)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("FTS query failed: %s", exc)
+        return []
+
+    return [
+        RetrievedChunk(
+            content=row["content"],
+            video_title=row["video_title"],
+            timestamp_start=float(row["timestamp_start"]),
+            timestamp_end=float(row["timestamp_end"]),
+            video_id=row["video_id"],
+            distance=-row["rank"],  # negate: FTS5 rank is negative, lower = better
+        )
+        for row in rows
     ]
 
 

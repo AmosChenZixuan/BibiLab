@@ -82,6 +82,17 @@ CREATE TABLE IF NOT EXISTS artifacts (
 )
 """
 
+_CREATE_CHUNKS_FTS = """
+CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(
+    content,
+    video_id UNINDEXED,
+    video_title UNINDEXED,
+    timestamp_start UNINDEXED,
+    timestamp_end UNINDEXED,
+    chunk_id UNINDEXED
+)
+"""
+
 _CREATE_CONVERSATIONS = """
 CREATE TABLE IF NOT EXISTS conversations (
     id         TEXT PRIMARY KEY,
@@ -154,6 +165,7 @@ async def bootstrap_db() -> None:
         await db.execute(_CREATE_JOBS)
         await db.execute(_CREATE_SOURCES)
         await db.execute(_CREATE_ARTIFACTS)
+        await db.execute(_CREATE_CHUNKS_FTS)
         await db.execute(_CREATE_CONVERSATIONS)
         await db.execute(_CREATE_MESSAGES)
         await db.execute("CREATE INDEX IF NOT EXISTS idx_messages_conversation_id ON messages(conversation_id)")
@@ -781,3 +793,61 @@ async def delete_conversation(conversation_id: str) -> None:
     async with get_db() as db:
         await db.execute("DELETE FROM conversations WHERE id=?", (conversation_id,))
         await db.commit()
+
+
+# ---------------------------------------------------------------------------
+# FTS5 helpers
+# ---------------------------------------------------------------------------
+
+
+async def insert_fts_rows(
+    rows: list[tuple[str, str, str, float, float, str]],
+) -> None:
+    """Insert rows into chunks_fts. Each tuple: (content, video_id, video_title, ts_start, ts_end, chunk_id)."""
+    if not rows:
+        return
+    async with get_db() as db:
+        await db.executemany(
+            "INSERT INTO chunks_fts (content, video_id, video_title, timestamp_start, timestamp_end, chunk_id) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            rows,
+        )
+        await db.commit()
+
+
+async def clear_fts_for_video(video_id: str) -> None:
+    """Delete all FTS rows for a given video_id."""
+    async with get_db() as db:
+        await db.execute("DELETE FROM chunks_fts WHERE video_id = ?", (video_id,))
+        await db.commit()
+
+
+async def clear_fts_for_list(list_id: str) -> None:
+    """Delete all FTS rows whose video_id belongs to sources in the given list."""
+    async with get_db() as db:
+        await db.execute(
+            "DELETE FROM chunks_fts WHERE video_id IN (SELECT video_id FROM sources WHERE list_id = ?)",
+            (list_id,),
+        )
+        await db.commit()
+
+
+async def query_fts_rows(
+    query_text: str,
+    video_ids: list[str],
+    top_k: int = 30,
+) -> list[aiosqlite.Row]:
+    """Run FTS5 MATCH query filtered by video_ids, return rows ranked by BM25."""
+    if not video_ids:
+        return []
+    placeholders = _in_placeholders(video_ids)
+    async with get_db() as db:
+        cursor = await db.execute(
+            f"SELECT content, video_id, video_title, timestamp_start, timestamp_end, rank "
+            f"FROM chunks_fts "
+            f"WHERE chunks_fts MATCH ? AND video_id IN ({placeholders}) "
+            f"ORDER BY rank "
+            f"LIMIT ?",
+            [query_text, *video_ids, top_k],
+        )
+        return await cursor.fetchall()
