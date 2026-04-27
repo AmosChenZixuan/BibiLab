@@ -208,6 +208,11 @@ async def retrieve(
     effective_top_k = 50 if mode == "broad" else top_k
     chunks = await query_chunks(query_text, source_ids, cfg, top_k=effective_top_k)
 
+    if cfg.rag.reranking_enabled and chunks:
+        from bibilab.pipeline.rerank import rerank  # noqa: PLC0415
+
+        chunks = await rerank(query_text, chunks, top_k=top_k)
+
     best_by_source: dict[str, RetrievedChunk] = {}
     for chunk in chunks:
         vid = chunk.video_id
