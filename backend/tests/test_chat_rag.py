@@ -268,3 +268,77 @@ async def test_get_video_ids_for_sources_no_matches(tmp_bibilab_home):
     result = await get_video_ids_for_sources(["nonexistent-src"])
 
     assert result == {}
+
+
+# --- retrieve() wrapper tests ---
+
+
+@pytest.mark.asyncio
+async def test_retrieve_returns_result_with_metadata(tmp_bibilab_home):
+    from bibilab.config import BibilabConfig, RagConfig
+    from bibilab.pipeline.embed import RetrievalResult, retrieve
+
+    cfg = BibilabConfig(rag=RagConfig(max_distance=0.5))
+
+    mock_collection = MagicMock()
+    mock_collection.query.return_value = {
+        "documents": [["chunk A", "chunk B", "chunk C"]],
+        "metadatas": [
+            [
+                {"video_id": "v1", "video_title": "Video 1", "timestamp_start": 0.0, "timestamp_end": 5.0},
+                {"video_id": "v2", "video_title": "Video 2", "timestamp_start": 5.0, "timestamp_end": 10.0},
+                {"video_id": "v1", "video_title": "Video 1", "timestamp_start": 10.0, "timestamp_end": 15.0},
+            ]
+        ],
+        "distances": [[0.1, 0.2, 0.3]],
+    }
+
+    with (
+        patch("bibilab.pipeline.embed.get_video_ids_for_sources", new_callable=AsyncMock) as mock_map,
+        patch("bibilab.pipeline.embed._get_collection", return_value=mock_collection),
+    ):
+        mock_map.return_value = {"s1": "v1", "s2": "v2"}
+
+        result = await retrieve("test query", ["s1", "s2"], cfg, top_k=5)
+
+    assert isinstance(result, RetrievalResult)
+    assert len(result.chunks) == 3
+    assert result.mode == "focused"
+    assert result.candidates_evaluated == 3
+    assert result.sources_with_hits == 2
+    assert result.sources_total == 2
+    assert len(result.source_coverage) == 2
+    assert result.source_coverage[0].video_id == "v1"
+    assert result.source_coverage[0].best_distance == 0.1
+    assert result.source_coverage[1].video_id == "v2"
+
+
+@pytest.mark.asyncio
+async def test_retrieve_empty_sources(tmp_bibilab_home):
+    from bibilab.config import BibilabConfig, RagConfig
+    from bibilab.pipeline.embed import retrieve
+
+    cfg = BibilabConfig(rag=RagConfig(max_distance=0.5))
+
+    result = await retrieve("test query", [], cfg)
+
+    assert result.chunks == []
+    assert result.sources_total == 0
+    assert result.sources_with_hits == 0
+    assert result.source_coverage == []
+
+
+@pytest.mark.asyncio
+async def test_retrieve_respects_mode_parameter(tmp_bibilab_home):
+    from bibilab.config import BibilabConfig, RagConfig
+    from bibilab.pipeline.embed import retrieve
+
+    cfg = BibilabConfig(rag=RagConfig(max_distance=0.5))
+
+    with patch("bibilab.pipeline.embed.get_video_ids_for_sources", new_callable=AsyncMock) as mock_map:
+        mock_map.return_value = {}
+
+        result = await retrieve("test query", ["s1"], cfg, mode="broad")
+
+    assert result.mode == "broad"
+    assert result.sources_total == 1

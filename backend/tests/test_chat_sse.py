@@ -44,21 +44,27 @@ async def test_chat_endpoint_includes_rag_context(client, tmp_bibilab_home):
         yield MagicMock(type="done", content=None, tool_call=None)
 
     with patch("bibilab.routers.chat.stream_llm", capture_stream):
-        with patch("bibilab.routers.chat.query_chunks", new_callable=AsyncMock) as mock_query:
+        with patch("bibilab.routers.chat.retrieve", new_callable=AsyncMock) as mock_retrieve:
             with patch("bibilab.routers.chat.get_sources_for_list", new_callable=AsyncMock) as mock_sources:
-                from bibilab.pipeline.embed import RetrievedChunk
+                from bibilab.pipeline.embed import RetrievalResult, RetrievedChunk
 
                 mock_sources.return_value = [MagicMock(id="src-1")]
-                mock_query.return_value = [
-                    RetrievedChunk(
-                        content="video transcript here",
-                        video_title="Test Video",
-                        timestamp_start=10.0,
-                        timestamp_end=30.0,
-                        video_id="bv123",
-                        distance=0.15,
-                    )
-                ]
+                chunk = RetrievedChunk(
+                    content="video transcript here",
+                    video_title="Test Video",
+                    timestamp_start=10.0,
+                    timestamp_end=30.0,
+                    video_id="bv123",
+                    distance=0.15,
+                )
+                mock_retrieve.return_value = RetrievalResult(
+                    chunks=[chunk],
+                    mode="focused",
+                    candidates_evaluated=1,
+                    sources_with_hits=1,
+                    sources_total=1,
+                    source_coverage=[],
+                )
                 resp = await client.post(f"/lists/{list_id}/chat", json={"message": "what is this about?"})
 
     assert resp.status_code == 200

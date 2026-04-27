@@ -28,7 +28,7 @@ from bibilab.models.chat import (
 from bibilab.pipeline._shared import stream_llm
 from bibilab.pipeline.chat_summary import maybe_compress_conversation
 from bibilab.pipeline.chat_tools import GENERATE_REPORT_TOOL, execute_tool
-from bibilab.pipeline.embed import query_chunks
+from bibilab.pipeline.embed import RetrievalResult, retrieve
 
 logger = logging.getLogger(__name__)
 
@@ -72,11 +72,11 @@ async def delete_conversation_endpoint(list_id: str) -> None:
         await delete_conversation(conversation_row["id"])
 
 
-def _format_rag_context(chunks: list, query: str) -> str:
-    if not chunks:
+def _format_rag_context(result: RetrievalResult, query: str) -> str:
+    if not result.chunks:
         return ""
     parts = [f"Query: {query}\n\nRelevant transcript excerpts:"]
-    for chunk in chunks:
+    for chunk in result.chunks:
         ts_start = int(chunk.timestamp_start)
         ts_end = int(chunk.timestamp_end)
         parts.append(f'- [{chunk.video_title} @ {ts_start}s-{ts_end}s]: "{chunk.content}"')
@@ -121,16 +121,15 @@ async def chat_endpoint(
         source_rows = await get_sources_for_list(list_id)
         source_ids = [row["id"] for row in source_rows]
 
-    rag_chunks = []
     rag_context = ""
     if source_ids and request.message.strip():
-        rag_chunks = await query_chunks(
+        rag_result = await retrieve(
             query_text=request.message,
             source_ids=source_ids,
             cfg=cfg,
             top_k=5,
         )
-        rag_context = _format_rag_context(rag_chunks, request.message)
+        rag_context = _format_rag_context(rag_result, request.message)
 
     system_parts = [GROUNDING_SYSTEM_PROMPT]
     if existing_summary:

@@ -31,6 +31,23 @@ class RetrievedChunk:
     distance: float
 
 
+@dataclass
+class SourceHit:
+    video_id: str
+    video_title: str
+    best_distance: float
+
+
+@dataclass
+class RetrievalResult:
+    chunks: list[RetrievedChunk]
+    mode: str
+    candidates_evaluated: int
+    sources_with_hits: int
+    sources_total: int
+    source_coverage: list[SourceHit]
+
+
 def _embedding_model_dir() -> Path:
     return bibilab_home() / "models" / "embedding"
 
@@ -177,3 +194,39 @@ async def query_chunks(
         for i in range(len(documents[0]))
         if distances[0][i] <= floor
     ]
+
+
+async def retrieve(
+    query_text: str,
+    source_ids: list[str],
+    cfg: BibilabConfig,
+    mode: str = "focused",
+    top_k: int = 10,
+) -> RetrievalResult:
+    """High-level retrieval that wraps query_chunks with metadata."""
+    sources_total = len(source_ids)
+    chunks = await query_chunks(query_text, source_ids, cfg, top_k=top_k)
+
+    best_by_source: dict[str, RetrievedChunk] = {}
+    for chunk in chunks:
+        vid = chunk.video_id
+        if vid not in best_by_source or chunk.distance < best_by_source[vid].distance:
+            best_by_source[vid] = chunk
+
+    source_coverage = [
+        SourceHit(
+            video_id=c.video_id,
+            video_title=c.video_title,
+            best_distance=c.distance,
+        )
+        for c in sorted(best_by_source.values(), key=lambda c: c.distance)
+    ]
+
+    return RetrievalResult(
+        chunks=chunks,
+        mode=mode,
+        candidates_evaluated=len(chunks),
+        sources_with_hits=len(best_by_source),
+        sources_total=sources_total,
+        source_coverage=source_coverage,
+    )
