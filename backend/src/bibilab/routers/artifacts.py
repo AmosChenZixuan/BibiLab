@@ -135,9 +135,6 @@ async def delete_artifact_endpoint(artifact_id: str) -> None:
     if row is None:
         raise HTTPException(status_code=404, detail="Artifact not found")
 
-    if row["status"] == "generating":
-        raise HTTPException(status_code=409, detail="Cannot delete an artifact that is being generated")
-
     content_path_str = row["content_path"]
     if content_path_str:
         content_path = bibilab_home() / content_path_str

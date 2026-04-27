@@ -75,7 +75,6 @@ function renderChatPanel(
           selectedSourceIds={[]}
           sources={[]}
           listId="list-1"
-          onArtifactGenerated={vi.fn()}
           {...props}
         />
       </JobActivityProvider>

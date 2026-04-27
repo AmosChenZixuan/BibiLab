@@ -10,7 +10,6 @@ interface UseSSEStreamOptions {
   listId: string;
   selectedSourceIds: string[];
   setMessages: React.Dispatch<React.SetStateAction<MessageUI[]>>;
-  onArtifactGenerated?: (id: string, type: string, sourceIds: string[]) => void;
   trackJobs?: (jobs: JobRegistration[]) => void;
   interruptedLabel?: string;
 }
@@ -26,7 +25,6 @@ export function useSSEStream({
   listId,
   selectedSourceIds,
   setMessages,
-  onArtifactGenerated,
   trackJobs,
   interruptedLabel = "Interrupted",
 }: UseSSEStreamOptions): UseSSEStreamReturn {
@@ -138,9 +136,6 @@ export function useSSEStream({
           const toolCallData = { name: "generate_report", result };
           if (result.job_id && trackJobs) {
             trackJobs([{ id: result.job_id, producer: "artifact", label: result.type, contextKey: listId }]);
-          }
-          if (result.artifact_id) {
-            onArtifactGenerated?.(result.artifact_id, result.type, selectedSourceIds);
           }
           updateAssistantMsg(assistantMsgId, { toolCall: toolCallData });
         } else if (event.type === "done") {

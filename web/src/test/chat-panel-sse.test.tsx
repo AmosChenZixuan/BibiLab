@@ -62,7 +62,6 @@ function renderChatPanel(props?: Partial<React.ComponentProps<typeof ChatPanel>>
           selectedSourceIds={[]}
           sources={[]}
           listId="list-1"
-          onArtifactGenerated={vi.fn()}
           {...props}
         />
       </JobActivityProvider>
@@ -150,7 +149,6 @@ describe("chat panel — SSE streaming (phase 6.2)", () => {
       selectedSourceIds: ["src-1"],
       sources: [SOURCE_1],
       listId: "list-1",
-      onArtifactGenerated: vi.fn(),
     });
 
     const textarea = screen.getByRole("textbox");

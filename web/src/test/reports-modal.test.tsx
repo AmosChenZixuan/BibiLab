@@ -34,7 +34,6 @@ function renderReportsModal(props?: Partial<React.ComponentProps<typeof ReportsM
           sourceIds={["src-1", "src-2"]}
           onClose={vi.fn()}
           open={true}
-          onArtifactGenerated={vi.fn()}
           {...props}
         />
       </JobActivityProvider>
