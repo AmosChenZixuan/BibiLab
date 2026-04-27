@@ -3,7 +3,6 @@ import { useParams } from "react-router-dom";
 import { Minimize2, ArrowLeftToLine, ArrowRightToLine} from 'lucide-react';
 import { useLanguage } from "@/app/LanguageContext";
 import { api, toErrorMessageWithT } from "@/lib/api";
-import { ARTIFACT_TYPE_KEYS } from "@/lib/artifactTypes";
 import type { Artifact, Source, SourceContent } from "@/lib/types";
 
 import { usePanelResize, Resizer, COLLAPSED_PANEL } from "@/components/lists/panel-resize";
@@ -104,10 +103,6 @@ export function ListDetailPage() {
     }
   }
 
-  const handleArtifactGenerated = useCallback((_artifactId: string, _type: Artifact["type"], _sourceIds: string[]) => {
-    // No-op: loading state is derived from JobActivityProvider in ArtifactList
-  }, []);
-
   const panelBase = "flex h-full shrink-0 flex-col overflow-hidden rounded-3xl border border-border bg-white/76 shadow-lg";
 
   return (
@@ -182,7 +177,6 @@ export function ListDetailPage() {
             selectedSourceIds={selectedSourceIds}
             sources={sources}
             listId={listId}
-            onArtifactGenerated={handleArtifactGenerated}
           />
         </div>
 
@@ -205,7 +199,6 @@ export function ListDetailPage() {
             artifacts={artifacts}
             onArtifactsChange={setArtifacts}
             onToggleCollapse={() => setLabCollapsed((v) => !v)}
-            onArtifactGenerated={handleArtifactGenerated}
           />
         </div>
       </div>

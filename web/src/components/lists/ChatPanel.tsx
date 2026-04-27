@@ -30,14 +30,12 @@ interface ChatPanelProps {
   selectedSourceIds: string[];
   sources: Source[];
   listId: string;
-  onArtifactGenerated: (artifactId: string, type: string, sourceIds: string[]) => void;
 }
 
 export function ChatPanel({
   selectedSourceIds,
   sources,
   listId,
-  onArtifactGenerated,
 }: ChatPanelProps) {
   const { t } = useLanguage();
   const { trackJobs } = useJobActivity();
@@ -53,7 +51,6 @@ export function ChatPanel({
     listId,
     selectedSourceIds,
     setMessages,
-    onArtifactGenerated,
     trackJobs,
     interruptedLabel: t("chat.interrupted"),
   });

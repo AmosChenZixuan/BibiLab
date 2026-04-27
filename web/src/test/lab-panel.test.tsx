@@ -52,7 +52,6 @@ function renderLabPanel(props?: Partial<React.ComponentProps<typeof LabPanel>>) 
           artifacts={[]}
           onArtifactsChange={vi.fn()}
           onToggleCollapse={vi.fn()}
-          onArtifactGenerated={vi.fn()}
           {...props}
         />
       </LanguageProvider>
@@ -209,7 +208,6 @@ describe("LabPanel", () => {
             artifacts={[ARTIFACT_1]}
             onArtifactsChange={vi.fn()}
             onToggleCollapse={onToggleCollapse}
-            onArtifactGenerated={vi.fn()}
           />
         </LanguageProvider>
       </JobActivityProvider>,
@@ -227,7 +225,6 @@ describe("LabPanel", () => {
             artifacts={[ARTIFACT_1]}
             onArtifactsChange={vi.fn()}
             onToggleCollapse={onToggleCollapse}
-            onArtifactGenerated={vi.fn()}
           />
         </LanguageProvider>
       </JobActivityProvider>,

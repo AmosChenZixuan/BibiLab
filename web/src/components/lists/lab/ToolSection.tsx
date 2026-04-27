@@ -3,15 +3,13 @@ import { FileText } from "lucide-react";
 
 import { useLanguage } from "@/app/LanguageContext";
 import { ReportsModal } from "@/components/lists/lab/ReportsModal";
-import type { ArtifactType } from "@/lib/types";
 
 interface ToolSectionProps {
   listId: string;
   selectedSourceIds: string[];
-  onArtifactGenerated: (artifactId: string, type: ArtifactType, sourceIds: string[]) => void;
 }
 
-export function ToolSection({ listId, selectedSourceIds, onArtifactGenerated }: ToolSectionProps) {
+export function ToolSection({ listId, selectedSourceIds }: ToolSectionProps) {
   const { t } = useLanguage();
   const [reportsOpen, setReportsOpen] = useState(false);
 
@@ -32,7 +30,6 @@ export function ToolSection({ listId, selectedSourceIds, onArtifactGenerated }: 
         listId={listId}
         sourceIds={selectedSourceIds}
         onClose={() => setReportsOpen(false)}
-        onArtifactGenerated={onArtifactGenerated}
       />
     </div>
   );
