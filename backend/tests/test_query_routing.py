@@ -19,7 +19,7 @@ async def test_classify_query_returns_factual():
 
 
 @pytest.mark.asyncio
-async def test_query_classifications_table_exists():
+async def test_query_classifications_table_exists(tmp_bibilab_home):
     from bibilab.db import bootstrap_db, get_db
 
     await bootstrap_db()
@@ -95,16 +95,25 @@ async def test_classify_query_llm_failure_falls_back_to_factual():
 
 
 @pytest.mark.asyncio
-async def test_query_classifications_persisted():
-    from bibilab.db import bootstrap_db, log_query_classification
+async def test_query_classifications_persisted(tmp_bibilab_home):
+    from bibilab.db import bootstrap_db, get_db, log_query_classification
 
     await bootstrap_db()
-    row = await log_query_classification(
+    await log_query_classification(
         list_id="test-list-id",
         query_text="test query",
         query_type="factual",
         effective_mode="focused",
     )
+
+    async with get_db() as db:
+        cursor = await db.execute(
+            "SELECT list_id, query_text, query_type, effective_mode FROM query_classifications WHERE list_id = ?",
+            ["test-list-id"],
+        )
+        row = await cursor.fetchone()
+
+    assert row is not None
     assert row["list_id"] == "test-list-id"
     assert row["query_text"] == "test query"
     assert row["query_type"] == "factual"

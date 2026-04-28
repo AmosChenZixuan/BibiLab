@@ -406,7 +406,7 @@ async def test_retrieve_broad_mode_increases_top_k(tmp_bibilab_home):
 
         await retrieve("test query", ["s1"], cfg, mode="broad", top_k=10)
 
-        mock_qc.assert_called_once_with("test query", ["s1"], cfg, top_k=50)
+        mock_qc.assert_called_once_with("test query", ["s1"], cfg, top_k=50, video_ids=["v1"])
 
 
 @pytest.mark.asyncio
@@ -518,6 +518,11 @@ async def test_hybrid_search_runs_fts_and_vector_in_parallel(tmp_bibilab_home):
 
     with (
         patch(
+            "bibilab.pipeline.embed.get_video_ids_for_sources",
+            new_callable=AsyncMock,
+            return_value={"s1": "v1", "s2": "v2"},
+        ),
+        patch(
             "bibilab.pipeline.embed.query_chunks",
             new_callable=AsyncMock,
             return_value=vector_chunks,
@@ -530,8 +535,8 @@ async def test_hybrid_search_runs_fts_and_vector_in_parallel(tmp_bibilab_home):
     ):
         result = await hybrid_search("test query", ["s1", "s2"], cfg, effective_top_k=30)
 
-    mock_vector.assert_called_once_with("test query", ["s1", "s2"], cfg, top_k=30)
-    mock_fts.assert_called_once_with("test query", ["s1", "s2"], cfg, top_k=30)
+    mock_vector.assert_called_once_with("test query", ["s1", "s2"], cfg, top_k=30, video_ids=["v1", "v2"])
+    mock_fts.assert_called_once_with("test query", ["s1", "s2"], cfg, top_k=30, video_ids=["v1", "v2"])
     assert len(result) == 2
 
 
@@ -545,6 +550,11 @@ async def test_hybrid_search_fallback_when_fts_returns_empty(tmp_bibilab_home):
     vector_chunks = [_make_chunk(content="vec chunk", video_id="v1")]
 
     with (
+        patch(
+            "bibilab.pipeline.embed.get_video_ids_for_sources",
+            new_callable=AsyncMock,
+            return_value={"s1": "v1"},
+        ),
         patch(
             "bibilab.pipeline.embed.query_chunks",
             new_callable=AsyncMock,
@@ -571,6 +581,11 @@ async def test_hybrid_search_fallback_when_fts_errors(tmp_bibilab_home):
     vector_chunks = [_make_chunk(content="vec chunk", video_id="v1")]
 
     with (
+        patch(
+            "bibilab.pipeline.embed.get_video_ids_for_sources",
+            new_callable=AsyncMock,
+            return_value={"s1": "v1"},
+        ),
         patch(
             "bibilab.pipeline.embed.query_chunks",
             new_callable=AsyncMock,
@@ -606,6 +621,11 @@ async def test_hybrid_search_deduplicates_same_chunk(tmp_bibilab_home):
     fts_chunks = [same_chunk]
 
     with (
+        patch(
+            "bibilab.pipeline.embed.get_video_ids_for_sources",
+            new_callable=AsyncMock,
+            return_value={"s1": "v1"},
+        ),
         patch(
             "bibilab.pipeline.embed.query_chunks",
             new_callable=AsyncMock,

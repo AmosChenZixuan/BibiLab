@@ -17,7 +17,7 @@ from pathlib import Path
 from bibilab.adapters.base import VideoMeta
 from bibilab.config import BibilabConfig, bibilab_home
 from bibilab.db import get_db_path, get_video_ids_for_sources, query_fts_rows
-from bibilab.models._enums import CHAT_MODE_BROAD, CHAT_MODE_FOCUSED
+from bibilab.models._enums import CHAT_MODE_BROAD, CHAT_MODE_FOCUSED, ChatMode
 from bibilab.pipeline.chunk import RagChunk
 
 logger = logging.getLogger(__name__)
@@ -52,6 +52,11 @@ class RetrievalResult:
     sources_with_hits: int
     sources_total: int
     source_coverage: list[SourceHit]
+
+
+def _chunk_score(chunk: RetrievedChunk) -> float:
+    """Canonical relevance where lower = more relevant."""
+    return -chunk.score if chunk.score is not None else chunk.distance
 
 
 def _chunk_key(chunk: RetrievedChunk) -> str:
@@ -222,6 +227,8 @@ async def query_chunks(
     source_ids: list[str],
     cfg: BibilabConfig,
     top_k: int = 10,
+    *,
+    video_ids: list[str] | None = None,
 ) -> list[RetrievedChunk]:
     """Query ChromaDB for transcript chunks relevant to the query, filtered by source.
 
@@ -230,6 +237,7 @@ async def query_chunks(
         source_ids: List of source UUIDs to filter chunks by.
         cfg: BibilabConfig instance.
         top_k: Maximum number of chunks to return.
+        video_ids: Optional pre-resolved video IDs. If not provided, resolved from source_ids.
 
     Returns:
         List of RetrievedChunk sorted by distance ascending (most relevant first).
@@ -239,11 +247,11 @@ async def query_chunks(
     if not source_ids:
         return []
 
-    id_to_video_id = await get_video_ids_for_sources(source_ids)
-    if not id_to_video_id:
-        return []
-
-    video_ids = list(id_to_video_id.values())
+    if video_ids is None:
+        id_to_video_id = await get_video_ids_for_sources(source_ids)
+        if not id_to_video_id:
+            return []
+        video_ids = list(id_to_video_id.values())
 
     def _sync_query() -> dict:
         collection = _get_collection(cfg)
@@ -288,20 +296,30 @@ async def query_fts(
     source_ids: list[str],
     cfg: BibilabConfig,
     top_k: int = 30,
+    *,
+    video_ids: list[str] | None = None,
 ) -> list[RetrievedChunk]:
     """Query FTS5 index for transcript chunks matching the query, filtered by source.
 
-    Returns list of RetrievedChunk with distance derived from BM25 rank.
-    FTS5 rank is positive (lower = more relevant), matching vector distance semantics.
+    Args:
+        query_text: The query string to search for.
+        source_ids: List of source UUIDs to filter by.
+        cfg: BibilabConfig instance.
+        top_k: Maximum number of chunks to return.
+        video_ids: Optional pre-resolved video IDs. If not provided, resolved from source_ids.
+
+    Returns list of RetrievedChunk with distance set to the raw FTS5 BM25 rank,
+    which is negative (more negative = more relevant). This keeps "lower = more
+    relevant" consistent with vector distance ordering used elsewhere.
     """
     if not source_ids:
         return []
 
-    id_to_video_id = await get_video_ids_for_sources(source_ids)
-    if not id_to_video_id:
-        return []
-
-    video_ids = list(id_to_video_id.values())
+    if video_ids is None:
+        id_to_video_id = await get_video_ids_for_sources(source_ids)
+        if not id_to_video_id:
+            return []
+        video_ids = list(id_to_video_id.values())
 
     rows = await query_fts_rows(query_text, video_ids, top_k)
 
@@ -328,25 +346,38 @@ async def hybrid_search(
 
     Falls back to vector-only if FTS returns empty or errors.
     """
-    vec_task = query_chunks(query_text, source_ids, cfg, top_k=effective_top_k)
-    fts_task = query_fts(query_text, source_ids, cfg, top_k=effective_top_k)
+    id_to_video_id = await get_video_ids_for_sources(source_ids)
+    if not id_to_video_id:
+        return []
+    video_ids = list(id_to_video_id.values())
 
-    results = await asyncio.gather(vec_task, fts_task, return_exceptions=True)
-    vec_chunks, fts_result = results[0], results[1]
+    vec_task = query_chunks(query_text, source_ids, cfg, top_k=effective_top_k, video_ids=video_ids)
+    fts_task = query_fts(query_text, source_ids, cfg, top_k=effective_top_k, video_ids=video_ids)
+
+    vec_result, fts_result = await asyncio.gather(vec_task, fts_task, return_exceptions=True)
+
+    if isinstance(vec_result, Exception):
+        logger.warning("Vector query failed in hybrid search, falling back to FTS-only: %s", vec_result)
+        vec_result = []
 
     if isinstance(fts_result, Exception):
         logger.warning("FTS query failed in hybrid search, falling back to vector-only: %s", fts_result)
-        return vec_chunks
+        fts_result = []
 
-    fts_chunks = fts_result
-    return _rrf_fuse(vec_chunks, fts_chunks, k=RRF_K)
+    # RRF fusion only when both sides contributed; otherwise return the non-empty
+    # ranking as-is to preserve raw distance semantics.
+    if not vec_result:
+        return fts_result
+    if not fts_result:
+        return vec_result
+    return _rrf_fuse(vec_result, fts_result, k=RRF_K)
 
 
 async def retrieve(
     query_text: str,
     source_ids: list[str],
     cfg: BibilabConfig,
-    mode: str = CHAT_MODE_FOCUSED,
+    mode: ChatMode = CHAT_MODE_FOCUSED,
     top_k: int = 10,
 ) -> RetrievalResult:
     """High-level retrieval that wraps hybrid search with metadata."""
@@ -358,39 +389,34 @@ async def retrieve(
     else:
         chunks = await query_chunks(query_text, source_ids, cfg, top_k=effective_top_k)
 
+    candidates_evaluated = len(chunks)
+
     if cfg.rag.reranking_enabled and chunks:
         from bibilab.pipeline.rerank import rerank  # noqa: PLC0415
 
-        pre_rerank_count = len(chunks)
         chunks = await rerank(query_text, chunks, top_k=top_k)
-    else:
-        pre_rerank_count = len(chunks)
-
-    def _score(chunk: RetrievedChunk) -> float:
-        """Canonical relevance where lower = more relevant."""
-        return -chunk.score if chunk.score is not None else chunk.distance
 
     best_by_source: dict[str, RetrievedChunk] = {}
     for chunk in chunks:
         vid = chunk.video_id
-        if vid not in best_by_source or _score(chunk) < _score(best_by_source[vid]):
+        if vid not in best_by_source or _chunk_score(chunk) < _chunk_score(best_by_source[vid]):
             best_by_source[vid] = chunk
 
     source_coverage = [
         SourceHit(
             video_id=c.video_id,
             video_title=c.video_title,
-            best_distance=_score(c),
+            best_distance=_chunk_score(c),
         )
-        for c in sorted(best_by_source.values(), key=_score)
+        for c in sorted(best_by_source.values(), key=_chunk_score)
     ]
 
-    result_chunks = sorted(best_by_source.values(), key=_score) if mode == CHAT_MODE_BROAD else chunks
+    result_chunks = sorted(best_by_source.values(), key=_chunk_score) if mode == CHAT_MODE_BROAD else chunks
 
     return RetrievalResult(
         chunks=result_chunks,
         mode=mode,
-        candidates_evaluated=pre_rerank_count,
+        candidates_evaluated=candidates_evaluated,
         sources_with_hits=len(best_by_source),
         sources_total=sources_total,
         source_coverage=source_coverage,

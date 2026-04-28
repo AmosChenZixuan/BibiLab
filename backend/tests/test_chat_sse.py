@@ -358,8 +358,11 @@ async def test_rag_meta_event_emitted_before_deltas(client):
                     )
                     resp = await client.post(f"/lists/{list_id}/chat", json={"message": "hi"})
     lines = resp.text.strip().split("\n")
-    rag_meta_line = next(line for line in lines if "rag_meta" in line)
-    delta_line = next(line for line in lines if "delta" in line)
+    rag_meta_lines = [line for line in lines if "rag_meta" in line]
+    delta_lines = [line for line in lines if "delta" in line]
+    assert rag_meta_lines, "Expected at least one rag_meta event"
+    assert delta_lines, "Expected at least one delta event"
+    rag_meta_line, delta_line = rag_meta_lines[0], delta_lines[0]
     assert lines.index(rag_meta_line) < lines.index(delta_line)
 
 
@@ -395,7 +398,9 @@ async def test_assistant_message_persisted_with_rag_metadata(client):
                     await client.post(f"/lists/{list_id}/chat", json={"message": "hi"})
     conv_resp = await client.get(f"/lists/{list_id}/conversation")
     msgs = conv_resp.json()["messages"]
-    assistant = next(m for m in msgs if m["role"] == "assistant")
+    assistant_msgs = [m for m in msgs if m["role"] == "assistant"]
+    assert assistant_msgs, "Expected at least one assistant message"
+    assistant = assistant_msgs[0]
     assert assistant["metadata"] is not None
     assert assistant["metadata"]["rag"] is not None
     assert assistant["metadata"]["rag"]["mode"] == "focused"
@@ -431,7 +436,9 @@ async def test_no_rag_event_when_no_retrieval(client):
     assert "rag_meta" not in resp.text
     conv_resp = await client.get(f"/lists/{list_id}/conversation")
     msgs = conv_resp.json()["messages"]
-    assistant = next(m for m in msgs if m["role"] == "assistant")
+    assistant_msgs = [m for m in msgs if m["role"] == "assistant"]
+    assert assistant_msgs, "Expected at least one assistant message"
+    assistant = assistant_msgs[0]
     assert assistant["metadata"] is None
 
 

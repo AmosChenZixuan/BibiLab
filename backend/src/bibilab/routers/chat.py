@@ -152,7 +152,7 @@ async def chat_endpoint(
 
     conv_row = await get_conv_row(conversation_id)
     existing_summary = conv_row["summary"] if conv_row else None
-    conversation_mode = conv_row["mode"]
+    conversation_mode = conv_row["mode"] if conv_row else CHAT_MODE_FOCUSED
 
     history_rows = await get_recent_messages(conversation_id, limit=100)
     history = [{"role": row["role"], "content": row["content"]} for row in history_rows]
@@ -238,7 +238,7 @@ async def chat_endpoint(
 
         if not tool_calls:
             full_response = "".join(first_response_deltas)
-            rag_meta = {"rag": rag_payload_obj["rag"]} if rag_payload_obj is not None else None
+            rag_meta = rag_payload_obj if rag_payload_obj is not None else None
             await create_message(
                 conversation_id=conversation_id,
                 role="assistant",

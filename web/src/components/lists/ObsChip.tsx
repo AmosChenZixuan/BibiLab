@@ -29,23 +29,23 @@ export function ObsChip({ rag }: ObsChipProps) {
       </button>
 
       {expanded && (
-        <div className="absolute top-full left-0 z-50 mt-1 bg-white border border-border rounded-lg shadow-lg p-3 min-w-64 text-xs">
+        <div className="absolute top-full left-0 z-float mt-1 bg-white border border-border rounded-lg shadow-lg p-3 min-w-64 text-xs">
           <div className="flex justify-between items-center py-0.5">
-            <span className="text-gray-500">{t("chat.obsChip.mode")}</span>
-            <span className="font-medium text-gray-900">{rag.mode}</span>
+            <span className="text-muted">{t("chat.obsChip.mode")}</span>
+            <span className="font-medium text-ink">{rag.mode}</span>
           </div>
           <div className="flex justify-between items-center py-0.5">
-            <span className="text-gray-500">{t("chat.obsChip.chunksEvaluated")}</span>
-            <span className="font-medium text-gray-900">{rag.candidates_evaluated}</span>
+            <span className="text-muted">{t("chat.obsChip.chunksEvaluated")}</span>
+            <span className="font-medium text-ink">{rag.candidates_evaluated}</span>
           </div>
           <div className="flex justify-between items-center py-0.5">
-            <span className="text-gray-500">{t("chat.obsChip.sourcesRetrieved")}</span>
-            <span className="font-medium text-gray-900">{rag.sources_with_hits} / {rag.sources_total}</span>
+            <span className="text-muted">{t("chat.obsChip.sourcesRetrieved")}</span>
+            <span className="font-medium text-ink">{rag.sources_with_hits} / {rag.sources_total}</span>
           </div>
           {rag.sources.length > 0 && (
             <div className="mt-2 pt-2 border-t border-border">
               {rag.sources.map((s, i) => (
-                <span key={i} className="block text-gray-700">{s.title}</span>
+                <span key={i} className="block text-ink">{s.title}</span>
               ))}
             </div>
           )}

@@ -7,9 +7,9 @@ import { Modal } from "@/components/ui/Modal";
 
 interface ChatConfigModalProps {
   listId: string;
-  currentMode: string;
+  currentMode: ChatMode;
   onClose: () => void;
-  onSave: (mode: string) => void;
+  onSave: (mode: ChatMode) => void;
 }
 
 export function ChatConfigModal({ listId, currentMode, onClose, onSave }: ChatConfigModalProps) {

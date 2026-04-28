@@ -7,6 +7,9 @@ from bibilab.config import BibilabConfig
 from bibilab.models._enums import (
     CHAT_MODE_BROAD,
     CHAT_MODE_FOCUSED,
+    QUERY_TYPE_ANALYTICAL,
+    QUERY_TYPE_BREADTH,
+    QUERY_TYPE_FACTUAL,
     ChatMode,
     QueryType,
 )
@@ -18,9 +21,9 @@ QUERY_CLASSIFICATION_MAX_TOKENS = 10
 
 
 def map_type_to_mode(qt: QueryType) -> ChatMode:
-    if qt == "factual":
+    if qt == QUERY_TYPE_FACTUAL:
         return CHAT_MODE_FOCUSED
-    if qt in ("breadth", "analytical"):
+    if qt in (QUERY_TYPE_BREADTH, QUERY_TYPE_ANALYTICAL):
         return CHAT_MODE_BROAD
     raise ValueError(f"Unknown query type: {qt!r}")
 
@@ -50,7 +53,7 @@ def _build_prompt(query: str) -> str:
 
 def _parse_response(text: str) -> QueryType:
     cleaned = text.strip().strip('"').lower()
-    if cleaned in ("factual", "breadth", "analytical"):
+    if cleaned in (QUERY_TYPE_FACTUAL, QUERY_TYPE_BREADTH, QUERY_TYPE_ANALYTICAL):
         return cleaned  # type: ignore[return-value]
     raise ValueError(f"Unexpected classification response: {text!r}")
 
@@ -67,4 +70,4 @@ async def classify_query(query: str, cfg: BibilabConfig) -> QueryType:
         return _parse_response(raw)
     except Exception as exc:
         logger.warning("Query classification failed (%s); falling back to factual", exc)
-        return "factual"
+        return QUERY_TYPE_FACTUAL

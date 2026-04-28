@@ -80,7 +80,7 @@ async def test_retrieve_with_reranking_enabled(tmp_bibilab_home):
     from bibilab.config import BibilabConfig, RagConfig
     from bibilab.pipeline.embed import retrieve
 
-    cfg = BibilabConfig(rag=RagConfig(max_distance=1.0, reranking_enabled=True))
+    cfg = BibilabConfig(rag=RagConfig(max_distance=1.0, reranking_enabled=True, hybrid_enabled=False))
 
     chunks = [_make_chunk(content="a", distance=0.2), _make_chunk(content="b", distance=0.1)]
 
@@ -107,7 +107,7 @@ async def test_retrieve_with_reranking_disabled(tmp_bibilab_home):
     from bibilab.config import BibilabConfig, RagConfig
     from bibilab.pipeline.embed import retrieve
 
-    cfg = BibilabConfig(rag=RagConfig(max_distance=1.0, reranking_enabled=False))
+    cfg = BibilabConfig(rag=RagConfig(max_distance=1.0, reranking_enabled=False, hybrid_enabled=False))
 
     chunks = [_make_chunk(content="a", distance=0.2)]
 
