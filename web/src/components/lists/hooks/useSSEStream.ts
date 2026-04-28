@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 
 import type { JobRegistration } from "@/components/jobs/JobActivityProvider";
 import type { MessageUI } from "@/components/lists/hooks/useConversationHistory";
-import { formatTimestamp, parseCitations } from "@/lib/chat-utils";
+import { formatTimestamp, parseCitations, type RagMetadata } from "@/lib/chat-utils";
 import type { ToolResult } from "@/lib/chat-utils";
 import { LANG_STORAGE_KEY } from "@/lib/utils";
 
@@ -75,6 +75,7 @@ export function useSSEStream({
       content: text,
       isStreaming: false,
       citations: [],
+      rag: null,
       toolCall: null,
       error: null,
       timestamp: formatTimestamp(new Date().toISOString()),
@@ -89,6 +90,7 @@ export function useSSEStream({
       toolCall: null,
       error: null,
       timestamp: formatTimestamp(new Date().toISOString()),
+      rag: null,
     };
 
     setMessages((prev) => [...prev, userMsg, assistantMsg]);
@@ -105,7 +107,10 @@ export function useSSEStream({
           "Content-Type": "application/json",
           "X-UI-Lang": localStorage.getItem(LANG_STORAGE_KEY) ?? "en",
         },
-        body: JSON.stringify({ message: text, source_ids: selectedSourceIds }),
+        body: JSON.stringify({
+          message: text,
+          source_ids: selectedSourceIds,
+        }),
         signal: controller.signal,
       });
 
@@ -138,10 +143,18 @@ export function useSSEStream({
             trackJobs([{ id: result.job_id, producer: "artifact", label: result.type, contextKey: listId }]);
           }
           updateAssistantMsg(assistantMsgId, { toolCall: toolCallData });
+        } else if (event.type === "rag_meta") {
+          const rag = event.rag as RagMetadata;
+          updateAssistantMsg(assistantMsgId, { rag });
         } else if (event.type === "done") {
           updateAssistantMsg(assistantMsgId, (m) => {
             const { citations, cleanContent } = parseCitations(m.content);
-            return { isStreaming: false, content: cleanContent, citations };
+            return {
+              isStreaming: false,
+              content: cleanContent,
+              citations,
+              rag: m.rag,
+            };
           });
           safeSetIsStreaming(false);
           isStreamingRef.current = false;

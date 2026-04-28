@@ -217,6 +217,7 @@ export type Conversation = {
   id: string;
   list_id: string;
   summary: string | null;
+  mode: string;
   created_at: string;
   updated_at: string;
 };

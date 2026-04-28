@@ -1,9 +1,19 @@
+import type { ChatMode } from "@/lib/constants";
+
 export type Citation = { source_title: string; timestamp_start: number; timestamp_end: number };
 export type ToolResult = { artifact_id: string; job_id?: string; name: string; type: string };
 export interface ToolCallData {
   name: string;
   result: ToolResult;
 }
+export type RagSource = { video_id: string; title: string };
+export type RagMetadata = {
+  mode: ChatMode;
+  candidates_evaluated: number;
+  sources_with_hits: number;
+  sources_total: number;
+  sources: RagSource[];
+};
 
 export function formatDurationHuman(seconds: number): string {
   if (seconds < 60) return `${seconds}s`;

@@ -3,6 +3,8 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field
 
+from bibilab.models._enums import ChatMode
+
 
 def _parse_datetime(value: str | datetime) -> datetime:
     if isinstance(value, str):
@@ -14,6 +16,19 @@ def _parse_json(value: str | None) -> dict | None:
     if value:
         return json.loads(value)
     return None
+
+
+class RagSource(BaseModel):
+    video_id: str
+    title: str
+
+
+class RagMetadata(BaseModel):
+    mode: ChatMode
+    candidates_evaluated: int
+    sources_with_hits: int
+    sources_total: int
+    sources: list[RagSource]
 
 
 class MessageResponse(BaseModel):
@@ -38,6 +53,7 @@ class ConversationResponse(BaseModel):
     id: str
     list_id: str
     summary: str | None
+    mode: str
     created_at: datetime
     updated_at: datetime
 
@@ -47,6 +63,7 @@ class ConversationResponse(BaseModel):
             id=row["id"],
             list_id=row["list_id"],
             summary=row["summary"],
+            mode=row["mode"],
             created_at=_parse_datetime(row["created_at"]),
             updated_at=_parse_datetime(row["updated_at"]),
         )
@@ -55,6 +72,10 @@ class ConversationResponse(BaseModel):
 class ChatRequest(BaseModel):
     message: str = Field(..., max_length=10000)
     source_ids: list[str] | None = None
+
+
+class PatchConversationRequest(BaseModel):
+    mode: ChatMode
 
 
 class GetConversationResponse(BaseModel):

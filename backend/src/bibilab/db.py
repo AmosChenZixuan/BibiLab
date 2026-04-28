@@ -169,6 +169,12 @@ async def bootstrap_db() -> None:
         await db.execute(_CREATE_CONVERSATIONS)
         await db.execute(_CREATE_MESSAGES)
         await db.execute("CREATE INDEX IF NOT EXISTS idx_messages_conversation_id ON messages(conversation_id)")
+
+        conv_columns = [row[1] for row in await db.execute_fetchall("PRAGMA table_info(conversations)")]
+        if "mode" not in conv_columns:
+            # Literal 'focused' is safe here — this is a one-shot DDL migration, not user input
+            await db.execute("ALTER TABLE conversations ADD COLUMN mode TEXT NOT NULL DEFAULT 'focused'")
+
         await db.commit()
 
 
@@ -618,7 +624,7 @@ async def create_conversation(list_id: str) -> str:
 async def get_conversation_by_list(list_id: str) -> aiosqlite.Row | None:
     async with get_db() as db:
         cursor = await db.execute(
-            "SELECT id, list_id, summary, created_at, updated_at FROM conversations WHERE list_id=?",
+            "SELECT id, list_id, summary, mode, created_at, updated_at FROM conversations WHERE list_id=?",
             (list_id,),
         )
         return await cursor.fetchone()
@@ -783,10 +789,20 @@ async def compress_conversation(
 async def get_conversation(conversation_id: str) -> aiosqlite.Row | None:
     async with get_db() as db:
         cursor = await db.execute(
-            "SELECT id, list_id, summary, created_at, updated_at FROM conversations WHERE id=?",
+            "SELECT id, list_id, summary, mode, created_at, updated_at FROM conversations WHERE id=?",
             (conversation_id,),
         )
         return await cursor.fetchone()
+
+
+async def update_conversation_mode(conversation_id: str, mode: Literal["focused", "broad"]) -> None:
+    now = _now()
+    async with get_db() as db:
+        await db.execute(
+            "UPDATE conversations SET mode=?, updated_at=? WHERE id=?",
+            (mode, now, conversation_id),
+        )
+        await db.commit()
 
 
 async def delete_conversation(conversation_id: str) -> None:

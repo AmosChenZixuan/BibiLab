@@ -240,6 +240,26 @@
     "subtitle": {
       "templateSingular": "%{count} source · %{duration} total",
       "templatePlural": "%{count} sources · %{duration} total"
+    },
+    "configure": {
+      "title": "Configure chat"
+    },
+    "configModal": {
+      "title": "Retrieval Mode",
+      "label": "Choose retrieval mode",
+      "focused": "Focused",
+      "focusedHint": "Targeted retrieval, precise citations",
+      "broad": "Broad",
+      "broadHint": "Wider retrieval, more context",
+      "cancel": "Cancel",
+      "save": "Save",
+      "saving": "Saving..."
+    },
+    "obsChip": {
+      "mode": "Mode",
+      "chunksEvaluated": "Chunks evaluated",
+      "sourcesRetrieved": "Sources retrieved",
+      "ariaLabel": "Retrieval observability"
     }
   },
   "common": {

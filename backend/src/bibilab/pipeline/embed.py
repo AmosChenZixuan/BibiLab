@@ -17,6 +17,7 @@ from pathlib import Path
 from bibilab.adapters.base import VideoMeta
 from bibilab.config import BibilabConfig, bibilab_home
 from bibilab.db import get_db_path, get_video_ids_for_sources, query_fts_rows
+from bibilab.models._enums import CHAT_MODE_BROAD
 from bibilab.pipeline.chunk import RagChunk
 
 logger = logging.getLogger(__name__)
@@ -356,7 +357,7 @@ async def retrieve(
 ) -> RetrievalResult:
     """High-level retrieval that wraps hybrid search with metadata."""
     sources_total = len(source_ids)
-    effective_top_k = 50 if mode == "broad" else top_k
+    effective_top_k = 50 if mode == CHAT_MODE_BROAD else top_k
 
     if cfg.rag.hybrid_enabled:
         chunks = await hybrid_search(query_text, source_ids, cfg, effective_top_k=effective_top_k)
@@ -366,7 +367,10 @@ async def retrieve(
     if cfg.rag.reranking_enabled and chunks:
         from bibilab.pipeline.rerank import rerank  # noqa: PLC0415
 
+        pre_rerank_count = len(chunks)
         chunks = await rerank(query_text, chunks, top_k=top_k)
+    else:
+        pre_rerank_count = len(chunks)
 
     def _score(chunk: RetrievedChunk) -> float:
         """Canonical relevance where lower = more relevant."""
@@ -387,12 +391,12 @@ async def retrieve(
         for c in sorted(best_by_source.values(), key=_score)
     ]
 
-    result_chunks = sorted(best_by_source.values(), key=_score) if mode == "broad" else chunks
+    result_chunks = sorted(best_by_source.values(), key=_score) if mode == CHAT_MODE_BROAD else chunks
 
     return RetrievalResult(
         chunks=result_chunks,
         mode=mode,
-        candidates_evaluated=len(chunks),
+        candidates_evaluated=pre_rerank_count,
         sources_with_hits=len(best_by_source),
         sources_total=sources_total,
         source_coverage=source_coverage,

@@ -275,3 +275,153 @@ async def test_chat_endpoint_yields_tool_result_event(client):
     assert resp.status_code == 200
     assert "tool_result" in resp.text
     assert "abc123" in resp.text
+
+
+@pytest.mark.asyncio
+async def test_conversation_mode_defaults_to_focused(client):
+    """Conversation is not created on GET; PATCH creates it with focused mode."""
+    list_id = (await client.post("/lists", json={"name": "Test"})).json()["id"]
+    conv_resp = await client.get(f"/lists/{list_id}/conversation")
+    assert conv_resp.json()["conversation"] is None
+    resp = await client.patch(f"/lists/{list_id}/conversation", json={"mode": "focused"})
+    assert resp.json()["mode"] == "focused"
+
+
+@pytest.mark.asyncio
+async def test_patch_conversation_mode_updates_row(client):
+    """PATCH /lists/:id/conversation updates the mode field."""
+    list_id = (await client.post("/lists", json={"name": "Test"})).json()["id"]
+    resp = await client.patch(f"/lists/{list_id}/conversation", json={"mode": "broad"})
+    assert resp.status_code == 200
+    assert resp.json()["mode"] == "broad"
+    conv_resp = await client.get(f"/lists/{list_id}/conversation")
+    assert conv_resp.json()["conversation"]["mode"] == "broad"
+
+
+@pytest.mark.asyncio
+async def test_chat_endpoint_uses_stored_mode(client):
+    """Chat endpoint passes stored conversation mode to retrieve()."""
+    list_id = (await client.post("/lists", json={"name": "Test"})).json()["id"]
+    await client.patch(f"/lists/{list_id}/conversation", json={"mode": "broad"})
+    captured_mode = []
+
+    async def capture_retrieve(query_text, source_ids, cfg, mode="focused", top_k=10):
+        captured_mode.append(mode)
+        return MagicMock(
+            chunks=[], mode=mode, candidates_evaluated=0, sources_with_hits=0, sources_total=0, source_coverage=[]
+        )
+
+    with patch("bibilab.routers.chat.retrieve", capture_retrieve):
+        with patch("bibilab.routers.chat.get_sources_for_list", new_callable=AsyncMock) as mock_sources:
+            mock_sources.return_value = [MagicMock(id="src-1")]
+            with patch("bibilab.routers.chat.stream_llm") as mock_stream:
+                mock_stream.return_value = an_async_generator(
+                    [
+                        MagicMock(type="done", content=None, tool_call=None),
+                    ]
+                )
+                await client.post(f"/lists/{list_id}/chat", json={"message": "hi"})
+    assert captured_mode[0] == "broad"
+
+
+@pytest.mark.asyncio
+async def test_rag_meta_event_emitted_before_deltas(client):
+    """rag_meta SSE event is emitted before any delta events."""
+    list_id = (await client.post("/lists", json={"name": "Test"})).json()["id"]
+    from bibilab.pipeline.embed import RetrievalResult, RetrievedChunk
+
+    with patch("bibilab.routers.chat.retrieve", new_callable=AsyncMock) as mock_retrieve:
+        mock_retrieve.return_value = RetrievalResult(
+            chunks=[
+                RetrievedChunk(
+                    content="test", video_title="V", timestamp_start=0, timestamp_end=1, video_id="v1", distance=0.1
+                )
+            ],
+            mode="focused",
+            candidates_evaluated=30,
+            sources_with_hits=1,
+            sources_total=1,
+            source_coverage=[],
+        )
+        with patch("bibilab.routers.chat.get_sources_for_list", new_callable=AsyncMock) as mock_sources:
+            mock_sources.return_value = [MagicMock(id="src-1")]
+            with patch("bibilab.routers.chat.stream_llm") as mock_stream:
+                mock_stream.return_value = an_async_generator(
+                    [
+                        MagicMock(type="delta", content="Hi", tool_call=None),
+                        MagicMock(type="done", content=None, tool_call=None),
+                    ]
+                )
+                resp = await client.post(f"/lists/{list_id}/chat", json={"message": "hi"})
+    lines = resp.text.strip().split("\n")
+    rag_meta_line = next(line for line in lines if "rag_meta" in line)
+    delta_line = next(line for line in lines if "delta" in line)
+    assert lines.index(rag_meta_line) < lines.index(delta_line)
+
+
+@pytest.mark.asyncio
+async def test_assistant_message_persisted_with_rag_metadata(client):
+    """Assistant message metadata contains rag data after retrieval."""
+    list_id = (await client.post("/lists", json={"name": "Test"})).json()["id"]
+    from bibilab.pipeline.embed import RetrievalResult, RetrievedChunk
+
+    with patch("bibilab.routers.chat.retrieve", new_callable=AsyncMock) as mock_retrieve:
+        mock_retrieve.return_value = RetrievalResult(
+            chunks=[
+                RetrievedChunk(
+                    content="test", video_title="V", timestamp_start=0, timestamp_end=1, video_id="v1", distance=0.1
+                )
+            ],
+            mode="focused",
+            candidates_evaluated=30,
+            sources_with_hits=1,
+            sources_total=1,
+            source_coverage=[],
+        )
+        with patch("bibilab.routers.chat.get_sources_for_list", new_callable=AsyncMock) as mock_sources:
+            mock_sources.return_value = [MagicMock(id="src-1")]
+            with patch("bibilab.routers.chat.stream_llm") as mock_stream:
+                mock_stream.return_value = an_async_generator(
+                    [
+                        MagicMock(type="done", content=None, tool_call=None),
+                    ]
+                )
+                await client.post(f"/lists/{list_id}/chat", json={"message": "hi"})
+    conv_resp = await client.get(f"/lists/{list_id}/conversation")
+    msgs = conv_resp.json()["messages"]
+    assistant = next(m for m in msgs if m["role"] == "assistant")
+    assert assistant["metadata"] is not None
+    assert assistant["metadata"]["rag"] is not None
+    assert assistant["metadata"]["rag"]["mode"] == "focused"
+    assert assistant["metadata"]["rag"]["candidates_evaluated"] == 30
+
+
+@pytest.mark.asyncio
+async def test_no_rag_event_when_no_retrieval(client):
+    """No rag_meta event when retrieve returns no chunks."""
+    list_id = (await client.post("/lists", json={"name": "Test"})).json()["id"]
+    from bibilab.pipeline.embed import RetrievalResult
+
+    with patch("bibilab.routers.chat.retrieve", new_callable=AsyncMock) as mock_retrieve:
+        mock_retrieve.return_value = RetrievalResult(
+            chunks=[],
+            mode="focused",
+            candidates_evaluated=0,
+            sources_with_hits=0,
+            sources_total=0,
+            source_coverage=[],
+        )
+        with patch("bibilab.routers.chat.get_sources_for_list", new_callable=AsyncMock) as mock_sources:
+            mock_sources.return_value = [MagicMock(id="src-1")]
+            with patch("bibilab.routers.chat.stream_llm") as mock_stream:
+                mock_stream.return_value = an_async_generator(
+                    [
+                        MagicMock(type="done", content=None, tool_call=None),
+                    ]
+                )
+                resp = await client.post(f"/lists/{list_id}/chat", json={"message": "hi"})
+    assert "rag_meta" not in resp.text
+    conv_resp = await client.get(f"/lists/{list_id}/conversation")
+    msgs = conv_resp.json()["messages"]
+    assistant = next(m for m in msgs if m["role"] == "assistant")
+    assert assistant["metadata"] is None

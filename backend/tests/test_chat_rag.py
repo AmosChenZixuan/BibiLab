@@ -750,3 +750,40 @@ async def test_retrieve_broad_mode_keeps_highest_scoring_chunk_per_source(tmp_bi
 
     assert result.source_coverage[0].video_id == "v1"
     assert result.source_coverage[1].video_id == "v2"
+
+
+@pytest.mark.asyncio
+async def test_candidates_evaluated_reflects_pre_rerank_count(tmp_bibilab_home):
+    """candidates_evaluated equals chunk count BEFORE rerank trim, not after."""
+    from bibilab.config import BibilabConfig, RagConfig
+    from bibilab.pipeline.embed import retrieve
+
+    cfg = BibilabConfig(rag=RagConfig(max_distance=1.0, reranking_enabled=True))
+
+    mock_collection = MagicMock()
+    mock_collection.query.return_value = {
+        "documents": [["c1", "c2", "c3", "c4", "c5"]],
+        "metadatas": [
+            [
+                {"video_id": "v1", "video_title": "Video 1", "timestamp_start": 0.0, "timestamp_end": 5.0},
+                {"video_id": "v1", "video_title": "Video 1", "timestamp_start": 5.0, "timestamp_end": 10.0},
+                {"video_id": "v2", "video_title": "Video 2", "timestamp_start": 0.0, "timestamp_end": 5.0},
+                {"video_id": "v2", "video_title": "Video 2", "timestamp_start": 5.0, "timestamp_end": 10.0},
+                {"video_id": "v3", "video_title": "Video 3", "timestamp_start": 0.0, "timestamp_end": 5.0},
+            ]
+        ],
+        "distances": [[0.05, 0.15, 0.10, 0.20, 0.12]],
+    }
+
+    with (
+        patch("bibilab.pipeline.embed.get_video_ids_for_sources", new_callable=AsyncMock) as mock_map,
+        patch("bibilab.pipeline.embed._get_collection", return_value=mock_collection),
+    ):
+        mock_map.return_value = {"s1": "v1", "s2": "v2", "s3": "v3"}
+
+        result = await retrieve("test query", ["s1", "s2", "s3"], cfg, mode="focused", top_k=2)
+
+    # candidates_evaluated should reflect the 5 chunks retrieved BEFORE reranking trimmed to top_k=2
+    assert result.candidates_evaluated == 5
+    # But chunks returned should be the top_k after reranking
+    assert len(result.chunks) == 2
