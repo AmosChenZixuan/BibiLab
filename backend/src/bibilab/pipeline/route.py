@@ -14,6 +14,8 @@ from bibilab.pipeline._shared import _call_llm
 
 logger = logging.getLogger(__name__)
 
+QUERY_CLASSIFICATION_MAX_TOKENS = 10
+
 
 def map_type_to_mode(qt: QueryType) -> ChatMode:
     if qt == "factual":
@@ -61,7 +63,7 @@ async def classify_query(query: str, cfg: BibilabConfig) -> QueryType:
     """
     prompt = _build_prompt(query)
     try:
-        raw = await asyncio.to_thread(_call_llm, prompt, cfg.ai, llm_max_tokens=10)
+        raw = await asyncio.to_thread(_call_llm, prompt, cfg.ai, llm_max_tokens=QUERY_CLASSIFICATION_MAX_TOKENS)
         return _parse_response(raw)
     except Exception as exc:
         logger.warning("Query classification failed (%s); falling back to factual", exc)

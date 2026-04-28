@@ -17,10 +17,13 @@ from pathlib import Path
 from bibilab.adapters.base import VideoMeta
 from bibilab.config import BibilabConfig, bibilab_home
 from bibilab.db import get_db_path, get_video_ids_for_sources, query_fts_rows
-from bibilab.models._enums import CHAT_MODE_BROAD
+from bibilab.models._enums import CHAT_MODE_BROAD, CHAT_MODE_FOCUSED
 from bibilab.pipeline.chunk import RagChunk
 
 logger = logging.getLogger(__name__)
+
+DEFAULT_EFFECTIVE_TOP_K = 50
+RRF_K = 60
 
 
 @dataclass
@@ -59,7 +62,7 @@ def _chunk_key(chunk: RetrievedChunk) -> str:
 def _rrf_fuse(
     a: list[RetrievedChunk],
     b: list[RetrievedChunk],
-    k: int = 60,
+    k: int = RRF_K,
 ) -> list[RetrievedChunk]:
     """Reciprocal Rank Fusion on two ranked RetrievedChunk lists.
 
@@ -309,7 +312,7 @@ async def query_fts(
             timestamp_start=float(row["timestamp_start"]),
             timestamp_end=float(row["timestamp_end"]),
             video_id=row["video_id"],
-            distance=-row["rank"],  # negated rank
+            distance=row["rank"],
         )
         for row in rows
     ]
@@ -336,19 +339,19 @@ async def hybrid_search(
         return vec_chunks
 
     fts_chunks = fts_result
-    return _rrf_fuse(vec_chunks, fts_chunks, k=60)
+    return _rrf_fuse(vec_chunks, fts_chunks, k=RRF_K)
 
 
 async def retrieve(
     query_text: str,
     source_ids: list[str],
     cfg: BibilabConfig,
-    mode: str = "focused",
+    mode: str = CHAT_MODE_FOCUSED,
     top_k: int = 10,
 ) -> RetrievalResult:
     """High-level retrieval that wraps hybrid search with metadata."""
     sources_total = len(source_ids)
-    effective_top_k = 50 if mode == CHAT_MODE_BROAD else top_k
+    effective_top_k = DEFAULT_EFFECTIVE_TOP_K if mode == CHAT_MODE_BROAD else top_k
 
     if cfg.rag.hybrid_enabled:
         chunks = await hybrid_search(query_text, source_ids, cfg, effective_top_k=effective_top_k)

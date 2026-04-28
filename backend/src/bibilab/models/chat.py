@@ -18,19 +18,6 @@ def _parse_json(value: str | None) -> dict | None:
     return None
 
 
-class RagSource(BaseModel):
-    video_id: str
-    title: str
-
-
-class RagMetadata(BaseModel):
-    mode: ChatMode
-    candidates_evaluated: int
-    sources_with_hits: int
-    sources_total: int
-    sources: list[RagSource]
-
-
 class MessageResponse(BaseModel):
     id: str
     role: str
@@ -81,12 +68,3 @@ class PatchConversationRequest(BaseModel):
 class GetConversationResponse(BaseModel):
     conversation: ConversationResponse | None
     messages: list[MessageResponse]
-
-
-class QueryClassificationLog(BaseModel):
-    id: str
-    list_id: str
-    query_text: str
-    query_type: str
-    effective_mode: str
-    created_at: datetime

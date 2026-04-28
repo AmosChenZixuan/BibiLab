@@ -2,7 +2,8 @@ import { useState } from "react";
 
 import { useLanguage } from "@/app/LanguageContext";
 import { CHAT_MODE_FOCUSED, CHAT_MODE_BROAD, type ChatMode } from "@/lib/constants";
-import { api } from "@/lib/api";
+import { api, toErrorMessageWithT } from "@/lib/api";
+import { Modal } from "@/components/ui/Modal";
 
 interface ChatConfigModalProps {
   listId: string;
@@ -25,63 +26,20 @@ export function ChatConfigModal({ listId, currentMode, onClose, onSave }: ChatCo
       onSave(selected);
       onClose();
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      setError(msg);
+      setError(toErrorMessageWithT(err, t));
       console.error("[ChatConfigModal] save failed:", err);
       setSaving(false);
     }
   }
 
   return (
-    <div
-      className="fixed inset-0 z-40 flex items-center justify-center bg-ink/30 backdrop-blur-sm"
-      onClick={onClose}
-    >
-      <div
-        className="w-80 rounded-2xl bg-white p-5 shadow-xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <h3 className="mb-4 font-serif text-base font-semibold text-ink">
-          {t("chat.configModal.title")}
-        </h3>
-
-        <div
-          className="flex gap-0.5 rounded-full bg-surface p-1"
-          role="radiogroup"
-          aria-label={t("chat.configModal.label")}
-        >
-          {([CHAT_MODE_FOCUSED, CHAT_MODE_BROAD] as const).map((mode) => {
-            const isSelected = selected === mode;
-            return (
-              <label
-                key={mode}
-                className={`flex flex-1 cursor-pointer flex-col items-center rounded-full px-3 py-2 text-center text-sm transition ${
-                  isSelected
-                    ? "bg-blue text-white shadow-sm"
-                    : "text-muted hover:text-ink"
-                }`}
-              >
-                <input
-                  type="radio"
-                  name="chat-mode"
-                  value={mode}
-                  checked={isSelected}
-                  onChange={() => setSelected(mode)}
-                  className="sr-only"
-                />
-                <span className="font-medium">{t(`chat.configModal.${mode}`)}</span>
-                <span className={`text-xs ${isSelected ? "text-white/80" : "text-muted"}`}>
-                  {t(`chat.configModal.${mode}Hint`)}
-                </span>
-              </label>
-            );
-          })}
-        </div>
-
-        {error && (
-          <p className="mt-2 text-xs text-red-600">{error}</p>
-        )}
-        <div className="mt-4 flex justify-end gap-2">
+    <Modal
+      open={true}
+      onClose={onClose}
+      title={t("chat.configModal.title")}
+      size="md"
+      footer={
+        <>
           <button
             type="button"
             onClick={onClose}
@@ -97,8 +55,45 @@ export function ChatConfigModal({ listId, currentMode, onClose, onSave }: ChatCo
           >
             {saving ? t("chat.configModal.saving") : t("chat.configModal.save")}
           </button>
-        </div>
+        </>
+      }
+    >
+      <div
+        className="flex gap-0.5 rounded-full bg-surface p-1"
+        role="radiogroup"
+        aria-label={t("chat.configModal.label")}
+      >
+        {([CHAT_MODE_FOCUSED, CHAT_MODE_BROAD] as const).map((mode) => {
+          const isSelected = selected === mode;
+          return (
+            <label
+              key={mode}
+              className={`flex flex-1 cursor-pointer flex-col items-center rounded-full px-3 py-2 text-center text-sm transition ${
+                isSelected
+                  ? "bg-blue text-white shadow-sm"
+                  : "text-muted hover:text-ink"
+              }`}
+            >
+              <input
+                type="radio"
+                name="chat-mode"
+                value={mode}
+                checked={isSelected}
+                onChange={() => setSelected(mode)}
+                className="sr-only"
+              />
+              <span className="font-medium">{t(`chat.configModal.${mode}`)}</span>
+              <span className={`text-xs ${isSelected ? "text-white/80" : "text-muted"}`}>
+                {t(`chat.configModal.${mode}Hint`)}
+              </span>
+            </label>
+          );
+        })}
       </div>
-    </div>
+
+      {error && (
+        <p className="mt-2 text-xs text-pink">{error}</p>
+      )}
+    </Modal>
   );
 }

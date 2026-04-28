@@ -150,5 +150,5 @@ async def test_query_fts_integration(tmp_bibilab_home: Path):
         results = await query_fts("learning", ["src1"], BibilabConfig())
 
     assert len(results) == 2
-    assert all(r.distance > 0 for r in results)  # abs(BM25) is strictly positive
+    assert all(r.distance < 0 for r in results)  # BM25 rank is positive, lower is better
     assert all("learning" in r.content for r in results)

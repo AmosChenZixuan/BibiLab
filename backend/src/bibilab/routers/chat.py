@@ -12,7 +12,6 @@ from bibilab.db import (
     delete_conversation,
     delete_messages_by_ids,
     get_conversation_by_list,
-    get_db,
     get_list,
     get_or_create_conversation,
     get_recent_messages,
@@ -23,7 +22,7 @@ from bibilab.db import (
 from bibilab.db import (
     get_conversation as get_conv_row,
 )
-from bibilab.models._enums import CHAT_MODE_FOCUSED
+from bibilab.models._enums import CHAT_MODE_BROAD, CHAT_MODE_FOCUSED
 from bibilab.models.chat import (
     ChatRequest,
     ConversationResponse,
@@ -99,7 +98,7 @@ def _format_chunk_line(chunk: RetrievedChunk) -> str:
 def _format_rag_context(result: RetrievalResult, query: str) -> str:
     if not result.chunks:
         return ""
-    if result.mode == "broad":
+    if result.mode == CHAT_MODE_BROAD:
         parts = [
             f"Query: {query}\n",
             f"Concept appears in {result.sources_with_hits} of {result.sources_total} sources\n",
@@ -171,14 +170,12 @@ async def chat_endpoint(
         if cfg.rag.query_routing_enabled and conversation_mode == CHAT_MODE_FOCUSED:
             query_type = await classify_query(request.message, cfg)
             effective_mode = map_type_to_mode(query_type)
-            async with get_db() as db:
-                await log_query_classification(
-                    db,
-                    list_id=list_id,
-                    query_text=request.message,
-                    query_type=query_type,
-                    effective_mode=effective_mode,
-                )
+            await log_query_classification(
+                list_id=list_id,
+                query_text=request.message,
+                query_type=query_type,
+                effective_mode=effective_mode,
+            )
         rag_result = await retrieve(
             query_text=request.message,
             source_ids=source_ids,

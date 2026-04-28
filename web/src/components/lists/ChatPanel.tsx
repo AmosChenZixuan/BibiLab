@@ -219,7 +219,7 @@ export function ChatPanel({
               {t("chat.empty.noHistory.hint")}
             </p>
             {chatMode === CHAT_MODE_BROAD && (
-              <p className="m-0 max-w-xs text-sm text-gray-400">
+              <p className="m-0 max-w-xs text-sm text-muted">
                 {t("chat.mode.broad.description")}
               </p>
             )}

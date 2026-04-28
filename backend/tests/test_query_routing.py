@@ -92,3 +92,20 @@ async def test_classify_query_llm_failure_falls_back_to_factual():
 
         result = await classify_query("test query", cfg)
         assert result == "factual"
+
+
+@pytest.mark.asyncio
+async def test_query_classifications_persisted():
+    from bibilab.db import bootstrap_db, log_query_classification
+
+    await bootstrap_db()
+    row = await log_query_classification(
+        list_id="test-list-id",
+        query_text="test query",
+        query_type="factual",
+        effective_mode="focused",
+    )
+    assert row["list_id"] == "test-list-id"
+    assert row["query_text"] == "test query"
+    assert row["query_type"] == "factual"
+    assert row["effective_mode"] == "focused"

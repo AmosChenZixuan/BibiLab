@@ -831,21 +831,6 @@ async def delete_conversation(conversation_id: str) -> None:
 # ---------------------------------------------------------------------------
 
 
-async def insert_fts_rows(
-    rows: list[tuple[str, str, str, float, float, str]],
-) -> None:
-    """Insert rows into chunks_fts. Each tuple: (content, video_id, video_title, ts_start, ts_end, chunk_id)."""
-    if not rows:
-        return
-    async with get_db() as db:
-        await db.executemany(
-            "INSERT INTO chunks_fts (content, video_id, video_title, timestamp_start, timestamp_end, chunk_id) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
-            rows,
-        )
-        await db.commit()
-
-
 async def clear_fts_for_video(video_id: str) -> None:
     """Delete all FTS rows for a given video_id."""
     async with get_db() as db:
@@ -885,16 +870,23 @@ async def query_fts_rows(
 
 
 async def log_query_classification(
-    db: aiosqlite.Connection,
     list_id: str,
     query_text: str,
     query_type: str,
     effective_mode: str,
-) -> None:
-    await db.execute(
-        """
-        INSERT INTO query_classifications (id, list_id, query_text, query_type, effective_mode, created_at)
-        VALUES (?, ?, ?, ?, ?, ?)
-        """,
-        (str(uuid.uuid4()), list_id, query_text, query_type, effective_mode, _now()),
-    )
+) -> dict:
+    async with get_db() as db:
+        await db.execute(
+            """
+            INSERT INTO query_classifications (id, list_id, query_text, query_type, effective_mode, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (str(uuid.uuid4()), list_id, query_text, query_type, effective_mode, _now()),
+        )
+        await db.commit()
+        rows = await db.execute(
+            "SELECT id, list_id, query_text, query_type, effective_mode, created_at "
+            "FROM query_classifications WHERE list_id = ? ORDER BY created_at DESC LIMIT 1",
+            [list_id],
+        )
+        return dict(await rows.fetchone())
