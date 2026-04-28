@@ -12,3 +12,5 @@ class VideoStatus(str, Enum):
 ChatMode = Literal["focused", "broad"]
 CHAT_MODE_FOCUSED: ChatMode = "focused"
 CHAT_MODE_BROAD: ChatMode = "broad"
+
+QueryType = Literal["factual", "breadth", "analytical"]

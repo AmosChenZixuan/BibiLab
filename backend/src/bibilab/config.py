@@ -84,6 +84,7 @@ class RagConfig(BaseModel):
     max_distance: float = 0.8
     reranking_enabled: bool = True
     hybrid_enabled: bool = True
+    query_routing_enabled: bool = True
 
 
 class BibilabConfig(BaseModel):

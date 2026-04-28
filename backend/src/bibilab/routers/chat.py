@@ -12,15 +12,18 @@ from bibilab.db import (
     delete_conversation,
     delete_messages_by_ids,
     get_conversation_by_list,
+    get_db,
     get_list,
     get_or_create_conversation,
     get_recent_messages,
     get_sources_for_list,
+    log_query_classification,
     update_conversation_mode,
 )
 from bibilab.db import (
     get_conversation as get_conv_row,
 )
+from bibilab.models._enums import CHAT_MODE_FOCUSED
 from bibilab.models.chat import (
     ChatRequest,
     ConversationResponse,
@@ -31,7 +34,8 @@ from bibilab.models.chat import (
 from bibilab.pipeline._shared import stream_llm
 from bibilab.pipeline.chat_summary import maybe_compress_conversation
 from bibilab.pipeline.chat_tools import GENERATE_REPORT_TOOL, execute_tool
-from bibilab.pipeline.embed import RetrievalResult, retrieve
+from bibilab.pipeline.embed import RetrievalResult, RetrievedChunk, retrieve
+from bibilab.pipeline.route import classify_query, map_type_to_mode
 
 logger = logging.getLogger(__name__)
 
@@ -86,6 +90,12 @@ async def patch_conversation(list_id: str, request: PatchConversationRequest) ->
     return ConversationResponse.from_row(dict(conv_row))
 
 
+def _format_chunk_line(chunk: RetrievedChunk) -> str:
+    ts_start = int(chunk.timestamp_start)
+    ts_end = int(chunk.timestamp_end)
+    return f'- [{chunk.video_title} @ {ts_start}s-{ts_end}s]: "{chunk.content}"'
+
+
 def _format_rag_context(result: RetrievalResult, query: str) -> str:
     if not result.chunks:
         return ""
@@ -95,16 +105,10 @@ def _format_rag_context(result: RetrievalResult, query: str) -> str:
             f"Concept appears in {result.sources_with_hits} of {result.sources_total} sources\n",
             "Best excerpt per source:",
         ]
-        for chunk in result.chunks:
-            ts_start = int(chunk.timestamp_start)
-            ts_end = int(chunk.timestamp_end)
-            parts.append(f'- [{chunk.video_title} @ {ts_start}s-{ts_end}s]: "{chunk.content}"')
+        parts.extend(_format_chunk_line(c) for c in result.chunks)
         return "\n".join(parts)
     parts = [f"Query: {query}\n\nRelevant transcript excerpts:"]
-    for chunk in result.chunks:
-        ts_start = int(chunk.timestamp_start)
-        ts_end = int(chunk.timestamp_end)
-        parts.append(f'- [{chunk.video_title} @ {ts_start}s-{ts_end}s]: "{chunk.content}"')
+    parts.extend(_format_chunk_line(c) for c in result.chunks)
     return "\n".join(parts)
 
 
@@ -160,15 +164,27 @@ async def chat_endpoint(
         source_rows = await get_sources_for_list(list_id)
         source_ids = [row["id"] for row in source_rows]
 
+    effective_mode = conversation_mode
     rag_context = ""
     rag_result = None
     if source_ids and request.message.strip():
+        if cfg.rag.query_routing_enabled and conversation_mode == CHAT_MODE_FOCUSED:
+            query_type = await classify_query(request.message, cfg)
+            effective_mode = map_type_to_mode(query_type)
+            async with get_db() as db:
+                await log_query_classification(
+                    db,
+                    list_id=list_id,
+                    query_text=request.message,
+                    query_type=query_type,
+                    effective_mode=effective_mode,
+                )
         rag_result = await retrieve(
             query_text=request.message,
             source_ids=source_ids,
             cfg=cfg,
             top_k=5,
-            mode=conversation_mode,
+            mode=effective_mode,
         )
         rag_context = _format_rag_context(rag_result, request.message)
 

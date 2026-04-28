@@ -44,28 +44,30 @@ async def test_chat_endpoint_includes_rag_context(client, tmp_bibilab_home):
         yield MagicMock(type="done", content=None, tool_call=None)
 
     with patch("bibilab.routers.chat.stream_llm", capture_stream):
-        with patch("bibilab.routers.chat.retrieve", new_callable=AsyncMock) as mock_retrieve:
-            with patch("bibilab.routers.chat.get_sources_for_list", new_callable=AsyncMock) as mock_sources:
-                from bibilab.pipeline.embed import RetrievalResult, RetrievedChunk
+        with patch("bibilab.routers.chat.classify_query", new_callable=AsyncMock) as mock_classify:
+            mock_classify.return_value = "factual"
+            with patch("bibilab.routers.chat.retrieve", new_callable=AsyncMock) as mock_retrieve:
+                with patch("bibilab.routers.chat.get_sources_for_list", new_callable=AsyncMock) as mock_sources:
+                    from bibilab.pipeline.embed import RetrievalResult, RetrievedChunk
 
-                mock_sources.return_value = [MagicMock(id="src-1")]
-                chunk = RetrievedChunk(
-                    content="video transcript here",
-                    video_title="Test Video",
-                    timestamp_start=10.0,
-                    timestamp_end=30.0,
-                    video_id="bv123",
-                    distance=0.15,
-                )
-                mock_retrieve.return_value = RetrievalResult(
-                    chunks=[chunk],
-                    mode="focused",
-                    candidates_evaluated=1,
-                    sources_with_hits=1,
-                    sources_total=1,
-                    source_coverage=[],
-                )
-                resp = await client.post(f"/lists/{list_id}/chat", json={"message": "what is this about?"})
+                    mock_sources.return_value = [MagicMock(id="src-1")]
+                    chunk = RetrievedChunk(
+                        content="video transcript here",
+                        video_title="Test Video",
+                        timestamp_start=10.0,
+                        timestamp_end=30.0,
+                        video_id="bv123",
+                        distance=0.15,
+                    )
+                    mock_retrieve.return_value = RetrievalResult(
+                        chunks=[chunk],
+                        mode="focused",
+                        candidates_evaluated=1,
+                        sources_with_hits=1,
+                        sources_total=1,
+                        source_coverage=[],
+                    )
+                    resp = await client.post(f"/lists/{list_id}/chat", json={"message": "what is this about?"})
 
     assert resp.status_code == 200
     assert len(captured_system) == 1
@@ -343,16 +345,18 @@ async def test_rag_meta_event_emitted_before_deltas(client):
             sources_total=1,
             source_coverage=[],
         )
-        with patch("bibilab.routers.chat.get_sources_for_list", new_callable=AsyncMock) as mock_sources:
-            mock_sources.return_value = [MagicMock(id="src-1")]
-            with patch("bibilab.routers.chat.stream_llm") as mock_stream:
-                mock_stream.return_value = an_async_generator(
-                    [
-                        MagicMock(type="delta", content="Hi", tool_call=None),
-                        MagicMock(type="done", content=None, tool_call=None),
-                    ]
-                )
-                resp = await client.post(f"/lists/{list_id}/chat", json={"message": "hi"})
+        with patch("bibilab.routers.chat.classify_query", new_callable=AsyncMock) as mock_classify:
+            mock_classify.return_value = "factual"
+            with patch("bibilab.routers.chat.get_sources_for_list", new_callable=AsyncMock) as mock_sources:
+                mock_sources.return_value = [MagicMock(id="src-1")]
+                with patch("bibilab.routers.chat.stream_llm") as mock_stream:
+                    mock_stream.return_value = an_async_generator(
+                        [
+                            MagicMock(type="delta", content="Hi", tool_call=None),
+                            MagicMock(type="done", content=None, tool_call=None),
+                        ]
+                    )
+                    resp = await client.post(f"/lists/{list_id}/chat", json={"message": "hi"})
     lines = resp.text.strip().split("\n")
     rag_meta_line = next(line for line in lines if "rag_meta" in line)
     delta_line = next(line for line in lines if "delta" in line)
@@ -378,15 +382,17 @@ async def test_assistant_message_persisted_with_rag_metadata(client):
             sources_total=1,
             source_coverage=[],
         )
-        with patch("bibilab.routers.chat.get_sources_for_list", new_callable=AsyncMock) as mock_sources:
-            mock_sources.return_value = [MagicMock(id="src-1")]
-            with patch("bibilab.routers.chat.stream_llm") as mock_stream:
-                mock_stream.return_value = an_async_generator(
-                    [
-                        MagicMock(type="done", content=None, tool_call=None),
-                    ]
-                )
-                await client.post(f"/lists/{list_id}/chat", json={"message": "hi"})
+        with patch("bibilab.routers.chat.classify_query", new_callable=AsyncMock) as mock_classify:
+            mock_classify.return_value = "factual"
+            with patch("bibilab.routers.chat.get_sources_for_list", new_callable=AsyncMock) as mock_sources:
+                mock_sources.return_value = [MagicMock(id="src-1")]
+                with patch("bibilab.routers.chat.stream_llm") as mock_stream:
+                    mock_stream.return_value = an_async_generator(
+                        [
+                            MagicMock(type="done", content=None, tool_call=None),
+                        ]
+                    )
+                    await client.post(f"/lists/{list_id}/chat", json={"message": "hi"})
     conv_resp = await client.get(f"/lists/{list_id}/conversation")
     msgs = conv_resp.json()["messages"]
     assistant = next(m for m in msgs if m["role"] == "assistant")
@@ -411,17 +417,135 @@ async def test_no_rag_event_when_no_retrieval(client):
             sources_total=0,
             source_coverage=[],
         )
-        with patch("bibilab.routers.chat.get_sources_for_list", new_callable=AsyncMock) as mock_sources:
-            mock_sources.return_value = [MagicMock(id="src-1")]
-            with patch("bibilab.routers.chat.stream_llm") as mock_stream:
-                mock_stream.return_value = an_async_generator(
-                    [
-                        MagicMock(type="done", content=None, tool_call=None),
-                    ]
-                )
-                resp = await client.post(f"/lists/{list_id}/chat", json={"message": "hi"})
+        with patch("bibilab.routers.chat.classify_query", new_callable=AsyncMock) as mock_classify:
+            mock_classify.return_value = "factual"
+            with patch("bibilab.routers.chat.get_sources_for_list", new_callable=AsyncMock) as mock_sources:
+                mock_sources.return_value = [MagicMock(id="src-1")]
+                with patch("bibilab.routers.chat.stream_llm") as mock_stream:
+                    mock_stream.return_value = an_async_generator(
+                        [
+                            MagicMock(type="done", content=None, tool_call=None),
+                        ]
+                    )
+                    resp = await client.post(f"/lists/{list_id}/chat", json={"message": "hi"})
     assert "rag_meta" not in resp.text
     conv_resp = await client.get(f"/lists/{list_id}/conversation")
     msgs = conv_resp.json()["messages"]
     assistant = next(m for m in msgs if m["role"] == "assistant")
     assert assistant["metadata"] is None
+
+
+@pytest.mark.asyncio
+async def test_routing_skipped_when_disabled(client, tmp_bibilab_home):
+    """query_routing_enabled=False → classify_query not called."""
+    from bibilab.config import BibilabConfig, RagConfig, get_config
+
+    list_id = (await client.post("/lists", json={"name": "Test"})).json()["id"]
+
+    mock_cfg = BibilabConfig(rag=RagConfig(query_routing_enabled=False))
+
+    app = client._transport.app
+    app.dependency_overrides[get_config] = lambda: mock_cfg
+
+    try:
+        with patch("bibilab.routers.chat.classify_query", new_callable=AsyncMock) as mock_classify:
+            mock_classify.return_value = "breadth"
+            with patch("bibilab.routers.chat.retrieve", new_callable=AsyncMock) as mock_retrieve:
+                mock_retrieve.return_value = MagicMock(
+                    chunks=[],
+                    mode="focused",
+                    candidates_evaluated=0,
+                    sources_with_hits=0,
+                    sources_total=0,
+                    source_coverage=[],
+                )
+                with patch("bibilab.routers.chat.get_sources_for_list", new_callable=AsyncMock) as mock_sources:
+                    mock_sources.return_value = [MagicMock(id="src-1")]
+                    with patch("bibilab.routers.chat.stream_llm") as mock_stream:
+                        mock_stream.return_value = an_async_generator(
+                            [MagicMock(type="done", content=None, tool_call=None)]
+                        )
+                        await client.post(f"/lists/{list_id}/chat", json={"message": "hi"})
+
+        mock_classify.assert_not_called()
+    finally:
+        app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+async def test_routing_skipped_when_mode_is_broad(client, tmp_bibilab_home):
+    """Explicit broad mode → classify_query not called."""
+    from bibilab.config import BibilabConfig, RagConfig, get_config
+
+    list_id = (await client.post("/lists", json={"name": "Test"})).json()["id"]
+    await client.patch(f"/lists/{list_id}/conversation", json={"mode": "broad"})
+
+    mock_cfg = BibilabConfig(rag=RagConfig(query_routing_enabled=True))
+
+    app = client._transport.app
+    app.dependency_overrides[get_config] = lambda: mock_cfg
+
+    try:
+        with patch("bibilab.routers.chat.classify_query", new_callable=AsyncMock) as mock_classify:
+            mock_classify.return_value = "breadth"
+            with patch("bibilab.routers.chat.retrieve", new_callable=AsyncMock) as mock_retrieve:
+                mock_retrieve.return_value = MagicMock(
+                    chunks=[],
+                    mode="broad",
+                    candidates_evaluated=0,
+                    sources_with_hits=0,
+                    sources_total=0,
+                    source_coverage=[],
+                )
+                with patch("bibilab.routers.chat.get_sources_for_list", new_callable=AsyncMock) as mock_sources:
+                    mock_sources.return_value = [MagicMock(id="src-1")]
+                    with patch("bibilab.routers.chat.stream_llm") as mock_stream:
+                        mock_stream.return_value = an_async_generator(
+                            [MagicMock(type="done", content=None, tool_call=None)]
+                        )
+                        await client.post(f"/lists/{list_id}/chat", json={"message": "hi"})
+
+        mock_classify.assert_not_called()
+    finally:
+        app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+async def test_routing_runs_when_enabled_and_mode_is_focused(client, tmp_bibilab_home):
+    """Default focused mode + routing enabled → classify_query called, result used."""
+    from bibilab.config import BibilabConfig, RagConfig, get_config
+
+    list_id = (await client.post("/lists", json={"name": "Test"})).json()["id"]
+
+    mock_cfg = BibilabConfig(rag=RagConfig(query_routing_enabled=True))
+
+    app = client._transport.app
+    app.dependency_overrides[get_config] = lambda: mock_cfg
+
+    try:
+        with patch("bibilab.routers.chat.classify_query", new_callable=AsyncMock) as mock_classify:
+            mock_classify.return_value = "breadth"
+            with patch("bibilab.routers.chat.log_query_classification", new_callable=AsyncMock) as mock_log:
+                with patch("bibilab.routers.chat.retrieve", new_callable=AsyncMock) as mock_retrieve:
+                    mock_retrieve.return_value = MagicMock(
+                        chunks=[],
+                        mode="broad",
+                        candidates_evaluated=0,
+                        sources_with_hits=0,
+                        sources_total=0,
+                        source_coverage=[],
+                    )
+                    with patch("bibilab.routers.chat.get_sources_for_list", new_callable=AsyncMock) as mock_sources:
+                        mock_sources.return_value = [MagicMock(id="src-1")]
+                        with patch("bibilab.routers.chat.stream_llm") as mock_stream:
+                            mock_stream.return_value = an_async_generator(
+                                [MagicMock(type="done", content=None, tool_call=None)]
+                            )
+                            await client.post(f"/lists/{list_id}/chat", json={"message": "tell me everything"})
+
+        mock_classify.assert_called_once()
+        mock_log.assert_called_once()
+        call_args = mock_retrieve.call_args
+        assert call_args.kwargs["mode"] == "broad"
+    finally:
+        app.dependency_overrides.clear()

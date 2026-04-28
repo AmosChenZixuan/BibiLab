@@ -81,3 +81,12 @@ class PatchConversationRequest(BaseModel):
 class GetConversationResponse(BaseModel):
     conversation: ConversationResponse | None
     messages: list[MessageResponse]
+
+
+class QueryClassificationLog(BaseModel):
+    id: str
+    list_id: str
+    query_text: str
+    query_type: str
+    effective_mode: str
+    created_at: datetime

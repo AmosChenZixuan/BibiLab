@@ -114,6 +114,17 @@ CREATE TABLE IF NOT EXISTS messages (
 )
 """
 
+_CREATE_QUERY_CLASSIFICATIONS = """
+CREATE TABLE IF NOT EXISTS query_classifications (
+    id            TEXT PRIMARY KEY,
+    list_id       TEXT NOT NULL,
+    query_text    TEXT NOT NULL,
+    query_type    TEXT NOT NULL,
+    effective_mode TEXT NOT NULL,
+    created_at    TEXT NOT NULL
+)
+"""
+
 
 async def bootstrap_db() -> None:
     async with get_db() as db:
@@ -174,6 +185,10 @@ async def bootstrap_db() -> None:
         if "mode" not in conv_columns:
             # Literal 'focused' is safe here — this is a one-shot DDL migration, not user input
             await db.execute("ALTER TABLE conversations ADD COLUMN mode TEXT NOT NULL DEFAULT 'focused'")
+
+        qc_columns = [row[1] for row in await db.execute_fetchall("PRAGMA table_info(query_classifications)")]
+        if not qc_columns:
+            await db.execute(_CREATE_QUERY_CLASSIFICATIONS)
 
         await db.commit()
 
@@ -867,3 +882,19 @@ async def query_fts_rows(
             [query_text, *video_ids, top_k],
         )
         return await cursor.fetchall()
+
+
+async def log_query_classification(
+    db: aiosqlite.Connection,
+    list_id: str,
+    query_text: str,
+    query_type: str,
+    effective_mode: str,
+) -> None:
+    await db.execute(
+        """
+        INSERT INTO query_classifications (id, list_id, query_text, query_type, effective_mode, created_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (str(uuid.uuid4()), list_id, query_text, query_type, effective_mode, _now()),
+    )

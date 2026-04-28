@@ -289,8 +289,7 @@ async def query_fts(
     """Query FTS5 index for transcript chunks matching the query, filtered by source.
 
     Returns list of RetrievedChunk with distance derived from BM25 rank.
-    FTS5 rank is negative (more negative = better match); we negate it to get
-    a positive distance-like score where lower = more relevant.
+    FTS5 rank is positive (lower = more relevant), matching vector distance semantics.
     """
     if not source_ids:
         return []
@@ -301,11 +300,7 @@ async def query_fts(
 
     video_ids = list(id_to_video_id.values())
 
-    try:
-        rows = await query_fts_rows(query_text, video_ids, top_k)
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("FTS query failed: %s", exc)
-        return []
+    rows = await query_fts_rows(query_text, video_ids, top_k)
 
     return [
         RetrievedChunk(
@@ -314,7 +309,7 @@ async def query_fts(
             timestamp_start=float(row["timestamp_start"]),
             timestamp_end=float(row["timestamp_end"]),
             video_id=row["video_id"],
-            distance=-row["rank"],  # negate: FTS5 rank is negative, lower = better
+            distance=-row["rank"],  # negated rank
         )
         for row in rows
     ]
@@ -341,10 +336,6 @@ async def hybrid_search(
         return vec_chunks
 
     fts_chunks = fts_result
-
-    if not fts_chunks:
-        return vec_chunks
-
     return _rrf_fuse(vec_chunks, fts_chunks, k=60)
 
 
