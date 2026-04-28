@@ -145,6 +145,7 @@ export function useSSEStream({
           updateAssistantMsg(assistantMsgId, { toolCall: toolCallData });
         } else if (event.type === "rag_meta") {
           const rag = event.rag as RagMetadata;
+          if (!rag) return;
           updateAssistantMsg(assistantMsgId, { rag });
         } else if (event.type === "done") {
           updateAssistantMsg(assistantMsgId, (m) => {

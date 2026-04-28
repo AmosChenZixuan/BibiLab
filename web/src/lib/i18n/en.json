@@ -260,6 +260,11 @@
       "chunksEvaluated": "Chunks evaluated",
       "sourcesRetrieved": "Sources retrieved",
       "ariaLabel": "Retrieval observability"
+    },
+    "mode": {
+      "broad": {
+        "description": "Broad mode retrieves one relevant chunk per source, maximizing coverage across videos."
+      }
     }
   },
   "common": {

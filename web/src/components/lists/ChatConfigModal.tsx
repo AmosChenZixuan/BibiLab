@@ -15,14 +15,19 @@ export function ChatConfigModal({ listId, currentMode, onClose, onSave }: ChatCo
   const { t } = useLanguage();
   const [selected, setSelected] = useState<ChatMode>((currentMode as ChatMode) || CHAT_MODE_FOCUSED);
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   async function handleSave() {
     setSaving(true);
+    setError(null);
     try {
       await api.updateConversation(listId, { mode: selected });
       onSave(selected);
       onClose();
-    } catch {
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setError(msg);
+      console.error("[ChatConfigModal] save failed:", err);
       setSaving(false);
     }
   }
@@ -73,6 +78,9 @@ export function ChatConfigModal({ listId, currentMode, onClose, onSave }: ChatCo
           })}
         </div>
 
+        {error && (
+          <p className="mt-2 text-xs text-red-600">{error}</p>
+        )}
         <div className="mt-4 flex justify-end gap-2">
           <button
             type="button"

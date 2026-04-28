@@ -260,6 +260,11 @@
       "chunksEvaluated": "已评估块数",
       "sourcesRetrieved": "已检索的来源数",
       "ariaLabel": "检索详情"
+    },
+    "mode": {
+      "broad": {
+        "description": "宽泛模式从每个来源中检索一个相关块，最大化跨视频的覆盖范围。"
+      }
     }
   },
   "common": {

@@ -220,7 +220,7 @@ export function ChatPanel({
             </p>
             {chatMode === CHAT_MODE_BROAD && (
               <p className="m-0 max-w-xs text-sm text-gray-400">
-                Broad mode searches all sources to find the best matches for your question.
+                {t("chat.mode.broad.description")}
               </p>
             )}
           </div>

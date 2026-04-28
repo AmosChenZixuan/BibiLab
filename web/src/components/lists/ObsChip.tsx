@@ -16,7 +16,7 @@ export function ObsChip({ rag }: ObsChipProps) {
   const label = `${rag.candidates_evaluated} chunks · ${rag.sources_with_hits}/${rag.sources_total}`;
 
   return (
-    <div className="relative inline-flex items-center gap-1 px-2 py-0.5 rounded bg-blue-50 border border-blue-200 text-xs text-blue-700 cursor-pointer">
+    <div className="relative inline-flex items-center gap-1 px-2 py-0.5 rounded bg-blue-50 border border-blue-200 text-xs text-blue-700">
       <button
         type="button"
         onClick={() => setExpanded((v) => !v)}
