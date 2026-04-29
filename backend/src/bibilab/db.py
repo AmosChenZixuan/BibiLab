@@ -185,10 +185,13 @@ async def bootstrap_db() -> None:
         await db.execute(_CREATE_MESSAGES)
         await db.execute("CREATE INDEX IF NOT EXISTS idx_messages_conversation_id ON messages(conversation_id)")
 
-        conv_columns = [row[1] for row in await db.execute_fetchall("PRAGMA table_info(conversations)")]
-        if "mode" not in conv_columns:
-            # Literal 'focused' is safe here — this is a one-shot DDL migration, not user input
-            await db.execute("ALTER TABLE conversations ADD COLUMN mode TEXT NOT NULL DEFAULT 'focused'")
+    conv_columns = [row[1] for row in await db.execute_fetchall("PRAGMA table_info(conversations)")]
+    if "mode" not in conv_columns:
+        # Literal 'auto' is safe here - this is a one-shot DDL migration, not user input
+        await db.execute("ALTER TABLE conversations ADD COLUMN mode TEXT NOT NULL DEFAULT 'auto'")
+    else:
+        # Migration: update existing 'focused' rows to 'auto' for new three-state default
+        await db.execute("UPDATE conversations SET mode = 'auto' WHERE mode = 'focused'")
 
         qc_columns = [row[1] for row in await db.execute_fetchall("PRAGMA table_info(query_classifications)")]
         if not qc_columns:
