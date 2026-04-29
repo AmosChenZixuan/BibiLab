@@ -9,6 +9,7 @@ import pytest
 from bibilab.adapters.base import VideoMeta
 from bibilab.config import BibilabConfig, _reset_cache
 from bibilab.db import (
+    _escape_fts_query,
     bootstrap_db,
     get_db,
     query_fts_rows,
@@ -152,3 +153,26 @@ async def test_query_fts_integration(tmp_bibilab_home: Path):
     assert len(results) == 2
     assert all(r.distance < 0 for r in results)  # FTS5 BM25 rank is negative; lower = more relevant
     assert all("learning" in r.content for r in results)
+
+
+def test_escape_fts_query_empty_string():
+    assert _escape_fts_query("") == ""
+
+
+def test_escape_fts_query_only_whitespace():
+    assert _escape_fts_query("   \t  ") == ""
+
+
+def test_escape_fts_query_fts_operators():
+    escaped = _escape_fts_query("AND OR NOT * ^")
+    assert escaped == '"AND" "OR" "NOT" "*" "^"'
+
+
+def test_escape_fts_query_preserves_normal_tokens():
+    escaped = _escape_fts_query("machine learning")
+    assert escaped == '"machine" "learning"'
+
+
+def test_escape_fts_query_embedded_quotes():
+    escaped = _escape_fts_query('say "hello world"')
+    assert escaped == '"say" """hello" "world"""'

@@ -829,9 +829,15 @@ async def test_candidates_evaluated_reflects_pre_rerank_count(tmp_bibilab_home):
         "distances": [[0.05, 0.15, 0.10, 0.20, 0.12]],
     }
 
+    reranked_chunks = [
+        _make_chunk(content="c1", video_id="v1", ts_start=0.0, ts_end=5.0),
+        _make_chunk(content="c2", video_id="v1", ts_start=5.0, ts_end=10.0),
+    ]
+
     with (
         patch("bibilab.pipeline.embed.get_video_ids_for_sources", new_callable=AsyncMock) as mock_map,
         patch("bibilab.pipeline.embed._get_collection", return_value=mock_collection),
+        patch("bibilab.pipeline.rerank.rerank", new_callable=AsyncMock, return_value=reranked_chunks),
     ):
         mock_map.return_value = {"s1": "v1", "s2": "v2", "s3": "v3"}
 

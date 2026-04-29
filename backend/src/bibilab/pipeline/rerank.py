@@ -17,6 +17,9 @@ logger = logging.getLogger(__name__)
 _reranker: CrossEncoder | None = None
 _reranker_lock = threading.Lock()
 
+# Model is fixed to ensure consistent cross-encoder score semantics across deployments.
+# Swapping models would require re-tuning the top_k rerank threshold since different
+# models produce different score distributions.
 _RERANKER_MODEL = "cross-encoder/ms-marco-MiniLM-L-6-v2"
 
 

@@ -191,6 +191,10 @@ async def bootstrap_db() -> None:
         if "mode" not in conv_columns:
             await db.execute(f"ALTER TABLE conversations ADD COLUMN mode TEXT NOT NULL DEFAULT '{CHAT_MODE_AUTO}'")
         else:
+            # Migration: PR #207 changed the server-side default mode from 'focused' to
+            # 'auto'. Existing conversation rows created during development had mode='focused'
+            # (the old default). Reset them to 'auto' so the query router handles them
+            # correctly. This is a one-time backfill; do not extend this UPDATE to other values.
             await db.execute("UPDATE conversations SET mode = ? WHERE mode = ?", (CHAT_MODE_AUTO, CHAT_MODE_FOCUSED))
 
         await db.commit()

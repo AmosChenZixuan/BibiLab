@@ -16,7 +16,7 @@ from pathlib import Path
 
 from bibilab.adapters.base import VideoMeta
 from bibilab.config import BibilabConfig, bibilab_home
-from bibilab.db import get_db_path, get_video_ids_for_sources, query_fts_rows
+from bibilab.db import _escape_fts_query, get_db_path, get_video_ids_for_sources, query_fts_rows
 from bibilab.models._enums import CHAT_MODE_BROAD, CHAT_MODE_FOCUSED, ChatMode
 from bibilab.pipeline.chunk import RagChunk
 
@@ -50,7 +50,7 @@ class SourceHit:
 @dataclass
 class RetrievalResult:
     chunks: list[RetrievedChunk]
-    mode: str
+    mode: ChatMode
     candidates_evaluated: int
     sources_with_hits: int
     sources_total: int
@@ -221,6 +221,9 @@ def clear_embeddings_for_list(list_id: str, cfg: BibilabConfig) -> None:
 
 def clear_embeddings_for_video(video_id: str, cfg: BibilabConfig) -> None:
     """Delete all ChromaDB chunks belonging to the given video."""
+    chroma_path = bibilab_home() / "chroma"
+    if not chroma_path.exists():
+        return
     collection = _get_collection(cfg)
     try:
         collection.delete(where={"video_id": video_id})
@@ -334,7 +337,8 @@ async def query_fts(
         return []
     video_ids = resolved
 
-    rows = await query_fts_rows(query_text, video_ids, top_k)
+    escaped = _escape_fts_query(query_text)
+    rows = await query_fts_rows(escaped, video_ids, top_k)
 
     return [
         RetrievedChunk(
