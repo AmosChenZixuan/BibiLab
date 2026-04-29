@@ -280,13 +280,13 @@ async def test_chat_endpoint_yields_tool_result_event(client):
 
 
 @pytest.mark.asyncio
-async def test_conversation_mode_defaults_to_auto(client):
-    """Conversation is not created on GET; PATCH creates it with auto mode."""
+async def test_conversation_mode_defaults_to_focused(client):
+    """Conversation is not created on GET; PATCH creates it with focused mode."""
     list_id = (await client.post("/lists", json={"name": "Test"})).json()["id"]
     conv_resp = await client.get(f"/lists/{list_id}/conversation")
     assert conv_resp.json()["conversation"] is None
-    resp = await client.patch(f"/lists/{list_id}/conversation", json={"mode": "auto"})
-    assert resp.json()["mode"] == "auto"
+    resp = await client.patch(f"/lists/{list_id}/conversation", json={"mode": "focused"})
+    assert resp.json()["mode"] == "focused"
 
 
 @pytest.mark.asyncio
