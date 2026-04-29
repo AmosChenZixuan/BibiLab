@@ -120,7 +120,7 @@ def _format_rag_context(result: RetrievalResult, query: str) -> str:
 
 def _build_rag_payload(rag_result: RetrievalResult) -> dict:
     return {
-        "type": "rag_meta",
+        "type": SSE_EVENT_RAG_META,
         "rag": {
             "mode": rag_result.mode,
             "candidates_evaluated": rag_result.candidates_evaluated,
@@ -241,7 +241,7 @@ async def chat_endpoint(
                     yield f"data: {json.dumps({'type': SSE_EVENT_DELTA, 'content': event.content})}\n\n"
                 elif event.type == "tool_call":
                     tool_calls.append(event.tool_call)
-                elif event.type == "done":
+                elif event.type == SSE_EVENT_DONE:
                     if not tool_calls:
                         yield f"data: {json.dumps({'type': SSE_EVENT_DONE})}\n\n"
         except Exception:
