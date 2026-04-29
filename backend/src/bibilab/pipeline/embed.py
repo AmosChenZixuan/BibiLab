@@ -25,6 +25,8 @@ logger = logging.getLogger(__name__)
 RETRIEVAL_CANDIDATE_POOL = 30
 RRF_K = 60
 
+_chroma_collection: "chromadb.Collection | None" = None
+
 
 @dataclass
 class RetrievedChunk:
@@ -116,13 +118,16 @@ def _default_embedding_function() -> "ONNXMiniLM_L6_V2":
 
 
 def _get_collection(cfg: BibilabConfig) -> "chromadb.Collection":
-    import chromadb  # noqa: PLC0415
+    global _chroma_collection
+    if _chroma_collection is None:
+        import chromadb  # noqa: PLC0415
 
-    client = chromadb.PersistentClient(path=str(bibilab_home() / "chroma"))
-    return client.get_or_create_collection(
-        cfg.transcript_collection_name,
-        embedding_function=_default_embedding_function(),
-    )
+        client = chromadb.PersistentClient(path=str(bibilab_home() / "chroma"))
+        _chroma_collection = client.get_or_create_collection(
+            cfg.transcript_collection_name,
+            embedding_function=_default_embedding_function(),
+        )
+    return _chroma_collection
 
 
 def embed_chunks(
@@ -223,6 +228,21 @@ def clear_embeddings_for_video(video_id: str, cfg: BibilabConfig) -> None:
         logger.warning("Failed to delete embeddings for video %s: %s", video_id, exc)
 
 
+async def _resolve_video_ids(
+    source_ids: list[str],
+    video_ids: list[str] | None,
+) -> list[str] | None:
+    """Resolve video_ids from source_ids if not already provided."""
+    if video_ids is not None:
+        return video_ids
+    if not source_ids:
+        return None
+    id_to_video_id = await get_video_ids_for_sources(source_ids)
+    if not id_to_video_id:
+        return None
+    return list(id_to_video_id.values())
+
+
 async def query_chunks(
     query_text: str,
     source_ids: list[str],
@@ -245,14 +265,10 @@ async def query_chunks(
         Returns empty list when no sources match, all results are below the
         relevance floor, or ChromaDB errors.
     """
-    if not source_ids:
+    resolved = await _resolve_video_ids(source_ids, video_ids)
+    if resolved is None:
         return []
-
-    if video_ids is None:
-        id_to_video_id = await get_video_ids_for_sources(source_ids)
-        if not id_to_video_id:
-            return []
-        video_ids = list(id_to_video_id.values())
+    video_ids = resolved
 
     def _sync_query() -> dict:
         collection = _get_collection(cfg)
@@ -313,14 +329,10 @@ async def query_fts(
     which is negative (more negative = more relevant). This keeps "lower = more
     relevant" consistent with vector distance ordering used elsewhere.
     """
-    if not source_ids:
+    resolved = await _resolve_video_ids(source_ids, video_ids)
+    if resolved is None:
         return []
-
-    if video_ids is None:
-        id_to_video_id = await get_video_ids_for_sources(source_ids)
-        if not id_to_video_id:
-            return []
-        video_ids = list(id_to_video_id.values())
+    video_ids = resolved
 
     rows = await query_fts_rows(query_text, video_ids, top_k)
 
@@ -347,10 +359,9 @@ async def hybrid_search(
 
     Falls back to vector-only if FTS returns empty or errors.
     """
-    id_to_video_id = await get_video_ids_for_sources(source_ids)
-    if not id_to_video_id:
+    video_ids = await _resolve_video_ids(source_ids, None)
+    if video_ids is None:
         return []
-    video_ids = list(id_to_video_id.values())
 
     vec_task = query_chunks(query_text, source_ids, cfg, top_k=effective_top_k, video_ids=video_ids)
     fts_task = query_fts(query_text, source_ids, cfg, top_k=effective_top_k, video_ids=video_ids)

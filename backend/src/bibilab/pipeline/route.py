@@ -5,12 +5,9 @@ import logging
 
 from bibilab.config import BibilabConfig
 from bibilab.models._enums import (
-    CHAT_MODE_BROAD,
-    CHAT_MODE_FOCUSED,
     QUERY_TYPE_ANALYTICAL,
     QUERY_TYPE_BREADTH,
     QUERY_TYPE_FACTUAL,
-    ChatMode,
     QueryType,
 )
 from bibilab.pipeline._shared import _call_llm
@@ -18,14 +15,6 @@ from bibilab.pipeline._shared import _call_llm
 logger = logging.getLogger(__name__)
 
 QUERY_CLASSIFICATION_MAX_TOKENS = 10
-
-
-def map_type_to_mode(qt: QueryType) -> ChatMode:
-    if qt == QUERY_TYPE_FACTUAL:
-        return CHAT_MODE_FOCUSED
-    if qt in (QUERY_TYPE_BREADTH, QUERY_TYPE_ANALYTICAL):
-        return CHAT_MODE_BROAD
-    raise ValueError(f"Unknown query type: {qt!r}")
 
 
 CLASSIFICATION_PROMPT = """\

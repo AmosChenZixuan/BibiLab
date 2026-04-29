@@ -22,7 +22,7 @@ from bibilab.db import (
 from bibilab.db import (
     get_conversation as get_conv_row,
 )
-from bibilab.models._enums import CHAT_MODE_AUTO, CHAT_MODE_BROAD, CHAT_MODE_FOCUSED
+from bibilab.models._enums import CHAT_MODE_AUTO, CHAT_MODE_BROAD, CHAT_MODE_FOCUSED, map_type_to_mode
 from bibilab.models.chat import (
     ChatRequest,
     ConversationResponse,
@@ -34,11 +34,18 @@ from bibilab.pipeline._shared import stream_llm
 from bibilab.pipeline.chat_summary import maybe_compress_conversation
 from bibilab.pipeline.chat_tools import GENERATE_REPORT_TOOL, execute_tool
 from bibilab.pipeline.embed import RetrievalResult, RetrievedChunk, retrieve
-from bibilab.pipeline.route import classify_query, map_type_to_mode
+from bibilab.pipeline.route import classify_query
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+SSE_EVENT_DELTA = "delta"
+SSE_EVENT_DONE = "done"
+SSE_EVENT_ERROR = "error"
+SSE_EVENT_TOOL_RESULT = "tool_result"
+SSE_EVENT_CLEAR_TEXT = "clear_text"
+SSE_EVENT_RAG_META = "rag_meta"
 
 
 @router.get("/lists/{list_id}/conversation")
@@ -229,18 +236,18 @@ async def chat_endpoint(
                 tools=[GENERATE_REPORT_TOOL],
                 system=system_message if system_message.strip() else None,
             ):
-                if event.type == "delta":
+                if event.type == SSE_EVENT_DELTA:
                     first_response_deltas.append(event.content or "")
-                    yield f"data: {json.dumps({'type': 'delta', 'content': event.content})}\n\n"
+                    yield f"data: {json.dumps({'type': SSE_EVENT_DELTA, 'content': event.content})}\n\n"
                 elif event.type == "tool_call":
                     tool_calls.append(event.tool_call)
                 elif event.type == "done":
                     if not tool_calls:
-                        yield f"data: {json.dumps({'type': 'done'})}\n\n"
+                        yield f"data: {json.dumps({'type': SSE_EVENT_DONE})}\n\n"
         except Exception:
             logger.exception("LLM streaming failed")
             await delete_messages_by_ids([user_msg_id])
-            yield f"data: {json.dumps({'type': 'error', 'message': 'An internal error occurred'})}\n\n"
+            yield f"data: {json.dumps({'type': SSE_EVENT_ERROR, 'message': 'An internal error occurred'})}\n\n"
             return
 
         if not tool_calls:
@@ -254,7 +261,7 @@ async def chat_endpoint(
             )
             return
 
-        yield f"data: {json.dumps({'type': 'clear_text'})}\n\n"
+        yield f"data: {json.dumps({'type': SSE_EVENT_CLEAR_TEXT})}\n\n"
 
         tool_results = []
         for tc in tool_calls:
@@ -267,7 +274,7 @@ async def chat_endpoint(
                     ui_lang=ui_lang,
                 )
             except Exception as exc:
-                yield f"data: {json.dumps({'type': 'error', 'message': str(exc)})}\n\n"
+                yield f"data: {json.dumps({'type': SSE_EVENT_ERROR, 'message': str(exc)})}\n\n"
                 full_response = "".join(first_response_deltas)
                 await create_message(
                     conversation_id=conversation_id,
@@ -278,9 +285,9 @@ async def chat_endpoint(
                 return
 
             tool_results.append({"tool_call_id": tc.id, "content": json.dumps({"name": tc.name, "result": result})})
-            yield f"data: {json.dumps({'type': 'tool_result', 'tool_call_id': tc.id, 'result': result})}\n\n"
+            yield f"data: {json.dumps({'type': SSE_EVENT_TOOL_RESULT, 'tool_call_id': tc.id, 'result': result})}\n\n"
 
-        yield f"data: {json.dumps({'type': 'done'})}\n\n"
+        yield f"data: {json.dumps({'type': SSE_EVENT_DONE})}\n\n"
 
         tool_call_meta = []
         for tc, tr in zip(tool_calls, tool_results):

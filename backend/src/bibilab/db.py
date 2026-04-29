@@ -11,7 +11,7 @@ from typing import Any, Literal
 import aiosqlite
 
 import bibilab.config
-from bibilab.models._enums import ChatMode
+from bibilab.models._enums import CHAT_MODE_AUTO, CHAT_MODE_FOCUSED, ChatMode
 from bibilab.models.jobs import JobStatus
 
 logger = logging.getLogger(__name__)
@@ -188,9 +188,9 @@ async def bootstrap_db() -> None:
 
         conv_columns = [row[1] for row in await db.execute_fetchall("PRAGMA table_info(conversations)")]
         if "mode" not in conv_columns:
-            await db.execute("ALTER TABLE conversations ADD COLUMN mode TEXT NOT NULL DEFAULT 'auto'")
+            await db.execute(f"ALTER TABLE conversations ADD COLUMN mode TEXT NOT NULL DEFAULT '{CHAT_MODE_AUTO}'")
         else:
-            await db.execute("UPDATE conversations SET mode = 'auto' WHERE mode = 'focused'")
+            await db.execute(f"UPDATE conversations SET mode = '{CHAT_MODE_AUTO}' WHERE mode = '{CHAT_MODE_FOCUSED}'")
 
         await db.commit()
 
