@@ -834,13 +834,6 @@ async def delete_conversation(conversation_id: str) -> None:
 # ---------------------------------------------------------------------------
 
 
-async def clear_fts_for_video(video_id: str) -> None:
-    """Delete all FTS rows for a given video_id."""
-    async with get_db() as db:
-        await db.execute("DELETE FROM chunks_fts WHERE video_id = ?", (video_id,))
-        await db.commit()
-
-
 async def clear_fts_for_list(list_id: str) -> None:
     """Delete all FTS rows whose video_id belongs to sources in the given list."""
     async with get_db() as db:

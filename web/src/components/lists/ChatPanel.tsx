@@ -55,7 +55,7 @@ export function ChatPanel({
 
   useEffect(() => {
     if (conversationMode) {
-      setChatMode(conversationMode as ChatMode);
+      setChatMode(conversationMode);
     }
   }, [conversationMode]);
 

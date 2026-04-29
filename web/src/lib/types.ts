@@ -1,3 +1,5 @@
+import type { ChatMode } from "./constants";
+
 export type OutputLanguage = "ui" | "en" | "zh";
 
 export type BibilabList = {
@@ -217,7 +219,7 @@ export type Conversation = {
   id: string;
   list_id: string;
   summary: string | null;
-  mode: string;
+  mode: ChatMode;
   created_at: string;
   updated_at: string;
 };

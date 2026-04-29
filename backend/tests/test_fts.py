@@ -1,5 +1,6 @@
 """Tests for the SQLite FTS5 full-text search index."""
 
+import asyncio
 from pathlib import Path
 from unittest.mock import patch
 
@@ -9,12 +10,11 @@ from bibilab.adapters.base import VideoMeta
 from bibilab.config import BibilabConfig, _reset_cache
 from bibilab.db import (
     bootstrap_db,
-    clear_fts_for_video,
     get_db,
     query_fts_rows,
 )
 from bibilab.pipeline.chunk import RagChunk
-from bibilab.pipeline.embed import populate_fts, query_fts
+from bibilab.pipeline.embed import clear_fts_for_video_sync, populate_fts, query_fts
 
 
 @pytest.fixture()
@@ -113,7 +113,7 @@ async def test_clear_fts_for_video(tmp_bibilab_home: Path):
         cursor = await db.execute("SELECT COUNT(*) FROM chunks_fts")
         assert (await cursor.fetchone())[0] == 1
 
-    await clear_fts_for_video("VID1")
+    await asyncio.to_thread(clear_fts_for_video_sync, "VID1")
 
     async with get_db() as db:
         cursor = await db.execute("SELECT COUNT(*) FROM chunks_fts")

@@ -261,7 +261,8 @@
       "mode": "Mode",
       "chunksEvaluated": "Chunks evaluated",
       "sourcesRetrieved": "Sources retrieved",
-      "ariaLabel": "Retrieval observability"
+      "ariaLabel": "Retrieval observability",
+      "chipLabel": "%{count} chunks · %{hits}/%{total}"
     },
     "mode": {
       "broad": {

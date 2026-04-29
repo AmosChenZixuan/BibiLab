@@ -14,7 +14,7 @@ interface ChatConfigModalProps {
 
 export function ChatConfigModal({ listId, currentMode, onClose, onSave }: ChatConfigModalProps) {
   const { t } = useLanguage();
-  const [selected, setSelected] = useState<ChatMode>(currentMode || CHAT_MODE_AUTO);
+  const [selected, setSelected] = useState<ChatMode>(currentMode);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 

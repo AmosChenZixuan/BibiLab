@@ -40,7 +40,7 @@ class ConversationResponse(BaseModel):
     id: str
     list_id: str
     summary: str | None
-    mode: str
+    mode: ChatMode
     created_at: datetime
     updated_at: datetime
 

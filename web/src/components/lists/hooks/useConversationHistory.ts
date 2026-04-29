@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 
 import { api } from "@/lib/api";
+import { type ChatMode } from "@/lib/constants";
 import {
   formatTimestamp,
   parseCitations,
@@ -26,7 +27,7 @@ export function useConversationHistory(listId: string | undefined, hasSources: b
   const [messages, setMessages] = useState<MessageUI[]>([]);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [conversationMode, setConversationMode] = useState<string | null>(null);
+  const [conversationMode, setConversationMode] = useState<ChatMode | null>(null);
 
   useEffect(() => {
     if (!listId || !hasSources) return;

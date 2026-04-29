@@ -261,7 +261,8 @@
       "mode": "模式",
       "chunksEvaluated": "已评估块数",
       "sourcesRetrieved": "已检索的来源数",
-      "ariaLabel": "检索详情"
+      "ariaLabel": "检索详情",
+      "chipLabel": "%{count} 块 · %{hits}/%{total}"
     },
     "mode": {
       "broad": {

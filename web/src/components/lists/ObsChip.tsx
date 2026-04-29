@@ -13,7 +13,11 @@ export function ObsChip({ rag }: ObsChipProps) {
   const { t } = useLanguage();
   const [expanded, setExpanded] = useState(false);
 
-  const label = `${rag.candidates_evaluated} chunks · ${rag.sources_with_hits}/${rag.sources_total}`;
+  const label = t("chat.obsChip.chipLabel", {
+    count: rag.candidates_evaluated,
+    hits: rag.sources_with_hits,
+    total: rag.sources_total,
+  });
 
   return (
     <div className="relative inline-flex items-center gap-1 px-2 py-0.5 rounded bg-sky/10 border border-border text-xs text-blue">
