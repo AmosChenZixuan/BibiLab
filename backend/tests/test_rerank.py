@@ -98,7 +98,7 @@ async def test_retrieve_with_reranking_enabled(tmp_bibilab_home):
     ):
         result = await retrieve("query", ["src1"], cfg, top_k=5)
 
-    mock_rerank.assert_called_once_with("query", chunks, top_k=5)
+    mock_rerank.assert_called_once_with("query", chunks, top_k=len(chunks))
     assert result.chunks == list(reversed(chunks))
 
 
@@ -348,7 +348,12 @@ async def test_broad_mode_respects_floor(tmp_bibilab_home):
 
 
 @pytest.mark.asyncio
-async def test_sources_with_hits_reflects_pool_not_topk(tmp_bibilab_home):
+async def test_sources_with_hits_reflects_full_reranked_pool(tmp_bibilab_home):
+    """Focused mode: sources_with_hits reflects ALL reranked candidates, not the top_k slice.
+
+    Regression for #9 — ObsChip should show real retrieval coverage, not the LLM-input slice.
+    Mock honors top_k: rerank scores all chunks but returns only the top_k requested by retrieve().
+    """
     from bibilab.config import BibilabConfig, RagConfig
     from bibilab.models._enums import CHAT_MODE_FOCUSED
     from bibilab.pipeline.embed import retrieve
@@ -358,7 +363,11 @@ async def test_sources_with_hits_reflects_pool_not_topk(tmp_bibilab_home):
     )
 
     chunks = [_make_chunk(content=f"c{i}", video_id=f"v{i}", video_title=f"vid{i}") for i in range(8)]
-    reranked = chunks[:5]
+
+    async def mock_rerank(query, chunks_arg, top_k):
+        for c in chunks_arg:
+            c.score = 1.0
+        return list(chunks_arg)[:top_k]
 
     with (
         patch(
@@ -366,11 +375,7 @@ async def test_sources_with_hits_reflects_pool_not_topk(tmp_bibilab_home):
             new_callable=AsyncMock,
             return_value=chunks,
         ),
-        patch(
-            "bibilab.pipeline.rerank.rerank",
-            new_callable=AsyncMock,
-            return_value=reranked,
-        ),
+        patch("bibilab.pipeline.rerank.rerank", side_effect=mock_rerank),
     ):
         result = await retrieve("query", ["src1"], cfg, mode=CHAT_MODE_FOCUSED, top_k=5)
 

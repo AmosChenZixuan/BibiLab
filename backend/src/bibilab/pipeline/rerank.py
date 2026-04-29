@@ -60,9 +60,7 @@ async def rerank(
     scored = list(zip(chunks, scores))
     scored.sort(key=lambda x: x[1], reverse=True)
 
-    result = []
-    for chunk, score in scored[:top_k]:
+    for chunk, score in scored:
         chunk.score = float(score)
-        result.append(chunk)
 
-    return result
+    return [chunk for chunk, _ in scored[:top_k]]

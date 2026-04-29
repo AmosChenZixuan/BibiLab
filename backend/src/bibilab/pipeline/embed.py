@@ -67,6 +67,16 @@ def _chunk_key(chunk: RetrievedChunk) -> str:
     return f"{chunk.video_id}_{chunk.timestamp_start}_{chunk.timestamp_end}"
 
 
+def _best_by_source(chunks: list[RetrievedChunk]) -> dict[str, RetrievedChunk]:
+    """Pick the most relevant chunk per video_id."""
+    best: dict[str, RetrievedChunk] = {}
+    for chunk in chunks:
+        vid = chunk.video_id
+        if vid not in best or _chunk_score(chunk) < _chunk_score(best[vid]):
+            best[vid] = chunk
+    return best
+
+
 def _rrf_fuse(
     a: list[RetrievedChunk],
     b: list[RetrievedChunk],
@@ -410,27 +420,21 @@ async def retrieve(
 
     candidates_evaluated = len(chunks)
 
-    pool_snapshot = list(chunks)
-
     if cfg.rag.reranking_enabled and chunks:
         from bibilab.pipeline.rerank import rerank  # noqa: PLC0415
 
-        rerank_top_k = len(chunks) if mode == CHAT_MODE_BROAD else top_k
         try:
-            chunks = await rerank(query_text, chunks, top_k=rerank_top_k)
+            chunks = await rerank(query_text, chunks, top_k=len(chunks))
         except Exception as exc:  # noqa: BLE001 - model load can fail in many ways
             logger.warning("Reranking failed, falling back to un-reranked chunks: %s", exc)
-            chunks = chunks[:rerank_top_k]
+
+        pool_best_by_source = _best_by_source(chunks)
 
         floor = cfg.rag.rerank_min_score
         if floor is not None:
             chunks = [c for c in chunks if c.score is None or c.score >= floor]
-
-    pool_best_by_source: dict[str, RetrievedChunk] = {}
-    for chunk in pool_snapshot:
-        vid = chunk.video_id
-        if vid not in pool_best_by_source or _chunk_score(chunk) < _chunk_score(pool_best_by_source[vid]):
-            pool_best_by_source[vid] = chunk
+    else:
+        pool_best_by_source = _best_by_source(chunks)
 
     source_coverage = [
         SourceHit(
@@ -442,14 +446,9 @@ async def retrieve(
     ]
 
     if mode == CHAT_MODE_BROAD:
-        broad_best_by_source: dict[str, RetrievedChunk] = {}
-        for chunk in chunks:
-            vid = chunk.video_id
-            if vid not in broad_best_by_source or _chunk_score(chunk) < _chunk_score(broad_best_by_source[vid]):
-                broad_best_by_source[vid] = chunk
-        result_chunks = sorted(broad_best_by_source.values(), key=_chunk_score)
+        result_chunks = sorted(_best_by_source(chunks).values(), key=_chunk_score)
     else:
-        result_chunks = chunks
+        result_chunks = chunks[:top_k]
 
     return RetrievalResult(
         chunks=result_chunks,
