@@ -211,6 +211,7 @@ async def chat_endpoint(
         nonlocal first_response_deltas, tool_calls
 
         rag_payload_obj = _build_rag_payload(rag_result) if rag_result and rag_result.chunks else None
+        rag_meta_inner = rag_payload_obj["rag"] if rag_payload_obj else None
 
         if rag_payload_obj is not None:
             yield f"data: {json.dumps(rag_payload_obj)}\n\n"
@@ -238,12 +239,12 @@ async def chat_endpoint(
 
         if not tool_calls:
             full_response = "".join(first_response_deltas)
-            rag_meta = rag_payload_obj if rag_payload_obj is not None else None
+            metadata = {"rag": rag_meta_inner} if rag_meta_inner else None
             await create_message(
                 conversation_id=conversation_id,
                 role="assistant",
                 content=full_response,
-                metadata=rag_meta,
+                metadata=metadata,
             )
             return
 
@@ -281,8 +282,8 @@ async def chat_endpoint(
             tool_call_meta.append({"id": tc.id, "name": tc.name, "result": result_data.get("result")})
 
         meta: dict[str, Any] = {"tool_calls": tool_call_meta}
-        if rag_payload_obj is not None:
-            meta["rag"] = rag_payload_obj["rag"]
+        if rag_meta_inner is not None:
+            meta["rag"] = rag_meta_inner
         await create_message(
             conversation_id=conversation_id,
             role="assistant",
