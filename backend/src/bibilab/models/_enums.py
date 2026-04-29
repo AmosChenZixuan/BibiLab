@@ -9,7 +9,8 @@ class VideoStatus(str, Enum):
     NEEDS_AUTH = "needs_auth"
 
 
-ChatMode = Literal["focused", "broad"]
+ChatMode = Literal["auto", "focused", "broad"]
+CHAT_MODE_AUTO: ChatMode = "auto"
 CHAT_MODE_FOCUSED: ChatMode = "focused"
 CHAT_MODE_BROAD: ChatMode = "broad"
 

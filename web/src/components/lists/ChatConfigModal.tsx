@@ -1,7 +1,7 @@
 import { useState } from "react";
 
 import { useLanguage } from "@/app/LanguageContext";
-import { CHAT_MODE_FOCUSED, CHAT_MODE_BROAD, type ChatMode } from "@/lib/constants";
+import { CHAT_MODE_AUTO, CHAT_MODE_FOCUSED, CHAT_MODE_BROAD, type ChatMode } from "@/lib/constants";
 import { api, toErrorMessageWithT } from "@/lib/api";
 import { Modal } from "@/components/ui/Modal";
 
@@ -63,7 +63,7 @@ export function ChatConfigModal({ listId, currentMode, onClose, onSave }: ChatCo
         role="radiogroup"
         aria-label={t("chat.configModal.label")}
       >
-        {([CHAT_MODE_FOCUSED, CHAT_MODE_BROAD] as const).map((mode) => {
+        {([CHAT_MODE_AUTO, CHAT_MODE_FOCUSED, CHAT_MODE_BROAD] as const).map((mode) => {
           const isSelected = selected === mode;
           return (
             <label

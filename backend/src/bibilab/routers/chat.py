@@ -22,7 +22,7 @@ from bibilab.db import (
 from bibilab.db import (
     get_conversation as get_conv_row,
 )
-from bibilab.models._enums import CHAT_MODE_BROAD, CHAT_MODE_FOCUSED
+from bibilab.models._enums import CHAT_MODE_AUTO, CHAT_MODE_BROAD, CHAT_MODE_FOCUSED
 from bibilab.models.chat import (
     ChatRequest,
     ConversationResponse,
@@ -167,15 +167,18 @@ async def chat_endpoint(
     rag_context = ""
     rag_result = None
     if source_ids and request.message.strip():
-        if cfg.rag.query_routing_enabled and conversation_mode == CHAT_MODE_FOCUSED:
-            query_type = await classify_query(request.message, cfg)
-            effective_mode = map_type_to_mode(query_type)
-            await log_query_classification(
-                list_id=list_id,
-                query_text=request.message,
-                query_type=query_type,
-                effective_mode=effective_mode,
-            )
+        if conversation_mode == CHAT_MODE_AUTO:
+            if cfg.rag.query_routing_enabled:
+                query_type = await classify_query(request.message, cfg)
+                effective_mode = map_type_to_mode(query_type)
+                await log_query_classification(
+                    list_id=list_id,
+                    query_text=request.message,
+                    query_type=query_type,
+                    effective_mode=effective_mode,
+                )
+            else:
+                effective_mode = CHAT_MODE_FOCUSED
         rag_result = await retrieve(
             query_text=request.message,
             source_ids=source_ids,

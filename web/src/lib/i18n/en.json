@@ -247,6 +247,8 @@
     "configModal": {
       "title": "Retrieval Mode",
       "label": "Choose retrieval mode",
+      "auto": "Auto",
+      "autoHint": "Smart routing based on query",
       "focused": "Focused",
       "focusedHint": "Targeted retrieval, precise citations",
       "broad": "Broad",

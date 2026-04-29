@@ -247,6 +247,8 @@
     "configModal": {
       "title": "检索模式",
       "label": "选择检索模式",
+      "auto": "自动",
+      "autoHint": "根据查询智能路由",
       "focused": "精准",
       "focusedHint": "定向检索，精准引用",
       "broad": "宽泛",
