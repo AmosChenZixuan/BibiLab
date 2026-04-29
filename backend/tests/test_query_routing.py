@@ -37,7 +37,7 @@ def test_rag_config_has_query_routing_enabled():
 
 
 def test_map_type_to_mode():
-    from bibilab.pipeline.route import map_type_to_mode
+    from bibilab.models._enums import map_type_to_mode
 
     assert map_type_to_mode("factual") == "focused"
     assert map_type_to_mode("breadth") == "broad"

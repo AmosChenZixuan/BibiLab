@@ -102,6 +102,7 @@ CREATE TABLE IF NOT EXISTS conversations (
     id         TEXT PRIMARY KEY,
     list_id    TEXT NOT NULL UNIQUE REFERENCES lists(id) ON DELETE CASCADE,
     summary    TEXT,
+    mode       TEXT NOT NULL DEFAULT 'auto',
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 )
@@ -190,7 +191,7 @@ async def bootstrap_db() -> None:
         if "mode" not in conv_columns:
             await db.execute(f"ALTER TABLE conversations ADD COLUMN mode TEXT NOT NULL DEFAULT '{CHAT_MODE_AUTO}'")
         else:
-            await db.execute(f"UPDATE conversations SET mode = '{CHAT_MODE_AUTO}' WHERE mode = '{CHAT_MODE_FOCUSED}'")
+            await db.execute("UPDATE conversations SET mode = ? WHERE mode = ?", (CHAT_MODE_AUTO, CHAT_MODE_FOCUSED))
 
         await db.commit()
 
