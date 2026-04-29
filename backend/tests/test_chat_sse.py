@@ -368,7 +368,7 @@ async def test_rag_meta_event_emitted_before_deltas(client):
 
 @pytest.mark.asyncio
 async def test_assistant_message_persisted_with_rag_metadata(client):
-    """Assistant message metadata contains rag data after retrieval."""
+    """Assistant message metadata contains rag data without SSE envelope."""
     list_id = (await client.post("/lists", json={"name": "Test"})).json()["id"]
     from bibilab.pipeline.embed import RetrievalResult, RetrievedChunk
 
@@ -396,15 +396,16 @@ async def test_assistant_message_persisted_with_rag_metadata(client):
                         ]
                     )
                     await client.post(f"/lists/{list_id}/chat", json={"message": "hi"})
-    conv_resp = await client.get(f"/lists/{list_id}/conversation")
-    msgs = conv_resp.json()["messages"]
-    assistant_msgs = [m for m in msgs if m["role"] == "assistant"]
-    assert assistant_msgs, "Expected at least one assistant message"
-    assistant = assistant_msgs[0]
-    assert assistant["metadata"] is not None
-    assert assistant["metadata"]["rag"] is not None
-    assert assistant["metadata"]["rag"]["mode"] == "focused"
-    assert assistant["metadata"]["rag"]["candidates_evaluated"] == 30
+                    conv_resp = await client.get(f"/lists/{list_id}/conversation")
+                    msgs = conv_resp.json()["messages"]
+                    assistant_msgs = [m for m in msgs if m["role"] == "assistant"]
+                    assert assistant_msgs, "Expected at least one assistant message"
+                    assistant = assistant_msgs[0]
+                    assert assistant["metadata"] is not None
+                    assert "type" not in assistant["metadata"], "metadata should not contain SSE envelope 'type' key"
+                    assert assistant["metadata"]["rag"] is not None
+                    assert assistant["metadata"]["rag"]["mode"] == "focused"
+                    assert assistant["metadata"]["rag"]["candidates_evaluated"] == 30
 
 
 @pytest.mark.asyncio
