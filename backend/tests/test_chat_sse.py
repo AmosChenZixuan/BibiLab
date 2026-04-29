@@ -280,13 +280,20 @@ async def test_chat_endpoint_yields_tool_result_event(client):
 
 
 @pytest.mark.asyncio
-async def test_conversation_mode_defaults_to_focused(client):
-    """Conversation is not created on GET; PATCH creates it with focused mode."""
+async def test_conversation_mode_defaults_to_auto(client):
+    """A freshly-created conversation row uses the 'auto' column default."""
     list_id = (await client.post("/lists", json={"name": "Test"})).json()["id"]
+
+    with patch("bibilab.routers.chat.stream_llm") as mock_stream:
+        mock_stream.return_value = an_async_generator(
+            [
+                MagicMock(type="done", content=None, tool_call=None),
+            ]
+        )
+        await client.post(f"/lists/{list_id}/chat", json={"message": "hi"})
+
     conv_resp = await client.get(f"/lists/{list_id}/conversation")
-    assert conv_resp.json()["conversation"] is None
-    resp = await client.patch(f"/lists/{list_id}/conversation", json={"mode": "focused"})
-    assert resp.json()["mode"] == "focused"
+    assert conv_resp.json()["conversation"]["mode"] == "auto"
 
 
 @pytest.mark.asyncio

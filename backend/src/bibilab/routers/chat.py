@@ -171,12 +171,15 @@ async def chat_endpoint(
             if cfg.rag.query_routing_enabled:
                 query_type = await classify_query(request.message, cfg)
                 effective_mode = map_type_to_mode(query_type)
-                await log_query_classification(
-                    list_id=list_id,
-                    query_text=request.message,
-                    query_type=query_type,
-                    effective_mode=effective_mode,
-                )
+                try:
+                    await log_query_classification(
+                        list_id=list_id,
+                        query_text=request.message,
+                        query_type=query_type,
+                        effective_mode=effective_mode,
+                    )
+                except Exception:
+                    logger.warning("Failed to log query classification", exc_info=True)
             else:
                 effective_mode = CHAT_MODE_FOCUSED
         rag_result = await retrieve(
