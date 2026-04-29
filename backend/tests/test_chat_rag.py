@@ -309,7 +309,8 @@ async def test_retrieve_returns_result_with_metadata(tmp_bibilab_home):
     assert result.sources_total == 2
     assert len(result.source_coverage) == 2
     assert result.source_coverage[0].video_id == "v1"
-    assert result.source_coverage[0].best_distance == 0.1
+    # lower score = more relevant (stores -score after RRF/rerank)
+    assert result.source_coverage[0].best_score == 0.1
     assert result.source_coverage[1].video_id == "v2"
 
 
@@ -471,8 +472,9 @@ async def test_format_rag_context_broad_mode(tmp_bibilab_home):
         sources_with_hits=2,
         sources_total=5,
         source_coverage=[
-            SourceHit(video_id="v1", video_title="Video A", best_distance=0.1),
-            SourceHit(video_id="v2", video_title="Video B", best_distance=0.2),
+            # lower score = more relevant (stores -score after RRF/rerank)
+            SourceHit(video_id="v1", video_title="Video A", best_score=0.1),
+            SourceHit(video_id="v2", video_title="Video B", best_score=0.2),
         ],
     )
 
