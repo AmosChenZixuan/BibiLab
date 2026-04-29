@@ -391,9 +391,9 @@ async def test_retrieve_broad_mode_keeps_best_per_source(tmp_bibilab_home):
 
 
 @pytest.mark.asyncio
-async def test_retrieve_broad_mode_increases_top_k(tmp_bibilab_home):
+async def test_retrieve_broad_mode_uses_candidate_pool(tmp_bibilab_home):
     from bibilab.config import BibilabConfig, RagConfig
-    from bibilab.pipeline.embed import retrieve
+    from bibilab.pipeline.embed import RETRIEVAL_CANDIDATE_POOL, retrieve
 
     cfg = BibilabConfig(rag=RagConfig(max_distance=0.5))
 
@@ -406,7 +406,7 @@ async def test_retrieve_broad_mode_increases_top_k(tmp_bibilab_home):
 
         await retrieve("test query", ["s1"], cfg, mode="broad", top_k=10)
 
-        mock_qc.assert_called_once_with("test query", ["s1"], cfg, top_k=50, video_ids=["v1"])
+        mock_qc.assert_called_once_with("test query", ["s1"], cfg, top_k=RETRIEVAL_CANDIDATE_POOL, video_ids=["v1"])
 
 
 @pytest.mark.asyncio
@@ -646,7 +646,7 @@ async def test_hybrid_search_deduplicates_same_chunk(tmp_bibilab_home):
 @pytest.mark.asyncio
 async def test_retrieve_uses_hybrid_search(tmp_bibilab_home):
     from bibilab.config import BibilabConfig, RagConfig
-    from bibilab.pipeline.embed import retrieve
+    from bibilab.pipeline.embed import RETRIEVAL_CANDIDATE_POOL, retrieve
 
     cfg = BibilabConfig(rag=RagConfig(max_distance=1.0, reranking_enabled=False))
 
@@ -659,14 +659,14 @@ async def test_retrieve_uses_hybrid_search(tmp_bibilab_home):
     ) as mock_hybrid:
         result = await retrieve("query", ["src1"], cfg, top_k=5)
 
-    mock_hybrid.assert_called_once_with("query", ["src1"], cfg, effective_top_k=5)
+    mock_hybrid.assert_called_once_with("query", ["src1"], cfg, effective_top_k=RETRIEVAL_CANDIDATE_POOL)
     assert result.chunks == chunks
 
 
 @pytest.mark.asyncio
 async def test_retrieve_hybrid_disabled_skips_fts(tmp_bibilab_home):
     from bibilab.config import BibilabConfig, RagConfig
-    from bibilab.pipeline.embed import retrieve
+    from bibilab.pipeline.embed import RETRIEVAL_CANDIDATE_POOL, retrieve
 
     cfg = BibilabConfig(rag=RagConfig(max_distance=1.0, hybrid_enabled=False, reranking_enabled=False))
 
@@ -686,8 +686,40 @@ async def test_retrieve_hybrid_disabled_skips_fts(tmp_bibilab_home):
         result = await retrieve("query", ["src1"], cfg, top_k=5)
 
     mock_hybrid.assert_not_called()
-    mock_vector.assert_called_once_with("query", ["src1"], cfg, top_k=5)
+    mock_vector.assert_called_once_with("query", ["src1"], cfg, top_k=RETRIEVAL_CANDIDATE_POOL)
     assert result.chunks == chunks
+
+
+@pytest.mark.asyncio
+async def test_retrieve_focused_mode_uses_candidate_pool_before_rerank(tmp_bibilab_home):
+    """Focused mode must pull RETRIEVAL_CANDIDATE_POOL candidates, not top_k, so that
+    the cross-encoder reranker has a meaningful pool to trim from."""
+    from bibilab.config import BibilabConfig, RagConfig
+    from bibilab.pipeline.embed import RETRIEVAL_CANDIDATE_POOL, retrieve
+
+    cfg = BibilabConfig(rag=RagConfig(max_distance=1.0, reranking_enabled=True))
+
+    candidate_chunks = [_make_chunk(content=f"c{i}", video_id=f"v{i}") for i in range(20)]
+    reranked = candidate_chunks[:5]
+
+    with (
+        patch(
+            "bibilab.pipeline.embed.hybrid_search",
+            new_callable=AsyncMock,
+            return_value=candidate_chunks,
+        ) as mock_hybrid,
+        patch(
+            "bibilab.pipeline.rerank.rerank",
+            new_callable=AsyncMock,
+            return_value=reranked,
+        ) as mock_rerank,
+    ):
+        result = await retrieve("query", ["src1"], cfg, mode="focused", top_k=5)
+
+    mock_hybrid.assert_called_once_with("query", ["src1"], cfg, effective_top_k=RETRIEVAL_CANDIDATE_POOL)
+    mock_rerank.assert_called_once_with("query", candidate_chunks, top_k=5)
+    assert result.chunks == reranked
+    assert result.candidates_evaluated == len(candidate_chunks)
 
 
 def test_rrf_fuse_ranks_doc_in_both_lists_above_doc_in_one():

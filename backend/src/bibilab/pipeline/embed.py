@@ -22,7 +22,7 @@ from bibilab.pipeline.chunk import RagChunk
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_EFFECTIVE_TOP_K = 50
+RETRIEVAL_CANDIDATE_POOL = 30
 RRF_K = 60
 
 
@@ -382,7 +382,10 @@ async def retrieve(
 ) -> RetrievalResult:
     """High-level retrieval that wraps hybrid search with metadata."""
     sources_total = len(source_ids)
-    effective_top_k = DEFAULT_EFFECTIVE_TOP_K if mode == CHAT_MODE_BROAD else top_k
+    # Both modes pull a candidate pool sized for meaningful downstream processing:
+    # focused mode lets the reranker trim to top_k; broad mode aggregates one chunk
+    # per source for coverage. top_k only constrains the post-rerank trim.
+    effective_top_k = RETRIEVAL_CANDIDATE_POOL
 
     if cfg.rag.hybrid_enabled:
         chunks = await hybrid_search(query_text, source_ids, cfg, effective_top_k=effective_top_k)
@@ -394,7 +397,11 @@ async def retrieve(
     if cfg.rag.reranking_enabled and chunks:
         from bibilab.pipeline.rerank import rerank  # noqa: PLC0415
 
-        chunks = await rerank(query_text, chunks, top_k=top_k)
+        try:
+            chunks = await rerank(query_text, chunks, top_k=top_k)
+        except Exception as exc:  # noqa: BLE001 - model load can fail in many ways
+            logger.warning("Reranking failed, falling back to un-reranked chunks: %s", exc)
+            chunks = chunks[:top_k]
 
     best_by_source: dict[str, RetrievedChunk] = {}
     for chunk in chunks:

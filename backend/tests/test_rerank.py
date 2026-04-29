@@ -103,6 +103,37 @@ async def test_retrieve_with_reranking_enabled(tmp_bibilab_home):
 
 
 @pytest.mark.asyncio
+async def test_retrieve_falls_back_when_rerank_raises(tmp_bibilab_home, caplog):
+    import logging
+
+    from bibilab.config import BibilabConfig, RagConfig
+    from bibilab.pipeline.embed import retrieve
+
+    cfg = BibilabConfig(rag=RagConfig(max_distance=1.0, reranking_enabled=True, hybrid_enabled=False))
+
+    chunks = [_make_chunk(content=f"c{i}", distance=0.1 * i) for i in range(5)]
+
+    with (
+        patch(
+            "bibilab.pipeline.embed.query_chunks",
+            new_callable=AsyncMock,
+            return_value=chunks,
+        ),
+        patch(
+            "bibilab.pipeline.rerank.rerank",
+            new_callable=AsyncMock,
+            side_effect=RuntimeError("model download failed"),
+        ),
+        caplog.at_level(logging.WARNING, logger="bibilab.pipeline.embed"),
+    ):
+        result = await retrieve("query", ["src1"], cfg, top_k=3)
+
+    assert len(result.chunks) == 3
+    assert [c.content for c in result.chunks] == ["c0", "c1", "c2"]
+    assert any("Reranking failed" in record.message for record in caplog.records)
+
+
+@pytest.mark.asyncio
 async def test_retrieve_with_reranking_disabled(tmp_bibilab_home):
     from bibilab.config import BibilabConfig, RagConfig
     from bibilab.pipeline.embed import retrieve
