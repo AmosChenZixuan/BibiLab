@@ -14,7 +14,7 @@ from bibilab.pipeline._shared import _call_llm
 
 logger = logging.getLogger(__name__)
 
-QUERY_CLASSIFICATION_MAX_TOKENS = 10
+QUERY_CLASSIFICATION_MAX_TOKENS = 20
 
 
 CLASSIFICATION_PROMPT = """\
