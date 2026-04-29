@@ -430,9 +430,28 @@ async def test_retrieve_focused_mode_returns_all_chunks(tmp_bibilab_home):
         "distances": [[0.1, 0.2, 0.3]],
     }
 
+    from bibilab.pipeline.embed import RetrievedChunk
+
+    def make_chunk(content, score_val):
+        c = RetrievedChunk(
+            content=content,
+            video_title="Video 1",
+            timestamp_start=0.0,
+            timestamp_end=5.0,
+            video_id="v1",
+            distance=0.1,
+        )
+        c.score = score_val
+        return c
+
     with (
         patch("bibilab.pipeline.embed.get_video_ids_for_sources", new_callable=AsyncMock) as mock_map,
         patch("bibilab.pipeline.embed._get_collection", return_value=mock_collection),
+        patch(
+            "bibilab.pipeline.rerank.rerank",
+            new_callable=AsyncMock,
+            return_value=[make_chunk("c1", 0.5), make_chunk("c2", 0.3), make_chunk("c3", 0.1)],
+        ),
     ):
         mock_map.return_value = {"s1": "v1"}
 

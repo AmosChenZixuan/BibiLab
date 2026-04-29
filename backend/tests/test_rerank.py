@@ -160,6 +160,225 @@ async def test_retrieve_with_reranking_disabled(tmp_bibilab_home):
 
 
 @pytest.mark.asyncio
+async def test_broad_mode_covers_candidate_pool_sources(tmp_bibilab_home):
+    from bibilab.config import BibilabConfig, RagConfig
+    from bibilab.models._enums import CHAT_MODE_BROAD
+    from bibilab.pipeline.embed import retrieve
+
+    cfg = BibilabConfig(
+        rag=RagConfig(max_distance=1.0, reranking_enabled=True, hybrid_enabled=False, rerank_min_score=0.0)
+    )
+
+    chunks = [_make_chunk(content=f"c{i}", video_id=f"v{i}", video_title=f"vid{i}") for i in range(8)]
+
+    with (
+        patch(
+            "bibilab.pipeline.embed.query_chunks",
+            new_callable=AsyncMock,
+            return_value=chunks,
+        ),
+        patch(
+            "bibilab.pipeline.rerank.rerank",
+            new_callable=AsyncMock,
+            return_value=chunks,
+        ),
+    ):
+        result = await retrieve("query", ["src1"], cfg, mode=CHAT_MODE_BROAD, top_k=8)
+
+    assert len(result.source_coverage) == 8
+    assert len(result.chunks) == 8
+    assert len({c.video_id for c in result.chunks}) == 8
+
+
+@pytest.mark.asyncio
+async def test_focused_mode_unchanged(tmp_bibilab_home):
+    from bibilab.config import BibilabConfig, RagConfig
+    from bibilab.models._enums import CHAT_MODE_FOCUSED
+    from bibilab.pipeline.embed import retrieve
+
+    cfg = BibilabConfig(
+        rag=RagConfig(max_distance=1.0, reranking_enabled=True, hybrid_enabled=False, rerank_min_score=0.0)
+    )
+
+    chunks = [_make_chunk(content=f"c{i}", video_id=f"v{i}", video_title=f"vid{i}") for i in range(8)]
+
+    with (
+        patch(
+            "bibilab.pipeline.embed.query_chunks",
+            new_callable=AsyncMock,
+            return_value=chunks,
+        ),
+        patch(
+            "bibilab.pipeline.rerank.rerank",
+            new_callable=AsyncMock,
+            return_value=chunks[:5],
+        ),
+    ):
+        result = await retrieve("query", ["src1"], cfg, mode=CHAT_MODE_FOCUSED, top_k=5)
+
+    assert len(result.chunks) == 5
+
+
+@pytest.mark.asyncio
+async def test_rerank_floor_drops_low_scores(tmp_bibilab_home):
+    from bibilab.config import BibilabConfig, RagConfig
+    from bibilab.pipeline.embed import retrieve
+
+    cfg = BibilabConfig(
+        rag=RagConfig(max_distance=1.0, reranking_enabled=True, hybrid_enabled=False, rerank_min_score=0.0)
+    )
+
+    chunks = [_make_chunk(content=f"c{i}") for i in range(5)]
+    reranked = [_make_chunk(content=f"c{i}", distance=0.0) for i in range(5)]
+    for i, c in enumerate(reranked):
+        c.score = [-2, -1, 0.5, 2, 5][i]
+
+    with (
+        patch(
+            "bibilab.pipeline.embed.query_chunks",
+            new_callable=AsyncMock,
+            return_value=chunks,
+        ),
+        patch(
+            "bibilab.pipeline.rerank.rerank",
+            new_callable=AsyncMock,
+            return_value=reranked,
+        ),
+    ):
+        result = await retrieve("query", ["src1"], cfg, top_k=5)
+
+    assert len(result.chunks) == 3
+    assert [c.content for c in result.chunks] == ["c2", "c3", "c4"]
+
+
+@pytest.mark.asyncio
+async def test_rerank_floor_disabled_when_none(tmp_bibilab_home):
+    from bibilab.config import BibilabConfig, RagConfig
+    from bibilab.pipeline.embed import retrieve
+
+    cfg = BibilabConfig(
+        rag=RagConfig(max_distance=1.0, reranking_enabled=True, hybrid_enabled=False, rerank_min_score=None)
+    )
+
+    chunks = [_make_chunk(content=f"c{i}") for i in range(5)]
+    reranked = [_make_chunk(content=f"c{i}", distance=0.0) for i in range(5)]
+    for i, c in enumerate(reranked):
+        c.score = [-2, -1, 0.5, 2, 5][i]
+
+    with (
+        patch(
+            "bibilab.pipeline.embed.query_chunks",
+            new_callable=AsyncMock,
+            return_value=chunks,
+        ),
+        patch(
+            "bibilab.pipeline.rerank.rerank",
+            new_callable=AsyncMock,
+            return_value=reranked,
+        ),
+    ):
+        result = await retrieve("query", ["src1"], cfg, top_k=5)
+
+    assert len(result.chunks) == 5
+
+
+@pytest.mark.asyncio
+async def test_rerank_failure_skips_floor(tmp_bibilab_home, caplog):
+    import logging
+
+    from bibilab.config import BibilabConfig, RagConfig
+    from bibilab.pipeline.embed import retrieve
+
+    cfg = BibilabConfig(
+        rag=RagConfig(max_distance=1.0, reranking_enabled=True, hybrid_enabled=False, rerank_min_score=0.5)
+    )
+
+    chunks = [_make_chunk(content=f"c{i}", distance=0.1 * i) for i in range(5)]
+
+    with (
+        patch(
+            "bibilab.pipeline.embed.query_chunks",
+            new_callable=AsyncMock,
+            return_value=chunks,
+        ),
+        patch(
+            "bibilab.pipeline.rerank.rerank",
+            new_callable=AsyncMock,
+            side_effect=RuntimeError("model download failed"),
+        ),
+        caplog.at_level(logging.WARNING, logger="bibilab.pipeline.embed"),
+    ):
+        result = await retrieve("query", ["src1"], cfg, top_k=3)
+
+    assert len(result.chunks) == 3
+    assert [c.content for c in result.chunks] == ["c0", "c1", "c2"]
+    assert any("Reranking failed" in record.message for record in caplog.records)
+
+
+@pytest.mark.asyncio
+async def test_broad_mode_respects_floor(tmp_bibilab_home):
+    from bibilab.config import BibilabConfig, RagConfig
+    from bibilab.models._enums import CHAT_MODE_BROAD
+    from bibilab.pipeline.embed import retrieve
+
+    cfg = BibilabConfig(rag=RagConfig(reranking_enabled=True, hybrid_enabled=False, rerank_min_score=0.0))
+
+    chunks = [_make_chunk(content=f"c{i}", video_id=f"v{i}") for i in range(4)]
+
+    reranked = list(chunks)
+    for c, s in zip(reranked, [-1.0, -0.5, 0.5, 1.0]):
+        c.score = s
+
+    with (
+        patch(
+            "bibilab.pipeline.embed.query_chunks",
+            new_callable=AsyncMock,
+            return_value=chunks,
+        ),
+        patch(
+            "bibilab.pipeline.rerank.rerank",
+            new_callable=AsyncMock,
+            return_value=reranked,
+        ),
+    ):
+        result = await retrieve("q", ["src1"], cfg, mode=CHAT_MODE_BROAD, top_k=4)
+
+    assert {c.video_id for c in result.chunks} == {"v2", "v3"}
+    assert result.sources_with_hits == 4
+
+
+@pytest.mark.asyncio
+async def test_sources_with_hits_reflects_pool_not_topk(tmp_bibilab_home):
+    from bibilab.config import BibilabConfig, RagConfig
+    from bibilab.models._enums import CHAT_MODE_FOCUSED
+    from bibilab.pipeline.embed import retrieve
+
+    cfg = BibilabConfig(
+        rag=RagConfig(max_distance=1.0, reranking_enabled=True, hybrid_enabled=False, rerank_min_score=0.0)
+    )
+
+    chunks = [_make_chunk(content=f"c{i}", video_id=f"v{i}", video_title=f"vid{i}") for i in range(8)]
+    reranked = chunks[:5]
+
+    with (
+        patch(
+            "bibilab.pipeline.embed.query_chunks",
+            new_callable=AsyncMock,
+            return_value=chunks,
+        ),
+        patch(
+            "bibilab.pipeline.rerank.rerank",
+            new_callable=AsyncMock,
+            return_value=reranked,
+        ),
+    ):
+        result = await retrieve("query", ["src1"], cfg, mode=CHAT_MODE_FOCUSED, top_k=5)
+
+    assert result.sources_with_hits == 8
+    assert len(result.chunks) == 5
+
+
+@pytest.mark.asyncio
 async def test_reranker_lazy_singleton():
     import bibilab.pipeline.rerank as rerank_mod
 

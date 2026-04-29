@@ -157,7 +157,8 @@ POST /ingest/url → resolve → dedup check → create job(s)
 POST /lists/:id/chat (SSE)
   → get_or_create_conversation → load history + stored mode
   → if mode == "auto" and query_routing_enabled: classify_query → effective_mode
-  → retrieve(): hybrid_search (BM25 + vector RRF, pool 30) → rerank → aggregate (broad) or top-k (focused)
+  → retrieve(): hybrid_search (BM25 + vector RRF, pool 30) → rerank → aggregate (broad, no top-k cap) or top-k (focused) → floor filter
+  → sources_with_hits reflects candidate-pool coverage; result_chunks reflects actual LLM input
   → stream_llm (system prompt + RAG context + history)
   → yield rag_meta + delta/tool_result/done events
   → persist assistant message → BackgroundTask: maybe_compress_conversation
@@ -193,6 +194,6 @@ v0: `BilibiliAdapter` — single video. Cookie-based auth in config.
   "transcription": { "engine": "faster-whisper", "model_size": "large-v3", "device": "cuda|cpu", "language": "auto" },
   "vision": { "enabled": false, "frame_sample_rate": 30, "model": null },
   "backend": { "port": 8765, "worker_concurrency": 1 },
-  "rag": { "max_distance": 0.8, "hybrid_enabled": true, "reranking_enabled": true, "query_routing_enabled": true }
+  "rag": { "max_distance": 0.8, "hybrid_enabled": true, "reranking_enabled": true, "query_routing_enabled": true, "rerank_min_score": 0.0 }
 }
 ```

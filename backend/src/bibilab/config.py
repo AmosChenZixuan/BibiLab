@@ -85,6 +85,7 @@ class RagConfig(BaseModel):
     reranking_enabled: bool = True
     hybrid_enabled: bool = True
     query_routing_enabled: bool = True
+    rerank_min_score: float | None = 0.0
 
 
 class BibilabConfig(BaseModel):
