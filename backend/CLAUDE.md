@@ -28,6 +28,9 @@ pipeline/         — one file per stage
   _shared.py        sync _call_llm + async stream_llm (OpenAI/Anthropic), tool/stream dataclasses
   chat_tools.py     tool definitions (generate_report) + execution dispatcher
   chat_summary.py   conversation compression (sliding window + LLM summary)
+  embed.py          ChromaDB embed + retrieve() (hybrid search → rerank → aggregation), FTS5 populate
+  rerank.py         lazy cross-encoder reranker (sentence-transformers, singleton)
+  route.py          LLM-based query classifier (factual/breadth/analytical → focused/broad)
 adapters/         — platform-specific download + resolution (base + bilibili)
 db.py             — SQLite schema + query helpers
 config.py         — settings persisted to ~/.bibilab/config.json
@@ -45,6 +48,7 @@ whisper_models.py — Whisper model management
 - **Imports**: stdlib → third-party → local, with blank lines between groups
 - **Errors**: `HTTPException(status_code=N, detail=...)` for HTTP errors; `AuthRequiredError`, `DownloadError`, `PipelineError` for domain errors
 - **LLM content blocks**: Never assume `msg.content[0]` is a TextBlock. Filter by `block.type == "text"` — some providers return ThinkingBlock or other types first. Use `next((b for b in msg.content if b.type == "text"), None)` with a None default to avoid StopIteration in async contexts.
+- **FTS5 input**: Always pass user query strings through `_escape_fts_query()` (db.py) before MATCH evaluation. FTS5 treats bare `OR`, `*`, `:`, `^` as operators — unescaped user input raises `OperationalError`.
 
 ## Database Schema
 
@@ -104,6 +108,7 @@ whisper_models.py — Whisper model management
 | `id` | UUID, primary key |
 | `list_id` | FK to `lists.id`, UNIQUE, ON DELETE CASCADE |
 | `summary` | Rolling LLM-generated summary, nullable |
+| `mode` | `"auto"` \| `"focused"` \| `"broad"`, default `'auto'`. Read by chat router to decide retrieval mode and whether to run the query classifier. |
 | `created_at` | ISO timestamp |
 | `updated_at` | ISO timestamp |
 
@@ -115,8 +120,16 @@ whisper_models.py — Whisper model management
 | `conversation_id` | FK to `conversations.id`, ON DELETE CASCADE, indexed |
 | `role` | `"user"` \| `"assistant"` \| `"tool"` |
 | `content` | Message text |
-| `metadata` | JSON blob (tool_calls, citations), nullable |
+| `metadata` | JSON blob, nullable. Shape: `{"tool_calls": [...], "rag": {mode, candidates_evaluated, sources_with_hits, sources_total, sources}}`. The wire SSE envelope (`{"type": "rag_meta", ...}`) is unwrapped before storage. |
 | `created_at` | ISO timestamp |
+
+### `chunks_fts` — FTS5 virtual table
+
+BM25-ranked full-text index over transcript chunks. Populated by `populate_fts()` during the embed stage; cleared per-video on re-ingest. Columns: `content`, `video_id`, `video_title`, `timestamp_start`, `timestamp_end`, `chunk_id`. Query via `query_fts_rows()` in `db.py`.
+
+### `query_classifications` — routing log (training data)
+
+Append-only log of LLM classifier outputs. Columns: `id`, `list_id`, `query_text`, `query_type`, `effective_mode`, `created_at`. Insert wrapped in try/except — failures are logged but do not break the chat request.
 
 ## Ingestion Pipeline
 
@@ -142,9 +155,11 @@ POST /ingest/url → resolve → dedup check → create job(s)
 
 ```
 POST /lists/:id/chat (SSE)
-  → get_or_create_conversation → load history → RAG query_chunks
+  → get_or_create_conversation → load history + stored mode
+  → if mode == "auto" and query_routing_enabled: classify_query → effective_mode
+  → retrieve(): hybrid_search (BM25 + vector RRF, pool 30) → rerank → aggregate (broad) or top-k (focused)
   → stream_llm (system prompt + RAG context + history)
-  → yield delta/tool_result/done events
+  → yield rag_meta + delta/tool_result/done events
   → persist assistant message → BackgroundTask: maybe_compress_conversation
 ```
 
@@ -178,6 +193,6 @@ v0: `BilibiliAdapter` — single video. Cookie-based auth in config.
   "transcription": { "engine": "faster-whisper", "model_size": "large-v3", "device": "cuda|cpu", "language": "auto" },
   "vision": { "enabled": false, "frame_sample_rate": 30, "model": null },
   "backend": { "port": 8765, "worker_concurrency": 1 },
-  "rag": { "max_distance": 0.8 }
+  "rag": { "max_distance": 0.8, "hybrid_enabled": true, "reranking_enabled": true, "query_routing_enabled": true }
 }
 ```
