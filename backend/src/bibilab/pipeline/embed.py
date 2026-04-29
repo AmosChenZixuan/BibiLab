@@ -41,7 +41,8 @@ class RetrievedChunk:
 class SourceHit:
     video_id: str
     video_title: str
-    best_distance: float
+    # lower = more relevant (stores -score after RRF/rerank)
+    best_score: float
 
 
 @dataclass
@@ -413,7 +414,7 @@ async def retrieve(
         SourceHit(
             video_id=c.video_id,
             video_title=c.video_title,
-            best_distance=_chunk_score(c),
+            best_score=_chunk_score(c),
         )
         for c in sorted(best_by_source.values(), key=_chunk_score)
     ]
