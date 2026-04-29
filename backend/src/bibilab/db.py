@@ -188,7 +188,9 @@ async def bootstrap_db() -> None:
 
         conv_columns = [row[1] for row in await db.execute_fetchall("PRAGMA table_info(conversations)")]
         if "mode" not in conv_columns:
-            await db.execute("ALTER TABLE conversations ADD COLUMN mode TEXT NOT NULL DEFAULT 'focused'")
+            await db.execute("ALTER TABLE conversations ADD COLUMN mode TEXT NOT NULL DEFAULT 'auto'")
+        else:
+            await db.execute("UPDATE conversations SET mode = 'auto' WHERE mode = 'focused'")
 
         await db.commit()
 

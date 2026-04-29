@@ -519,11 +519,12 @@ async def test_routing_skipped_when_mode_is_broad(client, tmp_bibilab_home):
 
 
 @pytest.mark.asyncio
-async def test_routing_runs_when_enabled_and_mode_is_focused(client, tmp_bibilab_home):
-    """Default focused mode + routing enabled → classify_query called, result used."""
+async def test_routing_runs_when_enabled_and_mode_is_auto(client, tmp_bibilab_home):
+    """Auto mode + routing enabled → classify_query called, result used to determine effective mode."""
     from bibilab.config import BibilabConfig, RagConfig, get_config
 
     list_id = (await client.post("/lists", json={"name": "Test"})).json()["id"]
+    await client.patch(f"/lists/{list_id}/conversation", json={"mode": "auto"})
 
     mock_cfg = BibilabConfig(rag=RagConfig(query_routing_enabled=True))
 
@@ -555,5 +556,85 @@ async def test_routing_runs_when_enabled_and_mode_is_focused(client, tmp_bibilab
         mock_log.assert_called_once()
         call_args = mock_retrieve.call_args
         assert call_args.kwargs["mode"] == "broad"
+    finally:
+        app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+async def test_routing_skipped_when_mode_is_focused(client, tmp_bibilab_home):
+    """Explicit focused mode → classify_query not called, retrieve uses focused directly."""
+    from bibilab.config import BibilabConfig, RagConfig, get_config
+
+    list_id = (await client.post("/lists", json={"name": "Test"})).json()["id"]
+    await client.patch(f"/lists/{list_id}/conversation", json={"mode": "focused"})
+
+    mock_cfg = BibilabConfig(rag=RagConfig(query_routing_enabled=True))
+
+    app = client._transport.app
+    app.dependency_overrides[get_config] = lambda: mock_cfg
+
+    try:
+        with patch("bibilab.routers.chat.classify_query", new_callable=AsyncMock) as mock_classify:
+            mock_classify.return_value = "breadth"
+            with patch("bibilab.routers.chat.retrieve", new_callable=AsyncMock) as mock_retrieve:
+                mock_retrieve.return_value = MagicMock(
+                    chunks=[],
+                    mode="focused",
+                    candidates_evaluated=0,
+                    sources_with_hits=0,
+                    sources_total=0,
+                    source_coverage=[],
+                )
+                with patch("bibilab.routers.chat.get_sources_for_list", new_callable=AsyncMock) as mock_sources:
+                    mock_sources.return_value = [MagicMock(id="src-1")]
+                    with patch("bibilab.routers.chat.stream_llm") as mock_stream:
+                        mock_stream.return_value = an_async_generator(
+                            [MagicMock(type="done", content=None, tool_call=None)]
+                        )
+                        await client.post(f"/lists/{list_id}/chat", json={"message": "tell me everything"})
+
+        mock_classify.assert_not_called()
+        call_args = mock_retrieve.call_args
+        assert call_args.kwargs["mode"] == "focused"
+    finally:
+        app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+async def test_auto_mode_falls_back_to_focused_when_routing_disabled(client, tmp_bibilab_home):
+    """Auto mode + routing disabled → classify_query not called, retrieve uses focused."""
+    from bibilab.config import BibilabConfig, RagConfig, get_config
+
+    list_id = (await client.post("/lists", json={"name": "Test"})).json()["id"]
+    await client.patch(f"/lists/{list_id}/conversation", json={"mode": "auto"})
+
+    mock_cfg = BibilabConfig(rag=RagConfig(query_routing_enabled=False))
+
+    app = client._transport.app
+    app.dependency_overrides[get_config] = lambda: mock_cfg
+
+    try:
+        with patch("bibilab.routers.chat.classify_query", new_callable=AsyncMock) as mock_classify:
+            mock_classify.return_value = "breadth"
+            with patch("bibilab.routers.chat.retrieve", new_callable=AsyncMock) as mock_retrieve:
+                mock_retrieve.return_value = MagicMock(
+                    chunks=[],
+                    mode="focused",
+                    candidates_evaluated=0,
+                    sources_with_hits=0,
+                    sources_total=0,
+                    source_coverage=[],
+                )
+                with patch("bibilab.routers.chat.get_sources_for_list", new_callable=AsyncMock) as mock_sources:
+                    mock_sources.return_value = [MagicMock(id="src-1")]
+                    with patch("bibilab.routers.chat.stream_llm") as mock_stream:
+                        mock_stream.return_value = an_async_generator(
+                            [MagicMock(type="done", content=None, tool_call=None)]
+                        )
+                        await client.post(f"/lists/{list_id}/chat", json={"message": "hi"})
+
+        mock_classify.assert_not_called()
+        call_args = mock_retrieve.call_args
+        assert call_args.kwargs["mode"] == "focused"
     finally:
         app.dependency_overrides.clear()

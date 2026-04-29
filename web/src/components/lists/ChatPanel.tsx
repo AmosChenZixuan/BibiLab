@@ -23,7 +23,7 @@ import { useConversationHistory, type MessageUI } from "@/components/lists/hooks
 import { ObsChip } from "@/components/lists/ObsChip";
 import { PulseRing } from "@/components/ui/PulseRing";
 import type { Source } from "@/lib/types";
-import { CHAT_MODE_FOCUSED, CHAT_MODE_BROAD, type ChatMode } from "@/lib/constants";
+import { CHAT_MODE_AUTO, CHAT_MODE_FOCUSED, CHAT_MODE_BROAD, type ChatMode } from "@/lib/constants";
 import { api } from "@/lib/api";
 import {
   autoResize,
@@ -47,7 +47,7 @@ export function ChatPanel({
   const [messages, setMessages] = useState<MessageUI[]>([]);
   const [showClearPopover, setShowClearPopover] = useState(false);
   const [showConfigModal, setShowConfigModal] = useState(false);
-  const [chatMode, setChatMode] = useState<ChatMode>(CHAT_MODE_FOCUSED);
+  const [chatMode, setChatMode] = useState<ChatMode>(CHAT_MODE_AUTO);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const hasSources = selectedSourceIds.length > 0;
