@@ -159,9 +159,11 @@ class WorkerLoop:
             raise
         except PipelineError as exc:
             logger.error("Job %s pipeline error: %s", job_id, exc)
+            await asyncio.to_thread(cleanup_job_artifacts, job)
             await update_job_status(job_id, JobStatus.FAILED.value, error=str(exc))
         except Exception as exc:
             logger.exception("Job %s failed", job_id)
+            await asyncio.to_thread(cleanup_job_artifacts, job)
             await update_job_status(job_id, JobStatus.FAILED.value, error=str(exc))
         finally:
             self._in_flight.discard(job_id)
@@ -453,11 +455,19 @@ All output fields MUST be written in {_LANG_NAME.get(lang, "English")}."""
             await delete_job(job_id)
             return None
 
-        video_path: Path = await asyncio.to_thread(
-            self._get_adapter().download,
-            video_meta.video_id,
-            video_meta.source_url,
-        )
+        try:
+            video_path: Path = await asyncio.to_thread(
+                self._get_adapter().download,
+                video_meta.video_id,
+                video_meta.source_url,
+            )
+        except Exception:
+            cleanup_meta = {"video_id": video_meta.video_id, "source_id": source_id}
+            await asyncio.to_thread(
+                cleanup_job_artifacts,
+                {"id": job_id, "type": "ingest", "status": "downloading", "meta": cleanup_meta},
+            )
+            raise
 
         # Download cover
         covers_dir = self._bibilab_home / "covers"
@@ -474,7 +484,12 @@ All output fields MUST be written in {_LANG_NAME.get(lang, "English")}."""
     ) -> Path | None:
         """Stage 2: Extract audio from downloaded video."""
         await update_job_status(job_id, JobStatus.TRANSCRIBING.value, progress=25)
-        wav_path = await asyncio.to_thread(extract_audio, video_path)
+        try:
+            wav_path = await asyncio.to_thread(extract_audio, video_path)
+        except Exception:
+            # video_path exists but audio extraction failed - video will be cleaned up
+            # by cancel_or_delete_job using the full job dict from DB
+            raise
 
         if job_id in self._cancelled:
             self._cancelled.discard(job_id)
