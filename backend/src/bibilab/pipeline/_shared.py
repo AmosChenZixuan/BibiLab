@@ -61,7 +61,13 @@ def _call_llm(
             timeout=llm_timeout,
         )
         text_block = next((block for block in msg.content if block.type == "text"), None)
-        return text_block.text if text_block else ""
+        if text_block is None:
+            stop_reason = getattr(msg, "stop_reason", "unknown")
+            raise ValueError(
+                f"LLM returned no text content (stop_reason={stop_reason}, max_tokens={llm_max_tokens}). "
+                "This may happen when thinking consumes all output tokens."
+            )
+        return text_block.text
 
     # openai (includes OpenAI-compatible providers via base_url)
     if cache_key not in _client_cache:
@@ -73,7 +79,14 @@ def _call_llm(
         max_tokens=llm_max_tokens,
         timeout=llm_timeout,
     )
-    return resp.choices[0].message.content
+    content = resp.choices[0].message.content
+    if not content:
+        finish_reason = getattr(resp.choices[0], "finish_reason", "unknown")
+        raise ValueError(
+            f"LLM returned no text content (finish_reason={finish_reason}, max_tokens={llm_max_tokens}). "
+            "This may happen when reasoning consumes all output tokens."
+        )
+    return content
 
 
 _T = TypeVar("_T", bound=BaseModel)

@@ -234,7 +234,6 @@ async def generate_list_overview(
         cfg.ai.output_language,
         request.headers.get("X-UI-Lang"),
         llm_timeout=cfg.transcription.llm_timeout,
-        llm_max_tokens=cfg.transcription.llm_max_tokens,
     )
 
     list_name = row["name"]

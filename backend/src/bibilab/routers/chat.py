@@ -47,6 +47,9 @@ SSE_EVENT_DONE = "done"
 SSE_EVENT_ERROR = "error"
 SSE_EVENT_TOOL_RESULT = "tool_result"
 SSE_EVENT_CLEAR_TEXT = "clear_text"
+
+# Sized for thinking-capable models with potentially long chat responses + tool turns.
+CHAT_MAX_TOKENS = 16384
 SSE_EVENT_RAG_META = "rag_meta"
 
 
@@ -237,6 +240,7 @@ async def chat_endpoint(
                 cfg=cfg.ai,
                 tools=[GENERATE_REPORT_TOOL],
                 system=system_message if system_message.strip() else None,
+                llm_max_tokens=CHAT_MAX_TOKENS,
             ):
                 if event.type == SSE_EVENT_DELTA:
                     first_response_deltas.append(event.content or "")

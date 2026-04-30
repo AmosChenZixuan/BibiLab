@@ -12,6 +12,9 @@ from bibilab.pipeline._shared import (
 
 logger = logging.getLogger(__name__)
 
+# Sized for thinking-capable models: budget covers reasoning tokens + a 2–4 paragraph outline.
+OVERVIEW_MAX_TOKENS = 8192
+
 
 _OVERVIEW_PROMPT = """\
 You are a knowledge synthesis assistant. Given summaries of several videos in a
@@ -31,7 +34,7 @@ def generate_overview(
     output_language: str = "ui",
     ui_lang: str | None = None,
     llm_timeout: int = 120,
-    llm_max_tokens: int = 2048,
+    llm_max_tokens: int = OVERVIEW_MAX_TOKENS,
 ) -> str:
     """Generate an overview outline from a list of {title, summary} dicts."""
     lang = _resolved_lang(output_language, ui_lang)

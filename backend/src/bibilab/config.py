@@ -53,9 +53,8 @@ class TranscriptionConfig(BaseModel):
     model_size: str = "large-v3"
     device: str = "cuda"  # cuda | cpu
     language: str = "auto"  # auto | zh | en
-    # LLM call settings (used during summarization/synthesis steps)
+    # LLM call timeout in seconds (per-request)
     llm_timeout: int = 120
-    llm_max_tokens: int = 2048
     # Chunking
     target_tokens: int = 300
     chunk_max_tokens: int = 400

@@ -62,7 +62,6 @@ async def rerun_source(
         cfg.ai.output_language,
         request.headers.get("X-UI-Lang"),
         llm_timeout=cfg.transcription.llm_timeout,
-        llm_max_tokens=cfg.transcription.llm_max_tokens,
     )
     await update_source_digest(source_id, extraction.summary, extraction.keywords)
 

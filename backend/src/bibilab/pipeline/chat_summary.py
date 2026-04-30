@@ -16,7 +16,10 @@ logger = logging.getLogger(__name__)
 
 COMPRESSION_THRESHOLD = 30
 SLIDING_WINDOW_SIZE = 20
-SUMMARY_MAX_TOKENS = 500
+# Target length the model should aim for in the summary text itself.
+SUMMARY_TARGET_TOKENS = 500
+# API budget — must accommodate thinking tokens + the ~500-token output for reasoning models.
+SUMMARY_MAX_TOKENS = 8192
 
 
 async def maybe_compress_conversation(
@@ -46,7 +49,7 @@ async def maybe_compress_conversation(
             f"New messages to integrate into the summary:\n"
             f"{messages_text}\n\n"
             "Compress the above messages and merge them with the existing summary. "
-            "Produce a concise summary (ideally under 500 tokens) that preserves key facts, "
+            f"Produce a concise summary (ideally under {SUMMARY_TARGET_TOKENS} tokens) that preserves key facts, "
             "decisions, user preferences, and topics discussed. "
             "Return only the updated summary text, no preamble or explanation."
         )
@@ -54,7 +57,7 @@ async def maybe_compress_conversation(
         compression_prompt = (
             f"Compress the following conversation history into a concise summary. "
             f"Preserve key facts, decisions, user preferences, and topics discussed. "
-            f"Target length: under {SUMMARY_MAX_TOKENS} tokens. "
+            f"Target length: under {SUMMARY_TARGET_TOKENS} tokens. "
             f"Return only the summary text, no preamble or explanation.\n\n"
             f"{messages_text}"
         )

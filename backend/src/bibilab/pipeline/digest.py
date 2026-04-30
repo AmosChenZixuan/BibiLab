@@ -20,6 +20,9 @@ from bibilab.pipeline.audio import PipelineError
 
 logger = logging.getLogger(__name__)
 
+# Sized for thinking-capable models: budget covers reasoning tokens + a ~150-word JSON output.
+DIGEST_MAX_TOKENS = 8192
+
 
 class DigestResult(BaseModel):
     summary: str
@@ -56,7 +59,7 @@ def digest(
     output_language: str = "ui",
     ui_lang: str | None = None,
     llm_timeout: int = 120,
-    llm_max_tokens: int = 2048,
+    llm_max_tokens: int = DIGEST_MAX_TOKENS,
 ) -> DigestResult:
     lang = _resolved_lang(output_language, ui_lang)
     lang_instruction = _LANG_INSTRUCTION.get(lang, _LANG_INSTRUCTION["en"])

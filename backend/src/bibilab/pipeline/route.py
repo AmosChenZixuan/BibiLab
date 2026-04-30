@@ -14,7 +14,9 @@ from bibilab.pipeline._shared import _call_llm
 
 logger = logging.getLogger(__name__)
 
-QUERY_CLASSIFICATION_MAX_TOKENS = 20
+# The classifier output itself is one short word, but thinking-capable models also consume
+# this budget for reasoning tokens. Keep generous headroom or the response gets truncated to empty.
+QUERY_CLASSIFICATION_MAX_TOKENS = 4096
 
 
 CLASSIFICATION_PROMPT = """\

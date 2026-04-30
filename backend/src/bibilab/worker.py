@@ -35,6 +35,9 @@ from bibilab.whisper_models import download_whisper_model
 
 logger = logging.getLogger(__name__)
 
+# Sized for thinking-capable models with multi-source artifact output (multi-page markdown report).
+ARTIFACT_MAX_TOKENS = 16384
+
 
 class ArtifactResult(BaseModel):
     """Result from LLM artifact generation."""
@@ -302,7 +305,7 @@ All output fields MUST be written in {_LANG_NAME.get(lang, "English")}."""
                     llm_prompt,
                     cfg.ai,
                     llm_timeout=cfg.transcription.llm_timeout,
-                    llm_max_tokens=max(cfg.transcription.llm_max_tokens, 8192),
+                    llm_max_tokens=ARTIFACT_MAX_TOKENS,
                 )
                 return _parse_llm_json_response(raw, ArtifactResult)
             except Exception as exc:  # noqa: BLE001
@@ -532,7 +535,6 @@ All output fields MUST be written in {_LANG_NAME.get(lang, "English")}."""
                 cfg.ai.output_language,
                 meta_raw.get("ui_lang"),
                 llm_timeout=cfg.transcription.llm_timeout,
-                llm_max_tokens=cfg.transcription.llm_max_tokens,
             )
 
         async def _embed() -> None:
