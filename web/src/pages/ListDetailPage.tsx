@@ -68,6 +68,14 @@ export function ListDetailPage() {
     return () => controller.abort();
   }, [load]);
 
+  const prevDetailSourceRef = useRef<Source | null>(null);
+  useEffect(() => {
+    if (prevDetailSourceRef.current !== null && detailSource === null) {
+      void load();
+    }
+    prevDetailSourceRef.current = detailSource;
+  }, [detailSource, load]);
+
   useEffect(() => {
     return () => {
       if (openSourceControllerRef.current) {
