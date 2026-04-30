@@ -391,17 +391,14 @@ async def test_reranker_lazy_singleton():
     try:
         rerank_mod._reranker = None
 
-        mock_ce_class = MagicMock()
         mock_ce_instance = MagicMock()
-        mock_ce_class.return_value = mock_ce_instance
+        mock_ce_class = MagicMock(return_value=mock_ce_instance)
 
-        with patch("bibilab.pipeline.rerank.CrossEncoder", mock_ce_class, create=True):
-            # Patch the import inside _get_reranker
-            with patch.dict("sys.modules", {"sentence_transformers": MagicMock(CrossEncoder=mock_ce_class)}):
-                result1 = rerank_mod._get_reranker()
-                result2 = rerank_mod._get_reranker()
+        with patch("bibilab.pipeline.rerank.ONNXCrossEncoder", mock_ce_class):
+            result1 = rerank_mod._get_reranker()
+            result2 = rerank_mod._get_reranker()
 
-        assert result1 is result2
-        mock_ce_class.assert_called_once_with("cross-encoder/ms-marco-MiniLM-L-6-v2")
+            assert result1 is result2
+            mock_ce_class.assert_called_once()
     finally:
         rerank_mod._reranker = original

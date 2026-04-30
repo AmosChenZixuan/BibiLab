@@ -29,7 +29,7 @@ pipeline/         — one file per stage
   chat_tools.py     tool definitions (generate_report) + execution dispatcher
   chat_summary.py   conversation compression (sliding window + LLM summary)
   embed.py          ChromaDB embed + retrieve() (hybrid search → rerank → aggregation), FTS5 populate
-  rerank.py         lazy cross-encoder reranker (sentence-transformers, singleton)
+  rerank.py         lazy ONNX cross-encoder reranker (onnxruntime, singleton)
   route.py          LLM-based query classifier (factual/breadth/analytical → focused/broad)
 adapters/         — platform-specific download + resolution (base + bilibili)
 db.py             — SQLite schema + query helpers
