@@ -338,9 +338,9 @@ async def query_fts(
         top_k: Maximum number of chunks to return.
         video_ids: Optional pre-resolved video IDs. If not provided, resolved from source_ids.
 
-    Returns list of RetrievedChunk with distance set to the raw FTS5 BM25 rank,
-    which is negative (more negative = more relevant). This keeps "lower = more
-    relevant" consistent with vector distance ordering used elsewhere.
+    Returns list of RetrievedChunk with score set to the negated FTS5 BM25 rank
+    (positive, higher = more relevant) and distance set to 0.0. _chunk_score()
+    negates the score to recover "lower = more relevant" ordering.
     """
     resolved = await _resolve_video_ids(source_ids, video_ids)
     if resolved is None:
@@ -357,7 +357,8 @@ async def query_fts(
             timestamp_start=float(row["timestamp_start"]),
             timestamp_end=float(row["timestamp_end"]),
             video_id=row["video_id"],
-            distance=row["rank"],
+            distance=0.0,
+            score=-row["rank"],
         )
         for row in rows
     ]

@@ -187,6 +187,8 @@ async def bootstrap_db() -> None:
         await db.execute(_CREATE_QUERY_CLASSIFICATIONS)
         await db.execute("CREATE INDEX IF NOT EXISTS idx_messages_conversation_id ON messages(conversation_id)")
 
+        await db.execute("PRAGMA journal_mode=WAL")
+
         conv_columns = [row[1] for row in await db.execute_fetchall("PRAGMA table_info(conversations)")]
         if "mode" not in conv_columns:
             await db.execute(f"ALTER TABLE conversations ADD COLUMN mode TEXT NOT NULL DEFAULT '{CHAT_MODE_AUTO}'")
