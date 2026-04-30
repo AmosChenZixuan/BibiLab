@@ -11,7 +11,7 @@ from typing import Any, Literal
 import aiosqlite
 
 import bibilab.config
-from bibilab.models._enums import CHAT_MODE_AUTO, CHAT_MODE_FOCUSED, ChatMode
+from bibilab.models._enums import ChatMode
 from bibilab.models.jobs import JobStatus
 
 logger = logging.getLogger(__name__)
@@ -133,50 +133,6 @@ CREATE TABLE IF NOT EXISTS query_classifications (
 
 async def bootstrap_db() -> None:
     async with get_db() as db:
-        list_columns = [row[1] for row in await db.execute_fetchall("PRAGMA table_info(lists)")]
-        if list_columns and "thumbnail_source_id" not in list_columns:
-            thumbnail_select = "thumbnail_source_video_id" if "thumbnail_source_video_id" in list_columns else "NULL"
-            await db.execute("ALTER TABLE lists RENAME TO lists_old")
-            await db.execute(_CREATE_LISTS)
-            await db.execute(
-                f"""
-                INSERT INTO lists (id, name, thumbnail_source_id, created_at)
-                SELECT id, name, {thumbnail_select}, created_at FROM lists_old
-                """
-            )
-            await db.execute("DROP TABLE lists_old")
-
-        job_columns = [row[1] for row in await db.execute_fetchall("PRAGMA table_info(jobs)")]
-        if "source_url" in job_columns or "platform" in job_columns:
-            await db.execute("ALTER TABLE jobs RENAME TO jobs_old")
-            await db.execute(_CREATE_JOBS)
-            await db.execute(
-                """
-                INSERT INTO jobs (id, type, status, progress, error, created_at, updated_at, meta)
-                SELECT
-                    id,
-                    CASE WHEN type = 'video' THEN 'ingest' ELSE type END,
-                    status,
-                    progress,
-                    error,
-                    created_at,
-                    updated_at,
-                    json_set(
-                        COALESCE(meta, '{}'),
-                        '$.source_url',
-                        source_url,
-                        '$.platform',
-                        platform
-                    )
-                FROM jobs_old
-                """
-            )
-            await db.execute("DROP TABLE jobs_old")
-
-        # Fresh-start sources migration: drop old table if schema lacks 'id' column
-        source_columns = [row[1] for row in await db.execute_fetchall("PRAGMA table_info(sources)")]
-        if source_columns and "id" not in source_columns:
-            await db.execute("DROP TABLE IF EXISTS sources")
         await db.execute(_CREATE_LISTS)
         await db.execute(_CREATE_JOBS)
         await db.execute(_CREATE_SOURCES)
@@ -186,19 +142,7 @@ async def bootstrap_db() -> None:
         await db.execute(_CREATE_MESSAGES)
         await db.execute(_CREATE_QUERY_CLASSIFICATIONS)
         await db.execute("CREATE INDEX IF NOT EXISTS idx_messages_conversation_id ON messages(conversation_id)")
-
         await db.execute("PRAGMA journal_mode=WAL")
-
-        conv_columns = [row[1] for row in await db.execute_fetchall("PRAGMA table_info(conversations)")]
-        if "mode" not in conv_columns:
-            await db.execute(f"ALTER TABLE conversations ADD COLUMN mode TEXT NOT NULL DEFAULT '{CHAT_MODE_AUTO}'")
-        else:
-            # Migration: PR #207 changed the server-side default mode from 'focused' to
-            # 'auto'. Existing conversation rows created during development had mode='focused'
-            # (the old default). Reset them to 'auto' so the query router handles them
-            # correctly. This is a one-time backfill; do not extend this UPDATE to other values.
-            await db.execute("UPDATE conversations SET mode = ? WHERE mode = ?", (CHAT_MODE_AUTO, CHAT_MODE_FOCUSED))
-
         await db.commit()
 
 
