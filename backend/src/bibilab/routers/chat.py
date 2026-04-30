@@ -40,6 +40,8 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
+# SSE event types — used both as stream-internal event discriminators (stream_llm yield)
+# and as the 'type' field in the SSE 'data:' JSON payload sent to the client.
 SSE_EVENT_DELTA = "delta"
 SSE_EVENT_DONE = "done"
 SSE_EVENT_ERROR = "error"
