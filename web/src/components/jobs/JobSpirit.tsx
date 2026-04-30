@@ -75,7 +75,7 @@ export function JobSpirit() {
             {errorMessage ? (
               <p className="px-4 pt-3 text-xs text-pink">{errorMessage}</p>
             ) : null}
-            <ul className="divide-y divide-border">
+            <ul className="max-h-96 overflow-y-auto divide-y divide-border">
               {visibleJobs.map((item) => {
                 const fallbackLabel = item.producer === "artifact"
                   ? (ARTIFACT_TYPE_KEYS[item.label] ? t(ARTIFACT_TYPE_KEYS[item.label]) : item.label)
@@ -84,7 +84,7 @@ export function JobSpirit() {
                 return (
                   <li
                     key={item.job.id}
-                    className={`grid gap-2 px-4 py-3 transition-opacity ${item.isTerminal ? "opacity-50" : ""}`}
+                    className={`min-w-0 grid gap-2 px-4 py-3 transition-opacity ${item.isTerminal ? "opacity-50" : ""}`}
                   >
                     <div className="flex items-center gap-2.5 overflow-hidden">
                       <StatusDot item={item} />
@@ -119,7 +119,7 @@ export function JobSpirit() {
                       </div>
                     ) : null}
                     {item.job.error ? (
-                      <p className="text-xs text-pink">{item.job.error}</p>
+                      <p className="text-xs text-pink break-words">{item.job.error}</p>
                     ) : null}
                   </li>
                 );
