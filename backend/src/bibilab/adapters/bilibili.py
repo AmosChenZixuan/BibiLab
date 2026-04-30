@@ -31,6 +31,7 @@ _ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 _AUTH_RE = re.compile(r"log\s*in|sign\s*in|403", re.IGNORECASE)
 
 _METADATA_CONCURRENCY = 8
+_BILIBILI_NAV_URL = "https://api.bilibili.com/x/web-interface/nav"
 _cookie_file_cache: tuple[str, Path] | None = None
 
 
@@ -94,6 +95,20 @@ def _info_to_video_meta(info: dict, platform: str = "bilibili", fallback_uploade
 class BilibiliAdapter(PlatformAdapter):
     def __init__(self, cookie: str = "") -> None:
         self._cookie = cookie
+
+    async def _validate_cookies(self) -> bool:
+        """Check if configured cookies are still valid via the bilibili nav API."""
+        if not self._cookie:
+            return False
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.get(
+                    _BILIBILI_NAV_URL,
+                    headers={"Cookie": self._cookie, "Referer": "https://www.bilibili.com/"},
+                )
+                return resp.status_code == 200
+        except httpx.HTTPError:
+            return False
 
     def resolve_flat(self, url: str) -> PlaylistMeta:
         rtype = _resource_type(url)
@@ -212,7 +227,7 @@ class BilibiliAdapter(PlatformAdapter):
                 ext = info.get("ext", "mp4")
         except yt_dlp.utils.DownloadError as exc:
             msg = str(exc).lower()
-            if _AUTH_RE.search(msg):
+            if _AUTH_RE.search(msg) or "412" in msg:
                 raise AuthRequiredError("video") from exc
             raise
 
@@ -243,11 +258,19 @@ class BilibiliAdapter(PlatformAdapter):
                     url = f"https://api.bilibili.com/x/web-interface/view?bvid={bvid}"
                     try:
                         resp = await client.get(url)
-                        if resp.status_code != 200:
+                        if resp.status_code == 412:
+                            if not await self._validate_cookies():
+                                raise AuthRequiredError("video")
+                            resp = await client.get(url)
+                            if resp.status_code != 200:
+                                return (bvid, None)
+                        elif resp.status_code != 200:
                             return (bvid, None)
                         json_data = resp.json()
                     except httpx.HTTPError:
                         return (bvid, None)
+                    except AuthRequiredError:
+                        raise
 
                     data = json_data.get("data")
                     if not isinstance(data, dict):
