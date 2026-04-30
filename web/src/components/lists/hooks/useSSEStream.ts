@@ -2,8 +2,16 @@ import { useEffect, useRef, useState } from "react";
 
 import type { JobRegistration } from "@/components/jobs/JobActivityProvider";
 import type { MessageUI } from "@/components/lists/hooks/useConversationHistory";
-import { formatTimestamp, parseCitations } from "@/lib/chat-utils";
+import { formatTimestamp, parseCitations, type RagMetadata } from "@/lib/chat-utils";
 import type { ToolResult } from "@/lib/chat-utils";
+import {
+  SSE_EVENT_CLEAR_TEXT,
+  SSE_EVENT_DELTA,
+  SSE_EVENT_DONE,
+  SSE_EVENT_ERROR,
+  SSE_EVENT_RAG_META,
+  SSE_EVENT_TOOL_RESULT,
+} from "@/lib/constants";
 import { LANG_STORAGE_KEY } from "@/lib/utils";
 
 interface UseSSEStreamOptions {
@@ -75,6 +83,7 @@ export function useSSEStream({
       content: text,
       isStreaming: false,
       citations: [],
+      rag: null,
       toolCall: null,
       error: null,
       timestamp: formatTimestamp(new Date().toISOString()),
@@ -89,6 +98,7 @@ export function useSSEStream({
       toolCall: null,
       error: null,
       timestamp: formatTimestamp(new Date().toISOString()),
+      rag: null,
     };
 
     setMessages((prev) => [...prev, userMsg, assistantMsg]);
@@ -105,7 +115,10 @@ export function useSSEStream({
           "Content-Type": "application/json",
           "X-UI-Lang": localStorage.getItem(LANG_STORAGE_KEY) ?? "en",
         },
-        body: JSON.stringify({ message: text, source_ids: selectedSourceIds }),
+        body: JSON.stringify({
+          message: text,
+          source_ids: selectedSourceIds,
+        }),
         signal: controller.signal,
       });
 
@@ -125,12 +138,12 @@ export function useSSEStream({
           return;
         }
 
-        if (event.type === "clear_text") {
+        if (event.type === SSE_EVENT_CLEAR_TEXT) {
           updateAssistantMsg(assistantMsgId, { content: "" });
-        } else if (event.type === "delta") {
+        } else if (event.type === SSE_EVENT_DELTA) {
           const content = event.content as string;
           updateAssistantMsg(assistantMsgId, (m) => ({ content: m.content + content }));
-        } else if (event.type === "tool_result") {
+        } else if (event.type === SSE_EVENT_TOOL_RESULT) {
           const result = event.result as ToolResult;
           if (!result) return;
           const toolCallData = { name: "generate_report", result };
@@ -138,14 +151,23 @@ export function useSSEStream({
             trackJobs([{ id: result.job_id, producer: "artifact", label: result.type, contextKey: listId }]);
           }
           updateAssistantMsg(assistantMsgId, { toolCall: toolCallData });
-        } else if (event.type === "done") {
+        } else if (event.type === SSE_EVENT_RAG_META) {
+          const rag = event.rag as RagMetadata;
+          if (!rag) return;
+          updateAssistantMsg(assistantMsgId, { rag });
+        } else if (event.type === SSE_EVENT_DONE) {
           updateAssistantMsg(assistantMsgId, (m) => {
             const { citations, cleanContent } = parseCitations(m.content);
-            return { isStreaming: false, content: cleanContent, citations };
+            return {
+              isStreaming: false,
+              content: cleanContent,
+              citations,
+              rag: m.rag,
+            };
           });
           safeSetIsStreaming(false);
           isStreamingRef.current = false;
-        } else if (event.type === "error") {
+        } else if (event.type === SSE_EVENT_ERROR) {
           const errorMsg = event.message as string;
           updateAssistantMsg(assistantMsgId, { isStreaming: false, error: errorMsg });
           safeSetIsStreaming(false);

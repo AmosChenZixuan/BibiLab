@@ -34,11 +34,12 @@ Single-port deployment: FastAPI serves the React build as static files in produc
 ```
 ~/.bibilab/
 ├── config.json        Pydantic settings, credentials
-├── bibilab.db         SQLite (lists, jobs, sources, artifacts)
+├── bibilab.db         SQLite (lists, jobs, sources, artifacts, conversations, messages, chunks_fts, query_classifications)
 ├── covers/            cached cover images
 ├── transcripts/       raw Whisper segments
 ├── artifacts/         generated artifact content
 ├── chroma/            ChromaDB vector data
+├── models/            cached embedding + reranker models (downloaded on first use)
 └── downloads/         temp video files, cleaned after pipeline
 ```
 
@@ -57,6 +58,9 @@ Single-port deployment: FastAPI serves the React build as static files in produc
 | Chat conversations | One conversation per list, auto-created on first message | `get_or_create_conversation` with `ON CONFLICT` upsert |
 | Chat streaming | SSE via `StreamingResponse`; RAG context in system prompt | Citations parsed client-side from `[title @ Ts-Ts]` format |
 | Conversation compression | Background summary after 30+ messages, sliding window of 20 | Keeps recent context; old messages deleted after summarization |
+| Retrieval | Hybrid (BM25 + vector) fused via RRF (k=60), pool of 30 → cross-encoder rerank → top-k | BM25 catches lexical matches the embedding misses; rerank improves precision on the top slice |
+| Chat mode | Three-state per conversation: `auto` (default), `focused`, `broad`; stored on `conversations.mode` | `auto` lets the LLM classifier pick; explicit choice always wins. Avoids silent override of user intent |
+| Query routing | LLM classifier maps `factual → focused`, `breadth/analytical → broad`; fires only when mode = `auto` | Opt-in via mode toggle; respects explicit user choice |
 
 ## Code Health Rules
 

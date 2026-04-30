@@ -82,6 +82,10 @@ class BackendConfig(BaseModel):
 
 class RagConfig(BaseModel):
     max_distance: float = 0.8
+    reranking_enabled: bool = True
+    hybrid_enabled: bool = True
+    query_routing_enabled: bool = True
+    rerank_min_score: float | None = 0.0
 
 
 class BibilabConfig(BaseModel):

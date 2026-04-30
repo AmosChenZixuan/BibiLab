@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
 
 import { api } from "@/lib/api";
+import { type ChatMode } from "@/lib/constants";
 import {
   formatTimestamp,
   parseCitations,
   type Citation,
+  type RagMetadata,
   type ToolCallData,
   type ToolResult,
 } from "@/lib/chat-utils";
@@ -18,12 +20,14 @@ export interface MessageUI {
   toolCall: ToolCallData | null;
   error: string | null;
   timestamp: string;
+  rag: RagMetadata | null;
 }
 
 export function useConversationHistory(listId: string | undefined, hasSources: boolean) {
   const [messages, setMessages] = useState<MessageUI[]>([]);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [conversationMode, setConversationMode] = useState<ChatMode | null>(null);
 
   useEffect(() => {
     if (!listId || !hasSources) return;
@@ -36,6 +40,9 @@ export function useConversationHistory(listId: string | undefined, hasSources: b
       .getConversation(listId)
       .then((data) => {
         if (cancelled || !data) return;
+        if (data.conversation?.mode) {
+          setConversationMode(data.conversation.mode);
+        }
         if (!data.messages?.length) return;
         const loaded: MessageUI[] = data.messages.map((m) => {
           const { citations, cleanContent } = parseCitations(m.content);
@@ -54,6 +61,7 @@ export function useConversationHistory(listId: string | undefined, hasSources: b
             toolCall,
             error: null,
             timestamp: formatTimestamp(m.created_at),
+            rag: (m.metadata?.rag as RagMetadata | null) ?? null,
           };
         });
         setMessages(loaded);
@@ -70,5 +78,5 @@ export function useConversationHistory(listId: string | undefined, hasSources: b
     };
   }, [listId, hasSources]);
 
-  return { messages, isLoadingHistory, loadError };
+  return { messages, isLoadingHistory, loadError, conversationMode };
 }

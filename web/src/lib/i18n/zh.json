@@ -206,19 +206,19 @@
     "empty": {
       "noSources": {
         "title": "未选择来源",
-        "hint": "在左侧面板选择来源以开始聊天。聊天始终限定于当前选择。"
+        "hint": "在左侧面板选择来源以开始聊天，聊天内容仅基于当前选择。"
       },
       "noHistory": {
         "title": "向来源提问",
-        "hint": "问题将基于所选来源的转录稿回答，并附带时间戳引用。"
+        "hint": "问题将根据所选来源的转录稿回答，并附上时间戳引用。"
       }
     },
     "input": {
       "placeholder": {
-        "noSources": "选择来源以开始聊天...",
-        "noHistory": "向来源提问...",
-        "followUp": "继续提问...",
-        "streaming": "回答中..."
+        "noSources": "选择来源以开始聊天…",
+        "noHistory": "向来源提问…",
+        "followUp": "继续提问…",
+        "streaming": "回答中…"
       },
       "hint": {
         "enter": "回车发送",
@@ -238,8 +238,36 @@
     "scrollToBottom": "滚动到底部",
     "createdReport": "已生成报告：",
     "subtitle": {
-      "templateSingular": "共 %{count} 个来源 · %{duration}",
-      "templatePlural": "共 %{count} 个来源 · %{duration}"
+      "templateSingular": "%{count} 个来源 · %{duration}",
+      "templatePlural": "%{count} 个来源 · %{duration}"
+    },
+    "configure": {
+      "title": "配置聊天"
+    },
+    "configModal": {
+      "title": "检索模式",
+      "label": "选择检索模式",
+      "auto": "自动",
+      "autoHint": "根据查询智能路由",
+      "focused": "精准",
+      "focusedHint": "定向检索，精准引用",
+      "broad": "宽泛",
+      "broadHint": "广泛检索，更多上下文",
+      "cancel": "取消",
+      "save": "保存",
+      "saving": "保存中…"
+    },
+    "obsChip": {
+      "mode": "模式",
+      "chunksEvaluated": "已评估块数",
+      "sourcesRetrieved": "已检索的来源数",
+      "ariaLabel": "检索详情",
+      "chipLabel": "%{count} 块 · %{hits}/%{total}"
+    },
+    "mode": {
+      "broad": {
+        "description": "宽泛模式从每个来源中检索一个相关块，最大化跨视频的覆盖范围。"
+      }
     }
   },
   "common": {

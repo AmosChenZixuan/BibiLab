@@ -19,7 +19,9 @@ npx vitest run --coverage          # Coverage (requires @vitest/coverage-v8)
 ```
 components/ui/    — primitive components (Button, Modal, Panel, Input, Select, Spinner, StatusChip, SettingsField, Thumbnail, ContextMenu)
 components/auth/  — platform auth modals (BilibiliQrModal)
-components/*/     — feature components (lists/, lists/sources/, lists/lab/, jobs/, layout/, settings/)
+components/*/     — feature components (lists/, lists/sources/, lists/lab/, lists/hooks/, jobs/, layout/, settings/)
+                    lists/hooks/ holds chat hooks: useConversationHistory, useSSEStream, useAutoScroll
+                    lists/ChatConfigModal, lists/ObsChip — chat mode toggle + retrieval observability chip
 pages/            — route-level page components
 lib/              — typed api client, types, artifact types, templates, download helpers, health check, i18n, utils
 app/              — router, language context
@@ -48,3 +50,5 @@ test/             — Vitest test files + setup
 - **Utilities**: before writing a helper function inside a component, check `lib/utils.ts` for existing implementations. If a utility is pure (no React state), it belongs in `lib/`, not inline in a component.
 - **Styling**: Tailwind utility classes only; no CSS modules. Inline `style` only for dynamic computed values (widths, positions, URLs). No arbitrary bracket values (e.g. `mt-[10px]`) — use Tailwind's built-in scale or CSS custom properties from `src/styles/app.css` (`--color-*`, `--z-*`, `--font-*`)
 - **Cross-component auth sync**: When auth state changes (login/logout), call `notifyBilibiliAuthChanged()` from `lib/api.ts`. Components that need to react listen for `BILIBILI_AUTH_REFRESH_EVENT` via `window.addEventListener`. Do not prop-drill auth state through unrelated components.
+- **Chat mode**: Three-state literal (`auto` | `focused` | `broad`). Import `CHAT_MODE_AUTO` / `CHAT_MODE_FOCUSED` / `CHAT_MODE_BROAD` and the `ChatMode` type from `@/lib/constants`. Mode is persisted server-side via `api.updateConversation(listId, { mode })` — it is **not** sent in the chat request body. The server reads it from `conversations.mode`.
+- **RAG metadata**: SSE stream emits a `rag_meta` event before deltas; parsed in `useSSEStream` and surfaced via `ObsChip`. Type `RagMetadata` in `@/lib/chat-utils`.

@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 import uuid
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
@@ -10,7 +11,10 @@ from typing import Any, Literal
 import aiosqlite
 
 import bibilab.config
+from bibilab.models._enums import CHAT_MODE_AUTO, CHAT_MODE_FOCUSED, ChatMode
 from bibilab.models.jobs import JobStatus
+
+logger = logging.getLogger(__name__)
 
 
 def get_db_path() -> Path:
@@ -82,11 +86,23 @@ CREATE TABLE IF NOT EXISTS artifacts (
 )
 """
 
+_CREATE_CHUNKS_FTS = """
+CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(
+    content,
+    video_id UNINDEXED,
+    video_title UNINDEXED,
+    timestamp_start UNINDEXED,
+    timestamp_end UNINDEXED,
+    chunk_id UNINDEXED
+)
+"""
+
 _CREATE_CONVERSATIONS = """
 CREATE TABLE IF NOT EXISTS conversations (
     id         TEXT PRIMARY KEY,
     list_id    TEXT NOT NULL UNIQUE REFERENCES lists(id) ON DELETE CASCADE,
     summary    TEXT,
+    mode       TEXT NOT NULL DEFAULT 'auto',
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 )
@@ -100,6 +116,17 @@ CREATE TABLE IF NOT EXISTS messages (
     content          TEXT NOT NULL,
     metadata         TEXT,
     created_at       TEXT NOT NULL
+)
+"""
+
+_CREATE_QUERY_CLASSIFICATIONS = """
+CREATE TABLE IF NOT EXISTS query_classifications (
+    id            TEXT PRIMARY KEY,
+    list_id       TEXT NOT NULL,
+    query_text    TEXT NOT NULL,
+    query_type    TEXT NOT NULL,
+    effective_mode TEXT NOT NULL,
+    created_at    TEXT NOT NULL
 )
 """
 
@@ -154,9 +181,24 @@ async def bootstrap_db() -> None:
         await db.execute(_CREATE_JOBS)
         await db.execute(_CREATE_SOURCES)
         await db.execute(_CREATE_ARTIFACTS)
+        await db.execute(_CREATE_CHUNKS_FTS)
         await db.execute(_CREATE_CONVERSATIONS)
         await db.execute(_CREATE_MESSAGES)
+        await db.execute(_CREATE_QUERY_CLASSIFICATIONS)
         await db.execute("CREATE INDEX IF NOT EXISTS idx_messages_conversation_id ON messages(conversation_id)")
+
+        await db.execute("PRAGMA journal_mode=WAL")
+
+        conv_columns = [row[1] for row in await db.execute_fetchall("PRAGMA table_info(conversations)")]
+        if "mode" not in conv_columns:
+            await db.execute(f"ALTER TABLE conversations ADD COLUMN mode TEXT NOT NULL DEFAULT '{CHAT_MODE_AUTO}'")
+        else:
+            # Migration: PR #207 changed the server-side default mode from 'focused' to
+            # 'auto'. Existing conversation rows created during development had mode='focused'
+            # (the old default). Reset them to 'auto' so the query router handles them
+            # correctly. This is a one-time backfill; do not extend this UPDATE to other values.
+            await db.execute("UPDATE conversations SET mode = ? WHERE mode = ?", (CHAT_MODE_AUTO, CHAT_MODE_FOCUSED))
+
         await db.commit()
 
 
@@ -606,7 +648,7 @@ async def create_conversation(list_id: str) -> str:
 async def get_conversation_by_list(list_id: str) -> aiosqlite.Row | None:
     async with get_db() as db:
         cursor = await db.execute(
-            "SELECT id, list_id, summary, created_at, updated_at FROM conversations WHERE list_id=?",
+            "SELECT id, list_id, summary, mode, created_at, updated_at FROM conversations WHERE list_id=?",
             (list_id,),
         )
         return await cursor.fetchone()
@@ -771,13 +813,99 @@ async def compress_conversation(
 async def get_conversation(conversation_id: str) -> aiosqlite.Row | None:
     async with get_db() as db:
         cursor = await db.execute(
-            "SELECT id, list_id, summary, created_at, updated_at FROM conversations WHERE id=?",
+            "SELECT id, list_id, summary, mode, created_at, updated_at FROM conversations WHERE id=?",
             (conversation_id,),
         )
         return await cursor.fetchone()
 
 
+async def update_conversation_mode(conversation_id: str, mode: ChatMode) -> None:
+    now = _now()
+    async with get_db() as db:
+        await db.execute(
+            "UPDATE conversations SET mode=?, updated_at=? WHERE id=?",
+            (mode, now, conversation_id),
+        )
+        await db.commit()
+
+
 async def delete_conversation(conversation_id: str) -> None:
     async with get_db() as db:
         await db.execute("DELETE FROM conversations WHERE id=?", (conversation_id,))
+        await db.commit()
+
+
+# ---------------------------------------------------------------------------
+# FTS5 helpers
+# ---------------------------------------------------------------------------
+
+
+async def clear_fts_for_list(list_id: str) -> None:
+    """Delete all FTS rows whose video_id belongs to sources in the given list."""
+    async with get_db() as db:
+        await db.execute(
+            "DELETE FROM chunks_fts WHERE video_id IN (SELECT video_id FROM sources WHERE list_id = ?)",
+            (list_id,),
+        )
+        await db.commit()
+
+
+def _escape_fts_query(query_text: str) -> str:
+    """Escape user input for safe FTS5 MATCH evaluation.
+
+    Quotes each whitespace-separated token to disable FTS5 operator parsing
+    (`AND`, `OR`, `:`, `*`, `^`) so arbitrary user queries cannot raise
+    `OperationalError`. Inner double-quotes are doubled per FTS5 syntax.
+    """
+    tokens = [t for t in query_text.split() if t]
+    if not tokens:
+        return ""
+    return " ".join('"' + t.replace('"', '""') + '"' for t in tokens)
+
+
+async def query_fts_rows(
+    query_text: str,
+    video_ids: list[str],
+    top_k: int = 30,
+) -> list[aiosqlite.Row]:
+    """Run FTS5 MATCH query filtered by video_ids, return rows ranked by BM25.
+
+    Returns an empty list if the query is empty or FTS5 raises a syntax error.
+    """
+    if not video_ids:
+        return []
+    match_query = _escape_fts_query(query_text)
+    if not match_query:
+        return []
+    placeholders = _in_placeholders(video_ids)
+    async with get_db() as db:
+        try:
+            cursor = await db.execute(
+                f"SELECT content, video_id, video_title, timestamp_start, timestamp_end, rank "
+                f"FROM chunks_fts "
+                f"WHERE chunks_fts MATCH ? AND video_id IN ({placeholders}) "
+                f"ORDER BY rank "
+                f"LIMIT ?",
+                [match_query, *video_ids, top_k],
+            )
+            return await cursor.fetchall()
+        except aiosqlite.OperationalError as exc:
+            logger.warning("FTS5 MATCH query failed (%s); returning empty results", exc)
+            return []
+
+
+async def log_query_classification(
+    list_id: str,
+    query_text: str,
+    query_type: str,
+    effective_mode: str,
+) -> None:
+    async with get_db() as db:
+        await db.execute(
+            """
+            INSERT INTO query_classifications (id, list_id, query_text, query_type, effective_mode, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (str(uuid.uuid4()), list_id, query_text, query_type, effective_mode, _now()),
+        )
         await db.commit()

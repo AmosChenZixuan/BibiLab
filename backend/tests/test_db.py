@@ -464,7 +464,11 @@ def test_clear_embeddings_for_video_does_not_raise(tmp_path: Path):
 
     mock_col = MagicMock()
     mock_col.delete.return_value = None
-    with patch("bibilab.pipeline.embed._get_collection", return_value=mock_col):
+    with (
+        patch("bibilab.pipeline.embed._get_collection", return_value=mock_col),
+        patch("bibilab.pipeline.embed.bibilab_home", return_value=tmp_path),
+    ):
+        (tmp_path / "chroma").mkdir(parents=True, exist_ok=True)
         clear_embeddings_for_video("BV1abc", BibilabConfig())
     mock_col.delete.assert_called_once_with(where={"video_id": "BV1abc"})
 

@@ -240,6 +240,34 @@
     "subtitle": {
       "templateSingular": "%{count} source · %{duration} total",
       "templatePlural": "%{count} sources · %{duration} total"
+    },
+    "configure": {
+      "title": "Configure chat"
+    },
+    "configModal": {
+      "title": "Retrieval Mode",
+      "label": "Choose retrieval mode",
+      "auto": "Auto",
+      "autoHint": "Smart routing based on query",
+      "focused": "Focused",
+      "focusedHint": "Targeted retrieval, precise citations",
+      "broad": "Broad",
+      "broadHint": "Wider retrieval, more context",
+      "cancel": "Cancel",
+      "save": "Save",
+      "saving": "Saving..."
+    },
+    "obsChip": {
+      "mode": "Mode",
+      "chunksEvaluated": "Chunks evaluated",
+      "sourcesRetrieved": "Sources retrieved",
+      "ariaLabel": "Retrieval observability",
+      "chipLabel": "%{count} chunks · %{hits}/%{total}"
+    },
+    "mode": {
+      "broad": {
+        "description": "Broad mode retrieves one relevant chunk per source, maximizing coverage across videos."
+      }
     }
   },
   "common": {

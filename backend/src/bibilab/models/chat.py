@@ -3,6 +3,8 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field
 
+from bibilab.models._enums import ChatMode
+
 
 def _parse_datetime(value: str | datetime) -> datetime:
     if isinstance(value, str):
@@ -38,6 +40,7 @@ class ConversationResponse(BaseModel):
     id: str
     list_id: str
     summary: str | None
+    mode: ChatMode
     created_at: datetime
     updated_at: datetime
 
@@ -47,6 +50,7 @@ class ConversationResponse(BaseModel):
             id=row["id"],
             list_id=row["list_id"],
             summary=row["summary"],
+            mode=row["mode"],
             created_at=_parse_datetime(row["created_at"]),
             updated_at=_parse_datetime(row["updated_at"]),
         )
@@ -55,6 +59,10 @@ class ConversationResponse(BaseModel):
 class ChatRequest(BaseModel):
     message: str = Field(..., max_length=10000)
     source_ids: list[str] | None = None
+
+
+class PatchConversationRequest(BaseModel):
+    mode: ChatMode
 
 
 class GetConversationResponse(BaseModel):
