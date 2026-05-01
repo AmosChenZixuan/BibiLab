@@ -72,5 +72,18 @@ _PARAMS_BY_TYPE: dict[QueryType, RetrievalParams] = {
 }
 
 
-def params_for_type(query_type: QueryType) -> RetrievalParams:
-    return _PARAMS_BY_TYPE[query_type]
+def params_for_type(query_type: QueryType, sources_total: int) -> RetrievalParams:
+    """Resolve params for a query type, with list-size-aware adjustments.
+
+    - Breadth on lists with < 3 sources degrades to factual params
+      (1 chunk per source on a 1-source list is worse than focused).
+    - Breadth top_k is capped at sources_total (asking for 20 chunks from
+      a 5-source list is impossible at depth=1 — the diverse selector
+      would relax-fallback to duplicates, wasting token budget).
+    """
+    if query_type == QUERY_TYPE_BREADTH and sources_total < 3:
+        return _PARAMS_BY_TYPE[QUERY_TYPE_FACTUAL]
+    base = _PARAMS_BY_TYPE[query_type]
+    if query_type == QUERY_TYPE_BREADTH:
+        return RetrievalParams(depth_per_source=base.depth_per_source, top_k=min(base.top_k, sources_total))
+    return base

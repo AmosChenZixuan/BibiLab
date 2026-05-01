@@ -967,12 +967,43 @@ def test_params_by_type_presets():
     from bibilab.models._enums import QUERY_TYPE_ANALYTICAL, QUERY_TYPE_BREADTH, QUERY_TYPE_FACTUAL
     from bibilab.pipeline.route import params_for_type
 
-    fact = params_for_type(QUERY_TYPE_FACTUAL)
+    # Large list — no override
+    fact = params_for_type(QUERY_TYPE_FACTUAL, sources_total=10)
     assert fact.depth_per_source == 2
     assert fact.top_k == 5
-    anl = params_for_type(QUERY_TYPE_ANALYTICAL)
+    anl = params_for_type(QUERY_TYPE_ANALYTICAL, sources_total=10)
     assert anl.depth_per_source == 4
     assert anl.top_k == 12
-    brd = params_for_type(QUERY_TYPE_BREADTH)
+    brd = params_for_type(QUERY_TYPE_BREADTH, sources_total=10)
     assert brd.depth_per_source == 1
-    assert brd.top_k == 20
+    assert brd.top_k == 10  # capped at sources_total
+
+
+def test_params_breadth_capped_by_sources():
+    from bibilab.models._enums import QUERY_TYPE_BREADTH
+    from bibilab.pipeline.route import params_for_type
+
+    brd = params_for_type(QUERY_TYPE_BREADTH, sources_total=5)
+    assert brd.top_k == 5
+    assert brd.depth_per_source == 1
+
+
+def test_params_small_list_breadth_falls_back_to_factual():
+    from bibilab.models._enums import QUERY_TYPE_BREADTH
+    from bibilab.pipeline.route import params_for_type
+
+    # 2 sources: breadth degrades to factual
+    brd = params_for_type(QUERY_TYPE_BREADTH, sources_total=2)
+    assert brd.depth_per_source == 2
+    assert brd.top_k == 5
+
+
+def test_params_factual_unchanged_by_list_size():
+    from bibilab.models._enums import QUERY_TYPE_FACTUAL
+    from bibilab.pipeline.route import params_for_type
+
+    # Factual params invariant to list size
+    for n in (1, 5, 50):
+        fact = params_for_type(QUERY_TYPE_FACTUAL, sources_total=n)
+        assert fact.depth_per_source == 2
+        assert fact.top_k == 5

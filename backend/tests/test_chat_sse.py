@@ -323,7 +323,7 @@ async def test_chat_endpoint_uses_stored_mode(client):
 
     with patch("bibilab.routers.chat.retrieve", capture_retrieve):
         with patch("bibilab.routers.chat.get_sources_for_list", new_callable=AsyncMock) as mock_sources:
-            mock_sources.return_value = [MagicMock(id="src-1")]
+            mock_sources.return_value = [{"id": f"src-{i}"} for i in range(30)]
             with patch("bibilab.routers.chat.stream_llm") as mock_stream:
                 mock_stream.return_value = an_async_generator(
                     [
@@ -554,7 +554,7 @@ async def test_routing_runs_when_enabled_and_mode_is_auto(client, tmp_bibilab_ho
                         source_coverage=[],
                     )
                     with patch("bibilab.routers.chat.get_sources_for_list", new_callable=AsyncMock) as mock_sources:
-                        mock_sources.return_value = [MagicMock(id="src-1")]
+                        mock_sources.return_value = [{"id": f"src-{i}"} for i in range(30)]
                         with patch("bibilab.routers.chat.stream_llm") as mock_stream:
                             mock_stream.return_value = an_async_generator(
                                 [MagicMock(type="done", content=None, tool_call=None)]
