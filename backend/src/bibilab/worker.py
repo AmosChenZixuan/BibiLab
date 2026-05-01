@@ -414,10 +414,15 @@ All output fields MUST be written in {_LANG_NAME.get(lang, "English")}."""
         if result is None:
             return  # cancelled
         segments, detected_language, transcript_path = result
+        effective_language = (
+            cfg.transcription.language if cfg.transcription.language != "auto" else (detected_language or "en")
+        )
 
         # Stage 4: Chunk, digest + embed in parallel
         try:
-            extraction = await self._stage_process(job_id, job, segments, video_meta, list_id, cfg, transcript_path)
+            extraction = await self._stage_process(
+                job_id, job, segments, video_meta, list_id, cfg, transcript_path, effective_language
+            )
         except Exception as exc:
             raise PipelineError(f"[processing] {exc}") from exc
         if extraction is None:
@@ -529,13 +534,13 @@ All output fields MUST be written in {_LANG_NAME.get(lang, "English")}."""
         list_id: str,
         cfg: BibilabConfig,
         transcript_path: Path,
+        effective_language: str,
     ) -> DigestResult | None:
         """Stage 4: Chunk segments, run digest + embed in parallel."""
         await update_job_status(job_id, JobStatus.PROCESSING.value, progress=40)
         chunks = chunk_segments(
             segments,
-            target_tokens=cfg.transcription.target_tokens,
-            chunk_max_tokens=cfg.transcription.chunk_max_tokens,
+            language=effective_language,
         )
 
         meta_raw = _parse_job_meta(job)
