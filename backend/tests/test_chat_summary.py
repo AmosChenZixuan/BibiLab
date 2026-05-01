@@ -133,6 +133,7 @@ async def test_existing_summary_included_in_prompt(tmp_bibilab_home):
     assert captured_prompt is not None
     assert "User loves Python tutorials." in captured_prompt
     assert "Message 0" in captured_prompt
+    assert "PRESERVE ALL [title @ Ts-Ts] citations" in captured_prompt
 
 
 @pytest.mark.asyncio
@@ -235,6 +236,45 @@ async def test_nonexistent_conversation_noops(tmp_bibilab_home):
         await maybe_compress_conversation("nonexistent-conv-id", cfg)
 
     assert not called
+
+
+@pytest.mark.asyncio
+async def test_compression_prompt_preserves_citations(tmp_bibilab_home):
+    """Compression prompt must include instruction to preserve [title @ Ts-Ts] citations."""
+    from bibilab.db import (
+        bootstrap_db,
+        create_conversation,
+        create_list,
+        create_message,
+    )
+    from bibilab.pipeline.chat_summary import COMPRESSION_THRESHOLD, maybe_compress_conversation
+
+    await bootstrap_db()
+    await create_list("list-1", "Test List", "2026-01-01T00:00:00")
+    conv_id = await create_conversation("list-1")
+
+    for i in range(COMPRESSION_THRESHOLD + 3):
+        await create_message(conv_id, "user", f"Message {i}", None)
+        await asyncio.sleep(0.001)
+
+    from bibilab.config import BibilabConfig
+
+    cfg = BibilabConfig()
+
+    from unittest.mock import patch
+
+    captured_prompt = None
+
+    def fake_call_llm(prompt, *args, **kwargs):
+        nonlocal captured_prompt
+        captured_prompt = prompt
+        return "Summary with citation preserved."
+
+    with patch("bibilab.pipeline.chat_summary._call_llm", fake_call_llm):
+        await maybe_compress_conversation(conv_id, cfg)
+
+    assert captured_prompt is not None
+    assert "PRESERVE ALL [title @ Ts-Ts] citations" in captured_prompt
 
 
 @pytest.mark.asyncio

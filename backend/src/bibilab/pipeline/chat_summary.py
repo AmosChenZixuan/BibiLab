@@ -21,6 +21,11 @@ SUMMARY_TARGET_TOKENS = 500
 # API budget — must accommodate thinking tokens + the ~500-token output for reasoning models.
 SUMMARY_MAX_TOKENS = 8192
 
+CITATION_PRESERVATION_INSTRUCTION = (
+    "PRESERVE ALL [title @ Ts-Ts] citations exactly as they appear — they are load-bearing "
+    "for downstream RAG continuity. "
+)
+
 
 async def maybe_compress_conversation(
     conversation_id: str,
@@ -51,13 +56,15 @@ async def maybe_compress_conversation(
             "Compress the above messages and merge them with the existing summary. "
             f"Produce a concise summary (ideally under {SUMMARY_TARGET_TOKENS} tokens) that preserves key facts, "
             "decisions, user preferences, and topics discussed. "
-            "Return only the updated summary text, no preamble or explanation."
+            + CITATION_PRESERVATION_INSTRUCTION
+            + "Return only the updated summary text, no preamble or explanation."
         )
     else:
         compression_prompt = (
-            f"Compress the following conversation history into a concise summary. "
-            f"Preserve key facts, decisions, user preferences, and topics discussed. "
-            f"Target length: under {SUMMARY_TARGET_TOKENS} tokens. "
+            "Compress the following conversation history into a concise summary. "
+            "Preserve key facts, decisions, user preferences, and topics discussed. "
+            + CITATION_PRESERVATION_INSTRUCTION
+            + f"Target length: under {SUMMARY_TARGET_TOKENS} tokens. "
             f"Return only the summary text, no preamble or explanation.\n\n"
             f"{messages_text}"
         )
