@@ -276,6 +276,7 @@ async def test_get_video_ids_for_sources_no_matches(tmp_bibilab_home):
 @pytest.mark.asyncio
 async def test_retrieve_returns_result_with_metadata(tmp_bibilab_home):
     from bibilab.config import BibilabConfig, RagConfig
+    from bibilab.models._enums import RetrievalParams
     from bibilab.pipeline.embed import RetrievalResult, retrieve
 
     cfg = BibilabConfig(rag=RagConfig(max_distance=0.5, reranking_enabled=False))
@@ -299,7 +300,7 @@ async def test_retrieve_returns_result_with_metadata(tmp_bibilab_home):
     ):
         mock_map.return_value = {"s1": "v1", "s2": "v2"}
 
-        result = await retrieve("test query", ["s1", "s2"], cfg, top_k=5)
+        result = await retrieve("test query", ["s1", "s2"], cfg, params=RetrievalParams(depth_per_source=2, top_k=5))
 
     assert isinstance(result, RetrievalResult)
     assert len(result.chunks) == 3
@@ -317,11 +318,12 @@ async def test_retrieve_returns_result_with_metadata(tmp_bibilab_home):
 @pytest.mark.asyncio
 async def test_retrieve_empty_sources(tmp_bibilab_home):
     from bibilab.config import BibilabConfig, RagConfig
+    from bibilab.models._enums import RetrievalParams
     from bibilab.pipeline.embed import retrieve
 
     cfg = BibilabConfig(rag=RagConfig(max_distance=0.5))
 
-    result = await retrieve("test query", [], cfg)
+    result = await retrieve("test query", [], cfg, params=RetrievalParams(depth_per_source=2, top_k=5))
 
     assert result.chunks == []
     assert result.sources_total == 0
@@ -330,8 +332,9 @@ async def test_retrieve_empty_sources(tmp_bibilab_home):
 
 
 @pytest.mark.asyncio
-async def test_retrieve_respects_mode_parameter(tmp_bibilab_home):
+async def test_retrieve_params_infer_mode(tmp_bibilab_home):
     from bibilab.config import BibilabConfig, RagConfig
+    from bibilab.models._enums import RetrievalParams
     from bibilab.pipeline.embed import retrieve
 
     cfg = BibilabConfig(rag=RagConfig(max_distance=0.5))
@@ -339,7 +342,7 @@ async def test_retrieve_respects_mode_parameter(tmp_bibilab_home):
     with patch("bibilab.pipeline.embed.get_video_ids_for_sources", new_callable=AsyncMock) as mock_map:
         mock_map.return_value = {}
 
-        result = await retrieve("test query", ["s1"], cfg, mode="broad")
+        result = await retrieve("test query", ["s1"], cfg, params=RetrievalParams(depth_per_source=1, top_k=20))
 
     assert result.mode == "broad"
     assert result.sources_total == 1
@@ -349,8 +352,9 @@ async def test_retrieve_respects_mode_parameter(tmp_bibilab_home):
 
 
 @pytest.mark.asyncio
-async def test_retrieve_broad_mode_keeps_best_per_source(tmp_bibilab_home):
+async def test_diverse_top_k_depth_one_keeps_best_per_source(tmp_bibilab_home):
     from bibilab.config import BibilabConfig, RagConfig
+    from bibilab.models._enums import RetrievalParams
     from bibilab.pipeline.embed import retrieve
 
     cfg = BibilabConfig(rag=RagConfig(max_distance=0.5, reranking_enabled=False))
@@ -377,9 +381,11 @@ async def test_retrieve_broad_mode_keeps_best_per_source(tmp_bibilab_home):
     ):
         mock_map.return_value = {"s1": "v1", "s2": "v2", "s3": "v3"}
 
-        result = await retrieve("test query", ["s1", "s2", "s3"], cfg, mode="broad")
+        result = await retrieve(
+            "test query", ["s1", "s2", "s3"], cfg, params=RetrievalParams(depth_per_source=1, top_k=3)
+        )
 
-    # Only best chunk per source
+    # Only best chunk per source (depth=1, ranked by distance ascending)
     assert len(result.chunks) == 3
     video_ids = [c.video_id for c in result.chunks]
     assert video_ids == ["v1", "v2", "v3"]
@@ -392,8 +398,9 @@ async def test_retrieve_broad_mode_keeps_best_per_source(tmp_bibilab_home):
 
 
 @pytest.mark.asyncio
-async def test_retrieve_broad_mode_uses_candidate_pool(tmp_bibilab_home):
+async def test_retrieve_uses_candidate_pool(tmp_bibilab_home):
     from bibilab.config import BibilabConfig, RagConfig
+    from bibilab.models._enums import RetrievalParams
     from bibilab.pipeline.embed import RETRIEVAL_CANDIDATE_POOL, retrieve
 
     cfg = BibilabConfig(rag=RagConfig(max_distance=0.5))
@@ -405,15 +412,16 @@ async def test_retrieve_broad_mode_uses_candidate_pool(tmp_bibilab_home):
         mock_map.return_value = {"s1": "v1"}
         mock_qc.return_value = []
 
-        await retrieve("test query", ["s1"], cfg, mode="broad", top_k=10)
+        await retrieve("test query", ["s1"], cfg, params=RetrievalParams(depth_per_source=1, top_k=10))
 
         mock_qc.assert_called_once_with("test query", ["s1"], cfg, top_k=RETRIEVAL_CANDIDATE_POOL, video_ids=["v1"])
 
 
 @pytest.mark.asyncio
-async def test_retrieve_focused_mode_returns_all_chunks(tmp_bibilab_home):
+async def test_retrieve_depth_two_keeps_multiple_per_source(tmp_bibilab_home):
     from bibilab.config import BibilabConfig, RagConfig
-    from bibilab.pipeline.embed import retrieve
+    from bibilab.models._enums import RetrievalParams
+    from bibilab.pipeline.embed import RetrievedChunk, retrieve
 
     cfg = BibilabConfig(rag=RagConfig(max_distance=0.5))
 
@@ -429,8 +437,6 @@ async def test_retrieve_focused_mode_returns_all_chunks(tmp_bibilab_home):
         ],
         "distances": [[0.1, 0.2, 0.3]],
     }
-
-    from bibilab.pipeline.embed import RetrievedChunk
 
     def make_chunk(content, score_val):
         c = RetrievedChunk(
@@ -455,15 +461,14 @@ async def test_retrieve_focused_mode_returns_all_chunks(tmp_bibilab_home):
     ):
         mock_map.return_value = {"s1": "v1"}
 
-        result = await retrieve("test query", ["s1"], cfg, mode="focused")
+        result = await retrieve("test query", ["s1"], cfg, params=RetrievalParams(depth_per_source=2, top_k=5))
 
-    # Focused mode keeps all chunks, not just best per source
     assert len(result.chunks) == 3
     assert all(c.video_id == "v1" for c in result.chunks)
 
 
 @pytest.mark.asyncio
-async def test_format_rag_context_broad_mode(tmp_bibilab_home):
+async def test_format_rag_context(tmp_bibilab_home):
     from bibilab.pipeline.embed import RetrievalResult, RetrievedChunk, SourceHit
     from bibilab.routers.chat import _format_rag_context  # noqa: E402
 
@@ -486,7 +491,7 @@ async def test_format_rag_context_broad_mode(tmp_bibilab_home):
                 distance=0.2,
             ),
         ],
-        mode="broad",
+        mode="focused",
         candidates_evaluated=8,
         sources_with_hits=2,
         sources_total=5,
@@ -499,9 +504,28 @@ async def test_format_rag_context_broad_mode(tmp_bibilab_home):
 
     text = _format_rag_context(result, "my query")
 
-    assert "Concept appears in 2 of 5 sources" in text
-    assert "Best excerpt per source:" in text
+    assert "from 2 of 5 sources" in text
+    assert "Relevant transcript excerpts" in text
     assert '[Video A @ 10s-20s]: "chunk about topic"' in text
+    assert "Concept appears" not in text
+    assert "Best excerpt per source:" not in text
+
+
+def test_format_rag_context_empty(tmp_bibilab_home):
+    from bibilab.pipeline.embed import RetrievalResult
+    from bibilab.routers.chat import _format_rag_context  # noqa: E402
+
+    result = RetrievalResult(
+        chunks=[],
+        mode="focused",
+        candidates_evaluated=0,
+        sources_with_hits=0,
+        sources_total=0,
+        source_coverage=[],
+    )
+
+    text = _format_rag_context(result, "query")
+    assert text == ""
 
 
 # --- hybrid_search tests (issue #201) ---
@@ -667,6 +691,7 @@ async def test_hybrid_search_deduplicates_same_chunk(tmp_bibilab_home):
 @pytest.mark.asyncio
 async def test_retrieve_uses_hybrid_search(tmp_bibilab_home):
     from bibilab.config import BibilabConfig, RagConfig
+    from bibilab.models._enums import RetrievalParams
     from bibilab.pipeline.embed import RETRIEVAL_CANDIDATE_POOL, retrieve
 
     cfg = BibilabConfig(rag=RagConfig(max_distance=1.0, reranking_enabled=False))
@@ -678,7 +703,7 @@ async def test_retrieve_uses_hybrid_search(tmp_bibilab_home):
         new_callable=AsyncMock,
         return_value=chunks,
     ) as mock_hybrid:
-        result = await retrieve("query", ["src1"], cfg, top_k=5)
+        result = await retrieve("query", ["src1"], cfg, params=RetrievalParams(depth_per_source=2, top_k=5))
 
     mock_hybrid.assert_called_once_with("query", ["src1"], cfg, effective_top_k=RETRIEVAL_CANDIDATE_POOL)
     assert result.chunks == chunks
@@ -687,6 +712,7 @@ async def test_retrieve_uses_hybrid_search(tmp_bibilab_home):
 @pytest.mark.asyncio
 async def test_retrieve_hybrid_disabled_skips_fts(tmp_bibilab_home):
     from bibilab.config import BibilabConfig, RagConfig
+    from bibilab.models._enums import RetrievalParams
     from bibilab.pipeline.embed import RETRIEVAL_CANDIDATE_POOL, retrieve
 
     cfg = BibilabConfig(rag=RagConfig(max_distance=1.0, hybrid_enabled=False, reranking_enabled=False))
@@ -704,7 +730,7 @@ async def test_retrieve_hybrid_disabled_skips_fts(tmp_bibilab_home):
             return_value=chunks,
         ) as mock_vector,
     ):
-        result = await retrieve("query", ["src1"], cfg, top_k=5)
+        result = await retrieve("query", ["src1"], cfg, params=RetrievalParams(depth_per_source=2, top_k=5))
 
     mock_hybrid.assert_not_called()
     mock_vector.assert_called_once_with("query", ["src1"], cfg, top_k=RETRIEVAL_CANDIDATE_POOL)
@@ -712,11 +738,12 @@ async def test_retrieve_hybrid_disabled_skips_fts(tmp_bibilab_home):
 
 
 @pytest.mark.asyncio
-async def test_retrieve_focused_mode_uses_candidate_pool_before_rerank(tmp_bibilab_home):
-    """Focused mode must pull RETRIEVAL_CANDIDATE_POOL candidates and feed the full pool
-    to the reranker, so all candidates contribute to source coverage. retrieve() then
-    trims to top_k for the LLM input."""
+async def test_retrieve_uses_candidate_pool_before_rerank(tmp_bibilab_home):
+    """retrieve() must pull RETRIEVAL_CANDIDATE_POOL candidates and feed the full pool
+    to the reranker, so all candidates contribute to source coverage. Then _diverse_top_k
+    trims to params.top_k for the LLM input."""
     from bibilab.config import BibilabConfig, RagConfig
+    from bibilab.models._enums import RetrievalParams
     from bibilab.pipeline.embed import RETRIEVAL_CANDIDATE_POOL, retrieve
 
     cfg = BibilabConfig(rag=RagConfig(max_distance=1.0, reranking_enabled=True))
@@ -735,7 +762,7 @@ async def test_retrieve_focused_mode_uses_candidate_pool_before_rerank(tmp_bibil
             return_value=candidate_chunks,
         ) as mock_rerank,
     ):
-        result = await retrieve("query", ["src1"], cfg, mode="focused", top_k=5)
+        result = await retrieve("query", ["src1"], cfg, params=RetrievalParams(depth_per_source=2, top_k=5))
 
     mock_hybrid.assert_called_once_with("query", ["src1"], cfg, effective_top_k=RETRIEVAL_CANDIDATE_POOL)
     mock_rerank.assert_called_once_with("query", candidate_chunks, top_k=len(candidate_chunks))
@@ -761,11 +788,10 @@ def test_rrf_fuse_ranks_doc_in_both_lists_above_doc_in_one():
 
 
 @pytest.mark.asyncio
-async def test_retrieve_broad_mode_keeps_highest_scoring_chunk_per_source(tmp_bibilab_home):
-    """Regression: when chunks have .score set, broad mode must keep the highest-scoring
-    chunk per source, not the lowest. _score() must negate score so that ascending sort
-    correctly puts most-relevant first."""
+async def test_diverse_top_k_keeps_highest_scoring_per_source(tmp_bibilab_home):
+    """With depth=1 and score-descending input, _diverse_top_k keeps the best chunk per source."""
     from bibilab.config import BibilabConfig, RagConfig
+    from bibilab.models._enums import RetrievalParams
     from bibilab.pipeline.embed import retrieve
 
     cfg = BibilabConfig(rag=RagConfig(max_distance=1.0, reranking_enabled=False))
@@ -808,14 +834,15 @@ async def test_retrieve_broad_mode_keeps_highest_scoring_chunk_per_source(tmp_bi
     v2_low.score = 0.3
     v2_high.score = 0.7
 
-    chunks = [v1_low, v1_high, v2_low, v2_high]
+    # In production, reranker returns chunks in score-descending order
+    chunks = [v1_high, v2_high, v2_low, v1_low]
 
     with patch(
         "bibilab.pipeline.embed.hybrid_search",
         new_callable=AsyncMock,
         return_value=chunks,
     ):
-        result = await retrieve("query", ["s1", "s2"], cfg, mode="broad", top_k=5)
+        result = await retrieve("query", ["s1", "s2"], cfg, params=RetrievalParams(depth_per_source=1, top_k=2))
 
     assert len(result.chunks) == 2
     chunk_by_video = {c.video_id: c for c in result.chunks}
@@ -830,6 +857,7 @@ async def test_retrieve_broad_mode_keeps_highest_scoring_chunk_per_source(tmp_bi
 async def test_candidates_evaluated_reflects_pre_rerank_count(tmp_bibilab_home):
     """candidates_evaluated equals chunk count BEFORE rerank trim, not after."""
     from bibilab.config import BibilabConfig, RagConfig
+    from bibilab.models._enums import RetrievalParams
     from bibilab.pipeline.embed import retrieve
 
     cfg = BibilabConfig(rag=RagConfig(max_distance=1.0, reranking_enabled=True))
@@ -861,9 +889,121 @@ async def test_candidates_evaluated_reflects_pre_rerank_count(tmp_bibilab_home):
     ):
         mock_map.return_value = {"s1": "v1", "s2": "v2", "s3": "v3"}
 
-        result = await retrieve("test query", ["s1", "s2", "s3"], cfg, mode="focused", top_k=2)
+        result = await retrieve(
+            "test query", ["s1", "s2", "s3"], cfg, params=RetrievalParams(depth_per_source=2, top_k=2)
+        )
 
     # candidates_evaluated should reflect the 5 chunks retrieved BEFORE reranking trimmed to top_k=2
     assert result.candidates_evaluated == 5
     # But chunks returned should be the top_k after reranking
     assert len(result.chunks) == 2
+
+
+# --- _diverse_top_k unit tests ---
+
+
+def test_diverse_top_k_depth_one_one_per_source():
+    from bibilab.pipeline.embed import _diverse_top_k
+
+    chunks = [
+        _make_chunk(content="a1", video_id="v1"),
+        _make_chunk(content="a2", video_id="v1"),
+        _make_chunk(content="b1", video_id="v2"),
+        _make_chunk(content="b2", video_id="v2"),
+        _make_chunk(content="c1", video_id="v3"),
+        _make_chunk(content="c2", video_id="v3"),
+    ]
+    result = _diverse_top_k(chunks, depth=1, k=3)
+    assert len(result) == 3
+    assert {c.video_id for c in result} == {"v1", "v2", "v3"}
+
+
+def test_diverse_top_k_depth_two_allows_two_per_source():
+    from bibilab.pipeline.embed import _diverse_top_k
+
+    chunks = [
+        _make_chunk(content="a1", video_id="v1"),
+        _make_chunk(content="a2", video_id="v1"),
+        _make_chunk(content="a3", video_id="v1"),
+        _make_chunk(content="b1", video_id="v2"),
+        _make_chunk(content="b2", video_id="v2"),
+        _make_chunk(content="c1", video_id="v3"),
+        _make_chunk(content="c2", video_id="v3"),
+    ]
+    result = _diverse_top_k(chunks, depth=2, k=4)
+    # depth=2 allows ≤2 per source; k=4 is filled before leftovers
+    counts: dict[str, int] = {}
+    for c in result:
+        counts[c.video_id] = counts.get(c.video_id, 0) + 1
+    assert all(v <= 2 for v in counts.values())
+
+
+def test_diverse_top_k_single_source_relaxes_cap():
+    from bibilab.pipeline.embed import _diverse_top_k
+
+    chunks = [_make_chunk(content=f"c{i}", video_id="v1") for i in range(10)]
+    result = _diverse_top_k(chunks, depth=2, k=5)
+    assert len(result) == 5
+    assert all(c.video_id == "v1" for c in result)
+
+
+def test_diverse_top_k_depth_fills_then_leftovers():
+    from bibilab.pipeline.embed import _diverse_top_k
+
+    chunks = [
+        _make_chunk(content="a1", video_id="v1"),
+        _make_chunk(content="a2", video_id="v1"),
+        _make_chunk(content="b1", video_id="v2"),
+        _make_chunk(content="b2", video_id="v2"),
+    ]
+    # depth=1, k=3: picks a1 (v1) then b1 (v2), k not filled → leftovers fill
+    result = _diverse_top_k(chunks, depth=1, k=3)
+    assert len(result) == 3
+    # First two should be the diversity picks
+    assert {c.video_id for c in result[:2]} == {"v1", "v2"}
+
+
+def test_params_by_type_presets():
+    from bibilab.models._enums import QUERY_TYPE_ANALYTICAL, QUERY_TYPE_BREADTH, QUERY_TYPE_FACTUAL
+    from bibilab.pipeline.route import params_for_type
+
+    # Large list — no override
+    fact = params_for_type(QUERY_TYPE_FACTUAL, sources_total=10)
+    assert fact.depth_per_source == 2
+    assert fact.top_k == 5
+    anl = params_for_type(QUERY_TYPE_ANALYTICAL, sources_total=10)
+    assert anl.depth_per_source == 4
+    assert anl.top_k == 12
+    brd = params_for_type(QUERY_TYPE_BREADTH, sources_total=10)
+    assert brd.depth_per_source == 1
+    assert brd.top_k == 10  # capped at sources_total
+
+
+def test_params_breadth_capped_by_sources():
+    from bibilab.models._enums import QUERY_TYPE_BREADTH
+    from bibilab.pipeline.route import params_for_type
+
+    brd = params_for_type(QUERY_TYPE_BREADTH, sources_total=5)
+    assert brd.top_k == 5
+    assert brd.depth_per_source == 1
+
+
+def test_params_small_list_breadth_falls_back_to_factual():
+    from bibilab.models._enums import QUERY_TYPE_BREADTH
+    from bibilab.pipeline.route import params_for_type
+
+    # 2 sources: breadth degrades to factual
+    brd = params_for_type(QUERY_TYPE_BREADTH, sources_total=2)
+    assert brd.depth_per_source == 2
+    assert brd.top_k == 5
+
+
+def test_params_factual_unchanged_by_list_size():
+    from bibilab.models._enums import QUERY_TYPE_FACTUAL
+    from bibilab.pipeline.route import params_for_type
+
+    # Factual params invariant to list size
+    for n in (1, 5, 50):
+        fact = params_for_type(QUERY_TYPE_FACTUAL, sources_total=n)
+        assert fact.depth_per_source == 2
+        assert fact.top_k == 5

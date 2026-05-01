@@ -56,90 +56,7 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-// ─── Test 1: Configure button opens modal ──────────────────────────────────────
-describe("Slice 2 — chat mode toggle UI", () => {
-  test("Configure button opens modal", async () => {
-    vi.spyOn(window, "fetch").mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
-      const url = typeof input === "string" ? input : input instanceof URL ? input.href : (input as Request).url;
-      const method = init?.method ?? "GET";
-      if (url.includes("/conversation") && method === "GET") {
-        return Promise.resolve(
-          new Response(JSON.stringify({ conversation: null, messages: [] })),
-        );
-      }
-      if (url.includes("/chat") && method === "POST") {
-        return Promise.resolve(
-          makeSseStream([
-            'data: {"type":"done"}\n\n',
-          ]),
-        );
-      }
-      return Promise.resolve(new Response(JSON.stringify([])));
-    });
-
-    renderChatPanel({
-      selectedSourceIds: ["src-1"],
-      sources: [SOURCE_1],
-      listId: "list-1",
-    });
-
-    await waitFor(() => screen.getByText("Ask your sources"));
-
-    const configBtn = screen.getByRole("button", { name: /configure/i });
-    await userEvent.click(configBtn);
-
-    await waitFor(() => {
-      expect(screen.getByText(/focused/i)).toBeInTheDocument();
-      expect(screen.getByText(/broad/i)).toBeInTheDocument();
-    });
-  });
-
-  // ─── Test 2: Modal save sends PATCH with mode ────────────────────────────────
-  test("Modal save sends PATCH with mode", async () => {
-    let patchCalls: { listId: string; body: string }[] = [];
-    vi.spyOn(window, "fetch").mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
-      const url = typeof input === "string" ? input : input instanceof URL ? input.href : (input as Request).url;
-      const method = init?.method ?? "GET";
-      if (url.includes("/conversation") && method === "PATCH") {
-        patchCalls.push({ listId: url, body: init?.body as string ?? "" });
-        return Promise.resolve(new Response(JSON.stringify({ conversation: { id: "conv-1", list_id: "list-1", summary: null, mode: "broad", created_at: "2026-04-01T00:00:00Z", updated_at: "2026-04-01T00:00:00Z" }, messages: [] })));
-      }
-      if (url.includes("/conversation")) {
-        return Promise.resolve(
-          new Response(JSON.stringify({ conversation: null, messages: [] })),
-        );
-      }
-      return Promise.resolve(new Response(JSON.stringify([])));
-    });
-
-    renderChatPanel({
-      selectedSourceIds: ["src-1"],
-      sources: [SOURCE_1],
-      listId: "list-1",
-    });
-
-    await waitFor(() => screen.getByText("Ask your sources"));
-
-    const configBtn = screen.getByRole("button", { name: /configure/i });
-    await userEvent.click(configBtn);
-
-    await waitFor(() => expect(screen.getByText(/focused/i)).toBeInTheDocument());
-
-    const broadOption = screen.getByRole("radio", { name: /broad/i });
-    await userEvent.click(broadOption);
-
-    const saveBtn = screen.getByRole("button", { name: /save/i });
-    await userEvent.click(saveBtn);
-
-    await waitFor(() => {
-      expect(patchCalls.length).toBe(1);
-      expect(patchCalls[0].listId).toContain("/lists/list-1/conversation");
-      const body = JSON.parse(patchCalls[0].body);
-      expect(body.mode).toBe("broad");
-    });
-  });
-
-  // ─── Test 3: rag_meta event attaches rag to in-progress message ──────────────
+describe("Slice 2 — RAG observability via SSE rag_meta", () => {
   test("rag_meta event attaches rag to in-progress message", async () => {
     vi.spyOn(window, "fetch").mockImplementation(() =>
       Promise.resolve(
@@ -167,7 +84,6 @@ describe("Slice 2 — chat mode toggle UI", () => {
     });
   });
 
-  // ─── Test 4: Obs chip renders with correct chunk/source counts ──────────────
   test("Obs chip renders with correct chunk/source counts", async () => {
     vi.spyOn(window, "fetch").mockImplementation(() =>
       Promise.resolve(
@@ -195,7 +111,6 @@ describe("Slice 2 — chat mode toggle UI", () => {
     expect(chip).toBeInTheDocument();
   });
 
-  // ─── Test 5: Obs chip expands on click ───────────────────────────────────────
   test("Obs chip expands on click", async () => {
     vi.spyOn(window, "fetch").mockImplementation(() =>
       Promise.resolve(

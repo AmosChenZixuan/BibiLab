@@ -41,7 +41,7 @@ def test_map_type_to_mode():
 
     assert map_type_to_mode("factual") == "focused"
     assert map_type_to_mode("breadth") == "broad"
-    assert map_type_to_mode("analytical") == "broad"
+    assert map_type_to_mode("analytical") == "focused"
     with pytest.raises(ValueError):
         map_type_to_mode("unknown")
 

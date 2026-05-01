@@ -22,7 +22,10 @@ from bibilab.db import (
 from bibilab.db import (
     get_conversation as get_conv_row,
 )
-from bibilab.models._enums import CHAT_MODE_AUTO, CHAT_MODE_BROAD, CHAT_MODE_FOCUSED, map_type_to_mode
+from bibilab.models._enums import (
+    QUERY_TYPE_FACTUAL,
+    map_type_to_mode,
+)
 from bibilab.models.chat import (
     ChatRequest,
     ConversationResponse,
@@ -34,7 +37,7 @@ from bibilab.pipeline._shared import stream_llm
 from bibilab.pipeline.chat_summary import maybe_compress_conversation
 from bibilab.pipeline.chat_tools import GENERATE_REPORT_TOOL, execute_tool
 from bibilab.pipeline.embed import RetrievalResult, RetrievedChunk, retrieve
-from bibilab.pipeline.route import classify_query
+from bibilab.pipeline.route import classify_query, params_for_type
 
 logger = logging.getLogger(__name__)
 
@@ -110,17 +113,8 @@ def _format_chunk_line(chunk: RetrievedChunk) -> str:
 def _format_rag_context(result: RetrievalResult, query: str) -> str:
     if not result.chunks:
         return ""
-    if result.mode == CHAT_MODE_BROAD:
-        parts = [
-            f"Query: {query}\n",
-            f"Concept appears in {result.sources_with_hits} of {result.sources_total} sources\n",
-            "Best excerpt per source:",
-        ]
-        parts.extend(_format_chunk_line(c) for c in result.chunks)
-        return "\n".join(parts)
-    parts = [f"Query: {query}\n\nRelevant transcript excerpts:"]
-    parts.extend(_format_chunk_line(c) for c in result.chunks)
-    return "\n".join(parts)
+    header = f"Relevant transcript excerpts (from {result.sources_with_hits} of {result.sources_total} sources):"
+    return "\n".join([f"Query: {query}\n", header, *map(_format_chunk_line, result.chunks)])
 
 
 def _build_rag_payload(rag_result: RetrievalResult) -> dict:
@@ -164,7 +158,6 @@ async def chat_endpoint(
 
     conv_row = await get_conv_row(conversation_id)
     existing_summary = conv_row["summary"] if conv_row else None
-    conversation_mode = conv_row["mode"] if conv_row else CHAT_MODE_FOCUSED
 
     history_rows = await get_recent_messages(conversation_id, limit=100)
     history = [{"role": row["role"], "content": row["content"]} for row in history_rows]
@@ -175,31 +168,29 @@ async def chat_endpoint(
         source_rows = await get_sources_for_list(list_id)
         source_ids = [row["id"] for row in source_rows]
 
-    effective_mode = conversation_mode
     rag_context = ""
     rag_result = None
     if source_ids and request.message.strip():
-        if conversation_mode == CHAT_MODE_AUTO:
-            if cfg.rag.query_routing_enabled:
-                query_type = await classify_query(request.message, cfg)
-                effective_mode = map_type_to_mode(query_type)
-                try:
-                    await log_query_classification(
-                        list_id=list_id,
-                        query_text=request.message,
-                        query_type=query_type,
-                        effective_mode=effective_mode,
-                    )
-                except Exception:
-                    logger.warning("Failed to log query classification", exc_info=True)
-            else:
-                effective_mode = CHAT_MODE_FOCUSED
+        if cfg.rag.query_routing_enabled:
+            query_type = await classify_query(request.message, cfg)
+            params = params_for_type(query_type, len(source_ids))
+            effective_mode = map_type_to_mode(query_type)
+            try:
+                await log_query_classification(
+                    list_id=list_id,
+                    query_text=request.message,
+                    query_type=query_type,
+                    effective_mode=effective_mode,
+                )
+            except Exception:
+                logger.warning("Failed to log query classification", exc_info=True)
+        else:
+            params = params_for_type(QUERY_TYPE_FACTUAL, len(source_ids))
         rag_result = await retrieve(
             query_text=request.message,
             source_ids=source_ids,
             cfg=cfg,
-            top_k=5,
-            mode=effective_mode,
+            params=params,
         )
         rag_context = _format_rag_context(rag_result, request.message)
 

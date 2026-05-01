@@ -308,29 +308,33 @@ async def test_patch_conversation_mode_updates_row(client):
 
 
 @pytest.mark.asyncio
-async def test_chat_endpoint_uses_stored_mode(client):
-    """Chat endpoint passes stored conversation mode to retrieve()."""
+async def test_chat_endpoint_uses_classifier_for_params(client):
+    """Chat endpoint runs classifier and passes its output params to retrieve()."""
     list_id = (await client.post("/lists", json={"name": "Test"})).json()["id"]
-    await client.patch(f"/lists/{list_id}/conversation", json={"mode": "broad"})
-    captured_mode = []
 
-    async def capture_retrieve(query_text, source_ids, cfg, mode="focused", top_k=10):
-        captured_mode.append(mode)
+    captured_params = []
+
+    async def capture_retrieve(query_text, source_ids, cfg, params):
+        captured_params.append(params)
         return MagicMock(
-            chunks=[], mode=mode, candidates_evaluated=0, sources_with_hits=0, sources_total=0, source_coverage=[]
+            chunks=[], mode="broad", candidates_evaluated=0, sources_with_hits=0, sources_total=0, source_coverage=[]
         )
 
-    with patch("bibilab.routers.chat.retrieve", capture_retrieve):
-        with patch("bibilab.routers.chat.get_sources_for_list", new_callable=AsyncMock) as mock_sources:
-            mock_sources.return_value = [MagicMock(id="src-1")]
-            with patch("bibilab.routers.chat.stream_llm") as mock_stream:
-                mock_stream.return_value = an_async_generator(
-                    [
-                        MagicMock(type="done", content=None, tool_call=None),
-                    ]
-                )
-                await client.post(f"/lists/{list_id}/chat", json={"message": "hi"})
-    assert captured_mode[0] == "broad"
+    with patch("bibilab.routers.chat.classify_query", new_callable=AsyncMock) as mock_classify:
+        mock_classify.return_value = "breadth"
+        with patch("bibilab.routers.chat.retrieve", capture_retrieve):
+            with patch("bibilab.routers.chat.get_sources_for_list", new_callable=AsyncMock) as mock_sources:
+                mock_sources.return_value = [{"id": f"src-{i}"} for i in range(30)]
+                with patch("bibilab.routers.chat.stream_llm") as mock_stream:
+                    mock_stream.return_value = an_async_generator(
+                        [
+                            MagicMock(type="done", content=None, tool_call=None),
+                        ]
+                    )
+                    await client.post(f"/lists/{list_id}/chat", json={"message": "hi"})
+    mock_classify.assert_called_once()
+    assert captured_params[0].depth_per_source == 1
+    assert captured_params[0].top_k == 20
 
 
 @pytest.mark.asyncio
@@ -488,8 +492,8 @@ async def test_routing_skipped_when_disabled(client, tmp_bibilab_home):
 
 
 @pytest.mark.asyncio
-async def test_routing_skipped_when_mode_is_broad(client, tmp_bibilab_home):
-    """Explicit broad mode → classify_query not called."""
+async def test_routing_runs_regardless_of_stored_mode(client, tmp_bibilab_home):
+    """Classifier always runs when routing enabled — stored mode is ignored."""
     from bibilab.config import BibilabConfig, RagConfig, get_config
 
     list_id = (await client.post("/lists", json={"name": "Test"})).json()["id"]
@@ -513,14 +517,14 @@ async def test_routing_skipped_when_mode_is_broad(client, tmp_bibilab_home):
                     source_coverage=[],
                 )
                 with patch("bibilab.routers.chat.get_sources_for_list", new_callable=AsyncMock) as mock_sources:
-                    mock_sources.return_value = [MagicMock(id="src-1")]
+                    mock_sources.return_value = [{"id": f"src-{i}"} for i in range(30)]
                     with patch("bibilab.routers.chat.stream_llm") as mock_stream:
                         mock_stream.return_value = an_async_generator(
                             [MagicMock(type="done", content=None, tool_call=None)]
                         )
                         await client.post(f"/lists/{list_id}/chat", json={"message": "hi"})
 
-        mock_classify.assert_not_called()
+        mock_classify.assert_called_once()
     finally:
         app.dependency_overrides.clear()
 
@@ -552,7 +556,7 @@ async def test_routing_runs_when_enabled_and_mode_is_auto(client, tmp_bibilab_ho
                         source_coverage=[],
                     )
                     with patch("bibilab.routers.chat.get_sources_for_list", new_callable=AsyncMock) as mock_sources:
-                        mock_sources.return_value = [MagicMock(id="src-1")]
+                        mock_sources.return_value = [{"id": f"src-{i}"} for i in range(30)]
                         with patch("bibilab.routers.chat.stream_llm") as mock_stream:
                             mock_stream.return_value = an_async_generator(
                                 [MagicMock(type="done", content=None, tool_call=None)]
@@ -562,14 +566,15 @@ async def test_routing_runs_when_enabled_and_mode_is_auto(client, tmp_bibilab_ho
         mock_classify.assert_called_once()
         mock_log.assert_called_once()
         call_args = mock_retrieve.call_args
-        assert call_args.kwargs["mode"] == "broad"
+        assert call_args.kwargs["params"].depth_per_source == 1
+        assert call_args.kwargs["params"].top_k == 20
     finally:
         app.dependency_overrides.clear()
 
 
 @pytest.mark.asyncio
-async def test_routing_skipped_when_mode_is_focused(client, tmp_bibilab_home):
-    """Explicit focused mode → classify_query not called, retrieve uses focused directly."""
+async def test_routing_runs_when_enabled(client, tmp_bibilab_home):
+    """Classifier runs when query_routing_enabled=True, regardless of stored mode."""
     from bibilab.config import BibilabConfig, RagConfig, get_config
 
     list_id = (await client.post("/lists", json={"name": "Test"})).json()["id"]
@@ -582,7 +587,7 @@ async def test_routing_skipped_when_mode_is_focused(client, tmp_bibilab_home):
 
     try:
         with patch("bibilab.routers.chat.classify_query", new_callable=AsyncMock) as mock_classify:
-            mock_classify.return_value = "breadth"
+            mock_classify.return_value = "factual"
             with patch("bibilab.routers.chat.retrieve", new_callable=AsyncMock) as mock_retrieve:
                 mock_retrieve.return_value = MagicMock(
                     chunks=[],
@@ -593,16 +598,17 @@ async def test_routing_skipped_when_mode_is_focused(client, tmp_bibilab_home):
                     source_coverage=[],
                 )
                 with patch("bibilab.routers.chat.get_sources_for_list", new_callable=AsyncMock) as mock_sources:
-                    mock_sources.return_value = [MagicMock(id="src-1")]
+                    mock_sources.return_value = [{"id": f"src-{i}"} for i in range(5)]
                     with patch("bibilab.routers.chat.stream_llm") as mock_stream:
                         mock_stream.return_value = an_async_generator(
                             [MagicMock(type="done", content=None, tool_call=None)]
                         )
                         await client.post(f"/lists/{list_id}/chat", json={"message": "tell me everything"})
 
-        mock_classify.assert_not_called()
+        mock_classify.assert_called_once()
         call_args = mock_retrieve.call_args
-        assert call_args.kwargs["mode"] == "focused"
+        assert call_args.kwargs["params"].depth_per_source == 2
+        assert call_args.kwargs["params"].top_k == 5
     finally:
         app.dependency_overrides.clear()
 
@@ -642,6 +648,7 @@ async def test_auto_mode_falls_back_to_focused_when_routing_disabled(client, tmp
 
         mock_classify.assert_not_called()
         call_args = mock_retrieve.call_args
-        assert call_args.kwargs["mode"] == "focused"
+        assert call_args.kwargs["params"].depth_per_source == 2
+        assert call_args.kwargs["params"].top_k == 5
     finally:
         app.dependency_overrides.clear()

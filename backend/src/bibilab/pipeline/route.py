@@ -9,6 +9,7 @@ from bibilab.models._enums import (
     QUERY_TYPE_BREADTH,
     QUERY_TYPE_FACTUAL,
     QueryType,
+    RetrievalParams,
 )
 from bibilab.pipeline._shared import _call_llm
 
@@ -62,3 +63,27 @@ async def classify_query(query: str, cfg: BibilabConfig) -> QueryType:
     except Exception as exc:
         logger.warning("Query classification failed (%s); falling back to factual", exc)
         return QUERY_TYPE_FACTUAL
+
+
+_PARAMS_BY_TYPE: dict[QueryType, RetrievalParams] = {
+    QUERY_TYPE_FACTUAL: RetrievalParams(depth_per_source=2, top_k=5),
+    QUERY_TYPE_ANALYTICAL: RetrievalParams(depth_per_source=4, top_k=12),
+    QUERY_TYPE_BREADTH: RetrievalParams(depth_per_source=1, top_k=20),
+}
+
+
+def params_for_type(query_type: QueryType, sources_total: int) -> RetrievalParams:
+    """Resolve params for a query type, with list-size-aware adjustments.
+
+    - Breadth on lists with < 3 sources degrades to factual params
+      (1 chunk per source on a 1-source list is worse than focused).
+    - Breadth top_k is capped at sources_total (asking for 20 chunks from
+      a 5-source list is impossible at depth=1 — the diverse selector
+      would relax-fallback to duplicates, wasting token budget).
+    """
+    if query_type == QUERY_TYPE_BREADTH and sources_total < 3:
+        return _PARAMS_BY_TYPE[QUERY_TYPE_FACTUAL]
+    base = _PARAMS_BY_TYPE[query_type]
+    if query_type == QUERY_TYPE_BREADTH:
+        return RetrievalParams(depth_per_source=base.depth_per_source, top_k=min(base.top_k, sources_total))
+    return base

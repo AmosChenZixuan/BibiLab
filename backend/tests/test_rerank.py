@@ -78,6 +78,7 @@ async def test_rerank_single_chunk():
 @pytest.mark.asyncio
 async def test_retrieve_with_reranking_enabled(tmp_bibilab_home):
     from bibilab.config import BibilabConfig, RagConfig
+    from bibilab.models._enums import RetrievalParams
     from bibilab.pipeline.embed import retrieve
 
     cfg = BibilabConfig(rag=RagConfig(max_distance=1.0, reranking_enabled=True, hybrid_enabled=False))
@@ -96,7 +97,7 @@ async def test_retrieve_with_reranking_enabled(tmp_bibilab_home):
             return_value=list(reversed(chunks)),
         ) as mock_rerank,
     ):
-        result = await retrieve("query", ["src1"], cfg, top_k=5)
+        result = await retrieve("query", ["src1"], cfg, params=RetrievalParams(depth_per_source=2, top_k=5))
 
     mock_rerank.assert_called_once_with("query", chunks, top_k=len(chunks))
     assert result.chunks == list(reversed(chunks))
@@ -107,6 +108,7 @@ async def test_retrieve_falls_back_when_rerank_raises(tmp_bibilab_home, caplog):
     import logging
 
     from bibilab.config import BibilabConfig, RagConfig
+    from bibilab.models._enums import RetrievalParams
     from bibilab.pipeline.embed import retrieve
 
     cfg = BibilabConfig(rag=RagConfig(max_distance=1.0, reranking_enabled=True, hybrid_enabled=False))
@@ -126,7 +128,7 @@ async def test_retrieve_falls_back_when_rerank_raises(tmp_bibilab_home, caplog):
         ),
         caplog.at_level(logging.WARNING, logger="bibilab.pipeline.embed"),
     ):
-        result = await retrieve("query", ["src1"], cfg, top_k=3)
+        result = await retrieve("query", ["src1"], cfg, params=RetrievalParams(depth_per_source=2, top_k=3))
 
     assert len(result.chunks) == 3
     assert [c.content for c in result.chunks] == ["c0", "c1", "c2"]
@@ -136,6 +138,7 @@ async def test_retrieve_falls_back_when_rerank_raises(tmp_bibilab_home, caplog):
 @pytest.mark.asyncio
 async def test_retrieve_with_reranking_disabled(tmp_bibilab_home):
     from bibilab.config import BibilabConfig, RagConfig
+    from bibilab.models._enums import RetrievalParams
     from bibilab.pipeline.embed import retrieve
 
     cfg = BibilabConfig(rag=RagConfig(max_distance=1.0, reranking_enabled=False, hybrid_enabled=False))
@@ -153,7 +156,7 @@ async def test_retrieve_with_reranking_disabled(tmp_bibilab_home):
             new_callable=AsyncMock,
         ) as mock_rerank,
     ):
-        result = await retrieve("query", ["src1"], cfg, top_k=5)
+        result = await retrieve("query", ["src1"], cfg, params=RetrievalParams(depth_per_source=2, top_k=5))
 
     mock_rerank.assert_not_called()
     assert result.chunks == chunks
@@ -162,7 +165,7 @@ async def test_retrieve_with_reranking_disabled(tmp_bibilab_home):
 @pytest.mark.asyncio
 async def test_broad_mode_covers_candidate_pool_sources(tmp_bibilab_home):
     from bibilab.config import BibilabConfig, RagConfig
-    from bibilab.models._enums import CHAT_MODE_BROAD
+    from bibilab.models._enums import RetrievalParams
     from bibilab.pipeline.embed import retrieve
 
     cfg = BibilabConfig(
@@ -183,7 +186,7 @@ async def test_broad_mode_covers_candidate_pool_sources(tmp_bibilab_home):
             return_value=chunks,
         ),
     ):
-        result = await retrieve("query", ["src1"], cfg, mode=CHAT_MODE_BROAD, top_k=8)
+        result = await retrieve("query", ["src1"], cfg, params=RetrievalParams(depth_per_source=1, top_k=8))
 
     assert len(result.source_coverage) == 8
     assert len(result.chunks) == 8
@@ -193,7 +196,7 @@ async def test_broad_mode_covers_candidate_pool_sources(tmp_bibilab_home):
 @pytest.mark.asyncio
 async def test_focused_mode_unchanged(tmp_bibilab_home):
     from bibilab.config import BibilabConfig, RagConfig
-    from bibilab.models._enums import CHAT_MODE_FOCUSED
+    from bibilab.models._enums import RetrievalParams
     from bibilab.pipeline.embed import retrieve
 
     cfg = BibilabConfig(
@@ -214,7 +217,7 @@ async def test_focused_mode_unchanged(tmp_bibilab_home):
             return_value=chunks[:5],
         ),
     ):
-        result = await retrieve("query", ["src1"], cfg, mode=CHAT_MODE_FOCUSED, top_k=5)
+        result = await retrieve("query", ["src1"], cfg, params=RetrievalParams(depth_per_source=2, top_k=5))
 
     assert len(result.chunks) == 5
 
@@ -222,6 +225,7 @@ async def test_focused_mode_unchanged(tmp_bibilab_home):
 @pytest.mark.asyncio
 async def test_rerank_floor_drops_low_scores(tmp_bibilab_home):
     from bibilab.config import BibilabConfig, RagConfig
+    from bibilab.models._enums import RetrievalParams
     from bibilab.pipeline.embed import retrieve
 
     cfg = BibilabConfig(
@@ -245,7 +249,7 @@ async def test_rerank_floor_drops_low_scores(tmp_bibilab_home):
             return_value=reranked,
         ),
     ):
-        result = await retrieve("query", ["src1"], cfg, top_k=5)
+        result = await retrieve("query", ["src1"], cfg, params=RetrievalParams(depth_per_source=2, top_k=5))
 
     assert len(result.chunks) == 3
     assert [c.content for c in result.chunks] == ["c2", "c3", "c4"]
@@ -254,6 +258,7 @@ async def test_rerank_floor_drops_low_scores(tmp_bibilab_home):
 @pytest.mark.asyncio
 async def test_rerank_floor_disabled_when_none(tmp_bibilab_home):
     from bibilab.config import BibilabConfig, RagConfig
+    from bibilab.models._enums import RetrievalParams
     from bibilab.pipeline.embed import retrieve
 
     cfg = BibilabConfig(
@@ -277,7 +282,7 @@ async def test_rerank_floor_disabled_when_none(tmp_bibilab_home):
             return_value=reranked,
         ),
     ):
-        result = await retrieve("query", ["src1"], cfg, top_k=5)
+        result = await retrieve("query", ["src1"], cfg, params=RetrievalParams(depth_per_source=2, top_k=5))
 
     assert len(result.chunks) == 5
 
@@ -287,6 +292,7 @@ async def test_rerank_failure_skips_floor(tmp_bibilab_home, caplog):
     import logging
 
     from bibilab.config import BibilabConfig, RagConfig
+    from bibilab.models._enums import RetrievalParams
     from bibilab.pipeline.embed import retrieve
 
     cfg = BibilabConfig(
@@ -308,7 +314,7 @@ async def test_rerank_failure_skips_floor(tmp_bibilab_home, caplog):
         ),
         caplog.at_level(logging.WARNING, logger="bibilab.pipeline.embed"),
     ):
-        result = await retrieve("query", ["src1"], cfg, top_k=3)
+        result = await retrieve("query", ["src1"], cfg, params=RetrievalParams(depth_per_source=2, top_k=3))
 
     assert len(result.chunks) == 3
     assert [c.content for c in result.chunks] == ["c0", "c1", "c2"]
@@ -318,7 +324,7 @@ async def test_rerank_failure_skips_floor(tmp_bibilab_home, caplog):
 @pytest.mark.asyncio
 async def test_broad_mode_respects_floor(tmp_bibilab_home):
     from bibilab.config import BibilabConfig, RagConfig
-    from bibilab.models._enums import CHAT_MODE_BROAD
+    from bibilab.models._enums import RetrievalParams
     from bibilab.pipeline.embed import retrieve
 
     cfg = BibilabConfig(rag=RagConfig(reranking_enabled=True, hybrid_enabled=False, rerank_min_score=0.0))
@@ -341,7 +347,7 @@ async def test_broad_mode_respects_floor(tmp_bibilab_home):
             return_value=reranked,
         ),
     ):
-        result = await retrieve("q", ["src1"], cfg, mode=CHAT_MODE_BROAD, top_k=4)
+        result = await retrieve("q", ["src1"], cfg, params=RetrievalParams(depth_per_source=1, top_k=4))
 
     assert {c.video_id for c in result.chunks} == {"v2", "v3"}
     assert result.sources_with_hits == 4
@@ -349,13 +355,12 @@ async def test_broad_mode_respects_floor(tmp_bibilab_home):
 
 @pytest.mark.asyncio
 async def test_sources_with_hits_reflects_full_reranked_pool(tmp_bibilab_home):
-    """Focused mode: sources_with_hits reflects ALL reranked candidates, not the top_k slice.
+    """sources_with_hits reflects ALL reranked candidates, not the final top_k slice.
 
     Regression for #9 — ObsChip should show real retrieval coverage, not the LLM-input slice.
-    Mock honors top_k: rerank scores all chunks but returns only the top_k requested by retrieve().
     """
     from bibilab.config import BibilabConfig, RagConfig
-    from bibilab.models._enums import CHAT_MODE_FOCUSED
+    from bibilab.models._enums import RetrievalParams
     from bibilab.pipeline.embed import retrieve
 
     cfg = BibilabConfig(
@@ -377,7 +382,7 @@ async def test_sources_with_hits_reflects_full_reranked_pool(tmp_bibilab_home):
         ),
         patch("bibilab.pipeline.rerank.rerank", side_effect=mock_rerank),
     ):
-        result = await retrieve("query", ["src1"], cfg, mode=CHAT_MODE_FOCUSED, top_k=5)
+        result = await retrieve("query", ["src1"], cfg, params=RetrievalParams(depth_per_source=2, top_k=5))
 
     assert result.sources_with_hits == 8
     assert len(result.chunks) == 5

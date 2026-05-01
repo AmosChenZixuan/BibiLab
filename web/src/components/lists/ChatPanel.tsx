@@ -11,19 +11,16 @@ import {
   MessageSquareOff,
   RotateCcw,
   SendHorizontal,
-  Settings2,
   Square,
   Trash2,
 } from "lucide-react";
 
 import { useLanguage } from "@/app/LanguageContext";
 import { useJobActivity } from "@/components/jobs/JobActivityProvider";
-import { ChatConfigModal } from "@/components/lists/ChatConfigModal";
 import { useConversationHistory, type MessageUI } from "@/components/lists/hooks/useConversationHistory";
 import { ObsChip } from "@/components/lists/ObsChip";
 import { PulseRing } from "@/components/ui/PulseRing";
 import type { Source } from "@/lib/types";
-import { CHAT_MODE_AUTO, CHAT_MODE_FOCUSED, CHAT_MODE_BROAD, type ChatMode } from "@/lib/constants";
 import { api } from "@/lib/api";
 import {
   autoResize,
@@ -46,18 +43,10 @@ export function ChatPanel({
   const [inputValue, setInputValue] = useState("");
   const [messages, setMessages] = useState<MessageUI[]>([]);
   const [showClearPopover, setShowClearPopover] = useState(false);
-  const [showConfigModal, setShowConfigModal] = useState(false);
-  const [chatMode, setChatMode] = useState<ChatMode>(CHAT_MODE_AUTO);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const hasSources = selectedSourceIds.length > 0;
-  const { messages: historyMessages, isLoadingHistory, loadError, conversationMode } = useConversationHistory(listId, hasSources);
-
-  useEffect(() => {
-    if (conversationMode) {
-      setChatMode(conversationMode);
-    }
-  }, [conversationMode]);
+  const { messages: historyMessages, isLoadingHistory, loadError } = useConversationHistory(listId, hasSources);
 
   const { sendMessage, stopStreaming, retryLastMessage, isStreaming } = useSSEStream({
     listId,
@@ -131,16 +120,6 @@ export function ChatPanel({
       <div className="shrink-0 border-b border-border px-4 py-3.5">
         <div className="flex items-center">
           <h2 className="flex-1 font-serif text-lg text-ink">{t("chat.header.title")}</h2>
-          <div className="relative">
-            <button
-              type="button"
-              onClick={() => setShowConfigModal(true)}
-              aria-label={t("chat.configure.title")}
-              className="flex h-7 w-7 items-center justify-center rounded-lg text-muted transition hover:bg-border"
-            >
-              <Settings2 size={14} />
-            </button>
-          </div>
           <div className="relative">
             <button
               type="button"
@@ -218,11 +197,6 @@ export function ChatPanel({
             <p className="m-0 max-w-xs text-sm text-muted">
               {t("chat.empty.noHistory.hint")}
             </p>
-            {chatMode === CHAT_MODE_BROAD && (
-              <p className="m-0 max-w-xs text-sm text-muted">
-                {t("chat.mode.broad.description")}
-              </p>
-            )}
           </div>
         ) : (
           <div className="flex flex-col gap-3.5">
@@ -335,14 +309,6 @@ export function ChatPanel({
         </div>
       </div>
 
-      {showConfigModal && (
-        <ChatConfigModal
-          listId={listId}
-          currentMode={chatMode}
-          onClose={() => setShowConfigModal(false)}
-          onSave={(mode) => setChatMode(mode as ChatMode)}
-        />
-      )}
     </div>
   );
 }
