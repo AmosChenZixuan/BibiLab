@@ -57,7 +57,6 @@ afterEach(() => {
 });
 
 describe("Slice 2 — RAG observability via SSE rag_meta", () => {
-  // ─── Test 1: rag_meta event attaches rag to in-progress message ──────────────
   test("rag_meta event attaches rag to in-progress message", async () => {
     vi.spyOn(window, "fetch").mockImplementation(() =>
       Promise.resolve(
@@ -85,7 +84,6 @@ describe("Slice 2 — RAG observability via SSE rag_meta", () => {
     });
   });
 
-  // ─── Test 4: Obs chip renders with correct chunk/source counts ──────────────
   test("Obs chip renders with correct chunk/source counts", async () => {
     vi.spyOn(window, "fetch").mockImplementation(() =>
       Promise.resolve(
@@ -113,7 +111,6 @@ describe("Slice 2 — RAG observability via SSE rag_meta", () => {
     expect(chip).toBeInTheDocument();
   });
 
-  // ─── Test 5: Obs chip expands on click ───────────────────────────────────────
   test("Obs chip expands on click", async () => {
     vi.spyOn(window, "fetch").mockImplementation(() =>
       Promise.resolve(

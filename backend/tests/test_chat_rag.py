@@ -511,7 +511,7 @@ async def test_format_rag_context(tmp_bibilab_home):
     assert "Best excerpt per source:" not in text
 
 
-async def test_format_rag_context_empty(tmp_bibilab_home):
+def test_format_rag_context_empty(tmp_bibilab_home):
     from bibilab.pipeline.embed import RetrievalResult
     from bibilab.routers.chat import _format_rag_context  # noqa: E402
 
