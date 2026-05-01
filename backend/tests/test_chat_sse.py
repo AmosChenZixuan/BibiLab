@@ -312,12 +312,13 @@ async def test_chat_endpoint_uses_stored_mode(client):
     """Chat endpoint passes stored conversation mode to retrieve()."""
     list_id = (await client.post("/lists", json={"name": "Test"})).json()["id"]
     await client.patch(f"/lists/{list_id}/conversation", json={"mode": "broad"})
-    captured_mode = []
 
-    async def capture_retrieve(query_text, source_ids, cfg, mode="focused", top_k=10):
-        captured_mode.append(mode)
+    captured_params = []
+
+    async def capture_retrieve(query_text, source_ids, cfg, params):
+        captured_params.append(params)
         return MagicMock(
-            chunks=[], mode=mode, candidates_evaluated=0, sources_with_hits=0, sources_total=0, source_coverage=[]
+            chunks=[], mode="broad", candidates_evaluated=0, sources_with_hits=0, sources_total=0, source_coverage=[]
         )
 
     with patch("bibilab.routers.chat.retrieve", capture_retrieve):
@@ -330,7 +331,8 @@ async def test_chat_endpoint_uses_stored_mode(client):
                     ]
                 )
                 await client.post(f"/lists/{list_id}/chat", json={"message": "hi"})
-    assert captured_mode[0] == "broad"
+    assert captured_params[0].depth_per_source == 1
+    assert captured_params[0].top_k == 20
 
 
 @pytest.mark.asyncio
@@ -562,7 +564,8 @@ async def test_routing_runs_when_enabled_and_mode_is_auto(client, tmp_bibilab_ho
         mock_classify.assert_called_once()
         mock_log.assert_called_once()
         call_args = mock_retrieve.call_args
-        assert call_args.kwargs["mode"] == "broad"
+        assert call_args.kwargs["params"].depth_per_source == 1
+        assert call_args.kwargs["params"].top_k == 20
     finally:
         app.dependency_overrides.clear()
 
@@ -602,7 +605,8 @@ async def test_routing_skipped_when_mode_is_focused(client, tmp_bibilab_home):
 
         mock_classify.assert_not_called()
         call_args = mock_retrieve.call_args
-        assert call_args.kwargs["mode"] == "focused"
+        assert call_args.kwargs["params"].depth_per_source == 2
+        assert call_args.kwargs["params"].top_k == 5
     finally:
         app.dependency_overrides.clear()
 
@@ -642,6 +646,7 @@ async def test_auto_mode_falls_back_to_focused_when_routing_disabled(client, tmp
 
         mock_classify.assert_not_called()
         call_args = mock_retrieve.call_args
-        assert call_args.kwargs["mode"] == "focused"
+        assert call_args.kwargs["params"].depth_per_source == 2
+        assert call_args.kwargs["params"].top_k == 5
     finally:
         app.dependency_overrides.clear()

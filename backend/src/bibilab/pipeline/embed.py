@@ -17,7 +17,7 @@ from pathlib import Path
 from bibilab.adapters.base import VideoMeta
 from bibilab.config import BibilabConfig, bibilab_home
 from bibilab.db import _escape_fts_query, get_db_path, get_video_ids_for_sources, query_fts_rows
-from bibilab.models._enums import CHAT_MODE_BROAD, CHAT_MODE_FOCUSED, ChatMode
+from bibilab.models._enums import CHAT_MODE_BROAD, CHAT_MODE_FOCUSED, ChatMode, RetrievalParams
 from bibilab.pipeline.chunk import RagChunk
 
 logger = logging.getLogger(__name__)
@@ -75,6 +75,30 @@ def _best_by_source(chunks: list[RetrievedChunk]) -> dict[str, RetrievedChunk]:
         if vid not in best or _chunk_score(chunk) < _chunk_score(best[vid]):
             best[vid] = chunk
     return best
+
+
+def _diverse_top_k(ranked: list[RetrievedChunk], depth: int, k: int) -> list[RetrievedChunk]:
+    """Pick up to k chunks, allowing at most depth chunks from any single video.
+
+    Fills slots greedily in ranked order. If k slots can't be filled while
+    respecting the depth cap (too few distinct sources), the cap is relaxed
+    and leftovers fill the remaining slots.
+    """
+    per_src: dict[str, int] = {}
+    picked: list[RetrievedChunk] = []
+    leftovers: list[RetrievedChunk] = []
+
+    for c in ranked:
+        cur = per_src.get(c.video_id, 0)
+        if cur < depth:
+            picked.append(c)
+            per_src[c.video_id] = cur + 1
+            if len(picked) == k:
+                return picked
+        else:
+            leftovers.append(c)
+
+    return (picked + leftovers)[:k]
 
 
 def _rrf_fuse(
@@ -405,14 +429,15 @@ async def retrieve(
     query_text: str,
     source_ids: list[str],
     cfg: BibilabConfig,
-    mode: ChatMode = CHAT_MODE_FOCUSED,
-    top_k: int = 10,
+    params: RetrievalParams,
 ) -> RetrievalResult:
-    """High-level retrieval that wraps hybrid search with metadata."""
+    """High-level retrieval that wraps hybrid search with metadata.
+
+    Selection is driven by RetrievalParams: depth_per_source caps chunks from
+    any single video; top_k sets the total returned. One code path replaces the
+    old focused/broad mode branching.
+    """
     sources_total = len(source_ids)
-    # Both modes pull a candidate pool sized for meaningful downstream processing:
-    # focused mode lets the reranker trim to top_k; broad mode aggregates one chunk
-    # per source for coverage. top_k only constrains the post-rerank trim.
     effective_top_k = RETRIEVAL_CANDIDATE_POOL
 
     if cfg.rag.hybrid_enabled:
@@ -447,14 +472,13 @@ async def retrieve(
         for c in sorted(pool_best_by_source.values(), key=_chunk_score)
     ]
 
-    if mode == CHAT_MODE_BROAD:
-        result_chunks = sorted(_best_by_source(chunks).values(), key=_chunk_score)
-    else:
-        result_chunks = chunks[:top_k]
+    result_chunks = _diverse_top_k(chunks, params.depth_per_source, params.top_k)
+
+    inferred_mode: ChatMode = CHAT_MODE_BROAD if params.depth_per_source == 1 else CHAT_MODE_FOCUSED
 
     return RetrievalResult(
         chunks=result_chunks,
-        mode=mode,
+        mode=inferred_mode,
         candidates_evaluated=candidates_evaluated,
         sources_with_hits=len(pool_best_by_source),
         sources_total=sources_total,

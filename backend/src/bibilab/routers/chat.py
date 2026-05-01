@@ -22,7 +22,14 @@ from bibilab.db import (
 from bibilab.db import (
     get_conversation as get_conv_row,
 )
-from bibilab.models._enums import CHAT_MODE_AUTO, CHAT_MODE_BROAD, CHAT_MODE_FOCUSED, map_type_to_mode
+from bibilab.models._enums import (
+    CHAT_MODE_AUTO,
+    CHAT_MODE_BROAD,
+    CHAT_MODE_FOCUSED,
+    QUERY_TYPE_BREADTH,
+    QUERY_TYPE_FACTUAL,
+    map_type_to_mode,
+)
 from bibilab.models.chat import (
     ChatRequest,
     ConversationResponse,
@@ -34,7 +41,7 @@ from bibilab.pipeline._shared import stream_llm
 from bibilab.pipeline.chat_summary import maybe_compress_conversation
 from bibilab.pipeline.chat_tools import GENERATE_REPORT_TOOL, execute_tool
 from bibilab.pipeline.embed import RetrievalResult, RetrievedChunk, retrieve
-from bibilab.pipeline.route import classify_query
+from bibilab.pipeline.route import classify_query, params_for_type
 
 logger = logging.getLogger(__name__)
 
@@ -182,6 +189,7 @@ async def chat_endpoint(
         if conversation_mode == CHAT_MODE_AUTO:
             if cfg.rag.query_routing_enabled:
                 query_type = await classify_query(request.message, cfg)
+                params = params_for_type(query_type)
                 effective_mode = map_type_to_mode(query_type)
                 try:
                     await log_query_classification(
@@ -193,13 +201,19 @@ async def chat_endpoint(
                 except Exception:
                     logger.warning("Failed to log query classification", exc_info=True)
             else:
+                params = params_for_type(QUERY_TYPE_FACTUAL)
                 effective_mode = CHAT_MODE_FOCUSED
+        elif conversation_mode == CHAT_MODE_FOCUSED:
+            params = params_for_type(QUERY_TYPE_FACTUAL)
+        elif conversation_mode == CHAT_MODE_BROAD:
+            params = params_for_type(QUERY_TYPE_BREADTH)
+        else:
+            params = params_for_type(QUERY_TYPE_FACTUAL)
         rag_result = await retrieve(
             query_text=request.message,
             source_ids=source_ids,
             cfg=cfg,
-            top_k=5,
-            mode=effective_mode,
+            params=params,
         )
         rag_context = _format_rag_context(rag_result, request.message)
 

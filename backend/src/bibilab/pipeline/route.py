@@ -9,6 +9,7 @@ from bibilab.models._enums import (
     QUERY_TYPE_BREADTH,
     QUERY_TYPE_FACTUAL,
     QueryType,
+    RetrievalParams,
 )
 from bibilab.pipeline._shared import _call_llm
 
@@ -62,3 +63,14 @@ async def classify_query(query: str, cfg: BibilabConfig) -> QueryType:
     except Exception as exc:
         logger.warning("Query classification failed (%s); falling back to factual", exc)
         return QUERY_TYPE_FACTUAL
+
+
+_PARAMS_BY_TYPE: dict[QueryType, RetrievalParams] = {
+    QUERY_TYPE_FACTUAL: RetrievalParams(depth_per_source=2, top_k=5),
+    QUERY_TYPE_ANALYTICAL: RetrievalParams(depth_per_source=4, top_k=12),
+    QUERY_TYPE_BREADTH: RetrievalParams(depth_per_source=1, top_k=20),
+}
+
+
+def params_for_type(query_type: QueryType) -> RetrievalParams:
+    return _PARAMS_BY_TYPE[query_type]

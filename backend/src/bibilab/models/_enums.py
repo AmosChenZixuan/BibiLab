@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from enum import Enum
 from typing import Literal
 
@@ -18,6 +19,12 @@ QueryType = Literal["factual", "breadth", "analytical"]
 QUERY_TYPE_FACTUAL: QueryType = "factual"
 QUERY_TYPE_BREADTH: QueryType = "breadth"
 QUERY_TYPE_ANALYTICAL: QueryType = "analytical"
+
+
+@dataclass(frozen=True)
+class RetrievalParams:
+    depth_per_source: int
+    top_k: int
 
 
 def map_type_to_mode(qt: QueryType) -> ChatMode:
