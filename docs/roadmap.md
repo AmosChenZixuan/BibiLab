@@ -13,7 +13,7 @@
 
 ### v1
 
-9. **RAG Q&A** — List-scoped multi-turn chat with transcript citation and timestamp references. Open: how to scope citations (per-chunk or per-turn)? How to handle multi-source ranking?
+9. ~~**RAG Q&A**~~ — List-scoped multi-turn chat with transcript citation, timestamp references, hybrid search, reranking, and query routing. Implemented (epic #193, redesign #229).
 10. **Multimodal vision** — Opt-in frame sampling pass. Open: which multimodal model? Does this run in pipeline or on-demand like overview?
 11. **Source truth panel** — User-supplied corrections injected into RAG context. Open: stored as annotations on the note file, or a separate overlay table?
 

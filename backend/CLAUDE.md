@@ -108,7 +108,7 @@ whisper_models.py — Whisper model management
 | `id` | UUID, primary key |
 | `list_id` | FK to `lists.id`, UNIQUE, ON DELETE CASCADE |
 | `summary` | Rolling LLM-generated summary, nullable |
-| `mode` | `"auto"` \| `"focused"` \| `"broad"`, default `'auto'`. Read by chat router to decide retrieval mode and whether to run the query classifier. |
+| `mode` | `"auto"` \| `"focused"` \| `"broad"`, default `'auto'`. Retained for backward compat; no longer read by retrieval router (classifier always runs when routing enabled). |
 | `created_at` | ISO timestamp |
 | `updated_at` | ISO timestamp |
 
@@ -156,8 +156,8 @@ POST /ingest/url → resolve → dedup check → create job(s)
 ```
 POST /lists/:id/chat (SSE)
   → get_or_create_conversation → load history + stored mode
-  → if mode == "auto" and query_routing_enabled: classify_query → effective_mode
-  → retrieve(): hybrid_search (BM25 + vector RRF, pool 30) → rerank → aggregate (broad, no top-k cap) or top-k (focused) → floor filter
+  → if query_routing_enabled: classify_query → effective_mode
+  → retrieve(): hybrid_search (BM25 + vector RRF, pool 30) → rerank → _diverse_top_k (per-source depth cap + top-k) → floor filter
   → sources_with_hits reflects candidate-pool coverage; result_chunks reflects actual LLM input
   → stream_llm (system prompt + RAG context + history)
   → yield rag_meta + delta/tool_result/done events
