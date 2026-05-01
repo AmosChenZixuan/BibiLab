@@ -27,13 +27,13 @@ models/           — Pydantic request/response models + domain errors
 pipeline/         — one file per stage
   _shared.py        sync _call_llm + async stream_llm (OpenAI/Anthropic), tool/stream dataclasses
   chat_tools.py     tool definitions (generate_report) + execution dispatcher
-  chat_summary.py   conversation compression (sliding window + LLM summary)
+  chat_summary.py   conversation compression (sliding window + LLM summary; preserves [title @ Ts-Ts] RAG citations)
   embed.py          ChromaDB embed + retrieve() (hybrid search → rerank → aggregation), FTS5 populate
-  rerank.py         lazy ONNX cross-encoder reranker (onnxruntime, singleton)
+  rerank.py         lazy ONNX cross-encoder reranker (Xenova/bge-reranker-base, XLM-RoBERTa zh+en; batched inference)
   route.py          LLM-based query classifier (factual/breadth/analytical → focused/broad)
 adapters/         — platform-specific download + resolution (base + bilibili)
 db.py             — SQLite schema + query helpers
-config.py         — settings persisted to ~/.bibilab/config.json
+config.py         — settings persisted to ~/.bibilab/config.json; includes models_dir() helper
 worker.py         — SQLite-polling job dispatcher; accepts config/adapter/home via constructor for testability
 cleanup.py        — resource cleanup utilities
 whisper_models.py — Whisper model management
@@ -166,7 +166,7 @@ POST /lists/:id/chat (SSE)
 
 - `stream_llm` supports both OpenAI and Anthropic protocols via `AsyncOpenAI`/`AsyncAnthropic`
 - Tool calling: LLM can invoke `generate_report` → creates artifact job
-- Compression: triggered when message count > 30; keeps sliding window of 20; summarizes older messages via `_call_llm` in `asyncio.to_thread`
+- Compression: triggered when message count > 30; keeps sliding window of 20; summarizes older messages via `_call_llm` in `asyncio.to_thread`; LLM prompt instructs preservation of `[title @ Ts-Ts]` RAG citations
 - Summary injected into system prompt on subsequent requests
 
 ## Platform Adapters
@@ -196,4 +196,7 @@ v0: `BilibiliAdapter` — single video. Cookie-based auth in config.
   "backend": { "port": 8765, "worker_concurrency": 1 },
   "rag": { "max_distance": 0.8, "hybrid_enabled": true, "reranking_enabled": true, "query_routing_enabled": true, "rerank_min_score": 0.0 }
 }
+```
+Reranker model is fixed to `Xenova/bge-reranker-base` (XLM-RoBERTa, Chinese + English). `rerank_min_score` default 0.0 — recalibration pending #220 eval set.
+```
 ```
