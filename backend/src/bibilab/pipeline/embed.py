@@ -434,8 +434,7 @@ async def retrieve(
     """High-level retrieval that wraps hybrid search with metadata.
 
     Selection is driven by RetrievalParams: depth_per_source caps chunks from
-    any single video; top_k sets the total returned. One code path replaces the
-    old focused/broad mode branching.
+    any single video; top_k sets the total returned.
     """
     sources_total = len(source_ids)
     effective_top_k = RETRIEVAL_CANDIDATE_POOL

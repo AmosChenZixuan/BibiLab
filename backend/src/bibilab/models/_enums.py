@@ -30,6 +30,8 @@ class RetrievalParams:
 def map_type_to_mode(qt: QueryType) -> ChatMode:
     if qt == QUERY_TYPE_FACTUAL:
         return CHAT_MODE_FOCUSED
-    if qt in (QUERY_TYPE_BREADTH, QUERY_TYPE_ANALYTICAL):
+    if qt == QUERY_TYPE_BREADTH:
         return CHAT_MODE_BROAD
+    if qt == QUERY_TYPE_ANALYTICAL:
+        return CHAT_MODE_FOCUSED
     raise ValueError(f"Unknown query type: {qt!r}")
