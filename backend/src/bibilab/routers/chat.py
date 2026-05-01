@@ -23,10 +23,6 @@ from bibilab.db import (
     get_conversation as get_conv_row,
 )
 from bibilab.models._enums import (
-    CHAT_MODE_AUTO,
-    CHAT_MODE_BROAD,
-    CHAT_MODE_FOCUSED,
-    QUERY_TYPE_BREADTH,
     QUERY_TYPE_FACTUAL,
     map_type_to_mode,
 )
@@ -162,7 +158,6 @@ async def chat_endpoint(
 
     conv_row = await get_conv_row(conversation_id)
     existing_summary = conv_row["summary"] if conv_row else None
-    conversation_mode = conv_row["mode"] if conv_row else CHAT_MODE_FOCUSED
 
     history_rows = await get_recent_messages(conversation_id, limit=100)
     history = [{"role": row["role"], "content": row["content"]} for row in history_rows]
@@ -173,31 +168,22 @@ async def chat_endpoint(
         source_rows = await get_sources_for_list(list_id)
         source_ids = [row["id"] for row in source_rows]
 
-    effective_mode = conversation_mode
     rag_context = ""
     rag_result = None
     if source_ids and request.message.strip():
-        if conversation_mode == CHAT_MODE_AUTO:
-            if cfg.rag.query_routing_enabled:
-                query_type = await classify_query(request.message, cfg)
-                params = params_for_type(query_type, len(source_ids))
-                effective_mode = map_type_to_mode(query_type)
-                try:
-                    await log_query_classification(
-                        list_id=list_id,
-                        query_text=request.message,
-                        query_type=query_type,
-                        effective_mode=effective_mode,
-                    )
-                except Exception:
-                    logger.warning("Failed to log query classification", exc_info=True)
-            else:
-                params = params_for_type(QUERY_TYPE_FACTUAL, len(source_ids))
-                effective_mode = CHAT_MODE_FOCUSED
-        elif conversation_mode == CHAT_MODE_FOCUSED:
-            params = params_for_type(QUERY_TYPE_FACTUAL, len(source_ids))
-        elif conversation_mode == CHAT_MODE_BROAD:
-            params = params_for_type(QUERY_TYPE_BREADTH, len(source_ids))
+        if cfg.rag.query_routing_enabled:
+            query_type = await classify_query(request.message, cfg)
+            params = params_for_type(query_type, len(source_ids))
+            effective_mode = map_type_to_mode(query_type)
+            try:
+                await log_query_classification(
+                    list_id=list_id,
+                    query_text=request.message,
+                    query_type=query_type,
+                    effective_mode=effective_mode,
+                )
+            except Exception:
+                logger.warning("Failed to log query classification", exc_info=True)
         else:
             params = params_for_type(QUERY_TYPE_FACTUAL, len(source_ids))
         rag_result = await retrieve(
