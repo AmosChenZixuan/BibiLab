@@ -15,7 +15,7 @@ import sqlite3
 from pathlib import Path
 
 from bibilab.adapters.base import VideoMeta
-from bibilab.config import BibilabConfig, bibilab_home
+from bibilab.config import BibilabConfig, bibilab_home, models_dir
 from bibilab.db import _escape_fts_query, get_db_path, get_video_ids_for_sources, query_fts_rows
 from bibilab.models._enums import CHAT_MODE_BROAD, CHAT_MODE_FOCUSED, ChatMode, RetrievalParams
 from bibilab.pipeline.chunk import RagChunk
@@ -133,7 +133,7 @@ def _rrf_fuse(
 
 
 def _embedding_model_dir() -> Path:
-    return bibilab_home() / "models" / "embedding"
+    return models_dir("embedding")
 
 
 def is_embedding_model_downloaded() -> bool:

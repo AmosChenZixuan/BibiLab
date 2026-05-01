@@ -11,6 +11,11 @@ def bibilab_home() -> Path:
     return Path.home() / ".bibilab"
 
 
+def models_dir(*parts: str) -> Path:
+    """Path under ~/.bibilab/models/. Use for model download directories."""
+    return bibilab_home().joinpath("models", *parts)
+
+
 def cover_path(source_id: str) -> Path:
     return bibilab_home() / "covers" / f"{source_id}.jpg"
 

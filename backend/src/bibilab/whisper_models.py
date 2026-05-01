@@ -1,7 +1,7 @@
 import shutil
 from pathlib import Path
 
-from bibilab.config import bibilab_home
+from bibilab.config import bibilab_home, models_dir
 
 SUPPORTED_WHISPER_MODELS: tuple[str, ...] = (
     "base",
@@ -12,7 +12,7 @@ SUPPORTED_WHISPER_MODELS: tuple[str, ...] = (
 
 
 def whisper_model_dir() -> Path:
-    return bibilab_home() / "models" / "whisper"
+    return models_dir("whisper")
 
 
 def _hf_cache_dir() -> Path:

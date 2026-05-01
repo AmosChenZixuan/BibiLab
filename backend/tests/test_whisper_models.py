@@ -54,6 +54,7 @@ def test_download_whisper_model_uses_model_subdirectory(tmp_path: Path):
 
     with (
         patch("bibilab.whisper_models.bibilab_home", return_value=tmp_path),
+        patch("bibilab.whisper_models.models_dir", return_value=whisper_root),
         patch("faster_whisper.utils.download_model", side_effect=fake_download_model),
     ):
         from bibilab.whisper_models import download_whisper_model

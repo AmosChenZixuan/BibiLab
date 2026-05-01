@@ -11,15 +11,16 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     pass
 
-from bibilab.config import bibilab_home
+from bibilab.config import models_dir
 from bibilab.pipeline.embed import RetrievedChunk
 
 logger = logging.getLogger(__name__)
 
-# Model is fixed to ensure consistent cross-encoder score semantics across deployments.
-# Swapping models would require re-tuning the top_k rerank threshold since different
-# models produce different score distributions.
-_MODEL_REPO = "Xenova/ms-marco-MiniLM-L-6-v2"
+# bge-reranker-base (XLM-RoBERTa) handles Chinese + English, matching
+# the project's primary content languages. Model is intentionally fixed
+# rather than configurable — swapping models would require re-tuning
+# rerank_min_score since score distributions differ.
+_MODEL_REPO = "Xenova/bge-reranker-base"
 _MODEL_FILENAME = "model.onnx"
 _TOKENIZER_FILENAME = "tokenizer.json"
 
@@ -28,7 +29,7 @@ _reranker_lock = threading.Lock()
 
 
 def _model_dir() -> Path:
-    return bibilab_home() / "models" / "reranker"
+    return models_dir("reranker", _MODEL_REPO.replace("/", "_"))
 
 
 class ONNXCrossEncoder:
@@ -78,17 +79,34 @@ class ONNXCrossEncoder:
                         f.write(chunk)
 
     def predict(self, pairs: list[list[str]]) -> list[float]:
-        scores: list[float] = []
-        for query, doc in pairs:
-            encoded = self._tokenizer.encode(query, doc)
-            onnx_input = {
-                "input_ids": self._np.array([encoded.ids], dtype=self._np.int64),
-                "attention_mask": self._np.array([encoded.attention_mask], dtype=self._np.int64),
-                "token_type_ids": self._np.array([encoded.type_ids], dtype=self._np.int64),
-            }
-            logits = self._session.run(None, onnx_input)[0]
-            scores.append(float(logits[0][0]))
-        return scores
+        onnx_input_names = {i.name for i in self._session.get_inputs()}
+        has_token_type = "token_type_ids" in onnx_input_names
+
+        encoded_list = [self._tokenizer.encode(query, doc) for query, doc in pairs]
+
+        max_len = max(len(e.ids) for e in encoded_list)
+        pad_id = self._tokenizer.token_to_id("<pad>") or 0
+
+        batch_ids = []
+        batch_mask = []
+        batch_type_ids = [] if has_token_type else None
+
+        for enc in encoded_list:
+            pad_len = max_len - len(enc.ids)
+            batch_ids.append(enc.ids + [pad_id] * pad_len)
+            batch_mask.append(enc.attention_mask + [0] * pad_len)
+            if has_token_type:
+                batch_type_ids.append(enc.type_ids + [0] * pad_len)
+
+        onnx_input = {
+            "input_ids": self._np.array(batch_ids, dtype=self._np.int64),
+            "attention_mask": self._np.array(batch_mask, dtype=self._np.int64),
+        }
+        if has_token_type:
+            onnx_input["token_type_ids"] = self._np.array(batch_type_ids, dtype=self._np.int64)
+
+        logits = self._session.run(None, onnx_input)[0]
+        return [float(logits[i][0]) for i in range(len(pairs))]
 
 
 def _get_reranker() -> ONNXCrossEncoder:
