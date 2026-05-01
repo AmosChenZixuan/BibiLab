@@ -468,7 +468,7 @@ async def test_retrieve_depth_two_keeps_multiple_per_source(tmp_bibilab_home):
 
 
 @pytest.mark.asyncio
-async def test_format_rag_context_broad_mode(tmp_bibilab_home):
+async def test_format_rag_context(tmp_bibilab_home):
     from bibilab.pipeline.embed import RetrievalResult, RetrievedChunk, SourceHit
     from bibilab.routers.chat import _format_rag_context  # noqa: E402
 
@@ -491,7 +491,7 @@ async def test_format_rag_context_broad_mode(tmp_bibilab_home):
                 distance=0.2,
             ),
         ],
-        mode="broad",
+        mode="focused",
         candidates_evaluated=8,
         sources_with_hits=2,
         sources_total=5,
@@ -504,9 +504,28 @@ async def test_format_rag_context_broad_mode(tmp_bibilab_home):
 
     text = _format_rag_context(result, "my query")
 
-    assert "Concept appears in 2 of 5 sources" in text
-    assert "Best excerpt per source:" in text
+    assert "from 2 of 5 sources" in text
+    assert "Relevant transcript excerpts" in text
     assert '[Video A @ 10s-20s]: "chunk about topic"' in text
+    assert "Concept appears" not in text
+    assert "Best excerpt per source:" not in text
+
+
+async def test_format_rag_context_empty(tmp_bibilab_home):
+    from bibilab.pipeline.embed import RetrievalResult
+    from bibilab.routers.chat import _format_rag_context  # noqa: E402
+
+    result = RetrievalResult(
+        chunks=[],
+        mode="focused",
+        candidates_evaluated=0,
+        sources_with_hits=0,
+        sources_total=0,
+        source_coverage=[],
+    )
+
+    text = _format_rag_context(result, "query")
+    assert text == ""
 
 
 # --- hybrid_search tests (issue #201) ---

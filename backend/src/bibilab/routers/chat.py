@@ -117,17 +117,8 @@ def _format_chunk_line(chunk: RetrievedChunk) -> str:
 def _format_rag_context(result: RetrievalResult, query: str) -> str:
     if not result.chunks:
         return ""
-    if result.mode == CHAT_MODE_BROAD:
-        parts = [
-            f"Query: {query}\n",
-            f"Concept appears in {result.sources_with_hits} of {result.sources_total} sources\n",
-            "Best excerpt per source:",
-        ]
-        parts.extend(_format_chunk_line(c) for c in result.chunks)
-        return "\n".join(parts)
-    parts = [f"Query: {query}\n\nRelevant transcript excerpts:"]
-    parts.extend(_format_chunk_line(c) for c in result.chunks)
-    return "\n".join(parts)
+    header = f"Relevant transcript excerpts (from {result.sources_with_hits} of {result.sources_total} sources):"
+    return "\n".join([f"Query: {query}\n", header, *map(_format_chunk_line, result.chunks)])
 
 
 def _build_rag_payload(rag_result: RetrievalResult) -> dict:
