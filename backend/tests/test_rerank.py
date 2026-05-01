@@ -402,3 +402,55 @@ async def test_reranker_lazy_singleton():
             mock_ce_class.assert_called_once()
     finally:
         rerank_mod._reranker = original
+
+
+def test_get_collection_keys_by_name(tmp_bibilab_home):
+    """_get_collection returns different collections for different config names.
+
+    Regression test for #223: the module-level singleton was stored as a single
+    reference (_chroma_collection = None) that never updated when
+    transcript_collection_name changed. After the fix, _chroma_collections is
+    a dict keyed by collection name, so different configs get different collections.
+    """
+    import bibilab.pipeline.embed as embed_mod
+    from bibilab.config import BibilabConfig
+
+    # Reset module-level state
+    embed_mod._chroma_collections = {}
+
+    collections_created = []
+
+    class FakeCollection:
+        def __init__(self, name):
+            self.name = name
+
+    def fake_get_or_create(name, embedding_function=None):
+        coll = FakeCollection(name)
+        collections_created.append(coll)
+        return coll
+
+    fake_client = MagicMock()
+    fake_client.get_or_create_collection = fake_get_or_create
+
+    # chromadb is imported lazily inside _get_collection, so patch the
+    # top-level chromadb module so the local import picks up the mock.
+    with patch("chromadb.PersistentClient", return_value=fake_client):
+        cfg1 = BibilabConfig(transcript_collection_name="collection_a")
+        cfg2 = BibilabConfig(transcript_collection_name="collection_b")
+
+        coll_a = embed_mod._get_collection(cfg1)
+        coll_b = embed_mod._get_collection(cfg2)
+
+        # Two different configs must produce distinct collections
+        assert coll_a is not coll_b
+        assert coll_a.name == "collection_a"
+        assert coll_b.name == "collection_b"
+
+        # Calling again with the same name returns the cached collection
+        coll_a2 = embed_mod._get_collection(cfg1)
+        assert coll_a2 is coll_a
+
+        assert len(collections_created) == 2
+
+    # Clean up
+    embed_mod._chroma_collections = {}

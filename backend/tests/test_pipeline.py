@@ -146,6 +146,34 @@ def test_chunk_timestamps_correct():
     assert chunks[0].timestamp_end == 30.0
 
 
+def test_chunk_language_zh_reduces_fragmentation():
+    """Chinese gets higher target_tokens, producing fewer chunks than English."""
+    seg = _seg("this sentence has approximately twenty tokens in cl100k base encoding")
+    segs = [seg for _ in range(50)]
+    chunks_en = chunk_segments(segs, language="en")
+    chunks_zh = chunk_segments(segs, language="zh")
+    assert len(chunks_zh) < len(chunks_en)
+
+
+def test_chunk_explicit_target_overrides_language():
+    """Explicit target_tokens bypasses the language lookup table."""
+    seg = _seg("this sentence has approximately twenty tokens in cl100k base encoding")
+    segs = [seg for _ in range(50)]
+    chunks_a = chunk_segments(segs, target_tokens=500, language="en")
+    chunks_b = chunk_segments(segs, target_tokens=500, language="zh")
+    assert len(chunks_a) == len(chunks_b)
+
+
+def test_chunk_unknown_language_falls_back_to_default():
+    """Unrecognized language code uses _DEFAULT_TARGET_TOKENS (300)."""
+    seg = _seg("this sentence has approximately twenty tokens in cl100k base encoding")
+    segs = [seg for _ in range(50)]
+    chunks_fr = chunk_segments(segs, language="fr")
+    chunks_en = chunk_segments(segs, language="en")
+    # French is unknown, falls back to default (same as English)
+    assert len(chunks_fr) == len(chunks_en)
+
+
 # ---------------------------------------------------------------------------
 # _shared.py
 # ---------------------------------------------------------------------------

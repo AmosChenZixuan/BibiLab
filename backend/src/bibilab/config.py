@@ -55,9 +55,6 @@ class TranscriptionConfig(BaseModel):
     language: str = "auto"  # auto | zh | en
     # LLM call timeout in seconds (per-request)
     llm_timeout: int = 120
-    # Chunking
-    target_tokens: int = 300
-    chunk_max_tokens: int = 400
     # Transcription
     beam_size: int = 5
 

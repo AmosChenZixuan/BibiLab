@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 RETRIEVAL_CANDIDATE_POOL = 30
 RRF_K = 60
 
-_chroma_collection: "chromadb.Collection | None" = None
+_chroma_collections: dict[str, "chromadb.Collection"] = {}
 
 
 @dataclass
@@ -128,16 +128,17 @@ def _default_embedding_function() -> "ONNXMiniLM_L6_V2":
 
 
 def _get_collection(cfg: BibilabConfig) -> "chromadb.Collection":
-    global _chroma_collection
-    if _chroma_collection is None:
+    global _chroma_collections
+    name = cfg.transcript_collection_name
+    if name not in _chroma_collections:
         import chromadb  # noqa: PLC0415
 
         client = chromadb.PersistentClient(path=str(bibilab_home() / "chroma"))
-        _chroma_collection = client.get_or_create_collection(
-            cfg.transcript_collection_name,
+        _chroma_collections[name] = client.get_or_create_collection(
+            name,
             embedding_function=_default_embedding_function(),
         )
-    return _chroma_collection
+    return _chroma_collections[name]
 
 
 def embed_chunks(
