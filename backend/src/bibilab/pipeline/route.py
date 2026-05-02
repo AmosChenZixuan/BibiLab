@@ -16,8 +16,9 @@ from bibilab.pipeline._shared import _call_llm
 logger = logging.getLogger(__name__)
 
 # The classifier output itself is one short word, but thinking-capable models also consume
-# this budget for reasoning tokens. Keep generous headroom or the response gets truncated to empty.
-QUERY_CLASSIFICATION_MAX_TOKENS = 4096
+# this budget for reasoning tokens. Extended-thinking models need at least 1K for reasoning,
+# and the total budget must cover both.
+QUERY_CLASSIFICATION_MAX_TOKENS = 8192
 
 
 CLASSIFICATION_PROMPT = """\

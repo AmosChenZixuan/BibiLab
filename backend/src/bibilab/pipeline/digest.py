@@ -20,8 +20,11 @@ from bibilab.pipeline.audio import PipelineError
 
 logger = logging.getLogger(__name__)
 
-# Sized for thinking-capable models: budget covers reasoning tokens + a ~150-word JSON output.
-DIGEST_MAX_TOKENS = 8192
+# Sized for thinking-capable models: budget covers reasoning tokens + a ~150-word
+# JSON output. Reasoning models can consume 12K+ tokens thinking about a long
+# transcript, so we need ample headroom. The JSON output itself is bounded by the
+# schema and can't go haywire.
+DIGEST_MAX_TOKENS = 32768
 
 
 class DigestResult(BaseModel):

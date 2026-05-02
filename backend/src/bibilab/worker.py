@@ -35,8 +35,9 @@ from bibilab.whisper_models import download_whisper_model
 
 logger = logging.getLogger(__name__)
 
-# Sized for thinking-capable models with multi-source artifact output (multi-page markdown report).
-ARTIFACT_MAX_TOKENS = 16384
+# Sized for thinking-capable models with multi-source artifact output (multi-page markdown
+# report). Thinking + long-form output can easily exceed 16K for complex artifacts.
+ARTIFACT_MAX_TOKENS = 32768
 
 
 class ArtifactResult(BaseModel):

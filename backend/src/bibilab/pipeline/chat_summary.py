@@ -18,8 +18,9 @@ COMPRESSION_THRESHOLD = 30
 SLIDING_WINDOW_SIZE = 20
 # Target length the model should aim for in the summary text itself.
 SUMMARY_TARGET_TOKENS = 500
-# API budget — must accommodate thinking tokens + the ~500-token output for reasoning models.
-SUMMARY_MAX_TOKENS = 8192
+# API budget — must accommodate thinking tokens + the ~500-token output for reasoning
+# models. Extended thinking can consume 10K+ tokens on longer conversation histories.
+SUMMARY_MAX_TOKENS = 16384
 
 CITATION_PRESERVATION_INSTRUCTION = (
     "PRESERVE ALL [title @ Ts-Ts] citations exactly as they appear — they are load-bearing "

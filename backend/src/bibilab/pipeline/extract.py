@@ -12,8 +12,9 @@ from bibilab.pipeline._shared import (
 
 logger = logging.getLogger(__name__)
 
-# Sized for thinking-capable models: budget covers reasoning tokens + a 2–4 paragraph outline.
-OVERVIEW_MAX_TOKENS = 8192
+# Sized for thinking-capable models: budget covers reasoning tokens + a 2–4 paragraph
+# outline. Overview prompt includes multiple video summaries, so thinking can be substantial.
+OVERVIEW_MAX_TOKENS = 16384
 
 
 _OVERVIEW_PROMPT = """\
