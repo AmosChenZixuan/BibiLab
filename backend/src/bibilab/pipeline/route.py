@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import re
 
 from bibilab.config import BibilabConfig
 from bibilab.models._enums import (
@@ -44,10 +45,13 @@ def _build_prompt(query: str) -> str:
     return CLASSIFICATION_PROMPT.format(query=query)
 
 
+_CLASSIFICATION_RE = re.compile(r"(?<![a-zA-Z])(factual|breadth|analytical)(?![a-zA-Z])", re.IGNORECASE)
+
+
 def _parse_response(text: str) -> QueryType:
-    cleaned = text.strip().strip('"').lower()
-    if cleaned in (QUERY_TYPE_FACTUAL, QUERY_TYPE_BREADTH, QUERY_TYPE_ANALYTICAL):
-        return cleaned  # type: ignore[return-value]
+    match = _CLASSIFICATION_RE.search(text)
+    if match:
+        return match.group(1).lower()  # type: ignore[return-value]
     raise ValueError(f"Unexpected classification response: {text!r}")
 
 
