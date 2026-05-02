@@ -194,9 +194,9 @@ v0: `BilibiliAdapter` — single video. Cookie-based auth in config.
   "transcription": { "engine": "faster-whisper", "model_size": "large-v3", "device": "cuda|cpu", "language": "auto" },
   "vision": { "enabled": false, "frame_sample_rate": 30, "model": null },
   "backend": { "port": 8765, "worker_concurrency": 1 },
-  "rag": { "max_distance": 0.8, "hybrid_enabled": true, "reranking_enabled": true, "query_routing_enabled": true, "rerank_min_score": 0.0 }
+  "rag": { "max_distance": 0.8, "hybrid_enabled": true, "reranking_enabled": true, "query_routing_enabled": true, "rerank_min_score": null }
 }
 ```
-Reranker model is fixed to `Xenova/bge-reranker-base` (XLM-RoBERTa, Chinese + English). `rerank_min_score` default 0.0 — recalibration pending #220 eval set.
+Reranker model is fixed to `Xenova/bge-reranker-base` (XLM-RoBERTa, Chinese + English). `rerank_min_score` default `null` — disabled pending #220 eval set calibration.
 ```
 ```

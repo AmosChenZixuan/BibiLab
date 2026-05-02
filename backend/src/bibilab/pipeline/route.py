@@ -85,10 +85,14 @@ def params_for_type(query_type: QueryType, sources_total: int) -> RetrievalParam
     - Breadth top_k is capped at sources_total (asking for 20 chunks from
       a 5-source list is impossible at depth=1 — the diverse selector
       would relax-fallback to duplicates, wasting token budget).
+    - Factual/analytical top_k is floored at sources_total so all sources
+      can be represented, capped at 3× base to bound token usage on very
+      large lists.
     """
     if query_type == QUERY_TYPE_BREADTH and sources_total < 3:
         return _PARAMS_BY_TYPE[QUERY_TYPE_FACTUAL]
     base = _PARAMS_BY_TYPE[query_type]
     if query_type == QUERY_TYPE_BREADTH:
         return RetrievalParams(depth_per_source=base.depth_per_source, top_k=min(base.top_k, sources_total))
-    return base
+    top_k = max(base.top_k, min(sources_total, base.top_k * 3))
+    return RetrievalParams(depth_per_source=base.depth_per_source, top_k=top_k)

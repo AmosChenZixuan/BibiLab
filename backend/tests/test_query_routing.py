@@ -163,3 +163,10 @@ async def test_query_classifications_persisted(tmp_bibilab_home):
     assert row["query_text"] == "test query"
     assert row["query_type"] == "factual"
     assert row["effective_mode"] == "focused"
+
+
+def test_rerank_min_score_is_none_by_default():
+    from bibilab.config import RagConfig
+
+    cfg = RagConfig()
+    assert cfg.rerank_min_score is None
