@@ -22,7 +22,15 @@ from bibilab.pipeline.chunk import RagChunk
 
 logger = logging.getLogger(__name__)
 
-RETRIEVAL_CANDIDATE_POOL = 30
+
+def _dynamic_pool(num_sources: int) -> int:
+    """Candidate pool size that scales with source count.
+
+    Floor of 10 (avoids under-sampling tiny lists), ceiling of 60 (bounds
+    ChromaDB + FTS latency on huge lists), factor of 3× sources in between.
+    """
+    return min(max(num_sources * 3, 10), 60)
+
 
 _chroma_collections: dict[str, "chromadb.Collection"] = {}
 
@@ -435,7 +443,7 @@ async def retrieve(
     any single video; top_k sets the total returned.
     """
     sources_total = len(source_ids)
-    effective_top_k = RETRIEVAL_CANDIDATE_POOL
+    effective_top_k = _dynamic_pool(sources_total)
 
     if cfg.rag.hybrid_enabled:
         chunks = await hybrid_search(query_text, source_ids, cfg, effective_top_k=effective_top_k)
