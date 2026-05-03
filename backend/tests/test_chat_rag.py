@@ -967,10 +967,10 @@ def test_params_by_type_presets():
     from bibilab.models._enums import QUERY_TYPE_ANALYTICAL, QUERY_TYPE_BREADTH, QUERY_TYPE_FACTUAL
     from bibilab.pipeline.route import params_for_type
 
-    # Large list — no override
+    # Large list — no override for factual, analytical still scales
     fact = params_for_type(QUERY_TYPE_FACTUAL, sources_total=10)
-    assert fact.depth_per_source == 2
-    assert fact.top_k == 10  # floored at sources_total
+    assert fact.depth_per_source == 1
+    assert fact.top_k == 4  # fixed, no scaling with source count
     anl = params_for_type(QUERY_TYPE_ANALYTICAL, sources_total=10)
     assert anl.depth_per_source == 4
     assert anl.top_k == 12
@@ -992,19 +992,15 @@ def test_params_small_list_breadth_falls_back_to_factual():
     from bibilab.models._enums import QUERY_TYPE_BREADTH
     from bibilab.pipeline.route import params_for_type
 
-    # 2 sources: breadth degrades to factual
+    # 2 sources: breadth degrades to factual params
     brd = params_for_type(QUERY_TYPE_BREADTH, sources_total=2)
-    assert brd.depth_per_source == 2
-    assert brd.top_k == 5
+    assert brd.depth_per_source == 1
+    assert brd.top_k == 4
 
 
-def test_params_factual_scales_with_sources():
+def test_params_factual_does_not_scale_with_sources():
     from bibilab.models._enums import QUERY_TYPE_FACTUAL
     from bibilab.pipeline.route import params_for_type
 
-    # Small list: base top_k applies
-    assert params_for_type(QUERY_TYPE_FACTUAL, sources_total=3).top_k == 5
-    # Mid list: scales to cover all sources
-    assert params_for_type(QUERY_TYPE_FACTUAL, sources_total=9).top_k == 9
-    # Large list: capped at 3× base
-    assert params_for_type(QUERY_TYPE_FACTUAL, sources_total=50).top_k == 15
+    # Factual params are fixed regardless of source count.
+    assert params_for_type(QUERY_TYPE_FACTUAL, sources_total=3) == params_for_type(QUERY_TYPE_FACTUAL, sources_total=50)

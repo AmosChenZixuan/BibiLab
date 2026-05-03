@@ -607,8 +607,8 @@ async def test_routing_runs_when_enabled(client, tmp_bibilab_home):
 
         mock_classify.assert_called_once()
         call_args = mock_retrieve.call_args
-        assert call_args.kwargs["params"].depth_per_source == 2
-        assert call_args.kwargs["params"].top_k == 5
+        assert call_args.kwargs["params"].depth_per_source == 1
+        assert call_args.kwargs["params"].top_k == 4
     finally:
         app.dependency_overrides.clear()
 
@@ -648,7 +648,7 @@ async def test_auto_mode_falls_back_to_focused_when_routing_disabled(client, tmp
 
         mock_classify.assert_not_called()
         call_args = mock_retrieve.call_args
-        assert call_args.kwargs["params"].depth_per_source == 2
-        assert call_args.kwargs["params"].top_k == 5
+        assert call_args.kwargs["params"].depth_per_source == 1
+        assert call_args.kwargs["params"].top_k == 4
     finally:
         app.dependency_overrides.clear()
