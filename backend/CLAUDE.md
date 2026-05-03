@@ -197,6 +197,6 @@ v0: `BilibiliAdapter` — single video. Cookie-based auth in config.
   "rag": { "max_distance": 0.8, "hybrid_enabled": true, "reranking_enabled": true, "query_routing_enabled": true, "rerank_min_score": null }
 }
 ```
-Reranker model is fixed to `Xenova/bge-reranker-base` (XLM-RoBERTa, Chinese + English). `rerank_min_score` default `null` — disabled pending #220 eval set calibration.
+Reranker model is fixed to `Xenova/bge-reranker-base` (XLM-RoBERTa, Chinese + English). `rerank_min_score` default `null` — calibrated empirically in #220 (MRR 0.559 vs 0.472/0.466 at -2.0 and 0.0); see `docs/internal/rag_tuning.md`.
 ```
 ```
