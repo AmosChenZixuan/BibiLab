@@ -88,9 +88,9 @@ The `rerank_min_score` default was set to `0.0` in code, which filtered all chun
 
 ### 3. Factual queries over-pad with diversity constraint
 
-For focused (factual) queries, `params_for_type()` sets `depth_per_source=2` and `top_k` scales with source count. This means a list with 16 sources gets `top_k=8` factual chunks — but most factual queries only need 1-2 sources.
+For focused (factual) queries, `params_for_type()` (shrunk in bbe3d19 to ensure source coverage) sets `top_k = max(base.top_k, min(sources_total, base.top_k * 3))`. For a 16-source list this means factual queries get `top_k=15` instead of the base `top_k=5`, pulling in noise from many sources when most factual queries only need 1-2 sources.
 
-The diversity constraint (`depth_per_source=2`) and large `top_k` together admit noise into the LLM context. Separately filed as a new issue for a follow-up PR.
+This is the current state for better or worse: it avoids the 0-chunk bug at the cost of precision. #250 will revisit whether the noise tradeoff is worth it — options include a tighter multiplier cap or per-type source-coverage weighting.
 
 ## Decisions
 

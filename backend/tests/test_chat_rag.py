@@ -705,7 +705,7 @@ async def test_retrieve_uses_hybrid_search(tmp_bibilab_home):
     ) as mock_hybrid:
         result = await retrieve("query", ["src1"], cfg, params=RetrievalParams(depth_per_source=2, top_k=5))
 
-    mock_hybrid.assert_called_once_with("query", ["src1"], cfg, effective_top_k=RETRIEVAL_CANDIDATE_POOL, rrf_k=60)
+    mock_hybrid.assert_called_once_with("query", ["src1"], cfg, effective_top_k=RETRIEVAL_CANDIDATE_POOL)
     assert result.chunks == chunks
 
 
@@ -764,7 +764,7 @@ async def test_retrieve_uses_candidate_pool_before_rerank(tmp_bibilab_home):
     ):
         result = await retrieve("query", ["src1"], cfg, params=RetrievalParams(depth_per_source=2, top_k=5))
 
-    mock_hybrid.assert_called_once_with("query", ["src1"], cfg, effective_top_k=RETRIEVAL_CANDIDATE_POOL, rrf_k=60)
+    mock_hybrid.assert_called_once_with("query", ["src1"], cfg, effective_top_k=RETRIEVAL_CANDIDATE_POOL)
     mock_rerank.assert_called_once_with("query", candidate_chunks, top_k=len(candidate_chunks))
     assert len(result.chunks) == 5
     assert result.candidates_evaluated == len(candidate_chunks)

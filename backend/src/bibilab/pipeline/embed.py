@@ -24,7 +24,6 @@ logger = logging.getLogger(__name__)
 
 RETRIEVAL_CANDIDATE_POOL = 30
 RRF_K = 60
-_UNSET = object()
 
 _chroma_collections: dict[str, "chromadb.Collection"] = {}
 
@@ -395,8 +394,6 @@ async def hybrid_search(
     source_ids: list[str],
     cfg: BibilabConfig,
     effective_top_k: int,
-    *,
-    rrf_k: int = RRF_K,
 ) -> list[RetrievedChunk]:
     """Run vector and FTS5 BM25 retrieval in parallel, merge via RRF.
 
@@ -425,7 +422,7 @@ async def hybrid_search(
         return fts_result
     if not fts_result:
         return vec_result
-    return _rrf_fuse(vec_result, fts_result, k=rrf_k)
+    return _rrf_fuse(vec_result, fts_result, k=RRF_K)
 
 
 async def retrieve(
@@ -433,9 +430,6 @@ async def retrieve(
     source_ids: list[str],
     cfg: BibilabConfig,
     params: RetrievalParams,
-    *,
-    rerank_min_score_override=_UNSET,
-    rrf_k_override: int = RRF_K,
 ) -> RetrievalResult:
     """High-level retrieval that wraps hybrid search with metadata.
 
@@ -446,7 +440,7 @@ async def retrieve(
     effective_top_k = RETRIEVAL_CANDIDATE_POOL
 
     if cfg.rag.hybrid_enabled:
-        chunks = await hybrid_search(query_text, source_ids, cfg, effective_top_k=effective_top_k, rrf_k=rrf_k_override)
+        chunks = await hybrid_search(query_text, source_ids, cfg, effective_top_k=effective_top_k)
     else:
         chunks = await query_chunks(query_text, source_ids, cfg, top_k=effective_top_k)
 
@@ -462,9 +456,8 @@ async def retrieve(
 
         pool_best_by_source = _best_by_source(chunks)
 
-        floor = rerank_min_score_override if rerank_min_score_override is not _UNSET else cfg.rag.rerank_min_score
-        if floor is not None:
-            chunks = [c for c in chunks if c.score is None or c.score >= floor]
+        if cfg.rag.rerank_min_score is not None:
+            chunks = [c for c in chunks if c.score is None or c.score >= cfg.rag.rerank_min_score]
     else:
         pool_best_by_source = _best_by_source(chunks)
 
