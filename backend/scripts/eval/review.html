@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>#220 Eval Label Review</title>
+<style>
+  :root {
+    --bg: #f8f9fa;
+    --card: #fff;
+    --border: #dee2e6;
+    --text: #212529;
+    --muted: #6c757d;
+    --yes: #d4edda;
+    --yes-text: #155724;
+    --yes-border: #c3e6cb;
+    --no: #f8d7da;
+    --no-text: #721c24;
+    --no-border: #f5c6cb;
+    --pending: #fff3cd;
+    --pending-text: #856404;
+    --accent: #0d6efd;
+    --sidebar-w: 320px;
+  }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); height: 100vh; display: flex; }
+  button { cursor: pointer; font: inherit; }
+  a { color: var(--accent); }
+
+  .sidebar {
+    width: var(--sidebar-w); min-width: var(--sidebar-w); background: var(--card); border-right: 1px solid var(--border);
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  .sidebar-header { padding: 16px; border-bottom: 1px solid var(--border); }
+  .sidebar-header h1 { font-size: 16px; margin-bottom: 8px; }
+  .progress-bar { height: 4px; background: var(--border); border-radius: 2px; margin-top: 8px; }
+  .progress-fill { height: 100%; background: var(--accent); border-radius: 2px; transition: width .2s; }
+  .progress-text { font-size: 12px; color: var(--muted); margin-top: 4px; }
+  .file-area { padding: 12px 16px; border-bottom: 1px solid var(--border); }
+  .file-area input { width: 100%; font-size: 13px; }
+  .query-list { flex: 1; overflow-y: auto; }
+  .query-item {
+    padding: 10px 16px; border-bottom: 1px solid var(--border); cursor: pointer;
+    display: flex; align-items: flex-start; gap: 8px; transition: background .1s;
+  }
+  .query-item:hover { background: #f1f3f5; }
+  .query-item.active { background: #e7f1ff; border-left: 3px solid var(--accent); }
+  .query-id { font-weight: 600; font-size: 13px; min-width: 28px; color: var(--accent); }
+  .query-text { font-size: 13px; line-height: 1.4; flex: 1; }
+  .query-meta { font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .query-status { font-size: 11px; white-space: nowrap; }
+  .query-status .done { color: #155724; }
+  .query-status .todo { color: var(--muted); }
+
+  .main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+  .main-header {
+    padding: 16px 24px; border-bottom: 1px solid var(--border); background: var(--card);
+    display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  }
+  .main-header h2 { font-size: 18px; }
+  .main-header .info { font-size: 13px; color: var(--muted); }
+  .actions { display: flex; gap: 8px; }
+  .btn { padding: 6px 14px; border-radius: 6px; border: 1px solid var(--border); background: var(--card); font-size: 13px; }
+  .btn:hover { background: #f1f3f5; }
+  .btn.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .btn.primary:hover { opacity: .9; }
+  .btn.success { background: #28a745; color: #fff; border-color: #28a745; }
+  .chunk-list { flex: 1; overflow-y: auto; padding: 16px 24px; }
+
+  .chunk {
+    background: var(--card); border: 1px solid var(--border); border-radius: 8px;
+    padding: 16px; margin-bottom: 12px;
+  }
+  .chunk.relevant { border-color: var(--yes-border); background: #f6fff6; }
+  .chunk.not-relevant { border-color: var(--no-border); background: #fff8f8; }
+  .chunk-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+  .chunk-source { font-size: 13px; font-weight: 600; }
+  .chunk-ts { font-size: 12px; color: var(--muted); }
+  .chunk-content { font-size: 14px; line-height: 1.7; white-space: pre-wrap; max-height: 300px; overflow-y: auto; padding: 10px; background: #f8f9fa; border-radius: 4px; margin-bottom: 10px; }
+  .chunk-content::-webkit-scrollbar { width: 6px; }
+  .chunk-content::-webkit-scrollbar-thumb { background: #ccc; border-radius: 3px; }
+
+  .toggle-group { display: flex; gap: 8px; align-items: center; }
+  .toggle {
+    padding: 4px 16px; border-radius: 20px; border: 2px solid var(--border);
+    font-size: 13px; font-weight: 500; background: #fff; transition: all .15s;
+  }
+  .toggle.yes.active { background: var(--yes); border-color: var(--yes-border); color: var(--yes-text); }
+  .toggle.no.active { background: var(--no); border-color: var(--no-border); color: var(--no-text); }
+
+  .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; color: var(--muted); gap: 12px; }
+  .empty-state p { font-size: 14px; }
+  .shortcuts { font-size: 12px; color: var(--muted); padding: 8px 24px; border-top: 1px solid var(--border); background: var(--card); }
+  .shortcuts kbd { background: #e9ecef; padding: 1px 5px; border-radius: 3px; font-size: 11px; border: 1px solid #ccc; }
+  .filter-bar { display: flex; gap: 8px; padding: 8px 16px; border-bottom: 1px solid var(--border); background: #fff; }
+  .filter-btn { padding: 3px 10px; border-radius: 12px; border: 1px solid var(--border); font-size: 12px; background: #fff; }
+  .filter-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+</style>
+</head>
+<body>
+
+<div class="sidebar">
+  <div class="sidebar-header">
+    <h1>#220 Eval Label Review</h1>
+    <div class="file-area">
+      <input type="file" id="fileInput" accept=".json">
+    </div>
+    <div class="progress-bar"><div class="progress-fill" id="progressFill" style="width:0%"></div></div>
+    <div class="progress-text" id="progressText">Load labels.json to begin</div>
+  </div>
+  <div class="filter-bar">
+    <button class="filter-btn active" data-filter="all">All</button>
+    <button class="filter-btn" data-filter="todo">Unreviewed</button>
+    <button class="filter-btn" data-filter="done">Reviewed</button>
+    <button class="filter-btn" data-filter="has-yes">Has ✓</button>
+  </div>
+  <div class="query-list" id="queryList"></div>
+</div>
+
+<div class="main">
+  <div class="main-header" id="mainHeader" style="display:none">
+    <div>
+      <h2 id="queryTitle"></h2>
+      <div class="info" id="queryInfo"></div>
+    </div>
+    <div class="actions">
+      <button class="btn" onclick="toggleAll(true)" title="Mark all chunks relevant">All ✓</button>
+      <button class="btn" onclick="toggleAll(false)" title="Mark all chunks not relevant">All ✗</button>
+      <button class="btn primary" onclick="markReviewed()">Mark Reviewed</button>
+      <button class="btn success" onclick="saveFile()">Save</button>
+    </div>
+  </div>
+  <div class="chunk-list" id="chunkList">
+    <div class="empty-state">
+      <p>Load <code>labels.json</code> and select a query from the sidebar</p>
+    </div>
+  </div>
+  <div class="shortcuts" id="shortcuts" style="display:none">
+    <kbd>y</kbd> / <kbd>n</kbd> toggle chunk &nbsp;|&nbsp;
+    <kbd>j</kbd> / <kbd>k</kbd> next/prev query &nbsp;|&nbsp;
+    <kbd>1</kbd>-<kbd>9</kbd> jump to chunk &nbsp;|&nbsp;
+    <kbd>r</kbd> mark reviewed &nbsp;|&nbsp;
+    <kbd>Ctrl+S</kbd> save
+  </div>
+</div>
+
+<script>
+let data = null;
+let currentQid = null;
+let currentFilter = 'all';
+let reviewed = new Set();  // re-hydrated from data on load
+
+const $ = (s) => document.querySelector(s);
+const $$ = (s) => document.querySelectorAll(s);
+
+// --- File I/O ---
+$('#fileInput').addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    data = JSON.parse(reader.result);
+    // Re-hydrate reviewed set: a query is "reviewed" if all its chunks have relevant !== null
+    reviewed.clear();
+    for (const qid of queryIds()) {
+      const chunks = data[qid]?.chunks;
+      if (chunks && chunks.length > 0 && chunks.every(c => c.relevant !== null)) {
+        reviewed.add(qid);
+      }
+    }
+    currentQid = null;
+    renderSidebar();
+    updateProgress();
+    selectQuery(queryIds()[0]);
+  };
+  reader.readAsText(file);
+});
+
+function saveFile() {
+  if (!data) return;
+  const blob = new Blob([JSON.stringify(data, null, 2)], {type: 'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'labels.json';
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// --- Data helpers ---
+function queryIds() {
+  if (!data) return [];
+  return Object.keys(data).filter(k => k !== 'combos').sort();
+}
+
+function filteredIds() {
+  const ids = queryIds();
+  if (currentFilter === 'all') return ids;
+  if (currentFilter === 'todo') return ids.filter(id => !reviewed.has(id));
+  if (currentFilter === 'done') return ids.filter(id => reviewed.has(id));
+  if (currentFilter === 'has-yes') return ids.filter(id => {
+    return data[id].chunks.some(c => c.relevant === true);
+  });
+  return ids;
+}
+
+function updateProgress() {
+  const ids = queryIds();
+  const done = ids.filter(id => reviewed.has(id)).length;
+  const pct = ids.length ? Math.round(done / ids.length * 100) : 0;
+  $('#progressFill').style.width = pct + '%';
+  $('#progressText').textContent = `${done}/${ids.length} queries reviewed (${pct}%)`;
+}
+
+// --- Render ---
+function renderSidebar() {
+  const list = $('#queryList');
+  list.innerHTML = '';
+  for (const qid of filteredIds()) {
+    const q = data[qid];
+    const div = document.createElement('div');
+    div.className = 'query-item' + (qid === currentQid ? ' active' : '');
+    div.onclick = () => selectQuery(qid);
+
+    const yesCount = q.chunks.filter(c => c.relevant === true).length;
+    const total = q.chunks.length;
+    const isReviewed = reviewed.has(qid);
+
+    div.innerHTML = `
+      <span class="query-id">${qid}</span>
+      <div>
+        <div class="query-text">${esc(q.query_text)}</div>
+        <div class="query-meta">${q.expected_type} · ${yesCount}/${total} relevant</div>
+      </div>
+      <span class="query-status">${isReviewed ? '<span class="done">✓</span>' : '<span class="todo">—</span>'}</span>
+    `;
+    list.appendChild(div);
+  }
+}
+
+function selectQuery(qid) {
+  if (!qid) return;
+  currentQid = qid;
+  const q = data[qid];
+
+  $('#mainHeader').style.display = 'flex';
+  $('#shortcuts').style.display = 'block';
+  $('#queryTitle').textContent = `${qid}: ${q.query_text}`;
+  $('#queryInfo').textContent = `${q.expected_type} → classified as ${q.classified_type} · ${q.list} · ${q.chunks.length} chunks`;
+
+  const list = $('#chunkList');
+  list.innerHTML = '';
+
+  q.chunks.forEach((chunk, i) => {
+    const rel = chunk.relevant;
+    const div = document.createElement('div');
+    div.className = 'chunk' + (rel === true ? ' relevant' : rel === false ? ' not-relevant' : '');
+    div.id = `chunk-${i}`;
+
+    const ts = `${chunk.timestamp_start}s-${chunk.timestamp_end}s`;
+    const activeClass = rel === true ? 'yes active' : '';
+    const noClass = rel === false ? 'no active' : '';
+
+    div.innerHTML = `
+      <div class="chunk-header">
+        <div>
+          <span class="chunk-source">${esc(chunk.video_title)}</span>
+          <span class="chunk-ts"> @ ${ts}</span>
+        </div>
+        <div class="toggle-group">
+          <button class="toggle yes ${activeClass}" data-action="yes" data-i="${i}">✓ Relevant</button>
+          <button class="toggle no ${noClass}" data-action="no" data-i="${i}">✗ Not</button>
+        </div>
+      </div>
+      <div class="chunk-content">${esc(chunk.content)}</div>
+    `;
+    list.appendChild(div);
+  });
+
+  // Bind toggle buttons
+  $$('.toggle').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const i = parseInt(btn.dataset.i);
+      const val = btn.dataset.action === 'yes';
+      setRelevant(i, val);
+    });
+  });
+
+  renderSidebar();
+  updateProgress();
+}
+
+function setRelevant(i, val) {
+  const chunk = data[currentQid].chunks[i];
+  chunk.relevant = val;
+  // Re-render just that chunk's state
+  const el = $(`#chunk-${i}`);
+  el.className = 'chunk' + (val === true ? ' relevant' : val === false ? ' not-relevant' : '');
+  el.querySelector('.toggle.yes').className = 'toggle yes' + (val === true ? ' active' : '');
+  el.querySelector('.toggle.no').className = 'toggle no' + (val === false ? ' active' : '');
+  renderSidebar();
+  updateProgress();
+}
+
+function toggleAll(val) {
+  if (!currentQid) return;
+  data[currentQid].chunks.forEach((_, i) => setRelevant(i, val));
+}
+
+function markReviewed() {
+  if (!currentQid) return;
+  reviewed.add(currentQid);
+  // Ensure all chunks have a value (default to current)
+  data[currentQid].chunks.forEach(c => {
+    if (c.relevant === null) c.relevant = false;
+  });
+  renderSidebar();
+  updateProgress();
+}
+
+// --- Keyboard ---
+document.addEventListener('keydown', (e) => {
+  if (!currentQid) return;
+  if (e.target.tagName === 'INPUT') return;
+
+  if (e.key === 'y') {
+    // Toggle active chunk (or all visible) — simplest: focus mode, use number keys
+  } else if (e.key === 'r') {
+    markReviewed();
+  } else if (e.key === 'j' || e.key === 'ArrowDown') {
+    e.preventDefault();
+    navigateQuery(1);
+  } else if (e.key === 'k' || e.key === 'ArrowUp') {
+    e.preventDefault();
+    navigateQuery(-1);
+  } else if (e.key === 'a' && !e.ctrlKey && !e.metaKey) {
+    toggleAll(true);
+  } else if (e.key === 'x' && !e.ctrlKey && !e.metaKey) {
+    toggleAll(false);
+  } else if (e.ctrlKey && e.key === 's') {
+    e.preventDefault();
+    saveFile();
+  } else {
+    // Number keys 1-9 toggle specific chunk
+    const n = parseInt(e.key);
+    if (n >= 1 && n <= 9) {
+      const i = n - 1;
+      if (i < data[currentQid].chunks.length) {
+        const cur = data[currentQid].chunks[i].relevant;
+        setRelevant(i, cur === true ? false : true);
+      }
+    }
+  }
+});
+
+function navigateQuery(dir) {
+  const ids = filteredIds();
+  const idx = ids.indexOf(currentQid);
+  if (idx === -1) return;
+  const next = ids[idx + dir];
+  if (next) selectQuery(next);
+}
+
+// --- Filter ---
+$$('.filter-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    currentFilter = btn.dataset.filter;
+    $$('.filter-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    const ids = filteredIds();
+    renderSidebar();
+    if (!ids.includes(currentQid)) {
+      selectQuery(ids[0]);
+    }
+  });
+});
+
+// --- Utils ---
+function esc(s) {
+  const div = document.createElement('div');
+  div.textContent = s;
+  return div.innerHTML;
+}
+</script>
+</body>
+</html>
