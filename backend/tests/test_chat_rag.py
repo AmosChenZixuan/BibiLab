@@ -781,7 +781,7 @@ def test_rrf_fuse_ranks_doc_in_both_lists_above_doc_in_one():
     vec_list = [doc_a, doc_b, doc_c]
     fts_list = [doc_a, doc_c]
 
-    result = _rrf_fuse(vec_list, fts_list, k=60)
+    result = _rrf_fuse(vec_list, fts_list)
 
     assert result[0].content == "a"
     assert result.index(doc_c) < result.index(doc_b)

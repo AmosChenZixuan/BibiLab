@@ -23,7 +23,6 @@ from bibilab.pipeline.chunk import RagChunk
 logger = logging.getLogger(__name__)
 
 RETRIEVAL_CANDIDATE_POOL = 30
-RRF_K = 60
 
 _chroma_collections: dict[str, "chromadb.Collection"] = {}
 
@@ -104,11 +103,10 @@ def _diverse_top_k(ranked: list[RetrievedChunk], depth: int, k: int) -> list[Ret
 def _rrf_fuse(
     a: list[RetrievedChunk],
     b: list[RetrievedChunk],
-    k: int = RRF_K,
 ) -> list[RetrievedChunk]:
     """Reciprocal Rank Fusion on two ranked RetrievedChunk lists.
 
-    RRF_score(d) = sum(1 / (k + rank_i(d)) for each list where d appears).
+    RRF_score(d) = sum(1 / (60 + rank_i(d)) for each list where d appears).
     Returns fused list sorted by RRF score descending. Duplicates (same _chunk_key)
     are merged into a single entry.
     """
@@ -123,7 +121,7 @@ def _rrf_fuse(
 
     scored = []
     for key, ranks in positions.items():
-        score = sum(1.0 / (k + r) for r in ranks)
+        score = sum(1.0 / (60 + r) for r in ranks)
         chunk = key_to_chunk[key]
         chunk.score = score
         scored.append((score, chunk))
@@ -422,7 +420,7 @@ async def hybrid_search(
         return fts_result
     if not fts_result:
         return vec_result
-    return _rrf_fuse(vec_result, fts_result, k=RRF_K)
+    return _rrf_fuse(vec_result, fts_result)
 
 
 async def retrieve(

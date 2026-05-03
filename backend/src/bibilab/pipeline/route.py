@@ -28,14 +28,17 @@ Classify the following user query into exactly one category:
 
 - factual: The query asks for a specific fact, entity, or single-hop answer from
   one or more sources. Examples: "What does video X say about Y?", "When was Z
-  mentioned?", "Summarize the main point of video X."
+  mentioned?", "Summarize the main point of video X.", "X是什么？",
+  "视频X中为什么提到了Y？"
 - breadth: The query asks to survey, list, or count across multiple sources.
   Examples: "Which videos discuss topic X?", "How many sources mention Y?",
-  "What are the main themes across the library?"
+  "What are the main themes across the library?", "哪些视频讨论了X？",
+  "关于Y有多少个来源？"
 - analytical: The query asks to compare, contrast, analyze relationships, or
   reason across multiple concepts. Examples: "How does approach X differ from Y
   across videos?", "Compare the strategies in video A and video B.", "What is
-  the relationship between X and Y?"
+  the relationship between X and Y?", "视频A和B中的方法有什么区别？",
+  "X和Y之间的关系是什么？"
 
 Query: {query}
 Category:"""
