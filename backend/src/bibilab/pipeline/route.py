@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import re
 
 from bibilab.config import BibilabConfig
 from bibilab.models._enums import (
@@ -16,8 +17,9 @@ from bibilab.pipeline._shared import _call_llm
 logger = logging.getLogger(__name__)
 
 # The classifier output itself is one short word, but thinking-capable models also consume
-# this budget for reasoning tokens. Keep generous headroom or the response gets truncated to empty.
-QUERY_CLASSIFICATION_MAX_TOKENS = 4096
+# this budget for reasoning tokens. Extended-thinking models need at least 1K for reasoning,
+# and the total budget must cover both.
+QUERY_CLASSIFICATION_MAX_TOKENS = 8192
 
 
 CLASSIFICATION_PROMPT = """\
@@ -43,10 +45,13 @@ def _build_prompt(query: str) -> str:
     return CLASSIFICATION_PROMPT.format(query=query)
 
 
+_CLASSIFICATION_RE = re.compile(r"(?<![a-zA-Z])(factual|breadth|analytical)(?![a-zA-Z])", re.IGNORECASE)
+
+
 def _parse_response(text: str) -> QueryType:
-    cleaned = text.strip().strip('"').lower()
-    if cleaned in (QUERY_TYPE_FACTUAL, QUERY_TYPE_BREADTH, QUERY_TYPE_ANALYTICAL):
-        return cleaned  # type: ignore[return-value]
+    match = _CLASSIFICATION_RE.search(text)
+    if match:
+        return match.group(1).lower()  # type: ignore[return-value]
     raise ValueError(f"Unexpected classification response: {text!r}")
 
 
@@ -80,10 +85,14 @@ def params_for_type(query_type: QueryType, sources_total: int) -> RetrievalParam
     - Breadth top_k is capped at sources_total (asking for 20 chunks from
       a 5-source list is impossible at depth=1 — the diverse selector
       would relax-fallback to duplicates, wasting token budget).
+    - Factual/analytical top_k is floored at sources_total so all sources
+      can be represented, capped at 3× base to bound token usage on very
+      large lists.
     """
     if query_type == QUERY_TYPE_BREADTH and sources_total < 3:
         return _PARAMS_BY_TYPE[QUERY_TYPE_FACTUAL]
     base = _PARAMS_BY_TYPE[query_type]
     if query_type == QUERY_TYPE_BREADTH:
         return RetrievalParams(depth_per_source=base.depth_per_source, top_k=min(base.top_k, sources_total))
-    return base
+    top_k = max(base.top_k, min(sources_total, base.top_k * 3))
+    return RetrievalParams(depth_per_source=base.depth_per_source, top_k=top_k)

@@ -94,6 +94,51 @@ async def test_classify_query_llm_failure_falls_back_to_factual():
         assert result == "factual"
 
 
+def test_parse_response_quoted_word():
+    from bibilab.pipeline.route import _parse_response
+
+    assert _parse_response('"breadth"') == "breadth"
+
+
+def test_parse_response_word_with_explanation():
+    from bibilab.pipeline.route import _parse_response
+
+    raw = "breadth\n\nThe query asks to survey across multiple video sources to list out all methods mentioned."
+    assert _parse_response(raw) == "breadth"
+
+
+def test_parse_response_word_with_trailing_period():
+    from bibilab.pipeline.route import _parse_response
+
+    assert _parse_response("analytical.") == "analytical"
+
+
+def test_parse_response_invalid_word():
+    from bibilab.pipeline.route import _parse_response
+
+    with pytest.raises(ValueError):
+        _parse_response("not a type")
+
+
+def test_parse_response_multiline_period_explanation():
+    from bibilab.pipeline.route import _parse_response
+
+    assert _parse_response("factual.\n\nThis query asks for a specific fact.") == "factual"
+
+
+def test_parse_response_markdown_bold():
+    from bibilab.pipeline.route import _parse_response
+
+    assert _parse_response("**breadth**") == "breadth"
+
+
+def test_parse_response_markdown_bold_with_explanation():
+    from bibilab.pipeline.route import _parse_response
+
+    raw = "**breadth**\n\nThe query asks to find information about a specific entity across multiple sources."
+    assert _parse_response(raw) == "breadth"
+
+
 @pytest.mark.asyncio
 async def test_query_classifications_persisted(tmp_bibilab_home):
     from bibilab.db import bootstrap_db, get_db, log_query_classification
@@ -118,3 +163,10 @@ async def test_query_classifications_persisted(tmp_bibilab_home):
     assert row["query_text"] == "test query"
     assert row["query_type"] == "factual"
     assert row["effective_mode"] == "focused"
+
+
+def test_rerank_min_score_is_none_by_default():
+    from bibilab.config import RagConfig
+
+    cfg = RagConfig()
+    assert cfg.rerank_min_score is None

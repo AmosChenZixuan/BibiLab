@@ -195,7 +195,12 @@ async def chat_endpoint(
         rag_context = _format_rag_context(rag_result, request.message)
 
     system_parts = [GROUNDING_SYSTEM_PROMPT]
-    if existing_summary:
+    if existing_summary and rag_context:
+        system_parts.append(
+            "Historical conversation summary (for context only — the current "
+            "question may be about different sources than those summarized below):\n" + existing_summary
+        )
+    elif existing_summary:
         system_parts.append(f"\n\nEarlier conversation summary:\n{existing_summary}")
     if rag_context:
         system_parts.append(rag_context)

@@ -970,7 +970,7 @@ def test_params_by_type_presets():
     # Large list — no override
     fact = params_for_type(QUERY_TYPE_FACTUAL, sources_total=10)
     assert fact.depth_per_source == 2
-    assert fact.top_k == 5
+    assert fact.top_k == 10  # floored at sources_total
     anl = params_for_type(QUERY_TYPE_ANALYTICAL, sources_total=10)
     assert anl.depth_per_source == 4
     assert anl.top_k == 12
@@ -998,12 +998,13 @@ def test_params_small_list_breadth_falls_back_to_factual():
     assert brd.top_k == 5
 
 
-def test_params_factual_unchanged_by_list_size():
+def test_params_factual_scales_with_sources():
     from bibilab.models._enums import QUERY_TYPE_FACTUAL
     from bibilab.pipeline.route import params_for_type
 
-    # Factual params invariant to list size
-    for n in (1, 5, 50):
-        fact = params_for_type(QUERY_TYPE_FACTUAL, sources_total=n)
-        assert fact.depth_per_source == 2
-        assert fact.top_k == 5
+    # Small list: base top_k applies
+    assert params_for_type(QUERY_TYPE_FACTUAL, sources_total=3).top_k == 5
+    # Mid list: scales to cover all sources
+    assert params_for_type(QUERY_TYPE_FACTUAL, sources_total=9).top_k == 9
+    # Large list: capped at 3× base
+    assert params_for_type(QUERY_TYPE_FACTUAL, sources_total=50).top_k == 15
