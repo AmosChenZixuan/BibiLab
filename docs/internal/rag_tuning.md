@@ -74,7 +74,7 @@ Only the three floor values produce distinct results:
 
 ### 1. RRF_K is a dead parameter (confirmed)
 
-The cross-encoder reranks the entire candidate pool (30 chunks), completely overwriting the RRF fusion ordering. Verified by plumbing `rrf_k_override` through `retrieve()` → `hybrid_search()` → `_rrf_fuse()` and sweeping {30, 60, 90} × 3 floors. All 270 pairwise comparisons of ranked lists were bit-identical. RRF_K should be removed as a tunable (#245).
+The cross-encoder reranks the entire candidate pool (30 chunks), completely overwriting the RRF fusion ordering. Verified during the calibration sweep by temporarily plumbing `rrf_k` through `retrieve()` → `hybrid_search()` → `_rrf_fuse()` and sweeping {30, 60, 90} × 3 floors. All 270 pairwise comparisons of ranked lists were bit-identical. RRF_K should be removed as a tunable (#245).
 
 ### 2. floor=null is the best default
 
@@ -116,4 +116,4 @@ Re-run the eval sweep when:
 - Tool-calling search ships (#228) — verify no regression
 - New lists added with different content characteristics
 
-See `backend/scripts/eval/README.md` for the re-run procedure.
+The eval harness was deliberately throwaway (author-specific corpus, single-use UI). To re-sweep: write a script that calls `retrieve()` directly, varying `cfg.rag.rerank_min_score` per call — that is the only parameter the campaign found to affect ranking. The candidate pool (30), reranker model, and RRF fusion are all fixed.

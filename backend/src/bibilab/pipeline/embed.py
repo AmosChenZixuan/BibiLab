@@ -456,8 +456,9 @@ async def retrieve(
 
         pool_best_by_source = _best_by_source(chunks)
 
-        if cfg.rag.rerank_min_score is not None:
-            chunks = [c for c in chunks if c.score is None or c.score >= cfg.rag.rerank_min_score]
+        floor = cfg.rag.rerank_min_score
+        if floor is not None:
+            chunks = [c for c in chunks if c.score is None or c.score >= floor]
     else:
         pool_best_by_source = _best_by_source(chunks)
 
