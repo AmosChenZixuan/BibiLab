@@ -130,8 +130,7 @@ async def stream_with_tools(
         async for event in stream_llm(messages, cfg, tools, system=system, llm_max_tokens=llm_max_tokens):
             if event.type == "tool_call":
                 tool_calls.append(event.tool_call)
-            else:
-                yield event
+            yield event
 
         if not tool_calls:
             return
@@ -234,9 +233,10 @@ async def chat_endpoint(
 
     first_response_deltas: list[str] = []
     tool_calls: list = []
+    retrieve_result: dict | None = None
 
     async def event_generator():
-        nonlocal first_response_deltas, tool_calls
+        nonlocal first_response_deltas, tool_calls, retrieve_result
 
         system_parts = [GROUNDING_SYSTEM_PROMPT]
         if existing_summary:
@@ -275,7 +275,10 @@ async def chat_endpoint(
                 elif event.type == "tool_call":
                     tool_calls.append(event.tool_call)
                 elif event.type == "tool_result":
-                    yield f"data: {json.dumps({'type': SSE_EVENT_TOOL_RESULT, **json.loads(event.content)})}\n\n"
+                    parsed = json.loads(event.content)
+                    if parsed["name"] == "retrieve":
+                        retrieve_result = parsed["result"]
+                    yield f"data: {json.dumps({'type': SSE_EVENT_TOOL_RESULT, **parsed})}\n\n"
                 elif event.type == SSE_EVENT_DONE:
                     if not tool_calls:
                         yield f"data: {json.dumps({'type': SSE_EVENT_DONE})}\n\n"
@@ -299,26 +302,10 @@ async def chat_endpoint(
             )
             return
 
-        # Collect coverage from retrieve tool_result and persist
-        retrieve_result = None
-        tool_call_meta: list[dict] = []
-        for tc in tool_calls:
-            if tc.name == "retrieve":
-                try:
-                    result = await execute_tool_bound("retrieve", tc.arguments)
-                    retrieve_result = result
-                    tool_call_meta.append({"id": tc.id, "name": tc.name, "result": result})
-                except Exception as exc:
-                    yield f"data: {json.dumps({'type': SSE_EVENT_ERROR, 'message': str(exc)})}\n\n"
-                    await create_message(
-                        conversation_id=conversation_id,
-                        role="assistant",
-                        content="",
-                        metadata={"tool_calls": [{"id": tc.id, "name": tc.name, "error": str(exc)}]},
-                    )
-                    return
-            elif tc.name == "generate_report":
-                tool_call_meta.append({"id": tc.id, "name": tc.name})
+        # Persist tool call metadata (results already collected during stream)
+        tool_call_meta: list[dict] = [
+            {"id": tc.id, "name": tc.name} for tc in tool_calls if tc.name in ("retrieve", "generate_report")
+        ]
 
         meta: dict[str, Any] = {}
         if tool_call_meta:
@@ -338,6 +325,8 @@ async def chat_endpoint(
             content="",
             metadata=meta if meta else None,
         )
+
+        yield f"data: {json.dumps({'type': SSE_EVENT_DONE})}\n\n"
 
     return StreamingResponse(
         event_generator(),
