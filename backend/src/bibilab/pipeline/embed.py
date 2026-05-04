@@ -443,7 +443,7 @@ async def retrieve(
     any single video; top_k sets the total returned.
     """
     sources_total = len(source_ids)
-    effective_top_k = _dynamic_pool(sources_total)
+    effective_top_k = max(_dynamic_pool(sources_total), params.top_k)
 
     if cfg.rag.hybrid_enabled:
         chunks = await hybrid_search(query_text, source_ids, cfg, effective_top_k=effective_top_k)

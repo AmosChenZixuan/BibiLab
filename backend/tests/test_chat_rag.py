@@ -408,8 +408,8 @@ def test_dynamic_pool_floor():
 def test_dynamic_pool_scaling():
     from bibilab.pipeline.embed import _dynamic_pool
 
-    assert _dynamic_pool(5) == 15  # 5*3=15
-    assert _dynamic_pool(10) == 30  # 10*3=30
+    assert _dynamic_pool(5) == 15
+    assert _dynamic_pool(10) == 30
 
 
 def test_dynamic_pool_ceiling():
@@ -418,6 +418,28 @@ def test_dynamic_pool_ceiling():
     assert _dynamic_pool(20) == 60  # 20*3=60, exactly at ceiling
     assert _dynamic_pool(50) == 60  # capped
     assert _dynamic_pool(200) == 60  # capped
+
+
+@pytest.mark.asyncio
+async def test_retrieve_pool_at_least_top_k(tmp_bibilab_home):
+    """effective_top_k must be >= params.top_k even when _dynamic_pool is smaller.
+    E.g. analytical query on a 1-source list: pool=10 but top_k=12."""
+    from bibilab.config import BibilabConfig, RagConfig
+    from bibilab.models._enums import RetrievalParams
+    from bibilab.pipeline.embed import _dynamic_pool, retrieve
+
+    cfg = BibilabConfig(rag=RagConfig(max_distance=1.0, reranking_enabled=False))
+
+    with patch(
+        "bibilab.pipeline.embed.hybrid_search",
+        new_callable=AsyncMock,
+        return_value=[],
+    ) as mock_hybrid:
+        await retrieve("query", ["src1"], cfg, params=RetrievalParams(depth_per_source=4, top_k=12))
+
+    # _dynamic_pool(1) = 10, but params.top_k = 12 → pool should be 12
+    assert _dynamic_pool(1) == 10
+    mock_hybrid.assert_called_once_with("query", ["src1"], cfg, effective_top_k=12)
 
 
 @pytest.mark.asyncio
