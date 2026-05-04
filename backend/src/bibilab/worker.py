@@ -20,6 +20,7 @@ from bibilab.db import (
     get_pending_jobs,
     get_source,
     reset_stuck_jobs,
+    update_job_meta,
     update_job_status,
     update_source_digest,
     write_source,
@@ -374,6 +375,7 @@ All output fields MUST be written in {_LANG_NAME.get(lang, "English")}."""
         cfg = self._get_config()
 
         source_id: str = meta_raw.get("source_id") or str(uuid.uuid4())
+        await update_job_meta(job_id, {"source_id": source_id})
         video_id: str = meta_raw["video_id"]
         list_id: str = meta_raw["list_id"]
 

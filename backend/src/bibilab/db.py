@@ -523,6 +523,25 @@ async def update_job_status(
         await db.commit()
 
 
+async def update_job_meta(job_id: str, patch: dict) -> None:
+    """Merge `patch` into the job's JSON meta column."""
+    import json
+
+    async with get_db() as db:
+        row = await db.execute("SELECT meta FROM jobs WHERE id=?", (job_id,))
+        result = await row.fetchone()
+        if result is None:
+            return
+        existing = result[0]
+        meta = json.loads(existing) if isinstance(existing, str) else (existing or {})
+        meta.update(patch)
+        await db.execute(
+            "UPDATE jobs SET meta=?, updated_at=? WHERE id=?",
+            (json.dumps(meta, ensure_ascii=False), _now(), job_id),
+        )
+        await db.commit()
+
+
 async def get_job(job_id: str) -> aiosqlite.Row | None:
     async with get_db() as db:
         cursor = await db.execute("SELECT * FROM jobs WHERE id=?", (job_id,))
