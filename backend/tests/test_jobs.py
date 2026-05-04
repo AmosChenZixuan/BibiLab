@@ -144,3 +144,39 @@ async def test_delete_job_cleans_up_ingest_artifacts(client: httpx.AsyncClient, 
     assert not download_path.exists()
     mock_clear.assert_called_once()
     assert mock_clear.call_args[0][0] == video_id
+
+
+@pytest.mark.asyncio
+async def test_delete_job_cleans_up_cover_when_source_id_in_meta(client: httpx.AsyncClient, tmp_bibilab_home: Path):
+    from bibilab.db import bootstrap_db, create_job, get_job
+
+    await bootstrap_db()
+    source_id = "BV1cover-cleanup"
+    video_id = "BV1cover-cleanup-vid"
+    cover_path = tmp_bibilab_home / "covers" / f"{source_id}.jpg"
+    cover_path.parent.mkdir(parents=True, exist_ok=True)
+    cover_path.write_bytes(b"fake-cover")
+
+    job_id = await create_job(
+        type="ingest",
+        meta={
+            "video_id": video_id,
+            "source_id": source_id,
+            "list_id": "list-1",
+            "title": "Cover Cleanup",
+            "platform": "bilibili",
+            "source_url": f"https://www.bilibili.com/video/{video_id}",
+        },
+    )
+
+    db_path = tmp_bibilab_home / "bibilab.db"
+    with sqlite3.connect(db_path) as db:
+        db.execute("UPDATE jobs SET status='failed' WHERE id=?", (job_id,))
+        db.commit()
+
+    with patch("bibilab.cleanup.clear_embeddings_for_video"):
+        resp = await client.delete(f"/jobs/{job_id}")
+
+    assert resp.status_code == 204
+    assert await get_job(job_id) is None
+    assert not cover_path.exists()

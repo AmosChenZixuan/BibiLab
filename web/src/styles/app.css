@@ -161,6 +161,28 @@
     color: var(--color-ink);
   }
 
+  .bubble table {
+    width: 100%;
+    margin: 1.25em 0;
+    font-size: 0.875em;
+    line-height: 1.71429;
+  }
+
+  .bubble thead th {
+    color: var(--color-ink);
+    font-weight: 600;
+    vertical-align: bottom;
+    padding: 0 0.571429em 0.571429em;
+  }
+
+  .bubble tbody td {
+    padding: 0.571429em;
+  }
+
+  .bubble tbody tr {
+    border-bottom: 1px solid var(--color-border);
+  }
+
   /* Citation chips */
   .cites {
     display: flex;

@@ -524,9 +524,11 @@ async def update_job_status(
 
 
 async def update_job_meta(job_id: str, patch: dict) -> None:
-    """Merge `patch` into the job's JSON meta column."""
-    import json
+    """Merge `patch` into the job's JSON meta column.
 
+    Single-writer assumption: the worker processes jobs sequentially and only
+    one coroutine touches a given job at a time, so SELECT-then-UPDATE is safe.
+    """
     async with get_db() as db:
         row = await db.execute("SELECT meta FROM jobs WHERE id=?", (job_id,))
         result = await row.fetchone()
@@ -537,7 +539,7 @@ async def update_job_meta(job_id: str, patch: dict) -> None:
         meta.update(patch)
         await db.execute(
             "UPDATE jobs SET meta=?, updated_at=? WHERE id=?",
-            (json.dumps(meta, ensure_ascii=False), _now(), job_id),
+            (json.dumps(meta), _now(), job_id),
         )
         await db.commit()
 

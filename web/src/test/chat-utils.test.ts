@@ -69,6 +69,21 @@ describe("parseCitations", () => {
     expect(cleanContent).toBe(" and ");
   });
 
+  test("deduplicates repeated citations", () => {
+    const text = "[A @ 0s-5s] and [A @ 0s-5s] again [B @ 10s-20s]";
+    const { citations, cleanContent } = parseCitations(text);
+    expect(citations).toHaveLength(2);
+    expect(citations[0]).toEqual({ source_title: "A", timestamp_start: 0, timestamp_end: 5 });
+    expect(citations[1]).toEqual({ source_title: "B", timestamp_start: 10, timestamp_end: 20 });
+    expect(cleanContent).toBe(" and  again ");
+  });
+
+  test("does not deduplicate different timestamps for same title", () => {
+    const text = "[A @ 0s-5s] and [A @ 10s-20s]";
+    const { citations } = parseCitations(text);
+    expect(citations).toHaveLength(2);
+  });
+
   test("no citations", () => {
     const { citations, cleanContent } = parseCitations("plain text");
     expect(citations).toEqual([]);

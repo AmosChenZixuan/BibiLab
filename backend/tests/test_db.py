@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 from unittest.mock import patch
 
@@ -590,3 +591,31 @@ class TestDeriveVideoStatuses:
         ]
         result = derive_video_statuses(["v1"], jobs, set())
         assert result == {"v1": "in_progress"}
+
+
+@pytest.mark.asyncio
+async def test_update_job_meta_merges_existing_keys(tmp_bibilab_home: Path):
+    from bibilab.db import bootstrap_db, create_job, get_db, get_job, update_job_meta
+
+    await bootstrap_db()
+    await create_job("ingest", {"video_id": "BV1", "list_id": "list-1", "title": "Original"})
+    async with get_db() as db:
+        cursor = await db.execute("SELECT id FROM jobs LIMIT 1")
+        row = await cursor.fetchone()
+        job_id = row["id"]
+
+    await update_job_meta(job_id, {"source_id": "src-123"})
+
+    job = await get_job(job_id)
+    meta = json.loads(job["meta"])
+    assert meta["video_id"] == "BV1"
+    assert meta["title"] == "Original"
+    assert meta["source_id"] == "src-123"
+
+
+@pytest.mark.asyncio
+async def test_update_job_meta_noops_on_missing_job(tmp_bibilab_home: Path):
+    from bibilab.db import bootstrap_db, update_job_meta
+
+    await bootstrap_db()
+    await update_job_meta("nonexistent-id", {"source_id": "src-123"})
