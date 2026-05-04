@@ -529,7 +529,7 @@ async def test_format_rag_context(tmp_bibilab_home):
     text = _format_rag_context(result, "my query")
 
     assert "from 2 of 5 sources" in text
-    assert "Relevant transcript excerpts" in text
+    assert "Relevant excerpts" in text
     assert '[Video A @ 10s-20s]: "chunk about topic"' in text
     assert "Concept appears" not in text
     assert "Best excerpt per source:" not in text

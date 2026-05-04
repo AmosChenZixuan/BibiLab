@@ -32,17 +32,20 @@ export function formatSubtitle(t: (key: string, params?: Record<string, string |
 }
 
 export function parseCitations(text: string): { citations: Citation[]; cleanContent: string } {
-  const citations: Citation[] = [];
+  const seen = new Map<string, Citation>();
   const regex = /\[([^\]]+?) @ (\d+)s-(\d+)s\]/g;
   const cleanContent = text.replace(regex, (_, title, start, end) => {
-    citations.push({
-      source_title: title,
-      timestamp_start: parseInt(start, 10),
-      timestamp_end: parseInt(end, 10),
-    });
+    const key = `${title}|${start}|${end}`;
+    if (!seen.has(key)) {
+      seen.set(key, {
+        source_title: title,
+        timestamp_start: parseInt(start, 10),
+        timestamp_end: parseInt(end, 10),
+      });
+    }
     return "";
   });
-  return { citations, cleanContent };
+  return { citations: Array.from(seen.values()), cleanContent };
 }
 
 export function formatTimestamp(iso: string): string {

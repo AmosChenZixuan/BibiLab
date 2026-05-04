@@ -114,7 +114,7 @@ def _format_chunk_line(chunk: RetrievedChunk) -> str:
 def _format_rag_context(result: RetrievalResult, query: str) -> str:
     if not result.chunks:
         return ""
-    header = f"Relevant transcript excerpts (from {result.sources_with_hits} of {result.sources_total} sources):"
+    header = f"Relevant excerpts (from {result.sources_with_hits} of {result.sources_total} sources):"
     return "\n".join([f"Query: {query}\n", header, *map(_format_chunk_line, result.chunks)])
 
 
@@ -132,11 +132,11 @@ def _build_rag_payload(rag_result: RetrievalResult, effective_mode: ChatMode) ->
 
 
 GROUNDING_SYSTEM_PROMPT = (
-    "You are a helpful assistant answering questions strictly based on the provided transcript excerpts. "
+    "You are a helpful assistant answering questions strictly based on the provided source material. "
     "CRITICAL RULES:\n"
-    "1. ONLY use information from the transcript excerpts provided below. Never use your own knowledge.\n"
-    '2. If the excerpts do not contain the answer, say "The provided transcripts do not cover this topic."\n'
-    "3. Quote or closely paraphrase the transcript — do not reinterpret, editorialize, or add external context.\n"
+    "1. ONLY use information from the source material provided below. Never use your own knowledge.\n"
+    '2. If the excerpts do not contain the answer, say "The provided sources do not cover this topic."\n'
+    "3. Quote or closely paraphrase the source material — do not reinterpret, editorialize, or add external context.\n"
     "4. Cite sources using EXACTLY this format: [video_title @ Ns-Ns] — e.g. [My Video @ 120s-145s].\n"
     "5. Use the generate_report tool when the user asks for summaries, study guides, blog posts, or custom reports.\n"
     "6. Do not ask follow-up questions, suggest next steps, or offer unsolicited advice.\n"

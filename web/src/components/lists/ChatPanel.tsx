@@ -213,7 +213,9 @@ export function ChatPanel({
                       <PulseRing />
                     ) : msg.content ? (
                       <div className="bubble bubble-assistant">
-                        <ReactMarkdown>{msg.content}</ReactMarkdown>
+                        <div className="prose prose-sm max-w-none">
+                          <ReactMarkdown>{msg.content}</ReactMarkdown>
+                        </div>
                         {msg.isStreaming && <span className="chat-cursor" />}
                       </div>
                     ) : null}

@@ -220,6 +220,11 @@ export function SourcesListMode({
     }
   }, [allSelected, currentSources, onSelectedSourcesChange]);
 
+  const handleCancelPreview = useCallback(() => {
+    setPreviewVideos(null);
+    setPreviewLoading(false);
+  }, []);
+
   // When a job flips to done, refresh sources and dismiss
   useEffect(() => {
     const completed = ingestJobs.filter(
@@ -482,10 +487,7 @@ export function SourcesListMode({
         <PlaylistPreviewModal
           videos={previewVideos}
           onSubmit={(selected) => submitSelection(selected)}
-          onCancel={() => {
-            setPreviewVideos(null);
-            setPreviewLoading(false);
-          }}
+          onCancel={handleCancelPreview}
           submitting={submitting}
           isLoading={previewLoading}
         />
