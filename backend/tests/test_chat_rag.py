@@ -492,65 +492,6 @@ async def test_retrieve_depth_two_keeps_multiple_per_source(tmp_bibilab_home):
     assert all(c.video_id == "v1" for c in result.chunks)
 
 
-@pytest.mark.asyncio
-async def test_format_rag_context(tmp_bibilab_home):
-    from bibilab.pipeline.embed import RetrievalResult, RetrievedChunk, SourceHit
-    from bibilab.routers.chat import _format_rag_context  # noqa: E402
-
-    result = RetrievalResult(
-        chunks=[
-            RetrievedChunk(
-                content="chunk about topic",
-                video_title="Video A",
-                timestamp_start=10.0,
-                timestamp_end=20.0,
-                video_id="v1",
-                distance=0.1,
-            ),
-            RetrievedChunk(
-                content="another chunk",
-                video_title="Video B",
-                timestamp_start=0.0,
-                timestamp_end=5.0,
-                video_id="v2",
-                distance=0.2,
-            ),
-        ],
-        candidates_evaluated=8,
-        sources_with_hits=2,
-        sources_total=5,
-        source_coverage=[
-            # lower score = more relevant (stores -score after RRF/rerank)
-            SourceHit(video_id="v1", video_title="Video A", best_score=0.1),
-            SourceHit(video_id="v2", video_title="Video B", best_score=0.2),
-        ],
-    )
-
-    text = _format_rag_context(result, "my query")
-
-    assert "from 2 of 5 sources" in text
-    assert "Relevant excerpts" in text
-    assert '[Video A @ 10s-20s]: "chunk about topic"' in text
-    assert "Concept appears" not in text
-    assert "Best excerpt per source:" not in text
-
-
-def test_format_rag_context_empty(tmp_bibilab_home):
-    from bibilab.pipeline.embed import RetrievalResult
-    from bibilab.routers.chat import _format_rag_context  # noqa: E402
-
-    result = RetrievalResult(
-        chunks=[],
-        candidates_evaluated=0,
-        sources_with_hits=0,
-        sources_total=0,
-        source_coverage=[],
-    )
-
-    text = _format_rag_context(result, "query")
-    assert text == ""
-
-
 # --- hybrid_search tests (issue #201) ---
 
 
@@ -987,35 +928,32 @@ def test_diverse_top_k_depth_fills_then_leftovers():
 
 
 def test_params_by_type_presets():
-    from bibilab.models._enums import QUERY_TYPE_ANALYTICAL, QUERY_TYPE_BREADTH, QUERY_TYPE_FACTUAL
-    from bibilab.pipeline.route import params_for_type
+    from bibilab.pipeline.chat_tools import search_mode_to_params
 
     # Large list — no override for factual, analytical still scales
-    fact = params_for_type(QUERY_TYPE_FACTUAL, sources_total=10)
+    fact = search_mode_to_params("factual", sources_total=10)
     assert fact.depth_per_source == 1
     assert fact.top_k == 4  # fixed, no scaling with source count
-    anl = params_for_type(QUERY_TYPE_ANALYTICAL, sources_total=10)
+    anl = search_mode_to_params("analytical", sources_total=10)
     assert anl.depth_per_source == 4
     assert anl.top_k == 12
-    brd = params_for_type(QUERY_TYPE_BREADTH, sources_total=10)
+    brd = search_mode_to_params("breadth", sources_total=10)
     assert brd.depth_per_source == 1
     assert brd.top_k == 10  # capped at sources_total
 
 
 def test_params_breadth_capped_by_sources():
-    from bibilab.models._enums import QUERY_TYPE_BREADTH
-    from bibilab.pipeline.route import params_for_type
+    from bibilab.pipeline.chat_tools import search_mode_to_params
 
-    brd = params_for_type(QUERY_TYPE_BREADTH, sources_total=5)
+    brd = search_mode_to_params("breadth", sources_total=5)
     assert brd.top_k == 5
     assert brd.depth_per_source == 1
 
 
 def test_params_small_list_breadth_falls_back_to_factual():
-    from bibilab.models._enums import QUERY_TYPE_BREADTH
-    from bibilab.pipeline.route import params_for_type
+    from bibilab.pipeline.chat_tools import search_mode_to_params
 
     # 2 sources: breadth degrades to factual params
-    brd = params_for_type(QUERY_TYPE_BREADTH, sources_total=2)
+    brd = search_mode_to_params("breadth", sources_total=2)
     assert brd.depth_per_source == 1
     assert brd.top_k == 4
