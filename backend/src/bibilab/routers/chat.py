@@ -16,7 +16,6 @@ from bibilab.db import (
     get_or_create_conversation,
     get_recent_messages,
     get_sources_for_list,
-    update_conversation_mode,
 )
 from bibilab.db import (
     get_conversation as get_conv_row,
@@ -26,7 +25,6 @@ from bibilab.models.chat import (
     ConversationResponse,
     GetConversationResponse,
     MessageResponse,
-    PatchConversationRequest,
 )
 from bibilab.pipeline._shared import StreamEvent, ToolCall, ToolDefinition, stream_llm
 from bibilab.pipeline.chat_summary import maybe_compress_conversation
@@ -86,17 +84,6 @@ async def delete_conversation_endpoint(list_id: str) -> None:
     conversation_row = await get_conversation_by_list(list_id)
     if conversation_row is not None:
         await delete_conversation(conversation_row["id"])
-
-
-@router.patch("/lists/{list_id}/conversation", response_model=ConversationResponse)
-async def patch_conversation(list_id: str, request: PatchConversationRequest) -> ConversationResponse:
-    list_row = await get_list(list_id)
-    if list_row is None:
-        raise HTTPException(status_code=404, detail="List not found")
-    conversation_id = await get_or_create_conversation(list_id)
-    await update_conversation_mode(conversation_id, request.mode)
-    conv_row = await get_conv_row(conversation_id)
-    return ConversationResponse.from_row(dict(conv_row))
 
 
 def _client_tool_result(name: str, result: dict) -> dict:
