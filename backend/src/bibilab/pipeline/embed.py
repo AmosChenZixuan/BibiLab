@@ -17,7 +17,7 @@ from pathlib import Path
 from bibilab.adapters.base import VideoMeta
 from bibilab.config import BibilabConfig, bibilab_home, models_dir
 from bibilab.db import _escape_fts_query, get_db_path, get_video_ids_for_sources, query_fts_rows
-from bibilab.models._enums import CHAT_MODE_BROAD, CHAT_MODE_FOCUSED, ChatMode, RetrievalParams
+from bibilab.models._enums import RetrievalParams
 from bibilab.pipeline.chunk import RagChunk
 
 logger = logging.getLogger(__name__)
@@ -57,7 +57,6 @@ class SourceHit:
 @dataclass
 class RetrievalResult:
     chunks: list[RetrievedChunk]
-    mode: ChatMode
     candidates_evaluated: int
     sources_with_hits: int
     sources_total: int
@@ -479,11 +478,8 @@ async def retrieve(
 
     result_chunks = _diverse_top_k(chunks, params.depth_per_source, params.top_k)
 
-    inferred_mode: ChatMode = CHAT_MODE_BROAD if params.depth_per_source == 1 else CHAT_MODE_FOCUSED
-
     return RetrievalResult(
         chunks=result_chunks,
-        mode=inferred_mode,
         candidates_evaluated=candidates_evaluated,
         sources_with_hits=len(pool_best_by_source),
         sources_total=sources_total,

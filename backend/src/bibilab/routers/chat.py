@@ -24,6 +24,7 @@ from bibilab.db import (
 )
 from bibilab.models._enums import (
     QUERY_TYPE_FACTUAL,
+    ChatMode,
     map_type_to_mode,
 )
 from bibilab.models.chat import (
@@ -117,11 +118,11 @@ def _format_rag_context(result: RetrievalResult, query: str) -> str:
     return "\n".join([f"Query: {query}\n", header, *map(_format_chunk_line, result.chunks)])
 
 
-def _build_rag_payload(rag_result: RetrievalResult) -> dict:
+def _build_rag_payload(rag_result: RetrievalResult, effective_mode: ChatMode) -> dict:
     return {
         "type": SSE_EVENT_RAG_META,
         "rag": {
-            "mode": rag_result.mode,
+            "mode": effective_mode,
             "candidates_evaluated": rag_result.candidates_evaluated,
             "sources_with_hits": rag_result.sources_with_hits,
             "sources_total": rag_result.sources_total,
@@ -186,6 +187,7 @@ async def chat_endpoint(
                 logger.warning("Failed to log query classification", exc_info=True)
         else:
             params = params_for_type(QUERY_TYPE_FACTUAL, len(source_ids))
+            effective_mode = map_type_to_mode(QUERY_TYPE_FACTUAL)
         rag_result = await retrieve(
             query_text=request.message,
             source_ids=source_ids,
@@ -224,7 +226,7 @@ async def chat_endpoint(
     async def event_generator():
         nonlocal first_response_deltas, tool_calls
 
-        rag_payload_obj = _build_rag_payload(rag_result) if rag_result and rag_result.chunks else None
+        rag_payload_obj = _build_rag_payload(rag_result, effective_mode) if rag_result and rag_result.chunks else None
         rag_meta_inner = rag_payload_obj["rag"] if rag_payload_obj else None
 
         if rag_payload_obj is not None:

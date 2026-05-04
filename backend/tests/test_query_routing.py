@@ -8,21 +8,10 @@ from bibilab.models._enums import QUERY_TYPE_ANALYTICAL, QUERY_TYPE_BREADTH, QUE
 from bibilab.pipeline.route import params_for_type
 
 
-def test_params_for_type_factual_ignores_source_count():
-    """Factual queries should use fixed base params, not scale with source count."""
-    params = params_for_type(QUERY_TYPE_FACTUAL, sources_total=16)
+@pytest.mark.parametrize("sources_total", [2, 16, 50])
+def test_params_for_type_factual_is_fixed(sources_total: int):
+    params = params_for_type(QUERY_TYPE_FACTUAL, sources_total=sources_total)
     assert params.depth_per_source == 1
-    assert params.top_k == 4
-
-    # Same params regardless of list size.
-    params_small = params_for_type(QUERY_TYPE_FACTUAL, sources_total=2)
-    assert params_small == params
-
-
-def test_params_for_type_factual_is_not_scaled():
-    """factual top_k should not be floored at sources_total or capped at 3× base."""
-    # With the old scaling: max(5, min(16, 15)) = 15. Now it should be fixed.
-    params = params_for_type(QUERY_TYPE_FACTUAL, sources_total=50)
     assert params.top_k == 4
 
 

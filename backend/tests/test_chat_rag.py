@@ -304,7 +304,6 @@ async def test_retrieve_returns_result_with_metadata(tmp_bibilab_home):
 
     assert isinstance(result, RetrievalResult)
     assert len(result.chunks) == 3
-    assert result.mode == "focused"
     assert result.candidates_evaluated == 3
     assert result.sources_with_hits == 2
     assert result.sources_total == 2
@@ -329,23 +328,6 @@ async def test_retrieve_empty_sources(tmp_bibilab_home):
     assert result.sources_total == 0
     assert result.sources_with_hits == 0
     assert result.source_coverage == []
-
-
-@pytest.mark.asyncio
-async def test_retrieve_params_infer_mode(tmp_bibilab_home):
-    from bibilab.config import BibilabConfig, RagConfig
-    from bibilab.models._enums import RetrievalParams
-    from bibilab.pipeline.embed import retrieve
-
-    cfg = BibilabConfig(rag=RagConfig(max_distance=0.5))
-
-    with patch("bibilab.pipeline.embed.get_video_ids_for_sources", new_callable=AsyncMock) as mock_map:
-        mock_map.return_value = {}
-
-        result = await retrieve("test query", ["s1"], cfg, params=RetrievalParams(depth_per_source=1, top_k=20))
-
-    assert result.mode == "broad"
-    assert result.sources_total == 1
 
 
 # --- Source-aware aggregation tests ---
@@ -437,7 +419,6 @@ async def test_retrieve_pool_at_least_top_k(tmp_bibilab_home):
     ) as mock_hybrid:
         await retrieve("query", ["src1"], cfg, params=RetrievalParams(depth_per_source=4, top_k=12))
 
-    # _dynamic_pool(1) = 10, but params.top_k = 12 → pool should be max(10, 12) = 12
     mock_hybrid.assert_called_once_with("query", ["src1"], cfg, effective_top_k=12)
 
 
@@ -535,7 +516,6 @@ async def test_format_rag_context(tmp_bibilab_home):
                 distance=0.2,
             ),
         ],
-        mode="focused",
         candidates_evaluated=8,
         sources_with_hits=2,
         sources_total=5,
@@ -561,7 +541,6 @@ def test_format_rag_context_empty(tmp_bibilab_home):
 
     result = RetrievalResult(
         chunks=[],
-        mode="focused",
         candidates_evaluated=0,
         sources_with_hits=0,
         sources_total=0,
@@ -1040,11 +1019,3 @@ def test_params_small_list_breadth_falls_back_to_factual():
     brd = params_for_type(QUERY_TYPE_BREADTH, sources_total=2)
     assert brd.depth_per_source == 1
     assert brd.top_k == 4
-
-
-def test_params_factual_does_not_scale_with_sources():
-    from bibilab.models._enums import QUERY_TYPE_FACTUAL
-    from bibilab.pipeline.route import params_for_type
-
-    # Factual params are fixed regardless of source count.
-    assert params_for_type(QUERY_TYPE_FACTUAL, sources_total=3) == params_for_type(QUERY_TYPE_FACTUAL, sources_total=50)

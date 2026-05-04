@@ -109,6 +109,7 @@ For focused (factual) queries, the old `params_for_type()` scaled `top_k = max(b
 - **No LLM-end measurement:** Only retrieval metrics (P@K, Recall, MRR). End-to-end answer quality not measured — the reranker-cut chunks might have been "close enough" that the LLM could still answer.
 - **Reranker-bound:** Floor values are specific to bge-reranker-base score distribution. A reranker swap (e.g. #225) invalidates floor calibration.
 - **Label quality:** 356 chunks labeled manually by author with LLM pre-labeling assist. Single-labeler bias possible.
+- **Pool ceiling on large lists:** For a 200-source list with a breadth query (top_k=20), pool=60 means at most 30% of sources can contribute a candidate before reranking. The ceiling trades broad recall for bounded latency — acceptable for current list sizes, worth revisiting if lists routinely exceed ~60 sources.
 
 ## Re-run Conditions
 
