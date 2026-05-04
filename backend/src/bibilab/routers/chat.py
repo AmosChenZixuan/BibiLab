@@ -1,12 +1,12 @@
 import json
 import logging
-from typing import Any
+from typing import Any, AsyncGenerator
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from starlette.background import BackgroundTask
 
-from bibilab.config import BibilabConfig, get_config
+from bibilab.config import AIConfig, BibilabConfig, get_config
 from bibilab.db import (
     create_message,
     delete_conversation,
@@ -34,7 +34,7 @@ from bibilab.models.chat import (
     MessageResponse,
     PatchConversationRequest,
 )
-from bibilab.pipeline._shared import stream_llm
+from bibilab.pipeline._shared import StreamEvent, ToolCall, ToolDefinition, stream_llm
 from bibilab.pipeline.chat_summary import maybe_compress_conversation
 from bibilab.pipeline.chat_tools import GENERATE_REPORT_TOOL, execute_tool
 from bibilab.pipeline.embed import RetrievalResult, RetrievedChunk, retrieve
@@ -54,6 +54,10 @@ SSE_EVENT_CLEAR_TEXT = "clear_text"
 
 # Sized for thinking-capable models with potentially long chat responses + tool turns.
 CHAT_MAX_TOKENS = 16384
+
+LOOPBACK_TOOLS = {"retrieve"}
+MAX_TOOL_ITERATIONS = 3
+
 SSE_EVENT_RAG_META = "rag_meta"
 
 
@@ -131,6 +135,13 @@ def _build_rag_payload(rag_result: RetrievalResult, effective_mode: ChatMode) ->
     }
 
 
+def _client_tool_result(name: str, result: dict) -> dict:
+    """Strip internal fields before sending to client."""
+    if name == "retrieve":
+        return {k: v for k, v in result.items() if k != "_chunks"}
+    return result
+
+
 GROUNDING_SYSTEM_PROMPT = (
     "You are a helpful assistant answering questions strictly based on the provided source material. "
     "CRITICAL RULES:\n"
@@ -142,6 +153,92 @@ GROUNDING_SYSTEM_PROMPT = (
     "6. Do not ask follow-up questions, suggest next steps, or offer unsolicited advice.\n"
     "7. Be concise and direct. Answer in 1-3 sentences when possible."
 )
+
+
+async def stream_with_tools(
+    messages: list[dict],
+    cfg: AIConfig,
+    tools: list[ToolDefinition],
+    execute_tool_fn,
+    system: str | None = None,
+    llm_max_tokens: int = CHAT_MAX_TOKENS,
+) -> AsyncGenerator[StreamEvent, None]:
+    """Call stream_llm in a loop. Loopback tools (retrieve) feed results back
+    for another LLM turn. Terminal tools (generate_report) exit the loop."""
+    messages = list(messages)
+    iteration = 0
+
+    while True:
+        iteration += 1
+        tool_calls: list[ToolCall] = []
+        async for event in stream_llm(messages, cfg, tools, system=system, llm_max_tokens=llm_max_tokens):
+            if event.type == "tool_call":
+                tool_calls.append(event.tool_call)
+            else:
+                yield event
+
+        if not tool_calls:
+            return
+
+        if iteration > MAX_TOOL_ITERATIONS:
+            yield StreamEvent(type="error", content="Max tool iterations exceeded")
+            return
+
+        results: dict[str, dict] = {}
+        for tc in tool_calls:
+            try:
+                result = await execute_tool_fn(tc.name, tc.arguments)
+                results[tc.id] = result
+            except Exception as exc:
+                yield StreamEvent(type="error", content=str(exc))
+                return
+
+            yield StreamEvent(
+                type="tool_result",
+                content=json.dumps({"name": tc.name, "result": _client_tool_result(tc.name, result)}),
+            )
+
+        if any(tc.name in LOOPBACK_TOOLS for tc in tool_calls):
+            if cfg.protocol == "anthropic":
+                messages.append(
+                    {
+                        "role": "assistant",
+                        "content": [
+                            {"type": "tool_use", "id": tc.id, "name": tc.name, "input": tc.arguments}
+                            for tc in tool_calls
+                        ],
+                    }
+                )
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "tool_result", "tool_use_id": tc.id, "content": json.dumps(results[tc.id])}
+                            for tc in tool_calls
+                        ],
+                    }
+                )
+            else:
+                openai_tool_calls = [
+                    {
+                        "id": tc.id,
+                        "type": "function",
+                        "function": {"name": tc.name, "arguments": json.dumps(tc.arguments)},
+                    }
+                    for tc in tool_calls
+                ]
+                messages.append({"role": "assistant", "content": None, "tool_calls": openai_tool_calls})
+                for tc in tool_calls:
+                    messages.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": tc.id,
+                            "content": json.dumps(results[tc.id]),
+                        }
+                    )
+            continue
+
+        return
 
 
 @router.post("/lists/{list_id}/chat")

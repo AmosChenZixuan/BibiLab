@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from bibilab.pipeline._shared import stream_llm
+from bibilab.pipeline._shared import StreamEvent, ToolCall, stream_llm
 
 
 def an_async_generator(items):
@@ -93,3 +93,119 @@ async def test_stream_llm_passes_openai_tool_messages():
     msgs = captured[0]
     assert msgs[-1]["role"] == "tool"
     assert msgs[-1]["tool_call_id"] == "t1"
+
+
+@pytest.mark.asyncio
+async def test_stream_with_tools_passthrough_no_tool_calls():
+    """When LLM returns no tool_calls, events pass through and function returns."""
+    from bibilab.config import AIConfig
+    from bibilab.routers.chat import stream_with_tools
+
+    cfg = AIConfig(protocol="openai", model="gpt-4o", api_key="test", base_url="")
+
+    async def fake_stream(messages, cfg, tools=None, system=None, llm_max_tokens=2048):
+        yield StreamEvent(type="delta", content="Hello")
+        yield StreamEvent(type="done")
+
+    async def noop(*args, **kwargs):
+        return {}
+
+    with patch("bibilab.routers.chat.stream_llm", side_effect=fake_stream):
+        events = []
+        async for event in stream_with_tools(
+            messages=[{"role": "user", "content": "hi"}],
+            cfg=cfg,
+            tools=[],
+            execute_tool_fn=noop,
+        ):
+            events.append(event)
+
+    assert len(events) == 2
+    assert events[0].type == "delta"
+    assert events[0].content == "Hello"
+    assert events[1].type == "done"
+
+
+@pytest.mark.asyncio
+async def test_stream_with_tools_loopback_retrieve():
+    """LLM calls retrieve -> execute -> feed result -> second LLM turn."""
+    from bibilab.config import AIConfig
+    from bibilab.pipeline.chat_tools import RETRIEVE_TOOL
+    from bibilab.routers.chat import stream_with_tools
+
+    cfg = AIConfig(protocol="openai", model="gpt-4o", api_key="test", base_url="")
+
+    retrieve_tc = ToolCall(id="c1", name="retrieve", arguments={"query": "test", "search_mode": "factual"})
+    retrieve_result = {
+        "search_mode": "factual",
+        "candidates_evaluated": 5,
+        "sources_with_hits": 2,
+        "sources_total": 3,
+        "source_coverage": [],
+        "_chunks": [],
+    }
+
+    call_count = 0
+
+    async def fake_stream(messages, cfg, tools=None, system=None, llm_max_tokens=2048):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            yield StreamEvent(type="tool_call", tool_call=retrieve_tc)
+        else:
+            yield StreamEvent(type="delta", content="Answer based on chunks")
+            yield StreamEvent(type="done")
+
+    async def fake_execute(tool_name, arguments):
+        if tool_name == "retrieve":
+            return retrieve_result
+        raise ValueError(f"Unknown tool: {tool_name}")
+
+    with patch("bibilab.routers.chat.stream_llm", side_effect=fake_stream):
+        events = []
+        async for event in stream_with_tools(
+            messages=[{"role": "user", "content": "what is this about?"}],
+            cfg=cfg,
+            tools=[RETRIEVE_TOOL],
+            execute_tool_fn=fake_execute,
+        ):
+            events.append(event)
+
+    assert call_count == 2
+    tool_result_events = [e for e in events if e.type == "tool_result"]
+    assert len(tool_result_events) == 1
+    delta_events = [e for e in events if e.type == "delta"]
+    assert len(delta_events) == 1
+    assert delta_events[0].content == "Answer based on chunks"
+
+
+@pytest.mark.asyncio
+async def test_stream_with_tools_max_iterations():
+    """Hard cap at MAX_TOOL_ITERATIONS prevents infinite loops."""
+    from bibilab.config import AIConfig
+    from bibilab.pipeline.chat_tools import RETRIEVE_TOOL
+    from bibilab.routers.chat import stream_with_tools
+
+    cfg = AIConfig(protocol="openai", model="gpt-4o", api_key="test", base_url="")
+
+    tc = ToolCall(id="c1", name="retrieve", arguments={"query": "test", "search_mode": "factual"})
+
+    async def fake_stream(messages, cfg, tools=None, system=None, llm_max_tokens=2048):
+        yield StreamEvent(type="tool_call", tool_call=tc)
+
+    async def fake_execute(name, args):
+        return {"ok": True}
+
+    with patch("bibilab.routers.chat.stream_llm", side_effect=fake_stream):
+        events = []
+        async for event in stream_with_tools(
+            messages=[{"role": "user", "content": "hi"}],
+            cfg=cfg,
+            tools=[RETRIEVE_TOOL],
+            execute_tool_fn=fake_execute,
+        ):
+            events.append(event)
+
+    error_events = [e for e in events if e.type == "error"]
+    assert len(error_events) == 1
+    assert "Max tool iterations" in error_events[0].content
