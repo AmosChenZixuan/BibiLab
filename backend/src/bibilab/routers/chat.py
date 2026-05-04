@@ -16,16 +16,10 @@ from bibilab.db import (
     get_or_create_conversation,
     get_recent_messages,
     get_sources_for_list,
-    log_query_classification,
     update_conversation_mode,
 )
 from bibilab.db import (
     get_conversation as get_conv_row,
-)
-from bibilab.models._enums import (
-    QUERY_TYPE_FACTUAL,
-    ChatMode,
-    map_type_to_mode,
 )
 from bibilab.models.chat import (
     ChatRequest,
@@ -36,9 +30,7 @@ from bibilab.models.chat import (
 )
 from bibilab.pipeline._shared import StreamEvent, ToolCall, ToolDefinition, stream_llm
 from bibilab.pipeline.chat_summary import maybe_compress_conversation
-from bibilab.pipeline.chat_tools import GENERATE_REPORT_TOOL, execute_tool
-from bibilab.pipeline.embed import RetrievalResult, RetrievedChunk, retrieve
-from bibilab.pipeline.route import classify_query, params_for_type
+from bibilab.pipeline.chat_tools import GENERATE_REPORT_TOOL, RETRIEVE_TOOL, execute_tool
 
 logger = logging.getLogger(__name__)
 
@@ -57,8 +49,6 @@ CHAT_MAX_TOKENS = 16384
 
 LOOPBACK_TOOLS = {"retrieve"}
 MAX_TOOL_ITERATIONS = 3
-
-SSE_EVENT_RAG_META = "rag_meta"
 
 
 @router.get("/lists/{list_id}/conversation")
@@ -109,32 +99,6 @@ async def patch_conversation(list_id: str, request: PatchConversationRequest) ->
     return ConversationResponse.from_row(dict(conv_row))
 
 
-def _format_chunk_line(chunk: RetrievedChunk) -> str:
-    ts_start = int(chunk.timestamp_start)
-    ts_end = int(chunk.timestamp_end)
-    return f'- [{chunk.video_title} @ {ts_start}s-{ts_end}s]: "{chunk.content}"'
-
-
-def _format_rag_context(result: RetrievalResult, query: str) -> str:
-    if not result.chunks:
-        return ""
-    header = f"Relevant excerpts (from {result.sources_with_hits} of {result.sources_total} sources):"
-    return "\n".join([f"Query: {query}\n", header, *map(_format_chunk_line, result.chunks)])
-
-
-def _build_rag_payload(rag_result: RetrievalResult, effective_mode: ChatMode) -> dict:
-    return {
-        "type": SSE_EVENT_RAG_META,
-        "rag": {
-            "mode": effective_mode,
-            "candidates_evaluated": rag_result.candidates_evaluated,
-            "sources_with_hits": rag_result.sources_with_hits,
-            "sources_total": rag_result.sources_total,
-            "sources": [{"video_id": sh.video_id, "title": sh.video_title} for sh in rag_result.source_coverage],
-        },
-    }
-
-
 def _client_tool_result(name: str, result: dict) -> dict:
     """Strip internal fields before sending to client."""
     if name == "retrieve":
@@ -145,6 +109,11 @@ def _client_tool_result(name: str, result: dict) -> dict:
 GROUNDING_SYSTEM_PROMPT = (
     "You are a helpful assistant answering questions strictly based on the provided source material. "
     "CRITICAL RULES:\n"
+    "0. If the user's question requires looking up video content (facts, comparisons, "
+    "summaries, counts across sources), you MUST call the retrieve tool BEFORE answering. "
+    "Do not answer from memory — always retrieve first for content questions. "
+    "This does NOT apply when the user asks you to generate a report/artifact — "
+    "the generate_report tool handles its own retrieval.\n"
     "1. ONLY use information from the source material provided below. Never use your own knowledge.\n"
     '2. If the excerpts do not contain the answer, say "The provided sources do not cover this topic."\n'
     "3. Quote or closely paraphrase the source material — do not reinterpret, editorialize, or add external context.\n"
@@ -266,47 +235,6 @@ async def chat_endpoint(
         source_rows = await get_sources_for_list(list_id)
         source_ids = [row["id"] for row in source_rows]
 
-    rag_context = ""
-    rag_result = None
-    if source_ids and request.message.strip():
-        if cfg.rag.query_routing_enabled:
-            query_type = await classify_query(request.message, cfg)
-            params = params_for_type(query_type, len(source_ids))
-            effective_mode = map_type_to_mode(query_type)
-            try:
-                await log_query_classification(
-                    list_id=list_id,
-                    query_text=request.message,
-                    query_type=query_type,
-                    effective_mode=effective_mode,
-                )
-            except Exception:
-                logger.warning("Failed to log query classification", exc_info=True)
-        else:
-            params = params_for_type(QUERY_TYPE_FACTUAL, len(source_ids))
-            effective_mode = map_type_to_mode(QUERY_TYPE_FACTUAL)
-        rag_result = await retrieve(
-            query_text=request.message,
-            source_ids=source_ids,
-            cfg=cfg,
-            params=params,
-        )
-        rag_context = _format_rag_context(rag_result, request.message)
-
-    system_parts = [GROUNDING_SYSTEM_PROMPT]
-    if existing_summary and rag_context:
-        system_parts.append(
-            "Historical conversation summary (for context only — the current "
-            "question may be about different sources than those summarized below):\n" + existing_summary
-        )
-    elif existing_summary:
-        system_parts.append(f"\n\nEarlier conversation summary:\n{existing_summary}")
-    if rag_context:
-        system_parts.append(rag_context)
-    system_message = "\n\n".join(system_parts)
-
-    messages_for_llm = history + [{"role": "user", "content": request.message}]
-
     ui_lang = http_request.headers.get("X-UI-Lang", "en")
 
     user_msg_row = await create_message(
@@ -323,17 +251,34 @@ async def chat_endpoint(
     async def event_generator():
         nonlocal first_response_deltas, tool_calls
 
-        rag_payload_obj = _build_rag_payload(rag_result, effective_mode) if rag_result and rag_result.chunks else None
-        rag_meta_inner = rag_payload_obj["rag"] if rag_payload_obj else None
+        system_parts = [GROUNDING_SYSTEM_PROMPT]
+        if existing_summary:
+            system_parts.append(
+                "Historical conversation summary (for context only — the current "
+                "question may be about different sources than those summarized below):\n" + existing_summary
+            )
+        system_message = "\n\n".join(system_parts)
 
-        if rag_payload_obj is not None:
-            yield f"data: {json.dumps(rag_payload_obj)}\n\n"
+        messages_for_llm = history + [{"role": "user", "content": request.message}]
+
+        async def execute_tool_bound(name: str, args: dict) -> dict:
+            return await execute_tool(
+                tool_name=name,
+                arguments=args,
+                list_id=list_id,
+                source_ids=source_ids,
+                ui_lang=ui_lang,
+                cfg=cfg,
+            )
+
+        tools = [RETRIEVE_TOOL, GENERATE_REPORT_TOOL]
 
         try:
-            async for event in stream_llm(
+            async for event in stream_with_tools(
                 messages=messages_for_llm,
                 cfg=cfg.ai,
-                tools=[GENERATE_REPORT_TOOL],
+                tools=tools,
+                execute_tool_fn=execute_tool_bound,
                 system=system_message if system_message.strip() else None,
                 llm_max_tokens=CHAT_MAX_TOKENS,
             ):
@@ -342,9 +287,15 @@ async def chat_endpoint(
                     yield f"data: {json.dumps({'type': SSE_EVENT_DELTA, 'content': event.content})}\n\n"
                 elif event.type == "tool_call":
                     tool_calls.append(event.tool_call)
+                elif event.type == "tool_result":
+                    yield f"data: {json.dumps({'type': SSE_EVENT_TOOL_RESULT, **json.loads(event.content)})}\n\n"
                 elif event.type == SSE_EVENT_DONE:
                     if not tool_calls:
                         yield f"data: {json.dumps({'type': SSE_EVENT_DONE})}\n\n"
+                elif event.type == "error":
+                    logger.error("stream_with_tools error: %s", event.content)
+                    yield f"data: {json.dumps({'type': SSE_EVENT_ERROR, 'message': event.content})}\n\n"
+                    return
         except Exception:
             logger.exception("LLM streaming failed")
             await delete_messages_by_ids([user_msg_id])
@@ -353,56 +304,52 @@ async def chat_endpoint(
 
         if not tool_calls:
             full_response = "".join(first_response_deltas)
-            metadata = {"rag": rag_meta_inner} if rag_meta_inner else None
             await create_message(
                 conversation_id=conversation_id,
                 role="assistant",
                 content=full_response,
-                metadata=metadata,
+                metadata=None,
             )
             return
 
-        yield f"data: {json.dumps({'type': SSE_EVENT_CLEAR_TEXT})}\n\n"
-
-        tool_results = []
+        # Collect coverage from retrieve tool_result and persist
+        retrieve_result = None
+        tool_call_meta: list[dict] = []
         for tc in tool_calls:
-            try:
-                result = await execute_tool(
-                    tool_name=tc.name,
-                    arguments=tc.arguments,
-                    list_id=list_id,
-                    source_ids=source_ids,
-                    ui_lang=ui_lang,
-                )
-            except Exception as exc:
-                yield f"data: {json.dumps({'type': SSE_EVENT_ERROR, 'message': str(exc)})}\n\n"
-                full_response = "".join(first_response_deltas)
-                await create_message(
-                    conversation_id=conversation_id,
-                    role="assistant",
-                    content=full_response,
-                    metadata={"tool_calls": [{"id": tc.id, "name": tc.name, "error": str(exc)}]},
-                )
-                return
+            if tc.name == "retrieve":
+                try:
+                    result = await execute_tool_bound("retrieve", tc.arguments)
+                    retrieve_result = result
+                    tool_call_meta.append({"id": tc.id, "name": tc.name, "result": result})
+                except Exception as exc:
+                    yield f"data: {json.dumps({'type': SSE_EVENT_ERROR, 'message': str(exc)})}\n\n"
+                    await create_message(
+                        conversation_id=conversation_id,
+                        role="assistant",
+                        content="",
+                        metadata={"tool_calls": [{"id": tc.id, "name": tc.name, "error": str(exc)}]},
+                    )
+                    return
+            elif tc.name == "generate_report":
+                tool_call_meta.append({"id": tc.id, "name": tc.name})
 
-            tool_results.append({"tool_call_id": tc.id, "content": json.dumps({"name": tc.name, "result": result})})
-            yield f"data: {json.dumps({'type': SSE_EVENT_TOOL_RESULT, 'tool_call_id': tc.id, 'result': result})}\n\n"
+        meta: dict[str, Any] = {}
+        if tool_call_meta:
+            meta["tool_calls"] = tool_call_meta
+        if retrieve_result:
+            meta["rag"] = {
+                "search_mode": retrieve_result.get("search_mode"),
+                "candidates_evaluated": retrieve_result.get("candidates_evaluated"),
+                "sources_with_hits": retrieve_result.get("sources_with_hits"),
+                "sources_total": retrieve_result.get("sources_total"),
+                "source_coverage": retrieve_result.get("source_coverage"),
+            }
 
-        yield f"data: {json.dumps({'type': SSE_EVENT_DONE})}\n\n"
-
-        tool_call_meta = []
-        for tc, tr in zip(tool_calls, tool_results):
-            result_data = json.loads(tr["content"])
-            tool_call_meta.append({"id": tc.id, "name": tc.name, "result": result_data.get("result")})
-
-        meta: dict[str, Any] = {"tool_calls": tool_call_meta}
-        if rag_meta_inner is not None:
-            meta["rag"] = rag_meta_inner
         await create_message(
             conversation_id=conversation_id,
             role="assistant",
             content="",
-            metadata=meta,
+            metadata=meta if meta else None,
         )
 
     return StreamingResponse(
