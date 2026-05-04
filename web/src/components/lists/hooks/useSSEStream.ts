@@ -9,7 +9,6 @@ import {
   SSE_EVENT_DELTA,
   SSE_EVENT_DONE,
   SSE_EVENT_ERROR,
-  SSE_EVENT_RAG_META,
   SSE_EVENT_TOOL_RESULT,
 } from "@/lib/constants";
 import { LANG_STORAGE_KEY } from "@/lib/utils";
@@ -144,17 +143,21 @@ export function useSSEStream({
           const content = event.content as string;
           updateAssistantMsg(assistantMsgId, (m) => ({ content: m.content + content }));
         } else if (event.type === SSE_EVENT_TOOL_RESULT) {
-          const result = event.result as ToolResult;
-          if (!result) return;
-          const toolCallData = { name: "generate_report", result };
-          if (result.job_id && trackJobs) {
-            trackJobs([{ id: result.job_id, producer: "artifact", label: result.type, contextKey: listId }]);
+          const toolName = event.name as string;
+          if (!toolName) return;
+          if (toolName === "retrieve") {
+            const rag = event.result as unknown as RagMetadata;
+            updateAssistantMsg(assistantMsgId, { rag });
+          } else {
+            // generate_report
+            const result = event.result as ToolResult;
+            if (!result) return;
+            const toolCallData = { name: "generate_report", result };
+            if (result.job_id && trackJobs) {
+              trackJobs([{ id: result.job_id, producer: "artifact", label: result.name, contextKey: listId }]);
+            }
+            updateAssistantMsg(assistantMsgId, { toolCall: toolCallData });
           }
-          updateAssistantMsg(assistantMsgId, { toolCall: toolCallData });
-        } else if (event.type === SSE_EVENT_RAG_META) {
-          const rag = event.rag as RagMetadata;
-          if (!rag) return;
-          updateAssistantMsg(assistantMsgId, { rag });
         } else if (event.type === SSE_EVENT_DONE) {
           updateAssistantMsg(assistantMsgId, (m) => {
             const { citations, cleanContent } = parseCitations(m.content);

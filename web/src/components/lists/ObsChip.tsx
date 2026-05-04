@@ -36,7 +36,7 @@ export function ObsChip({ rag }: ObsChipProps) {
         <div className="absolute top-full left-0 z-float mt-1 bg-white border border-border rounded-lg shadow-lg p-3 min-w-64 text-xs">
           <div className="flex justify-between items-center py-0.5">
             <span className="text-muted">{t("chat.obsChip.mode")}</span>
-            <span className="font-medium text-ink">{rag.mode}</span>
+            <span className="font-medium text-ink">{rag.search_mode}</span>
           </div>
           <div className="flex justify-between items-center py-0.5">
             <span className="text-muted">{t("chat.obsChip.chunksEvaluated")}</span>
@@ -46,9 +46,9 @@ export function ObsChip({ rag }: ObsChipProps) {
             <span className="text-muted">{t("chat.obsChip.sourcesRetrieved")}</span>
             <span className="font-medium text-ink">{rag.sources_with_hits} / {rag.sources_total}</span>
           </div>
-          {rag.sources.length > 0 && (
+          {rag.source_coverage.length > 0 && (
             <div className="mt-2 pt-2 border-t border-border">
-              {rag.sources.map((s, i) => (
+              {rag.source_coverage.map((s, i) => (
                 <span key={i} className="block text-ink">{s.title}</span>
               ))}
             </div>

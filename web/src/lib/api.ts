@@ -18,7 +18,6 @@ import type {
   Conversation,
   Message,
 } from "./types";
-import type { ChatMode } from "./constants";
 import { LANG_STORAGE_KEY } from "./utils";
 import type { Lang } from "@/app/LanguageContext";
 
@@ -299,12 +298,6 @@ export class ConversationsClient {
     return this.request<void>(this.baseUrl, `/lists/${listId}/conversation`, { method: "DELETE" });
   }
 
-  updateConversation(listId: string, patch: { mode: ChatMode }) {
-    return this.request<Conversation>(this.baseUrl, `/lists/${listId}/conversation`, {
-      method: "PATCH",
-      body: JSON.stringify(patch),
-    });
-  }
 }
 
 export type BilibiliQrStatus = "waiting" | "scanned" | "expired" | "success";
@@ -371,7 +364,6 @@ export interface ApiClient {
   downloadWhisperModel(modelSize: string): Promise<WhisperDownloadResponse | undefined>;
   getConversation(listId: string, opts?: { signal?: AbortSignal; before?: string; limit?: number }): Promise<GetConversationResponse | undefined>;
   deleteConversation(listId: string): Promise<void | undefined>;
-  updateConversation(listId: string, patch: { mode: ChatMode }): Promise<Conversation | undefined>;
   auth: {
     generateBilibiliQr(): Promise<{ url: string; key: string } | undefined>;
     pollBilibiliQr(key: string): Promise<{ status: BilibiliQrStatus } | undefined>;
@@ -429,7 +421,6 @@ export function createApiClient(baseUrl?: string): ApiClient {
     downloadWhisperModel: (modelSize) => models.downloadWhisperModel(modelSize),
     getConversation: (listId, opts) => conversations.getConversation(listId, opts),
     deleteConversation: (listId) => conversations.deleteConversation(listId),
-    updateConversation: (listId, patch) => conversations.updateConversation(listId, patch),
     auth,
   };
 }

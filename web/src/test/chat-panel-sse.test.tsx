@@ -140,7 +140,7 @@ describe("chat panel — SSE streaming (phase 6.2)", () => {
         makeSseStream([
           'data: {"type":"delta","content":"Generating study guide..."}\n\n',
           'data: {"type":"done"}\n\n',
-          'data: {"type":"tool_result","tool_call_id":"tc-1","result":{"artifact_id":"art-1","name":"Backprop essentials","type":"study_guide"}}\n\n',
+          'data: {"type":"tool_result","name":"generate_report","result":{"artifact_id":"art-1","name":"Backprop essentials","type":"study_guide"}}\n\n',
         ]),
       ),
     );
