@@ -58,9 +58,9 @@ Single-port deployment: FastAPI serves the React build as static files in produc
 | Chat conversations | One conversation per list, auto-created on first message | `get_or_create_conversation` with `ON CONFLICT` upsert |
 | Chat streaming | SSE via `StreamingResponse`; RAG context in system prompt | Citations parsed client-side from `[title @ Ts-Ts]` format |
 | Conversation compression | Background summary after 30+ messages, sliding window of 20; prompt preserves `[title @ Ts-Ts]` citations | Prevents citation drift across compression cycles; old messages deleted after summarization |
-| Retrieval | Hybrid (BM25 + vector) fused via RRF (k=60), pool of 30 → cross-encoder rerank (Xenova/bge-reranker-base, zh+en) → diverse top-k with per-source depth cap | `RetrievalParams` drives selection; unified path replaces old focused/broad branching |
+| Retrieval | Hybrid (BM25 + vector) fused via RRF (k=60), dynamic pool = max(min(sources_total×3, 10, 60), params.top_k) → cross-encoder rerank (Xenova/bge-reranker-base, zh+en) → diverse top-k with per-source depth cap | `RetrievalParams` drives selection; unified path replaces old focused/broad branching |
 | Chat mode | Three-state: `auto` (default), `focused`, `broad`; stored on `conversations.mode`, retained for backward compat | UI toggle removed (#233); classifier always runs when routing enabled |
-| Query routing | LLM classifier maps `factual → focused`, `breadth/analytical → broad`; runs unconditionally when `query_routing_enabled = true` | Falls back to factual params when routing disabled |
+| Query routing | LLM classifier maps `factual/analytical → focused`, `breadth → broad`; runs unconditionally when `query_routing_enabled = true` | Falls back to factual params when routing disabled |
 
 ## Code Health Rules
 

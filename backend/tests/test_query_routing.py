@@ -4,6 +4,31 @@ from unittest.mock import patch
 
 import pytest
 
+from bibilab.models._enums import QUERY_TYPE_ANALYTICAL, QUERY_TYPE_BREADTH, QUERY_TYPE_FACTUAL
+from bibilab.pipeline.route import params_for_type
+
+
+@pytest.mark.parametrize("sources_total", [2, 16, 50])
+def test_params_for_type_factual_is_fixed(sources_total: int):
+    params = params_for_type(QUERY_TYPE_FACTUAL, sources_total=sources_total)
+    assert params.depth_per_source == 1
+    assert params.top_k == 4
+
+
+def test_params_for_type_breadth_still_capped():
+    """Breadth should still be capped at sources_total."""
+    params = params_for_type(QUERY_TYPE_BREADTH, sources_total=5)
+    assert params.depth_per_source == 1
+    assert params.top_k == 5  # capped: min(20, 5)
+
+
+def test_params_for_type_analytical_still_scaled():
+    """Analytical should still scale with source count."""
+    params = params_for_type(QUERY_TYPE_ANALYTICAL, sources_total=20)
+    assert params.depth_per_source == 4
+    # max(12, min(20, 36)) = 20
+    assert params.top_k == 20
+
 
 @pytest.mark.asyncio
 async def test_classify_query_returns_factual():

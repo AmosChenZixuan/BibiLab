@@ -17,12 +17,20 @@ from pathlib import Path
 from bibilab.adapters.base import VideoMeta
 from bibilab.config import BibilabConfig, bibilab_home, models_dir
 from bibilab.db import _escape_fts_query, get_db_path, get_video_ids_for_sources, query_fts_rows
-from bibilab.models._enums import CHAT_MODE_BROAD, CHAT_MODE_FOCUSED, ChatMode, RetrievalParams
+from bibilab.models._enums import RetrievalParams
 from bibilab.pipeline.chunk import RagChunk
 
 logger = logging.getLogger(__name__)
 
-RETRIEVAL_CANDIDATE_POOL = 30
+
+def _dynamic_pool(num_sources: int) -> int:
+    """Candidate pool size that scales with source count.
+
+    Floor of 10 (avoids under-sampling tiny lists), ceiling of 60 (bounds
+    ChromaDB + FTS latency on huge lists), factor of 3× sources in between.
+    """
+    return min(max(num_sources * 3, 10), 60)
+
 
 _chroma_collections: dict[str, "chromadb.Collection"] = {}
 
@@ -49,7 +57,6 @@ class SourceHit:
 @dataclass
 class RetrievalResult:
     chunks: list[RetrievedChunk]
-    mode: ChatMode
     candidates_evaluated: int
     sources_with_hits: int
     sources_total: int
@@ -435,7 +442,7 @@ async def retrieve(
     any single video; top_k sets the total returned.
     """
     sources_total = len(source_ids)
-    effective_top_k = RETRIEVAL_CANDIDATE_POOL
+    effective_top_k = max(_dynamic_pool(sources_total), params.top_k)
 
     if cfg.rag.hybrid_enabled:
         chunks = await hybrid_search(query_text, source_ids, cfg, effective_top_k=effective_top_k)
@@ -471,11 +478,8 @@ async def retrieve(
 
     result_chunks = _diverse_top_k(chunks, params.depth_per_source, params.top_k)
 
-    inferred_mode: ChatMode = CHAT_MODE_BROAD if params.depth_per_source == 1 else CHAT_MODE_FOCUSED
-
     return RetrievalResult(
         chunks=result_chunks,
-        mode=inferred_mode,
         candidates_evaluated=candidates_evaluated,
         sources_with_hits=len(pool_best_by_source),
         sources_total=sources_total,

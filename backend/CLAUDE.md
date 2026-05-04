@@ -157,7 +157,7 @@ POST /ingest/url → resolve → dedup check → create job(s)
 POST /lists/:id/chat (SSE)
   → get_or_create_conversation → load history + stored mode
   → if query_routing_enabled: classify_query → effective_mode
-  → retrieve(): hybrid_search (BM25 + vector RRF, pool 30) → rerank → _diverse_top_k (per-source depth cap + top-k) → floor filter
+  → retrieve(): hybrid_search (BM25 + vector RRF, pool = max(_dynamic_pool(sources_total), params.top_k)) → rerank → _diverse_top_k (per-source depth cap + top-k) → floor filter
   → sources_with_hits reflects candidate-pool coverage; result_chunks reflects actual LLM input
   → stream_llm (system prompt + RAG context + history)
   → yield rag_meta + delta/tool_result/done events

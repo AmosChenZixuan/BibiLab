@@ -61,7 +61,6 @@ async def test_chat_endpoint_includes_rag_context(client, tmp_bibilab_home):
                     )
                     mock_retrieve.return_value = RetrievalResult(
                         chunks=[chunk],
-                        mode="focused",
                         candidates_evaluated=1,
                         sources_with_hits=1,
                         sources_total=1,
@@ -350,7 +349,6 @@ async def test_rag_meta_event_emitted_before_deltas(client):
                     content="test", video_title="V", timestamp_start=0, timestamp_end=1, video_id="v1", distance=0.1
                 )
             ],
-            mode="focused",
             candidates_evaluated=30,
             sources_with_hits=1,
             sources_total=1,
@@ -390,7 +388,6 @@ async def test_assistant_message_persisted_with_rag_metadata(client):
                     content="test", video_title="V", timestamp_start=0, timestamp_end=1, video_id="v1", distance=0.1
                 )
             ],
-            mode="focused",
             candidates_evaluated=30,
             sources_with_hits=1,
             sources_total=1,
@@ -428,7 +425,6 @@ async def test_no_rag_event_when_no_retrieval(client):
     with patch("bibilab.routers.chat.retrieve", new_callable=AsyncMock) as mock_retrieve:
         mock_retrieve.return_value = RetrievalResult(
             chunks=[],
-            mode="focused",
             candidates_evaluated=0,
             sources_with_hits=0,
             sources_total=0,
@@ -607,8 +603,8 @@ async def test_routing_runs_when_enabled(client, tmp_bibilab_home):
 
         mock_classify.assert_called_once()
         call_args = mock_retrieve.call_args
-        assert call_args.kwargs["params"].depth_per_source == 2
-        assert call_args.kwargs["params"].top_k == 5
+        assert call_args.kwargs["params"].depth_per_source == 1
+        assert call_args.kwargs["params"].top_k == 4
     finally:
         app.dependency_overrides.clear()
 
@@ -648,7 +644,7 @@ async def test_auto_mode_falls_back_to_focused_when_routing_disabled(client, tmp
 
         mock_classify.assert_not_called()
         call_args = mock_retrieve.call_args
-        assert call_args.kwargs["params"].depth_per_source == 2
-        assert call_args.kwargs["params"].top_k == 5
+        assert call_args.kwargs["params"].depth_per_source == 1
+        assert call_args.kwargs["params"].top_k == 4
     finally:
         app.dependency_overrides.clear()
