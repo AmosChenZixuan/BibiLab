@@ -128,6 +128,12 @@ async def bootstrap_db() -> None:
         await db.execute(_CREATE_CONVERSATIONS)
         await db.execute(_CREATE_MESSAGES)
         await db.execute("CREATE INDEX IF NOT EXISTS idx_messages_conversation_id ON messages(conversation_id)")
+        # Migrate away from removed tables/columns (safe to run on every boot).
+        await db.execute("DROP TABLE IF EXISTS query_classifications")
+        try:
+            await db.execute("ALTER TABLE conversations DROP COLUMN mode")
+        except aiosqlite.OperationalError:
+            pass  # column already dropped, or SQLite < 3.35 doesn't support DROP COLUMN
         await db.execute("PRAGMA journal_mode=WAL")
         await db.commit()
 

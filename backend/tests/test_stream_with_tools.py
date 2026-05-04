@@ -173,6 +173,64 @@ async def test_stream_with_tools_loopback_retrieve():
 
 
 @pytest.mark.asyncio
+async def test_stream_with_tools_terminal_tool_exits_after_execution():
+    """Terminal tool (not in LOOPBACK_TOOLS): execute, yield result, exit loop."""
+    from bibilab.config import AIConfig
+    from bibilab.pipeline._shared import ToolDefinition
+    from bibilab.routers.chat import stream_with_tools
+
+    cfg = AIConfig(protocol="openai", model="gpt-4o", api_key="test", base_url="")
+
+    TERMINAL_TOOL = ToolDefinition(
+        name="generate_report",
+        description="Generate a report",
+        parameters={"type": "object", "properties": {}, "required": []},
+    )
+
+    report_tc = ToolCall(id="c1", name="generate_report", arguments={"type": "brief", "prompt": "summarize"})
+    report_result = {"artifact_id": "art-1", "name": "brief", "type": "brief"}
+
+    call_count = 0
+
+    async def fake_stream(messages, cfg, tools=None, system=None, llm_max_tokens=2048):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            yield StreamEvent(type="delta", content="Let me generate a report.")
+            yield StreamEvent(type="tool_call", tool_call=report_tc)
+        else:
+            yield StreamEvent(type="delta", content="Should not reach here")
+            yield StreamEvent(type="done")
+
+    async def fake_execute(tool_name, arguments):
+        if tool_name == "generate_report":
+            return report_result
+        raise ValueError(f"Unknown tool: {tool_name}")
+
+    with patch("bibilab.routers.chat.stream_llm", side_effect=fake_stream):
+        events = []
+        async for event in stream_with_tools(
+            messages=[{"role": "user", "content": "make a report"}],
+            cfg=cfg,
+            tools=[TERMINAL_TOOL],
+            execute_tool_fn=fake_execute,
+        ):
+            events.append(event)
+
+    # Terminal tool → only one LLM call, no loopback.
+    assert call_count == 1
+    tool_result_events = [e for e in events if e.type == "tool_result"]
+    assert len(tool_result_events) == 1
+    delta_events = [e for e in events if e.type == "delta"]
+    assert len(delta_events) == 1
+    assert delta_events[0].content == "Let me generate a report."
+    # No done event — terminal tool suppresses it (caller adds one post-loop).
+    assert not [e for e in events if e.type == "done"]
+    # The tool_result carries the correct result.
+    assert "art-1" in tool_result_events[0].content
+
+
+@pytest.mark.asyncio
 async def test_stream_with_tools_max_iterations():
     """Hard cap at MAX_TOOL_ITERATIONS prevents infinite loops."""
     from bibilab.config import AIConfig

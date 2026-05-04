@@ -5,7 +5,6 @@ import type { MessageUI } from "@/components/lists/hooks/useConversationHistory"
 import { formatTimestamp, parseCitations, type RagMetadata } from "@/lib/chat-utils";
 import type { ToolResult } from "@/lib/chat-utils";
 import {
-  SSE_EVENT_CLEAR_TEXT,
   SSE_EVENT_DELTA,
   SSE_EVENT_DONE,
   SSE_EVENT_ERROR,
@@ -137,9 +136,7 @@ export function useSSEStream({
           return;
         }
 
-        if (event.type === SSE_EVENT_CLEAR_TEXT) {
-          updateAssistantMsg(assistantMsgId, { content: "" });
-        } else if (event.type === SSE_EVENT_DELTA) {
+        if (event.type === SSE_EVENT_DELTA) {
           const content = event.content as string;
           updateAssistantMsg(assistantMsgId, (m) => ({ content: m.content + content }));
         } else if (event.type === SSE_EVENT_TOOL_RESULT) {

@@ -1,6 +1,7 @@
 import json
 import logging
-from typing import Any, AsyncGenerator
+from collections.abc import AsyncGenerator
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
@@ -40,7 +41,6 @@ SSE_EVENT_DELTA = "delta"
 SSE_EVENT_DONE = "done"
 SSE_EVENT_ERROR = "error"
 SSE_EVENT_TOOL_RESULT = "tool_result"
-SSE_EVENT_CLEAR_TEXT = "clear_text"
 
 # Sized for thinking-capable models with potentially long chat responses + tool turns.
 CHAT_MAX_TOKENS = 16384
@@ -153,6 +153,11 @@ async def stream_with_tools(
                 content=json.dumps({"name": tc.name, "result": _client_tool_result(tc.name, result)}),
             )
 
+        # LOOPBACK_TOOLS = {"retrieve"}. If the LLM calls both retrieve and a
+        # terminal tool (generate_report) in the same turn, the loopback branch
+        # still runs — the terminal tool's messages are fed back to the LLM too.
+        # In practice the system prompt steers them apart; if this ever causes
+        # issues, check for terminal-tool membership here and exit early.
         if any(tc.name in LOOPBACK_TOOLS for tc in tool_calls):
             if cfg.protocol == "anthropic":
                 messages.append(
@@ -234,9 +239,10 @@ async def chat_endpoint(
     first_response_deltas: list[str] = []
     tool_calls: list = []
     retrieve_result: dict | None = None
+    generate_report_result: dict | None = None
 
     async def event_generator():
-        nonlocal first_response_deltas, tool_calls, retrieve_result
+        nonlocal first_response_deltas, tool_calls, retrieve_result, generate_report_result
 
         system_parts = [GROUNDING_SYSTEM_PROMPT]
         if existing_summary:
@@ -273,17 +279,28 @@ async def chat_endpoint(
                     first_response_deltas.append(event.content or "")
                     yield f"data: {json.dumps({'type': SSE_EVENT_DELTA, 'content': event.content})}\n\n"
                 elif event.type == "tool_call":
+                    # Collect tool_calls locally to gate the done-event suppression
+                    # and metadata persistence below. stream_with_tools has its own
+                    # per-iteration list that drives the loopback decision — the two
+                    # lists are intentionally independent.
                     tool_calls.append(event.tool_call)
                 elif event.type == "tool_result":
                     parsed = json.loads(event.content)
                     if parsed["name"] == "retrieve":
+                        # Last retrieve result wins for metadata persistence.
+                        # In practice the LLM rarely calls retrieve twice per
+                        # turn, and the second call is usually the more refined
+                        # one (narrower query after seeing first results).
                         retrieve_result = parsed["result"]
+                    elif parsed["name"] == "generate_report":
+                        generate_report_result = parsed["result"]
                     yield f"data: {json.dumps({'type': SSE_EVENT_TOOL_RESULT, **parsed})}\n\n"
                 elif event.type == SSE_EVENT_DONE:
                     if not tool_calls:
                         yield f"data: {json.dumps({'type': SSE_EVENT_DONE})}\n\n"
                 elif event.type == "error":
                     logger.error("stream_with_tools error: %s", event.content)
+                    await delete_messages_by_ids([user_msg_id])
                     yield f"data: {json.dumps({'type': SSE_EVENT_ERROR, 'message': event.content})}\n\n"
                     return
         except Exception:
@@ -302,10 +319,15 @@ async def chat_endpoint(
             )
             return
 
-        # Persist tool call metadata (results already collected during stream)
-        tool_call_meta: list[dict] = [
-            {"id": tc.id, "name": tc.name} for tc in tool_calls if tc.name in ("retrieve", "generate_report")
-        ]
+        # Persist tool call metadata (results already collected during stream).
+        # generate_report includes its result so the frontend can rehydrate
+        # artifact links from history without a live SSE tool_result event.
+        tool_call_meta: list[dict] = []
+        for tc in tool_calls:
+            entry: dict[str, Any] = {"id": tc.id, "name": tc.name}
+            if tc.name == "generate_report" and generate_report_result:
+                entry["result"] = generate_report_result
+            tool_call_meta.append(entry)
 
         meta: dict[str, Any] = {}
         if tool_call_meta:
@@ -319,10 +341,13 @@ async def chat_endpoint(
                 "source_coverage": retrieve_result.get("source_coverage"),
             }
 
+        # Persist any preamble + post-loopback deltas alongside tool metadata
+        # so the full response survives history reload (not just live SSE).
+        assistant_content = "".join(first_response_deltas) if first_response_deltas else ""
         await create_message(
             conversation_id=conversation_id,
             role="assistant",
-            content="",
+            content=assistant_content,
             metadata=meta if meta else None,
         )
 

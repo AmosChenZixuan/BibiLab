@@ -11,6 +11,14 @@ from bibilab.pipeline.embed import retrieve
 
 logger = logging.getLogger(__name__)
 
+
+def _format_chunk_for_llm(chunk: dict) -> str:
+    """Format a chunk as a citation-ready line matching the system prompt's required format."""
+    ts_start = int(chunk["start"])
+    ts_end = int(chunk["end"])
+    return f'- [{chunk["title"]} @ {ts_start}s-{ts_end}s]: "{chunk["content"]}"'
+
+
 _VALID_ARTIFACT_TYPES = frozenset({"brief", "study_guide", "blog_post", "custom_report"})
 
 _PARAMS_BY_MODE = {
@@ -25,6 +33,7 @@ def search_mode_to_params(search_mode: SearchMode, sources_total: int) -> Retrie
         return _PARAMS_BY_MODE["factual"]
     base = _PARAMS_BY_MODE.get(search_mode)
     if base is None:
+        logger.warning("Unknown search_mode %r — falling back to factual", search_mode)
         return _PARAMS_BY_MODE["factual"]
     if search_mode == "breadth":
         return RetrievalParams(depth_per_source=base.depth_per_source, top_k=min(base.top_k, sources_total))
@@ -129,7 +138,9 @@ async def execute_retrieve(
         "sources_total": result.sources_total,
         "source_coverage": [{"video_id": s.video_id, "title": s.video_title} for s in result.source_coverage],
         "_chunks": [
-            {"title": c.video_title, "start": c.timestamp_start, "end": c.timestamp_end, "content": c.content}
+            _format_chunk_for_llm(
+                {"title": c.video_title, "start": c.timestamp_start, "end": c.timestamp_end, "content": c.content}
+            )
             for c in result.chunks
         ],
     }
