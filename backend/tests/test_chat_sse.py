@@ -6,15 +6,13 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from bibilab.pipeline._shared import StreamEvent, ToolCall
-from bibilab.routers.chat import SSE_EVENT_DELTA, SSE_EVENT_DONE, SSE_EVENT_TOOL_RESULT
-
-
-def an_async_generator(items):
-    async def gen():
-        for item in items:
-            yield item
-
-    return gen()
+from bibilab.routers.chat import (
+    SSE_EVENT_DELTA,
+    SSE_EVENT_DONE,
+    SSE_EVENT_TOOL_RESULT,
+    _client_tool_result,
+)
+from tests import an_async_generator
 
 
 def _parse_sse(text: str) -> list[dict]:
@@ -23,10 +21,6 @@ def _parse_sse(text: str) -> list[dict]:
         if line.startswith("data: "):
             events.append(json.loads(line[6:]))
     return events
-
-
-def _strip_chunks(result: dict) -> dict:
-    return {k: v for k, v in result.items() if k != "_chunks"}
 
 
 async def _get_assistant_msgs(client, list_id: str) -> list[dict]:
@@ -180,7 +174,7 @@ async def test_retrieve_tool_result_has_coverage(client):
         result = await execute_tool_fn("retrieve", {"query": "test", "search_mode": "factual"})
         yield StreamEvent(
             type="tool_result",
-            content=json.dumps({"name": "retrieve", "result": _strip_chunks(result)}),
+            content=json.dumps({"name": "retrieve", "result": _client_tool_result("retrieve", result)}),
         )
         yield StreamEvent(type="delta", content="Answer")
         yield StreamEvent(type="done")
@@ -291,7 +285,8 @@ async def test_smoke_scenario_2_retrieve(client, search_mode, query, user_messag
             tool_call=ToolCall(id="c1", name="retrieve", arguments={"query": query, "search_mode": search_mode}),
         )
         result = await execute_tool_fn("retrieve", {"query": query, "search_mode": search_mode})
-        yield StreamEvent(type="tool_result", content=json.dumps({"name": "retrieve", "result": _strip_chunks(result)}))
+        tool_result_data = {"name": "retrieve", "result": _client_tool_result("retrieve", result)}
+        yield StreamEvent(type="tool_result", content=json.dumps(tool_result_data))
         yield StreamEvent(type=SSE_EVENT_DELTA, content=delta_text)
         yield StreamEvent(type=SSE_EVENT_DONE)
 

@@ -5,14 +5,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from bibilab.pipeline._shared import StreamEvent, ToolCall, stream_llm
-
-
-def an_async_generator(items):
-    async def gen():
-        for item in items:
-            yield item
-
-    return gen()
+from tests import an_async_generator
 
 
 @pytest.mark.asyncio

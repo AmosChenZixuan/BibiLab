@@ -4,9 +4,10 @@ export interface ToolCallData {
   name: string;
   result: ToolResult;
 }
+export type SearchMode = "factual" | "breadth" | "analytical";
 export type RagSource = { video_id: string; title: string };
 export type RagMetadata = {
-  search_mode: string;
+  search_mode: SearchMode;
   candidates_evaluated: number;
   sources_with_hits: number;
   sources_total: number;

@@ -5,7 +5,7 @@ import uuid
 
 from bibilab.config import BibilabConfig
 from bibilab.db import create_job
-from bibilab.models._enums import RetrievalParams
+from bibilab.models._enums import RetrievalParams, SearchMode
 from bibilab.pipeline._shared import ToolDefinition
 from bibilab.pipeline.embed import retrieve
 
@@ -20,7 +20,7 @@ _PARAMS_BY_MODE = {
 }
 
 
-def search_mode_to_params(search_mode: str, sources_total: int) -> RetrievalParams:
+def search_mode_to_params(search_mode: SearchMode, sources_total: int) -> RetrievalParams:
     if search_mode == "breadth" and sources_total < 3:
         return _PARAMS_BY_MODE["factual"]
     base = _PARAMS_BY_MODE.get(search_mode)
@@ -116,7 +116,7 @@ async def execute_generate_report(
 
 async def execute_retrieve(
     query: str,
-    search_mode: str,
+    search_mode: SearchMode,
     source_ids: list[str],
     cfg: BibilabConfig,
 ) -> dict:
