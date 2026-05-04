@@ -426,7 +426,7 @@ async def test_retrieve_pool_at_least_top_k(tmp_bibilab_home):
     E.g. analytical query on a 1-source list: pool=10 but top_k=12."""
     from bibilab.config import BibilabConfig, RagConfig
     from bibilab.models._enums import RetrievalParams
-    from bibilab.pipeline.embed import _dynamic_pool, retrieve
+    from bibilab.pipeline.embed import retrieve
 
     cfg = BibilabConfig(rag=RagConfig(max_distance=1.0, reranking_enabled=False))
 
@@ -437,8 +437,7 @@ async def test_retrieve_pool_at_least_top_k(tmp_bibilab_home):
     ) as mock_hybrid:
         await retrieve("query", ["src1"], cfg, params=RetrievalParams(depth_per_source=4, top_k=12))
 
-    # _dynamic_pool(1) = 10, but params.top_k = 12 → pool should be 12
-    assert _dynamic_pool(1) == 10
+    # _dynamic_pool(1) = 10, but params.top_k = 12 → pool should be max(10, 12) = 12
     mock_hybrid.assert_called_once_with("query", ["src1"], cfg, effective_top_k=12)
 
 

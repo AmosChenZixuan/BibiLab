@@ -32,7 +32,7 @@ Two-axis sweep of tunable retrieval parameters:
 
 9 combos total (3 × 3). Each query runs all combos; union of chunks across combos is labeled once, then per-combo metrics are computed from the ranked lists.
 
-**Retrieval pipeline:** hybrid search (BM25 + vector, RRF fusion, pool of 30) → cross-encoder rerank (bge-reranker-base) → floor filter → diverse top-k (per-source depth cap + total cap set by query type).
+**Retrieval pipeline:** hybrid search (BM25 + vector, RRF fusion, pool = max(_dynamic_pool(sources_total), params.top_k)) → cross-encoder rerank (bge-reranker-base) → floor filter → diverse top-k (per-source depth cap + total cap set by query type).
 
 ## Results
 
@@ -86,11 +86,11 @@ Per-list behavior differs: 干饭 and AI面试 prefer null (MRR 0.611 and 0.454)
 
 The `rerank_min_score` default was set to `0.0` in code, which filtered all chunks for users with a stale config file. This was the root cause of the 0-chunk bug (8/30 queries returning empty). The code default is now `null` (commit bbe3d19).
 
-### 3. Factual queries over-pad with diversity constraint
+### 3. Factual queries over-padded with diversity constraint (resolved: #250)
 
-For focused (factual) queries, `params_for_type()` (shrunk in bbe3d19 to ensure source coverage) sets `top_k = max(base.top_k, min(sources_total, base.top_k * 3))`. For a 16-source list this means factual queries get `top_k=15` instead of the base `top_k=5`, pulling in noise from many sources when most factual queries only need 1-2 sources.
+For focused (factual) queries, the old `params_for_type()` scaled `top_k = max(base.top_k, min(sources_total, base.top_k * 3))`. For a 16-source list this meant factual queries got `top_k=15` instead of the base `top_k=5`, pulling in noise from many sources when most factual queries only need 1-2 sources.
 
-This is the current state for better or worse: it avoids the 0-chunk bug at the cost of precision. #250 will revisit whether the noise tradeoff is worth it — options include a tighter multiplier cap or per-type source-coverage weighting.
+**Resolution (#250):** Factual params are now fixed at `depth_per_source=1, top_k=4` with no scaling. The scaling is retained for analytical queries only.
 
 ## Decisions
 
@@ -100,6 +100,8 @@ This is the current state for better or worse: it avoids the 0-chunk bug at the 
 | Remove RRF_K as tunable | Dead parameter — reranker overwrites RRF ordering | #245 |
 | 3-bucket classifier sufficient | 93% accuracy on 30 queries; prompt fixes cover the gaps | #234 |
 | Defer #228 classifier replacement | ~1 month, wait for real user query data | #228 |
+| Fixed factual params depth=1, top_k=4 | Factual queries target specific facts; scaling with source count admits noise | #250 |
+| Dynamic candidate pool: _dynamic_pool(n) = min(max(n×3, 10), 60) | Scales 3× source count, floor 10 avoids under-sampling tiny lists, ceiling 60 bounds latency. Guarded with max(pool, params.top_k). | #219 |
 
 ## Caveats
 
@@ -116,4 +118,4 @@ Re-run the eval sweep when:
 - Tool-calling search ships (#228) — verify no regression
 - New lists added with different content characteristics
 
-The eval harness was deliberately throwaway (author-specific corpus, single-use UI). To re-sweep: write a script that calls `retrieve()` directly, varying `cfg.rag.rerank_min_score` per call — that is the only parameter the campaign found to affect ranking. The candidate pool (30), reranker model, and RRF fusion are all fixed.
+The eval harness was deliberately throwaway (author-specific corpus, single-use UI). To re-sweep: write a script that calls `retrieve()` directly, varying `cfg.rag.rerank_min_score` per call — that is the only parameter the campaign found to affect ranking. The candidate pool is now dynamic (#219), so re-sweeps should pass realistic source counts.
