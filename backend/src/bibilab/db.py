@@ -322,6 +322,19 @@ async def get_sources_for_list(list_id: str) -> list[aiosqlite.Row]:
         return await cursor.fetchall()
 
 
+async def count_sources(source_ids: list[str]) -> int:
+    if not source_ids:
+        return 0
+    async with get_db() as db:
+        placeholders = _in_placeholders(source_ids)
+        cursor = await db.execute(
+            f"SELECT COUNT(*) AS n FROM sources WHERE id IN ({placeholders})",
+            source_ids,
+        )
+        row = await cursor.fetchone()
+        return row["n"] if row else 0
+
+
 async def get_video_ids_for_sources(source_ids: list[str]) -> dict[str, str]:
     """Map source UUIDs to platform video_ids for ChromaDB filtering.
     Returns {source_id: video_id} for each source found.
