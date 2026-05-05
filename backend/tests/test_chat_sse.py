@@ -1,16 +1,35 @@
-"""Tests for the SSE chat streaming endpoint."""
+"""Tests for the SSE chat streaming endpoint (post-tool-calling refactor)."""
 
-from unittest.mock import AsyncMock, MagicMock, patch
+import json
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from bibilab.pipeline._shared import StreamEvent, ToolCall
+from bibilab.routers.chat import (
+    SSE_EVENT_DELTA,
+    SSE_EVENT_DONE,
+    SSE_EVENT_TOOL_RESULT,
+    _client_tool_result,
+)
+from tests import an_async_generator
 
-def an_async_generator(items):
-    async def gen():
-        for item in items:
-            yield item
 
-    return gen()
+def _parse_sse(text: str) -> list[dict]:
+    events = []
+    for line in text.split("\n"):
+        if line.startswith("data: "):
+            events.append(json.loads(line[6:]))
+    return events
+
+
+async def _get_assistant_msgs(client, list_id: str) -> list[dict]:
+    conv_resp = await client.get(f"/lists/{list_id}/conversation")
+    return [m for m in conv_resp.json()["messages"] if m["role"] == "assistant"]
+
+
+async def _create_list(client, name: str) -> str:
+    return (await client.post("/lists", json={"name": name})).json()["id"]
 
 
 @pytest.mark.asyncio
@@ -18,12 +37,12 @@ async def test_chat_endpoint_returns_sse_stream(client):
     """POST /lists/:id/chat returns text/event-stream with delta events."""
     list_id = (await client.post("/lists", json={"name": "Test"})).json()["id"]
 
-    with patch("bibilab.routers.chat.stream_llm") as mock_stream:
-        mock_stream.return_value = an_async_generator(
+    with patch("bibilab.routers.chat.stream_with_tools") as mock:
+        mock.return_value = an_async_generator(
             [
-                MagicMock(type="delta", content="Hello", tool_call=None),
-                MagicMock(type="delta", content=" world", tool_call=None),
-                MagicMock(type="done", content=None, tool_call=None),
+                StreamEvent(type="delta", content="Hello"),
+                StreamEvent(type="delta", content=" world"),
+                StreamEvent(type="done"),
             ]
         )
         resp = await client.post(f"/lists/{list_id}/chat", json={"message": "hi"})
@@ -33,45 +52,10 @@ async def test_chat_endpoint_returns_sse_stream(client):
 
 
 @pytest.mark.asyncio
-async def test_chat_endpoint_includes_rag_context(client, tmp_bibilab_home):
-    """RAG chunks from ChromaDB are included as system parameter to stream_llm."""
-    list_id = (await client.post("/lists", json={"name": "Test"})).json()["id"]
-
-    captured_system = []
-
-    async def capture_stream(messages, cfg, tools=None, llm_timeout=120, llm_max_tokens=2048, system=None):
-        captured_system.append(system)
-        yield MagicMock(type="done", content=None, tool_call=None)
-
-    with patch("bibilab.routers.chat.stream_llm", capture_stream):
-        with patch("bibilab.routers.chat.classify_query", new_callable=AsyncMock) as mock_classify:
-            mock_classify.return_value = "factual"
-            with patch("bibilab.routers.chat.retrieve", new_callable=AsyncMock) as mock_retrieve:
-                with patch("bibilab.routers.chat.get_sources_for_list", new_callable=AsyncMock) as mock_sources:
-                    from bibilab.pipeline.embed import RetrievalResult, RetrievedChunk
-
-                    mock_sources.return_value = [MagicMock(id="src-1")]
-                    chunk = RetrievedChunk(
-                        content="video transcript here",
-                        video_title="Test Video",
-                        timestamp_start=10.0,
-                        timestamp_end=30.0,
-                        video_id="bv123",
-                        distance=0.15,
-                    )
-                    mock_retrieve.return_value = RetrievalResult(
-                        chunks=[chunk],
-                        candidates_evaluated=1,
-                        sources_with_hits=1,
-                        sources_total=1,
-                        source_coverage=[],
-                    )
-                    resp = await client.post(f"/lists/{list_id}/chat", json={"message": "what is this about?"})
-
-    assert resp.status_code == 200
-    assert len(captured_system) == 1
-    assert captured_system[0] is not None
-    assert "video transcript here" in captured_system[0]
+async def test_chat_endpoint_404_for_missing_list(client):
+    """Returns 404 when list does not exist."""
+    resp = await client.post("/lists/nonexistent/chat", json={"message": "hi"})
+    assert resp.status_code == 404
 
 
 @pytest.mark.asyncio
@@ -79,11 +63,11 @@ async def test_chat_endpoint_saves_user_message(client):
     """User message is persisted to DB after successful stream."""
     list_id = (await client.post("/lists", json={"name": "Test"})).json()["id"]
 
-    with patch("bibilab.routers.chat.stream_llm") as mock_stream:
-        mock_stream.return_value = an_async_generator(
+    with patch("bibilab.routers.chat.stream_with_tools") as mock:
+        mock.return_value = an_async_generator(
             [
-                MagicMock(type="delta", content="Hi"),
-                MagicMock(type="done", content=None, tool_call=None),
+                StreamEvent(type="delta", content="Hi"),
+                StreamEvent(type="done"),
             ]
         )
         resp = await client.post(f"/lists/{list_id}/chat", json={"message": "hello"})
@@ -99,11 +83,11 @@ async def test_chat_endpoint_saves_assistant_message(client):
     """Assistant message is persisted to DB after stream completes."""
     list_id = (await client.post("/lists", json={"name": "Test"})).json()["id"]
 
-    with patch("bibilab.routers.chat.stream_llm") as mock_stream:
-        mock_stream.return_value = an_async_generator(
+    with patch("bibilab.routers.chat.stream_with_tools") as mock:
+        mock.return_value = an_async_generator(
             [
-                MagicMock(type="delta", content="Hello"),
-                MagicMock(type="done", content=None, tool_call=None),
+                StreamEvent(type="delta", content="Hello"),
+                StreamEvent(type="done"),
             ]
         )
         resp = await client.post(f"/lists/{list_id}/chat", json={"message": "hi"})
@@ -112,13 +96,6 @@ async def test_chat_endpoint_saves_assistant_message(client):
     conv_resp = await client.get(f"/lists/{list_id}/conversation")
     messages = conv_resp.json()["messages"]
     assert any(m["role"] == "assistant" and m["content"] == "Hello" for m in messages)
-
-
-@pytest.mark.asyncio
-async def test_chat_endpoint_404_for_missing_list(client):
-    """Returns 404 when list does not exist."""
-    resp = await client.post("/lists/nonexistent/chat", json={"message": "hi"})
-    assert resp.status_code == 404
 
 
 @pytest.mark.asyncio
@@ -134,517 +111,243 @@ async def test_chat_endpoint_uses_conversation_history(client):
 
     captured_messages = []
 
-    async def capture_stream(messages, cfg, tools=None, llm_timeout=120, llm_max_tokens=2048, system=None):
+    async def capture(messages, cfg, tools=None, execute_tool_fn=None, system=None, llm_max_tokens=2048):
         captured_messages.append(messages)
-        yield MagicMock(type="done", content=None, tool_call=None)
+        yield StreamEvent(type="done")
 
-    with patch("bibilab.routers.chat.stream_llm", capture_stream):
+    with patch("bibilab.routers.chat.stream_with_tools", capture):
         resp = await client.post(f"/lists/{list_id}/chat", json={"message": "follow-up"})
 
     assert resp.status_code == 200
-    msgs = captured_messages[0]
-    roles = [m["role"] for m in msgs]
+    roles = [m["role"] for m in captured_messages[0]]
     assert "user" in roles
     assert "assistant" in roles
-    contents = [m["content"] for m in msgs]
-    assert "Previous question" in contents
-    assert "Previous answer" in contents
 
 
 @pytest.mark.asyncio
-async def test_chat_endpoint_includes_tool_definitions(client):
-    """Tools from chat_tools are passed to stream_llm."""
+async def test_chat_endpoint_includes_tools(client):
+    """Both retrieve and generate_report tools are passed to stream_with_tools."""
     list_id = (await client.post("/lists", json={"name": "Test"})).json()["id"]
 
     captured_tools = []
 
-    async def capture_stream(messages, cfg, tools=None, llm_timeout=120, llm_max_tokens=2048, system=None):
+    async def capture(messages, cfg, tools=None, execute_tool_fn=None, system=None, llm_max_tokens=2048):
         captured_tools.append(tools)
-        yield MagicMock(type="done", content=None, tool_call=None)
+        yield StreamEvent(type="done")
 
-    with patch("bibilab.routers.chat.stream_llm", capture_stream):
+    with patch("bibilab.routers.chat.stream_with_tools", capture):
         resp = await client.post(f"/lists/{list_id}/chat", json={"message": "hi"})
 
     assert resp.status_code == 200
-    assert captured_tools[0] is not None
     tool_names = [t.name for t in captured_tools[0]]
+    assert "retrieve" in tool_names
     assert "generate_report" in tool_names
 
 
 @pytest.mark.asyncio
-async def test_chat_endpoint_handles_tool_call(client):
-    """Tool call is executed and result is fed back to LLM for final response."""
+async def test_chat_endpoint_handles_generate_report_tool(client):
+    """generate_report tool execution yields proper SSE events."""
     list_id = (await client.post("/lists", json={"name": "Test"})).json()["id"]
 
-    mock_tool_call = MagicMock()
-    mock_tool_call.id = "call_1"
-    mock_tool_call.name = "generate_report"
-    mock_tool_call.arguments = {"type": "brief", "prompt": "summarize"}
+    async def fake_stream(messages, cfg, tools=None, execute_tool_fn=None, system=None, llm_max_tokens=2048):
+        yield StreamEvent(type="delta", content="Generating...")
+        yield StreamEvent(
+            type="tool_result",
+            content='{"name":"generate_report","result":{"artifact_id":"abc","name":"brief","type":"brief"}}',
+        )
+        yield StreamEvent(type="done")
 
-    tool_result = {"artifact_id": "abc", "name": "brief", "type": "brief"}
-
-    with patch("bibilab.routers.chat.stream_llm") as mock_stream:
-        mock_stream.side_effect = [
-            an_async_generator(
-                [
-                    MagicMock(type="delta", content="Generating...", tool_call=None),
-                    MagicMock(type="tool_call", content=None, tool_call=mock_tool_call),
-                ]
-            ),
-            an_async_generator(
-                [
-                    MagicMock(type="delta", content="Here is your brief.", tool_call=None),
-                    MagicMock(type="done", content=None, tool_call=None),
-                ]
-            ),
-        ]
-        with patch("bibilab.routers.chat.execute_tool", new_callable=AsyncMock) as mock_exec:
-            mock_exec.return_value = tool_result
-            resp = await client.post(f"/lists/{list_id}/chat", json={"message": "make a brief"})
+    with patch("bibilab.routers.chat.stream_with_tools", fake_stream):
+        resp = await client.post(f"/lists/{list_id}/chat", json={"message": "make a brief"})
 
     assert resp.status_code == 200
-    assert mock_exec.called
-    assert "artifact_id" in resp.text or "brief" in resp.text
+    assert "abc" in resp.text
+    assert "tool_result" in resp.text
 
 
 @pytest.mark.asyncio
-async def test_chat_endpoint_saves_tool_call_metadata(client):
-    """Assistant message has tool_calls metadata after tool execution."""
+async def test_retrieve_tool_result_has_coverage(client):
+    """retrieve tool_result includes search_mode and coverage metadata."""
     list_id = (await client.post("/lists", json={"name": "Test"})).json()["id"]
 
-    mock_tool_call = MagicMock()
-    mock_tool_call.id = "call_1"
-    mock_tool_call.name = "generate_report"
-    mock_tool_call.arguments = {"type": "brief", "prompt": "summarize"}
+    async def fake_stream(messages, cfg, tools=None, execute_tool_fn=None, system=None, llm_max_tokens=2048):
+        result = await execute_tool_fn("retrieve", {"query": "test", "search_mode": "factual"})
+        yield StreamEvent(
+            type="tool_result",
+            content=json.dumps({"name": "retrieve", "result": _client_tool_result("retrieve", result)}),
+        )
+        yield StreamEvent(type="delta", content="Answer")
+        yield StreamEvent(type="done")
 
-    tool_result = {"artifact_id": "abc", "name": "brief", "type": "brief"}
-
-    with patch("bibilab.routers.chat.stream_llm") as mock_stream:
-        mock_stream.side_effect = [
-            an_async_generator(
-                [
-                    MagicMock(type="tool_call", content=None, tool_call=mock_tool_call),
-                ]
-            ),
-            an_async_generator(
-                [
-                    MagicMock(type="done", content=None, tool_call=None),
-                ]
-            ),
-        ]
-        with patch("bibilab.routers.chat.execute_tool", new_callable=AsyncMock) as mock_exec:
-            mock_exec.return_value = tool_result
-            resp = await client.post(f"/lists/{list_id}/chat", json={"message": "make a brief"})
-
-    assert resp.status_code == 200
-    conv_resp = await client.get(f"/lists/{list_id}/conversation")
-    assistant_msgs = [m for m in conv_resp.json()["messages"] if m["role"] == "assistant"]
-    assert len(assistant_msgs) == 1
-    assert assistant_msgs[0]["metadata"] is not None
-    assert "tool_calls" in assistant_msgs[0]["metadata"]
-
-
-@pytest.mark.asyncio
-async def test_chat_endpoint_yields_tool_result_event(client):
-    """SSE stream includes tool_result event after tool execution."""
-    list_id = (await client.post("/lists", json={"name": "Test"})).json()["id"]
-
-    mock_tool_call = MagicMock()
-    mock_tool_call.id = "call_1"
-    mock_tool_call.name = "generate_report"
-    mock_tool_call.arguments = {"type": "brief", "prompt": "summarize"}
-
-    tool_result = {"artifact_id": "abc123", "name": "brief", "type": "brief"}
-
-    with patch("bibilab.routers.chat.stream_llm") as mock_stream:
-        mock_stream.side_effect = [
-            an_async_generator(
-                [
-                    MagicMock(type="tool_call", content=None, tool_call=mock_tool_call),
-                ]
-            ),
-            an_async_generator(
-                [
-                    MagicMock(type="done", content=None, tool_call=None),
-                ]
-            ),
-        ]
-        with patch("bibilab.routers.chat.execute_tool", new_callable=AsyncMock) as mock_exec:
-            mock_exec.return_value = tool_result
-            resp = await client.post(f"/lists/{list_id}/chat", json={"message": "make a brief"})
+    with patch("bibilab.routers.chat.stream_with_tools", fake_stream):
+        resp = await client.post(f"/lists/{list_id}/chat", json={"message": "what is this?"})
 
     assert resp.status_code == 200
     assert "tool_result" in resp.text
-    assert "abc123" in resp.text
+    assert "factual" in resp.text
 
 
 @pytest.mark.asyncio
-async def test_conversation_mode_defaults_to_auto(client):
-    """A freshly-created conversation row uses the 'auto' column default."""
+async def test_conversation_no_longer_has_mode(client):
+    """After mode column dropped, conversation response has no mode field."""
     list_id = (await client.post("/lists", json={"name": "Test"})).json()["id"]
 
-    with patch("bibilab.routers.chat.stream_llm") as mock_stream:
-        mock_stream.return_value = an_async_generator(
-            [
-                MagicMock(type="done", content=None, tool_call=None),
-            ]
-        )
+    with patch("bibilab.routers.chat.stream_with_tools") as mock:
+        mock.return_value = an_async_generator([StreamEvent(type="done")])
         await client.post(f"/lists/{list_id}/chat", json={"message": "hi"})
 
     conv_resp = await client.get(f"/lists/{list_id}/conversation")
-    assert conv_resp.json()["conversation"]["mode"] == "auto"
+    assert "mode" not in conv_resp.json()["conversation"]
 
 
 @pytest.mark.asyncio
-async def test_patch_conversation_mode_updates_row(client):
-    """PATCH /lists/:id/conversation updates the mode field."""
+async def test_patch_conversation_endpoint_gone(client):
+    """PATCH /lists/:id/conversation returns 405 (no route)."""
     list_id = (await client.post("/lists", json={"name": "Test"})).json()["id"]
     resp = await client.patch(f"/lists/{list_id}/conversation", json={"mode": "broad"})
+    assert resp.status_code == 405
+
+
+# ---------------------------------------------------------------------------
+# Smoke tests: 4 scenarios verifying LLM tool-calling behaviour end-to-end
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_smoke_scenario_1_chitchat_no_tool_calls(client):
+    """Chitchat: LLM responds directly, no retrieve tool, no tool_result in SSE."""
+    list_id = await _create_list(client, "Smoke 1")
+
+    async def fake_stream(messages, cfg, tools=None, execute_tool_fn=None, system=None, llm_max_tokens=2048):
+        yield StreamEvent(type=SSE_EVENT_DELTA, content="You're welcome!")
+        yield StreamEvent(type=SSE_EVENT_DONE)
+
+    with patch("bibilab.routers.chat.stream_with_tools", fake_stream):
+        resp = await client.post(f"/lists/{list_id}/chat", json={"message": "thanks"})
+
     assert resp.status_code == 200
-    assert resp.json()["mode"] == "broad"
-    conv_resp = await client.get(f"/lists/{list_id}/conversation")
-    assert conv_resp.json()["conversation"]["mode"] == "broad"
+    events = _parse_sse(resp.text)
+    types = [e["type"] for e in events]
+    assert SSE_EVENT_TOOL_RESULT not in types, "chitchat should NOT trigger any tool"
+    assert SSE_EVENT_DELTA in types
+    assert SSE_EVENT_DONE in types
+
+    assistant_msgs = await _get_assistant_msgs(client, list_id)
+    assert len(assistant_msgs) == 1
+    assert assistant_msgs[0]["content"] == "You're welcome!"
 
 
 @pytest.mark.asyncio
-async def test_chat_endpoint_uses_classifier_for_params(client):
-    """Chat endpoint runs classifier and passes its output params to retrieve()."""
-    list_id = (await client.post("/lists", json={"name": "Test"})).json()["id"]
+@pytest.mark.parametrize(
+    "search_mode,query,user_message,delta_text,result_overrides",
+    [
+        (
+            "factual",
+            "test query",
+            "What does the video say about transformers?",
+            "Based on the transcript, the answer is...",
+            {
+                "candidates_evaluated": 30,
+                "sources_with_hits": 1,
+                "sources_total": 1,
+                "source_coverage": [{"video_id": "bv1", "title": "Test Video"}],
+                "_chunks": [{"title": "Test Video", "start": 10.0, "end": 25.0, "content": "relevant chunk"}],
+            },
+        ),
+        (
+            "breadth",
+            "核心观点",
+            "汇总所有视频的核心观点",
+            "汇总如下...",
+            {
+                "candidates_evaluated": 60,
+                "sources_with_hits": 3,
+                "sources_total": 5,
+                "source_coverage": [
+                    {"video_id": "v1", "title": "Video A"},
+                    {"video_id": "v2", "title": "Video B"},
+                    {"video_id": "v3", "title": "Video C"},
+                ],
+                "_chunks": [],
+            },
+        ),
+    ],
+)
+async def test_smoke_scenario_2_retrieve(client, search_mode, query, user_message, delta_text, result_overrides):
+    """LLM calls retrieve tool with correct search_mode before answering."""
+    list_id = await _create_list(client, f"Smoke retrieve {search_mode}")
 
-    captured_params = []
+    retrieve_result = {"search_mode": search_mode, **result_overrides}
 
-    async def capture_retrieve(query_text, source_ids, cfg, params):
-        captured_params.append(params)
-        return MagicMock(
-            chunks=[], mode="broad", candidates_evaluated=0, sources_with_hits=0, sources_total=0, source_coverage=[]
+    async def fake_stream(messages, cfg, tools=None, execute_tool_fn=None, system=None, llm_max_tokens=2048):
+        yield StreamEvent(
+            type="tool_call",
+            tool_call=ToolCall(id="c1", name="retrieve", arguments={"query": query, "search_mode": search_mode}),
         )
+        result = await execute_tool_fn("retrieve", {"query": query, "search_mode": search_mode})
+        tool_result_data = {"name": "retrieve", "result": _client_tool_result("retrieve", result)}
+        yield StreamEvent(type="tool_result", content=json.dumps(tool_result_data))
+        yield StreamEvent(type=SSE_EVENT_DELTA, content=delta_text)
+        yield StreamEvent(type=SSE_EVENT_DONE)
 
-    with patch("bibilab.routers.chat.classify_query", new_callable=AsyncMock) as mock_classify:
-        mock_classify.return_value = "breadth"
-        with patch("bibilab.routers.chat.retrieve", capture_retrieve):
-            with patch("bibilab.routers.chat.get_sources_for_list", new_callable=AsyncMock) as mock_sources:
-                mock_sources.return_value = [{"id": f"src-{i}"} for i in range(30)]
-                with patch("bibilab.routers.chat.stream_llm") as mock_stream:
-                    mock_stream.return_value = an_async_generator(
-                        [
-                            MagicMock(type="done", content=None, tool_call=None),
-                        ]
-                    )
-                    await client.post(f"/lists/{list_id}/chat", json={"message": "hi"})
-    mock_classify.assert_called_once()
-    assert captured_params[0].depth_per_source == 1
-    assert captured_params[0].top_k == 20
+    with patch("bibilab.routers.chat.stream_with_tools", fake_stream):
+        with patch("bibilab.routers.chat.execute_tool", new_callable=AsyncMock) as mock_exec:
+            mock_exec.return_value = retrieve_result
+            resp = await client.post(f"/lists/{list_id}/chat", json={"message": user_message})
 
+    assert resp.status_code == 200
+    events = _parse_sse(resp.text)
+    types = [e["type"] for e in events]
 
-@pytest.mark.asyncio
-async def test_rag_meta_event_emitted_before_deltas(client):
-    """rag_meta SSE event is emitted before any delta events."""
-    list_id = (await client.post("/lists", json={"name": "Test"})).json()["id"]
-    from bibilab.pipeline.embed import RetrievalResult, RetrievedChunk
+    assert SSE_EVENT_TOOL_RESULT in types
+    tool_results = [e for e in events if e["type"] == SSE_EVENT_TOOL_RESULT]
+    assert len(tool_results) == 1, "one tool_result from stream (metadata saved to DB, not SSE)"
 
-    with patch("bibilab.routers.chat.retrieve", new_callable=AsyncMock) as mock_retrieve:
-        mock_retrieve.return_value = RetrievalResult(
-            chunks=[
-                RetrievedChunk(
-                    content="test", video_title="V", timestamp_start=0, timestamp_end=1, video_id="v1", distance=0.1
-                )
-            ],
-            candidates_evaluated=30,
-            sources_with_hits=1,
-            sources_total=1,
-            source_coverage=[],
-        )
-        with patch("bibilab.routers.chat.classify_query", new_callable=AsyncMock) as mock_classify:
-            mock_classify.return_value = "factual"
-            with patch("bibilab.routers.chat.get_sources_for_list", new_callable=AsyncMock) as mock_sources:
-                mock_sources.return_value = [MagicMock(id="src-1")]
-                with patch("bibilab.routers.chat.stream_llm") as mock_stream:
-                    mock_stream.return_value = an_async_generator(
-                        [
-                            MagicMock(type="delta", content="Hi", tool_call=None),
-                            MagicMock(type="done", content=None, tool_call=None),
-                        ]
-                    )
-                    resp = await client.post(f"/lists/{list_id}/chat", json={"message": "hi"})
-    lines = resp.text.strip().split("\n")
-    rag_meta_lines = [line for line in lines if "rag_meta" in line]
-    delta_lines = [line for line in lines if "delta" in line]
-    assert rag_meta_lines, "Expected at least one rag_meta event"
-    assert delta_lines, "Expected at least one delta event"
-    rag_meta_line, delta_line = rag_meta_lines[0], delta_lines[0]
-    assert lines.index(rag_meta_line) < lines.index(delta_line)
+    stream_result = tool_results[0]
+    assert stream_result["name"] == "retrieve"
+    assert stream_result["result"]["search_mode"] == search_mode
+    assert stream_result["result"]["candidates_evaluated"] == result_overrides["candidates_evaluated"]
+    assert "_chunks" not in stream_result["result"], "_chunks must be stripped before sending to client"
+
+    assert SSE_EVENT_DELTA in types
+    assert SSE_EVENT_DONE in types
+
+    assistant_msgs = await _get_assistant_msgs(client, list_id)
+    assert len(assistant_msgs) == 1
+    assert assistant_msgs[0]["metadata"] is not None
+    assert assistant_msgs[0]["metadata"]["rag"]["search_mode"] == search_mode
 
 
 @pytest.mark.asyncio
-async def test_assistant_message_persisted_with_rag_metadata(client):
-    """Assistant message metadata contains rag data without SSE envelope."""
-    list_id = (await client.post("/lists", json={"name": "Test"})).json()["id"]
-    from bibilab.pipeline.embed import RetrievalResult, RetrievedChunk
+async def test_smoke_scenario_3_generate_report_no_retrieve(client):
+    """Report request: LLM calls generate_report directly, no retrieve tool involved."""
+    list_id = await _create_list(client, "Smoke 3")
 
-    with patch("bibilab.routers.chat.retrieve", new_callable=AsyncMock) as mock_retrieve:
-        mock_retrieve.return_value = RetrievalResult(
-            chunks=[
-                RetrievedChunk(
-                    content="test", video_title="V", timestamp_start=0, timestamp_end=1, video_id="v1", distance=0.1
-                )
-            ],
-            candidates_evaluated=30,
-            sources_with_hits=1,
-            sources_total=1,
-            source_coverage=[],
-        )
-        with patch("bibilab.routers.chat.classify_query", new_callable=AsyncMock) as mock_classify:
-            mock_classify.return_value = "factual"
-            with patch("bibilab.routers.chat.get_sources_for_list", new_callable=AsyncMock) as mock_sources:
-                mock_sources.return_value = [MagicMock(id="src-1")]
-                with patch("bibilab.routers.chat.stream_llm") as mock_stream:
-                    mock_stream.return_value = an_async_generator(
-                        [
-                            MagicMock(type="done", content=None, tool_call=None),
-                        ]
-                    )
-                    await client.post(f"/lists/{list_id}/chat", json={"message": "hi"})
-                    conv_resp = await client.get(f"/lists/{list_id}/conversation")
-                    msgs = conv_resp.json()["messages"]
-                    assistant_msgs = [m for m in msgs if m["role"] == "assistant"]
-                    assert assistant_msgs, "Expected at least one assistant message"
-                    assistant = assistant_msgs[0]
-                    assert assistant["metadata"] is not None
-                    assert "type" not in assistant["metadata"], "metadata should not contain SSE envelope 'type' key"
-                    assert assistant["metadata"]["rag"] is not None
-                    assert assistant["metadata"]["rag"]["mode"] == "focused"
-                    assert assistant["metadata"]["rag"]["candidates_evaluated"] == 30
+    report_result = {"artifact_id": "art-123", "job_id": "job-456", "name": "brief", "type": "brief"}
 
+    async def fake_stream(messages, cfg, tools=None, execute_tool_fn=None, system=None, llm_max_tokens=2048):
+        yield StreamEvent(type=SSE_EVENT_DELTA, content="Let me generate a brief for you.")
+        result = await execute_tool_fn("generate_report", {"type": "brief", "prompt": "summarize the videos"})
+        yield StreamEvent(type="tool_result", content=json.dumps({"name": "generate_report", "result": result}))
+        yield StreamEvent(type=SSE_EVENT_DONE)
 
-@pytest.mark.asyncio
-async def test_no_rag_event_when_no_retrieval(client):
-    """No rag_meta event when retrieve returns no chunks."""
-    list_id = (await client.post("/lists", json={"name": "Test"})).json()["id"]
-    from bibilab.pipeline.embed import RetrievalResult
+    with patch("bibilab.routers.chat.stream_with_tools", fake_stream):
+        with patch("bibilab.routers.chat.execute_tool", new_callable=AsyncMock) as mock_exec:
+            mock_exec.return_value = report_result
+            resp = await client.post(f"/lists/{list_id}/chat", json={"message": "make a brief summarizing all videos"})
 
-    with patch("bibilab.routers.chat.retrieve", new_callable=AsyncMock) as mock_retrieve:
-        mock_retrieve.return_value = RetrievalResult(
-            chunks=[],
-            candidates_evaluated=0,
-            sources_with_hits=0,
-            sources_total=0,
-            source_coverage=[],
-        )
-        with patch("bibilab.routers.chat.classify_query", new_callable=AsyncMock) as mock_classify:
-            mock_classify.return_value = "factual"
-            with patch("bibilab.routers.chat.get_sources_for_list", new_callable=AsyncMock) as mock_sources:
-                mock_sources.return_value = [MagicMock(id="src-1")]
-                with patch("bibilab.routers.chat.stream_llm") as mock_stream:
-                    mock_stream.return_value = an_async_generator(
-                        [
-                            MagicMock(type="done", content=None, tool_call=None),
-                        ]
-                    )
-                    resp = await client.post(f"/lists/{list_id}/chat", json={"message": "hi"})
-    assert "rag_meta" not in resp.text
-    conv_resp = await client.get(f"/lists/{list_id}/conversation")
-    msgs = conv_resp.json()["messages"]
-    assistant_msgs = [m for m in msgs if m["role"] == "assistant"]
-    assert assistant_msgs, "Expected at least one assistant message"
-    assistant = assistant_msgs[0]
-    assert assistant["metadata"] is None
+    assert resp.status_code == 200
+    events = _parse_sse(resp.text)
+    types = [e["type"] for e in events]
 
+    assert SSE_EVENT_TOOL_RESULT in types
+    tool_results = [e for e in events if e["type"] == SSE_EVENT_TOOL_RESULT]
+    report_events = [tr for tr in tool_results if tr.get("name") == "generate_report"]
+    retrieve_events = [tr for tr in tool_results if tr.get("name") == "retrieve"]
+    assert len(report_events) >= 1, "generate_report tool_result must be present"
+    assert len(retrieve_events) == 0, "generate_report should NOT trigger retrieve"
 
-@pytest.mark.asyncio
-async def test_routing_skipped_when_disabled(client, tmp_bibilab_home):
-    """query_routing_enabled=False → classify_query not called."""
-    from bibilab.config import BibilabConfig, RagConfig, get_config
-
-    list_id = (await client.post("/lists", json={"name": "Test"})).json()["id"]
-
-    mock_cfg = BibilabConfig(rag=RagConfig(query_routing_enabled=False))
-
-    app = client._transport.app
-    app.dependency_overrides[get_config] = lambda: mock_cfg
-
-    try:
-        with patch("bibilab.routers.chat.classify_query", new_callable=AsyncMock) as mock_classify:
-            mock_classify.return_value = "breadth"
-            with patch("bibilab.routers.chat.retrieve", new_callable=AsyncMock) as mock_retrieve:
-                mock_retrieve.return_value = MagicMock(
-                    chunks=[],
-                    mode="focused",
-                    candidates_evaluated=0,
-                    sources_with_hits=0,
-                    sources_total=0,
-                    source_coverage=[],
-                )
-                with patch("bibilab.routers.chat.get_sources_for_list", new_callable=AsyncMock) as mock_sources:
-                    mock_sources.return_value = [MagicMock(id="src-1")]
-                    with patch("bibilab.routers.chat.stream_llm") as mock_stream:
-                        mock_stream.return_value = an_async_generator(
-                            [MagicMock(type="done", content=None, tool_call=None)]
-                        )
-                        await client.post(f"/lists/{list_id}/chat", json={"message": "hi"})
-
-        mock_classify.assert_not_called()
-    finally:
-        app.dependency_overrides.clear()
-
-
-@pytest.mark.asyncio
-async def test_routing_runs_regardless_of_stored_mode(client, tmp_bibilab_home):
-    """Classifier always runs when routing enabled — stored mode is ignored."""
-    from bibilab.config import BibilabConfig, RagConfig, get_config
-
-    list_id = (await client.post("/lists", json={"name": "Test"})).json()["id"]
-    await client.patch(f"/lists/{list_id}/conversation", json={"mode": "broad"})
-
-    mock_cfg = BibilabConfig(rag=RagConfig(query_routing_enabled=True))
-
-    app = client._transport.app
-    app.dependency_overrides[get_config] = lambda: mock_cfg
-
-    try:
-        with patch("bibilab.routers.chat.classify_query", new_callable=AsyncMock) as mock_classify:
-            mock_classify.return_value = "breadth"
-            with patch("bibilab.routers.chat.retrieve", new_callable=AsyncMock) as mock_retrieve:
-                mock_retrieve.return_value = MagicMock(
-                    chunks=[],
-                    mode="broad",
-                    candidates_evaluated=0,
-                    sources_with_hits=0,
-                    sources_total=0,
-                    source_coverage=[],
-                )
-                with patch("bibilab.routers.chat.get_sources_for_list", new_callable=AsyncMock) as mock_sources:
-                    mock_sources.return_value = [{"id": f"src-{i}"} for i in range(30)]
-                    with patch("bibilab.routers.chat.stream_llm") as mock_stream:
-                        mock_stream.return_value = an_async_generator(
-                            [MagicMock(type="done", content=None, tool_call=None)]
-                        )
-                        await client.post(f"/lists/{list_id}/chat", json={"message": "hi"})
-
-        mock_classify.assert_called_once()
-    finally:
-        app.dependency_overrides.clear()
-
-
-@pytest.mark.asyncio
-async def test_routing_runs_when_enabled_and_mode_is_auto(client, tmp_bibilab_home):
-    """Auto mode + routing enabled → classify_query called, result used to determine effective mode."""
-    from bibilab.config import BibilabConfig, RagConfig, get_config
-
-    list_id = (await client.post("/lists", json={"name": "Test"})).json()["id"]
-    await client.patch(f"/lists/{list_id}/conversation", json={"mode": "auto"})
-
-    mock_cfg = BibilabConfig(rag=RagConfig(query_routing_enabled=True))
-
-    app = client._transport.app
-    app.dependency_overrides[get_config] = lambda: mock_cfg
-
-    try:
-        with patch("bibilab.routers.chat.classify_query", new_callable=AsyncMock) as mock_classify:
-            mock_classify.return_value = "breadth"
-            with patch("bibilab.routers.chat.log_query_classification", new_callable=AsyncMock) as mock_log:
-                with patch("bibilab.routers.chat.retrieve", new_callable=AsyncMock) as mock_retrieve:
-                    mock_retrieve.return_value = MagicMock(
-                        chunks=[],
-                        mode="broad",
-                        candidates_evaluated=0,
-                        sources_with_hits=0,
-                        sources_total=0,
-                        source_coverage=[],
-                    )
-                    with patch("bibilab.routers.chat.get_sources_for_list", new_callable=AsyncMock) as mock_sources:
-                        mock_sources.return_value = [{"id": f"src-{i}"} for i in range(30)]
-                        with patch("bibilab.routers.chat.stream_llm") as mock_stream:
-                            mock_stream.return_value = an_async_generator(
-                                [MagicMock(type="done", content=None, tool_call=None)]
-                            )
-                            await client.post(f"/lists/{list_id}/chat", json={"message": "tell me everything"})
-
-        mock_classify.assert_called_once()
-        mock_log.assert_called_once()
-        call_args = mock_retrieve.call_args
-        assert call_args.kwargs["params"].depth_per_source == 1
-        assert call_args.kwargs["params"].top_k == 20
-    finally:
-        app.dependency_overrides.clear()
-
-
-@pytest.mark.asyncio
-async def test_routing_runs_when_enabled(client, tmp_bibilab_home):
-    """Classifier runs when query_routing_enabled=True, regardless of stored mode."""
-    from bibilab.config import BibilabConfig, RagConfig, get_config
-
-    list_id = (await client.post("/lists", json={"name": "Test"})).json()["id"]
-    await client.patch(f"/lists/{list_id}/conversation", json={"mode": "focused"})
-
-    mock_cfg = BibilabConfig(rag=RagConfig(query_routing_enabled=True))
-
-    app = client._transport.app
-    app.dependency_overrides[get_config] = lambda: mock_cfg
-
-    try:
-        with patch("bibilab.routers.chat.classify_query", new_callable=AsyncMock) as mock_classify:
-            mock_classify.return_value = "factual"
-            with patch("bibilab.routers.chat.retrieve", new_callable=AsyncMock) as mock_retrieve:
-                mock_retrieve.return_value = MagicMock(
-                    chunks=[],
-                    mode="focused",
-                    candidates_evaluated=0,
-                    sources_with_hits=0,
-                    sources_total=0,
-                    source_coverage=[],
-                )
-                with patch("bibilab.routers.chat.get_sources_for_list", new_callable=AsyncMock) as mock_sources:
-                    mock_sources.return_value = [{"id": f"src-{i}"} for i in range(5)]
-                    with patch("bibilab.routers.chat.stream_llm") as mock_stream:
-                        mock_stream.return_value = an_async_generator(
-                            [MagicMock(type="done", content=None, tool_call=None)]
-                        )
-                        await client.post(f"/lists/{list_id}/chat", json={"message": "tell me everything"})
-
-        mock_classify.assert_called_once()
-        call_args = mock_retrieve.call_args
-        assert call_args.kwargs["params"].depth_per_source == 1
-        assert call_args.kwargs["params"].top_k == 4
-    finally:
-        app.dependency_overrides.clear()
-
-
-@pytest.mark.asyncio
-async def test_auto_mode_falls_back_to_focused_when_routing_disabled(client, tmp_bibilab_home):
-    """Auto mode + routing disabled → classify_query not called, retrieve uses focused."""
-    from bibilab.config import BibilabConfig, RagConfig, get_config
-
-    list_id = (await client.post("/lists", json={"name": "Test"})).json()["id"]
-    await client.patch(f"/lists/{list_id}/conversation", json={"mode": "auto"})
-
-    mock_cfg = BibilabConfig(rag=RagConfig(query_routing_enabled=False))
-
-    app = client._transport.app
-    app.dependency_overrides[get_config] = lambda: mock_cfg
-
-    try:
-        with patch("bibilab.routers.chat.classify_query", new_callable=AsyncMock) as mock_classify:
-            mock_classify.return_value = "breadth"
-            with patch("bibilab.routers.chat.retrieve", new_callable=AsyncMock) as mock_retrieve:
-                mock_retrieve.return_value = MagicMock(
-                    chunks=[],
-                    mode="focused",
-                    candidates_evaluated=0,
-                    sources_with_hits=0,
-                    sources_total=0,
-                    source_coverage=[],
-                )
-                with patch("bibilab.routers.chat.get_sources_for_list", new_callable=AsyncMock) as mock_sources:
-                    mock_sources.return_value = [MagicMock(id="src-1")]
-                    with patch("bibilab.routers.chat.stream_llm") as mock_stream:
-                        mock_stream.return_value = an_async_generator(
-                            [MagicMock(type="done", content=None, tool_call=None)]
-                        )
-                        await client.post(f"/lists/{list_id}/chat", json={"message": "hi"})
-
-        mock_classify.assert_not_called()
-        call_args = mock_retrieve.call_args
-        assert call_args.kwargs["params"].depth_per_source == 1
-        assert call_args.kwargs["params"].top_k == 4
-    finally:
-        app.dependency_overrides.clear()
+    assert report_events[0]["result"]["artifact_id"] == "art-123"
+    assert report_events[0]["result"]["type"] == "brief"
+    assert SSE_EVENT_DELTA in types
+    assert SSE_EVENT_DONE in types

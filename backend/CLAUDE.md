@@ -26,11 +26,10 @@ models/           — Pydantic request/response models + domain errors
   chat.py           ChatRequest, MessageResponse, ConversationResponse
 pipeline/         — one file per stage
   _shared.py        sync _call_llm + async stream_llm (OpenAI/Anthropic), tool/stream dataclasses
-  chat_tools.py     tool definitions (generate_report) + execution dispatcher
+  chat_tools.py     tool definitions (retrieve + generate_report) + execution dispatcher + chunk formatting
   chat_summary.py   conversation compression (sliding window + LLM summary; preserves [title @ Ts-Ts] RAG citations)
   embed.py          ChromaDB embed + retrieve() (hybrid search → rerank → aggregation), FTS5 populate
   rerank.py         lazy ONNX cross-encoder reranker (Xenova/bge-reranker-base, XLM-RoBERTa zh+en; batched inference)
-  route.py          LLM-based query classifier (factual/breadth/analytical → focused/broad)
 adapters/         — platform-specific download + resolution (base + bilibili)
 db.py             — SQLite schema + query helpers
 config.py         — settings persisted to ~/.bibilab/config.json; includes models_dir() helper
@@ -108,7 +107,6 @@ whisper_models.py — Whisper model management
 | `id` | UUID, primary key |
 | `list_id` | FK to `lists.id`, UNIQUE, ON DELETE CASCADE |
 | `summary` | Rolling LLM-generated summary, nullable |
-| `mode` | `"auto"` \| `"focused"` \| `"broad"`, default `'auto'`. Retained for backward compat; no longer read by retrieval router (classifier always runs when routing enabled). |
 | `created_at` | ISO timestamp |
 | `updated_at` | ISO timestamp |
 
@@ -120,16 +118,12 @@ whisper_models.py — Whisper model management
 | `conversation_id` | FK to `conversations.id`, ON DELETE CASCADE, indexed |
 | `role` | `"user"` \| `"assistant"` \| `"tool"` |
 | `content` | Message text |
-| `metadata` | JSON blob, nullable. Shape: `{"tool_calls": [...], "rag": {mode, candidates_evaluated, sources_with_hits, sources_total, sources}}`. The wire SSE envelope (`{"type": "rag_meta", ...}`) is unwrapped before storage. |
+| `metadata` | JSON blob, nullable. Shape: `{"tool_calls": [...], "rag": {search_mode, candidates_evaluated, sources_with_hits, sources_total, source_coverage}}`. Set by `chat_endpoint` post-stream from the retrieve `tool_result` event. |
 | `created_at` | ISO timestamp |
 
 ### `chunks_fts` — FTS5 virtual table
 
 BM25-ranked full-text index over transcript chunks. Populated by `populate_fts()` during the embed stage; cleared per-video on re-ingest. Columns: `content`, `video_id`, `video_title`, `timestamp_start`, `timestamp_end`, `chunk_id`. Query via `query_fts_rows()` in `db.py`.
-
-### `query_classifications` — routing log (training data)
-
-Append-only log of LLM classifier outputs. Columns: `id`, `list_id`, `query_text`, `query_type`, `effective_mode`, `created_at`. Insert wrapped in try/except — failures are logged but do not break the chat request.
 
 ## Ingestion Pipeline
 
@@ -155,17 +149,20 @@ POST /ingest/url → resolve → dedup check → create job(s)
 
 ```
 POST /lists/:id/chat (SSE)
-  → get_or_create_conversation → load history + stored mode
-  → if query_routing_enabled: classify_query → effective_mode
-  → retrieve(): hybrid_search (BM25 + vector RRF, pool = max(_dynamic_pool(sources_total), params.top_k)) → rerank → _diverse_top_k (per-source depth cap + top-k) → floor filter
-  → sources_with_hits reflects candidate-pool coverage; result_chunks reflects actual LLM input
-  → stream_llm (system prompt + RAG context + history)
-  → yield rag_meta + delta/tool_result/done events
-  → persist assistant message → BackgroundTask: maybe_compress_conversation
+  → get_or_create_conversation → load history + existing summary
+  → add GROUNDING_SYSTEM_PROMPT + summary (if present) as system message
+  → stream_with_tools(stream_llm loop):
+      LLM yields tool_call (retrieve) → execute_retrieve() → hybrid_search (BM25 + vector RRF) → rerank → _diverse_top_k
+      → tool_result (with citation-formatted _chunks) fed back to LLM → second turn yields delta/done
+      LLM yields tool_call (generate_report) → execute_generate_report() → tool_result → exit loop
+      LLM yields delta + done directly (no tool) → exit loop
+  → yield delta + tool_result + done events (SSE)
+  → persist assistant message with rag metadata → BackgroundTask: maybe_compress_conversation
 ```
 
+- `stream_with_tools` wraps `stream_llm` in a bounded loop (max 3 iterations). Loopback tools (`retrieve`) feed results back for another LLM turn; terminal tools (`generate_report`) exit the loop.
+- Retrieve result `_chunks` are formatted as citation-ready strings (`[title @ Ns-Ns]: "content"`) for the LLM; stripped from the client-bound `tool_result` SSE payload by `_client_tool_result()`.
 - `stream_llm` supports both OpenAI and Anthropic protocols via `AsyncOpenAI`/`AsyncAnthropic`
-- Tool calling: LLM can invoke `generate_report` → creates artifact job
 - Compression: triggered when message count > 30; keeps sliding window of 20; summarizes older messages via `_call_llm` in `asyncio.to_thread`; LLM prompt instructs preservation of `[title @ Ts-Ts]` RAG citations
 - Summary injected into system prompt on subsequent requests
 
@@ -194,7 +191,7 @@ v0: `BilibiliAdapter` — single video. Cookie-based auth in config.
   "transcription": { "engine": "faster-whisper", "model_size": "large-v3", "device": "cuda|cpu", "language": "auto" },
   "vision": { "enabled": false, "frame_sample_rate": 30, "model": null },
   "backend": { "port": 8765, "worker_concurrency": 1 },
-  "rag": { "max_distance": 0.8, "hybrid_enabled": true, "reranking_enabled": true, "query_routing_enabled": true, "rerank_min_score": null }
+  "rag": { "max_distance": 0.8, "hybrid_enabled": true, "reranking_enabled": true, "rerank_min_score": null }
 }
 ```
 Reranker model is fixed to `Xenova/bge-reranker-base` (XLM-RoBERTa, Chinese + English). `rerank_min_score` default `null` — calibrated empirically in #220 (MRR 0.559 vs 0.472/0.466 at -2.0 and 0.0); see `docs/internal/rag_tuning.md`.

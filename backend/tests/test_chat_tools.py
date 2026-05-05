@@ -56,7 +56,10 @@ class TestExecuteTool:
 
     @pytest.mark.asyncio
     async def test_execute_tool_dispatches_to_generate_report(self, tmp_bibilab_home):
+        from bibilab.config import AIConfig, BibilabConfig
         from bibilab.pipeline.chat_tools import execute_tool
+
+        cfg = BibilabConfig(ai=AIConfig(protocol="openai", model="test", api_key="test", base_url=""))
 
         with patch("bibilab.pipeline.chat_tools.execute_generate_report", new_callable=AsyncMock) as mock_exec:
             mock_exec.return_value = {"artifact_id": "a1", "name": "brief", "type": "brief"}
@@ -67,6 +70,7 @@ class TestExecuteTool:
                 list_id="list-1",
                 source_ids=["s1"],
                 ui_lang="en",
+                cfg=cfg,
             )
 
             mock_exec.assert_called_once_with(
@@ -80,7 +84,10 @@ class TestExecuteTool:
 
     @pytest.mark.asyncio
     async def test_execute_tool_unknown_raises(self, tmp_bibilab_home):
+        from bibilab.config import AIConfig, BibilabConfig
         from bibilab.pipeline.chat_tools import execute_tool
+
+        cfg = BibilabConfig(ai=AIConfig(protocol="openai", model="test", api_key="test", base_url=""))
 
         with pytest.raises(ValueError, match="Unknown tool"):
             await execute_tool(
@@ -89,4 +96,5 @@ class TestExecuteTool:
                 list_id="list-1",
                 source_ids=[],
                 ui_lang="en",
+                cfg=cfg,
             )

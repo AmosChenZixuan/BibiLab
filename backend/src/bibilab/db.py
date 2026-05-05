@@ -11,7 +11,6 @@ from typing import Any, Literal
 import aiosqlite
 
 import bibilab.config
-from bibilab.models._enums import ChatMode
 from bibilab.models.jobs import JobStatus
 
 logger = logging.getLogger(__name__)
@@ -102,7 +101,6 @@ CREATE TABLE IF NOT EXISTS conversations (
     id         TEXT PRIMARY KEY,
     list_id    TEXT NOT NULL UNIQUE REFERENCES lists(id) ON DELETE CASCADE,
     summary    TEXT,
-    mode       TEXT NOT NULL DEFAULT 'auto',
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 )
@@ -119,17 +117,6 @@ CREATE TABLE IF NOT EXISTS messages (
 )
 """
 
-_CREATE_QUERY_CLASSIFICATIONS = """
-CREATE TABLE IF NOT EXISTS query_classifications (
-    id            TEXT PRIMARY KEY,
-    list_id       TEXT NOT NULL,
-    query_text    TEXT NOT NULL,
-    query_type    TEXT NOT NULL,
-    effective_mode TEXT NOT NULL,
-    created_at    TEXT NOT NULL
-)
-"""
-
 
 async def bootstrap_db() -> None:
     async with get_db() as db:
@@ -140,8 +127,13 @@ async def bootstrap_db() -> None:
         await db.execute(_CREATE_CHUNKS_FTS)
         await db.execute(_CREATE_CONVERSATIONS)
         await db.execute(_CREATE_MESSAGES)
-        await db.execute(_CREATE_QUERY_CLASSIFICATIONS)
         await db.execute("CREATE INDEX IF NOT EXISTS idx_messages_conversation_id ON messages(conversation_id)")
+        # Migrate away from removed tables/columns (safe to run on every boot).
+        await db.execute("DROP TABLE IF EXISTS query_classifications")
+        try:
+            await db.execute("ALTER TABLE conversations DROP COLUMN mode")
+        except aiosqlite.OperationalError:
+            pass  # column already dropped, or SQLite < 3.35 doesn't support DROP COLUMN
         await db.execute("PRAGMA journal_mode=WAL")
         await db.commit()
 
@@ -613,7 +605,7 @@ async def create_conversation(list_id: str) -> str:
 async def get_conversation_by_list(list_id: str) -> aiosqlite.Row | None:
     async with get_db() as db:
         cursor = await db.execute(
-            "SELECT id, list_id, summary, mode, created_at, updated_at FROM conversations WHERE list_id=?",
+            "SELECT id, list_id, summary, created_at, updated_at FROM conversations WHERE list_id=?",
             (list_id,),
         )
         return await cursor.fetchone()
@@ -778,20 +770,10 @@ async def compress_conversation(
 async def get_conversation(conversation_id: str) -> aiosqlite.Row | None:
     async with get_db() as db:
         cursor = await db.execute(
-            "SELECT id, list_id, summary, mode, created_at, updated_at FROM conversations WHERE id=?",
+            "SELECT id, list_id, summary, created_at, updated_at FROM conversations WHERE id=?",
             (conversation_id,),
         )
         return await cursor.fetchone()
-
-
-async def update_conversation_mode(conversation_id: str, mode: ChatMode) -> None:
-    now = _now()
-    async with get_db() as db:
-        await db.execute(
-            "UPDATE conversations SET mode=?, updated_at=? WHERE id=?",
-            (mode, now, conversation_id),
-        )
-        await db.commit()
 
 
 async def delete_conversation(conversation_id: str) -> None:
@@ -857,20 +839,3 @@ async def query_fts_rows(
         except aiosqlite.OperationalError as exc:
             logger.warning("FTS5 MATCH query failed (%s); returning empty results", exc)
             return []
-
-
-async def log_query_classification(
-    list_id: str,
-    query_text: str,
-    query_type: str,
-    effective_mode: str,
-) -> None:
-    async with get_db() as db:
-        await db.execute(
-            """
-            INSERT INTO query_classifications (id, list_id, query_text, query_type, effective_mode, created_at)
-            VALUES (?, ?, ?, ?, ?, ?)
-            """,
-            (str(uuid.uuid4()), list_id, query_text, query_type, effective_mode, _now()),
-        )
-        await db.commit()

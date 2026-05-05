@@ -56,12 +56,12 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-describe("Slice 2 — RAG observability via SSE rag_meta", () => {
-  test("rag_meta event attaches rag to in-progress message", async () => {
+describe("Slice 2 — RAG observability via SSE tool_result", () => {
+  test("retrieve tool_result event attaches rag to in-progress message", async () => {
     vi.spyOn(window, "fetch").mockImplementation(() =>
       Promise.resolve(
         makeSseStream([
-          'data: {"type":"rag_meta","rag":{"mode":"focused","candidates_evaluated":30,"sources_with_hits":1,"sources_total":1,"sources":[{"video_id":"BV1test","title":"Test Video A"}]}}\n\n',
+          'data: {"type":"tool_result","name":"retrieve","result":{"search_mode":"factual","candidates_evaluated":30,"sources_with_hits":1,"sources_total":1,"source_coverage":[{"video_id":"BV1test","title":"Test Video A"}]}}\n\n',
           'data: {"type":"delta","content":"Hello"}\n\n',
           'data: {"type":"done"}\n\n',
         ]),
@@ -88,7 +88,7 @@ describe("Slice 2 — RAG observability via SSE rag_meta", () => {
     vi.spyOn(window, "fetch").mockImplementation(() =>
       Promise.resolve(
         makeSseStream([
-          'data: {"type":"rag_meta","rag":{"mode":"focused","candidates_evaluated":42,"sources_with_hits":3,"sources_total":5,"sources":[{"video_id":"v1","title":"Video A"},{"video_id":"v2","title":"Video B"},{"video_id":"v3","title":"Video C"}]}}\n\n',
+          'data: {"type":"tool_result","name":"retrieve","result":{"search_mode":"factual","candidates_evaluated":42,"sources_with_hits":3,"sources_total":5,"source_coverage":[{"video_id":"v1","title":"Video A"},{"video_id":"v2","title":"Video B"},{"video_id":"v3","title":"Video C"}]}}\n\n',
           'data: {"type":"delta","content":"Answer"}\n\n',
           'data: {"type":"done"}\n\n',
         ]),
@@ -115,7 +115,7 @@ describe("Slice 2 — RAG observability via SSE rag_meta", () => {
     vi.spyOn(window, "fetch").mockImplementation(() =>
       Promise.resolve(
         makeSseStream([
-          'data: {"type":"rag_meta","rag":{"mode":"focused","candidates_evaluated":10,"sources_with_hits":2,"sources_total":4,"sources":[{"video_id":"v1","title":"Intro Video"},{"video_id":"v2","title":"Conclusion Video"}]}}\n\n',
+          'data: {"type":"tool_result","name":"retrieve","result":{"search_mode":"factual","candidates_evaluated":10,"sources_with_hits":2,"sources_total":4,"source_coverage":[{"video_id":"v1","title":"Intro Video"},{"video_id":"v2","title":"Conclusion Video"}]}}\n\n',
           'data: {"type":"delta","content":"Done"}\n\n',
           'data: {"type":"done"}\n\n',
         ]),
@@ -138,7 +138,7 @@ describe("Slice 2 — RAG observability via SSE rag_meta", () => {
     await userEvent.click(chip);
 
     await waitFor(() => {
-      expect(screen.getByText(/focused/i)).toBeInTheDocument();
+      expect(screen.getByText(/factual/i)).toBeInTheDocument();
       expect(screen.getByText(/intro video/i)).toBeInTheDocument();
       expect(screen.getByText(/conclusion video/i)).toBeInTheDocument();
     });

@@ -85,7 +85,6 @@ class RagConfig(BaseModel):
     max_distance: float = 0.8
     reranking_enabled: bool = True
     hybrid_enabled: bool = True
-    query_routing_enabled: bool = True
     # Disabled by default — bge-reranker-base logits are not calibrated to a
     # fixed floor. Proper calibration pending #220 eval set.
     rerank_min_score: float | None = None
