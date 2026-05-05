@@ -260,3 +260,55 @@ async def test_stream_with_tools_max_iterations():
     error_events = [e for e in events if e.type == "error"]
     assert len(error_events) == 1
     assert "Max tool iterations" in error_events[0].content
+
+
+@pytest.mark.asyncio
+async def test_stream_with_tools_loops_back_for_query_list_metadata():
+    """A query_list_metadata tool_call must trigger a second LLM turn (loopback)."""
+    from unittest.mock import AsyncMock
+
+    from bibilab.config import AIConfig
+    from bibilab.pipeline._shared import StreamEvent, ToolCall
+    from bibilab.routers.chat import stream_with_tools
+
+    turns = []
+
+    async def fake_stream_llm(messages, cfg, tools=None, system=None, llm_max_tokens=None):
+        turns.append(list(messages))
+        if len(turns) == 1:
+            yield StreamEvent(
+                type="tool_call",
+                tool_call=ToolCall(
+                    id="t1",
+                    name="query_list_metadata",
+                    arguments={"query_type": "count"},
+                ),
+            )
+            yield StreamEvent(type="done")
+        else:
+            yield StreamEvent(type="delta", content="There are 8 videos.")
+            yield StreamEvent(type="done")
+
+    execute_tool_fn = AsyncMock(return_value={"count": 8})
+
+    cfg = AIConfig(protocol="openai", model="test", api_key="test", base_url="")
+    events = []
+
+    from unittest.mock import patch
+
+    with patch("bibilab.routers.chat.stream_llm", fake_stream_llm):
+        async for event in stream_with_tools(
+            messages=[{"role": "user", "content": "how many videos?"}],
+            cfg=cfg,
+            tools=[],
+            execute_tool_fn=execute_tool_fn,
+        ):
+            events.append(event)
+
+    # Two turns: initial + loopback.
+    assert len(turns) == 2
+    # execute_tool_fn called once with the metadata tool args.
+    execute_tool_fn.assert_awaited_once_with("query_list_metadata", {"query_type": "count"})
+    # A delta carrying the answer must have been yielded after loopback.
+    delta_text = "".join(e.content or "" for e in events if e.type == "delta")
+    assert "8" in delta_text
