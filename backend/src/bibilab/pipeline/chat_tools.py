@@ -211,4 +211,9 @@ async def execute_tool(
             source_ids=source_ids,
             ui_lang=ui_lang,
         )
+    if tool_name == "query_list_metadata":
+        return await execute_query_list_metadata(
+            source_ids=source_ids,
+            query_type=arguments["query_type"],
+        )
     raise ValueError(f"Unknown tool: {tool_name}")

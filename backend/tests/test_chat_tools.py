@@ -83,6 +83,33 @@ class TestExecuteTool:
             assert result["artifact_id"] == "a1"
 
     @pytest.mark.asyncio
+    async def test_execute_tool_dispatches_to_query_list_metadata(self, tmp_bibilab_home):
+        from unittest.mock import AsyncMock, patch
+
+        from bibilab.config import AIConfig, BibilabConfig
+        from bibilab.pipeline.chat_tools import execute_tool
+
+        cfg = BibilabConfig(ai=AIConfig(protocol="openai", model="test", api_key="test", base_url=""))
+
+        with patch(
+            "bibilab.pipeline.chat_tools.execute_query_list_metadata",
+            new_callable=AsyncMock,
+        ) as mock_exec:
+            mock_exec.return_value = {"count": 8}
+
+            result = await execute_tool(
+                tool_name="query_list_metadata",
+                arguments={"query_type": "count"},
+                list_id="list-1",
+                source_ids=["s1", "s2"],
+                ui_lang="en",
+                cfg=cfg,
+            )
+
+            mock_exec.assert_awaited_once_with(source_ids=["s1", "s2"], query_type="count")
+            assert result == {"count": 8}
+
+    @pytest.mark.asyncio
     async def test_execute_tool_unknown_raises(self, tmp_bibilab_home):
         from bibilab.config import AIConfig, BibilabConfig
         from bibilab.pipeline.chat_tools import execute_tool
