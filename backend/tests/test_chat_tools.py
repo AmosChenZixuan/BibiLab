@@ -163,7 +163,7 @@ class TestExecuteQueryListMetadata:
         assert result == {"title": "Foo", "duration_seconds": 3600}
 
     @pytest.mark.asyncio
-    async def test_longest_empty_returns_empty_dict(self, tmp_bibilab_home):
+    async def test_longest_empty_returns_title_none_duration_none(self, tmp_bibilab_home):
         from unittest.mock import AsyncMock, patch
 
         from bibilab.pipeline.chat_tools import execute_query_list_metadata
@@ -171,7 +171,7 @@ class TestExecuteQueryListMetadata:
         with patch("bibilab.pipeline.chat_tools.longest_source", new_callable=AsyncMock) as m:
             m.return_value = None
             result = await execute_query_list_metadata([], "longest")
-        assert result == {}
+        assert result == {"title": None, "duration_seconds": None}
 
     @pytest.mark.asyncio
     async def test_languages_returns_breakdown_dict(self, tmp_bibilab_home):
