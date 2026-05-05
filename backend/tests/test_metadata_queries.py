@@ -120,3 +120,65 @@ async def test_longest_source_no_matches(tmp_bibilab_home):
 
     await bootstrap_db()
     assert await longest_source(["nonexistent"]) is None
+
+
+@pytest.mark.asyncio
+async def test_language_breakdown_groups_by_language(tmp_bibilab_home):
+    from bibilab.db import language_breakdown
+
+    await bootstrap_db()
+    await _seed(
+        [
+            {"id": "s1", "language": "zh"},
+            {"id": "s2", "language": "zh"},
+            {"id": "s3", "language": "en"},
+        ]
+    )
+
+    result = await language_breakdown(["s1", "s2", "s3"])
+
+    assert result == {"zh": 2, "en": 1}
+
+
+@pytest.mark.asyncio
+async def test_language_breakdown_null_grouped_as_unknown(tmp_bibilab_home):
+    from bibilab.db import language_breakdown
+
+    await bootstrap_db()
+    await _seed(
+        [
+            {"id": "s1", "language": "zh"},
+            {"id": "s2", "language": None},
+            {"id": "s3", "language": None},
+        ]
+    )
+
+    result = await language_breakdown(["s1", "s2", "s3"])
+
+    assert result == {"zh": 1, "unknown": 2}
+
+
+@pytest.mark.asyncio
+async def test_language_breakdown_subset(tmp_bibilab_home):
+    from bibilab.db import language_breakdown
+
+    await bootstrap_db()
+    await _seed(
+        [
+            {"id": "s1", "language": "zh"},
+            {"id": "s2", "language": "en"},
+            {"id": "s3", "language": "en"},
+        ]
+    )
+
+    result = await language_breakdown(["s1", "s2"])
+
+    assert result == {"zh": 1, "en": 1}
+
+
+@pytest.mark.asyncio
+async def test_language_breakdown_empty(tmp_bibilab_home):
+    from bibilab.db import language_breakdown
+
+    await bootstrap_db()
+    assert await language_breakdown([]) == {}
