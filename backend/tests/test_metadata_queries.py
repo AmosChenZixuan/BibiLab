@@ -68,3 +68,55 @@ async def test_count_sources_empty(tmp_bibilab_home):
     )
     result = await count_sources([])
     assert result == 0
+
+
+@pytest.mark.asyncio
+async def test_longest_source_returns_max(tmp_bibilab_home):
+    from bibilab.db import longest_source
+
+    await bootstrap_db()
+    await _seed(
+        [
+            {"id": "s1", "title": "Short", "duration_seconds": 60},
+            {"id": "s2", "title": "Medium", "duration_seconds": 600},
+            {"id": "s3", "title": "Long", "duration_seconds": 3600},
+        ]
+    )
+
+    result = await longest_source(["s1", "s2", "s3"])
+
+    assert result == {"title": "Long", "duration_seconds": 3600}
+
+
+@pytest.mark.asyncio
+async def test_longest_source_subset_excludes_unselected(tmp_bibilab_home):
+    from bibilab.db import longest_source
+
+    await bootstrap_db()
+    await _seed(
+        [
+            {"id": "s1", "title": "Short", "duration_seconds": 60},
+            {"id": "s2", "title": "Medium", "duration_seconds": 600},
+            {"id": "s3", "title": "Long", "duration_seconds": 3600},
+        ]
+    )
+
+    result = await longest_source(["s1", "s2"])
+
+    assert result == {"title": "Medium", "duration_seconds": 600}
+
+
+@pytest.mark.asyncio
+async def test_longest_source_empty(tmp_bibilab_home):
+    from bibilab.db import longest_source
+
+    await bootstrap_db()
+    assert await longest_source([]) is None
+
+
+@pytest.mark.asyncio
+async def test_longest_source_no_matches(tmp_bibilab_home):
+    from bibilab.db import bootstrap_db, longest_source
+
+    await bootstrap_db()
+    assert await longest_source(["nonexistent"]) is None

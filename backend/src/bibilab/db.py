@@ -335,6 +335,23 @@ async def count_sources(source_ids: list[str]) -> int:
         return row["n"] if row else 0
 
 
+async def longest_source(source_ids: list[str]) -> dict | None:
+    if not source_ids:
+        return None
+    async with get_db() as db:
+        placeholders = _in_placeholders(source_ids)
+        cursor = await db.execute(
+            f"SELECT title, duration_seconds FROM sources "
+            f"WHERE id IN ({placeholders}) "
+            f"ORDER BY duration_seconds DESC, id ASC LIMIT 1",
+            source_ids,
+        )
+        row = await cursor.fetchone()
+        if row is None:
+            return None
+        return {"title": row["title"], "duration_seconds": row["duration_seconds"]}
+
+
 async def get_video_ids_for_sources(source_ids: list[str]) -> dict[str, str]:
     """Map source UUIDs to platform video_ids for ChromaDB filtering.
     Returns {source_id: video_id} for each source found.
