@@ -342,7 +342,7 @@ async def longest_source(source_ids: list[str]) -> dict | None:
         placeholders = _in_placeholders(source_ids)
         cursor = await db.execute(
             f"SELECT title, duration_seconds FROM sources "
-            f"WHERE id IN ({placeholders}) "
+            f"WHERE id IN ({placeholders}) AND duration_seconds IS NOT NULL "
             f"ORDER BY duration_seconds DESC, id ASC LIMIT 1",
             source_ids,
         )

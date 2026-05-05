@@ -123,6 +123,24 @@ async def test_longest_source_no_matches(tmp_bibilab_home):
 
 
 @pytest.mark.asyncio
+async def test_longest_source_tiebreaker_lower_id_wins(tmp_bibilab_home):
+    from bibilab.db import bootstrap_db, longest_source
+
+    await bootstrap_db()
+    await _seed(
+        [
+            {"id": "s2", "title": "Second", "duration_seconds": 600},
+            {"id": "s1", "title": "First", "duration_seconds": 600},
+        ]
+    )
+
+    result = await longest_source(["s1", "s2"])
+
+    # id ASC tiebreaker: s1 < s2, so s1 wins
+    assert result == {"title": "First", "duration_seconds": 600}
+
+
+@pytest.mark.asyncio
 async def test_language_breakdown_groups_by_language(tmp_bibilab_home):
     from bibilab.db import language_breakdown
 
