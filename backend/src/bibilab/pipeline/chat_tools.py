@@ -4,7 +4,7 @@ import logging
 import uuid
 
 from bibilab.config import BibilabConfig
-from bibilab.db import create_job
+from bibilab.db import count_sources, create_job, language_breakdown, longest_source
 from bibilab.models._enums import RetrievalParams, SearchMode
 from bibilab.pipeline._shared import ToolDefinition
 from bibilab.pipeline.embed import retrieve
@@ -94,6 +94,42 @@ RETRIEVE_TOOL = ToolDefinition(
         "required": ["query", "search_mode"],
     },
 )
+
+QUERY_LIST_METADATA_TOOL = ToolDefinition(
+    name="query_list_metadata",
+    description=(
+        "Look up structured metadata about the sources you are chatting about. "
+        "Use when the user asks about counts, durations, or languages. "
+        "Do NOT use for content questions — use retrieve for those."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "query_type": {
+                "type": "string",
+                "enum": ["count", "longest", "languages"],
+                "description": (
+                    "count = number of sources; "
+                    "longest = source with the longest duration; "
+                    "languages = count per language"
+                ),
+            },
+        },
+        "required": ["query_type"],
+    },
+)
+
+
+async def execute_query_list_metadata(source_ids: list[str], query_type: str) -> dict:
+    if query_type == "count":
+        return {"count": await count_sources(source_ids)}
+    if query_type == "longest":
+        row = await longest_source(source_ids)
+        return row if row is not None else {}
+    if query_type == "languages":
+        return {"languages": await language_breakdown(source_ids)}
+    logger.warning("Unknown query_type %r — falling back to count", query_type)
+    return {"count": await count_sources(source_ids)}
 
 
 async def execute_generate_report(
