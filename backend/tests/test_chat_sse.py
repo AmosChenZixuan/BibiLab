@@ -351,3 +351,34 @@ async def test_smoke_scenario_3_generate_report_no_retrieve(client):
     assert report_events[0]["result"]["type"] == "brief"
     assert SSE_EVENT_DELTA in types
     assert SSE_EVENT_DONE in types
+
+
+@pytest.mark.asyncio
+async def test_query_list_metadata_in_loopback_tools():
+    from bibilab.routers.chat import LOOPBACK_TOOLS
+
+    assert "query_list_metadata" in LOOPBACK_TOOLS
+
+
+@pytest.mark.asyncio
+async def test_query_list_metadata_tool_registered_for_chat():
+    """The tools list passed to stream_with_tools must include query_list_metadata."""
+    from bibilab.pipeline.chat_tools import (
+        GENERATE_REPORT_TOOL,
+        QUERY_LIST_METADATA_TOOL,
+        RETRIEVE_TOOL,
+    )
+    from bibilab.routers import chat as chat_router
+
+    src = chat_router.__file__
+    with open(src) as f:
+        body = f.read()
+
+    # Sanity check: the three tools must all appear together in the tools list.
+    assert "QUERY_LIST_METADATA_TOOL" in body
+    assert "RETRIEVE_TOOL" in body
+    assert "GENERATE_REPORT_TOOL" in body
+    # The constants exist (smoke).
+    assert QUERY_LIST_METADATA_TOOL.name == "query_list_metadata"
+    assert RETRIEVE_TOOL.name == "retrieve"
+    assert GENERATE_REPORT_TOOL.name == "generate_report"

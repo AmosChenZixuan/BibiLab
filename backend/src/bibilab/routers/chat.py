@@ -29,7 +29,12 @@ from bibilab.models.chat import (
 )
 from bibilab.pipeline._shared import StreamEvent, ToolCall, ToolDefinition, stream_llm
 from bibilab.pipeline.chat_summary import maybe_compress_conversation
-from bibilab.pipeline.chat_tools import GENERATE_REPORT_TOOL, RETRIEVE_TOOL, execute_tool
+from bibilab.pipeline.chat_tools import (
+    GENERATE_REPORT_TOOL,
+    QUERY_LIST_METADATA_TOOL,
+    RETRIEVE_TOOL,
+    execute_tool,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +50,7 @@ SSE_EVENT_TOOL_RESULT = "tool_result"
 # Sized for thinking-capable models with potentially long chat responses + tool turns.
 CHAT_MAX_TOKENS = 16384
 
-LOOPBACK_TOOLS = {"retrieve"}
+LOOPBACK_TOOLS = {"retrieve", "query_list_metadata"}
 MAX_TOOL_ITERATIONS = 3
 
 
@@ -264,7 +269,7 @@ async def chat_endpoint(
                 cfg=cfg,
             )
 
-        tools = [RETRIEVE_TOOL, GENERATE_REPORT_TOOL]
+        tools = [RETRIEVE_TOOL, QUERY_LIST_METADATA_TOOL, GENERATE_REPORT_TOOL]
 
         try:
             async for event in stream_with_tools(
