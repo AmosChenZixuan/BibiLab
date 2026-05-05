@@ -26,7 +26,7 @@ models/           — Pydantic request/response models + domain errors
   chat.py           ChatRequest, MessageResponse, ConversationResponse
 pipeline/         — one file per stage
   _shared.py        sync _call_llm + async stream_llm (OpenAI/Anthropic), tool/stream dataclasses
-  chat_tools.py     tool definitions (retrieve + generate_report) + execution dispatcher + chunk formatting
+  chat_tools.py     tool definitions (retrieve + query_list_metadata + generate_report) + execution dispatcher + chunk formatting
   chat_summary.py   conversation compression (sliding window + LLM summary; preserves [title @ Ts-Ts] RAG citations)
   embed.py          ChromaDB embed + retrieve() (hybrid search → rerank → aggregation), FTS5 populate
   rerank.py         lazy ONNX cross-encoder reranker (Xenova/bge-reranker-base, XLM-RoBERTa zh+en; batched inference)
@@ -154,13 +154,14 @@ POST /lists/:id/chat (SSE)
   → stream_with_tools(stream_llm loop):
       LLM yields tool_call (retrieve) → execute_retrieve() → hybrid_search (BM25 + vector RRF) → rerank → _diverse_top_k
       → tool_result (with citation-formatted _chunks) fed back to LLM → second turn yields delta/done
+      LLM yields tool_call (query_list_metadata) → execute_query_list_metadata() → tool_result → fed back to LLM
       LLM yields tool_call (generate_report) → execute_generate_report() → tool_result → exit loop
       LLM yields delta + done directly (no tool) → exit loop
   → yield delta + tool_result + done events (SSE)
   → persist assistant message with rag metadata → BackgroundTask: maybe_compress_conversation
 ```
 
-- `stream_with_tools` wraps `stream_llm` in a bounded loop (max 3 iterations). Loopback tools (`retrieve`) feed results back for another LLM turn; terminal tools (`generate_report`) exit the loop.
+- `stream_with_tools` wraps `stream_llm` in a bounded loop (max 3 iterations). Loopback tools (`retrieve`, `query_list_metadata`) feed results back for another LLM turn; terminal tools (`generate_report`) exit the loop.
 - Retrieve result `_chunks` are formatted as citation-ready strings (`[title @ Ns-Ns]: "content"`) for the LLM; stripped from the client-bound `tool_result` SSE payload by `_client_tool_result()`.
 - `stream_llm` supports both OpenAI and Anthropic protocols via `AsyncOpenAI`/`AsyncAnthropic`
 - Compression: triggered when message count > 30; keeps sliding window of 20; summarizes older messages via `_call_llm` in `asyncio.to_thread`; LLM prompt instructs preservation of `[title @ Ts-Ts]` RAG citations
