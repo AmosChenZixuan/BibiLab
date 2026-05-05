@@ -29,7 +29,12 @@ from bibilab.models.chat import (
 )
 from bibilab.pipeline._shared import StreamEvent, ToolCall, ToolDefinition, stream_llm
 from bibilab.pipeline.chat_summary import maybe_compress_conversation
-from bibilab.pipeline.chat_tools import GENERATE_REPORT_TOOL, RETRIEVE_TOOL, execute_tool
+from bibilab.pipeline.chat_tools import (
+    GENERATE_REPORT_TOOL,
+    QUERY_LIST_METADATA_TOOL,
+    RETRIEVE_TOOL,
+    execute_tool,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +50,7 @@ SSE_EVENT_TOOL_RESULT = "tool_result"
 # Sized for thinking-capable models with potentially long chat responses + tool turns.
 CHAT_MAX_TOKENS = 16384
 
-LOOPBACK_TOOLS = {"retrieve"}
+LOOPBACK_TOOLS = {"retrieve", "query_list_metadata"}
 MAX_TOOL_ITERATIONS = 3
 
 
@@ -97,10 +102,12 @@ GROUNDING_SYSTEM_PROMPT = (
     "You are a helpful assistant answering questions strictly based on the provided source material. "
     "CRITICAL RULES:\n"
     "0. If the user's question requires looking up video content (facts, comparisons, "
-    "summaries, counts across sources), you MUST call the retrieve tool BEFORE answering. "
-    "Do not answer from memory — always retrieve first for content questions. "
-    "This does NOT apply when the user asks you to generate a report/artifact — "
-    "the generate_report tool handles its own retrieval.\n"
+    "summaries), you MUST call the retrieve tool BEFORE answering. "
+    "For questions about counts, durations, or languages of the sources themselves, "
+    "call query_list_metadata instead. "
+    "Do not answer from memory — always call the appropriate tool first for content "
+    "or metadata questions. This does NOT apply when the user asks you to generate a "
+    "report/artifact — the generate_report tool handles its own retrieval.\n"
     "1. ONLY use information from the source material provided below. Never use your own knowledge.\n"
     '2. If the excerpts do not contain the answer, say "The provided sources do not cover this topic."\n'
     "3. Quote or closely paraphrase the source material — do not reinterpret, editorialize, or add external context.\n"
@@ -264,7 +271,7 @@ async def chat_endpoint(
                 cfg=cfg,
             )
 
-        tools = [RETRIEVE_TOOL, GENERATE_REPORT_TOOL]
+        tools = [RETRIEVE_TOOL, QUERY_LIST_METADATA_TOOL, GENERATE_REPORT_TOOL]
 
         try:
             async for event in stream_with_tools(

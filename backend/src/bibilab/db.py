@@ -322,6 +322,51 @@ async def get_sources_for_list(list_id: str) -> list[aiosqlite.Row]:
         return await cursor.fetchall()
 
 
+async def count_sources(source_ids: list[str]) -> int:
+    if not source_ids:
+        return 0
+    async with get_db() as db:
+        placeholders = _in_placeholders(source_ids)
+        cursor = await db.execute(
+            f"SELECT COUNT(*) AS n FROM sources WHERE id IN ({placeholders})",
+            source_ids,
+        )
+        row = await cursor.fetchone()
+        return row["n"] if row else 0
+
+
+async def longest_source(source_ids: list[str]) -> dict | None:
+    if not source_ids:
+        return None
+    async with get_db() as db:
+        placeholders = _in_placeholders(source_ids)
+        cursor = await db.execute(
+            f"SELECT title, duration_seconds FROM sources "
+            f"WHERE id IN ({placeholders}) AND duration_seconds IS NOT NULL "
+            f"ORDER BY duration_seconds DESC, id ASC LIMIT 1",
+            source_ids,
+        )
+        row = await cursor.fetchone()
+        if row is None:
+            return None
+        return {"title": row["title"], "duration_seconds": row["duration_seconds"]}
+
+
+async def language_breakdown(source_ids: list[str]) -> dict[str, int]:
+    if not source_ids:
+        return {}
+    async with get_db() as db:
+        placeholders = _in_placeholders(source_ids)
+        cursor = await db.execute(
+            f"SELECT COALESCE(NULLIF(language, ''), 'unknown') AS lang, COUNT(*) AS n "
+            f"FROM sources WHERE id IN ({placeholders}) "
+            f"GROUP BY lang",
+            source_ids,
+        )
+        rows = await cursor.fetchall()
+        return {row["lang"]: row["n"] for row in rows}
+
+
 async def get_video_ids_for_sources(source_ids: list[str]) -> dict[str, str]:
     """Map source UUIDs to platform video_ids for ChromaDB filtering.
     Returns {source_id: video_id} for each source found.

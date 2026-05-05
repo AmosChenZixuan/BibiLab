@@ -351,3 +351,49 @@ async def test_smoke_scenario_3_generate_report_no_retrieve(client):
     assert report_events[0]["result"]["type"] == "brief"
     assert SSE_EVENT_DELTA in types
     assert SSE_EVENT_DONE in types
+
+
+@pytest.mark.asyncio
+async def test_query_list_metadata_in_loopback_tools():
+    from bibilab.routers.chat import LOOPBACK_TOOLS
+
+    assert "query_list_metadata" in LOOPBACK_TOOLS
+
+
+@pytest.mark.asyncio
+async def test_query_list_metadata_tool_registered_for_chat(client):
+    """Behavioral: the chat endpoint must pass QUERY_LIST_METADATA_TOOL to stream_llm."""
+    from bibilab.pipeline.chat_tools import (
+        GENERATE_REPORT_TOOL,
+        QUERY_LIST_METADATA_TOOL,
+        RETRIEVE_TOOL,
+    )
+    from bibilab.routers.chat import SSE_EVENT_DELTA, SSE_EVENT_DONE
+
+    captured_tools = None
+
+    async def fake_stream_llm(messages, cfg, tools=None, system=None, llm_max_tokens=None):
+        nonlocal captured_tools
+        captured_tools = tools
+        # Yield one delta so the loop doesn't hang waiting for done
+        yield type("StreamEvent", (), {"type": SSE_EVENT_DELTA, "content": "hi"})()
+        yield type("StreamEvent", (), {"type": SSE_EVENT_DONE})()
+
+    list_id = (await client.post("/lists", json={"name": "Test"})).json()["id"]
+
+    with patch("bibilab.routers.chat.stream_llm", fake_stream_llm):
+        resp = await client.post(f"/lists/{list_id}/chat", json={"message": "hi"})
+
+    assert resp.status_code == 200
+    assert captured_tools is not None, "stream_llm was never called"
+    tool_names = {t.name for t in captured_tools}
+    assert tool_names == {RETRIEVE_TOOL.name, QUERY_LIST_METADATA_TOOL.name, GENERATE_REPORT_TOOL.name}
+
+
+def test_grounding_prompt_routes_counts_to_metadata_tool():
+    from bibilab.routers.chat import GROUNDING_SYSTEM_PROMPT
+
+    # The old phrasing ("counts across sources" → retrieve) must be gone.
+    assert "counts across sources" not in GROUNDING_SYSTEM_PROMPT
+    # New routing must mention the metadata tool by name for the LLM.
+    assert "query_list_metadata" in GROUNDING_SYSTEM_PROMPT
