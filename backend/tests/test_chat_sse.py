@@ -382,3 +382,12 @@ async def test_query_list_metadata_tool_registered_for_chat():
     assert QUERY_LIST_METADATA_TOOL.name == "query_list_metadata"
     assert RETRIEVE_TOOL.name == "retrieve"
     assert GENERATE_REPORT_TOOL.name == "generate_report"
+
+
+def test_grounding_prompt_routes_counts_to_metadata_tool():
+    from bibilab.routers.chat import GROUNDING_SYSTEM_PROMPT
+
+    # The old phrasing ("counts across sources" → retrieve) must be gone.
+    assert "counts across sources" not in GROUNDING_SYSTEM_PROMPT
+    # New routing must mention the metadata tool by name for the LLM.
+    assert "query_list_metadata" in GROUNDING_SYSTEM_PROMPT
