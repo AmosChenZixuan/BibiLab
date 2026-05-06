@@ -36,6 +36,7 @@ from bibilab.pipeline.chat_tools import (
     CitationRegistryEntry,
     execute_tool,
 )
+from bibilab.pipeline.citation_parser import flush_buffer, parse_delta
 
 logger = logging.getLogger(__name__)
 
@@ -134,8 +135,6 @@ async def stream_with_tools(
     registry: dict[str, CitationRegistryEntry] | None = None,
     source_map: dict[str, str] | None = None,
 ) -> AsyncGenerator[StreamEvent, None]:
-    from bibilab.pipeline.citation_parser import flush_buffer, parse_delta
-
     if registry is None:
         registry = {}
     if source_map is None:
@@ -188,7 +187,6 @@ async def stream_with_tools(
         for tc in tool_calls:
             try:
                 result = await _execute_with_registry(tc.name, tc.arguments)
-                results[tc.id] = result
             except Exception as exc:
                 yield StreamEvent(type="error", content=str(exc))
                 return
@@ -202,11 +200,13 @@ async def stream_with_tools(
                     f"Sources retrieved this turn: {idx_str}. Cite only these indices.\n\n"
                     f"{headers}\n\n" + "\n".join(result.get("_chunks", []))
                 )
+                results[tc.id] = enriched
                 yield StreamEvent(
                     type="tool_result",
                     content=json.dumps({"name": tc.name, "result": _client_tool_result(tc.name, enriched)}),
                 )
             else:
+                results[tc.id] = result
                 yield StreamEvent(
                     type="tool_result",
                     content=json.dumps({"name": tc.name, "result": _client_tool_result(tc.name, result)}),
@@ -274,11 +274,10 @@ async def chat_endpoint(
     history_rows = await get_recent_messages(conversation_id, limit=100)
     history = [{"role": row["role"], "content": row["content"]} for row in history_rows]
 
+    source_rows = await get_sources_for_list(list_id)
     if request.source_ids:
         source_ids = request.source_ids
-        source_rows = await get_sources_for_list(list_id)
     else:
-        source_rows = await get_sources_for_list(list_id)
         source_ids = [row["id"] for row in source_rows]
 
     ui_lang = http_request.headers.get("X-UI-Lang", "en")
@@ -325,6 +324,7 @@ async def chat_endpoint(
                 cfg=cfg,
                 registry=registry,
                 source_map=source_map,
+                source_rows=source_rows,
             )
 
         tools = [RETRIEVE_TOOL, QUERY_LIST_METADATA_TOOL, GENERATE_REPORT_TOOL]
@@ -400,7 +400,9 @@ async def chat_endpoint(
             raw_coverage = retrieve_result.get("source_coverage", [])
             ordered_coverage = sorted(
                 raw_coverage,
-                key=lambda s: registry.get(s["source_id"], CitationRegistryEntry(index=999, source_id="")).index,
+                key=lambda s: (
+                    registry.get(s["source_id"], CitationRegistryEntry(index=len(registry) + 1, source_id="")).index
+                ),
             )
             meta["rag"] = {
                 "search_mode": retrieve_result.get("search_mode"),
@@ -414,8 +416,6 @@ async def chat_endpoint(
 
         # content = preamble (first_response_deltas) + any trailing text after last citation
         assistant_content = "".join(first_response_deltas)
-        if pending_text:
-            assistant_content += pending_text
         await create_message(
             conversation_id=conversation_id,
             role="assistant",

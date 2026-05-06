@@ -45,10 +45,6 @@ export function useConversationHistory(listId: string | undefined, hasSources: b
 
           if (m.metadata?.content_blocks) {
             contentBlocks = m.metadata.content_blocks as ContentBlock[];
-            displayContent = contentBlocks
-              .filter((b): b is { type: "text"; text: string } => b.type === "text")
-              .map((b) => b.text)
-              .join("");
           } else {
             const stripped = stripLegacyTokens(m.content);
             contentBlocks = [{ type: "text", text: stripped }];
@@ -64,7 +60,7 @@ export function useConversationHistory(listId: string | undefined, hasSources: b
           return {
             id: m.id,
             role: m.role as "user" | "assistant",
-            content: displayContent,
+            content: displayContent ?? "",
             isStreaming: false,
             contentBlocks,
             toolCall,

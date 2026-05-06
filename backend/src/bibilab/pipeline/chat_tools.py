@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 class CitationRegistryEntry:
     index: int
     source_id: str
+    title: str = ""
     chunk_ids: set[str] = field(default_factory=set)
 
 
@@ -26,10 +27,10 @@ def _format_chunk_for_llm(chunk: dict, index: int) -> str:
     return f'[{index} @ {ts_start}s-{ts_end}s]: "{chunk["content"]}"'
 
 
-def _build_source_headers(registry: dict[str, CitationRegistryEntry], titles: dict[str, str]) -> str:
+def _build_source_headers(registry: dict[str, CitationRegistryEntry]) -> str:
     lines = []
     for entry in sorted(registry.values(), key=lambda e: e.index):
-        title = titles.get(entry.source_id, "Unknown")
+        title = entry.title or "Unknown"
         lines.append(f'Source [{entry.index}]: "{title}"')
     return "\n".join(lines)
 
@@ -181,11 +182,17 @@ async def execute_retrieve(
     cfg: BibilabConfig,
     registry: dict[str, CitationRegistryEntry] | None = None,
     source_map: dict[str, str] | None = None,
+    source_rows: list[dict] | None = None,
 ) -> dict:
     if registry is None:
         registry = {}
     if source_map is None:
         source_map = {}
+    if source_rows is None:
+        source_rows = []
+
+    # Build source_id → title map for title caching on registry entries
+    id_to_title: dict[str, str] = {row["id"]: row["title"] for row in source_rows}
 
     params = search_mode_to_params(search_mode, len(source_ids))
     result = await retrieve(query_text=query, source_ids=source_ids, cfg=cfg, params=params)
@@ -197,7 +204,11 @@ async def execute_retrieve(
         if sid is None:
             continue
         if sid not in registry:
-            registry[sid] = CitationRegistryEntry(index=next_index, source_id=sid)
+            registry[sid] = CitationRegistryEntry(
+                index=next_index,
+                source_id=sid,
+                title=id_to_title.get(sid, s.video_title),
+            )
             next_index += 1
 
     # Accumulate chunk_ids per source (synthetic key: video_id_start_end)
@@ -237,10 +248,7 @@ async def execute_retrieve(
             )
             for c in result.chunks
         ],
-        "_source_headers": _build_source_headers(
-            registry,
-            {source_map.get(s.video_id, ""): s.video_title for s in result.source_coverage},
-        ),
+        "_source_headers": _build_source_headers(registry),
         "_turn_indices": turn_indices,
     }
 
@@ -254,6 +262,7 @@ async def execute_tool(
     cfg: BibilabConfig,
     registry: dict[str, CitationRegistryEntry] | None = None,
     source_map: dict[str, str] | None = None,
+    source_rows: list[dict] | None = None,
 ) -> dict:
     if tool_name == "retrieve":
         return await execute_retrieve(
@@ -263,6 +272,7 @@ async def execute_tool(
             cfg=cfg,
             registry=registry,
             source_map=source_map,
+            source_rows=source_rows,
         )
     if tool_name == "generate_report":
         artifact_type = arguments.get("type")
