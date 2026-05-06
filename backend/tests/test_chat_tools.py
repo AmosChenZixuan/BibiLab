@@ -198,3 +198,43 @@ class TestExecuteQueryListMetadata:
 
         assert result == {"count": 4}
         assert "Unknown query_type" in caplog.text
+
+
+class TestFormatChunkForLLM:
+    def test_format_with_index(self):
+        from bibilab.pipeline.chat_tools import _format_chunk_for_llm
+
+        result = _format_chunk_for_llm(
+            {"title": "V", "start": 120.0, "end": 145.0, "content": "hi"},
+            index=3,
+        )
+        assert result == '[3 @ 120s-145s]: "hi"'
+
+    def test_truncates_floats(self):
+        from bibilab.pipeline.chat_tools import _format_chunk_for_llm
+
+        result = _format_chunk_for_llm(
+            {"title": "V", "start": 10.9, "end": 20.1, "content": "x"},
+            index=1,
+        )
+        assert result == '[1 @ 10s-20s]: "x"'
+
+
+class TestBuildSourceHeaders:
+    def test_single(self):
+        from bibilab.pipeline.chat_tools import CitationRegistryEntry, _build_source_headers
+
+        r = {"s1": CitationRegistryEntry(index=1, source_id="s1")}
+        assert _build_source_headers(r, {"s1": "My Video"}) == 'Source [1]: "My Video"'
+
+    def test_sorted_by_index(self):
+        from bibilab.pipeline.chat_tools import CitationRegistryEntry, _build_source_headers
+
+        r = {
+            "sb": CitationRegistryEntry(index=2, source_id="sb"),
+            "sa": CitationRegistryEntry(index=1, source_id="sa"),
+        }
+        result = _build_source_headers(r, {"sa": "A", "sb": "B"})
+        lines = result.split("\n")
+        assert lines[0] == 'Source [1]: "A"'
+        assert lines[1] == 'Source [2]: "B"'
