@@ -179,21 +179,69 @@ async def execute_retrieve(
     search_mode: SearchMode,
     source_ids: list[str],
     cfg: BibilabConfig,
+    registry: dict[str, CitationRegistryEntry] | None = None,
+    source_map: dict[str, str] | None = None,
 ) -> dict:
+    if registry is None:
+        registry = {}
+    if source_map is None:
+        source_map = {}
+
     params = search_mode_to_params(search_mode, len(source_ids))
     result = await retrieve(query_text=query, source_ids=source_ids, cfg=cfg, params=params)
+
+    # Assign indices: new sources get next available index
+    next_index = max((e.index for e in registry.values()), default=0) + 1
+    for s in result.source_coverage:
+        sid = source_map.get(s.video_id)
+        if sid is None:
+            continue
+        if sid not in registry:
+            registry[sid] = CitationRegistryEntry(index=next_index, source_id=sid)
+            next_index += 1
+
+    # Accumulate chunk_ids per source (synthetic key: video_id_start_end)
+    for c in result.chunks:
+        sid = source_map.get(c.video_id)
+        if sid and sid in registry:
+            cid = f"{c.video_id}_{int(c.timestamp_start)}_{int(c.timestamp_end)}"
+            registry[sid].chunk_ids.add(cid)
+
+    # Build video_id → registry index lookup for chunk formatting
+    video_id_to_index: dict[str, int] = {}
+    for s in result.source_coverage:
+        sid = source_map.get(s.video_id)
+        if sid and sid in registry:
+            video_id_to_index[s.video_id] = registry[sid].index
+
+    # Collect indices actually retrieved this turn (for the enumeration line)
+    turn_indices = sorted(set(video_id_to_index.values()))
+
     return {
         "search_mode": search_mode,
         "candidates_evaluated": result.candidates_evaluated,
         "sources_with_hits": result.sources_with_hits,
         "sources_total": result.sources_total,
-        "source_coverage": [{"video_id": s.video_id, "title": s.video_title} for s in result.source_coverage],
+        "source_coverage": [
+            {
+                "source_id": source_map.get(s.video_id, ""),
+                "video_id": s.video_id,
+                "title": s.video_title,
+            }
+            for s in result.source_coverage
+        ],
         "_chunks": [
             _format_chunk_for_llm(
-                {"title": c.video_title, "start": c.timestamp_start, "end": c.timestamp_end, "content": c.content}
+                {"Title": c.video_title, "start": c.timestamp_start, "end": c.timestamp_end, "content": c.content},
+                index=video_id_to_index.get(c.video_id, 0),
             )
             for c in result.chunks
         ],
+        "_source_headers": _build_source_headers(
+            registry,
+            {source_map.get(s.video_id, ""): s.video_title for s in result.source_coverage},
+        ),
+        "_turn_indices": turn_indices,
     }
 
 
@@ -204,6 +252,8 @@ async def execute_tool(
     source_ids: list[str],
     ui_lang: str,
     cfg: BibilabConfig,
+    registry: dict[str, CitationRegistryEntry] | None = None,
+    source_map: dict[str, str] | None = None,
 ) -> dict:
     if tool_name == "retrieve":
         return await execute_retrieve(
@@ -211,6 +261,8 @@ async def execute_tool(
             search_mode=arguments["search_mode"],
             source_ids=source_ids,
             cfg=cfg,
+            registry=registry,
+            source_map=source_map,
         )
     if tool_name == "generate_report":
         artifact_type = arguments.get("type")
