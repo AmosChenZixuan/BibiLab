@@ -25,18 +25,57 @@ import { api } from "@/lib/api";
 import {
   autoResize,
   formatSubtitle,
+  type ContentBlock,
 } from "@/lib/chat-utils";
+
+function CitationChip({
+  index,
+  sourceId,
+  chunkIds,
+  sources,
+  onOpenSource,
+}: {
+  index: number;
+  sourceId: string;
+  chunkIds: string[];
+  sources: Source[];
+  onOpenSource?: (source: Source, opts?: { highlightChunks?: string[] }) => void;
+}) {
+  const { t } = useLanguage();
+  const source = sources.find((s) => s.id === sourceId);
+  if (!source) {
+    return (
+      <span className="cite-missing" title={t("chat.citationMissing")}>
+        [{index}]
+      </span>
+    );
+  }
+  return (
+    <span className="cite-chip-wrap">
+      <button
+        type="button"
+        className="cite-chip"
+        onClick={() => onOpenSource?.(source, { highlightChunks: chunkIds })}
+      >
+        [{index}]
+      </button>
+      <span className="cite-chip-tooltip">{source.title}</span>
+    </span>
+  );
+}
 
 interface ChatPanelProps {
   selectedSourceIds: string[];
   sources: Source[];
   listId: string;
+  onOpenSource?: (source: Source, opts?: { highlightChunks?: string[] }) => void;
 }
 
 export function ChatPanel({
   selectedSourceIds,
   sources,
   listId,
+  onOpenSource,
 }: ChatPanelProps) {
   const { t } = useLanguage();
   const { trackJobs } = useJobActivity();
@@ -211,18 +250,29 @@ export function ChatPanel({
                   <>
                     {msg.isStreaming && !msg.content ? (
                       <PulseRing />
+                    ) : msg.contentBlocks.length > 0 ? (
+                      <div className="bubble bubble-assistant">
+                        {msg.contentBlocks.map((block, i) =>
+                          block.type === "text" ? (
+                            <ReactMarkdown key={i}>{block.text}</ReactMarkdown>
+                          ) : (
+                            <CitationChip
+                              key={i}
+                              index={block.index}
+                              sourceId={block.source_id}
+                              chunkIds={block.chunk_ids}
+                              sources={sources}
+                              onOpenSource={onOpenSource}
+                            />
+                          ),
+                        )}
+                        {msg.isStreaming && <span className="chat-cursor" />}
+                      </div>
                     ) : msg.content ? (
                       <div className="bubble bubble-assistant">
                         <ReactMarkdown>{msg.content}</ReactMarkdown>
-                        {msg.isStreaming && <span className="chat-cursor" />}
                       </div>
                     ) : null}
-                    {/* TODO(#241): citations section - to be updated in Task 12 with CitationChip */}
-                    {(msg.contentBlocks as Array<{ type: string }>).filter(b => b.type === "citation").length > 0 && (
-                      <div className="cites">
-                        {/* citations will be rendered by block renderer in Task 12 */}
-                      </div>
-                    )}
                     {msg.rag && <ObsChip rag={msg.rag} />}
                     {msg.toolCall && (
                       <div className="toolcall">
