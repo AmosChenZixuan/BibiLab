@@ -232,7 +232,7 @@ async def execute_retrieve(
         ],
         "_chunks": [
             _format_chunk_for_llm(
-                {"Title": c.video_title, "start": c.timestamp_start, "end": c.timestamp_end, "content": c.content},
+                {"start": c.timestamp_start, "end": c.timestamp_end, "content": c.content},
                 index=video_id_to_index.get(c.video_id, 0),
             )
             for c in result.chunks

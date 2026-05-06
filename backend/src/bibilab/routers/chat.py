@@ -100,13 +100,6 @@ def _client_tool_result(name: str, result: dict) -> dict:
     return result
 
 
-def _flush_pending(pending_text: str, content_blocks: list[dict]) -> str:
-    """Append pending text as a content block and return the emptied string."""
-    if pending_text:
-        content_blocks.append({"type": "text", "text": pending_text})
-    return ""
-
-
 GROUNDING_SYSTEM_PROMPT = (
     "You are a helpful assistant answering questions strictly based on the provided source material. "
     "CRITICAL RULES:\n"
@@ -141,7 +134,6 @@ async def stream_with_tools(
     registry: dict[str, CitationRegistryEntry] | None = None,
     source_map: dict[str, str] | None = None,
 ) -> AsyncGenerator[StreamEvent, None]:
-    from bibilab.pipeline.chat_tools import CitationRegistryEntry
     from bibilab.pipeline.citation_parser import flush_buffer, parse_delta
 
     if registry is None:
@@ -173,6 +165,8 @@ async def stream_with_tools(
                     if pe.type == "citation":
                         citation_emitted = True
                     yield pe
+            elif event.type == "done" and tool_calls:
+                pass  # Suppress: event_generator yields done after the async loop
             else:
                 yield event
 
@@ -303,20 +297,13 @@ async def chat_endpoint(
     registry: dict[str, CitationRegistryEntry] = {}
 
     first_response_deltas: list[str] = []
-    tool_calls: list = []
     retrieve_result: dict | None = None
     generate_report_result: dict | None = None
     content_blocks: list[dict] = []
     pending_text = ""
 
     async def event_generator():
-        nonlocal \
-            first_response_deltas, \
-            tool_calls, \
-            retrieve_result, \
-            generate_report_result, \
-            content_blocks, \
-            pending_text
+        nonlocal first_response_deltas, retrieve_result, generate_report_result, content_blocks, pending_text
 
         system_parts = [GROUNDING_SYSTEM_PROMPT]
         if existing_summary:
@@ -328,7 +315,7 @@ async def chat_endpoint(
 
         messages_for_llm = history + [{"role": "user", "content": request.message}]
 
-        async def execute_tool_bound(name: str, args: dict, **kwargs) -> dict:
+        async def execute_tool_bound(name: str, args: dict) -> dict:
             return await execute_tool(
                 tool_name=name,
                 arguments=args,
@@ -336,8 +323,8 @@ async def chat_endpoint(
                 source_ids=source_ids,
                 ui_lang=ui_lang,
                 cfg=cfg,
-                registry=kwargs.get("registry", registry),
-                source_map=kwargs.get("source_map", source_map),
+                registry=registry,
+                source_map=source_map,
             )
 
         tools = [RETRIEVE_TOOL, QUERY_LIST_METADATA_TOOL, GENERATE_REPORT_TOOL]
@@ -372,12 +359,6 @@ async def chat_endpoint(
                         }
                     )
                     yield f"data: {json.dumps({'type': SSE_EVENT_CITATION, **data})}\n\n"
-                elif event.type == "tool_call":
-                    # Collect tool_calls locally to gate the done-event suppression
-                    # and metadata persistence below. stream_with_tools has its own
-                    # per-iteration list that drives the loopback decision — the two
-                    # lists are intentionally independent.
-                    tool_calls.append(event.tool_call)
                 elif event.type == "tool_result":
                     parsed = json.loads(event.content)
                     if parsed["name"] == "retrieve":
@@ -389,9 +370,6 @@ async def chat_endpoint(
                     elif parsed["name"] == "generate_report":
                         generate_report_result = parsed["result"]
                     yield f"data: {json.dumps({'type': SSE_EVENT_TOOL_RESULT, **parsed})}\n\n"
-                elif event.type == SSE_EVENT_DONE:
-                    if not tool_calls:
-                        yield f"data: {json.dumps({'type': SSE_EVENT_DONE})}\n\n"
                 elif event.type == "error":
                     logger.error("stream_with_tools error: %s", event.content)
                     await delete_messages_by_ids([user_msg_id])
@@ -403,39 +381,16 @@ async def chat_endpoint(
             yield f"data: {json.dumps({'type': SSE_EVENT_ERROR, 'message': 'An internal error occurred'})}\n\n"
             return
 
-        if not tool_calls:
-            pending_text = _flush_pending(pending_text, content_blocks)
-
-            full_response = "".join(first_response_deltas)
-            meta: dict[str, Any] = {}
-            if content_blocks:
-                meta["content_blocks"] = content_blocks
-            if retrieve_result:
-                meta["rag"] = {
-                    "search_mode": retrieve_result.get("search_mode"),
-                    "candidates_evaluated": retrieve_result.get("candidates_evaluated"),
-                    "sources_with_hits": retrieve_result.get("sources_with_hits"),
-                    "sources_total": retrieve_result.get("sources_total"),
-                    "source_coverage": retrieve_result.get("source_coverage"),
-                }
-
-            await create_message(
-                conversation_id=conversation_id,
-                role="assistant",
-                content=full_response,
-                metadata=meta if meta else None,
-            )
-            return
-
-        # Persist tool call metadata (results already collected during stream).
-        # generate_report includes its result so the frontend can rehydrate
-        # artifact links from history without a live SSE tool_result event.
+        # Persist message after stream completes. Single path for both no-tool and tool flows.
+        # generate_report result is included so frontend can rehydrate artifact links from history.
         tool_call_meta: list[dict] = []
-        for tc in tool_calls:
-            entry: dict[str, Any] = {"id": tc.id, "name": tc.name}
-            if tc.name == "generate_report" and generate_report_result:
-                entry["result"] = generate_report_result
-            tool_call_meta.append(entry)
+        if generate_report_result is not None:
+            tool_call_meta = [{"name": "generate_report", "result": generate_report_result}]
+
+        # Flush trailing text into content_blocks before persisting
+        if pending_text:
+            content_blocks.append({"type": "text", "text": pending_text})
+            pending_text = ""
 
         meta: dict[str, Any] = {}
         if tool_call_meta:
@@ -454,15 +409,13 @@ async def chat_endpoint(
                 "sources_total": retrieve_result.get("sources_total"),
                 "source_coverage": ordered_coverage,
             }
-
-        # Flush trailing text into content_blocks
-        pending_text = _flush_pending(pending_text, content_blocks)
         if content_blocks:
             meta["content_blocks"] = content_blocks
 
-        # Persist any preamble + post-loopback deltas alongside tool metadata
-        # so the full response survives history reload (not just live SSE).
-        assistant_content = "".join(first_response_deltas) if first_response_deltas else ""
+        # content = preamble (first_response_deltas) + any trailing text after last citation
+        assistant_content = "".join(first_response_deltas)
+        if pending_text:
+            assistant_content += pending_text
         await create_message(
             conversation_id=conversation_id,
             role="assistant",
