@@ -175,7 +175,7 @@ export function useSSEStream({
         } else if (event.type === SSE_EVENT_CITATION) {
           flushText();
           const citation = event as unknown as CitationEvent;
-          accBlocks.push({ type: "citation", ...citation });
+          accBlocks.push(citation);
           updateAssistantMsg(assistantMsgId, { contentBlocks: [...accBlocks] });
         } else if (event.type === SSE_EVENT_DONE) {
           flushText();

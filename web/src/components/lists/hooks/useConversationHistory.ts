@@ -41,7 +41,7 @@ export function useConversationHistory(listId: string | undefined, hasSources: b
         if (!data.messages?.length) return;
         const loaded: MessageUI[] = data.messages.map((m) => {
           let contentBlocks: ContentBlock[];
-          let displayContent: string;
+          let displayContent = "";
 
           if (m.metadata?.content_blocks) {
             contentBlocks = m.metadata.content_blocks as ContentBlock[];
