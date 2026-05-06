@@ -2,7 +2,7 @@
 
 import logging
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from bibilab.config import BibilabConfig
 from bibilab.db import count_sources, create_job, language_breakdown, longest_source
@@ -18,7 +18,6 @@ class CitationRegistryEntry:
     index: int
     source_id: str
     title: str = ""
-    chunk_ids: set[str] = field(default_factory=set)
 
 
 def _format_chunk_for_llm(chunk: dict, index: int) -> str:
@@ -211,13 +210,6 @@ async def execute_retrieve(
             )
             next_index += 1
 
-    # Accumulate chunk_ids per source (synthetic key: video_id_start_end)
-    for c in result.chunks:
-        sid = source_map.get(c.video_id)
-        if sid and sid in registry:
-            cid = f"{c.video_id}_{int(c.timestamp_start)}_{int(c.timestamp_end)}"
-            registry[sid].chunk_ids.add(cid)
-
     # Build video_id → registry index lookup for chunk formatting
     video_id_to_index: dict[str, int] = {}
     for s in result.source_coverage:
@@ -244,9 +236,10 @@ async def execute_retrieve(
         "_chunks": [
             _format_chunk_for_llm(
                 {"start": c.timestamp_start, "end": c.timestamp_end, "content": c.content},
-                index=video_id_to_index.get(c.video_id, 0),
+                index=video_id_to_index[c.video_id],
             )
             for c in result.chunks
+            if c.video_id in video_id_to_index
         ],
         "_source_headers": _build_source_headers(registry),
         "_turn_indices": turn_indices,

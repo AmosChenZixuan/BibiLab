@@ -84,8 +84,7 @@ export function ListDetailPage() {
     };
   }, []);
 
-  function handleOpenSource(source: Source, _opts?: { highlightChunks?: string[] }) {
-    // V1: highlightChunks accepted but unused — V2 will scroll + highlight
+  function handleOpenSource(source: Source) {
     currentSourceIdRef.current = source.id;
     setDetailSource(source);
     setSourceContent(null);
