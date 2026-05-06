@@ -268,7 +268,8 @@
       "broad": {
         "description": "宽泛模式从每个来源中检索一个相关块，最大化跨视频的覆盖范围。"
       }
-    }
+    },
+    "citationMissing": "来源已不在列表中"
   },
   "common": {
     "cancel": "取消",

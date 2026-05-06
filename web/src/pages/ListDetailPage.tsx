@@ -84,7 +84,8 @@ export function ListDetailPage() {
     };
   }, []);
 
-  function handleOpenSource(source: Source) {
+  function handleOpenSource(source: Source, _opts?: { highlightChunks?: string[] }) {
+    // V1: highlightChunks accepted but unused — V2 will scroll + highlight
     currentSourceIdRef.current = source.id;
     setDetailSource(source);
     setSourceContent(null);
@@ -185,6 +186,7 @@ export function ListDetailPage() {
             selectedSourceIds={selectedSourceIds}
             sources={sources}
             listId={listId}
+            onOpenSource={handleOpenSource}
           />
         </div>
 
