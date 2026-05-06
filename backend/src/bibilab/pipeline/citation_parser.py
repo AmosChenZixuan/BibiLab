@@ -20,7 +20,7 @@ def parse_delta(
     """Process a text delta through the citation parser.
 
     Returns (events, new_buffer). Events are stripped-text deltas and/or
-    citation events with {index, source_id, chunk_ids} payloads.
+    citation events with {index, source_id} payloads.
     """
     buffer += delta
     events: list[StreamEvent] = []
@@ -42,7 +42,6 @@ def parse_delta(
                         {
                             "index": n,
                             "source_id": entry.source_id,
-                            "chunk_ids": sorted(entry.chunk_ids),
                         }
                     ),
                 )

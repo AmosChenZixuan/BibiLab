@@ -52,6 +52,7 @@ async def maybe_compress_conversation(
             "Compress the above messages and merge them with the existing summary. "
             f"Produce a concise summary (ideally under {SUMMARY_TARGET_TOKENS} tokens) that preserves key facts, "
             "decisions, user preferences, and topics discussed. "
+            # Legacy migration: old messages may contain [title @ Ts-Ts] tokens.
             "PRESERVE ALL [title @ Ts-Ts] citations in the conversation — do not remove or rewrite them. "
             "Return only the updated summary text, no preamble or explanation."
         )
@@ -59,6 +60,7 @@ async def maybe_compress_conversation(
         compression_prompt = (
             "Compress the following conversation history into a concise summary. "
             "Preserve key facts, decisions, user preferences, and topics discussed. "
+            # Legacy migration: old messages may contain [title @ Ts-Ts] tokens.
             "PRESERVE ALL [title @ Ts-Ts] citations in the conversation — do not remove or rewrite them. "
             f"Target length: under {SUMMARY_TARGET_TOKENS} tokens. "
             f"Return only the summary text, no preamble or explanation.\n\n"

@@ -88,6 +88,62 @@ afterEach(() => {
 });
 
 describe("chat panel", () => {
+  test("citation chip renders cite-missing for unknown source", async () => {
+    // Mock conversation with a citation block for a source not in the list
+    vi.spyOn(window, "fetch").mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : (input as Request).url;
+      const method = init?.method ?? "GET";
+      if (url.includes("/conversation") && method === "GET") {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              conversation: { id: "conv-1", list_id: "list-1" },
+              messages: [
+                {
+                  id: "msg-1",
+                  role: "assistant",
+                  content: "",
+                  created_at: "2026-04-08T12:00:00Z",
+                  metadata: {
+                    content_blocks: [
+                      { type: "citation", index: 1, source_id: "deleted-source" },
+                    ],
+                  },
+                },
+              ],
+            }),
+          ),
+        );
+      }
+      if (url.includes("/chat") && method === "POST") {
+        return Promise.resolve(
+          new Response(
+            new ReadableStream({
+              start(c) {
+                c.enqueue(new TextEncoder().encode('data: {"type":"done"}\n\n'));
+                c.close();
+              },
+            }),
+            { headers: { "Content-Type": "text/event-stream" } },
+          ),
+        );
+      }
+      return Promise.resolve(new Response(JSON.stringify([])));
+    });
+
+    renderChatPanel(
+      { selectedSourceIds: ["src-1"], sources: [SOURCE_1] },
+      { skipMock: true },
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("[1]")).toBeInTheDocument();
+    });
+    // cite-missing span renders [1] with the i18n tooltip
+    const chip = screen.getByText("[1]");
+    expect(chip.className).toContain("cite-missing");
+  });
+
   test("shows 'Nothing selected' empty state when no sources selected", () => {
     renderChatPanel({ selectedSourceIds: [], sources: [] });
 

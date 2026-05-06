@@ -353,10 +353,3 @@ async def test_get_messages_beyond_window_returns_older_messages(tmp_bibilab_hom
     assert "msg-06" in beyond_ids
     assert "msg-07" not in beyond_ids
     assert "msg-11" not in beyond_ids
-
-
-class TestNoCitationPreservation:
-    def test_constant_removed(self):
-        import bibilab.pipeline.chat_summary as cs
-
-        assert not hasattr(cs, "CITATION_PRESERVATION_INSTRUCTION")

@@ -13,6 +13,8 @@ import {
 } from "@/lib/constants";
 import { LANG_STORAGE_KEY } from "@/lib/utils";
 
+type CitationEvent = { type: "citation"; index: number; source_id: string };
+
 interface UseSSEStreamOptions {
   listId: string;
   selectedSourceIds: string[];
@@ -172,8 +174,8 @@ export function useSSEStream({
           }
         } else if (event.type === SSE_EVENT_CITATION) {
           flushText();
-          const citation = event as unknown as { index: number; source_id: string; chunk_ids: string[] };
-          accBlocks.push({ type: "citation", ...citation });
+          const citation = event as unknown as CitationEvent;
+          accBlocks.push(citation);
           updateAssistantMsg(assistantMsgId, { contentBlocks: [...accBlocks] });
         } else if (event.type === SSE_EVENT_DONE) {
           flushText();

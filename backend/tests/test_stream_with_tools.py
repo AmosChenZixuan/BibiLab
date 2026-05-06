@@ -308,7 +308,10 @@ async def test_stream_with_tools_loops_back_for_query_list_metadata():
     # Two turns: initial + loopback.
     assert len(turns) == 2
     # execute_tool_fn called once with the metadata tool args.
-    execute_tool_fn.assert_awaited_once_with("query_list_metadata", {"query_type": "count"}, registry={}, source_map={})
+    execute_tool_fn.assert_awaited_once()
+    call_args = execute_tool_fn.call_args
+    assert call_args[0][0] == "query_list_metadata"
+    assert call_args[0][1] == {"query_type": "count"}
     # A delta carrying the answer must have been yielded after loopback.
     delta_text = "".join(e.content or "" for e in events if e.type == "delta")
     assert "8" in delta_text

@@ -40,12 +40,11 @@ LLM delta stream
 3. LLM calls `retrieve` → `execute_retrieve` assigns indices, formats chunks with `[N @ Ts-Ts]`
 4. Tool result includes `Source [N]: "Title"` headers + enumeration line
 5. LLM responds with deltas containing `[N]` tokens
-6. `CitationParser` strips `[N]`, emits `citation` SSE events with `{index, source_id, chunk_ids}`
+6. `CitationParser` strips `[N]`, emits `citation` SSE events with `{index, source_id}`
 7. Frontend assembles `ContentBlock[]` from interleaved delta + citation events
 8. On stream end: `content_blocks` persisted in `metadata`, `source_coverage` ordered by registry index
 
 ## V2 follow-up
 
-- `handleOpenSource` consumes `highlightChunks` → scroll-to + highlight in `SourcesViewerMode`
 - LLM prompt extension for chunk-specific citations (`[N#M]`)
 - Hover snippet preview: lazy-load chunk text

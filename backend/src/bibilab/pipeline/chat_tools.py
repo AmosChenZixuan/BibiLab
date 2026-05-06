@@ -2,7 +2,7 @@
 
 import logging
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from bibilab.config import BibilabConfig
 from bibilab.db import count_sources, create_job, language_breakdown, longest_source
@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 class CitationRegistryEntry:
     index: int
     source_id: str
-    chunk_ids: set[str] = field(default_factory=set)
+    title: str = ""
 
 
 def _format_chunk_for_llm(chunk: dict, index: int) -> str:
@@ -26,10 +26,10 @@ def _format_chunk_for_llm(chunk: dict, index: int) -> str:
     return f'[{index} @ {ts_start}s-{ts_end}s]: "{chunk["content"]}"'
 
 
-def _build_source_headers(registry: dict[str, CitationRegistryEntry], titles: dict[str, str]) -> str:
+def _build_source_headers(registry: dict[str, CitationRegistryEntry]) -> str:
     lines = []
     for entry in sorted(registry.values(), key=lambda e: e.index):
-        title = titles.get(entry.source_id, "Unknown")
+        title = entry.title
         lines.append(f'Source [{entry.index}]: "{title}"')
     return "\n".join(lines)
 
@@ -181,11 +181,17 @@ async def execute_retrieve(
     cfg: BibilabConfig,
     registry: dict[str, CitationRegistryEntry] | None = None,
     source_map: dict[str, str] | None = None,
+    source_rows: list[dict] | None = None,
 ) -> dict:
     if registry is None:
         registry = {}
     if source_map is None:
         source_map = {}
+    if source_rows is None:
+        source_rows = []
+
+    # Build source_id → title map for title caching on registry entries
+    id_to_title: dict[str, str] = {row["id"]: row["title"] for row in source_rows}
 
     params = search_mode_to_params(search_mode, len(source_ids))
     result = await retrieve(query_text=query, source_ids=source_ids, cfg=cfg, params=params)
@@ -197,15 +203,12 @@ async def execute_retrieve(
         if sid is None:
             continue
         if sid not in registry:
-            registry[sid] = CitationRegistryEntry(index=next_index, source_id=sid)
+            registry[sid] = CitationRegistryEntry(
+                index=next_index,
+                source_id=sid,
+                title=id_to_title.get(sid, s.video_title),
+            )
             next_index += 1
-
-    # Accumulate chunk_ids per source (synthetic key: video_id_start_end)
-    for c in result.chunks:
-        sid = source_map.get(c.video_id)
-        if sid and sid in registry:
-            cid = f"{c.video_id}_{int(c.timestamp_start)}_{int(c.timestamp_end)}"
-            registry[sid].chunk_ids.add(cid)
 
     # Build video_id → registry index lookup for chunk formatting
     video_id_to_index: dict[str, int] = {}
@@ -216,6 +219,15 @@ async def execute_retrieve(
 
     # Collect indices actually retrieved this turn (for the enumeration line)
     turn_indices = sorted(set(video_id_to_index.values()))
+
+    chunks_formatted = [
+        _format_chunk_for_llm(
+            {"start": c.timestamp_start, "end": c.timestamp_end, "content": c.content},
+            index=video_id_to_index[c.video_id],
+        )
+        for c in result.chunks
+        if c.video_id in video_id_to_index
+    ]
 
     return {
         "search_mode": search_mode,
@@ -230,16 +242,10 @@ async def execute_retrieve(
             }
             for s in result.source_coverage
         ],
-        "_chunks": [
-            _format_chunk_for_llm(
-                {"Title": c.video_title, "start": c.timestamp_start, "end": c.timestamp_end, "content": c.content},
-                index=video_id_to_index.get(c.video_id, 0),
-            )
-            for c in result.chunks
-        ],
-        "_source_headers": _build_source_headers(
-            registry,
-            {source_map.get(s.video_id, ""): s.video_title for s in result.source_coverage},
+        "_chunks": (
+            f"Sources retrieved this turn: {', '.join(f'[{i}]' for i in turn_indices)}. "
+            "Cite only these indices.\n\n"
+            f"{_build_source_headers(registry)}\n\n" + "\n".join(chunks_formatted)
         ),
         "_turn_indices": turn_indices,
     }
@@ -254,6 +260,7 @@ async def execute_tool(
     cfg: BibilabConfig,
     registry: dict[str, CitationRegistryEntry] | None = None,
     source_map: dict[str, str] | None = None,
+    source_rows: list[dict] | None = None,
 ) -> dict:
     if tool_name == "retrieve":
         return await execute_retrieve(
@@ -263,6 +270,7 @@ async def execute_tool(
             cfg=cfg,
             registry=registry,
             source_map=source_map,
+            source_rows=source_rows,
         )
     if tool_name == "generate_report":
         artifact_type = arguments.get("type")

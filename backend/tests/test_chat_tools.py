@@ -224,17 +224,17 @@ class TestBuildSourceHeaders:
     def test_single(self):
         from bibilab.pipeline.chat_tools import CitationRegistryEntry, _build_source_headers
 
-        r = {"s1": CitationRegistryEntry(index=1, source_id="s1")}
-        assert _build_source_headers(r, {"s1": "My Video"}) == 'Source [1]: "My Video"'
+        r = {"s1": CitationRegistryEntry(index=1, source_id="s1", title="My Video")}
+        assert _build_source_headers(r) == 'Source [1]: "My Video"'
 
     def test_sorted_by_index(self):
         from bibilab.pipeline.chat_tools import CitationRegistryEntry, _build_source_headers
 
         r = {
-            "sb": CitationRegistryEntry(index=2, source_id="sb"),
-            "sa": CitationRegistryEntry(index=1, source_id="sa"),
+            "sb": CitationRegistryEntry(index=2, source_id="sb", title="B"),
+            "sa": CitationRegistryEntry(index=1, source_id="sa", title="A"),
         }
-        result = _build_source_headers(r, {"sa": "A", "sb": "B"})
+        result = _build_source_headers(r)
         lines = result.split("\n")
         assert lines[0] == 'Source [1]: "A"'
         assert lines[1] == 'Source [2]: "B"'

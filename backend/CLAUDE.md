@@ -27,7 +27,7 @@ models/           — Pydantic request/response models + domain errors
 pipeline/         — one file per stage
   _shared.py        sync _call_llm + async stream_llm (OpenAI/Anthropic), tool/stream dataclasses
   chat_tools.py     tool definitions (retrieve + query_list_metadata + generate_report) + execution dispatcher + chunk formatting
-  chat_summary.py   conversation compression (sliding window + LLM summary; preserves [title @ Ts-Ts] RAG citations)
+  chat_summary.py   conversation compression (sliding window + LLM summary; preserves [N] RAG citations)
   embed.py          ChromaDB embed + retrieve() (hybrid search → rerank → aggregation), FTS5 populate
   rerank.py         lazy ONNX cross-encoder reranker (Xenova/bge-reranker-base, XLM-RoBERTa zh+en; batched inference)
 adapters/         — platform-specific download + resolution (base + bilibili)
@@ -162,9 +162,9 @@ POST /lists/:id/chat (SSE)
 ```
 
 - `stream_with_tools` wraps `stream_llm` in a bounded loop (max 3 iterations). Loopback tools (`retrieve`, `query_list_metadata`) feed results back for another LLM turn; terminal tools (`generate_report`) exit the loop.
-- Retrieve result `_chunks` are formatted as citation-ready strings (`[title @ Ns-Ns]: "content"`) for the LLM; stripped from the client-bound `tool_result` SSE payload by `_client_tool_result()`.
+- Retrieve result `_chunks` are formatted as citation-ready strings (`[N]: "content"`) for the LLM; stripped from the client-bound `tool_result` SSE payload by `_client_tool_result()`.
 - `stream_llm` supports both OpenAI and Anthropic protocols via `AsyncOpenAI`/`AsyncAnthropic`
-- Compression: triggered when message count > 30; keeps sliding window of 20; summarizes older messages via `_call_llm` in `asyncio.to_thread`; LLM prompt instructs preservation of `[title @ Ts-Ts]` RAG citations
+- Compression: triggered when message count > 30; keeps sliding window of 20; summarizes older messages via `_call_llm` in `asyncio.to_thread`; LLM prompt instructs preservation of `[N]` RAG citations
 - Summary injected into system prompt on subsequent requests
 
 ## Platform Adapters
