@@ -299,7 +299,7 @@ async def chat_endpoint(
 
         messages_for_llm = history + [{"role": "user", "content": request.message}]
 
-        async def execute_tool_bound(name: str, args: dict) -> dict:
+        async def execute_tool_bound(name: str, args: dict, **kwargs) -> dict:
             return await execute_tool(
                 tool_name=name,
                 arguments=args,
@@ -307,9 +307,7 @@ async def chat_endpoint(
                 source_ids=source_ids,
                 ui_lang=ui_lang,
                 cfg=cfg,
-                registry=registry,
-                source_map=source_map,
-                source_rows=source_rows,
+                **kwargs,
             )
 
         tools = [RETRIEVE_TOOL, QUERY_LIST_METADATA_TOOL, GENERATE_REPORT_TOOL]

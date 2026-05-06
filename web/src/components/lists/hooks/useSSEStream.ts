@@ -162,8 +162,7 @@ export function useSSEStream({
           if (toolName === "retrieve") {
             const rag = event.result as unknown as RagMetadata;
             updateAssistantMsg(assistantMsgId, { rag });
-          } else {
-            // generate_report
+          } else if (toolName === "generate_report") {
             const result = event.result as ToolResult;
             if (!result) return;
             const toolCallData = { name: "generate_report", result };
