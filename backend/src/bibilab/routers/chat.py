@@ -100,6 +100,13 @@ def _client_tool_result(name: str, result: dict) -> dict:
     return result
 
 
+def _flush_pending(pending_text: str, content_blocks: list[dict]) -> str:
+    """Append pending text as a content block and return the emptied string."""
+    if pending_text:
+        content_blocks.append({"type": "text", "text": pending_text})
+    return ""
+
+
 GROUNDING_SYSTEM_PROMPT = (
     "You are a helpful assistant answering questions strictly based on the provided source material. "
     "CRITICAL RULES:\n"
@@ -156,11 +163,12 @@ async def stream_with_tools(
     while True:
         iteration += 1
         tool_calls: list[ToolCall] = []
+        lookup = _build_lookup()
         async for event in stream_llm(messages, cfg, tools, system=system, llm_max_tokens=llm_max_tokens):
             if event.type == "tool_call":
                 tool_calls.append(event.tool_call)
             elif event.type == "delta" and event.content:
-                parsed_events, parse_buffer = parse_delta(event.content, parse_buffer, _build_lookup())
+                parsed_events, parse_buffer = parse_delta(event.content, parse_buffer, lookup)
                 for pe in parsed_events:
                     if pe.type == "citation":
                         citation_emitted = True
@@ -396,8 +404,7 @@ async def chat_endpoint(
             return
 
         if not tool_calls:
-            if pending_text:
-                content_blocks.append({"type": "text", "text": pending_text})
+            pending_text = _flush_pending(pending_text, content_blocks)
 
             full_response = "".join(first_response_deltas)
             meta: dict[str, Any] = {}
@@ -447,12 +454,10 @@ async def chat_endpoint(
                 "sources_total": retrieve_result.get("sources_total"),
                 "source_coverage": ordered_coverage,
             }
-        if content_blocks:
-            meta["content_blocks"] = content_blocks
 
         # Flush trailing text into content_blocks
-        if pending_text:
-            content_blocks.append({"type": "text", "text": pending_text})
+        pending_text = _flush_pending(pending_text, content_blocks)
+        if content_blocks:
             meta["content_blocks"] = content_blocks
 
         # Persist any preamble + post-loopback deltas alongside tool metadata
