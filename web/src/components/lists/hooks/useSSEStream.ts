@@ -2,9 +2,10 @@ import { useEffect, useRef, useState } from "react";
 
 import type { JobRegistration } from "@/components/jobs/JobActivityProvider";
 import type { MessageUI } from "@/components/lists/hooks/useConversationHistory";
-import { formatTimestamp, parseCitations, type RagMetadata } from "@/lib/chat-utils";
+import { formatTimestamp, type RagMetadata, type ContentBlock } from "@/lib/chat-utils";
 import type { ToolResult } from "@/lib/chat-utils";
 import {
+  SSE_EVENT_CITATION,
   SSE_EVENT_DELTA,
   SSE_EVENT_DONE,
   SSE_EVENT_ERROR,
@@ -80,7 +81,7 @@ export function useSSEStream({
       role: "user",
       content: text,
       isStreaming: false,
-      citations: [],
+      contentBlocks: [],
       rag: null,
       toolCall: null,
       error: null,
@@ -92,7 +93,7 @@ export function useSSEStream({
       role: "assistant",
       content: "",
       isStreaming: true,
-      citations: [],
+      contentBlocks: [],
       toolCall: null,
       error: null,
       timestamp: formatTimestamp(new Date().toISOString()),
@@ -105,6 +106,16 @@ export function useSSEStream({
 
     const controller = new AbortController();
     abortControllerRef.current = controller;
+
+    let accBlocks: ContentBlock[] = [];
+    let pendingText = "";
+
+    const flushText = () => {
+      if (pendingText) {
+        accBlocks.push({ type: "text", text: pendingText });
+        pendingText = "";
+      }
+    };
 
     try {
       const response = await fetch(`/api/lists/${listId}/chat`, {
@@ -138,7 +149,11 @@ export function useSSEStream({
 
         if (event.type === SSE_EVENT_DELTA) {
           const content = event.content as string;
-          updateAssistantMsg(assistantMsgId, (m) => ({ content: m.content + content }));
+          pendingText += content;
+          updateAssistantMsg(assistantMsgId, (m) => ({
+            content: m.content + content,
+            contentBlocks: [...accBlocks, { type: "text", text: pendingText }],
+          }));
         } else if (event.type === SSE_EVENT_TOOL_RESULT) {
           const toolName = event.name as string;
           if (!toolName) return;
@@ -155,15 +170,16 @@ export function useSSEStream({
             }
             updateAssistantMsg(assistantMsgId, { toolCall: toolCallData });
           }
+        } else if (event.type === SSE_EVENT_CITATION) {
+          flushText();
+          const citation = event as unknown as { index: number; source_id: string; chunk_ids: string[] };
+          accBlocks.push({ type: "citation", ...citation });
+          updateAssistantMsg(assistantMsgId, { contentBlocks: [...accBlocks] });
         } else if (event.type === SSE_EVENT_DONE) {
-          updateAssistantMsg(assistantMsgId, (m) => {
-            const { citations, cleanContent } = parseCitations(m.content);
-            return {
-              isStreaming: false,
-              content: cleanContent,
-              citations,
-              rag: m.rag,
-            };
+          flushText();
+          updateAssistantMsg(assistantMsgId, {
+            isStreaming: false,
+            contentBlocks: [...accBlocks],
           });
           safeSetIsStreaming(false);
           isStreamingRef.current = false;

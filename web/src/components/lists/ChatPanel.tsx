@@ -217,20 +217,10 @@ export function ChatPanel({
                         {msg.isStreaming && <span className="chat-cursor" />}
                       </div>
                     ) : null}
-                    {msg.citations.length > 0 && (
+                    {/* TODO(#241): citations section - to be updated in Task 12 with CitationChip */}
+                    {(msg.contentBlocks as Array<{ type: string }>).filter(b => b.type === "citation").length > 0 && (
                       <div className="cites">
-                        {msg.citations.map((c, i) => (
-                          <span key={i} className="cite">
-                            <span className="src">{c.source_title}</span>
-                            <span className="tspan">
-                              {Math.floor(c.timestamp_start / 60)}:
-                              {String(c.timestamp_start % 60).padStart(2, "0")}
-                              –
-                              {Math.floor(c.timestamp_end / 60)}:
-                              {String(c.timestamp_end % 60).padStart(2, "0")}
-                            </span>
-                          </span>
-                        ))}
+                        {/* citations will be rendered by block renderer in Task 12 */}
                       </div>
                     )}
                     {msg.rag && <ObsChip rag={msg.rag} />}

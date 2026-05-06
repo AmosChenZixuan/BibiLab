@@ -1,11 +1,14 @@
-export type Citation = { source_title: string; timestamp_start: number; timestamp_end: number };
+export type ContentBlock =
+  | { type: "text"; text: string }
+  | { type: "citation"; index: number; source_id: string; chunk_ids: string[] };
+
 export type ToolResult = { artifact_id: string; job_id?: string; name: string; type: string };
 export interface ToolCallData {
   name: string;
   result: ToolResult;
 }
 export type SearchMode = "factual" | "breadth" | "analytical";
-export type RagSource = { video_id: string; title: string };
+export type RagSource = { source_id: string; video_id: string; title: string };
 export type RagMetadata = {
   search_mode: SearchMode;
   candidates_evaluated: number;
@@ -22,29 +25,19 @@ export function formatDurationHuman(seconds: number): string {
   return `${m}m`;
 }
 
-export function formatSubtitle(t: (key: string, params?: Record<string, string | number>) => string, sourceCount: number, totalSeconds: number): string {
+export function formatSubtitle(
+  t: (key: string, params?: Record<string, string | number>) => string,
+  sourceCount: number,
+  totalSeconds: number,
+): string {
   const key = sourceCount === 1 ? "chat.subtitle.templateSingular" : "chat.subtitle.templatePlural";
-  return t(key, {
-    count: sourceCount,
-    duration: formatDurationHuman(totalSeconds),
-  });
+  return t(key, { count: sourceCount, duration: formatDurationHuman(totalSeconds) });
 }
 
-export function parseCitations(text: string): { citations: Citation[]; cleanContent: string } {
-  const seen = new Map<string, Citation>();
-  const regex = /\[([^\]]+?) @ (\d+)s-(\d+)s\]/g;
-  const cleanContent = text.replace(regex, (_, title, start, end) => {
-    const key = `${title}|${start}|${end}`;
-    if (!seen.has(key)) {
-      seen.set(key, {
-        source_title: title,
-        timestamp_start: parseInt(start, 10),
-        timestamp_end: parseInt(end, 10),
-      });
-    }
-    return "";
-  });
-  return { citations: Array.from(seen.values()), cleanContent };
+const LEGACY_CITATION_RE = /\[([^\]]+?) @ (\d+)s-(\d+)s\]/g;
+
+export function stripLegacyTokens(text: string): string {
+  return text.replace(LEGACY_CITATION_RE, "");
 }
 
 export function formatTimestamp(iso: string): string {
