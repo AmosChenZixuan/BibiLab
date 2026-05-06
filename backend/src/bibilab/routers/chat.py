@@ -33,6 +33,7 @@ from bibilab.pipeline.chat_tools import (
     GENERATE_REPORT_TOOL,
     QUERY_LIST_METADATA_TOOL,
     RETRIEVE_TOOL,
+    CitationRegistryEntry,
     execute_tool,
 )
 
@@ -46,6 +47,7 @@ SSE_EVENT_DELTA = "delta"
 SSE_EVENT_DONE = "done"
 SSE_EVENT_ERROR = "error"
 SSE_EVENT_TOOL_RESULT = "tool_result"
+SSE_EVENT_CITATION = "citation"
 
 # Sized for thinking-capable models with potentially long chat responses + tool turns.
 CHAT_MAX_TOKENS = 16384
@@ -92,9 +94,9 @@ async def delete_conversation_endpoint(list_id: str) -> None:
 
 
 def _client_tool_result(name: str, result: dict) -> dict:
-    """Strip internal fields before sending to client."""
+    """Strip internal fields (_-prefixed keys) before sending to client."""
     if name == "retrieve":
-        return {k: v for k, v in result.items() if k != "_chunks"}
+        return {k: v for k, v in result.items() if not k.startswith("_")}
     return result
 
 
@@ -125,11 +127,27 @@ async def stream_with_tools(
     execute_tool_fn,
     system: str | None = None,
     llm_max_tokens: int = CHAT_MAX_TOKENS,
+    registry: dict[str, CitationRegistryEntry] | None = None,
+    source_map: dict[str, str] | None = None,
 ) -> AsyncGenerator[StreamEvent, None]:
-    """Call stream_llm in a loop. Loopback tools (retrieve) feed results back
-    for another LLM turn. Terminal tools (generate_report) exit the loop."""
+    from bibilab.pipeline.chat_tools import CitationRegistryEntry
+    from bibilab.pipeline.citation_parser import flush_buffer, parse_delta
+
+    if registry is None:
+        registry = {}
+    if source_map is None:
+        source_map = {}
+
     messages = list(messages)
     iteration = 0
+    parse_buffer = ""
+    citation_emitted = False
+
+    def _build_lookup() -> dict[int, CitationRegistryEntry]:
+        return {e.index: e for e in registry.values()}
+
+    async def _execute_with_registry(name: str, args: dict) -> dict:
+        return await execute_tool_fn(name, args, registry=registry, source_map=source_map)
 
     while True:
         iteration += 1
@@ -137,9 +155,23 @@ async def stream_with_tools(
         async for event in stream_llm(messages, cfg, tools, system=system, llm_max_tokens=llm_max_tokens):
             if event.type == "tool_call":
                 tool_calls.append(event.tool_call)
-            yield event
+            elif event.type == "delta" and event.content:
+                parsed_events, parse_buffer = parse_delta(event.content, parse_buffer, _build_lookup())
+                for pe in parsed_events:
+                    if pe.type == "citation":
+                        citation_emitted = True
+                    yield pe
+            else:
+                yield event
 
         if not tool_calls:
+            for pe in flush_buffer(parse_buffer):
+                yield pe
+            if not citation_emitted and registry:
+                logger.warning(
+                    "citations_missing_after_retrieve registry_size=%d",
+                    len(registry),
+                )
             return
 
         if iteration > MAX_TOOL_ITERATIONS:
@@ -149,22 +181,31 @@ async def stream_with_tools(
         results: dict[str, dict] = {}
         for tc in tool_calls:
             try:
-                result = await execute_tool_fn(tc.name, tc.arguments)
+                result = await _execute_with_registry(tc.name, tc.arguments)
                 results[tc.id] = result
             except Exception as exc:
                 yield StreamEvent(type="error", content=str(exc))
                 return
 
-            yield StreamEvent(
-                type="tool_result",
-                content=json.dumps({"name": tc.name, "result": _client_tool_result(tc.name, result)}),
-            )
+            if tc.name == "retrieve":
+                enriched = dict(result)
+                headers = result.get("_source_headers", "")
+                turn_indices = result.get("_turn_indices", [])
+                idx_str = ", ".join(f"[{i}]" for i in turn_indices)
+                enriched["_chunks"] = (
+                    f"Sources retrieved this turn: {idx_str}. Cite only these indices.\n\n"
+                    f"{headers}\n\n" + "\n".join(result.get("_chunks", []))
+                )
+                yield StreamEvent(
+                    type="tool_result",
+                    content=json.dumps({"name": tc.name, "result": _client_tool_result(tc.name, enriched)}),
+                )
+            else:
+                yield StreamEvent(
+                    type="tool_result",
+                    content=json.dumps({"name": tc.name, "result": _client_tool_result(tc.name, result)}),
+                )
 
-        # LOOPBACK_TOOLS = {"retrieve"}. If the LLM calls both retrieve and a
-        # terminal tool (generate_report) in the same turn, the loopback branch
-        # still runs — the terminal tool's messages are fed back to the LLM too.
-        # In practice the system prompt steers them apart; if this ever causes
-        # issues, check for terminal-tool membership here and exit early.
         if any(tc.name in LOOPBACK_TOOLS for tc in tool_calls):
             if cfg.protocol == "anthropic":
                 messages.append(
@@ -229,6 +270,7 @@ async def chat_endpoint(
 
     if request.source_ids:
         source_ids = request.source_ids
+        source_rows = await get_sources_for_list(list_id)
     else:
         source_rows = await get_sources_for_list(list_id)
         source_ids = [row["id"] for row in source_rows]
@@ -243,13 +285,26 @@ async def chat_endpoint(
     )
     user_msg_id = user_msg_row["id"]
 
+    # Build video_id → source_id map for citation registry (single call)
+    source_map: dict[str, str] = {row["video_id"]: row["id"] for row in source_rows}
+
+    registry: dict[str, CitationRegistryEntry] = {}
+
     first_response_deltas: list[str] = []
     tool_calls: list = []
     retrieve_result: dict | None = None
     generate_report_result: dict | None = None
+    content_blocks: list[dict] = []
+    pending_text = ""
 
     async def event_generator():
-        nonlocal first_response_deltas, tool_calls, retrieve_result, generate_report_result
+        nonlocal \
+            first_response_deltas, \
+            tool_calls, \
+            retrieve_result, \
+            generate_report_result, \
+            content_blocks, \
+            pending_text
 
         system_parts = [GROUNDING_SYSTEM_PROMPT]
         if existing_summary:
@@ -261,7 +316,7 @@ async def chat_endpoint(
 
         messages_for_llm = history + [{"role": "user", "content": request.message}]
 
-        async def execute_tool_bound(name: str, args: dict) -> dict:
+        async def execute_tool_bound(name: str, args: dict, **kwargs) -> dict:
             return await execute_tool(
                 tool_name=name,
                 arguments=args,
@@ -269,6 +324,8 @@ async def chat_endpoint(
                 source_ids=source_ids,
                 ui_lang=ui_lang,
                 cfg=cfg,
+                registry=kwargs.get("registry", registry),
+                source_map=kwargs.get("source_map", source_map),
             )
 
         tools = [RETRIEVE_TOOL, QUERY_LIST_METADATA_TOOL, GENERATE_REPORT_TOOL]
@@ -281,10 +338,28 @@ async def chat_endpoint(
                 execute_tool_fn=execute_tool_bound,
                 system=system_message if system_message.strip() else None,
                 llm_max_tokens=CHAT_MAX_TOKENS,
+                registry=registry,
+                source_map=source_map,
             ):
                 if event.type == SSE_EVENT_DELTA:
-                    first_response_deltas.append(event.content or "")
-                    yield f"data: {json.dumps({'type': SSE_EVENT_DELTA, 'content': event.content})}\n\n"
+                    content = event.content or ""
+                    first_response_deltas.append(content)
+                    pending_text += content
+                    yield f"data: {json.dumps({'type': SSE_EVENT_DELTA, 'content': content})}\n\n"
+                elif event.type == SSE_EVENT_CITATION:
+                    if pending_text:
+                        content_blocks.append({"type": "text", "text": pending_text})
+                        pending_text = ""
+                    data = json.loads(event.content)
+                    content_blocks.append(
+                        {
+                            "type": "citation",
+                            "index": data["index"],
+                            "source_id": data["source_id"],
+                            "chunk_ids": data["chunk_ids"],
+                        }
+                    )
+                    yield f"data: {json.dumps({'type': SSE_EVENT_CITATION, **data})}\n\n"
                 elif event.type == "tool_call":
                     # Collect tool_calls locally to gate the done-event suppression
                     # and metadata persistence below. stream_with_tools has its own
@@ -317,12 +392,27 @@ async def chat_endpoint(
             return
 
         if not tool_calls:
+            if pending_text:
+                content_blocks.append({"type": "text", "text": pending_text})
+
             full_response = "".join(first_response_deltas)
+            meta: dict[str, Any] = {}
+            if content_blocks:
+                meta["content_blocks"] = content_blocks
+            if retrieve_result:
+                meta["rag"] = {
+                    "search_mode": retrieve_result.get("search_mode"),
+                    "candidates_evaluated": retrieve_result.get("candidates_evaluated"),
+                    "sources_with_hits": retrieve_result.get("sources_with_hits"),
+                    "sources_total": retrieve_result.get("sources_total"),
+                    "source_coverage": retrieve_result.get("source_coverage"),
+                }
+
             await create_message(
                 conversation_id=conversation_id,
                 role="assistant",
                 content=full_response,
-                metadata=None,
+                metadata=meta if meta else None,
             )
             return
 
@@ -340,13 +430,26 @@ async def chat_endpoint(
         if tool_call_meta:
             meta["tool_calls"] = tool_call_meta
         if retrieve_result:
+            # Sort source_coverage by registry index so [0] ↔ [1], [1] ↔ [2], etc.
+            raw_coverage = retrieve_result.get("source_coverage", [])
+            ordered_coverage = sorted(
+                raw_coverage,
+                key=lambda s: registry.get(s["source_id"], CitationRegistryEntry(index=999, source_id="")).index,
+            )
             meta["rag"] = {
                 "search_mode": retrieve_result.get("search_mode"),
                 "candidates_evaluated": retrieve_result.get("candidates_evaluated"),
                 "sources_with_hits": retrieve_result.get("sources_with_hits"),
                 "sources_total": retrieve_result.get("sources_total"),
-                "source_coverage": retrieve_result.get("source_coverage"),
+                "source_coverage": ordered_coverage,
             }
+        if content_blocks:
+            meta["content_blocks"] = content_blocks
+
+        # Flush trailing text into content_blocks
+        if pending_text:
+            content_blocks.append({"type": "text", "text": pending_text})
+            meta["content_blocks"] = content_blocks
 
         # Persist any preamble + post-loopback deltas alongside tool metadata
         # so the full response survives history reload (not just live SSE).
