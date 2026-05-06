@@ -408,7 +408,7 @@ async def test_chat_sse_emits_citation_events(client):
         async for ev in an_async_generator(
             [
                 StreamEvent(type="delta", content="See "),
-                StreamEvent(type="citation", content='{"index":1,"source_id":"s1","chunk_ids":["c1"]}'),
+                StreamEvent(type="citation", content='{"index":1,"source_id":"s1"}'),
                 StreamEvent(type="delta", content=" for details."),
                 StreamEvent(type="done"),
             ]
@@ -435,7 +435,7 @@ async def test_chat_persists_content_blocks_in_metadata(client):
         async for ev in an_async_generator(
             [
                 StreamEvent(type="delta", content="Hello "),
-                StreamEvent(type="citation", content='{"index":1,"source_id":"s1","chunk_ids":["c1"]}'),
+                StreamEvent(type="citation", content='{"index":1,"source_id":"s1"}'),
                 StreamEvent(type="delta", content=" world"),
                 StreamEvent(type="done"),
             ]

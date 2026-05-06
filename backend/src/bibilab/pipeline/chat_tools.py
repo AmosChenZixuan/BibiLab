@@ -220,6 +220,15 @@ async def execute_retrieve(
     # Collect indices actually retrieved this turn (for the enumeration line)
     turn_indices = sorted(set(video_id_to_index.values()))
 
+    chunks_formatted = [
+        _format_chunk_for_llm(
+            {"start": c.timestamp_start, "end": c.timestamp_end, "content": c.content},
+            index=video_id_to_index[c.video_id],
+        )
+        for c in result.chunks
+        if c.video_id in video_id_to_index
+    ]
+
     return {
         "search_mode": search_mode,
         "candidates_evaluated": result.candidates_evaluated,
@@ -233,15 +242,12 @@ async def execute_retrieve(
             }
             for s in result.source_coverage
         ],
-        "_chunks": [
-            _format_chunk_for_llm(
-                {"start": c.timestamp_start, "end": c.timestamp_end, "content": c.content},
-                index=video_id_to_index[c.video_id],
-            )
-            for c in result.chunks
-            if c.video_id in video_id_to_index
-        ],
-        "_source_headers": _build_source_headers(registry),
+        "_chunks": chunks_formatted,
+        "_llm_context": (
+            f"Sources retrieved this turn: {', '.join(f'[{i}]' for i in turn_indices)}. "
+            "Cite only these indices.\n\n"
+            f"{_build_source_headers(registry)}\n\n" + "\n".join(chunks_formatted)
+        ),
         "_turn_indices": turn_indices,
     }
 

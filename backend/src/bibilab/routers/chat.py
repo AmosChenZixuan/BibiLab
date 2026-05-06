@@ -192,18 +192,13 @@ async def stream_with_tools(
                 return
 
             if tc.name == "retrieve":
-                enriched = dict(result)
-                headers = result.get("_source_headers", "")
-                turn_indices = result.get("_turn_indices", [])
-                idx_str = ", ".join(f"[{i}]" for i in turn_indices)
-                enriched["_chunks"] = (
-                    f"Sources retrieved this turn: {idx_str}. Cite only these indices.\n\n"
-                    f"{headers}\n\n" + "\n".join(result.get("_chunks", []))
-                )
-                results[tc.id] = enriched
+                # LLM sees _llm_context (preamble + chunks joined); client sees _chunks stripped
+                llm_result = dict(result)
+                llm_result["_chunks"] = result.get("_llm_context", "\n".join(result.get("_chunks", [])))
+                results[tc.id] = llm_result
                 yield StreamEvent(
                     type="tool_result",
-                    content=json.dumps({"name": tc.name, "result": _client_tool_result(tc.name, enriched)}),
+                    content=json.dumps({"name": tc.name, "result": _client_tool_result(tc.name, result)}),
                 )
             else:
                 results[tc.id] = result
@@ -295,14 +290,14 @@ async def chat_endpoint(
 
     registry: dict[str, CitationRegistryEntry] = {}
 
-    first_response_deltas: list[str] = []
+    assistant_text_deltas: list[str] = []
     retrieve_result: dict | None = None
     generate_report_result: dict | None = None
     content_blocks: list[dict] = []
     pending_text = ""
 
     async def event_generator():
-        nonlocal first_response_deltas, retrieve_result, generate_report_result, content_blocks, pending_text
+        nonlocal assistant_text_deltas, retrieve_result, generate_report_result, content_blocks, pending_text
 
         system_parts = [GROUNDING_SYSTEM_PROMPT]
         if existing_summary:
@@ -342,7 +337,7 @@ async def chat_endpoint(
             ):
                 if event.type == SSE_EVENT_DELTA:
                     content = event.content or ""
-                    first_response_deltas.append(content)
+                    assistant_text_deltas.append(content)
                     pending_text += content
                     yield f"data: {json.dumps({'type': SSE_EVENT_DELTA, 'content': content})}\n\n"
                 elif event.type == SSE_EVENT_CITATION:
@@ -397,12 +392,11 @@ async def chat_endpoint(
             meta["tool_calls"] = tool_call_meta
         if retrieve_result:
             # Sort source_coverage by registry index so [0] ↔ [1], [1] ↔ [2], etc.
+            # Filter to only entries present in the registry; unknown sources are excluded.
             raw_coverage = retrieve_result.get("source_coverage", [])
             ordered_coverage = sorted(
-                raw_coverage,
-                key=lambda s: (
-                    registry.get(s["source_id"], CitationRegistryEntry(index=len(registry) + 1, source_id="")).index
-                ),
+                [s for s in raw_coverage if s["source_id"] in registry],
+                key=lambda s: registry[s["source_id"]].index,
             )
             meta["rag"] = {
                 "search_mode": retrieve_result.get("search_mode"),
@@ -414,8 +408,8 @@ async def chat_endpoint(
         if content_blocks:
             meta["content_blocks"] = content_blocks
 
-        # content = preamble (first_response_deltas) + any trailing text after last citation
-        assistant_content = "".join(first_response_deltas)
+        # content = preamble (assistant_text_deltas) + any trailing text after last citation
+        assistant_content = "".join(assistant_text_deltas)
         await create_message(
             conversation_id=conversation_id,
             role="assistant",
