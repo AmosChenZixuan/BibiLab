@@ -51,23 +51,20 @@ describe("formatSubtitle", () => {
 });
 
 describe("stripLegacyTokens", () => {
-  test("removes citation tokens", () => {
-    const text = "Some text [Video Title @ 10s-20s] more text";
-    expect(stripLegacyTokens(text)).toBe("Some text  more text");
+  test("removes [Title @ Ns-Ns] patterns", () => {
+    expect(stripLegacyTokens("See [My Video @ 120s-145s].")).toBe("See .");
   });
 
-  test("handles multiple citation tokens", () => {
-    const text = "[A @ 0s-5s] and [B @ 60s-120s]";
-    expect(stripLegacyTokens(text)).toBe(" and ");
+  test("removes multiple", () => {
+    expect(stripLegacyTokens("[A @ 10s-20s] and [B @ 30s-40s]")).toBe(" and ");
   });
 
-  test("removes repeated citation tokens", () => {
-    const text = "[A @ 0s-5s] and [A @ 0s-5s] again [B @ 10s-20s]";
-    expect(stripLegacyTokens(text)).toBe(" and  again ");
+  test("leaves non-citation brackets intact", () => {
+    expect(stripLegacyTokens("array[0] and [note]")).toBe("array[0] and [note]");
   });
 
-  test("handles text without citation tokens", () => {
-    expect(stripLegacyTokens("plain text")).toBe("plain text");
+  test("handles empty string", () => {
+    expect(stripLegacyTokens("")).toBe("");
   });
 });
 
