@@ -13,7 +13,7 @@ import {
 } from "@/lib/constants";
 import { LANG_STORAGE_KEY } from "@/lib/utils";
 
-type CitationEvent = { type: "citation"; index: number; source_id: string };
+type CitationEvent = { type: "citation"; index: number; source_id: string; chunk_ids: string[] };
 
 interface UseSSEStreamOptions {
   listId: string;

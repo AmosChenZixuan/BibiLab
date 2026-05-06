@@ -31,13 +31,15 @@ import {
 function CitationChip({
   index,
   sourceId,
+  chunkIds,
   sources,
   onOpenSource,
 }: {
   index: number;
   sourceId: string;
+  chunkIds: string[];
   sources: Source[];
-  onOpenSource?: (source: Source) => void;
+  onOpenSource?: (source: Source, opts?: { highlightChunks?: string[] }) => void;
 }) {
   const { t } = useLanguage();
   const source = sources.find((s) => s.id === sourceId);
@@ -50,7 +52,7 @@ function CitationChip({
   }
   return (
     <span className="cite-chip-wrap">
-      <button type="button" className="cite-chip" onClick={() => onOpenSource?.(source)}>
+      <button type="button" className="cite-chip" onClick={() => onOpenSource?.(source, { highlightChunks: chunkIds })}>
         [{index}]
       </button>
       <span className="cite-chip-tooltip">{source.title}</span>
@@ -62,7 +64,7 @@ interface ChatPanelProps {
   selectedSourceIds: string[];
   sources: Source[];
   listId: string;
-  onOpenSource?: (source: Source) => void;
+  onOpenSource?: (source: Source, opts?: { highlightChunks?: string[] }) => void;
 }
 
 export function ChatPanel({
@@ -254,6 +256,7 @@ export function ChatPanel({
                               key={i}
                               index={block.index}
                               sourceId={block.source_id}
+                              chunkIds={block.chunk_ids}
                               sources={sources}
                               onOpenSource={onOpenSource}
                             />

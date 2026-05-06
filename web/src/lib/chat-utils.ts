@@ -1,6 +1,6 @@
 export type ContentBlock =
   | { type: "text"; text: string }
-  | { type: "citation"; index: number; source_id: string };
+  | { type: "citation"; index: number; source_id: string; chunk_ids: string[] };
 
 export type ToolResult = { artifact_id: string; job_id?: string; name: string; type: string };
 export interface ToolCallData {

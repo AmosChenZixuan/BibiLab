@@ -340,9 +340,15 @@ async def chat_endpoint(
                             "type": "citation",
                             "index": data["index"],
                             "source_id": data["source_id"],
+                            "chunk_ids": data.get("chunk_ids", []),
                         }
                     )
-                    sse_data = {"type": SSE_EVENT_CITATION, "index": data["index"], "source_id": data["source_id"]}
+                    sse_data = {
+                        "type": SSE_EVENT_CITATION,
+                        "index": data["index"],
+                        "source_id": data["source_id"],
+                        "chunk_ids": data.get("chunk_ids", []),
+                    }
                     yield f"data: {json.dumps(sse_data)}\n\n"
                 elif event.type == "tool_result":
                     parsed = json.loads(event.content)

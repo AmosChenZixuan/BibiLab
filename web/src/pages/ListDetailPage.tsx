@@ -84,7 +84,7 @@ export function ListDetailPage() {
     };
   }, []);
 
-  function handleOpenSource(source: Source) {
+  function handleOpenSource(source: Source, _opts?: { highlightChunks?: string[] }) {
     currentSourceIdRef.current = source.id;
     setDetailSource(source);
     setSourceContent(null);

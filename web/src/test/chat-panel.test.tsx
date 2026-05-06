@@ -106,7 +106,7 @@ describe("chat panel", () => {
                   created_at: "2026-04-08T12:00:00Z",
                   metadata: {
                     content_blocks: [
-                      { type: "citation", index: 1, source_id: "deleted-source" },
+                      { type: "citation", index: 1, source_id: "deleted-source", chunk_ids: [] },
                     ],
                   },
                 },
