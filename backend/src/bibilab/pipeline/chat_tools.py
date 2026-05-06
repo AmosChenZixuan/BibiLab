@@ -2,6 +2,7 @@
 
 import logging
 import uuid
+from dataclasses import dataclass, field
 
 from bibilab.config import BibilabConfig
 from bibilab.db import count_sources, create_job, language_breakdown, longest_source
@@ -12,11 +13,25 @@ from bibilab.pipeline.embed import retrieve
 logger = logging.getLogger(__name__)
 
 
-def _format_chunk_for_llm(chunk: dict) -> str:
-    """Format a chunk as a citation-ready line matching the system prompt's required format."""
+@dataclass
+class CitationRegistryEntry:
+    index: int
+    source_id: str
+    chunk_ids: set[str] = field(default_factory=set)
+
+
+def _format_chunk_for_llm(chunk: dict, index: int) -> str:
     ts_start = int(chunk["start"])
     ts_end = int(chunk["end"])
-    return f'- [{chunk["title"]} @ {ts_start}s-{ts_end}s]: "{chunk["content"]}"'
+    return f'[{index} @ {ts_start}s-{ts_end}s]: "{chunk["content"]}"'
+
+
+def _build_source_headers(registry: dict[str, CitationRegistryEntry], titles: dict[str, str]) -> str:
+    lines = []
+    for entry in sorted(registry.values(), key=lambda e: e.index):
+        title = titles.get(entry.source_id, "Unknown")
+        lines.append(f'Source [{entry.index}]: "{title}"')
+    return "\n".join(lines)
 
 
 _VALID_ARTIFACT_TYPES = frozenset({"brief", "study_guide", "blog_post", "custom_report"})
