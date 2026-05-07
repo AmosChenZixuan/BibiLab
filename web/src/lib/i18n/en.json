@@ -258,11 +258,17 @@
       "saving": "Saving..."
     },
     "obsChip": {
+      "query": "Query",
       "mode": "Mode",
       "chunksEvaluated": "Chunks evaluated",
       "sourcesRetrieved": "Sources retrieved",
       "ariaLabel": "Retrieval observability",
-      "chipLabel": "%{count} chunks · %{hits}/%{total}"
+      "chipLabel": "%{count} chunks · %{hits}/%{total}",
+      "metaQueryType": {
+        "count": "Count",
+        "longest": "Longest",
+        "languages": "Languages"
+      }
     },
     "mode": {
       "broad": {

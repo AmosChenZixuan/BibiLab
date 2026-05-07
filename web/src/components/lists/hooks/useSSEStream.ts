@@ -2,13 +2,14 @@ import { useEffect, useRef, useState } from "react";
 
 import type { JobRegistration } from "@/components/jobs/JobActivityProvider";
 import type { MessageUI } from "@/components/lists/hooks/useConversationHistory";
-import { formatTimestamp, type RagMetadata, type ContentBlock } from "@/lib/chat-utils";
+import { formatTimestamp, type ContentBlock, type PendingMetadataCall, type PendingRagCall, type RagCall, type SearchMode } from "@/lib/chat-utils";
 import type { ToolResult } from "@/lib/chat-utils";
 import {
   SSE_EVENT_CITATION,
   SSE_EVENT_DELTA,
   SSE_EVENT_DONE,
   SSE_EVENT_ERROR,
+  SSE_EVENT_TOOL_CALL_START,
   SSE_EVENT_TOOL_RESULT,
 } from "@/lib/constants";
 import { LANG_STORAGE_KEY } from "@/lib/utils";
@@ -88,6 +89,8 @@ export function useSSEStream({
       toolCall: null,
       error: null,
       timestamp: formatTimestamp(new Date().toISOString()),
+      pendingRagCalls: [],
+      pendingMetadataCalls: [],
     };
 
     const assistantMsg: MessageUI = {
@@ -100,6 +103,8 @@ export function useSSEStream({
       error: null,
       timestamp: formatTimestamp(new Date().toISOString()),
       rag: null,
+      pendingRagCalls: [],
+      pendingMetadataCalls: [],
     };
 
     setMessages((prev) => [...prev, userMsg, assistantMsg]);
@@ -163,12 +168,55 @@ export function useSSEStream({
             content: m.content + content,
             contentBlocks: [...accBlocks, { type: "text", text: pendingText }],
           }));
+        } else if (event.type === SSE_EVENT_TOOL_CALL_START) {
+          const toolName = event.name as string;
+          const id = event.id as string;
+          if (!id || !toolName || !event.arguments) {
+            console.warn("tool_call_start missing required fields", event);
+            return;
+          }
+          if (toolName === "retrieve") {
+            const args = event.arguments as { query: string; search_mode: SearchMode };
+            updateAssistantMsg(assistantMsgId, (m) => ({
+              pendingRagCalls: [
+                ...m.pendingRagCalls,
+                { id, query: args.query, search_mode: args.search_mode },
+              ],
+            }));
+          } else if (toolName === "query_list_metadata") {
+            const args = event.arguments as { query_type: string };
+            updateAssistantMsg(assistantMsgId, (m) => ({
+              pendingMetadataCalls: [
+                ...m.pendingMetadataCalls,
+                { id, query_type: args.query_type },
+              ],
+            }));
+          }
         } else if (event.type === SSE_EVENT_TOOL_RESULT) {
           const toolName = event.name as string;
           if (!toolName) return;
           if (toolName === "retrieve") {
-            const rag = event.result as unknown as RagMetadata;
-            updateAssistantMsg(assistantMsgId, { rag });
+            const call = event.result as unknown as RagCall;
+            const callId = event.id as string;
+            updateAssistantMsg(assistantMsgId, (m) => ({
+              rag: { calls: [...(m.rag?.calls ?? []), call] },
+              pendingRagCalls: callId
+                ? m.pendingRagCalls.filter((p) => p.id !== callId)
+                : m.pendingRagCalls,
+            }));
+            if (!callId) {
+              console.warn("retrieve tool_result missing id, pending chip not cleared");
+            }
+          } else if (toolName === "query_list_metadata") {
+            const callId = event.id as string;
+            updateAssistantMsg(assistantMsgId, (m) => ({
+              pendingMetadataCalls: callId
+                ? m.pendingMetadataCalls.filter((p) => p.id !== callId)
+                : m.pendingMetadataCalls,
+            }));
+            if (!callId) {
+              console.warn("query_list_metadata tool_result missing id, pending chip not cleared");
+            }
           } else if (toolName === "generate_report") {
             const result = event.result as ToolResult;
             if (!result) return;
@@ -188,12 +236,14 @@ export function useSSEStream({
           updateAssistantMsg(assistantMsgId, {
             isStreaming: false,
             contentBlocks: [...accBlocks],
+            pendingRagCalls: [],
+            pendingMetadataCalls: [],
           });
           safeSetIsStreaming(false);
           isStreamingRef.current = false;
         } else if (event.type === SSE_EVENT_ERROR) {
           const errorMsg = event.message as string;
-          updateAssistantMsg(assistantMsgId, { isStreaming: false, error: errorMsg });
+          updateAssistantMsg(assistantMsgId, { isStreaming: false, error: errorMsg, pendingRagCalls: [], pendingMetadataCalls: [] });
           safeSetIsStreaming(false);
           isStreamingRef.current = false;
         }
@@ -231,9 +281,9 @@ export function useSSEStream({
       isStreamingRef.current = false;
     } catch (err) {
       if (err instanceof Error && err.name === "AbortError") {
-        updateAssistantMsg(assistantMsgId, { isStreaming: false, error: interruptedLabel });
+        updateAssistantMsg(assistantMsgId, { isStreaming: false, error: interruptedLabel, pendingRagCalls: [], pendingMetadataCalls: [] });
       } else {
-        updateAssistantMsg(assistantMsgId, { isStreaming: false, error: String(err) });
+        updateAssistantMsg(assistantMsgId, { isStreaming: false, error: String(err), pendingRagCalls: [], pendingMetadataCalls: [] });
       }
       safeSetIsStreaming(false);
       isStreamingRef.current = false;

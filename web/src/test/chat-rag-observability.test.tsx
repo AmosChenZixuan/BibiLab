@@ -111,6 +111,39 @@ describe("Slice 2 — RAG observability via SSE tool_result", () => {
     expect(chip).toBeInTheDocument();
   });
 
+  test("renders one ObsChip per rag.calls entry", async () => {
+    vi.spyOn(window, "fetch").mockImplementation(() =>
+      Promise.resolve(
+        makeSseStream([
+          'data: {"type":"tool_call_start","id":"tc1","name":"retrieve","arguments":{"query":"A","search_mode":"breadth"}}\n\n',
+          'data: {"type":"tool_call_start","id":"tc2","name":"retrieve","arguments":{"query":"B","search_mode":"factual"}}\n\n',
+          'data: {"type":"tool_result","id":"tc1","name":"retrieve","result":{"query":"A","search_mode":"breadth","candidates_evaluated":10,"sources_with_hits":2,"sources_total":4,"source_coverage":[]}}\n\n',
+          'data: {"type":"tool_result","id":"tc2","name":"retrieve","result":{"query":"B","search_mode":"factual","candidates_evaluated":20,"sources_with_hits":1,"sources_total":3,"source_coverage":[]}}\n\n',
+          'data: {"type":"delta","content":"Answer"}\n\n',
+          'data: {"type":"done"}\n\n',
+        ]),
+      ),
+    );
+
+    renderChatPanel({
+      selectedSourceIds: ["src-1"],
+      sources: [SOURCE_1],
+      listId: "list-1",
+    });
+
+    const textarea = screen.getByRole("textbox");
+    await userEvent.type(textarea, "Hi");
+    await userEvent.keyboard("{Enter}");
+
+    await waitFor(() => screen.getByText("Answer"));
+
+    // Both calls resolved to ObsChips
+    expect(screen.getByText("A")).toBeInTheDocument();
+    expect(screen.getByText("B")).toBeInTheDocument();
+    expect(screen.getByText(/10 chunks · 2\/4/)).toBeInTheDocument();
+    expect(screen.getByText(/20 chunks · 1\/3/)).toBeInTheDocument();
+  });
+
   test("Obs chip expands on click", async () => {
     vi.spyOn(window, "fetch").mockImplementation(() =>
       Promise.resolve(

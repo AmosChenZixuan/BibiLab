@@ -258,11 +258,17 @@
       "saving": "保存中…"
     },
     "obsChip": {
+      "query": "查询",
       "mode": "模式",
       "chunksEvaluated": "已评估块数",
       "sourcesRetrieved": "已检索的来源数",
       "ariaLabel": "检索详情",
-      "chipLabel": "%{count} 块 · %{hits}/%{total}"
+      "chipLabel": "%{count} 块 · %{hits}/%{total}",
+      "metaQueryType": {
+        "count": "总数",
+        "longest": "最长",
+        "languages": "语言"
+      }
     },
     "mode": {
       "broad": {

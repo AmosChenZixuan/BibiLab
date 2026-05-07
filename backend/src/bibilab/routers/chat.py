@@ -49,6 +49,7 @@ SSE_EVENT_DELTA = "delta"
 SSE_EVENT_DONE = "done"
 SSE_EVENT_ERROR = "error"
 SSE_EVENT_TOOL_RESULT = "tool_result"
+SSE_EVENT_TOOL_CALL_START = "tool_call_start"
 SSE_EVENT_CITATION = "citation"
 
 # Sized for thinking-capable models with potentially long chat responses + tool turns.
@@ -109,11 +110,14 @@ async def delete_conversation_endpoint(list_id: str) -> None:
         await delete_conversation(conversation_row["id"])
 
 
-def _client_tool_result(name: str, result: dict) -> dict:
-    """Strip internal fields (_-prefixed keys) before sending to client."""
-    if name == "retrieve":
-        return {k: v for k, v in result.items() if not k.startswith("_")}
-    return result
+def _client_tool_result(result: dict) -> dict:
+    """Strip internal fields (_-prefixed keys) before sending tool results to the client.
+
+    Tool implementations may attach private metadata via _-prefixed keys (e.g. _chunks).
+    These are never exposed over SSE. If you add a new tool whose result includes fields
+    the client needs, do NOT prefix them with ``_``.
+    """
+    return {k: v for k, v in result.items() if not k.startswith("_")}
 
 
 GROUNDING_SYSTEM_PROMPT = (
@@ -128,15 +132,18 @@ GROUNDING_SYSTEM_PROMPT = (
     "report/artifact — the generate_report tool handles its own retrieval.\n"
     "1. ONLY use information from the source material provided below. Never use your own knowledge.\n"
     '2. If the excerpts do not contain the answer, say "The provided sources do not cover this topic."\n'
-    "3. Quote or closely paraphrase the source material — do not reinterpret, editorialize, or add external context.\n"
-    "4. Cite using exactly [N], where N is the source number from the retrieve result. "
+    "3. When the user identifies errors in your previous answer, audit ALL items in your prior response, "
+    "not only the ones explicitly flagged — the user may have pointed out a sample. Re-verify each prior "
+    "claim against the retrieved sources before re-asserting it.\n"
+    "4. Quote or closely paraphrase the source material — do not reinterpret, editorialize, or add external context.\n"
+    "5. Cite using exactly [N], where N is the source number from the retrieve result. "
     "Do not cite sources you did not retrieve. "
     "When citing content from a long source, mention the relevant timestamp inline in your prose "
     "(e.g. 'around the 2:00 mark [1]...' or 'between 1:24:30 and 1:25:10 [1]...'). "
     "Use natural phrasing, not a structured format. Skip timestamps for short sources or thematic citations.\n"
-    "5. Use the generate_report tool when the user asks for summaries, study guides, blog posts, or custom reports.\n"
-    "6. Do not ask follow-up questions, suggest next steps, or offer unsolicited advice.\n"
-    "7. Be concise and direct. Answer in 1-3 sentences when possible."
+    "6. Use the generate_report tool when the user asks for summaries, study guides, blog posts, or custom reports.\n"
+    "7. Do not ask follow-up questions, suggest next steps, or offer unsolicited advice.\n"
+    "8. Be concise and direct. Answer in 1-3 sentences when possible."
 )
 
 
@@ -159,6 +166,7 @@ async def stream_with_tools(
     iteration = 0
     parse_buffer = ""
     citation_emitted = False
+    retrieve_used = False
 
     def _build_lookup() -> dict[int, CitationRegistryEntry]:
         return {e.index: e for e in registry.values()}
@@ -169,22 +177,28 @@ async def stream_with_tools(
     while True:
         iteration += 1
         tool_calls: list[ToolCall] = []
+        iteration_text = ""
         lookup = _build_lookup()
-        async for event in stream_llm(messages, cfg, tools, system=system, llm_max_tokens=llm_max_tokens):
+        active_tools = [t for t in tools if not (retrieve_used and t.name == RETRIEVE_TOOL.name)]
+        async for event in stream_llm(messages, cfg, active_tools, system=system, llm_max_tokens=llm_max_tokens):
             if event.type == "tool_call":
                 tool_calls.append(event.tool_call)
             elif event.type == "delta" and event.content:
-                parsed_events, parse_buffer = parse_delta(event.content, parse_buffer, lookup)
-                for pe in parsed_events:
-                    if pe.type == "citation":
-                        citation_emitted = True
-                    yield pe
+                iteration_text += event.content
             elif event.type == "done" and tool_calls:
-                pass  # Suppress: event_generator yields done after the async loop
+                pass
+            elif event.type in ("delta", "done"):
+                pass
             else:
                 yield event
 
         if not tool_calls:
+            if iteration_text:
+                parsed_events, parse_buffer = parse_delta(iteration_text, parse_buffer, lookup)
+                for pe in parsed_events:
+                    if pe.type == "citation":
+                        citation_emitted = True
+                    yield pe
             for pe in flush_buffer(parse_buffer):
                 yield pe
             if not citation_emitted and registry:
@@ -194,25 +208,44 @@ async def stream_with_tools(
                 )
             return
 
+        parse_buffer = ""
+
+        is_terminal = not any(tc.name in LOOPBACK_TOOLS for tc in tool_calls)
+        if not is_terminal and iteration_text:
+            logger.info("preamble_discarded len=%d iteration=%d", len(iteration_text), iteration)
+        if is_terminal and iteration_text:
+            parsed_events, _ = parse_delta(iteration_text, "", lookup)
+            for pe in parsed_events:
+                yield pe
+
         if iteration > MAX_TOOL_ITERATIONS:
             yield StreamEvent(type="error", content="Max tool iterations exceeded")
             return
 
         results: dict[str, dict] = {}
         for tc in tool_calls:
+            if tc.name in LOOPBACK_TOOLS:
+                yield StreamEvent(
+                    type="tool_call_start",
+                    content=json.dumps({"id": tc.id, "name": tc.name, "arguments": tc.arguments}),
+                )
+        for tc in tool_calls:
             try:
                 result = await _execute_with_registry(tc.name, tc.arguments)
-            except Exception as exc:
-                yield StreamEvent(type="error", content=str(exc))
+            except Exception:
+                logger.exception("tool_execution_failed tool=%s", tc.name)
+                yield StreamEvent(type="error", content=f"Tool {tc.name} failed")
                 return
 
             results[tc.id] = result
             yield StreamEvent(
                 type="tool_result",
-                content=json.dumps({"name": tc.name, "result": _client_tool_result(tc.name, result)}),
+                content=json.dumps({"id": tc.id, "name": tc.name, "result": _client_tool_result(result)}),
             )
 
         if any(tc.name in LOOPBACK_TOOLS for tc in tool_calls):
+            if any(tc.name == RETRIEVE_TOOL.name for tc in tool_calls):
+                retrieve_used = True
             if cfg.protocol == "anthropic":
                 messages.append(
                     {
@@ -296,13 +329,13 @@ async def chat_endpoint(
     registry: dict[str, CitationRegistryEntry] = {}
 
     assistant_text_deltas: list[str] = []
-    retrieve_result: dict | None = None
+    retrieve_calls: list[dict] = []
     generate_report_result: dict | None = None
     content_blocks: list[dict] = []
     pending_text = ""
 
     async def event_generator():
-        nonlocal assistant_text_deltas, retrieve_result, generate_report_result, content_blocks, pending_text
+        nonlocal assistant_text_deltas, retrieve_calls, generate_report_result, content_blocks, pending_text
 
         system_parts = [GROUNDING_SYSTEM_PROMPT]
         if existing_summary:
@@ -363,14 +396,27 @@ async def chat_endpoint(
                         "chunk_ids": data.get("chunk_ids", []),
                     }
                     yield f"data: {json.dumps(sse_data)}\n\n"
+                elif event.type == SSE_EVENT_TOOL_CALL_START:
+                    parsed = json.loads(event.content)
+                    yield f"data: {json.dumps({'type': SSE_EVENT_TOOL_CALL_START, **parsed})}\n\n"
                 elif event.type == "tool_result":
                     parsed = json.loads(event.content)
                     if parsed["name"] == "retrieve":
-                        # Last retrieve result wins for metadata persistence.
-                        # In practice the LLM rarely calls retrieve twice per
-                        # turn, and the second call is usually the more refined
-                        # one (narrower query after seeing first results).
-                        retrieve_result = parsed["result"]
+                        result = parsed["result"]
+                        ordered_coverage = sorted(
+                            [s for s in result.get("source_coverage", []) if s["source_id"] in registry],
+                            key=lambda s: registry[s["source_id"]].index,
+                        )
+                        retrieve_calls.append(
+                            {
+                                "query": result.get("query", ""),
+                                "search_mode": result.get("search_mode"),
+                                "candidates_evaluated": result.get("candidates_evaluated"),
+                                "sources_with_hits": result.get("sources_with_hits"),
+                                "sources_total": result.get("sources_total"),
+                                "source_coverage": ordered_coverage,
+                            }
+                        )
                     elif parsed["name"] == "generate_report":
                         generate_report_result = parsed["result"]
                     yield f"data: {json.dumps({'type': SSE_EVENT_TOOL_RESULT, **parsed})}\n\n"
@@ -399,21 +445,8 @@ async def chat_endpoint(
         meta: dict[str, Any] = {}
         if tool_call_meta:
             meta["tool_calls"] = tool_call_meta
-        if retrieve_result:
-            # Sort source_coverage by registry index so [0] ↔ [1], [1] ↔ [2], etc.
-            # Filter to only entries present in the registry; unknown sources are excluded.
-            raw_coverage = retrieve_result.get("source_coverage", [])
-            ordered_coverage = sorted(
-                [s for s in raw_coverage if s["source_id"] in registry],
-                key=lambda s: registry[s["source_id"]].index,
-            )
-            meta["rag"] = {
-                "search_mode": retrieve_result.get("search_mode"),
-                "candidates_evaluated": retrieve_result.get("candidates_evaluated"),
-                "sources_with_hits": retrieve_result.get("sources_with_hits"),
-                "sources_total": retrieve_result.get("sources_total"),
-                "source_coverage": ordered_coverage,
-            }
+        if retrieve_calls:
+            meta["rag"] = {"calls": retrieve_calls}
         if content_blocks:
             meta["content_blocks"] = content_blocks
 

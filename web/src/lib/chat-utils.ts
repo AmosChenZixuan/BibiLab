@@ -10,12 +10,23 @@ export interface ToolCallData {
 }
 export type SearchMode = "factual" | "breadth" | "analytical";
 export type RagSource = { source_id: string; video_id: string; title: string };
-export type RagMetadata = {
+export type RagCall = {
+  query: string;
   search_mode: SearchMode;
   candidates_evaluated: number;
   sources_with_hits: number;
   sources_total: number;
   source_coverage: RagSource[];
+};
+export type RagMetadata = { calls: RagCall[] };
+export type PendingRagCall = {
+  id: string;
+  query: string;
+  search_mode: SearchMode;
+};
+export type PendingMetadataCall = {
+  id: string;
+  query_type: string;
 };
 
 export function formatDurationHuman(seconds: number): string {

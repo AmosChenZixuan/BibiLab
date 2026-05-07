@@ -118,7 +118,7 @@ whisper_models.py — Whisper model management
 | `conversation_id` | FK to `conversations.id`, ON DELETE CASCADE, indexed |
 | `role` | `"user"` \| `"assistant"` \| `"tool"` |
 | `content` | Message text |
-| `metadata` | JSON blob, nullable. Shape: `{"tool_calls": [...], "rag": {search_mode, candidates_evaluated, sources_with_hits, sources_total, source_coverage}}`. Set by `chat_endpoint` post-stream from the retrieve `tool_result` event. |
+| `metadata` | JSON blob, nullable. Shape: `{"tool_calls": [...], "rag": {"calls": [{"query", "search_mode", "candidates_evaluated", "sources_with_hits", "sources_total", "source_coverage"}]}}`. Set by `chat_endpoint` post-stream from retrieve `tool_result` events (one entry per retrieve call). |
 | `created_at` | ISO timestamp |
 
 ### `chunks_fts` — FTS5 virtual table

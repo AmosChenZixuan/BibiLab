@@ -113,10 +113,10 @@ async def test_stream_with_tools_passthrough_no_tool_calls():
         ):
             events.append(event)
 
-    assert len(events) == 2
+    # done is no longer yielded by stream_with_tools — caller emits it post-loop.
+    assert len(events) == 1
     assert events[0].type == "delta"
     assert events[0].content == "Hello"
-    assert events[1].type == "done"
 
 
 @pytest.mark.asyncio
