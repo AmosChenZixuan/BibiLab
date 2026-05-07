@@ -5,7 +5,7 @@ import {
   formatDurationHuman,
   formatSubtitle,
   formatTimestamp,
-  parseCitations,
+  stripLegacyTokens,
 } from "@/lib/chat-utils";
 
 describe("formatDurationHuman", () => {
@@ -50,44 +50,21 @@ describe("formatSubtitle", () => {
   });
 });
 
-describe("parseCitations", () => {
-  test("extracts citations and cleans content", () => {
-    const text = "Some text [Video Title @ 10s-20s] more text";
-    const { citations, cleanContent } = parseCitations(text);
-    expect(citations).toEqual([
-      { source_title: "Video Title", timestamp_start: 10, timestamp_end: 20 },
-    ]);
-    expect(cleanContent).toBe("Some text  more text");
+describe("stripLegacyTokens", () => {
+  test("removes [Title @ Ns-Ns] patterns", () => {
+    expect(stripLegacyTokens("See [My Video @ 120s-145s].")).toBe("See .");
   });
 
-  test("multiple citations", () => {
-    const text = "[A @ 0s-5s] and [B @ 60s-120s]";
-    const { citations, cleanContent } = parseCitations(text);
-    expect(citations).toHaveLength(2);
-    expect(citations[0].source_title).toBe("A");
-    expect(citations[1].source_title).toBe("B");
-    expect(cleanContent).toBe(" and ");
+  test("removes multiple", () => {
+    expect(stripLegacyTokens("[A @ 10s-20s] and [B @ 30s-40s]")).toBe(" and ");
   });
 
-  test("deduplicates repeated citations", () => {
-    const text = "[A @ 0s-5s] and [A @ 0s-5s] again [B @ 10s-20s]";
-    const { citations, cleanContent } = parseCitations(text);
-    expect(citations).toHaveLength(2);
-    expect(citations[0]).toEqual({ source_title: "A", timestamp_start: 0, timestamp_end: 5 });
-    expect(citations[1]).toEqual({ source_title: "B", timestamp_start: 10, timestamp_end: 20 });
-    expect(cleanContent).toBe(" and  again ");
+  test("leaves non-citation brackets intact", () => {
+    expect(stripLegacyTokens("array[0] and [note]")).toBe("array[0] and [note]");
   });
 
-  test("does not deduplicate different timestamps for same title", () => {
-    const text = "[A @ 0s-5s] and [A @ 10s-20s]";
-    const { citations } = parseCitations(text);
-    expect(citations).toHaveLength(2);
-  });
-
-  test("no citations", () => {
-    const { citations, cleanContent } = parseCitations("plain text");
-    expect(citations).toEqual([]);
-    expect(cleanContent).toBe("plain text");
+  test("handles empty string", () => {
+    expect(stripLegacyTokens("")).toBe("");
   });
 });
 

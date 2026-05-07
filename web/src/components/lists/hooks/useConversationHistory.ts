@@ -3,8 +3,8 @@ import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import {
   formatTimestamp,
-  parseCitations,
-  type Citation,
+  stripLegacyTokens,
+  type ContentBlock,
   type RagMetadata,
   type ToolCallData,
   type ToolResult,
@@ -15,7 +15,7 @@ export interface MessageUI {
   role: "user" | "assistant";
   content: string;
   isStreaming: boolean;
-  citations: Citation[];
+  contentBlocks: ContentBlock[];
   toolCall: ToolCallData | null;
   error: string | null;
   timestamp: string;
@@ -40,7 +40,17 @@ export function useConversationHistory(listId: string | undefined, hasSources: b
         if (cancelled || !data) return;
         if (!data.messages?.length) return;
         const loaded: MessageUI[] = data.messages.map((m) => {
-          const { citations, cleanContent } = parseCitations(m.content);
+          let contentBlocks: ContentBlock[];
+          let displayContent = "";
+
+          if (m.metadata?.content_blocks) {
+            contentBlocks = m.metadata.content_blocks as ContentBlock[];
+          } else {
+            const stripped = stripLegacyTokens(m.content);
+            contentBlocks = [{ type: "text", text: stripped }];
+            displayContent = stripped;
+          }
+
           let toolCall: ToolCallData | null = null;
           const tcList = m.metadata?.tool_calls as Array<{ name: string; result?: ToolResult }> | undefined;
           const tc = tcList?.[0];
@@ -50,9 +60,9 @@ export function useConversationHistory(listId: string | undefined, hasSources: b
           return {
             id: m.id,
             role: m.role as "user" | "assistant",
-            content: cleanContent,
+            content: displayContent,
             isStreaming: false,
-            citations,
+            contentBlocks,
             toolCall,
             error: null,
             timestamp: formatTimestamp(m.created_at),

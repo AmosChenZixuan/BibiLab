@@ -25,18 +25,102 @@ import { api } from "@/lib/api";
 import {
   autoResize,
   formatSubtitle,
+  type ContentBlock,
 } from "@/lib/chat-utils";
+
+function CitationChip({
+  index,
+  sourceId,
+  chunkIds,
+  sources,
+  onOpenSource,
+}: {
+  index: number;
+  sourceId: string;
+  chunkIds: string[];
+  sources: Source[];
+  onOpenSource?: (source: Source, opts?: { highlightChunks?: string[] }) => void;
+}) {
+  const { t } = useLanguage();
+  const source = sources.find((s) => s.id === sourceId);
+  if (!source) {
+    return (
+      <span className="cite-missing" title={t("chat.citationMissing")}>
+        [{index}]
+      </span>
+    );
+  }
+  return (
+    <span className="cite-chip-wrap">
+      <button type="button" className="cite-chip" onClick={() => onOpenSource?.(source, { highlightChunks: chunkIds })}>
+        [{index}]
+      </button>
+      <span className="cite-chip-tooltip">{source.title}</span>
+    </span>
+  );
+}
+
+function renderParagraphs(
+  contentBlocks: ContentBlock[],
+  sources: Source[],
+  onOpenSource?: (source: Source, opts?: { highlightChunks?: string[] }) => void,
+  isStreaming?: boolean,
+) {
+  const paragraphs: Array<Array<ContentBlock>> = [[]];
+  for (const block of contentBlocks) {
+    if (block.type === "paragraph_break") {
+      if (paragraphs[paragraphs.length - 1].length > 0) {
+        paragraphs.push([]);
+      }
+    } else {
+      paragraphs[paragraphs.length - 1].push(block);
+    }
+  }
+
+  return (
+    <>
+      {paragraphs.map((para, pi) =>
+        para.length === 0 ? null : (
+          <div key={pi} className="citation-paragraph">
+            {para.map((block, bi) =>
+              block.type === "text" ? (
+                <ReactMarkdown
+                  key={bi}
+                  components={{ p: ({ children }) => <>{children}</> }}
+                >
+                  {block.text}
+                </ReactMarkdown>
+              ) : block.type === "citation" ? (
+                <CitationChip
+                  key={bi}
+                  index={block.index}
+                  sourceId={block.source_id}
+                  chunkIds={block.chunk_ids}
+                  sources={sources}
+                  onOpenSource={onOpenSource}
+                />
+              ) : null,
+            )}
+          </div>
+        ),
+      )}
+      {isStreaming && <span className="chat-cursor" />}
+    </>
+  );
+}
 
 interface ChatPanelProps {
   selectedSourceIds: string[];
   sources: Source[];
   listId: string;
+  onOpenSource?: (source: Source, opts?: { highlightChunks?: string[] }) => void;
 }
 
 export function ChatPanel({
   selectedSourceIds,
   sources,
   listId,
+  onOpenSource,
 }: ChatPanelProps) {
   const { t } = useLanguage();
   const { trackJobs } = useJobActivity();
@@ -211,28 +295,15 @@ export function ChatPanel({
                   <>
                     {msg.isStreaming && !msg.content ? (
                       <PulseRing />
+                    ) : msg.contentBlocks.length > 0 ? (
+                      <div className="bubble bubble-assistant">
+                        {renderParagraphs(msg.contentBlocks, sources, onOpenSource, msg.isStreaming)}
+                      </div>
                     ) : msg.content ? (
                       <div className="bubble bubble-assistant">
                         <ReactMarkdown>{msg.content}</ReactMarkdown>
-                        {msg.isStreaming && <span className="chat-cursor" />}
                       </div>
                     ) : null}
-                    {msg.citations.length > 0 && (
-                      <div className="cites">
-                        {msg.citations.map((c, i) => (
-                          <span key={i} className="cite">
-                            <span className="src">{c.source_title}</span>
-                            <span className="tspan">
-                              {Math.floor(c.timestamp_start / 60)}:
-                              {String(c.timestamp_start % 60).padStart(2, "0")}
-                              –
-                              {Math.floor(c.timestamp_end / 60)}:
-                              {String(c.timestamp_end % 60).padStart(2, "0")}
-                            </span>
-                          </span>
-                        ))}
-                      </div>
-                    )}
                     {msg.rag && <ObsChip rag={msg.rag} />}
                     {msg.toolCall && (
                       <div className="toolcall">

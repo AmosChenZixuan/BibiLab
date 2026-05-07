@@ -133,7 +133,9 @@ async def test_existing_summary_included_in_prompt(tmp_bibilab_home):
     assert captured_prompt is not None
     assert "User loves Python tutorials." in captured_prompt
     assert "Message 0" in captured_prompt
-    assert "PRESERVE ALL [title @ Ts-Ts] citations" in captured_prompt
+    # Legacy [title @ Ts-Ts] citation preservation was removed per #241 spec:
+    # summaries are plain prose without legacy token preservation.
+    assert "PRESERVE ALL [title @ Ts-Ts]" not in captured_prompt
 
 
 @pytest.mark.asyncio
@@ -239,8 +241,8 @@ async def test_nonexistent_conversation_noops(tmp_bibilab_home):
 
 
 @pytest.mark.asyncio
-async def test_compression_prompt_preserves_citations(tmp_bibilab_home):
-    """Compression prompt must include instruction to preserve [title @ Ts-Ts] citations."""
+async def test_compression_prompt_no_legacy_citation_preservation(tmp_bibilab_home):
+    """Compression prompt does not preserve legacy [title @ Ts-Ts] citations per #241 spec."""
     from bibilab.db import (
         bootstrap_db,
         create_conversation,
@@ -274,7 +276,9 @@ async def test_compression_prompt_preserves_citations(tmp_bibilab_home):
         await maybe_compress_conversation(conv_id, cfg)
 
     assert captured_prompt is not None
-    assert "PRESERVE ALL [title @ Ts-Ts] citations" in captured_prompt
+    # Legacy [title @ Ts-Ts] citation preservation was removed per #241 spec:
+    # summaries are plain prose without legacy token preservation.
+    assert "PRESERVE ALL [title @ Ts-Ts]" not in captured_prompt
 
 
 @pytest.mark.asyncio

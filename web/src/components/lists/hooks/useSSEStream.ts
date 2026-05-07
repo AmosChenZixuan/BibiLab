@@ -2,15 +2,18 @@ import { useEffect, useRef, useState } from "react";
 
 import type { JobRegistration } from "@/components/jobs/JobActivityProvider";
 import type { MessageUI } from "@/components/lists/hooks/useConversationHistory";
-import { formatTimestamp, parseCitations, type RagMetadata } from "@/lib/chat-utils";
+import { formatTimestamp, type RagMetadata, type ContentBlock } from "@/lib/chat-utils";
 import type { ToolResult } from "@/lib/chat-utils";
 import {
+  SSE_EVENT_CITATION,
   SSE_EVENT_DELTA,
   SSE_EVENT_DONE,
   SSE_EVENT_ERROR,
   SSE_EVENT_TOOL_RESULT,
 } from "@/lib/constants";
 import { LANG_STORAGE_KEY } from "@/lib/utils";
+
+type CitationEvent = { type: "citation"; index: number; source_id: string; chunk_ids: string[] };
 
 interface UseSSEStreamOptions {
   listId: string;
@@ -80,7 +83,7 @@ export function useSSEStream({
       role: "user",
       content: text,
       isStreaming: false,
-      citations: [],
+      contentBlocks: [],
       rag: null,
       toolCall: null,
       error: null,
@@ -92,7 +95,7 @@ export function useSSEStream({
       role: "assistant",
       content: "",
       isStreaming: true,
-      citations: [],
+      contentBlocks: [],
       toolCall: null,
       error: null,
       timestamp: formatTimestamp(new Date().toISOString()),
@@ -105,6 +108,23 @@ export function useSSEStream({
 
     const controller = new AbortController();
     abortControllerRef.current = controller;
+
+    let accBlocks: ContentBlock[] = [];
+    let pendingText = "";
+
+    const flushText = () => {
+      if (!pendingText) return;
+      const parts = pendingText.split(/\n{2,}/);
+      for (let j = 0; j < parts.length; j++) {
+        if (parts[j]) {
+          accBlocks.push({ type: "text", text: parts[j] });
+        }
+        if (j < parts.length - 1) {
+          accBlocks.push({ type: "paragraph_break" });
+        }
+      }
+      pendingText = "";
+    };
 
     try {
       const response = await fetch(`/api/lists/${listId}/chat`, {
@@ -138,15 +158,18 @@ export function useSSEStream({
 
         if (event.type === SSE_EVENT_DELTA) {
           const content = event.content as string;
-          updateAssistantMsg(assistantMsgId, (m) => ({ content: m.content + content }));
+          pendingText += content;
+          updateAssistantMsg(assistantMsgId, (m) => ({
+            content: m.content + content,
+            contentBlocks: [...accBlocks, { type: "text", text: pendingText }],
+          }));
         } else if (event.type === SSE_EVENT_TOOL_RESULT) {
           const toolName = event.name as string;
           if (!toolName) return;
           if (toolName === "retrieve") {
             const rag = event.result as unknown as RagMetadata;
             updateAssistantMsg(assistantMsgId, { rag });
-          } else {
-            // generate_report
+          } else if (toolName === "generate_report") {
             const result = event.result as ToolResult;
             if (!result) return;
             const toolCallData = { name: "generate_report", result };
@@ -155,15 +178,16 @@ export function useSSEStream({
             }
             updateAssistantMsg(assistantMsgId, { toolCall: toolCallData });
           }
+        } else if (event.type === SSE_EVENT_CITATION) {
+          flushText();
+          const citation = event as unknown as CitationEvent;
+          accBlocks.push(citation);
+          updateAssistantMsg(assistantMsgId, { contentBlocks: [...accBlocks] });
         } else if (event.type === SSE_EVENT_DONE) {
-          updateAssistantMsg(assistantMsgId, (m) => {
-            const { citations, cleanContent } = parseCitations(m.content);
-            return {
-              isStreaming: false,
-              content: cleanContent,
-              citations,
-              rag: m.rag,
-            };
+          flushText();
+          updateAssistantMsg(assistantMsgId, {
+            isStreaming: false,
+            contentBlocks: [...accBlocks],
           });
           safeSetIsStreaming(false);
           isStreamingRef.current = false;

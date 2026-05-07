@@ -149,7 +149,7 @@ async def test_stream_with_tools_loopback_retrieve():
             yield StreamEvent(type="delta", content="Answer based on chunks")
             yield StreamEvent(type="done")
 
-    async def fake_execute(tool_name, arguments):
+    async def fake_execute(tool_name, arguments, **kwargs):
         if tool_name == "retrieve":
             return retrieve_result
         raise ValueError(f"Unknown tool: {tool_name}")
@@ -202,7 +202,7 @@ async def test_stream_with_tools_terminal_tool_exits_after_execution():
             yield StreamEvent(type="delta", content="Should not reach here")
             yield StreamEvent(type="done")
 
-    async def fake_execute(tool_name, arguments):
+    async def fake_execute(tool_name, arguments, **kwargs):
         if tool_name == "generate_report":
             return report_result
         raise ValueError(f"Unknown tool: {tool_name}")
@@ -244,7 +244,7 @@ async def test_stream_with_tools_max_iterations():
     async def fake_stream(messages, cfg, tools=None, system=None, llm_max_tokens=2048):
         yield StreamEvent(type="tool_call", tool_call=tc)
 
-    async def fake_execute(name, args):
+    async def fake_execute(name, args, **kwargs):
         return {"ok": True}
 
     with patch("bibilab.routers.chat.stream_llm", side_effect=fake_stream):
@@ -308,7 +308,10 @@ async def test_stream_with_tools_loops_back_for_query_list_metadata():
     # Two turns: initial + loopback.
     assert len(turns) == 2
     # execute_tool_fn called once with the metadata tool args.
-    execute_tool_fn.assert_awaited_once_with("query_list_metadata", {"query_type": "count"})
+    execute_tool_fn.assert_awaited_once()
+    call_args = execute_tool_fn.call_args
+    assert call_args[0][0] == "query_list_metadata"
+    assert call_args[0][1] == {"query_type": "count"}
     # A delta carrying the answer must have been yielded after loopback.
     delta_text = "".join(e.content or "" for e in events if e.type == "delta")
     assert "8" in delta_text

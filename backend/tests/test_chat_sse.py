@@ -111,7 +111,7 @@ async def test_chat_endpoint_uses_conversation_history(client):
 
     captured_messages = []
 
-    async def capture(messages, cfg, tools=None, execute_tool_fn=None, system=None, llm_max_tokens=2048):
+    async def capture(messages, cfg, tools=None, execute_tool_fn=None, system=None, llm_max_tokens=2048, **kwargs):
         captured_messages.append(messages)
         yield StreamEvent(type="done")
 
@@ -131,7 +131,7 @@ async def test_chat_endpoint_includes_tools(client):
 
     captured_tools = []
 
-    async def capture(messages, cfg, tools=None, execute_tool_fn=None, system=None, llm_max_tokens=2048):
+    async def capture(messages, cfg, tools=None, execute_tool_fn=None, system=None, llm_max_tokens=2048, **kwargs):
         captured_tools.append(tools)
         yield StreamEvent(type="done")
 
@@ -149,7 +149,7 @@ async def test_chat_endpoint_handles_generate_report_tool(client):
     """generate_report tool execution yields proper SSE events."""
     list_id = (await client.post("/lists", json={"name": "Test"})).json()["id"]
 
-    async def fake_stream(messages, cfg, tools=None, execute_tool_fn=None, system=None, llm_max_tokens=2048):
+    async def fake_stream(messages, cfg, tools=None, execute_tool_fn=None, system=None, llm_max_tokens=2048, **kwargs):
         yield StreamEvent(type="delta", content="Generating...")
         yield StreamEvent(
             type="tool_result",
@@ -170,7 +170,7 @@ async def test_retrieve_tool_result_has_coverage(client):
     """retrieve tool_result includes search_mode and coverage metadata."""
     list_id = (await client.post("/lists", json={"name": "Test"})).json()["id"]
 
-    async def fake_stream(messages, cfg, tools=None, execute_tool_fn=None, system=None, llm_max_tokens=2048):
+    async def fake_stream(messages, cfg, tools=None, execute_tool_fn=None, system=None, llm_max_tokens=2048, **kwargs):
         result = await execute_tool_fn("retrieve", {"query": "test", "search_mode": "factual"})
         yield StreamEvent(
             type="tool_result",
@@ -218,7 +218,7 @@ async def test_smoke_scenario_1_chitchat_no_tool_calls(client):
     """Chitchat: LLM responds directly, no retrieve tool, no tool_result in SSE."""
     list_id = await _create_list(client, "Smoke 1")
 
-    async def fake_stream(messages, cfg, tools=None, execute_tool_fn=None, system=None, llm_max_tokens=2048):
+    async def fake_stream(messages, cfg, tools=None, execute_tool_fn=None, system=None, llm_max_tokens=2048, **kwargs):
         yield StreamEvent(type=SSE_EVENT_DELTA, content="You're welcome!")
         yield StreamEvent(type=SSE_EVENT_DONE)
 
@@ -250,7 +250,7 @@ async def test_smoke_scenario_1_chitchat_no_tool_calls(client):
                 "candidates_evaluated": 30,
                 "sources_with_hits": 1,
                 "sources_total": 1,
-                "source_coverage": [{"video_id": "bv1", "title": "Test Video"}],
+                "source_coverage": [{"source_id": "src-1", "video_id": "bv1", "title": "Test Video"}],
                 "_chunks": [{"title": "Test Video", "start": 10.0, "end": 25.0, "content": "relevant chunk"}],
             },
         ),
@@ -264,9 +264,9 @@ async def test_smoke_scenario_1_chitchat_no_tool_calls(client):
                 "sources_with_hits": 3,
                 "sources_total": 5,
                 "source_coverage": [
-                    {"video_id": "v1", "title": "Video A"},
-                    {"video_id": "v2", "title": "Video B"},
-                    {"video_id": "v3", "title": "Video C"},
+                    {"source_id": "src-1", "video_id": "v1", "title": "Video A"},
+                    {"source_id": "src-2", "video_id": "v2", "title": "Video B"},
+                    {"source_id": "src-3", "video_id": "v3", "title": "Video C"},
                 ],
                 "_chunks": [],
             },
@@ -279,7 +279,7 @@ async def test_smoke_scenario_2_retrieve(client, search_mode, query, user_messag
 
     retrieve_result = {"search_mode": search_mode, **result_overrides}
 
-    async def fake_stream(messages, cfg, tools=None, execute_tool_fn=None, system=None, llm_max_tokens=2048):
+    async def fake_stream(messages, cfg, tools=None, execute_tool_fn=None, system=None, llm_max_tokens=2048, **kwargs):
         yield StreamEvent(
             type="tool_call",
             tool_call=ToolCall(id="c1", name="retrieve", arguments={"query": query, "search_mode": search_mode}),
@@ -325,7 +325,7 @@ async def test_smoke_scenario_3_generate_report_no_retrieve(client):
 
     report_result = {"artifact_id": "art-123", "job_id": "job-456", "name": "brief", "type": "brief"}
 
-    async def fake_stream(messages, cfg, tools=None, execute_tool_fn=None, system=None, llm_max_tokens=2048):
+    async def fake_stream(messages, cfg, tools=None, execute_tool_fn=None, system=None, llm_max_tokens=2048, **kwargs):
         yield StreamEvent(type=SSE_EVENT_DELTA, content="Let me generate a brief for you.")
         result = await execute_tool_fn("generate_report", {"type": "brief", "prompt": "summarize the videos"})
         yield StreamEvent(type="tool_result", content=json.dumps({"name": "generate_report", "result": result}))
@@ -372,7 +372,7 @@ async def test_query_list_metadata_tool_registered_for_chat(client):
 
     captured_tools = None
 
-    async def fake_stream_llm(messages, cfg, tools=None, system=None, llm_max_tokens=None):
+    async def fake_stream_llm(messages, cfg, tools=None, system=None, llm_max_tokens=None, **kwargs):
         nonlocal captured_tools
         captured_tools = tools
         # Yield one delta so the loop doesn't hang waiting for done
@@ -397,3 +397,152 @@ def test_grounding_prompt_routes_counts_to_metadata_tool():
     assert "counts across sources" not in GROUNDING_SYSTEM_PROMPT
     # New routing must mention the metadata tool by name for the LLM.
     assert "query_list_metadata" in GROUNDING_SYSTEM_PROMPT
+
+
+@pytest.mark.asyncio
+async def test_chat_sse_emits_citation_events(client):
+    """SSE stream includes citation events interleaved with deltas, no [N] in text."""
+    list_id = (await client.post("/lists", json={"name": "T"})).json()["id"]
+
+    async def fake_stream(*args, **kwargs):
+        async for ev in an_async_generator(
+            [
+                StreamEvent(type="delta", content="See "),
+                StreamEvent(type="citation", content='{"index":1,"source_id":"s1"}'),
+                StreamEvent(type="delta", content=" for details."),
+                StreamEvent(type="done"),
+            ]
+        ):
+            yield ev
+
+    with patch("bibilab.routers.chat.stream_with_tools", side_effect=fake_stream):
+        resp = await client.post(f"/lists/{list_id}/chat", json={"message": "hi"})
+
+    assert resp.status_code == 200
+    events = _parse_sse(resp.text)
+    types = [e["type"] for e in events]
+    assert "citation" in types
+    assert "done" in types
+    delta_text = "".join(e.get("content", "") for e in events if e["type"] == "delta")
+    assert "[1]" not in delta_text
+
+
+@pytest.mark.asyncio
+async def test_chat_persists_content_blocks_in_metadata(client):
+    """Assistant message metadata includes content_blocks after citation stream."""
+    list_id = (await client.post("/lists", json={"name": "T"})).json()["id"]
+
+    async def fake_stream(*args, **kwargs):
+        async for ev in an_async_generator(
+            [
+                StreamEvent(type="delta", content="Hello "),
+                StreamEvent(type="citation", content='{"index":1,"source_id":"s1"}'),
+                StreamEvent(type="delta", content=" world"),
+                StreamEvent(type="done"),
+            ]
+        ):
+            yield ev
+
+    with patch("bibilab.routers.chat.stream_with_tools", side_effect=fake_stream):
+        await client.post(f"/lists/{list_id}/chat", json={"message": "hi"})
+
+    msgs = await _get_assistant_msgs(client, list_id)
+    assert len(msgs) == 1
+    meta = msgs[0].get("metadata")
+    assert meta is not None
+    blocks = meta["content_blocks"]
+    assert len(blocks) == 3
+    assert blocks[0] == {"type": "text", "text": "Hello "}
+    assert blocks[1]["type"] == "citation" and blocks[1]["index"] == 1
+    assert blocks[2] == {"type": "text", "text": " world"}
+
+
+@pytest.mark.asyncio
+async def test_chat_persists_paragraph_breaks_in_content_blocks(client):
+    """Paragraph boundaries (\n\n+) are split into paragraph_break blocks server-side.
+
+    Exercises both flush sites: mid-stream citation flush (pending text before
+    a citation) and post-stream final flush.
+    """
+    list_id = (await client.post("/lists", json={"name": "T"})).json()["id"]
+
+    async def fake_stream(*args, **kwargs):
+        async for ev in an_async_generator(
+            [
+                StreamEvent(type="delta", content="First paragraph "),
+                StreamEvent(type="citation", content='{"index":1,"source_id":"s1"}'),
+                StreamEvent(type="delta", content=".\n\nSecond paragraph "),
+                StreamEvent(type="citation", content='{"index":2,"source_id":"s2"}'),
+                StreamEvent(type="delta", content="."),
+                StreamEvent(type="done"),
+            ]
+        ):
+            yield ev
+
+    with patch("bibilab.routers.chat.stream_with_tools", side_effect=fake_stream):
+        await client.post(f"/lists/{list_id}/chat", json={"message": "hi"})
+
+    msgs = await _get_assistant_msgs(client, list_id)
+    blocks = msgs[0]["metadata"]["content_blocks"]
+    types = [b["type"] for b in blocks]
+    # Expected: text, citation, text, paragraph_break, text, citation, text
+    assert types == ["text", "citation", "text", "paragraph_break", "text", "citation", "text"]
+    assert blocks[2]["text"] == "."
+    assert blocks[4]["text"] == "Second paragraph "
+
+
+@pytest.mark.asyncio
+async def test_chat_sse_multi_retrieve_no_crash(client):
+    """Smoke test: two retrieve calls in one turn do not crash the SSE stream.
+
+    The registry ordering and dedup logic is exercised in
+    test_citation_registry.py; this test verifies the SSE layer
+    handles the multi-call flow without internal errors.
+    """
+    list_id = (await client.post("/lists", json={"name": "T"})).json()["id"]
+
+    async def fake_stream_with_tools(*args, **kwargs):
+        tc1 = ToolCall(id="tc1", name="retrieve", arguments={"query": "q1", "search_mode": "factual"})
+        tc2 = ToolCall(id="tc2", name="retrieve", arguments={"query": "q2", "search_mode": "factual"})
+        yield StreamEvent(type="tool_call", tool_call=tc1)
+        yield StreamEvent(type="done")
+        yield StreamEvent(type="tool_call", tool_call=tc2)
+        yield StreamEvent(type="done")
+        yield StreamEvent(type="delta", content="result")
+        yield StreamEvent(type="done")
+
+    with patch("bibilab.routers.chat.stream_with_tools", side_effect=fake_stream_with_tools):
+        resp = await client.post(f"/lists/{list_id}/chat", json={"message": "hi"})
+
+    assert resp.status_code == 200
+    events = _parse_sse(resp.text)
+    types = [e["type"] for e in events]
+    assert "done" in types
+
+
+@pytest.mark.asyncio
+async def test_chat_sse_hallucinated_index_emitted_as_text(client, caplog):
+    """[7] when registry only has 1-2 → emitted as text delta, warning logged.
+
+    Mocks stream_llm (not stream_with_tools) so the real parser runs.
+    The registry stays empty (no retrieve triggered), so [7] is out of range
+    and the parser logs citation_hallucinated_index.
+    """
+    list_id = (await client.post("/lists", json={"name": "T"})).json()["id"]
+
+    async def fake_stream_llm(*args, **kwargs):
+        yield StreamEvent(type="delta", content="see [7]")
+        yield StreamEvent(type="done")
+
+    import logging
+
+    with patch("bibilab.routers.chat.stream_llm", side_effect=fake_stream_llm):
+        with caplog.at_level(logging.WARNING, logger="bibilab.pipeline.citation_parser"):
+            resp = await client.post(f"/lists/{list_id}/chat", json={"message": "hi"})
+
+    assert resp.status_code == 200
+    events = _parse_sse(resp.text)
+    assert all(e["type"] == "delta" or e["type"] == "done" for e in events)
+    delta_text = "".join(e.get("content", "") for e in events if e["type"] == "delta")
+    assert "[7]" in delta_text
+    assert any("citation_hallucinated_index" in rec.message for rec in caplog.records)

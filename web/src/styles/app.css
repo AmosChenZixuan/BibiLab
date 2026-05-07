@@ -93,6 +93,10 @@
     border-bottom-left-radius: 6px;
   }
 
+  .citation-paragraph + .citation-paragraph {
+    margin-top: 0.75em;
+  }
+
   /* Chat streaming cursor */
   .chat-cursor {
     display: inline-block;
@@ -184,39 +188,69 @@
   }
 
   /* Citation chips */
-  .cites {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 5px;
-    padding: 0 4px;
+  .cite-chip-wrap {
+    position: relative;
+    display: inline;
   }
 
-  .cite {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    background: rgba(255, 255, 255, 0.7);
-    border: 1px solid var(--color-border);
-    border-radius: 9999px;
-    padding: 2px 9px;
-    font-size: 11px;
-    color: var(--color-muted);
-    max-width: 180px;
+  .cite-chip {
+    display: inline;
+    background: none;
+    border: none;
+    padding: 0;
+    margin: 0 1px;
+    font-size: 0.8em;
+    font-weight: 600;
+    color: var(--color-blue);
+    cursor: pointer;
+    vertical-align: baseline;
+    line-height: inherit;
+    font-family: var(--font-sans);
   }
 
-  .cite .src {
-    color: var(--color-ink);
-    font-weight: 500;
+  .cite-chip:hover {
+    text-decoration: underline;
+  }
+
+  .cite-chip:focus-visible {
+    outline: 2px solid var(--color-blue);
+    outline-offset: 1px;
+    border-radius: 2px;
+  }
+
+  .cite-chip-tooltip {
+    display: none;
+    position: absolute;
+    bottom: calc(100% + 6px);
+    left: 50%;
+    transform: translateX(-50%);
+    max-width: 260px;
+    padding: 4px 8px;
+    background: var(--color-ink);
+    color: #fff;
+    font-size: 12px;
+    font-weight: 400;
+    line-height: 1.4;
+    border-radius: 6px;
+    white-space: normal;
     overflow: hidden;
     text-overflow: ellipsis;
-    white-space: nowrap;
-    max-width: 100px;
+    pointer-events: none;
+    z-index: var(--z-tooltip, 50);
   }
 
-  .cite .tspan {
-    font-family: var(--font-mono);
-    font-size: 10px;
-    color: var(--color-blue);
+  .cite-chip-wrap:hover .cite-chip-tooltip,
+  .cite-chip-wrap:focus-within .cite-chip-tooltip {
+    display: block;
+  }
+
+  .cite-missing {
+    display: inline;
+    font-size: 0.8em;
+    color: var(--color-muted);
+    cursor: not-allowed;
+    opacity: 0.6;
+    vertical-align: baseline;
   }
 
   /* Tool-call card */
