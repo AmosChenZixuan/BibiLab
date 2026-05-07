@@ -220,6 +220,37 @@ class TestFormatChunkForLLM:
         assert result == '[1 @ 10s-20s]: "x"'
 
 
+class TestExecuteRetrieve:
+    """Tests for execute_retrieve return shape and registry handling."""
+
+    @pytest.mark.asyncio
+    async def test_execute_retrieve_includes_query_in_result(self, monkeypatch):
+        """The result returned by execute_retrieve must include the original query."""
+        from bibilab.pipeline import chat_tools
+        from bibilab.pipeline.embed import RetrievalResult
+
+        async def fake_retrieve(**kwargs):
+            return RetrievalResult(
+                chunks=[],
+                source_coverage=[],
+                candidates_evaluated=0,
+                sources_with_hits=0,
+                sources_total=1,
+            )
+
+        monkeypatch.setattr(chat_tools, "retrieve", fake_retrieve)
+
+        result = await chat_tools.execute_retrieve(
+            query="面食 种类",
+            search_mode="breadth",
+            source_ids=["s1"],
+            cfg=None,
+        )
+
+        assert result["query"] == "面食 种类"
+        assert result["search_mode"] == "breadth"
+
+
 class TestBuildSourceHeaders:
     def test_single(self):
         from bibilab.pipeline.chat_tools import CitationRegistryEntry, _build_source_headers

@@ -232,6 +232,7 @@ async def execute_retrieve(
     ]
 
     return {
+        "query": query,
         "search_mode": search_mode,
         "candidates_evaluated": result.candidates_evaluated,
         "sources_with_hits": result.sources_with_hits,
