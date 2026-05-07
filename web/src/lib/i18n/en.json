@@ -258,6 +258,7 @@
       "saving": "Saving..."
     },
     "obsChip": {
+      "query": "Query",
       "mode": "Mode",
       "chunksEvaluated": "Chunks evaluated",
       "sourcesRetrieved": "Sources retrieved",

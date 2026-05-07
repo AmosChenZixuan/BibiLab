@@ -2,13 +2,14 @@ import { useEffect, useRef, useState } from "react";
 
 import type { JobRegistration } from "@/components/jobs/JobActivityProvider";
 import type { MessageUI } from "@/components/lists/hooks/useConversationHistory";
-import { formatTimestamp, type RagMetadata, type ContentBlock } from "@/lib/chat-utils";
+import { formatTimestamp, type ContentBlock, type PendingRagCall, type RagCall, type SearchMode } from "@/lib/chat-utils";
 import type { ToolResult } from "@/lib/chat-utils";
 import {
   SSE_EVENT_CITATION,
   SSE_EVENT_DELTA,
   SSE_EVENT_DONE,
   SSE_EVENT_ERROR,
+  SSE_EVENT_TOOL_CALL_START,
   SSE_EVENT_TOOL_RESULT,
 } from "@/lib/constants";
 import { LANG_STORAGE_KEY } from "@/lib/utils";
@@ -88,6 +89,7 @@ export function useSSEStream({
       toolCall: null,
       error: null,
       timestamp: formatTimestamp(new Date().toISOString()),
+      pendingRagCalls: [],
     };
 
     const assistantMsg: MessageUI = {
@@ -100,6 +102,7 @@ export function useSSEStream({
       error: null,
       timestamp: formatTimestamp(new Date().toISOString()),
       rag: null,
+      pendingRagCalls: [],
     };
 
     setMessages((prev) => [...prev, userMsg, assistantMsg]);
@@ -163,12 +166,28 @@ export function useSSEStream({
             content: m.content + content,
             contentBlocks: [...accBlocks, { type: "text", text: pendingText }],
           }));
+        } else if (event.type === SSE_EVENT_TOOL_CALL_START) {
+          const toolName = event.name as string;
+          if (toolName !== "retrieve") return;
+          const id = event.id as string;
+          const args = event.arguments as { query: string; search_mode: SearchMode };
+          updateAssistantMsg(assistantMsgId, (m) => ({
+            pendingRagCalls: [
+              ...m.pendingRagCalls,
+              { id, query: args.query, search_mode: args.search_mode },
+            ],
+          }));
         } else if (event.type === SSE_EVENT_TOOL_RESULT) {
           const toolName = event.name as string;
           if (!toolName) return;
           if (toolName === "retrieve") {
-            const rag = event.result as unknown as RagMetadata;
-            updateAssistantMsg(assistantMsgId, { rag });
+            const call = event.result as unknown as RagCall;
+            updateAssistantMsg(assistantMsgId, (m) => ({
+              rag: { calls: [...(m.rag?.calls ?? []), call] },
+              pendingRagCalls: m.pendingRagCalls.filter(
+                (p) => !(p.query === call.query && p.search_mode === call.search_mode),
+              ),
+            }));
           } else if (toolName === "generate_report") {
             const result = event.result as ToolResult;
             if (!result) return;

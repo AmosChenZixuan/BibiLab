@@ -258,6 +258,7 @@
       "saving": "保存中…"
     },
     "obsChip": {
+      "query": "查询",
       "mode": "模式",
       "chunksEvaluated": "已评估块数",
       "sourcesRetrieved": "已检索的来源数",

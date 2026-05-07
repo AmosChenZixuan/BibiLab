@@ -5,6 +5,7 @@ import {
   formatTimestamp,
   stripLegacyTokens,
   type ContentBlock,
+  type PendingRagCall,
   type RagMetadata,
   type ToolCallData,
   type ToolResult,
@@ -20,6 +21,7 @@ export interface MessageUI {
   error: string | null;
   timestamp: string;
   rag: RagMetadata | null;
+  pendingRagCalls: PendingRagCall[];
 }
 
 export function useConversationHistory(listId: string | undefined, hasSources: boolean) {
@@ -67,6 +69,7 @@ export function useConversationHistory(listId: string | undefined, hasSources: b
             error: null,
             timestamp: formatTimestamp(m.created_at),
             rag: (m.metadata?.rag as RagMetadata | null) ?? null,
+            pendingRagCalls: [],
           };
         });
         setMessages(loaded);

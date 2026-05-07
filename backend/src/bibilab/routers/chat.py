@@ -207,6 +207,13 @@ async def stream_with_tools(
 
         parse_buffer = ""
 
+        # Terminal tools (not loopback): no follow-up LLM turn, so yield preamble now.
+        is_terminal = not any(tc.name in LOOPBACK_TOOLS for tc in tool_calls)
+        if is_terminal and iteration_text:
+            parsed_events, _ = parse_delta(iteration_text, "", lookup)
+            for pe in parsed_events:
+                yield pe
+
         if iteration > MAX_TOOL_ITERATIONS:
             yield StreamEvent(type="error", content="Max tool iterations exceeded")
             return
