@@ -111,6 +111,12 @@ async def delete_conversation_endpoint(list_id: str) -> None:
 
 
 def _client_tool_result(result: dict) -> dict:
+    """Strip internal fields (_-prefixed keys) before sending tool results to the client.
+
+    Tool implementations may attach private metadata via _-prefixed keys (e.g. _chunks).
+    These are never exposed over SSE. If you add a new tool whose result includes fields
+    the client needs, do NOT prefix them with ``_``.
+    """
     return {k: v for k, v in result.items() if not k.startswith("_")}
 
 

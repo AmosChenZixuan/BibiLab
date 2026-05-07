@@ -171,6 +171,10 @@ export function useSSEStream({
         } else if (event.type === SSE_EVENT_TOOL_CALL_START) {
           const toolName = event.name as string;
           const id = event.id as string;
+          if (!id || !toolName || !event.arguments) {
+            console.warn("tool_call_start missing required fields", event);
+            return;
+          }
           if (toolName === "retrieve") {
             const args = event.arguments as { query: string; search_mode: SearchMode };
             updateAssistantMsg(assistantMsgId, (m) => ({
@@ -196,10 +200,23 @@ export function useSSEStream({
             const callId = event.id as string;
             updateAssistantMsg(assistantMsgId, (m) => ({
               rag: { calls: [...(m.rag?.calls ?? []), call] },
-              pendingRagCalls: m.pendingRagCalls.filter((p) => p.id !== callId),
+              pendingRagCalls: callId
+                ? m.pendingRagCalls.filter((p) => p.id !== callId)
+                : m.pendingRagCalls,
             }));
+            if (!callId) {
+              console.warn("retrieve tool_result missing id, pending chip not cleared");
+            }
           } else if (toolName === "query_list_metadata") {
-            updateAssistantMsg(assistantMsgId, { pendingMetadataCalls: [] });
+            const callId = event.id as string;
+            updateAssistantMsg(assistantMsgId, (m) => ({
+              pendingMetadataCalls: callId
+                ? m.pendingMetadataCalls.filter((p) => p.id !== callId)
+                : m.pendingMetadataCalls,
+            }));
+            if (!callId) {
+              console.warn("query_list_metadata tool_result missing id, pending chip not cleared");
+            }
           } else if (toolName === "generate_report") {
             const result = event.result as ToolResult;
             if (!result) return;

@@ -77,10 +77,14 @@ export function PendingObsChip({ query, search_mode }: { query: string; search_m
 }
 
 export function PendingMetaChip({ query_type }: { query_type: string }) {
+  const { t } = useLanguage();
+  const key = `chat.obsChip.metaQueryType.${query_type}`;
+  const translated = t(key);
+  const label = translated !== key ? translated : query_type;
   return (
     <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-sky/10 border border-border text-xs text-blue">
       <Loader2 size={11} className="animate-spin" />
-      <span className="font-mono">{query_type}</span>
+      <span className="font-mono">{label}</span>
     </div>
   );
 }

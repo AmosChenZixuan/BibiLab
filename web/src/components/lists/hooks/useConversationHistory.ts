@@ -63,12 +63,8 @@ export function useConversationHistory(listId: string | undefined, hasSources: b
           }
           let rag: RagMetadata | null = null;
           const rawRag = m.metadata?.rag as Record<string, unknown> | undefined;
-          if (rawRag) {
-            if (rawRag.calls) {
-              rag = rawRag as unknown as RagMetadata;
-            } else {
-              console.warn("Legacy rag metadata shape (no 'calls' key) — ignoring", rawRag);
-            }
+          if (rawRag?.calls) {
+            rag = rawRag as unknown as RagMetadata;
           }
           return {
             id: m.id,
