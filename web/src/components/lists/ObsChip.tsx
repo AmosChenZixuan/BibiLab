@@ -75,3 +75,12 @@ export function PendingObsChip({ query, search_mode }: { query: string; search_m
     </div>
   );
 }
+
+export function PendingMetaChip({ query_type }: { query_type: string }) {
+  return (
+    <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-sky/10 border border-border text-xs text-blue">
+      <Loader2 size={11} className="animate-spin" />
+      <span className="font-mono">{query_type}</span>
+    </div>
+  );
+}

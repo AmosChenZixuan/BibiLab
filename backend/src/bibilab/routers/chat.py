@@ -205,6 +205,8 @@ async def stream_with_tools(
         parse_buffer = ""
 
         is_terminal = not any(tc.name in LOOPBACK_TOOLS for tc in tool_calls)
+        if not is_terminal and iteration_text:
+            logger.info("preamble_discarded len=%d iteration=%d", len(iteration_text), iteration)
         if is_terminal and iteration_text:
             parsed_events, _ = parse_delta(iteration_text, "", lookup)
             for pe in parsed_events:
@@ -224,8 +226,9 @@ async def stream_with_tools(
         for tc in tool_calls:
             try:
                 result = await _execute_with_registry(tc.name, tc.arguments)
-            except Exception as exc:
-                yield StreamEvent(type="error", content=str(exc))
+            except Exception:
+                logger.exception("tool_execution_failed tool=%s", tc.name)
+                yield StreamEvent(type="error", content=f"Tool {tc.name} failed")
                 return
 
             results[tc.id] = result

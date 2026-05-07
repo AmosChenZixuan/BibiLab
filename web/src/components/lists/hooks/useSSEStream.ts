@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 
 import type { JobRegistration } from "@/components/jobs/JobActivityProvider";
 import type { MessageUI } from "@/components/lists/hooks/useConversationHistory";
-import { formatTimestamp, type ContentBlock, type PendingRagCall, type RagCall, type SearchMode } from "@/lib/chat-utils";
+import { formatTimestamp, type ContentBlock, type PendingMetadataCall, type PendingRagCall, type RagCall, type SearchMode } from "@/lib/chat-utils";
 import type { ToolResult } from "@/lib/chat-utils";
 import {
   SSE_EVENT_CITATION,
@@ -90,6 +90,7 @@ export function useSSEStream({
       error: null,
       timestamp: formatTimestamp(new Date().toISOString()),
       pendingRagCalls: [],
+      pendingMetadataCalls: [],
     };
 
     const assistantMsg: MessageUI = {
@@ -103,6 +104,7 @@ export function useSSEStream({
       timestamp: formatTimestamp(new Date().toISOString()),
       rag: null,
       pendingRagCalls: [],
+      pendingMetadataCalls: [],
     };
 
     setMessages((prev) => [...prev, userMsg, assistantMsg]);
@@ -168,15 +170,24 @@ export function useSSEStream({
           }));
         } else if (event.type === SSE_EVENT_TOOL_CALL_START) {
           const toolName = event.name as string;
-          if (toolName !== "retrieve") return;
           const id = event.id as string;
-          const args = event.arguments as { query: string; search_mode: SearchMode };
-          updateAssistantMsg(assistantMsgId, (m) => ({
-            pendingRagCalls: [
-              ...m.pendingRagCalls,
-              { id, query: args.query, search_mode: args.search_mode },
-            ],
-          }));
+          if (toolName === "retrieve") {
+            const args = event.arguments as { query: string; search_mode: SearchMode };
+            updateAssistantMsg(assistantMsgId, (m) => ({
+              pendingRagCalls: [
+                ...m.pendingRagCalls,
+                { id, query: args.query, search_mode: args.search_mode },
+              ],
+            }));
+          } else if (toolName === "query_list_metadata") {
+            const args = event.arguments as { query_type: string };
+            updateAssistantMsg(assistantMsgId, (m) => ({
+              pendingMetadataCalls: [
+                ...m.pendingMetadataCalls,
+                { id, query_type: args.query_type },
+              ],
+            }));
+          }
         } else if (event.type === SSE_EVENT_TOOL_RESULT) {
           const toolName = event.name as string;
           if (!toolName) return;
@@ -187,6 +198,8 @@ export function useSSEStream({
               rag: { calls: [...(m.rag?.calls ?? []), call] },
               pendingRagCalls: m.pendingRagCalls.filter((p) => p.id !== callId),
             }));
+          } else if (toolName === "query_list_metadata") {
+            updateAssistantMsg(assistantMsgId, { pendingMetadataCalls: [] });
           } else if (toolName === "generate_report") {
             const result = event.result as ToolResult;
             if (!result) return;
@@ -206,12 +219,14 @@ export function useSSEStream({
           updateAssistantMsg(assistantMsgId, {
             isStreaming: false,
             contentBlocks: [...accBlocks],
+            pendingRagCalls: [],
+            pendingMetadataCalls: [],
           });
           safeSetIsStreaming(false);
           isStreamingRef.current = false;
         } else if (event.type === SSE_EVENT_ERROR) {
           const errorMsg = event.message as string;
-          updateAssistantMsg(assistantMsgId, { isStreaming: false, error: errorMsg });
+          updateAssistantMsg(assistantMsgId, { isStreaming: false, error: errorMsg, pendingRagCalls: [], pendingMetadataCalls: [] });
           safeSetIsStreaming(false);
           isStreamingRef.current = false;
         }
@@ -249,9 +264,9 @@ export function useSSEStream({
       isStreamingRef.current = false;
     } catch (err) {
       if (err instanceof Error && err.name === "AbortError") {
-        updateAssistantMsg(assistantMsgId, { isStreaming: false, error: interruptedLabel });
+        updateAssistantMsg(assistantMsgId, { isStreaming: false, error: interruptedLabel, pendingRagCalls: [], pendingMetadataCalls: [] });
       } else {
-        updateAssistantMsg(assistantMsgId, { isStreaming: false, error: String(err) });
+        updateAssistantMsg(assistantMsgId, { isStreaming: false, error: String(err), pendingRagCalls: [], pendingMetadataCalls: [] });
       }
       safeSetIsStreaming(false);
       isStreamingRef.current = false;

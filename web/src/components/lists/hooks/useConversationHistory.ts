@@ -5,6 +5,7 @@ import {
   formatTimestamp,
   stripLegacyTokens,
   type ContentBlock,
+  type PendingMetadataCall,
   type PendingRagCall,
   type RagMetadata,
   type ToolCallData,
@@ -22,6 +23,7 @@ export interface MessageUI {
   timestamp: string;
   rag: RagMetadata | null;
   pendingRagCalls: PendingRagCall[];
+  pendingMetadataCalls: PendingMetadataCall[];
 }
 
 export function useConversationHistory(listId: string | undefined, hasSources: boolean) {
@@ -59,6 +61,15 @@ export function useConversationHistory(listId: string | undefined, hasSources: b
           if (tc?.result) {
             toolCall = { name: tc.name, result: tc.result };
           }
+          let rag: RagMetadata | null = null;
+          const rawRag = m.metadata?.rag as Record<string, unknown> | undefined;
+          if (rawRag) {
+            if (rawRag.calls) {
+              rag = rawRag as unknown as RagMetadata;
+            } else {
+              console.warn("Legacy rag metadata shape (no 'calls' key) — ignoring", rawRag);
+            }
+          }
           return {
             id: m.id,
             role: m.role as "user" | "assistant",
@@ -68,8 +79,9 @@ export function useConversationHistory(listId: string | undefined, hasSources: b
             toolCall,
             error: null,
             timestamp: formatTimestamp(m.created_at),
-            rag: (m.metadata?.rag as RagMetadata | null) ?? null,
+            rag,
             pendingRagCalls: [],
+            pendingMetadataCalls: [],
           };
         });
         setMessages(loaded);

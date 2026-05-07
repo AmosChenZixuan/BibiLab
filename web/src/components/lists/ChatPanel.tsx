@@ -18,7 +18,7 @@ import {
 import { useLanguage } from "@/app/LanguageContext";
 import { useJobActivity } from "@/components/jobs/JobActivityProvider";
 import { useConversationHistory, type MessageUI } from "@/components/lists/hooks/useConversationHistory";
-import { ObsChip, PendingObsChip } from "@/components/lists/ObsChip";
+import { ObsChip, PendingMetaChip, PendingObsChip } from "@/components/lists/ObsChip";
 import { PulseRing } from "@/components/ui/PulseRing";
 import type { Source } from "@/lib/types";
 import { api } from "@/lib/api";
@@ -309,6 +309,9 @@ export function ChatPanel({
                     ))}
                     {msg.pendingRagCalls.map((p) => (
                       <PendingObsChip key={`pending-${p.id}`} query={p.query} search_mode={p.search_mode} />
+                    ))}
+                    {msg.pendingMetadataCalls.map((p) => (
+                      <PendingMetaChip key={`pending-meta-${p.id}`} query_type={p.query_type} />
                     ))}
                     {msg.toolCall && (
                       <div className="toolcall">

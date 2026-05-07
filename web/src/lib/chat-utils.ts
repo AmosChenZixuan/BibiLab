@@ -24,6 +24,10 @@ export type PendingRagCall = {
   query: string;
   search_mode: SearchMode;
 };
+export type PendingMetadataCall = {
+  id: string;
+  query_type: string;
+};
 
 export function formatDurationHuman(seconds: number): string {
   if (seconds < 60) return `${seconds}s`;
