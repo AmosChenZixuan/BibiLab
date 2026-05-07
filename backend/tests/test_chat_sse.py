@@ -576,6 +576,67 @@ async def test_retrieve_filtered_after_first_use(client):
 
 
 @pytest.mark.asyncio
+async def test_preamble_suppressed_for_tool_iteration(client):
+    """Deltas from an iteration that ends with a retrieve tool_call must not reach the client."""
+    list_id = (await client.post("/lists", json={"name": "T"})).json()["id"]
+    iteration_count = 0
+
+    async def fake_stream_llm(messages, cfg, tools=None, system=None, llm_max_tokens=None, **kwargs):
+        nonlocal iteration_count
+        iteration_count += 1
+        if iteration_count == 1:
+            yield StreamEvent(type="delta", content="Let me look that up again.")
+            yield StreamEvent(
+                type="tool_call",
+                tool_call=ToolCall(id="tc1", name="retrieve", arguments={"query": "x", "search_mode": "factual"}),
+            )
+            yield StreamEvent(type="done")
+        else:
+            yield StreamEvent(type="delta", content="final answer")
+            yield StreamEvent(type="done")
+
+    async def fake_execute_tool(**kwargs):
+        args = kwargs.get("arguments", {})
+        return {
+            "query": args.get("query", ""),
+            "search_mode": "factual",
+            "candidates_evaluated": 0,
+            "sources_with_hits": 0,
+            "sources_total": 1,
+            "source_coverage": [],
+            "_chunks": "",
+            "_turn_indices": [],
+        }
+
+    with (
+        patch("bibilab.routers.chat.stream_llm", fake_stream_llm),
+        patch("bibilab.routers.chat.execute_tool", fake_execute_tool),
+    ):
+        resp = await client.post(f"/lists/{list_id}/chat", json={"message": "q"})
+
+    assert resp.status_code == 200
+    body = resp.text
+    assert "Let me look that up again" not in body, "preamble from tool-emitting iteration leaked to client"
+    assert "final answer" in body, "terminal iteration's delta must reach the client"
+
+
+@pytest.mark.asyncio
+async def test_terminal_iteration_deltas_streamed(client):
+    """A no-tool iteration's deltas must reach the client verbatim."""
+    list_id = (await client.post("/lists", json={"name": "T"})).json()["id"]
+
+    async def fake_stream_llm(messages, cfg, tools=None, system=None, llm_max_tokens=None, **kwargs):
+        yield StreamEvent(type="delta", content="hello world")
+        yield StreamEvent(type="done")
+
+    with patch("bibilab.routers.chat.stream_llm", fake_stream_llm):
+        resp = await client.post(f"/lists/{list_id}/chat", json={"message": "hi"})
+
+    assert resp.status_code == 200
+    assert "hello world" in resp.text
+
+
+@pytest.mark.asyncio
 async def test_chat_sse_hallucinated_index_emitted_as_text(client, caplog):
     """[7] when registry only has 1-2 → emitted as text delta, warning logged.
 

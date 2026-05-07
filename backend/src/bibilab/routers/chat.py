@@ -170,23 +170,28 @@ async def stream_with_tools(
     while True:
         iteration += 1
         tool_calls: list[ToolCall] = []
+        iteration_text = ""
         lookup = _build_lookup()
         active_tools = [t for t in tools if not (retrieve_used and t.name == "retrieve")]
         async for event in stream_llm(messages, cfg, active_tools, system=system, llm_max_tokens=llm_max_tokens):
             if event.type == "tool_call":
                 tool_calls.append(event.tool_call)
             elif event.type == "delta" and event.content:
-                parsed_events, parse_buffer = parse_delta(event.content, parse_buffer, lookup)
-                for pe in parsed_events:
-                    if pe.type == "citation":
-                        citation_emitted = True
-                    yield pe
+                iteration_text += event.content
             elif event.type == "done" and tool_calls:
-                pass  # Suppress: event_generator yields done after the async loop
+                pass
+            elif event.type in ("delta", "done"):
+                pass
             else:
                 yield event
 
         if not tool_calls:
+            if iteration_text:
+                parsed_events, parse_buffer = parse_delta(iteration_text, parse_buffer, lookup)
+                for pe in parsed_events:
+                    if pe.type == "citation":
+                        citation_emitted = True
+                    yield pe
             for pe in flush_buffer(parse_buffer):
                 yield pe
             if not citation_emitted and registry:
@@ -195,6 +200,8 @@ async def stream_with_tools(
                     len(registry),
                 )
             return
+
+        parse_buffer = ""
 
         if iteration > MAX_TOOL_ITERATIONS:
             yield StreamEvent(type="error", content="Max tool iterations exceeded")
