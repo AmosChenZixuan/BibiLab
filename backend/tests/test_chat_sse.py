@@ -315,7 +315,7 @@ async def test_smoke_scenario_2_retrieve(client, search_mode, query, user_messag
     assistant_msgs = await _get_assistant_msgs(client, list_id)
     assert len(assistant_msgs) == 1
     assert assistant_msgs[0]["metadata"] is not None
-    assert assistant_msgs[0]["metadata"]["rag"]["search_mode"] == search_mode
+    assert assistant_msgs[0]["metadata"]["rag"]["calls"][0]["search_mode"] == search_mode
 
 
 @pytest.mark.asyncio
@@ -662,3 +662,117 @@ async def test_chat_sse_hallucinated_index_emitted_as_text(client, caplog):
     delta_text = "".join(e.get("content", "") for e in events if e["type"] == "delta")
     assert "[7]" in delta_text
     assert any("citation_hallucinated_index" in rec.message for rec in caplog.records)
+
+
+def test_grounding_prompt_has_audit_prior_claims_rule():
+    from bibilab.routers.chat import GROUNDING_SYSTEM_PROMPT
+
+    assert "audit ALL items" in GROUNDING_SYSTEM_PROMPT, (
+        "GROUNDING_SYSTEM_PROMPT must instruct the LLM to audit all prior claims, "
+        "not just user-flagged ones, when correcting a previous answer."
+    )
+
+
+@pytest.mark.asyncio
+async def test_tool_call_start_emitted_before_tool_result(client):
+    """Each retrieve tool_call must emit a tool_call_start SSE event before its tool_result."""
+    list_id = (await client.post("/lists", json={"name": "T"})).json()["id"]
+    iteration_count = 0
+
+    async def fake_stream_llm(messages, cfg, tools=None, system=None, llm_max_tokens=None, **kwargs):
+        nonlocal iteration_count
+        iteration_count += 1
+        if iteration_count == 1:
+            yield StreamEvent(
+                type="tool_call",
+                tool_call=ToolCall(id="tc1", name="retrieve", arguments={"query": "noodles", "search_mode": "breadth"}),
+            )
+            yield StreamEvent(type="done")
+        else:
+            yield StreamEvent(type="delta", content="answer")
+            yield StreamEvent(type="done")
+
+    async def fake_execute_tool(**kwargs):
+        args = kwargs.get("arguments", {})
+        return {
+            "query": args.get("query", ""),
+            "search_mode": args.get("search_mode"),
+            "candidates_evaluated": 5,
+            "sources_with_hits": 2,
+            "sources_total": 3,
+            "source_coverage": [],
+            "_chunks": "",
+            "_turn_indices": [],
+        }
+
+    with (
+        patch("bibilab.routers.chat.stream_llm", fake_stream_llm),
+        patch("bibilab.routers.chat.execute_tool", fake_execute_tool),
+    ):
+        resp = await client.post(f"/lists/{list_id}/chat", json={"message": "q"})
+
+    assert resp.status_code == 200
+    body = resp.text
+    start_idx = body.find('"tool_call_start"')
+    result_idx = body.find('"tool_result"')
+    assert start_idx >= 0, "tool_call_start event missing"
+    assert result_idx >= 0, "tool_result event missing"
+    assert start_idx < result_idx, "tool_call_start must precede tool_result"
+    assert '"name": "retrieve"' in body
+    assert '"query": "noodles"' in body
+    assert '"search_mode": "breadth"' in body
+
+
+@pytest.mark.asyncio
+async def test_rag_metadata_persists_calls_list(client):
+    """metadata.rag.calls must contain one entry per retrieve call in the turn."""
+    list_id = (await client.post("/lists", json={"name": "T"})).json()["id"]
+    iteration_count = 0
+
+    async def fake_stream_llm(messages, cfg, tools=None, system=None, llm_max_tokens=None, **kwargs):
+        nonlocal iteration_count
+        iteration_count += 1
+        if iteration_count == 1:
+            yield StreamEvent(
+                type="tool_call",
+                tool_call=ToolCall(id="tc1", name="retrieve", arguments={"query": "A", "search_mode": "breadth"}),
+            )
+            yield StreamEvent(
+                type="tool_call",
+                tool_call=ToolCall(id="tc2", name="retrieve", arguments={"query": "B", "search_mode": "factual"}),
+            )
+            yield StreamEvent(type="done")
+        else:
+            yield StreamEvent(type="delta", content="ok")
+            yield StreamEvent(type="done")
+
+    async def fake_execute_tool(**kwargs):
+        args = kwargs.get("arguments", {})
+        return {
+            "query": args.get("query", ""),
+            "search_mode": args.get("search_mode"),
+            "candidates_evaluated": 1,
+            "sources_with_hits": 1,
+            "sources_total": 5,
+            "source_coverage": [],
+            "_chunks": "",
+            "_turn_indices": [],
+        }
+
+    with (
+        patch("bibilab.routers.chat.stream_llm", fake_stream_llm),
+        patch("bibilab.routers.chat.execute_tool", fake_execute_tool),
+    ):
+        resp = await client.post(f"/lists/{list_id}/chat", json={"message": "q"})
+    assert resp.status_code == 200
+
+    conv = (await client.get(f"/lists/{list_id}/conversation")).json()
+    assistant_msgs = [m for m in conv["messages"] if m["role"] == "assistant"]
+    assert assistant_msgs, "no assistant message persisted"
+    rag = assistant_msgs[-1]["metadata"]["rag"]
+    assert "calls" in rag
+    assert len(rag["calls"]) == 2
+    queries = sorted(c["query"] for c in rag["calls"])
+    assert queries == ["A", "B"]
+    modes = sorted(c["search_mode"] for c in rag["calls"])
+    assert modes == ["breadth", "factual"]
