@@ -60,6 +60,55 @@ function CitationChip({
   );
 }
 
+function renderParagraphs(
+  contentBlocks: ContentBlock[],
+  sources: Source[],
+  onOpenSource?: (source: Source, opts?: { highlightChunks?: string[] }) => void,
+  isStreaming?: boolean,
+) {
+  const paragraphs: Array<Array<ContentBlock>> = [[]];
+  for (const block of contentBlocks) {
+    if (block.type === "paragraph_break") {
+      if (paragraphs[paragraphs.length - 1].length > 0) {
+        paragraphs.push([]);
+      }
+    } else {
+      paragraphs[paragraphs.length - 1].push(block);
+    }
+  }
+
+  return (
+    <>
+      {paragraphs.map((para, pi) =>
+        para.length === 0 ? null : (
+          <div key={pi} className="citation-paragraph">
+            {para.map((block, bi) =>
+              block.type === "text" ? (
+                <ReactMarkdown
+                  key={bi}
+                  components={{ p: ({ children }) => <>{children}</> }}
+                >
+                  {block.text}
+                </ReactMarkdown>
+              ) : block.type === "citation" ? (
+                <CitationChip
+                  key={bi}
+                  index={block.index}
+                  sourceId={block.source_id}
+                  chunkIds={block.chunk_ids}
+                  sources={sources}
+                  onOpenSource={onOpenSource}
+                />
+              ) : null,
+            )}
+          </div>
+        ),
+      )}
+      {isStreaming && <span className="chat-cursor" />}
+    </>
+  );
+}
+
 interface ChatPanelProps {
   selectedSourceIds: string[];
   sources: Source[];
@@ -248,21 +297,7 @@ export function ChatPanel({
                       <PulseRing />
                     ) : msg.contentBlocks.length > 0 ? (
                       <div className="bubble bubble-assistant">
-                        {msg.contentBlocks.map((block, i) =>
-                          block.type === "text" ? (
-                            <ReactMarkdown key={i} components={block.text.includes('\n\n') ? undefined : { p: ({children}) => <>{children}</> }}>{block.text}</ReactMarkdown>
-                          ) : (
-                            <CitationChip
-                              key={i}
-                              index={block.index}
-                              sourceId={block.source_id}
-                              chunkIds={block.chunk_ids}
-                              sources={sources}
-                              onOpenSource={onOpenSource}
-                            />
-                          ),
-                        )}
-                        {msg.isStreaming && <span className="chat-cursor" />}
+                        {renderParagraphs(msg.contentBlocks, sources, onOpenSource, msg.isStreaming)}
                       </div>
                     ) : msg.content ? (
                       <div className="bubble bubble-assistant">

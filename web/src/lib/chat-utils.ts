@@ -1,6 +1,7 @@
 export type ContentBlock =
   | { type: "text"; text: string }
-  | { type: "citation"; index: number; source_id: string; chunk_ids: string[] };
+  | { type: "citation"; index: number; source_id: string; chunk_ids: string[] }
+  | { type: "paragraph_break" };
 
 export type ToolResult = { artifact_id: string; job_id?: string; name: string; type: string };
 export interface ToolCallData {
@@ -25,13 +26,12 @@ export function formatDurationHuman(seconds: number): string {
   return `${m}m`;
 }
 
-export function formatSubtitle(
-  t: (key: string, params?: Record<string, string | number>) => string,
-  sourceCount: number,
-  totalSeconds: number,
-): string {
+export function formatSubtitle(t: (key: string, params?: Record<string, string | number>) => string, sourceCount: number, totalSeconds: number): string {
   const key = sourceCount === 1 ? "chat.subtitle.templateSingular" : "chat.subtitle.templatePlural";
-  return t(key, { count: sourceCount, duration: formatDurationHuman(totalSeconds) });
+  return t(key, {
+    count: sourceCount,
+    duration: formatDurationHuman(totalSeconds),
+  });
 }
 
 const LEGACY_CITATION_RE = /\[([^\]]+?) @ (\d+)s-(\d+)s\]/g;

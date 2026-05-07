@@ -35,6 +35,9 @@ def parse_delta(
 
         entry = index_to_entry.get(n)
         if entry is not None:
+            # chunk_ids snapshot is safe: LLM only emits prose after the
+            # retrieve tool result completes — registry is stable at this point.
+            # If retrieve ever streams mid-prose, this becomes a race.
             events.append(
                 StreamEvent(
                     type="citation",

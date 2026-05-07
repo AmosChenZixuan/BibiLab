@@ -44,6 +44,13 @@ LLM delta stream
 7. Frontend assembles `ContentBlock[]` from interleaved delta + citation events
 8. On stream end: `content_blocks` persisted in `metadata`, `source_coverage` ordered by registry index
 
+## Chunk ID format
+
+`chunk_ids` are synthetic strings `"{video_id}_{int(start_seconds)}_{int(end_seconds)}"`,
+not foreign keys to `chunks` table. Built in `execute_retrieve`. V2 highlighting
+must re-derive timestamps by parsing these strings; consider replacing with
+real chunk UUIDs if and when chunks gain stable IDs in the embedding pipeline.
+
 ## V2 follow-up
 
 - LLM prompt extension for chunk-specific citations (`[N#M]`)

@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 from collections.abc import AsyncGenerator
 from typing import Any
 
@@ -55,6 +56,20 @@ CHAT_MAX_TOKENS = 16384
 
 LOOPBACK_TOOLS = {"retrieve", "query_list_metadata"}
 MAX_TOOL_ITERATIONS = 3
+
+_PARAGRAPH_SPLIT = re.compile(r"\n{2,}")
+
+
+def _flush_pending_text(content_blocks: list[dict], text: str) -> None:
+    """Split text on paragraph boundaries (\n\n+), emit text + paragraph_break blocks."""
+    if not text:
+        return
+    parts = _PARAGRAPH_SPLIT.split(text)
+    for j, part in enumerate(parts):
+        if part:
+            content_blocks.append({"type": "text", "text": part})
+        if j < len(parts) - 1:
+            content_blocks.append({"type": "paragraph_break"})
 
 
 @router.get("/lists/{list_id}/conversation")
@@ -330,7 +345,7 @@ async def chat_endpoint(
                     yield f"data: {json.dumps({'type': SSE_EVENT_DELTA, 'content': content})}\n\n"
                 elif event.type == SSE_EVENT_CITATION:
                     if pending_text:
-                        content_blocks.append({"type": "text", "text": pending_text})
+                        _flush_pending_text(content_blocks, pending_text)
                         pending_text = ""
                     data = json.loads(event.content)
                     content_blocks.append(
@@ -378,7 +393,7 @@ async def chat_endpoint(
 
         # Flush trailing text into content_blocks before persisting
         if pending_text:
-            content_blocks.append({"type": "text", "text": pending_text})
+            _flush_pending_text(content_blocks, pending_text)
             pending_text = ""
 
         meta: dict[str, Any] = {}

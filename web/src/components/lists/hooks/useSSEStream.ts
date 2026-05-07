@@ -113,10 +113,17 @@ export function useSSEStream({
     let pendingText = "";
 
     const flushText = () => {
-      if (pendingText) {
-        accBlocks.push({ type: "text", text: pendingText });
-        pendingText = "";
+      if (!pendingText) return;
+      const parts = pendingText.split(/\n{2,}/);
+      for (let j = 0; j < parts.length; j++) {
+        if (parts[j]) {
+          accBlocks.push({ type: "text", text: parts[j] });
+        }
+        if (j < parts.length - 1) {
+          accBlocks.push({ type: "paragraph_break" });
+        }
       }
+      pendingText = "";
     };
 
     try {

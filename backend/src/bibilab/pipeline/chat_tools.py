@@ -182,17 +182,11 @@ async def execute_retrieve(
     cfg: BibilabConfig,
     registry: dict[str, CitationRegistryEntry] | None = None,
     source_map: dict[str, str] | None = None,
-    source_rows: list[dict] | None = None,
 ) -> dict:
     if registry is None:
         registry = {}
     if source_map is None:
         source_map = {}
-    if source_rows is None:
-        source_rows = []
-
-    # Build source_id → title map for title caching on registry entries
-    id_to_title: dict[str, str] = {row["id"]: row["title"] for row in source_rows}
 
     params = search_mode_to_params(search_mode, len(source_ids))
     result = await retrieve(query_text=query, source_ids=source_ids, cfg=cfg, params=params)
@@ -207,7 +201,7 @@ async def execute_retrieve(
             registry[sid] = CitationRegistryEntry(
                 index=next_index,
                 source_id=sid,
-                title=id_to_title.get(sid, s.video_title),
+                title=s.video_title,
             )
             next_index += 1
 
@@ -268,7 +262,6 @@ async def execute_tool(
     cfg: BibilabConfig,
     registry: dict[str, CitationRegistryEntry] | None = None,
     source_map: dict[str, str] | None = None,
-    source_rows: list[dict] | None = None,
 ) -> dict:
     if tool_name == "retrieve":
         return await execute_retrieve(
@@ -278,7 +271,6 @@ async def execute_tool(
             cfg=cfg,
             registry=registry,
             source_map=source_map,
-            source_rows=source_rows,
         )
     if tool_name == "generate_report":
         artifact_type = arguments.get("type")

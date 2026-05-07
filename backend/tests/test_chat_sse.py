@@ -422,6 +422,7 @@ async def test_chat_sse_emits_citation_events(client):
     events = _parse_sse(resp.text)
     types = [e["type"] for e in events]
     assert "citation" in types
+    assert "done" in types
     delta_text = "".join(e.get("content", "") for e in events if e["type"] == "delta")
     assert "[1]" not in delta_text
 
@@ -454,6 +455,69 @@ async def test_chat_persists_content_blocks_in_metadata(client):
     assert blocks[0] == {"type": "text", "text": "Hello "}
     assert blocks[1]["type"] == "citation" and blocks[1]["index"] == 1
     assert blocks[2] == {"type": "text", "text": " world"}
+
+
+@pytest.mark.asyncio
+async def test_chat_persists_paragraph_breaks_in_content_blocks(client):
+    """Paragraph boundaries (\n\n+) are split into paragraph_break blocks server-side.
+
+    Exercises both flush sites: mid-stream citation flush (pending text before
+    a citation) and post-stream final flush.
+    """
+    list_id = (await client.post("/lists", json={"name": "T"})).json()["id"]
+
+    async def fake_stream(*args, **kwargs):
+        async for ev in an_async_generator(
+            [
+                StreamEvent(type="delta", content="First paragraph "),
+                StreamEvent(type="citation", content='{"index":1,"source_id":"s1"}'),
+                StreamEvent(type="delta", content=".\n\nSecond paragraph "),
+                StreamEvent(type="citation", content='{"index":2,"source_id":"s2"}'),
+                StreamEvent(type="delta", content="."),
+                StreamEvent(type="done"),
+            ]
+        ):
+            yield ev
+
+    with patch("bibilab.routers.chat.stream_with_tools", side_effect=fake_stream):
+        await client.post(f"/lists/{list_id}/chat", json={"message": "hi"})
+
+    msgs = await _get_assistant_msgs(client, list_id)
+    blocks = msgs[0]["metadata"]["content_blocks"]
+    types = [b["type"] for b in blocks]
+    # Expected: text, citation, text, paragraph_break, text, citation, text
+    assert types == ["text", "citation", "text", "paragraph_break", "text", "citation", "text"]
+    assert blocks[2]["text"] == "."
+    assert blocks[4]["text"] == "Second paragraph "
+
+
+@pytest.mark.asyncio
+async def test_chat_sse_multi_retrieve_no_crash(client):
+    """Smoke test: two retrieve calls in one turn do not crash the SSE stream.
+
+    The registry ordering and dedup logic is exercised in
+    test_citation_registry.py; this test verifies the SSE layer
+    handles the multi-call flow without internal errors.
+    """
+    list_id = (await client.post("/lists", json={"name": "T"})).json()["id"]
+
+    async def fake_stream_with_tools(*args, **kwargs):
+        tc1 = ToolCall(id="tc1", name="retrieve", arguments={"query": "q1", "search_mode": "factual"})
+        tc2 = ToolCall(id="tc2", name="retrieve", arguments={"query": "q2", "search_mode": "factual"})
+        yield StreamEvent(type="tool_call", tool_call=tc1)
+        yield StreamEvent(type="done")
+        yield StreamEvent(type="tool_call", tool_call=tc2)
+        yield StreamEvent(type="done")
+        yield StreamEvent(type="delta", content="result")
+        yield StreamEvent(type="done")
+
+    with patch("bibilab.routers.chat.stream_with_tools", side_effect=fake_stream_with_tools):
+        resp = await client.post(f"/lists/{list_id}/chat", json={"message": "hi"})
+
+    assert resp.status_code == 200
+    events = _parse_sse(resp.text)
+    types = [e["type"] for e in events]
+    assert "done" in types
 
 
 @pytest.mark.asyncio

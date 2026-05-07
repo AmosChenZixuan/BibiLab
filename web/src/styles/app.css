@@ -93,6 +93,10 @@
     border-bottom-left-radius: 6px;
   }
 
+  .citation-paragraph + .citation-paragraph {
+    margin-top: 0.75em;
+  }
+
   /* Chat streaming cursor */
   .chat-cursor {
     display: inline-block;
