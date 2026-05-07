@@ -21,17 +21,27 @@ uv run python -m bibilab.main       # Start server (localhost:8765)
 ```
 routers/          — one APIRouter per module; aggregated in main.py
   auth.py           /auth/bilibili/* (QR login, cookie management)
-  chat.py           /lists/:id/chat (SSE streaming), /lists/:id/conversation (CRUD)
+  chat.py           /lists/:id/chat (SSE streaming), /lists/:id/conversation (CRUD); stream_with_tools loop
+  lists.py          /lists/* (CRUD), /lists/:id/overview (POST)
+  ingest.py         /ingest/url (POST)
+  sources.py        /sources/* (source content, covers, rerun)
 models/           — Pydantic request/response models + domain errors
   chat.py           ChatRequest, MessageResponse, ConversationResponse
 pipeline/         — one file per stage
-  _shared.py        sync _call_llm + async stream_llm (OpenAI/Anthropic), tool/stream dataclasses
-  chat_tools.py     tool definitions (retrieve + query_list_metadata + generate_report) + execution dispatcher + chunk formatting
-  chat_summary.py   conversation compression (sliding window + LLM summary; preserves [N] RAG citations)
+  _shared.py        sync _call_llm + async stream_llm (OpenAI/Anthropic), StreamEvent/ToolCall/ToolDefinition dataclasses
+  audio.py          FFmpeg audio extraction (video → .wav)
+  transcribe.py     Faster Whisper transcription → raw segments
+  chunk.py          greedy segment merger → ~300-token RAG chunks
+  digest.py         LLM summary + keywords → denormalized into sources
   embed.py          ChromaDB embed + retrieve() (hybrid search → rerank → aggregation), FTS5 populate
+  extract.py        LLM knowledge synthesis (overview generation)
   rerank.py         lazy ONNX cross-encoder reranker (Xenova/bge-reranker-base, XLM-RoBERTa zh+en; batched inference)
+  chat_tools.py     tool definitions (retrieve + query_list_metadata + generate_report) + execution dispatcher + chunk formatting + CitationRegistry
+  chat_summary.py   conversation compression (sliding window + LLM summary; preserves [N] RAG citations)
+  citation_parser.py incremental citation parser — strips [N] tokens from LLM deltas, emits citation SSE events with {index, source_id, chunk_ids}
 adapters/         — platform-specific download + resolution (base + bilibili)
-db.py             — SQLite schema + query helpers
+db.py             — SQLite schema + query helpers (840 lines)
+video_status.py   — derive_video_statuses (status mapping extracted from db.py per Code Health Rule #4)
 config.py         — settings persisted to ~/.bibilab/config.json; includes models_dir() helper
 worker.py         — SQLite-polling job dispatcher; accepts config/adapter/home via constructor for testability
 cleanup.py        — resource cleanup utilities
@@ -153,16 +163,20 @@ POST /lists/:id/chat (SSE)
   → add GROUNDING_SYSTEM_PROMPT + summary (if present) as system message
   → stream_with_tools(stream_llm loop):
       LLM yields tool_call (retrieve) → execute_retrieve() → hybrid_search (BM25 + vector RRF) → rerank → _diverse_top_k
-      → tool_result (with citation-formatted _chunks) fed back to LLM → second turn yields delta/done
+      → tool_call_start emitted → tool_result (with citation-formatted _chunks) fed back to LLM → second turn yields text with [N] citations
+      → parse_delta strips [N] markers, emits citation SSE events ({index, source_id, chunk_ids}) interleaved with delta events
       LLM yields tool_call (query_list_metadata) → execute_query_list_metadata() → tool_result → fed back to LLM
       LLM yields tool_call (generate_report) → execute_generate_report() → tool_result → exit loop
       LLM yields delta + done directly (no tool) → exit loop
-  → yield delta + tool_result + done events (SSE)
+  → yield delta + tool_call_start + tool_result + citation + done events (SSE)
   → persist assistant message with rag metadata → BackgroundTask: maybe_compress_conversation
 ```
 
 - `stream_with_tools` wraps `stream_llm` in a bounded loop (max 3 iterations). Loopback tools (`retrieve`, `query_list_metadata`) feed results back for another LLM turn; terminal tools (`generate_report`) exit the loop.
-- Retrieve result `_chunks` are formatted as citation-ready strings (`[N]: "content"`) for the LLM; stripped from the client-bound `tool_result` SSE payload by `_client_tool_result()`.
+- **Preamble suppression**: Text generated before a loopback tool call is discarded (`preamble_discarded`). Only the tool result is fed back to the LLM; the pre-call filler text never reaches the client.
+- **Sequential-retrieve guard**: After the first `retrieve` call succeeds, `retrieve` is removed from the active tool list for the remainder of the turn. A second retrieve within the same turn is rejected.
+- Retrieve result `_chunks` are formatted as citation-ready `[N]: "content"` strings for the LLM; stripped from the client-bound `tool_result` SSE payload by `_client_tool_result()`.
+- `citation_parser.parse_delta()` strips `[N]` markers from LLM output and emits `citation` SSE events with `{index, source_id, chunk_ids}`. A partial `[` at delta end is held in a buffer for the next delta. `flush_buffer()` drains remaining buffer at stream end.
 - `stream_llm` supports both OpenAI and Anthropic protocols via `AsyncOpenAI`/`AsyncAnthropic`
 - Compression: triggered when message count > 30; keeps sliding window of 20; summarizes older messages via `_call_llm` in `asyncio.to_thread`; LLM prompt instructs preservation of `[N]` RAG citations
 - Summary injected into system prompt on subsequent requests

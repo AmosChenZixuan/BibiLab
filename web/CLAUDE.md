@@ -21,9 +21,9 @@ components/ui/    — primitive components (Button, Modal, Panel, Input, Select,
 components/auth/  — platform auth modals (BilibiliQrModal)
 components/*/     — feature components (lists/, lists/sources/, lists/lab/, lists/hooks/, jobs/, layout/, settings/)
                     lists/hooks/ holds chat hooks: useConversationHistory, useSSEStream, useAutoScroll
-                    lists/ObsChip — retrieval observability chip driven by tool_result SSE events
+                    lists/ObsChip — retrieval observability chip driven by tool_call_start (pending) and tool_result (results) SSE events
 pages/            — route-level page components
-lib/              — typed api client, types, artifact types, templates, download helpers, health check, i18n, utils
+lib/              — typed api client, types, constants (SSE event types), artifact types, templates, download helpers, health check, i18n, utils
 app/              — router, language context
 test/             — Vitest test files + setup
 ```
@@ -46,7 +46,7 @@ test/             — Vitest test files + setup
 - **API client**: single `api` object in `lib/api.ts` with typed `request<T>` wrapper; errors thrown as `ApiError`. All HTTP requests must go through this client — do not use raw `fetch()` except for SSE streaming endpoints that require `ReadableStream` access.
 - **Error handling**: always use `toErrorMessageWithT(error, t)` for user-facing error messages, never the raw `toErrorMessage()`. This ensures errors display in the correct UI language.
 - **i18n**: `useLanguage()` → `t("key.path")` for lookup; `%{name}` placeholders with `t("key", { name: value })` for interpolation. String tables in `lib/i18n/{en,zh}.json` must stay in sync
-- **Constants**: localStorage keys, custom event names, and other repeated string literals must be defined as named constants in a shared location (e.g., `lib/utils.ts`). Never scatter the same magic string across multiple files.
+- **Constants**: SSE event type strings go in `lib/constants.ts`. Domain-specific event names (e.g., `BILIBILI_AUTH_REFRESH_EVENT`) live alongside their dispatcher in `lib/api.ts`. localStorage keys and utility constants live in `lib/utils.ts`. Never scatter the same magic string across multiple files.
 - **Utilities**: before writing a helper function inside a component, check `lib/utils.ts` for existing implementations. If a utility is pure (no React state), it belongs in `lib/`, not inline in a component.
 - **Styling**: Tailwind utility classes only; no CSS modules. Inline `style` only for dynamic computed values (widths, positions, URLs). No arbitrary bracket values (e.g. `mt-[10px]`) — use Tailwind's built-in scale or CSS custom properties from `src/styles/app.css` (`--color-*`, `--z-*`, `--font-*`)
 - **Cross-component auth sync**: When auth state changes (login/logout), call `notifyBilibiliAuthChanged()` from `lib/api.ts`. Components that need to react listen for `BILIBILI_AUTH_REFRESH_EVENT` via `window.addEventListener`. Do not prop-drill auth state through unrelated components.

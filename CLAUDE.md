@@ -56,11 +56,10 @@ Single-port deployment: FastAPI serves the React build as static files in produc
 | Backend serves SPA | FastAPI mounts `/assets` + catch-all → `index.html` | Single-port; no separate frontend server |
 | Worker concurrency | Configurable via `config.backend.worker_concurrency` | Default 1 |
 | Chat conversations | One conversation per list, auto-created on first message | `get_or_create_conversation` with `ON CONFLICT` upsert |
-| Chat streaming | SSE via `StreamingResponse`; RAG context in system prompt | Citations parsed client-side from `[title @ Ts-Ts]` format |
-| Conversation compression | Background summary after 30+ messages, sliding window of 20; prompt preserves `[title @ Ts-Ts]` citations | Prevents citation drift across compression cycles; old messages deleted after summarization |
+| Conversation compression | Background summary after 30+ messages, sliding window of 20; prompt preserves `[N]` citations | Prevents citation drift across compression cycles; old messages deleted after summarization |
 | Retrieval | Hybrid (BM25 + vector) fused via RRF (k=60), dynamic pool = max(min(sources_total×3, 10, 60), params.top_k) → cross-encoder rerank (Xenova/bge-reranker-base, zh+en) → diverse top-k with per-source depth cap | LLM dispatches `retrieve` tool mid-stream; `search_mode_to_params` maps factual/breadth/analytical → `RetrievalParams` |
 | Tool-calling chat | `stream_with_tools` wraps `stream_llm` in a bounded loop (max 3 iterations); loopback tools (`retrieve`) feed results back for another turn; terminal tools (`generate_report`) exit | Eliminates the 8K-token pre-stream classifier; LLM decides when to retrieve based on the question |
-| Chat streaming | SSE via `StreamingResponse`; retrieve results arrive as `tool_result` events carrying RAG metadata | `tool_result` with `name: "retrieve"` replaces the old `rag_meta` SSE event type |
+| Chat streaming | SSE via `StreamingResponse`; LLM dispatches tool calls mid-stream; preamble suppressed (pre-tool-call text discarded); sequential retrieve disabled after first call; `[N]` citations streamed as `citation` SSE events | `tool_call_start`, `tool_result`, `citation`, `delta`, `done` event types; `parse_delta` strips `[N]` markers and emits citation events with `{index, source_id, chunk_ids}` |
 
 ## Code Health Rules
 
