@@ -576,6 +576,71 @@ async def test_retrieve_filtered_after_first_use(client):
 
 
 @pytest.mark.asyncio
+async def test_metadata_then_retrieve_allowed(client):
+    """query_list_metadata in iteration 1 must NOT block retrieve in iteration 2."""
+    from bibilab.pipeline.chat_tools import (
+        QUERY_LIST_METADATA_TOOL,
+        RETRIEVE_TOOL,
+    )
+
+    list_id = (await client.post("/lists", json={"name": "T"})).json()["id"]
+
+    captured_tools_per_iteration: list[list[str]] = []
+    iteration_count = 0
+
+    async def fake_stream_llm(messages, cfg, tools=None, system=None, llm_max_tokens=None, **kwargs):
+        nonlocal iteration_count
+        iteration_count += 1
+        captured_tools_per_iteration.append([t.name for t in (tools or [])])
+        if iteration_count == 1:
+            yield StreamEvent(
+                type="tool_call",
+                tool_call=ToolCall(id="tc1", name="query_list_metadata", arguments={"query_type": "count"}),
+            )
+            yield StreamEvent(type="done")
+        elif iteration_count == 2:
+            yield StreamEvent(
+                type="tool_call",
+                tool_call=ToolCall(id="tc2", name="retrieve", arguments={"query": "x", "search_mode": "factual"}),
+            )
+            yield StreamEvent(type="done")
+        else:
+            yield StreamEvent(type="delta", content="answer")
+            yield StreamEvent(type="done")
+
+    async def fake_execute_tool(**kwargs):
+        name = kwargs.get("name", "")
+        args = kwargs.get("arguments", {})
+        if name == "query_list_metadata":
+            return {"count": 8}
+        return {
+            "query": args.get("query", ""),
+            "search_mode": "factual",
+            "candidates_evaluated": 0,
+            "sources_with_hits": 0,
+            "sources_total": 1,
+            "source_coverage": [],
+            "_chunks": "",
+            "_turn_indices": [],
+        }
+
+    with (
+        patch("bibilab.routers.chat.stream_llm", fake_stream_llm),
+        patch("bibilab.routers.chat.execute_tool", fake_execute_tool),
+    ):
+        resp = await client.post(f"/lists/{list_id}/chat", json={"message": "q"})
+
+    assert resp.status_code == 200
+    assert iteration_count == 3
+    # Iteration 1: all tools available including retrieve
+    assert RETRIEVE_TOOL.name in captured_tools_per_iteration[0]
+    assert QUERY_LIST_METADATA_TOOL.name in captured_tools_per_iteration[0]
+    # Iteration 2: retrieve is still available — metadata didn't consume the allowance
+    assert RETRIEVE_TOOL.name in captured_tools_per_iteration[1]
+    assert "answer" in resp.text
+
+
+@pytest.mark.asyncio
 async def test_preamble_suppressed_for_tool_iteration(client):
     """Deltas from an iteration that ends with a retrieve tool_call must not reach the client."""
     list_id = (await client.post("/lists", json={"name": "T"})).json()["id"]
