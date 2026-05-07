@@ -94,7 +94,6 @@ vi.mock("@/lib/api", () => {
       deleteSource: vi.fn().mockResolvedValue(undefined),
     }),
     toErrorMessageWithT: vi.fn((e: unknown) => (e instanceof Error ? e.message : String(e))),
-    toErrorMessage: vi.fn((e: unknown) => (e instanceof Error ? e.message : String(e))),
     default: {
       previewPlaylist: mockPreviewPlaylist,
       previewPlaylistMetadata: mockPreviewPlaylistMetadata,

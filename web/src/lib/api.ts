@@ -37,7 +37,7 @@ export class ApiError extends Error {
   }
 }
 
-export function toErrorMessage(error: unknown): string {
+function toErrorMessage(error: unknown): string {
   if (error instanceof ApiError) {
     if (error.status === 401 && typeof error.detail !== "string") {
       return "errors.401";

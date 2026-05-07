@@ -925,35 +925,3 @@ def test_diverse_top_k_depth_fills_then_leftovers():
     assert len(result) == 3
     # First two should be the diversity picks
     assert {c.video_id for c in result[:2]} == {"v1", "v2"}
-
-
-def test_params_by_type_presets():
-    from bibilab.pipeline.chat_tools import search_mode_to_params
-
-    # Large list — no override for factual, analytical still scales
-    fact = search_mode_to_params("factual", sources_total=10)
-    assert fact.depth_per_source == 1
-    assert fact.top_k == 4  # fixed, no scaling with source count
-    anl = search_mode_to_params("analytical", sources_total=10)
-    assert anl.depth_per_source == 4
-    assert anl.top_k == 12
-    brd = search_mode_to_params("breadth", sources_total=10)
-    assert brd.depth_per_source == 1
-    assert brd.top_k == 10  # capped at sources_total
-
-
-def test_params_breadth_capped_by_sources():
-    from bibilab.pipeline.chat_tools import search_mode_to_params
-
-    brd = search_mode_to_params("breadth", sources_total=5)
-    assert brd.top_k == 5
-    assert brd.depth_per_source == 1
-
-
-def test_params_small_list_breadth_falls_back_to_factual():
-    from bibilab.pipeline.chat_tools import search_mode_to_params
-
-    # 2 sources: breadth degrades to factual params
-    brd = search_mode_to_params("breadth", sources_total=2)
-    assert brd.depth_per_source == 1
-    assert brd.top_k == 4

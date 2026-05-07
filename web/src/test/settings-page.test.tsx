@@ -42,7 +42,6 @@ vi.mock("../lib/api", () => {
     createApiClient: () => mockApi,
     api: mockApi,
     notifyHealthChanged: vi.fn(),
-    toErrorMessage: (error: unknown) => (error instanceof Error ? error.message : MOCK_ERROR_MESSAGE),
     toErrorMessageWithT: (error: unknown) => (error instanceof Error ? error.message : MOCK_ERROR_MESSAGE),
     setCurrentLang: vi.fn(),
   };

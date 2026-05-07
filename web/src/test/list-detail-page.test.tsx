@@ -166,7 +166,6 @@ vi.mock("../lib/api", () => {
     notifyBilibiliAuthChanged: vi.fn(),
     createApiClient: () => mockApi,
     api: mockApi,
-    toErrorMessage: vi.fn((e: unknown) => (e instanceof Error ? e.message : String(e))),
     toErrorMessageWithT: vi.fn((e: unknown) => (e instanceof Error ? e.message : String(e))),
     setCurrentLang: vi.fn(),
   };

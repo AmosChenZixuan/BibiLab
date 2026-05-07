@@ -14,7 +14,6 @@ vi.mock("../lib/api", () => {
   return {
     createApiClient: () => mockApi,
     api: mockApi,
-    toErrorMessage: (error: unknown) => (error instanceof Error ? error.message : "Request failed"),
     toErrorMessageWithT: (error: unknown, _t: (key: string) => string) =>
       error instanceof Error ? error.message : "Request failed",
     setCurrentLang: vi.fn(),

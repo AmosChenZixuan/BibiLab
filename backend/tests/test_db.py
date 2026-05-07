@@ -268,7 +268,8 @@ async def test_get_sources_for_list(tmp_bibilab_home: Path):
 
 @pytest.mark.asyncio
 async def test_get_video_statuses_empty(tmp_bibilab_home: Path) -> None:
-    from bibilab.db import bootstrap_db, get_video_statuses
+    from bibilab.db import bootstrap_db
+    from bibilab.video_status import get_video_statuses
 
     await bootstrap_db()
     result = await get_video_statuses([], "list-1")
@@ -277,7 +278,8 @@ async def test_get_video_statuses_empty(tmp_bibilab_home: Path) -> None:
 
 @pytest.mark.asyncio
 async def test_get_video_statuses_all_new(tmp_bibilab_home: Path) -> None:
-    from bibilab.db import bootstrap_db, create_list, get_video_statuses
+    from bibilab.db import bootstrap_db, create_list
+    from bibilab.video_status import get_video_statuses
 
     await bootstrap_db()
     await create_list("list-1", "Test", "2026-01-01T00:00:00")
@@ -287,7 +289,8 @@ async def test_get_video_statuses_all_new(tmp_bibilab_home: Path) -> None:
 
 @pytest.mark.asyncio
 async def test_get_video_statuses_all_processed(tmp_bibilab_home: Path) -> None:
-    from bibilab.db import bootstrap_db, create_list, get_video_statuses, write_source
+    from bibilab.db import bootstrap_db, create_list, write_source
+    from bibilab.video_status import get_video_statuses
 
     await bootstrap_db()
     await create_list("list-1", "Test", "2026-01-01T00:00:00")
@@ -317,7 +320,8 @@ async def test_get_video_statuses_all_processed(tmp_bibilab_home: Path) -> None:
 
 @pytest.mark.asyncio
 async def test_get_video_statuses_all_in_progress(tmp_bibilab_home: Path) -> None:
-    from bibilab.db import bootstrap_db, create_job, create_list, get_video_statuses
+    from bibilab.db import bootstrap_db, create_job, create_list
+    from bibilab.video_status import get_video_statuses
 
     await bootstrap_db()
     await create_list("list-1", "Test", "2026-01-01T00:00:00")
@@ -329,7 +333,8 @@ async def test_get_video_statuses_all_in_progress(tmp_bibilab_home: Path) -> Non
 
 @pytest.mark.asyncio
 async def test_get_video_statuses_all_needs_auth(tmp_bibilab_home: Path) -> None:
-    from bibilab.db import bootstrap_db, create_job, create_list, get_db, get_video_statuses
+    from bibilab.db import bootstrap_db, create_job, create_list, get_db
+    from bibilab.video_status import get_video_statuses
 
     await bootstrap_db()
     await create_list("list-1", "Test", "2026-01-01T00:00:00")
@@ -344,7 +349,8 @@ async def test_get_video_statuses_all_needs_auth(tmp_bibilab_home: Path) -> None
 
 @pytest.mark.asyncio
 async def test_get_video_statuses_mixed(tmp_bibilab_home: Path) -> None:
-    from bibilab.db import bootstrap_db, create_job, create_list, get_db, get_video_statuses, write_source
+    from bibilab.db import bootstrap_db, create_job, create_list, get_db, write_source
+    from bibilab.video_status import get_video_statuses
 
     await bootstrap_db()
     await create_list("list-1", "Test", "2026-01-01T00:00:00")
@@ -378,7 +384,8 @@ async def test_get_video_statuses_mixed(tmp_bibilab_home: Path) -> None:
 
 @pytest.mark.asyncio
 async def test_get_video_statuses_done_job_not_in_progress(tmp_bibilab_home: Path) -> None:
-    from bibilab.db import bootstrap_db, create_job, create_list, get_video_statuses, update_job_status
+    from bibilab.db import bootstrap_db, create_job, create_list, update_job_status
+    from bibilab.video_status import get_video_statuses
 
     await bootstrap_db()
     await create_list("list-1", "Test", "2026-01-01T00:00:00")
@@ -390,7 +397,8 @@ async def test_get_video_statuses_done_job_not_in_progress(tmp_bibilab_home: Pat
 
 @pytest.mark.asyncio
 async def test_get_video_statuses_failed_is_new(tmp_bibilab_home: Path) -> None:
-    from bibilab.db import bootstrap_db, create_job, create_list, get_video_statuses, update_job_status
+    from bibilab.db import bootstrap_db, create_job, create_list, update_job_status
+    from bibilab.video_status import get_video_statuses
 
     await bootstrap_db()
     await create_list("list-1", "Test", "2026-01-01T00:00:00")
@@ -402,7 +410,8 @@ async def test_get_video_statuses_failed_is_new(tmp_bibilab_home: Path) -> None:
 
 @pytest.mark.asyncio
 async def test_get_video_statuses_job_list_id_isolation(tmp_bibilab_home: Path) -> None:
-    from bibilab.db import bootstrap_db, create_job, create_list, get_video_statuses
+    from bibilab.db import bootstrap_db, create_job, create_list
+    from bibilab.video_status import get_video_statuses
 
     await bootstrap_db()
     await create_list("list-1", "Test", "2026-01-01T00:00:00")
@@ -415,7 +424,8 @@ async def test_get_video_statuses_job_list_id_isolation(tmp_bibilab_home: Path) 
 @pytest.mark.asyncio
 async def test_get_video_statuses_job_video_id_isolation(tmp_bibilab_home: Path) -> None:
     """A job for a different video_id in the same list must not affect the result."""
-    from bibilab.db import bootstrap_db, create_job, create_list, get_video_statuses
+    from bibilab.db import bootstrap_db, create_job, create_list
+    from bibilab.video_status import get_video_statuses
 
     await bootstrap_db()
     await create_list("list-1", "Test", "2026-01-01T00:00:00")
@@ -426,7 +436,8 @@ async def test_get_video_statuses_job_video_id_isolation(tmp_bibilab_home: Path)
 
 @pytest.mark.asyncio
 async def test_get_video_statuses_precedence_needs_auth_over_processed(tmp_bibilab_home: Path) -> None:
-    from bibilab.db import bootstrap_db, create_job, create_list, get_db, get_video_statuses, write_source
+    from bibilab.db import bootstrap_db, create_job, create_list, get_db, write_source
+    from bibilab.video_status import get_video_statuses
 
     await bootstrap_db()
     await create_list("list-1", "Test", "2026-01-01T00:00:00")
@@ -476,74 +487,74 @@ def test_clear_embeddings_for_video_does_not_raise(tmp_path: Path):
 
 class TestDeriveVideoStatuses:
     def test_all_new_when_no_jobs_no_processed(self):
-        from bibilab.db import derive_video_statuses
+        from bibilab.video_status import derive_video_statuses
 
         result = derive_video_statuses(["v1", "v2"], [], set())
         assert result == {"v1": "new", "v2": "new"}
 
     def test_all_new_when_empty_video_ids(self):
-        from bibilab.db import derive_video_statuses
+        from bibilab.video_status import derive_video_statuses
 
         result = derive_video_statuses([], [], set())
         assert result == {}
 
     def test_processed_when_in_sources(self):
-        from bibilab.db import derive_video_statuses
+        from bibilab.video_status import derive_video_statuses
 
         result = derive_video_statuses(["v1"], [], {"v1"})
         assert result == {"v1": "processed"}
 
     def test_processed_with_in_progress_job_shows_in_progress(self):
-        from bibilab.db import derive_video_statuses
+        from bibilab.video_status import derive_video_statuses
 
         jobs = [{"video_id": "v1", "status": "queued"}]
         result = derive_video_statuses(["v1"], jobs, {"v1"})
         assert result == {"v1": "in_progress"}
 
     def test_in_progress_queued(self):
-        from bibilab.db import derive_video_statuses
+        from bibilab.video_status import derive_video_statuses
 
         result = derive_video_statuses(["v1"], [{"video_id": "v1", "status": "queued"}], set())
         assert result == {"v1": "in_progress"}
 
     def test_in_progress_downloading(self):
-        from bibilab.db import derive_video_statuses
+        from bibilab.video_status import derive_video_statuses
 
         result = derive_video_statuses(["v1"], [{"video_id": "v1", "status": "downloading"}], set())
         assert result == {"v1": "in_progress"}
 
     def test_in_progress_transcribing(self):
-        from bibilab.db import derive_video_statuses
+        from bibilab.video_status import derive_video_statuses
 
         result = derive_video_statuses(["v1"], [{"video_id": "v1", "status": "transcribing"}], set())
         assert result == {"v1": "in_progress"}
 
     def test_in_progress_processing(self):
-        from bibilab.db import derive_video_statuses
+        from bibilab.video_status import derive_video_statuses
 
         result = derive_video_statuses(["v1"], [{"video_id": "v1", "status": "processing"}], set())
         assert result == {"v1": "in_progress"}
 
     def test_in_progress_done_is_not_in_progress(self):
-        from bibilab.db import derive_video_statuses
+        from bibilab.video_status import derive_video_statuses
 
         result = derive_video_statuses(["v1"], [{"video_id": "v1", "status": "done"}], set())
         assert result == {"v1": "new"}
 
     def test_in_progress_failed_is_not_in_progress(self):
-        from bibilab.db import derive_video_statuses
+        from bibilab.video_status import derive_video_statuses
 
         result = derive_video_statuses(["v1"], [{"video_id": "v1", "status": "failed"}], set())
         assert result == {"v1": "new"}
 
     def test_needs_auth(self):
-        from bibilab.db import derive_video_statuses
+        from bibilab.video_status import derive_video_statuses
 
         result = derive_video_statuses(["v1"], [{"video_id": "v1", "status": "needs_auth"}], set())
         assert result == {"v1": "needs_auth"}
 
     def test_needs_auth_takes_precedence_over_in_progress(self):
-        from bibilab.db import derive_video_statuses
+        from bibilab.video_status import derive_video_statuses
 
         jobs = [
             {"video_id": "v1", "status": "queued"},
@@ -553,14 +564,14 @@ class TestDeriveVideoStatuses:
         assert result == {"v1": "needs_auth"}
 
     def test_in_progress_takes_precedence_over_processed_job(self):
-        from bibilab.db import derive_video_statuses
+        from bibilab.video_status import derive_video_statuses
 
         jobs = [{"video_id": "v1", "status": "queued"}]
         result = derive_video_statuses(["v1"], jobs, {"v1"})
         assert result == {"v1": "in_progress"}
 
     def test_mixed_statuses(self):
-        from bibilab.db import derive_video_statuses
+        from bibilab.video_status import derive_video_statuses
 
         jobs = [
             {"video_id": "v1", "status": "needs_auth"},
@@ -576,14 +587,14 @@ class TestDeriveVideoStatuses:
         }
 
     def test_job_for_different_video_not_considered(self):
-        from bibilab.db import derive_video_statuses
+        from bibilab.video_status import derive_video_statuses
 
         jobs = [{"video_id": "other", "status": "queued"}]
         result = derive_video_statuses(["v1"], jobs, set())
         assert result == {"v1": "new"}
 
     def test_multiple_in_progress_jobs_same_video(self):
-        from bibilab.db import derive_video_statuses
+        from bibilab.video_status import derive_video_statuses
 
         jobs = [
             {"video_id": "v1", "status": "queued"},
