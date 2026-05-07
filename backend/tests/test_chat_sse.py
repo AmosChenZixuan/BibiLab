@@ -174,7 +174,7 @@ async def test_retrieve_tool_result_has_coverage(client):
         result = await execute_tool_fn("retrieve", {"query": "test", "search_mode": "factual"})
         yield StreamEvent(
             type="tool_result",
-            content=json.dumps({"name": "retrieve", "result": _client_tool_result("retrieve", result)}),
+            content=json.dumps({"name": "retrieve", "result": _client_tool_result(result)}),
         )
         yield StreamEvent(type="delta", content="Answer")
         yield StreamEvent(type="done")
@@ -285,7 +285,7 @@ async def test_smoke_scenario_2_retrieve(client, search_mode, query, user_messag
             tool_call=ToolCall(id="c1", name="retrieve", arguments={"query": query, "search_mode": search_mode}),
         )
         result = await execute_tool_fn("retrieve", {"query": query, "search_mode": search_mode})
-        tool_result_data = {"name": "retrieve", "result": _client_tool_result("retrieve", result)}
+        tool_result_data = {"name": "retrieve", "result": _client_tool_result(result)}
         yield StreamEvent(type="tool_result", content=json.dumps(tool_result_data))
         yield StreamEvent(type=SSE_EVENT_DELTA, content=delta_text)
         yield StreamEvent(type=SSE_EVENT_DONE)

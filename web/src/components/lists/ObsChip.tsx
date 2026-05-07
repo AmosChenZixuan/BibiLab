@@ -3,7 +3,7 @@ import { useLanguage } from "@/app/LanguageContext";
 
 import { Info, Loader2 } from "lucide-react";
 
-import type { RagCall } from "@/lib/chat-utils";
+import type { RagCall, SearchMode } from "@/lib/chat-utils";
 
 interface ObsChipProps {
   call: RagCall;
@@ -65,7 +65,7 @@ export function ObsChip({ call }: ObsChipProps) {
   );
 }
 
-export function PendingObsChip({ query, search_mode }: { query: string; search_mode: string }) {
+export function PendingObsChip({ query, search_mode }: { query: string; search_mode: SearchMode }) {
   return (
     <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-sky/10 border border-border text-xs text-blue">
       <Loader2 size={11} className="animate-spin" />

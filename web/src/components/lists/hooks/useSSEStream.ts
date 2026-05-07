@@ -182,11 +182,10 @@ export function useSSEStream({
           if (!toolName) return;
           if (toolName === "retrieve") {
             const call = event.result as unknown as RagCall;
+            const callId = event.id as string;
             updateAssistantMsg(assistantMsgId, (m) => ({
               rag: { calls: [...(m.rag?.calls ?? []), call] },
-              pendingRagCalls: m.pendingRagCalls.filter(
-                (p) => !(p.query === call.query && p.search_mode === call.search_mode),
-              ),
+              pendingRagCalls: m.pendingRagCalls.filter((p) => p.id !== callId),
             }));
           } else if (toolName === "generate_report") {
             const result = event.result as ToolResult;

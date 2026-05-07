@@ -110,11 +110,8 @@ async def delete_conversation_endpoint(list_id: str) -> None:
         await delete_conversation(conversation_row["id"])
 
 
-def _client_tool_result(name: str, result: dict) -> dict:
-    """Strip internal fields (_-prefixed keys) before sending to client."""
-    if name == "retrieve":
-        return {k: v for k, v in result.items() if not k.startswith("_")}
-    return result
+def _client_tool_result(result: dict) -> dict:
+    return {k: v for k, v in result.items() if not k.startswith("_")}
 
 
 GROUNDING_SYSTEM_PROMPT = (
@@ -176,7 +173,7 @@ async def stream_with_tools(
         tool_calls: list[ToolCall] = []
         iteration_text = ""
         lookup = _build_lookup()
-        active_tools = [t for t in tools if not (retrieve_used and t.name == "retrieve")]
+        active_tools = [t for t in tools if not (retrieve_used and t.name == RETRIEVE_TOOL.name)]
         async for event in stream_llm(messages, cfg, active_tools, system=system, llm_max_tokens=llm_max_tokens):
             if event.type == "tool_call":
                 tool_calls.append(event.tool_call)
@@ -207,7 +204,6 @@ async def stream_with_tools(
 
         parse_buffer = ""
 
-        # Terminal tools (not loopback): no follow-up LLM turn, so yield preamble now.
         is_terminal = not any(tc.name in LOOPBACK_TOOLS for tc in tool_calls)
         if is_terminal and iteration_text:
             parsed_events, _ = parse_delta(iteration_text, "", lookup)
@@ -220,7 +216,7 @@ async def stream_with_tools(
 
         results: dict[str, dict] = {}
         for tc in tool_calls:
-            if tc.name in ("retrieve", "query_list_metadata"):
+            if tc.name in LOOPBACK_TOOLS:
                 yield StreamEvent(
                     type="tool_call_start",
                     content=json.dumps({"id": tc.id, "name": tc.name, "arguments": tc.arguments}),
@@ -235,11 +231,11 @@ async def stream_with_tools(
             results[tc.id] = result
             yield StreamEvent(
                 type="tool_result",
-                content=json.dumps({"name": tc.name, "result": _client_tool_result(tc.name, result)}),
+                content=json.dumps({"id": tc.id, "name": tc.name, "result": _client_tool_result(result)}),
             )
 
         if any(tc.name in LOOPBACK_TOOLS for tc in tool_calls):
-            if any(tc.name == "retrieve" for tc in tool_calls):
+            if any(tc.name == RETRIEVE_TOOL.name for tc in tool_calls):
                 retrieve_used = True
             if cfg.protocol == "anthropic":
                 messages.append(

@@ -117,7 +117,7 @@ describe("Slice 2 — RAG observability via SSE tool_result", () => {
         makeSseStream([
           'data: {"type":"tool_call_start","id":"tc1","name":"retrieve","arguments":{"query":"A","search_mode":"breadth"}}\n\n',
           'data: {"type":"tool_call_start","id":"tc2","name":"retrieve","arguments":{"query":"B","search_mode":"factual"}}\n\n',
-          'data: {"type":"tool_result","name":"retrieve","result":{"query":"A","search_mode":"breadth","candidates_evaluated":10,"sources_with_hits":2,"sources_total":4,"source_coverage":[]}}\n\n',
+          'data: {"type":"tool_result","id":"tc1","name":"retrieve","result":{"query":"A","search_mode":"breadth","candidates_evaluated":10,"sources_with_hits":2,"sources_total":4,"source_coverage":[]}}\n\n',
           'data: {"type":"delta","content":"Answer"}\n\n',
           'data: {"type":"done"}\n\n',
         ]),
