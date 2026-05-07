@@ -521,6 +521,61 @@ async def test_chat_sse_multi_retrieve_no_crash(client):
 
 
 @pytest.mark.asyncio
+async def test_retrieve_filtered_after_first_use(client):
+    """After retrieve runs in iteration 1, iteration 2's tools list excludes retrieve."""
+    from bibilab.pipeline.chat_tools import (
+        GENERATE_REPORT_TOOL,
+        QUERY_LIST_METADATA_TOOL,
+        RETRIEVE_TOOL,
+    )
+
+    list_id = (await client.post("/lists", json={"name": "T"})).json()["id"]
+
+    captured_tools_per_iteration: list[list[str]] = []
+    iteration_count = 0
+
+    async def fake_stream_llm(messages, cfg, tools=None, system=None, llm_max_tokens=None, **kwargs):
+        nonlocal iteration_count
+        iteration_count += 1
+        captured_tools_per_iteration.append([t.name for t in (tools or [])])
+        if iteration_count == 1:
+            yield StreamEvent(
+                type="tool_call",
+                tool_call=ToolCall(id="tc1", name="retrieve", arguments={"query": "x", "search_mode": "factual"}),
+            )
+            yield StreamEvent(type="done")
+        else:
+            yield StreamEvent(type="delta", content="answer")
+            yield StreamEvent(type="done")
+
+    async def fake_execute_tool(**kwargs):
+        return {
+            "query": kwargs.get("arguments", {}).get("query", ""),
+            "search_mode": "factual",
+            "candidates_evaluated": 0,
+            "sources_with_hits": 0,
+            "sources_total": 1,
+            "source_coverage": [],
+            "_chunks": "",
+            "_turn_indices": [],
+        }
+
+    with (
+        patch("bibilab.routers.chat.stream_llm", fake_stream_llm),
+        patch("bibilab.routers.chat.execute_tool", fake_execute_tool),
+    ):
+        resp = await client.post(f"/lists/{list_id}/chat", json={"message": "q"})
+
+    assert resp.status_code == 200
+    assert iteration_count == 2
+    assert RETRIEVE_TOOL.name in captured_tools_per_iteration[0]
+    assert RETRIEVE_TOOL.name not in captured_tools_per_iteration[1]
+    # Other tools remain available
+    assert QUERY_LIST_METADATA_TOOL.name in captured_tools_per_iteration[1]
+    assert GENERATE_REPORT_TOOL.name in captured_tools_per_iteration[1]
+
+
+@pytest.mark.asyncio
 async def test_chat_sse_hallucinated_index_emitted_as_text(client, caplog):
     """[7] when registry only has 1-2 → emitted as text delta, warning logged.
 

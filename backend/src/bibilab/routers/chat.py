@@ -159,6 +159,7 @@ async def stream_with_tools(
     iteration = 0
     parse_buffer = ""
     citation_emitted = False
+    retrieve_used = False
 
     def _build_lookup() -> dict[int, CitationRegistryEntry]:
         return {e.index: e for e in registry.values()}
@@ -170,7 +171,8 @@ async def stream_with_tools(
         iteration += 1
         tool_calls: list[ToolCall] = []
         lookup = _build_lookup()
-        async for event in stream_llm(messages, cfg, tools, system=system, llm_max_tokens=llm_max_tokens):
+        active_tools = [t for t in tools if not (retrieve_used and t.name == "retrieve")]
+        async for event in stream_llm(messages, cfg, active_tools, system=system, llm_max_tokens=llm_max_tokens):
             if event.type == "tool_call":
                 tool_calls.append(event.tool_call)
             elif event.type == "delta" and event.content:
@@ -213,6 +215,8 @@ async def stream_with_tools(
             )
 
         if any(tc.name in LOOPBACK_TOOLS for tc in tool_calls):
+            if any(tc.name == "retrieve" for tc in tool_calls):
+                retrieve_used = True
             if cfg.protocol == "anthropic":
                 messages.append(
                     {
