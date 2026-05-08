@@ -56,6 +56,7 @@ async def stream_from_buffer(buf: StreamBuffer) -> AsyncGenerator[dict, None]:
 class ChatRunRegistry:
     def __init__(self) -> None:
         self._entries: dict[str, tuple[StreamBuffer, asyncio.Task]] = {}
+        self._bg_tasks: set[asyncio.Task] = set()
 
     def register(self, message_id: str, task: asyncio.Task) -> StreamBuffer:
         if message_id in self._entries:
@@ -86,6 +87,13 @@ class ChatRunRegistry:
 
     def all_tasks(self) -> list[tuple[str, asyncio.Task]]:
         return [(mid, task) for mid, (_, task) in self._entries.items()]
+
+    def track_background(self, task: asyncio.Task) -> None:
+        self._bg_tasks.add(task)
+        task.add_done_callback(lambda t: self._bg_tasks.discard(t))
+
+    def all_background_tasks(self) -> list[asyncio.Task]:
+        return list(self._bg_tasks)
 
 
 _registry = ChatRunRegistry()

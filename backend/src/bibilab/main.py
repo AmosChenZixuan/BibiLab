@@ -58,6 +58,14 @@ async def _await_all_registered(registry) -> None:
         except Exception:
             logger.warning("Task %s raised during shutdown drain", msg_id, exc_info=True)
 
+    for task in registry.all_background_tasks():
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+        except Exception:
+            logger.warning("Background task raised during shutdown drain", exc_info=True)
+
 
 def make_lifespan(*, start_worker: bool) -> Callable[[], AsyncGenerator[None, None]]:
     @asynccontextmanager

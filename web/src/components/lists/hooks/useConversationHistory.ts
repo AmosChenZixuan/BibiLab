@@ -26,7 +26,12 @@ export interface MessageUI {
   pendingMetadataCalls: PendingMetadataCall[];
 }
 
-export function useConversationHistory(listId: string | undefined, hasSources: boolean) {
+export function useConversationHistory(
+  listId: string | undefined,
+  hasSources: boolean,
+  interruptedLabel = "Response interrupted",
+  stoppedLabel = "Stopped",
+) {
   const [messages, setMessages] = useState<MessageUI[]>([]);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -75,7 +80,9 @@ export function useConversationHistory(listId: string | undefined, hasSources: b
             isStreaming: false,
             contentBlocks,
             toolCall,
-            error: m.error ?? ((m.status === "failed" || m.status === "cancelled") ? "Response interrupted" : null),
+            error:
+              m.error ??
+              (m.status === "failed" ? interruptedLabel : m.status === "cancelled" ? stoppedLabel : null),
             timestamp: formatTimestamp(m.created_at),
             rag,
             pendingRagCalls: [],

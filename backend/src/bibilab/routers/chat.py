@@ -486,10 +486,10 @@ async def run_chat_turn(
         buf.append(terminal_payload)
         buf.close(final_status)
 
-        asyncio.create_task(_evict_after_grace(registry, message_id))
+        registry.track_background(asyncio.create_task(_evict_after_grace(registry, message_id)))
 
         if final_status == "done":
-            asyncio.create_task(maybe_compress_conversation(conversation_id, cfg))
+            registry.track_background(asyncio.create_task(maybe_compress_conversation(conversation_id, cfg)))
 
 
 @router.post("/lists/{list_id}/chat")

@@ -82,8 +82,8 @@ async def test_reattach_404_for_nonexistent_list(client):
 
 
 @pytest.mark.asyncio
-async def test_reattach_204_buffer_not_found(client, tmp_bibilab_home):  # noqa: ARG001
-    """GET stream returns 204 when message not in any list."""
+async def test_reattach_404_message_not_in_list(client, tmp_bibilab_home):  # noqa: ARG001
+    """GET stream returns 404 when the message does not belong to the given list."""
     from bibilab.db import get_db
 
     list_id = "list-reattach-test"
