@@ -1,3 +1,5 @@
+import asyncio
+import logging
 from collections.abc import AsyncGenerator, Callable
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -8,7 +10,8 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from bibilab.config import bibilab_home, load_config
-from bibilab.db import bootstrap_db
+from bibilab.db import bootstrap_db, get_db
+from bibilab.pipeline.chat_runs import get_chat_run_registry
 from bibilab.routers.artifacts import router as artifacts_router
 from bibilab.routers.auth import router as auth_router
 from bibilab.routers.chat import router as chat_router
@@ -23,6 +26,39 @@ from bibilab.routers.whisper import router as whisper_router
 from bibilab.worker import WorkerLoop
 
 WEB_DIST = Path(__file__).resolve().parents[3] / "web" / "dist"
+
+logger = logging.getLogger(__name__)
+
+SHUTDOWN_DRAIN_TIMEOUT = 5.0
+
+
+async def sweep_orphaned_streams() -> None:
+    """Mark messages stuck at status='streaming' as failed.
+
+    Called at app startup before accepting requests. Registry is empty at
+    startup, so any 'streaming' row was abandoned by the previous process.
+    """
+    async with get_db() as db:
+        await db.execute(
+            "UPDATE messages SET status='failed', error='Server restarted during generation' WHERE status='streaming'"
+        )
+        await db.execute(
+            "UPDATE conversations SET active_stream_message_id=NULL WHERE active_stream_message_id IS NOT NULL"
+        )
+        await db.commit()
+
+
+async def _await_all_registered(registry) -> None:
+    """Wait for all registered tasks to finish (after cancellation)."""
+    for msg_id in registry.all_message_ids():
+        entry = registry._entries.get(msg_id)
+        if entry is None:
+            continue
+        _, task = entry
+        try:
+            await task
+        except (asyncio.CancelledError, Exception):
+            pass
 
 
 def make_lifespan(*, start_worker: bool) -> Callable[[], AsyncGenerator[None, None]]:
@@ -42,6 +78,7 @@ def make_lifespan(*, start_worker: bool) -> Callable[[], AsyncGenerator[None, No
             (home / subdir).mkdir(parents=True, exist_ok=True)
 
         await bootstrap_db()
+        await sweep_orphaned_streams()
 
         worker = None
         if start_worker:
@@ -54,6 +91,14 @@ def make_lifespan(*, start_worker: bool) -> Callable[[], AsyncGenerator[None, No
 
         if worker is not None:
             await worker.stop()
+
+        registry = get_chat_run_registry()
+        for msg_id in registry.all_message_ids():
+            registry.cancel(msg_id)
+        try:
+            await asyncio.wait_for(_await_all_registered(registry), timeout=SHUTDOWN_DRAIN_TIMEOUT)
+        except asyncio.TimeoutError:
+            logger.warning("shutdown drain timed out — orphans will be cleaned by startup sweep")
 
     return lifespan
 

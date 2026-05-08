@@ -7,11 +7,12 @@ from typing import Any
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 
 from bibilab.config import AIConfig, BibilabConfig, get_config
 from bibilab.db import (
     ActiveStreamConflict,
+    assert_message_in_list,
     create_user_and_assistant_atomic,
     delete_conversation,
     get_conversation_by_list,
@@ -556,3 +557,38 @@ async def chat_endpoint(
         media_type="text/event-stream",
         headers={"X-Accel-Buffering": "no"},
     )
+
+
+@router.get("/lists/{list_id}/chat/{message_id}/stream")
+async def reattach_stream(
+    list_id: str,
+    message_id: str,
+    run_registry: ChatRunRegistry = Depends(get_chat_run_registry),
+):
+    list_row = await get_list(list_id)
+    if list_row is None:
+        raise HTTPException(404, "List not found")
+
+    if not await assert_message_in_list(message_id, list_id):
+        raise HTTPException(404, "Message not in list")
+
+    buf = run_registry.get(message_id)
+    if buf is None:
+        return Response(status_code=204)
+
+    return StreamingResponse(
+        _sse_consumer(buf),
+        media_type="text/event-stream",
+        headers={"X-Accel-Buffering": "no"},
+    )
+
+
+@router.post("/lists/{list_id}/chat/{message_id}/cancel", status_code=204)
+async def cancel_stream(
+    list_id: str,
+    message_id: str,
+    run_registry: ChatRunRegistry = Depends(get_chat_run_registry),
+):
+    if not await assert_message_in_list(message_id, list_id):
+        raise HTTPException(404, "Message not in list")
+    run_registry.cancel(message_id)

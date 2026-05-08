@@ -860,6 +860,20 @@ async def set_active_stream(conversation_id: str, message_id: str | None) -> Non
         await db.commit()
 
 
+async def assert_message_in_list(message_id: str, list_id: str) -> bool:
+    """Return True if message_id belongs to a conversation scoped to list_id."""
+    async with get_db() as db:
+        cursor = await db.execute(
+            """
+            SELECT 1 FROM messages m
+            JOIN conversations c ON m.conversation_id = c.id
+            WHERE m.id=? AND c.list_id=?
+            """,
+            (message_id, list_id),
+        )
+        return await cursor.fetchone() is not None
+
+
 # ---------------------------------------------------------------------------
 # FTS5 helpers
 # ---------------------------------------------------------------------------
