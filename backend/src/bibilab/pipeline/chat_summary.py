@@ -75,4 +75,7 @@ async def maybe_compress_conversation(
         return
 
     ids_to_delete = [row["id"] for row in to_compress]
-    await compress_conversation(conversation_id, new_summary, ids_to_delete)
+    try:
+        await compress_conversation(conversation_id, new_summary, ids_to_delete)
+    except Exception:
+        logger.exception("Failed to persist compression for conversation %s", conversation_id)

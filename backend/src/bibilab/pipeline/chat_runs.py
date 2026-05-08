@@ -7,12 +7,9 @@ docs/specs/2026-05-07-resumable-chat-streams-design.md (local-only).
 from __future__ import annotations
 
 import asyncio
-import logging
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
 from typing import Literal
-
-logger = logging.getLogger(__name__)
 
 STREAM_BUFFER_GRACE_SECONDS = 60
 
@@ -86,6 +83,9 @@ class ChatRunRegistry:
 
     def all_message_ids(self) -> list[str]:
         return list(self._entries.keys())
+
+    def all_tasks(self) -> list[tuple[str, asyncio.Task]]:
+        return [(mid, task) for mid, (_, task) in self._entries.items()]
 
 
 _registry = ChatRunRegistry()

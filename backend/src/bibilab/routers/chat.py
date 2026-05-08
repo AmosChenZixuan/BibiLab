@@ -349,7 +349,9 @@ async def run_chat_turn(
     registry: ChatRunRegistry,
 ) -> None:
     buf = registry.get(message_id)
-    assert buf is not None
+    if buf is None:
+        logger.error("Buffer unexpectedly missing for message_id=%s", message_id)
+        return
 
     final_status: TerminalStatus = "done"
 
@@ -487,7 +489,7 @@ async def run_chat_turn(
         asyncio.create_task(_evict_after_grace(registry, message_id))
 
         if final_status == "done":
-            asyncio.create_task(asyncio.to_thread(maybe_compress_conversation, conversation_id, cfg))
+            asyncio.create_task(maybe_compress_conversation(conversation_id, cfg))
 
 
 @router.post("/lists/{list_id}/chat")

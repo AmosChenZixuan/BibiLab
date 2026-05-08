@@ -50,15 +50,13 @@ async def sweep_orphaned_streams() -> None:
 
 async def _await_all_registered(registry) -> None:
     """Wait for all registered tasks to finish (after cancellation)."""
-    for msg_id in registry.all_message_ids():
-        entry = registry._entries.get(msg_id)
-        if entry is None:
-            continue
-        _, task = entry
+    for msg_id, task in registry.all_tasks():
         try:
             await task
-        except (asyncio.CancelledError, Exception):
+        except asyncio.CancelledError:
             pass
+        except Exception:
+            logger.warning("Task %s raised during shutdown drain", msg_id, exc_info=True)
 
 
 def make_lifespan(*, start_worker: bool) -> Callable[[], AsyncGenerator[None, None]]:

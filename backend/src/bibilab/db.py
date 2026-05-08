@@ -607,7 +607,8 @@ async def create_conversation(list_id: str) -> str:
 async def get_conversation_by_list(list_id: str) -> aiosqlite.Row | None:
     async with get_db() as db:
         cursor = await db.execute(
-            "SELECT id, list_id, summary, created_at, updated_at FROM conversations WHERE list_id=?",
+            "SELECT id, list_id, summary, active_stream_message_id, created_at, updated_at "
+            "FROM conversations WHERE list_id=?",
             (list_id,),
         )
         return await cursor.fetchone()
@@ -772,7 +773,8 @@ async def compress_conversation(
 async def get_conversation(conversation_id: str) -> aiosqlite.Row | None:
     async with get_db() as db:
         cursor = await db.execute(
-            "SELECT id, list_id, summary, created_at, updated_at FROM conversations WHERE id=?",
+            "SELECT id, list_id, summary, active_stream_message_id, created_at, updated_at "
+            "FROM conversations WHERE id=?",
             (conversation_id,),
         )
         return await cursor.fetchone()

@@ -219,8 +219,8 @@ export function useSSEStream({
             if (!raw) continue;
             try {
               processSSEEvent(JSON.parse(raw));
-            } catch {
-              // ignore malformed JSON
+            } catch (e) {
+              console.warn("SSE: failed to parse event", raw, e);
             }
           }
         } else {
@@ -233,8 +233,8 @@ export function useSSEStream({
             if (raw) {
               try {
                 processSSEEvent(JSON.parse(raw));
-              } catch {
-                // ignore malformed JSON at stream end
+              } catch (e) {
+                console.warn("SSE: failed to parse final event", raw, e);
               }
             }
           }
@@ -242,6 +242,7 @@ export function useSSEStream({
         }
       }
 
+      updateAssistantMsg(assistantMsgId, { isStreaming: false });
       safeSetIsStreaming(false);
       isStreamingRef.current = false;
     } catch (err) {
@@ -313,7 +314,14 @@ export function useSSEStream({
         signal: controller.signal,
       });
 
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      if (!response.ok) {
+        let detail = `HTTP ${response.status}`;
+        try {
+          const body = await response.json();
+          if (body.detail) detail = body.detail;
+        } catch { /* use status-only fallback */ }
+        throw new Error(detail);
+      }
 
       await consumeSSE(response, assistantMsgId);
     } catch (err) {
@@ -373,7 +381,14 @@ export function useSSEStream({
         return;
       }
 
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      if (!response.ok) {
+        let detail = `HTTP ${response.status}`;
+        try {
+          const body = await response.json();
+          if (body.detail) detail = body.detail;
+        } catch { /* use status-only fallback */ }
+        throw new Error(detail);
+      }
 
       await consumeSSE(response, messageId);
     } catch (err) {
@@ -396,14 +411,16 @@ export function useSSEStream({
     }
     try {
       await fetch(`/api/lists/${listId}/chat/${msgId}/cancel`, { method: "POST" });
-    } catch {
+    } catch (e) {
+      console.warn("Cancel API call failed, falling back to client-side abort", e);
       abortControllerRef.current?.abort();
     }
   }
 
-  function retryLastMessage() {
+  async function retryLastMessage() {
     if (lastUserMessageRef.current) {
       const text = lastUserMessageRef.current;
+      await stopStreaming();
       safeSetIsStreaming(false);
       isStreamingRef.current = false;
       if (mountedRef.current) {
