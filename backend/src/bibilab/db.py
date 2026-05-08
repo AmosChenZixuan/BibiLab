@@ -97,11 +97,12 @@ CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(
 
 _CREATE_CONVERSATIONS = """
 CREATE TABLE IF NOT EXISTS conversations (
-    id         TEXT PRIMARY KEY,
-    list_id    TEXT NOT NULL UNIQUE REFERENCES lists(id) ON DELETE CASCADE,
-    summary    TEXT,
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL
+    id                      TEXT PRIMARY KEY,
+    list_id                 TEXT NOT NULL UNIQUE REFERENCES lists(id) ON DELETE CASCADE,
+    summary                 TEXT,
+    created_at              TEXT NOT NULL,
+    updated_at              TEXT NOT NULL,
+    active_stream_message_id TEXT
 )
 """
 
@@ -112,7 +113,9 @@ CREATE TABLE IF NOT EXISTS messages (
     role             TEXT NOT NULL,
     content          TEXT NOT NULL,
     metadata         TEXT,
-    created_at       TEXT NOT NULL
+    created_at       TEXT NOT NULL,
+    status           TEXT NOT NULL DEFAULT 'done',
+    error            TEXT
 )
 """
 
