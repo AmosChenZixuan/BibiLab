@@ -227,6 +227,8 @@ export function useSSEStream({
             } catch (e) {
               console.warn("SSE: failed to parse event", raw, e);
             }
+            // Yield to React between events so streaming animation is visible on reattach
+            await new Promise(resolve => setTimeout(resolve, 0));
           }
         } else {
           incomplete += chunkText;
@@ -348,8 +350,15 @@ export function useSSEStream({
     currentAssistantMsgIdRef.current = messageId;
 
     setMessages((prev) => {
-      const exists = prev.some((m) => m.id === messageId);
-      if (exists) {
+      const existing = prev.find((m) => m.id === messageId);
+      if (existing) {
+        // If message has substantive content from history, it's complete — skip reattach
+        const hasRealContent = existing.contentBlocks?.some(
+          (b) => b.type !== "text" || b.text.length > 0,
+        );
+        if (existing.content || hasRealContent) {
+          return prev;
+        }
         return prev.map((m) => (m.id === messageId ? { ...m, isStreaming: true, error: null } : m));
       }
       const newMsg: MessageUI = {

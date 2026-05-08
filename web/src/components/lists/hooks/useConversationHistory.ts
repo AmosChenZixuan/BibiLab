@@ -56,10 +56,12 @@ export function useConversationHistory(
 
           if (m.metadata?.content_blocks) {
             contentBlocks = m.metadata.content_blocks as ContentBlock[];
-          } else {
+          } else if (m.content) {
             const stripped = stripLegacyTokens(m.content);
             contentBlocks = [{ type: "text", text: stripped }];
             displayContent = stripped;
+          } else {
+            contentBlocks = [];
           }
 
           let toolCall: ToolCallData | null = null;

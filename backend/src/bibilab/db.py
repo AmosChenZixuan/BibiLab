@@ -674,10 +674,10 @@ async def get_recent_messages(
             cursor = await db.execute(
                 """
                 SELECT id, conversation_id, role, content, metadata, created_at, status, error FROM messages
-                WHERE conversation_id=? AND (created_at, id) < (
-                    SELECT created_at, id FROM messages WHERE id=?
+                WHERE conversation_id=? AND (created_at, rowid) < (
+                    SELECT created_at, rowid FROM messages WHERE id=?
                 )
-                ORDER BY created_at DESC, id DESC
+                ORDER BY created_at DESC, rowid DESC
                 LIMIT ?
                 """,
                 (conversation_id, before_id, limit),
@@ -687,7 +687,7 @@ async def get_recent_messages(
                 """
                 SELECT id, conversation_id, role, content, metadata, created_at, status, error FROM messages
                 WHERE conversation_id=?
-                ORDER BY created_at DESC, id DESC
+                ORDER BY created_at DESC, rowid DESC
                 LIMIT ?
                 """,
                 (conversation_id, limit),
@@ -725,12 +725,12 @@ async def get_messages_beyond_window(
             """
             SELECT id, conversation_id, role, content, metadata, created_at, status, error
             FROM (
-                SELECT *, ROW_NUMBER() OVER (ORDER BY created_at DESC, id DESC) AS _rn
+                SELECT *, ROW_NUMBER() OVER (ORDER BY created_at DESC, rowid DESC) AS _rn
                 FROM messages
                 WHERE conversation_id=?
             )
             WHERE _rn > ?
-            ORDER BY created_at ASC, id ASC
+            ORDER BY created_at ASC, rowid ASC
             """,
             (conversation_id, window_size),
         )
