@@ -1,23 +1,26 @@
+import asyncio
 import json
 import logging
 import re
 from collections.abc import AsyncGenerator
 from typing import Any
+from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
-from starlette.background import BackgroundTask
 
 from bibilab.config import AIConfig, BibilabConfig, get_config
 from bibilab.db import (
-    create_message,
+    ActiveStreamConflict,
+    create_user_and_assistant_atomic,
     delete_conversation,
-    delete_messages_by_ids,
     get_conversation_by_list,
     get_list,
     get_or_create_conversation,
     get_recent_messages,
     get_sources_for_list,
+    set_active_stream,
+    update_message_content,
 )
 from bibilab.db import (
     get_conversation as get_conv_row,
@@ -29,6 +32,14 @@ from bibilab.models.chat import (
     MessageResponse,
 )
 from bibilab.pipeline._shared import StreamEvent, ToolCall, ToolDefinition, stream_llm
+from bibilab.pipeline.chat_runs import (
+    STREAM_BUFFER_GRACE_SECONDS,
+    ChatRunRegistry,
+    StreamBuffer,
+    TerminalStatus,
+    get_chat_run_registry,
+    stream_from_buffer,
+)
 from bibilab.pipeline.chat_summary import maybe_compress_conversation
 from bibilab.pipeline.chat_tools import (
     GENERATE_REPORT_TOOL,
@@ -51,6 +62,7 @@ SSE_EVENT_ERROR = "error"
 SSE_EVENT_TOOL_RESULT = "tool_result"
 SSE_EVENT_TOOL_CALL_START = "tool_call_start"
 SSE_EVENT_CITATION = "citation"
+SSE_EVENT_CANCELLED = "cancelled"
 
 # Sized for thinking-capable models with potentially long chat responses + tool turns.
 CHAT_MAX_TOKENS = 16384
@@ -288,64 +300,75 @@ async def stream_with_tools(
         return
 
 
-@router.post("/lists/{list_id}/chat")
-async def chat_endpoint(
+def _serialize_event_for_buffer(event: StreamEvent) -> dict | None:
+    """Map a StreamEvent to the dict stored in StreamBuffer and sent via SSE."""
+    if event.type == SSE_EVENT_DELTA:
+        return {"type": SSE_EVENT_DELTA, "content": event.content or ""}
+    elif event.type == SSE_EVENT_CITATION:
+        data = json.loads(event.content)
+        return {
+            "type": SSE_EVENT_CITATION,
+            "index": data["index"],
+            "source_id": data["source_id"],
+            "chunk_ids": data.get("chunk_ids", []),
+        }
+    elif event.type == SSE_EVENT_TOOL_CALL_START:
+        parsed = json.loads(event.content)
+        return {"type": SSE_EVENT_TOOL_CALL_START, **parsed}
+    elif event.type == "tool_result":
+        parsed = json.loads(event.content)
+        return {"type": SSE_EVENT_TOOL_RESULT, **parsed}
+    elif event.type == "error":
+        return {"type": SSE_EVENT_ERROR, "message": event.content}
+    return None
+
+
+async def _sse_consumer(buf: StreamBuffer) -> AsyncGenerator[str, None]:
+    async for event in stream_from_buffer(buf):
+        yield f"data: {json.dumps(event)}\n\n"
+
+
+async def _evict_after_grace(registry: ChatRunRegistry, message_id: str) -> None:
+    await asyncio.sleep(STREAM_BUFFER_GRACE_SECONDS)
+    registry.evict(message_id)
+
+
+async def run_chat_turn(
+    *,
+    message_id: str,
+    conversation_id: str,
     list_id: str,
-    request: ChatRequest,
-    http_request: Request,
-    cfg: BibilabConfig = Depends(get_config),
-) -> StreamingResponse:
-    list_row = await get_list(list_id)
-    if list_row is None:
-        raise HTTPException(status_code=404, detail="List not found")
+    user_message_text: str,
+    history: list[dict],
+    summary: str | None,
+    source_ids: list[str],
+    source_map: dict[str, str],
+    ui_lang: str,
+    cfg: BibilabConfig,
+    registry: ChatRunRegistry,
+) -> None:
+    buf = registry.get(message_id)
+    assert buf is not None
 
-    conversation_id = await get_or_create_conversation(list_id)
+    final_status: TerminalStatus = "done"
 
-    conv_row = await get_conv_row(conversation_id)
-    existing_summary = conv_row["summary"] if conv_row else None
-
-    history_rows = await get_recent_messages(conversation_id, limit=100)
-    history = [{"role": row["role"], "content": row["content"]} for row in history_rows]
-
-    source_rows = await get_sources_for_list(list_id)
-    if request.source_ids:
-        source_ids = request.source_ids
-    else:
-        source_ids = [row["id"] for row in source_rows]
-
-    ui_lang = http_request.headers.get("X-UI-Lang", "en")
-
-    user_msg_row = await create_message(
-        conversation_id=conversation_id,
-        role="user",
-        content=request.message,
-        metadata=None,
-    )
-    user_msg_id = user_msg_row["id"]
-
-    # Build video_id → source_id map for citation registry (single call)
-    source_map: dict[str, str] = {row["video_id"]: row["id"] for row in source_rows}
-
-    registry: dict[str, CitationRegistryEntry] = {}
-
+    citation_registry: dict[str, CitationRegistryEntry] = {}
     assistant_text_deltas: list[str] = []
     retrieve_calls: list[dict] = []
     generate_report_result: dict | None = None
     content_blocks: list[dict] = []
     pending_text = ""
 
-    async def event_generator():
-        nonlocal assistant_text_deltas, retrieve_calls, generate_report_result, content_blocks, pending_text
-
+    try:
         system_parts = [GROUNDING_SYSTEM_PROMPT]
-        if existing_summary:
+        if summary:
             system_parts.append(
                 "Historical conversation summary (for context only — the current "
-                "question may be about different sources than those summarized below):\n" + existing_summary
+                "question may be about different sources than those summarized below):\n" + summary
             )
         system_message = "\n\n".join(system_parts)
 
-        messages_for_llm = history + [{"role": "user", "content": request.message}]
+        messages_for_llm = history + [{"role": "user", "content": user_message_text}]
 
         async def execute_tool_bound(name: str, args: dict, **kwargs) -> dict:
             return await execute_tool(
@@ -360,110 +383,176 @@ async def chat_endpoint(
 
         tools = [RETRIEVE_TOOL, QUERY_LIST_METADATA_TOOL, GENERATE_REPORT_TOOL]
 
-        try:
-            async for event in stream_with_tools(
-                messages=messages_for_llm,
-                cfg=cfg.ai,
-                tools=tools,
-                execute_tool_fn=execute_tool_bound,
-                system=system_message if system_message.strip() else None,
-                llm_max_tokens=CHAT_MAX_TOKENS,
-                registry=registry,
-                source_map=source_map,
-            ):
-                if event.type == SSE_EVENT_DELTA:
-                    content = event.content or ""
-                    assistant_text_deltas.append(content)
-                    pending_text += content
-                    yield f"data: {json.dumps({'type': SSE_EVENT_DELTA, 'content': content})}\n\n"
-                elif event.type == SSE_EVENT_CITATION:
-                    if pending_text:
-                        _flush_pending_text(content_blocks, pending_text)
-                        pending_text = ""
-                    data = json.loads(event.content)
-                    content_blocks.append(
-                        {
-                            "type": "citation",
-                            "index": data["index"],
-                            "source_id": data["source_id"],
-                            "chunk_ids": data.get("chunk_ids", []),
-                        }
-                    )
-                    sse_data = {
-                        "type": SSE_EVENT_CITATION,
+        async for event in stream_with_tools(
+            messages=messages_for_llm,
+            cfg=cfg.ai,
+            tools=tools,
+            execute_tool_fn=execute_tool_bound,
+            system=system_message if system_message.strip() else None,
+            llm_max_tokens=CHAT_MAX_TOKENS,
+            registry=citation_registry,
+            source_map=source_map,
+        ):
+            payload = _serialize_event_for_buffer(event)
+            if payload is not None:
+                buf.append(payload)
+
+            if event.type == SSE_EVENT_DELTA:
+                content = event.content or ""
+                assistant_text_deltas.append(content)
+                pending_text += content
+            elif event.type == SSE_EVENT_CITATION:
+                if pending_text:
+                    _flush_pending_text(content_blocks, pending_text)
+                    pending_text = ""
+                data = json.loads(event.content)
+                content_blocks.append(
+                    {
+                        "type": "citation",
                         "index": data["index"],
                         "source_id": data["source_id"],
                         "chunk_ids": data.get("chunk_ids", []),
                     }
-                    yield f"data: {json.dumps(sse_data)}\n\n"
-                elif event.type == SSE_EVENT_TOOL_CALL_START:
-                    parsed = json.loads(event.content)
-                    yield f"data: {json.dumps({'type': SSE_EVENT_TOOL_CALL_START, **parsed})}\n\n"
-                elif event.type == "tool_result":
-                    parsed = json.loads(event.content)
-                    if parsed["name"] == "retrieve":
-                        result = parsed["result"]
-                        ordered_coverage = sorted(
-                            [s for s in result.get("source_coverage", []) if s["source_id"] in registry],
-                            key=lambda s: registry[s["source_id"]].index,
-                        )
-                        retrieve_calls.append(
-                            {
-                                "query": result.get("query", ""),
-                                "search_mode": result.get("search_mode"),
-                                "candidates_evaluated": result.get("candidates_evaluated"),
-                                "sources_with_hits": result.get("sources_with_hits"),
-                                "sources_total": result.get("sources_total"),
-                                "source_coverage": ordered_coverage,
-                            }
-                        )
-                    elif parsed["name"] == "generate_report":
-                        generate_report_result = parsed["result"]
-                    yield f"data: {json.dumps({'type': SSE_EVENT_TOOL_RESULT, **parsed})}\n\n"
-                elif event.type == "error":
-                    logger.error("stream_with_tools error: %s", event.content)
-                    await delete_messages_by_ids([user_msg_id])
-                    yield f"data: {json.dumps({'type': SSE_EVENT_ERROR, 'message': event.content})}\n\n"
-                    return
+                )
+            elif event.type == "tool_result":
+                parsed = json.loads(event.content)
+                if parsed["name"] == "retrieve":
+                    result = parsed["result"]
+                    ordered_coverage = sorted(
+                        [s for s in result.get("source_coverage", []) if s["source_id"] in citation_registry],
+                        key=lambda s: citation_registry[s["source_id"]].index,
+                    )
+                    retrieve_calls.append(
+                        {
+                            "query": result.get("query", ""),
+                            "search_mode": result.get("search_mode"),
+                            "candidates_evaluated": result.get("candidates_evaluated"),
+                            "sources_with_hits": result.get("sources_with_hits"),
+                            "sources_total": result.get("sources_total"),
+                            "source_coverage": ordered_coverage,
+                        }
+                    )
+                elif parsed["name"] == "generate_report":
+                    generate_report_result = parsed["result"]
+            elif event.type == "error":
+                logger.error("stream_with_tools error: %s", event.content)
+                final_status = "failed"
+                return
+    except asyncio.CancelledError:
+        final_status = "cancelled"
+        raise
+    except Exception:
+        logger.exception("producer failed message_id=%s", message_id)
+        final_status = "failed"
+    finally:
+        try:
+            if pending_text:
+                _flush_pending_text(content_blocks, pending_text)
+                pending_text = ""
+
+            tool_call_meta: list[dict] = []
+            if generate_report_result is not None:
+                tool_call_meta = [{"name": "generate_report", "result": generate_report_result}]
+
+            meta: dict[str, Any] = {}
+            if tool_call_meta:
+                meta["tool_calls"] = tool_call_meta
+            if retrieve_calls:
+                meta["rag"] = {"calls": retrieve_calls}
+            if content_blocks:
+                meta["content_blocks"] = content_blocks
+
+            assistant_content = "".join(assistant_text_deltas)
+            error_text = "An internal error occurred" if final_status == "failed" else None
+            await update_message_content(
+                message_id,
+                content=assistant_content,
+                metadata=meta if meta else None,
+                status=final_status,
+                error=error_text,
+            )
+            await set_active_stream(conversation_id, None)
         except Exception:
-            logger.exception("LLM streaming failed")
-            await delete_messages_by_ids([user_msg_id])
-            yield f"data: {json.dumps({'type': SSE_EVENT_ERROR, 'message': 'An internal error occurred'})}\n\n"
-            return
+            logger.exception("producer finalize failed message_id=%s", message_id)
 
-        # Persist message after stream completes. Single path for both no-tool and tool flows.
-        # generate_report result is included so frontend can rehydrate artifact links from history.
-        tool_call_meta: list[dict] = []
-        if generate_report_result is not None:
-            tool_call_meta = [{"name": "generate_report", "result": generate_report_result}]
+        _terminal_map = {"done": SSE_EVENT_DONE, "cancelled": SSE_EVENT_CANCELLED, "failed": SSE_EVENT_ERROR}
+        sse_terminal = _terminal_map[final_status]
+        terminal_payload: dict[str, Any] = {"type": sse_terminal}
+        if final_status == "failed":
+            terminal_payload["message"] = "An internal error occurred"
+        buf.append(terminal_payload)
+        buf.close(final_status)
 
-        # Flush trailing text into content_blocks before persisting
-        if pending_text:
-            _flush_pending_text(content_blocks, pending_text)
-            pending_text = ""
+        asyncio.create_task(_evict_after_grace(registry, message_id))
 
-        meta: dict[str, Any] = {}
-        if tool_call_meta:
-            meta["tool_calls"] = tool_call_meta
-        if retrieve_calls:
-            meta["rag"] = {"calls": retrieve_calls}
-        if content_blocks:
-            meta["content_blocks"] = content_blocks
+        if final_status == "done":
+            asyncio.create_task(asyncio.to_thread(maybe_compress_conversation, conversation_id, cfg))
 
-        # content = preamble (assistant_text_deltas) + any trailing text after last citation
-        assistant_content = "".join(assistant_text_deltas)
-        await create_message(
+
+@router.post("/lists/{list_id}/chat")
+async def chat_endpoint(
+    list_id: str,
+    request: ChatRequest,
+    http_request: Request,
+    cfg: BibilabConfig = Depends(get_config),
+    run_registry: ChatRunRegistry = Depends(get_chat_run_registry),
+) -> StreamingResponse:
+    list_row = await get_list(list_id)
+    if list_row is None:
+        raise HTTPException(status_code=404, detail="List not found")
+
+    conversation_id = await get_or_create_conversation(list_id)
+
+    conv_row = await get_conv_row(conversation_id)
+    existing_summary = conv_row["summary"] if conv_row else None
+
+    # Snapshot history before inserting new messages — the producer adds the
+    # current user message explicitly via user_message_text.
+    history_rows = await get_recent_messages(conversation_id, limit=100)
+    history = [{"role": r["role"], "content": r["content"]} for r in history_rows]
+
+    source_rows = await get_sources_for_list(list_id)
+    if request.source_ids:
+        source_ids = request.source_ids
+    else:
+        source_ids = [row["id"] for row in source_rows]
+
+    # Atomic 409 guard + insert user msg + insert streaming assistant msg
+    user_msg_id = str(uuid4())
+    assistant_msg_id = str(uuid4())
+    try:
+        await create_user_and_assistant_atomic(
             conversation_id=conversation_id,
-            role="assistant",
-            content=assistant_content,
-            metadata=meta if meta else None,
+            user_msg_id=user_msg_id,
+            assistant_msg_id=assistant_msg_id,
+            user_text=request.message,
         )
+    except ActiveStreamConflict:
+        raise HTTPException(409, "Conversation already has an active stream")
 
-        yield f"data: {json.dumps({'type': SSE_EVENT_DONE})}\n\n"
+    source_map: dict[str, str] = {row["video_id"]: row["id"] for row in source_rows}
+    ui_lang = http_request.headers.get("X-UI-Lang", "en")
+
+    # Spawn producer
+    task = asyncio.create_task(
+        run_chat_turn(
+            message_id=assistant_msg_id,
+            conversation_id=conversation_id,
+            list_id=list_id,
+            user_message_text=request.message,
+            history=history,
+            summary=existing_summary,
+            source_ids=source_ids,
+            source_map=source_map,
+            ui_lang=ui_lang,
+            cfg=cfg,
+            registry=run_registry,
+        )
+    )
+    buf = run_registry.register(assistant_msg_id, task)
 
     return StreamingResponse(
-        event_generator(),
+        _sse_consumer(buf),
         media_type="text/event-stream",
         headers={"X-Accel-Buffering": "no"},
-        background=BackgroundTask(maybe_compress_conversation, conversation_id, cfg),
     )

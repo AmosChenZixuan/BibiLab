@@ -672,7 +672,7 @@ async def get_recent_messages(
         if before_id is not None:
             cursor = await db.execute(
                 """
-                SELECT id, conversation_id, role, content, metadata, created_at FROM messages
+                SELECT id, conversation_id, role, content, metadata, created_at, status, error FROM messages
                 WHERE conversation_id=? AND (created_at, id) < (
                     SELECT created_at, id FROM messages WHERE id=?
                 )
@@ -684,7 +684,7 @@ async def get_recent_messages(
         else:
             cursor = await db.execute(
                 """
-                SELECT id, conversation_id, role, content, metadata, created_at FROM messages
+                SELECT id, conversation_id, role, content, metadata, created_at, status, error FROM messages
                 WHERE conversation_id=?
                 ORDER BY created_at DESC, id DESC
                 LIMIT ?
@@ -722,7 +722,7 @@ async def get_messages_beyond_window(
     async with get_db() as db:
         cursor = await db.execute(
             """
-            SELECT id, conversation_id, role, content, metadata, created_at
+            SELECT id, conversation_id, role, content, metadata, created_at, status, error
             FROM (
                 SELECT *, ROW_NUMBER() OVER (ORDER BY created_at DESC, id DESC) AS _rn
                 FROM messages
@@ -781,6 +781,82 @@ async def get_conversation(conversation_id: str) -> aiosqlite.Row | None:
 async def delete_conversation(conversation_id: str) -> None:
     async with get_db() as db:
         await db.execute("DELETE FROM conversations WHERE id=?", (conversation_id,))
+        await db.commit()
+
+
+class ActiveStreamConflict(Exception):
+    """Raised when attempting to start a second stream on an active conversation."""
+
+
+async def create_user_and_assistant_atomic(
+    conversation_id: str,
+    user_msg_id: str,
+    assistant_msg_id: str,
+    user_text: str,
+) -> None:
+    """Insert user + streaming assistant message atomically, set active_stream_message_id.
+
+    Uses BEGIN IMMEDIATE to serialize concurrent callers — the second caller
+    sees active_stream_message_id != NULL and gets ActiveStreamConflict.
+    """
+    now = _now()
+    async with get_db() as db:
+        await db.execute("BEGIN IMMEDIATE")
+        try:
+            cursor = await db.execute(
+                "SELECT active_stream_message_id FROM conversations WHERE id=?",
+                (conversation_id,),
+            )
+            row = await cursor.fetchone()
+            if row and row["active_stream_message_id"] is not None:
+                raise ActiveStreamConflict(
+                    f"Conversation {conversation_id} already has active stream {row['active_stream_message_id']}"
+                )
+
+            await db.execute(
+                "INSERT INTO messages (id, conversation_id, role, content, metadata, created_at, status) "
+                "VALUES (?, ?, 'user', ?, NULL, ?, 'done')",
+                (user_msg_id, conversation_id, user_text, now),
+            )
+            await db.execute(
+                "INSERT INTO messages (id, conversation_id, role, content, metadata, created_at, status) "
+                "VALUES (?, ?, 'assistant', '', NULL, ?, 'streaming')",
+                (assistant_msg_id, conversation_id, now),
+            )
+            await db.execute(
+                "UPDATE conversations SET active_stream_message_id=? WHERE id=?",
+                (assistant_msg_id, conversation_id),
+            )
+            await db.commit()
+        except ActiveStreamConflict:
+            await db.execute("ROLLBACK")
+            raise
+        except Exception:
+            await db.execute("ROLLBACK")
+            raise
+
+
+async def update_message_content(
+    message_id: str,
+    content: str,
+    metadata: dict | None,
+    status: str,
+    error: str | None = None,
+) -> None:
+    async with get_db() as db:
+        await db.execute(
+            "UPDATE messages SET content=?, metadata=?, status=?, error=? WHERE id=?",
+            (content, json.dumps(metadata) if metadata is not None else None, status, error, message_id),
+        )
+        await db.commit()
+
+
+async def set_active_stream(conversation_id: str, message_id: str | None) -> None:
+    async with get_db() as db:
+        await db.execute(
+            "UPDATE conversations SET active_stream_message_id=? WHERE id=?",
+            (message_id, conversation_id),
+        )
         await db.commit()
 
 
