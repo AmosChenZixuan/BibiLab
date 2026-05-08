@@ -557,6 +557,10 @@ async def chat_endpoint(
         )
     )
     buf = run_registry.register(assistant_msg_id, task)
+    # Let client know the server-assigned id so Stop can target it before the
+    # first delta arrives.  Appended to the buffer before the consumer starts
+    # reading, so it is always the first event delivered.
+    buf.append({"type": "meta", "message_id": assistant_msg_id})
 
     return StreamingResponse(
         _sse_consumer(buf),

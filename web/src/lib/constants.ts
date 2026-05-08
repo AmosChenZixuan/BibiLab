@@ -5,6 +5,7 @@ export const SSE_EVENT_TOOL_RESULT = "tool_result" as const;
 export const SSE_EVENT_TOOL_CALL_START = "tool_call_start" as const;
 export const SSE_EVENT_CITATION = "citation" as const;
 export const SSE_EVENT_CANCELLED = "cancelled" as const;
+export const SSE_EVENT_META = "meta" as const;
 export type SSEEventType =
   | typeof SSE_EVENT_DELTA
   | typeof SSE_EVENT_DONE

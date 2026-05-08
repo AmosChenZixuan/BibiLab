@@ -10,6 +10,7 @@ import {
   SSE_EVENT_DELTA,
   SSE_EVENT_DONE,
   SSE_EVENT_ERROR,
+  SSE_EVENT_META,
   SSE_EVENT_TOOL_CALL_START,
   SSE_EVENT_TOOL_RESULT,
 } from "@/lib/constants";
@@ -104,6 +105,10 @@ export function useSSEStream({
     };
 
     function processSSEEvent(event: { type: string; [key: string]: unknown }): void {
+      if (event.type === SSE_EVENT_META) {
+        currentAssistantMsgIdRef.current = event.message_id as string;
+        return;
+      }
       if (event.type === SSE_EVENT_DELTA) {
         const content = event.content as string;
         pendingText += content;

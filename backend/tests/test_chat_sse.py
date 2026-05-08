@@ -723,7 +723,7 @@ async def test_chat_sse_hallucinated_index_emitted_as_text(client, caplog):
 
     assert resp.status_code == 200
     events = _parse_sse(resp.text)
-    assert all(e["type"] == "delta" or e["type"] == "done" for e in events)
+    assert all(e["type"] in ("delta", "done", "meta") for e in events)
     delta_text = "".join(e.get("content", "") for e in events if e["type"] == "delta")
     assert "[7]" in delta_text
     assert any("citation_hallucinated_index" in rec.message for rec in caplog.records)
