@@ -29,8 +29,8 @@ export interface MessageUI {
 export function useConversationHistory(
   listId: string | undefined,
   hasSources: boolean,
-  interruptedLabel = "Response interrupted",
-  stoppedLabel = "Stopped",
+  interruptedLabel: string,
+  stoppedLabel: string,
 ) {
   const [messages, setMessages] = useState<MessageUI[]>([]);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);

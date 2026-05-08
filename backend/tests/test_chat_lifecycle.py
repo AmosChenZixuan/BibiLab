@@ -104,8 +104,8 @@ async def test_reattach_404_message_not_in_list(client, tmp_bibilab_home):  # no
 
 
 @pytest.mark.asyncio
-async def test_cancel_204_for_nonexistent_message(client, tmp_bibilab_home):  # noqa: ARG001
-    """Cancel returns 204 when message not in any list."""
+async def test_cancel_404_for_nonexistent_message(client, tmp_bibilab_home):  # noqa: ARG001
+    """Cancel returns 404 when message does not exist in the given list."""
     from bibilab.db import get_db
 
     list_id = "list-cancel-test"

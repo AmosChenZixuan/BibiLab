@@ -410,7 +410,12 @@ export function useSSEStream({
       return;
     }
     try {
-      await fetch(`/api/lists/${listId}/chat/${msgId}/cancel`, { method: "POST" });
+      const res = await fetch(`/api/lists/${listId}/chat/${msgId}/cancel`, { method: "POST" });
+      if (!res.ok) {
+        // Server doesn't know this message (e.g. not yet persisted, or already
+        // evicted) — fall back to client-side abort so the UI doesn't hang.
+        abortControllerRef.current?.abort();
+      }
     } catch (e) {
       console.warn("Cancel API call failed, falling back to client-side abort", e);
       abortControllerRef.current?.abort();

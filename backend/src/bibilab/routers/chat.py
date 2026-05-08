@@ -474,9 +474,13 @@ async def run_chat_turn(
                 status=final_status,
                 error=error_text,
             )
-            await set_active_stream(conversation_id, None)
         except Exception:
             logger.exception("producer finalize failed message_id=%s", message_id)
+
+        try:
+            await set_active_stream(conversation_id, None)
+        except Exception:
+            logger.exception("producer clear active_stream failed message_id=%s", message_id)
 
         _terminal_map = {"done": SSE_EVENT_DONE, "cancelled": SSE_EVENT_CANCELLED, "failed": SSE_EVENT_ERROR}
         sse_terminal = _terminal_map[final_status]

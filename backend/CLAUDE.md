@@ -21,7 +21,7 @@ uv run python -m bibilab.main       # Start server (localhost:8765)
 ```
 routers/          — one APIRouter per module; aggregated in main.py
   auth.py           /auth/bilibili/* (QR login, cookie management)
-  chat.py           /lists/:id/chat (SSE streaming), /lists/:id/conversation (CRUD); stream_with_tools loop
+  chat.py           /lists/:id/chat (SSE streaming + cancel), /lists/:id/chat/:msg_id/stream (reattach), /lists/:id/conversation (CRUD); stream_with_tools loop
   lists.py          /lists/* (CRUD), /lists/:id/overview (POST)
   ingest.py         /ingest/url (POST)
   sources.py        /sources/* (source content, covers, rerun)
@@ -39,6 +39,7 @@ pipeline/         — one file per stage
   chat_tools.py     tool definitions (retrieve + query_list_metadata + generate_report) + execution dispatcher + chunk formatting + CitationRegistry
   chat_summary.py   conversation compression (sliding window + LLM summary; preserves [N] RAG citations)
   citation_parser.py incremental citation parser — strips [N] tokens from LLM deltas, emits citation SSE events with {index, source_id, chunk_ids}
+  chat_runs.py       StreamBuffer + ChatRunRegistry; in-memory buffer decouples LLM producer from HTTP request lifetime
 adapters/         — platform-specific download + resolution (base + bilibili)
 db.py             — SQLite schema + query helpers (840 lines)
 video_status.py   — derive_video_statuses (status mapping extracted from db.py per Code Health Rule #4)
@@ -117,6 +118,7 @@ whisper_models.py — Whisper model management
 | `id` | UUID, primary key |
 | `list_id` | FK to `lists.id`, UNIQUE, ON DELETE CASCADE |
 | `summary` | Rolling LLM-generated summary, nullable |
+| `active_stream_message_id` | FK to `messages.id`, nullable; points to the currently streaming assistant message |
 | `created_at` | ISO timestamp |
 | `updated_at` | ISO timestamp |
 
@@ -128,6 +130,8 @@ whisper_models.py — Whisper model management
 | `conversation_id` | FK to `conversations.id`, ON DELETE CASCADE, indexed |
 | `role` | `"user"` \| `"assistant"` \| `"tool"` |
 | `content` | Message text |
+| `status` | `"streaming"` → `"done"` \| `"failed"` \| `"cancelled"` |
+| `error` | Error message, nullable; set on producer failure or server restart sweep |
 | `metadata` | JSON blob, nullable. Shape: `{"tool_calls": [...], "rag": {"calls": [{"query", "search_mode", "candidates_evaluated", "sources_with_hits", "sources_total", "source_coverage"}]}}`. Set by `chat_endpoint` post-stream from retrieve `tool_result` events (one entry per retrieve call). |
 | `created_at` | ISO timestamp |
 
@@ -158,27 +162,48 @@ POST /ingest/url → resolve → dedup check → create job(s)
 ## Chat Pipeline
 
 ```
-POST /lists/:id/chat (SSE)
-  → get_or_create_conversation → load history + existing summary
-  → add GROUNDING_SYSTEM_PROMPT + summary (if present) as system message
-  → stream_with_tools(stream_llm loop):
-      LLM yields tool_call (retrieve) → execute_retrieve() → hybrid_search (BM25 + vector RRF) → rerank → _diverse_top_k
-      → tool_call_start emitted → tool_result (with citation-formatted _chunks) fed back to LLM → second turn yields text with [N] citations
-      → parse_delta strips [N] markers, emits citation SSE events ({index, source_id, chunk_ids}) interleaved with delta events
-      LLM yields tool_call (query_list_metadata) → execute_query_list_metadata() → tool_result → fed back to LLM
-      LLM yields tool_call (generate_report) → execute_generate_report() → tool_result → exit loop
-      LLM yields delta + done directly (no tool) → exit loop
-  → yield delta + tool_call_start + tool_result + citation + done events (SSE)
-  → persist assistant message with rag metadata → BackgroundTask: maybe_compress_conversation
+POST /lists/:id/chat (SSE) — creates user + assistant rows atomically, spawns async producer
+  → asyncio.Task: run_chat_turn writes events into StreamBuffer
+  → POST handler returns SSE stream consuming from buffer (late-subscriber-safe replay)
+  → producer persists final content + status + metadata in finally block
+  → producer fires fire-and-forget: evict buffer after grace, compress if done
+
+GET  /lists/:id/chat/{msg_id}/stream — reattach to an active stream (204 if evicted)
+POST /lists/:id/chat/{msg_id}/cancel — cancel producer task, persists status='cancelled'
+
+Startup: sweep_orphaned_streams marks leftover streaming rows as failed
+Shutdown: cancel all active tasks, drain with 5s timeout
 ```
 
+### SSE event types
+
+`delta`, `citation`, `tool_call_start`, `tool_result`, `done`, `error`, `cancelled`
+
+### Chat execution
+
+```
+stream_with_tools(stream_llm loop):
+    LLM yields tool_call (retrieve) → execute_retrieve() → hybrid_search (BM25 + vector RRF) → rerank → _diverse_top_k
+    → tool_call_start emitted → tool_result (with citation-formatted _chunks) fed back to LLM → second turn yields text with [N] citations
+    → parse_delta strips [N] markers, emits citation SSE events ({index, source_id, chunk_ids}) interleaved with delta events
+    LLM yields tool_call (query_list_metadata) → execute_query_list_metadata() → tool_result → fed back to LLM
+    LLM yields tool_call (generate_report) → execute_generate_report() → tool_result → exit loop
+    LLM yields delta + done directly (no tool) → exit loop
+→ yield delta + tool_call_start + tool_result + citation + done events (SSE)
+→ persist assistant message with rag metadata → asyncio.create_task: maybe_compress_conversation
+```
+
+- **Producer/consumer split**: `run_chat_turn` (async Task) writes SSE events into `StreamBuffer`; `_sse_consumer` reads from buffer. Decouples LLM lifetime from HTTP request.
 - `stream_with_tools` wraps `stream_llm` in a bounded loop (max 3 iterations). Loopback tools (`retrieve`, `query_list_metadata`) feed results back for another LLM turn; terminal tools (`generate_report`) exit the loop.
 - **Preamble suppression**: Text generated before a loopback tool call is discarded (`preamble_discarded`). Only the tool result is fed back to the LLM; the pre-call filler text never reaches the client.
 - **Sequential-retrieve guard**: After the first `retrieve` call succeeds, `retrieve` is removed from the active tool list for the remainder of the turn. A second retrieve within the same turn is rejected.
 - Retrieve result `_chunks` are formatted as citation-ready `[N]: "content"` strings for the LLM; stripped from the client-bound `tool_result` SSE payload by `_client_tool_result()`.
 - `citation_parser.parse_delta()` strips `[N]` markers from LLM output and emits `citation` SSE events with `{index, source_id, chunk_ids}`. A partial `[` at delta end is held in a buffer for the next delta. `flush_buffer()` drains remaining buffer at stream end.
 - `stream_llm` supports both OpenAI and Anthropic protocols via `AsyncOpenAI`/`AsyncAnthropic`
-- Compression: triggered when message count > 30; keeps sliding window of 20; summarizes older messages via `_call_llm` in `asyncio.to_thread`; LLM prompt instructs preservation of `[N]` RAG citations
+- **Reattach**: Frontend reads `active_stream_message_id` from conversation; if set, GETs the stream endpoint to replay buffered events + tail live ones. Returns 204 after buffer eviction.
+- **Cancel**: POST sets `status='cancelled'` + emits `cancelled` SSE event. Producer catches `CancelledError` and persists partial content.
+- **Lifecycle**: Startup sweep marks leftover `status='streaming'` rows as `failed`. Shutdown cancels all tasks, drains with 5s timeout. Buffer eviction fires 60s after terminal status.
+- Compression: triggered when message count > 30; keeps sliding window of 20; summarizes older messages via `_call_llm` in `asyncio.create_task`; LLM prompt instructs preservation of `[N]` RAG citations
 - Summary injected into system prompt on subsequent requests
 
 ## Platform Adapters
