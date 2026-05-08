@@ -737,18 +737,6 @@ async def get_messages_beyond_window(
         return list(await cursor.fetchall())
 
 
-async def delete_messages_by_ids(message_ids: list[str]) -> None:
-    if not message_ids:
-        return
-    async with get_db() as db:
-        placeholders = _in_placeholders(message_ids)
-        await db.execute(
-            f"DELETE FROM messages WHERE id IN ({placeholders})",
-            message_ids,
-        )
-        await db.commit()
-
-
 async def compress_conversation(
     conversation_id: str,
     summary: str,

@@ -232,14 +232,14 @@ async def stream_with_tools(
                 yield pe
 
         if iteration > MAX_TOOL_ITERATIONS:
-            yield StreamEvent(type="error", content="Max tool iterations exceeded")
+            yield StreamEvent(type=SSE_EVENT_ERROR, content="Max tool iterations exceeded")
             return
 
         results: dict[str, dict] = {}
         for tc in tool_calls:
             if tc.name in LOOPBACK_TOOLS:
                 yield StreamEvent(
-                    type="tool_call_start",
+                    type=SSE_EVENT_TOOL_CALL_START,
                     content=json.dumps({"id": tc.id, "name": tc.name, "arguments": tc.arguments}),
                 )
         for tc in tool_calls:
@@ -247,12 +247,12 @@ async def stream_with_tools(
                 result = await _execute_with_registry(tc.name, tc.arguments)
             except Exception:
                 logger.exception("tool_execution_failed tool=%s", tc.name)
-                yield StreamEvent(type="error", content=f"Tool {tc.name} failed")
+                yield StreamEvent(type=SSE_EVENT_ERROR, content=f"Tool {tc.name} failed")
                 return
 
             results[tc.id] = result
             yield StreamEvent(
-                type="tool_result",
+                type=SSE_EVENT_TOOL_RESULT,
                 content=json.dumps({"id": tc.id, "name": tc.name, "result": _client_tool_result(result)}),
             )
 
@@ -316,17 +316,23 @@ def _serialize_event_for_buffer(event: StreamEvent) -> dict | None:
     elif event.type == SSE_EVENT_TOOL_CALL_START:
         parsed = json.loads(event.content)
         return {"type": SSE_EVENT_TOOL_CALL_START, **parsed}
-    elif event.type == "tool_result":
+    elif event.type == SSE_EVENT_TOOL_RESULT:
         parsed = json.loads(event.content)
         return {"type": SSE_EVENT_TOOL_RESULT, **parsed}
-    elif event.type == "error":
+    elif event.type == SSE_EVENT_ERROR:
         return {"type": SSE_EVENT_ERROR, "message": event.content}
     return None
 
 
 async def _sse_consumer(buf: StreamBuffer) -> AsyncGenerator[str, None]:
-    async for event in stream_from_buffer(buf):
-        yield f"data: {json.dumps(event)}\n\n"
+    try:
+        async for event in stream_from_buffer(buf):
+            yield f"data: {json.dumps(event)}\n\n"
+    except asyncio.CancelledError:
+        # Client disconnected — normal, no action needed.
+        raise
+    except Exception:
+        logger.exception("SSE consumer failed message_id=%s", buf.message_id)
 
 
 async def _evict_after_grace(registry: ChatRunRegistry, message_id: str) -> None:
@@ -476,14 +482,19 @@ async def run_chat_turn(
             )
         except Exception:
             logger.exception("producer finalize failed message_id=%s", message_id)
+            final_status = "failed"
 
         try:
             await set_active_stream(conversation_id, None)
         except Exception:
-            logger.exception("producer clear active_stream failed message_id=%s", message_id)
+            logger.exception(
+                "producer clear active_stream failed message_id=%s — stale pointer may cause "
+                "reattach to dead stream on next page load",
+                message_id,
+            )
 
-        _terminal_map = {"done": SSE_EVENT_DONE, "cancelled": SSE_EVENT_CANCELLED, "failed": SSE_EVENT_ERROR}
-        sse_terminal = _terminal_map[final_status]
+        terminal_map = {"done": SSE_EVENT_DONE, "cancelled": SSE_EVENT_CANCELLED, "failed": SSE_EVENT_ERROR}
+        sse_terminal = terminal_map[final_status]
         terminal_payload: dict[str, Any] = {"type": sse_terminal}
         if final_status == "failed":
             terminal_payload["message"] = "An internal error occurred"
