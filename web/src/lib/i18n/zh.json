@@ -232,6 +232,7 @@
       "clear": "清空"
     },
     "interrupted": "回答被中断",
+    "stopped": "已停止",
     "retry": "重试",
     "stop": "停止",
     "send": "发送",

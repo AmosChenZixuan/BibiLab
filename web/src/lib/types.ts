@@ -219,6 +219,7 @@ export type Conversation = {
   summary: string | null;
   created_at: string;
   updated_at: string;
+  active_stream_message_id: string | null;
 };
 
 export type Message = {
@@ -227,6 +228,8 @@ export type Message = {
   content: string;
   metadata: Record<string, unknown> | null;
   created_at: string;
+  status?: string;
+  error?: string | null;
 };
 
 export interface VideoMetadataMap {

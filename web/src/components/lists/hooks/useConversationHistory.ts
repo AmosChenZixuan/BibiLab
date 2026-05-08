@@ -30,6 +30,7 @@ export function useConversationHistory(listId: string | undefined, hasSources: b
   const [messages, setMessages] = useState<MessageUI[]>([]);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [activeStreamMessageId, setActiveStreamMessageId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!listId || !hasSources) return;
@@ -42,6 +43,7 @@ export function useConversationHistory(listId: string | undefined, hasSources: b
       .getConversation(listId)
       .then((data) => {
         if (cancelled || !data) return;
+        setActiveStreamMessageId(data.conversation?.active_stream_message_id ?? null);
         if (!data.messages?.length) return;
         const loaded: MessageUI[] = data.messages.map((m) => {
           let contentBlocks: ContentBlock[];
@@ -73,7 +75,7 @@ export function useConversationHistory(listId: string | undefined, hasSources: b
             isStreaming: false,
             contentBlocks,
             toolCall,
-            error: null,
+            error: m.error ?? ((m.status === "failed" || m.status === "cancelled") ? "Response interrupted" : null),
             timestamp: formatTimestamp(m.created_at),
             rag,
             pendingRagCalls: [],
@@ -94,5 +96,5 @@ export function useConversationHistory(listId: string | undefined, hasSources: b
     };
   }, [listId, hasSources]);
 
-  return { messages, isLoadingHistory, loadError };
+  return { messages, isLoadingHistory, loadError, activeStreamMessageId };
 }
