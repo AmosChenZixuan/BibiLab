@@ -60,6 +60,13 @@ function CitationChip({
   );
 }
 
+function getErrorLabel(error: string | null, t: (key: string) => string): string {
+  if (!error) return "";
+  const key = `chat.errors.${error}`;
+  const translated = t(key);
+  return translated !== key ? translated : error;
+}
+
 function renderParagraphs(
   contentBlocks: ContentBlock[],
   sources: Source[],
@@ -337,7 +344,7 @@ export function ChatPanel({
                     {msg.error && (
                       <div className="interrupted">
                         <span className="ic"><AlertCircle size={14} /></span>
-                        <span>{(() => { const key = `chat.errors.${msg.error}`; const translated = t(key); return translated !== key ? translated : msg.error; })()}</span>
+                        <span>{getErrorLabel(msg.error, t)}</span>
                         <button type="button" onClick={() => retryMessage(msg.id)} className="retry">
                           <RotateCcw size={12} />{t("chat.retry")}
                         </button>

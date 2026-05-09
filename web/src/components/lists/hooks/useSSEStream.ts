@@ -1,3 +1,4 @@
+import { flushSync } from "react-dom";
 import { useEffect, useRef, useState } from "react";
 
 import type { JobRegistration } from "@/components/jobs/JobActivityProvider";
@@ -439,25 +440,24 @@ export function useSSEStream({
   async function retryMessage(assistantMessageId: string) {
     let text: string | null = null;
 
-    setMessages((prev) => {
-      const asstIndex = prev.findIndex((m) => m.id === assistantMessageId);
-      if (asstIndex === -1) return prev;
+    flushSync(() => {
+      setMessages((prev) => {
+        const asstIndex = prev.findIndex((m) => m.id === assistantMessageId);
+        if (asstIndex === -1) return prev;
 
-      let userIndex = -1;
-      for (let i = asstIndex - 1; i >= 0; i--) {
-        if (prev[i].role === "user") {
-          userIndex = i;
-          break;
+        let userIndex = -1;
+        for (let i = asstIndex - 1; i >= 0; i--) {
+          if (prev[i].role === "user") {
+            userIndex = i;
+            break;
+          }
         }
-      }
-      if (userIndex === -1) return prev;
+        if (userIndex === -1) return prev;
 
-      text = prev[userIndex].content;
-      return prev.slice(0, userIndex);
+        text = prev[userIndex].content;
+        return prev.slice(0, userIndex);
+      });
     });
-
-    // Wait for state update before capturing text (setState is async)
-    await new Promise(resolve => setTimeout(resolve, 0));
 
     if (!text) return;
 

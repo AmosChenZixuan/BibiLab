@@ -74,32 +74,26 @@ LOOPBACK_TOOLS = {"retrieve", "query_list_metadata"}
 MAX_TOOL_ITERATIONS = 3
 
 
+_ERROR_CODE_MAP: tuple[tuple[type[Exception], str], ...] = (
+    (openai.APIConnectionError, "llm_connection_error"),
+    (openai.APITimeoutError, "llm_connection_error"),
+    (anthropic.APIConnectionError, "llm_connection_error"),
+    (anthropic.APITimeoutError, "llm_connection_error"),
+    (openai.AuthenticationError, "llm_auth_error"),
+    (openai.PermissionDeniedError, "llm_auth_error"),
+    (anthropic.AuthenticationError, "llm_auth_error"),
+    (openai.RateLimitError, "llm_rate_limit_error"),
+    (anthropic.RateLimitError, "llm_rate_limit_error"),
+    (openai.APIError, "llm_api_error"),
+    (anthropic.APIError, "llm_api_error"),
+)
+
+
 def classify_error(exception: Exception) -> str:
-    """Map SDK exception types to a stable error code for i18n on the frontend.
-
-    Inspects both ``openai.*`` and ``anthropic.*`` exception hierarchies
-    since the codebase supports both protocols.
-    """
-    # Connection errors
-    if isinstance(exception, (openai.APIConnectionError, anthropic.APIConnectionError)):
-        return "llm_connection_error"
-    if isinstance(exception, (openai.APITimeoutError, anthropic.APITimeoutError)):
-        return "llm_connection_error"
-
-    # Auth errors
-    if isinstance(exception, (openai.AuthenticationError, anthropic.AuthenticationError)):
-        return "llm_auth_error"
-    if isinstance(exception, (openai.PermissionDeniedError, anthropic.PermissionDeniedError)):
-        return "llm_auth_error"
-
-    # Rate limit
-    if isinstance(exception, (openai.RateLimitError, anthropic.RateLimitError)):
-        return "llm_rate_limit_error"
-
-    # Generic API error (catch-all for other SDK errors)
-    if isinstance(exception, (openai.APIError, anthropic.APIError)):
-        return "llm_api_error"
-
+    """Map SDK exception types to a stable error code for i18n on the frontend."""
+    for exc_type, code in _ERROR_CODE_MAP:
+        if isinstance(exception, exc_type):
+            return code
     return "internal_error"
 
 
@@ -223,10 +217,9 @@ async def stream_with_tools(
         iteration += 1
         tool_calls: list[ToolCall] = []
         lookup = _build_lookup()
+        is_synthesis_turn = iteration > MAX_TOOL_ITERATIONS
         active_tools = (
-            []
-            if iteration > MAX_TOOL_ITERATIONS
-            else [t for t in tools if not (retrieve_used and t.name == RETRIEVE_TOOL.name)]
+            [] if is_synthesis_turn else [t for t in tools if not (retrieve_used and t.name == RETRIEVE_TOOL.name)]
         )
         async for event in stream_llm(messages, cfg, active_tools, system=system, llm_max_tokens=llm_max_tokens):
             if event.type == "tool_call":
@@ -246,7 +239,7 @@ async def stream_with_tools(
             else:
                 yield event
 
-        if not tool_calls:
+        if not tool_calls or is_synthesis_turn:
             for pe in flush_buffer(parse_buffer):
                 yield pe
             if not citation_emitted and registry:

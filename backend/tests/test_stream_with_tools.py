@@ -24,10 +24,16 @@ async def test_stream_llm_passes_list_content_to_anthropic():
             captured.append(kwargs["messages"])
 
         async def __aenter__(self):
-            return an_async_generator([])
+            return self
 
         async def __aexit__(self, *args):
             pass
+
+        def __aiter__(self):
+            return self
+
+        async def __anext__(self):
+            raise StopAsyncIteration
 
     with patch("bibilab.pipeline._shared.AsyncAnthropic") as mock_cls:
         mock_cls.return_value = MagicMock(messages=MagicMock(stream=FakeStream))
@@ -272,8 +278,10 @@ async def test_stream_with_tools_max_iterations_graceful():
     error_events = [e for e in events if e.type == "error"]
     assert len(error_events) == 0, f"No hard error — forced synthesis instead. Got error events: {error_events}"
 
-    # Should have made MAX_TOOL_ITERATIONS calls
-    assert len(iterations_seen) == MAX_TOOL_ITERATIONS
+    # MAX_TOOL_ITERATIONS tool-using turns + 1 synthesis turn (active_tools=[]).
+    assert len(iterations_seen) == MAX_TOOL_ITERATIONS + 1
+    # Last call is the synthesis turn — no tools available.
+    assert iterations_seen[-1] == 0
 
 
 @pytest.mark.asyncio

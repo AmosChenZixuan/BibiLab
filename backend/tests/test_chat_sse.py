@@ -842,3 +842,37 @@ async def test_rag_metadata_persists_calls_list(client):
     assert queries == ["A", "B"]
     modes = sorted(c["search_mode"] for c in rag["calls"])
     assert modes == ["breadth", "factual"]
+
+
+@pytest.mark.asyncio
+async def test_chat_endpoint_error_reason_in_sse_terminal_payload(client):
+    """When stream_with_tools yields an error event, the terminal SSE payload
+    carries the correct error code message, not the hard-coded default."""
+    from unittest.mock import AsyncMock, patch
+
+    list_id = (await client.post("/lists", json={"name": "ErrReason"})).json()["id"]
+
+    class RecordingStreamEvent:
+        def __init__(self, type, content=None, tool_call=None):
+            self.type = type
+            self.content = content
+            self.tool_call = tool_call
+
+    async def fake_stream(messages, cfg, tools=None, execute_tool_fn=None, system=None, llm_max_tokens=2048, **kwargs):
+        yield RecordingStreamEvent(type="error", content="original error text from tool failure")
+
+    with patch("bibilab.routers.chat.stream_with_tools", fake_stream):
+        with patch("bibilab.routers.chat.execute_tool", new_callable=AsyncMock, return_value={"ok": True}):
+            resp = await client.post(f"/lists/{list_id}/chat", json={"message": "trigger error"})
+
+    assert resp.status_code == 200
+    body = resp.text
+    events = []
+    for line in body.split("\n"):
+        if line.startswith("data: "):
+            events.append(json.loads(line[6:]))
+    error_events = [e for e in events if e["type"] == "error"]
+    assert len(error_events) >= 1, "terminal error event must be present"
+    terminal = error_events[-1]
+    # tool_error is the code set when stream_with_tools yields type="error"
+    assert terminal["message"] == "tool_error"

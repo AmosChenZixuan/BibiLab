@@ -6,6 +6,16 @@ import pytest
 import pytest_asyncio
 
 
+@pytest.fixture(autouse=True)
+def _clear_llm_client_caches():
+    """Prevent MagicMock accumulation in module-level client caches across tests."""
+    yield
+    from bibilab.pipeline._shared import _async_client_cache, _client_cache
+
+    _async_client_cache.clear()
+    _client_cache.clear()
+
+
 @pytest.fixture()
 def tmp_bibilab_home(tmp_path: Path):
     from bibilab.config import _reset_cache
@@ -38,3 +48,10 @@ async def client(tmp_bibilab_home: Path):  # noqa: ARG001
                 base_url="http://testserver",
             ) as async_client:
                 yield async_client
+                from bibilab.pipeline.chat_runs import reset_chat_run_registry
+
+                reset_chat_run_registry()
+                from bibilab.pipeline._shared import _async_client_cache, _client_cache
+
+                _async_client_cache.clear()
+                _client_cache.clear()

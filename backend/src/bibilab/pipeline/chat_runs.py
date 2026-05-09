@@ -51,7 +51,7 @@ async def stream_from_buffer(buf: StreamBuffer) -> AsyncGenerator[dict, None]:
             if buf.terminal:
                 return
             wake.clear()
-            await wake.wait()
+            await asyncio.wait_for(wake.wait(), timeout=300)
     finally:
         buf.subscribers.discard(wake)
 
@@ -105,3 +105,11 @@ _registry = ChatRunRegistry()
 
 def get_chat_run_registry() -> ChatRunRegistry:
     return _registry
+
+
+def reset_chat_run_registry() -> None:
+    global _registry
+    for task in _registry.all_background_tasks():
+        if not task.done():
+            task.cancel()
+    _registry = ChatRunRegistry()
