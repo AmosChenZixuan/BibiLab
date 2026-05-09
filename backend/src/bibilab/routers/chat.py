@@ -6,6 +6,8 @@ from collections.abc import AsyncGenerator
 from typing import Any
 from uuid import uuid4
 
+import anthropic
+import openai
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import Response, StreamingResponse
 
@@ -70,6 +72,36 @@ CHAT_MAX_TOKENS = 16384
 
 LOOPBACK_TOOLS = {"retrieve", "query_list_metadata"}
 MAX_TOOL_ITERATIONS = 3
+
+
+def classify_error(exception: Exception) -> str:
+    """Map SDK exception types to a stable error code for i18n on the frontend.
+
+    Inspects both ``openai.*`` and ``anthropic.*`` exception hierarchies
+    since the codebase supports both protocols.
+    """
+    # Connection errors
+    if isinstance(exception, (openai.APIConnectionError, anthropic.APIConnectionError)):
+        return "llm_connection_error"
+    if isinstance(exception, (openai.APITimeoutError, anthropic.APITimeoutError)):
+        return "llm_connection_error"
+
+    # Auth errors
+    if isinstance(exception, (openai.AuthenticationError, anthropic.AuthenticationError)):
+        return "llm_auth_error"
+    if isinstance(exception, (openai.PermissionDeniedError, anthropic.PermissionDeniedError)):
+        return "llm_auth_error"
+
+    # Rate limit
+    if isinstance(exception, (openai.RateLimitError, anthropic.RateLimitError)):
+        return "llm_rate_limit_error"
+
+    # Generic API error (catch-all for other SDK errors)
+    if isinstance(exception, (openai.APIError, anthropic.APIError)):
+        return "llm_api_error"
+
+    return "internal_error"
+
 
 _PARAGRAPH_SPLIT = re.compile(r"\n{2,}")
 
@@ -191,7 +223,11 @@ async def stream_with_tools(
         iteration += 1
         tool_calls: list[ToolCall] = []
         lookup = _build_lookup()
-        active_tools = [t for t in tools if not (retrieve_used and t.name == RETRIEVE_TOOL.name)]
+        active_tools = (
+            []
+            if iteration > MAX_TOOL_ITERATIONS
+            else [t for t in tools if not (retrieve_used and t.name == RETRIEVE_TOOL.name)]
+        )
         async for event in stream_llm(messages, cfg, active_tools, system=system, llm_max_tokens=llm_max_tokens):
             if event.type == "tool_call":
                 tool_calls.append(event.tool_call)
@@ -223,10 +259,6 @@ async def stream_with_tools(
         # Reset: a partial [ left over from preamble text should not bleed into
         # iteration 2's citation parsing.
         parse_buffer = ""
-
-        if iteration > MAX_TOOL_ITERATIONS:
-            yield StreamEvent(type=SSE_EVENT_ERROR, content="Max tool iterations exceeded")
-            return
 
         results: dict[str, dict] = {}
         for tc in tool_calls:
@@ -360,6 +392,7 @@ async def run_chat_turn(
     generate_report_result: dict | None = None
     content_blocks: list[dict] = []
     pending_text = ""
+    error_reason: str | None = None
 
     try:
         system_parts = [GROUNDING_SYSTEM_PROMPT]
@@ -438,13 +471,15 @@ async def run_chat_turn(
                     generate_report_result = parsed["result"]
             elif event.type == "error":
                 logger.error("stream_with_tools error: %s", event.content)
+                error_reason = "tool_error"
                 final_status = "failed"
                 return
     except asyncio.CancelledError:
         final_status = "cancelled"
         raise
-    except Exception:
+    except Exception as e:
         logger.exception("producer failed message_id=%s", message_id)
+        error_reason = classify_error(e)
         final_status = "failed"
     finally:
         try:
@@ -465,7 +500,9 @@ async def run_chat_turn(
                 meta["content_blocks"] = content_blocks
 
             assistant_content = "".join(assistant_text_deltas)
-            error_text = "An internal error occurred" if final_status == "failed" else None
+            error_text = (
+                error_reason if error_reason else ("An internal error occurred" if final_status == "failed" else None)
+            )
             await update_message_content(
                 message_id,
                 content=assistant_content,
@@ -490,7 +527,7 @@ async def run_chat_turn(
         sse_terminal = terminal_map[final_status]
         terminal_payload: dict[str, Any] = {"type": sse_terminal}
         if final_status == "failed":
-            terminal_payload["message"] = "An internal error occurred"
+            terminal_payload["message"] = error_reason or "An internal error occurred"
         buf.append(terminal_payload)
         buf.close(final_status)
 

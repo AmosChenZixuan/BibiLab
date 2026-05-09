@@ -2,6 +2,9 @@
 
 from unittest.mock import MagicMock, patch
 
+import anthropic
+import httpx
+import openai
 import pytest
 
 from bibilab.pipeline._shared import StreamEvent, ToolCall, stream_llm
@@ -326,3 +329,89 @@ async def test_stream_with_tools_loops_back_for_query_list_metadata():
     # A delta carrying the answer must have been yielded after loopback.
     delta_text = "".join(e.content or "" for e in events if e.type == "delta")
     assert "8" in delta_text
+
+
+class TestClassifyError:
+    _req = httpx.Request("GET", "http://test")
+    _resp = httpx.Response(500, request=_req)
+
+    def test_tool_error_not_classified_by_sdk(self):
+        """A plain Exception (like tool execution failures) is internal_error.
+
+        The tool_error code is set explicitly at the yield site in run_chat_turn,
+        not derived from exception inspection.
+        """
+        from bibilab.routers.chat import classify_error
+
+        assert classify_error(Exception("something broke")) == "internal_error"
+
+    def test_openai_connection_error(self):
+        from bibilab.routers.chat import classify_error
+
+        assert classify_error(openai.APIConnectionError(request=self._req)) == "llm_connection_error"
+
+    def test_openai_timeout(self):
+        from bibilab.routers.chat import classify_error
+
+        assert classify_error(openai.APITimeoutError(request=self._req)) == "llm_connection_error"
+
+    def test_openai_auth_error(self):
+        from bibilab.routers.chat import classify_error
+
+        assert (
+            classify_error(openai.AuthenticationError(message="bad key", response=self._resp, body=None))
+            == "llm_auth_error"
+        )
+
+    def test_openai_permission_denied(self):
+        from bibilab.routers.chat import classify_error
+
+        assert (
+            classify_error(openai.PermissionDeniedError(message="not allowed", response=self._resp, body=None))
+            == "llm_auth_error"
+        )
+
+    def test_openai_rate_limit(self):
+        from bibilab.routers.chat import classify_error
+
+        assert (
+            classify_error(openai.RateLimitError(message="too many", response=self._resp, body=None))
+            == "llm_rate_limit_error"
+        )
+
+    def test_openai_api_error_subclass(self):
+        from bibilab.routers.chat import classify_error
+
+        class SomeOpenAIError(openai.APIError):
+            pass
+
+        assert classify_error(SomeOpenAIError(message="generic", request=self._req, body=None)) == "llm_api_error"
+
+    def test_anthropic_connection_error(self):
+        from bibilab.routers.chat import classify_error
+
+        assert classify_error(anthropic.APIConnectionError(request=self._req)) == "llm_connection_error"
+
+    def test_anthropic_auth_error(self):
+        from bibilab.routers.chat import classify_error
+
+        assert (
+            classify_error(anthropic.AuthenticationError(message="bad key", response=self._resp, body=None))
+            == "llm_auth_error"
+        )
+
+    def test_anthropic_rate_limit(self):
+        from bibilab.routers.chat import classify_error
+
+        assert (
+            classify_error(anthropic.RateLimitError(message="too many", response=self._resp, body=None))
+            == "llm_rate_limit_error"
+        )
+
+    def test_openai_api_status_error_still_api_error(self):
+        from bibilab.routers.chat import classify_error
+
+        assert (
+            classify_error(openai.APIStatusError(message="status 500", response=self._resp, body=None))
+            == "llm_api_error"
+        )
