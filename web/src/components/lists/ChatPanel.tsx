@@ -337,7 +337,7 @@ export function ChatPanel({
                     {msg.error && (
                       <div className="interrupted">
                         <span className="ic"><AlertCircle size={14} /></span>
-                        <span>{msg.error}</span>
+                        <span>{(() => { const key = `chat.errors.${msg.error}`; const translated = t(key); return translated !== key ? translated : msg.error; })()}</span>
                         <button type="button" onClick={() => retryMessage(msg.id)} className="retry">
                           <RotateCcw size={12} />{t("chat.retry")}
                         </button>
