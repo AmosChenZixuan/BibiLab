@@ -190,14 +190,19 @@ async def stream_with_tools(
     while True:
         iteration += 1
         tool_calls: list[ToolCall] = []
-        iteration_text = ""
         lookup = _build_lookup()
         active_tools = [t for t in tools if not (retrieve_used and t.name == RETRIEVE_TOOL.name)]
         async for event in stream_llm(messages, cfg, active_tools, system=system, llm_max_tokens=llm_max_tokens):
             if event.type == "tool_call":
                 tool_calls.append(event.tool_call)
             elif event.type == "delta" and event.content:
-                iteration_text += event.content
+                # Parse incrementally so citations and text reach the client as
+                # they arrive rather than waiting for the full LLM response.
+                parsed_events, parse_buffer = parse_delta(event.content, parse_buffer, lookup)
+                for pe in parsed_events:
+                    if pe.type == "citation":
+                        citation_emitted = True
+                    yield pe
             elif event.type == "done" and tool_calls:
                 pass
             elif event.type in ("delta", "done"):
@@ -206,12 +211,6 @@ async def stream_with_tools(
                 yield event
 
         if not tool_calls:
-            if iteration_text:
-                parsed_events, parse_buffer = parse_delta(iteration_text, parse_buffer, lookup)
-                for pe in parsed_events:
-                    if pe.type == "citation":
-                        citation_emitted = True
-                    yield pe
             for pe in flush_buffer(parse_buffer):
                 yield pe
             if not citation_emitted and registry:
@@ -221,15 +220,9 @@ async def stream_with_tools(
                 )
             return
 
+        # Reset: a partial [ left over from preamble text should not bleed into
+        # iteration 2's citation parsing.
         parse_buffer = ""
-
-        is_terminal = not any(tc.name in LOOPBACK_TOOLS for tc in tool_calls)
-        if not is_terminal and iteration_text:
-            logger.info("preamble_discarded len=%d iteration=%d", len(iteration_text), iteration)
-        if is_terminal and iteration_text:
-            parsed_events, _ = parse_delta(iteration_text, "", lookup)
-            for pe in parsed_events:
-                yield pe
 
         if iteration > MAX_TOOL_ITERATIONS:
             yield StreamEvent(type=SSE_EVENT_ERROR, content="Max tool iterations exceeded")
