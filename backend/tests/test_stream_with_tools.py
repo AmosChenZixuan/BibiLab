@@ -231,18 +231,28 @@ async def test_stream_with_tools_terminal_tool_exits_after_execution():
 
 
 @pytest.mark.asyncio
-async def test_stream_with_tools_max_iterations():
-    """Hard cap at MAX_TOOL_ITERATIONS prevents infinite loops."""
+async def test_stream_with_tools_max_iterations_graceful():
+    """After MAX_TOOL_ITERATIONS, LLM synthesizes from prior results instead of erroring."""
     from bibilab.config import AIConfig
     from bibilab.pipeline.chat_tools import RETRIEVE_TOOL
-    from bibilab.routers.chat import stream_with_tools
+    from bibilab.routers.chat import MAX_TOOL_ITERATIONS, stream_with_tools
 
     cfg = AIConfig(protocol="openai", model="gpt-4o", api_key="test", base_url="")
 
     tc = ToolCall(id="c1", name="retrieve", arguments={"query": "test", "search_mode": "factual"})
 
+    iteration = 0
+
     async def fake_stream(messages, cfg, tools=None, system=None, llm_max_tokens=2048):
-        yield StreamEvent(type="tool_call", tool_call=tc)
+        nonlocal iteration
+        iteration += 1
+        if iteration <= MAX_TOOL_ITERATIONS:
+            # Still yielding tool calls to trigger loopback
+            yield StreamEvent(type="tool_call", tool_call=tc)
+        else:
+            # After max iterations: no tools available, LLM forced to synthesize
+            yield StreamEvent(type="delta", content="Synthesized answer from prior results.")
+            yield StreamEvent(type="done")
 
     async def fake_execute(name, args, **kwargs):
         return {"ok": True}
@@ -258,8 +268,10 @@ async def test_stream_with_tools_max_iterations():
             events.append(event)
 
     error_events = [e for e in events if e.type == "error"]
-    assert len(error_events) == 1
-    assert "Max tool iterations" in error_events[0].content
+    assert len(error_events) == 0, "No hard error — forced synthesis instead"
+    delta_events = [e for e in events if e.type == "delta"]
+    assert len(delta_events) == 1
+    assert delta_events[0].content == "Synthesized answer from prior results."
 
 
 @pytest.mark.asyncio
