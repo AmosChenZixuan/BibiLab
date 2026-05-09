@@ -414,4 +414,81 @@ describe("chat panel — conversation history (phase 6.3)", () => {
       expect(assistantBubble).toHaveTextContent("Answer.");
     });
   });
+
+  test("retry on a mid-history failed assistant retries that specific turn's user message", async () => {
+    let requestBody: string | null = null;
+    vi.spyOn(window, "fetch").mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : (input as Request).url;
+      const method = init?.method ?? "GET";
+      if (url.includes("/conversation") && method === "GET") {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              conversation: { id: "conv-1", list_id: "list-1" },
+              messages: [
+                {
+                  id: "user-1",
+                  role: "user",
+                  content: "First question",
+                  metadata: null,
+                  created_at: "2026-04-01T10:00:00Z",
+                },
+                {
+                  id: "asst-1",
+                  role: "assistant",
+                  content: "",
+                  error: "An internal error occurred",
+                  metadata: null,
+                  created_at: "2026-04-01T10:01:00Z",
+                },
+                {
+                  id: "user-2",
+                  role: "user",
+                  content: "Second question",
+                  metadata: null,
+                  created_at: "2026-04-01T10:02:00Z",
+                },
+                {
+                  id: "asst-2",
+                  role: "assistant",
+                  content: "Second answer",
+                  metadata: null,
+                  created_at: "2026-04-01T10:03:00Z",
+                },
+              ],
+            }),
+          ),
+        );
+      }
+      if (url.includes("/chat") && method === "POST") {
+        const body = JSON.parse((init?.body as string) ?? "{}");
+        requestBody = body.message;
+        return Promise.resolve(
+          makeSseStream(['data: {"type":"done"}\n\n']),
+        );
+      }
+      if (url.includes("/cancel") && method === "POST") {
+        return Promise.resolve(new Response(null, { status: 204 }));
+      }
+      return Promise.resolve(new Response(JSON.stringify([])));
+    });
+
+    renderChatPanel({
+      selectedSourceIds: ["src-1"],
+      sources: [SOURCE_1],
+      listId: "list-1",
+    });
+
+    // Wait for history to load — two retry buttons should appear (one per failed assistant)
+    const retryButtons = await waitFor(() => screen.getAllByRole("button", { name: /retry/i }));
+    expect(retryButtons.length).toBeGreaterThanOrEqual(1);
+
+    // Click retry on the first failed assistant (asst-1)
+    await userEvent.click(retryButtons[0]);
+
+    // Verify the correct user message text was re-sent (user-1 = "First question", not user-2)
+    await waitFor(() => {
+      expect(requestBody).toBe("First question");
+    });
+  });
 });
