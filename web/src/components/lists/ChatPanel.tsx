@@ -132,7 +132,7 @@ export function ChatPanel({
   const hasSources = selectedSourceIds.length > 0;
   const { messages: historyMessages, isLoadingHistory, loadError, activeStreamMessageId } = useConversationHistory(listId, hasSources, t("chat.interrupted"), t("chat.stopped"));
 
-  const { sendMessage, stopStreaming, retryLastMessage, reattach, isStreaming } = useSSEStream({
+  const { sendMessage, stopStreaming, retryMessage, reattach, isStreaming } = useSSEStream({
     listId,
     selectedSourceIds,
     setMessages,
@@ -338,7 +338,7 @@ export function ChatPanel({
                       <div className="interrupted">
                         <span className="ic"><AlertCircle size={14} /></span>
                         <span>{msg.error}</span>
-                        <button type="button" onClick={retryLastMessage} className="retry">
+                        <button type="button" onClick={() => retryMessage(msg.id)} className="retry">
                           <RotateCcw size={12} />{t("chat.retry")}
                         </button>
                       </div>

@@ -30,7 +30,7 @@ interface UseSSEStreamOptions {
 interface UseSSEStreamReturn {
   sendMessage: (text: string) => Promise<void>;
   stopStreaming: () => void;
-  retryLastMessage: () => void;
+  retryMessage: (assistantMessageId: string) => void;
   reattach: (messageId: string) => Promise<void>;
   isStreaming: boolean;
 }
@@ -436,18 +436,36 @@ export function useSSEStream({
     }
   }
 
-  async function retryLastMessage() {
-    if (lastUserMessageRef.current) {
-      const text = lastUserMessageRef.current;
-      await stopStreaming();
-      safeSetIsStreaming(false);
-      isStreamingRef.current = false;
-      if (mountedRef.current) {
-        setMessages((prev) => prev.slice(0, -2));
+  async function retryMessage(assistantMessageId: string) {
+    let text: string | null = null;
+
+    setMessages((prev) => {
+      const asstIndex = prev.findIndex((m) => m.id === assistantMessageId);
+      if (asstIndex === -1) return prev;
+
+      let userIndex = -1;
+      for (let i = asstIndex - 1; i >= 0; i--) {
+        if (prev[i].role === "user") {
+          userIndex = i;
+          break;
+        }
       }
-      void sendMessage(text);
-    }
+      if (userIndex === -1) return prev;
+
+      text = prev[userIndex].content;
+      return prev.slice(0, userIndex);
+    });
+
+    // Wait for state update before capturing text (setState is async)
+    await new Promise(resolve => setTimeout(resolve, 0));
+
+    if (!text) return;
+
+    await stopStreaming();
+    safeSetIsStreaming(false);
+    isStreamingRef.current = false;
+    void sendMessage(text);
   }
 
-  return { sendMessage, stopStreaming, retryLastMessage, reattach, isStreaming };
+  return { sendMessage, stopStreaming, retryMessage, reattach, isStreaming };
 }
