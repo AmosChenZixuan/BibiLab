@@ -641,8 +641,8 @@ async def test_metadata_then_retrieve_allowed(client):
 
 
 @pytest.mark.asyncio
-async def test_preamble_suppressed_for_tool_iteration(client):
-    """Deltas from an iteration that ends with a retrieve tool_call must not reach the client."""
+async def test_deltas_streamed_immediately_during_tool_iteration(client):
+    """Deltas from a tool iteration reach the client immediately (not buffered until stream end)."""
     list_id = (await client.post("/lists", json={"name": "T"})).json()["id"]
     iteration_count = 0
 
@@ -681,7 +681,8 @@ async def test_preamble_suppressed_for_tool_iteration(client):
 
     assert resp.status_code == 200
     body = resp.text
-    assert "Let me look that up again" not in body, "preamble from tool-emitting iteration leaked to client"
+    # Deltas are now streamed immediately, so preamble reaches the client
+    assert "Let me look that up again" in body, "preamble from tool iteration must reach client"
     assert "final answer" in body, "terminal iteration's delta must reach the client"
 
 
@@ -723,7 +724,7 @@ async def test_chat_sse_hallucinated_index_emitted_as_text(client, caplog):
 
     assert resp.status_code == 200
     events = _parse_sse(resp.text)
-    assert all(e["type"] == "delta" or e["type"] == "done" for e in events)
+    assert all(e["type"] in ("delta", "done", "meta") for e in events)
     delta_text = "".join(e.get("content", "") for e in events if e["type"] == "delta")
     assert "[7]" in delta_text
     assert any("citation_hallucinated_index" in rec.message for rec in caplog.records)

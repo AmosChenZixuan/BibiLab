@@ -130,15 +130,18 @@ export function ChatPanel({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const hasSources = selectedSourceIds.length > 0;
-  const { messages: historyMessages, isLoadingHistory, loadError } = useConversationHistory(listId, hasSources);
+  const { messages: historyMessages, isLoadingHistory, loadError, activeStreamMessageId } = useConversationHistory(listId, hasSources, t("chat.interrupted"), t("chat.stopped"));
 
-  const { sendMessage, stopStreaming, retryLastMessage, isStreaming } = useSSEStream({
+  const { sendMessage, stopStreaming, retryLastMessage, reattach, isStreaming } = useSSEStream({
     listId,
     selectedSourceIds,
     setMessages,
     trackJobs,
     interruptedLabel: t("chat.interrupted"),
+    stoppedLabel: t("chat.stopped"),
   });
+
+  const reattachedRef = useRef<string | null>(null);
 
   const { showScrollButton, messageListRef, scrollToBottom } = useAutoScroll({
     isLoadingHistory,
@@ -169,6 +172,17 @@ export function ChatPanel({
       setMessages(historyMessages);
     }
   }, [historyMessages]);
+
+  useEffect(() => {
+    if (
+      activeStreamMessageId &&
+      !isStreaming &&
+      reattachedRef.current !== activeStreamMessageId
+    ) {
+      reattachedRef.current = activeStreamMessageId;
+      void reattach(activeStreamMessageId);
+    }
+  }, [activeStreamMessageId, isStreaming, reattach]);
 
   function handleSend() {
     const text = inputValue.trim();

@@ -232,6 +232,7 @@
       "clear": "Clear"
     },
     "interrupted": "Response interrupted",
+    "stopped": "Stopped",
     "retry": "Retry",
     "stop": "Stop",
     "send": "Send",

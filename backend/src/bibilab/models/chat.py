@@ -22,6 +22,8 @@ class MessageResponse(BaseModel):
     content: str
     metadata: dict | None
     created_at: datetime
+    status: str = "done"
+    error: str | None = None
 
     @classmethod
     def from_row(cls, row: dict) -> "MessageResponse":
@@ -31,6 +33,8 @@ class MessageResponse(BaseModel):
             content=row["content"],
             metadata=_parse_json(row["metadata"]),
             created_at=_parse_datetime(row["created_at"]),
+            status=row.get("status", "done"),
+            error=row.get("error"),
         )
 
 
@@ -40,6 +44,7 @@ class ConversationResponse(BaseModel):
     summary: str | None
     created_at: datetime
     updated_at: datetime
+    active_stream_message_id: str | None = None
 
     @classmethod
     def from_row(cls, row: dict) -> "ConversationResponse":
@@ -49,6 +54,7 @@ class ConversationResponse(BaseModel):
             summary=row["summary"],
             created_at=_parse_datetime(row["created_at"]),
             updated_at=_parse_datetime(row["updated_at"]),
+            active_stream_message_id=row.get("active_stream_message_id"),
         )
 
 

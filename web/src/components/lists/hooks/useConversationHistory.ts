@@ -26,10 +26,16 @@ export interface MessageUI {
   pendingMetadataCalls: PendingMetadataCall[];
 }
 
-export function useConversationHistory(listId: string | undefined, hasSources: boolean) {
+export function useConversationHistory(
+  listId: string | undefined,
+  hasSources: boolean,
+  interruptedLabel: string,
+  stoppedLabel: string,
+) {
   const [messages, setMessages] = useState<MessageUI[]>([]);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [activeStreamMessageId, setActiveStreamMessageId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!listId || !hasSources) return;
@@ -42,6 +48,7 @@ export function useConversationHistory(listId: string | undefined, hasSources: b
       .getConversation(listId)
       .then((data) => {
         if (cancelled || !data) return;
+        setActiveStreamMessageId(data.conversation?.active_stream_message_id ?? null);
         if (!data.messages?.length) return;
         const loaded: MessageUI[] = data.messages.map((m) => {
           let contentBlocks: ContentBlock[];
@@ -49,10 +56,12 @@ export function useConversationHistory(listId: string | undefined, hasSources: b
 
           if (m.metadata?.content_blocks) {
             contentBlocks = m.metadata.content_blocks as ContentBlock[];
-          } else {
+          } else if (m.content) {
             const stripped = stripLegacyTokens(m.content);
             contentBlocks = [{ type: "text", text: stripped }];
             displayContent = stripped;
+          } else {
+            contentBlocks = [];
           }
 
           let toolCall: ToolCallData | null = null;
@@ -73,7 +82,9 @@ export function useConversationHistory(listId: string | undefined, hasSources: b
             isStreaming: false,
             contentBlocks,
             toolCall,
-            error: null,
+            error:
+              m.error ??
+              (m.status === "failed" ? interruptedLabel : m.status === "cancelled" ? stoppedLabel : null),
             timestamp: formatTimestamp(m.created_at),
             rag,
             pendingRagCalls: [],
@@ -94,5 +105,5 @@ export function useConversationHistory(listId: string | undefined, hasSources: b
     };
   }, [listId, hasSources]);
 
-  return { messages, isLoadingHistory, loadError };
+  return { messages, isLoadingHistory, loadError, activeStreamMessageId };
 }

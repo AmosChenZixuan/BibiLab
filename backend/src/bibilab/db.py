@@ -97,11 +97,12 @@ CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(
 
 _CREATE_CONVERSATIONS = """
 CREATE TABLE IF NOT EXISTS conversations (
-    id         TEXT PRIMARY KEY,
-    list_id    TEXT NOT NULL UNIQUE REFERENCES lists(id) ON DELETE CASCADE,
-    summary    TEXT,
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL
+    id                      TEXT PRIMARY KEY,
+    list_id                 TEXT NOT NULL UNIQUE REFERENCES lists(id) ON DELETE CASCADE,
+    summary                 TEXT,
+    created_at              TEXT NOT NULL,
+    updated_at              TEXT NOT NULL,
+    active_stream_message_id TEXT
 )
 """
 
@@ -112,7 +113,9 @@ CREATE TABLE IF NOT EXISTS messages (
     role             TEXT NOT NULL,
     content          TEXT NOT NULL,
     metadata         TEXT,
-    created_at       TEXT NOT NULL
+    created_at       TEXT NOT NULL,
+    status           TEXT NOT NULL DEFAULT 'done',
+    error            TEXT
 )
 """
 
@@ -604,7 +607,8 @@ async def create_conversation(list_id: str) -> str:
 async def get_conversation_by_list(list_id: str) -> aiosqlite.Row | None:
     async with get_db() as db:
         cursor = await db.execute(
-            "SELECT id, list_id, summary, created_at, updated_at FROM conversations WHERE list_id=?",
+            "SELECT id, list_id, summary, active_stream_message_id, created_at, updated_at "
+            "FROM conversations WHERE list_id=?",
             (list_id,),
         )
         return await cursor.fetchone()
@@ -669,11 +673,11 @@ async def get_recent_messages(
         if before_id is not None:
             cursor = await db.execute(
                 """
-                SELECT id, conversation_id, role, content, metadata, created_at FROM messages
-                WHERE conversation_id=? AND (created_at, id) < (
-                    SELECT created_at, id FROM messages WHERE id=?
+                SELECT id, conversation_id, role, content, metadata, created_at, status, error FROM messages
+                WHERE conversation_id=? AND (created_at, rowid) < (
+                    SELECT created_at, rowid FROM messages WHERE id=?
                 )
-                ORDER BY created_at DESC, id DESC
+                ORDER BY created_at DESC, rowid DESC
                 LIMIT ?
                 """,
                 (conversation_id, before_id, limit),
@@ -681,9 +685,9 @@ async def get_recent_messages(
         else:
             cursor = await db.execute(
                 """
-                SELECT id, conversation_id, role, content, metadata, created_at FROM messages
+                SELECT id, conversation_id, role, content, metadata, created_at, status, error FROM messages
                 WHERE conversation_id=?
-                ORDER BY created_at DESC, id DESC
+                ORDER BY created_at DESC, rowid DESC
                 LIMIT ?
                 """,
                 (conversation_id, limit),
@@ -719,30 +723,18 @@ async def get_messages_beyond_window(
     async with get_db() as db:
         cursor = await db.execute(
             """
-            SELECT id, conversation_id, role, content, metadata, created_at
+            SELECT id, conversation_id, role, content, metadata, created_at, status, error
             FROM (
-                SELECT *, ROW_NUMBER() OVER (ORDER BY created_at DESC, id DESC) AS _rn
+                SELECT *, ROW_NUMBER() OVER (ORDER BY created_at DESC, rowid DESC) AS _rn
                 FROM messages
                 WHERE conversation_id=?
             )
             WHERE _rn > ?
-            ORDER BY created_at ASC, id ASC
+            ORDER BY created_at ASC, rowid ASC
             """,
             (conversation_id, window_size),
         )
         return list(await cursor.fetchall())
-
-
-async def delete_messages_by_ids(message_ids: list[str]) -> None:
-    if not message_ids:
-        return
-    async with get_db() as db:
-        placeholders = _in_placeholders(message_ids)
-        await db.execute(
-            f"DELETE FROM messages WHERE id IN ({placeholders})",
-            message_ids,
-        )
-        await db.commit()
 
 
 async def compress_conversation(
@@ -769,7 +761,8 @@ async def compress_conversation(
 async def get_conversation(conversation_id: str) -> aiosqlite.Row | None:
     async with get_db() as db:
         cursor = await db.execute(
-            "SELECT id, list_id, summary, created_at, updated_at FROM conversations WHERE id=?",
+            "SELECT id, list_id, summary, active_stream_message_id, created_at, updated_at "
+            "FROM conversations WHERE id=?",
             (conversation_id,),
         )
         return await cursor.fetchone()
@@ -779,6 +772,96 @@ async def delete_conversation(conversation_id: str) -> None:
     async with get_db() as db:
         await db.execute("DELETE FROM conversations WHERE id=?", (conversation_id,))
         await db.commit()
+
+
+class ActiveStreamConflict(Exception):
+    """Raised when attempting to start a second stream on an active conversation."""
+
+
+async def create_user_and_assistant_atomic(
+    conversation_id: str,
+    user_msg_id: str,
+    assistant_msg_id: str,
+    user_text: str,
+) -> None:
+    """Insert user + streaming assistant message atomically, set active_stream_message_id.
+
+    Uses BEGIN IMMEDIATE to serialize concurrent callers — the second caller
+    sees active_stream_message_id != NULL and gets ActiveStreamConflict.
+    """
+    now = _now()
+    async with get_db() as db:
+        await db.execute("BEGIN IMMEDIATE")
+        try:
+            cursor = await db.execute(
+                "SELECT active_stream_message_id FROM conversations WHERE id=?",
+                (conversation_id,),
+            )
+            row = await cursor.fetchone()
+            if row and row["active_stream_message_id"] is not None:
+                raise ActiveStreamConflict(
+                    f"Conversation {conversation_id} already has active stream {row['active_stream_message_id']}"
+                )
+
+            await db.execute(
+                "INSERT INTO messages (id, conversation_id, role, content, metadata, created_at, status) "
+                "VALUES (?, ?, 'user', ?, NULL, ?, 'done')",
+                (user_msg_id, conversation_id, user_text, now),
+            )
+            await db.execute(
+                "INSERT INTO messages (id, conversation_id, role, content, metadata, created_at, status) "
+                "VALUES (?, ?, 'assistant', '', NULL, ?, 'streaming')",
+                (assistant_msg_id, conversation_id, now),
+            )
+            await db.execute(
+                "UPDATE conversations SET active_stream_message_id=? WHERE id=?",
+                (assistant_msg_id, conversation_id),
+            )
+            await db.commit()
+        except ActiveStreamConflict:
+            await db.execute("ROLLBACK")
+            raise
+        except Exception:
+            await db.execute("ROLLBACK")
+            raise
+
+
+async def update_message_content(
+    message_id: str,
+    content: str,
+    metadata: dict | None,
+    status: str,
+    error: str | None = None,
+) -> None:
+    async with get_db() as db:
+        await db.execute(
+            "UPDATE messages SET content=?, metadata=?, status=?, error=? WHERE id=?",
+            (content, json.dumps(metadata) if metadata is not None else None, status, error, message_id),
+        )
+        await db.commit()
+
+
+async def set_active_stream(conversation_id: str, message_id: str | None) -> None:
+    async with get_db() as db:
+        await db.execute(
+            "UPDATE conversations SET active_stream_message_id=? WHERE id=?",
+            (message_id, conversation_id),
+        )
+        await db.commit()
+
+
+async def assert_message_in_list(message_id: str, list_id: str) -> bool:
+    """Return True if message_id belongs to a conversation scoped to list_id."""
+    async with get_db() as db:
+        cursor = await db.execute(
+            """
+            SELECT 1 FROM messages m
+            JOIN conversations c ON m.conversation_id = c.id
+            WHERE m.id=? AND c.list_id=?
+            """,
+            (message_id, list_id),
+        )
+        return await cursor.fetchone() is not None
 
 
 # ---------------------------------------------------------------------------
