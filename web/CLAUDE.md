@@ -20,7 +20,7 @@ npx vitest run --coverage          # Coverage (requires @vitest/coverage-v8)
 components/ui/    — primitive components (Button, Modal, Panel, Input, Select, Spinner, StatusChip, SettingsField, Thumbnail, ContextMenu)
 components/auth/  — platform auth modals (BilibiliQrModal)
 components/*/     — feature components (lists/, lists/sources/, lists/lab/, lists/hooks/, jobs/, layout/, settings/)
-                    lists/hooks/ holds chat hooks: useConversationHistory (history load + reattach eligibility via active_stream_message_id), useSSEStream (send/stop/retry/reattach), useAutoScroll
+                    lists/hooks/ holds chat hooks: useConversationHistory (history load + reattach eligibility via active_stream_message_id), useSSEStream (send/stop/retryMessage(assistantId)/reattach), useAutoScroll
                     lists/ObsChip — retrieval observability chip driven by tool_call_start (pending) and tool_result (results) SSE events
 pages/            — route-level page components
 lib/              — typed api client, types, constants (SSE event types), artifact types, templates, download helpers, health check, i18n, utils
@@ -47,7 +47,7 @@ test/             — Vitest test files + setup
 - **Error handling**: always use `toErrorMessageWithT(error, t)` for user-facing error messages, never the raw `toErrorMessage()`. This ensures errors display in the correct UI language.
 - **i18n**: `useLanguage()` → `t("key.path")` for lookup; `%{name}` placeholders with `t("key", { name: value })` for interpolation. String tables in `lib/i18n/{en,zh}.json` must stay in sync
 - **Constants**: SSE event type strings go in `lib/constants.ts` (`delta`, `citation`, `tool_call_start`, `tool_result`, `done`, `error`, `cancelled`). Domain-specific event names (e.g., `BILIBILI_AUTH_REFRESH_EVENT`) live alongside their dispatcher in `lib/api.ts`. localStorage keys and utility constants live in `lib/utils.ts`. Never scatter the same magic string across multiple files.
-- **Utilities**: before writing a helper function inside a component, check `lib/utils.ts` for existing implementations. If a utility is pure (no React state), it belongs in `lib/`, not inline in a component.
+- **Utilities**: before writing a helper function inside a component, check `lib/utils.ts` and `lib/chat-utils.ts` for existing implementations (`translateOrFallback`, `getErrorLabel`, `formatDurationHuman`, etc.). If a utility is pure (no React state), it belongs in `lib/`, not inline in a component.
 - **Styling**: Tailwind utility classes only; no CSS modules. Inline `style` only for dynamic computed values (widths, positions, URLs). No arbitrary bracket values (e.g. `mt-[10px]`) — use Tailwind's built-in scale or CSS custom properties from `src/styles/app.css` (`--color-*`, `--z-*`, `--font-*`)
 - **Cross-component auth sync**: When auth state changes (login/logout), call `notifyBilibiliAuthChanged()` from `lib/api.ts`. Components that need to react listen for `BILIBILI_AUTH_REFRESH_EVENT` via `window.addEventListener`. Do not prop-drill auth state through unrelated components.
 - **RAG metadata**: The LLM dispatches a `retrieve` tool call mid-stream; results arrive as an SSE `tool_result` event with `name: "retrieve"`. Parsed in `useSSEStream` and surfaced via `ObsChip`. See `RagMetadata` type in `@/lib/chat-utils`. On history reload, `useConversationHistory` reads `metadata.rag` from the stored message.
