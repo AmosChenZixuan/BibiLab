@@ -349,6 +349,9 @@ async def _sse_consumer(buf: StreamBuffer) -> AsyncGenerator[str, None]:
     except asyncio.CancelledError:
         # Client disconnected — normal, no action needed.
         raise
+    except asyncio.TimeoutError:
+        logger.error("SSE subscriber timed out message_id=%s", buf.message_id)
+        yield f"data: {json.dumps({'type': 'error', 'message': 'stream_timeout'})}\n\n"
     except Exception:
         logger.exception("SSE consumer failed message_id=%s", buf.message_id)
 

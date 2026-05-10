@@ -423,3 +423,16 @@ class TestClassifyError:
             classify_error(openai.APIStatusError(message="status 500", response=self._resp, body=None))
             == "llm_api_error"
         )
+
+    def test_anthropic_timeout(self):
+        from bibilab.routers.chat import classify_error
+
+        assert classify_error(anthropic.APITimeoutError(request=self._req)) == "llm_connection_error"
+
+    def test_anthropic_api_status_error_still_api_error(self):
+        from bibilab.routers.chat import classify_error
+
+        assert (
+            classify_error(anthropic.APIStatusError(message="status 500", response=self._resp, body=None))
+            == "llm_api_error"
+        )

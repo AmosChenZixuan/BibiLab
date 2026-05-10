@@ -490,5 +490,43 @@ describe("chat panel — conversation history (phase 6.3)", () => {
     await waitFor(() => {
       expect(requestBody).toBe("First question");
     });
+
+    // Subsequent messages after the retried turn are removed from the DOM
+    expect(screen.queryByText("Second question")).not.toBeInTheDocument();
+    expect(screen.queryByText("Second answer")).not.toBeInTheDocument();
+  });
+
+  test("live SSE error with classified code displays localized message", async () => {
+    vi.spyOn(window, "fetch").mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : (input as Request).url;
+      const method = init?.method ?? "GET";
+      if (url.includes("/conversation") && method === "GET") {
+        return Promise.resolve(
+          new Response(JSON.stringify({ conversation: null, messages: [] })),
+        );
+      }
+      if (url.includes("/chat") && method === "POST") {
+        return Promise.resolve(
+          makeSseStream([
+            'data: {"type":"error","message":"llm_rate_limit_error"}\n\n',
+          ]),
+        );
+      }
+      return Promise.resolve(new Response(JSON.stringify([])));
+    });
+
+    renderChatPanel({
+      selectedSourceIds: ["src-1"],
+      sources: [SOURCE_1],
+      listId: "list-1",
+    });
+
+    const textarea = screen.getByRole("textbox");
+    await userEvent.type(textarea, "test");
+    await userEvent.keyboard("{Enter}");
+
+    await waitFor(() => {
+      expect(screen.getByText("AI provider rate limit exceeded")).toBeInTheDocument();
+    });
   });
 });

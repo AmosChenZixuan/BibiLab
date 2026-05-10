@@ -3,6 +3,8 @@
 import json
 from unittest.mock import AsyncMock, patch
 
+import httpx
+import openai
 import pytest
 
 from bibilab.pipeline._shared import StreamEvent, ToolCall
@@ -876,3 +878,28 @@ async def test_chat_endpoint_error_reason_in_sse_terminal_payload(client):
     terminal = error_events[-1]
     # tool_error is the code set when stream_with_tools yields type="error"
     assert terminal["message"] == "tool_error"
+
+
+@pytest.mark.asyncio
+async def test_chat_endpoint_classify_error_reaches_sse_terminal_payload(client):
+    """When an SDK exception propagates from stream_llm, classify_error() maps
+    it to the correct i18n code in the SSE terminal payload (spec #266 requirement)."""
+    list_id = (await client.post("/lists", json={"name": "ClassifyErr"})).json()["id"]
+
+    async def fake_stream_llm_raises(*args, **kwargs):
+        raise openai.RateLimitError(
+            message="too many requests",
+            response=httpx.Response(429, request=httpx.Request("POST", "http://test")),
+            body=None,
+        )
+        yield  # unreachable, makes this an async generator
+
+    with patch("bibilab.routers.chat.stream_llm", fake_stream_llm_raises):
+        resp = await client.post(f"/lists/{list_id}/chat", json={"message": "trigger rate limit"})
+
+    assert resp.status_code == 200
+    events = _parse_sse(resp.text)
+    error_events = [e for e in events if e["type"] == "error"]
+    assert len(error_events) >= 1, "terminal error event must be present"
+    terminal = error_events[-1]
+    assert terminal["message"] == "llm_rate_limit_error"

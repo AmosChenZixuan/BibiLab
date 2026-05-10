@@ -47,7 +47,6 @@ export function useSSEStream({
   const [isStreaming, setIsStreaming] = useState(false);
   const isStreamingRef = useRef(false);
   const abortControllerRef = useRef<AbortController | null>(null);
-  const lastUserMessageRef = useRef<string>("");
   const currentAssistantMsgIdRef = useRef<string | null>(null);
   const mountedRef = useRef(true);
 
@@ -268,7 +267,6 @@ export function useSSEStream({
     if (!text) return;
     if (isStreamingRef.current) return;
 
-    lastUserMessageRef.current = text;
     const userMsgId = `user-${Date.now()}`;
     const assistantMsgId = `assistant-${Date.now()}`;
     currentAssistantMsgIdRef.current = assistantMsgId;

@@ -51,7 +51,12 @@ async def stream_from_buffer(buf: StreamBuffer) -> AsyncGenerator[dict, None]:
             if buf.terminal:
                 return
             wake.clear()
-            await asyncio.wait_for(wake.wait(), timeout=300)
+            try:
+                await asyncio.wait_for(wake.wait(), timeout=300)
+            except asyncio.TimeoutError:
+                logger.error("subscriber timed out waiting for producer message_id=%s", buf.message_id)
+                yield {"type": "error", "message": "stream_timeout"}
+                return
     finally:
         buf.subscribers.discard(wake)
 
@@ -109,6 +114,9 @@ def get_chat_run_registry() -> ChatRunRegistry:
 
 def reset_chat_run_registry() -> None:
     global _registry
+    for _, task in _registry.all_tasks():
+        if not task.done():
+            task.cancel()
     for task in _registry.all_background_tasks():
         if not task.done():
             task.cancel()
