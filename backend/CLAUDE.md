@@ -21,7 +21,7 @@ uv run python -m bibilab.main       # Start server (localhost:8765)
 ```
 routers/          — one APIRouter per module; aggregated in main.py
   auth.py           /auth/bilibili/* (QR login, cookie management)
-  chat.py           /lists/:id/chat (SSE streaming + cancel), /lists/:id/chat/:msg_id/stream (reattach), /lists/:id/conversation (CRUD); stream_with_tools loop
+  chat.py           /lists/:id/chat (SSE streaming + cancel), /lists/:id/chat/:msg_id/stream (reattach), /lists/:id/conversation (CRUD); stream_with_tools loop; classify_error (SDK exception → i18n error code)
   lists.py          /lists/* (CRUD), /lists/:id/overview (POST)
   ingest.py         /ingest/url (POST)
   sources.py        /sources/* (source content, covers, rerun)
@@ -131,7 +131,7 @@ whisper_models.py — Whisper model management
 | `role` | `"user"` \| `"assistant"` \| `"tool"` |
 | `content` | Message text |
 | `status` | `"streaming"` → `"done"` \| `"failed"` \| `"cancelled"` |
-| `error` | Error message, nullable; set on producer failure or server restart sweep |
+| `error` | Error code (e.g. `llm_rate_limit_error`, `internal_error`), nullable; set on producer failure or server restart sweep; mapped by `classify_error()` from SDK exceptions; frontend resolves via `chat.errors.*` i18n keys |
 | `metadata` | JSON blob, nullable. Shape: `{"tool_calls": [...], "rag": {"calls": [{"query", "search_mode", "candidates_evaluated", "sources_with_hits", "sources_total", "source_coverage"}]}}`. Set by `chat_endpoint` post-stream from retrieve `tool_result` events (one entry per retrieve call). |
 | `created_at` | ISO timestamp |
 
@@ -194,7 +194,7 @@ stream_with_tools(stream_llm loop):
 ```
 
 - **Producer/consumer split**: `run_chat_turn` (async Task) writes SSE events into `StreamBuffer`; `_sse_consumer` reads from buffer. Decouples LLM lifetime from HTTP request.
-- `stream_with_tools` wraps `stream_llm` in a bounded loop (max 3 iterations). Loopback tools (`retrieve`, `query_list_metadata`) feed results back for another LLM turn; terminal tools (`generate_report`) exit the loop.
+- `stream_with_tools` wraps `stream_llm` in a bounded loop (max 3 iterations). Loopback tools (`retrieve`, `query_list_metadata`) feed results back for another LLM turn; terminal tools (`generate_report`) exit the loop. When iterations are exhausted, `active_tools` is forced to `[]` so the LLM synthesizes from accumulated results instead of yielding a hard error. If tools were used but no text was generated, a forced follow-up LLM call (no tools) ensures the user always gets an answer.
 - **Preamble streaming**: Text generated before a loopback tool call is streamed to the client immediately (parsed incrementally via `parse_delta`). Trade-off: short filler like "Let me look that up..." reaches the client before the retrieve runs.
 - **Sequential-retrieve guard**: After the first `retrieve` call succeeds, `retrieve` is removed from the active tool list for the remainder of the turn. A second retrieve within the same turn is rejected.
 - Retrieve result `_chunks` are formatted as citation-ready `[N]: "content"` strings for the LLM; stripped from the client-bound `tool_result` SSE payload by `_client_tool_result()`.

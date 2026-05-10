@@ -276,7 +276,16 @@
         "description": "Broad mode retrieves one relevant chunk per source, maximizing coverage across videos."
       }
     },
-    "citationMissing": "Source no longer in list"
+    "citationMissing": "Source no longer in list",
+    "errors": {
+      "tool_error": "Tool execution failed",
+      "stream_timeout": "Stream timed out",
+      "llm_connection_error": "Unable to reach AI provider",
+      "llm_auth_error": "AI provider authentication failed",
+      "llm_rate_limit_error": "AI provider rate limit exceeded",
+      "llm_api_error": "AI provider error",
+      "internal_error": "An internal error occurred"
+    }
   },
   "common": {
     "cancel": "Cancel",

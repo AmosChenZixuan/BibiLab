@@ -276,7 +276,16 @@
         "description": "宽泛模式从每个来源中检索一个相关块，最大化跨视频的覆盖范围。"
       }
     },
-    "citationMissing": "来源已不在列表中"
+    "citationMissing": "来源已不在列表中",
+    "errors": {
+      "tool_error": "工具执行失败",
+      "stream_timeout": "请求超时",
+      "llm_connection_error": "无法连接到 AI 提供商",
+      "llm_auth_error": "AI 提供商认证失败",
+      "llm_rate_limit_error": "AI 提供商速率限制",
+      "llm_api_error": "AI 提供商错误",
+      "internal_error": "发生内部错误"
+    }
   },
   "common": {
     "cancel": "取消",

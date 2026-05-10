@@ -2,6 +2,9 @@
 
 from unittest.mock import MagicMock, patch
 
+import anthropic
+import httpx
+import openai
 import pytest
 
 from bibilab.pipeline._shared import StreamEvent, ToolCall, stream_llm
@@ -21,10 +24,16 @@ async def test_stream_llm_passes_list_content_to_anthropic():
             captured.append(kwargs["messages"])
 
         async def __aenter__(self):
-            return an_async_generator([])
+            return self
 
         async def __aexit__(self, *args):
             pass
+
+        def __aiter__(self):
+            return self
+
+        async def __anext__(self):
+            raise StopAsyncIteration
 
     with patch("bibilab.pipeline._shared.AsyncAnthropic") as mock_cls:
         mock_cls.return_value = MagicMock(messages=MagicMock(stream=FakeStream))
@@ -231,18 +240,27 @@ async def test_stream_with_tools_terminal_tool_exits_after_execution():
 
 
 @pytest.mark.asyncio
-async def test_stream_with_tools_max_iterations():
-    """Hard cap at MAX_TOOL_ITERATIONS prevents infinite loops."""
+async def test_stream_with_tools_max_iterations_graceful():
+    """After MAX_TOOL_ITERATIONS, active_tools is forced to [] so the LLM synthesizes from accumulated results."""
     from bibilab.config import AIConfig
     from bibilab.pipeline.chat_tools import RETRIEVE_TOOL
-    from bibilab.routers.chat import stream_with_tools
+    from bibilab.routers.chat import MAX_TOOL_ITERATIONS, stream_with_tools
 
     cfg = AIConfig(protocol="openai", model="gpt-4o", api_key="test", base_url="")
 
     tc = ToolCall(id="c1", name="retrieve", arguments={"query": "test", "search_mode": "factual"})
 
+    iterations_seen = []
+
     async def fake_stream(messages, cfg, tools=None, system=None, llm_max_tokens=2048):
+        # Record how many tools were available in this call
+        iterations_seen.append(len(tools) if tools else 0)
+
+        # ALWAYS yield a tool call — the iteration limit is tracked INSIDE stream_with_tools
+        # We need to keep returning tools so we hit the iteration > MAX_TOOL_ITERATIONS check
         yield StreamEvent(type="tool_call", tool_call=tc)
+        # Note: we don't yield done here — we rely on stream_with_tools to stop the loop
+        # after MAX_TOOL_ITERATIONS
 
     async def fake_execute(name, args, **kwargs):
         return {"ok": True}
@@ -258,8 +276,71 @@ async def test_stream_with_tools_max_iterations():
             events.append(event)
 
     error_events = [e for e in events if e.type == "error"]
-    assert len(error_events) == 1
-    assert "Max tool iterations" in error_events[0].content
+    assert len(error_events) == 0, f"No hard error — forced synthesis instead. Got error events: {error_events}"
+
+    # MAX_TOOL_ITERATIONS tool-using turns + 1 synthesis turn + 1 forced synthesis
+    # (forced synthesis kicks in because the mock never produces text).
+    assert len(iterations_seen) == MAX_TOOL_ITERATIONS + 2
+    # Both the synthesis turn and forced synthesis have no tools available.
+    assert iterations_seen[-2] == 0
+    assert iterations_seen[-1] == 0
+
+
+@pytest.mark.asyncio
+async def test_stream_with_tools_forces_synthesis_when_exhausted_turn_returns_empty():
+    """When the synthesis turn produces no text, force one more LLM call so the user always gets an answer."""
+    from bibilab.config import AIConfig
+    from bibilab.pipeline.chat_tools import RETRIEVE_TOOL
+    from bibilab.routers.chat import MAX_TOOL_ITERATIONS, stream_with_tools
+
+    cfg = AIConfig(protocol="openai", model="gpt-4o", api_key="test", base_url="")
+
+    retrieve_tc = ToolCall(id="c1", name="retrieve", arguments={"query": "test", "search_mode": "factual"})
+
+    call_count = 0
+
+    async def fake_stream(messages, cfg, tools=None, system=None, llm_max_tokens=2048):
+        nonlocal call_count
+        call_count += 1
+        if call_count <= MAX_TOOL_ITERATIONS:
+            # Tool iterations: always call retrieve
+            yield StreamEvent(type="tool_call", tool_call=retrieve_tc)
+        elif call_count == MAX_TOOL_ITERATIONS + 1:
+            # Synthesis turn: model returns empty — no deltas, no tool calls
+            yield StreamEvent(type="done")
+        else:
+            # Forced synthesis: model produces the answer
+            yield StreamEvent(type="delta", content="Based on retrieved sources, the answer is 42.")
+            yield StreamEvent(type="done")
+
+    async def fake_execute(name, args, **kwargs):
+        return {
+            "ok": True,
+            "query": args.get("query", ""),
+            "source_coverage": [],
+            "candidates_evaluated": 1,
+            "sources_with_hits": 0,
+            "sources_total": 1,
+        }
+
+    with patch("bibilab.routers.chat.stream_llm", side_effect=fake_stream):
+        events = []
+        async for event in stream_with_tools(
+            messages=[{"role": "user", "content": "what is the answer?"}],
+            cfg=cfg,
+            tools=[RETRIEVE_TOOL],
+            execute_tool_fn=fake_execute,
+        ):
+            events.append(event)
+
+    # MAX_TOOL_ITERATIONS tool turns + 1 empty synthesis + 1 forced synthesis
+    assert call_count == MAX_TOOL_ITERATIONS + 2
+    # No errors
+    error_events = [e for e in events if e.type == "error"]
+    assert len(error_events) == 0
+    # The forced synthesis produced text
+    delta_text = "".join(e.content or "" for e in events if e.type == "delta")
+    assert "42" in delta_text
 
 
 @pytest.mark.asyncio
@@ -315,3 +396,150 @@ async def test_stream_with_tools_loops_back_for_query_list_metadata():
     # A delta carrying the answer must have been yielded after loopback.
     delta_text = "".join(e.content or "" for e in events if e.type == "delta")
     assert "8" in delta_text
+
+
+@pytest.mark.asyncio
+async def test_forced_synthesis_forwards_error_events():
+    """If the forced-synthesis LLM call yields an error event, it must be forwarded
+    so run_chat_turn can mark the message failed instead of silently dropping it."""
+    from bibilab.config import AIConfig
+    from bibilab.pipeline.chat_tools import RETRIEVE_TOOL
+    from bibilab.routers.chat import MAX_TOOL_ITERATIONS, stream_with_tools
+
+    cfg = AIConfig(protocol="openai", model="gpt-4o", api_key="test", base_url="")
+    retrieve_tc = ToolCall(id="c1", name="retrieve", arguments={"query": "q", "search_mode": "factual"})
+
+    call_count = 0
+
+    async def fake_stream(messages, cfg, tools=None, system=None, llm_max_tokens=2048):
+        nonlocal call_count
+        call_count += 1
+        if call_count <= MAX_TOOL_ITERATIONS:
+            yield StreamEvent(type="tool_call", tool_call=retrieve_tc)
+        elif call_count == MAX_TOOL_ITERATIONS + 1:
+            yield StreamEvent(type="done")
+        else:
+            yield StreamEvent(type="error", content="forced synthesis failed")
+
+    async def fake_execute(name, args, **kwargs):
+        return {
+            "ok": True,
+            "query": "q",
+            "source_coverage": [],
+            "candidates_evaluated": 1,
+            "sources_with_hits": 0,
+            "sources_total": 1,
+        }
+
+    with patch("bibilab.routers.chat.stream_llm", side_effect=fake_stream):
+        events = []
+        async for event in stream_with_tools(
+            messages=[{"role": "user", "content": "q"}],
+            cfg=cfg,
+            tools=[RETRIEVE_TOOL],
+            execute_tool_fn=fake_execute,
+        ):
+            events.append(event)
+
+    error_events = [e for e in events if e.type == "error"]
+    assert len(error_events) == 1
+    assert "forced synthesis failed" in error_events[0].content
+
+
+class TestClassifyError:
+    _req = httpx.Request("GET", "http://test")
+    _resp = httpx.Response(500, request=_req)
+
+    def test_tool_error_not_classified_by_sdk(self):
+        """A plain Exception (like tool execution failures) is internal_error.
+
+        The tool_error code is set explicitly at the yield site in run_chat_turn,
+        not derived from exception inspection.
+        """
+        from bibilab.routers.chat import classify_error
+
+        assert classify_error(Exception("something broke")) == "internal_error"
+
+    def test_openai_connection_error(self):
+        from bibilab.routers.chat import classify_error
+
+        assert classify_error(openai.APIConnectionError(request=self._req)) == "llm_connection_error"
+
+    def test_openai_timeout(self):
+        from bibilab.routers.chat import classify_error
+
+        assert classify_error(openai.APITimeoutError(request=self._req)) == "llm_connection_error"
+
+    def test_openai_auth_error(self):
+        from bibilab.routers.chat import classify_error
+
+        assert (
+            classify_error(openai.AuthenticationError(message="bad key", response=self._resp, body=None))
+            == "llm_auth_error"
+        )
+
+    def test_openai_permission_denied(self):
+        from bibilab.routers.chat import classify_error
+
+        assert (
+            classify_error(openai.PermissionDeniedError(message="not allowed", response=self._resp, body=None))
+            == "llm_auth_error"
+        )
+
+    def test_openai_rate_limit(self):
+        from bibilab.routers.chat import classify_error
+
+        assert (
+            classify_error(openai.RateLimitError(message="too many", response=self._resp, body=None))
+            == "llm_rate_limit_error"
+        )
+
+    def test_openai_api_error_subclass(self):
+        from bibilab.routers.chat import classify_error
+
+        class SomeOpenAIError(openai.APIError):
+            pass
+
+        assert classify_error(SomeOpenAIError(message="generic", request=self._req, body=None)) == "llm_api_error"
+
+    def test_anthropic_connection_error(self):
+        from bibilab.routers.chat import classify_error
+
+        assert classify_error(anthropic.APIConnectionError(request=self._req)) == "llm_connection_error"
+
+    def test_anthropic_auth_error(self):
+        from bibilab.routers.chat import classify_error
+
+        assert (
+            classify_error(anthropic.AuthenticationError(message="bad key", response=self._resp, body=None))
+            == "llm_auth_error"
+        )
+
+    def test_anthropic_rate_limit(self):
+        from bibilab.routers.chat import classify_error
+
+        assert (
+            classify_error(anthropic.RateLimitError(message="too many", response=self._resp, body=None))
+            == "llm_rate_limit_error"
+        )
+
+    def test_openai_api_status_error_still_api_error(self):
+        from bibilab.routers.chat import classify_error
+
+        assert (
+            classify_error(openai.APIStatusError(message="status 500", response=self._resp, body=None))
+            == "llm_api_error"
+        )
+
+    def test_anthropic_timeout(self):
+        from bibilab.routers.chat import classify_error
+
+        assert classify_error(anthropic.APITimeoutError(request=self._req)) == "llm_connection_error"
+
+    def test_anthropic_api_status_error_still_api_error(self):
+        from bibilab.routers.chat import classify_error
+
+        assert (
+            classify_error(anthropic.APIStatusError(message="status 500", response=self._resp, body=None))
+            == "llm_api_error"
+        )

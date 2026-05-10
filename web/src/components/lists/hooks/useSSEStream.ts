@@ -21,6 +21,7 @@ type CitationEvent = { type: "citation"; index: number; source_id: string; chunk
 interface UseSSEStreamOptions {
   listId: string;
   selectedSourceIds: string[];
+  messages: MessageUI[];
   setMessages: React.Dispatch<React.SetStateAction<MessageUI[]>>;
   trackJobs?: (jobs: JobRegistration[]) => void;
   interruptedLabel?: string;
@@ -30,7 +31,7 @@ interface UseSSEStreamOptions {
 interface UseSSEStreamReturn {
   sendMessage: (text: string) => Promise<void>;
   stopStreaming: () => void;
-  retryLastMessage: () => void;
+  retryMessage: (assistantMessageId: string) => void;
   reattach: (messageId: string) => Promise<void>;
   isStreaming: boolean;
 }
@@ -38,6 +39,7 @@ interface UseSSEStreamReturn {
 export function useSSEStream({
   listId,
   selectedSourceIds,
+  messages,
   setMessages,
   trackJobs,
   interruptedLabel = "Interrupted",
@@ -46,9 +48,10 @@ export function useSSEStream({
   const [isStreaming, setIsStreaming] = useState(false);
   const isStreamingRef = useRef(false);
   const abortControllerRef = useRef<AbortController | null>(null);
-  const lastUserMessageRef = useRef<string>("");
   const currentAssistantMsgIdRef = useRef<string | null>(null);
   const mountedRef = useRef(true);
+  const messagesRef = useRef(messages);
+  messagesRef.current = messages;
 
   useEffect(() => {
     mountedRef.current = true;
@@ -267,7 +270,6 @@ export function useSSEStream({
     if (!text) return;
     if (isStreamingRef.current) return;
 
-    lastUserMessageRef.current = text;
     const userMsgId = `user-${Date.now()}`;
     const assistantMsgId = `assistant-${Date.now()}`;
     currentAssistantMsgIdRef.current = assistantMsgId;
@@ -436,18 +438,28 @@ export function useSSEStream({
     }
   }
 
-  async function retryLastMessage() {
-    if (lastUserMessageRef.current) {
-      const text = lastUserMessageRef.current;
-      await stopStreaming();
-      safeSetIsStreaming(false);
-      isStreamingRef.current = false;
-      if (mountedRef.current) {
-        setMessages((prev) => prev.slice(0, -2));
+  async function retryMessage(assistantMessageId: string) {
+    const msgs = messagesRef.current;
+    const asstIndex = msgs.findIndex((m) => m.id === assistantMessageId);
+    if (asstIndex === -1) return;
+
+    let userIndex = -1;
+    for (let i = asstIndex - 1; i >= 0; i--) {
+      if (msgs[i].role === "user") {
+        userIndex = i;
+        break;
       }
-      void sendMessage(text);
     }
+    if (userIndex === -1) return;
+
+    const text = msgs[userIndex].content;
+    if (!text) return;
+
+    await stopStreaming();
+    safeSetIsStreaming(false);
+    isStreamingRef.current = false;
+    void sendMessage(text);
   }
 
-  return { sendMessage, stopStreaming, retryLastMessage, reattach, isStreaming };
+  return { sendMessage, stopStreaming, retryMessage, reattach, isStreaming };
 }

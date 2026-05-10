@@ -25,6 +25,7 @@ import { api } from "@/lib/api";
 import {
   autoResize,
   formatSubtitle,
+  getErrorLabel,
   type ContentBlock,
 } from "@/lib/chat-utils";
 
@@ -59,6 +60,7 @@ function CitationChip({
     </span>
   );
 }
+
 
 function renderParagraphs(
   contentBlocks: ContentBlock[],
@@ -132,9 +134,10 @@ export function ChatPanel({
   const hasSources = selectedSourceIds.length > 0;
   const { messages: historyMessages, isLoadingHistory, loadError, activeStreamMessageId } = useConversationHistory(listId, hasSources, t("chat.interrupted"), t("chat.stopped"));
 
-  const { sendMessage, stopStreaming, retryLastMessage, reattach, isStreaming } = useSSEStream({
+  const { sendMessage, stopStreaming, retryMessage, reattach, isStreaming } = useSSEStream({
     listId,
     selectedSourceIds,
+    messages,
     setMessages,
     trackJobs,
     interruptedLabel: t("chat.interrupted"),
@@ -337,8 +340,8 @@ export function ChatPanel({
                     {msg.error && (
                       <div className="interrupted">
                         <span className="ic"><AlertCircle size={14} /></span>
-                        <span>{msg.error}</span>
-                        <button type="button" onClick={retryLastMessage} className="retry">
+                        <span>{getErrorLabel(msg.error, t)}</span>
+                        <button type="button" onClick={() => retryMessage(msg.id)} className="retry">
                           <RotateCcw size={12} />{t("chat.retry")}
                         </button>
                       </div>

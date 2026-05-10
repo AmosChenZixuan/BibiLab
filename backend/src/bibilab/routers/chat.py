@@ -6,6 +6,8 @@ from collections.abc import AsyncGenerator
 from typing import Any
 from uuid import uuid4
 
+import anthropic
+import openai
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import Response, StreamingResponse
 
@@ -70,6 +72,28 @@ CHAT_MAX_TOKENS = 16384
 
 LOOPBACK_TOOLS = {"retrieve", "query_list_metadata"}
 MAX_TOOL_ITERATIONS = 3
+
+
+_ERROR_CODE_MAP: tuple[tuple[type[Exception], str], ...] = (
+    (openai.APIConnectionError, "llm_connection_error"),
+    (anthropic.APIConnectionError, "llm_connection_error"),
+    (openai.AuthenticationError, "llm_auth_error"),
+    (openai.PermissionDeniedError, "llm_auth_error"),
+    (anthropic.AuthenticationError, "llm_auth_error"),
+    (openai.RateLimitError, "llm_rate_limit_error"),
+    (anthropic.RateLimitError, "llm_rate_limit_error"),
+    (openai.APIError, "llm_api_error"),
+    (anthropic.APIError, "llm_api_error"),
+)
+
+
+def classify_error(exception: Exception) -> str:
+    """Map SDK exception types to a stable error code for i18n on the frontend."""
+    for exc_type, code in _ERROR_CODE_MAP:
+        if isinstance(exception, exc_type):
+            return code
+    return "internal_error"
+
 
 _PARAGRAPH_SPLIT = re.compile(r"\n{2,}")
 
@@ -180,6 +204,7 @@ async def stream_with_tools(
     parse_buffer = ""
     citation_emitted = False
     retrieve_used = False
+    text_generated = False
 
     def _build_lookup() -> dict[int, CitationRegistryEntry]:
         return {e.index: e for e in registry.values()}
@@ -191,11 +216,15 @@ async def stream_with_tools(
         iteration += 1
         tool_calls: list[ToolCall] = []
         lookup = _build_lookup()
-        active_tools = [t for t in tools if not (retrieve_used and t.name == RETRIEVE_TOOL.name)]
+        is_synthesis_turn = iteration > MAX_TOOL_ITERATIONS
+        active_tools = (
+            [] if is_synthesis_turn else [t for t in tools if not (retrieve_used and t.name == RETRIEVE_TOOL.name)]
+        )
         async for event in stream_llm(messages, cfg, active_tools, system=system, llm_max_tokens=llm_max_tokens):
             if event.type == "tool_call":
                 tool_calls.append(event.tool_call)
             elif event.type == "delta" and event.content:
+                text_generated = True
                 # Parse incrementally so citations and text reach the client as
                 # they arrive rather than waiting for the full LLM response.
                 parsed_events, parse_buffer = parse_delta(event.content, parse_buffer, lookup)
@@ -210,9 +239,35 @@ async def stream_with_tools(
             else:
                 yield event
 
-        if not tool_calls:
+        if not tool_calls or is_synthesis_turn:
             for pe in flush_buffer(parse_buffer):
                 yield pe
+            # If tools were used but no answer text was ever generated, force one
+            # more LLM call with no tools so the user always gets a text response.
+            if not text_generated and retrieve_used:
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": (
+                            "You have retrieved information from the sources. "
+                            "Now answer the user's original question. "
+                            "Provide a complete answer based solely on the retrieved content."
+                        ),
+                    }
+                )
+                async for event in stream_llm(messages, cfg, [], system=system, llm_max_tokens=llm_max_tokens):
+                    if event.type == "delta" and event.content:
+                        parsed_events, parse_buffer = parse_delta(event.content, parse_buffer, lookup)
+                        for pe in parsed_events:
+                            yield pe
+                    elif event.type in ("delta", "done"):
+                        pass
+                    else:
+                        # Forward error/other events so producer-side error handling
+                        # can capture failures during forced synthesis.
+                        yield event
+                for pe in flush_buffer(parse_buffer):
+                    yield pe
             if not citation_emitted and registry:
                 logger.info(
                     "citations_missing_after_retrieve registry_size=%d",
@@ -223,10 +278,6 @@ async def stream_with_tools(
         # Reset: a partial [ left over from preamble text should not bleed into
         # iteration 2's citation parsing.
         parse_buffer = ""
-
-        if iteration > MAX_TOOL_ITERATIONS:
-            yield StreamEvent(type=SSE_EVENT_ERROR, content="Max tool iterations exceeded")
-            return
 
         results: dict[str, dict] = {}
         for tc in tool_calls:
@@ -360,6 +411,7 @@ async def run_chat_turn(
     generate_report_result: dict | None = None
     content_blocks: list[dict] = []
     pending_text = ""
+    error_reason: str | None = None
 
     try:
         system_parts = [GROUNDING_SYSTEM_PROMPT]
@@ -438,13 +490,15 @@ async def run_chat_turn(
                     generate_report_result = parsed["result"]
             elif event.type == "error":
                 logger.error("stream_with_tools error: %s", event.content)
+                error_reason = "tool_error"
                 final_status = "failed"
                 return
     except asyncio.CancelledError:
         final_status = "cancelled"
         raise
-    except Exception:
+    except Exception as e:
         logger.exception("producer failed message_id=%s", message_id)
+        error_reason = classify_error(e)
         final_status = "failed"
     finally:
         try:
@@ -465,7 +519,7 @@ async def run_chat_turn(
                 meta["content_blocks"] = content_blocks
 
             assistant_content = "".join(assistant_text_deltas)
-            error_text = "An internal error occurred" if final_status == "failed" else None
+            error_text = error_reason if error_reason else ("internal_error" if final_status == "failed" else None)
             await update_message_content(
                 message_id,
                 content=assistant_content,
@@ -490,7 +544,7 @@ async def run_chat_turn(
         sse_terminal = terminal_map[final_status]
         terminal_payload: dict[str, Any] = {"type": sse_terminal}
         if final_status == "failed":
-            terminal_payload["message"] = "An internal error occurred"
+            terminal_payload["message"] = error_reason or "internal_error"
         buf.append(terminal_payload)
         buf.close(final_status)
 
