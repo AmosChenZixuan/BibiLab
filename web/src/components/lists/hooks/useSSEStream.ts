@@ -1,4 +1,3 @@
-import { flushSync } from "react-dom";
 import { useEffect, useRef, useState } from "react";
 
 import type { JobRegistration } from "@/components/jobs/JobActivityProvider";
@@ -22,6 +21,7 @@ type CitationEvent = { type: "citation"; index: number; source_id: string; chunk
 interface UseSSEStreamOptions {
   listId: string;
   selectedSourceIds: string[];
+  messages: MessageUI[];
   setMessages: React.Dispatch<React.SetStateAction<MessageUI[]>>;
   trackJobs?: (jobs: JobRegistration[]) => void;
   interruptedLabel?: string;
@@ -39,6 +39,7 @@ interface UseSSEStreamReturn {
 export function useSSEStream({
   listId,
   selectedSourceIds,
+  messages,
   setMessages,
   trackJobs,
   interruptedLabel = "Interrupted",
@@ -436,30 +437,22 @@ export function useSSEStream({
   }
 
   async function retryMessage(assistantMessageId: string) {
-    let text: string | null = null;
+    const asstIndex = messages.findIndex((m) => m.id === assistantMessageId);
+    if (asstIndex === -1) return;
 
-    flushSync(() => {
-      setMessages((prev) => {
-        const asstIndex = prev.findIndex((m) => m.id === assistantMessageId);
-        if (asstIndex === -1) return prev;
+    let userIndex = -1;
+    for (let i = asstIndex - 1; i >= 0; i--) {
+      if (messages[i].role === "user") {
+        userIndex = i;
+        break;
+      }
+    }
+    if (userIndex === -1) return;
 
-        let userIndex = -1;
-        for (let i = asstIndex - 1; i >= 0; i--) {
-          if (prev[i].role === "user") {
-            userIndex = i;
-            break;
-          }
-        }
-        if (userIndex === -1) return prev;
-
-        text = prev[userIndex].content;
-        return prev.slice(0, userIndex);
-      });
-    });
-
+    const text = messages[userIndex].content;
     if (!text) return;
 
-    await stopStreaming();
+    stopStreaming();
     safeSetIsStreaming(false);
     isStreamingRef.current = false;
     void sendMessage(text);

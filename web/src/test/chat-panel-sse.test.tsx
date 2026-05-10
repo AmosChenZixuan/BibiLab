@@ -491,9 +491,9 @@ describe("chat panel — conversation history (phase 6.3)", () => {
       expect(requestBody).toBe("First question");
     });
 
-    // Subsequent messages after the retried turn are removed from the DOM
-    expect(screen.queryByText("Second question")).not.toBeInTheDocument();
-    expect(screen.queryByText("Second answer")).not.toBeInTheDocument();
+    // Subsequent messages after the retried turn are preserved (append-only retry)
+    expect(screen.getByText("Second question")).toBeInTheDocument();
+    expect(screen.getByText("Second answer")).toBeInTheDocument();
   });
 
   test("live SSE error with classified code displays localized message", async () => {

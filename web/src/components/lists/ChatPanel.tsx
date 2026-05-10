@@ -142,6 +142,7 @@ export function ChatPanel({
   const { sendMessage, stopStreaming, retryMessage, reattach, isStreaming } = useSSEStream({
     listId,
     selectedSourceIds,
+    messages,
     setMessages,
     trackJobs,
     interruptedLabel: t("chat.interrupted"),

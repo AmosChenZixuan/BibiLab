@@ -278,10 +278,69 @@ async def test_stream_with_tools_max_iterations_graceful():
     error_events = [e for e in events if e.type == "error"]
     assert len(error_events) == 0, f"No hard error — forced synthesis instead. Got error events: {error_events}"
 
-    # MAX_TOOL_ITERATIONS tool-using turns + 1 synthesis turn (active_tools=[]).
-    assert len(iterations_seen) == MAX_TOOL_ITERATIONS + 1
-    # Last call is the synthesis turn — no tools available.
+    # MAX_TOOL_ITERATIONS tool-using turns + 1 synthesis turn + 1 forced synthesis
+    # (forced synthesis kicks in because the mock never produces text).
+    assert len(iterations_seen) == MAX_TOOL_ITERATIONS + 2
+    # Both the synthesis turn and forced synthesis have no tools available.
+    assert iterations_seen[-2] == 0
     assert iterations_seen[-1] == 0
+
+
+@pytest.mark.asyncio
+async def test_stream_with_tools_forces_synthesis_when_exhausted_turn_returns_empty():
+    """When the synthesis turn produces no text, force one more LLM call so the user always gets an answer."""
+    from bibilab.config import AIConfig
+    from bibilab.pipeline.chat_tools import RETRIEVE_TOOL
+    from bibilab.routers.chat import MAX_TOOL_ITERATIONS, stream_with_tools
+
+    cfg = AIConfig(protocol="openai", model="gpt-4o", api_key="test", base_url="")
+
+    retrieve_tc = ToolCall(id="c1", name="retrieve", arguments={"query": "test", "search_mode": "factual"})
+
+    call_count = 0
+
+    async def fake_stream(messages, cfg, tools=None, system=None, llm_max_tokens=2048):
+        nonlocal call_count
+        call_count += 1
+        if call_count <= MAX_TOOL_ITERATIONS:
+            # Tool iterations: always call retrieve
+            yield StreamEvent(type="tool_call", tool_call=retrieve_tc)
+        elif call_count == MAX_TOOL_ITERATIONS + 1:
+            # Synthesis turn: model returns empty — no deltas, no tool calls
+            yield StreamEvent(type="done")
+        else:
+            # Forced synthesis: model produces the answer
+            yield StreamEvent(type="delta", content="Based on retrieved sources, the answer is 42.")
+            yield StreamEvent(type="done")
+
+    async def fake_execute(name, args, **kwargs):
+        return {
+            "ok": True,
+            "query": args.get("query", ""),
+            "source_coverage": [],
+            "candidates_evaluated": 1,
+            "sources_with_hits": 0,
+            "sources_total": 1,
+        }
+
+    with patch("bibilab.routers.chat.stream_llm", side_effect=fake_stream):
+        events = []
+        async for event in stream_with_tools(
+            messages=[{"role": "user", "content": "what is the answer?"}],
+            cfg=cfg,
+            tools=[RETRIEVE_TOOL],
+            execute_tool_fn=fake_execute,
+        ):
+            events.append(event)
+
+    # MAX_TOOL_ITERATIONS tool turns + 1 empty synthesis + 1 forced synthesis
+    assert call_count == MAX_TOOL_ITERATIONS + 2
+    # No errors
+    error_events = [e for e in events if e.type == "error"]
+    assert len(error_events) == 0
+    # The forced synthesis produced text
+    delta_text = "".join(e.content or "" for e in events if e.type == "delta")
+    assert "42" in delta_text
 
 
 @pytest.mark.asyncio

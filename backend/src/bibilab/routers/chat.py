@@ -206,6 +206,7 @@ async def stream_with_tools(
     parse_buffer = ""
     citation_emitted = False
     retrieve_used = False
+    text_generated = False
 
     def _build_lookup() -> dict[int, CitationRegistryEntry]:
         return {e.index: e for e in registry.values()}
@@ -225,6 +226,7 @@ async def stream_with_tools(
             if event.type == "tool_call":
                 tool_calls.append(event.tool_call)
             elif event.type == "delta" and event.content:
+                text_generated = True
                 # Parse incrementally so citations and text reach the client as
                 # they arrive rather than waiting for the full LLM response.
                 parsed_events, parse_buffer = parse_delta(event.content, parse_buffer, lookup)
@@ -242,6 +244,28 @@ async def stream_with_tools(
         if not tool_calls or is_synthesis_turn:
             for pe in flush_buffer(parse_buffer):
                 yield pe
+            # If tools were used but no answer text was ever generated, force one
+            # more LLM call with no tools so the user always gets a text response.
+            if not text_generated and retrieve_used:
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": (
+                            "You have retrieved information from the sources. "
+                            "Now answer the user's original question. "
+                            "Provide a complete answer based solely on the retrieved content."
+                        ),
+                    }
+                )
+                async for event in stream_llm(messages, cfg, [], system=system, llm_max_tokens=llm_max_tokens):
+                    if event.type == "delta" and event.content:
+                        parsed_events, parse_buffer = parse_delta(event.content, parse_buffer, lookup)
+                        for pe in parsed_events:
+                            yield pe
+                    elif event.type == "done":
+                        pass
+                for pe in flush_buffer(parse_buffer):
+                    yield pe
             if not citation_emitted and registry:
                 logger.info(
                     "citations_missing_after_retrieve registry_size=%d",
