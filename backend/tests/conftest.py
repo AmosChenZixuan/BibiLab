@@ -48,9 +48,20 @@ async def client(tmp_bibilab_home: Path):  # noqa: ARG001
                 base_url="http://testserver",
             ) as async_client:
                 yield async_client
-                from bibilab.pipeline.chat_runs import reset_chat_run_registry
+                from bibilab.pipeline.chat_runs import ChatRunRegistry, get_chat_run_registry
 
-                reset_chat_run_registry()
+                old = get_chat_run_registry()
+                for _, task in old.all_tasks():
+                    if not task.done():
+                        task.cancel()
+                for task in old.all_background_tasks():
+                    if not task.done():
+                        task.cancel()
+                # Replace with fresh registry for next test
+                import bibilab.pipeline.chat_runs as cr
+
+                cr._registry = ChatRunRegistry()
+
                 from bibilab.pipeline._shared import _async_client_cache, _client_cache
 
                 _async_client_cache.clear()

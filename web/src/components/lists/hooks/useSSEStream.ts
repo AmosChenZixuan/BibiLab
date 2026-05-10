@@ -50,6 +50,8 @@ export function useSSEStream({
   const abortControllerRef = useRef<AbortController | null>(null);
   const currentAssistantMsgIdRef = useRef<string | null>(null);
   const mountedRef = useRef(true);
+  const messagesRef = useRef(messages);
+  messagesRef.current = messages;
 
   useEffect(() => {
     mountedRef.current = true;
@@ -437,19 +439,20 @@ export function useSSEStream({
   }
 
   async function retryMessage(assistantMessageId: string) {
-    const asstIndex = messages.findIndex((m) => m.id === assistantMessageId);
+    const msgs = messagesRef.current;
+    const asstIndex = msgs.findIndex((m) => m.id === assistantMessageId);
     if (asstIndex === -1) return;
 
     let userIndex = -1;
     for (let i = asstIndex - 1; i >= 0; i--) {
-      if (messages[i].role === "user") {
+      if (msgs[i].role === "user") {
         userIndex = i;
         break;
       }
     }
     if (userIndex === -1) return;
 
-    const text = messages[userIndex].content;
+    const text = msgs[userIndex].content;
     if (!text) return;
 
     await stopStreaming();

@@ -70,7 +70,6 @@ export function autoResize(ta: HTMLTextAreaElement) {
   }
 }
 
-export function getErrorLabel(error: string | null, t: (key: string) => string): string {
-  if (!error) return "";
+export function getErrorLabel(error: string, t: (key: string) => string): string {
   return translateOrFallback(t, `chat.errors.${error}`, error);
 }
