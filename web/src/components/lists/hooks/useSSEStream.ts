@@ -452,7 +452,7 @@ export function useSSEStream({
     const text = messages[userIndex].content;
     if (!text) return;
 
-    stopStreaming();
+    await stopStreaming();
     safeSetIsStreaming(false);
     isStreamingRef.current = false;
     void sendMessage(text);

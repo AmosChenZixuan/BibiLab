@@ -1,3 +1,5 @@
+import { translateOrFallback } from "@/lib/utils";
+
 export type ContentBlock =
   | { type: "text"; text: string }
   | { type: "citation"; index: number; source_id: string; chunk_ids: string[] }
@@ -66,4 +68,9 @@ export function autoResize(ta: HTMLTextAreaElement) {
     ta.style.height = `${Math.min(ta.scrollHeight, maxHeight)}px`;
     ta.style.overflowY = ta.scrollHeight > maxHeight ? "auto" : "hidden";
   }
+}
+
+export function getErrorLabel(error: string | null, t: (key: string) => string): string {
+  if (!error) return "";
+  return translateOrFallback(t, `chat.errors.${error}`, error);
 }

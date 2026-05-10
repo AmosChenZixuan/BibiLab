@@ -25,6 +25,7 @@ import { api } from "@/lib/api";
 import {
   autoResize,
   formatSubtitle,
+  getErrorLabel,
   type ContentBlock,
 } from "@/lib/chat-utils";
 
@@ -60,12 +61,6 @@ function CitationChip({
   );
 }
 
-function getErrorLabel(error: string | null, t: (key: string) => string): string {
-  if (!error) return "";
-  const key = `chat.errors.${error}`;
-  const translated = t(key);
-  return translated !== key ? translated : error;
-}
 
 function renderParagraphs(
   contentBlocks: ContentBlock[],

@@ -279,6 +279,7 @@
     "citationMissing": "来源已不在列表中",
     "errors": {
       "tool_error": "工具执行失败",
+      "stream_timeout": "请求超时",
       "llm_connection_error": "无法连接到 AI 提供商",
       "llm_auth_error": "AI 提供商认证失败",
       "llm_rate_limit_error": "AI 提供商速率限制",

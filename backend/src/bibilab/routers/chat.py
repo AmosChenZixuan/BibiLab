@@ -76,9 +76,7 @@ MAX_TOOL_ITERATIONS = 3
 
 _ERROR_CODE_MAP: tuple[tuple[type[Exception], str], ...] = (
     (openai.APIConnectionError, "llm_connection_error"),
-    (openai.APITimeoutError, "llm_connection_error"),
     (anthropic.APIConnectionError, "llm_connection_error"),
-    (anthropic.APITimeoutError, "llm_connection_error"),
     (openai.AuthenticationError, "llm_auth_error"),
     (openai.PermissionDeniedError, "llm_auth_error"),
     (anthropic.AuthenticationError, "llm_auth_error"),
@@ -373,9 +371,6 @@ async def _sse_consumer(buf: StreamBuffer) -> AsyncGenerator[str, None]:
     except asyncio.CancelledError:
         # Client disconnected — normal, no action needed.
         raise
-    except asyncio.TimeoutError:
-        logger.error("SSE subscriber timed out message_id=%s", buf.message_id)
-        yield f"data: {json.dumps({'type': 'error', 'message': 'stream_timeout'})}\n\n"
     except Exception:
         logger.exception("SSE consumer failed message_id=%s", buf.message_id)
 
@@ -520,9 +515,7 @@ async def run_chat_turn(
                 meta["content_blocks"] = content_blocks
 
             assistant_content = "".join(assistant_text_deltas)
-            error_text = (
-                error_reason if error_reason else ("An internal error occurred" if final_status == "failed" else None)
-            )
+            error_text = error_reason if error_reason else ("internal_error" if final_status == "failed" else None)
             await update_message_content(
                 message_id,
                 content=assistant_content,
@@ -547,7 +540,7 @@ async def run_chat_turn(
         sse_terminal = terminal_map[final_status]
         terminal_payload: dict[str, Any] = {"type": sse_terminal}
         if final_status == "failed":
-            terminal_payload["message"] = error_reason or "An internal error occurred"
+            terminal_payload["message"] = error_reason or "internal_error"
         buf.append(terminal_payload)
         buf.close(final_status)
 

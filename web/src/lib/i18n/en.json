@@ -279,6 +279,7 @@
     "citationMissing": "Source no longer in list",
     "errors": {
       "tool_error": "Tool execution failed",
+      "stream_timeout": "Stream timed out",
       "llm_connection_error": "Unable to reach AI provider",
       "llm_auth_error": "AI provider authentication failed",
       "llm_rate_limit_error": "AI provider rate limit exceeded",
