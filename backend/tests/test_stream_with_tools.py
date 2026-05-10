@@ -398,6 +398,54 @@ async def test_stream_with_tools_loops_back_for_query_list_metadata():
     assert "8" in delta_text
 
 
+@pytest.mark.asyncio
+async def test_forced_synthesis_forwards_error_events():
+    """If the forced-synthesis LLM call yields an error event, it must be forwarded
+    so run_chat_turn can mark the message failed instead of silently dropping it."""
+    from bibilab.config import AIConfig
+    from bibilab.pipeline.chat_tools import RETRIEVE_TOOL
+    from bibilab.routers.chat import MAX_TOOL_ITERATIONS, stream_with_tools
+
+    cfg = AIConfig(protocol="openai", model="gpt-4o", api_key="test", base_url="")
+    retrieve_tc = ToolCall(id="c1", name="retrieve", arguments={"query": "q", "search_mode": "factual"})
+
+    call_count = 0
+
+    async def fake_stream(messages, cfg, tools=None, system=None, llm_max_tokens=2048):
+        nonlocal call_count
+        call_count += 1
+        if call_count <= MAX_TOOL_ITERATIONS:
+            yield StreamEvent(type="tool_call", tool_call=retrieve_tc)
+        elif call_count == MAX_TOOL_ITERATIONS + 1:
+            yield StreamEvent(type="done")
+        else:
+            yield StreamEvent(type="error", content="forced synthesis failed")
+
+    async def fake_execute(name, args, **kwargs):
+        return {
+            "ok": True,
+            "query": "q",
+            "source_coverage": [],
+            "candidates_evaluated": 1,
+            "sources_with_hits": 0,
+            "sources_total": 1,
+        }
+
+    with patch("bibilab.routers.chat.stream_llm", side_effect=fake_stream):
+        events = []
+        async for event in stream_with_tools(
+            messages=[{"role": "user", "content": "q"}],
+            cfg=cfg,
+            tools=[RETRIEVE_TOOL],
+            execute_tool_fn=fake_execute,
+        ):
+            events.append(event)
+
+    error_events = [e for e in events if e.type == "error"]
+    assert len(error_events) == 1
+    assert "forced synthesis failed" in error_events[0].content
+
+
 class TestClassifyError:
     _req = httpx.Request("GET", "http://test")
     _resp = httpx.Response(500, request=_req)

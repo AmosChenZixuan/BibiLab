@@ -260,8 +260,12 @@ async def stream_with_tools(
                         parsed_events, parse_buffer = parse_delta(event.content, parse_buffer, lookup)
                         for pe in parsed_events:
                             yield pe
-                    elif event.type == "done":
+                    elif event.type in ("delta", "done"):
                         pass
+                    else:
+                        # Forward error/other events so producer-side error handling
+                        # can capture failures during forced synthesis.
+                        yield event
                 for pe in flush_buffer(parse_buffer):
                     yield pe
             if not citation_emitted and registry:
