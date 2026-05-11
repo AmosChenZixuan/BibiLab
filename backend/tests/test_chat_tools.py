@@ -269,3 +269,27 @@ class TestBuildSourceHeaders:
         lines = result.split("\n")
         assert lines[0] == 'Source [1]: "A"'
         assert lines[1] == 'Source [2]: "B"'
+
+
+class TestResolveResponseLanguage:
+    def test_resolve_response_language_explicit_override(self):
+        from bibilab.config import AIConfig
+        from bibilab.routers.chat import resolve_response_language
+
+        cfg = AIConfig(protocol="openai", model="x", api_key="k", base_url="", output_language="zh")
+        assert resolve_response_language(cfg, ui_lang="en") == "zh"
+
+    def test_resolve_response_language_ui_fallback(self):
+        from bibilab.config import AIConfig
+        from bibilab.routers.chat import resolve_response_language
+
+        cfg = AIConfig(protocol="openai", model="x", api_key="k", base_url="", output_language="ui")
+        assert resolve_response_language(cfg, ui_lang="zh") == "zh"
+
+    def test_resolve_response_language_default_is_ui(self):
+        from bibilab.config import AIConfig
+        from bibilab.routers.chat import resolve_response_language
+
+        cfg = AIConfig(protocol="openai", model="x", api_key="k", base_url="")
+        # AIConfig default for output_language is "ui"
+        assert resolve_response_language(cfg, ui_lang="en") == "en"

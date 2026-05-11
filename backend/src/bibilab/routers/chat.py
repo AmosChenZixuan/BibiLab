@@ -57,6 +57,16 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
+
+def resolve_response_language(cfg: AIConfig, ui_lang: str) -> str:
+    """Return the language string to use in chat responses.
+
+    AIConfig.output_language wins when explicitly set; "ui" means follow
+    the UI's X-UI-Lang header (passed in as ui_lang).
+    """
+    return ui_lang if cfg.output_language == "ui" else cfg.output_language
+
+
 # SSE event types — used both as stream-internal event discriminators (stream_llm yield)
 # and as the 'type' field in the SSE 'data:' JSON payload sent to the client.
 SSE_EVENT_DELTA = "delta"
