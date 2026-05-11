@@ -371,7 +371,7 @@ def expand_message_for_provider(
             name = b.get("name")
             arguments = b.get("arguments")
             result = b.get("result")
-            if not all([tool_use_id, name, arguments, result]):
+            if tool_use_id is None or name is None or arguments is None or result is None:
                 logger.warning("expand_message_for_provider skipping malformed block: missing keys")
                 continue
             assistant_content.append({"type": "tool_use", "id": tool_use_id, "name": name, "input": arguments})
@@ -386,7 +386,7 @@ def expand_message_for_provider(
             {"role": "user", "content": tool_result_content},
         ]
 
-    elif protocol == "openai":
+    if protocol == "openai":
         openai_tool_calls: list[dict] = []
         out: list[dict] = [
             {"role": "assistant", "content": text or None, "tool_calls": openai_tool_calls},
@@ -396,7 +396,7 @@ def expand_message_for_provider(
             name = b.get("name")
             arguments = b.get("arguments")
             result = b.get("result")
-            if not all([tool_use_id, name, arguments, result]):
+            if tool_use_id is None or name is None or arguments is None or result is None:
                 logger.warning("expand_message_for_provider skipping malformed block: missing keys")
                 continue
             openai_tool_calls.append(
@@ -414,6 +414,10 @@ def expand_message_for_provider(
                 }
             )
         return out
+
+    logger.warning("expand_message_for_provider unknown protocol=%s — returning text-only fallback", protocol)
+    clean = {k: v for k, v in msg.items() if k != "tool_blocks"}
+    return [clean]
 
 
 def reseed_citation_registry(

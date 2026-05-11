@@ -115,7 +115,8 @@ CREATE TABLE IF NOT EXISTS messages (
     metadata         TEXT,
     created_at       TEXT NOT NULL,
     status           TEXT NOT NULL DEFAULT 'done',
-    error            TEXT
+    error            TEXT,
+    tool_blocks      TEXT
 )
 """
 

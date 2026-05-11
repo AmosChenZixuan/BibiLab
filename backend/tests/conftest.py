@@ -1,7 +1,6 @@
 from pathlib import Path
 from unittest.mock import patch
 
-import aiosqlite
 import httpx
 import pytest
 import pytest_asyncio
@@ -34,20 +33,6 @@ def tmp_bibilab_home(tmp_path: Path):
                                         with patch("bibilab.adapters.bilibili.bibilab_home", return_value=tmp_path):
                                             with patch("pathlib.Path.home", return_value=tmp_path):
                                                 yield tmp_path
-
-
-@pytest.fixture(autouse=True)
-async def _add_tool_blocks_column(tmp_bibilab_home: Path):
-    """Ensure tool_blocks column exists in test DBs (added via ALTER after bootstrap_db)."""
-    from bibilab.db import bootstrap_db, get_db
-
-    await bootstrap_db()
-    async with get_db() as db:
-        try:
-            await db.execute("ALTER TABLE messages ADD COLUMN tool_blocks TEXT")
-            await db.commit()
-        except aiosqlite.OperationalError:
-            pass  # column already exists
 
 
 @pytest_asyncio.fixture()
