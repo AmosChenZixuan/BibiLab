@@ -87,8 +87,10 @@ RETRIEVE_TOOL = ToolDefinition(
     description=(
         "Retrieve information from video transcripts. Use when the user asks about "
         "video content, facts, comparisons, summaries, or anything requiring lookup "
-        "across sources. Do NOT use for chitchat (thanks, greetings, rephrasing) or "
-        "conversation-only queries."
+        "across sources. Do NOT use for pure greetings (hi, thanks) or "
+        "conversation-control messages (e.g. 'stop', 'never mind'). Any question "
+        "about content — even short or vague ones like 'what is X' — is a content "
+        "question; retrieve."
     ),
     parameters={
         "type": "object",

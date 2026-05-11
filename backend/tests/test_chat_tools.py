@@ -309,6 +309,23 @@ class TestBuildGroundingPrompt:
         assert "do not introduce real-world parallels" in prompt
 
 
+class TestRetrieveToolDescription:
+    def test_retrieve_tool_description_drops_rephrasing_exclusion(self):
+        from bibilab.pipeline.chat_tools import RETRIEVE_TOOL
+
+        desc = RETRIEVE_TOOL.description
+        # The "rephrasing" exclusion conflated user rephrasing with model rephrasing
+        # and caused short content questions to skip retrieval.
+        assert "rephrasing" not in desc
+
+    def test_retrieve_tool_description_biases_toward_retrieve_for_short_questions(self):
+        from bibilab.pipeline.chat_tools import RETRIEVE_TOOL
+
+        desc = RETRIEVE_TOOL.description
+        assert "short or vague" in desc or "even short" in desc
+        assert "content question" in desc
+
+
 class TestResolveResponseLanguage:
     def test_resolve_response_language_explicit_override(self):
         from bibilab.config import AIConfig
