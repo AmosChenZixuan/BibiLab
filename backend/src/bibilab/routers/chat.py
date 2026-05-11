@@ -478,6 +478,8 @@ async def run_chat_turn(
 
         tools = [RETRIEVE_TOOL, QUERY_LIST_METADATA_TOOL, GENERATE_REPORT_TOOL]
 
+        tool_blocks: list[dict] = []
+
         async for event in stream_with_tools(
             messages=messages_for_llm,
             cfg=cfg.ai,
@@ -487,6 +489,7 @@ async def run_chat_turn(
             llm_max_tokens=CHAT_MAX_TOKENS,
             registry=citation_registry,
             source_map=source_map,
+            tool_block_sink=tool_blocks,
         ):
             payload = _serialize_event_for_buffer(event)
             if payload is not None:
@@ -567,6 +570,7 @@ async def run_chat_turn(
                 metadata=meta if meta else None,
                 status=final_status,
                 error=error_text,
+                tool_blocks=tool_blocks if tool_blocks else None,
             )
         except Exception:
             logger.exception("producer finalize failed message_id=%s", message_id)

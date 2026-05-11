@@ -743,6 +743,98 @@ def test_grounding_prompt_has_audit_prior_claims_rule():
     )
 
 
+# ---------------------------------------------------------------------------
+# Task 10: tool_blocks persistence
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_run_chat_turn_persists_tool_blocks(monkeypatch, tmp_path):
+    """When the producer runs a retrieve tool, tool_blocks must be persisted via update_message_content."""
+    from bibilab.config import AIConfig, BackendConfig, BibilabConfig
+    from bibilab.pipeline._shared import StreamEvent, ToolCall
+    from bibilab.routers import chat as chat_module
+
+    call_count = 0
+    retrieve_tc = ToolCall(id="c1", name="retrieve", arguments={"query": "x", "search_mode": "factual"})
+
+    async def fake_stream_llm(messages, cfg, tools=None, system=None, llm_max_tokens=2048):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            yield StreamEvent(type="tool_call", tool_call=retrieve_tc)
+        else:
+            yield StreamEvent(type="delta", content="Answer [1]")
+            yield StreamEvent(type="done")
+
+    async def fake_execute(tool_name, arguments, **kwargs):
+        return {
+            "query": "x",
+            "search_mode": "factual",
+            "candidates_evaluated": 1,
+            "sources_with_hits": 1,
+            "sources_total": 1,
+            "source_coverage": [{"source_id": "s1", "video_id": "v1", "title": "V1"}],
+            "_chunks": "fmt",
+            "_turn_indices": [1],
+            "_raw_chunks": [
+                {
+                    "source_id": "s1",
+                    "chunk_id": "v1_0_10",
+                    "content": "verbatim",
+                    "video_title": "V1",
+                    "timestamp_start": 0.0,
+                    "timestamp_end": 10.0,
+                    "citation_index": 1,
+                },
+            ],
+        }
+
+    monkeypatch.setattr(chat_module, "stream_llm", fake_stream_llm)
+    monkeypatch.setattr(chat_module, "execute_tool", fake_execute)
+
+    captured: dict = {}
+
+    async def capture_update(message_id, content, metadata, status, error=None, tool_blocks=None):
+        captured["tool_blocks"] = tool_blocks
+
+    async def noop(*a, **kw):
+        return None
+
+    monkeypatch.setattr(chat_module, "update_message_content", capture_update)
+    monkeypatch.setattr(chat_module, "set_active_stream", noop)
+
+    from bibilab.pipeline.chat_runs import ChatRunRegistry
+
+    registry = ChatRunRegistry()
+    msg_id = "msg-1"
+    registry.register(msg_id, task=None)
+
+    cfg = BibilabConfig(
+        ai=AIConfig(protocol="openai", model="x", api_key="k", base_url=""),
+        backend=BackendConfig(),
+    )
+
+    await chat_module.run_chat_turn(
+        message_id=msg_id,
+        conversation_id="c1",
+        list_id="l1",
+        user_message_text="q",
+        history=[],
+        summary=None,
+        source_ids=["s1"],
+        source_map={"v1": "s1"},
+        ui_lang="en",
+        cfg=cfg,
+        registry=registry,
+    )
+
+    assert captured.get("tool_blocks") is not None
+    assert len(captured["tool_blocks"]) == 1
+    assert captured["tool_blocks"][0]["name"] == "retrieve"
+    assert captured["tool_blocks"][0]["result"]["chunks"][0]["content"] == "verbatim"
+
+
 @pytest.mark.asyncio
 async def test_tool_call_start_emitted_before_tool_result(client):
     """Each retrieve tool_call must emit a tool_call_start SSE event before its tool_result."""
