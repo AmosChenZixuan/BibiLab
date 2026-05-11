@@ -251,6 +251,61 @@ class TestExecuteRetrieve:
         assert result["search_mode"] == "breadth"
 
 
+@pytest.mark.asyncio
+async def test_execute_retrieve_returns_raw_chunks_for_replay(monkeypatch):
+    from bibilab.config import AIConfig, BackendConfig, BibilabConfig
+    from bibilab.pipeline import chat_tools
+    from bibilab.pipeline.embed import RetrievalResult, RetrievedChunk, SourceHit
+
+    async def fake_retrieve(query_text, source_ids, cfg, params):
+        return RetrievalResult(
+            chunks=[
+                RetrievedChunk(
+                    content="verbatim text",
+                    video_title="Video One",
+                    timestamp_start=120.4,
+                    timestamp_end=145.0,
+                    video_id="v1",
+                    distance=0.1,
+                    score=0.9,
+                ),
+            ],
+            candidates_evaluated=5,
+            sources_with_hits=1,
+            sources_total=1,
+            source_coverage=[SourceHit(video_id="v1", video_title="Video One", best_score=-0.9)],
+        )
+
+    monkeypatch.setattr(chat_tools, "retrieve", fake_retrieve)
+
+    cfg = BibilabConfig(
+        ai=AIConfig(protocol="openai", model="x", api_key="k", base_url=""),
+        backend=BackendConfig(),
+    )
+    registry: dict = {}
+    source_map = {"v1": "s1"}
+
+    result = await chat_tools.execute_retrieve(
+        query="test",
+        search_mode="factual",
+        source_ids=["s1"],
+        cfg=cfg,
+        registry=registry,
+        source_map=source_map,
+    )
+
+    assert "_raw_chunks" in result
+    raw = result["_raw_chunks"]
+    assert len(raw) == 1
+    assert raw[0]["source_id"] == "s1"
+    assert raw[0]["content"] == "verbatim text"
+    assert raw[0]["video_title"] == "Video One"
+    assert raw[0]["timestamp_start"] == 120.4
+    assert raw[0]["timestamp_end"] == 145.0
+    assert raw[0]["citation_index"] == 1
+    assert raw[0]["chunk_id"] == "v1_120_145"
+
+
 class TestBuildSourceHeaders:
     def test_single(self):
         from bibilab.pipeline.chat_tools import CitationRegistryEntry, _build_source_headers

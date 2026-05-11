@@ -233,6 +233,20 @@ async def execute_retrieve(
         if c.video_id in video_id_to_index
     ]
 
+    raw_chunks = [
+        {
+            "source_id": source_map.get(c.video_id, ""),
+            "chunk_id": f"{c.video_id}_{int(c.timestamp_start)}_{int(c.timestamp_end)}",
+            "content": c.content,
+            "video_title": c.video_title,
+            "timestamp_start": c.timestamp_start,
+            "timestamp_end": c.timestamp_end,
+            "citation_index": video_id_to_index[c.video_id],
+        }
+        for c in result.chunks
+        if c.video_id in video_id_to_index
+    ]
+
     return {
         "query": query,
         "search_mode": search_mode,
@@ -253,6 +267,7 @@ async def execute_retrieve(
             f"{_build_source_headers(registry)}\n\n" + "\n".join(chunks_formatted)
         ),
         "_turn_indices": turn_indices,
+        "_raw_chunks": raw_chunks,
     }
 
 
