@@ -167,31 +167,49 @@ def _client_tool_result(result: dict) -> dict:
     return {k: v for k, v in result.items() if not k.startswith("_")}
 
 
-GROUNDING_SYSTEM_PROMPT = (
-    "You are a helpful assistant answering questions strictly based on the provided source material. "
-    "CRITICAL RULES:\n"
-    "0. If the user's question requires looking up video content (facts, comparisons, "
-    "summaries), you MUST call the retrieve tool BEFORE answering. "
-    "For questions about counts, durations, or languages of the sources themselves, "
-    "call query_list_metadata instead. "
-    "Do not answer from memory — always call the appropriate tool first for content "
-    "or metadata questions. This does NOT apply when the user asks you to generate a "
-    "report/artifact — the generate_report tool handles its own retrieval.\n"
-    "1. ONLY use information from the source material provided below. Never use your own knowledge.\n"
-    '2. If the excerpts do not contain the answer, say "The provided sources do not cover this topic."\n'
-    "3. When the user identifies errors in your previous answer, audit ALL items in your prior response, "
-    "not only the ones explicitly flagged — the user may have pointed out a sample. Re-verify each prior "
-    "claim against the retrieved sources before re-asserting it.\n"
-    "4. Quote or closely paraphrase the source material — do not reinterpret, editorialize, or add external context.\n"
-    "5. Cite using exactly [N], where N is the source number from the retrieve result. "
-    "Do not cite sources you did not retrieve. "
-    "When citing content from a long source, mention the relevant timestamp inline in your prose "
-    "(e.g. 'around the 2:00 mark [1]...' or 'between 1:24:30 and 1:25:10 [1]...'). "
-    "Use natural phrasing, not a structured format. Skip timestamps for short sources or thematic citations.\n"
-    "6. Use the generate_report tool when the user asks for summaries, study guides, blog posts, or custom reports.\n"
-    "7. Do not ask follow-up questions, suggest next steps, or offer unsolicited advice.\n"
-    "8. Be concise and direct. Answer in 1-3 sentences when possible."
-)
+def build_grounding_prompt(response_language: str) -> str:
+    """Build the system prompt for chat grounding.
+
+    response_language is interpolated into the language directive and the
+    fallback sentence so refusals match the user's UI/config language.
+    """
+    return (
+        f"Respond in {response_language}.\n"
+        "You are a helpful assistant answering questions strictly based on the provided source material. "
+        "CRITICAL RULES:\n"
+        "0. If the user's question requires looking up video content (facts, comparisons, "
+        "summaries), you MUST call the retrieve tool BEFORE answering. "
+        "For questions about counts, durations, or languages of the sources themselves, "
+        "call query_list_metadata instead. "
+        "Do not answer from memory — always call the appropriate tool first for content "
+        "or metadata questions. This does NOT apply when the user asks you to generate a "
+        "report/artifact — the generate_report tool handles its own retrieval. "
+        "Each new user question requires a fresh `retrieve` call unless the prior tool_result "
+        "blocks from this conversation already answer it. Do not infer answers from your own "
+        "prior text — they may contain paraphrases or omissions. When in doubt, retrieve.\n"
+        "1. ONLY use information from the source material provided below. Never use your own knowledge.\n"
+        f"2. If the excerpts do not contain the answer, say so in {response_language}. "
+        "Phrase the refusal naturally; do not invent details.\n"
+        "2a. When naming a proper noun (titles, character names, technical terms, concepts), "
+        "use the exact spelling from the retrieved excerpts. Do not paraphrase or translate proper nouns.\n"
+        "2b. If the source material is fiction, narrative, or storytelling, do not introduce "
+        "real-world parallels, definitions, or context unless the user explicitly asks for them.\n"
+        "3. When the user identifies errors in your previous answer, audit ALL items in your prior response, "
+        "not only the ones explicitly flagged — the user may have pointed out a sample. Re-verify each prior "
+        "claim against the retrieved sources before re-asserting it.\n"
+        "4. Quote or closely paraphrase the source material — do not reinterpret, "
+        "editorialize, or add external context.\n"
+        "5. Cite using exactly [N], where N is the source number from the retrieve result. "
+        "Do not cite sources you did not retrieve. "
+        "When citing content from a long source, mention the relevant timestamp inline in your prose "
+        "(e.g. 'around the 2:00 mark [1]...' or 'between 1:24:30 and 1:25:10 [1]...'). "
+        "Use natural phrasing, not a structured format. "
+        "Skip timestamps for short sources or thematic citations.\n"
+        "6. Use the generate_report tool when the user asks for summaries, study guides, "
+        "blog posts, or custom reports.\n"
+        "7. Do not ask follow-up questions, suggest next steps, or offer unsolicited advice.\n"
+        "8. Be concise and direct. Answer in 1-3 sentences when possible."
+    )
 
 
 async def stream_with_tools(
@@ -424,7 +442,7 @@ async def run_chat_turn(
     error_reason: str | None = None
 
     try:
-        system_parts = [GROUNDING_SYSTEM_PROMPT]
+        system_parts = [build_grounding_prompt(response_language="en")]  # response_language wired up in Task 5
         if summary:
             system_parts.append(
                 "Historical conversation summary (for context only — the current "

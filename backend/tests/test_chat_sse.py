@@ -393,12 +393,13 @@ async def test_query_list_metadata_tool_registered_for_chat(client):
 
 
 def test_grounding_prompt_routes_counts_to_metadata_tool():
-    from bibilab.routers.chat import GROUNDING_SYSTEM_PROMPT
+    from bibilab.routers.chat import build_grounding_prompt
 
+    prompt = build_grounding_prompt(response_language="en")
     # The old phrasing ("counts across sources" → retrieve) must be gone.
-    assert "counts across sources" not in GROUNDING_SYSTEM_PROMPT
+    assert "counts across sources" not in prompt
     # New routing must mention the metadata tool by name for the LLM.
-    assert "query_list_metadata" in GROUNDING_SYSTEM_PROMPT
+    assert "query_list_metadata" in prompt
 
 
 @pytest.mark.asyncio
@@ -733,10 +734,11 @@ async def test_chat_sse_hallucinated_index_emitted_as_text(client, caplog):
 
 
 def test_grounding_prompt_has_audit_prior_claims_rule():
-    from bibilab.routers.chat import GROUNDING_SYSTEM_PROMPT
+    from bibilab.routers.chat import build_grounding_prompt
 
-    assert "audit ALL items" in GROUNDING_SYSTEM_PROMPT, (
-        "GROUNDING_SYSTEM_PROMPT must instruct the LLM to audit all prior claims, "
+    prompt = build_grounding_prompt(response_language="en")
+    assert "audit ALL items" in prompt, (
+        "build_grounding_prompt must instruct the LLM to audit all prior claims, "
         "not just user-flagged ones, when correcting a previous answer."
     )
 

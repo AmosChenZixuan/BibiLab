@@ -271,6 +271,44 @@ class TestBuildSourceHeaders:
         assert lines[1] == 'Source [2]: "B"'
 
 
+class TestBuildGroundingPrompt:
+    def test_build_grounding_prompt_includes_response_language_prefix(self):
+        from bibilab.routers.chat import build_grounding_prompt
+
+        prompt = build_grounding_prompt(response_language="zh")
+        assert prompt.startswith("Respond in zh.")
+
+    def test_build_grounding_prompt_localizes_fallback_sentence(self):
+        from bibilab.routers.chat import build_grounding_prompt
+
+        prompt = build_grounding_prompt(response_language="zh")
+        # The fallback rule must reference the response_language, not hard-coded English.
+        assert "say so in zh" in prompt
+        # And the old hard-coded English string must be gone.
+        assert "The provided sources do not cover this topic" not in prompt
+
+    def test_build_grounding_prompt_has_fresh_retrieve_directive(self):
+        from bibilab.routers.chat import build_grounding_prompt
+
+        prompt = build_grounding_prompt(response_language="en")
+        assert "Each new user question requires a fresh `retrieve` call" in prompt
+        assert "Do not infer answers from your own prior text" in prompt
+        assert "When in doubt, retrieve." in prompt
+
+    def test_build_grounding_prompt_has_verbatim_proper_noun_rule(self):
+        from bibilab.routers.chat import build_grounding_prompt
+
+        prompt = build_grounding_prompt(response_language="en")
+        assert "exact spelling from the retrieved excerpts" in prompt
+        assert "Do not paraphrase or translate proper nouns" in prompt
+
+    def test_build_grounding_prompt_has_no_real_world_parallels_rule(self):
+        from bibilab.routers.chat import build_grounding_prompt
+
+        prompt = build_grounding_prompt(response_language="en")
+        assert "do not introduce real-world parallels" in prompt
+
+
 class TestResolveResponseLanguage:
     def test_resolve_response_language_explicit_override(self):
         from bibilab.config import AIConfig
