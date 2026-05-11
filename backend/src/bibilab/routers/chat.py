@@ -328,15 +328,18 @@ async def stream_with_tools(
 
             results[tc.id] = result
             if tool_block_sink is not None:
-                tool_block_sink.append(
-                    build_tool_block_entry(
-                        tool_use_id=tc.id,
-                        name=tc.name,
-                        arguments=tc.arguments,
-                        result=result,
-                        raw_chunks=result.get("_raw_chunks"),
+                try:
+                    tool_block_sink.append(
+                        build_tool_block_entry(
+                            tool_use_id=tc.id,
+                            name=tc.name,
+                            arguments=tc.arguments,
+                            result=result,
+                            raw_chunks=result.get("_raw_chunks"),
+                        )
                     )
-                )
+                except Exception:
+                    logger.exception("tool_block_sink_append_failed tool=%s", tc.name)
             yield StreamEvent(
                 type=SSE_EVENT_TOOL_RESULT,
                 content=json.dumps({"id": tc.id, "name": tc.name, "result": _client_tool_result(result)}),
@@ -582,6 +585,8 @@ async def run_chat_turn(
         except Exception:
             logger.exception("producer finalize failed message_id=%s", message_id)
             final_status = "failed"
+            if error_reason is None:
+                error_reason = "persistence_error"
 
         try:
             await set_active_stream(conversation_id, None)
@@ -631,7 +636,10 @@ async def chat_endpoint(
         entry = {"role": r["role"], "content": r["content"]}
         raw_blocks = r["tool_blocks"]
         if raw_blocks:
-            entry["tool_blocks"] = json.loads(raw_blocks)
+            try:
+                entry["tool_blocks"] = json.loads(raw_blocks)
+            except json.JSONDecodeError:
+                logger.exception("malformed tool_blocks JSON in message_id=%s", r["id"])
         history.append(entry)
 
     source_rows = await get_sources_for_list(list_id)
