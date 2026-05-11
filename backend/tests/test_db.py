@@ -630,3 +630,60 @@ async def test_update_job_meta_noops_on_missing_job(tmp_bibilab_home: Path):
 
     await bootstrap_db()
     await update_job_meta("nonexistent-id", {"source_id": "src-123"})
+
+
+@pytest.mark.asyncio
+async def test_message_tool_blocks_round_trip(tmp_bibilab_home: Path):
+    """update_message_content + get_recent_messages round-trip the tool_blocks JSON."""
+    from bibilab.db import (
+        bootstrap_db,
+        create_conversation,
+        create_list,
+        create_message,
+        get_recent_messages,
+        update_message_content,
+    )
+
+    await bootstrap_db()
+    await create_list("list-1", "Test List", "2026-01-01T00:00:00")
+    conv_id = await create_conversation("list-1")
+    row = await create_message(conv_id, role="assistant", content="", metadata=None)
+    msg_id = row["id"]
+
+    blocks = [
+        {
+            "tool_use_id": "toolu_1",
+            "name": "retrieve",
+            "arguments": {"query": "q", "search_mode": "factual"},
+            "result": {
+                "chunks": [
+                    {
+                        "source_id": "s1",
+                        "chunk_id": "v1_0_10",
+                        "content": "x",
+                        "video_title": "V1",
+                        "timestamp_start": 0.0,
+                        "timestamp_end": 10.0,
+                        "citation_index": 1,
+                    }
+                ],
+                "summary": {"sources_total": 1},
+            },
+        }
+    ]
+
+    await update_message_content(
+        msg_id,
+        content="answer",
+        metadata=None,
+        status="done",
+        error=None,
+        tool_blocks=blocks,
+    )
+
+    rows = await get_recent_messages(conv_id, limit=10)
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["tool_blocks"] is not None
+    stored = json.loads(row["tool_blocks"])
+    assert stored == blocks

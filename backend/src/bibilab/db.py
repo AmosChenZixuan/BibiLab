@@ -673,7 +673,9 @@ async def get_recent_messages(
         if before_id is not None:
             cursor = await db.execute(
                 """
-                SELECT id, conversation_id, role, content, metadata, created_at, status, error FROM messages
+                SELECT id, conversation_id, role, content, metadata,
+                       created_at, status, error, tool_blocks
+                FROM messages
                 WHERE conversation_id=? AND (created_at, rowid) < (
                     SELECT created_at, rowid FROM messages WHERE id=?
                 )
@@ -685,7 +687,9 @@ async def get_recent_messages(
         else:
             cursor = await db.execute(
                 """
-                SELECT id, conversation_id, role, content, metadata, created_at, status, error FROM messages
+                SELECT id, conversation_id, role, content, metadata,
+                       created_at, status, error, tool_blocks
+                FROM messages
                 WHERE conversation_id=?
                 ORDER BY created_at DESC, rowid DESC
                 LIMIT ?
@@ -723,7 +727,7 @@ async def get_messages_beyond_window(
     async with get_db() as db:
         cursor = await db.execute(
             """
-            SELECT id, conversation_id, role, content, metadata, created_at, status, error
+            SELECT id, conversation_id, role, content, metadata, created_at, status, error, tool_blocks
             FROM (
                 SELECT *, ROW_NUMBER() OVER (ORDER BY created_at DESC, rowid DESC) AS _rn
                 FROM messages
@@ -832,11 +836,19 @@ async def update_message_content(
     metadata: dict | None,
     status: str,
     error: str | None = None,
+    tool_blocks: list[dict] | None = None,
 ) -> None:
     async with get_db() as db:
         await db.execute(
-            "UPDATE messages SET content=?, metadata=?, status=?, error=? WHERE id=?",
-            (content, json.dumps(metadata) if metadata is not None else None, status, error, message_id),
+            "UPDATE messages SET content=?, metadata=?, status=?, error=?, tool_blocks=? WHERE id=?",
+            (
+                content,
+                json.dumps(metadata) if metadata is not None else None,
+                status,
+                error,
+                json.dumps(tool_blocks) if tool_blocks is not None else None,
+                message_id,
+            ),
         )
         await db.commit()
 

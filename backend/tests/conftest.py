@@ -35,6 +35,20 @@ def tmp_bibilab_home(tmp_path: Path):
                                                 yield tmp_path
 
 
+@pytest.fixture(autouse=True)
+async def _add_tool_blocks_column(tmp_bibilab_home: Path, monkeypatch):
+    """Ensure tool_blocks column exists in test DBs (added via ALTER after bootstrap_db)."""
+    from bibilab.db import bootstrap_db, get_db
+
+    await bootstrap_db()
+    async with get_db() as db:
+        try:
+            await db.execute("ALTER TABLE messages ADD COLUMN tool_blocks TEXT")
+            await db.commit()
+        except Exception:
+            pass  # column already exists (or SQLite version doesn't support ALTER ADD COLUMN)
+
+
 @pytest_asyncio.fixture()
 async def client(tmp_bibilab_home: Path):  # noqa: ARG001
     from bibilab.main import create_app
