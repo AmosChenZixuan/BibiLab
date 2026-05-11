@@ -905,3 +905,63 @@ async def test_chat_endpoint_classify_error_reaches_sse_terminal_payload(client)
     assert len(error_events) >= 1, "terminal error event must be present"
     terminal = error_events[-1]
     assert terminal["message"] == "llm_rate_limit_error"
+
+
+# ---------------------------------------------------------------------------
+# Task 5: response_language threading
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_chat_uses_resolved_response_language_in_system_prompt(monkeypatch, tmp_path):
+    """When UI lang is zh and output_language is 'ui', the system prompt must say 'Respond in zh.'."""
+    from bibilab.config import AIConfig, BackendConfig, BibilabConfig
+    from bibilab.routers import chat as chat_module
+
+    captured_system: list[str] = []
+
+    async def fake_stream_llm(messages, cfg, tools=None, system=None, llm_max_tokens=2048):
+        captured_system.append(system or "")
+        from bibilab.pipeline._shared import StreamEvent
+
+        yield StreamEvent(type="delta", content="ok")
+        yield StreamEvent(type="done")
+
+    async def noop(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(chat_module, "stream_llm", fake_stream_llm)
+    monkeypatch.setattr(chat_module, "update_message_content", noop)
+    monkeypatch.setattr(chat_module, "set_active_stream", noop)
+
+    # Build a minimal cfg with output_language="ui" so ui_lang wins
+    cfg = BibilabConfig(
+        ai=AIConfig(protocol="openai", model="x", api_key="k", base_url="", output_language="ui"),
+        backend=BackendConfig(),
+    )
+
+    # Drive run_chat_turn directly with ui_lang="zh"
+    from bibilab.pipeline.chat_runs import ChatRunRegistry
+
+    registry = ChatRunRegistry()
+    msg_id = "test-msg-lang-1"
+    registry.register(msg_id, task=None)
+
+    await chat_module.run_chat_turn(
+        message_id=msg_id,
+        conversation_id="conv-1",
+        list_id="list-1",
+        user_message_text="hi",
+        history=[],
+        summary=None,
+        source_ids=[],
+        source_map={},
+        ui_lang="zh",
+        cfg=cfg,
+        registry=registry,
+    )
+
+    assert captured_system, "stream_llm was never called"
+    assert captured_system[0].startswith("Respond in zh."), (
+        f"Expected system prompt to start with 'Respond in zh.', got: {captured_system[0][:100]}"
+    )

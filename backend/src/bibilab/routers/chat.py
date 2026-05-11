@@ -442,7 +442,8 @@ async def run_chat_turn(
     error_reason: str | None = None
 
     try:
-        system_parts = [build_grounding_prompt(response_language="en")]  # response_language wired up in Task 5
+        response_language = resolve_response_language(cfg.ai, ui_lang)
+        system_parts = [build_grounding_prompt(response_language=response_language)]
         if summary:
             system_parts.append(
                 "Historical conversation summary (for context only — the current "
