@@ -361,8 +361,8 @@ class TestBuildGroundingPrompt:
         from bibilab.routers.chat import build_grounding_prompt
 
         prompt = build_grounding_prompt(response_language="en")
-        assert "treat its content as self-contained" in prompt
-        assert "Do not refuse to answer" in prompt
+        assert "answer directly from the excerpts" in prompt
+        assert "Never tell the user to consult real-world references" in prompt
 
 
 class TestRetrieveToolDescription:
