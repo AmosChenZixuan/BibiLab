@@ -225,28 +225,29 @@ async def execute_retrieve(
     # Collect indices actually retrieved this turn (for the enumeration line)
     turn_indices = sorted(set(video_id_to_index.values()))
 
-    chunks_formatted = [
-        _format_chunk_for_llm(
-            {"start": c.timestamp_start, "end": c.timestamp_end, "content": c.content},
-            index=video_id_to_index[c.video_id],
+    chunks_formatted = []
+    raw_chunks = []
+    for c in result.chunks:
+        if c.video_id not in video_id_to_index:
+            continue
+        idx = video_id_to_index[c.video_id]
+        chunks_formatted.append(
+            _format_chunk_for_llm(
+                {"start": c.timestamp_start, "end": c.timestamp_end, "content": c.content},
+                index=idx,
+            )
         )
-        for c in result.chunks
-        if c.video_id in video_id_to_index
-    ]
-
-    raw_chunks = [
-        {
-            "source_id": source_map.get(c.video_id, ""),
-            "chunk_id": f"{c.video_id}_{int(c.timestamp_start)}_{int(c.timestamp_end)}",
-            "content": c.content,
-            "video_title": c.video_title,
-            "timestamp_start": c.timestamp_start,
-            "timestamp_end": c.timestamp_end,
-            "citation_index": video_id_to_index[c.video_id],
-        }
-        for c in result.chunks
-        if c.video_id in video_id_to_index
-    ]
+        raw_chunks.append(
+            {
+                "source_id": source_map.get(c.video_id, ""),
+                "chunk_id": f"{c.video_id}_{int(c.timestamp_start)}_{int(c.timestamp_end)}",
+                "content": c.content,
+                "video_title": c.video_title,
+                "timestamp_start": c.timestamp_start,
+                "timestamp_end": c.timestamp_end,
+                "citation_index": idx,
+            }
+        )
 
     return {
         "query": query,
@@ -286,7 +287,7 @@ def build_tool_block_entry(
     attached so replay survives re-embedding. For other tools, the result
     is stored as-is.
     """
-    if name == "retrieve":
+    if name == RETRIEVE_TOOL.name:
         summary = {k: v for k, v in result.items() if not k.startswith("_")}
         return {
             "tool_use_id": tool_use_id,
@@ -312,7 +313,7 @@ async def execute_tool(
     registry: dict[str, CitationRegistryEntry] | None = None,
     source_map: dict[str, str] | None = None,
 ) -> dict:
-    if tool_name == "retrieve":
+    if tool_name == RETRIEVE_TOOL.name:
         return await execute_retrieve(
             query=arguments["query"],
             search_mode=arguments["search_mode"],
@@ -321,7 +322,7 @@ async def execute_tool(
             registry=registry,
             source_map=source_map,
         )
-    if tool_name == "generate_report":
+    if tool_name == GENERATE_REPORT_TOOL.name:
         artifact_type = arguments.get("type")
         prompt = arguments.get("prompt")
         if not artifact_type or not prompt:
@@ -335,7 +336,7 @@ async def execute_tool(
             source_ids=source_ids,
             ui_lang=ui_lang,
         )
-    if tool_name == "query_list_metadata":
+    if tool_name == QUERY_LIST_METADATA_TOOL.name:
         return await execute_query_list_metadata(
             source_ids=source_ids,
             query_type=arguments["query_type"],
@@ -363,47 +364,56 @@ def expand_message_for_provider(
     text = msg.get("content", "")
 
     if protocol == "anthropic":
-        assistant_content: list[dict] = [
-            {"type": "tool_use", "id": b["tool_use_id"], "name": b["name"], "input": b["arguments"]} for b in blocks
-        ]
+        assistant_content: list[dict] = []
+        tool_result_content: list[dict] = []
+        for b in blocks:
+            tool_use_id = b.get("tool_use_id")
+            name = b.get("name")
+            arguments = b.get("arguments")
+            result = b.get("result")
+            if not all([tool_use_id, name, arguments, result]):
+                logger.warning("expand_message_for_provider skipping malformed block: missing keys")
+                continue
+            assistant_content.append({"type": "tool_use", "id": tool_use_id, "name": name, "input": arguments})
+            tool_result_content.append(
+                {"type": "tool_result", "tool_use_id": tool_use_id, "content": json.dumps(result)}
+            )
         if text:
             assistant_content.append({"type": "text", "text": text})
-
-        tool_result_content = [
-            {
-                "type": "tool_result",
-                "tool_use_id": b["tool_use_id"],
-                "content": json.dumps(b["result"]),
-            }
-            for b in blocks
-        ]
 
         return [
             {"role": "assistant", "content": assistant_content},
             {"role": "user", "content": tool_result_content},
         ]
 
-    # openai
-    openai_tool_calls = [
-        {
-            "id": b["tool_use_id"],
-            "type": "function",
-            "function": {"name": b["name"], "arguments": json.dumps(b["arguments"])},
-        }
-        for b in blocks
-    ]
-    out: list[dict] = [
-        {"role": "assistant", "content": text or None, "tool_calls": openai_tool_calls},
-    ]
-    for b in blocks:
-        out.append(
-            {
-                "role": "tool",
-                "tool_call_id": b["tool_use_id"],
-                "content": json.dumps(b["result"]),
-            }
-        )
-    return out
+    elif protocol == "openai":
+        openai_tool_calls: list[dict] = []
+        out: list[dict] = [
+            {"role": "assistant", "content": text or None, "tool_calls": openai_tool_calls},
+        ]
+        for b in blocks:
+            tool_use_id = b.get("tool_use_id")
+            name = b.get("name")
+            arguments = b.get("arguments")
+            result = b.get("result")
+            if not all([tool_use_id, name, arguments, result]):
+                logger.warning("expand_message_for_provider skipping malformed block: missing keys")
+                continue
+            openai_tool_calls.append(
+                {
+                    "id": tool_use_id,
+                    "type": "function",
+                    "function": {"name": name, "arguments": json.dumps(arguments)},
+                }
+            )
+            out.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": tool_use_id,
+                    "content": json.dumps(result),
+                }
+            )
+        return out
 
 
 def reseed_citation_registry(
@@ -418,17 +428,20 @@ def reseed_citation_registry(
     """
     for msg in history:
         for block in msg.get("tool_blocks") or []:
-            if block.get("name") != "retrieve":
+            if block.get("name") != RETRIEVE_TOOL.name:
                 continue
             chunks = block.get("result", {}).get("chunks", [])
             for ch in chunks:
                 sid = ch.get("source_id")
                 if not sid:
                     continue
+                ci = ch.get("citation_index")
+                if ci is None:
+                    continue
                 entry = registry.get(sid)
                 if entry is None:
                     entry = CitationRegistryEntry(
-                        index=ch["citation_index"],
+                        index=ci,
                         source_id=sid,
                         title=ch.get("video_title", ""),
                     )
