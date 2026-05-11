@@ -552,3 +552,212 @@ class TestResolveResponseLanguage:
         cfg = AIConfig(protocol="openai", model="x", api_key="k", base_url="")
         # AIConfig default for output_language is "ui"
         assert resolve_response_language(cfg, ui_lang="en") == "en"
+
+
+class TestReseedCitationRegistry:
+    def test_reseed_basic_single_chunk(self):
+        from bibilab.pipeline.chat_tools import reseed_citation_registry
+
+        registry: dict = {}
+        history = [
+            {
+                "role": "assistant",
+                "content": "Answer [1]",
+                "tool_blocks": [
+                    {
+                        "tool_use_id": "t1",
+                        "name": "retrieve",
+                        "arguments": {"query": "q", "search_mode": "factual"},
+                        "result": {
+                            "chunks": [
+                                {
+                                    "source_id": "s1",
+                                    "citation_index": 1,
+                                    "chunk_id": "v1_0_10",
+                                    "video_title": "Video One",
+                                    "content": "verbatim text",
+                                }
+                            ],
+                            "summary": {"sources_total": 1},
+                        },
+                    }
+                ],
+            }
+        ]
+
+        reseed_citation_registry(registry, history)
+
+        assert len(registry) == 1
+        assert "s1" in registry
+        entry = registry["s1"]
+        assert entry.index == 1
+        assert entry.source_id == "s1"
+        assert entry.title == "Video One"
+        assert "v1_0_10" in entry.chunk_ids
+
+    def test_reseed_accumulates_chunk_ids_for_same_source(self):
+        from bibilab.pipeline.chat_tools import reseed_citation_registry
+
+        registry: dict = {}
+        history = [
+            {
+                "role": "assistant",
+                "content": "Answer",
+                "tool_blocks": [
+                    {
+                        "tool_use_id": "t1",
+                        "name": "retrieve",
+                        "arguments": {"query": "q", "search_mode": "factual"},
+                        "result": {
+                            "chunks": [
+                                {
+                                    "source_id": "s1",
+                                    "citation_index": 1,
+                                    "chunk_id": "v1_0_10",
+                                    "video_title": "V1",
+                                },
+                                {
+                                    "source_id": "s1",
+                                    "citation_index": 1,
+                                    "chunk_id": "v1_10_20",
+                                    "video_title": "V1",
+                                },
+                            ],
+                            "summary": {"sources_total": 1},
+                        },
+                    }
+                ],
+            }
+        ]
+
+        reseed_citation_registry(registry, history)
+
+        assert len(registry) == 1
+        entry = registry["s1"]
+        assert "v1_0_10" in entry.chunk_ids
+        assert "v1_10_20" in entry.chunk_ids
+        assert len(entry.chunk_ids) == 2
+
+    def test_reseed_skips_non_retrieve_blocks(self):
+        from bibilab.pipeline.chat_tools import reseed_citation_registry
+
+        registry: dict = {}
+        history = [
+            {
+                "role": "assistant",
+                "content": "There are 5 videos.",
+                "tool_blocks": [
+                    {
+                        "tool_use_id": "t1",
+                        "name": "query_list_metadata",
+                        "arguments": {"query_type": "count"},
+                        "result": {"count": 5},
+                    }
+                ],
+            }
+        ]
+
+        reseed_citation_registry(registry, history)
+
+        assert len(registry) == 0
+
+    def test_reseed_preserves_existing_entries(self):
+        from bibilab.pipeline.chat_tools import CitationRegistryEntry, reseed_citation_registry
+
+        registry = {
+            "s1": CitationRegistryEntry(index=1, source_id="s1", title="V1", chunk_ids={"v1_0_10"}),
+        }
+        history = [
+            {
+                "role": "assistant",
+                "content": "More info [1]",
+                "tool_blocks": [
+                    {
+                        "tool_use_id": "t2",
+                        "name": "retrieve",
+                        "arguments": {"query": "q2", "search_mode": "factual"},
+                        "result": {
+                            "chunks": [
+                                {
+                                    "source_id": "s1",
+                                    "citation_index": 1,
+                                    "chunk_id": "v1_50_60",
+                                    "video_title": "V1",
+                                }
+                            ],
+                            "summary": {"sources_total": 1},
+                        },
+                    }
+                ],
+            }
+        ]
+
+        reseed_citation_registry(registry, history)
+
+        assert len(registry) == 1
+        entry = registry["s1"]
+        assert entry.index == 1
+        # Old chunk is preserved
+        assert "v1_0_10" in entry.chunk_ids
+        # New chunk is added
+        assert "v1_50_60" in entry.chunk_ids
+        assert len(entry.chunk_ids) == 2
+
+    def test_reseed_handles_missing_citation_index(self):
+        from bibilab.pipeline.chat_tools import reseed_citation_registry
+
+        registry: dict = {}
+        history = [
+            {
+                "role": "assistant",
+                "content": "Answer",
+                "tool_blocks": [
+                    {
+                        "tool_use_id": "t1",
+                        "name": "retrieve",
+                        "arguments": {"query": "q", "search_mode": "factual"},
+                        "result": {
+                            "chunks": [
+                                {
+                                    "source_id": "s1",
+                                    "chunk_id": "v1_0_10",
+                                    "video_title": "V1",
+                                    # citation_index intentionally missing
+                                },
+                                {
+                                    "source_id": "s2",
+                                    "citation_index": 2,
+                                    "chunk_id": "v2_0_10",
+                                    "video_title": "V2",
+                                },
+                            ],
+                            "summary": {"sources_total": 2},
+                        },
+                    }
+                ],
+            }
+        ]
+
+        reseed_citation_registry(registry, history)
+
+        # Chunk without citation_index is skipped; only s2 is registered.
+        assert "s1" not in registry
+        assert "s2" in registry
+        assert registry["s2"].index == 2
+
+    def test_reseed_empty_history(self):
+        from bibilab.pipeline.chat_tools import reseed_citation_registry
+
+        registry: dict = {}
+        reseed_citation_registry(registry, [])
+        assert len(registry) == 0
+
+        # Also verify an existing entry is preserved
+        from bibilab.pipeline.chat_tools import CitationRegistryEntry
+
+        registry_with_entry = {
+            "s1": CitationRegistryEntry(index=1, source_id="s1", title="V1"),
+        }
+        reseed_citation_registry(registry_with_entry, [])
+        assert len(registry_with_entry) == 1
+        assert "s1" in registry_with_entry

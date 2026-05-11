@@ -610,3 +610,33 @@ class TestClassifyError:
             classify_error(anthropic.APIStatusError(message="status 500", response=self._resp, body=None))
             == "llm_api_error"
         )
+
+
+@pytest.mark.asyncio
+async def test_stream_with_tools_default_sink_none_does_not_crash():
+    """Calling stream_with_tools without tool_block_sink must not crash (defaults to None)."""
+    from bibilab.config import AIConfig
+    from bibilab.routers.chat import stream_with_tools
+
+    cfg = AIConfig(protocol="openai", model="gpt-4o", api_key="test", base_url="")
+
+    async def fake_stream(messages, cfg, tools=None, system=None, llm_max_tokens=2048):
+        yield StreamEvent(type="delta", content="Hello")
+        yield StreamEvent(type="done")
+
+    async def noop(*args, **kwargs):
+        return {}
+
+    with patch("bibilab.routers.chat.stream_llm", side_effect=fake_stream):
+        events = []
+        async for event in stream_with_tools(
+            messages=[{"role": "user", "content": "hi"}],
+            cfg=cfg,
+            tools=[],
+            execute_tool_fn=noop,
+        ):
+            events.append(event)
+
+    assert len(events) == 1
+    assert events[0].type == "delta"
+    assert events[0].content == "Hello"

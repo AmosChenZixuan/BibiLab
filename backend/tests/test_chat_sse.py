@@ -1138,3 +1138,106 @@ async def test_chat_uses_resolved_response_language_in_system_prompt(monkeypatch
     assert captured_system[0].startswith("Respond in zh."), (
         f"Expected system prompt to start with 'Respond in zh.', got: {captured_system[0][:100]}"
     )
+
+
+@pytest.mark.asyncio
+async def test_run_chat_turn_reseeds_citation_registry_from_history_tool_blocks(monkeypatch):
+    """When history contains retrieve tool_blocks, reseed populates citation_registry before stream_with_tools."""
+    from bibilab.config import AIConfig, BackendConfig, BibilabConfig
+    from bibilab.pipeline._shared import StreamEvent
+    from bibilab.routers import chat as chat_module
+
+    captured_registry: list[dict] = []
+
+    async def fake_stream_with_tools(
+        messages,
+        cfg,
+        tools,
+        execute_tool_fn,
+        system=None,
+        llm_max_tokens=2048,
+        registry=None,
+        source_map=None,
+        tool_block_sink=None,
+    ):
+        # Capture a copy of registry after reseed has populated it.
+        captured_registry.append(dict(registry) if registry else {})
+        yield StreamEvent(type="delta", content="ok")
+        yield StreamEvent(type="done")
+
+    monkeypatch.setattr(chat_module, "stream_with_tools", fake_stream_with_tools)
+
+    async def noop(*a, **kw):
+        return None
+
+    monkeypatch.setattr(chat_module, "update_message_content", noop)
+    monkeypatch.setattr(chat_module, "set_active_stream", noop)
+
+    from bibilab.pipeline.chat_runs import ChatRunRegistry
+
+    registry = ChatRunRegistry()
+    msg_id = "msg-reseed-1"
+    registry.register(msg_id, task=None)
+
+    history = [
+        {"role": "user", "content": "first question"},
+        {
+            "role": "assistant",
+            "content": "first answer [1]",
+            "tool_blocks": [
+                {
+                    "tool_use_id": "toolu_a",
+                    "name": "retrieve",
+                    "arguments": {"query": "x", "search_mode": "factual"},
+                    "result": {
+                        "chunks": [
+                            {
+                                "source_id": "s1",
+                                "citation_index": 1,
+                                "chunk_id": "v1_0_10",
+                                "video_title": "Video One",
+                                "content": "verbatim",
+                            },
+                            {
+                                "source_id": "s1",
+                                "citation_index": 1,
+                                "chunk_id": "v1_30_40",
+                                "video_title": "Video One",
+                                "content": "more text",
+                            },
+                        ],
+                        "summary": {"sources_total": 1},
+                    },
+                }
+            ],
+        },
+    ]
+
+    cfg = BibilabConfig(
+        ai=AIConfig(protocol="openai", model="x", api_key="k", base_url=""),
+        backend=BackendConfig(),
+    )
+
+    await chat_module.run_chat_turn(
+        message_id=msg_id,
+        conversation_id="c1",
+        list_id="l1",
+        user_message_text="follow-up",
+        history=history,
+        summary=None,
+        source_ids=["s1"],
+        source_map={"v1": "s1"},
+        ui_lang="en",
+        cfg=cfg,
+        registry=registry,
+    )
+
+    assert captured_registry, "stream_with_tools was not called"
+    reg = captured_registry[0]
+    assert "s1" in reg, f"Expected registry to contain 's1', got keys: {list(reg.keys())}"
+    entry = reg["s1"]
+    assert entry.index == 1
+    assert entry.source_id == "s1"
+    assert entry.title == "Video One"
+    assert "v1_0_10" in entry.chunk_ids
+    assert "v1_30_40" in entry.chunk_ids
