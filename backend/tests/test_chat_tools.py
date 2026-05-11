@@ -361,8 +361,8 @@ class TestBuildGroundingPrompt:
         from bibilab.routers.chat import build_grounding_prompt
 
         prompt = build_grounding_prompt(response_language="en")
-        assert "answer directly from the excerpts" in prompt
-        assert "Never tell the user to consult real-world references" in prompt
+        assert "start your answer with what the excerpts say" in prompt
+        assert "Describe the concept as the source presents it" in prompt
 
 
 class TestRetrieveToolDescription:
