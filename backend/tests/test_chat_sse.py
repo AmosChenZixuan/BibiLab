@@ -1004,6 +1004,87 @@ async def test_chat_endpoint_classify_error_reaches_sse_terminal_payload(client)
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# Task 12: tool_blocks history expansion
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_run_chat_turn_replays_tool_blocks_on_turn_2(monkeypatch):
+    """Turn 2 must include the turn-1 retrieve's tool_use + tool_result blocks in the LLM messages."""
+    from bibilab.config import AIConfig, BackendConfig, BibilabConfig
+    from bibilab.pipeline._shared import StreamEvent
+    from bibilab.routers import chat as chat_module
+
+    captured_messages: list[list[dict]] = []
+
+    async def fake_stream_llm(messages, cfg, tools=None, system=None, llm_max_tokens=2048):
+        captured_messages.append(list(messages))
+        yield StreamEvent(type="delta", content="ok")
+        yield StreamEvent(type="done")
+
+    monkeypatch.setattr(chat_module, "stream_llm", fake_stream_llm)
+
+    async def noop(*a, **kw):
+        return None
+
+    monkeypatch.setattr(chat_module, "update_message_content", noop)
+    monkeypatch.setattr(chat_module, "set_active_stream", noop)
+
+    from bibilab.pipeline.chat_runs import ChatRunRegistry
+
+    registry = ChatRunRegistry()
+    msg_id = "msg-turn-2"
+    registry.register(msg_id, task=None)
+
+    history = [
+        {"role": "user", "content": "first question"},
+        {
+            "role": "assistant",
+            "content": "first answer [1]",
+            "tool_blocks": [
+                {
+                    "tool_use_id": "toolu_a",
+                    "name": "retrieve",
+                    "arguments": {"query": "x", "search_mode": "factual"},
+                    "result": {"chunks": [{"content": "verbatim"}], "summary": {"sources_total": 1}},
+                }
+            ],
+        },
+    ]
+
+    cfg = BibilabConfig(
+        ai=AIConfig(protocol="anthropic", model="x", api_key="k", base_url=""),
+        backend=BackendConfig(),
+    )
+
+    await chat_module.run_chat_turn(
+        message_id=msg_id,
+        conversation_id="c1",
+        list_id="l1",
+        user_message_text="follow-up",
+        history=history,
+        summary=None,
+        source_ids=[],
+        source_map={},
+        ui_lang="en",
+        cfg=cfg,
+        registry=registry,
+    )
+
+    assert captured_messages, "stream_llm not called"
+    sent = captured_messages[0]
+    # Expect: original user → assistant{tool_use+text} → user{tool_result} → new user
+    roles = [m["role"] for m in sent]
+    assert roles == ["user", "assistant", "user", "user"]
+    # Verify the assistant message has the tool_use block (anthropic shape)
+    assert sent[1]["content"][0]["type"] == "tool_use"
+    assert sent[1]["content"][0]["id"] == "toolu_a"
+    # Verify the synthetic user message carries the tool_result
+    assert sent[2]["content"][0]["type"] == "tool_result"
+    assert sent[2]["content"][0]["tool_use_id"] == "toolu_a"
+
+
 @pytest.mark.asyncio
 async def test_chat_uses_resolved_response_language_in_system_prompt(monkeypatch, tmp_path):
     """When UI lang is zh and output_language is 'ui', the system prompt must say 'Respond in zh.'."""

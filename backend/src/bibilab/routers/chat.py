@@ -51,6 +51,8 @@ from bibilab.pipeline.chat_tools import (
     CitationRegistryEntry,
     build_tool_block_entry,
     execute_tool,
+    expand_message_for_provider,
+    reseed_citation_registry,
 )
 from bibilab.pipeline.citation_parser import flush_buffer, parse_delta
 
@@ -463,7 +465,12 @@ async def run_chat_turn(
             )
         system_message = "\n\n".join(system_parts)
 
-        messages_for_llm = history + [{"role": "user", "content": user_message_text}]
+        # Reseed citation registry and expand history tool blocks for replay.
+        reseed_citation_registry(citation_registry, history)
+        expanded_history: list[dict] = []
+        for h in history:
+            expanded_history.extend(expand_message_for_provider(h, protocol=cfg.ai.protocol))
+        messages_for_llm = expanded_history + [{"role": "user", "content": user_message_text}]
 
         async def execute_tool_bound(name: str, args: dict, **kwargs) -> dict:
             return await execute_tool(
@@ -619,7 +626,13 @@ async def chat_endpoint(
     # Snapshot history before inserting new messages — the producer adds the
     # current user message explicitly via user_message_text.
     history_rows = await get_recent_messages(conversation_id, limit=100)
-    history = [{"role": r["role"], "content": r["content"]} for r in history_rows]
+    history = []
+    for r in history_rows:
+        entry = {"role": r["role"], "content": r["content"]}
+        raw_blocks = r["tool_blocks"]
+        if raw_blocks:
+            entry["tool_blocks"] = json.loads(raw_blocks)
+        history.append(entry)
 
     source_rows = await get_sources_for_list(list_id)
     if request.source_ids:

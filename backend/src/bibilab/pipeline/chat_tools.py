@@ -404,3 +404,35 @@ def expand_message_for_provider(
             }
         )
     return out
+
+
+def reseed_citation_registry(
+    registry: dict[str, CitationRegistryEntry],
+    history: list[dict],
+) -> None:
+    """Reseed the citation registry from stored retrieve tool_blocks in history.
+
+    Walks each assistant message's tool_blocks. For each retrieve result,
+    re-creates CitationRegistryEntry instances keyed by source_id so prior
+    [N] markers in old assistant text continue to resolve to the same source.
+    """
+    for msg in history:
+        for block in msg.get("tool_blocks") or []:
+            if block.get("name") != "retrieve":
+                continue
+            chunks = block.get("result", {}).get("chunks", [])
+            for ch in chunks:
+                sid = ch.get("source_id")
+                if not sid:
+                    continue
+                entry = registry.get(sid)
+                if entry is None:
+                    entry = CitationRegistryEntry(
+                        index=ch["citation_index"],
+                        source_id=sid,
+                        title=ch.get("video_title", ""),
+                    )
+                    registry[sid] = entry
+                cid = ch.get("chunk_id")
+                if cid:
+                    entry.chunk_ids.add(cid)
