@@ -256,6 +256,36 @@ async def execute_retrieve(
     }
 
 
+def build_tool_block_entry(
+    tool_use_id: str,
+    name: str,
+    arguments: dict,
+    result: dict,
+    raw_chunks: list[dict] | None,
+) -> dict:
+    """Normalize an in-flight tool call+result into the persisted shape.
+
+    For retrieve, internal underscore-prefixed fields are stripped (they're
+    LLM-formatting metadata, not replay state); raw chunk snapshots are
+    attached so replay survives re-embedding. For other tools, the result
+    is stored as-is.
+    """
+    if name == "retrieve":
+        summary = {k: v for k, v in result.items() if not k.startswith("_")}
+        return {
+            "tool_use_id": tool_use_id,
+            "name": name,
+            "arguments": arguments,
+            "result": {"chunks": raw_chunks or [], "summary": summary},
+        }
+    return {
+        "tool_use_id": tool_use_id,
+        "name": name,
+        "arguments": arguments,
+        "result": result,
+    }
+
+
 async def execute_tool(
     tool_name: str,
     arguments: dict,

@@ -326,6 +326,66 @@ class TestRetrieveToolDescription:
         assert "content question" in desc
 
 
+class TestBuildToolBlockEntry:
+    def test_build_tool_block_entry_retrieve_strips_internal_underscore_fields(self):
+        from bibilab.pipeline.chat_tools import build_tool_block_entry
+
+        retrieve_result = {
+            "query": "test",
+            "search_mode": "factual",
+            "candidates_evaluated": 5,
+            "sources_with_hits": 2,
+            "sources_total": 3,
+            "source_coverage": [
+                {"source_id": "s1", "video_id": "v1", "title": "Video One"},
+            ],
+            "_chunks": "internal formatted string — must not be stored",
+            "_turn_indices": [1],
+        }
+        raw_chunks = [
+            {
+                "source_id": "s1",
+                "chunk_id": "v1_120_145",
+                "content": "verbatim text",
+                "video_title": "Video One",
+                "timestamp_start": 120.4,
+                "timestamp_end": 145.0,
+                "citation_index": 1,
+            },
+        ]
+
+        entry = build_tool_block_entry(
+            tool_use_id="toolu_1",
+            name="retrieve",
+            arguments={"query": "test", "search_mode": "factual"},
+            result=retrieve_result,
+            raw_chunks=raw_chunks,
+        )
+
+        assert entry["tool_use_id"] == "toolu_1"
+        assert entry["name"] == "retrieve"
+        assert entry["arguments"] == {"query": "test", "search_mode": "factual"}
+        assert "_chunks" not in entry["result"]
+        assert "_turn_indices" not in entry["result"]
+        assert entry["result"]["chunks"] == raw_chunks
+        assert entry["result"]["summary"]["sources_total"] == 3
+
+    def test_build_tool_block_entry_non_retrieve_preserves_result_as_is(self):
+        from bibilab.pipeline.chat_tools import build_tool_block_entry
+
+        entry = build_tool_block_entry(
+            tool_use_id="toolu_2",
+            name="query_list_metadata",
+            arguments={"query_type": "count"},
+            result={"count": 5},
+            raw_chunks=None,
+        )
+
+        assert entry["tool_use_id"] == "toolu_2"
+        assert entry["name"] == "query_list_metadata"
+        assert entry["result"] == {"count": 5}
+
+
 class TestResolveResponseLanguage:
     def test_resolve_response_language_explicit_override(self):
         from bibilab.config import AIConfig
