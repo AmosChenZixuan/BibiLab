@@ -393,12 +393,13 @@ async def test_query_list_metadata_tool_registered_for_chat(client):
 
 
 def test_grounding_prompt_routes_counts_to_metadata_tool():
-    from bibilab.routers.chat import GROUNDING_SYSTEM_PROMPT
+    from bibilab.routers.chat import build_grounding_prompt
 
+    prompt = build_grounding_prompt(response_language="en")
     # The old phrasing ("counts across sources" → retrieve) must be gone.
-    assert "counts across sources" not in GROUNDING_SYSTEM_PROMPT
+    assert "counts across sources" not in prompt
     # New routing must mention the metadata tool by name for the LLM.
-    assert "query_list_metadata" in GROUNDING_SYSTEM_PROMPT
+    assert "query_list_metadata" in prompt
 
 
 @pytest.mark.asyncio
@@ -733,12 +734,105 @@ async def test_chat_sse_hallucinated_index_emitted_as_text(client, caplog):
 
 
 def test_grounding_prompt_has_audit_prior_claims_rule():
-    from bibilab.routers.chat import GROUNDING_SYSTEM_PROMPT
+    from bibilab.routers.chat import build_grounding_prompt
 
-    assert "audit ALL items" in GROUNDING_SYSTEM_PROMPT, (
-        "GROUNDING_SYSTEM_PROMPT must instruct the LLM to audit all prior claims, "
+    prompt = build_grounding_prompt(response_language="en")
+    assert "audit ALL items" in prompt, (
+        "build_grounding_prompt must instruct the LLM to audit all prior claims, "
         "not just user-flagged ones, when correcting a previous answer."
     )
+
+
+# ---------------------------------------------------------------------------
+# Task 10: tool_blocks persistence
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_run_chat_turn_persists_tool_blocks(monkeypatch, tmp_path):
+    """When the producer runs a retrieve tool, tool_blocks must be persisted via update_message_content."""
+    from bibilab.config import AIConfig, BackendConfig, BibilabConfig
+    from bibilab.pipeline._shared import StreamEvent, ToolCall
+    from bibilab.routers import chat as chat_module
+
+    call_count = 0
+    retrieve_tc = ToolCall(id="c1", name="retrieve", arguments={"query": "x", "search_mode": "factual"})
+
+    async def fake_stream_llm(messages, cfg, tools=None, system=None, llm_max_tokens=2048):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            yield StreamEvent(type="tool_call", tool_call=retrieve_tc)
+        else:
+            yield StreamEvent(type="delta", content="Answer [1]")
+            yield StreamEvent(type="done")
+
+    async def fake_execute(tool_name, arguments, **kwargs):
+        return {
+            "query": "x",
+            "search_mode": "factual",
+            "candidates_evaluated": 1,
+            "sources_with_hits": 1,
+            "sources_total": 1,
+            "source_coverage": [{"source_id": "s1", "video_id": "v1", "title": "V1"}],
+            "_chunks": "fmt",
+            "_turn_indices": [1],
+            "_raw_chunks": [
+                {
+                    "source_id": "s1",
+                    "chunk_id": "v1_0_10",
+                    "content": "verbatim",
+                    "video_title": "V1",
+                    "timestamp_start": 0.0,
+                    "timestamp_end": 10.0,
+                    "citation_index": 1,
+                },
+            ],
+        }
+
+    monkeypatch.setattr(chat_module, "stream_llm", fake_stream_llm)
+    monkeypatch.setattr(chat_module, "execute_tool", fake_execute)
+
+    captured: dict = {}
+
+    async def capture_update(message_id, content, metadata, status, error=None, tool_blocks=None):
+        captured["tool_blocks"] = tool_blocks
+
+    async def noop(*a, **kw):
+        return None
+
+    monkeypatch.setattr(chat_module, "update_message_content", capture_update)
+    monkeypatch.setattr(chat_module, "set_active_stream", noop)
+
+    from bibilab.pipeline.chat_runs import ChatRunRegistry
+
+    registry = ChatRunRegistry()
+    msg_id = "msg-1"
+    registry.register(msg_id, task=None)
+
+    cfg = BibilabConfig(
+        ai=AIConfig(protocol="openai", model="x", api_key="k", base_url=""),
+        backend=BackendConfig(),
+    )
+
+    await chat_module.run_chat_turn(
+        message_id=msg_id,
+        conversation_id="c1",
+        list_id="l1",
+        user_message_text="q",
+        history=[],
+        summary=None,
+        source_ids=["s1"],
+        source_map={"v1": "s1"},
+        ui_lang="en",
+        cfg=cfg,
+        registry=registry,
+    )
+
+    assert captured.get("tool_blocks") is not None
+    assert len(captured["tool_blocks"]) == 1
+    assert captured["tool_blocks"][0]["name"] == "retrieve"
+    assert captured["tool_blocks"][0]["result"]["chunks"][0]["content"] == "verbatim"
 
 
 @pytest.mark.asyncio
@@ -903,3 +997,247 @@ async def test_chat_endpoint_classify_error_reaches_sse_terminal_payload(client)
     assert len(error_events) >= 1, "terminal error event must be present"
     terminal = error_events[-1]
     assert terminal["message"] == "llm_rate_limit_error"
+
+
+# ---------------------------------------------------------------------------
+# Task 5: response_language threading
+# ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# Task 12: tool_blocks history expansion
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_run_chat_turn_replays_tool_blocks_on_turn_2(monkeypatch):
+    """Turn 2 must include the turn-1 retrieve's tool_use + tool_result blocks in the LLM messages."""
+    from bibilab.config import AIConfig, BackendConfig, BibilabConfig
+    from bibilab.pipeline._shared import StreamEvent
+    from bibilab.routers import chat as chat_module
+
+    captured_messages: list[list[dict]] = []
+
+    async def fake_stream_llm(messages, cfg, tools=None, system=None, llm_max_tokens=2048):
+        captured_messages.append(list(messages))
+        yield StreamEvent(type="delta", content="ok")
+        yield StreamEvent(type="done")
+
+    monkeypatch.setattr(chat_module, "stream_llm", fake_stream_llm)
+
+    async def noop(*a, **kw):
+        return None
+
+    monkeypatch.setattr(chat_module, "update_message_content", noop)
+    monkeypatch.setattr(chat_module, "set_active_stream", noop)
+
+    from bibilab.pipeline.chat_runs import ChatRunRegistry
+
+    registry = ChatRunRegistry()
+    msg_id = "msg-turn-2"
+    registry.register(msg_id, task=None)
+
+    history = [
+        {"role": "user", "content": "first question"},
+        {
+            "role": "assistant",
+            "content": "first answer [1]",
+            "tool_blocks": [
+                {
+                    "tool_use_id": "toolu_a",
+                    "name": "retrieve",
+                    "arguments": {"query": "x", "search_mode": "factual"},
+                    "result": {"chunks": [{"content": "verbatim"}], "summary": {"sources_total": 1}},
+                }
+            ],
+        },
+    ]
+
+    cfg = BibilabConfig(
+        ai=AIConfig(protocol="anthropic", model="x", api_key="k", base_url=""),
+        backend=BackendConfig(),
+    )
+
+    await chat_module.run_chat_turn(
+        message_id=msg_id,
+        conversation_id="c1",
+        list_id="l1",
+        user_message_text="follow-up",
+        history=history,
+        summary=None,
+        source_ids=[],
+        source_map={},
+        ui_lang="en",
+        cfg=cfg,
+        registry=registry,
+    )
+
+    assert captured_messages, "stream_llm not called"
+    sent = captured_messages[0]
+    # Expect: original user → assistant{tool_use+text} → user{tool_result} → new user
+    roles = [m["role"] for m in sent]
+    assert roles == ["user", "assistant", "user", "user"]
+    # Verify the assistant message has the tool_use block (anthropic shape)
+    assert sent[1]["content"][0]["type"] == "tool_use"
+    assert sent[1]["content"][0]["id"] == "toolu_a"
+    # Verify the synthetic user message carries the tool_result
+    assert sent[2]["content"][0]["type"] == "tool_result"
+    assert sent[2]["content"][0]["tool_use_id"] == "toolu_a"
+
+
+@pytest.mark.asyncio
+async def test_chat_uses_resolved_response_language_in_system_prompt(monkeypatch, tmp_path):
+    """When UI lang is zh and output_language is 'ui', the system prompt must say 'Respond in zh.'."""
+    from bibilab.config import AIConfig, BackendConfig, BibilabConfig
+    from bibilab.routers import chat as chat_module
+
+    captured_system: list[str] = []
+
+    async def fake_stream_llm(messages, cfg, tools=None, system=None, llm_max_tokens=2048):
+        captured_system.append(system or "")
+        from bibilab.pipeline._shared import StreamEvent
+
+        yield StreamEvent(type="delta", content="ok")
+        yield StreamEvent(type="done")
+
+    async def noop(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(chat_module, "stream_llm", fake_stream_llm)
+    monkeypatch.setattr(chat_module, "update_message_content", noop)
+    monkeypatch.setattr(chat_module, "set_active_stream", noop)
+
+    # Build a minimal cfg with output_language="ui" so ui_lang wins
+    cfg = BibilabConfig(
+        ai=AIConfig(protocol="openai", model="x", api_key="k", base_url="", output_language="ui"),
+        backend=BackendConfig(),
+    )
+
+    # Drive run_chat_turn directly with ui_lang="zh"
+    from bibilab.pipeline.chat_runs import ChatRunRegistry
+
+    registry = ChatRunRegistry()
+    msg_id = "test-msg-lang-1"
+    registry.register(msg_id, task=None)
+
+    await chat_module.run_chat_turn(
+        message_id=msg_id,
+        conversation_id="conv-1",
+        list_id="list-1",
+        user_message_text="hi",
+        history=[],
+        summary=None,
+        source_ids=[],
+        source_map={},
+        ui_lang="zh",
+        cfg=cfg,
+        registry=registry,
+    )
+
+    assert captured_system, "stream_llm was never called"
+    assert captured_system[0].startswith("Respond in zh."), (
+        f"Expected system prompt to start with 'Respond in zh.', got: {captured_system[0][:100]}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_run_chat_turn_reseeds_citation_registry_from_history_tool_blocks(monkeypatch):
+    """When history contains retrieve tool_blocks, reseed populates citation_registry before stream_with_tools."""
+    from bibilab.config import AIConfig, BackendConfig, BibilabConfig
+    from bibilab.pipeline._shared import StreamEvent
+    from bibilab.routers import chat as chat_module
+
+    captured_registry: list[dict] = []
+
+    async def fake_stream_with_tools(
+        messages,
+        cfg,
+        tools,
+        execute_tool_fn,
+        system=None,
+        llm_max_tokens=2048,
+        registry=None,
+        source_map=None,
+        tool_block_sink=None,
+    ):
+        # Capture a copy of registry after reseed has populated it.
+        captured_registry.append(dict(registry) if registry else {})
+        yield StreamEvent(type="delta", content="ok")
+        yield StreamEvent(type="done")
+
+    monkeypatch.setattr(chat_module, "stream_with_tools", fake_stream_with_tools)
+
+    async def noop(*a, **kw):
+        return None
+
+    monkeypatch.setattr(chat_module, "update_message_content", noop)
+    monkeypatch.setattr(chat_module, "set_active_stream", noop)
+
+    from bibilab.pipeline.chat_runs import ChatRunRegistry
+
+    registry = ChatRunRegistry()
+    msg_id = "msg-reseed-1"
+    registry.register(msg_id, task=None)
+
+    history = [
+        {"role": "user", "content": "first question"},
+        {
+            "role": "assistant",
+            "content": "first answer [1]",
+            "tool_blocks": [
+                {
+                    "tool_use_id": "toolu_a",
+                    "name": "retrieve",
+                    "arguments": {"query": "x", "search_mode": "factual"},
+                    "result": {
+                        "chunks": [
+                            {
+                                "source_id": "s1",
+                                "citation_index": 1,
+                                "chunk_id": "v1_0_10",
+                                "video_title": "Video One",
+                                "content": "verbatim",
+                            },
+                            {
+                                "source_id": "s1",
+                                "citation_index": 1,
+                                "chunk_id": "v1_30_40",
+                                "video_title": "Video One",
+                                "content": "more text",
+                            },
+                        ],
+                        "summary": {"sources_total": 1},
+                    },
+                }
+            ],
+        },
+    ]
+
+    cfg = BibilabConfig(
+        ai=AIConfig(protocol="openai", model="x", api_key="k", base_url=""),
+        backend=BackendConfig(),
+    )
+
+    await chat_module.run_chat_turn(
+        message_id=msg_id,
+        conversation_id="c1",
+        list_id="l1",
+        user_message_text="follow-up",
+        history=history,
+        summary=None,
+        source_ids=["s1"],
+        source_map={"v1": "s1"},
+        ui_lang="en",
+        cfg=cfg,
+        registry=registry,
+    )
+
+    assert captured_registry, "stream_with_tools was not called"
+    reg = captured_registry[0]
+    assert "s1" in reg, f"Expected registry to contain 's1', got keys: {list(reg.keys())}"
+    entry = reg["s1"]
+    assert entry.index == 1
+    assert entry.source_id == "s1"
+    assert entry.title == "Video One"
+    assert "v1_0_10" in entry.chunk_ids
+    assert "v1_30_40" in entry.chunk_ids

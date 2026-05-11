@@ -49,13 +49,26 @@ from bibilab.pipeline.chat_tools import (
     QUERY_LIST_METADATA_TOOL,
     RETRIEVE_TOOL,
     CitationRegistryEntry,
+    build_tool_block_entry,
     execute_tool,
+    expand_message_for_provider,
+    reseed_citation_registry,
 )
 from bibilab.pipeline.citation_parser import flush_buffer, parse_delta
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+def resolve_response_language(cfg: AIConfig, ui_lang: str) -> str:
+    """Return the language string to use in chat responses.
+
+    AIConfig.output_language wins when explicitly set; "ui" means follow
+    the UI's X-UI-Lang header (passed in as ui_lang).
+    """
+    return ui_lang if cfg.output_language == "ui" else cfg.output_language
+
 
 # SSE event types — used both as stream-internal event discriminators (stream_llm yield)
 # and as the 'type' field in the SSE 'data:' JSON payload sent to the client.
@@ -157,31 +170,64 @@ def _client_tool_result(result: dict) -> dict:
     return {k: v for k, v in result.items() if not k.startswith("_")}
 
 
-GROUNDING_SYSTEM_PROMPT = (
-    "You are a helpful assistant answering questions strictly based on the provided source material. "
-    "CRITICAL RULES:\n"
-    "0. If the user's question requires looking up video content (facts, comparisons, "
-    "summaries), you MUST call the retrieve tool BEFORE answering. "
-    "For questions about counts, durations, or languages of the sources themselves, "
-    "call query_list_metadata instead. "
-    "Do not answer from memory — always call the appropriate tool first for content "
-    "or metadata questions. This does NOT apply when the user asks you to generate a "
-    "report/artifact — the generate_report tool handles its own retrieval.\n"
-    "1. ONLY use information from the source material provided below. Never use your own knowledge.\n"
-    '2. If the excerpts do not contain the answer, say "The provided sources do not cover this topic."\n'
-    "3. When the user identifies errors in your previous answer, audit ALL items in your prior response, "
-    "not only the ones explicitly flagged — the user may have pointed out a sample. Re-verify each prior "
-    "claim against the retrieved sources before re-asserting it.\n"
-    "4. Quote or closely paraphrase the source material — do not reinterpret, editorialize, or add external context.\n"
-    "5. Cite using exactly [N], where N is the source number from the retrieve result. "
-    "Do not cite sources you did not retrieve. "
-    "When citing content from a long source, mention the relevant timestamp inline in your prose "
-    "(e.g. 'around the 2:00 mark [1]...' or 'between 1:24:30 and 1:25:10 [1]...'). "
-    "Use natural phrasing, not a structured format. Skip timestamps for short sources or thematic citations.\n"
-    "6. Use the generate_report tool when the user asks for summaries, study guides, blog posts, or custom reports.\n"
-    "7. Do not ask follow-up questions, suggest next steps, or offer unsolicited advice.\n"
-    "8. Be concise and direct. Answer in 1-3 sentences when possible."
-)
+def build_grounding_prompt(response_language: str) -> str:
+    """Build the system prompt for chat grounding.
+
+    response_language is interpolated into the language directive and the
+    fallback sentence so refusals match the user's UI/config language.
+    """
+    return (
+        f"Respond in {response_language}.\n"
+        "CRITICAL CONTEXT: The user is asking about content from their personal video library. "
+        "EVERY question — including 'what is X' or 'explain X' — is a request for what their "
+        "video sources say about X, not for a real-world academic definition. If the excerpts "
+        "mention the topic, describe what they say directly. Do not distinguish between "
+        "'fictional' and 'real' answers — the sources ARE the answer.\n"
+        "You are a helpful assistant answering questions strictly based on the provided source material. "
+        "Treat the excerpts as your sole and sufficient knowledge base. "
+        "Never suggest the user consult external sources.\n"
+        "CRITICAL RULES:\n"
+        "0. If the user's question requires looking up video content (facts, comparisons, "
+        "summaries), you MUST call the retrieve tool BEFORE answering. "
+        "For questions about counts, durations, or languages of the sources themselves, "
+        "call query_list_metadata instead. "
+        "Do not answer from memory — always call the appropriate tool first for content "
+        "or metadata questions. This does NOT apply when the user asks you to generate a "
+        "report/artifact — the generate_report tool handles its own retrieval. "
+        "Each new user question requires a fresh `retrieve` call unless the prior tool_result "
+        "blocks from this conversation already answer it. Do not infer answers from your own "
+        "prior text — they may contain paraphrases or omissions. When in doubt, retrieve.\n"
+        "1. ONLY use information from the source material provided below. Never use your own "
+        "knowledge. If the excerpts mention the topic the user asked about — in any genre, "
+        "fiction or otherwise — those excerpts ARE your answer. Describe them directly.\n"
+        f"2. If the excerpts do not mention the topic at all, say so in {response_language}. "
+        "But if the excerpts mention the topic — even briefly or in a fictional context — "
+        "that counts as containing the answer. Describe it. "
+        "Phrase refusals naturally; do not invent details.\n"
+        "2a. When naming a proper noun (titles, character names, technical terms, concepts), "
+        "use the exact spelling from the retrieved excerpts. Do not paraphrase or translate proper nouns.\n"
+        "2b. When the user asks about a concept from fiction or narrative sources, start your "
+        "answer with what the excerpts say — e.g. 'According to [source title], [concept] is...' "
+        "Describe the concept as the source presents it. Only add real-world comparisons if the "
+        "user explicitly asks for them.\n"
+        "3. When the user identifies errors in your previous answer, audit ALL items in your prior response, "
+        "not only the ones explicitly flagged — the user may have pointed out a sample. Re-verify each prior "
+        "claim against the retrieved sources before re-asserting it.\n"
+        "4. Quote or closely paraphrase the source material — do not reinterpret, "
+        "editorialize, or add external context.\n"
+        "5. Cite using exactly [N], where N is the source number from the retrieve result. "
+        "Do not cite sources you did not retrieve. "
+        "A citation [N] must only appear next to information that came from that specific source's "
+        "excerpts — never guess or mix up which source a fact belongs to. "
+        "When citing content from a long source, mention the relevant timestamp inline in your prose "
+        "(e.g. 'around the 2:00 mark [1]...' or 'between 1:24:30 and 1:25:10 [1]...'). "
+        "Use natural phrasing, not a structured format. "
+        "Skip timestamps for short sources or thematic citations.\n"
+        "6. Use the generate_report tool when the user asks for summaries, study guides, "
+        "blog posts, or custom reports.\n"
+        "7. Do not ask follow-up questions, suggest next steps, or offer unsolicited advice.\n"
+        "8. Be concise and direct. Answer in 1-3 sentences when possible."
+    )
 
 
 async def stream_with_tools(
@@ -193,6 +239,7 @@ async def stream_with_tools(
     llm_max_tokens: int = CHAT_MAX_TOKENS,
     registry: dict[str, CitationRegistryEntry] | None = None,
     source_map: dict[str, str] | None = None,
+    tool_block_sink: list[dict] | None = None,
 ) -> AsyncGenerator[StreamEvent, None]:
     if registry is None:
         registry = {}
@@ -295,6 +342,19 @@ async def stream_with_tools(
                 return
 
             results[tc.id] = result
+            if tool_block_sink is not None:
+                try:
+                    tool_block_sink.append(
+                        build_tool_block_entry(
+                            tool_use_id=tc.id,
+                            name=tc.name,
+                            arguments=tc.arguments,
+                            result=result,
+                            raw_chunks=result.get("_raw_chunks"),
+                        )
+                    )
+                except Exception:
+                    logger.exception("tool_block_sink_append_failed tool=%s", tc.name)
             yield StreamEvent(
                 type=SSE_EVENT_TOOL_RESULT,
                 content=json.dumps({"id": tc.id, "name": tc.name, "result": _client_tool_result(result)}),
@@ -414,7 +474,8 @@ async def run_chat_turn(
     error_reason: str | None = None
 
     try:
-        system_parts = [GROUNDING_SYSTEM_PROMPT]
+        response_language = resolve_response_language(cfg.ai, ui_lang)
+        system_parts = [build_grounding_prompt(response_language=response_language)]
         if summary:
             system_parts.append(
                 "Historical conversation summary (for context only — the current "
@@ -422,7 +483,12 @@ async def run_chat_turn(
             )
         system_message = "\n\n".join(system_parts)
 
-        messages_for_llm = history + [{"role": "user", "content": user_message_text}]
+        # Reseed citation registry and expand history tool blocks for replay.
+        reseed_citation_registry(citation_registry, history)
+        expanded_history: list[dict] = []
+        for h in history:
+            expanded_history.extend(expand_message_for_provider(h, protocol=cfg.ai.protocol))
+        messages_for_llm = expanded_history + [{"role": "user", "content": user_message_text}]
 
         async def execute_tool_bound(name: str, args: dict, **kwargs) -> dict:
             return await execute_tool(
@@ -437,6 +503,8 @@ async def run_chat_turn(
 
         tools = [RETRIEVE_TOOL, QUERY_LIST_METADATA_TOOL, GENERATE_REPORT_TOOL]
 
+        tool_blocks: list[dict] = []
+
         async for event in stream_with_tools(
             messages=messages_for_llm,
             cfg=cfg.ai,
@@ -446,6 +514,7 @@ async def run_chat_turn(
             llm_max_tokens=CHAT_MAX_TOKENS,
             registry=citation_registry,
             source_map=source_map,
+            tool_block_sink=tool_blocks,
         ):
             payload = _serialize_event_for_buffer(event)
             if payload is not None:
@@ -526,10 +595,13 @@ async def run_chat_turn(
                 metadata=meta if meta else None,
                 status=final_status,
                 error=error_text,
+                tool_blocks=tool_blocks if tool_blocks else None,
             )
         except Exception:
             logger.exception("producer finalize failed message_id=%s", message_id)
             final_status = "failed"
+            if error_reason is None:
+                error_reason = "persistence_error"
 
         try:
             await set_active_stream(conversation_id, None)
@@ -574,7 +646,16 @@ async def chat_endpoint(
     # Snapshot history before inserting new messages — the producer adds the
     # current user message explicitly via user_message_text.
     history_rows = await get_recent_messages(conversation_id, limit=100)
-    history = [{"role": r["role"], "content": r["content"]} for r in history_rows]
+    history = []
+    for r in history_rows:
+        entry = {"role": r["role"], "content": r["content"]}
+        raw_blocks = r["tool_blocks"]
+        if raw_blocks:
+            try:
+                entry["tool_blocks"] = json.loads(raw_blocks)
+            except json.JSONDecodeError:
+                logger.exception("malformed tool_blocks JSON in message_id=%s", r["id"])
+        history.append(entry)
 
     source_rows = await get_sources_for_list(list_id)
     if request.source_ids:

@@ -446,6 +446,73 @@ async def test_forced_synthesis_forwards_error_events():
     assert "forced synthesis failed" in error_events[0].content
 
 
+@pytest.mark.asyncio
+async def test_stream_with_tools_populates_tool_block_sink():
+    """tool_block_sink collects normalized entries for each tool call executed."""
+    from bibilab.config import AIConfig
+    from bibilab.pipeline.chat_tools import RETRIEVE_TOOL
+    from bibilab.routers.chat import stream_with_tools
+
+    cfg = AIConfig(protocol="openai", model="gpt-4o", api_key="test", base_url="")
+
+    retrieve_tc = ToolCall(id="c1", name="retrieve", arguments={"query": "test", "search_mode": "factual"})
+    retrieve_result = {
+        "query": "test",
+        "search_mode": "factual",
+        "candidates_evaluated": 5,
+        "sources_with_hits": 1,
+        "sources_total": 1,
+        "source_coverage": [{"source_id": "s1", "video_id": "v1", "title": "V1"}],
+        "_chunks": "internal",
+        "_turn_indices": [1],
+        "_raw_chunks": [
+            {
+                "source_id": "s1",
+                "chunk_id": "v1_120_145",
+                "content": "verbatim",
+                "video_title": "V1",
+                "timestamp_start": 120.0,
+                "timestamp_end": 145.0,
+                "citation_index": 1,
+            },
+        ],
+    }
+
+    call_count = 0
+
+    async def fake_stream(messages, cfg, tools=None, system=None, llm_max_tokens=2048):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            yield StreamEvent(type="tool_call", tool_call=retrieve_tc)
+        else:
+            yield StreamEvent(type="delta", content="Answer")
+            yield StreamEvent(type="done")
+
+    async def fake_execute(tool_name, arguments, **kwargs):
+        return retrieve_result
+
+    sink: list = []
+    with patch("bibilab.routers.chat.stream_llm", side_effect=fake_stream):
+        async for _ in stream_with_tools(
+            messages=[{"role": "user", "content": "q"}],
+            cfg=cfg,
+            tools=[RETRIEVE_TOOL],
+            execute_tool_fn=fake_execute,
+            tool_block_sink=sink,
+        ):
+            pass
+
+    assert len(sink) == 1
+    entry = sink[0]
+    assert entry["tool_use_id"] == "c1"
+    assert entry["name"] == "retrieve"
+    assert entry["arguments"] == {"query": "test", "search_mode": "factual"}
+    assert "_chunks" not in entry["result"]
+    assert "_raw_chunks" not in entry["result"]
+    assert entry["result"]["chunks"][0]["content"] == "verbatim"
+
+
 class TestClassifyError:
     _req = httpx.Request("GET", "http://test")
     _resp = httpx.Response(500, request=_req)
@@ -543,3 +610,33 @@ class TestClassifyError:
             classify_error(anthropic.APIStatusError(message="status 500", response=self._resp, body=None))
             == "llm_api_error"
         )
+
+
+@pytest.mark.asyncio
+async def test_stream_with_tools_default_sink_none_does_not_crash():
+    """Calling stream_with_tools without tool_block_sink must not crash (defaults to None)."""
+    from bibilab.config import AIConfig
+    from bibilab.routers.chat import stream_with_tools
+
+    cfg = AIConfig(protocol="openai", model="gpt-4o", api_key="test", base_url="")
+
+    async def fake_stream(messages, cfg, tools=None, system=None, llm_max_tokens=2048):
+        yield StreamEvent(type="delta", content="Hello")
+        yield StreamEvent(type="done")
+
+    async def noop(*args, **kwargs):
+        return {}
+
+    with patch("bibilab.routers.chat.stream_llm", side_effect=fake_stream):
+        events = []
+        async for event in stream_with_tools(
+            messages=[{"role": "user", "content": "hi"}],
+            cfg=cfg,
+            tools=[],
+            execute_tool_fn=noop,
+        ):
+            events.append(event)
+
+    assert len(events) == 1
+    assert events[0].type == "delta"
+    assert events[0].content == "Hello"
