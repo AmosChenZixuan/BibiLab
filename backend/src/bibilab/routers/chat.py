@@ -49,6 +49,7 @@ from bibilab.pipeline.chat_tools import (
     QUERY_LIST_METADATA_TOOL,
     RETRIEVE_TOOL,
     CitationRegistryEntry,
+    build_tool_block_entry,
     execute_tool,
 )
 from bibilab.pipeline.citation_parser import flush_buffer, parse_delta
@@ -221,6 +222,7 @@ async def stream_with_tools(
     llm_max_tokens: int = CHAT_MAX_TOKENS,
     registry: dict[str, CitationRegistryEntry] | None = None,
     source_map: dict[str, str] | None = None,
+    tool_block_sink: list[dict] | None = None,
 ) -> AsyncGenerator[StreamEvent, None]:
     if registry is None:
         registry = {}
@@ -323,6 +325,16 @@ async def stream_with_tools(
                 return
 
             results[tc.id] = result
+            if tool_block_sink is not None:
+                tool_block_sink.append(
+                    build_tool_block_entry(
+                        tool_use_id=tc.id,
+                        name=tc.name,
+                        arguments=tc.arguments,
+                        result=result,
+                        raw_chunks=result.get("_raw_chunks"),
+                    )
+                )
             yield StreamEvent(
                 type=SSE_EVENT_TOOL_RESULT,
                 content=json.dumps({"id": tc.id, "name": tc.name, "result": _client_tool_result(result)}),
