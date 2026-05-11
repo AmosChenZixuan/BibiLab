@@ -1,5 +1,6 @@
 """Tool definitions and execution for chat."""
 
+import json
 import logging
 import uuid
 from dataclasses import dataclass, field
@@ -340,3 +341,66 @@ async def execute_tool(
             query_type=arguments["query_type"],
         )
     raise ValueError(f"Unknown tool: {tool_name}")
+
+
+def expand_message_for_provider(
+    msg: dict,
+    protocol: str,  # "anthropic" or "openai"
+) -> list[dict]:
+    """Expand a stored message into provider-shape messages.
+
+    For text-only messages (no tool_blocks, or empty), returns [msg] without
+    the tool_blocks key. For assistant messages with tool_blocks, returns the
+    synthetic shape the LLM expects so it sees prior tool_use/tool_result
+    blocks on subsequent turns.
+    """
+    blocks = msg.get("tool_blocks")
+    if not blocks:
+        # Strip tool_blocks if present-but-empty; producer expects clean shape.
+        clean = {k: v for k, v in msg.items() if k != "tool_blocks"}
+        return [clean]
+
+    text = msg.get("content", "")
+
+    if protocol == "anthropic":
+        assistant_content: list[dict] = [
+            {"type": "tool_use", "id": b["tool_use_id"], "name": b["name"], "input": b["arguments"]} for b in blocks
+        ]
+        if text:
+            assistant_content.append({"type": "text", "text": text})
+
+        tool_result_content = [
+            {
+                "type": "tool_result",
+                "tool_use_id": b["tool_use_id"],
+                "content": json.dumps(b["result"]),
+            }
+            for b in blocks
+        ]
+
+        return [
+            {"role": "assistant", "content": assistant_content},
+            {"role": "user", "content": tool_result_content},
+        ]
+
+    # openai
+    openai_tool_calls = [
+        {
+            "id": b["tool_use_id"],
+            "type": "function",
+            "function": {"name": b["name"], "arguments": json.dumps(b["arguments"])},
+        }
+        for b in blocks
+    ]
+    out: list[dict] = [
+        {"role": "assistant", "content": text or None, "tool_calls": openai_tool_calls},
+    ]
+    for b in blocks:
+        out.append(
+            {
+                "role": "tool",
+                "tool_call_id": b["tool_use_id"],
+                "content": json.dumps(b["result"]),
+            }
+        )
+    return out

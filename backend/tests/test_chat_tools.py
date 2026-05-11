@@ -441,6 +441,95 @@ class TestBuildToolBlockEntry:
         assert entry["result"] == {"count": 5}
 
 
+def test_expand_message_for_provider_text_only_passthrough_anthropic():
+    from bibilab.pipeline.chat_tools import expand_message_for_provider
+
+    msg = {"role": "assistant", "content": "Hi there"}
+    out = expand_message_for_provider(msg, protocol="anthropic")
+    assert out == [{"role": "assistant", "content": "Hi there"}]
+
+
+def test_expand_message_for_provider_text_only_passthrough_openai():
+    from bibilab.pipeline.chat_tools import expand_message_for_provider
+
+    msg = {"role": "user", "content": "What's up"}
+    out = expand_message_for_provider(msg, protocol="openai")
+    assert out == [{"role": "user", "content": "What's up"}]
+
+
+def test_expand_message_for_provider_empty_tool_blocks_passthrough():
+    from bibilab.pipeline.chat_tools import expand_message_for_provider
+
+    msg = {"role": "assistant", "content": "Hi", "tool_blocks": []}
+    out = expand_message_for_provider(msg, protocol="anthropic")
+    assert out == [{"role": "assistant", "content": "Hi"}]
+
+
+def test_expand_message_for_provider_anthropic_shape():
+    from bibilab.pipeline.chat_tools import expand_message_for_provider
+
+    msg = {
+        "role": "assistant",
+        "content": "Answer [1]",
+        "tool_blocks": [
+            {
+                "tool_use_id": "toolu_1",
+                "name": "retrieve",
+                "arguments": {"query": "q", "search_mode": "factual"},
+                "result": {"chunks": [{"content": "x"}], "summary": {"sources_total": 1}},
+            }
+        ],
+    }
+    out = expand_message_for_provider(msg, protocol="anthropic")
+
+    assert len(out) == 2
+    assert out[0]["role"] == "assistant"
+    assert out[0]["content"][0] == {
+        "type": "tool_use",
+        "id": "toolu_1",
+        "name": "retrieve",
+        "input": {"query": "q", "search_mode": "factual"},
+    }
+    assert out[0]["content"][-1] == {"type": "text", "text": "Answer [1]"}
+    assert out[1]["role"] == "user"
+    assert out[1]["content"][0]["type"] == "tool_result"
+    assert out[1]["content"][0]["tool_use_id"] == "toolu_1"
+
+
+def test_expand_message_for_provider_openai_shape():
+    from bibilab.pipeline.chat_tools import expand_message_for_provider
+
+    msg = {
+        "role": "assistant",
+        "content": "Answer [1]",
+        "tool_blocks": [
+            {
+                "tool_use_id": "call_1",
+                "name": "retrieve",
+                "arguments": {"query": "q", "search_mode": "factual"},
+                "result": {"chunks": [{"content": "x"}], "summary": {"sources_total": 1}},
+            }
+        ],
+    }
+    out = expand_message_for_provider(msg, protocol="openai")
+
+    # OpenAI shape: assistant{tool_calls, content}, then one tool message per call.
+    assert len(out) == 2
+    assert out[0]["role"] == "assistant"
+    assert out[0]["tool_calls"][0]["id"] == "call_1"
+    assert out[0]["tool_calls"][0]["function"]["name"] == "retrieve"
+    # OpenAI requires arguments to be a JSON string, not a dict.
+    import json
+
+    assert json.loads(out[0]["tool_calls"][0]["function"]["arguments"]) == {
+        "query": "q",
+        "search_mode": "factual",
+    }
+    assert out[0]["content"] == "Answer [1]"
+    assert out[1]["role"] == "tool"
+    assert out[1]["tool_call_id"] == "call_1"
+
+
 class TestResolveResponseLanguage:
     def test_resolve_response_language_explicit_override(self):
         from bibilab.config import AIConfig
