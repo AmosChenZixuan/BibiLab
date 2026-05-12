@@ -444,6 +444,8 @@ async def apply_source_filter(
         )
         rows = await cursor.fetchall()
 
+    # Match in Python (not SQL LIKE) to avoid escaping %, _, [ wildcard characters.
+    # title_contains is user-supplied text intended as a literal substring, not a pattern.
     matched = [row["id"] for row in rows if title_contains.lower() in row["title"].lower()]
     return matched
 
