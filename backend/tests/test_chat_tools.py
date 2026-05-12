@@ -5,6 +5,44 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 
+class TestRetrieveToolSchema:
+    def test_retrieve_tool_no_search_mode(self):
+        from bibilab.pipeline.chat_tools import RETRIEVE_TOOL
+
+        props = RETRIEVE_TOOL.parameters["properties"]
+        assert "search_mode" not in props
+
+    def test_retrieve_tool_has_source_filter(self):
+        from bibilab.pipeline.chat_tools import RETRIEVE_TOOL
+
+        props = RETRIEVE_TOOL.parameters["properties"]
+        assert "source_filter" in props
+        sf = props["source_filter"]
+        assert sf["type"] == "object"
+        assert "title_contains" in sf["properties"]
+        assert sf["properties"]["title_contains"]["type"] == "string"
+
+    def test_retrieve_tool_has_expected_hits(self):
+        from bibilab.pipeline.chat_tools import RETRIEVE_TOOL
+
+        props = RETRIEVE_TOOL.parameters["properties"]
+        assert "expected_hits" in props
+        assert props["expected_hits"]["enum"] == ["one", "few", "many"]
+
+    def test_retrieve_tool_required_is_query_only(self):
+        from bibilab.pipeline.chat_tools import RETRIEVE_TOOL
+
+        required = RETRIEVE_TOOL.parameters["required"]
+        assert required == ["query"]
+
+    def test_retrieve_tool_description_guides_source_filter(self):
+        from bibilab.pipeline.chat_tools import RETRIEVE_TOOL
+
+        desc = RETRIEVE_TOOL.description
+        assert "source_filter" in desc
+        assert "title_contains" in desc or "episode" in desc.lower()
+
+
 class TestGenerateReportToolDefinition:
     def test_generate_report_tool_schema(self):
         from bibilab.pipeline.chat_tools import GENERATE_REPORT_TOOL

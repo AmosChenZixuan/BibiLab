@@ -86,12 +86,14 @@ GENERATE_REPORT_TOOL = ToolDefinition(
 RETRIEVE_TOOL = ToolDefinition(
     name="retrieve",
     description=(
-        "Retrieve information from video transcripts. Use when the user asks about "
-        "video content, facts, comparisons, summaries, or anything requiring lookup "
-        "across sources. Do NOT use for pure greetings (hi, thanks) or "
-        "conversation-control messages (e.g. 'stop', 'never mind'). Any question "
-        "about content — even short or vague ones like 'what is X' — is a content "
-        "question; retrieve."
+        "Retrieve information from video transcripts. "
+        "When the user names a specific source by title, episode number, "
+        "or other identifier (e.g. '第八集', '第3道菜', 'the React video'), "
+        "include source_filter so retrieval is scoped to that subset. "
+        "Use expected_hits='one' for single-fact questions ('how many eggs'), "
+        "'few' (default) for narrow content questions, "
+        "'many' for survey questions or comprehensive summaries. "
+        "Do NOT use for pure greetings (hi, thanks) or conversation-control messages."
     ),
     parameters={
         "type": "object",
@@ -100,17 +102,28 @@ RETRIEVE_TOOL = ToolDefinition(
                 "type": "string",
                 "description": "Search query — key terms or question in the user's language",
             },
-            "search_mode": {
+            "source_filter": {
+                "type": "object",
+                "description": "Optional. Narrows retrieval to sources whose title matches.",
+                "properties": {
+                    "title_contains": {
+                        "type": "string",
+                        "description": "Case-insensitive substring match against sources.title",
+                    },
+                },
+            },
+            "expected_hits": {
                 "type": "string",
-                "enum": ["factual", "breadth", "analytical"],
+                "enum": ["one", "few", "many"],
                 "description": (
-                    "factual = specific fact from 1-2 sources; "
-                    "breadth = survey/list across many sources; "
-                    "analytical = comparison/analysis needing deep per-source coverage"
+                    "Expected retrieval breadth. "
+                    "one = single-fact, depth_per_source=1, top_k=2; "
+                    "few = default, depth_per_source=2, top_k=8; "
+                    "many = survey/summary, depth_per_source=5, top_k=24"
                 ),
             },
         },
-        "required": ["query", "search_mode"],
+        "required": ["query"],
     },
 )
 
