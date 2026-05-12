@@ -903,16 +903,17 @@ def test_diverse_top_k_depth_two_allows_two_per_source():
     assert all(v <= 2 for v in counts.values())
 
 
-def test_diverse_top_k_single_source_relaxes_cap():
+def test_diverse_top_k_strict_cap_single_source():
     from bibilab.pipeline.embed import _diverse_top_k
 
     chunks = [_make_chunk(content=f"c{i}", video_id="v1") for i in range(10)]
+    # depth=2 strictly caps single-source returns to 2, regardless of k
     result = _diverse_top_k(chunks, depth=2, k=5)
-    assert len(result) == 5
+    assert len(result) == 2
     assert all(c.video_id == "v1" for c in result)
 
 
-def test_diverse_top_k_depth_fills_then_leftovers():
+def test_diverse_top_k_short_return_when_cap_blocks_fill():
     from bibilab.pipeline.embed import _diverse_top_k
 
     chunks = [
@@ -921,8 +922,7 @@ def test_diverse_top_k_depth_fills_then_leftovers():
         _make_chunk(content="b1", video_id="v2"),
         _make_chunk(content="b2", video_id="v2"),
     ]
-    # depth=1, k=3: picks a1 (v1) then b1 (v2), k not filled → leftovers fill
+    # depth=1, k=3: picks a1, b1 → cap blocks remaining slot, no leftover fill
     result = _diverse_top_k(chunks, depth=1, k=3)
-    assert len(result) == 3
-    # First two should be the diversity picks
-    assert {c.video_id for c in result[:2]} == {"v1", "v2"}
+    assert len(result) == 2
+    assert {c.video_id for c in result} == {"v1", "v2"}
