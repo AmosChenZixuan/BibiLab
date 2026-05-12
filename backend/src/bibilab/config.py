@@ -1,10 +1,13 @@
 import json
+import logging
 import os
 import threading
 from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel
+
+logger = logging.getLogger(__name__)
 
 
 def bibilab_home() -> Path:
@@ -126,6 +129,11 @@ def load_config() -> BibilabConfig:
         with path.open() as f:
             data = json.load(f)
         _config_cache = BibilabConfig.model_validate(data)
+        if _config_cache.rag.rerank_min_score is not None:
+            logger.warning(
+                "config.rag.rerank_min_score is deprecated (#277); "
+                "the value is no longer applied. Remove it from ~/.bibilab/config.json."
+            )
         return _config_cache.model_copy(deep=True)
 
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -61,6 +62,10 @@ class RetrievalResult:
     sources_with_hits: int
     sources_total: int
     source_coverage: list[SourceHit]
+    # Telemetry for #277 I-4. dropped_by_gate is 0 when gate did not run
+    # (rerank disabled or failed); reranked disambiguates that case.
+    dropped_by_gate: int = 0
+    reranked: bool = False
 
 
 def _chunk_score(chunk: RetrievedChunk) -> float:
@@ -76,14 +81,14 @@ def _chunk_key(chunk: RetrievedChunk) -> str:
 def _diverse_top_k(ranked: list[RetrievedChunk], depth: int, k: int) -> list[RetrievedChunk]:
     """Pick up to k chunks, allowing at most depth chunks from any single video.
 
-    Fills slots greedily in ranked order. If k slots can't be filled while
-    respecting the depth cap (too few distinct sources), the cap is relaxed
-    and leftovers fill the remaining slots.
+    Strict cap — no leftover backfill. If the depth cap blocks slots from
+    filling, returns fewer than k. Callers must treat short returns as the
+    normal case (see #277). Adaptive depth (matching depth to the pool's
+    distinct-source count) is the caller's responsibility — compute it
+    via _adaptive_depth() and pass the effective depth in.
     """
     per_src: dict[str, int] = {}
     picked: list[RetrievedChunk] = []
-    leftovers: list[RetrievedChunk] = []
-
     for c in ranked:
         cur = per_src.get(c.video_id, 0)
         if cur < depth:
@@ -91,10 +96,54 @@ def _diverse_top_k(ranked: list[RetrievedChunk], depth: int, k: int) -> list[Ret
             per_src[c.video_id] = cur + 1
             if len(picked) == k:
                 return picked
-        else:
-            leftovers.append(c)
+    return picked
 
-    return (picked + leftovers)[:k]
+
+def _adaptive_depth(spec_depth: int, top_k: int, num_sources_in_pool: int) -> int:
+    """Effective per-source depth given the pool's distinct-source count.
+
+    When the LLM (post-#287) scopes retrieval to one source via
+    `selected_source_ids`, the static depth from _PARAMS_BY_MODE under-returns.
+    This raises depth toward top_k as the pool narrows. Empty pool returns
+    spec to avoid divide-by-zero; _diverse_top_k handles empty input fine).
+    """
+    if num_sources_in_pool <= 0:
+        return spec_depth
+    return max(spec_depth, math.ceil(top_k / num_sources_in_pool))
+
+
+# bge-reranker logit margin: chunks within this many units of top score are
+# kept. Unvalidated initial value — public recommended figure, not measured
+# on Bibilab data. Tuning relies on I-4 telemetry (dropped_by_gate
+# distribution), not offline sweeps; #220 harness was deleted on purpose.
+RELEVANCE_MARGIN = 4.0
+
+
+def _quantile_gate(chunks: list[RetrievedChunk]) -> list[RetrievedChunk]:
+    """Keep chunks whose rerank score is meaningful relative to the pool.
+
+    threshold = max(median(scores), top - RELEVANCE_MARGIN)
+    The median term floors aggression: when the top itself is low (the
+    "all chunks marginal" case from #277), threshold rises to median and
+    forces a half-cut, killing junk that would otherwise pad top_k.
+    The margin term caps aggression: when the pool has a clear winner,
+    threshold stays within RELEVANCE_MARGIN of top so multiple
+    similarly-good chunks survive. Always keeps the top chunk (MIN_KEEP=1).
+
+    Caller must ensure chunks were reranked (score = bge logit). For
+    RRF-domain scores the margin is uncalibrated; gate is bypassed in that
+    case (see retrieve()).
+    """
+    if not chunks:
+        return chunks
+    scores = sorted((c.score for c in chunks if c.score is not None), reverse=True)
+    if not scores:
+        return chunks
+    top = scores[0]
+    median = scores[len(scores) // 2]
+    threshold = max(median, top - RELEVANCE_MARGIN)
+    kept = [c for c in chunks if c.score is not None and c.score >= threshold]
+    return kept if kept else [chunks[0]]
 
 
 def _rrf_fuse(
@@ -449,20 +498,27 @@ async def retrieve(
 
     candidates_evaluated = len(chunks)
 
+    reranked = False
+    dropped_by_gate = 0
     if cfg.rag.reranking_enabled and chunks:
         from bibilab.pipeline.rerank import rerank  # noqa: PLC0415
 
         try:
             chunks = await rerank(query_text, chunks, top_k=len(chunks))
+            reranked = True
         except Exception as exc:  # noqa: BLE001 - model load can fail in many ways
-            logger.warning("Reranking failed, falling back to un-reranked chunks: %s", exc)
+            logger.warning("Reranking failed, gate skipped: %s", exc)
 
-        floor = cfg.rag.rerank_min_score
-        if floor is not None:
-            chunks = [c for c in chunks if c.score is None or c.score >= floor]
+        if reranked:
+            pre_gate = len(chunks)
+            chunks = _quantile_gate(chunks)
+            dropped_by_gate = pre_gate - len(chunks)
 
-    # candidates_evaluated: pool size (pre-diverse-top-k); used for logs, not UI
-    result_chunks = _diverse_top_k(chunks, params.depth_per_source, params.top_k)
+    # candidates_evaluated: pool size (pre-diverse-top-k); used for logs, not UI.
+    # adaptive depth ensures #287 scoped queries (1-3 sources) aren't capped at spec.
+    num_sources_in_pool = len({c.video_id for c in chunks})
+    effective_depth = _adaptive_depth(params.depth_per_source, params.top_k, num_sources_in_pool)
+    result_chunks = _diverse_top_k(chunks, effective_depth, params.top_k)
 
     # source_coverage derived from result_chunks so the chip reflects what the LLM actually saw
     source_video_ids = list(dict.fromkeys(c.video_id for c in result_chunks))
@@ -481,4 +537,6 @@ async def retrieve(
         sources_with_hits=len(source_video_ids),
         sources_total=sources_total,
         source_coverage=source_coverage,
+        dropped_by_gate=dropped_by_gate,
+        reranked=reranked,
     )

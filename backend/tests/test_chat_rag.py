@@ -330,6 +330,55 @@ async def test_retrieve_empty_sources(tmp_bibilab_home):
     assert result.source_coverage == []
 
 
+@pytest.mark.asyncio
+async def test_retrieve_single_source_returns_top_k_chunks(tmp_bibilab_home):
+    """When LLM scopes to one source (#287), retrieve must return up to top_k
+    chunks from that source, not be capped at spec_depth=2."""
+    from unittest.mock import AsyncMock, MagicMock, patch
+
+    from bibilab.config import BibilabConfig, RagConfig
+    from bibilab.models._enums import RetrievalParams
+    from bibilab.pipeline.embed import retrieve
+
+    cfg = BibilabConfig(rag=RagConfig(max_distance=0.5, reranking_enabled=False, hybrid_enabled=False))
+
+    # Seed 6 chunks from a single video via mock collection
+    mock_collection = MagicMock()
+    mock_collection.query.return_value = {
+        "documents": [[f"chunk{i} content" for i in range(6)]],
+        "metadatas": [
+            [
+                {
+                    "video_id": "v1",
+                    "video_title": "Ramen Video",
+                    "timestamp_start": float(i) * 10,
+                    "timestamp_end": float(i) * 10 + 9.9,
+                }
+                for i in range(6)
+            ]
+        ],
+        "distances": [[0.1, 0.2, 0.3, 0.4, 0.5, 0.5]],
+    }
+
+    with (
+        patch("bibilab.pipeline.embed.get_video_ids_for_sources", new_callable=AsyncMock) as mock_map,
+        patch("bibilab.pipeline.embed._get_collection", return_value=mock_collection),
+    ):
+        mock_map.return_value = {"source-1": "v1"}
+
+        result = await retrieve(
+            query_text="ramen",
+            source_ids=["source-1"],
+            cfg=cfg,
+            params=RetrievalParams(depth_per_source=2, top_k=8),
+            scoped_source_ids=None,
+        )
+
+    # Pre-fix: returns 2. Post-fix: returns up to 6 (all available) because
+    # _adaptive_depth(2, 8, 1) = 8 → single source gets depth=8.
+    assert len(result.chunks) == 6, f"expected 6 chunks, got {len(result.chunks)}"
+
+
 # --- Source-aware aggregation tests ---
 
 
@@ -442,13 +491,45 @@ async def test_retrieve_uses_candidate_pool(tmp_bibilab_home):
         mock_qc.assert_called_once_with("test query", ["s1"], cfg, top_k=_dynamic_pool(1), video_ids=["v1"])
 
 
+# --- _adaptive_depth unit tests ---
+
+
+def test_adaptive_depth_single_source_relaxes_to_top_k():
+    from bibilab.pipeline.embed import _adaptive_depth
+
+    # 1 source in pool: depth grows to top_k so single-source queries aren't
+    # capped to 2 chunks (regression introduced by #287 scoped queries).
+    assert _adaptive_depth(spec_depth=2, top_k=8, num_sources_in_pool=1) == 8
+
+
+def test_adaptive_depth_few_sources_partial_relax():
+    from bibilab.pipeline.embed import _adaptive_depth
+
+    # 2 sources, top_k=8 → 4 each (ceil(8/2))
+    assert _adaptive_depth(spec_depth=2, top_k=8, num_sources_in_pool=2) == 4
+
+
+def test_adaptive_depth_many_sources_preserves_spec():
+    from bibilab.pipeline.embed import _adaptive_depth
+
+    # 8 sources, top_k=8 → spec wins (ceil(8/8)=1 < 2)
+    assert _adaptive_depth(spec_depth=2, top_k=8, num_sources_in_pool=8) == 2
+
+
+def test_adaptive_depth_zero_sources_returns_spec():
+    from bibilab.pipeline.embed import _adaptive_depth
+
+    # Empty pool: return spec to avoid divide-by-zero
+    assert _adaptive_depth(spec_depth=2, top_k=8, num_sources_in_pool=0) == 2
+
+
 @pytest.mark.asyncio
 async def test_retrieve_depth_two_keeps_multiple_per_source(tmp_bibilab_home):
     from bibilab.config import BibilabConfig, RagConfig
     from bibilab.models._enums import RetrievalParams
     from bibilab.pipeline.embed import RetrievedChunk, retrieve
 
-    cfg = BibilabConfig(rag=RagConfig(max_distance=0.5))
+    cfg = BibilabConfig(rag=RagConfig(max_distance=0.5, reranking_enabled=False))
 
     mock_collection = MagicMock()
     mock_collection.query.return_value = {
@@ -903,16 +984,17 @@ def test_diverse_top_k_depth_two_allows_two_per_source():
     assert all(v <= 2 for v in counts.values())
 
 
-def test_diverse_top_k_single_source_relaxes_cap():
+def test_diverse_top_k_strict_cap_single_source():
     from bibilab.pipeline.embed import _diverse_top_k
 
     chunks = [_make_chunk(content=f"c{i}", video_id="v1") for i in range(10)]
+    # depth=2 strictly caps single-source returns to 2, regardless of k
     result = _diverse_top_k(chunks, depth=2, k=5)
-    assert len(result) == 5
+    assert len(result) == 2
     assert all(c.video_id == "v1" for c in result)
 
 
-def test_diverse_top_k_depth_fills_then_leftovers():
+def test_diverse_top_k_short_return_when_cap_blocks_fill():
     from bibilab.pipeline.embed import _diverse_top_k
 
     chunks = [
@@ -921,8 +1003,243 @@ def test_diverse_top_k_depth_fills_then_leftovers():
         _make_chunk(content="b1", video_id="v2"),
         _make_chunk(content="b2", video_id="v2"),
     ]
-    # depth=1, k=3: picks a1 (v1) then b1 (v2), k not filled → leftovers fill
+    # depth=1, k=3: picks a1, b1 → cap blocks remaining slot, no leftover fill
     result = _diverse_top_k(chunks, depth=1, k=3)
-    assert len(result) == 3
-    # First two should be the diversity picks
-    assert {c.video_id for c in result[:2]} == {"v1", "v2"}
+    assert len(result) == 2
+    assert {c.video_id for c in result} == {"v1", "v2"}
+
+
+def test_retrieval_result_has_telemetry_fields():
+    """Smoke test: new I-4 telemetry fields exist with safe defaults."""
+    from bibilab.pipeline.embed import RetrievalResult
+
+    r = RetrievalResult(
+        chunks=[],
+        candidates_evaluated=0,
+        sources_with_hits=0,
+        sources_total=0,
+        source_coverage=[],
+    )
+    assert r.dropped_by_gate == 0
+    assert r.reranked is False
+
+
+# --- _quantile_gate unit tests ---
+
+
+def _chunk_with_score(score: float, vid: str = "v1"):
+    from bibilab.pipeline.embed import RetrievedChunk
+
+    return RetrievedChunk(
+        content="c",
+        video_title="t",
+        timestamp_start=0.0,
+        timestamp_end=1.0,
+        video_id=vid,
+        distance=0.0,
+        score=score,
+    )
+
+
+def test_quantile_gate_drops_below_margin():
+    from bibilab.pipeline.embed import _quantile_gate
+
+    chunks = [_chunk_with_score(s) for s in (8.0, 7.5, 3.2, -1.0)]
+    # top=8, scores[sorted desc]=[8.0,7.5,3.2,-1.0], median=scores[2]=3.2
+    # threshold=max(3.2, 4.0)=4.0 → keep [8.0, 7.5]
+    kept = _quantile_gate(chunks)
+    scores = [c.score for c in kept]
+    assert scores == [8.0, 7.5]
+
+
+def test_quantile_gate_single_top_honors_min_keep():
+    from bibilab.pipeline.embed import _quantile_gate
+
+    chunks = [_chunk_with_score(5.0)]
+    kept = _quantile_gate(chunks)
+    assert len(kept) == 1
+    assert kept[0].score == 5.0
+
+
+def test_quantile_gate_empty_input_returns_empty():
+    from bibilab.pipeline.embed import _quantile_gate
+
+    assert _quantile_gate([]) == []
+
+
+def test_quantile_gate_narrow_margin_drops_bottom():
+    from bibilab.pipeline.embed import _quantile_gate
+
+    chunks = [_chunk_with_score(s) for s in (8.0, 7.8, 7.5, 7.2)]
+    # top=8, median=7.5, threshold=max(7.5, 8.0-4.0)=7.5 → drop 7.2
+    kept = _quantile_gate(chunks)
+    assert [c.score for c in kept] == [8.0, 7.8, 7.5]
+
+
+# ─── Task 7: reranked flag wiring ─────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_retrieve_reranked_flag_true_on_success(tmp_bibilab_home):
+    """When rerank succeeds, reranked=True and dropped_by_gate reflects gate."""
+    from bibilab.config import BibilabConfig, RagConfig
+    from bibilab.models._enums import RetrievalParams
+    from bibilab.pipeline import embed as embed_mod
+
+    cfg = BibilabConfig(rag=RagConfig(max_distance=1.0, reranking_enabled=True, hybrid_enabled=False))
+
+    mock_collection = MagicMock()
+    mock_collection.query.return_value = {
+        "documents": [[f"chunk{i} content" for i in range(6)]],
+        "metadatas": [
+            [
+                {
+                    "video_id": "v1",
+                    "video_title": "V",
+                    "timestamp_start": float(i) * 10,
+                    "timestamp_end": float(i) * 10 + 9.9,
+                }
+                for i in range(6)
+            ]
+        ],
+        "distances": [[0.1] * 6],
+    }
+
+    async def fake_rerank(query, chunks, top_k):
+        scores = [8.0, 7.5, 3.2, -1.0, -2.0, -3.0][: len(chunks)]
+        for c, s in zip(chunks, scores, strict=False):
+            c.score = s
+        return chunks
+
+    with (
+        patch("bibilab.pipeline.embed.get_video_ids_for_sources", new_callable=AsyncMock) as mock_map,
+        patch("bibilab.pipeline.embed._get_collection", return_value=mock_collection),
+        patch("bibilab.pipeline.rerank.rerank", side_effect=fake_rerank),
+    ):
+        mock_map.return_value = {"source-1": "v1"}
+
+        result = await embed_mod.retrieve(
+            query_text="q",
+            source_ids=["source-1"],
+            cfg=cfg,
+            params=RetrievalParams(depth_per_source=2, top_k=8),
+            scoped_source_ids=None,
+        )
+        assert result.reranked is True
+        # Gate keeps [8.0, 7.5] → drops 4
+        assert result.dropped_by_gate == 4
+        assert len(result.chunks) == 2
+
+
+@pytest.mark.asyncio
+async def test_retrieve_reranked_flag_false_when_disabled(tmp_bibilab_home):
+    """reranking_enabled=False → reranked=False, dropped_by_gate=0."""
+    from bibilab.config import BibilabConfig, RagConfig
+    from bibilab.models._enums import RetrievalParams
+    from bibilab.pipeline import embed as embed_mod
+
+    cfg = BibilabConfig(rag=RagConfig(max_distance=1.0, reranking_enabled=False, hybrid_enabled=False))
+
+    mock_collection = MagicMock()
+    mock_collection.query.return_value = {
+        "documents": [["only one"]],
+        "metadatas": [[{"video_id": "v1", "video_title": "V", "timestamp_start": 0.0, "timestamp_end": 10.0}]],
+        "distances": [[0.1]],
+    }
+
+    with (
+        patch("bibilab.pipeline.embed.get_video_ids_for_sources", new_callable=AsyncMock) as mock_map,
+        patch("bibilab.pipeline.embed._get_collection", return_value=mock_collection),
+    ):
+        mock_map.return_value = {"source-1": "v1"}
+
+        result = await embed_mod.retrieve(
+            query_text="q",
+            source_ids=["source-1"],
+            cfg=cfg,
+            params=RetrievalParams(depth_per_source=2, top_k=8),
+            scoped_source_ids=None,
+        )
+        assert result.reranked is False
+        assert result.dropped_by_gate == 0
+
+
+@pytest.mark.asyncio
+async def test_retrieve_reranked_flag_false_on_exception(tmp_bibilab_home):
+    """Rerank raises → reranked=False, gate bypassed."""
+    from bibilab.config import BibilabConfig, RagConfig
+    from bibilab.models._enums import RetrievalParams
+    from bibilab.pipeline import embed as embed_mod
+
+    cfg = BibilabConfig(rag=RagConfig(max_distance=1.0, reranking_enabled=True, hybrid_enabled=False))
+
+    mock_collection = MagicMock()
+    mock_collection.query.return_value = {
+        "documents": [["one", "two"]],
+        "metadatas": [
+            [
+                {"video_id": "v1", "video_title": "V", "timestamp_start": 0.0, "timestamp_end": 10.0},
+                {"video_id": "v1", "video_title": "V", "timestamp_start": 10.0, "timestamp_end": 20.0},
+            ]
+        ],
+        "distances": [[0.1, 0.2]],
+    }
+
+    async def boom(*a, **kw):
+        raise RuntimeError("model missing")
+
+    with (
+        patch("bibilab.pipeline.embed.get_video_ids_for_sources", new_callable=AsyncMock) as mock_map,
+        patch("bibilab.pipeline.embed._get_collection", return_value=mock_collection),
+        patch("bibilab.pipeline.rerank.rerank", side_effect=boom),
+    ):
+        mock_map.return_value = {"source-1": "v1"}
+
+        result = await embed_mod.retrieve(
+            query_text="q",
+            source_ids=["source-1"],
+            cfg=cfg,
+            params=RetrievalParams(depth_per_source=2, top_k=8),
+            scoped_source_ids=None,
+        )
+        assert result.reranked is False
+        assert result.dropped_by_gate == 0
+
+
+def test_rerank_min_score_logs_deprecation_when_set(tmp_path, monkeypatch, caplog):
+    """Setting rerank_min_score to a non-null value logs a one-time deprecation."""
+    import json
+    import logging
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    cfg_dir = tmp_path / ".bibilab"
+    cfg_dir.mkdir()
+    (cfg_dir / "config.json").write_text(json.dumps({"rag": {"rerank_min_score": 0.5}}))
+
+    from bibilab.config import _reset_cache, load_config
+
+    _reset_cache()
+    with caplog.at_level(logging.WARNING, logger="bibilab.config"):
+        load_config()
+
+    assert any(
+        "rerank_min_score" in record.message and "deprecated" in record.message.lower() for record in caplog.records
+    )
+
+
+def test_rerank_min_score_no_warning_when_null(tmp_path, monkeypatch, caplog):
+    import json
+    import logging
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    cfg_dir = tmp_path / ".bibilab"
+    cfg_dir.mkdir()
+    (cfg_dir / "config.json").write_text(json.dumps({"rag": {}}))
+
+    from bibilab.config import _reset_cache, load_config
+
+    _reset_cache()
+    with caplog.at_level(logging.WARNING, logger="bibilab.config"):
+        load_config()
+
+    assert not any("rerank_min_score" in r.message for r in caplog.records)
