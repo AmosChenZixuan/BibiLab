@@ -1071,8 +1071,7 @@ def test_quantile_gate_narrow_margin_drops_bottom():
     from bibilab.pipeline.embed import _quantile_gate
 
     chunks = [_chunk_with_score(s) for s in (8.0, 7.8, 7.5, 7.2)]
-    # top=8, scores[sorted desc]=[8.0,7.8,7.5,7.2], median=7.5 (lower-middle)
-    # threshold=max(7.5, 4.0)=7.5 → drop 7.2 (below threshold)
+    # top=8, median=7.5, threshold=max(7.5, 8.0-3.0)=7.5 → drop 7.2
     kept = _quantile_gate(chunks)
     assert [c.score for c in kept] == [8.0, 7.8, 7.5]
 

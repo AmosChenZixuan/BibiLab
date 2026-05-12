@@ -116,7 +116,7 @@ def _adaptive_depth(spec_depth: int, top_k: int, num_sources_in_pool: int) -> in
 # kept. Unvalidated initial value — public recommended figure, not measured
 # on Bibilab data. Tuning relies on I-4 telemetry (dropped_by_gate
 # distribution), not offline sweeps; #220 harness was deleted on purpose.
-RELEVANCE_MARGIN = 4.0
+RELEVANCE_MARGIN = 3.0
 
 
 def _quantile_gate(chunks: list[RetrievedChunk]) -> list[RetrievedChunk]:
