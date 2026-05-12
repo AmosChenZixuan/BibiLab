@@ -228,7 +228,7 @@ async def execute_retrieve(
         source_map = {}
 
     # Apply source_filter only when title_contains is present
-    if source_filter is not None and source_filter.get("title_contains"):
+    if isinstance(source_filter, dict) and source_filter.get("title_contains"):
         filtered_source_ids, all_titles = await apply_source_filter(source_ids, source_filter)
         if not filtered_source_ids:
             filter_str = source_filter["title_contains"]
@@ -368,6 +368,12 @@ async def execute_tool(
     source_map: dict[str, str] | None = None,
 ) -> dict:
     if tool_name == RETRIEVE_TOOL.name:
+        logger.info(
+            "retrieve tool call: query=%r source_filter=%r expected_hits=%r",
+            arguments["query"],
+            arguments.get("source_filter"),
+            arguments.get("expected_hits", DEFAULT_EXPECTED_HITS),
+        )
         return await execute_retrieve(
             query=arguments["query"],
             source_ids=source_ids,
