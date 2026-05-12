@@ -239,6 +239,26 @@ async def execute_retrieve(
             # Narrow: resolve video_ids to source_ids for the retrieve call
             video_to_source = {v: s for s, v in source_map.items()}
             filtered_source_ids = [video_to_source[vid] for vid in narrowed_video_ids if vid in video_to_source]
+            if len(narrowed_video_ids) != len(filtered_source_ids):
+                logger.warning(
+                    "source_filter narrowed to %d video_ids but only %d found in source_map — "
+                    "some sources silently dropped",
+                    len(narrowed_video_ids),
+                    len(filtered_source_ids),
+                )
+            if not filtered_source_ids:
+                return {
+                    "query": query,
+                    "source_filter": source_filter,
+                    "filter_miss": False,  # not a filter_miss — map was incomplete
+                    "candidates_evaluated": 0,
+                    "sources_with_hits": 0,
+                    "sources_total": len(source_ids),  # original count
+                    "source_coverage": [],
+                    "_chunks": "",
+                    "_turn_indices": [],
+                    "_raw_chunks": [],
+                }
             source_ids = filtered_source_ids
 
     params = params_for_expected_hits(expected_hits)
