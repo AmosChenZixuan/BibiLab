@@ -495,7 +495,7 @@ class TestBuildToolBlockEntry:
 
         retrieve_result = {
             "query": "test",
-            "search_mode": "factual",
+            "expected_hits": "few",
             "candidates_evaluated": 5,
             "sources_with_hits": 2,
             "sources_total": 3,
@@ -520,14 +520,14 @@ class TestBuildToolBlockEntry:
         entry = build_tool_block_entry(
             tool_use_id="toolu_1",
             name="retrieve",
-            arguments={"query": "test", "search_mode": "factual"},
+            arguments={"query": "test", "expected_hits": "few"},
             result=retrieve_result,
             raw_chunks=raw_chunks,
         )
 
         assert entry["tool_use_id"] == "toolu_1"
         assert entry["name"] == "retrieve"
-        assert entry["arguments"] == {"query": "test", "search_mode": "factual"}
+        assert entry["arguments"] == {"query": "test", "expected_hits": "few"}
         assert "_chunks" not in entry["result"]
         assert "_turn_indices" not in entry["result"]
         assert entry["result"]["chunks"] == raw_chunks
@@ -583,7 +583,7 @@ def test_expand_message_for_provider_anthropic_shape():
             {
                 "tool_use_id": "toolu_1",
                 "name": "retrieve",
-                "arguments": {"query": "q", "search_mode": "factual"},
+                "arguments": {"query": "q", "expected_hits": "few"},
                 "result": {"chunks": [{"content": "x"}], "summary": {"sources_total": 1}},
             }
         ],
@@ -596,7 +596,7 @@ def test_expand_message_for_provider_anthropic_shape():
         "type": "tool_use",
         "id": "toolu_1",
         "name": "retrieve",
-        "input": {"query": "q", "search_mode": "factual"},
+        "input": {"query": "q", "expected_hits": "few"},
     }
     assert out[0]["content"][-1] == {"type": "text", "text": "Answer [1]"}
     assert out[1]["role"] == "user"
@@ -614,7 +614,7 @@ def test_expand_message_for_provider_openai_shape():
             {
                 "tool_use_id": "call_1",
                 "name": "retrieve",
-                "arguments": {"query": "q", "search_mode": "factual"},
+                "arguments": {"query": "q", "expected_hits": "few"},
                 "result": {"chunks": [{"content": "x"}], "summary": {"sources_total": 1}},
             }
         ],
@@ -631,7 +631,7 @@ def test_expand_message_for_provider_openai_shape():
 
     assert json.loads(out[0]["tool_calls"][0]["function"]["arguments"]) == {
         "query": "q",
-        "search_mode": "factual",
+        "expected_hits": "few",
     }
     assert out[0]["content"] == "Answer [1]"
     assert out[1]["role"] == "tool"
