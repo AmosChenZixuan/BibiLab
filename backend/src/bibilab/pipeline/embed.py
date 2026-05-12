@@ -434,8 +434,9 @@ async def retrieve(
 
     Args:
         source_ids: the full list of sources (used to derive sources_total for the UI chip).
-        scoped_source_ids: optional subset to search within; when a source_filter is active,
-            this is the filtered pool so search is scoped while the chip still shows list-total.
+        scoped_source_ids: optional subset to search within; when selected_source_ids are provided
+            by the LLM (via query_list_metadata), this is the filtered pool so search is scoped
+            while the UI chip still shows the full list total.
     """
     sources_total = len(source_ids)
     search_pool = scoped_source_ids if scoped_source_ids is not None else source_ids
