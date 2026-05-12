@@ -76,14 +76,14 @@ def _chunk_key(chunk: RetrievedChunk) -> str:
 def _diverse_top_k(ranked: list[RetrievedChunk], depth: int, k: int) -> list[RetrievedChunk]:
     """Pick up to k chunks, allowing at most depth chunks from any single video.
 
-    Fills slots greedily in ranked order. If k slots can't be filled while
-    respecting the depth cap (too few distinct sources), the cap is relaxed
-    and leftovers fill the remaining slots.
+    Strict cap — no leftover backfill. If the depth cap blocks slots from
+    filling, returns fewer than k. Callers must treat short returns as the
+    normal case (see #277). Adaptive depth (matching depth to the pool's
+    distinct-source count) is the caller's responsibility — compute it
+    via _adaptive_depth() and pass the effective depth in.
     """
     per_src: dict[str, int] = {}
     picked: list[RetrievedChunk] = []
-    leftovers: list[RetrievedChunk] = []
-
     for c in ranked:
         cur = per_src.get(c.video_id, 0)
         if cur < depth:
@@ -91,10 +91,7 @@ def _diverse_top_k(ranked: list[RetrievedChunk], depth: int, k: int) -> list[Ret
             per_src[c.video_id] = cur + 1
             if len(picked) == k:
                 return picked
-        else:
-            leftovers.append(c)
-
-    return (picked + leftovers)[:k]
+    return picked
 
 
 def _rrf_fuse(
