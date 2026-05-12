@@ -732,7 +732,8 @@ async def test_retrieve_uses_candidate_pool_before_rerank(tmp_bibilab_home):
     mock_rerank.assert_called_once_with("query", candidate_chunks, top_k=len(candidate_chunks))
     assert len(result.chunks) == 5
     assert result.candidates_evaluated == len(candidate_chunks)
-    assert result.sources_with_hits == len(candidate_chunks)
+    # sources_with_hits reflects result_chunks (what the LLM actually saw), not pool size
+    assert result.sources_with_hits == 5
 
 
 def test_rrf_fuse_ranks_doc_in_both_lists_above_doc_in_one():

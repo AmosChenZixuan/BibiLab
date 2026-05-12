@@ -261,10 +261,9 @@
     "obsChip": {
       "query": "查询",
       "mode": "模式",
-      "chunksEvaluated": "已评估块数",
-      "sourcesRetrieved": "已检索的来源数",
+      "sourcesCited": "已引用的来源",
       "ariaLabel": "检索详情",
-      "chipLabel": "%{count} 块 · %{hits}/%{total}",
+      "chipLabel": "已引用 %{hits} / %{total}",
       "metaQueryType": {
         "count": "总数",
         "longest": "最长",

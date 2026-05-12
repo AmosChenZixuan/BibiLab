@@ -541,8 +541,14 @@ async def run_chat_turn(
                 parsed = json.loads(event.content)
                 if parsed["name"] == "retrieve":
                     result = parsed["result"]
+                    # Emit only the sources whose [N] actually appeared in the assistant text.
+                    # content_blocks (type: "citation") holds every citation index the LLM emitted.
+                    emitted_indices = {cb["index"] for cb in content_blocks if cb.get("type") == "citation"}
+                    emitted_source_ids = {
+                        sid for sid, entry in citation_registry.items() if entry.index in emitted_indices
+                    }
                     ordered_coverage = sorted(
-                        [s for s in result.get("source_coverage", []) if s["source_id"] in citation_registry],
+                        [s for s in result.get("source_coverage", []) if s["source_id"] in emitted_source_ids],
                         key=lambda s: citation_registry[s["source_id"]].index,
                     )
                     retrieve_calls.append(

@@ -46,11 +46,7 @@ export function ObsChip({ call }: ObsChipProps) {
             <span className="font-medium text-ink">{call.search_mode}</span>
           </div>
           <div className="flex justify-between items-center py-0.5">
-            <span className="text-muted">{t("chat.obsChip.chunksEvaluated")}</span>
-            <span className="font-medium text-ink">{call.candidates_evaluated}</span>
-          </div>
-          <div className="flex justify-between items-center py-0.5">
-            <span className="text-muted">{t("chat.obsChip.sourcesRetrieved")}</span>
+            <span className="text-muted">{t("chat.obsChip.sourcesCited")}</span>
             <span className="font-medium text-ink">{call.sources_with_hits} / {call.sources_total}</span>
           </div>
           {call.source_coverage.length > 0 && (

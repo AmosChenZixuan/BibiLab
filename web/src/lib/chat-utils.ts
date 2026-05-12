@@ -12,6 +12,7 @@ export interface ToolCallData {
 }
 export type SearchMode = "factual" | "breadth" | "analytical";
 export type RagSource = { source_id: string; video_id: string; title: string };
+/** source_coverage lists only sources whose [N] actually appeared in the assistant text. */
 export type RagCall = {
   query: string;
   search_mode: SearchMode;

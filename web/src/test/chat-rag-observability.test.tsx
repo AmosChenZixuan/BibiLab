@@ -80,7 +80,7 @@ describe("Slice 2 — RAG observability via SSE tool_result", () => {
 
     await waitFor(() => {
       expect(screen.getByText("Hello")).toBeInTheDocument();
-      expect(screen.getByText(/30 chunks · 1\/1/)).toBeInTheDocument();
+      expect(screen.getByText(/cited 1 \/ 1/)).toBeInTheDocument();
     });
   });
 
@@ -107,7 +107,7 @@ describe("Slice 2 — RAG observability via SSE tool_result", () => {
 
     await waitFor(() => screen.getByText("Answer"));
 
-    const chip = screen.getByText(/42 chunks · 3\/5/);
+    const chip = screen.getByText(/cited 3 \/ 5/);
     expect(chip).toBeInTheDocument();
   });
 
@@ -140,8 +140,8 @@ describe("Slice 2 — RAG observability via SSE tool_result", () => {
     // Both calls resolved to ObsChips
     expect(screen.getByText("A")).toBeInTheDocument();
     expect(screen.getByText("B")).toBeInTheDocument();
-    expect(screen.getByText(/10 chunks · 2\/4/)).toBeInTheDocument();
-    expect(screen.getByText(/20 chunks · 1\/3/)).toBeInTheDocument();
+    expect(screen.getByText(/cited 2 \/ 4/)).toBeInTheDocument();
+    expect(screen.getByText(/cited 1 \/ 3/)).toBeInTheDocument();
   });
 
   test("Obs chip expands on click", async () => {
@@ -167,7 +167,7 @@ describe("Slice 2 — RAG observability via SSE tool_result", () => {
 
     await waitFor(() => screen.getByText("Done"));
 
-    const chip = screen.getByText(/10 chunks · 2\/4/);
+    const chip = screen.getByText(/cited 2 \/ 4/);
     await userEvent.click(chip);
 
     await waitFor(() => {

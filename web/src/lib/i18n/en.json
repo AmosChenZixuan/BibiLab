@@ -261,10 +261,9 @@
     "obsChip": {
       "query": "Query",
       "mode": "Mode",
-      "chunksEvaluated": "Chunks evaluated",
-      "sourcesRetrieved": "Sources retrieved",
+      "sourcesCited": "Sources cited",
       "ariaLabel": "Retrieval observability",
-      "chipLabel": "%{count} chunks · %{hits}/%{total}",
+      "chipLabel": "cited %{hits} / %{total}",
       "metaQueryType": {
         "count": "Count",
         "longest": "Longest",

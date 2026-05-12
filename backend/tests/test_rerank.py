@@ -350,7 +350,8 @@ async def test_broad_mode_respects_floor(tmp_bibilab_home):
         result = await retrieve("q", ["src1"], cfg, params=RetrievalParams(depth_per_source=1, top_k=4))
 
     assert {c.video_id for c in result.chunks} == {"v2", "v3"}
-    assert result.sources_with_hits == 4
+    # sources_with_hits now reflects result_chunks (what the LLM actually saw), not pool size
+    assert result.sources_with_hits == 2
 
 
 @pytest.mark.asyncio
@@ -384,7 +385,7 @@ async def test_sources_with_hits_reflects_full_reranked_pool(tmp_bibilab_home):
     ):
         result = await retrieve("query", ["src1"], cfg, params=RetrievalParams(depth_per_source=2, top_k=5))
 
-    assert result.sources_with_hits == 8
+    assert result.sources_with_hits == 5
     assert len(result.chunks) == 5
 
 

@@ -459,29 +459,28 @@ async def retrieve(
         except Exception as exc:  # noqa: BLE001 - model load can fail in many ways
             logger.warning("Reranking failed, falling back to un-reranked chunks: %s", exc)
 
-        pool_best_by_source = _best_by_source(chunks)
-
         floor = cfg.rag.rerank_min_score
         if floor is not None:
             chunks = [c for c in chunks if c.score is None or c.score >= floor]
-    else:
-        pool_best_by_source = _best_by_source(chunks)
 
+    # candidates_evaluated: pool size (pre-diverse-top-k); used for logs, not UI
+    result_chunks = _diverse_top_k(chunks, params.depth_per_source, params.top_k)
+
+    # source_coverage derived from result_chunks so the chip reflects what the LLM actually saw
+    source_video_ids = list(dict.fromkeys(c.video_id for c in result_chunks))
     source_coverage = [
         SourceHit(
-            video_id=c.video_id,
-            video_title=c.video_title,
-            best_score=_chunk_score(c),
+            video_id=vid,
+            video_title=next(c.video_title for c in result_chunks if c.video_id == vid),
+            best_score=_chunk_score(next(c for c in result_chunks if c.video_id == vid)),
         )
-        for c in sorted(pool_best_by_source.values(), key=_chunk_score)
+        for vid in source_video_ids
     ]
-
-    result_chunks = _diverse_top_k(chunks, params.depth_per_source, params.top_k)
 
     return RetrievalResult(
         chunks=result_chunks,
         candidates_evaluated=candidates_evaluated,
-        sources_with_hits=len(pool_best_by_source),
+        sources_with_hits=len(source_video_ids),
         sources_total=sources_total,
         source_coverage=source_coverage,
     )
