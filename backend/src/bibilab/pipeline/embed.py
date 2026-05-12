@@ -498,17 +498,21 @@ async def retrieve(
 
     candidates_evaluated = len(chunks)
 
+    reranked = False
+    dropped_by_gate = 0
     if cfg.rag.reranking_enabled and chunks:
         from bibilab.pipeline.rerank import rerank  # noqa: PLC0415
 
         try:
             chunks = await rerank(query_text, chunks, top_k=len(chunks))
+            reranked = True
         except Exception as exc:  # noqa: BLE001 - model load can fail in many ways
-            logger.warning("Reranking failed, falling back to un-reranked chunks: %s", exc)
+            logger.warning("Reranking failed, gate skipped: %s", exc)
 
-        floor = cfg.rag.rerank_min_score
-        if floor is not None:
-            chunks = [c for c in chunks if c.score is None or c.score >= floor]
+        if reranked:
+            pre_gate = len(chunks)
+            chunks = _quantile_gate(chunks)
+            dropped_by_gate = pre_gate - len(chunks)
 
     # candidates_evaluated: pool size (pre-diverse-top-k); used for logs, not UI.
     # adaptive depth ensures #287 scoped queries (1-3 sources) aren't capped at spec.
@@ -533,4 +537,6 @@ async def retrieve(
         sources_with_hits=len(source_video_ids),
         sources_total=sources_total,
         source_coverage=source_coverage,
+        dropped_by_gate=dropped_by_gate,
+        reranked=reranked,
     )

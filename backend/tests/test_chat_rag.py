@@ -529,7 +529,7 @@ async def test_retrieve_depth_two_keeps_multiple_per_source(tmp_bibilab_home):
     from bibilab.models._enums import RetrievalParams
     from bibilab.pipeline.embed import RetrievedChunk, retrieve
 
-    cfg = BibilabConfig(rag=RagConfig(max_distance=0.5))
+    cfg = BibilabConfig(rag=RagConfig(max_distance=0.5, reranking_enabled=False))
 
     mock_collection = MagicMock()
     mock_collection.query.return_value = {
@@ -1073,3 +1073,133 @@ def test_quantile_gate_all_within_margin_keeps_all():
     # top=8, median=7.5, threshold = max(7.5, 4.0) = 7.5 → keep [8.0, 7.8, 7.5]
     kept = _quantile_gate(chunks)
     assert [c.score for c in kept] == [8.0, 7.8, 7.5]
+
+
+# ─── Task 7: reranked flag wiring ─────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_retrieve_reranked_flag_true_on_success(monkeypatch, tmp_bibilab_home):
+    """When rerank succeeds, reranked=True and dropped_by_gate reflects gate."""
+    from bibilab.config import BibilabConfig, RagConfig
+    from bibilab.models._enums import RetrievalParams
+    from bibilab.pipeline import embed as embed_mod
+
+    cfg = BibilabConfig(rag=RagConfig(max_distance=1.0, reranking_enabled=True, hybrid_enabled=False))
+
+    mock_collection = MagicMock()
+    mock_collection.query.return_value = {
+        "documents": [[f"chunk{i} content" for i in range(6)]],
+        "metadatas": [
+            [
+                {
+                    "video_id": "v1",
+                    "video_title": "V",
+                    "timestamp_start": float(i) * 10,
+                    "timestamp_end": float(i) * 10 + 9.9,
+                }
+                for i in range(6)
+            ]
+        ],
+        "distances": [[0.1] * 6],
+    }
+
+    async def fake_rerank(query, chunks, top_k):
+        scores = [8.0, 7.5, 3.2, -1.0, -2.0, -3.0][: len(chunks)]
+        for c, s in zip(chunks, scores, strict=False):
+            c.score = s
+        return chunks
+
+    with (
+        patch("bibilab.pipeline.embed.get_video_ids_for_sources", new_callable=AsyncMock) as mock_map,
+        patch("bibilab.pipeline.embed._get_collection", return_value=mock_collection),
+        patch("bibilab.pipeline.rerank.rerank", side_effect=fake_rerank),
+    ):
+        mock_map.return_value = {"source-1": "v1"}
+
+        result = await embed_mod.retrieve(
+            query_text="q",
+            source_ids=["source-1"],
+            cfg=cfg,
+            params=RetrievalParams(depth_per_source=2, top_k=8),
+            scoped_source_ids=None,
+        )
+        assert result.reranked is True
+        # Gate keeps [8.0, 7.5] → drops 4
+        assert result.dropped_by_gate == 4
+        assert len(result.chunks) == 2
+
+
+@pytest.mark.asyncio
+async def test_retrieve_reranked_flag_false_when_disabled(tmp_bibilab_home):
+    """reranking_enabled=False → reranked=False, dropped_by_gate=0."""
+    from bibilab.config import BibilabConfig, RagConfig
+    from bibilab.models._enums import RetrievalParams
+    from bibilab.pipeline import embed as embed_mod
+
+    cfg = BibilabConfig(rag=RagConfig(max_distance=1.0, reranking_enabled=False, hybrid_enabled=False))
+
+    mock_collection = MagicMock()
+    mock_collection.query.return_value = {
+        "documents": [["only one"]],
+        "metadatas": [[{"video_id": "v1", "video_title": "V", "timestamp_start": 0.0, "timestamp_end": 10.0}]],
+        "distances": [[0.1]],
+    }
+
+    with (
+        patch("bibilab.pipeline.embed.get_video_ids_for_sources", new_callable=AsyncMock) as mock_map,
+        patch("bibilab.pipeline.embed._get_collection", return_value=mock_collection),
+    ):
+        mock_map.return_value = {"source-1": "v1"}
+
+        result = await embed_mod.retrieve(
+            query_text="q",
+            source_ids=["source-1"],
+            cfg=cfg,
+            params=RetrievalParams(depth_per_source=2, top_k=8),
+            scoped_source_ids=None,
+        )
+        assert result.reranked is False
+        assert result.dropped_by_gate == 0
+
+
+@pytest.mark.asyncio
+async def test_retrieve_reranked_flag_false_on_exception(monkeypatch, tmp_bibilab_home):
+    """Rerank raises → reranked=False, gate bypassed."""
+    from bibilab.config import BibilabConfig, RagConfig
+    from bibilab.models._enums import RetrievalParams
+    from bibilab.pipeline import embed as embed_mod
+
+    cfg = BibilabConfig(rag=RagConfig(max_distance=1.0, reranking_enabled=True, hybrid_enabled=False))
+
+    mock_collection = MagicMock()
+    mock_collection.query.return_value = {
+        "documents": [["one", "two"]],
+        "metadatas": [
+            [
+                {"video_id": "v1", "video_title": "V", "timestamp_start": 0.0, "timestamp_end": 10.0},
+                {"video_id": "v1", "video_title": "V", "timestamp_start": 10.0, "timestamp_end": 20.0},
+            ]
+        ],
+        "distances": [[0.1, 0.2]],
+    }
+
+    async def boom(*a, **kw):
+        raise RuntimeError("model missing")
+
+    with (
+        patch("bibilab.pipeline.embed.get_video_ids_for_sources", new_callable=AsyncMock) as mock_map,
+        patch("bibilab.pipeline.embed._get_collection", return_value=mock_collection),
+        patch("bibilab.pipeline.rerank.rerank", side_effect=boom),
+    ):
+        mock_map.return_value = {"source-1": "v1"}
+
+        result = await embed_mod.retrieve(
+            query_text="q",
+            source_ids=["source-1"],
+            cfg=cfg,
+            params=RetrievalParams(depth_per_source=2, top_k=8),
+            scoped_source_ids=None,
+        )
+        assert result.reranked is False
+        assert result.dropped_by_gate == 0
