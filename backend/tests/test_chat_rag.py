@@ -1203,3 +1203,42 @@ async def test_retrieve_reranked_flag_false_on_exception(monkeypatch, tmp_bibila
         )
         assert result.reranked is False
         assert result.dropped_by_gate == 0
+
+
+def test_rerank_min_score_logs_deprecation_when_set(tmp_path, monkeypatch, caplog):
+    """Setting rerank_min_score to a non-null value logs a one-time deprecation."""
+    import json
+    import logging
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    cfg_dir = tmp_path / ".bibilab"
+    cfg_dir.mkdir()
+    (cfg_dir / "config.json").write_text(json.dumps({"rag": {"rerank_min_score": 0.5}}))
+
+    from bibilab.config import _reset_cache, load_config
+
+    _reset_cache()
+    with caplog.at_level(logging.WARNING, logger="bibilab.config"):
+        load_config()
+
+    assert any(
+        "rerank_min_score" in record.message and "deprecated" in record.message.lower() for record in caplog.records
+    )
+
+
+def test_rerank_min_score_no_warning_when_null(tmp_path, monkeypatch, caplog):
+    import json
+    import logging
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    cfg_dir = tmp_path / ".bibilab"
+    cfg_dir.mkdir()
+    (cfg_dir / "config.json").write_text(json.dumps({"rag": {}}))
+
+    from bibilab.config import _reset_cache, load_config
+
+    _reset_cache()
+    with caplog.at_level(logging.WARNING, logger="bibilab.config"):
+        load_config()
+
+    assert not any("rerank_min_score" in r.message for r in caplog.records)
