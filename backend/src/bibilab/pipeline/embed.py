@@ -444,8 +444,10 @@ async def apply_source_filter(
         )
         rows = await cursor.fetchall()
 
-    # Match in Python (not SQL LIKE) to avoid escaping %, _, [ wildcard characters.
+    # Match in Python (not SQL LIKE) to avoid % / _ escaping.
+    # SQLite LIKE only treats % and _ as wildcards; [...] is a GLOB/T-SQL pattern.
     # title_contains is user-supplied text intended as a literal substring, not a pattern.
+    # If a future implementation switches to GLOB or sources_fts, escaping must be revisited.
     matched = [row["id"] for row in rows if title_contains.lower() in row["title"].lower()]
     return matched
 
