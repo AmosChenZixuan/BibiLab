@@ -558,6 +558,8 @@ async def run_chat_turn(
                             "sources_with_hits": result.get("sources_with_hits"),
                             "sources_total": result.get("sources_total"),
                             "source_coverage": result.get("source_coverage", []),
+                            "dropped_by_gate": result.get("dropped_by_gate", 0),
+                            "reranked": result.get("reranked", False),
                         }
                     )
                 elif parsed["name"] == "generate_report":
