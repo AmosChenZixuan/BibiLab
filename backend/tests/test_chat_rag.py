@@ -1022,3 +1022,54 @@ def test_retrieval_result_has_telemetry_fields():
     )
     assert r.dropped_by_gate == 0
     assert r.reranked is False
+
+
+# --- _quantile_gate unit tests ---
+
+
+def _chunk_with_score(score: float, vid: str = "v1"):
+    from bibilab.pipeline.embed import RetrievedChunk
+
+    return RetrievedChunk(
+        content="c",
+        video_title="t",
+        timestamp_start=0.0,
+        timestamp_end=1.0,
+        video_id=vid,
+        distance=0.0,
+        score=score,
+    )
+
+
+def test_quantile_gate_drops_below_margin():
+    from bibilab.pipeline.embed import _quantile_gate
+
+    chunks = [_chunk_with_score(s) for s in (8.0, 7.5, 3.2, -1.0)]
+    # top=8, median=5.35, threshold = max(5.35, 8-4) = 5.35 → keep [8.0, 7.5]
+    kept = _quantile_gate(chunks)
+    scores = [c.score for c in kept]
+    assert scores == [8.0, 7.5]
+
+
+def test_quantile_gate_single_top_honors_min_keep():
+    from bibilab.pipeline.embed import _quantile_gate
+
+    chunks = [_chunk_with_score(5.0)]
+    kept = _quantile_gate(chunks)
+    assert len(kept) == 1
+    assert kept[0].score == 5.0
+
+
+def test_quantile_gate_empty_input_returns_empty():
+    from bibilab.pipeline.embed import _quantile_gate
+
+    assert _quantile_gate([]) == []
+
+
+def test_quantile_gate_all_within_margin_keeps_all():
+    from bibilab.pipeline.embed import _quantile_gate
+
+    chunks = [_chunk_with_score(s) for s in (8.0, 7.8, 7.5, 7.2)]
+    # top=8, median=7.5, threshold = max(7.5, 4.0) = 7.5 → keep [8.0, 7.8, 7.5]
+    kept = _quantile_gate(chunks)
+    assert [c.score for c in kept] == [8.0, 7.8, 7.5]

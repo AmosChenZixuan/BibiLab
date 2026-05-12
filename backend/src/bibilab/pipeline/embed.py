@@ -112,6 +112,40 @@ def _adaptive_depth(spec_depth: int, top_k: int, num_sources_in_pool: int) -> in
     return max(spec_depth, math.ceil(top_k / num_sources_in_pool))
 
 
+# bge-reranker logit margin: chunks within this many units of top score are
+# kept. Unvalidated initial value — public recommended figure, not measured
+# on Bibilab data. Tuning relies on I-4 telemetry (dropped_by_gate
+# distribution), not offline sweeps; #220 harness was deleted on purpose.
+RELEVANCE_MARGIN = 4.0
+
+
+def _quantile_gate(chunks: list[RetrievedChunk]) -> list[RetrievedChunk]:
+    """Keep chunks whose rerank score is meaningful relative to the pool.
+
+    threshold = max(median(scores), top - RELEVANCE_MARGIN)
+    The median term floors aggression: when the top itself is low (the
+    "all chunks marginal" case from #277), threshold rises to median and
+    forces a half-cut, killing junk that would otherwise pad top_k.
+    The margin term caps aggression: when the pool has a clear winner,
+    threshold stays within RELEVANCE_MARGIN of top so multiple
+    similarly-good chunks survive. Always keeps the top chunk (MIN_KEEP=1).
+
+    Caller must ensure chunks were reranked (score = bge logit). For
+    RRF-domain scores the margin is uncalibrated; gate is bypassed in that
+    case (see retrieve()).
+    """
+    if not chunks:
+        return chunks
+    scores = sorted((c.score for c in chunks if c.score is not None), reverse=True)
+    if not scores:
+        return chunks
+    top = scores[0]
+    median = scores[len(scores) // 2]
+    threshold = max(median, top - RELEVANCE_MARGIN)
+    kept = [c for c in chunks if c.score is not None and c.score >= threshold]
+    return kept if kept else [chunks[0]]
+
+
 def _rrf_fuse(
     a: list[RetrievedChunk],
     b: list[RetrievedChunk],
