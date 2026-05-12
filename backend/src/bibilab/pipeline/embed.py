@@ -446,7 +446,8 @@ async def apply_source_filter(
         )
         rows = await cursor.fetchall()
 
-    matched = [row["id"] for row in rows if title_contains.lower() in row["title"].lower()]
+    title_lower = title_contains.lower()
+    matched = [row["id"] for row in rows if title_lower in row["title"].lower()]
     titles = [row["title"] for row in rows]
     return matched, titles
 
