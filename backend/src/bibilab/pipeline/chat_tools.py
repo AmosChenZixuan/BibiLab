@@ -9,7 +9,7 @@ from bibilab.config import BibilabConfig
 from bibilab.db import count_sources, create_job, language_breakdown, longest_source
 from bibilab.models._enums import RetrievalParams, SearchMode
 from bibilab.pipeline._shared import ToolDefinition
-from bibilab.pipeline.embed import retrieve
+from bibilab.pipeline.embed import apply_source_filter, retrieve
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +43,19 @@ _PARAMS_BY_MODE = {
     "breadth": RetrievalParams(depth_per_source=1, top_k=20),
     "analytical": RetrievalParams(depth_per_source=4, top_k=12),
 }
+
+
+def params_for_expected_hits(expected_hits: str) -> RetrievalParams:
+    """Map expected_hits to RetrievalParams for I-1.
+
+    Replaces search_mode_to_params.
+    """
+    table = {
+        "one": RetrievalParams(depth_per_source=1, top_k=2),
+        "few": RetrievalParams(depth_per_source=2, top_k=8),
+        "many": RetrievalParams(depth_per_source=5, top_k=24),
+    }
+    return table.get(expected_hits, table["few"])
 
 
 def search_mode_to_params(search_mode: SearchMode, sources_total: int) -> RetrievalParams:
@@ -193,18 +206,42 @@ async def execute_generate_report(
 
 async def execute_retrieve(
     query: str,
-    search_mode: SearchMode,
     source_ids: list[str],
     cfg: BibilabConfig,
     registry: dict[str, CitationRegistryEntry] | None = None,
     source_map: dict[str, str] | None = None,
+    source_filter: dict | None = None,
+    expected_hits: str = "few",
 ) -> dict:
     if registry is None:
         registry = {}
     if source_map is None:
         source_map = {}
 
-    params = search_mode_to_params(search_mode, len(source_ids))
+    # Apply source_filter if provided
+    if source_filter is not None:
+        narrowed_video_ids = await apply_source_filter(source_ids, source_filter)
+        if narrowed_video_ids == []:
+            # filter_miss: no sources matched the filter
+            return {
+                "query": query,
+                "source_filter": source_filter,
+                "filter_miss": True,
+                "candidates_evaluated": 0,
+                "sources_with_hits": 0,
+                "sources_total": len(source_ids),
+                "source_coverage": [],
+                "_chunks": "",
+                "_turn_indices": [],
+                "_raw_chunks": [],
+            }
+        if narrowed_video_ids is not None:
+            # Narrow: resolve video_ids to source_ids for the retrieve call
+            video_to_source = {v: s for s, v in source_map.items()}
+            filtered_source_ids = [video_to_source[vid] for vid in narrowed_video_ids if vid in video_to_source]
+            source_ids = filtered_source_ids
+
+    params = params_for_expected_hits(expected_hits)
     result = await retrieve(query_text=query, source_ids=source_ids, cfg=cfg, params=params)
 
     # Assign indices: new sources get next available index
@@ -264,7 +301,8 @@ async def execute_retrieve(
 
     return {
         "query": query,
-        "search_mode": search_mode,
+        "source_filter": source_filter,
+        "filter_miss": False,
         "candidates_evaluated": result.candidates_evaluated,
         "sources_with_hits": result.sources_with_hits,
         "sources_total": result.sources_total,
@@ -329,11 +367,12 @@ async def execute_tool(
     if tool_name == RETRIEVE_TOOL.name:
         return await execute_retrieve(
             query=arguments["query"],
-            search_mode=arguments["search_mode"],
             source_ids=source_ids,
             cfg=cfg,
             registry=registry,
             source_map=source_map,
+            source_filter=arguments.get("source_filter"),
+            expected_hits=arguments.get("expected_hits", "few"),
         )
     if tool_name == GENERATE_REPORT_TOOL.name:
         artifact_type = arguments.get("type")

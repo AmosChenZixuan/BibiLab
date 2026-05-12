@@ -280,13 +280,83 @@ class TestExecuteRetrieve:
 
         result = await chat_tools.execute_retrieve(
             query="面食 种类",
-            search_mode="breadth",
             source_ids=["s1"],
             cfg=None,
         )
 
         assert result["query"] == "面食 种类"
-        assert result["search_mode"] == "breadth"
+        assert result["filter_miss"] is False
+
+
+@pytest.mark.asyncio
+async def test_execute_retrieve_with_source_filter_narrows_sources(monkeypatch):
+    from bibilab.config import AIConfig, BibilabConfig
+    from bibilab.pipeline import chat_tools
+    from bibilab.pipeline.embed import RetrievalResult, RetrievedChunk, SourceHit
+
+    apply_called = False
+
+    async def fake_apply(source_ids, source_filter):
+        nonlocal apply_called
+        apply_called = True
+        assert source_ids == ["s1"]
+        assert source_filter == {"title_contains": "第八集"}
+        return ["v8"]
+
+    monkeypatch.setattr(chat_tools, "apply_source_filter", fake_apply)
+
+    async def fake_retrieve(query_text, source_ids, cfg, params):
+        return RetrievalResult(
+            chunks=[
+                RetrievedChunk(
+                    content="...",
+                    video_title="第八集",
+                    timestamp_start=0.0,
+                    timestamp_end=10.0,
+                    video_id="v8",
+                    distance=0.0,
+                ),
+            ],
+            candidates_evaluated=1,
+            sources_with_hits=1,
+            sources_total=1,
+            source_coverage=[SourceHit(video_id="v8", video_title="第八集", best_score=0.0)],
+        )
+
+    monkeypatch.setattr(chat_tools, "retrieve", fake_retrieve)
+
+    result = await chat_tools.execute_retrieve(
+        query="第八集讲了什么",
+        source_ids=["s1"],
+        cfg=BibilabConfig(ai=AIConfig(protocol="openai", model="x", api_key="k")),
+        source_map={"v8": "s1"},
+        source_filter={"title_contains": "第八集"},
+        expected_hits="many",
+    )
+
+    assert apply_called
+    assert result["sources_total"] == 1
+
+
+@pytest.mark.asyncio
+async def test_execute_retrieve_filter_miss_returns_filter_miss_true(monkeypatch):
+    from bibilab.config import AIConfig, BibilabConfig
+    from bibilab.pipeline import chat_tools
+
+    async def fake_apply(source_ids, source_filter):
+        return []
+
+    monkeypatch.setattr(chat_tools, "apply_source_filter", fake_apply)
+
+    result = await chat_tools.execute_retrieve(
+        query="不存在的",
+        source_ids=["s1"],
+        cfg=BibilabConfig(ai=AIConfig(protocol="openai", model="x", api_key="k")),
+        source_map={"v8": "s1"},
+        source_filter={"title_contains": "不存在的"},
+    )
+
+    assert result["filter_miss"] is True
 
 
 @pytest.mark.asyncio
@@ -325,7 +395,6 @@ async def test_execute_retrieve_returns_raw_chunks_for_replay(monkeypatch):
 
     result = await chat_tools.execute_retrieve(
         query="test",
-        search_mode="factual",
         source_ids=["s1"],
         cfg=cfg,
         registry=registry,
