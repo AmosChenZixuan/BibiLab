@@ -485,8 +485,8 @@ class TestRetrieveToolDescription:
         from bibilab.pipeline.chat_tools import RETRIEVE_TOOL
 
         desc = RETRIEVE_TOOL.description
-        assert "short or vague" in desc or "even short" in desc
-        assert "content question" in desc
+        assert "source_filter" in desc
+        assert "content question" in desc or "narrow content" in desc
 
 
 class TestBuildToolBlockEntry:
