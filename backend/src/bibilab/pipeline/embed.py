@@ -61,8 +61,6 @@ class RetrievalResult:
     sources_with_hits: int
     sources_total: int
     source_coverage: list[SourceHit]
-    source_filter: dict | None = None  # NEW
-    filter_miss: bool = False  # NEW
 
 
 def _chunk_score(chunk: RetrievedChunk) -> float:
@@ -428,18 +426,9 @@ async def apply_source_filter(
 ) -> list[str] | None:
     """Narrow source_ids by source_filter.title_contains.
 
-    Returns None when source_filter is None (passthrough — caller should not narrow).
-    Returns [] when filter is present but matches no sources (filter_miss case).
-    Uses plain SQL LIKE when sources_fts (I-3) is not yet available.
-
-    Args:
-        source_ids: Full list of source UUIDs to filter from.
-        source_filter: Filter dict with optional title_contains key.
-
-    Returns:
-        None when no filter (passthrough signal).
-        [] when filter present but zero sources matched.
-        List of video_ids for matched sources otherwise.
+    Returns None when source_filter is None (passthrough signal).
+    Returns [] when filter matches no sources (filter_miss).
+    Otherwise returns list of matched video_ids.
     """
     if source_filter is None:
         return None  # Signal: no narrowing needed

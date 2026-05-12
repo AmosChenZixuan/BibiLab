@@ -10,8 +10,7 @@ class VideoStatus(str, Enum):
     NEEDS_AUTH = "needs_auth"
 
 
-SearchMode = Literal["factual", "breadth", "analytical"]  # deprecated, kept for compat
-ExpectedHits = Literal["one", "few", "many"]  # canonical type for expected_hits parameter
+ExpectedHits = Literal["one", "few", "many"]
 
 
 @dataclass(frozen=True)
