@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -92,6 +93,19 @@ def _diverse_top_k(ranked: list[RetrievedChunk], depth: int, k: int) -> list[Ret
             if len(picked) == k:
                 return picked
     return picked
+
+
+def _adaptive_depth(spec_depth: int, top_k: int, num_sources_in_pool: int) -> int:
+    """Effective per-source depth given the pool's distinct-source count.
+
+    When the LLM (post-#287) scopes retrieval to one source via
+    `selected_source_ids`, the static depth from _PARAMS_BY_MODE under-returns.
+    This raises depth toward top_k as the pool narrows. Empty pool returns
+    spec to avoid divide-by-zero; _diverse_top_k handles empty input fine).
+    """
+    if num_sources_in_pool <= 0:
+        return spec_depth
+    return max(spec_depth, math.ceil(top_k / num_sources_in_pool))
 
 
 def _rrf_fuse(

@@ -442,6 +442,38 @@ async def test_retrieve_uses_candidate_pool(tmp_bibilab_home):
         mock_qc.assert_called_once_with("test query", ["s1"], cfg, top_k=_dynamic_pool(1), video_ids=["v1"])
 
 
+# --- _adaptive_depth unit tests ---
+
+
+def test_adaptive_depth_single_source_relaxes_to_top_k():
+    from bibilab.pipeline.embed import _adaptive_depth
+
+    # 1 source in pool: depth grows to top_k so single-source queries aren't
+    # capped to 2 chunks (regression introduced by #287 scoped queries).
+    assert _adaptive_depth(spec_depth=2, top_k=8, num_sources_in_pool=1) == 8
+
+
+def test_adaptive_depth_few_sources_partial_relax():
+    from bibilab.pipeline.embed import _adaptive_depth
+
+    # 2 sources, top_k=8 → 4 each (ceil(8/2))
+    assert _adaptive_depth(spec_depth=2, top_k=8, num_sources_in_pool=2) == 4
+
+
+def test_adaptive_depth_many_sources_preserves_spec():
+    from bibilab.pipeline.embed import _adaptive_depth
+
+    # 8 sources, top_k=8 → spec wins (ceil(8/8)=1 < 2)
+    assert _adaptive_depth(spec_depth=2, top_k=8, num_sources_in_pool=8) == 2
+
+
+def test_adaptive_depth_zero_sources_returns_spec():
+    from bibilab.pipeline.embed import _adaptive_depth
+
+    # Empty pool: return spec to avoid divide-by-zero
+    assert _adaptive_depth(spec_depth=2, top_k=8, num_sources_in_pool=0) == 2
+
+
 @pytest.mark.asyncio
 async def test_retrieve_depth_two_keeps_multiple_per_source(tmp_bibilab_home):
     from bibilab.config import BibilabConfig, RagConfig
