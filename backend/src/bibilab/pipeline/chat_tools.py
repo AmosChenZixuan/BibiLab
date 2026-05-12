@@ -9,7 +9,7 @@ from bibilab.config import BibilabConfig
 from bibilab.db import count_sources, create_job, get_titles, language_breakdown, longest_source
 from bibilab.models._enums import RetrievalParams
 from bibilab.pipeline._shared import ToolDefinition
-from bibilab.pipeline.embed import apply_source_filter, retrieve
+from bibilab.pipeline.embed import retrieve
 
 logger = logging.getLogger(__name__)
 
@@ -227,7 +227,7 @@ async def execute_retrieve(
     cfg: BibilabConfig,
     registry: dict[str, CitationRegistryEntry] | None = None,
     source_map: dict[str, str] | None = None,
-    source_filter: dict | None = None,
+    selected_source_ids: list[str] | None = None,
     expected_hits: str = DEFAULT_EXPECTED_HITS,
 ) -> dict:
     if registry is None:
@@ -235,31 +235,12 @@ async def execute_retrieve(
     if source_map is None:
         source_map = {}
 
-    # Some Anthropic-compatible providers (e.g. MiniMax) serialize nested object
-    # arguments as JSON strings in later tool-call rounds. Attempt parse before use.
-    if isinstance(source_filter, str):
-        try:
-            source_filter = json.loads(source_filter)
-        except json.JSONDecodeError:
-            logger.warning("source_filter was a non-JSON string: %r", source_filter)
-            source_filter = None
-
-    # Apply source_filter only when title_contains is present
+    # selected_source_ids: string list of source IDs selected by LLM via query_list_metadata.
+    # Compute intersection with available source_ids to produce scoped_source_ids.
     scoped_source_ids: list[str] | None = None
-    if isinstance(source_filter, dict) and source_filter.get("title_contains"):
-        filtered_source_ids, all_titles = await apply_source_filter(source_ids, source_filter)
-        if not filtered_source_ids:
-            filter_str = source_filter["title_contains"]
-            msg = _format_filter_miss_message(filter_str, all_titles) if all_titles else ""
-            return _empty_retrieve_result(
-                query=query,
-                source_filter=source_filter,
-                filter_miss=True,
-                sources_total=len(source_ids),
-                expected_hits=expected_hits,
-                chunks_text=msg,
-            )
-        scoped_source_ids = filtered_source_ids
+    if selected_source_ids:  # non-None and non-empty; [] means "search all"
+        id_set = set(source_ids)
+        scoped_source_ids = [sid for sid in selected_source_ids if sid in id_set]
 
     params = params_for_expected_hits(expected_hits)
     result = await retrieve(
@@ -327,8 +308,6 @@ async def execute_retrieve(
 
     return {
         "query": query,
-        "source_filter": source_filter,
-        "filter_miss": False,
         "expected_hits": expected_hits,
         "candidates_evaluated": result.candidates_evaluated,
         "sources_with_hits": result.sources_with_hits,
@@ -393,9 +372,9 @@ async def execute_tool(
 ) -> dict:
     if tool_name == RETRIEVE_TOOL.name:
         logger.info(
-            "retrieve tool call: query=%r source_filter=%r expected_hits=%r",
+            "retrieve tool call: query=%r source_ids=%r expected_hits=%r",
             arguments["query"],
-            arguments.get("source_filter"),
+            arguments.get("source_ids"),
             arguments.get("expected_hits", DEFAULT_EXPECTED_HITS),
         )
         return await execute_retrieve(
@@ -404,7 +383,7 @@ async def execute_tool(
             cfg=cfg,
             registry=registry,
             source_map=source_map,
-            source_filter=arguments.get("source_filter"),
+            selected_source_ids=arguments.get("source_ids"),
             expected_hits=arguments.get("expected_hits", DEFAULT_EXPECTED_HITS),
         )
     if tool_name == GENERATE_REPORT_TOOL.name:
