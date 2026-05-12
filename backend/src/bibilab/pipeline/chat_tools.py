@@ -39,14 +39,16 @@ def _build_source_headers(registry: dict[str, CitationRegistryEntry]) -> str:
 _VALID_ARTIFACT_TYPES = frozenset({"brief", "study_guide", "blog_post", "custom_report"})
 
 
+DEFAULT_EXPECTED_HITS = "few"
+
+
 def params_for_expected_hits(expected_hits: str) -> RetrievalParams:
     """Map expected_hits to RetrievalParams."""
-    table = {
+    return {
         "one": RetrievalParams(depth_per_source=1, top_k=2),
         "few": RetrievalParams(depth_per_source=2, top_k=8),
         "many": RetrievalParams(depth_per_source=5, top_k=24),
-    }
-    return table.get(expected_hits, table["few"])
+    }[expected_hits]
 
 
 def _empty_retrieve_result(
@@ -54,7 +56,7 @@ def _empty_retrieve_result(
     source_filter: dict | None,
     filter_miss: bool,
     sources_total: int,
-    expected_hits: str = "few",
+    expected_hits: str = DEFAULT_EXPECTED_HITS,
 ) -> dict:
     return {
         "query": query,
@@ -209,17 +211,17 @@ async def execute_retrieve(
     registry: dict[str, CitationRegistryEntry] | None = None,
     source_map: dict[str, str] | None = None,
     source_filter: dict | None = None,
-    expected_hits: str = "few",
+    expected_hits: str = DEFAULT_EXPECTED_HITS,
 ) -> dict:
     if registry is None:
         registry = {}
     if source_map is None:
         source_map = {}
 
-    # Apply source_filter if provided
-    if source_filter is not None:
-        narrowed_video_ids = await apply_source_filter(source_ids, source_filter)
-        if narrowed_video_ids == []:
+    # Apply source_filter only when title_contains is present
+    if source_filter is not None and source_filter.get("title_contains"):
+        filtered_source_ids = await apply_source_filter(source_ids, source_filter)
+        if not filtered_source_ids:
             return _empty_retrieve_result(
                 query=query,
                 source_filter=source_filter,
@@ -227,26 +229,7 @@ async def execute_retrieve(
                 sources_total=len(source_ids),
                 expected_hits=expected_hits,
             )
-        if narrowed_video_ids is not None:
-            # Narrow: resolve video_ids to source_ids for the retrieve call
-            video_to_source = {v: s for s, v in source_map.items()}
-            filtered_source_ids = [video_to_source[vid] for vid in narrowed_video_ids if vid in video_to_source]
-            if len(narrowed_video_ids) != len(filtered_source_ids):
-                logger.warning(
-                    "source_filter narrowed to %d video_ids but only %d found in source_map — "
-                    "some sources silently dropped",
-                    len(narrowed_video_ids),
-                    len(filtered_source_ids),
-                )
-            if not filtered_source_ids:
-                return _empty_retrieve_result(
-                    query=query,
-                    source_filter=source_filter,
-                    filter_miss=False,
-                    sources_total=len(source_ids),
-                    expected_hits=expected_hits,
-                )
-            source_ids = filtered_source_ids
+        source_ids = filtered_source_ids
 
     params = params_for_expected_hits(expected_hits)
     result = await retrieve(query_text=query, source_ids=source_ids, cfg=cfg, params=params)
@@ -380,7 +363,7 @@ async def execute_tool(
             registry=registry,
             source_map=source_map,
             source_filter=arguments.get("source_filter"),
-            expected_hits=arguments.get("expected_hits", "few"),
+            expected_hits=arguments.get("expected_hits", DEFAULT_EXPECTED_HITS),
         )
     if tool_name == GENERATE_REPORT_TOOL.name:
         artifact_type = arguments.get("type")

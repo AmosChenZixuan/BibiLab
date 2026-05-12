@@ -39,7 +39,7 @@ class TestApplySourceFilter:
             source_ids=["s8", "s3"],
             source_filter={"title_contains": "第八集"},
         )
-        assert result == ["v8"]
+        assert result == ["s8"]
 
     @pytest.mark.asyncio
     async def test_title_contains_no_match_returns_empty(self, tmp_bibilab_home):
@@ -63,11 +63,12 @@ class TestApplySourceFilter:
         assert result == []
 
     @pytest.mark.asyncio
-    async def test_no_filter_returns_none(self, tmp_bibilab_home):
+    async def test_none_filter_returns_empty_list(self, tmp_bibilab_home):
         from bibilab.pipeline.embed import apply_source_filter
 
+        # None is gated at the call site; the function itself returns [] for empty/no-match
         result = await apply_source_filter(source_ids=["s1", "s2"], source_filter=None)
-        assert result is None
+        assert result == []
 
     @pytest.mark.asyncio
     async def test_empty_filter_returns_empty(self, tmp_bibilab_home):

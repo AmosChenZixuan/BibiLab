@@ -423,41 +423,29 @@ async def hybrid_search(
 async def apply_source_filter(
     source_ids: list[str],
     source_filter: dict | None,
-) -> list[str] | None:
-    """Narrow source_ids by source_filter.title_contains.
+) -> list[str]:
+    """Return source_ids whose title matches source_filter.title_contains (case-insensitive).
 
-    Returns None when source_filter is None (passthrough signal).
-    Returns [] when filter matches no sources (filter_miss).
-    Otherwise returns list of matched video_ids.
+    Returns [] when no sources match.
     """
-    if source_filter is None:
-        return None  # Signal: no narrowing needed
+    if not source_ids:
+        return []
 
-    title_contains = source_filter.get("title_contains", "")
+    title_contains = source_filter.get("title_contains", "") if source_filter else ""
     if not title_contains:
         return []  # Empty filter → no match
 
-    id_to_video = await get_video_ids_for_sources(source_ids)
-    if not id_to_video:
-        return []
-
-    source_id_list = list(id_to_video.keys())
-    placeholders = ", ".join(["?"] * len(source_id_list))
+    placeholders = ", ".join(["?"] * len(source_ids))
 
     async with get_db() as db:
         cursor = await db.execute(
-            f"SELECT id, video_id, title FROM sources WHERE id IN ({placeholders})",
-            source_id_list,
+            f"SELECT id, title FROM sources WHERE id IN ({placeholders})",
+            source_ids,
         )
         rows = await cursor.fetchall()
 
-    matched: list[tuple[str, str]] = []  # (video_id, title)
-    for row in rows:
-        if title_contains.lower() in row["title"].lower():
-            matched.append((row["video_id"], row["title"]))
-
-    matched.sort(key=lambda x: x[1])
-    return [vid for vid, _ in matched]
+    matched = [row["id"] for row in rows if title_contains.lower() in row["title"].lower()]
+    return matched
 
 
 async def retrieve(
