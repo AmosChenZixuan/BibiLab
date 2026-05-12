@@ -12,15 +12,20 @@ class TestRetrieveToolSchema:
         props = RETRIEVE_TOOL.parameters["properties"]
         assert "search_mode" not in props
 
-    def test_retrieve_tool_has_source_filter(self):
+    def test_retrieve_tool_no_source_filter(self):
         from bibilab.pipeline.chat_tools import RETRIEVE_TOOL
 
         props = RETRIEVE_TOOL.parameters["properties"]
-        assert "source_filter" in props
-        sf = props["source_filter"]
-        assert sf["type"] == "object"
-        assert "title_contains" in sf["properties"]
-        assert sf["properties"]["title_contains"]["type"] == "string"
+        assert "source_filter" not in props
+
+    def test_retrieve_tool_has_source_ids(self):
+        from bibilab.pipeline.chat_tools import RETRIEVE_TOOL
+
+        props = RETRIEVE_TOOL.parameters["properties"]
+        assert "source_ids" in props
+        assert props["source_ids"]["type"] == "array"
+        assert props["source_ids"]["items"] == {"type": "string"}
+        assert props["source_ids"]["nullable"] is True
 
     def test_retrieve_tool_has_expected_hits(self):
         from bibilab.pipeline.chat_tools import RETRIEVE_TOOL
@@ -35,12 +40,11 @@ class TestRetrieveToolSchema:
         required = RETRIEVE_TOOL.parameters["required"]
         assert required == ["query"]
 
-    def test_retrieve_tool_description_guides_source_filter(self):
+    def test_retrieve_tool_description_reflects_source_ids_approach(self):
         from bibilab.pipeline.chat_tools import RETRIEVE_TOOL
 
         desc = RETRIEVE_TOOL.description
-        assert "source_filter" in desc
-        assert "title_contains" in desc or "episode" in desc.lower()
+        assert "query_list_metadata" in desc or "titles" in desc
 
 
 class TestGenerateReportToolDefinition:
@@ -172,8 +176,14 @@ class TestQueryListMetadataToolDefinition:
         assert QUERY_LIST_METADATA_TOOL.name == "query_list_metadata"
         props = QUERY_LIST_METADATA_TOOL.parameters["properties"]
         assert "query_type" in props
-        assert props["query_type"]["enum"] == ["count", "longest", "languages"]
+        assert props["query_type"]["enum"] == ["count", "longest", "languages", "titles"]
         assert QUERY_LIST_METADATA_TOOL.parameters["required"] == ["query_type"]
+
+    def test_tool_schema_includes_titles(self):
+        from bibilab.pipeline.chat_tools import QUERY_LIST_METADATA_TOOL
+
+        props = QUERY_LIST_METADATA_TOOL.parameters["properties"]
+        assert props["query_type"]["enum"] == ["count", "longest", "languages", "titles"]
 
 
 class TestExecuteQueryListMetadata:
@@ -237,6 +247,26 @@ class TestExecuteQueryListMetadata:
         assert result == {"count": 4}
         assert "Unknown query_type" in caplog.text
 
+    @pytest.mark.asyncio
+    async def test_titles_returns_list_of_source_id_title_dicts(self, tmp_bibilab_home):
+        from unittest.mock import AsyncMock, patch
+
+        from bibilab.pipeline.chat_tools import execute_query_list_metadata
+
+        with patch("bibilab.pipeline.chat_tools.get_titles", new_callable=AsyncMock) as m:
+            m.return_value = [
+                {"source_id": "s8", "title": "第八集 美食推荐"},
+                {"source_id": "s3", "title": "第3道菜 做法"},
+            ]
+            result = await execute_query_list_metadata(["s8", "s3"], "titles")
+        assert result == {
+            "titles": [
+                {"source_id": "s8", "title": "第八集 美食推荐"},
+                {"source_id": "s3", "title": "第3道菜 做法"},
+            ]
+        }
+        m.assert_awaited_once_with(["s8", "s3"])
+
 
 class TestFormatChunkForLLM:
     def test_format_with_index(self):
@@ -285,105 +315,82 @@ class TestExecuteRetrieve:
         )
 
         assert result["query"] == "面食 种类"
-        assert result["filter_miss"] is False
+        assert "filter_miss" not in result  # filter_miss removed in #287
 
+    @pytest.mark.asyncio
+    async def test_execute_retrieve_with_selected_source_ids_limits_search_pool(self, monkeypatch):
+        """selected_source_ids set intersection should limit search pool."""
+        from bibilab.config import AIConfig, BibilabConfig
+        from bibilab.pipeline import chat_tools
+        from bibilab.pipeline.embed import RetrievalResult, RetrievedChunk, SourceHit
 
-@pytest.mark.asyncio
-async def test_execute_retrieve_with_source_filter_narrows_sources(monkeypatch):
-    from bibilab.config import AIConfig, BibilabConfig
-    from bibilab.pipeline import chat_tools
-    from bibilab.pipeline.embed import RetrievalResult, RetrievedChunk, SourceHit
+        retrieve_called_with = None
 
-    apply_called = False
+        async def fake_retrieve(query_text, source_ids, cfg, params, scoped_source_ids=None, **kwargs):
+            nonlocal retrieve_called_with
+            retrieve_called_with = scoped_source_ids
+            return RetrievalResult(
+                chunks=[
+                    RetrievedChunk(
+                        content="content about s2",
+                        video_title="Source 2",
+                        timestamp_start=0.0,
+                        timestamp_end=10.0,
+                        video_id="v2",
+                        distance=0.0,
+                    ),
+                ],
+                candidates_evaluated=1,
+                sources_with_hits=1,
+                sources_total=3,
+                source_coverage=[SourceHit(video_id="v2", video_title="Source 2", best_score=0.0)],
+            )
 
-    async def fake_apply(source_ids, source_filter):
-        nonlocal apply_called
-        apply_called = True
-        assert source_ids == ["s1"]
-        assert source_filter == {"title_contains": "第八集"}
-        return ["v8"], ["第八集 xxx"]
+        monkeypatch.setattr(chat_tools, "retrieve", fake_retrieve)
 
-    monkeypatch.setattr(chat_tools, "apply_source_filter", fake_apply)
-
-    async def fake_retrieve(query_text, source_ids, cfg, params, **kwargs):
-        return RetrievalResult(
-            chunks=[
-                RetrievedChunk(
-                    content="...",
-                    video_title="第八集",
-                    timestamp_start=0.0,
-                    timestamp_end=10.0,
-                    video_id="v8",
-                    distance=0.0,
-                ),
-            ],
-            candidates_evaluated=1,
-            sources_with_hits=1,
-            sources_total=1,
-            source_coverage=[SourceHit(video_id="v8", video_title="第八集", best_score=0.0)],
+        cfg = BibilabConfig(ai=AIConfig(protocol="openai", model="x", api_key="k"))
+        result = await chat_tools.execute_retrieve(
+            query="test query",
+            source_ids=["s1", "s2", "s3"],
+            cfg=cfg,
+            source_map={"v2": "s2"},
+            selected_source_ids=["s2"],
         )
 
-    monkeypatch.setattr(chat_tools, "retrieve", fake_retrieve)
+        assert retrieve_called_with == ["s2"]
+        assert result["sources_total"] == 3
 
-    result = await chat_tools.execute_retrieve(
-        query="第八集讲了什么",
-        source_ids=["s1"],
-        cfg=BibilabConfig(ai=AIConfig(protocol="openai", model="x", api_key="k")),
-        source_map={"v8": "s1"},
-        source_filter={"title_contains": "第八集"},
-        expected_hits="many",
-    )
+    @pytest.mark.asyncio
+    async def test_execute_retrieve_empty_selected_source_ids_means_search_all(self, monkeypatch):
+        """selected_source_ids=[] is falsy, scoped_source_ids=None (search all)."""
+        from bibilab.config import AIConfig, BibilabConfig
+        from bibilab.pipeline import chat_tools
+        from bibilab.pipeline.embed import RetrievalResult
 
-    assert apply_called
-    assert result["sources_total"] == 1
+        retrieve_called_with = None
 
+        async def fake_retrieve(query_text, source_ids, cfg, params, scoped_source_ids=None, **kwargs):
+            nonlocal retrieve_called_with
+            retrieve_called_with = scoped_source_ids
+            return RetrievalResult(
+                chunks=[],
+                source_coverage=[],
+                candidates_evaluated=0,
+                sources_with_hits=0,
+                sources_total=2,
+            )
 
-@pytest.mark.asyncio
-async def test_execute_retrieve_filter_miss_returns_filter_miss_true(monkeypatch):
-    from bibilab.config import AIConfig, BibilabConfig
-    from bibilab.pipeline import chat_tools
+        monkeypatch.setattr(chat_tools, "retrieve", fake_retrieve)
 
-    async def fake_apply(source_ids, source_filter):
-        return [], ["第8集 xxx"]
+        cfg = BibilabConfig(ai=AIConfig(protocol="openai", model="x", api_key="k"))
+        await chat_tools.execute_retrieve(
+            query="test",
+            source_ids=["s1", "s2"],
+            cfg=cfg,
+            selected_source_ids=[],  # empty list means "search all"
+        )
 
-    monkeypatch.setattr(chat_tools, "apply_source_filter", fake_apply)
-
-    result = await chat_tools.execute_retrieve(
-        query="第八集",
-        source_ids=["s1"],
-        cfg=BibilabConfig(ai=AIConfig(protocol="openai", model="x", api_key="k")),
-        source_map={"v8": "s1"},
-        source_filter={"title_contains": "第八集"},
-    )
-
-    assert result["filter_miss"] is True
-    assert "第8集 xxx" in result["_chunks"]
-    assert "No sources matched" in result["_chunks"]
-
-
-@pytest.mark.asyncio
-async def test_execute_retrieve_filter_miss_caps_titles_at_20(monkeypatch):
-    from bibilab.config import AIConfig, BibilabConfig
-    from bibilab.pipeline import chat_tools
-
-    async def fake_apply(source_ids, source_filter):
-        return [], [f"第{i}集 xxx" for i in range(25)]
-
-    monkeypatch.setattr(chat_tools, "apply_source_filter", fake_apply)
-
-    result = await chat_tools.execute_retrieve(
-        query="不存在",
-        source_ids=["s1"],
-        cfg=BibilabConfig(ai=AIConfig(protocol="openai", model="x", api_key="k")),
-        source_map={"v1": "s1"},
-        source_filter={"title_contains": "不存在"},
-    )
-
-    assert result["filter_miss"] is True
-    assert "第0集 xxx" in result["_chunks"]
-    assert "第19集 xxx" in result["_chunks"]
-    assert "第20集 xxx" not in result["_chunks"]
-    assert "... and 5 more" in result["_chunks"]
+        assert retrieve_called_with is None  # must be None, not [], to mean "search all"
 
 
 @pytest.mark.asyncio
@@ -512,7 +519,7 @@ class TestRetrieveToolDescription:
         from bibilab.pipeline.chat_tools import RETRIEVE_TOOL
 
         desc = RETRIEVE_TOOL.description
-        assert "source_filter" in desc
+        assert "query_list_metadata" in desc or "source_ids" in desc
         assert "content question" in desc or "narrow content" in desc
 
 

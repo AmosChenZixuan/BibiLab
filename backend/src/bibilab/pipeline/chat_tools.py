@@ -6,10 +6,10 @@ import uuid
 from dataclasses import dataclass, field
 
 from bibilab.config import BibilabConfig
-from bibilab.db import count_sources, create_job, language_breakdown, longest_source
+from bibilab.db import count_sources, create_job, get_titles, language_breakdown, longest_source
 from bibilab.models._enums import RetrievalParams
 from bibilab.pipeline._shared import ToolDefinition
-from bibilab.pipeline.embed import apply_source_filter, retrieve
+from bibilab.pipeline.embed import retrieve
 
 logger = logging.getLogger(__name__)
 
@@ -51,37 +51,6 @@ def params_for_expected_hits(expected_hits: str) -> RetrievalParams:
     }[expected_hits]
 
 
-def _format_filter_miss_message(filter_str: str, titles: list[str], *, cap: int = 20) -> str:
-    shown = titles[:cap]
-    overflow = len(titles) - cap
-    overflow_suffix = f"\n- ... and {overflow} more" if overflow > 0 else ""
-    titles_fmt = "\n".join(f"- {t}" for t in shown) + overflow_suffix
-    return f"\n\nNo sources matched 'title_contains: {filter_str}'. Available titles:\n{titles_fmt}"
-
-
-def _empty_retrieve_result(
-    query: str,
-    source_filter: dict | None,
-    filter_miss: bool,
-    sources_total: int,
-    expected_hits: str = DEFAULT_EXPECTED_HITS,
-    chunks_text: str = "",
-) -> dict:
-    return {
-        "query": query,
-        "source_filter": source_filter,
-        "filter_miss": filter_miss,
-        "expected_hits": expected_hits,
-        "candidates_evaluated": 0,
-        "sources_with_hits": 0,
-        "sources_total": sources_total,
-        "source_coverage": [],
-        "_chunks": chunks_text,
-        "_turn_indices": [],
-        "_raw_chunks": [],
-    }
-
-
 GENERATE_REPORT_TOOL = ToolDefinition(
     name="generate_report",
     description=(
@@ -109,9 +78,10 @@ RETRIEVE_TOOL = ToolDefinition(
     name="retrieve",
     description=(
         "Retrieve information from video transcripts. "
-        "When the user names a specific source by title, episode number, "
-        "or other identifier (e.g. '第八集', '第3道菜', 'the React video'), "
-        "include source_filter so retrieval is scoped to that subset. "
+        "When the user names a specific source by episode number, title, or other identifier "
+        "(e.g. '第八集', '第3道菜', 'the React video'), "
+        "first call query_list_metadata(query_type='titles') to get the list of sources, "
+        "then call retrieve with source_ids set to the matching source ID(s). "
         "Use expected_hits='one' for single-fact questions ('how many eggs'), "
         "'few' (default) for narrow content questions, "
         "'many' for survey questions or comprehensive summaries. "
@@ -124,20 +94,19 @@ RETRIEVE_TOOL = ToolDefinition(
                 "type": "string",
                 "description": "Search query — key terms or question in the user's language",
             },
-            "source_filter": {
-                "type": "object",
+            "source_ids": {
+                "type": "array",
+                "items": {"type": "string"},
+                "nullable": True,
                 "description": (
-                    "REQUIRED when the user references a specific source by episode/chapter number, "
-                    "title fragment, character/chef name, or video name. "
-                    "Omit ONLY for cross-source queries (compare, list all, etc.). "
-                    "Example: user says '第八集' → {'title_contains': '第八集'}"
+                    "Optional list of source IDs to search within. "
+                    "When the user references a specific source(s) by episode #, title, chef/character name, etc., "
+                    "first call query_list_metadata(query_type='titles') to get the list of sources, "
+                    "then pass the selected source_ids here. "
+                    "Omit for cross-source queries (compare, list all, etc.). "
+                    "Example: query_list_metadata returns [{source_id: 's8', title: '第8集 xxx'}, ...]; "
+                    "if the user asks about '第八集', call retrieve(source_ids=['s8']). "
                 ),
-                "properties": {
-                    "title_contains": {
-                        "type": "string",
-                        "description": "Case-insensitive substring match against sources.title",
-                    },
-                },
             },
             "expected_hits": {
                 "type": "string",
@@ -166,11 +135,12 @@ QUERY_LIST_METADATA_TOOL = ToolDefinition(
         "properties": {
             "query_type": {
                 "type": "string",
-                "enum": ["count", "longest", "languages"],
+                "enum": ["count", "longest", "languages", "titles"],
                 "description": (
                     "count = number of sources; "
                     "longest = source with the longest duration; "
-                    "languages = count per language"
+                    "languages = count per language; "
+                    "titles = list of {source_id, title} for source selection"
                 ),
             },
         },
@@ -187,6 +157,8 @@ async def execute_query_list_metadata(source_ids: list[str], query_type: str) ->
         return row if row is not None else {"title": None, "duration_seconds": None}
     if query_type == "languages":
         return {"languages": await language_breakdown(source_ids)}
+    if query_type == "titles":
+        return {"titles": await get_titles(source_ids)}
     logger.warning("Unknown query_type %r — falling back to count", query_type)
     return {"count": await count_sources(source_ids)}
 
@@ -224,7 +196,7 @@ async def execute_retrieve(
     cfg: BibilabConfig,
     registry: dict[str, CitationRegistryEntry] | None = None,
     source_map: dict[str, str] | None = None,
-    source_filter: dict | None = None,
+    selected_source_ids: list[str] | None = None,
     expected_hits: str = DEFAULT_EXPECTED_HITS,
 ) -> dict:
     if registry is None:
@@ -232,31 +204,15 @@ async def execute_retrieve(
     if source_map is None:
         source_map = {}
 
-    # Some Anthropic-compatible providers (e.g. MiniMax) serialize nested object
-    # arguments as JSON strings in later tool-call rounds. Attempt parse before use.
-    if isinstance(source_filter, str):
-        try:
-            source_filter = json.loads(source_filter)
-        except json.JSONDecodeError:
-            logger.warning("source_filter was a non-JSON string: %r", source_filter)
-            source_filter = None
-
-    # Apply source_filter only when title_contains is present
+    # selected_source_ids: list of strings selected by LLM via query_list_metadata.
+    # Compute intersection with available source_ids to produce scoped_source_ids.
     scoped_source_ids: list[str] | None = None
-    if isinstance(source_filter, dict) and source_filter.get("title_contains"):
-        filtered_source_ids, all_titles = await apply_source_filter(source_ids, source_filter)
-        if not filtered_source_ids:
-            filter_str = source_filter["title_contains"]
-            msg = _format_filter_miss_message(filter_str, all_titles) if all_titles else ""
-            return _empty_retrieve_result(
-                query=query,
-                source_filter=source_filter,
-                filter_miss=True,
-                sources_total=len(source_ids),
-                expected_hits=expected_hits,
-                chunks_text=msg,
-            )
-        scoped_source_ids = filtered_source_ids
+    if selected_source_ids:  # non-None and non-empty; [] means "search all"
+        id_set = set(source_ids)
+        scoped_source_ids = [sid for sid in selected_source_ids if sid in id_set]
+        if len(scoped_source_ids) < len(selected_source_ids):
+            missing = set(selected_source_ids) - id_set
+            logger.debug("Some selected_source_ids not in source_ids pool, filtered out: %s", missing)
 
     params = params_for_expected_hits(expected_hits)
     result = await retrieve(
@@ -324,8 +280,6 @@ async def execute_retrieve(
 
     return {
         "query": query,
-        "source_filter": source_filter,
-        "filter_miss": False,
         "expected_hits": expected_hits,
         "candidates_evaluated": result.candidates_evaluated,
         "sources_with_hits": result.sources_with_hits,
@@ -389,10 +343,15 @@ async def execute_tool(
     source_map: dict[str, str] | None = None,
 ) -> dict:
     if tool_name == RETRIEVE_TOOL.name:
+        source_ids_arg = arguments.get("source_ids")
+        # Validate source_ids type: must be None or list of str
+        if source_ids_arg is not None and not isinstance(source_ids_arg, list):
+            logger.warning("retrieve source_ids=%r is not a list, ignoring", source_ids_arg)
+            source_ids_arg = None
         logger.info(
-            "retrieve tool call: query=%r source_filter=%r expected_hits=%r",
+            "retrieve tool call: query=%r source_ids=%r expected_hits=%r",
             arguments["query"],
-            arguments.get("source_filter"),
+            source_ids_arg,
             arguments.get("expected_hits", DEFAULT_EXPECTED_HITS),
         )
         return await execute_retrieve(
@@ -401,7 +360,7 @@ async def execute_tool(
             cfg=cfg,
             registry=registry,
             source_map=source_map,
-            source_filter=arguments.get("source_filter"),
+            selected_source_ids=source_ids_arg,
             expected_hits=arguments.get("expected_hits", DEFAULT_EXPECTED_HITS),
         )
     if tool_name == GENERATE_REPORT_TOOL.name:

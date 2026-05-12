@@ -191,9 +191,12 @@ def build_grounding_prompt(response_language: str) -> str:
         "summaries), you MUST call the retrieve tool BEFORE answering. "
         "For questions about counts, durations, or languages of the sources themselves, "
         "call query_list_metadata instead. "
-        "If the user names ANY specific source identifier (episode number, chapter, title, "
-        "character name, chef name, video name — e.g. '第八集', '第3道菜', 'the React video'), "
-        "you MUST include source_filter={'title_contains': '<identifier>'} in that retrieve call. "
+        "If the user names a specific source by episode number, chapter, title, "
+        "character name, chef name, video name — e.g. '第八集', '第3道菜', 'the React video', "
+        "first call query_list_metadata(query_type='titles') to get the list of available sources, "
+        "then call retrieve with source_ids set to the matching source ID(s). "
+        "Example: query_list_metadata returns [{source_id: 's8', title: '第8集 xxx'}, ...]; "
+        "if the user asks about '第八集', call retrieve(source_ids=['s8']). "
         "Use expected_hits='many' for comprehensive summaries of one source "
         "(e.g. '第八集讲了什么'), 'few' for content questions, 'one' for single facts. "
         "Do not answer from memory — always call the appropriate tool first for content "
@@ -550,8 +553,6 @@ async def run_chat_turn(
                     retrieve_calls.append(
                         {
                             "query": result.get("query", ""),
-                            "source_filter": result.get("source_filter"),
-                            "filter_miss": result.get("filter_miss", False),
                             "expected_hits": result.get("expected_hits"),
                             "candidates_evaluated": result.get("candidates_evaluated"),
                             "sources_with_hits": result.get("sources_with_hits"),
