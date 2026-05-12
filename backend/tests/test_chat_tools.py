@@ -12,15 +12,20 @@ class TestRetrieveToolSchema:
         props = RETRIEVE_TOOL.parameters["properties"]
         assert "search_mode" not in props
 
-    def test_retrieve_tool_has_source_filter(self):
+    def test_retrieve_tool_no_source_filter(self):
         from bibilab.pipeline.chat_tools import RETRIEVE_TOOL
 
         props = RETRIEVE_TOOL.parameters["properties"]
-        assert "source_filter" in props
-        sf = props["source_filter"]
-        assert sf["type"] == "object"
-        assert "title_contains" in sf["properties"]
-        assert sf["properties"]["title_contains"]["type"] == "string"
+        assert "source_filter" not in props
+
+    def test_retrieve_tool_has_source_ids(self):
+        from bibilab.pipeline.chat_tools import RETRIEVE_TOOL
+
+        props = RETRIEVE_TOOL.parameters["properties"]
+        assert "source_ids" in props
+        assert props["source_ids"]["type"] == "array"
+        assert props["source_ids"]["items"] == {"type": "string"}
+        assert props["source_ids"]["nullable"] is True
 
     def test_retrieve_tool_has_expected_hits(self):
         from bibilab.pipeline.chat_tools import RETRIEVE_TOOL
@@ -35,12 +40,11 @@ class TestRetrieveToolSchema:
         required = RETRIEVE_TOOL.parameters["required"]
         assert required == ["query"]
 
-    def test_retrieve_tool_description_guides_source_filter(self):
+    def test_retrieve_tool_description_reflects_source_ids_approach(self):
         from bibilab.pipeline.chat_tools import RETRIEVE_TOOL
 
         desc = RETRIEVE_TOOL.description
-        assert "source_filter" in desc
-        assert "title_contains" in desc or "episode" in desc.lower()
+        assert "query_list_metadata" in desc or "titles" in desc
 
 
 class TestGenerateReportToolDefinition:

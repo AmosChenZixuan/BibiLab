@@ -109,9 +109,10 @@ RETRIEVE_TOOL = ToolDefinition(
     name="retrieve",
     description=(
         "Retrieve information from video transcripts. "
-        "When the user names a specific source by title, episode number, "
-        "or other identifier (e.g. '第八集', '第3道菜', 'the React video'), "
-        "include source_filter so retrieval is scoped to that subset. "
+        "When the user names a specific source by episode number, title, or other identifier "
+        "(e.g. '第八集', '第3道菜', 'the React video'), "
+        "first call query_list_metadata(query_type='titles') to get the list of sources, "
+        "then call retrieve with source_ids set to the matching source ID(s). "
         "Use expected_hits='one' for single-fact questions ('how many eggs'), "
         "'few' (default) for narrow content questions, "
         "'many' for survey questions or comprehensive summaries. "
@@ -124,20 +125,19 @@ RETRIEVE_TOOL = ToolDefinition(
                 "type": "string",
                 "description": "Search query — key terms or question in the user's language",
             },
-            "source_filter": {
-                "type": "object",
+            "source_ids": {
+                "type": "array",
+                "items": {"type": "string"},
+                "nullable": True,
                 "description": (
-                    "REQUIRED when the user references a specific source by episode/chapter number, "
-                    "title fragment, character/chef name, or video name. "
-                    "Omit ONLY for cross-source queries (compare, list all, etc.). "
-                    "Example: user says '第八集' → {'title_contains': '第八集'}"
+                    "Optional list of source IDs to search within. "
+                    "When the user references a specific source(s) by episode #, title, chef/character name, etc., "
+                    "first call query_list_metadata(query_type='titles') to get the list of sources, "
+                    "then pass the selected source_ids here. "
+                    "Omit for cross-source queries (compare, list all, etc.). "
+                    "Example: query_list_metadata returns [{source_id: 's8', title: '第8集 xxx'}, ...]; "
+                    "if the user asks about '第八集', call retrieve(source_ids=['s8']). "
                 ),
-                "properties": {
-                    "title_contains": {
-                        "type": "string",
-                        "description": "Case-insensitive substring match against sources.title",
-                    },
-                },
             },
             "expected_hits": {
                 "type": "string",
