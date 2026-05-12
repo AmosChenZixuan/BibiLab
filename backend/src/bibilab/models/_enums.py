@@ -12,6 +12,8 @@ class VideoStatus(str, Enum):
 
 SearchMode = Literal["factual", "breadth", "analytical"]
 
+ExpectedHits = Literal["one", "few", "many"]
+
 
 @dataclass(frozen=True)
 class RetrievalParams:
