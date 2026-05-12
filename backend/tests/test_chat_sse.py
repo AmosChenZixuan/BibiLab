@@ -241,10 +241,10 @@ async def test_smoke_scenario_1_chitchat_no_tool_calls(client):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "search_mode,query,user_message,delta_text,result_overrides",
+    "expected_hits,query,user_message,delta_text,result_overrides",
     [
         (
-            "factual",
+            "one",
             "test query",
             "What does the video say about transformers?",
             "Based on the transcript, the answer is...",
@@ -257,7 +257,7 @@ async def test_smoke_scenario_1_chitchat_no_tool_calls(client):
             },
         ),
         (
-            "breadth",
+            "few",
             "核心观点",
             "汇总所有视频的核心观点",
             "汇总如下...",
@@ -275,18 +275,18 @@ async def test_smoke_scenario_1_chitchat_no_tool_calls(client):
         ),
     ],
 )
-async def test_smoke_scenario_2_retrieve(client, search_mode, query, user_message, delta_text, result_overrides):
-    """LLM calls retrieve tool with correct search_mode before answering."""
-    list_id = await _create_list(client, f"Smoke retrieve {search_mode}")
+async def test_smoke_scenario_2_retrieve(client, expected_hits, query, user_message, delta_text, result_overrides):
+    """LLM calls retrieve tool with correct expected_hits before answering."""
+    list_id = await _create_list(client, f"Smoke retrieve {expected_hits}")
 
-    retrieve_result = {"search_mode": search_mode, **result_overrides}
+    retrieve_result = {"expected_hits": expected_hits, **result_overrides}
 
     async def fake_stream(messages, cfg, tools=None, execute_tool_fn=None, system=None, llm_max_tokens=2048, **kwargs):
         yield StreamEvent(
             type="tool_call",
-            tool_call=ToolCall(id="c1", name="retrieve", arguments={"query": query, "search_mode": search_mode}),
+            tool_call=ToolCall(id="c1", name="retrieve", arguments={"query": query, "expected_hits": expected_hits}),
         )
-        result = await execute_tool_fn("retrieve", {"query": query, "search_mode": search_mode})
+        result = await execute_tool_fn("retrieve", {"query": query, "expected_hits": expected_hits})
         tool_result_data = {"name": "retrieve", "result": _client_tool_result(result)}
         yield StreamEvent(type="tool_result", content=json.dumps(tool_result_data))
         yield StreamEvent(type=SSE_EVENT_DELTA, content=delta_text)
@@ -307,7 +307,7 @@ async def test_smoke_scenario_2_retrieve(client, search_mode, query, user_messag
 
     stream_result = tool_results[0]
     assert stream_result["name"] == "retrieve"
-    assert stream_result["result"]["search_mode"] == search_mode
+    assert stream_result["result"]["expected_hits"] == expected_hits
     assert stream_result["result"]["candidates_evaluated"] == result_overrides["candidates_evaluated"]
     assert "_chunks" not in stream_result["result"], "_chunks must be stripped before sending to client"
 
@@ -317,7 +317,7 @@ async def test_smoke_scenario_2_retrieve(client, search_mode, query, user_messag
     assistant_msgs = await _get_assistant_msgs(client, list_id)
     assert len(assistant_msgs) == 1
     assert assistant_msgs[0]["metadata"] is not None
-    assert assistant_msgs[0]["metadata"]["rag"]["calls"][0]["search_mode"] == search_mode
+    assert assistant_msgs[0]["metadata"]["rag"]["calls"][0]["expected_hits"] == expected_hits
 
 
 @pytest.mark.asyncio
@@ -847,7 +847,7 @@ async def test_tool_call_start_emitted_before_tool_result(client):
         if iteration_count == 1:
             yield StreamEvent(
                 type="tool_call",
-                tool_call=ToolCall(id="tc1", name="retrieve", arguments={"query": "noodles", "search_mode": "breadth"}),
+                tool_call=ToolCall(id="tc1", name="retrieve", arguments={"query": "noodles", "expected_hits": "few"}),
             )
             yield StreamEvent(type="done")
         else:
@@ -858,7 +858,7 @@ async def test_tool_call_start_emitted_before_tool_result(client):
         args = kwargs.get("arguments", {})
         return {
             "query": args.get("query", ""),
-            "search_mode": args.get("search_mode"),
+            "expected_hits": args.get("expected_hits"),
             "candidates_evaluated": 5,
             "sources_with_hits": 2,
             "sources_total": 3,
@@ -882,7 +882,7 @@ async def test_tool_call_start_emitted_before_tool_result(client):
     assert start_idx < result_idx, "tool_call_start must precede tool_result"
     assert '"name": "retrieve"' in body
     assert '"query": "noodles"' in body
-    assert '"search_mode": "breadth"' in body
+    assert '"expected_hits": "few"' in body
 
 
 @pytest.mark.asyncio
@@ -897,11 +897,11 @@ async def test_rag_metadata_persists_calls_list(client):
         if iteration_count == 1:
             yield StreamEvent(
                 type="tool_call",
-                tool_call=ToolCall(id="tc1", name="retrieve", arguments={"query": "A", "search_mode": "breadth"}),
+                tool_call=ToolCall(id="tc1", name="retrieve", arguments={"query": "A", "expected_hits": "few"}),
             )
             yield StreamEvent(
                 type="tool_call",
-                tool_call=ToolCall(id="tc2", name="retrieve", arguments={"query": "B", "search_mode": "factual"}),
+                tool_call=ToolCall(id="tc2", name="retrieve", arguments={"query": "B", "expected_hits": "one"}),
             )
             yield StreamEvent(type="done")
         else:
@@ -912,7 +912,7 @@ async def test_rag_metadata_persists_calls_list(client):
         args = kwargs.get("arguments", {})
         return {
             "query": args.get("query", ""),
-            "search_mode": args.get("search_mode"),
+            "expected_hits": args.get("expected_hits"),
             "candidates_evaluated": 1,
             "sources_with_hits": 1,
             "sources_total": 5,
@@ -936,8 +936,8 @@ async def test_rag_metadata_persists_calls_list(client):
     assert len(rag["calls"]) == 2
     queries = sorted(c["query"] for c in rag["calls"])
     assert queries == ["A", "B"]
-    modes = sorted(c["search_mode"] for c in rag["calls"])
-    assert modes == ["breadth", "factual"]
+    expected_hits_sorted = sorted(c["expected_hits"] for c in rag["calls"])
+    assert expected_hits_sorted == ["few", "one"]
 
 
 @pytest.mark.asyncio

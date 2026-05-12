@@ -553,6 +553,7 @@ async def run_chat_turn(
                             "query": result.get("query", ""),
                             "source_filter": result.get("source_filter"),
                             "filter_miss": result.get("filter_miss", False),
+                            "expected_hits": result.get("expected_hits"),
                             "candidates_evaluated": result.get("candidates_evaluated"),
                             "sources_with_hits": result.get("sources_with_hits"),
                             "sources_total": result.get("sources_total"),

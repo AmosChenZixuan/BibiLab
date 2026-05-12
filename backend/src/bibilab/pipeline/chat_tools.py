@@ -54,11 +54,13 @@ def _empty_retrieve_result(
     source_filter: dict | None,
     filter_miss: bool,
     sources_total: int,
+    expected_hits: str = "few",
 ) -> dict:
     return {
         "query": query,
         "source_filter": source_filter,
         "filter_miss": filter_miss,
+        "expected_hits": expected_hits,
         "candidates_evaluated": 0,
         "sources_with_hits": 0,
         "sources_total": sources_total,
@@ -223,6 +225,7 @@ async def execute_retrieve(
                 source_filter=source_filter,
                 filter_miss=True,
                 sources_total=len(source_ids),
+                expected_hits=expected_hits,
             )
         if narrowed_video_ids is not None:
             # Narrow: resolve video_ids to source_ids for the retrieve call
@@ -241,6 +244,7 @@ async def execute_retrieve(
                     source_filter=source_filter,
                     filter_miss=False,
                     sources_total=len(source_ids),
+                    expected_hits=expected_hits,
                 )
             source_ids = filtered_source_ids
 
@@ -306,6 +310,7 @@ async def execute_retrieve(
         "query": query,
         "source_filter": source_filter,
         "filter_miss": False,
+        "expected_hits": expected_hits,
         "candidates_evaluated": result.candidates_evaluated,
         "sources_with_hits": result.sources_with_hits,
         "sources_total": result.sources_total,
