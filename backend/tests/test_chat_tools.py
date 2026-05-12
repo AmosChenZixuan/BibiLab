@@ -5,6 +5,44 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 
+class TestRetrieveToolSchema:
+    def test_retrieve_tool_no_search_mode(self):
+        from bibilab.pipeline.chat_tools import RETRIEVE_TOOL
+
+        props = RETRIEVE_TOOL.parameters["properties"]
+        assert "search_mode" not in props
+
+    def test_retrieve_tool_has_source_filter(self):
+        from bibilab.pipeline.chat_tools import RETRIEVE_TOOL
+
+        props = RETRIEVE_TOOL.parameters["properties"]
+        assert "source_filter" in props
+        sf = props["source_filter"]
+        assert sf["type"] == "object"
+        assert "title_contains" in sf["properties"]
+        assert sf["properties"]["title_contains"]["type"] == "string"
+
+    def test_retrieve_tool_has_expected_hits(self):
+        from bibilab.pipeline.chat_tools import RETRIEVE_TOOL
+
+        props = RETRIEVE_TOOL.parameters["properties"]
+        assert "expected_hits" in props
+        assert props["expected_hits"]["enum"] == ["one", "few", "many"]
+
+    def test_retrieve_tool_required_is_query_only(self):
+        from bibilab.pipeline.chat_tools import RETRIEVE_TOOL
+
+        required = RETRIEVE_TOOL.parameters["required"]
+        assert required == ["query"]
+
+    def test_retrieve_tool_description_guides_source_filter(self):
+        from bibilab.pipeline.chat_tools import RETRIEVE_TOOL
+
+        desc = RETRIEVE_TOOL.description
+        assert "source_filter" in desc
+        assert "title_contains" in desc or "episode" in desc.lower()
+
+
 class TestGenerateReportToolDefinition:
     def test_generate_report_tool_schema(self):
         from bibilab.pipeline.chat_tools import GENERATE_REPORT_TOOL
@@ -242,13 +280,110 @@ class TestExecuteRetrieve:
 
         result = await chat_tools.execute_retrieve(
             query="面食 种类",
-            search_mode="breadth",
             source_ids=["s1"],
             cfg=None,
         )
 
         assert result["query"] == "面食 种类"
-        assert result["search_mode"] == "breadth"
+        assert result["filter_miss"] is False
+
+
+@pytest.mark.asyncio
+async def test_execute_retrieve_with_source_filter_narrows_sources(monkeypatch):
+    from bibilab.config import AIConfig, BibilabConfig
+    from bibilab.pipeline import chat_tools
+    from bibilab.pipeline.embed import RetrievalResult, RetrievedChunk, SourceHit
+
+    apply_called = False
+
+    async def fake_apply(source_ids, source_filter):
+        nonlocal apply_called
+        apply_called = True
+        assert source_ids == ["s1"]
+        assert source_filter == {"title_contains": "第八集"}
+        return ["v8"], ["第八集 xxx"]
+
+    monkeypatch.setattr(chat_tools, "apply_source_filter", fake_apply)
+
+    async def fake_retrieve(query_text, source_ids, cfg, params, **kwargs):
+        return RetrievalResult(
+            chunks=[
+                RetrievedChunk(
+                    content="...",
+                    video_title="第八集",
+                    timestamp_start=0.0,
+                    timestamp_end=10.0,
+                    video_id="v8",
+                    distance=0.0,
+                ),
+            ],
+            candidates_evaluated=1,
+            sources_with_hits=1,
+            sources_total=1,
+            source_coverage=[SourceHit(video_id="v8", video_title="第八集", best_score=0.0)],
+        )
+
+    monkeypatch.setattr(chat_tools, "retrieve", fake_retrieve)
+
+    result = await chat_tools.execute_retrieve(
+        query="第八集讲了什么",
+        source_ids=["s1"],
+        cfg=BibilabConfig(ai=AIConfig(protocol="openai", model="x", api_key="k")),
+        source_map={"v8": "s1"},
+        source_filter={"title_contains": "第八集"},
+        expected_hits="many",
+    )
+
+    assert apply_called
+    assert result["sources_total"] == 1
+
+
+@pytest.mark.asyncio
+async def test_execute_retrieve_filter_miss_returns_filter_miss_true(monkeypatch):
+    from bibilab.config import AIConfig, BibilabConfig
+    from bibilab.pipeline import chat_tools
+
+    async def fake_apply(source_ids, source_filter):
+        return [], ["第8集 xxx"]
+
+    monkeypatch.setattr(chat_tools, "apply_source_filter", fake_apply)
+
+    result = await chat_tools.execute_retrieve(
+        query="第八集",
+        source_ids=["s1"],
+        cfg=BibilabConfig(ai=AIConfig(protocol="openai", model="x", api_key="k")),
+        source_map={"v8": "s1"},
+        source_filter={"title_contains": "第八集"},
+    )
+
+    assert result["filter_miss"] is True
+    assert "第8集 xxx" in result["_chunks"]
+    assert "No sources matched" in result["_chunks"]
+
+
+@pytest.mark.asyncio
+async def test_execute_retrieve_filter_miss_caps_titles_at_20(monkeypatch):
+    from bibilab.config import AIConfig, BibilabConfig
+    from bibilab.pipeline import chat_tools
+
+    async def fake_apply(source_ids, source_filter):
+        return [], [f"第{i}集 xxx" for i in range(25)]
+
+    monkeypatch.setattr(chat_tools, "apply_source_filter", fake_apply)
+
+    result = await chat_tools.execute_retrieve(
+        query="不存在",
+        source_ids=["s1"],
+        cfg=BibilabConfig(ai=AIConfig(protocol="openai", model="x", api_key="k")),
+        source_map={"v1": "s1"},
+        source_filter={"title_contains": "不存在"},
+    )
+
+    assert result["filter_miss"] is True
+    assert "第0集 xxx" in result["_chunks"]
+    assert "第19集 xxx" in result["_chunks"]
+    assert "第20集 xxx" not in result["_chunks"]
+    assert "... and 5 more" in result["_chunks"]
 
 
 @pytest.mark.asyncio
@@ -257,7 +392,7 @@ async def test_execute_retrieve_returns_raw_chunks_for_replay(monkeypatch):
     from bibilab.pipeline import chat_tools
     from bibilab.pipeline.embed import RetrievalResult, RetrievedChunk, SourceHit
 
-    async def fake_retrieve(query_text, source_ids, cfg, params):
+    async def fake_retrieve(query_text, source_ids, cfg, params, **kwargs):
         return RetrievalResult(
             chunks=[
                 RetrievedChunk(
@@ -287,7 +422,6 @@ async def test_execute_retrieve_returns_raw_chunks_for_replay(monkeypatch):
 
     result = await chat_tools.execute_retrieve(
         query="test",
-        search_mode="factual",
         source_ids=["s1"],
         cfg=cfg,
         registry=registry,
@@ -378,8 +512,8 @@ class TestRetrieveToolDescription:
         from bibilab.pipeline.chat_tools import RETRIEVE_TOOL
 
         desc = RETRIEVE_TOOL.description
-        assert "short or vague" in desc or "even short" in desc
-        assert "content question" in desc
+        assert "source_filter" in desc
+        assert "content question" in desc or "narrow content" in desc
 
 
 class TestBuildToolBlockEntry:
@@ -388,7 +522,7 @@ class TestBuildToolBlockEntry:
 
         retrieve_result = {
             "query": "test",
-            "search_mode": "factual",
+            "expected_hits": "few",
             "candidates_evaluated": 5,
             "sources_with_hits": 2,
             "sources_total": 3,
@@ -413,14 +547,14 @@ class TestBuildToolBlockEntry:
         entry = build_tool_block_entry(
             tool_use_id="toolu_1",
             name="retrieve",
-            arguments={"query": "test", "search_mode": "factual"},
+            arguments={"query": "test", "expected_hits": "few"},
             result=retrieve_result,
             raw_chunks=raw_chunks,
         )
 
         assert entry["tool_use_id"] == "toolu_1"
         assert entry["name"] == "retrieve"
-        assert entry["arguments"] == {"query": "test", "search_mode": "factual"}
+        assert entry["arguments"] == {"query": "test", "expected_hits": "few"}
         assert "_chunks" not in entry["result"]
         assert "_turn_indices" not in entry["result"]
         assert entry["result"]["chunks"] == raw_chunks
@@ -476,7 +610,7 @@ def test_expand_message_for_provider_anthropic_shape():
             {
                 "tool_use_id": "toolu_1",
                 "name": "retrieve",
-                "arguments": {"query": "q", "search_mode": "factual"},
+                "arguments": {"query": "q", "expected_hits": "few"},
                 "result": {"chunks": [{"content": "x"}], "summary": {"sources_total": 1}},
             }
         ],
@@ -489,7 +623,7 @@ def test_expand_message_for_provider_anthropic_shape():
         "type": "tool_use",
         "id": "toolu_1",
         "name": "retrieve",
-        "input": {"query": "q", "search_mode": "factual"},
+        "input": {"query": "q", "expected_hits": "few"},
     }
     assert out[0]["content"][-1] == {"type": "text", "text": "Answer [1]"}
     assert out[1]["role"] == "user"
@@ -507,7 +641,7 @@ def test_expand_message_for_provider_openai_shape():
             {
                 "tool_use_id": "call_1",
                 "name": "retrieve",
-                "arguments": {"query": "q", "search_mode": "factual"},
+                "arguments": {"query": "q", "expected_hits": "few"},
                 "result": {"chunks": [{"content": "x"}], "summary": {"sources_total": 1}},
             }
         ],
@@ -524,7 +658,7 @@ def test_expand_message_for_provider_openai_shape():
 
     assert json.loads(out[0]["tool_calls"][0]["function"]["arguments"]) == {
         "query": "q",
-        "search_mode": "factual",
+        "expected_hits": "few",
     }
     assert out[0]["content"] == "Answer [1]"
     assert out[1]["role"] == "tool"

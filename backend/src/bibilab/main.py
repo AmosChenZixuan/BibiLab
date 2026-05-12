@@ -25,6 +25,8 @@ from bibilab.routers.sources import router as sources_router
 from bibilab.routers.whisper import router as whisper_router
 from bibilab.worker import WorkerLoop
 
+logging.basicConfig(level=logging.INFO, format="%(name)s | %(levelname)s | %(message)s")
+
 WEB_DIST = Path(__file__).resolve().parents[3] / "web" / "dist"
 
 logger = logging.getLogger(__name__)

@@ -10,7 +10,7 @@ class VideoStatus(str, Enum):
     NEEDS_AUTH = "needs_auth"
 
 
-SearchMode = Literal["factual", "breadth", "analytical"]
+ExpectedHits = Literal["one", "few", "many"]
 
 
 @dataclass(frozen=True)

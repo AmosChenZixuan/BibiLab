@@ -7,9 +7,9 @@ from dataclasses import dataclass, field
 
 from bibilab.config import BibilabConfig
 from bibilab.db import count_sources, create_job, language_breakdown, longest_source
-from bibilab.models._enums import RetrievalParams, SearchMode
+from bibilab.models._enums import RetrievalParams
 from bibilab.pipeline._shared import ToolDefinition
-from bibilab.pipeline.embed import retrieve
+from bibilab.pipeline.embed import apply_source_filter, retrieve
 
 logger = logging.getLogger(__name__)
 
@@ -38,26 +38,48 @@ def _build_source_headers(registry: dict[str, CitationRegistryEntry]) -> str:
 
 _VALID_ARTIFACT_TYPES = frozenset({"brief", "study_guide", "blog_post", "custom_report"})
 
-_PARAMS_BY_MODE = {
-    "factual": RetrievalParams(depth_per_source=1, top_k=4),
-    "breadth": RetrievalParams(depth_per_source=1, top_k=20),
-    "analytical": RetrievalParams(depth_per_source=4, top_k=12),
-}
+
+DEFAULT_EXPECTED_HITS = "few"
 
 
-def search_mode_to_params(search_mode: SearchMode, sources_total: int) -> RetrievalParams:
-    if search_mode == "breadth" and sources_total < 3:
-        return _PARAMS_BY_MODE["factual"]
-    base = _PARAMS_BY_MODE.get(search_mode)
-    if base is None:
-        logger.warning("Unknown search_mode %r — falling back to factual", search_mode)
-        return _PARAMS_BY_MODE["factual"]
-    if search_mode == "breadth":
-        return RetrievalParams(depth_per_source=base.depth_per_source, top_k=min(base.top_k, sources_total))
-    if search_mode == "factual":
-        return base
-    top_k = max(base.top_k, min(sources_total, base.top_k * 3))
-    return RetrievalParams(depth_per_source=base.depth_per_source, top_k=top_k)
+def params_for_expected_hits(expected_hits: str) -> RetrievalParams:
+    """Map expected_hits to RetrievalParams."""
+    return {
+        "one": RetrievalParams(depth_per_source=1, top_k=2),
+        "few": RetrievalParams(depth_per_source=2, top_k=8),
+        "many": RetrievalParams(depth_per_source=5, top_k=24),
+    }[expected_hits]
+
+
+def _format_filter_miss_message(filter_str: str, titles: list[str], *, cap: int = 20) -> str:
+    shown = titles[:cap]
+    overflow = len(titles) - cap
+    overflow_suffix = f"\n- ... and {overflow} more" if overflow > 0 else ""
+    titles_fmt = "\n".join(f"- {t}" for t in shown) + overflow_suffix
+    return f"\n\nNo sources matched 'title_contains: {filter_str}'. Available titles:\n{titles_fmt}"
+
+
+def _empty_retrieve_result(
+    query: str,
+    source_filter: dict | None,
+    filter_miss: bool,
+    sources_total: int,
+    expected_hits: str = DEFAULT_EXPECTED_HITS,
+    chunks_text: str = "",
+) -> dict:
+    return {
+        "query": query,
+        "source_filter": source_filter,
+        "filter_miss": filter_miss,
+        "expected_hits": expected_hits,
+        "candidates_evaluated": 0,
+        "sources_with_hits": 0,
+        "sources_total": sources_total,
+        "source_coverage": [],
+        "_chunks": chunks_text,
+        "_turn_indices": [],
+        "_raw_chunks": [],
+    }
 
 
 GENERATE_REPORT_TOOL = ToolDefinition(
@@ -86,12 +108,14 @@ GENERATE_REPORT_TOOL = ToolDefinition(
 RETRIEVE_TOOL = ToolDefinition(
     name="retrieve",
     description=(
-        "Retrieve information from video transcripts. Use when the user asks about "
-        "video content, facts, comparisons, summaries, or anything requiring lookup "
-        "across sources. Do NOT use for pure greetings (hi, thanks) or "
-        "conversation-control messages (e.g. 'stop', 'never mind'). Any question "
-        "about content — even short or vague ones like 'what is X' — is a content "
-        "question; retrieve."
+        "Retrieve information from video transcripts. "
+        "When the user names a specific source by title, episode number, "
+        "or other identifier (e.g. '第八集', '第3道菜', 'the React video'), "
+        "include source_filter so retrieval is scoped to that subset. "
+        "Use expected_hits='one' for single-fact questions ('how many eggs'), "
+        "'few' (default) for narrow content questions, "
+        "'many' for survey questions or comprehensive summaries. "
+        "Do NOT use for pure greetings (hi, thanks) or conversation-control messages."
     ),
     parameters={
         "type": "object",
@@ -100,17 +124,33 @@ RETRIEVE_TOOL = ToolDefinition(
                 "type": "string",
                 "description": "Search query — key terms or question in the user's language",
             },
-            "search_mode": {
-                "type": "string",
-                "enum": ["factual", "breadth", "analytical"],
+            "source_filter": {
+                "type": "object",
                 "description": (
-                    "factual = specific fact from 1-2 sources; "
-                    "breadth = survey/list across many sources; "
-                    "analytical = comparison/analysis needing deep per-source coverage"
+                    "REQUIRED when the user references a specific source by episode/chapter number, "
+                    "title fragment, character/chef name, or video name. "
+                    "Omit ONLY for cross-source queries (compare, list all, etc.). "
+                    "Example: user says '第八集' → {'title_contains': '第八集'}"
+                ),
+                "properties": {
+                    "title_contains": {
+                        "type": "string",
+                        "description": "Case-insensitive substring match against sources.title",
+                    },
+                },
+            },
+            "expected_hits": {
+                "type": "string",
+                "enum": ["one", "few", "many"],
+                "description": (
+                    "Expected retrieval breadth. "
+                    "one = single-fact, depth_per_source=1, top_k=2; "
+                    "few = default, depth_per_source=2, top_k=8; "
+                    "many = survey/summary, depth_per_source=5, top_k=24"
                 ),
             },
         },
-        "required": ["query", "search_mode"],
+        "required": ["query"],
     },
 )
 
@@ -180,19 +220,52 @@ async def execute_generate_report(
 
 async def execute_retrieve(
     query: str,
-    search_mode: SearchMode,
     source_ids: list[str],
     cfg: BibilabConfig,
     registry: dict[str, CitationRegistryEntry] | None = None,
     source_map: dict[str, str] | None = None,
+    source_filter: dict | None = None,
+    expected_hits: str = DEFAULT_EXPECTED_HITS,
 ) -> dict:
     if registry is None:
         registry = {}
     if source_map is None:
         source_map = {}
 
-    params = search_mode_to_params(search_mode, len(source_ids))
-    result = await retrieve(query_text=query, source_ids=source_ids, cfg=cfg, params=params)
+    # Some Anthropic-compatible providers (e.g. MiniMax) serialize nested object
+    # arguments as JSON strings in later tool-call rounds. Attempt parse before use.
+    if isinstance(source_filter, str):
+        try:
+            source_filter = json.loads(source_filter)
+        except json.JSONDecodeError:
+            logger.warning("source_filter was a non-JSON string: %r", source_filter)
+            source_filter = None
+
+    # Apply source_filter only when title_contains is present
+    scoped_source_ids: list[str] | None = None
+    if isinstance(source_filter, dict) and source_filter.get("title_contains"):
+        filtered_source_ids, all_titles = await apply_source_filter(source_ids, source_filter)
+        if not filtered_source_ids:
+            filter_str = source_filter["title_contains"]
+            msg = _format_filter_miss_message(filter_str, all_titles) if all_titles else ""
+            return _empty_retrieve_result(
+                query=query,
+                source_filter=source_filter,
+                filter_miss=True,
+                sources_total=len(source_ids),
+                expected_hits=expected_hits,
+                chunks_text=msg,
+            )
+        scoped_source_ids = filtered_source_ids
+
+    params = params_for_expected_hits(expected_hits)
+    result = await retrieve(
+        query_text=query,
+        source_ids=source_ids,
+        cfg=cfg,
+        params=params,
+        scoped_source_ids=scoped_source_ids,
+    )
 
     # Assign indices: new sources get next available index
     next_index = max((e.index for e in registry.values()), default=0) + 1
@@ -251,7 +324,9 @@ async def execute_retrieve(
 
     return {
         "query": query,
-        "search_mode": search_mode,
+        "source_filter": source_filter,
+        "filter_miss": False,
+        "expected_hits": expected_hits,
         "candidates_evaluated": result.candidates_evaluated,
         "sources_with_hits": result.sources_with_hits,
         "sources_total": result.sources_total,
@@ -314,13 +389,20 @@ async def execute_tool(
     source_map: dict[str, str] | None = None,
 ) -> dict:
     if tool_name == RETRIEVE_TOOL.name:
+        logger.info(
+            "retrieve tool call: query=%r source_filter=%r expected_hits=%r",
+            arguments["query"],
+            arguments.get("source_filter"),
+            arguments.get("expected_hits", DEFAULT_EXPECTED_HITS),
+        )
         return await execute_retrieve(
             query=arguments["query"],
-            search_mode=arguments["search_mode"],
             source_ids=source_ids,
             cfg=cfg,
             registry=registry,
             source_map=source_map,
+            source_filter=arguments.get("source_filter"),
+            expected_hits=arguments.get("expected_hits", DEFAULT_EXPECTED_HITS),
         )
     if tool_name == GENERATE_REPORT_TOOL.name:
         artifact_type = arguments.get("type")

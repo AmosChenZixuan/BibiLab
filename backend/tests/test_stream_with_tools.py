@@ -46,7 +46,7 @@ async def test_stream_llm_passes_list_content_to_anthropic():
                         "type": "tool_use",
                         "id": "t1",
                         "name": "retrieve",
-                        "input": {"query": "test", "search_mode": "factual"},
+                        "input": {"query": "test", "expected_hits": "few"},
                     }
                 ],
             },
@@ -82,7 +82,7 @@ async def test_stream_llm_passes_openai_tool_messages():
                     {
                         "id": "t1",
                         "type": "function",
-                        "function": {"name": "retrieve", "arguments": '{"query":"test","search_mode":"factual"}'},
+                        "function": {"name": "retrieve", "arguments": '{"query":"test","expected_hits":"few"}'},
                     }
                 ],
             },
@@ -137,9 +137,9 @@ async def test_stream_with_tools_loopback_retrieve():
 
     cfg = AIConfig(protocol="openai", model="gpt-4o", api_key="test", base_url="")
 
-    retrieve_tc = ToolCall(id="c1", name="retrieve", arguments={"query": "test", "search_mode": "factual"})
+    retrieve_tc = ToolCall(id="c1", name="retrieve", arguments={"query": "test", "expected_hits": "few"})
     retrieve_result = {
-        "search_mode": "factual",
+        "expected_hits": "few",
         "candidates_evaluated": 5,
         "sources_with_hits": 2,
         "sources_total": 3,
@@ -248,7 +248,7 @@ async def test_stream_with_tools_max_iterations_graceful():
 
     cfg = AIConfig(protocol="openai", model="gpt-4o", api_key="test", base_url="")
 
-    tc = ToolCall(id="c1", name="retrieve", arguments={"query": "test", "search_mode": "factual"})
+    tc = ToolCall(id="c1", name="retrieve", arguments={"query": "test", "expected_hits": "few"})
 
     iterations_seen = []
 
@@ -295,7 +295,7 @@ async def test_stream_with_tools_forces_synthesis_when_exhausted_turn_returns_em
 
     cfg = AIConfig(protocol="openai", model="gpt-4o", api_key="test", base_url="")
 
-    retrieve_tc = ToolCall(id="c1", name="retrieve", arguments={"query": "test", "search_mode": "factual"})
+    retrieve_tc = ToolCall(id="c1", name="retrieve", arguments={"query": "test", "expected_hits": "few"})
 
     call_count = 0
 
@@ -407,7 +407,7 @@ async def test_forced_synthesis_forwards_error_events():
     from bibilab.routers.chat import MAX_TOOL_ITERATIONS, stream_with_tools
 
     cfg = AIConfig(protocol="openai", model="gpt-4o", api_key="test", base_url="")
-    retrieve_tc = ToolCall(id="c1", name="retrieve", arguments={"query": "q", "search_mode": "factual"})
+    retrieve_tc = ToolCall(id="c1", name="retrieve", arguments={"query": "q", "expected_hits": "few"})
 
     call_count = 0
 
@@ -455,10 +455,10 @@ async def test_stream_with_tools_populates_tool_block_sink():
 
     cfg = AIConfig(protocol="openai", model="gpt-4o", api_key="test", base_url="")
 
-    retrieve_tc = ToolCall(id="c1", name="retrieve", arguments={"query": "test", "search_mode": "factual"})
+    retrieve_tc = ToolCall(id="c1", name="retrieve", arguments={"query": "test", "expected_hits": "few"})
     retrieve_result = {
         "query": "test",
-        "search_mode": "factual",
+        "expected_hits": "few",
         "candidates_evaluated": 5,
         "sources_with_hits": 1,
         "sources_total": 1,
@@ -507,7 +507,7 @@ async def test_stream_with_tools_populates_tool_block_sink():
     entry = sink[0]
     assert entry["tool_use_id"] == "c1"
     assert entry["name"] == "retrieve"
-    assert entry["arguments"] == {"query": "test", "search_mode": "factual"}
+    assert entry["arguments"] == {"query": "test", "expected_hits": "few"}
     assert "_chunks" not in entry["result"]
     assert "_raw_chunks" not in entry["result"]
     assert entry["result"]["chunks"][0]["content"] == "verbatim"

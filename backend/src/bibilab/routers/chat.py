@@ -191,6 +191,11 @@ def build_grounding_prompt(response_language: str) -> str:
         "summaries), you MUST call the retrieve tool BEFORE answering. "
         "For questions about counts, durations, or languages of the sources themselves, "
         "call query_list_metadata instead. "
+        "If the user names ANY specific source identifier (episode number, chapter, title, "
+        "character name, chef name, video name — e.g. '第八集', '第3道菜', 'the React video'), "
+        "you MUST include source_filter={'title_contains': '<identifier>'} in that retrieve call. "
+        "Use expected_hits='many' for comprehensive summaries of one source "
+        "(e.g. '第八集讲了什么'), 'few' for content questions, 'one' for single facts. "
         "Do not answer from memory — always call the appropriate tool first for content "
         "or metadata questions. This does NOT apply when the user asks you to generate a "
         "report/artifact — the generate_report tool handles its own retrieval. "
@@ -545,7 +550,9 @@ async def run_chat_turn(
                     retrieve_calls.append(
                         {
                             "query": result.get("query", ""),
-                            "search_mode": result.get("search_mode"),
+                            "source_filter": result.get("source_filter"),
+                            "filter_miss": result.get("filter_miss", False),
+                            "expected_hits": result.get("expected_hits"),
                             "candidates_evaluated": result.get("candidates_evaluated"),
                             "sources_with_hits": result.get("sources_with_hits"),
                             "sources_total": result.get("sources_total"),
