@@ -158,11 +158,7 @@ async def execute_query_list_metadata(source_ids: list[str], query_type: str) ->
     if query_type == "languages":
         return {"languages": await language_breakdown(source_ids)}
     if query_type == "titles":
-        try:
-            return {"titles": await get_titles(source_ids)}
-        except Exception:
-            logger.exception("get_titles failed for source_ids=%r", source_ids)
-            return {"titles": []}
+        return {"titles": await get_titles(source_ids)}
     logger.warning("Unknown query_type %r — falling back to count", query_type)
     return {"count": await count_sources(source_ids)}
 
