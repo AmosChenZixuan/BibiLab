@@ -16,7 +16,7 @@ from pathlib import Path
 
 from bibilab.adapters.base import VideoMeta
 from bibilab.config import BibilabConfig, bibilab_home, models_dir
-from bibilab.db import _escape_fts_query, get_db_path, get_video_ids_for_sources, query_fts_rows
+from bibilab.db import _escape_fts_query, get_db, get_db_path, get_video_ids_for_sources, query_fts_rows
 from bibilab.models._enums import RetrievalParams
 from bibilab.pipeline.chunk import RagChunk
 
@@ -61,6 +61,8 @@ class RetrievalResult:
     sources_with_hits: int
     sources_total: int
     source_coverage: list[SourceHit]
+    source_filter: dict | None = None  # NEW
+    filter_miss: bool = False  # NEW
 
 
 def _chunk_score(chunk: RetrievedChunk) -> float:
@@ -418,6 +420,58 @@ async def hybrid_search(
     if not fts_result:
         return vec_result
     return _rrf_fuse(vec_result, fts_result)
+
+
+async def apply_source_filter(
+    source_ids: list[str],
+    source_filter: dict | None,
+) -> list[str] | None:
+    """Narrow source_ids by source_filter.title_contains.
+
+    Returns None when source_filter is None (passthrough — caller should not narrow).
+    Returns [] when filter is present but matches no sources (filter_miss case).
+    Uses plain SQL LIKE when sources_fts (I-3) is not yet available.
+
+    Args:
+        source_ids: Full list of source UUIDs to filter from.
+        source_filter: Filter dict with optional title_contains key.
+
+    Returns:
+        None when no filter (passthrough signal).
+        [] when filter present but zero sources matched.
+        List of video_ids for matched sources otherwise.
+    """
+    if source_filter is None:
+        return None  # Signal: no narrowing needed
+
+    title_contains = source_filter.get("title_contains", "")
+    if not title_contains:
+        return []  # Empty filter → no match
+
+    # Escape LIKE special chars
+    escaped_pattern = title_contains.replace("[", "[[").replace("_", "[_").replace("%", "[%]")
+
+    id_to_video = await get_video_ids_for_sources(source_ids)
+    if not id_to_video:
+        return []
+
+    source_id_list = list(id_to_video.keys())
+    placeholders = ", ".join(["?"] * len(source_id_list))
+
+    async with get_db() as db:
+        cursor = await db.execute(
+            f"SELECT id, video_id, title FROM sources WHERE id IN ({placeholders})",
+            source_id_list,
+        )
+        rows = await cursor.fetchall()
+
+    matched: list[tuple[str, str]] = []  # (video_id, title)
+    for row in rows:
+        if escaped_pattern.lower() in row["title"].lower():
+            matched.append((row["video_id"], row["title"]))
+
+    matched.sort(key=lambda x: x[1])
+    return [vid for vid, _ in matched]
 
 
 async def retrieve(
