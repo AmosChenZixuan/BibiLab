@@ -357,7 +357,7 @@ async def test_retrieve_single_source_returns_top_k_chunks(tmp_bibilab_home):
                 for i in range(6)
             ]
         ],
-        "distances": [[0.1, 0.2, 0.3, 0.4, 0.5, 0.6]],
+        "distances": [[0.1, 0.2, 0.3, 0.4, 0.5, 0.5]],
     }
 
     with (
@@ -1007,3 +1007,18 @@ def test_diverse_top_k_short_return_when_cap_blocks_fill():
     result = _diverse_top_k(chunks, depth=1, k=3)
     assert len(result) == 2
     assert {c.video_id for c in result} == {"v1", "v2"}
+
+
+def test_retrieval_result_has_telemetry_fields():
+    """Smoke test: new I-4 telemetry fields exist with safe defaults."""
+    from bibilab.pipeline.embed import RetrievalResult
+
+    r = RetrievalResult(
+        chunks=[],
+        candidates_evaluated=0,
+        sources_with_hits=0,
+        sources_total=0,
+        source_coverage=[],
+    )
+    assert r.dropped_by_gate == 0
+    assert r.reranked is False

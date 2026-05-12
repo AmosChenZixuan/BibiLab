@@ -62,6 +62,10 @@ class RetrievalResult:
     sources_with_hits: int
     sources_total: int
     source_coverage: list[SourceHit]
+    # Telemetry for #277 I-4. dropped_by_gate is 0 when gate did not run
+    # (rerank disabled or failed); reranked disambiguates that case.
+    dropped_by_gate: int = 0
+    reranked: bool = False
 
 
 def _chunk_score(chunk: RetrievedChunk) -> float:
