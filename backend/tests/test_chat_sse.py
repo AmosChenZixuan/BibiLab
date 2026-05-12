@@ -169,11 +169,11 @@ async def test_chat_endpoint_handles_generate_report_tool(client):
 
 @pytest.mark.asyncio
 async def test_retrieve_tool_result_has_coverage(client):
-    """retrieve tool_result includes search_mode and coverage metadata."""
+    """retrieve tool_result includes source_filter and coverage metadata."""
     list_id = (await client.post("/lists", json={"name": "Test"})).json()["id"]
 
     async def fake_stream(messages, cfg, tools=None, execute_tool_fn=None, system=None, llm_max_tokens=2048, **kwargs):
-        result = await execute_tool_fn("retrieve", {"query": "test", "search_mode": "factual"})
+        result = await execute_tool_fn("retrieve", {"query": "test", "expected_hits": "few"})
         yield StreamEvent(
             type="tool_result",
             content=json.dumps({"name": "retrieve", "result": _client_tool_result(result)}),
@@ -186,7 +186,7 @@ async def test_retrieve_tool_result_has_coverage(client):
 
     assert resp.status_code == 200
     assert "tool_result" in resp.text
-    assert "factual" in resp.text
+    assert "source_filter" in resp.text
 
 
 @pytest.mark.asyncio
