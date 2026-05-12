@@ -256,7 +256,7 @@ async def test_rerank_floor_drops_low_scores(tmp_bibilab_home):
 
 
 @pytest.mark.asyncio
-async def test_rerank_floor_disabled_when_none(tmp_bibilab_home):
+async def test_rerank_min_score_null_still_runs_quantile_gate(tmp_bibilab_home):
     from bibilab.config import BibilabConfig, RagConfig
     from bibilab.models._enums import RetrievalParams
     from bibilab.pipeline.embed import retrieve

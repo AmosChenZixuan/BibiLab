@@ -1045,7 +1045,8 @@ def test_quantile_gate_drops_below_margin():
     from bibilab.pipeline.embed import _quantile_gate
 
     chunks = [_chunk_with_score(s) for s in (8.0, 7.5, 3.2, -1.0)]
-    # top=8, median=5.35, threshold = max(5.35, 8-4) = 5.35 → keep [8.0, 7.5]
+    # top=8, scores[sorted desc]=[8.0,7.5,3.2,-1.0], median=scores[2]=3.2
+    # threshold=max(3.2, 4.0)=4.0 → keep [8.0, 7.5]
     kept = _quantile_gate(chunks)
     scores = [c.score for c in kept]
     assert scores == [8.0, 7.5]
@@ -1066,11 +1067,12 @@ def test_quantile_gate_empty_input_returns_empty():
     assert _quantile_gate([]) == []
 
 
-def test_quantile_gate_all_within_margin_keeps_all():
+def test_quantile_gate_narrow_margin_drops_bottom():
     from bibilab.pipeline.embed import _quantile_gate
 
     chunks = [_chunk_with_score(s) for s in (8.0, 7.8, 7.5, 7.2)]
-    # top=8, median=7.5, threshold = max(7.5, 4.0) = 7.5 → keep [8.0, 7.8, 7.5]
+    # top=8, scores[sorted desc]=[8.0,7.8,7.5,7.2], median=7.5 (lower-middle)
+    # threshold=max(7.5, 4.0)=7.5 → drop 7.2 (below threshold)
     kept = _quantile_gate(chunks)
     assert [c.score for c in kept] == [8.0, 7.8, 7.5]
 
@@ -1079,7 +1081,7 @@ def test_quantile_gate_all_within_margin_keeps_all():
 
 
 @pytest.mark.asyncio
-async def test_retrieve_reranked_flag_true_on_success(monkeypatch, tmp_bibilab_home):
+async def test_retrieve_reranked_flag_true_on_success(tmp_bibilab_home):
     """When rerank succeeds, reranked=True and dropped_by_gate reflects gate."""
     from bibilab.config import BibilabConfig, RagConfig
     from bibilab.models._enums import RetrievalParams
@@ -1164,7 +1166,7 @@ async def test_retrieve_reranked_flag_false_when_disabled(tmp_bibilab_home):
 
 
 @pytest.mark.asyncio
-async def test_retrieve_reranked_flag_false_on_exception(monkeypatch, tmp_bibilab_home):
+async def test_retrieve_reranked_flag_false_on_exception(tmp_bibilab_home):
     """Rerank raises → reranked=False, gate bypassed."""
     from bibilab.config import BibilabConfig, RagConfig
     from bibilab.models._enums import RetrievalParams
