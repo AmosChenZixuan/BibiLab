@@ -200,3 +200,52 @@ async def test_language_breakdown_empty(tmp_bibilab_home):
 
     await bootstrap_db()
     assert await language_breakdown([]) == {}
+
+
+@pytest.mark.asyncio
+async def test_get_titles_returns_id_title_pairs(tmp_bibilab_home):
+    from bibilab.db import get_titles
+
+    await bootstrap_db()
+    await _seed(
+        [
+            {"id": "s-b", "title": "第八集 美食推荐"},
+            {"id": "s-a", "title": "第3道菜 做法"},
+        ]
+    )
+
+    result = await get_titles(["s-a", "s-b"])
+
+    assert result == [
+        {"source_id": "s-a", "title": "第3道菜 做法"},
+        {"source_id": "s-b", "title": "第八集 美食推荐"},
+    ]
+
+
+@pytest.mark.asyncio
+async def test_get_titles_subset(tmp_bibilab_home):
+    from bibilab.db import get_titles
+
+    await bootstrap_db()
+    await _seed(
+        [
+            {"id": "s1", "title": "T1"},
+            {"id": "s2", "title": "T2"},
+            {"id": "s3", "title": "T3"},
+        ]
+    )
+
+    result = await get_titles(["s1", "s3"])
+
+    assert result == [
+        {"source_id": "s1", "title": "T1"},
+        {"source_id": "s3", "title": "T3"},
+    ]
+
+
+@pytest.mark.asyncio
+async def test_get_titles_empty(tmp_bibilab_home):
+    from bibilab.db import get_titles
+
+    await bootstrap_db()
+    assert await get_titles([]) == []
