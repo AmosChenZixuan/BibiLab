@@ -305,7 +305,7 @@ async def test_execute_retrieve_with_source_filter_narrows_sources(monkeypatch):
 
     monkeypatch.setattr(chat_tools, "apply_source_filter", fake_apply)
 
-    async def fake_retrieve(query_text, source_ids, cfg, params):
+    async def fake_retrieve(query_text, source_ids, cfg, params, **kwargs):
         return RetrievalResult(
             chunks=[
                 RetrievedChunk(
@@ -392,7 +392,7 @@ async def test_execute_retrieve_returns_raw_chunks_for_replay(monkeypatch):
     from bibilab.pipeline import chat_tools
     from bibilab.pipeline.embed import RetrievalResult, RetrievedChunk, SourceHit
 
-    async def fake_retrieve(query_text, source_ids, cfg, params):
+    async def fake_retrieve(query_text, source_ids, cfg, params, **kwargs):
         return RetrievalResult(
             chunks=[
                 RetrievedChunk(

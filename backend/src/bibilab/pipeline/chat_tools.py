@@ -126,7 +126,12 @@ RETRIEVE_TOOL = ToolDefinition(
             },
             "source_filter": {
                 "type": "object",
-                "description": "Optional. Narrows retrieval to sources whose title matches.",
+                "description": (
+                    "REQUIRED when the user references a specific source by episode/chapter number, "
+                    "title fragment, character/chef name, or video name. "
+                    "Omit ONLY for cross-source queries (compare, list all, etc.). "
+                    "Example: user says '第八集' → {'title_contains': '第八集'}"
+                ),
                 "properties": {
                     "title_contains": {
                         "type": "string",
@@ -227,7 +232,17 @@ async def execute_retrieve(
     if source_map is None:
         source_map = {}
 
+    # Some Anthropic-compatible providers (e.g. MiniMax) serialize nested object
+    # arguments as JSON strings in later tool-call rounds. Attempt parse before use.
+    if isinstance(source_filter, str):
+        try:
+            source_filter = json.loads(source_filter)
+        except json.JSONDecodeError:
+            logger.warning("source_filter was a non-JSON string: %r", source_filter)
+            source_filter = None
+
     # Apply source_filter only when title_contains is present
+    scoped_source_ids: list[str] | None = None
     if isinstance(source_filter, dict) and source_filter.get("title_contains"):
         filtered_source_ids, all_titles = await apply_source_filter(source_ids, source_filter)
         if not filtered_source_ids:
@@ -241,10 +256,16 @@ async def execute_retrieve(
                 expected_hits=expected_hits,
                 chunks_text=msg,
             )
-        source_ids = filtered_source_ids
+        scoped_source_ids = filtered_source_ids
 
     params = params_for_expected_hits(expected_hits)
-    result = await retrieve(query_text=query, source_ids=source_ids, cfg=cfg, params=params)
+    result = await retrieve(
+        query_text=query,
+        source_ids=source_ids,
+        cfg=cfg,
+        params=params,
+        scoped_source_ids=scoped_source_ids,
+    )
 
     # Assign indices: new sources get next available index
     next_index = max((e.index for e in registry.values()), default=0) + 1
