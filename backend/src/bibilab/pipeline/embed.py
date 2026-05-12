@@ -423,33 +423,32 @@ async def hybrid_search(
 async def apply_source_filter(
     source_ids: list[str],
     source_filter: dict | None,
-) -> list[str]:
-    """Return source_ids whose title matches source_filter.title_contains (case-insensitive).
+) -> tuple[list[str], list[str]]:
+    """Return (matched_ids, all_titles) for sources whose title matches source_filter.title_contains.
 
-    Returns [] when no sources match.
+    title_contains matching is case-insensitive substring. all_titles preserves insertion order
+    (ORDER BY id ASC) so the filter-miss message is stable across requests.
+    Returns ([], []) when no sources match or filter is empty.
     """
     if not source_ids:
-        return []
+        return [], []
 
     title_contains = source_filter.get("title_contains", "") if source_filter else ""
     if not title_contains:
-        return []  # Empty filter → no match
+        return [], []
 
     placeholders = ", ".join(["?"] * len(source_ids))
 
     async with get_db() as db:
         cursor = await db.execute(
-            f"SELECT id, title FROM sources WHERE id IN ({placeholders})",
+            f"SELECT id, title FROM sources WHERE id IN ({placeholders}) ORDER BY id ASC",
             source_ids,
         )
         rows = await cursor.fetchall()
 
-    # Match in Python (not SQL LIKE) to avoid % / _ escaping.
-    # SQLite LIKE only treats % and _ as wildcards; [...] is a GLOB/T-SQL pattern.
-    # title_contains is user-supplied text intended as a literal substring, not a pattern.
-    # If a future implementation switches to GLOB or sources_fts, escaping must be revisited.
     matched = [row["id"] for row in rows if title_contains.lower() in row["title"].lower()]
-    return matched
+    titles = [row["title"] for row in rows]
+    return matched, titles
 
 
 async def retrieve(

@@ -301,7 +301,7 @@ async def test_execute_retrieve_with_source_filter_narrows_sources(monkeypatch):
         apply_called = True
         assert source_ids == ["s1"]
         assert source_filter == {"title_contains": "第八集"}
-        return ["v8"]
+        return ["v8"], ["第八集 xxx"]
 
     monkeypatch.setattr(chat_tools, "apply_source_filter", fake_apply)
 
@@ -344,19 +344,46 @@ async def test_execute_retrieve_filter_miss_returns_filter_miss_true(monkeypatch
     from bibilab.pipeline import chat_tools
 
     async def fake_apply(source_ids, source_filter):
-        return []
+        return [], ["第8集 xxx"]
 
     monkeypatch.setattr(chat_tools, "apply_source_filter", fake_apply)
 
     result = await chat_tools.execute_retrieve(
-        query="不存在的",
+        query="第八集",
         source_ids=["s1"],
         cfg=BibilabConfig(ai=AIConfig(protocol="openai", model="x", api_key="k")),
         source_map={"v8": "s1"},
-        source_filter={"title_contains": "不存在的"},
+        source_filter={"title_contains": "第八集"},
     )
 
     assert result["filter_miss"] is True
+    assert "第8集 xxx" in result["_chunks"]
+    assert "No sources matched" in result["_chunks"]
+
+
+@pytest.mark.asyncio
+async def test_execute_retrieve_filter_miss_caps_titles_at_20(monkeypatch):
+    from bibilab.config import AIConfig, BibilabConfig
+    from bibilab.pipeline import chat_tools
+
+    async def fake_apply(source_ids, source_filter):
+        return [], [f"第{i}集 xxx" for i in range(25)]
+
+    monkeypatch.setattr(chat_tools, "apply_source_filter", fake_apply)
+
+    result = await chat_tools.execute_retrieve(
+        query="不存在",
+        source_ids=["s1"],
+        cfg=BibilabConfig(ai=AIConfig(protocol="openai", model="x", api_key="k")),
+        source_map={"v1": "s1"},
+        source_filter={"title_contains": "不存在"},
+    )
+
+    assert result["filter_miss"] is True
+    assert "第0集 xxx" in result["_chunks"]
+    assert "第19集 xxx" in result["_chunks"]
+    assert "第20集 xxx" not in result["_chunks"]
+    assert "... and 5 more" in result["_chunks"]
 
 
 @pytest.mark.asyncio
