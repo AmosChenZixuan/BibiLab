@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 
 from bibilab.config import BibilabConfig
 from bibilab.db import count_sources, create_job, language_breakdown, longest_source
-from bibilab.models._enums import RetrievalParams, SearchMode
+from bibilab.models._enums import RetrievalParams
 from bibilab.pipeline._shared import ToolDefinition
 from bibilab.pipeline.embed import apply_source_filter, retrieve
 
@@ -38,18 +38,9 @@ def _build_source_headers(registry: dict[str, CitationRegistryEntry]) -> str:
 
 _VALID_ARTIFACT_TYPES = frozenset({"brief", "study_guide", "blog_post", "custom_report"})
 
-_PARAMS_BY_MODE = {
-    "factual": RetrievalParams(depth_per_source=1, top_k=4),
-    "breadth": RetrievalParams(depth_per_source=1, top_k=20),
-    "analytical": RetrievalParams(depth_per_source=4, top_k=12),
-}
-
 
 def params_for_expected_hits(expected_hits: str) -> RetrievalParams:
-    """Map expected_hits to RetrievalParams for I-1.
-
-    Replaces search_mode_to_params.
-    """
+    """Map expected_hits to RetrievalParams."""
     table = {
         "one": RetrievalParams(depth_per_source=1, top_k=2),
         "few": RetrievalParams(depth_per_source=2, top_k=8),
@@ -58,19 +49,24 @@ def params_for_expected_hits(expected_hits: str) -> RetrievalParams:
     return table.get(expected_hits, table["few"])
 
 
-def search_mode_to_params(search_mode: SearchMode, sources_total: int) -> RetrievalParams:
-    if search_mode == "breadth" and sources_total < 3:
-        return _PARAMS_BY_MODE["factual"]
-    base = _PARAMS_BY_MODE.get(search_mode)
-    if base is None:
-        logger.warning("Unknown search_mode %r — falling back to factual", search_mode)
-        return _PARAMS_BY_MODE["factual"]
-    if search_mode == "breadth":
-        return RetrievalParams(depth_per_source=base.depth_per_source, top_k=min(base.top_k, sources_total))
-    if search_mode == "factual":
-        return base
-    top_k = max(base.top_k, min(sources_total, base.top_k * 3))
-    return RetrievalParams(depth_per_source=base.depth_per_source, top_k=top_k)
+def _empty_retrieve_result(
+    query: str,
+    source_filter: dict | None,
+    filter_miss: bool,
+    sources_total: int,
+) -> dict:
+    return {
+        "query": query,
+        "source_filter": source_filter,
+        "filter_miss": filter_miss,
+        "candidates_evaluated": 0,
+        "sources_with_hits": 0,
+        "sources_total": sources_total,
+        "source_coverage": [],
+        "_chunks": "",
+        "_turn_indices": [],
+        "_raw_chunks": [],
+    }
 
 
 GENERATE_REPORT_TOOL = ToolDefinition(
@@ -222,19 +218,12 @@ async def execute_retrieve(
     if source_filter is not None:
         narrowed_video_ids = await apply_source_filter(source_ids, source_filter)
         if narrowed_video_ids == []:
-            # filter_miss: no sources matched the filter
-            return {
-                "query": query,
-                "source_filter": source_filter,
-                "filter_miss": True,
-                "candidates_evaluated": 0,
-                "sources_with_hits": 0,
-                "sources_total": len(source_ids),
-                "source_coverage": [],
-                "_chunks": "",
-                "_turn_indices": [],
-                "_raw_chunks": [],
-            }
+            return _empty_retrieve_result(
+                query=query,
+                source_filter=source_filter,
+                filter_miss=True,
+                sources_total=len(source_ids),
+            )
         if narrowed_video_ids is not None:
             # Narrow: resolve video_ids to source_ids for the retrieve call
             video_to_source = {v: s for s, v in source_map.items()}
@@ -247,18 +236,12 @@ async def execute_retrieve(
                     len(filtered_source_ids),
                 )
             if not filtered_source_ids:
-                return {
-                    "query": query,
-                    "source_filter": source_filter,
-                    "filter_miss": False,  # not a filter_miss — map was incomplete
-                    "candidates_evaluated": 0,
-                    "sources_with_hits": 0,
-                    "sources_total": len(source_ids),  # original count
-                    "source_coverage": [],
-                    "_chunks": "",
-                    "_turn_indices": [],
-                    "_raw_chunks": [],
-                }
+                return _empty_retrieve_result(
+                    query=query,
+                    source_filter=source_filter,
+                    filter_miss=False,
+                    sources_total=len(source_ids),
+                )
             source_ids = filtered_source_ids
 
     params = params_for_expected_hits(expected_hits)

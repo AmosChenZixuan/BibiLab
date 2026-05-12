@@ -448,9 +448,6 @@ async def apply_source_filter(
     if not title_contains:
         return []  # Empty filter → no match
 
-    # Escape LIKE special chars
-    escaped_pattern = title_contains.replace("[", "[[").replace("_", "[_").replace("%", "[%]")
-
     id_to_video = await get_video_ids_for_sources(source_ids)
     if not id_to_video:
         return []
@@ -467,7 +464,7 @@ async def apply_source_filter(
 
     matched: list[tuple[str, str]] = []  # (video_id, title)
     for row in rows:
-        if escaped_pattern.lower() in row["title"].lower():
+        if title_contains.lower() in row["title"].lower():
             matched.append((row["video_id"], row["title"]))
 
     matched.sort(key=lambda x: x[1])
