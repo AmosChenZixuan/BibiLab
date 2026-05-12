@@ -545,7 +545,8 @@ async def run_chat_turn(
                     retrieve_calls.append(
                         {
                             "query": result.get("query", ""),
-                            "search_mode": result.get("search_mode"),
+                            "source_filter": result.get("source_filter"),
+                            "filter_miss": result.get("filter_miss", False),
                             "candidates_evaluated": result.get("candidates_evaluated"),
                             "sources_with_hits": result.get("sources_with_hits"),
                             "sources_total": result.get("sources_total"),
