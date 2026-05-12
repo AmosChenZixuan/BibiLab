@@ -158,7 +158,11 @@ async def execute_query_list_metadata(source_ids: list[str], query_type: str) ->
     if query_type == "languages":
         return {"languages": await language_breakdown(source_ids)}
     if query_type == "titles":
-        return {"titles": await get_titles(source_ids)}
+        try:
+            return {"titles": await get_titles(source_ids)}
+        except Exception:
+            logger.exception("get_titles failed for source_ids=%r", source_ids)
+            return {"titles": []}
     logger.warning("Unknown query_type %r — falling back to count", query_type)
     return {"count": await count_sources(source_ids)}
 
@@ -204,12 +208,15 @@ async def execute_retrieve(
     if source_map is None:
         source_map = {}
 
-    # selected_source_ids: string list of source IDs selected by LLM via query_list_metadata.
+    # selected_source_ids: list of strings selected by LLM via query_list_metadata.
     # Compute intersection with available source_ids to produce scoped_source_ids.
     scoped_source_ids: list[str] | None = None
     if selected_source_ids:  # non-None and non-empty; [] means "search all"
         id_set = set(source_ids)
         scoped_source_ids = [sid for sid in selected_source_ids if sid in id_set]
+        if len(scoped_source_ids) < len(selected_source_ids):
+            missing = set(selected_source_ids) - id_set
+            logger.debug("Some selected_source_ids not in source_ids pool, filtered out: %s", missing)
 
     params = params_for_expected_hits(expected_hits)
     result = await retrieve(
@@ -340,10 +347,15 @@ async def execute_tool(
     source_map: dict[str, str] | None = None,
 ) -> dict:
     if tool_name == RETRIEVE_TOOL.name:
+        source_ids_arg = arguments.get("source_ids")
+        # Validate source_ids type: must be None or list of str
+        if source_ids_arg is not None and not isinstance(source_ids_arg, list):
+            logger.warning("retrieve source_ids=%r is not a list, ignoring", source_ids_arg)
+            source_ids_arg = None
         logger.info(
             "retrieve tool call: query=%r source_ids=%r expected_hits=%r",
             arguments["query"],
-            arguments.get("source_ids"),
+            source_ids_arg,
             arguments.get("expected_hits", DEFAULT_EXPECTED_HITS),
         )
         return await execute_retrieve(
@@ -352,7 +364,7 @@ async def execute_tool(
             cfg=cfg,
             registry=registry,
             source_map=source_map,
-            selected_source_ids=arguments.get("source_ids"),
+            selected_source_ids=source_ids_arg,
             expected_hits=arguments.get("expected_hits", DEFAULT_EXPECTED_HITS),
         )
     if tool_name == GENERATE_REPORT_TOOL.name:
