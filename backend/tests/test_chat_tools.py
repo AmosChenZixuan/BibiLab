@@ -172,8 +172,14 @@ class TestQueryListMetadataToolDefinition:
         assert QUERY_LIST_METADATA_TOOL.name == "query_list_metadata"
         props = QUERY_LIST_METADATA_TOOL.parameters["properties"]
         assert "query_type" in props
-        assert props["query_type"]["enum"] == ["count", "longest", "languages"]
+        assert props["query_type"]["enum"] == ["count", "longest", "languages", "titles"]
         assert QUERY_LIST_METADATA_TOOL.parameters["required"] == ["query_type"]
+
+    def test_tool_schema_includes_titles(self):
+        from bibilab.pipeline.chat_tools import QUERY_LIST_METADATA_TOOL
+
+        props = QUERY_LIST_METADATA_TOOL.parameters["properties"]
+        assert props["query_type"]["enum"] == ["count", "longest", "languages", "titles"]
 
 
 class TestExecuteQueryListMetadata:
@@ -236,6 +242,26 @@ class TestExecuteQueryListMetadata:
 
         assert result == {"count": 4}
         assert "Unknown query_type" in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_titles_returns_list_of_source_id_title_dicts(self, tmp_bibilab_home):
+        from unittest.mock import AsyncMock, patch
+
+        from bibilab.pipeline.chat_tools import execute_query_list_metadata
+
+        with patch("bibilab.pipeline.chat_tools.get_titles", new_callable=AsyncMock) as m:
+            m.return_value = [
+                {"source_id": "s8", "title": "第八集 美食推荐"},
+                {"source_id": "s3", "title": "第3道菜 做法"},
+            ]
+            result = await execute_query_list_metadata(["s8", "s3"], "titles")
+        assert result == {
+            "titles": [
+                {"source_id": "s8", "title": "第八集 美食推荐"},
+                {"source_id": "s3", "title": "第3道菜 做法"},
+            ]
+        }
+        m.assert_awaited_once_with(["s8", "s3"])
 
 
 class TestFormatChunkForLLM:

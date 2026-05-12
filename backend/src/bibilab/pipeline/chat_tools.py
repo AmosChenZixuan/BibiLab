@@ -6,7 +6,7 @@ import uuid
 from dataclasses import dataclass, field
 
 from bibilab.config import BibilabConfig
-from bibilab.db import count_sources, create_job, language_breakdown, longest_source
+from bibilab.db import count_sources, create_job, get_titles, language_breakdown, longest_source
 from bibilab.models._enums import RetrievalParams
 from bibilab.pipeline._shared import ToolDefinition
 from bibilab.pipeline.embed import apply_source_filter, retrieve
@@ -166,11 +166,12 @@ QUERY_LIST_METADATA_TOOL = ToolDefinition(
         "properties": {
             "query_type": {
                 "type": "string",
-                "enum": ["count", "longest", "languages"],
+                "enum": ["count", "longest", "languages", "titles"],
                 "description": (
                     "count = number of sources; "
                     "longest = source with the longest duration; "
-                    "languages = count per language"
+                    "languages = count per language; "
+                    "titles = list of {source_id, title} for source selection"
                 ),
             },
         },
@@ -187,6 +188,8 @@ async def execute_query_list_metadata(source_ids: list[str], query_type: str) ->
         return row if row is not None else {"title": None, "duration_seconds": None}
     if query_type == "languages":
         return {"languages": await language_breakdown(source_ids)}
+    if query_type == "titles":
+        return {"titles": await get_titles(source_ids)}
     logger.warning("Unknown query_type %r — falling back to count", query_type)
     return {"count": await count_sources(source_ids)}
 
