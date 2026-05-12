@@ -472,8 +472,11 @@ async def retrieve(
         if floor is not None:
             chunks = [c for c in chunks if c.score is None or c.score >= floor]
 
-    # candidates_evaluated: pool size (pre-diverse-top-k); used for logs, not UI
-    result_chunks = _diverse_top_k(chunks, params.depth_per_source, params.top_k)
+    # candidates_evaluated: pool size (pre-diverse-top-k); used for logs, not UI.
+    # adaptive depth ensures #287 scoped queries (1-3 sources) aren't capped at spec.
+    num_sources_in_pool = len({c.video_id for c in chunks})
+    effective_depth = _adaptive_depth(params.depth_per_source, params.top_k, num_sources_in_pool)
+    result_chunks = _diverse_top_k(chunks, effective_depth, params.top_k)
 
     # source_coverage derived from result_chunks so the chip reflects what the LLM actually saw
     source_video_ids = list(dict.fromkeys(c.video_id for c in result_chunks))

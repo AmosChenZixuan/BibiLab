@@ -330,6 +330,55 @@ async def test_retrieve_empty_sources(tmp_bibilab_home):
     assert result.source_coverage == []
 
 
+@pytest.mark.asyncio
+async def test_retrieve_single_source_returns_top_k_chunks(tmp_bibilab_home):
+    """When LLM scopes to one source (#287), retrieve must return up to top_k
+    chunks from that source, not be capped at spec_depth=2."""
+    from unittest.mock import AsyncMock, MagicMock, patch
+
+    from bibilab.config import BibilabConfig, RagConfig
+    from bibilab.models._enums import RetrievalParams
+    from bibilab.pipeline.embed import retrieve
+
+    cfg = BibilabConfig(rag=RagConfig(max_distance=0.5, reranking_enabled=False, hybrid_enabled=False))
+
+    # Seed 6 chunks from a single video via mock collection
+    mock_collection = MagicMock()
+    mock_collection.query.return_value = {
+        "documents": [[f"chunk{i} content" for i in range(6)]],
+        "metadatas": [
+            [
+                {
+                    "video_id": "v1",
+                    "video_title": "Ramen Video",
+                    "timestamp_start": float(i) * 10,
+                    "timestamp_end": float(i) * 10 + 9.9,
+                }
+                for i in range(6)
+            ]
+        ],
+        "distances": [[0.1, 0.2, 0.3, 0.4, 0.5, 0.6]],
+    }
+
+    with (
+        patch("bibilab.pipeline.embed.get_video_ids_for_sources", new_callable=AsyncMock) as mock_map,
+        patch("bibilab.pipeline.embed._get_collection", return_value=mock_collection),
+    ):
+        mock_map.return_value = {"source-1": "v1"}
+
+        result = await retrieve(
+            query_text="ramen",
+            source_ids=["source-1"],
+            cfg=cfg,
+            params=RetrievalParams(depth_per_source=2, top_k=8),
+            scoped_source_ids=None,
+        )
+
+    # Pre-fix: returns 2. Post-fix: returns up to 6 (all available) because
+    # _adaptive_depth(2, 8, 1) = 8 → single source gets depth=8.
+    assert len(result.chunks) == 6, f"expected 6 chunks, got {len(result.chunks)}"
+
+
 # --- Source-aware aggregation tests ---
 
 
