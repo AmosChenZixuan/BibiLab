@@ -355,8 +355,8 @@ async def test_broad_mode_respects_floor(tmp_bibilab_home):
 
 
 @pytest.mark.asyncio
-async def test_sources_with_hits_reflects_full_reranked_pool(tmp_bibilab_home):
-    """sources_with_hits reflects ALL reranked candidates, not the final top_k slice.
+async def test_sources_with_hits_reflects_result_chunks(tmp_bibilab_home):
+    """sources_with_hits reflects the distinct video_ids in result_chunks (post diverse-top-k), not the rerank pool.
 
     Regression for #9 — ObsChip should show real retrieval coverage, not the LLM-input slice.
     """

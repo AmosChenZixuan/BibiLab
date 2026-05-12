@@ -73,16 +73,6 @@ def _chunk_key(chunk: RetrievedChunk) -> str:
     return f"{chunk.video_id}_{chunk.timestamp_start}_{chunk.timestamp_end}"
 
 
-def _best_by_source(chunks: list[RetrievedChunk]) -> dict[str, RetrievedChunk]:
-    """Pick the most relevant chunk per video_id."""
-    best: dict[str, RetrievedChunk] = {}
-    for chunk in chunks:
-        vid = chunk.video_id
-        if vid not in best or _chunk_score(chunk) < _chunk_score(best[vid]):
-            best[vid] = chunk
-    return best
-
-
 def _diverse_top_k(ranked: list[RetrievedChunk], depth: int, k: int) -> list[RetrievedChunk]:
     """Pick up to k chunks, allowing at most depth chunks from any single video.
 

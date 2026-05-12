@@ -541,16 +541,7 @@ async def run_chat_turn(
                 parsed = json.loads(event.content)
                 if parsed["name"] == "retrieve":
                     result = parsed["result"]
-                    # Emit only the sources whose [N] actually appeared in the assistant text.
-                    # content_blocks (type: "citation") holds every citation index the LLM emitted.
-                    emitted_indices = {cb["index"] for cb in content_blocks if cb.get("type") == "citation"}
-                    emitted_source_ids = {
-                        sid for sid, entry in citation_registry.items() if entry.index in emitted_indices
-                    }
-                    ordered_coverage = sorted(
-                        [s for s in result.get("source_coverage", []) if s["source_id"] in emitted_source_ids],
-                        key=lambda s: citation_registry[s["source_id"]].index,
-                    )
+                    # Store raw source_coverage for now; narrow by emitted citations in finally.
                     retrieve_calls.append(
                         {
                             "query": result.get("query", ""),
@@ -558,7 +549,7 @@ async def run_chat_turn(
                             "candidates_evaluated": result.get("candidates_evaluated"),
                             "sources_with_hits": result.get("sources_with_hits"),
                             "sources_total": result.get("sources_total"),
-                            "source_coverage": ordered_coverage,
+                            "source_coverage": result.get("source_coverage", []),
                         }
                     )
                 elif parsed["name"] == "generate_report":
@@ -584,6 +575,19 @@ async def run_chat_turn(
             tool_call_meta: list[dict] = []
             if generate_report_result is not None:
                 tool_call_meta = [{"name": "generate_report", "result": generate_report_result}]
+
+            # Narrow source_coverage to only sources whose [N] actually appeared in assistant text.
+            # content_blocks (type: "citation") is fully populated at this point.
+            if retrieve_calls:
+                emitted_indices = {cb["index"] for cb in content_blocks if cb.get("type") == "citation"}
+                if emitted_indices:
+                    emitted_source_ids = {
+                        sid for sid, entry in citation_registry.items() if entry.index in emitted_indices
+                    }
+                    for call in retrieve_calls:
+                        call["source_coverage"] = [
+                            s for s in call["source_coverage"] if s.get("source_id") in emitted_source_ids
+                        ]
 
             meta: dict[str, Any] = {}
             if tool_call_meta:
