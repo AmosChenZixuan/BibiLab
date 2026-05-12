@@ -51,37 +51,6 @@ def params_for_expected_hits(expected_hits: str) -> RetrievalParams:
     }[expected_hits]
 
 
-def _format_filter_miss_message(filter_str: str, titles: list[str], *, cap: int = 20) -> str:
-    shown = titles[:cap]
-    overflow = len(titles) - cap
-    overflow_suffix = f"\n- ... and {overflow} more" if overflow > 0 else ""
-    titles_fmt = "\n".join(f"- {t}" for t in shown) + overflow_suffix
-    return f"\n\nNo sources matched 'title_contains: {filter_str}'. Available titles:\n{titles_fmt}"
-
-
-def _empty_retrieve_result(
-    query: str,
-    source_filter: dict | None,
-    filter_miss: bool,
-    sources_total: int,
-    expected_hits: str = DEFAULT_EXPECTED_HITS,
-    chunks_text: str = "",
-) -> dict:
-    return {
-        "query": query,
-        "source_filter": source_filter,
-        "filter_miss": filter_miss,
-        "expected_hits": expected_hits,
-        "candidates_evaluated": 0,
-        "sources_with_hits": 0,
-        "sources_total": sources_total,
-        "source_coverage": [],
-        "_chunks": chunks_text,
-        "_turn_indices": [],
-        "_raw_chunks": [],
-    }
-
-
 GENERATE_REPORT_TOOL = ToolDefinition(
     name="generate_report",
     description=(

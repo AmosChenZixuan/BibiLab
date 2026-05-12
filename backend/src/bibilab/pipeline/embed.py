@@ -16,7 +16,7 @@ from pathlib import Path
 
 from bibilab.adapters.base import VideoMeta
 from bibilab.config import BibilabConfig, bibilab_home, models_dir
-from bibilab.db import _escape_fts_query, get_db, get_db_path, get_video_ids_for_sources, query_fts_rows
+from bibilab.db import _escape_fts_query, get_db_path, get_video_ids_for_sources, query_fts_rows
 from bibilab.models._enums import RetrievalParams
 from bibilab.pipeline.chunk import RagChunk
 
@@ -418,38 +418,6 @@ async def hybrid_search(
     if not fts_result:
         return vec_result
     return _rrf_fuse(vec_result, fts_result)
-
-
-async def apply_source_filter(
-    source_ids: list[str],
-    source_filter: dict | None,
-) -> tuple[list[str], list[str]]:
-    """Return (matched_ids, all_titles) for sources whose title matches source_filter.title_contains.
-
-    title_contains matching is case-insensitive substring. all_titles preserves insertion order
-    (ORDER BY id ASC) so the filter-miss message is stable across requests.
-    Returns ([], []) when no sources match or filter is empty.
-    """
-    if not source_ids:
-        return [], []
-
-    title_contains = source_filter.get("title_contains", "") if source_filter else ""
-    if not title_contains:
-        return [], []
-
-    placeholders = ", ".join(["?"] * len(source_ids))
-
-    async with get_db() as db:
-        cursor = await db.execute(
-            f"SELECT id, title FROM sources WHERE id IN ({placeholders}) ORDER BY id ASC",
-            source_ids,
-        )
-        rows = await cursor.fetchall()
-
-    title_lower = title_contains.lower()
-    matched = [row["id"] for row in rows if title_lower in row["title"].lower()]
-    titles = [row["title"] for row in rows]
-    return matched, titles
 
 
 async def retrieve(
