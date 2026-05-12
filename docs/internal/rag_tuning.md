@@ -120,3 +120,23 @@ Re-run the eval sweep when:
 - New lists added with different content characteristics
 
 The eval harness was deliberately throwaway (author-specific corpus, single-use UI). To re-sweep: write a script that calls `retrieve()` directly, varying `cfg.rag.rerank_min_score` per call — that is the only parameter the campaign found to affect ranking. The candidate pool is now dynamic (#219), so re-sweeps should pass realistic source counts.
+
+## 2026-05 — `rerank_min_score=null` decision superseded by #277 (I-2)
+
+Section 2 above closed `rerank_min_score` at `null` because per-list optima
+diverged across query types. That conclusion still holds — a single static
+logit floor cannot serve narrative + procedural content from one number.
+
+#277 supersedes that approach by replacing the static floor with a dynamic
+**quantile gate** (`_quantile_gate` in `pipeline/embed.py`):
+`threshold = max(median(scores), top - RELEVANCE_MARGIN)` with
+`RELEVANCE_MARGIN = 4.0`. The gate runs only when rerank succeeded;
+`cfg.rag.rerank_min_score` is now a no-op and logs a deprecation warning at
+startup. Removal of the config field is scheduled for one release cycle
+after this lands.
+
+The 27-query calibration harness from this writeup was deleted on purpose
+after #235 close-out (see `feedback_oneshot_eval_scripts.md`). Tuning the
+new `RELEVANCE_MARGIN` does not happen via offline sweeps — it relies on
+the `dropped_by_gate` telemetry surfaced by I-4 in production traffic. Do
+not rebuild the harness.
