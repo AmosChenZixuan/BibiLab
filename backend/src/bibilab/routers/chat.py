@@ -697,9 +697,14 @@ async def chat_endpoint(
 
     source_map: dict[str, str] = {row["video_id"]: row["id"] for row in source_rows}
     id_to_title = {row["id"]: row["title"] for row in source_rows}
+    id_to_keywords = {row["id"]: json.loads(row["keywords"]) for row in source_rows}
     source_list_str = (
         "Sources:\n"
-        + "\n".join(f"[{i + 1}] {id_to_title[sid]}" for i, sid in enumerate(source_ids))
+        + "\n".join(
+            f"[{i + 1}] {id_to_title[sid]}"
+            + (f" ({', '.join(id_to_keywords[sid])})" if id_to_keywords.get(sid) else "")
+            for i, sid in enumerate(source_ids)
+        )
         + "\n\nTo search, call retrieve with source_ids set to the source numbers you judge relevant."
     )
     ui_lang = http_request.headers.get("X-UI-Lang", "en")

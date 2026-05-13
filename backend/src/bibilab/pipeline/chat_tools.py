@@ -217,6 +217,14 @@ async def execute_retrieve(
         scoped_source_ids = mapped if mapped else None
 
     params = params_for_expected_hits(expected_hits)
+    logger.info(
+        "retrieve dispatch: query=%r scoped=%s params(top_k=%d depth=%d) pool_size=%d",
+        query,
+        scoped_source_ids if scoped_source_ids else "all",
+        params.top_k,
+        params.depth_per_source,
+        len(scoped_source_ids) if scoped_source_ids else len(source_ids),
+    )
     result = await retrieve(
         query_text=query,
         source_ids=source_ids,
