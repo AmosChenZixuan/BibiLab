@@ -17,8 +17,7 @@ from bibilab.routers.chat import (
 from tests import an_async_generator
 
 _SRC_LIST_INSTRUCTION = (
-    "\n\nTo search, call retrieve. Include all source numbers except "
-    "those clearly unrelated to the query. When in doubt, include."
+    "\n\nTo search, call retrieve. Include all source numbers except those clearly unrelated to the query."
 )
 
 

@@ -276,35 +276,6 @@ def populate_fts(chunks: list[RagChunk], meta: VideoMeta) -> None:
     logger.info("FTS indexed %d chunks for %s", len(chunks), meta.video_id)
 
 
-def rebuild_fts_cjk_sync() -> int:
-    """Re-tokenize all existing FTS rows with CJK character spacing.
-
-    Returns the number of rows rebuilt. Idempotent — safe to run multiple times.
-    """
-    db_path = get_db_path()
-    if not db_path.exists():
-        return 0
-    conn = sqlite3.connect(str(db_path))
-    try:
-        rows = conn.execute(
-            "SELECT rowid, content, video_id, video_title, timestamp_start, timestamp_end, chunk_id FROM chunks_fts"
-        ).fetchall()
-        if not rows:
-            return 0
-        conn.execute("DELETE FROM chunks_fts")
-        conn.executemany(
-            "INSERT INTO chunks_fts "
-            "(content, video_id, video_title, timestamp_start, timestamp_end, chunk_id) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
-            [(_tokenize_cjk(r[1]), r[2], r[3], r[4], r[5], r[6]) for r in rows],
-        )
-        conn.commit()
-    finally:
-        conn.close()
-    logger.info("FTS CJK rebuild: %d rows re-tokenized", len(rows))
-    return len(rows)
-
-
 def clear_fts_for_video_sync(video_id: str) -> None:
     """Delete all FTS rows for a video (sync, for use from worker threads)."""
     db_path = get_db_path()

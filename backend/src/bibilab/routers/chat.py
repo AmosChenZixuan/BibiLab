@@ -708,7 +708,7 @@ async def chat_endpoint(
             for i, sid in enumerate(source_ids)
         )
         + "\n\nTo search, call retrieve. Include all source numbers except "
-        "those clearly unrelated to the query. When in doubt, include."
+        "those clearly unrelated to the query."
     )
     ui_lang = http_request.headers.get("X-UI-Lang", "en")
 

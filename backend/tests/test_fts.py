@@ -191,10 +191,7 @@ def test_tokenize_cjk_preserves_non_cjk():
 
 
 def test_tokenize_cjk_handles_mixed_text():
-    result = _tokenize_cjk("做noodles面")
-    assert "面" in result
-    # CJK chars get space-separated, ASCII left untouched
-    assert "做" in result
+    assert _tokenize_cjk("做noodles面") == "做 noodles面 "
 
 
 def test_tokenize_cjk_empty_string():
