@@ -370,20 +370,6 @@ async def language_breakdown(source_ids: list[str]) -> dict[str, int]:
         return {row["lang"]: row["n"] for row in rows}
 
 
-async def get_titles(source_ids: list[str]) -> list[dict]:
-    """Return [{source_id, title}] for the given source IDs, ordered by id ASC."""
-    if not source_ids:
-        return []
-    placeholders = _in_placeholders(source_ids)
-    async with get_db() as db:
-        cursor = await db.execute(
-            f"SELECT id, title FROM sources WHERE id IN ({placeholders}) ORDER BY id ASC",
-            source_ids,
-        )
-        rows = await cursor.fetchall()
-    return [{"source_id": row["id"], "title": row["title"]} for row in rows]
-
-
 async def get_video_ids_for_sources(source_ids: list[str]) -> dict[str, str]:
     """Map source UUIDs to platform video_ids for ChromaDB filtering.
     Returns {source_id: video_id} for each source found.

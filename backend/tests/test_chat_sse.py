@@ -16,6 +16,8 @@ from bibilab.routers.chat import (
 )
 from tests import an_async_generator
 
+_SRC_LIST_INSTRUCTION = "\n\nTo search, call retrieve with source_ids set to the source numbers you judge relevant."
+
 
 def _parse_sse(text: str) -> list[dict]:
     events = []
@@ -824,6 +826,7 @@ async def test_run_chat_turn_persists_tool_blocks(monkeypatch, tmp_path):
         summary=None,
         source_ids=["s1"],
         source_map={"v1": "s1"},
+        source_list_str="Sources:\n[1] Test" + _SRC_LIST_INSTRUCTION,
         ui_lang="en",
         cfg=cfg,
         registry=registry,
@@ -1067,6 +1070,7 @@ async def test_run_chat_turn_replays_tool_blocks_on_turn_2(monkeypatch):
         summary=None,
         source_ids=[],
         source_map={},
+        source_list_str="Sources:\n" + _SRC_LIST_INSTRUCTION,
         ui_lang="en",
         cfg=cfg,
         registry=registry,
@@ -1129,6 +1133,7 @@ async def test_chat_uses_resolved_response_language_in_system_prompt(monkeypatch
         summary=None,
         source_ids=[],
         source_map={},
+        source_list_str="Sources:\n" + _SRC_LIST_INSTRUCTION,
         ui_lang="zh",
         cfg=cfg,
         registry=registry,
@@ -1227,6 +1232,7 @@ async def test_run_chat_turn_reseeds_citation_registry_from_history_tool_blocks(
         summary=None,
         source_ids=["s1"],
         source_map={"v1": "s1"},
+        source_list_str="Sources:\n[1] Test" + _SRC_LIST_INSTRUCTION,
         ui_lang="en",
         cfg=cfg,
         registry=registry,
