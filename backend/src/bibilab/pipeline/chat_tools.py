@@ -97,7 +97,8 @@ RETRIEVE_TOOL = ToolDefinition(
                 "items": {"type": "string"},
                 "description": (
                     "Source numbers from the Sources list in the system prompt. "
-                    "Pass the numbers (as strings) of the sources you judge relevant to the query. "
+                    "Pass the numbers (as strings) of sources that could be relevant. "
+                    "Be inclusive — only exclude sources clearly unrelated to the query. "
                     'Example: ["1","3"] for sources [1] and [3]. '
                     "To search all sources, pass all numbers."
                 ),

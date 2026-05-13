@@ -189,7 +189,9 @@ def build_grounding_prompt(response_language: str) -> str:
         "CRITICAL RULES:\n"
         '0. The "Sources" section below lists every source in this conversation. '
         "For EVERY content question (facts, comparisons, summaries), you MUST call "
-        "retrieve with source_ids set to the source numbers you judge relevant. "
+        "retrieve with source_ids. Include sources that could contain relevant "
+        "information — only exclude sources clearly unrelated to the query. "
+        "When in doubt, include the source. "
         'Pass source numbers as strings, e.g. retrieve(source_ids=["1","3"]). '
         "For questions about counts, durations, or languages of the sources themselves, "
         "call query_list_metadata instead. "
@@ -705,7 +707,8 @@ async def chat_endpoint(
             + (f" ({', '.join(id_to_keywords[sid])})" if id_to_keywords.get(sid) else "")
             for i, sid in enumerate(source_ids)
         )
-        + "\n\nTo search, call retrieve with source_ids set to the source numbers you judge relevant."
+        + "\n\nTo search, call retrieve. Include all source numbers except "
+        "those clearly unrelated to the query. When in doubt, include."
     )
     ui_lang = http_request.headers.get("X-UI-Lang", "en")
 
