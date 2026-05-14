@@ -6,6 +6,8 @@ import {
   formatSubtitle,
   formatTimestamp,
   stripLegacyTokens,
+  ExpectedHits,
+  RetrievalCall,
 } from "@/lib/chat-utils";
 
 describe("formatDurationHuman", () => {
@@ -95,5 +97,53 @@ describe("autoResize", () => {
     autoResize(ta);
     expect(ta.style.height).toBe("200px");
     expect(ta.style.overflowY).toBe("auto");
+  });
+});
+
+describe("ExpectedHits type", () => {
+  test("is one of the expected literal values or null", () => {
+    // Type-level test: these assignments must compile without error.
+    // We test the union by casting to verify the type exists.
+    const values: ExpectedHits[] = ["one", "few", "many", null];
+    expect(values).toHaveLength(4);
+  });
+});
+
+describe("RetrievalCall", () => {
+  test("has all required fields", () => {
+    const call: RetrievalCall = {
+      query: "test query",
+      expected_hits: "few",
+      candidates_evaluated: 5,
+      sources_with_hits: 2,
+      sources_total: 3,
+      source_coverage: [],
+      context: [
+        {
+          chunk_id: "v1_120_145",
+          timestamp_start: 120.4,
+          timestamp_end: 145.0,
+          rerank_score: 0.95,
+          preview: "test content here",
+        },
+      ],
+    };
+    expect(call.expected_hits).toBe("few");
+    expect(call.context[0].chunk_id).toBe("v1_120_145");
+    expect(call.context[0].timestamp_start).toBe(120.4);
+    expect(call.context[0].rerank_score).toBe(0.95);
+  });
+
+  test("context can be empty array", () => {
+    const call: RetrievalCall = {
+      query: "test",
+      expected_hits: "one",
+      candidates_evaluated: 0,
+      sources_with_hits: 0,
+      sources_total: 1,
+      source_coverage: [],
+      context: [],
+    };
+    expect(call.context).toHaveLength(0);
   });
 });

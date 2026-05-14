@@ -589,16 +589,38 @@ async def run_chat_turn(
 
             # Narrow source_coverage to only sources whose [N] actually appeared in assistant text.
             # content_blocks (type: "citation") is fully populated at this point.
+            # Reconstruct context[] from citation_registry for each retrieve call.
             if retrieve_calls:
                 emitted_indices = {cb["index"] for cb in content_blocks if cb.get("type") == "citation"}
                 if emitted_indices:
                     emitted_source_ids = {
                         sid for sid, entry in citation_registry.items() if entry.index in emitted_indices
                     }
-                    for call in retrieve_calls:
+                else:
+                    emitted_source_ids = set()
+                for call in retrieve_calls:
+                    # Narrow source_coverage only when citations were emitted.
+                    if emitted_source_ids:
                         call["source_coverage"] = [
                             s for s in call["source_coverage"] if s.get("source_id") in emitted_source_ids
                         ]
+                    # Always reconstruct context[] from citation registry.
+                    # One entry per source in source_coverage (narrowed or full).
+                    source_ids_in_call = {s["source_id"] for s in call["source_coverage"]}
+                    context_entries = []
+                    for sid in source_ids_in_call:
+                        entry = citation_registry.get(sid)
+                        if entry is not None:
+                            context_entries.append(
+                                {
+                                    "chunk_id": entry.first_chunk_id or "",
+                                    "timestamp_start": entry.timestamp_start or 0.0,
+                                    "timestamp_end": entry.timestamp_end or 0.0,
+                                    "rerank_score": entry.rerank_score or 0.0,
+                                    "preview": entry.preview or "",
+                                }
+                            )
+                    call["context"] = context_entries
 
             meta: dict[str, Any] = {}
             if tool_call_meta:

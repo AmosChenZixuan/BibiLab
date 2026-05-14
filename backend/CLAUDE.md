@@ -132,7 +132,7 @@ whisper_models.py — Whisper model management
 | `content` | Message text |
 | `status` | `"streaming"` → `"done"` \| `"failed"` \| `"cancelled"` |
 | `error` | Error code (e.g. `llm_rate_limit_error`, `internal_error`), nullable; set on producer failure or server restart sweep; mapped by `classify_error()` from SDK exceptions; frontend resolves via `chat.errors.*` i18n keys |
-| `metadata` | JSON blob, nullable. Shape: `{"tool_calls": [...], "rag": {"calls": [{"query", "search_mode", "candidates_evaluated", "sources_with_hits", "sources_total", "source_coverage"}]}}`. Set by `chat_endpoint` post-stream from retrieve `tool_result` events (one entry per retrieve call). |
+| `metadata` | JSON blob, nullable. Shape: `{"tool_calls": [...], "rag": {"calls": [{"query", "expected_hits", "candidates_evaluated", "sources_with_hits", "sources_total", "source_coverage", "context": [{"chunk_id", "timestamp_start", "timestamp_end", "rerank_score", "preview"}], "dropped_by_gate", "reranked"}]}}`. Set by `run_chat_turn` post-stream from retrieve `tool_result` events (one entry per retrieve call). |
 | `created_at` | ISO timestamp |
 
 ### `chunks_fts` — FTS5 virtual table

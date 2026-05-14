@@ -61,7 +61,7 @@ describe("Slice 2 — RAG observability via SSE tool_result", () => {
     vi.spyOn(window, "fetch").mockImplementation(() =>
       Promise.resolve(
         makeSseStream([
-          'data: {"type":"tool_result","name":"retrieve","result":{"search_mode":"factual","candidates_evaluated":30,"sources_with_hits":1,"sources_total":1,"source_coverage":[{"video_id":"BV1test","title":"Test Video A"}]}}\n\n',
+          'data: {"type":"tool_result","name":"retrieve","result":{"expected_hits":"few","candidates_evaluated":30,"sources_with_hits":1,"sources_total":1,"source_coverage":[{"video_id":"BV1test","title":"Test Video A"}]}}\n\n',
           'data: {"type":"delta","content":"Hello"}\n\n',
           'data: {"type":"done"}\n\n',
         ]),
@@ -88,7 +88,7 @@ describe("Slice 2 — RAG observability via SSE tool_result", () => {
     vi.spyOn(window, "fetch").mockImplementation(() =>
       Promise.resolve(
         makeSseStream([
-          'data: {"type":"tool_result","name":"retrieve","result":{"search_mode":"factual","candidates_evaluated":42,"sources_with_hits":3,"sources_total":5,"source_coverage":[{"video_id":"v1","title":"Video A"},{"video_id":"v2","title":"Video B"},{"video_id":"v3","title":"Video C"}]}}\n\n',
+          'data: {"type":"tool_result","name":"retrieve","result":{"expected_hits":"few","candidates_evaluated":42,"sources_with_hits":3,"sources_total":5,"source_coverage":[{"video_id":"v1","title":"Video A"},{"video_id":"v2","title":"Video B"},{"video_id":"v3","title":"Video C"}]}}\n\n',
           'data: {"type":"delta","content":"Answer"}\n\n',
           'data: {"type":"done"}\n\n',
         ]),
@@ -115,10 +115,10 @@ describe("Slice 2 — RAG observability via SSE tool_result", () => {
     vi.spyOn(window, "fetch").mockImplementation(() =>
       Promise.resolve(
         makeSseStream([
-          'data: {"type":"tool_call_start","id":"tc1","name":"retrieve","arguments":{"query":"A","search_mode":"breadth"}}\n\n',
-          'data: {"type":"tool_call_start","id":"tc2","name":"retrieve","arguments":{"query":"B","search_mode":"factual"}}\n\n',
-          'data: {"type":"tool_result","id":"tc1","name":"retrieve","result":{"query":"A","search_mode":"breadth","candidates_evaluated":10,"sources_with_hits":2,"sources_total":4,"source_coverage":[]}}\n\n',
-          'data: {"type":"tool_result","id":"tc2","name":"retrieve","result":{"query":"B","search_mode":"factual","candidates_evaluated":20,"sources_with_hits":1,"sources_total":3,"source_coverage":[]}}\n\n',
+          'data: {"type":"tool_call_start","id":"tc1","name":"retrieve","arguments":{"query":"A","expected_hits":"many"}}\n\n',
+          'data: {"type":"tool_call_start","id":"tc2","name":"retrieve","arguments":{"query":"B","expected_hits":"few"}}\n\n',
+          'data: {"type":"tool_result","id":"tc1","name":"retrieve","result":{"query":"A","expected_hits":"many","candidates_evaluated":10,"sources_with_hits":2,"sources_total":4,"source_coverage":[]}}\n\n',
+          'data: {"type":"tool_result","id":"tc2","name":"retrieve","result":{"query":"B","expected_hits":"few","candidates_evaluated":20,"sources_with_hits":1,"sources_total":3,"source_coverage":[]}}\n\n',
           'data: {"type":"delta","content":"Answer"}\n\n',
           'data: {"type":"done"}\n\n',
         ]),
@@ -148,7 +148,7 @@ describe("Slice 2 — RAG observability via SSE tool_result", () => {
     vi.spyOn(window, "fetch").mockImplementation(() =>
       Promise.resolve(
         makeSseStream([
-          'data: {"type":"tool_result","name":"retrieve","result":{"search_mode":"factual","candidates_evaluated":10,"sources_with_hits":2,"sources_total":4,"source_coverage":[{"video_id":"v1","title":"Intro Video"},{"video_id":"v2","title":"Conclusion Video"}]}}\n\n',
+          'data: {"type":"tool_result","name":"retrieve","result":{"expected_hits":"few","candidates_evaluated":10,"sources_with_hits":2,"sources_total":4,"source_coverage":[{"video_id":"v1","title":"Intro Video"},{"video_id":"v2","title":"Conclusion Video"}]}}\n\n',
           'data: {"type":"delta","content":"Done"}\n\n',
           'data: {"type":"done"}\n\n',
         ]),
@@ -171,7 +171,7 @@ describe("Slice 2 — RAG observability via SSE tool_result", () => {
     await userEvent.click(chip);
 
     await waitFor(() => {
-      expect(screen.getByText(/factual/i)).toBeInTheDocument();
+      expect(screen.getByText(/few/i)).toBeInTheDocument();
       expect(screen.getByText(/intro video/i)).toBeInTheDocument();
       expect(screen.getByText(/conclusion video/i)).toBeInTheDocument();
     });
