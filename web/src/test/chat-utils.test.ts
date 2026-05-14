@@ -8,7 +8,6 @@ import {
   stripLegacyTokens,
   ExpectedHits,
   RetrievalCall,
-  LegacyRagCall,
 } from "@/lib/chat-utils";
 
 describe("formatDurationHuman", () => {
@@ -146,82 +145,5 @@ describe("RetrievalCall", () => {
       context: [],
     };
     expect(call.context).toHaveLength(0);
-  });
-});
-
-describe("LegacyRagCall", () => {
-  test("has search_mode instead of expected_hits", () => {
-    const legacy: LegacyRagCall = {
-      query: "test",
-      search_mode: "factual",
-      candidates_evaluated: 5,
-      sources_with_hits: 2,
-      sources_total: 3,
-      source_coverage: [],
-    };
-    expect("expected_hits" in legacy).toBe(false);
-    expect("search_mode" in legacy).toBe(true);
-  });
-
-  test("parses without context field", () => {
-    // AC4: legacy messages (no context) parse without errors
-    const raw = {
-      query: "legacy call",
-      search_mode: "breadth",
-      candidates_evaluated: 3,
-      sources_with_hits: 1,
-      sources_total: 2,
-      source_coverage: [],
-    };
-    const parsed: LegacyRagCall = raw as unknown as LegacyRagCall;
-    expect(parsed.query).toBe("legacy call");
-    expect(parsed.search_mode).toBe("breadth");
-  });
-});
-
-describe("RagMetadata legacy detection", () => {
-  test("new-style metadata has context on each call", () => {
-    const metadata = {
-      calls: [
-        {
-          query: "test",
-          expected_hits: "few",
-          candidates_evaluated: 1,
-          sources_with_hits: 1,
-          sources_total: 1,
-          source_coverage: [],
-          context: [
-            {
-              chunk_id: "v1_0_10",
-              timestamp_start: 0,
-              timestamp_end: 10,
-              rerank_score: 0.9,
-              preview: "x",
-            },
-          ],
-        },
-      ],
-    };
-    // All calls have context field
-    for (const call of metadata.calls) {
-      expect(call).toHaveProperty("context");
-    }
-  });
-
-  test("legacy metadata has no context field", () => {
-    const metadata = {
-      calls: [
-        {
-          query: "old call",
-          search_mode: "factual",
-          candidates_evaluated: 1,
-          sources_with_hits: 1,
-          sources_total: 1,
-          source_coverage: [],
-        },
-      ],
-      legacy: true,
-    };
-    expect(metadata.legacy).toBe(true);
   });
 });

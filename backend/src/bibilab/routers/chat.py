@@ -592,12 +592,15 @@ async def run_chat_turn(
             # Reconstruct context[] from citation_registry for each retrieve call.
             if retrieve_calls:
                 emitted_indices = {cb["index"] for cb in content_blocks if cb.get("type") == "citation"}
+                if emitted_indices:
+                    emitted_source_ids = {
+                        sid for sid, entry in citation_registry.items() if entry.index in emitted_indices
+                    }
+                else:
+                    emitted_source_ids = set()
                 for call in retrieve_calls:
                     # Narrow source_coverage only when citations were emitted.
-                    if emitted_indices:
-                        emitted_source_ids = {
-                            sid for sid, entry in citation_registry.items() if entry.index in emitted_indices
-                        }
+                    if emitted_source_ids:
                         call["source_coverage"] = [
                             s for s in call["source_coverage"] if s.get("source_id") in emitted_source_ids
                         ]
@@ -608,10 +611,9 @@ async def run_chat_turn(
                     for sid in source_ids_in_call:
                         entry = citation_registry.get(sid)
                         if entry is not None:
-                            chunk_ids_list = list(entry.chunk_ids)
                             context_entries.append(
                                 {
-                                    "chunk_id": chunk_ids_list[0] if chunk_ids_list else "",
+                                    "chunk_id": entry.first_chunk_id or "",
                                     "timestamp_start": entry.timestamp_start or 0.0,
                                     "timestamp_end": entry.timestamp_end or 0.0,
                                     "rerank_score": entry.rerank_score or 0.0,

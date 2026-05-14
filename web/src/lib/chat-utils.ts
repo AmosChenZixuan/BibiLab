@@ -30,17 +30,7 @@ export type RetrievalCall = {
   source_coverage: RagSource[];
   context: RetrievalChunk[];
 };
-/** Legacy shape — no context field. Parsing with no context triggers legacy: true. */
-export type LegacyRagCall = {
-  query: string;
-  search_mode: string;
-  candidates_evaluated: number;
-  sources_with_hits: number;
-  sources_total: number;
-  source_coverage: RagSource[];
-} & ({ context: never } | { context?: never });
-
-export type RagMetadata = { calls: (RetrievalCall | LegacyRagCall)[]; legacy?: boolean };
+export type RagMetadata = { calls: RetrievalCall[] };
 export type PendingRagCall = {
   id: string;
   query: string;

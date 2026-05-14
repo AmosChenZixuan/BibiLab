@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 
 import type { JobRegistration } from "@/components/jobs/JobActivityProvider";
 import type { MessageUI } from "@/components/lists/hooks/useConversationHistory";
-import { formatTimestamp, type ContentBlock, type PendingMetadataCall, type PendingRagCall, type LegacyRagCall, type ExpectedHits } from "@/lib/chat-utils";
+import { formatTimestamp, type ContentBlock, type PendingMetadataCall, type PendingRagCall, type RetrievalCall, type ExpectedHits } from "@/lib/chat-utils";
 import type { ToolResult } from "@/lib/chat-utils";
 import {
   SSE_EVENT_CANCELLED,
@@ -147,7 +147,7 @@ export function useSSEStream({
         const toolName = event.name as string;
         if (!toolName) return;
         if (toolName === "retrieve") {
-          const call = event.result as unknown as LegacyRagCall;
+          const call = event.result as unknown as RetrievalCall;
           const callId = event.id as string;
           updateAssistantMsg(assistantMsgId, (m) => ({
             rag: { calls: [...(m.rag?.calls ?? []), call] },

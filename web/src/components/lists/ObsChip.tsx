@@ -3,11 +3,15 @@ import { useLanguage } from "@/app/LanguageContext";
 
 import { Info, Loader2 } from "lucide-react";
 
-import type { LegacyRagCall, RetrievalCall, ExpectedHits } from "@/lib/chat-utils";
+import type { RetrievalCall, ExpectedHits } from "@/lib/chat-utils";
 import { translateOrFallback } from "@/lib/utils";
 
+function getCallMode(call: RetrievalCall): string {
+  return call.expected_hits ?? "—";
+}
+
 interface ObsChipProps {
-  call: LegacyRagCall | RetrievalCall;
+  call: RetrievalCall;
 }
 
 export function ObsChip({ call }: ObsChipProps) {
@@ -43,7 +47,7 @@ export function ObsChip({ call }: ObsChipProps) {
           </div>
           <div className="flex justify-between items-center py-0.5">
             <span className="text-muted">{t("chat.obsChip.mode")}</span>
-            <span className="font-medium text-ink">{"search_mode" in call ? (call as LegacyRagCall).search_mode : (call as RetrievalCall).expected_hits ?? "—"}</span>
+            <span className="font-medium text-ink">{getCallMode(call)}</span>
           </div>
           <div className="flex justify-between items-center py-0.5">
             <span className="text-muted">{t("chat.obsChip.sourcesCited")}</span>

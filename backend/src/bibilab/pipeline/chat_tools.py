@@ -22,6 +22,7 @@ class CitationRegistryEntry:
     chunk_ids: set[str] = field(default_factory=set)
     # Populated at SSE-build time from execute_retrieve chunk data.
     # Used to reconstruct context[] for persisted metadata.
+    first_chunk_id: str | None = None
     timestamp_start: float | None = None
     timestamp_end: float | None = None
     rerank_score: float | None = None
@@ -269,9 +270,10 @@ async def execute_retrieve(
             cid = f"{c.video_id}_{int(c.timestamp_start)}_{int(c.timestamp_end)}"
             registry[sid].chunk_ids.add(cid)
             # Populate entry fields from the first chunk for this source.
-            # Spec: "store stripped" — content is stored as-is (no [N] markers present).
+            # Content arrives already stripped (no [N] markers).
             entry = registry[sid]
             if entry.timestamp_start is None:
+                entry.first_chunk_id = cid
                 entry.timestamp_start = c.timestamp_start
                 entry.timestamp_end = c.timestamp_end
                 entry.rerank_score = c.score
@@ -310,6 +312,8 @@ async def execute_retrieve(
         "candidates_evaluated": result.candidates_evaluated,
         "sources_with_hits": result.sources_with_hits,
         "sources_total": result.sources_total,
+        "dropped_by_gate": result.dropped_by_gate,
+        "reranked": result.reranked,
         "source_coverage": [
             {
                 "source_id": source_map.get(s.video_id, ""),
