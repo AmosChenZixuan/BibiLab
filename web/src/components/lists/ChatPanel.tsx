@@ -325,7 +325,7 @@ export function ChatPanel({
                       <ObsChip key={`call-${i}`} call={call} />
                     ))}
                     {msg.pendingRagCalls.map((p) => (
-                      <PendingObsChip key={`pending-${p.id}`} query={p.query} search_mode={p.search_mode} />
+                      <PendingObsChip key={`pending-${p.id}`} query={p.query} expected_hits={p.expected_hits} />
                     ))}
                     {msg.pendingMetadataCalls.map((p) => (
                       <PendingMetaChip key={`pending-meta-${p.id}`} query_type={p.query_type} />

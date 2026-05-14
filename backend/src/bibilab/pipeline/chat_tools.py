@@ -20,6 +20,12 @@ class CitationRegistryEntry:
     source_id: str
     title: str = ""
     chunk_ids: set[str] = field(default_factory=set)
+    # Populated at SSE-build time from execute_retrieve chunk data.
+    # Used to reconstruct context[] for persisted metadata.
+    timestamp_start: float | None = None
+    timestamp_end: float | None = None
+    rerank_score: float | None = None
+    preview: str | None = None
 
 
 def _format_chunk_for_llm(chunk: dict, index: int) -> str:
@@ -255,12 +261,21 @@ async def execute_retrieve(
         if sid and sid in registry:
             video_id_to_index[s.video_id] = registry[sid].index
 
-    # Accumulate chunk_ids per source (synthetic key: video_id_start_end)
+    # Accumulate chunk_ids per source (synthetic key: video_id_start_end).
+    # Also populate CitationRegistryEntry fields from the first chunk per source.
     for c in result.chunks:
         sid = source_map.get(c.video_id)
         if sid and sid in registry:
             cid = f"{c.video_id}_{int(c.timestamp_start)}_{int(c.timestamp_end)}"
             registry[sid].chunk_ids.add(cid)
+            # Populate entry fields from the first chunk for this source.
+            # Spec: "store stripped" — content is stored as-is (no [N] markers present).
+            entry = registry[sid]
+            if entry.timestamp_start is None:
+                entry.timestamp_start = c.timestamp_start
+                entry.timestamp_end = c.timestamp_end
+                entry.rerank_score = c.score
+                entry.preview = c.content
 
     # Collect indices actually retrieved this turn (for the enumeration line)
     turn_indices = sorted(set(video_id_to_index.values()))

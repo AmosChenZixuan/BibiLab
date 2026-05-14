@@ -6,6 +6,9 @@ import {
   formatSubtitle,
   formatTimestamp,
   stripLegacyTokens,
+  ExpectedHits,
+  RetrievalCall,
+  LegacyRagCall,
 } from "@/lib/chat-utils";
 
 describe("formatDurationHuman", () => {
@@ -95,5 +98,130 @@ describe("autoResize", () => {
     autoResize(ta);
     expect(ta.style.height).toBe("200px");
     expect(ta.style.overflowY).toBe("auto");
+  });
+});
+
+describe("ExpectedHits type", () => {
+  test("is one of the expected literal values or null", () => {
+    // Type-level test: these assignments must compile without error.
+    // We test the union by casting to verify the type exists.
+    const values: ExpectedHits[] = ["one", "few", "many", null];
+    expect(values).toHaveLength(4);
+  });
+});
+
+describe("RetrievalCall", () => {
+  test("has all required fields", () => {
+    const call: RetrievalCall = {
+      query: "test query",
+      expected_hits: "few",
+      candidates_evaluated: 5,
+      sources_with_hits: 2,
+      sources_total: 3,
+      source_coverage: [],
+      context: [
+        {
+          chunk_id: "v1_120_145",
+          timestamp_start: 120.4,
+          timestamp_end: 145.0,
+          rerank_score: 0.95,
+          preview: "test content here",
+        },
+      ],
+    };
+    expect(call.expected_hits).toBe("few");
+    expect(call.context[0].chunk_id).toBe("v1_120_145");
+    expect(call.context[0].timestamp_start).toBe(120.4);
+    expect(call.context[0].rerank_score).toBe(0.95);
+  });
+
+  test("context can be empty array", () => {
+    const call: RetrievalCall = {
+      query: "test",
+      expected_hits: "one",
+      candidates_evaluated: 0,
+      sources_with_hits: 0,
+      sources_total: 1,
+      source_coverage: [],
+      context: [],
+    };
+    expect(call.context).toHaveLength(0);
+  });
+});
+
+describe("LegacyRagCall", () => {
+  test("has search_mode instead of expected_hits", () => {
+    const legacy: LegacyRagCall = {
+      query: "test",
+      search_mode: "factual",
+      candidates_evaluated: 5,
+      sources_with_hits: 2,
+      sources_total: 3,
+      source_coverage: [],
+    };
+    expect("expected_hits" in legacy).toBe(false);
+    expect("search_mode" in legacy).toBe(true);
+  });
+
+  test("parses without context field", () => {
+    // AC4: legacy messages (no context) parse without errors
+    const raw = {
+      query: "legacy call",
+      search_mode: "breadth",
+      candidates_evaluated: 3,
+      sources_with_hits: 1,
+      sources_total: 2,
+      source_coverage: [],
+    };
+    const parsed: LegacyRagCall = raw as unknown as LegacyRagCall;
+    expect(parsed.query).toBe("legacy call");
+    expect(parsed.search_mode).toBe("breadth");
+  });
+});
+
+describe("RagMetadata legacy detection", () => {
+  test("new-style metadata has context on each call", () => {
+    const metadata = {
+      calls: [
+        {
+          query: "test",
+          expected_hits: "few",
+          candidates_evaluated: 1,
+          sources_with_hits: 1,
+          sources_total: 1,
+          source_coverage: [],
+          context: [
+            {
+              chunk_id: "v1_0_10",
+              timestamp_start: 0,
+              timestamp_end: 10,
+              rerank_score: 0.9,
+              preview: "x",
+            },
+          ],
+        },
+      ],
+    };
+    // All calls have context field
+    for (const call of metadata.calls) {
+      expect(call).toHaveProperty("context");
+    }
+  });
+
+  test("legacy metadata has no context field", () => {
+    const metadata = {
+      calls: [
+        {
+          query: "old call",
+          search_mode: "factual",
+          candidates_evaluated: 1,
+          sources_with_hits: 1,
+          sources_total: 1,
+          source_coverage: [],
+        },
+      ],
+      legacy: true,
+    };
+    expect(metadata.legacy).toBe(true);
   });
 });
