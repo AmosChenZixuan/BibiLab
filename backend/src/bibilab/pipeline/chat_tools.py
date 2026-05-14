@@ -40,7 +40,7 @@ class ReuseAction(Enum):
 @dataclass
 class ReuseDecision:
     action: ReuseAction
-    note: str | None = None
+    note: str | None = None  # Always set for TRIVIAL, always None for FORCE_FRESH/KEEP.
 
 
 # Messages shorter than 3 non-whitespace chars, pure digits, or matching these
@@ -71,12 +71,19 @@ _REUSE_COSINE_THRESHOLD = 0.55
 
 
 def _cosine_similarity(a: list[float], b: list[float]) -> float:
+    if len(a) != len(b):
+        logger.warning("_cosine_similarity vector length mismatch: %d vs %d", len(a), len(b))
+        return 0.0
     dot = sum(x * y for x, y in zip(a, b))
     norm_a = math.sqrt(sum(x * x for x in a))
     norm_b = math.sqrt(sum(y * y for y in b))
     if norm_a == 0 or norm_b == 0:
         return 0.0
-    return dot / (norm_a * norm_b)
+    result = dot / (norm_a * norm_b)
+    if math.isnan(result) or math.isinf(result):
+        logger.warning("_cosine_similarity produced %s — returning 0.0 as safety default", result)
+        return 0.0
+    return result
 
 
 def decide_reuse(new_message: str, prior_user_message: str | None) -> ReuseDecision:
@@ -94,10 +101,13 @@ def decide_reuse(new_message: str, prior_user_message: str | None) -> ReuseDecis
     stripped = new_message.strip()
     non_ws = "".join(stripped.split())
     if len(non_ws) < 3:
+        logger.info("decide_reuse → TRIVIAL (short, len=%d)", len(non_ws))
         return ReuseDecision(action=ReuseAction.TRIVIAL, note=_TRIVIAL_PATH_NOTE)
     if non_ws.isdigit():
+        logger.info("decide_reuse → TRIVIAL (digits)")
         return ReuseDecision(action=ReuseAction.TRIVIAL, note=_TRIVIAL_PATH_NOTE)
     if stripped.lower() in _TRIVIAL_STOPWORDS:
+        logger.info("decide_reuse → TRIVIAL (stopword=%r)", stripped.lower())
         return ReuseDecision(action=ReuseAction.TRIVIAL, note=_TRIVIAL_PATH_NOTE)
 
     # --- No prior context to compare ---
@@ -105,12 +115,20 @@ def decide_reuse(new_message: str, prior_user_message: str | None) -> ReuseDecis
         return ReuseDecision(action=ReuseAction.FORCE_FRESH)
 
     # --- Cosine similarity ---
-    new_emb = embed_text(new_message)
-    prior_emb = embed_text(prior_user_message)
+    try:
+        new_emb = embed_text(new_message)
+        prior_emb = embed_text(prior_user_message)
+    except Exception:
+        logger.exception("decide_reuse embedding failed — falling back to FORCE_FRESH")
+        return ReuseDecision(action=ReuseAction.FORCE_FRESH)
+
     cosine = _cosine_similarity(new_emb, prior_emb)
+    logger.info("decide_reuse cosine=%.4f new=%r prior=%r", cosine, new_message[:80], prior_user_message[:80])
 
     if cosine < _REUSE_COSINE_THRESHOLD:
+        logger.info("decide_reuse → FORCE_FRESH (cosine %.4f < %.2f)", cosine, _REUSE_COSINE_THRESHOLD)
         return ReuseDecision(action=ReuseAction.FORCE_FRESH)
+    logger.info("decide_reuse → KEEP")
     return ReuseDecision(action=ReuseAction.KEEP)
 
 
