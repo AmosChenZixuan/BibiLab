@@ -49,7 +49,6 @@ _TRIVIAL_STOPWORDS = frozenset(
     {
         "嗯",
         "ok",
-        "continue",
         "好的",
         "好",
         "是",

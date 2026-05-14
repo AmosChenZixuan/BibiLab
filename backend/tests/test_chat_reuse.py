@@ -43,7 +43,6 @@ class TestDecideReuse:
             "ok",
             "OK",
             "Ok",
-            "continue",
             "好的",
             "好",
             "是",
@@ -65,7 +64,7 @@ class TestDecideReuse:
         assert decision.note is not None
         assert "acknowledgment" in decision.note.lower()
 
-    @pytest.mark.parametrize("msg", ["why", "what", "tell me more"])
+    @pytest.mark.parametrize("msg", ["why", "what", "tell me more", "continue"])
     def test_non_trivial_short_messages_pass_guard(self, msg):
         decision = decide_reuse(msg, "prior question about physics")
         assert decision.action != ReuseAction.TRIVIAL
@@ -110,6 +109,17 @@ class TestDecideReuse:
             "explain the plot of episode 5 in detail",
         )
         assert decision.action == ReuseAction.FORCE_FRESH
+
+    def test_embedding_failure_falls_back_to_force_fresh(self, monkeypatch):
+        from bibilab.pipeline import chat_tools
+
+        def boom(_):
+            raise RuntimeError("ONNX session crashed")
+
+        monkeypatch.setattr(chat_tools, "embed_text", boom)
+        decision = decide_reuse("a non-trivial question", "another non-trivial question")
+        assert decision.action == ReuseAction.FORCE_FRESH
+        assert decision.note is None
 
 
 class TestDecideReuseIntegration:

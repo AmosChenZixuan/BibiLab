@@ -495,26 +495,27 @@ async def run_chat_turn(
         system_message = "\n\n".join(system_parts)
 
         # Decide whether to keep or strip prior tool blocks.
-        # Find last user message (before current) and check if prior turn had a retrieve.
+        # Find last user message and check if any prior turn ran retrieve.
         prior_user_msg: str | None = None
-        prior_turn_has_retrieve = False
+        prior_history_has_retrieve = False
         prior_retrieve_tool_use_id: str | None = None
         for h in reversed(history):
             role = h.get("role")
-            if role == "user" and prior_user_msg is None and h.get("content") != user_message_text:
+            if role == "user" and prior_user_msg is None:
                 prior_user_msg = h["content"]
-            if role == "assistant" and not prior_turn_has_retrieve:
+            if role == "assistant" and not prior_history_has_retrieve:
                 for tb in h.get("tool_blocks") or []:
                     if tb.get("name") == "retrieve":
-                        prior_turn_has_retrieve = True
+                        prior_history_has_retrieve = True
                         prior_retrieve_tool_use_id = tb.get("tool_use_id")
                         break
-            if prior_user_msg is not None and prior_turn_has_retrieve:
+            if prior_user_msg is not None and prior_history_has_retrieve:
                 break
 
         reuse_decision = None
-        if prior_turn_has_retrieve:
-            reuse_decision = decide_reuse(user_message_text, prior_user_msg)
+        if prior_history_has_retrieve:
+            # decide_reuse runs sync ONNX inference; offload to thread to avoid blocking the loop.
+            reuse_decision = await asyncio.to_thread(decide_reuse, user_message_text, prior_user_msg)
 
         # Build history for LLM: strip tool_blocks on force_fresh or trivial.
         if reuse_decision is not None and reuse_decision.action in (ReuseAction.FORCE_FRESH, ReuseAction.TRIVIAL):
