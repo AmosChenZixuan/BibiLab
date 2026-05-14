@@ -1126,7 +1126,7 @@ async def test_run_chat_turn_replays_tool_blocks_on_turn_2(monkeypatch):
     registry.register(msg_id, task=None)
 
     history = [
-        {"role": "user", "content": "first question"},
+        {"role": "user", "content": "tell me about quantum mechanics"},
         {
             "role": "assistant",
             "content": "first answer [1]",
@@ -1150,7 +1150,7 @@ async def test_run_chat_turn_replays_tool_blocks_on_turn_2(monkeypatch):
         message_id=msg_id,
         conversation_id="c1",
         list_id="l1",
-        user_message_text="follow-up",
+        user_message_text="tell me more about quantum mechanics",
         history=history,
         summary=None,
         source_ids=[],
@@ -1270,7 +1270,7 @@ async def test_run_chat_turn_reseeds_citation_registry_from_history_tool_blocks(
     registry.register(msg_id, task=None)
 
     history = [
-        {"role": "user", "content": "first question"},
+        {"role": "user", "content": "tell me about quantum mechanics"},
         {
             "role": "assistant",
             "content": "first answer [1]",
@@ -1312,7 +1312,7 @@ async def test_run_chat_turn_reseeds_citation_registry_from_history_tool_blocks(
         message_id=msg_id,
         conversation_id="c1",
         list_id="l1",
-        user_message_text="follow-up",
+        user_message_text="tell me more about quantum mechanics",
         history=history,
         summary=None,
         source_ids=["s1"],

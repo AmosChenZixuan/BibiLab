@@ -49,7 +49,9 @@ from bibilab.pipeline.chat_tools import (
     QUERY_LIST_METADATA_TOOL,
     RETRIEVE_TOOL,
     CitationRegistryEntry,
+    ReuseAction,
     build_tool_block_entry,
+    decide_reuse,
     execute_tool,
     expand_message_for_provider,
     reseed_citation_registry,
@@ -492,10 +494,38 @@ async def run_chat_turn(
             )
         system_message = "\n\n".join(system_parts)
 
+        # Decide whether to keep or strip prior tool blocks.
+        # Find last user message (before current) and check if prior turn had a retrieve.
+        prior_user_msg: str | None = None
+        prior_turn_has_retrieve = False
+        prior_retrieve_tool_use_id: str | None = None
+        for h in reversed(history):
+            role = h.get("role")
+            if role == "user" and prior_user_msg is None and h.get("content") != user_message_text:
+                prior_user_msg = h["content"]
+            if role == "assistant" and not prior_turn_has_retrieve:
+                for tb in h.get("tool_blocks") or []:
+                    if tb.get("name") == "retrieve":
+                        prior_turn_has_retrieve = True
+                        prior_retrieve_tool_use_id = tb.get("tool_use_id")
+                        break
+            if prior_user_msg is not None and prior_turn_has_retrieve:
+                break
+
+        reuse_decision = None
+        if prior_turn_has_retrieve:
+            reuse_decision = decide_reuse(user_message_text, prior_user_msg)
+
+        # Build history for LLM: strip tool_blocks on force_fresh or trivial.
+        if reuse_decision is not None and reuse_decision.action in (ReuseAction.FORCE_FRESH, ReuseAction.TRIVIAL):
+            history_for_expansion = [{k: v for k, v in h.items() if k != "tool_blocks"} for h in history]
+        else:
+            history_for_expansion = history
+
         # Reseed citation registry and expand history tool blocks for replay.
-        reseed_citation_registry(citation_registry, history)
+        reseed_citation_registry(citation_registry, history_for_expansion)
         expanded_history: list[dict] = []
-        for h in history:
+        for h in history_for_expansion:
             expanded_history.extend(expand_message_for_provider(h, protocol=cfg.ai.protocol))
         messages_for_llm = expanded_history + [{"role": "user", "content": user_message_text}]
 
@@ -509,6 +539,10 @@ async def run_chat_turn(
                 cfg=cfg,
                 **kwargs,
             )
+
+        # Inject trivial-path note after classifier has run.
+        if reuse_decision is not None and reuse_decision.action == ReuseAction.TRIVIAL and reuse_decision.note:
+            system_message += "\n\n" + reuse_decision.note
 
         tools = [RETRIEVE_TOOL, QUERY_LIST_METADATA_TOOL, GENERATE_REPORT_TOOL]
 
@@ -625,6 +659,19 @@ async def run_chat_turn(
             meta: dict[str, Any] = {}
             if tool_call_meta:
                 meta["tool_calls"] = tool_call_meta
+            # Append synthetic reuse entry when classifier chose KEEP.
+            if reuse_decision is not None and reuse_decision.action == ReuseAction.KEEP and prior_retrieve_tool_use_id:
+                retrieve_calls.append(
+                    {
+                        "query": "(reused)",
+                        "expected_hits": None,
+                        "context": [],
+                        "dropped_by_gate": 0,
+                        "reranked": False,
+                        "reused_from_prior_call_id": prior_retrieve_tool_use_id,
+                    }
+                )
+
             if retrieve_calls:
                 meta["rag"] = {"calls": retrieve_calls}
             if content_blocks:

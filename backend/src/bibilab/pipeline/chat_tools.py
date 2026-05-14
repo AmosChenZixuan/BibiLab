@@ -2,14 +2,16 @@
 
 import json
 import logging
+import math
 import uuid
 from dataclasses import dataclass, field
+from enum import Enum
 
 from bibilab.config import BibilabConfig
 from bibilab.db import count_sources, create_job, language_breakdown, longest_source
 from bibilab.models._enums import RetrievalParams
 from bibilab.pipeline._shared import ToolDefinition
-from bibilab.pipeline.embed import retrieve
+from bibilab.pipeline.embed import embed_text, retrieve
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +29,89 @@ class CitationRegistryEntry:
     timestamp_end: float | None = None
     rerank_score: float | None = None
     preview: str | None = None
+
+
+class ReuseAction(Enum):
+    FORCE_FRESH = "force_fresh"
+    KEEP = "keep"
+    TRIVIAL = "trivial"
+
+
+@dataclass
+class ReuseDecision:
+    action: ReuseAction
+    note: str | None = None
+
+
+# Messages shorter than 3 non-whitespace chars, pure digits, or matching these
+# stopwords bypass reuse and get the trivial-acknowledgment path (#272 fix).
+_TRIVIAL_STOPWORDS = frozenset(
+    {
+        "嗯",
+        "ok",
+        "continue",
+        "好的",
+        "好",
+        "是",
+        "对",
+        "yes",
+        "no",
+        "thanks",
+        "谢谢",
+        "k",
+        "kk",
+    }
+)
+
+_TRIVIAL_PATH_NOTE = "The user sent a short acknowledgment. Respond naturally without calling retrieve."
+
+# Cosine threshold: below this, prior tool blocks are stripped.
+# Calibrated by spot-check; the gray zone (>= threshold) preserves today's behavior.
+_REUSE_COSINE_THRESHOLD = 0.55
+
+
+def _cosine_similarity(a: list[float], b: list[float]) -> float:
+    dot = sum(x * y for x, y in zip(a, b))
+    norm_a = math.sqrt(sum(x * x for x in a))
+    norm_b = math.sqrt(sum(y * y for y in b))
+    if norm_a == 0 or norm_b == 0:
+        return 0.0
+    return dot / (norm_a * norm_b)
+
+
+def decide_reuse(new_message: str, prior_user_message: str | None) -> ReuseDecision:
+    """Decide whether to keep or strip prior tool blocks.
+
+    Called before expand_message_for_provider. Uses three signals:
+    1. Trivial message guard (length, digits, stopwords)
+    2. Cosine similarity between current and prior user message
+    3. (Window check is the caller's responsibility — this is only called
+       when a prior-turn retrieve exists.)
+
+    Returns ReuseDecision with action and optional system note.
+    """
+    # --- Trivial message guard ---
+    stripped = new_message.strip()
+    non_ws = "".join(stripped.split())
+    if len(non_ws) < 3:
+        return ReuseDecision(action=ReuseAction.TRIVIAL, note=_TRIVIAL_PATH_NOTE)
+    if non_ws.isdigit():
+        return ReuseDecision(action=ReuseAction.TRIVIAL, note=_TRIVIAL_PATH_NOTE)
+    if stripped.lower() in _TRIVIAL_STOPWORDS:
+        return ReuseDecision(action=ReuseAction.TRIVIAL, note=_TRIVIAL_PATH_NOTE)
+
+    # --- No prior context to compare ---
+    if prior_user_message is None:
+        return ReuseDecision(action=ReuseAction.FORCE_FRESH)
+
+    # --- Cosine similarity ---
+    new_emb = embed_text(new_message)
+    prior_emb = embed_text(prior_user_message)
+    cosine = _cosine_similarity(new_emb, prior_emb)
+
+    if cosine < _REUSE_COSINE_THRESHOLD:
+        return ReuseDecision(action=ReuseAction.FORCE_FRESH)
+    return ReuseDecision(action=ReuseAction.KEEP)
 
 
 def _format_chunk_for_llm(chunk: dict, index: int) -> str:

@@ -195,6 +195,19 @@ def _default_embedding_function() -> "ONNXMiniLM_L6_V2":
     return LocalONNXMiniLM()
 
 
+def embed_text(text: str) -> list[float]:
+    """Embed a single text using the local ONNX MiniLM model.
+
+    Reuses the same model instance already loaded by ChromaDB.
+    One embedding per turn — negligible overhead.
+    """
+    ef = _default_embedding_function()
+    result = ef([text])[0]
+    if hasattr(result, "tolist"):
+        return result.tolist()
+    return list(result)
+
+
 def _get_collection(cfg: BibilabConfig) -> "chromadb.Collection":
     global _chroma_collections
     name = cfg.transcript_collection_name
