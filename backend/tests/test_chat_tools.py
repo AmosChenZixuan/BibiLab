@@ -541,6 +541,185 @@ async def test_execute_retrieve_returns_raw_chunks_for_replay(monkeypatch):
         assert retrieve_called_with == ["uuid-a", "uuid-c"]
 
 
+# AC1: expected_hits is present in execute_retrieve result
+@pytest.mark.asyncio
+async def test_execute_retrieve_includes_expected_hits_in_result(monkeypatch):
+    """execute_retrieve result dict must include expected_hits key."""
+    from bibilab.config import AIConfig, BibilabConfig
+    from bibilab.pipeline import chat_tools
+    from bibilab.pipeline.embed import RetrievalResult, RetrievedChunk, SourceHit
+
+    async def fake_retrieve(**kwargs):
+        return RetrievalResult(
+            chunks=[
+                RetrievedChunk(
+                    content="test",
+                    video_title="V",
+                    timestamp_start=0.0,
+                    timestamp_end=10.0,
+                    video_id="v1",
+                    distance=0.0,
+                    score=0.9,
+                ),
+            ],
+            candidates_evaluated=1,
+            sources_with_hits=1,
+            sources_total=1,
+            source_coverage=[SourceHit(video_id="v1", video_title="V", best_score=-0.9)],
+        )
+
+    monkeypatch.setattr(chat_tools, "retrieve", fake_retrieve)
+
+    cfg = BibilabConfig(ai=AIConfig(protocol="openai", model="x", api_key="k"))
+    result = await chat_tools.execute_retrieve(
+        query="test",
+        source_ids=["s1"],
+        cfg=cfg,
+        registry={},
+        source_map={"v1": "s1"},
+        expected_hits="few",
+    )
+
+    assert "expected_hits" in result
+    assert result["expected_hits"] == "few"
+
+
+# AC1: default expected_hits is "few"
+@pytest.mark.asyncio
+async def test_execute_retrieve_default_expected_hits_is_few(monkeypatch):
+    """When expected_hits is not provided, defaults to 'few'."""
+    from bibilab.config import AIConfig, BibilabConfig
+    from bibilab.pipeline import chat_tools
+    from bibilab.pipeline.embed import RetrievalResult
+
+    async def fake_retrieve(**kwargs):
+        return RetrievalResult(
+            chunks=[],
+            source_coverage=[],
+            candidates_evaluated=0,
+            sources_with_hits=0,
+            sources_total=1,
+        )
+
+    monkeypatch.setattr(chat_tools, "retrieve", fake_retrieve)
+
+    cfg = BibilabConfig(ai=AIConfig(protocol="openai", model="x", api_key="k"))
+    result = await chat_tools.execute_retrieve(
+        query="test",
+        source_ids=["s1"],
+        cfg=cfg,
+    )
+
+    assert result["expected_hits"] == "few"
+
+
+# AC2: CitationRegistryEntry gets timestamp_start, timestamp_end, rerank_score, preview
+@pytest.mark.asyncio
+async def test_citation_registry_entry_gets_chunk_fields_on_execute_retrieve(monkeypatch):
+    """When chunks are registered, CitationRegistryEntry gets timestamp_start, timestamp_end, rerank_score, preview."""
+    from bibilab.config import AIConfig, BibilabConfig
+    from bibilab.pipeline import chat_tools
+    from bibilab.pipeline.embed import RetrievalResult, RetrievedChunk, SourceHit
+
+    async def fake_retrieve(**kwargs):
+        return RetrievalResult(
+            chunks=[
+                RetrievedChunk(
+                    content="test content here",
+                    video_title="Test Video",
+                    timestamp_start=120.4,
+                    timestamp_end=145.0,
+                    video_id="v1",
+                    distance=0.0,
+                    score=0.95,
+                ),
+            ],
+            candidates_evaluated=1,
+            sources_with_hits=1,
+            sources_total=1,
+            source_coverage=[SourceHit(video_id="v1", video_title="Test Video", best_score=-0.95)],
+        )
+
+    monkeypatch.setattr(chat_tools, "retrieve", fake_retrieve)
+
+    cfg = BibilabConfig(ai=AIConfig(protocol="openai", model="x", api_key="k"))
+    registry: dict = {}
+    source_map = {"v1": "s1"}
+
+    await chat_tools.execute_retrieve(
+        query="test",
+        source_ids=["s1"],
+        cfg=cfg,
+        registry=registry,
+        source_map=source_map,
+    )
+
+    assert "s1" in registry
+    entry = registry["s1"]
+    assert entry.timestamp_start == 120.4, f"expected 120.4, got {entry.timestamp_start}"
+    assert entry.timestamp_end == 145.0, f"expected 145.0, got {entry.timestamp_end}"
+    assert entry.rerank_score == 0.95, f"expected 0.95, got {entry.rerank_score}"
+    assert entry.preview == "test content here", f"expected stripped preview, got {entry.preview}"
+
+
+# AC2: multiple chunks from same source only populate first chunk's fields
+@pytest.mark.asyncio
+async def test_citation_registry_entry_uses_first_chunk_fields(monkeypatch):
+    """When multiple chunks come from the same source, only first chunk's fields are stored on the entry."""
+    from bibilab.config import AIConfig, BibilabConfig
+    from bibilab.pipeline import chat_tools
+    from bibilab.pipeline.embed import RetrievalResult, RetrievedChunk, SourceHit
+
+    async def fake_retrieve(**kwargs):
+        return RetrievalResult(
+            chunks=[
+                RetrievedChunk(
+                    content="first chunk",
+                    video_title="V",
+                    timestamp_start=10.0,
+                    timestamp_end=20.0,
+                    video_id="v1",
+                    distance=0.0,
+                    score=0.8,
+                ),
+                RetrievedChunk(
+                    content="second chunk",
+                    video_title="V",
+                    timestamp_start=30.0,
+                    timestamp_end=40.0,
+                    video_id="v1",
+                    distance=0.0,
+                    score=0.9,
+                ),
+            ],
+            candidates_evaluated=2,
+            sources_with_hits=1,
+            sources_total=1,
+            source_coverage=[SourceHit(video_id="v1", video_title="V", best_score=-0.9)],
+        )
+
+    monkeypatch.setattr(chat_tools, "retrieve", fake_retrieve)
+
+    cfg = BibilabConfig(ai=AIConfig(protocol="openai", model="x", api_key="k"))
+    registry: dict = {}
+    source_map = {"v1": "s1"}
+
+    await chat_tools.execute_retrieve(
+        query="test",
+        source_ids=["s1"],
+        cfg=cfg,
+        registry=registry,
+        source_map=source_map,
+    )
+
+    entry = registry["s1"]
+    # First chunk's timestamps, not second
+    assert entry.timestamp_start == 10.0
+    assert entry.timestamp_end == 20.0
+    # First chunk's score
+    assert entry.rerank_score == 0.8
+
+
 class TestBuildSourceHeaders:
     def test_single(self):
         from bibilab.pipeline.chat_tools import CitationRegistryEntry, _build_source_headers

@@ -509,8 +509,8 @@ async def test_chat_sse_multi_retrieve_no_crash(client):
     list_id = (await client.post("/lists", json={"name": "T"})).json()["id"]
 
     async def fake_stream_with_tools(*args, **kwargs):
-        tc1 = ToolCall(id="tc1", name="retrieve", arguments={"query": "q1", "search_mode": "factual"})
-        tc2 = ToolCall(id="tc2", name="retrieve", arguments={"query": "q2", "search_mode": "factual"})
+        tc1 = ToolCall(id="tc1", name="retrieve", arguments={"query": "q1", "expected_hits": "few"})
+        tc2 = ToolCall(id="tc2", name="retrieve", arguments={"query": "q2", "expected_hits": "few"})
         yield StreamEvent(type="tool_call", tool_call=tc1)
         yield StreamEvent(type="done")
         yield StreamEvent(type="tool_call", tool_call=tc2)
@@ -548,7 +548,7 @@ async def test_retrieve_filtered_after_first_use(client):
         if iteration_count == 1:
             yield StreamEvent(
                 type="tool_call",
-                tool_call=ToolCall(id="tc1", name="retrieve", arguments={"query": "x", "search_mode": "factual"}),
+                tool_call=ToolCall(id="tc1", name="retrieve", arguments={"query": "x", "expected_hits": "few"}),
             )
             yield StreamEvent(type="done")
         else:
@@ -558,7 +558,7 @@ async def test_retrieve_filtered_after_first_use(client):
     async def fake_execute_tool(**kwargs):
         return {
             "query": kwargs.get("arguments", {}).get("query", ""),
-            "search_mode": "factual",
+            "expected_hits": "few",
             "candidates_evaluated": 0,
             "sources_with_hits": 0,
             "sources_total": 1,
@@ -608,7 +608,7 @@ async def test_metadata_then_retrieve_allowed(client):
         elif iteration_count == 2:
             yield StreamEvent(
                 type="tool_call",
-                tool_call=ToolCall(id="tc2", name="retrieve", arguments={"query": "x", "search_mode": "factual"}),
+                tool_call=ToolCall(id="tc2", name="retrieve", arguments={"query": "x", "expected_hits": "few"}),
             )
             yield StreamEvent(type="done")
         else:
@@ -622,7 +622,7 @@ async def test_metadata_then_retrieve_allowed(client):
             return {"count": 8}
         return {
             "query": args.get("query", ""),
-            "search_mode": "factual",
+            "expected_hits": "few",
             "candidates_evaluated": 0,
             "sources_with_hits": 0,
             "sources_total": 1,
@@ -660,7 +660,7 @@ async def test_deltas_streamed_immediately_during_tool_iteration(client):
             yield StreamEvent(type="delta", content="Let me look that up again.")
             yield StreamEvent(
                 type="tool_call",
-                tool_call=ToolCall(id="tc1", name="retrieve", arguments={"query": "x", "search_mode": "factual"}),
+                tool_call=ToolCall(id="tc1", name="retrieve", arguments={"query": "x", "expected_hits": "few"}),
             )
             yield StreamEvent(type="done")
         else:
@@ -671,7 +671,7 @@ async def test_deltas_streamed_immediately_during_tool_iteration(client):
         args = kwargs.get("arguments", {})
         return {
             "query": args.get("query", ""),
-            "search_mode": "factual",
+            "expected_hits": "few",
             "candidates_evaluated": 0,
             "sources_with_hits": 0,
             "sources_total": 1,
@@ -760,7 +760,7 @@ async def test_run_chat_turn_persists_tool_blocks(monkeypatch, tmp_path):
     from bibilab.routers import chat as chat_module
 
     call_count = 0
-    retrieve_tc = ToolCall(id="c1", name="retrieve", arguments={"query": "x", "search_mode": "factual"})
+    retrieve_tc = ToolCall(id="c1", name="retrieve", arguments={"query": "x", "expected_hits": "few"})
 
     async def fake_stream_llm(messages, cfg, tools=None, system=None, llm_max_tokens=2048):
         nonlocal call_count
@@ -774,7 +774,7 @@ async def test_run_chat_turn_persists_tool_blocks(monkeypatch, tmp_path):
     async def fake_execute(tool_name, arguments, **kwargs):
         return {
             "query": "x",
-            "search_mode": "factual",
+            "expected_hits": "few",
             "candidates_evaluated": 1,
             "sources_with_hits": 1,
             "sources_total": 1,
@@ -945,6 +945,89 @@ async def test_rag_metadata_persists_calls_list(client):
     assert expected_hits_sorted == ["few", "one"]
 
 
+# AC1+AC2: expected_hits and context[] in persisted metadata
+@pytest.mark.asyncio
+async def test_rag_metadata_persists_expected_hits_and_context(client, monkeypatch):
+    """metadata.rag.calls[i] must have expected_hits and non-empty context[]."""
+    from bibilab.pipeline import chat_tools
+
+    iteration_count = 0
+
+    async def fake_stream_llm(messages, cfg, tools=None, system=None, llm_max_tokens=None, **kwargs):
+        nonlocal iteration_count
+        iteration_count += 1
+        if iteration_count == 1:
+            yield StreamEvent(
+                type="tool_call",
+                tool_call=ToolCall(id="tc1", name="retrieve", arguments={"query": "test", "expected_hits": "few"}),
+            )
+            yield StreamEvent(type="done")
+        else:
+            yield StreamEvent(type="delta", content="Answer [1]")
+            yield StreamEvent(type="done")
+
+    async def fake_execute_tool(tool_name, arguments, **kwargs):
+        # Simulate execute_retrieve populating the citation registry via execute_tool.
+        # The registry is passed via kwargs["registry"] from stream_with_tools.
+        reg = kwargs.get("registry")
+        if reg is not None:
+            # Simulate chunk registration with the required fields.
+            entry = chat_tools.CitationRegistryEntry(
+                index=1,
+                source_id="s1",
+                title="Video s1",
+            )
+            entry.timestamp_start = 120.0
+            entry.timestamp_end = 145.0
+            entry.rerank_score = 0.95
+            entry.preview = "test chunk content"
+            entry.chunk_ids.add("v1_120_145")
+            reg["s1"] = entry
+        return {
+            "query": arguments.get("query", ""),
+            "expected_hits": arguments.get("expected_hits"),
+            "candidates_evaluated": 2,
+            "sources_with_hits": 1,
+            "sources_total": 1,
+            "source_coverage": [
+                {"source_id": "s1", "video_id": "v1", "title": "Video s1"},
+            ],
+        }
+
+    with (
+        patch("bibilab.routers.chat.stream_llm", fake_stream_llm),
+        patch("bibilab.routers.chat.execute_tool", fake_execute_tool),
+    ):
+        list_id = (await client.post("/lists", json={"name": "CtxTest"})).json()["id"]
+        resp = await client.post(f"/lists/{list_id}/chat", json={"message": "q"})
+
+    assert resp.status_code == 200
+    conv = (await client.get(f"/lists/{list_id}/conversation")).json()
+    assistant_msgs = [m for m in conv["messages"] if m["role"] == "assistant"]
+    assert assistant_msgs, "no assistant message"
+    rag = assistant_msgs[-1]["metadata"]["rag"]
+    assert len(rag["calls"]) == 1
+    call = rag["calls"][0]
+
+    # AC1
+    assert "expected_hits" in call, "expected_hits must be present"
+    assert call["expected_hits"] == "few", f"expected 'few', got {call['expected_hits']}"
+
+    # AC2: context is non-empty array with required fields
+    assert "context" in call, "context field must be present"
+    assert len(call["context"]) > 0, "context must be non-empty"
+    ctx = call["context"][0]
+    assert "chunk_id" in ctx, "chunk_id required"
+    assert "timestamp_start" in ctx, "timestamp_start required"
+    assert "timestamp_end" in ctx, "timestamp_end required"
+    assert "rerank_score" in ctx, "rerank_score required"
+    assert "preview" in ctx, "preview required"
+    assert isinstance(ctx["timestamp_start"], (int, float))
+    assert isinstance(ctx["timestamp_end"], (int, float))
+    assert isinstance(ctx["rerank_score"], (int, float))
+    assert isinstance(ctx["preview"], str)
+
+
 @pytest.mark.asyncio
 async def test_chat_endpoint_error_reason_in_sse_terminal_payload(client):
     """When stream_with_tools yields an error event, the terminal SSE payload
@@ -1051,7 +1134,7 @@ async def test_run_chat_turn_replays_tool_blocks_on_turn_2(monkeypatch):
                 {
                     "tool_use_id": "toolu_a",
                     "name": "retrieve",
-                    "arguments": {"query": "x", "search_mode": "factual"},
+                    "arguments": {"query": "x", "expected_hits": "few"},
                     "result": {"chunks": [{"content": "verbatim"}], "summary": {"sources_total": 1}},
                 }
             ],
@@ -1195,7 +1278,7 @@ async def test_run_chat_turn_reseeds_citation_registry_from_history_tool_blocks(
                 {
                     "tool_use_id": "toolu_a",
                     "name": "retrieve",
-                    "arguments": {"query": "x", "search_mode": "factual"},
+                    "arguments": {"query": "x", "expected_hits": "few"},
                     "result": {
                         "chunks": [
                             {

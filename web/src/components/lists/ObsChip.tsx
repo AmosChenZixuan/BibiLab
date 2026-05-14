@@ -3,11 +3,11 @@ import { useLanguage } from "@/app/LanguageContext";
 
 import { Info, Loader2 } from "lucide-react";
 
-import type { RagCall, SearchMode } from "@/lib/chat-utils";
+import type { LegacyRagCall, RetrievalCall, ExpectedHits } from "@/lib/chat-utils";
 import { translateOrFallback } from "@/lib/utils";
 
 interface ObsChipProps {
-  call: RagCall;
+  call: LegacyRagCall | RetrievalCall;
 }
 
 export function ObsChip({ call }: ObsChipProps) {
@@ -43,7 +43,7 @@ export function ObsChip({ call }: ObsChipProps) {
           </div>
           <div className="flex justify-between items-center py-0.5">
             <span className="text-muted">{t("chat.obsChip.mode")}</span>
-            <span className="font-medium text-ink">{call.search_mode}</span>
+            <span className="font-medium text-ink">{"search_mode" in call ? (call as LegacyRagCall).search_mode : (call as RetrievalCall).expected_hits ?? "—"}</span>
           </div>
           <div className="flex justify-between items-center py-0.5">
             <span className="text-muted">{t("chat.obsChip.sourcesCited")}</span>
@@ -62,13 +62,13 @@ export function ObsChip({ call }: ObsChipProps) {
   );
 }
 
-export function PendingObsChip({ query, search_mode }: { query: string; search_mode: SearchMode }) {
+export function PendingObsChip({ query, expected_hits }: { query: string; expected_hits: ExpectedHits }) {
   return (
     <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-sky/10 border border-border text-xs text-blue">
       <Loader2 size={11} className="animate-spin" />
       <span className="font-mono">{query}</span>
       <span className="text-muted">·</span>
-      <span>{search_mode}</span>
+      <span>{expected_hits ?? "—"}</span>
     </div>
   );
 }

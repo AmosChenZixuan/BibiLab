@@ -10,22 +10,41 @@ export interface ToolCallData {
   name: string;
   result: ToolResult;
 }
-export type SearchMode = "factual" | "breadth" | "analytical";
+export type ExpectedHits = "one" | "few" | "many" | null;
 export type RagSource = { source_id: string; video_id: string; title: string };
+/** Single chunk in the persisted context[] array. */
+export type RetrievalChunk = {
+  chunk_id: string;
+  timestamp_start: number;
+  timestamp_end: number;
+  rerank_score: number;
+  preview: string;
+};
 /** source_coverage lists only sources whose [N] actually appeared in the assistant text. */
-export type RagCall = {
+export type RetrievalCall = {
   query: string;
-  search_mode: SearchMode;
+  expected_hits: ExpectedHits;
   candidates_evaluated: number;
   sources_with_hits: number;
   sources_total: number;
   source_coverage: RagSource[];
+  context: RetrievalChunk[];
 };
-export type RagMetadata = { calls: RagCall[] };
+/** Legacy shape — no context field. Parsing with no context triggers legacy: true. */
+export type LegacyRagCall = {
+  query: string;
+  search_mode: string;
+  candidates_evaluated: number;
+  sources_with_hits: number;
+  sources_total: number;
+  source_coverage: RagSource[];
+} & ({ context: never } | { context?: never });
+
+export type RagMetadata = { calls: (RetrievalCall | LegacyRagCall)[]; legacy?: boolean };
 export type PendingRagCall = {
   id: string;
   query: string;
-  search_mode: SearchMode;
+  expected_hits: ExpectedHits;
 };
 export type PendingMetadataCall = {
   id: string;

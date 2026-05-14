@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 
 import type { JobRegistration } from "@/components/jobs/JobActivityProvider";
 import type { MessageUI } from "@/components/lists/hooks/useConversationHistory";
-import { formatTimestamp, type ContentBlock, type PendingMetadataCall, type PendingRagCall, type RagCall, type SearchMode } from "@/lib/chat-utils";
+import { formatTimestamp, type ContentBlock, type PendingMetadataCall, type PendingRagCall, type LegacyRagCall, type ExpectedHits } from "@/lib/chat-utils";
 import type { ToolResult } from "@/lib/chat-utils";
 import {
   SSE_EVENT_CANCELLED,
@@ -127,11 +127,11 @@ export function useSSEStream({
           return;
         }
         if (toolName === "retrieve") {
-          const args = event.arguments as { query: string; search_mode: SearchMode };
+          const args = event.arguments as { query: string; expected_hits: ExpectedHits };
           updateAssistantMsg(assistantMsgId, (m) => ({
             pendingRagCalls: [
               ...m.pendingRagCalls,
-              { id, query: args.query, search_mode: args.search_mode },
+              { id, query: args.query, expected_hits: args.expected_hits },
             ],
           }));
         } else if (toolName === "query_list_metadata") {
@@ -147,7 +147,7 @@ export function useSSEStream({
         const toolName = event.name as string;
         if (!toolName) return;
         if (toolName === "retrieve") {
-          const call = event.result as unknown as RagCall;
+          const call = event.result as unknown as LegacyRagCall;
           const callId = event.id as string;
           updateAssistantMsg(assistantMsgId, (m) => ({
             rag: { calls: [...(m.rag?.calls ?? []), call] },
