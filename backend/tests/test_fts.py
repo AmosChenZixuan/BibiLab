@@ -10,6 +10,7 @@ from bibilab.adapters.base import VideoMeta
 from bibilab.config import BibilabConfig, _reset_cache
 from bibilab.db import (
     _escape_fts_query,
+    _tokenize_cjk,
     bootstrap_db,
     get_db,
     query_fts_rows,
@@ -176,3 +177,40 @@ def test_escape_fts_query_preserves_normal_tokens():
 def test_escape_fts_query_embedded_quotes():
     escaped = _escape_fts_query('say "hello world"')
     assert escaped == '"say" """hello" "world"""'
+
+
+# --- _tokenize_cjk ---
+
+
+def test_tokenize_cjk_separates_chinese_characters():
+    assert _tokenize_cjk("面食做法") == "面 食 做 法 "
+
+
+def test_tokenize_cjk_preserves_non_cjk():
+    assert _tokenize_cjk("ABC 123 hello") == "ABC 123 hello"
+
+
+def test_tokenize_cjk_handles_mixed_text():
+    assert _tokenize_cjk("做noodles面") == "做 noodles面 "
+
+
+def test_tokenize_cjk_empty_string():
+    assert _tokenize_cjk("") == ""
+
+
+# --- _escape_fts_query with CJK ---
+
+
+def test_escape_fts_query_chinese_single_word():
+    escaped = _escape_fts_query("面食")
+    assert escaped == '"面" "食"'
+
+
+def test_escape_fts_query_chinese_phrase():
+    escaped = _escape_fts_query("面食做法有哪些")
+    assert escaped == '"面" "食" "做" "法" "有" "哪" "些"'
+
+
+def test_escape_fts_query_mixed_cjk_english():
+    escaped = _escape_fts_query("how to 做面")
+    assert escaped == '"how" "to" "做" "面"'

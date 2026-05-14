@@ -179,6 +179,11 @@ Shutdown: cancel all active tasks, drain with 5s timeout
 
 `delta`, `citation`, `tool_call_start`, `tool_result`, `done`, `error`, `cancelled`
 
+### System prompt context
+
+- **Source list**: Before streaming, the system prompt includes a numbered list of all sources: `[N] Title (keywords)`. The LLM picks relevant indices and passes them to `retrieve(source_ids=[...])`, scoping search to likely-relevant sources without an extra tool call. Anthropic prompt caching makes these tokens near-free after the first turn.
+- **Conservative selection**: The prompt instructs "include all but clearly unrelated" — the retrieval pipeline (BM25 → vector RRF → rerank → gate → diverse top-k) handles precision.
+
 ### Chat execution
 
 ```
@@ -235,5 +240,3 @@ v0: `BilibiliAdapter` — single video. Cookie-based auth in config.
 }
 ```
 Reranker model is fixed to `Xenova/bge-reranker-base` (XLM-RoBERTa, Chinese + English). `rerank_min_score` default `null` — calibrated empirically in #220 (MRR 0.559 vs 0.472/0.466 at -2.0 and 0.0); see `docs/internal/rag_tuning.md`.
-```
-```

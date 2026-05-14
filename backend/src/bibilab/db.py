@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 import uuid
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
@@ -368,20 +369,6 @@ async def language_breakdown(source_ids: list[str]) -> dict[str, int]:
         )
         rows = await cursor.fetchall()
         return {row["lang"]: row["n"] for row in rows}
-
-
-async def get_titles(source_ids: list[str]) -> list[dict]:
-    """Return [{source_id, title}] for the given source IDs, ordered by id ASC."""
-    if not source_ids:
-        return []
-    placeholders = _in_placeholders(source_ids)
-    async with get_db() as db:
-        cursor = await db.execute(
-            f"SELECT id, title FROM sources WHERE id IN ({placeholders}) ORDER BY id ASC",
-            source_ids,
-        )
-        rows = await cursor.fetchall()
-    return [{"source_id": row["id"], "title": row["title"]} for row in rows]
 
 
 async def get_video_ids_for_sources(source_ids: list[str]) -> dict[str, str]:
@@ -906,14 +893,29 @@ async def clear_fts_for_list(list_id: str) -> None:
         await db.commit()
 
 
+_CJK = re.compile(r"([一-鿿㐀-䶿])")
+
+
+def _tokenize_cjk(text: str) -> str:
+    """Insert spaces between consecutive CJK characters.
+
+    FTS5's unicode61 tokenizer treats unbroken CJK sequences as a single token,
+    making substring matching impossible. Inserting a space after each CJK
+    character forces FTS5 to index and match them individually.
+    """
+    return _CJK.sub(r"\1 ", text)
+
+
 def _escape_fts_query(query_text: str) -> str:
     """Escape user input for safe FTS5 MATCH evaluation.
 
-    Quotes each whitespace-separated token to disable FTS5 operator parsing
-    (`AND`, `OR`, `:`, `*`, `^`) so arbitrary user queries cannot raise
+    CJK characters are space-separated first so FTS5 can match them individually.
+    Then each whitespace-separated token is quoted to disable FTS5 operator
+    parsing (`AND`, `OR`, `:`, `*`, `^`) so arbitrary user queries cannot raise
     `OperationalError`. Inner double-quotes are doubled per FTS5 syntax.
     """
-    tokens = [t for t in query_text.split() if t]
+    tokenized = _tokenize_cjk(query_text)
+    tokens = [t for t in tokenized.split() if t]
     if not tokens:
         return ""
     return " ".join('"' + t.replace('"', '""') + '"' for t in tokens)

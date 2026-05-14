@@ -6,7 +6,7 @@ import uuid
 from dataclasses import dataclass, field
 
 from bibilab.config import BibilabConfig
-from bibilab.db import count_sources, create_job, get_titles, language_breakdown, longest_source
+from bibilab.db import count_sources, create_job, language_breakdown, longest_source
 from bibilab.models._enums import RetrievalParams
 from bibilab.pipeline._shared import ToolDefinition
 from bibilab.pipeline.embed import retrieve
@@ -78,10 +78,8 @@ RETRIEVE_TOOL = ToolDefinition(
     name="retrieve",
     description=(
         "Retrieve information from video transcripts. "
-        "When the user names a specific source by episode number, title, or other identifier "
-        "(e.g. '第八集', '第3道菜', 'the React video'), "
-        "first call query_list_metadata(query_type='titles') to get the list of sources, "
-        "then call retrieve with source_ids set to the matching source ID(s). "
+        "Pass source_ids as a list of source numbers from the Sources list in the system prompt. "
+        'Example: retrieve(source_ids=["1","3"]) to search sources 1 and 3. '
         "Use expected_hits='one' for single-fact questions ('how many eggs'), "
         "'few' (default) for narrow content questions, "
         "'many' for survey questions or comprehensive summaries. "
@@ -97,15 +95,12 @@ RETRIEVE_TOOL = ToolDefinition(
             "source_ids": {
                 "type": "array",
                 "items": {"type": "string"},
-                "nullable": True,
                 "description": (
-                    "Optional list of source IDs to search within. "
-                    "When the user references a specific source(s) by episode #, title, chef/character name, etc., "
-                    "first call query_list_metadata(query_type='titles') to get the list of sources, "
-                    "then pass the selected source_ids here. "
-                    "Omit for cross-source queries (compare, list all, etc.). "
-                    "Example: query_list_metadata returns [{source_id: 's8', title: '第8集 xxx'}, ...]; "
-                    "if the user asks about '第八集', call retrieve(source_ids=['s8']). "
+                    "Source numbers from the Sources list in the system prompt. "
+                    "Pass the numbers (as strings) of sources that could be relevant. "
+                    "Be inclusive — only exclude sources clearly unrelated to the query. "
+                    'Example: ["1","3"] for sources [1] and [3]. '
+                    "To search all sources, pass all numbers."
                 ),
             },
             "expected_hits": {
@@ -119,14 +114,14 @@ RETRIEVE_TOOL = ToolDefinition(
                 ),
             },
         },
-        "required": ["query"],
+        "required": ["query", "source_ids"],
     },
 )
 
 QUERY_LIST_METADATA_TOOL = ToolDefinition(
     name="query_list_metadata",
     description=(
-        "Look up structured metadata about the sources you are chatting about. "
+        "Look up structured metadata about the sources. "
         "Use when the user asks about counts, durations, or languages. "
         "Do NOT use for content questions — use retrieve for those."
     ),
@@ -135,12 +130,11 @@ QUERY_LIST_METADATA_TOOL = ToolDefinition(
         "properties": {
             "query_type": {
                 "type": "string",
-                "enum": ["count", "longest", "languages", "titles"],
+                "enum": ["count", "longest", "languages"],
                 "description": (
                     "count = number of sources; "
                     "longest = source with the longest duration; "
-                    "languages = count per language; "
-                    "titles = list of {source_id, title} for source selection"
+                    "languages = count per language"
                 ),
             },
         },
@@ -157,8 +151,6 @@ async def execute_query_list_metadata(source_ids: list[str], query_type: str) ->
         return row if row is not None else {"title": None, "duration_seconds": None}
     if query_type == "languages":
         return {"languages": await language_breakdown(source_ids)}
-    if query_type == "titles":
-        return {"titles": await get_titles(source_ids)}
     logger.warning("Unknown query_type %r — falling back to count", query_type)
     return {"count": await count_sources(source_ids)}
 
@@ -204,17 +196,36 @@ async def execute_retrieve(
     if source_map is None:
         source_map = {}
 
-    # selected_source_ids: list of strings selected by LLM via query_list_metadata.
-    # Compute intersection with available source_ids to produce scoped_source_ids.
+    # selected_source_ids: list of strings from the LLM — either source numbers
+    # ("1","3") referencing the Sources list, or raw UUIDs (backward compat).
+    # Map to the available source_ids list to produce scoped_source_ids.
     scoped_source_ids: list[str] | None = None
-    if selected_source_ids:  # non-None and non-empty; [] means "search all"
+    if selected_source_ids:
         id_set = set(source_ids)
-        scoped_source_ids = [sid for sid in selected_source_ids if sid in id_set]
-        if len(scoped_source_ids) < len(selected_source_ids):
-            missing = set(selected_source_ids) - id_set
-            logger.debug("Some selected_source_ids not in source_ids pool, filtered out: %s", missing)
+        mapped: list[str] = []
+        for s in selected_source_ids:
+            if s in id_set:
+                mapped.append(s)
+                continue
+            try:
+                idx = int(s) - 1
+                if 0 <= idx < len(source_ids):
+                    mapped.append(source_ids[idx])
+                else:
+                    logger.warning("Source index out of range: %r (max %d)", s, len(source_ids))
+            except (ValueError, TypeError):
+                logger.warning("Unrecognized source identifier: %r", s)
+        scoped_source_ids = mapped if mapped else None
 
     params = params_for_expected_hits(expected_hits)
+    logger.info(
+        "retrieve dispatch: query=%r scoped=%s params(top_k=%d depth=%d) pool_size=%d",
+        query,
+        scoped_source_ids if scoped_source_ids else "all",
+        params.top_k,
+        params.depth_per_source,
+        len(scoped_source_ids) if scoped_source_ids else len(source_ids),
+    )
     result = await retrieve(
         query_text=query,
         source_ids=source_ids,

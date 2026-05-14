@@ -25,7 +25,7 @@ class TestRetrieveToolSchema:
         assert "source_ids" in props
         assert props["source_ids"]["type"] == "array"
         assert props["source_ids"]["items"] == {"type": "string"}
-        assert props["source_ids"]["nullable"] is True
+        assert "nullable" not in props["source_ids"]
 
     def test_retrieve_tool_has_expected_hits(self):
         from bibilab.pipeline.chat_tools import RETRIEVE_TOOL
@@ -34,17 +34,19 @@ class TestRetrieveToolSchema:
         assert "expected_hits" in props
         assert props["expected_hits"]["enum"] == ["one", "few", "many"]
 
-    def test_retrieve_tool_required_is_query_only(self):
+    def test_retrieve_tool_required_includes_source_ids(self):
         from bibilab.pipeline.chat_tools import RETRIEVE_TOOL
 
         required = RETRIEVE_TOOL.parameters["required"]
-        assert required == ["query"]
+        assert "query" in required
+        assert "source_ids" in required
 
-    def test_retrieve_tool_description_reflects_source_ids_approach(self):
+    def test_retrieve_tool_description_mentions_source_list(self):
         from bibilab.pipeline.chat_tools import RETRIEVE_TOOL
 
         desc = RETRIEVE_TOOL.description
-        assert "query_list_metadata" in desc or "titles" in desc
+        assert "source_ids" in desc
+        assert "source numbers" in desc or "Sources" in desc
 
 
 class TestGenerateReportToolDefinition:
@@ -176,14 +178,14 @@ class TestQueryListMetadataToolDefinition:
         assert QUERY_LIST_METADATA_TOOL.name == "query_list_metadata"
         props = QUERY_LIST_METADATA_TOOL.parameters["properties"]
         assert "query_type" in props
-        assert props["query_type"]["enum"] == ["count", "longest", "languages", "titles"]
+        assert props["query_type"]["enum"] == ["count", "longest", "languages"]
         assert QUERY_LIST_METADATA_TOOL.parameters["required"] == ["query_type"]
 
-    def test_tool_schema_includes_titles(self):
+    def test_tool_schema_excludes_titles(self):
         from bibilab.pipeline.chat_tools import QUERY_LIST_METADATA_TOOL
 
         props = QUERY_LIST_METADATA_TOOL.parameters["properties"]
-        assert props["query_type"]["enum"] == ["count", "longest", "languages", "titles"]
+        assert "titles" not in props["query_type"]["enum"]
 
 
 class TestExecuteQueryListMetadata:
@@ -248,24 +250,20 @@ class TestExecuteQueryListMetadata:
         assert "Unknown query_type" in caplog.text
 
     @pytest.mark.asyncio
-    async def test_titles_returns_list_of_source_id_title_dicts(self, tmp_bibilab_home):
+    async def test_unknown_query_type_warns_for_titles(self, tmp_bibilab_home, caplog):
+        """After 'titles' is removed from the enum, requesting it falls back to count."""
+        import logging
         from unittest.mock import AsyncMock, patch
 
         from bibilab.pipeline.chat_tools import execute_query_list_metadata
 
-        with patch("bibilab.pipeline.chat_tools.get_titles", new_callable=AsyncMock) as m:
-            m.return_value = [
-                {"source_id": "s8", "title": "第八集 美食推荐"},
-                {"source_id": "s3", "title": "第3道菜 做法"},
-            ]
-            result = await execute_query_list_metadata(["s8", "s3"], "titles")
-        assert result == {
-            "titles": [
-                {"source_id": "s8", "title": "第八集 美食推荐"},
-                {"source_id": "s3", "title": "第3道菜 做法"},
-            ]
-        }
-        m.assert_awaited_once_with(["s8", "s3"])
+        with patch("bibilab.pipeline.chat_tools.count_sources", new_callable=AsyncMock) as m:
+            m.return_value = 3
+            with caplog.at_level(logging.WARNING, logger="bibilab.pipeline.chat_tools"):
+                result = await execute_query_list_metadata(["s1"], "titles")
+
+        assert result == {"count": 3}
+        assert "Unknown query_type" in caplog.text
 
 
 class TestFormatChunkForLLM:
@@ -446,6 +444,102 @@ async def test_execute_retrieve_returns_raw_chunks_for_replay(monkeypatch):
     assert raw[0]["citation_index"] == 1
     assert raw[0]["chunk_id"] == "v1_120_145"
 
+    @pytest.mark.asyncio
+    async def test_execute_retrieve_maps_numeric_indices_to_uuids(self, monkeypatch):
+        """source_ids=[\"1\",\"3\"] maps to source_ids[0] and source_ids[2]."""
+        from bibilab.config import AIConfig, BibilabConfig
+        from bibilab.pipeline import chat_tools
+        from bibilab.pipeline.embed import RetrievalResult
+
+        retrieve_called_with = None
+
+        async def fake_retrieve(query_text, source_ids, cfg, params, scoped_source_ids=None, **kwargs):
+            nonlocal retrieve_called_with
+            retrieve_called_with = scoped_source_ids
+            return RetrievalResult(
+                chunks=[],
+                source_coverage=[],
+                candidates_evaluated=0,
+                sources_with_hits=0,
+                sources_total=3,
+            )
+
+        monkeypatch.setattr(chat_tools, "retrieve", fake_retrieve)
+
+        cfg = BibilabConfig(ai=AIConfig(protocol="openai", model="x", api_key="k"))
+        await chat_tools.execute_retrieve(
+            query="test",
+            source_ids=["uuid-a", "uuid-b", "uuid-c"],
+            cfg=cfg,
+            selected_source_ids=["1", "3"],
+        )
+
+        assert retrieve_called_with == ["uuid-a", "uuid-c"]
+
+    @pytest.mark.asyncio
+    async def test_execute_retrieve_skips_out_of_range_indices(self, monkeypatch):
+        """Indices outside range are logged and skipped."""
+        from bibilab.config import AIConfig, BibilabConfig
+        from bibilab.pipeline import chat_tools
+        from bibilab.pipeline.embed import RetrievalResult
+
+        retrieve_called_with = None
+
+        async def fake_retrieve(query_text, source_ids, cfg, params, scoped_source_ids=None, **kwargs):
+            nonlocal retrieve_called_with
+            retrieve_called_with = scoped_source_ids
+            return RetrievalResult(
+                chunks=[],
+                source_coverage=[],
+                candidates_evaluated=0,
+                sources_with_hits=0,
+                sources_total=2,
+            )
+
+        monkeypatch.setattr(chat_tools, "retrieve", fake_retrieve)
+
+        cfg = BibilabConfig(ai=AIConfig(protocol="openai", model="x", api_key="k"))
+        await chat_tools.execute_retrieve(
+            query="test",
+            source_ids=["uuid-a", "uuid-b"],
+            cfg=cfg,
+            selected_source_ids=["1", "999"],
+        )
+
+        assert retrieve_called_with == ["uuid-a"]
+
+    @pytest.mark.asyncio
+    async def test_execute_retrieve_accepts_raw_uuids(self, monkeypatch):
+        """Raw UUIDs (backward compat) are accepted as-is."""
+        from bibilab.config import AIConfig, BibilabConfig
+        from bibilab.pipeline import chat_tools
+        from bibilab.pipeline.embed import RetrievalResult
+
+        retrieve_called_with = None
+
+        async def fake_retrieve(query_text, source_ids, cfg, params, scoped_source_ids=None, **kwargs):
+            nonlocal retrieve_called_with
+            retrieve_called_with = scoped_source_ids
+            return RetrievalResult(
+                chunks=[],
+                source_coverage=[],
+                candidates_evaluated=0,
+                sources_with_hits=0,
+                sources_total=3,
+            )
+
+        monkeypatch.setattr(chat_tools, "retrieve", fake_retrieve)
+
+        cfg = BibilabConfig(ai=AIConfig(protocol="openai", model="x", api_key="k"))
+        await chat_tools.execute_retrieve(
+            query="test",
+            source_ids=["uuid-a", "uuid-b", "uuid-c"],
+            cfg=cfg,
+            selected_source_ids=["uuid-a", "uuid-c"],
+        )
+
+        assert retrieve_called_with == ["uuid-a", "uuid-c"]
+
 
 class TestBuildSourceHeaders:
     def test_single(self):
@@ -519,8 +613,8 @@ class TestRetrieveToolDescription:
         from bibilab.pipeline.chat_tools import RETRIEVE_TOOL
 
         desc = RETRIEVE_TOOL.description
-        assert "query_list_metadata" in desc or "source_ids" in desc
-        assert "content question" in desc or "narrow content" in desc
+        assert "source_ids" in desc
+        assert "expected_hits" in desc
 
 
 class TestBuildToolBlockEntry:

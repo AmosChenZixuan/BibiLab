@@ -17,7 +17,7 @@ from pathlib import Path
 
 from bibilab.adapters.base import VideoMeta
 from bibilab.config import BibilabConfig, bibilab_home, models_dir
-from bibilab.db import _escape_fts_query, get_db_path, get_video_ids_for_sources, query_fts_rows
+from bibilab.db import _escape_fts_query, _tokenize_cjk, get_db_path, get_video_ids_for_sources, query_fts_rows
 from bibilab.models._enums import RetrievalParams
 from bibilab.pipeline.chunk import RagChunk
 
@@ -113,22 +113,22 @@ def _adaptive_depth(spec_depth: int, top_k: int, num_sources_in_pool: int) -> in
 
 
 # bge-reranker logit margin: chunks within this many units of top score are
-# kept. Unvalidated initial value — public recommended figure, not measured
-# on Bibilab data. Tuning relies on I-4 telemetry (dropped_by_gate
-# distribution), not offline sweeps; #220 harness was deleted on purpose.
-RELEVANCE_MARGIN = 4.0
+# kept. Tightened from 4.0 to 2.0 after observing false positives in mixed
+# pools (#290). bge logit > 0 = model judges pair more relevant than not.
+RELEVANCE_MARGIN = 2.0
 
 
 def _quantile_gate(chunks: list[RetrievedChunk]) -> list[RetrievedChunk]:
     """Keep chunks whose rerank score is meaningful relative to the pool.
 
-    threshold = max(median(scores), top - RELEVANCE_MARGIN)
+    threshold = max(0, median(scores), top - RELEVANCE_MARGIN)
+    The 0 floor rejects chunks the model scores below relevance-neutral.
     The median term floors aggression: when the top itself is low (the
     "all chunks marginal" case from #277), threshold rises to median and
     forces a half-cut, killing junk that would otherwise pad top_k.
     The margin term caps aggression: when the pool has a clear winner,
     threshold stays within RELEVANCE_MARGIN of top so multiple
-    similarly-good chunks survive. Always keeps the top chunk (MIN_KEEP=1).
+    similarly-good chunks survive. Always keeps the top chunk.
 
     Caller must ensure chunks were reranked (score = bge logit). For
     RRF-domain scores the margin is uncalibrated; gate is bypassed in that
@@ -141,7 +141,7 @@ def _quantile_gate(chunks: list[RetrievedChunk]) -> list[RetrievedChunk]:
         return chunks
     top = scores[0]
     median = scores[len(scores) // 2]
-    threshold = max(median, top - RELEVANCE_MARGIN)
+    threshold = max(0.0, median, top - RELEVANCE_MARGIN)
     kept = [c for c in chunks if c.score is not None and c.score >= threshold]
     return kept if kept else [chunks[0]]
 
@@ -260,7 +260,7 @@ def populate_fts(chunks: list[RagChunk], meta: VideoMeta) -> None:
             "VALUES (?, ?, ?, ?, ?, ?)",
             [
                 (
-                    chunk.text,
+                    _tokenize_cjk(chunk.text),
                     meta.video_id,
                     meta.title,
                     chunk.timestamp_start,
@@ -497,6 +497,15 @@ async def retrieve(
         chunks = await query_chunks(query_text, search_pool, cfg, top_k=effective_top_k)
 
     candidates_evaluated = len(chunks)
+    pool_src_counts: dict[str, int] = {}
+    for c in chunks:
+        pool_src_counts[c.video_id] = pool_src_counts.get(c.video_id, 0) + 1
+    logger.info(
+        "retrieve post-hybrid: candidates=%d per_source=%s effective_top_k=%d",
+        candidates_evaluated,
+        pool_src_counts,
+        effective_top_k,
+    )
 
     reranked = False
     dropped_by_gate = 0
@@ -513,12 +522,31 @@ async def retrieve(
             pre_gate = len(chunks)
             chunks = _quantile_gate(chunks)
             dropped_by_gate = pre_gate - len(chunks)
+            logger.info(
+                "retrieve post-rerank+gate: pre=%d post=%d dropped=%d top_score=%.4f",
+                pre_gate,
+                len(chunks),
+                dropped_by_gate,
+                chunks[0].score if chunks else -999,
+            )
 
     # candidates_evaluated: pool size (pre-diverse-top-k); used for logs, not UI.
     # adaptive depth ensures #287 scoped queries (1-3 sources) aren't capped at spec.
     num_sources_in_pool = len({c.video_id for c in chunks})
     effective_depth = _adaptive_depth(params.depth_per_source, params.top_k, num_sources_in_pool)
     result_chunks = _diverse_top_k(chunks, effective_depth, params.top_k)
+
+    final_src_counts: dict[str, int] = {}
+    for c in result_chunks:
+        final_src_counts[c.video_id] = final_src_counts.get(c.video_id, 0) + 1
+    logger.info(
+        "retrieve post-diverse: final=%d per_source=%s depth=%d(adaptive_from=%d) sources_in_pool=%d",
+        len(result_chunks),
+        final_src_counts,
+        effective_depth,
+        params.depth_per_source,
+        num_sources_in_pool,
+    )
 
     # source_coverage derived from result_chunks so the chip reflects what the LLM actually saw
     source_video_ids = list(dict.fromkeys(c.video_id for c in result_chunks))

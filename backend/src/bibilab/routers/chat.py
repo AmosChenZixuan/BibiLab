@@ -187,18 +187,17 @@ def build_grounding_prompt(response_language: str) -> str:
         "Treat the excerpts as your sole and sufficient knowledge base. "
         "Never suggest the user consult external sources.\n"
         "CRITICAL RULES:\n"
-        "0. If the user's question requires looking up video content (facts, comparisons, "
-        "summaries), you MUST call the retrieve tool BEFORE answering. "
+        '0. The "Sources" section below lists every source in this conversation. '
+        "For EVERY content question (facts, comparisons, summaries), you MUST call "
+        "retrieve with source_ids. Include sources that could contain relevant "
+        "information — only exclude sources clearly unrelated to the query. "
+        "When in doubt, include the source. "
+        'Pass source numbers as strings, e.g. retrieve(source_ids=["1","3"]). '
         "For questions about counts, durations, or languages of the sources themselves, "
         "call query_list_metadata instead. "
-        "If the user names a specific source by episode number, chapter, title, "
-        "character name, chef name, video name — e.g. '第八集', '第3道菜', 'the React video', "
-        "first call query_list_metadata(query_type='titles') to get the list of available sources, "
-        "then call retrieve with source_ids set to the matching source ID(s). "
-        "Example: query_list_metadata returns [{source_id: 's8', title: '第8集 xxx'}, ...]; "
-        "if the user asks about '第八集', call retrieve(source_ids=['s8']). "
         "Use expected_hits='many' for comprehensive summaries of one source "
-        "(e.g. '第八集讲了什么'), 'few' for content questions, 'one' for single facts. "
+        "(e.g. '第八集讲了什么'), 'few' for narrow content questions (default), "
+        "'one' for single facts. "
         "Do not answer from memory — always call the appropriate tool first for content "
         "or metadata questions. This does NOT apply when the user asks you to generate a "
         "report/artifact — the generate_report tool handles its own retrieval. "
@@ -462,6 +461,7 @@ async def run_chat_turn(
     summary: str | None,
     source_ids: list[str],
     source_map: dict[str, str],
+    source_list_str: str,
     ui_lang: str,
     cfg: BibilabConfig,
     registry: ChatRunRegistry,
@@ -484,6 +484,7 @@ async def run_chat_turn(
     try:
         response_language = resolve_response_language(cfg.ai, ui_lang)
         system_parts = [build_grounding_prompt(response_language=response_language)]
+        system_parts.append(source_list_str)
         if summary:
             system_parts.append(
                 "Historical conversation summary (for context only — the current "
@@ -697,6 +698,18 @@ async def chat_endpoint(
         raise HTTPException(409, "Conversation already has an active stream")
 
     source_map: dict[str, str] = {row["video_id"]: row["id"] for row in source_rows}
+    id_to_title = {row["id"]: row["title"] for row in source_rows}
+    id_to_keywords = {row["id"]: json.loads(row["keywords"]) for row in source_rows}
+    source_list_str = (
+        "Sources:\n"
+        + "\n".join(
+            f"[{i + 1}] {id_to_title[sid]}"
+            + (f" ({', '.join(id_to_keywords[sid])})" if id_to_keywords.get(sid) else "")
+            for i, sid in enumerate(source_ids)
+        )
+        + "\n\nTo search, call retrieve. Include all source numbers except "
+        "those clearly unrelated to the query."
+    )
     ui_lang = http_request.headers.get("X-UI-Lang", "en")
 
     # Spawn producer
@@ -710,6 +723,7 @@ async def chat_endpoint(
             summary=existing_summary,
             source_ids=source_ids,
             source_map=source_map,
+            source_list_str=source_list_str,
             ui_lang=ui_lang,
             cfg=cfg,
             registry=run_registry,

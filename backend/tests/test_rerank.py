@@ -251,8 +251,9 @@ async def test_rerank_floor_drops_low_scores(tmp_bibilab_home):
     ):
         result = await retrieve("query", ["src1"], cfg, params=RetrievalParams(depth_per_source=2, top_k=5))
 
-    assert len(result.chunks) == 2
-    assert [c.content for c in result.chunks] == ["c3", "c4"]
+    # _quantile_gate: top=5, median=0.5, threshold=max(0, 0.5, 5-2)=3 → keeps [c4] only
+    assert len(result.chunks) == 1
+    assert [c.content for c in result.chunks] == ["c4"]
 
 
 @pytest.mark.asyncio
@@ -284,10 +285,10 @@ async def test_rerank_min_score_null_still_runs_quantile_gate(tmp_bibilab_home):
     ):
         result = await retrieve("query", ["src1"], cfg, params=RetrievalParams(depth_per_source=2, top_k=5))
 
-    # _quantile_gate: top=5, median=-1, threshold=max(-1, 5-4)=1 → keeps [c3,c4]
-    # depth=2 from 1 source → 2 chunks
-    assert len(result.chunks) == 2
-    assert [c.content for c in result.chunks] == ["c3", "c4"]
+    # _quantile_gate: top=5, median=0.5, threshold=max(0, 0.5, 5-2)=3 → keeps [c4] only
+    # depth=2 from 1 source → 1 chunk (only one passes gate)
+    assert len(result.chunks) == 1
+    assert [c.content for c in result.chunks] == ["c4"]
 
 
 @pytest.mark.asyncio
@@ -352,9 +353,10 @@ async def test_broad_mode_respects_floor(tmp_bibilab_home):
     ):
         result = await retrieve("q", ["src1"], cfg, params=RetrievalParams(depth_per_source=1, top_k=4))
 
-    assert {c.video_id for c in result.chunks} == {"v1", "v2", "v3"}
+    # 0-floor cuts v1 (score -1.0 < 0), keeps v2 (0.5) and v3 (1.0)
+    assert {c.video_id for c in result.chunks} == {"v2", "v3"}
     # sources_with_hits now reflects result_chunks (what the LLM actually saw), not pool size
-    assert result.sources_with_hits == 3
+    assert result.sources_with_hits == 2
 
 
 @pytest.mark.asyncio
