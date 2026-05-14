@@ -72,6 +72,15 @@ Every change — feature, fix, or refactor — must leave the codebase no worse 
 5. **Scope discipline.** A bug fix changes only what's broken. A feature adds only what's specified. If you notice adjacent issues, file them — don't fix them in the same PR.
 6. **Verify before committing.** Run `uv run pytest` (backend) and `npm test && npm run lint` (frontend) before declaring work done.
 
+## Commit & PR Conventions
+
+**Commit messages:** `"<type> | <scope> | #<issue> <description>"`
+
+- Type: `feat`, `fix`, `refactor`, `chore`, `docs`
+- Issue number optional for non-issue commits
+
+**PR titles:** same as commit title, prefix with `#<issue>` when applicable
+
 ## Notes
 
 - Active specs in `docs/specs/`; internal docs in `docs/internal/`; roadmap in `docs/roadmap.md`.
