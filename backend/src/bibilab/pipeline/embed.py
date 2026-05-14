@@ -195,6 +195,28 @@ def _default_embedding_function() -> "ONNXMiniLM_L6_V2":
     return LocalONNXMiniLM()
 
 
+_embed_fn: "ONNXMiniLM_L6_V2 | None" = None
+
+
+def embed_text(text: str) -> list[float]:
+    """Embed a single text using the local ONNX MiniLM model.
+
+    Caches the ONNX session at module level — re-created on first call
+    after ChromaDB has downloaded the model. One embedding per turn.
+    """
+    global _embed_fn
+    if _embed_fn is None:
+        _embed_fn = _default_embedding_function()
+    try:
+        result = _embed_fn([text])[0]
+    except Exception:
+        logger.exception("embed_text ONNX inference failed for text=%r", text[:100])
+        raise
+    if hasattr(result, "tolist"):
+        return result.tolist()
+    return list(result)
+
+
 def _get_collection(cfg: BibilabConfig) -> "chromadb.Collection":
     global _chroma_collections
     name = cfg.transcript_collection_name

@@ -2,14 +2,16 @@
 
 import json
 import logging
+import math
 import uuid
 from dataclasses import dataclass, field
+from enum import Enum
 
 from bibilab.config import BibilabConfig
 from bibilab.db import count_sources, create_job, language_breakdown, longest_source
 from bibilab.models._enums import RetrievalParams
 from bibilab.pipeline._shared import ToolDefinition
-from bibilab.pipeline.embed import retrieve
+from bibilab.pipeline.embed import embed_text, retrieve
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +29,106 @@ class CitationRegistryEntry:
     timestamp_end: float | None = None
     rerank_score: float | None = None
     preview: str | None = None
+
+
+class ReuseAction(Enum):
+    FORCE_FRESH = "force_fresh"
+    KEEP = "keep"
+    TRIVIAL = "trivial"
+
+
+@dataclass
+class ReuseDecision:
+    action: ReuseAction
+    note: str | None = None  # Always set for TRIVIAL, always None for FORCE_FRESH/KEEP.
+
+
+# Messages shorter than 3 non-whitespace chars, pure digits, or matching these
+# stopwords bypass reuse and get the trivial-acknowledgment path (#272 fix).
+_TRIVIAL_STOPWORDS = frozenset(
+    {
+        "嗯",
+        "ok",
+        "好的",
+        "好",
+        "是",
+        "对",
+        "yes",
+        "no",
+        "thanks",
+        "谢谢",
+        "k",
+        "kk",
+    }
+)
+
+_TRIVIAL_PATH_NOTE = "The user sent a short acknowledgment. Respond naturally without calling retrieve."
+
+# Cosine threshold: below this, prior tool blocks are stripped.
+# Calibrated by spot-check; the gray zone (>= threshold) preserves today's behavior.
+_REUSE_COSINE_THRESHOLD = 0.55
+
+
+def _cosine_similarity(a: list[float], b: list[float]) -> float:
+    if len(a) != len(b):
+        logger.warning("_cosine_similarity vector length mismatch: %d vs %d", len(a), len(b))
+        return 0.0
+    dot = sum(x * y for x, y in zip(a, b))
+    norm_a = math.sqrt(sum(x * x for x in a))
+    norm_b = math.sqrt(sum(y * y for y in b))
+    if norm_a == 0 or norm_b == 0:
+        return 0.0
+    result = dot / (norm_a * norm_b)
+    if math.isnan(result) or math.isinf(result):
+        logger.warning("_cosine_similarity produced %s — returning 0.0 as safety default", result)
+        return 0.0
+    return result
+
+
+def decide_reuse(new_message: str, prior_user_message: str | None) -> ReuseDecision:
+    """Decide whether to keep or strip prior tool blocks.
+
+    Called before expand_message_for_provider. Uses three signals:
+    1. Trivial message guard (length, digits, stopwords)
+    2. Cosine similarity between current and prior user message
+    3. (Window check is the caller's responsibility — this is only called
+       when a prior-turn retrieve exists.)
+
+    Returns ReuseDecision with action and optional system note.
+    """
+    # --- Trivial message guard ---
+    stripped = new_message.strip()
+    non_ws = "".join(stripped.split())
+    if len(non_ws) < 3:
+        logger.info("decide_reuse → TRIVIAL (short, len=%d)", len(non_ws))
+        return ReuseDecision(action=ReuseAction.TRIVIAL, note=_TRIVIAL_PATH_NOTE)
+    if non_ws.isdigit():
+        logger.info("decide_reuse → TRIVIAL (digits)")
+        return ReuseDecision(action=ReuseAction.TRIVIAL, note=_TRIVIAL_PATH_NOTE)
+    if stripped.lower() in _TRIVIAL_STOPWORDS:
+        logger.info("decide_reuse → TRIVIAL (stopword=%r)", stripped.lower())
+        return ReuseDecision(action=ReuseAction.TRIVIAL, note=_TRIVIAL_PATH_NOTE)
+
+    # --- No prior context to compare ---
+    if prior_user_message is None:
+        return ReuseDecision(action=ReuseAction.FORCE_FRESH)
+
+    # --- Cosine similarity ---
+    try:
+        new_emb = embed_text(new_message)
+        prior_emb = embed_text(prior_user_message)
+    except Exception:
+        logger.exception("decide_reuse embedding failed — falling back to FORCE_FRESH")
+        return ReuseDecision(action=ReuseAction.FORCE_FRESH)
+
+    cosine = _cosine_similarity(new_emb, prior_emb)
+    logger.info("decide_reuse cosine=%.4f new=%r prior=%r", cosine, new_message[:80], prior_user_message[:80])
+
+    if cosine < _REUSE_COSINE_THRESHOLD:
+        logger.info("decide_reuse → FORCE_FRESH (cosine %.4f < %.2f)", cosine, _REUSE_COSINE_THRESHOLD)
+        return ReuseDecision(action=ReuseAction.FORCE_FRESH)
+    logger.info("decide_reuse → KEEP")
+    return ReuseDecision(action=ReuseAction.KEEP)
 
 
 def _format_chunk_for_llm(chunk: dict, index: int) -> str:
