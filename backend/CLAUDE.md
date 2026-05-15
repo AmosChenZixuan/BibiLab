@@ -241,4 +241,4 @@ v0: `BilibiliAdapter` — single video. Cookie-based auth in config.
   "rag": { "max_distance": 0.8, "hybrid_enabled": true, "reranking_enabled": true, "rerank_min_score": null }
 }
 ```
-Reranker model is fixed to `Xenova/bge-reranker-base` (XLM-RoBERTa, Chinese + English). `rerank_min_score` default `null` — calibrated empirically in #220 (MRR 0.559 vs 0.472/0.466 at -2.0 and 0.0); see `docs/internal/rag_tuning.md`.
+Reranker model is fixed to `Xenova/bge-reranker-base` (XLM-RoBERTa, Chinese + English). `_quantile_gate` replaces the deprecated `rerank_min_score` floor — margin (bge logit units) is selected per retrieval from `_RELEVANCE_MARGIN_BY_HITS[expected_hits]` (one=1.0, few=2.0, many=2.5). `RetrievalResult.gate_margin` telemetry records the margin used. See `docs/internal/rag_tuning.md`.

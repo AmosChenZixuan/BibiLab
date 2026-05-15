@@ -151,13 +151,16 @@ _VALID_ARTIFACT_TYPES = frozenset({"brief", "study_guide", "blog_post", "custom_
 DEFAULT_EXPECTED_HITS = "few"
 
 
+_PARAMS_BY_HITS = {
+    "one": RetrievalParams(depth_per_source=1, top_k=2, expected_hits="one"),
+    "few": RetrievalParams(depth_per_source=2, top_k=8, expected_hits="few"),
+    "many": RetrievalParams(depth_per_source=5, top_k=24, expected_hits="many"),
+}
+
+
 def params_for_expected_hits(expected_hits: str) -> RetrievalParams:
-    """Map expected_hits to RetrievalParams."""
-    return {
-        "one": RetrievalParams(depth_per_source=1, top_k=2),
-        "few": RetrievalParams(depth_per_source=2, top_k=8),
-        "many": RetrievalParams(depth_per_source=5, top_k=24),
-    }[expected_hits]
+    """Map expected_hits to RetrievalParams. Defaults to 'few' for unknown values."""
+    return _PARAMS_BY_HITS.get(expected_hits, _PARAMS_BY_HITS[DEFAULT_EXPECTED_HITS])
 
 
 GENERATE_REPORT_TOOL = ToolDefinition(
@@ -477,6 +480,7 @@ async def execute_retrieve(
         "sources_total": result.sources_total,
         "dropped_by_gate": result.dropped_by_gate,
         "reranked": result.reranked,
+        "gate_margin": result.gate_margin,
         "scope_choice": scope_choice or "none",
         "excluded_count": excluded_count,
         "scoped_pool_size": pool_size,
