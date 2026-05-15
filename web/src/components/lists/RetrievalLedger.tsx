@@ -15,7 +15,11 @@ export function RetrievalLedger({ calls = [], pendingRetrieve = [], pendingMetad
   return (
     <div className="flex flex-col gap-1">
       {calls.map((call, i) => {
-        const variant = call.reused_from_prior_call_id != null ? "reused" : call.context.length === 0 ? "empty" : "default";
+        const variant = call.reused_from_prior_call_id != null
+          ? "reused"
+          : call.context.length === 0
+            ? (call.dropped_by_gate > 0 ? "empty" : "default")
+            : "default";
         return <RetrievalLedgerRow key={i} variant={variant} call={call} />;
       })}
       {pendingRetrieve.map((p) => (

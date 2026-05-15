@@ -659,6 +659,10 @@ async def run_chat_turn(
                                 }
                             )
                     call["context"] = context_entries
+                    call["scope_choice"] = call.get("scope_choice") or "none"
+                    call["excluded_count"] = call.get("excluded_count")
+                    call["scoped_pool_size"] = call.get("scoped_pool_size")
+                    call["gate_margin"] = call.get("gate_margin")
 
             meta: dict[str, Any] = {}
             if tool_call_meta:
