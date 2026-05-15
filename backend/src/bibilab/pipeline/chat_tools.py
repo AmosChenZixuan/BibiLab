@@ -186,13 +186,27 @@ GENERATE_REPORT_TOOL = ToolDefinition(
 RETRIEVE_TOOL = ToolDefinition(
     name="retrieve",
     description=(
-        "Retrieve information from video transcripts. "
-        "Pass source_ids as a list of source numbers from the Sources list in the system prompt. "
-        'Example: retrieve(source_ids=["1","3"]) to search sources 1 and 3. '
-        "Use expected_hits='one' for single-fact questions ('how many eggs'), "
-        "'few' (default) for narrow content questions, "
-        "'many' for survey questions or comprehensive summaries. "
-        "Do NOT use for pure greetings (hi, thanks) or conversation-control messages."
+        "Retrieve information from video transcripts.\n\n"
+        "Default workflow: list source numbers in `exclude_source_ids` whose "
+        "titles/keywords are clearly unrelated to the query. The retrieve will "
+        "search all other sources. When unsure whether a source is relevant, "
+        "LEAVE IT IN (do not exclude). Excluding too aggressively misses correct "
+        "answers.\n\n"
+        "Use `source_ids` (whitelist) ONLY when the user explicitly limits scope, "
+        "e.g. 'only check episode 7' or 'compare ep7 and ep8'.\n\n"
+        "Use expected_hits='one' for single-fact questions, 'few' (default) for "
+        "narrow content questions, 'many' for survey/summary questions.\n\n"
+        "Do NOT use for pure greetings or conversation-control messages.\n\n"
+        "Examples:\n"
+        "  # Typical: list contains many sources, exclude obviously off-topic ones\n"
+        '  retrieve(query="长期情景记忆如何保存",\n'
+        '           exclude_source_ids=["2","3","7","10","14","16"])\n\n'
+        "  # Topic spans most or all sources\n"
+        '  retrieve(query="大模型面试常见问题概览",\n'
+        "           exclude_source_ids=[])\n\n"
+        "  # User explicitly scoped (rare): use whitelist\n"
+        '  retrieve(query="第八集主要讲什么",\n'
+        '           source_ids=["8"])'
     ),
     parameters={
         "type": "object",
@@ -201,15 +215,22 @@ RETRIEVE_TOOL = ToolDefinition(
                 "type": "string",
                 "description": "Search query — key terms or question in the user's language",
             },
+            "exclude_source_ids": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": (
+                    "Source numbers (from the Sources list in the system prompt) "
+                    "whose titles/keywords are clearly unrelated to the query. "
+                    "Empty list if all sources may be relevant."
+                ),
+            },
             "source_ids": {
                 "type": "array",
                 "items": {"type": "string"},
                 "description": (
-                    "Source numbers from the Sources list in the system prompt. "
-                    "Pass the numbers (as strings) of sources that could be relevant. "
-                    "Be inclusive — only exclude sources clearly unrelated to the query. "
-                    'Example: ["1","3"] for sources [1] and [3]. '
-                    "To search all sources, pass all numbers."
+                    "Source numbers to search — use ONLY when the user explicitly "
+                    "limits scope (e.g. 'only check episode 7'). "
+                    "In most cases, use exclude_source_ids instead."
                 ),
             },
             "expected_hits": {
@@ -223,7 +244,7 @@ RETRIEVE_TOOL = ToolDefinition(
                 ),
             },
         },
-        "required": ["query", "source_ids"],
+        "required": ["query", "exclude_source_ids"],
     },
 )
 
@@ -291,6 +312,52 @@ async def execute_generate_report(
     }
 
 
+def _coerce_to_str_list(val, key: str) -> list[str] | None:
+    if val is None:
+        return None
+    if isinstance(val, list):
+        coerced = []
+        for x in val:
+            if isinstance(x, (str, int, float, bool)):
+                coerced.append(str(x))
+            else:
+                logger.warning("retrieve: %s contains non-scalar item %r, skipping", key, type(x).__name__)
+        return coerced
+    if isinstance(val, str):
+        try:
+            parsed = json.loads(val)
+            if isinstance(parsed, list):
+                logger.info("retrieve: coerced stringified list for %s", key)
+                return [str(x) for x in parsed]
+        except json.JSONDecodeError:
+            pass
+    logger.warning("retrieve: %s=%r unparseable, treating as None", key, val)
+    return None
+
+
+def _map_indices_to_uuids(indices: list[str], source_ids: list[str]) -> list[str]:
+    """Map a list of index strings or raw UUIDs to the corresponding source_ids UUIDs.
+
+    Handles 1-based positional indices ("1", "3") and direct UUID strings.
+    Out-of-range indices are logged and skipped.
+    """
+    id_set = set(source_ids)
+    mapped: list[str] = []
+    for s in indices:
+        if s in id_set:
+            mapped.append(s)
+            continue
+        try:
+            idx = int(s) - 1
+            if 0 <= idx < len(source_ids):
+                mapped.append(source_ids[idx])
+            else:
+                logger.warning("Source index out of range: %r (max %d)", s, len(source_ids))
+        except (ValueError, TypeError):
+            logger.warning("Unrecognized source identifier: %r", s)
+    return mapped
+
+
 async def execute_retrieve(
     query: str,
     source_ids: list[str],
@@ -298,6 +365,8 @@ async def execute_retrieve(
     registry: dict[str, CitationRegistryEntry] | None = None,
     source_map: dict[str, str] | None = None,
     selected_source_ids: list[str] | None = None,
+    exclude_source_ids: list[str] | None = None,
+    scope_choice: str | None = None,
     expected_hits: str = DEFAULT_EXPECTED_HITS,
 ) -> dict:
     if registry is None:
@@ -305,35 +374,27 @@ async def execute_retrieve(
     if source_map is None:
         source_map = {}
 
-    # selected_source_ids: list of strings from the LLM — either source numbers
-    # ("1","3") referencing the Sources list, or raw UUIDs (backward compat).
-    # Map to the available source_ids list to produce scoped_source_ids.
+    # Compute scoped_source_ids based on scope_choice
     scoped_source_ids: list[str] | None = None
-    if selected_source_ids:
-        id_set = set(source_ids)
-        mapped: list[str] = []
-        for s in selected_source_ids:
-            if s in id_set:
-                mapped.append(s)
-                continue
-            try:
-                idx = int(s) - 1
-                if 0 <= idx < len(source_ids):
-                    mapped.append(source_ids[idx])
-                else:
-                    logger.warning("Source index out of range: %r (max %d)", s, len(source_ids))
-            except (ValueError, TypeError):
-                logger.warning("Unrecognized source identifier: %r", s)
-        scoped_source_ids = mapped if mapped else None
+    excluded_count: int | None = None
+    if scope_choice == "exclude" and exclude_source_ids is not None:
+        excluded_uuids = _map_indices_to_uuids(exclude_source_ids, source_ids)
+        scoped_source_ids = [s for s in source_ids if s not in excluded_uuids]
+        excluded_count = len(excluded_uuids)
+    elif scope_choice == "whitelist" and selected_source_ids is not None:
+        scoped_source_ids = _map_indices_to_uuids(selected_source_ids, source_ids)
+        if not scoped_source_ids:
+            logger.warning("retrieve: whitelist mapped to empty pool; all indices unrecognized or out of range")
 
     params = params_for_expected_hits(expected_hits)
+    pool_size = len(scoped_source_ids) if scoped_source_ids is not None else len(source_ids)
     logger.info(
-        "retrieve dispatch: query=%r scoped=%s params(top_k=%d depth=%d) pool_size=%d",
+        "retrieve dispatch: query=%r scope=%s params(top_k=%d depth=%d) pool_size=%d",
         query,
-        scoped_source_ids if scoped_source_ids else "all",
+        scope_choice or "none",
         params.top_k,
         params.depth_per_source,
-        len(scoped_source_ids) if scoped_source_ids else len(source_ids),
+        pool_size,
     )
     result = await retrieve(
         query_text=query,
@@ -416,6 +477,9 @@ async def execute_retrieve(
         "sources_total": result.sources_total,
         "dropped_by_gate": result.dropped_by_gate,
         "reranked": result.reranked,
+        "scope_choice": scope_choice or "none",
+        "excluded_count": excluded_count,
+        "scoped_pool_size": pool_size,
         "source_coverage": [
             {
                 "source_id": source_map.get(s.video_id, ""),
@@ -475,24 +539,39 @@ async def execute_tool(
     source_map: dict[str, str] | None = None,
 ) -> dict:
     if tool_name == RETRIEVE_TOOL.name:
-        source_ids_arg = arguments.get("source_ids")
-        # Validate source_ids type: must be None or list of str
-        if source_ids_arg is not None and not isinstance(source_ids_arg, list):
-            logger.warning("retrieve source_ids=%r is not a list, ignoring", source_ids_arg)
-            source_ids_arg = None
+        exclude = _coerce_to_str_list(arguments.get("exclude_source_ids"), "exclude_source_ids")
+        whitelist = _coerce_to_str_list(arguments.get("source_ids"), "source_ids")
+        query = arguments.get("query")
+        if not query or not isinstance(query, str):
+            raise ValueError(f"retrieve requires a non-empty 'query' string, got {query!r}")
+
+        if exclude is not None:
+            scope_choice = "exclude"
+            if whitelist is not None:
+                logger.warning("retrieve: both exclude_source_ids and source_ids given; using exclude")
+        elif whitelist is not None:
+            scope_choice = "whitelist"
+        else:
+            scope_choice = "none"
+            logger.warning("retrieve: neither exclude nor whitelist given; searching all sources")
+
         logger.info(
-            "retrieve tool call: query=%r source_ids=%r expected_hits=%r",
-            arguments["query"],
-            source_ids_arg,
+            "retrieve tool call: query=%r scope=%s exclude=%s whitelist=%s expected_hits=%r",
+            query,
+            scope_choice,
+            exclude,
+            whitelist,
             arguments.get("expected_hits", DEFAULT_EXPECTED_HITS),
         )
         return await execute_retrieve(
-            query=arguments["query"],
+            query=query,
             source_ids=source_ids,
             cfg=cfg,
             registry=registry,
             source_map=source_map,
-            selected_source_ids=source_ids_arg,
+            selected_source_ids=whitelist,
+            exclude_source_ids=exclude,
+            scope_choice=scope_choice,
             expected_hits=arguments.get("expected_hits", DEFAULT_EXPECTED_HITS),
         )
     if tool_name == GENERATE_REPORT_TOOL.name:
