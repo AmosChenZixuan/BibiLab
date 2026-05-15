@@ -26,5 +26,5 @@ class RetrievalParams:
 _RELEVANCE_MARGIN_BY_HITS: dict[ExpectedHits, float] = {
     "one": 1.0,
     "few": 2.0,
-    "many": 3.0,
+    "many": 2.5,
 }

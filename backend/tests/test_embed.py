@@ -150,7 +150,7 @@ class TestRelevanceMarginByHitsMap:
         """AC4: _RELEVANCE_MARGIN_BY_HITS maps expected_hits to correct margins."""
         assert _RELEVANCE_MARGIN_BY_HITS["one"] == 1.0
         assert _RELEVANCE_MARGIN_BY_HITS["few"] == 2.0
-        assert _RELEVANCE_MARGIN_BY_HITS["many"] == 3.0
+        assert _RELEVANCE_MARGIN_BY_HITS["many"] == 2.5
 
 
 class TestRetrievalParamsExpectedHits:
