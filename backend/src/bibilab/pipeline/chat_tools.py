@@ -316,7 +316,13 @@ def _coerce_to_str_list(val, key: str) -> list[str] | None:
     if val is None:
         return None
     if isinstance(val, list):
-        return [str(x) for x in val]
+        coerced = []
+        for x in val:
+            if isinstance(x, (str, int, float, bool)):
+                coerced.append(str(x))
+            else:
+                logger.warning("retrieve: %s contains non-scalar item %r, skipping", key, type(x).__name__)
+        return coerced
     if isinstance(val, str):
         try:
             parsed = json.loads(val)
@@ -375,11 +381,13 @@ async def execute_retrieve(
         excluded_uuids = _map_indices_to_uuids(exclude_source_ids, source_ids)
         scoped_source_ids = [s for s in source_ids if s not in excluded_uuids]
         excluded_count = len(excluded_uuids)
-    elif scope_choice == "whitelist" and selected_source_ids:
+    elif scope_choice == "whitelist" and selected_source_ids is not None:
         scoped_source_ids = _map_indices_to_uuids(selected_source_ids, source_ids)
+        if not scoped_source_ids:
+            logger.warning("retrieve: whitelist mapped to empty pool; all indices unrecognized or out of range")
 
     params = params_for_expected_hits(expected_hits)
-    pool_size = len(scoped_source_ids) if scoped_source_ids else len(source_ids)
+    pool_size = len(scoped_source_ids) if scoped_source_ids is not None else len(source_ids)
     logger.info(
         "retrieve dispatch: query=%r scope=%s params(top_k=%d depth=%d) pool_size=%d",
         query,
@@ -533,6 +541,9 @@ async def execute_tool(
     if tool_name == RETRIEVE_TOOL.name:
         exclude = _coerce_to_str_list(arguments.get("exclude_source_ids"), "exclude_source_ids")
         whitelist = _coerce_to_str_list(arguments.get("source_ids"), "source_ids")
+        query = arguments.get("query")
+        if not query or not isinstance(query, str):
+            raise ValueError(f"retrieve requires a non-empty 'query' string, got {query!r}")
 
         if exclude is not None:
             scope_choice = "exclude"
@@ -546,14 +557,14 @@ async def execute_tool(
 
         logger.info(
             "retrieve tool call: query=%r scope=%s exclude=%s whitelist=%s expected_hits=%r",
-            arguments["query"],
+            query,
             scope_choice,
             exclude,
             whitelist,
             arguments.get("expected_hits", DEFAULT_EXPECTED_HITS),
         )
         return await execute_retrieve(
-            query=arguments["query"],
+            query=query,
             source_ids=source_ids,
             cfg=cfg,
             registry=registry,
