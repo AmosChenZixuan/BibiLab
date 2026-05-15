@@ -140,3 +140,20 @@ after #235 close-out (see `feedback_oneshot_eval_scripts.md`). Tuning the
 new `RELEVANCE_MARGIN` does not happen via offline sweeps — it relies on
 the `dropped_by_gate` telemetry surfaced by I-4 in production traffic. Do
 not rebuild the harness.
+
+## 2026-05-15 — #296 margin scaled by expected_hits
+
+`_quantile_gate` margin is no longer a global constant. It is derived from
+`_RELEVANCE_MARGIN_BY_HITS` keyed by `expected_hits`:
+
+| expected_hits | margin | intent |
+|---|---|---|
+| one | 1.0 | single-fact query: keep only top match |
+| few | 2.0 | narrow content: allow moderate spread (default) |
+| many | 3.0 | survey/summary: allow broader matches |
+
+The `expected_hits` bucket flows from the LLM tool call through
+`params_for_expected_hits()` into `RetrievalParams`, then into
+`retrieve()` where it selects the margin. `RetrievalResult.gate_margin`
+telemetry records the actual margin used so production traffic can be
+audited per bucket.

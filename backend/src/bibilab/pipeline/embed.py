@@ -18,7 +18,7 @@ from pathlib import Path
 from bibilab.adapters.base import VideoMeta
 from bibilab.config import BibilabConfig, bibilab_home, models_dir
 from bibilab.db import _escape_fts_query, _tokenize_cjk, get_db_path, get_video_ids_for_sources, query_fts_rows
-from bibilab.models._enums import RetrievalParams
+from bibilab.models._enums import _RELEVANCE_MARGIN_BY_HITS, RetrievalParams
 from bibilab.pipeline.chunk import RagChunk
 
 logger = logging.getLogger(__name__)
@@ -66,6 +66,8 @@ class RetrievalResult:
     # (rerank disabled or failed); reranked disambiguates that case.
     dropped_by_gate: int = 0
     reranked: bool = False
+    # Actual margin used by _quantile_gate (derived from expected_hits).
+    gate_margin: float = 0.0
 
 
 def _chunk_score(chunk: RetrievedChunk) -> float:
@@ -112,27 +114,26 @@ def _adaptive_depth(spec_depth: int, top_k: int, num_sources_in_pool: int) -> in
     return max(spec_depth, math.ceil(top_k / num_sources_in_pool))
 
 
-# bge-reranker logit margin: chunks within this many units of top score are
-# kept. Tightened from 4.0 to 2.0 after observing false positives in mixed
-# pools (#290). bge logit > 0 = model judges pair more relevant than not.
-RELEVANCE_MARGIN = 2.0
-
-
-def _quantile_gate(chunks: list[RetrievedChunk]) -> list[RetrievedChunk]:
+def _quantile_gate(chunks: list[RetrievedChunk], margin: float = 2.0) -> list[RetrievedChunk]:
     """Keep chunks whose rerank score is meaningful relative to the pool.
 
-    threshold = max(0, median(scores), top - RELEVANCE_MARGIN)
+    threshold = max(0, median(scores), top - margin)
     The 0 floor rejects chunks the model scores below relevance-neutral.
     The median term floors aggression: when the top itself is low (the
     "all chunks marginal" case from #277), threshold rises to median and
     forces a half-cut, killing junk that would otherwise pad top_k.
     The margin term caps aggression: when the pool has a clear winner,
-    threshold stays within RELEVANCE_MARGIN of top so multiple
+    threshold stays within margin of top so multiple
     similarly-good chunks survive. Always keeps the top chunk.
 
     Caller must ensure chunks were reranked (score = bge logit). For
     RRF-domain scores the margin is uncalibrated; gate is bypassed in that
     case (see retrieve()).
+
+    Args:
+        chunks: Reranked RetrievedChunk list (score = bge logit).
+        margin: bge logit units within which to keep chunks below the top.
+            Derived from _RELEVANCE_MARGIN_BY_HITS based on expected_hits.
     """
     if not chunks:
         return chunks
@@ -141,7 +142,7 @@ def _quantile_gate(chunks: list[RetrievedChunk]) -> list[RetrievedChunk]:
         return chunks
     top = scores[0]
     median = scores[len(scores) // 2]
-    threshold = max(0.0, median, top - RELEVANCE_MARGIN)
+    threshold = max(0.0, median, top - margin)
     kept = [c for c in chunks if c.score is not None and c.score >= threshold]
     return kept if kept else [chunks[0]]
 
@@ -542,14 +543,17 @@ async def retrieve(
 
         if reranked:
             pre_gate = len(chunks)
-            chunks = _quantile_gate(chunks)
+            margin = _RELEVANCE_MARGIN_BY_HITS.get(params.expected_hits, 2.0)
+            chunks = _quantile_gate(chunks, margin=margin)
             dropped_by_gate = pre_gate - len(chunks)
             logger.info(
-                "retrieve post-rerank+gate: pre=%d post=%d dropped=%d top_score=%.4f",
+                "retrieve post-rerank+gate: pre=%d post=%d dropped=%d top_score=%.4f margin=%.1f(expected_hits=%s)",
                 pre_gate,
                 len(chunks),
                 dropped_by_gate,
                 chunks[0].score if chunks else -999,
+                margin,
+                params.expected_hits,
             )
 
     # candidates_evaluated: pool size (pre-diverse-top-k); used for logs, not UI.
@@ -589,4 +593,5 @@ async def retrieve(
         source_coverage=source_coverage,
         dropped_by_gate=dropped_by_gate,
         reranked=reranked,
+        gate_margin=margin if reranked else 0.0,
     )
