@@ -191,10 +191,10 @@ def build_grounding_prompt(response_language: str) -> str:
         "CRITICAL RULES:\n"
         '0. The "Sources" section below lists every source in this conversation. '
         "For EVERY content question (facts, comparisons, summaries), you MUST call "
-        "retrieve with source_ids. Include sources that could contain relevant "
-        "information — only exclude sources clearly unrelated to the query. "
-        "When in doubt, include the source. "
-        'Pass source numbers as strings, e.g. retrieve(source_ids=["1","3"]). '
+        "retrieve with exclude_source_ids. List source numbers that are clearly "
+        "unrelated to the query. When unsure whether a source is relevant, "
+        "LEAVE IT IN (do not exclude). Excluding too aggressively misses correct answers. "
+        "Be conservative — when uncertain, do not exclude. "
         "For questions about counts, durations, or languages of the sources themselves, "
         "call query_list_metadata instead. "
         "Use expected_hits='many' for comprehensive summaries of one source "
@@ -771,14 +771,15 @@ async def chat_endpoint(
     id_to_title = {row["id"]: row["title"] for row in source_rows}
     id_to_keywords = {row["id"]: json.loads(row["keywords"]) for row in source_rows}
     source_list_str = (
-        "Sources:\n"
+        "Sources (scan for clearly unrelated items to exclude):\n"
         + "\n".join(
             f"[{i + 1}] {id_to_title[sid]}"
             + (f" ({', '.join(id_to_keywords[sid])})" if id_to_keywords.get(sid) else "")
             for i, sid in enumerate(source_ids)
         )
-        + "\n\nTo search, call retrieve. Include all source numbers except "
-        "those clearly unrelated to the query."
+        + "\n\nCall retrieve with exclude_source_ids listing only obvious mismatches. "
+        "Empty list is fine when all sources may be relevant. "
+        "Use source_ids whitelist ONLY when the user explicitly scopes to specific sources."
     )
     ui_lang = http_request.headers.get("X-UI-Lang", "en")
 

@@ -1,5 +1,6 @@
 """Tests for generate_report tool execution."""
 
+import logging
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -34,12 +35,12 @@ class TestRetrieveToolSchema:
         assert "expected_hits" in props
         assert props["expected_hits"]["enum"] == ["one", "few", "many"]
 
-    def test_retrieve_tool_required_includes_source_ids(self):
+    def test_retrieve_tool_required_includes_exclude_source_ids(self):
         from bibilab.pipeline.chat_tools import RETRIEVE_TOOL
 
         required = RETRIEVE_TOOL.parameters["required"]
         assert "query" in required
-        assert "source_ids" in required
+        assert "exclude_source_ids" in required
 
     def test_retrieve_tool_description_mentions_source_list(self):
         from bibilab.pipeline.chat_tools import RETRIEVE_TOOL
@@ -353,6 +354,7 @@ class TestExecuteRetrieve:
             cfg=cfg,
             source_map={"v2": "s2"},
             selected_source_ids=["s2"],
+            scope_choice="whitelist",
         )
 
         assert retrieve_called_with == ["s2"]
@@ -1176,3 +1178,504 @@ class TestReseedCitationRegistry:
         reseed_citation_registry(registry_with_entry, [])
         assert len(registry_with_entry) == 1
         assert "s1" in registry_with_entry
+
+
+# =============================================================================
+# Tests for I-6a: retrieve scope semantics — blacklist/exclude
+# =============================================================================
+
+
+class TestCoerceToStrList:
+    """AC2: _coerce_to_str_list parses JSON-string lists without silently dropping scope."""
+
+    def test_coerce_list_of_strings(self):
+        from bibilab.pipeline.chat_tools import _coerce_to_str_list
+
+        result = _coerce_to_str_list(["1", "3", "7"], "exclude_source_ids")
+        assert result == ["1", "3", "7"]
+
+    def test_coerce_stringified_json_list(self):
+        from bibilab.pipeline.chat_tools import _coerce_to_str_list
+
+        result = _coerce_to_str_list('["1", "3", "7"]', "exclude_source_ids")
+        assert result == ["1", "3", "7"]
+
+    def test_coerce_none(self):
+        from bibilab.pipeline.chat_tools import _coerce_to_str_list
+
+        result = _coerce_to_str_list(None, "exclude_source_ids")
+        assert result is None
+
+    def test_coerce_garbage_string_warns(self, caplog):
+        from bibilab.pipeline.chat_tools import _coerce_to_str_list
+
+        with caplog.at_level(logging.WARNING, logger="bibilab.pipeline.chat_tools"):
+            result = _coerce_to_str_list("not a list at all", "exclude_source_ids")
+
+        assert result is None
+        assert "unparseable" in caplog.text
+
+    def test_coerce_mixed_type_list(self):
+        from bibilab.pipeline.chat_tools import _coerce_to_str_list
+
+        result = _coerce_to_str_list([1, "2", 3], "source_ids")
+        assert result == ["1", "2", "3"]
+
+
+class TestMapIndicesToUuids:
+    """AC6: _map_indices_to_uuids extracts index-or-UUID mapping logic."""
+
+    def test_maps_1_based_indices_to_uuids(self):
+        from bibilab.pipeline.chat_tools import _map_indices_to_uuids
+
+        result = _map_indices_to_uuids(["1", "3"], ["uuid-a", "uuid-b", "uuid-c"])
+        assert result == ["uuid-a", "uuid-c"]
+
+    def test_accepts_raw_uuids(self):
+        from bibilab.pipeline.chat_tools import _map_indices_to_uuids
+
+        result = _map_indices_to_uuids(["uuid-a", "uuid-c"], ["uuid-a", "uuid-b", "uuid-c"])
+        assert result == ["uuid-a", "uuid-c"]
+
+    def test_out_of_range_index_logs_warning(self, caplog):
+        from bibilab.pipeline.chat_tools import _map_indices_to_uuids
+
+        with caplog.at_level(logging.WARNING, logger="bibilab.pipeline.chat_tools"):
+            result = _map_indices_to_uuids(["1", "999"], ["uuid-a", "uuid-b"])
+
+        assert result == ["uuid-a"]
+        assert "out of range" in caplog.text
+
+    def test_unrecognized_identifier_logs_warning(self, caplog):
+        from bibilab.pipeline.chat_tools import _map_indices_to_uuids
+
+        with caplog.at_level(logging.WARNING, logger="bibilab.pipeline.chat_tools"):
+            result = _map_indices_to_uuids(["uuid-a", "garbage"], ["uuid-a", "uuid-b"])
+
+        assert result == ["uuid-a"]
+        assert "Unrecognized source identifier" in caplog.text
+
+
+class TestExecuteToolDispatchMatrix:
+    """AC1: execute_tool dispatch uses exclude when both exclude and whitelist are present."""
+
+    @pytest.mark.asyncio
+    async def test_exclude_only_uses_exclude_path(self, tmp_bibilab_home):
+        from bibilab.config import AIConfig, BibilabConfig
+        from bibilab.pipeline import chat_tools
+        from bibilab.pipeline.embed import RetrievalResult
+
+        async def fake_retrieve(**kwargs):
+            return RetrievalResult(
+                chunks=[],
+                source_coverage=[],
+                candidates_evaluated=0,
+                sources_with_hits=0,
+                sources_total=3,
+            )
+
+        cfg = BibilabConfig(ai=AIConfig(protocol="openai", model="x", api_key="k"))
+
+        async def patched_retrieve(*args, **kwargs):
+            return await fake_retrieve(*args, **kwargs)
+
+        with patch.object(chat_tools, "retrieve", side_effect=patched_retrieve):
+            result = await chat_tools.execute_tool(
+                tool_name="retrieve",
+                arguments={
+                    "query": "test query",
+                    "exclude_source_ids": ["1", "2"],
+                },
+                list_id="list-1",
+                source_ids=["s1", "s2", "s3"],
+                ui_lang="en",
+                cfg=cfg,
+            )
+
+        assert result["scope_choice"] == "exclude"
+        assert result["excluded_count"] == 2
+        assert result["scoped_pool_size"] == 1
+
+    @pytest.mark.asyncio
+    async def test_whitelist_only_uses_whitelist_path(self, tmp_bibilab_home):
+        from bibilab.config import AIConfig, BibilabConfig
+        from bibilab.pipeline import chat_tools
+        from bibilab.pipeline.embed import RetrievalResult
+
+        async def fake_retrieve(**kwargs):
+            return RetrievalResult(
+                chunks=[],
+                source_coverage=[],
+                candidates_evaluated=0,
+                sources_with_hits=0,
+                sources_total=3,
+            )
+
+        cfg = BibilabConfig(ai=AIConfig(protocol="openai", model="x", api_key="k"))
+
+        async def patched_retrieve(*args, **kwargs):
+            return await fake_retrieve(*args, **kwargs)
+
+        with patch.object(chat_tools, "retrieve", side_effect=patched_retrieve):
+            result = await chat_tools.execute_tool(
+                tool_name="retrieve",
+                arguments={
+                    "query": "test query",
+                    "source_ids": ["1"],
+                },
+                list_id="list-1",
+                source_ids=["s1", "s2", "s3"],
+                ui_lang="en",
+                cfg=cfg,
+            )
+
+        assert result["scope_choice"] == "whitelist"
+        assert result["excluded_count"] is None
+        assert result["scoped_pool_size"] == 1
+
+    @pytest.mark.asyncio
+    async def test_both_given_uses_exclude_with_warning(self, tmp_bibilab_home, caplog):
+        from bibilab.config import AIConfig, BibilabConfig
+        from bibilab.pipeline import chat_tools
+        from bibilab.pipeline.embed import RetrievalResult
+
+        async def fake_retrieve(**kwargs):
+            return RetrievalResult(
+                chunks=[],
+                source_coverage=[],
+                candidates_evaluated=0,
+                sources_with_hits=0,
+                sources_total=3,
+            )
+
+        cfg = BibilabConfig(ai=AIConfig(protocol="openai", model="x", api_key="k"))
+
+        async def patched_retrieve(*args, **kwargs):
+            return await fake_retrieve(*args, **kwargs)
+
+        with patch.object(chat_tools, "retrieve", side_effect=patched_retrieve):
+            with caplog.at_level(logging.WARNING, logger="bibilab.pipeline.chat_tools"):
+                result = await chat_tools.execute_tool(
+                    tool_name="retrieve",
+                    arguments={
+                        "query": "test query",
+                        "exclude_source_ids": ["1"],
+                        "source_ids": ["2"],
+                    },
+                    list_id="list-1",
+                    source_ids=["s1", "s2", "s3"],
+                    ui_lang="en",
+                    cfg=cfg,
+                )
+
+        assert result["scope_choice"] == "exclude"
+        assert "both" in caplog.text.lower()
+
+    @pytest.mark.asyncio
+    async def test_neither_given_uses_none_with_warning(self, tmp_bibilab_home, caplog):
+        from bibilab.config import AIConfig, BibilabConfig
+        from bibilab.pipeline import chat_tools
+        from bibilab.pipeline.embed import RetrievalResult
+
+        async def fake_retrieve(**kwargs):
+            return RetrievalResult(
+                chunks=[],
+                source_coverage=[],
+                candidates_evaluated=0,
+                sources_with_hits=0,
+                sources_total=3,
+            )
+
+        cfg = BibilabConfig(ai=AIConfig(protocol="openai", model="x", api_key="k"))
+
+        async def patched_retrieve(*args, **kwargs):
+            return await fake_retrieve(*args, **kwargs)
+
+        with patch.object(chat_tools, "retrieve", side_effect=patched_retrieve):
+            with caplog.at_level(logging.WARNING, logger="bibilab.pipeline.chat_tools"):
+                result = await chat_tools.execute_tool(
+                    tool_name="retrieve",
+                    arguments={
+                        "query": "test query",
+                    },
+                    list_id="list-1",
+                    source_ids=["s1", "s2", "s3"],
+                    ui_lang="en",
+                    cfg=cfg,
+                )
+
+        assert result["scope_choice"] == "none"
+        assert "neither" in caplog.text.lower()
+
+    @pytest.mark.asyncio
+    async def test_stringified_json_list_coerced_successfully(self, tmp_bibilab_home):
+        """AC2: JSON string passed as exclude_source_ids is coerced to list."""
+        from bibilab.config import AIConfig, BibilabConfig
+        from bibilab.pipeline import chat_tools
+        from bibilab.pipeline.embed import RetrievalResult
+
+        async def fake_retrieve(**kwargs):
+            return RetrievalResult(
+                chunks=[],
+                source_coverage=[],
+                candidates_evaluated=0,
+                sources_with_hits=0,
+                sources_total=3,
+            )
+
+        cfg = BibilabConfig(ai=AIConfig(protocol="openai", model="x", api_key="k"))
+
+        async def patched_retrieve(*args, **kwargs):
+            return await fake_retrieve(*args, **kwargs)
+
+        with patch.object(chat_tools, "retrieve", side_effect=patched_retrieve):
+            result = await chat_tools.execute_tool(
+                tool_name="retrieve",
+                arguments={
+                    "query": "test query",
+                    "exclude_source_ids": '["1", "2"]',  # string, not list
+                },
+                list_id="list-1",
+                source_ids=["s1", "s2", "s3"],
+                ui_lang="en",
+                cfg=cfg,
+            )
+
+        assert result["scope_choice"] == "exclude"
+        assert result["excluded_count"] == 2
+        assert result["scoped_pool_size"] == 1
+
+
+class TestExecuteRetrieveExcludePath:
+    """AC6: execute_retrieve exclude path maps indices to correct UUIDs; out-of-range index produces warning."""
+
+    @pytest.mark.asyncio
+    async def test_exclude_indices_map_to_correct_uuids(self, monkeypatch):
+        from bibilab.config import AIConfig, BibilabConfig
+        from bibilab.pipeline import chat_tools
+        from bibilab.pipeline.embed import RetrievalResult
+
+        retrieve_called_with = None
+
+        async def fake_retrieve(query_text, source_ids, cfg, params, scoped_source_ids=None, **kwargs):
+            nonlocal retrieve_called_with
+            retrieve_called_with = scoped_source_ids
+            return RetrievalResult(
+                chunks=[],
+                source_coverage=[],
+                candidates_evaluated=0,
+                sources_with_hits=0,
+                sources_total=3,
+            )
+
+        monkeypatch.setattr(chat_tools, "retrieve", fake_retrieve)
+
+        cfg = BibilabConfig(ai=AIConfig(protocol="openai", model="x", api_key="k"))
+        await chat_tools.execute_retrieve(
+            query="test",
+            source_ids=["uuid-a", "uuid-b", "uuid-c"],
+            cfg=cfg,
+            exclude_source_ids=["1", "3"],
+            scope_choice="exclude",
+        )
+
+        assert retrieve_called_with == ["uuid-b"]  # excluded: uuid-a, uuid-c
+
+    @pytest.mark.asyncio
+    async def test_exclude_out_of_range_index_logs_warning(self, monkeypatch, caplog):
+        from bibilab.config import AIConfig, BibilabConfig
+        from bibilab.pipeline import chat_tools
+        from bibilab.pipeline.embed import RetrievalResult
+
+        async def fake_retrieve(**kwargs):
+            return RetrievalResult(
+                chunks=[],
+                source_coverage=[],
+                candidates_evaluated=0,
+                sources_with_hits=0,
+                sources_total=3,
+            )
+
+        monkeypatch.setattr(chat_tools, "retrieve", fake_retrieve)
+
+        cfg = BibilabConfig(ai=AIConfig(protocol="openai", model="x", api_key="k"))
+
+        with caplog.at_level(logging.WARNING, logger="bibilab.pipeline.chat_tools"):
+            await chat_tools.execute_retrieve(
+                query="test",
+                source_ids=["uuid-a", "uuid-b"],
+                cfg=cfg,
+                exclude_source_ids=["1", "999"],
+                scope_choice="exclude",
+            )
+
+        assert "out of range" in caplog.text
+
+
+class TestExecuteRetrieveTelemetry:
+    """AC3: execute_retrieve result includes scope_choice, excluded_count, scoped_pool_size."""
+
+    @pytest.mark.asyncio
+    async def test_exclude_path_includes_telemetry(self, monkeypatch):
+        from bibilab.config import AIConfig, BibilabConfig
+        from bibilab.pipeline import chat_tools
+        from bibilab.pipeline.embed import RetrievalResult, RetrievedChunk, SourceHit
+
+        async def fake_retrieve(**kwargs):
+            return RetrievalResult(
+                chunks=[
+                    RetrievedChunk(
+                        content="content",
+                        video_title="V2",
+                        timestamp_start=0.0,
+                        timestamp_end=10.0,
+                        video_id="v2",
+                        distance=0.0,
+                        score=0.9,
+                    ),
+                ],
+                candidates_evaluated=1,
+                sources_with_hits=1,
+                sources_total=3,
+                source_coverage=[SourceHit(video_id="v2", video_title="V2", best_score=-0.9)],
+            )
+
+        monkeypatch.setattr(chat_tools, "retrieve", fake_retrieve)
+
+        cfg = BibilabConfig(ai=AIConfig(protocol="openai", model="x", api_key="k"))
+        result = await chat_tools.execute_retrieve(
+            query="test",
+            source_ids=["s1", "s2", "s3"],
+            cfg=cfg,
+            source_map={"v2": "s2"},
+            exclude_source_ids=["1"],
+            scope_choice="exclude",
+        )
+
+        assert "scope_choice" in result
+        assert "excluded_count" in result
+        assert "scoped_pool_size" in result
+        assert result["scope_choice"] == "exclude"
+        assert result["excluded_count"] == 1
+        assert result["scoped_pool_size"] == 2  # 3 - 1 excluded
+
+    @pytest.mark.asyncio
+    async def test_whitelist_path_includes_telemetry(self, monkeypatch):
+        from bibilab.config import AIConfig, BibilabConfig
+        from bibilab.pipeline import chat_tools
+        from bibilab.pipeline.embed import RetrievalResult, RetrievedChunk, SourceHit
+
+        async def fake_retrieve(**kwargs):
+            return RetrievalResult(
+                chunks=[
+                    RetrievedChunk(
+                        content="content",
+                        video_title="V2",
+                        timestamp_start=0.0,
+                        timestamp_end=10.0,
+                        video_id="v2",
+                        distance=0.0,
+                        score=0.9,
+                    ),
+                ],
+                candidates_evaluated=1,
+                sources_with_hits=1,
+                sources_total=3,
+                source_coverage=[SourceHit(video_id="v2", video_title="V2", best_score=-0.9)],
+            )
+
+        monkeypatch.setattr(chat_tools, "retrieve", fake_retrieve)
+
+        cfg = BibilabConfig(ai=AIConfig(protocol="openai", model="x", api_key="k"))
+        result = await chat_tools.execute_retrieve(
+            query="test",
+            source_ids=["s1", "s2", "s3"],
+            cfg=cfg,
+            source_map={"v2": "s2"},
+            selected_source_ids=["2"],
+            scope_choice="whitelist",
+        )
+
+        assert result["scope_choice"] == "whitelist"
+        assert result["excluded_count"] is None
+        assert result["scoped_pool_size"] == 1
+
+    @pytest.mark.asyncio
+    async def test_none_scope_path_includes_telemetry(self, monkeypatch):
+        from bibilab.config import AIConfig, BibilabConfig
+        from bibilab.pipeline import chat_tools
+        from bibilab.pipeline.embed import RetrievalResult, RetrievedChunk, SourceHit
+
+        async def fake_retrieve(**kwargs):
+            return RetrievalResult(
+                chunks=[
+                    RetrievedChunk(
+                        content="content",
+                        video_title="V1",
+                        timestamp_start=0.0,
+                        timestamp_end=10.0,
+                        video_id="v1",
+                        distance=0.0,
+                        score=0.9,
+                    ),
+                ],
+                candidates_evaluated=1,
+                sources_with_hits=1,
+                sources_total=3,
+                source_coverage=[SourceHit(video_id="v1", video_title="V1", best_score=-0.9)],
+            )
+
+        monkeypatch.setattr(chat_tools, "retrieve", fake_retrieve)
+
+        cfg = BibilabConfig(ai=AIConfig(protocol="openai", model="x", api_key="k"))
+        result = await chat_tools.execute_retrieve(
+            query="test",
+            source_ids=["s1", "s2", "s3"],
+            cfg=cfg,
+            source_map={"v1": "s1"},
+            scope_choice=None,
+        )
+
+        assert result["scope_choice"] == "none"
+        assert result["excluded_count"] is None
+        assert result["scoped_pool_size"] == 3  # all sources
+
+
+class TestRetrieveToolSchemaUpdate:
+    """Verify RETRIEVE_TOOL schema has exclude_source_ids as primary required param."""
+
+    def test_exclude_source_ids_is_required(self):
+        from bibilab.pipeline.chat_tools import RETRIEVE_TOOL
+
+        required = RETRIEVE_TOOL.parameters["required"]
+        assert "exclude_source_ids" in required
+        assert "source_ids" not in required
+
+    def test_exclude_source_ids_in_properties(self):
+        from bibilab.pipeline.chat_tools import RETRIEVE_TOOL
+
+        props = RETRIEVE_TOOL.parameters["properties"]
+        assert "exclude_source_ids" in props
+        assert props["exclude_source_ids"]["type"] == "array"
+        assert props["exclude_source_ids"]["items"] == {"type": "string"}
+
+    def test_source_ids_retained_as_optional(self):
+        from bibilab.pipeline.chat_tools import RETRIEVE_TOOL
+
+        props = RETRIEVE_TOOL.parameters["properties"]
+        assert "source_ids" in props
+        required = RETRIEVE_TOOL.parameters["required"]
+        assert "source_ids" not in required
+
+    def test_retrieve_tool_description_mentions_exclude(self):
+        from bibilab.pipeline.chat_tools import RETRIEVE_TOOL
+
+        desc = RETRIEVE_TOOL.description
+        assert "exclude_source_ids" in desc
+
+    def test_retrieve_tool_description_mentions_whitelist_rare(self):
+        from bibilab.pipeline.chat_tools import RETRIEVE_TOOL
+
+        desc = RETRIEVE_TOOL.description
+        assert "source_ids" in desc
+        assert "whitelist" in desc.lower() or "ONLY when the user explicitly" in desc

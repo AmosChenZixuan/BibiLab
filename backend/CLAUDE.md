@@ -181,8 +181,8 @@ Shutdown: cancel all active tasks, drain with 5s timeout
 
 ### System prompt context
 
-- **Source list**: Before streaming, the system prompt includes a numbered list of all sources: `[N] Title (keywords)`. The LLM picks relevant indices and passes them to `retrieve(source_ids=[...])`, scoping search to likely-relevant sources without an extra tool call. Anthropic prompt caching makes these tokens near-free after the first turn.
-- **Conservative selection**: The prompt instructs "include all but clearly unrelated" — the retrieval pipeline (BM25 → vector RRF → rerank → gate → diverse top-k) handles precision.
+- **Source list**: Before streaming, the system prompt includes a numbered list of all sources: `[N] Title (keywords)`. The LLM scans for clearly unrelated sources and passes their numbers to `retrieve(exclude_source_ids=[...])`, scoping search to everything else. Anthropic prompt caching makes these tokens near-free after the first turn.
+- **Conservative exclusion**: The prompt instructs "exclude only obviously mismatched; when uncertain leave in" — the retrieval pipeline (BM25 → vector RRF → rerank → gate → diverse top-k) handles precision.
 
 ### Chat execution
 
