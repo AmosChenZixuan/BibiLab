@@ -70,8 +70,8 @@ export function RetrievalLedgerRow({ variant, call, pending }: RetrievalLedgerRo
   if (variant === "empty") {
     const summaryText = t("chat.ledger.summaryEmpty", { dropped: call.dropped_by_gate });
     return (
-      <div className="bg-amber/10 border border-amber/30 text-amber px-2 py-0.5 rounded text-xs">
-        <div className="flex items-center gap-1">
+      <div className="bg-amber/10 border border-amber/30 text-amber px-2 py-0.5 rounded text-xs overflow-x-hidden">
+        <div className="flex items-center gap-1 min-w-0">
           <span>⚠</span>
           <span>{summaryText}</span>
           <button
@@ -103,10 +103,10 @@ export function RetrievalLedgerRow({ variant, call, pending }: RetrievalLedgerRo
   // ----- default -----
   const summaryText = t("chat.ledger.summary", { chunks: context.length, sources: source_coverage.length });
   return (
-    <div className="bg-sky/5 border border-border text-blue px-2 py-0.5 rounded text-xs">
-      <div className="flex items-center gap-1">
+    <div className="bg-sky/5 border border-border text-blue px-2 py-0.5 rounded text-xs overflow-x-hidden">
+      <div className="flex items-center gap-1 min-w-0">
         <span>◉</span>
-        <span className="font-mono">{call.query}</span>
+        <span className="font-mono truncate">{call.query}</span>
         <span className="text-muted">→</span>
         <span>{summaryText}</span>
         <button
@@ -140,14 +140,14 @@ export function RetrievalLedgerRow({ variant, call, pending }: RetrievalLedgerRo
           {context.length > 0 && (
             <div className="mt-1 pt-1 border-t border-border space-y-0.5">
               {context.map((chunk) => (
-                <div key={chunk.chunk_id} className="text-ink">
-                  <span className="font-mono">[{chunk.citation_index}]</span>{" "}
-                  <span>{chunk.source_title}</span>
+                <div key={chunk.chunk_id} className="text-ink min-w-0">
+                  <span className="font-mono shrink-0">[{chunk.citation_index}]</span>
+                  <span className="truncate shrink">{chunk.source_title}</span>
                   <span className="text-muted"> · </span>
                   <span>{formatTimestamp(chunk.timestamp_start)}–{formatTimestamp(chunk.timestamp_end)}</span>
                   <span className="text-muted"> · </span>
                   <span>{chunk.rerank_score.toFixed(2)}</span>
-                  <div className="pl-4 text-muted truncate" title={chunk.preview}>
+                  <div className="pl-4 text-muted truncate max-w-xs" title={chunk.preview}>
                     &ldquo;{chunk.preview}&rdquo;
                   </div>
                 </div>
