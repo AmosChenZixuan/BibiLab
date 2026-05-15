@@ -121,15 +121,26 @@ describe("RetrievalCall", () => {
       context: [
         {
           chunk_id: "v1_120_145",
+          citation_index: 1,
+          source_id: "s1",
+          source_title: "Test Video",
           timestamp_start: 120.4,
           timestamp_end: 145.0,
           rerank_score: 0.95,
           preview: "test content here",
         },
       ],
+      dropped_by_gate: 0,
+      reranked: true,
+      scope_choice: "none",
+      excluded_count: null,
+      scoped_pool_size: 3,
+      gate_margin: null,
+      reused_from_prior_call_id: null,
     };
     expect(call.expected_hits).toBe("few");
     expect(call.context[0].chunk_id).toBe("v1_120_145");
+    expect(call.context[0].citation_index).toBe(1);
     expect(call.context[0].timestamp_start).toBe(120.4);
     expect(call.context[0].rerank_score).toBe(0.95);
   });
@@ -143,6 +154,13 @@ describe("RetrievalCall", () => {
       sources_total: 1,
       source_coverage: [],
       context: [],
+      dropped_by_gate: 0,
+      reranked: false,
+      scope_choice: "none",
+      excluded_count: null,
+      scoped_pool_size: 1,
+      gate_margin: null,
+      reused_from_prior_call_id: null,
     };
     expect(call.context).toHaveLength(0);
   });

@@ -10,11 +10,15 @@ export interface ToolCallData {
   name: string;
   result: ToolResult;
 }
+export type ScopeChoice = "exclude" | "whitelist" | "none";
 export type ExpectedHits = "one" | "few" | "many" | null;
 export type RagSource = { source_id: string; video_id: string; title: string };
 /** Single chunk in the persisted context[] array. */
 export type RetrievalChunk = {
   chunk_id: string;
+  citation_index: number;
+  source_id: string;
+  source_title: string;
   timestamp_start: number;
   timestamp_end: number;
   rerank_score: number;
@@ -29,6 +33,13 @@ export type RetrievalCall = {
   sources_total: number;
   source_coverage: RagSource[];
   context: RetrievalChunk[];
+  dropped_by_gate: number;
+  reranked: boolean;
+  scope_choice: ScopeChoice;
+  excluded_count: number | null;
+  scoped_pool_size: number;
+  gate_margin: number | null;
+  reused_from_prior_call_id: string | null;
 };
 export type RagMetadata = { calls: RetrievalCall[] };
 export type PendingRagCall = {

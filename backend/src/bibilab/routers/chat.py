@@ -649,6 +649,9 @@ async def run_chat_turn(
                             context_entries.append(
                                 {
                                     "chunk_id": entry.first_chunk_id or "",
+                                    "citation_index": entry.index,
+                                    "source_id": sid,
+                                    "source_title": entry.title or "",
                                     "timestamp_start": entry.timestamp_start or 0.0,
                                     "timestamp_end": entry.timestamp_end or 0.0,
                                     "rerank_score": entry.rerank_score or 0.0,

@@ -258,16 +258,33 @@
       "save": "Save",
       "saving": "Saving..."
     },
-    "obsChip": {
-      "query": "Query",
-      "mode": "Mode",
-      "sourcesCited": "Sources cited",
-      "ariaLabel": "Retrieval observability",
-      "chipLabel": "cited %{hits} / %{total}",
-      "metaQueryType": {
-        "count": "Count",
-        "longest": "Longest",
-        "languages": "Languages"
+    "ledger": {
+      "summary": "%{chunks} chunks · %{sources} sources",
+      "summaryEmpty": "0 chunks (%{dropped} dropped)",
+      "summaryReused": "reused from previous turn",
+      "summaryPending": "retrieving…",
+      "field": {
+        "query": "Query",
+        "mode": "Mode",
+        "scope": "Scope",
+        "result": "Result"
+      },
+      "scope": {
+        "exclude": "excluded %{count} of %{total}",
+        "whitelist": "only %{count} of %{total}",
+        "none": "all %{total} sources"
+      },
+      "mode": {
+        "one": "one",
+        "few": "few",
+        "many": "many"
+      },
+      "modeUnknown": "—",
+      "ariaToggle": "Toggle retrieval details",
+      "metadataPending": {
+        "count": "counting sources",
+        "longest": "checking longest",
+        "languages": "checking languages"
       }
     },
     "mode": {

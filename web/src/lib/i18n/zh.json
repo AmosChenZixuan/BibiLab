@@ -258,16 +258,33 @@
       "save": "保存",
       "saving": "保存中…"
     },
-    "obsChip": {
-      "query": "查询",
-      "mode": "模式",
-      "sourcesCited": "已引用的来源",
-      "ariaLabel": "检索详情",
-      "chipLabel": "已引用 %{hits} / %{total}",
-      "metaQueryType": {
-        "count": "总数",
-        "longest": "最长",
-        "languages": "语言"
+    "ledger": {
+      "summary": "%{chunks} 个块 · %{sources} 个来源",
+      "summaryEmpty": "0 个块（%{dropped} 被筛掉）",
+      "summaryReused": "复用上一轮",
+      "summaryPending": "检索中…",
+      "field": {
+        "query": "查询",
+        "mode": "模式",
+        "scope": "范围",
+        "result": "结果"
+      },
+      "scope": {
+        "exclude": "排除 %{count} / %{total}",
+        "whitelist": "仅 %{count} / %{total}",
+        "none": "全部 %{total} 个来源"
+      },
+      "mode": {
+        "one": "一个",
+        "few": "少数",
+        "many": "多个"
+      },
+      "modeUnknown": "—",
+      "ariaToggle": "切换检索详情",
+      "metadataPending": {
+        "count": "统计来源",
+        "longest": "检查最长",
+        "languages": "检查语言"
       }
     },
     "mode": {
