@@ -176,10 +176,10 @@ class TestRetrievalParamsExpectedHits:
 
 class TestRetrievalResultGateMargin:
     def test_retrieval_result_gate_margin(self):
-        """AC7: RetrievalResult.gate_margin field exists and defaults to 0.0."""
+        """AC7: RetrievalResult.gate_margin field exists and defaults to None."""
         from bibilab.pipeline.embed import RetrievalResult
 
-        # Default
+        # Default: None when gate did not run
         r = RetrievalResult(
             chunks=[],
             candidates_evaluated=0,
@@ -187,7 +187,7 @@ class TestRetrievalResultGateMargin:
             sources_total=1,
             source_coverage=[],
         )
-        assert r.gate_margin == 0.0
+        assert r.gate_margin is None
 
         # With gate_margin set
         r2 = RetrievalResult(

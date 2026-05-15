@@ -67,7 +67,8 @@ class RetrievalResult:
     dropped_by_gate: int = 0
     reranked: bool = False
     # Actual margin used by _quantile_gate (derived from expected_hits).
-    gate_margin: float = 0.0
+    # None when gate did not run (rerank disabled or failed); actual margin when it did.
+    gate_margin: float | None = None
 
 
 def _chunk_score(chunk: RetrievedChunk) -> float:
@@ -532,6 +533,7 @@ async def retrieve(
 
     reranked = False
     dropped_by_gate = 0
+    gate_margin: float | None = None
     if cfg.rag.reranking_enabled and chunks:
         from bibilab.pipeline.rerank import rerank  # noqa: PLC0415
 
@@ -543,8 +545,8 @@ async def retrieve(
 
         if reranked:
             pre_gate = len(chunks)
-            margin = _RELEVANCE_MARGIN_BY_HITS.get(params.expected_hits, 2.0)
-            chunks = _quantile_gate(chunks, margin=margin)
+            gate_margin = _RELEVANCE_MARGIN_BY_HITS.get(params.expected_hits, _RELEVANCE_MARGIN_BY_HITS["few"])
+            chunks = _quantile_gate(chunks, margin=gate_margin)
             dropped_by_gate = pre_gate - len(chunks)
             logger.info(
                 "retrieve post-rerank+gate: pre=%d post=%d dropped=%d top_score=%.4f margin=%.1f(expected_hits=%s)",
@@ -552,7 +554,7 @@ async def retrieve(
                 len(chunks),
                 dropped_by_gate,
                 chunks[0].score if chunks else -999,
-                margin,
+                gate_margin,
                 params.expected_hits,
             )
 
@@ -593,5 +595,5 @@ async def retrieve(
         source_coverage=source_coverage,
         dropped_by_gate=dropped_by_gate,
         reranked=reranked,
-        gate_margin=margin if reranked else 0.0,
+        gate_margin=gate_margin,
     )

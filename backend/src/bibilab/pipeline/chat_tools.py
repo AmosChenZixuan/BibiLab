@@ -151,13 +151,16 @@ _VALID_ARTIFACT_TYPES = frozenset({"brief", "study_guide", "blog_post", "custom_
 DEFAULT_EXPECTED_HITS = "few"
 
 
+_PARAMS_BY_HITS = {
+    "one": RetrievalParams(depth_per_source=1, top_k=2, expected_hits="one"),
+    "few": RetrievalParams(depth_per_source=2, top_k=8, expected_hits="few"),
+    "many": RetrievalParams(depth_per_source=5, top_k=24, expected_hits="many"),
+}
+
+
 def params_for_expected_hits(expected_hits: str) -> RetrievalParams:
-    """Map expected_hits to RetrievalParams."""
-    return {
-        "one": RetrievalParams(depth_per_source=1, top_k=2, expected_hits="one"),
-        "few": RetrievalParams(depth_per_source=2, top_k=8, expected_hits="few"),
-        "many": RetrievalParams(depth_per_source=5, top_k=24, expected_hits="many"),
-    }[expected_hits]
+    """Map expected_hits to RetrievalParams. Defaults to 'few' for unknown values."""
+    return _PARAMS_BY_HITS.get(expected_hits, _PARAMS_BY_HITS[DEFAULT_EXPECTED_HITS])
 
 
 GENERATE_REPORT_TOOL = ToolDefinition(
