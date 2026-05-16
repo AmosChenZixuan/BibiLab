@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Loader2 } from "lucide-react";
+import { Search, RefreshCw, Loader2, AlertTriangle, ChevronRight } from "lucide-react";
 import { useLanguage } from "@/app/LanguageContext";
 import type { RetrievalCall, PendingRagCall, PendingMetadataCall } from "@/lib/chat-utils";
 
@@ -12,9 +12,12 @@ interface RetrievalLedgerRowProps {
 }
 
 function formatTimestamp(seconds: number): string {
-  const m = Math.floor(seconds / 60);
-  const s = seconds % 60;
-  return `${m}:${s.toString().padStart(2, "0")}`;
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = Math.round(seconds % 60);
+  const pad = (n: number) => n.toString().padStart(2, "0");
+  if (h > 0) return `${h}:${pad(m)}:${pad(s)}`;
+  return `${m}:${pad(s)}`;
 }
 
 function ScopeDisplay({ call, t }: { call: RetrievalCall; t: (key: string, params?: Record<string, string | number>) => string }) {
@@ -37,62 +40,60 @@ export function RetrievalLedgerRow({ variant, call, pending }: RetrievalLedgerRo
   const { t } = useLanguage();
   const [expanded, setExpanded] = useState(false);
 
-  // ----- reused -----
+  // ----- reused: faint static line -----
   if (variant === "reused") {
     return (
-      <div className="bg-muted/20 border border-muted/30 opacity-70 px-2 py-0.5 rounded text-xs text-ink flex items-center gap-1">
-        <span>⟲</span>
+      <div className="flex items-center gap-1.5 py-0.5 text-xs text-muted opacity-60">
+        <RefreshCw size={12} className="shrink-0" />
         <span>{t("chat.ledger.summaryReused")}</span>
       </div>
     );
   }
 
-  // ----- pending -----
+  // ----- pending: spinner line -----
   if (variant === "pending" && pending) {
     const isRag = "expected_hits" in pending;
     const label = isRag
       ? t("chat.ledger.summaryPending")
       : t(`chat.ledger.metadataPending.${(pending as PendingMetadataCall).query_type}`, {});
     return (
-      <div className="bg-sky/5 animate-pulse px-2 py-0.5 rounded text-xs text-blue flex items-center gap-1">
-        <Loader2 size={11} className="animate-spin" />
+      <div className="flex items-center gap-1.5 py-0.5 text-xs text-muted opacity-70">
+        <Loader2 size={12} className="animate-spin shrink-0" />
         <span>{label || (pending as PendingMetadataCall).query_type}</span>
       </div>
     );
   }
 
-  // ----- default / empty -----
   if (!call) return null;
 
   const source_coverage = call.source_coverage ?? [];
   const context = call.context ?? [];
 
+  // ----- empty: faded amber disclosure -----
   if (variant === "empty") {
     const summaryText = t("chat.ledger.summaryEmpty", { dropped: call.dropped_by_gate });
     return (
-      <div className="bg-amber/10 border border-amber/30 text-amber px-2 py-0.5 rounded text-xs overflow-x-hidden">
-        <div className="flex items-center gap-1 min-w-0">
-          <span>⚠</span>
-          <span>{summaryText}</span>
-          <button
-            type="button"
-            onClick={() => setExpanded((v) => !v)}
-            className="ml-auto bg-transparent border-none p-0 text-amber cursor-pointer text-xs"
-            aria-expanded={expanded}
-            aria-label={t("chat.ledger.ariaToggle")}
-          >
-            {expanded ? "▴" : "▾"}
-          </button>
-        </div>
+      <div className="w-full overflow-hidden text-xs text-amber">
+        <button
+          type="button"
+          onClick={() => setExpanded((v) => !v)}
+          className="flex w-full items-center gap-1.5 border-none bg-transparent p-0 text-xs text-amber cursor-pointer"
+          aria-expanded={expanded}
+          aria-label={t("chat.ledger.ariaToggle")}
+        >
+          <AlertTriangle size={12} className="shrink-0" />
+          <span className="truncate">{summaryText}</span>
+          <ChevronRight size={12} className={`ml-auto shrink-0 transition-transform ${expanded ? "rotate-90" : ""}`} />
+        </button>
         {expanded && (
-          <div className="mt-1 pt-1 border-t border-amber/30">
-            <div className="flex justify-between py-0.5">
-              <span className="text-amber/70">{t("chat.ledger.field.query")}</span>
-              <span className="font-medium text-amber">{call.query}</span>
+          <div className="mt-1.5 flex flex-col gap-1 border-t border-border pt-1.5">
+            <div className="flex gap-2">
+              <span className="text-muted">{t("chat.ledger.field.query")}</span>
+              <span className="font-medium text-ink truncate">{call.query}</span>
             </div>
-            <div className="flex justify-between py-0.5">
-              <span className="text-amber/70">{t("chat.ledger.field.result")}</span>
-              <span className="font-medium text-amber">{t("chat.ledger.summaryEmpty", { dropped: call.dropped_by_gate })}</span>
+            <div className="flex gap-2">
+              <span className="text-muted">{t("chat.ledger.field.result")}</span>
+              <span className="font-medium text-ink">{summaryText}</span>
             </div>
           </div>
         )}
@@ -100,54 +101,55 @@ export function RetrievalLedgerRow({ variant, call, pending }: RetrievalLedgerRo
     );
   }
 
-  // ----- default -----
+  // ----- default: faded disclosure with chunk list -----
   const summaryText = t("chat.ledger.summary", { chunks: context.length, sources: source_coverage.length });
   return (
-    <div className="bg-sky/5 border border-border text-blue px-2 py-0.5 rounded text-xs overflow-x-hidden">
-      <div className="flex items-center gap-1 min-w-0">
-        <span>◉</span>
-        <span className="font-mono truncate">{call.query}</span>
-        <span className="text-muted">→</span>
-        <span>{summaryText}</span>
-        <button
-          type="button"
-          onClick={() => setExpanded((v) => !v)}
-          className="ml-auto bg-transparent border-none p-0 text-blue cursor-pointer text-xs"
-          aria-expanded={expanded}
-          aria-label={t("chat.ledger.ariaToggle")}
-        >
-          {expanded ? "▴" : "▾"}
-        </button>
-      </div>
+    <div className="w-full overflow-hidden text-xs text-muted">
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        className="flex w-full items-center gap-1.5 border-none bg-transparent p-0 text-xs text-muted cursor-pointer hover:text-ink"
+        aria-expanded={expanded}
+        aria-label={t("chat.ledger.ariaToggle")}
+      >
+        <Search size={12} className="shrink-0 opacity-70" />
+        <span className="min-w-0 truncate font-mono">{call.query}</span>
+        <span className="shrink-0 opacity-40">·</span>
+        <span className="shrink-0">{summaryText}</span>
+        <ChevronRight size={12} className={`ml-auto shrink-0 transition-transform ${expanded ? "rotate-90" : ""}`} />
+      </button>
 
       {expanded && (
-        <div className="mt-1 pt-1 border-t border-border">
+        <div className="mt-1.5 flex flex-col gap-2 border-t border-border pt-1.5">
           {/* Section A — metadata */}
-          <div className="flex justify-between py-0.5">
-            <span className="text-muted">{t("chat.ledger.field.query")}</span>
-            <span className="font-medium text-ink">{call.query}</span>
-          </div>
-          <div className="flex justify-between py-0.5">
-            <span className="text-muted">{t("chat.ledger.field.mode")}</span>
-            <span className="font-medium text-ink"><ModeDisplay expected_hits={call.expected_hits} t={t} /></span>
-          </div>
-          <div className="flex justify-between py-0.5">
-            <span className="text-muted">{t("chat.ledger.field.scope")}</span>
-            <span className="font-medium text-ink"><ScopeDisplay call={call} t={t} /></span>
+          <div className="flex flex-wrap gap-x-4 gap-y-1">
+            <span>
+              <span className="text-muted">{t("chat.ledger.field.query")} </span>
+              <span className="font-medium text-ink">{call.query}</span>
+            </span>
+            <span>
+              <span className="text-muted">{t("chat.ledger.field.mode")} </span>
+              <span className="font-medium text-ink"><ModeDisplay expected_hits={call.expected_hits} t={t} /></span>
+            </span>
+            <span>
+              <span className="text-muted">{t("chat.ledger.field.scope")} </span>
+              <span className="font-medium text-ink"><ScopeDisplay call={call} t={t} /></span>
+            </span>
           </div>
 
-          {/* Section B — chunk list */}
+          {/* Section B — chunk list, indented under a hairline */}
           {context.length > 0 && (
-            <div className="mt-1 pt-1 border-t border-border space-y-0.5">
+            <div className="flex flex-col gap-1.5 border-l border-border pl-3">
               {context.map((chunk) => (
-                <div key={chunk.chunk_id} className="text-ink min-w-0">
-                  <span className="font-mono shrink-0">[{chunk.citation_index}]</span>
-                  <span className="truncate shrink">{chunk.source_title}</span>
-                  <span className="text-muted"> · </span>
-                  <span>{formatTimestamp(chunk.timestamp_start)}–{formatTimestamp(chunk.timestamp_end)}</span>
-                  <span className="text-muted"> · </span>
-                  <span>{chunk.rerank_score.toFixed(2)}</span>
-                  <div className="pl-4 text-muted truncate max-w-xs" title={chunk.preview}>
+                <div key={chunk.chunk_id} className="flex min-w-0 flex-col">
+                  <div className="flex min-w-0 items-baseline gap-1.5">
+                    <span className="shrink-0 font-mono text-blue">[{chunk.citation_index}]</span>
+                    <span className="min-w-0 truncate text-ink">{chunk.source_title}</span>
+                    <span className="ml-auto shrink-0 font-mono text-muted">
+                      {formatTimestamp(chunk.timestamp_start)}–{formatTimestamp(chunk.timestamp_end)} · {chunk.rerank_score.toFixed(2)}
+                    </span>
+                  </div>
+                  <div className="mt-0.5 text-muted line-clamp-2" title={chunk.preview}>
                     &ldquo;{chunk.preview}&rdquo;
                   </div>
                 </div>
