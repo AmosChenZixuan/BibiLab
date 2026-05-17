@@ -1,5 +1,6 @@
 """Tests for the digest pipeline stage."""
 
+import json
 from unittest.mock import patch
 
 import pytest
@@ -7,7 +8,7 @@ import pytest
 from bibilab.adapters.base import VideoMeta
 from bibilab.config import AIConfig
 from bibilab.pipeline.audio import PipelineError
-from bibilab.pipeline.digest import DigestResult, _parse_response, digest
+from bibilab.pipeline.digest import _MAX_KEYWORDS, DigestResult, _parse_response, digest
 
 
 def _make_video_meta(title="Test Video") -> VideoMeta:
@@ -83,6 +84,25 @@ def test_digest_unknown_lang_falls_back_to_english():
     assert "All output fields MUST be written in English" in captured
 
 
+def test_digest_prompt_instructs_query_topic_keywords():
+    """Keyword directive asks for title+content topical features and carries the cap."""
+    captured = None
+
+    def capture_llm(prompt, cfg, llm_timeout=120, llm_max_tokens=2048):
+        nonlocal captured
+        captured = prompt
+        return '{"summary": "A video.", "keywords": []}'
+
+    with patch("bibilab.pipeline.digest._call_llm", side_effect=capture_llm):
+        digest("transcript", _make_video_meta(), _make_ai_cfg())
+
+    assert captured is not None
+    assert f"up to {_MAX_KEYWORDS}, each 1-4 words" in captured
+    assert "taken from title and transcript" in captured
+    assert "a self-contained topic a viewer could ask a question about" in captured
+    assert "Exclude three kinds of non-topics" in captured
+
+
 class TestDigestResultShape:
     def test_digest_result_shape(self):
         """DigestResult has summary + keywords, no title/key_points, keywords capped at 5."""
@@ -120,32 +140,16 @@ class TestDigestResultShape:
         assert not hasattr(result, "title")
         assert not hasattr(result, "key_points")
 
-    def test_digest_keywords_capped_at_5(self):
-        """Keywords returned by LLM are capped at 5."""
-        video_meta = VideoMeta(
-            video_id="test456",
-            title="Test Video",
-            platform="bilibili",
-            source_url="https://bilibili.example.com/video/test456",
-            cover_url="",
-            duration_seconds=300,
-            uploader="TestUploader",
-        )
-        ai_cfg = AIConfig(
-            protocol="openai",
-            model="gpt-4o-mini",
-            api_key="sk-test",
-            base_url="https://api.openai.com/v1",
-            output_language="en",
-        )
-        # Return more than 5 keywords
-        mock_response = '{"summary": "A video.", "keywords": ["a", "b", "c", "d", "e", "f", "g"]}'
+    def test_digest_keywords_capped_at_max(self):
+        """Keywords returned by LLM are capped at _MAX_KEYWORDS."""
+        overflow = [f"k{i}" for i in range(_MAX_KEYWORDS + 4)]
+        mock_response = json.dumps({"summary": "A video.", "keywords": overflow})
 
         with patch("bibilab.pipeline.digest._call_llm", return_value=mock_response):
-            result = digest("transcript", video_meta, ai_cfg)
+            result = digest("transcript", _make_video_meta(), _make_ai_cfg())
 
-        assert len(result.keywords) == 5
-        assert result.keywords == ["a", "b", "c", "d", "e"]
+        assert len(result.keywords) == _MAX_KEYWORDS
+        assert result.keywords == overflow[:_MAX_KEYWORDS]
 
     def test_digest_llm_failure_raises_pipeline_error(self):
         """On LLM failure (all retries exhausted), raises PipelineError instead of silent data loss."""

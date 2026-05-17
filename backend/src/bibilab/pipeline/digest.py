@@ -26,6 +26,11 @@ logger = logging.getLogger(__name__)
 # schema and can't go haywire.
 DIGEST_MAX_TOKENS = 32768
 
+# Keyword count: feeds the digest chip UI and the chat source-scoping prompt
+# (routers/chat.py builds "[N] Title (keywords)"). Kept short and topical so
+# both consumers stay cheap; raised from 5 to widen query-topic coverage.
+_MAX_KEYWORDS = 8
+
 
 class DigestResult(BaseModel):
     summary: str
@@ -89,29 +94,48 @@ class DigestResult(BaseModel):
 
 
 _DIGEST_PROMPT = """\
-You are a knowledge extraction assistant. Given a video transcript with timestamps, extract:
-1. A single-paragraph abstract of approximately 120–180 words covering the main ideas.
-2. Up to 5 short keyword phrases (1–3 words each) reflecting the content density.
-3. Series/serial metadata — extract ONLY if explicitly stated in the title or transcript.
+Extract structured metadata from the video below. Return ONE JSON object and
+nothing else. Each field is described once; follow its rule exactly.
 
-   - series_name: the show/program/column identity (e.g. "罗翔说刑法").
-     Distinct from the per-video title and the uploader channel name.
-     Return null if no series name is apparent.
+summary (string)
+  One paragraph, ~120-180 words, covering the main ideas.
 
-   - sequence_number: the episode/chapter/part/issue ordinal as an INTEGER.
-     Examples: "第8集" → 8, "第12期" → 12, "Chapter 5" → 5, "上篇/中篇/下篇" → 1/2/3.
-     Return null if no ordinal is found. Never guess.
+keywords (list of strings, up to {max_keywords}, each 1-4 words)
+  The main subjects the video covers, taken from title and transcript. Each
+  keyword must be a self-contained topic a viewer could ask a question about
+  on its own: a concrete dish, product, person, place, work, concept,
+  theory, or technique.
+  Exclude three kinds of non-topics:
+    - format / meta words   e.g. 教程, 讲解, 合集, vlog, 视频
+    - standalone modifiers  e.g. 麻辣, 韩式, 高清
+    - labels too generic to identify this video   e.g. 美食, 知识
+  Avoid near-duplicates (keep the most specific form only).
+  Examples across genres (titles shown for brevity; the transcript adds more):
+    "10分钟搞定！韩式炸鸡 + 辣鸡面"   -> 韩式炸鸡, 辣鸡面   (drop "10分钟搞定")
+    "罗翔讲刑法：正当防卫的边界"      -> 罗翔, 刑法, 正当防卫   (drop "讲")
+    "iPhone 16 Pro 深度评测 影像与续航" -> iPhone 16 Pro, 影像, 续航 (drop "深度评测")
 
-   - sequence_kind: short label for what the number represents.
-     Typical: "episode", "chapter", "part", "issue", "volume".
-     Free-form — use the term that best matches. Return null if unclear.
+series_name (string or null)
+  The show / column identity, distinct from this video's title and the
+  uploader name. e.g. "罗翔说刑法". null if none is stated.
 
-   - season_number: the season number as an INTEGER if explicitly indicated
-     (e.g. "S2" → 2, "第2季" → 2). Usually null.
+sequence_number (integer or null)
+  The video's ordinal within the series.
+  e.g. "第8集"->8, "第12期"->12, "Chapter 5"->5, "上篇/中篇/下篇"->1/2/3.
+  null if no ordinal is stated.
 
-   If any field is absent or ambiguous, return null. Never guess.
+sequence_kind (string or null)
+  What sequence_number counts, free-form: episode, chapter, part, issue,
+  volume, ... null if unclear.
 
-Respond ONLY with valid JSON matching this schema:
+season_number (integer or null)
+  e.g. "S2"->2, "第2季"->2. Usually null.
+
+Rule for the four series_* fields: extract ONLY a value explicitly stated in
+the title or transcript. Never guess. When unsure, use null - a wrong value
+silently hides correct content later, while null just falls back to normal.
+
+Output JSON in exactly this shape:
 {{
   "summary": "string",
   "keywords": ["string", ...],
@@ -129,8 +153,8 @@ Transcript:
 
 def _parse_response(text: str) -> DigestResult:
     result: DigestResult = _parse_llm_json_response(text, DigestResult)
-    if len(result.keywords) > 5:
-        result.keywords = result.keywords[:5]
+    if len(result.keywords) > _MAX_KEYWORDS:
+        result.keywords = result.keywords[:_MAX_KEYWORDS]
     return result
 
 
@@ -153,7 +177,7 @@ def digest(
     prompt = (
         lang_instruction
         + "\n\n"
-        + _DIGEST_PROMPT.format(title=meta.title, transcript=transcript_text)
+        + _DIGEST_PROMPT.format(title=meta.title, transcript=transcript_text, max_keywords=_MAX_KEYWORDS)
         + f"\n\n{lang_instruction}\nAll output fields MUST be written in {_LANG_NAME.get(lang, 'English')}."
     )
 
