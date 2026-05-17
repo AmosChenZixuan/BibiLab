@@ -55,6 +55,8 @@
     "embeddingModelMissing": "If missing, the first processing run downloads embeddings before indexing, which makes startup slower.",
     "ready": "ready",
     "missing": "missing",
+    "rerankerModel": "Reranker Model",
+    "rerankerModelMissing": "Downloaded automatically on first retrieval.",
     "backendApi": "Backend API",
     "connected": "connected",
     "offline": "offline",

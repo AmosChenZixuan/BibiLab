@@ -34,11 +34,13 @@ export function OtherTab({ config, dependencies, onBlur }: OtherTabProps) {
 
   const backendUrl = `http://localhost:${config.backend.port}`;
   const embeddingDependency = dependencies.embedding_model;
+  const rerankerDependency = dependencies.reranker_model;
   const backendDependency = dependencies.backend;
   const ffmpegDependency = dependencies.ffmpeg;
   const workerConcurrencyId = useId();
 
   const embeddingPath = embeddingDependency?.status === "ok" ? embeddingDependency.message : null;
+  const rerankerPath = rerankerDependency?.status === "ok" ? rerankerDependency.message : null;
   const ffmpegPath = ffmpegDependency?.status === "ok" ? ffmpegDependency.message : null;
 
   const valueClass = "ml-auto text-right font-mono text-sm text-muted";
@@ -57,12 +59,35 @@ export function OtherTab({ config, dependencies, onBlur }: OtherTabProps) {
         </div>
         <div className="flex min-w-56 flex-1 items-center justify-end gap-3 self-center">
           {embeddingDependency?.status === "ok" ? (
-            <p className={valueClass}>
+            <p className={`${valueClass} whitespace-nowrap`}>
               {embeddingPath}
             </p>
           ) : (
             <span className="max-w-3xl text-right text-sm leading-6 text-blue">
               {embeddingDependency?.message}
+            </span>
+          )}
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-x-5 gap-y-2 bg-white/36 px-4 py-3">
+        <div className="grid min-w-48 flex-1 basis-60 gap-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="text-sm font-semibold">{t("settings.rerankerModel")}</p>
+            <StatusChip status={rerankerDependency?.status === "ok" ? "ok" : "error"}>
+              {t(rerankerDependency?.status === "ok" ? "settings.ready" : "settings.missing")}
+            </StatusChip>
+          </div>
+          <p className="text-sm leading-5 text-muted">{t("settings.rerankerModelMissing")}</p>
+        </div>
+        <div className="flex min-w-56 flex-1 items-center justify-end gap-3 self-center">
+          {rerankerPath ? (
+            <p className={`${valueClass} whitespace-nowrap`}>
+              {rerankerPath}
+            </p>
+          ) : (
+            <span className="max-w-3xl text-right text-sm leading-6 text-blue">
+              {rerankerDependency?.message}
             </span>
           )}
         </div>

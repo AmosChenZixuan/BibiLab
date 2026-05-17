@@ -33,6 +33,12 @@ def _model_dir() -> Path:
     return models_dir("reranker", _MODEL_REPO.replace("/", "_"))
 
 
+def is_reranker_model_downloaded() -> bool:
+    """Return True if the bge-reranker-base ONNX model files are present locally."""
+    model_dir = _model_dir()
+    return (model_dir / "model.onnx").exists() and (model_dir / "tokenizer.json").exists()
+
+
 class ONNXCrossEncoder:
     def __init__(self) -> None:
         import numpy as np  # noqa: PLC0415
