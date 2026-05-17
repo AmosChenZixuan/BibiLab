@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends
 
 from bibilab.config import BibilabConfig, get_config
 from bibilab.pipeline.embed import _embedding_model_dir, is_embedding_model_downloaded
+from bibilab.pipeline.rerank import _model_dir, is_reranker_model_downloaded
 from bibilab.whisper_models import is_whisper_model_downloaded, whisper_model_dir
 
 router = APIRouter()
@@ -86,6 +87,17 @@ def _check_embedding_model() -> dict:
     }
 
 
+def _check_reranker_model() -> dict:
+    if is_reranker_model_downloaded():
+        return {"status": "ok", "message": str(_model_dir())}
+    return {
+        "status": "error",
+        "message": (
+            f"Reranker model not found at {_model_dir()}. It downloads automatically on first chat query (~140 MB)."
+        ),
+    }
+
+
 @router.get("/health")
 async def health(cfg: BibilabConfig = Depends(get_config)) -> dict:
 
@@ -96,6 +108,7 @@ async def health(cfg: BibilabConfig = Depends(get_config)) -> dict:
         "ffmpeg": _check_ffmpeg(),
         "cuda": _check_cuda(),
         "embedding_model": _check_embedding_model(),
+        "reranker_model": _check_reranker_model(),
     }
 
     blocking = {"llm", "whisper_model", "ffmpeg"}
