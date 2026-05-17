@@ -3,11 +3,12 @@
 from unittest.mock import patch
 
 import pytest
+from pydantic import ValidationError
 
 from bibilab.adapters.base import VideoMeta
 from bibilab.config import AIConfig
 from bibilab.pipeline.audio import PipelineError
-from bibilab.pipeline.digest import digest
+from bibilab.pipeline.digest import DigestResult, _parse_response, digest
 
 
 def _make_video_meta(title="Test Video") -> VideoMeta:
@@ -171,3 +172,98 @@ class TestDigestResultShape:
         with patch("bibilab.pipeline.digest._call_llm", side_effect=httpx.HTTPError("LLM down")):
             with pytest.raises(PipelineError, match="LLM down"):
                 digest("transcript", video_meta, ai_cfg)
+
+
+class TestDigestResultFacets:
+    def test_facets_default_to_none(self):
+        result = DigestResult(summary="S", keywords=["k"])
+        assert result.series_name is None
+        assert result.sequence_number is None
+        assert result.sequence_kind is None
+        assert result.season_number is None
+
+    def test_facets_populated_from_json(self):
+        json_str = (
+            '{"summary": "S", "keywords": ["k"], '
+            '"series_name": "罗翔说刑法", "sequence_number": 8, '
+            '"sequence_kind": "episode", "season_number": null}'
+        )
+        result = _parse_response(json_str)
+        assert result.summary == "S"
+        assert result.keywords == ["k"]
+        assert result.series_name == "罗翔说刑法"
+        assert result.sequence_number == 8
+        assert result.sequence_kind == "episode"
+        assert result.season_number is None
+
+    def test_facets_missing_keys_default_to_none(self):
+        json_str = '{"summary": "S", "keywords": []}'
+        result = _parse_response(json_str)
+        assert result.series_name is None
+        assert result.sequence_number is None
+        assert result.sequence_kind is None
+        assert result.season_number is None
+
+    def test_sequence_number_coerces_string_to_int(self):
+        json_str = '{"summary": "S", "keywords": [], "sequence_number": "8"}'
+        result = _parse_response(json_str)
+        assert result.sequence_number == 8
+        assert isinstance(result.sequence_number, int)
+
+    def test_sequence_number_coerces_float_to_int(self):
+        json_str = '{"summary": "S", "keywords": [], "sequence_number": 8.0}'
+        result = _parse_response(json_str)
+        assert result.sequence_number == 8
+        assert isinstance(result.sequence_number, int)
+
+    def test_sequence_number_non_numeric_raises_validation_error(self):
+        json_str = '{"summary": "S", "keywords": [], "sequence_number": "第八集"}'
+        with pytest.raises(ValidationError):
+            _parse_response(json_str)
+
+    def test_sequence_kind_lowercased(self):
+        json_str = '{"summary": "S", "keywords": [], "sequence_kind": "Episode"}'
+        result = _parse_response(json_str)
+        assert result.sequence_kind == "episode"
+
+    def test_sequence_kind_free_form_accepted(self):
+        json_str = '{"summary": "S", "keywords": [], "sequence_kind": "volume"}'
+        result = _parse_response(json_str)
+        assert result.sequence_kind == "volume"
+
+    def test_sequence_kind_empty_string_becomes_none(self):
+        json_str = '{"summary": "S", "keywords": [], "sequence_kind": ""}'
+        result = _parse_response(json_str)
+        assert result.sequence_kind is None
+
+    def test_full_digest_pipeline_includes_facets(self):
+        video_meta = VideoMeta(
+            video_id="test123",
+            title="罗翔说刑法 EP08 正当防卫",
+            platform="bilibili",
+            source_url="https://bilibili.example.com/video/test123",
+            cover_url="",
+            duration_seconds=600,
+            uploader="罗翔说刑法",
+        )
+        ai_cfg = AIConfig(
+            protocol="openai",
+            model="gpt-4o-mini",
+            api_key="sk-test",
+            base_url="https://api.openai.com/v1",
+            output_language="en",
+        )
+
+        mock_response = (
+            '{"summary": "A lecture on law.", "keywords": ["law", "criminal"], '
+            '"series_name": "罗翔说刑法", "sequence_number": 8, '
+            '"sequence_kind": "episode", "season_number": null}'
+        )
+
+        with patch("bibilab.pipeline.digest._call_llm", return_value=mock_response):
+            result = digest("transcript about law", video_meta, ai_cfg)
+
+        assert result.series_name == "罗翔说刑法"
+        assert result.sequence_number == 8
+        assert result.sequence_kind == "episode"
+        assert result.season_number is None

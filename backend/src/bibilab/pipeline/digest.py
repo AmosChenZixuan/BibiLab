@@ -4,7 +4,7 @@ import json
 import logging
 
 import httpx
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError, field_validator
 
 from bibilab.adapters.base import VideoMeta
 from bibilab.config import AIConfig
@@ -30,17 +30,80 @@ DIGEST_MAX_TOKENS = 32768
 class DigestResult(BaseModel):
     summary: str
     keywords: list[str]
+    series_name: str | None = None
+    sequence_number: int | None = None
+    sequence_kind: str | None = None
+    season_number: int | None = None
+
+    @field_validator("sequence_number", "season_number", mode="before")
+    @classmethod
+    def _coerce_int(cls, v: object) -> int | None:
+        if v is None:
+            return None
+        if isinstance(v, int):
+            return v
+        if isinstance(v, float) and v == int(v):
+            return int(v)
+        if isinstance(v, str):
+            stripped = v.strip()
+            try:
+                return int(stripped)
+            except ValueError:
+                pass
+        raise ValueError(f"Expected integer, got: {v!r}")
+
+    @field_validator("sequence_kind", mode="before")
+    @classmethod
+    def _normalize_kind(cls, v: object) -> str | None:
+        if v is None:
+            return None
+        if isinstance(v, str):
+            cleaned = v.strip().lower()
+            return cleaned or None
+        return None
 
 
 _DIGEST_PROMPT = """\
 You are a knowledge extraction assistant. Given a video transcript with timestamps, extract:
 1. A single-paragraph abstract of approximately 120–180 words covering the main ideas.
 2. Up to 5 short keyword phrases (1–3 words each) reflecting the content density.
+3. Series/serial metadata — extract ONLY if explicitly stated in the title or transcript.
+
+   - series_name: the show/program/column identity (e.g. "罗翔说刑法").
+     Distinct from the per-video title and the uploader channel name.
+     Return null if no series name is apparent.
+
+   - sequence_number: the episode/chapter/part/issue ordinal as an INTEGER. Examples of what to return:
+       "第八集" or "第8集" → 8
+       "EP08" or "Episode 8" → 8
+       "第12期" or "Issue 12" → 12
+       "上篇" or "（上）" → 1
+       "中篇" or "（中）" → 2
+       "下篇" or "（下）" → 3
+       "Chapter 5" or "第5章" → 5
+       "Part 2" → 2
+     Return null if no ordinal is found. Never guess.
+
+   - sequence_kind: a short label describing what the sequence_number represents.
+     Typical values: "episode", "chapter", "part", "issue", "volume".
+     Free-form string — use the term that best matches the source material.
+     Return null if unclear.
+
+   - season_number: the season number as an INTEGER if explicitly indicated
+     (e.g. "S2" → 2, "Season 3" → 3, "第2季" → 2). Usually null.
+
+   IMPORTANT: If any field is absent or ambiguous, return null. Never guess.
+     A wrong value silently excludes correct content later;
+     a missing value just falls back to normal behavior.
 
 Respond ONLY with valid JSON matching this schema:
 {{
   "summary": "string",
-  "keywords": ["string", ...]
+  "keywords": ["string", ...],
+  "series_name": "string | null",
+  "sequence_number": "integer | null",
+  "sequence_kind": "string | null",
+  "season_number": "integer | null"
 }}
 
 Video title: {title}
@@ -83,7 +146,7 @@ def digest(
         try:
             raw = _call_llm(prompt, cfg, llm_timeout=llm_timeout, llm_max_tokens=llm_max_tokens)
             return _parse_response(raw)
-        except (httpx.HTTPError, json.JSONDecodeError) as exc:
+        except (httpx.HTTPError, json.JSONDecodeError, ValidationError) as exc:
             last_exc = exc
             logger.warning(
                 "LLM digest failed for %s (attempt %d/3): %s",
@@ -100,7 +163,7 @@ def digest(
                         llm_max_tokens=llm_max_tokens,
                     )
                     return _parse_response(raw2)
-                except (httpx.HTTPError, json.JSONDecodeError) as retry_exc:
+                except (httpx.HTTPError, json.JSONDecodeError, ValidationError) as retry_exc:
                     last_exc = retry_exc
                     logger.warning(
                         "LLM digest retry failed for %s (attempt %d/3): %s",
