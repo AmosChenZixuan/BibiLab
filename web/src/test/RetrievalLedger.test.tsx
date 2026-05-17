@@ -3,16 +3,13 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import { LanguageProvider } from "@/app/LanguageContext";
-import { JobActivityProvider } from "@/components/jobs/JobActivityProvider";
 import { RetrievalLedger } from "@/components/lists/RetrievalLedger";
 import type { RetrievalCall, PendingRagCall, PendingMetadataCall } from "@/lib/chat-utils";
 
 function renderLedger(props: React.ComponentProps<typeof RetrievalLedger>) {
   return render(
     <LanguageProvider>
-      <JobActivityProvider>
-        <RetrievalLedger {...props} />
-      </JobActivityProvider>
+      <RetrievalLedger {...props} />
     </LanguageProvider>,
   );
 }
