@@ -182,7 +182,10 @@ export function useSSEStream({
         // Final authoritative ledger (persisted shape, with context[]).
         // Replaces the incremental tool_result entries so expand works
         // post-stream without a refresh.
-        const calls = event.calls as unknown as RetrievalCall[];
+        const calls = Array.isArray(event.calls) ? (event.calls as RetrievalCall[]) : [];
+        if (!Array.isArray(event.calls)) {
+          console.warn("SSE: rag event missing or invalid calls field", event);
+        }
         updateAssistantMsg(assistantMsgId, { rag: { calls } });
       } else if (event.type === SSE_EVENT_CITATION) {
         flushText();

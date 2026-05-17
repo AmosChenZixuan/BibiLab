@@ -569,10 +569,17 @@ async def run_chat_turn(
                 {
                     "query": "(reused)",
                     "expected_hits": None,
+                    "candidates_evaluated": 0,
+                    "sources_with_hits": 0,
+                    "sources_total": 0,
                     "source_coverage": [],
                     "context": [],
                     "dropped_by_gate": 0,
                     "reranked": False,
+                    "scope_choice": "none",
+                    "excluded_count": None,
+                    "scoped_pool_size": 0,
+                    "gate_margin": None,
                     "reused_from_prior_call_id": prior_retrieve_tool_use_id,
                 }
             )
@@ -628,6 +635,10 @@ async def run_chat_turn(
                             "source_coverage": result.get("source_coverage", []),
                             "dropped_by_gate": result.get("dropped_by_gate", 0),
                             "reranked": result.get("reranked", False),
+                            "scope_choice": result.get("scope_choice", "none"),
+                            "excluded_count": result.get("excluded_count"),
+                            "scoped_pool_size": result.get("scoped_pool_size"),
+                            "gate_margin": result.get("gate_margin"),
                         }
                     )
                 elif parsed["name"] == "generate_report":
@@ -691,7 +702,7 @@ async def run_chat_turn(
                                 }
                             )
                     call["context"] = context_entries
-                    call["scope_choice"] = call.get("scope_choice") or "none"
+                    call["scope_choice"] = call.get("scope_choice", "none")
                     call["excluded_count"] = call.get("excluded_count")
                     call["scoped_pool_size"] = call.get("scoped_pool_size")
                     call["gate_margin"] = call.get("gate_margin")

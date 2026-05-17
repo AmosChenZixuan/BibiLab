@@ -308,7 +308,7 @@ export function ChatPanel({
                 msg.content ||
                 msg.pendingRagCalls.length > 0 ||
                 msg.pendingMetadataCalls.length > 0 ||
-                (msg.rag?.calls.length ?? 0) > 0;
+                (msg.rag?.calls?.length ?? 0) > 0;
               return (
               <div key={msg.id} className={`msg ${msg.role}`}>
                 {msg.role === "user" ? (
