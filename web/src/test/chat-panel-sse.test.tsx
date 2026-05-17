@@ -109,6 +109,144 @@ describe("chat panel — SSE streaming (phase 6.2)", () => {
     );
   });
 
+  test("pending retrieve ledger shows while streaming before any content", async () => {
+    // retrieve dispatches mid-stream before any preamble text. The pending
+    // ledger row must be visible even though the assistant bubble is empty
+    // and the message is still streaming.
+    let ctrl!: ReadableStreamDefaultController<Uint8Array>;
+    const openBody = new ReadableStream<Uint8Array>({
+      start(c) {
+        ctrl = c;
+      },
+    });
+    vi.spyOn(window, "fetch").mockImplementation((input) => {
+      const url = String(input);
+      if (url.includes("/chat")) {
+        return Promise.resolve(
+          new Response(openBody, { headers: { "Content-Type": "text/event-stream" } }),
+        );
+      }
+      // conversation GET: empty history
+      return Promise.resolve(makeSseStream([]));
+    });
+
+    renderChatPanel({
+      selectedSourceIds: ["src-1"],
+      sources: [SOURCE_1],
+      listId: "list-1",
+    });
+
+    const textarea = screen.getByRole("textbox");
+    await userEvent.type(textarea, "What is X?");
+    await userEvent.keyboard("{Enter}");
+
+    ctrl.enqueue(
+      new TextEncoder().encode(
+        'data: {"type":"tool_call_start","id":"t1","name":"retrieve","arguments":{"query":"X","expected_hits":"few"}}\n\n',
+      ),
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText(/retrieving…/i)).toBeInTheDocument();
+    });
+  });
+
+  test("reuse tool_result frame renders the reused ledger row mid-stream", async () => {
+    // Exact wire the backend emits on KEEP: meta first (POST handler), then the
+    // reuse tool_result (chat.py buf.append), then text — still streaming, no
+    // done yet. The reused row must be visible mid-stream.
+    let ctrl!: ReadableStreamDefaultController<Uint8Array>;
+    const openBody = new ReadableStream<Uint8Array>({
+      start(c) {
+        ctrl = c;
+      },
+    });
+    vi.spyOn(window, "fetch").mockImplementation((input) => {
+      const url = String(input);
+      if (url.includes("/chat")) {
+        return Promise.resolve(
+          new Response(openBody, { headers: { "Content-Type": "text/event-stream" } }),
+        );
+      }
+      return Promise.resolve(makeSseStream([]));
+    });
+
+    renderChatPanel({ selectedSourceIds: ["src-1"], sources: [SOURCE_1], listId: "list-1" });
+
+    const textarea = screen.getByRole("textbox");
+    await userEvent.type(textarea, "tell me more");
+    await userEvent.keyboard("{Enter}");
+
+    const enc = new TextEncoder();
+    ctrl.enqueue(enc.encode('data: {"type":"meta","message_id":"srv-1"}\n\n'));
+    ctrl.enqueue(
+      enc.encode(
+        'data: {"type":"tool_result","id":"toolu_x","name":"retrieve","result":{"reused_from_prior_call_id":"toolu_x"}}\n\n',
+      ),
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText(/reused from previous turn/i)).toBeInTheDocument();
+    });
+  });
+
+  test("ledger collapses mid-stream, becomes expandable with context after rag+done", async () => {
+    let ctrl!: ReadableStreamDefaultController<Uint8Array>;
+    const openBody = new ReadableStream<Uint8Array>({
+      start(c) {
+        ctrl = c;
+      },
+    });
+    vi.spyOn(window, "fetch").mockImplementation((input) => {
+      const url = String(input);
+      if (url.includes("/chat")) {
+        return Promise.resolve(
+          new Response(openBody, { headers: { "Content-Type": "text/event-stream" } }),
+        );
+      }
+      return Promise.resolve(makeSseStream([]));
+    });
+
+    renderChatPanel({ selectedSourceIds: ["src-1"], sources: [SOURCE_1], listId: "list-1" });
+
+    await userEvent.type(screen.getByRole("textbox"), "what is X?");
+    await userEvent.keyboard("{Enter}");
+
+    const enc = new TextEncoder();
+    ctrl.enqueue(enc.encode('data: {"type":"meta","message_id":"srv-1"}\n\n'));
+    ctrl.enqueue(
+      enc.encode(
+        'data: {"type":"tool_result","id":"r1","name":"retrieve","result":{"query":"X","expected_hits":"few","sources_total":1,"source_coverage":[{"source_id":"s1","video_id":"v1","title":"Vid"}],"dropped_by_gate":0,"reranked":true,"scope_choice":"none","excluded_count":null,"scoped_pool_size":1,"gate_margin":1}}\n\n',
+      ),
+    );
+
+    // Mid-stream: ledger present but NOT expandable.
+    await waitFor(() => {
+      expect(screen.getByText(/X/)).toBeInTheDocument();
+    });
+    expect(
+      document.querySelector('button[aria-label="Toggle retrieval details"]'),
+    ).toBeNull();
+
+    // Final authoritative rag (with context[]) then done.
+    ctrl.enqueue(
+      enc.encode(
+        'data: {"type":"rag","calls":[{"query":"X","expected_hits":"few","candidates_evaluated":5,"sources_with_hits":1,"sources_total":1,"source_coverage":[{"source_id":"s1","video_id":"v1","title":"Vid"}],"context":[{"chunk_id":"c1","citation_index":1,"source_id":"s1","source_title":"Vid","timestamp_start":0,"timestamp_end":10,"rerank_score":2.5,"preview":"unique-preview-text"}],"dropped_by_gate":0,"reranked":true,"scope_choice":"none","excluded_count":null,"scoped_pool_size":1,"gate_margin":1,"reused_from_prior_call_id":null}]}\n\n',
+      ),
+    );
+    ctrl.enqueue(enc.encode('data: {"type":"delta","content":"answer"}\n\n'));
+    ctrl.enqueue(enc.encode('data: {"type":"done"}\n\n'));
+    ctrl.close();
+
+    const toggle = await waitFor(() => {
+      const b = document.querySelector('button[aria-label="Toggle retrieval details"]');
+      expect(b).not.toBeNull();
+      return b as HTMLElement;
+    });
+    await userEvent.click(toggle);
+    expect(screen.getByText(/unique-preview-text/)).toBeInTheDocument();
+  });
+
   test("streaming delivers content to assistant bubble", async () => {
     vi.spyOn(window, "fetch").mockImplementation(() =>
       Promise.resolve(

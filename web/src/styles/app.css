@@ -124,6 +124,45 @@
   .msg.assistant {
     align-self: flex-start;
     align-items: flex-start;
+    width: 88%;
+  }
+
+  /* Retrieval ledger — faded tool-call trace, locked to the message column */
+  .ledger-rail {
+    position: relative;
+  }
+
+  .ledger-rail::before {
+    content: "";
+    position: absolute;
+    left: 3px;
+    top: 10px;
+    bottom: 10px;
+    width: 1px;
+    background: var(--color-border);
+  }
+
+  .ledger-step {
+    position: relative;
+    padding-left: 18px;
+  }
+
+  .ledger-dot {
+    position: absolute;
+    left: 0;
+    top: 6px;
+    width: 7px;
+    height: 7px;
+    border-radius: 9999px;
+    background: var(--color-muted);
+  }
+
+  .ledger-dot--faint {
+    opacity: 0.4;
+  }
+
+  .ledger-dot--pending {
+    background: var(--color-blue);
   }
 
   /* Bubble base */

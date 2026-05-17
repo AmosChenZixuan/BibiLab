@@ -10,11 +10,15 @@ export interface ToolCallData {
   name: string;
   result: ToolResult;
 }
+export type ScopeChoice = "exclude" | "whitelist" | "none";
 export type ExpectedHits = "one" | "few" | "many" | null;
 export type RagSource = { source_id: string; video_id: string; title: string };
 /** Single chunk in the persisted context[] array. */
 export type RetrievalChunk = {
   chunk_id: string;
+  citation_index: number;
+  source_id: string;
+  source_title: string;
   timestamp_start: number;
   timestamp_end: number;
   rerank_score: number;
@@ -28,7 +32,16 @@ export type RetrievalCall = {
   sources_with_hits: number;
   sources_total: number;
   source_coverage: RagSource[];
-  context: RetrievalChunk[];
+  // context[] and reused_from_prior_call_id are absent on the streaming
+  // tool_result payload; reconstructed only in persisted metadata.rag.
+  context?: RetrievalChunk[];
+  dropped_by_gate: number;
+  reranked: boolean;
+  scope_choice: ScopeChoice;
+  excluded_count: number | null;
+  scoped_pool_size: number;
+  gate_margin: number | null;
+  reused_from_prior_call_id?: string | null;
 };
 export type RagMetadata = { calls: RetrievalCall[] };
 export type PendingRagCall = {
@@ -66,6 +79,15 @@ export function stripLegacyTokens(text: string): string {
 export function formatTimestamp(iso: string): string {
   const d = new Date(iso);
   return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+export function formatMediaTimestamp(seconds: number): string {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = Math.round(seconds % 60);
+  const pad = (n: number) => n.toString().padStart(2, "0");
+  if (h > 0) return `${h}:${pad(m)}:${pad(s)}`;
+  return `${m}:${pad(s)}`;
 }
 
 export function autoResize(ta: HTMLTextAreaElement) {

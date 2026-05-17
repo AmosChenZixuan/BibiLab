@@ -18,7 +18,7 @@ import {
 import { useLanguage } from "@/app/LanguageContext";
 import { useJobActivity } from "@/components/jobs/JobActivityProvider";
 import { useConversationHistory, type MessageUI } from "@/components/lists/hooks/useConversationHistory";
-import { ObsChip, PendingMetaChip, PendingObsChip } from "@/components/lists/ObsChip";
+import { RetrievalLedger } from "@/components/lists/RetrievalLedger";
 import { PulseRing } from "@/components/ui/PulseRing";
 import type { Source } from "@/lib/types";
 import { api } from "@/lib/api";
@@ -301,7 +301,15 @@ export function ChatPanel({
           </div>
         ) : (
           <div className="flex flex-col gap-3.5">
-            {messages.map((msg) => (
+            {messages.map((msg) => {
+              const showLedger =
+                !msg.isStreaming ||
+                msg.contentBlocks.length > 0 ||
+                msg.content ||
+                msg.pendingRagCalls.length > 0 ||
+                msg.pendingMetadataCalls.length > 0 ||
+                (msg.rag?.calls?.length ?? 0) > 0;
+              return (
               <div key={msg.id} className={`msg ${msg.role}`}>
                 {msg.role === "user" ? (
                   <>
@@ -310,7 +318,15 @@ export function ChatPanel({
                   </>
                 ) : (
                   <>
-                    {msg.isStreaming && !msg.content ? (
+                    {showLedger ? (
+                      <RetrievalLedger
+                        calls={msg.rag?.calls ?? []}
+                        pendingRetrieve={msg.pendingRagCalls}
+                        pendingMetadata={msg.pendingMetadataCalls}
+                        streaming={msg.isStreaming}
+                      />
+                    ) : null}
+                    {msg.isStreaming && !msg.content && !msg.contentBlocks.length ? (
                       <PulseRing />
                     ) : msg.contentBlocks.length > 0 ? (
                       <div className="bubble bubble-assistant">
@@ -321,15 +337,6 @@ export function ChatPanel({
                         <ReactMarkdown>{msg.content}</ReactMarkdown>
                       </div>
                     ) : null}
-                    {msg.rag?.calls?.map((call, i) => (
-                      <ObsChip key={`call-${i}`} call={call} />
-                    ))}
-                    {msg.pendingRagCalls.map((p) => (
-                      <PendingObsChip key={`pending-${p.id}`} query={p.query} expected_hits={p.expected_hits} />
-                    ))}
-                    {msg.pendingMetadataCalls.map((p) => (
-                      <PendingMetaChip key={`pending-meta-${p.id}`} query_type={p.query_type} />
-                    ))}
                     {msg.toolCall && (
                       <div className="toolcall">
                         <span className="ic"><FileText size={14} /></span>
@@ -352,7 +359,7 @@ export function ChatPanel({
                   </>
                 )}
               </div>
-            ))}
+            ); })}
           </div>
         )}
 

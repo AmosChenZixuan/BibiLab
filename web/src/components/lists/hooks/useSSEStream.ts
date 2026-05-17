@@ -11,6 +11,7 @@ import {
   SSE_EVENT_DONE,
   SSE_EVENT_ERROR,
   SSE_EVENT_META,
+  SSE_EVENT_RAG,
   SSE_EVENT_TOOL_CALL_START,
   SSE_EVENT_TOOL_RESULT,
 } from "@/lib/constants";
@@ -177,6 +178,15 @@ export function useSSEStream({
           }
           updateAssistantMsg(assistantMsgId, { toolCall: toolCallData });
         }
+      } else if (event.type === SSE_EVENT_RAG) {
+        // Final authoritative ledger (persisted shape, with context[]).
+        // Replaces the incremental tool_result entries so expand works
+        // post-stream without a refresh.
+        const calls = Array.isArray(event.calls) ? (event.calls as RetrievalCall[]) : [];
+        if (!Array.isArray(event.calls)) {
+          console.warn("SSE: rag event missing or invalid calls field", event);
+        }
+        updateAssistantMsg(assistantMsgId, { rag: { calls } });
       } else if (event.type === SSE_EVENT_CITATION) {
         flushText();
         const citation = event as unknown as CitationEvent;
