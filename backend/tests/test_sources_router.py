@@ -149,8 +149,12 @@ async def test_rerun_source_success(client: httpx.AsyncClient, tmp_bibilab_home:
         settings_snapshot={},
     )
 
-    # Mock the LLM call to return new digest
-    new_digest = '{"summary": "new summary from rerun", "keywords": ["new", "rerun", "test"]}'
+    # Mock the LLM call to return new digest with facets
+    new_digest = (
+        '{"summary": "new summary from rerun", "keywords": ["new", "rerun", "test"], '
+        '"series_name": "Rerun Series", "sequence_number": 5, '
+        '"sequence_kind": "episode", "season_number": 1}'
+    )
 
     def mock_call_llm(prompt, cfg, llm_timeout=120, llm_max_tokens=2048):
         return new_digest
@@ -162,11 +166,15 @@ async def test_rerun_source_success(client: httpx.AsyncClient, tmp_bibilab_home:
     resp = await client.post(f"/sources/{source_id}/rerun")
     assert resp.status_code == 200
 
-    # Verify summary and keywords were updated
+    # Verify summary, keywords, and facets were updated
     source = await get_source(source_id)
     assert source is not None
     assert source["summary"] == "new summary from rerun"
     assert json.loads(source["keywords"]) == ["new", "rerun", "test"]
+    assert source["series_name"] == "Rerun Series"
+    assert source["sequence_number"] == 5
+    assert source["sequence_kind"] == "episode"
+    assert source["season_number"] == 1
 
     # Verify transcript file was not modified
     assert transcript_file.read_text(encoding="utf-8") == "original transcript text"

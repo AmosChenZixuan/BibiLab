@@ -63,6 +63,14 @@ async def rerun_source(
         request.headers.get("X-UI-Lang"),
         llm_timeout=cfg.transcription.llm_timeout,
     )
-    await update_source_digest(source_id, extraction.summary, extraction.keywords)
+    await update_source_digest(
+        source_id,
+        extraction.summary,
+        extraction.keywords,
+        series_name=extraction.series_name,
+        sequence_number=extraction.sequence_number,
+        sequence_kind=extraction.sequence_kind,
+        season_number=extraction.season_number,
+    )
 
     return SourceContentResponse.from_source(source, transcript_text)
