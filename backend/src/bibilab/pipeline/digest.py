@@ -4,7 +4,7 @@ import json
 import logging
 
 import httpx
-from pydantic import BaseModel, ValidationError, field_validator
+from pydantic import BaseModel, ValidationError, ValidationInfo, field_validator, model_validator
 
 from bibilab.adapters.base import VideoMeta
 from bibilab.config import AIConfig
@@ -37,20 +37,29 @@ class DigestResult(BaseModel):
 
     @field_validator("sequence_number", "season_number", mode="before")
     @classmethod
-    def _coerce_int(cls, v: object) -> int | None:
+    def _coerce_int(cls, v: object, info: ValidationInfo) -> int | None:
+        # Facets are best-effort: an unparseable or out-of-range value degrades
+        # to None (logged) rather than raising. A null facet is "unknown" and
+        # falls back to normal behavior; a bad facet must never abort the digest.
         if v is None:
             return None
-        if isinstance(v, int):
-            return v
-        if isinstance(v, float) and v == int(v):
-            return int(v)
-        if isinstance(v, str):
-            stripped = v.strip()
+        if isinstance(v, bool):  # bool is an int subclass; JSON true/false is not an ordinal
+            n = None
+        elif isinstance(v, int):
+            n = v
+        elif isinstance(v, float) and v == int(v):
+            n = int(v)
+        elif isinstance(v, str):
             try:
-                return int(stripped)
+                n = int(v.strip())
             except ValueError:
-                pass
-        raise ValueError(f"Expected integer, got: {v!r}")
+                n = None
+        else:
+            n = None
+        if n is None or n < 1:
+            logger.warning("digest: dropping unusable %s=%r", info.field_name, v)
+            return None
+        return n
 
     @field_validator("sequence_kind", mode="before")
     @classmethod
@@ -60,7 +69,23 @@ class DigestResult(BaseModel):
         if isinstance(v, str):
             cleaned = v.strip().lower()
             return cleaned or None
-        raise ValueError(f"Expected string or null for sequence_kind, got: {v!r}")
+        logger.warning("digest: dropping unusable sequence_kind=%r", v)
+        return None
+
+    @model_validator(mode="after")
+    def _require_kind_with_number(self) -> "DigestResult":
+        # sequence_number and sequence_kind are a unit: a number with no label
+        # is unrenderable ("8 of what?"), a label with no number is meaningless.
+        # If the LLM emits exactly one, drop both rather than persist a half-facet.
+        if (self.sequence_number is None) != (self.sequence_kind is None):
+            logger.warning(
+                "digest: dropping mismatched sequence facet (number=%r, kind=%r)",
+                self.sequence_number,
+                self.sequence_kind,
+            )
+            self.sequence_number = None
+            self.sequence_kind = None
+        return self
 
 
 _DIGEST_PROMPT = """\
@@ -132,37 +157,24 @@ def digest(
         + f"\n\n{lang_instruction}\nAll output fields MUST be written in {_LANG_NAME.get(lang, 'English')}."
     )
 
+    # One plain attempt, then strict-suffix retries. Linear so the attempt
+    # count is unambiguous. Only summary/keywords failures land here now —
+    # facets degrade to None in the validators and never raise.
+    prompts = [prompt, prompt + _STRICT_SUFFIX, prompt + _STRICT_SUFFIX]
     last_exc: Exception | None = None
-    for attempt in range(3):
+    for attempt, p in enumerate(prompts, start=1):
         try:
-            raw = _call_llm(prompt, cfg, llm_timeout=llm_timeout, llm_max_tokens=llm_max_tokens)
+            raw = _call_llm(p, cfg, llm_timeout=llm_timeout, llm_max_tokens=llm_max_tokens)
             return _parse_response(raw)
         except (httpx.HTTPError, json.JSONDecodeError, ValidationError) as exc:
             last_exc = exc
             logger.warning(
-                "LLM digest failed for %s (attempt %d/3): %s",
+                "LLM digest failed for %s (attempt %d/%d): %s",
                 meta.video_id,
-                attempt + 1,
+                attempt,
+                len(prompts),
                 exc,
             )
-            if attempt < 2:
-                try:
-                    raw2 = _call_llm(
-                        prompt + _STRICT_SUFFIX,
-                        cfg,
-                        llm_timeout=llm_timeout,
-                        llm_max_tokens=llm_max_tokens,
-                    )
-                    return _parse_response(raw2)
-                except (httpx.HTTPError, json.JSONDecodeError, ValidationError) as retry_exc:
-                    last_exc = retry_exc
-                    logger.warning(
-                        "LLM digest retry failed for %s (attempt %d/3): %s",
-                        meta.video_id,
-                        attempt + 1,
-                        retry_exc,
-                    )
-                    continue
 
     # All retries exhausted — raise PipelineError instead of silent data loss
     error_msg = f"LLM digest exhausted all retries for {meta.video_id}: {last_exc}"

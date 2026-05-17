@@ -3,7 +3,6 @@
 from unittest.mock import patch
 
 import pytest
-from pydantic import ValidationError
 
 from bibilab.adapters.base import VideoMeta
 from bibilab.config import AIConfig
@@ -205,35 +204,77 @@ class TestDigestResultFacets:
         assert result.season_number is None
 
     def test_sequence_number_coerces_string_to_int(self):
-        json_str = '{"summary": "S", "keywords": [], "sequence_number": "8"}'
+        json_str = '{"summary": "S", "keywords": [], "sequence_number": "8", "sequence_kind": "episode"}'
         result = _parse_response(json_str)
         assert result.sequence_number == 8
         assert isinstance(result.sequence_number, int)
 
     def test_sequence_number_coerces_float_to_int(self):
-        json_str = '{"summary": "S", "keywords": [], "sequence_number": 8.0}'
+        json_str = '{"summary": "S", "keywords": [], "sequence_number": 8.0, "sequence_kind": "episode"}'
         result = _parse_response(json_str)
         assert result.sequence_number == 8
         assert isinstance(result.sequence_number, int)
 
-    def test_sequence_number_non_numeric_raises_validation_error(self):
-        json_str = '{"summary": "S", "keywords": [], "sequence_number": "第八集"}'
-        with pytest.raises(ValidationError):
-            _parse_response(json_str)
+    def test_season_number_coerces_string_to_int(self):
+        json_str = '{"summary": "S", "keywords": [], "season_number": "2"}'
+        result = _parse_response(json_str)
+        assert result.season_number == 2
+        assert isinstance(result.season_number, int)
+
+    def test_sequence_number_non_numeric_degrades_to_none(self):
+        # Unparseable facet must not abort the digest — degrade to None, keep summary.
+        json_str = '{"summary": "S", "keywords": [], "sequence_number": "第八集", "sequence_kind": "episode"}'
+        result = _parse_response(json_str)
+        assert result.summary == "S"
+        assert result.sequence_number is None
+        assert result.sequence_kind is None  # co-occurrence drops the orphaned kind
+
+    def test_sequence_number_fractional_float_degrades_to_none(self):
+        json_str = '{"summary": "S", "keywords": [], "sequence_number": 8.5, "sequence_kind": "episode"}'
+        result = _parse_response(json_str)
+        assert result.sequence_number is None
+
+    def test_sequence_number_below_one_degrades_to_none(self):
+        json_str = '{"summary": "S", "keywords": [], "sequence_number": 0, "sequence_kind": "episode"}'
+        result = _parse_response(json_str)
+        assert result.sequence_number is None
+
+    def test_sequence_number_boolean_degrades_to_none(self):
+        json_str = '{"summary": "S", "keywords": [], "sequence_number": true, "sequence_kind": "episode"}'
+        result = _parse_response(json_str)
+        assert result.sequence_number is None
 
     def test_sequence_kind_lowercased(self):
-        json_str = '{"summary": "S", "keywords": [], "sequence_kind": "Episode"}'
+        json_str = '{"summary": "S", "keywords": [], "sequence_number": 1, "sequence_kind": "Episode"}'
         result = _parse_response(json_str)
         assert result.sequence_kind == "episode"
 
     def test_sequence_kind_free_form_accepted(self):
-        json_str = '{"summary": "S", "keywords": [], "sequence_kind": "volume"}'
+        json_str = '{"summary": "S", "keywords": [], "sequence_number": 1, "sequence_kind": "volume"}'
         result = _parse_response(json_str)
         assert result.sequence_kind == "volume"
+
+    def test_sequence_kind_non_string_degrades_to_none(self):
+        json_str = '{"summary": "S", "keywords": [], "sequence_number": 1, "sequence_kind": 5}'
+        result = _parse_response(json_str)
+        assert result.sequence_kind is None
+        assert result.sequence_number is None  # co-occurrence drops the orphaned number
 
     def test_sequence_kind_empty_string_becomes_none(self):
         json_str = '{"summary": "S", "keywords": [], "sequence_kind": ""}'
         result = _parse_response(json_str)
+        assert result.sequence_kind is None
+
+    def test_sequence_number_without_kind_drops_both(self):
+        json_str = '{"summary": "S", "keywords": [], "sequence_number": 8}'
+        result = _parse_response(json_str)
+        assert result.sequence_number is None
+        assert result.sequence_kind is None
+
+    def test_sequence_kind_without_number_drops_both(self):
+        json_str = '{"summary": "S", "keywords": [], "sequence_kind": "episode"}'
+        result = _parse_response(json_str)
+        assert result.sequence_number is None
         assert result.sequence_kind is None
 
     def test_full_digest_pipeline_includes_facets(self):
@@ -267,3 +308,37 @@ class TestDigestResultFacets:
         assert result.sequence_number == 8
         assert result.sequence_kind == "episode"
         assert result.season_number is None
+
+
+class TestDigestRetry:
+    def test_bad_facet_does_not_trigger_retry(self):
+        # A malformed facet degrades to None in-place; the digest is good and
+        # must be returned on the first call — no retry, no PipelineError.
+        bad_facet = '{"summary": "S", "keywords": ["k"], "sequence_number": "第八集", "sequence_kind": "episode"}'
+        with patch("bibilab.pipeline.digest._call_llm", return_value=bad_facet) as m:
+            result = digest("transcript", _make_video_meta(), _make_ai_cfg())
+        assert m.call_count == 1
+        assert result.summary == "S"
+        assert result.sequence_number is None
+        assert result.sequence_kind is None
+
+    def test_transient_http_error_recovers_on_retry(self):
+        import httpx
+
+        valid = '{"summary": "recovered", "keywords": ["k"]}'
+        with patch(
+            "bibilab.pipeline.digest._call_llm",
+            side_effect=[httpx.HTTPError("transient"), valid],
+        ) as m:
+            result = digest("transcript", _make_video_meta(), _make_ai_cfg())
+        assert m.call_count == 2
+        assert result.summary == "recovered"
+
+    def test_missing_summary_exhausts_retries_raises_pipeline_error(self):
+        # A genuine schema failure (required summary absent) must retry the
+        # bounded number of times and then raise — never silently succeed.
+        no_summary = '{"keywords": ["k"]}'
+        with patch("bibilab.pipeline.digest._call_llm", return_value=no_summary) as m:
+            with pytest.raises(PipelineError, match="exhausted all retries"):
+                digest("transcript", _make_video_meta(), _make_ai_cfg())
+        assert m.call_count == 3

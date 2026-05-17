@@ -815,3 +815,106 @@ async def test_update_source_digest_persists_facets(tmp_bibilab_home: Path):
     assert source["sequence_number"] == 42
     assert source["sequence_kind"] == "chapter"
     assert source["season_number"] == 2
+
+
+async def test_write_source_reingest_coalesces_facets(tmp_bibilab_home: Path):
+    """Re-ingest with null facets preserves prior values; non-null overwrites."""
+    import uuid
+
+    from bibilab.db import bootstrap_db, create_list, get_source, write_source
+
+    await bootstrap_db()
+    list_id = "list-facet-coalesce"
+    await create_list(list_id, "Facet Coalesce", "2026-01-01T00:00:00")
+    source_id = str(uuid.uuid4())
+
+    base = dict(
+        source_id=source_id,
+        video_id="BVcoalesce01",
+        platform="bilibili",
+        list_id=list_id,
+        title="T",
+        summary="s",
+        keywords=["k"],
+        cover_url=None,
+        transcript_path=None,
+        source_url="https://example.com/BVcoalesce01",
+        duration_seconds=10,
+        uploader="U",
+        language=None,
+        whisper_model="large-v3",
+        ai_model="gpt-4o",
+        vision_enabled=False,
+        settings_snapshot={},
+    )
+
+    await write_source(**base, series_name="罗翔说刑法", sequence_number=8, sequence_kind="episode", season_number=1)
+
+    # Re-ingest where the digest found no facets — prior values must survive.
+    await write_source(**base, series_name=None, sequence_number=None, sequence_kind=None, season_number=None)
+    source = await get_source(source_id)
+    assert source is not None
+    assert source["series_name"] == "罗翔说刑法"
+    assert source["sequence_number"] == 8
+    assert source["sequence_kind"] == "episode"
+    assert source["season_number"] == 1
+
+    # Re-ingest with a fresh non-null value — that field is overwritten.
+    await write_source(**base, series_name=None, sequence_number=9, sequence_kind="episode", season_number=None)
+    source = await get_source(source_id)
+    assert source is not None
+    assert source["series_name"] == "罗翔说刑法"  # still preserved (null this run)
+    assert source["sequence_number"] == 9  # overwritten
+    assert source["season_number"] == 1  # still preserved
+
+
+async def test_update_source_digest_coalesces_facets(tmp_bibilab_home: Path):
+    """update_source_digest with null facets preserves prior values."""
+    import uuid
+
+    from bibilab.db import (
+        bootstrap_db,
+        create_list,
+        get_source,
+        update_source_digest,
+        write_source,
+    )
+
+    await bootstrap_db()
+    list_id = "list-facet-upd-coalesce"
+    await create_list(list_id, "Facet Update Coalesce", "2026-01-01T00:00:00")
+    source_id = str(uuid.uuid4())
+
+    await write_source(
+        source_id=source_id,
+        video_id="BVcoalesce02",
+        platform="bilibili",
+        list_id=list_id,
+        title="T",
+        summary="old",
+        keywords=["old"],
+        cover_url=None,
+        transcript_path=None,
+        source_url="https://example.com/BVcoalesce02",
+        duration_seconds=10,
+        uploader="U",
+        language=None,
+        whisper_model="large-v3",
+        ai_model="gpt-4o",
+        vision_enabled=False,
+        settings_snapshot={},
+        series_name="Keep Me",
+        sequence_number=3,
+        sequence_kind="part",
+        season_number=2,
+    )
+
+    # Rerun whose digest produced no facets — summary updates, facets survive.
+    await update_source_digest(source_id, "new summary", ["new"])
+    source = await get_source(source_id)
+    assert source is not None
+    assert source["summary"] == "new summary"
+    assert source["series_name"] == "Keep Me"
+    assert source["sequence_number"] == 3
+    assert source["sequence_kind"] == "part"
+    assert source["season_number"] == 2

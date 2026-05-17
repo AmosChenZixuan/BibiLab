@@ -277,10 +277,10 @@ async def write_source(
                 vision_enabled=excluded.vision_enabled,
                 processed_at=excluded.processed_at,
                 settings_snapshot=excluded.settings_snapshot,
-                series_name=excluded.series_name,
-                sequence_number=excluded.sequence_number,
-                sequence_kind=excluded.sequence_kind,
-                season_number=excluded.season_number
+                series_name=COALESCE(excluded.series_name, series_name),
+                sequence_number=COALESCE(excluded.sequence_number, sequence_number),
+                sequence_kind=COALESCE(excluded.sequence_kind, sequence_kind),
+                season_number=COALESCE(excluded.season_number, season_number)
             """,
             (
                 source_id,
@@ -332,8 +332,11 @@ async def update_source_digest(
     async with get_db() as db:
         await db.execute(
             "UPDATE sources SET summary=?, keywords=?,"
-            " series_name=?, sequence_number=?, sequence_kind=?,"
-            " season_number=?, processed_at=? WHERE id=?",
+            " series_name=COALESCE(?, series_name),"
+            " sequence_number=COALESCE(?, sequence_number),"
+            " sequence_kind=COALESCE(?, sequence_kind),"
+            " season_number=COALESCE(?, season_number),"
+            " processed_at=? WHERE id=?",
             (
                 summary,
                 json.dumps(keywords),
