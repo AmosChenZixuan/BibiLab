@@ -662,27 +662,9 @@ class TestBuildGroundingPrompt:
         # And the old hard-coded English string must be gone.
         assert "The provided sources do not cover this topic" not in prompt
 
-    def test_build_grounding_prompt_has_fresh_retrieve_directive(self):
-        from bibilab.routers.chat import build_grounding_prompt
-
-        prompt = build_grounding_prompt(response_language="en")
-        assert "Each new user question requires a fresh `retrieve` call" in prompt
-        assert "Do not infer answers from your own prior text" in prompt
-        assert "When in doubt, retrieve." in prompt
-
-    def test_build_grounding_prompt_has_verbatim_proper_noun_rule(self):
-        from bibilab.routers.chat import build_grounding_prompt
-
-        prompt = build_grounding_prompt(response_language="en")
-        assert "exact spelling from the retrieved excerpts" in prompt
-        assert "Do not paraphrase or translate proper nouns" in prompt
-
-    def test_build_grounding_prompt_has_no_real_world_parallels_rule(self):
-        from bibilab.routers.chat import build_grounding_prompt
-
-        prompt = build_grounding_prompt(response_language="en")
-        assert "start your answer with what the excerpts say" in prompt
-        assert "Describe the concept as the source presents it" in prompt
+    # (fresh retrieve directive removed — now handled by decide_reuse + retrieve tool description)
+    # (verbatim proper noun rule removed — replaced by ## Grounding "Copy proper nouns ... verbatim")
+    # (no real-world parallels rule removed — covered by fiction-authoritative sentence in ## Grounding)
 
 
 class TestRetrieveToolDescription:
