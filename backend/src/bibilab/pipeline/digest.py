@@ -60,7 +60,7 @@ class DigestResult(BaseModel):
         if isinstance(v, str):
             cleaned = v.strip().lower()
             return cleaned or None
-        return None
+        raise ValueError(f"Expected string or null for sequence_kind, got: {v!r}")
 
 
 _DIGEST_PROMPT = """\
@@ -73,28 +73,18 @@ You are a knowledge extraction assistant. Given a video transcript with timestam
      Distinct from the per-video title and the uploader channel name.
      Return null if no series name is apparent.
 
-   - sequence_number: the episode/chapter/part/issue ordinal as an INTEGER. Examples of what to return:
-       "第八集" or "第8集" → 8
-       "EP08" or "Episode 8" → 8
-       "第12期" or "Issue 12" → 12
-       "上篇" or "（上）" → 1
-       "中篇" or "（中）" → 2
-       "下篇" or "（下）" → 3
-       "Chapter 5" or "第5章" → 5
-       "Part 2" → 2
+   - sequence_number: the episode/chapter/part/issue ordinal as an INTEGER.
+     Examples: "第8集" → 8, "第12期" → 12, "上篇" → 1, "Chapter 5" → 5.
      Return null if no ordinal is found. Never guess.
 
-   - sequence_kind: a short label describing what the sequence_number represents.
-     Typical values: "episode", "chapter", "part", "issue", "volume".
-     Free-form string — use the term that best matches the source material.
-     Return null if unclear.
+   - sequence_kind: short label for what the number represents.
+     Typical: "episode", "chapter", "part", "issue", "volume".
+     Free-form — use the term that best matches. Return null if unclear.
 
    - season_number: the season number as an INTEGER if explicitly indicated
-     (e.g. "S2" → 2, "Season 3" → 3, "第2季" → 2). Usually null.
+     (e.g. "S2" → 2, "第2季" → 2). Usually null.
 
-   IMPORTANT: If any field is absent or ambiguous, return null. Never guess.
-     A wrong value silently excludes correct content later;
-     a missing value just falls back to normal behavior.
+   If any field is absent or ambiguous, return null. Never guess.
 
 Respond ONLY with valid JSON matching this schema:
 {{
@@ -114,7 +104,8 @@ Transcript:
 
 def _parse_response(text: str) -> DigestResult:
     result: DigestResult = _parse_llm_json_response(text, DigestResult)
-    result.keywords = result.keywords[:5]
+    if len(result.keywords) > 5:
+        result.keywords = result.keywords[:5]
     return result
 
 
