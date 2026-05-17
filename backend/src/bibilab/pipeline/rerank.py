@@ -12,6 +12,7 @@ if TYPE_CHECKING:
     pass
 
 from bibilab.config import models_dir
+from bibilab.pipeline.chat_inference_pool import get_chat_pool
 from bibilab.pipeline.embed import RetrievedChunk
 
 logger = logging.getLogger(__name__)
@@ -139,7 +140,8 @@ async def rerank(
     pairs = [[query, chunk.content] for chunk in chunks]
     reranker = _get_reranker()
 
-    scores = await asyncio.to_thread(reranker.predict, pairs)
+    loop = asyncio.get_running_loop()
+    scores = await loop.run_in_executor(get_chat_pool(), reranker.predict, pairs)
 
     scored = list(zip(chunks, scores))
     scored.sort(key=lambda x: x[1], reverse=True)
