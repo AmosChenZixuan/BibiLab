@@ -32,14 +32,16 @@ export type RetrievalCall = {
   sources_with_hits: number;
   sources_total: number;
   source_coverage: RagSource[];
-  context: RetrievalChunk[];
+  // context[] and reused_from_prior_call_id are absent on the streaming
+  // tool_result payload; reconstructed only in persisted metadata.rag.
+  context?: RetrievalChunk[];
   dropped_by_gate: number;
   reranked: boolean;
   scope_choice: ScopeChoice;
   excluded_count: number | null;
   scoped_pool_size: number;
   gate_margin: number | null;
-  reused_from_prior_call_id: string | null;
+  reused_from_prior_call_id?: string | null;
 };
 export type RagMetadata = { calls: RetrievalCall[] };
 export type PendingRagCall = {

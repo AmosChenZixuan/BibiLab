@@ -139,10 +139,10 @@ describe("RetrievalCall", () => {
       reused_from_prior_call_id: null,
     };
     expect(call.expected_hits).toBe("few");
-    expect(call.context[0].chunk_id).toBe("v1_120_145");
-    expect(call.context[0].citation_index).toBe(1);
-    expect(call.context[0].timestamp_start).toBe(120.4);
-    expect(call.context[0].rerank_score).toBe(0.95);
+    expect(call.context![0].chunk_id).toBe("v1_120_145");
+    expect(call.context![0].citation_index).toBe(1);
+    expect(call.context![0].timestamp_start).toBe(120.4);
+    expect(call.context![0].rerank_score).toBe(0.95);
   });
 
   test("context can be empty array", () => {

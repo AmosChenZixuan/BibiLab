@@ -95,6 +95,38 @@ describe("RetrievalLedger", () => {
     expect(screen.getByText(/counting sources/)).toBeInTheDocument();
   });
 
+  test("streaming-shaped call (context absent) renders as default, not empty", () => {
+    // The SSE tool_result payload omits context[] / reused_from_prior_call_id
+    // (those are reconstructed only at persist time). dropped_by_gate can be
+    // >0 even on a successful retrieval. callVariant must NOT misclassify a
+    // context-absent streaming call as the amber "empty" variant.
+    const streamingCall = {
+      query: "streaming-query",
+      expected_hits: "few",
+      candidates_evaluated: 8,
+      sources_with_hits: 2,
+      sources_total: 16,
+      source_coverage: [{ source_id: "s1", video_id: "v1", title: "Vid" }],
+      dropped_by_gate: 3,
+      reranked: true,
+      scope_choice: "none",
+      excluded_count: null,
+      scoped_pool_size: 16,
+      gate_margin: 2.0,
+    } as unknown as RetrievalCall;
+
+    renderLedger({ calls: [streamingCall], pendingRetrieve: [], pendingMetadata: [] });
+
+    // default variant shows the query; empty variant (collapsed) shows only
+    // "0 chunks (3 dropped)" with no query.
+    expect(screen.getByText(/streaming-query/)).toBeInTheDocument();
+    expect(screen.queryByText(/3 dropped/)).not.toBeInTheDocument();
+    // context absent on streaming payload; persisted context is one entry per
+    // cited source, so the streaming chunk count must equal source_coverage
+    // length (1) — not 0 — to stay consistent with post-refresh.
+    expect(screen.getByText(/1 chunks · 1 sources/)).toBeInTheDocument();
+  });
+
   test("ordering: calls first, then pending retrieve, then pending metadata", () => {
     const call1: RetrievalCall = { ...DEFAULT_CALL, query: "call-query" };
     const pending1: PendingRagCall = { id: "p1", query: "pending-retrieve", expected_hits: "one" };

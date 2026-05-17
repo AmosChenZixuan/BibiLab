@@ -82,6 +82,20 @@ describe("variant=default", () => {
     expect(container.innerHTML).toContain("[1]");
   });
 
+  test("streaming disables expand: no toggle button, collapsed only", async () => {
+    const { container } = renderRow({ variant: "default", call: BASE_CALL, streaming: true });
+    expect(container.querySelector('button[aria-label="Toggle retrieval details"]')).toBeNull();
+    // collapsed summary still shows the query; chunk previews stay hidden
+    expect(container.innerHTML).toContain("长期情景记忆");
+    expect(container.innerHTML).not.toContain("Another preview text");
+  });
+
+  test("streaming empty variant is non-expandable", async () => {
+    const emptyCall: RetrievalCall = { ...BASE_CALL, context: [], dropped_by_gate: 4 };
+    const { container } = renderRow({ variant: "empty", call: emptyCall, streaming: true });
+    expect(container.querySelector('button[aria-label="Toggle retrieval details"]')).toBeNull();
+  });
+
   test("toggle collapses", async () => {
     const { container } = renderRow({ variant: "default", call: BASE_CALL });
     const toggle = container.querySelector('button[aria-label="Toggle retrieval details"]')!;

@@ -81,6 +81,10 @@ SSE_EVENT_TOOL_RESULT = "tool_result"
 SSE_EVENT_TOOL_CALL_START = "tool_call_start"
 SSE_EVENT_CITATION = "citation"
 SSE_EVENT_CANCELLED = "cancelled"
+# Final authoritative rag.calls (persisted shape, with context[]) emitted just
+# before the terminal event so the client ledger matches post-refresh state
+# without a manual reload.
+SSE_EVENT_RAG = "rag"
 
 # Sized for thinking-capable models with potentially long chat responses + tool turns.
 CHAT_MAX_TOKENS = 16384
@@ -545,6 +549,34 @@ async def run_chat_turn(
         if reuse_decision is not None and reuse_decision.action == ReuseAction.TRIVIAL and reuse_decision.note:
             system_message += "\n\n" + reuse_decision.note
 
+        # KEEP: the reuse of prior context is the turn's first retrieval action —
+        # it is decided here, before the LLM streams any tool call. Recording it
+        # now (both the SSE frame and the persisted retrieve_calls entry) makes
+        # ordering emerge from emission sequence: this entry is first, fresh
+        # retrieves are appended by the stream loop below. No positional
+        # hardcoding, and both channels stay in lockstep by construction. The
+        # buffer append bypasses stream_with_tools so it is not double-counted.
+        if reuse_decision is not None and reuse_decision.action == ReuseAction.KEEP and prior_retrieve_tool_use_id:
+            buf.append(
+                {
+                    "type": SSE_EVENT_TOOL_RESULT,
+                    "id": prior_retrieve_tool_use_id,
+                    "name": "retrieve",
+                    "result": {"reused_from_prior_call_id": prior_retrieve_tool_use_id},
+                }
+            )
+            retrieve_calls.append(
+                {
+                    "query": "(reused)",
+                    "expected_hits": None,
+                    "source_coverage": [],
+                    "context": [],
+                    "dropped_by_gate": 0,
+                    "reranked": False,
+                    "reused_from_prior_call_id": prior_retrieve_tool_use_id,
+                }
+            )
+
         tools = [RETRIEVE_TOOL, QUERY_LIST_METADATA_TOOL, GENERATE_REPORT_TOOL]
 
         tool_blocks: list[dict] = []
@@ -667,18 +699,6 @@ async def run_chat_turn(
             meta: dict[str, Any] = {}
             if tool_call_meta:
                 meta["tool_calls"] = tool_call_meta
-            # Append synthetic reuse entry when classifier chose KEEP.
-            if reuse_decision is not None and reuse_decision.action == ReuseAction.KEEP and prior_retrieve_tool_use_id:
-                retrieve_calls.append(
-                    {
-                        "query": "(reused)",
-                        "expected_hits": None,
-                        "context": [],
-                        "dropped_by_gate": 0,
-                        "reranked": False,
-                        "reused_from_prior_call_id": prior_retrieve_tool_use_id,
-                    }
-                )
 
             if retrieve_calls:
                 meta["rag"] = {"calls": retrieve_calls}
@@ -709,6 +729,11 @@ async def run_chat_turn(
                 "reattach to dead stream on next page load",
                 message_id,
             )
+
+        # Final authoritative ledger: persisted-shape calls (context[]
+        # reconstructed) so the client matches post-refresh without reloading.
+        if retrieve_calls:
+            buf.append({"type": SSE_EVENT_RAG, "calls": retrieve_calls})
 
         terminal_map = {"done": SSE_EVENT_DONE, "cancelled": SSE_EVENT_CANCELLED, "failed": SSE_EVENT_ERROR}
         sse_terminal = terminal_map[final_status]

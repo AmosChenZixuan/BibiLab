@@ -9,6 +9,9 @@ interface RetrievalLedgerRowProps {
   variant: RowVariant;
   call?: RetrievalCall;
   pending?: PendingRagCall | PendingMetadataCall;
+  /** While the message streams, context[] is incomplete — render collapsed
+   * status only (no expand) until the final `rag` event arrives. */
+  streaming?: boolean;
 }
 
 function formatTimestamp(seconds: number): string {
@@ -36,7 +39,7 @@ function ModeDisplay({ expected_hits, t }: { expected_hits: RetrievalCall["expec
   return <>{t(key)}</>;
 }
 
-export function RetrievalLedgerRow({ variant, call, pending }: RetrievalLedgerRowProps) {
+export function RetrievalLedgerRow({ variant, call, pending, streaming = false }: RetrievalLedgerRowProps) {
   const { t } = useLanguage();
   const [expanded, setExpanded] = useState(false);
 
@@ -72,6 +75,14 @@ export function RetrievalLedgerRow({ variant, call, pending }: RetrievalLedgerRo
   // ----- empty: faded amber disclosure -----
   if (variant === "empty") {
     const summaryText = t("chat.ledger.summaryEmpty", { dropped: call.dropped_by_gate });
+    if (streaming) {
+      return (
+        <div className="flex w-full items-center gap-1.5 text-xs text-amber">
+          <AlertTriangle size={12} className="shrink-0" />
+          <span className="truncate">{summaryText}</span>
+        </div>
+      );
+    }
     return (
       <div className="w-full overflow-hidden text-xs text-amber">
         <button
@@ -102,21 +113,35 @@ export function RetrievalLedgerRow({ variant, call, pending }: RetrievalLedgerRo
   }
 
   // ----- default: faded disclosure with chunk list -----
-  const summaryText = t("chat.ledger.summary", { chunks: context.length, sources: source_coverage.length });
+  // Streaming payload omits context[]; persisted context is one entry per
+  // cited source, so fall back to source_coverage length for a consistent
+  // count before/after refresh.
+  const chunkCount = call.context?.length ?? source_coverage.length;
+  const summaryText = t("chat.ledger.summary", { chunks: chunkCount, sources: source_coverage.length });
+  if (streaming) {
+    return (
+      <div className="flex w-full items-baseline gap-1.5 text-xs text-muted">
+        <Search size={12} className="shrink-0 self-center opacity-70" />
+        <span className="min-w-0 truncate font-mono">{call.query}</span>
+        <span className="shrink-0 opacity-40">·</span>
+        <span className="shrink-0">{summaryText}</span>
+      </div>
+    );
+  }
   return (
     <div className="w-full overflow-hidden text-xs text-muted">
       <button
         type="button"
         onClick={() => setExpanded((v) => !v)}
-        className="flex w-full items-center gap-1.5 border-none bg-transparent p-0 text-xs text-muted cursor-pointer hover:text-ink"
+        className="flex w-full items-baseline gap-1.5 border-none bg-transparent p-0 text-xs text-muted cursor-pointer hover:text-ink"
         aria-expanded={expanded}
         aria-label={t("chat.ledger.ariaToggle")}
       >
-        <Search size={12} className="shrink-0 opacity-70" />
+        <Search size={12} className="shrink-0 self-center opacity-70" />
         <span className="min-w-0 truncate font-mono">{call.query}</span>
         <span className="shrink-0 opacity-40">·</span>
         <span className="shrink-0">{summaryText}</span>
-        <ChevronRight size={12} className={`ml-auto shrink-0 transition-transform ${expanded ? "rotate-90" : ""}`} />
+        <ChevronRight size={12} className={`ml-auto shrink-0 self-center transition-transform ${expanded ? "rotate-90" : ""}`} />
       </button>
 
       {expanded && (

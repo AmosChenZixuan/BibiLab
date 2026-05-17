@@ -310,11 +310,17 @@ export function ChatPanel({
                   </>
                 ) : (
                   <>
-                    {!msg.isStreaming || msg.contentBlocks.length > 0 || msg.content ? (
+                    {!msg.isStreaming ||
+                    msg.contentBlocks.length > 0 ||
+                    msg.content ||
+                    msg.pendingRagCalls.length > 0 ||
+                    msg.pendingMetadataCalls.length > 0 ||
+                    (msg.rag?.calls.length ?? 0) > 0 ? (
                       <RetrievalLedger
                         calls={msg.rag?.calls ?? []}
                         pendingRetrieve={msg.pendingRagCalls}
                         pendingMetadata={msg.pendingMetadataCalls}
+                        streaming={msg.isStreaming}
                       />
                     ) : null}
                     {msg.isStreaming && !msg.content && !msg.contentBlocks.length ? (
