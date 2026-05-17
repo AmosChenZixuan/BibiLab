@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Search, RefreshCw, Loader2, AlertTriangle, ChevronRight } from "lucide-react";
 import { useLanguage } from "@/app/LanguageContext";
-import type { RetrievalCall, PendingRagCall, PendingMetadataCall } from "@/lib/chat-utils";
+import { formatMediaTimestamp, type RetrievalCall, type PendingRagCall, type PendingMetadataCall } from "@/lib/chat-utils";
 
 export type RowVariant = "default" | "empty" | "reused" | "pending";
 
@@ -12,15 +12,6 @@ interface RetrievalLedgerRowProps {
   /** While the message streams, context[] is incomplete — render collapsed
    * status only (no expand) until the final `rag` event arrives. */
   streaming?: boolean;
-}
-
-function formatTimestamp(seconds: number): string {
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  const s = Math.round(seconds % 60);
-  const pad = (n: number) => n.toString().padStart(2, "0");
-  if (h > 0) return `${h}:${pad(m)}:${pad(s)}`;
-  return `${m}:${pad(s)}`;
 }
 
 function ScopeDisplay({ call, t }: { call: RetrievalCall; t: (key: string, params?: Record<string, string | number>) => string }) {
@@ -43,7 +34,6 @@ export function RetrievalLedgerRow({ variant, call, pending, streaming = false }
   const { t } = useLanguage();
   const [expanded, setExpanded] = useState(false);
 
-  // ----- reused: faint static line -----
   if (variant === "reused") {
     return (
       <div className="flex items-center gap-1.5 py-0.5 text-xs text-muted opacity-60">
@@ -53,7 +43,6 @@ export function RetrievalLedgerRow({ variant, call, pending, streaming = false }
     );
   }
 
-  // ----- pending: spinner line -----
   if (variant === "pending" && pending) {
     const isRag = "expected_hits" in pending;
     const label = isRag
@@ -72,7 +61,6 @@ export function RetrievalLedgerRow({ variant, call, pending, streaming = false }
   const source_coverage = call.source_coverage ?? [];
   const context = call.context ?? [];
 
-  // ----- empty: faded amber disclosure -----
   if (variant === "empty") {
     const summaryText = t("chat.ledger.summaryEmpty", { dropped: call.dropped_by_gate });
     if (streaming) {
@@ -112,7 +100,6 @@ export function RetrievalLedgerRow({ variant, call, pending, streaming = false }
     );
   }
 
-  // ----- default: faded disclosure with chunk list -----
   // Streaming payload omits context[]; persisted context is one entry per
   // cited source, so fall back to source_coverage length for a consistent
   // count before/after refresh.
@@ -146,7 +133,6 @@ export function RetrievalLedgerRow({ variant, call, pending, streaming = false }
 
       {expanded && (
         <div className="mt-1.5 flex flex-col gap-2 border-t border-border pt-1.5">
-          {/* Section A — metadata */}
           <div className="flex flex-wrap gap-x-4 gap-y-1">
             <span>
               <span className="text-muted">{t("chat.ledger.field.query")} </span>
@@ -162,7 +148,6 @@ export function RetrievalLedgerRow({ variant, call, pending, streaming = false }
             </span>
           </div>
 
-          {/* Section B — chunk list, indented under a hairline */}
           {context.length > 0 && (
             <div className="flex flex-col gap-1.5 border-l border-border pl-3">
               {context.map((chunk) => (
@@ -171,7 +156,7 @@ export function RetrievalLedgerRow({ variant, call, pending, streaming = false }
                     <span className="shrink-0 font-mono text-blue">[{chunk.citation_index}]</span>
                     <span className="min-w-0 truncate text-ink">{chunk.source_title}</span>
                     <span className="ml-auto shrink-0 font-mono text-muted">
-                      {formatTimestamp(chunk.timestamp_start)}–{formatTimestamp(chunk.timestamp_end)} · {chunk.rerank_score.toFixed(2)}
+                      {formatMediaTimestamp(chunk.timestamp_start)}–{formatMediaTimestamp(chunk.timestamp_end)} · {chunk.rerank_score.toFixed(2)}
                     </span>
                   </div>
                   <div className="mt-0.5 text-muted line-clamp-2" title={chunk.preview}>

@@ -81,6 +81,15 @@ export function formatTimestamp(iso: string): string {
   return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
+export function formatMediaTimestamp(seconds: number): string {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = Math.round(seconds % 60);
+  const pad = (n: number) => n.toString().padStart(2, "0");
+  if (h > 0) return `${h}:${pad(m)}:${pad(s)}`;
+  return `${m}:${pad(s)}`;
+}
+
 export function autoResize(ta: HTMLTextAreaElement) {
   if (!ta.value) {
     ta.style.height = "auto";

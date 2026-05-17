@@ -561,7 +561,7 @@ async def run_chat_turn(
                 {
                     "type": SSE_EVENT_TOOL_RESULT,
                     "id": prior_retrieve_tool_use_id,
-                    "name": "retrieve",
+                    "name": RETRIEVE_TOOL.name,
                     "result": {"reused_from_prior_call_id": prior_retrieve_tool_use_id},
                 }
             )

@@ -301,7 +301,15 @@ export function ChatPanel({
           </div>
         ) : (
           <div className="flex flex-col gap-3.5">
-            {messages.map((msg) => (
+            {messages.map((msg) => {
+              const showLedger =
+                !msg.isStreaming ||
+                msg.contentBlocks.length > 0 ||
+                msg.content ||
+                msg.pendingRagCalls.length > 0 ||
+                msg.pendingMetadataCalls.length > 0 ||
+                (msg.rag?.calls.length ?? 0) > 0;
+              return (
               <div key={msg.id} className={`msg ${msg.role}`}>
                 {msg.role === "user" ? (
                   <>
@@ -310,12 +318,7 @@ export function ChatPanel({
                   </>
                 ) : (
                   <>
-                    {!msg.isStreaming ||
-                    msg.contentBlocks.length > 0 ||
-                    msg.content ||
-                    msg.pendingRagCalls.length > 0 ||
-                    msg.pendingMetadataCalls.length > 0 ||
-                    (msg.rag?.calls.length ?? 0) > 0 ? (
+                    {showLedger ? (
                       <RetrievalLedger
                         calls={msg.rag?.calls ?? []}
                         pendingRetrieve={msg.pendingRagCalls}
@@ -356,7 +359,7 @@ export function ChatPanel({
                   </>
                 )}
               </div>
-            ))}
+            ); })}
           </div>
         )}
 
