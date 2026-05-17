@@ -177,7 +177,7 @@ Shutdown: cancel all active tasks, drain with 5s timeout
 
 ### SSE event types
 
-`delta`, `citation`, `tool_call_start`, `tool_result`, `done`, `error`, `cancelled`
+`delta`, `citation`, `tool_call_start`, `tool_result`, `rag`, `done`, `error`, `cancelled`
 
 ### System prompt context
 
@@ -203,10 +203,11 @@ stream_with_tools(stream_llm loop):
 - `stream_with_tools` wraps `stream_llm` in a bounded loop (max 3 iterations). Loopback tools (`retrieve`, `query_list_metadata`) feed results back for another LLM turn; terminal tools (`generate_report`) exit the loop. When iterations are exhausted, `active_tools` is forced to `[]` so the LLM synthesizes from accumulated results instead of yielding a hard error. If tools were used but no text was generated, a forced follow-up LLM call (no tools) ensures the user always gets an answer.
 - **Preamble streaming**: Text generated before a loopback tool call is streamed to the client immediately (parsed incrementally via `parse_delta`). Trade-off: short filler like "Let me look that up..." reaches the client before the retrieve runs.
 - **Sequential-retrieve guard**: After the first `retrieve` call succeeds, `retrieve` is removed from the active tool list for the remainder of the turn. A second retrieve within the same turn is rejected.
-- **Cross-turn reuse**: Before expanding history for the LLM, `decide_reuse()` computes cosine similarity (MiniLM, local ONNX) between current and prior user messages. Three-path output: TRIVIAL (acknowledgment guard) → strip tool blocks + inject note; FORCE_FRESH (cosine < 0.55) → strip prior tool blocks; KEEP (cosine ≥ 0.55) → preserve tool blocks (today's behavior). KEEP appends synthetic `reused_from_prior_call_id` to `rag.calls` for observability.
+- **Cross-turn reuse**: Before expanding history for the LLM, `decide_reuse()` computes cosine similarity (MiniLM, local ONNX) between current and prior user messages. Three-path output: TRIVIAL (acknowledgment guard) → strip tool blocks + inject note; FORCE_FRESH (cosine < 0.55) → strip prior tool blocks; KEEP (cosine ≥ 0.55) → preserve tool blocks (today's behavior). On KEEP, the reuse is the turn's **first** retrieval action (decided before the stream loop): a synthetic `tool_result` (`reused_from_prior_call_id`, bypasses `stream_with_tools` so it is not double-counted) is appended to the buffer *and* to `retrieve_calls` at a single emission point — order emerges from emission sequence, so fresh retrieves the loop appends land after it and the streamed order matches persisted `rag.calls` exactly.
 - Retrieve result `_chunks` are formatted as citation-ready `[N]: "content"` strings for the LLM; stripped from the client-bound `tool_result` SSE payload by `_client_tool_result()`.
 - `citation_parser.parse_delta()` strips `[N]` markers from LLM output and emits `citation` SSE events with `{index, source_id, chunk_ids}`. A partial `[` at delta end is held in a buffer for the next delta. `flush_buffer()` drains remaining buffer at stream end.
 - `stream_llm` supports both OpenAI and Anthropic protocols via `AsyncOpenAI`/`AsyncAnthropic`
+- **Final `rag` event**: In the `finally` block, after `context[]` is reconstructed from the citation registry, `run_chat_turn` emits one `rag` SSE event carrying the authoritative persisted-shape `rag.calls` just before the terminal event. The client replaces its incrementally-built ledger so expand works post-stream without a manual reload (the streaming `tool_result` payload omits `context[]`).
 - **Reattach**: Frontend reads `active_stream_message_id` from conversation; if set, GETs the stream endpoint to replay buffered events + tail live ones. Returns 204 after buffer eviction.
 - **Cancel**: POST sets `status='cancelled'` + emits `cancelled` SSE event. Producer catches `CancelledError` and persists partial content.
 - **Lifecycle**: Startup sweep marks leftover `status='streaming'` rows as `failed`. Shutdown cancels all tasks, drains with 5s timeout. Buffer eviction fires 60s after terminal status.
