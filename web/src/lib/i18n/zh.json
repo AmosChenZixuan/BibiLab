@@ -55,6 +55,8 @@
     "embeddingModelMissing": "如果缺失，首次处理运行前会下载嵌入模型并进行索引，这会使启动变慢。",
     "ready": "就绪",
     "missing": "缺失",
+    "rerankerModel": "Reranker 模型",
+    "rerankerModelMissing": "首次检索时自动下载。",
     "backendApi": "后端 API",
     "connected": "已连接",
     "offline": "离线",
