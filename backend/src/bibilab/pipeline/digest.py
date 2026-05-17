@@ -74,7 +74,7 @@ You are a knowledge extraction assistant. Given a video transcript with timestam
      Return null if no series name is apparent.
 
    - sequence_number: the episode/chapter/part/issue ordinal as an INTEGER.
-     Examples: "第8集" → 8, "第12期" → 12, "上篇" → 1, "Chapter 5" → 5.
+     Examples: "第8集" → 8, "第12期" → 12, "Chapter 5" → 5, "上篇/中篇/下篇" → 1/2/3.
      Return null if no ordinal is found. Never guess.
 
    - sequence_kind: short label for what the number represents.
