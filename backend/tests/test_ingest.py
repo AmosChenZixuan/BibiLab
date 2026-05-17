@@ -57,6 +57,10 @@ async def test_ingest_dedup(client: httpx.AsyncClient, tmp_bibilab_home: Path):
         ai_model="gpt-4o",
         vision_enabled=False,
         settings_snapshot={},
+        series_name=None,
+        sequence_number=None,
+        sequence_kind=None,
+        season_number=None,
     )
     resp = await client.post(
         "/ingest/url",
@@ -121,6 +125,10 @@ async def test_rerun_digest_only(tmp_bibilab_home: Path):
         ai_model="gpt-4o",
         vision_enabled=False,
         settings_snapshot={},
+        series_name=None,
+        sequence_number=None,
+        sequence_kind=None,
+        season_number=None,
     )
 
     # Create a job as if it was queued by the ingest endpoint
@@ -195,6 +203,10 @@ async def test_write_source_stores_relative_paths(tmp_bibilab_home: Path):
         ai_model="gpt-4o",
         vision_enabled=False,
         settings_snapshot={},
+        series_name=None,
+        sequence_number=None,
+        sequence_kind=None,
+        season_number=None,
     )
 
     # Read back and verify paths are stored as relative
@@ -479,6 +491,10 @@ async def test_preview_processed_status(client: httpx.AsyncClient, mock_resolve_
         ai_model="gpt-4o",
         vision_enabled=False,
         settings_snapshot={},
+        series_name=None,
+        sequence_number=None,
+        sequence_kind=None,
+        season_number=None,
     )
     resp = await client.post(
         "/ingest/preview",
@@ -700,3 +716,102 @@ async def test_preview_flat_unknown_list(client: httpx.AsyncClient, mock_resolve
         json={"list_id": "nonexistent", "url": "https://bilibili.com/medialist/ml123"},
     )
     assert resp.status_code == 404
+
+
+async def test_write_source_persists_facet_columns(tmp_bibilab_home: Path):
+    """write_source persists series_name, sequence_number, sequence_kind, season_number."""
+    import uuid
+
+    from bibilab.db import bootstrap_db, create_list, get_source, write_source
+
+    await bootstrap_db()
+    list_id = "list-facet-ws"
+    await create_list(list_id, "Facet WS", "2026-01-01T00:00:00")
+    source_id = str(uuid.uuid4())
+
+    await write_source(
+        source_id=source_id,
+        video_id="BVfacet001",
+        platform="bilibili",
+        list_id=list_id,
+        title="罗翔说刑法 EP08",
+        summary="A lecture on criminal law.",
+        keywords=["law"],
+        cover_url=None,
+        transcript_path=None,
+        source_url="https://example.com/BVfacet001",
+        duration_seconds=600,
+        uploader="UploaderX",
+        language="zh",
+        whisper_model="large-v3",
+        ai_model="gpt-4o",
+        vision_enabled=False,
+        settings_snapshot={},
+        series_name="罗翔说刑法",
+        sequence_number=8,
+        sequence_kind="episode",
+        season_number=None,
+    )
+
+    source = await get_source(source_id)
+    assert source is not None
+    assert source["series_name"] == "罗翔说刑法"
+    assert source["sequence_number"] == 8
+    assert source["sequence_kind"] == "episode"
+    assert source["season_number"] is None
+
+
+async def test_update_source_digest_persists_facets(tmp_bibilab_home: Path):
+    """update_source_digest writes all 4 facet columns."""
+    import uuid
+
+    from bibilab.db import (
+        bootstrap_db,
+        create_list,
+        get_source,
+        update_source_digest,
+        write_source,
+    )
+
+    await bootstrap_db()
+    list_id = "list-facet-upd"
+    await create_list(list_id, "Facet Update", "2026-01-01T00:00:00")
+    source_id = str(uuid.uuid4())
+
+    await write_source(
+        source_id=source_id,
+        video_id="BVfacet002",
+        platform="bilibili",
+        list_id=list_id,
+        title="Test",
+        summary="Old summary",
+        keywords=["old"],
+        cover_url=None,
+        transcript_path=None,
+        source_url="https://example.com/BVfacet002",
+        duration_seconds=300,
+        uploader="U",
+        language=None,
+        whisper_model="large-v3",
+        ai_model="gpt-4o",
+        vision_enabled=False,
+        settings_snapshot={},
+    )
+
+    await update_source_digest(
+        source_id,
+        "New summary",
+        ["new"],
+        series_name="Test Series",
+        sequence_number=42,
+        sequence_kind="chapter",
+        season_number=2,
+    )
+
+    source = await get_source(source_id)
+    assert source is not None
+    assert source["summary"] == "New summary"
+    assert source["series_name"] == "Test Series"
+    assert source["sequence_number"] == 42
+    assert source["sequence_kind"] == "chapter"
+    assert source["season_number"] == 2
