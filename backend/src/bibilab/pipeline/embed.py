@@ -19,6 +19,7 @@ from bibilab.adapters.base import VideoMeta
 from bibilab.config import BibilabConfig, bibilab_home, models_dir
 from bibilab.db import _escape_fts_query, _tokenize_cjk, get_db_path, get_video_ids_for_sources, query_fts_rows
 from bibilab.models._enums import _RELEVANCE_MARGIN_BY_HITS, RetrievalParams
+from bibilab.pipeline.chat_inference_pool import get_chat_pool
 from bibilab.pipeline.chunk import RagChunk
 
 logger = logging.getLogger(__name__)
@@ -385,7 +386,8 @@ async def query_chunks(
         )
 
     try:
-        results = await asyncio.to_thread(_sync_query)
+        loop = asyncio.get_running_loop()
+        results = await loop.run_in_executor(get_chat_pool(), _sync_query)
     except Exception as exc:  # noqa: BLE001 - ChromaDB errors vary by version
         logger.warning("ChromaDB query failed: %s", exc)
         return []
