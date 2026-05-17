@@ -737,14 +737,7 @@ async def test_chat_sse_hallucinated_index_emitted_as_text(client, caplog):
     assert any("citation_hallucinated_index" in rec.message for rec in caplog.records)
 
 
-def test_grounding_prompt_has_audit_prior_claims_rule():
-    from bibilab.routers.chat import build_grounding_prompt
-
-    prompt = build_grounding_prompt(response_language="en")
-    assert "audit ALL items" in prompt, (
-        "build_grounding_prompt must instruct the LLM to audit all prior claims, "
-        "not just user-flagged ones, when correcting a previous answer."
-    )
+# (audit prior claims rule removed — Rule 3 deferred to #301 fact-check tool)
 
 
 # ---------------------------------------------------------------------------
