@@ -25,11 +25,9 @@ function setup(props: Partial<React.ComponentProps<typeof DigestFacets>> = {}) {
 }
 
 describe("DigestFacets read", () => {
-  test("renders only non-null segments, no kind", () => {
+  test("renders series · season · number order, no kind", () => {
     setup({ facets: { seriesName: "罗翔说刑法", sequenceNumber: 8, seasonNumber: 2 } });
-    expect(screen.getByText(/罗翔说刑法/)).toBeInTheDocument();
-    expect(screen.getByText(/No\.\s*8/)).toBeInTheDocument();
-    expect(screen.getByText(/S\s*2/)).toBeInTheDocument();
+    expect(screen.getByText("罗翔说刑法 · S 2 · No. 8")).toBeInTheDocument();
   });
 
   test("all null renders nothing", () => {

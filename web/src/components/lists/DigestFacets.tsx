@@ -111,10 +111,11 @@ export function DigestFacets({ facets, editing, onSave, onExitEdit }: Props) {
     );
   }
 
+  // series · season · number — season is the higher unit (Plex convention).
   const segs: string[] = [];
   if (facets.seriesName != null) segs.push(facets.seriesName);
-  if (facets.sequenceNumber != null) segs.push(`${t("lists.facets.numberPrefix")} ${facets.sequenceNumber}`);
   if (facets.seasonNumber != null) segs.push(`${t("lists.facets.seasonPrefix")} ${facets.seasonNumber}`);
+  if (facets.sequenceNumber != null) segs.push(`${t("lists.facets.numberPrefix")} ${facets.sequenceNumber}`);
   if (segs.length === 0) return null;
 
   return <p className="m-0 text-xs font-semibold text-ink">{segs.join(" · ")}</p>;
