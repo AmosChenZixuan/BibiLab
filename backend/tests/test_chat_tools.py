@@ -659,10 +659,12 @@ class TestBuildGroundingPrompt:
         prompt = build_grounding_prompt(response_language="zh")
         # The fallback rule must reference the response_language, not hard-coded English.
         assert "say so in zh" in prompt
+        assert "do not call `retrieve` again" in prompt
         # And the old hard-coded English string must be gone.
         assert "The provided sources do not cover this topic" not in prompt
 
-    # (fresh retrieve directive removed — now handled by decide_reuse + retrieve tool description)
+    # (fresh retrieve directive removed — now handled by build_grounding_prompt reuse
+    #  instruction + retrieve tool description)
     # (verbatim proper noun rule removed — replaced by ## Grounding "Copy proper nouns ... verbatim")
     # (no real-world parallels rule removed — covered by fiction-authoritative sentence in ## Grounding)
 

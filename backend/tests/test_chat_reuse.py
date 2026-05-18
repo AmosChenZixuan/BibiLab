@@ -45,21 +45,23 @@ class TestTrivialAckNote:
         assert not hasattr(chat_tools, "ReuseAction")
 
 
-class TestDecideReuseIntegration:
-    """Integration tests: reuse classifier wired into run_chat_turn."""
+class TestReuseCallerMechanics:
+    """trivial_ack_note wired into run_chat_turn."""
 
     @pytest.mark.anyio
-    async def test_force_fresh_strips_tool_blocks_from_expanded_messages(self, monkeypatch):
-        """Topic switch → FORCE_FRESH → no tool_use/tool_result blocks in LLM messages."""
+    async def test_non_trivial_keeps_tool_blocks(self, monkeypatch):
+        """Non-trivial follow-up → tool_blocks NOT stripped → prior tool_use/
+        tool_result replay into the LLM messages so it can reuse them."""
         from bibilab.config import AIConfig, BackendConfig, BibilabConfig
         from bibilab.pipeline._shared import StreamEvent
+        from bibilab.pipeline.chat_runs import ChatRunRegistry
         from bibilab.routers import chat as chat_module
 
-        captured_messages: list[list[dict]] = []
+        captured: list[list[dict]] = []
 
         async def fake_stream_llm(messages, cfg, tools=None, system=None, llm_max_tokens=2048):
-            captured_messages.append(list(messages))
-            yield StreamEvent(type="delta", content="ok")
+            captured.append(list(messages))
+            yield StreamEvent(type="delta", content="reusing [1]")
             yield StreamEvent(type="done")
 
         async def noop(*a, **kw):
@@ -69,12 +71,8 @@ class TestDecideReuseIntegration:
         monkeypatch.setattr(chat_module, "update_message_content", noop)
         monkeypatch.setattr(chat_module, "set_active_stream", noop)
 
-        from bibilab.pipeline.chat_runs import ChatRunRegistry
-
         registry = ChatRunRegistry()
-        msg_id = "msg-fresh-1"
-        registry.register(msg_id, task=None)
-
+        registry.register("m1", task=None)
         history = [
             {"role": "user", "content": "tell me about quantum mechanics"},
             {
@@ -90,17 +88,15 @@ class TestDecideReuseIntegration:
                 ],
             },
         ]
-
         cfg = BibilabConfig(
             ai=AIConfig(protocol="anthropic", model="x", api_key="k", base_url=""),
             backend=BackendConfig(),
         )
-
         await chat_module.run_chat_turn(
-            message_id=msg_id,
+            message_id="m1",
             conversation_id="c1",
             list_id="l1",
-            user_message_text="what is the capital of France",
+            user_message_text="what else did it say about entanglement",
             history=history,
             summary=None,
             source_ids=[],
@@ -110,32 +106,25 @@ class TestDecideReuseIntegration:
             cfg=cfg,
             registry=registry,
         )
-
-        assert captured_messages, "stream_llm not called"
-        sent = captured_messages[0]
-        # FORCE_FRESH: tool_blocks stripped → no assistant or tool_result blocks from history.
-        # Expanded messages should be: [user (current)] only (no history replay).
-        for m in sent:
-            content = m.get("content")
-            if isinstance(content, list):
-                for block in content:
-                    assert block.get("type") != "tool_use", f"tool_use block leaked into FORCE_FRESH path: {block}"
-                    assert block.get("type") != "tool_result", (
-                        f"tool_result block leaked into FORCE_FRESH path: {block}"
-                    )
+        has_tool_block = any(
+            isinstance(m.get("content"), list)
+            and any(b.get("type") in ("tool_use", "tool_result") for b in m["content"])
+            for m in captured[0]
+        )
+        assert has_tool_block, "prior tool_blocks must replay on the non-trivial path"
 
     @pytest.mark.anyio
-    async def test_trivial_message_strips_tool_blocks_and_injects_note(self, monkeypatch):
-        """Trivial acknowledgment → tool blocks stripped + system note injected."""
+    async def test_trivial_with_no_prior_retrieve_injects_note(self, monkeypatch):
+        """#308 behavior delta: a bare ack with NO prior retrieve in history
+        still gets the no-retrieve note (loop/gate fully removed)."""
         from bibilab.config import AIConfig, BackendConfig, BibilabConfig
         from bibilab.pipeline._shared import StreamEvent
+        from bibilab.pipeline.chat_runs import ChatRunRegistry
         from bibilab.routers import chat as chat_module
 
         captured_system: list[str] = []
-        captured_messages: list[list[dict]] = []
 
         async def fake_stream_llm(messages, cfg, tools=None, system=None, llm_max_tokens=2048):
-            captured_messages.append(list(messages))
             captured_system.append(system or "")
             yield StreamEvent(type="delta", content="you're welcome")
             yield StreamEvent(type="done")
@@ -147,35 +136,18 @@ class TestDecideReuseIntegration:
         monkeypatch.setattr(chat_module, "update_message_content", noop)
         monkeypatch.setattr(chat_module, "set_active_stream", noop)
 
-        from bibilab.pipeline.chat_runs import ChatRunRegistry
-
         registry = ChatRunRegistry()
-        msg_id = "msg-trivial-1"
-        registry.register(msg_id, task=None)
-
+        registry.register("m2", task=None)
         history = [
-            {"role": "user", "content": "tell me about quantum mechanics"},
-            {
-                "role": "assistant",
-                "content": "first answer [1]",
-                "tool_blocks": [
-                    {
-                        "tool_use_id": "toolu_b",
-                        "name": "retrieve",
-                        "arguments": {"query": "quantum", "expected_hits": "few"},
-                        "result": {"chunks": [], "summary": {"sources_total": 1}},
-                    }
-                ],
-            },
+            {"role": "user", "content": "hi"},
+            {"role": "assistant", "content": "hello"},
         ]
-
         cfg = BibilabConfig(
             ai=AIConfig(protocol="anthropic", model="x", api_key="k", base_url=""),
             backend=BackendConfig(),
         )
-
         await chat_module.run_chat_turn(
-            message_id=msg_id,
+            message_id="m2",
             conversation_id="c2",
             list_id="l2",
             user_message_text="ok",
@@ -188,36 +160,25 @@ class TestDecideReuseIntegration:
             cfg=cfg,
             registry=registry,
         )
-
-        # Tool blocks must be stripped from expanded messages.
-        for m in captured_messages[0]:
-            content = m.get("content")
-            if isinstance(content, list):
-                for block in content:
-                    assert block.get("type") != "tool_use"
-                    assert block.get("type") != "tool_result"
-
-        # System note must be injected for TRIVIAL path.
         assert captured_system, "stream_llm never called"
-        assert "acknowledgment" in captured_system[0].lower(), (
-            f"Expected trivial-path note in system prompt, got: {captured_system[0][:200]}"
-        )
+        assert "acknowledgment" in captured_system[0].lower()
 
     @pytest.mark.anyio
-    async def test_keep_path_appends_reused_from_prior_call_id_in_metadata(self, monkeypatch):
-        """Related follow-up → KEEP → synthetic reused_from_prior_call_id in rag.calls."""
+    async def test_no_reused_from_prior_call_id_in_metadata(self, monkeypatch):
+        """KEEP synthetic block deleted → rag.calls never carries reuse marker."""
         from bibilab.config import AIConfig, BackendConfig, BibilabConfig
         from bibilab.pipeline._shared import StreamEvent
+        from bibilab.pipeline.chat_runs import ChatRunRegistry
         from bibilab.routers import chat as chat_module
 
         async def fake_stream_llm(messages, cfg, tools=None, system=None, llm_max_tokens=2048):
             yield StreamEvent(type="delta", content="follow-up answer")
             yield StreamEvent(type="done")
 
-        captured_metadata: dict = {}
+        captured: dict = {}
 
         async def capture_update(message_id, content, metadata, status, error=None, tool_blocks=None):
-            captured_metadata["meta"] = metadata
+            captured["meta"] = metadata
 
         async def noop(*a, **kw):
             return None
@@ -226,12 +187,8 @@ class TestDecideReuseIntegration:
         monkeypatch.setattr(chat_module, "update_message_content", capture_update)
         monkeypatch.setattr(chat_module, "set_active_stream", noop)
 
-        from bibilab.pipeline.chat_runs import ChatRunRegistry
-
         registry = ChatRunRegistry()
-        msg_id = "msg-keep-meta-1"
-        registry.register(msg_id, task=None)
-
+        registry.register("m3", task=None)
         history = [
             {"role": "user", "content": "tell me about quantum mechanics"},
             {
@@ -247,14 +204,12 @@ class TestDecideReuseIntegration:
                 ],
             },
         ]
-
         cfg = BibilabConfig(
             ai=AIConfig(protocol="anthropic", model="x", api_key="k", base_url=""),
             backend=BackendConfig(),
         )
-
         await chat_module.run_chat_turn(
-            message_id=msg_id,
+            message_id="m3",
             conversation_id="c3",
             list_id="l3",
             user_message_text="tell me more about quantum mechanics",
@@ -267,184 +222,5 @@ class TestDecideReuseIntegration:
             cfg=cfg,
             registry=registry,
         )
-
-        rag_calls = captured_metadata.get("meta", {}).get("rag", {}).get("calls", [])
-        reused_entries = [c for c in rag_calls if c.get("reused_from_prior_call_id")]
-        assert len(reused_entries) == 1, f"Expected 1 reused entry in rag.calls, got {len(reused_entries)}: {rag_calls}"
-        entry = reused_entries[0]
-        assert entry["query"] == "(reused)"
-        assert entry["reused_from_prior_call_id"] == "toolu_reuse_1"
-
-    @pytest.mark.anyio
-    async def test_keep_streams_reuse_tool_result_during_stream(self, monkeypatch):
-        """KEEP → a synthetic retrieve tool_result is streamed to the client so
-        the reuse row shows mid-stream, not only after refresh."""
-        from bibilab.config import AIConfig, BackendConfig, BibilabConfig
-        from bibilab.pipeline._shared import StreamEvent
-        from bibilab.routers import chat as chat_module
-
-        async def fake_stream_llm(messages, cfg, tools=None, system=None, llm_max_tokens=2048):
-            yield StreamEvent(type="delta", content="follow-up answer")
-            yield StreamEvent(type="done")
-
-        async def noop(*a, **kw):
-            return None
-
-        monkeypatch.setattr(chat_module, "stream_llm", fake_stream_llm)
-        monkeypatch.setattr(chat_module, "update_message_content", noop)
-        monkeypatch.setattr(chat_module, "set_active_stream", noop)
-
-        from bibilab.pipeline.chat_runs import ChatRunRegistry
-
-        registry = ChatRunRegistry()
-        msg_id = "msg-keep-sse-1"
-        buf = registry.register(msg_id, task=None)
-
-        history = [
-            {"role": "user", "content": "tell me about quantum mechanics"},
-            {
-                "role": "assistant",
-                "content": "first answer [1]",
-                "tool_blocks": [
-                    {
-                        "tool_use_id": "toolu_reuse_1",
-                        "name": "retrieve",
-                        "arguments": {"query": "quantum", "expected_hits": "few"},
-                        "result": {"chunks": [], "summary": {"sources_total": 1}},
-                    }
-                ],
-            },
-        ]
-
-        cfg = BibilabConfig(
-            ai=AIConfig(protocol="anthropic", model="x", api_key="k", base_url=""),
-            backend=BackendConfig(),
-        )
-
-        await chat_module.run_chat_turn(
-            message_id=msg_id,
-            conversation_id="c4",
-            list_id="l4",
-            user_message_text="tell me more about quantum mechanics",
-            history=history,
-            summary=None,
-            source_ids=[],
-            source_map={},
-            source_list_str="Sources:\n" + _SRC_LIST_INSTRUCTION,
-            ui_lang="en",
-            cfg=cfg,
-            registry=registry,
-        )
-
-        reuse_frames = [
-            e
-            for e in buf.events
-            if e.get("type") == "tool_result"
-            and e.get("name") == "retrieve"
-            and e.get("result", {}).get("reused_from_prior_call_id") == "toolu_reuse_1"
-        ]
-        assert len(reuse_frames) == 1, f"expected exactly one reuse tool_result frame, got {buf.events}"
-
-    @pytest.mark.anyio
-    async def test_keep_with_fresh_retrieve_streams_same_order_as_persisted(self, monkeypatch):
-        """KEEP turn that also runs a fresh retrieve: reuse is the turn's first
-        retrieval action, so it streams first AND is first in persisted
-        rag.calls — streamed order matches post-refresh order."""
-        import json
-
-        from bibilab.config import AIConfig, BackendConfig, BibilabConfig
-        from bibilab.pipeline._shared import StreamEvent
-        from bibilab.routers import chat as chat_module
-
-        async def fake_stream_with_tools(**kwargs):
-            result = {
-                "query": "quantum follow-up",
-                "expected_hits": "few",
-                "candidates_evaluated": 5,
-                "sources_with_hits": 1,
-                "sources_total": 1,
-                "source_coverage": [],
-                "dropped_by_gate": 0,
-                "reranked": True,
-            }
-            yield StreamEvent(
-                type="tool_result",
-                content=json.dumps({"id": "r1", "name": "retrieve", "result": result}),
-            )
-            yield StreamEvent(type="delta", content="answer")
-            yield StreamEvent(type="done")
-
-        captured: dict = {}
-
-        async def capture_update(message_id, content, metadata, status, error=None, tool_blocks=None):
-            captured["meta"] = metadata
-
-        async def noop(*a, **kw):
-            return None
-
-        monkeypatch.setattr(chat_module, "stream_with_tools", fake_stream_with_tools)
-        monkeypatch.setattr(chat_module, "update_message_content", capture_update)
-        monkeypatch.setattr(chat_module, "set_active_stream", noop)
-
-        from bibilab.pipeline.chat_runs import ChatRunRegistry
-
-        registry = ChatRunRegistry()
-        msg_id = "msg-keep-order-1"
-        buf = registry.register(msg_id, task=None)
-
-        history = [
-            {"role": "user", "content": "tell me about quantum mechanics"},
-            {
-                "role": "assistant",
-                "content": "first answer [1]",
-                "tool_blocks": [
-                    {
-                        "tool_use_id": "toolu_reuse_1",
-                        "name": "retrieve",
-                        "arguments": {"query": "quantum", "expected_hits": "few"},
-                        "result": {"chunks": [], "summary": {"sources_total": 1}},
-                    }
-                ],
-            },
-        ]
-
-        cfg = BibilabConfig(
-            ai=AIConfig(protocol="anthropic", model="x", api_key="k", base_url=""),
-            backend=BackendConfig(),
-        )
-
-        await chat_module.run_chat_turn(
-            message_id=msg_id,
-            conversation_id="c5",
-            list_id="l5",
-            user_message_text="tell me more about quantum mechanics",
-            history=history,
-            summary=None,
-            source_ids=[],
-            source_map={},
-            source_list_str="Sources:\n" + _SRC_LIST_INSTRUCTION,
-            ui_lang="en",
-            cfg=cfg,
-            registry=registry,
-        )
-
-        # Streamed order: reuse tool_result first, then the fresh retrieve.
-        tr = [e for e in buf.events if e.get("type") == "tool_result" and e.get("name") == "retrieve"]
-        assert len(tr) == 2, f"expected reuse + real tool_result, got {buf.events}"
-        assert tr[0]["result"]["reused_from_prior_call_id"] == "toolu_reuse_1", "reuse must stream first"
-        assert "reused_from_prior_call_id" not in tr[1]["result"], "fresh retrieve streams after reuse"
-
-        # Persisted order must match the streamed order.
-        calls = captured["meta"]["rag"]["calls"]
-        assert len(calls) == 2
-        assert calls[0]["reused_from_prior_call_id"] == "toolu_reuse_1"
-        assert calls[1]["query"] == "quantum follow-up"
-        assert calls[1].get("reused_from_prior_call_id") is None
-
-        # A final authoritative rag event is emitted just before the terminal
-        # done, carrying the persisted-shape calls.
-        types = [e.get("type") for e in buf.events]
-        assert "rag" in types, f"no final rag event: {types}"
-        rag_idx = types.index("rag")
-        assert types[rag_idx + 1] == "done", "rag must immediately precede done"
-        assert buf.events[rag_idx]["calls"] == calls
+        calls = captured.get("meta", {}).get("rag", {}).get("calls", [])
+        assert all("reused_from_prior_call_id" not in c for c in calls), calls

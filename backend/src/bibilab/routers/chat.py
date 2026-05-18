@@ -49,12 +49,11 @@ from bibilab.pipeline.chat_tools import (
     QUERY_LIST_METADATA_TOOL,
     RETRIEVE_TOOL,
     CitationRegistryEntry,
-    ReuseAction,
     build_tool_block_entry,
-    decide_reuse,
     execute_tool,
     expand_message_for_provider,
     reseed_citation_registry,
+    trivial_ack_note,
 )
 from bibilab.pipeline.citation_parser import flush_buffer, parse_delta
 
@@ -193,6 +192,10 @@ def build_grounding_prompt(response_language: str) -> str:
         "`expected_hits` to control retrieval breadth: `one` for single facts, "
         "`few` for narrow content questions (default), `many` for survey or "
         'full-source summary questions (e.g. "第八集讲了什么").\n\n'
+        "Excerpts you already retrieved remain in the conversation as tool "
+        "results. If they already answer the question, cite them directly — do "
+        "not call `retrieve` again. Call `retrieve` only when the conversation "
+        "lacks the needed excerpts.\n\n"
         "## Grounding\n"
         "Build your answer from the retrieved excerpts alone. Do not draw on "
         "outside knowledge. Treat the excerpts as authoritative whether the "
@@ -468,31 +471,12 @@ async def run_chat_turn(
             )
         system_message = "\n\n".join(system_parts)
 
-        # Decide whether to keep or strip prior tool blocks.
-        # Find last user message and check if any prior turn ran retrieve.
-        prior_user_msg: str | None = None
-        prior_history_has_retrieve = False
-        prior_retrieve_tool_use_id: str | None = None
-        for h in reversed(history):
-            role = h.get("role")
-            if role == "user" and prior_user_msg is None:
-                prior_user_msg = h["content"]
-            if role == "assistant" and not prior_history_has_retrieve:
-                for tb in h.get("tool_blocks") or []:
-                    if tb.get("name") == "retrieve":
-                        prior_history_has_retrieve = True
-                        prior_retrieve_tool_use_id = tb.get("tool_use_id")
-                        break
-            if prior_user_msg is not None and prior_history_has_retrieve:
-                break
-
-        reuse_decision = None
-        if prior_history_has_retrieve:
-            # decide_reuse runs sync ONNX inference; offload to thread to avoid blocking the loop.
-            reuse_decision = await asyncio.to_thread(decide_reuse, user_message_text, prior_user_msg)
-
-        # Build history for LLM: strip tool_blocks on force_fresh or trivial.
-        if reuse_decision is not None and reuse_decision.action in (ReuseAction.FORCE_FRESH, ReuseAction.TRIVIAL):
+        # #308: prior retrieve excerpts replay into the LLM messages, so the
+        # LLM self-judges reuse from the prompt instruction. Only the
+        # deterministic trivial-ack guard strips them (and tells the LLM not
+        # to retrieve on a bare acknowledgment).
+        trivial_note = trivial_ack_note(user_message_text)
+        if trivial_note:
             history_for_expansion = [{k: v for k, v in h.items() if k != "tool_blocks"} for h in history]
         else:
             history_for_expansion = history
@@ -515,44 +499,8 @@ async def run_chat_turn(
                 **kwargs,
             )
 
-        # Inject trivial-path note after classifier has run.
-        if reuse_decision is not None and reuse_decision.action == ReuseAction.TRIVIAL and reuse_decision.note:
-            system_message += "\n\n" + reuse_decision.note
-
-        # KEEP: the reuse of prior context is the turn's first retrieval action —
-        # it is decided here, before the LLM streams any tool call. Recording it
-        # now (both the SSE frame and the persisted retrieve_calls entry) makes
-        # ordering emerge from emission sequence: this entry is first, fresh
-        # retrieves are appended by the stream loop below. No positional
-        # hardcoding, and both channels stay in lockstep by construction. The
-        # buffer append bypasses stream_with_tools so it is not double-counted.
-        if reuse_decision is not None and reuse_decision.action == ReuseAction.KEEP and prior_retrieve_tool_use_id:
-            buf.append(
-                {
-                    "type": SSE_EVENT_TOOL_RESULT,
-                    "id": prior_retrieve_tool_use_id,
-                    "name": RETRIEVE_TOOL.name,
-                    "result": {"reused_from_prior_call_id": prior_retrieve_tool_use_id},
-                }
-            )
-            retrieve_calls.append(
-                {
-                    "query": "(reused)",
-                    "expected_hits": None,
-                    "candidates_evaluated": 0,
-                    "sources_with_hits": 0,
-                    "sources_total": 0,
-                    "source_coverage": [],
-                    "context": [],
-                    "dropped_by_gate": 0,
-                    "reranked": False,
-                    "scope_choice": "none",
-                    "excluded_count": None,
-                    "scoped_pool_size": 0,
-                    "gate_margin": None,
-                    "reused_from_prior_call_id": prior_retrieve_tool_use_id,
-                }
-            )
+        if trivial_note:
+            system_message += "\n\n" + trivial_note
 
         tools = [RETRIEVE_TOOL, QUERY_LIST_METADATA_TOOL, GENERATE_REPORT_TOOL]
 
