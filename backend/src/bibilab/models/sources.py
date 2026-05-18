@@ -1,7 +1,7 @@
 import json
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 
 class SourceContentResponse(BaseModel):
@@ -54,3 +54,30 @@ class SourceContentResponse(BaseModel):
             sequence_kind=source["sequence_kind"],
             season_number=source["season_number"],
         )
+
+
+class SourceFacetsUpdate(BaseModel):
+    """Manual facet edit. sequence_kind is intentionally NOT editable here.
+
+    `model_fields_set` lets the router distinguish an absent key (leave the
+    column alone) from an explicit null (clear it). Invalid ints raise
+    ValueError -> FastAPI 422 (a typed value is deliberate, never degraded).
+    """
+
+    series_name: str | None = None
+    sequence_number: int | None = None
+    season_number: int | None = None
+
+    @field_validator("sequence_number", "season_number", mode="before")
+    @classmethod
+    def _ints(cls, v: object) -> int | None:
+        from bibilab.pipeline.digest import parse_facet_int
+
+        return parse_facet_int(v)
+
+    @field_validator("series_name", mode="before")
+    @classmethod
+    def _series(cls, v: object) -> str | None:
+        from bibilab.pipeline.digest import clean_str_facet
+
+        return clean_str_facet(v)

@@ -44,6 +44,15 @@ export function SourcesViewerMode({
             summary={sourceContent.summary}
             keywords={sourceContent.keywords}
             onRerun={handleRerunDigest}
+            facets={{
+              seriesName: sourceContent.series_name,
+              sequenceNumber: sourceContent.sequence_number,
+              seasonNumber: sourceContent.season_number,
+            }}
+            onSaveFacets={async (patch) => {
+              await api.updateSourceFacets(source.id, patch);
+              onRefresh();
+            }}
           />
         )}
         {sourceContent?.transcript && (

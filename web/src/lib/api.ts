@@ -7,6 +7,7 @@ import type {
   OverviewDownload,
   Source,
   SourceContent,
+  SourceFacetsPatch,
   WhisperDownloadResponse,
   WhisperModel,
   ArtifactType,
@@ -187,6 +188,13 @@ export class SourcesClient {
   rerunDigest(sourceId: string) {
     return this.request<SourceContent>(this.baseUrl, `/sources/${sourceId}/rerun`, { method: "POST" });
   }
+
+  updateSourceFacets(sourceId: string, patch: SourceFacetsPatch) {
+    return this.request<void>(this.baseUrl, `/sources/${sourceId}/facets`, {
+      method: "PATCH",
+      body: JSON.stringify(patch),
+    });
+  }
 }
 
 export class IngestClient {
@@ -348,6 +356,7 @@ export interface ApiClient {
   getSource(sourceId: string, opts?: { signal?: AbortSignal }): Promise<SourceContent | undefined>;
   deleteSource(listId: string, sourceId: string): Promise<void | undefined>;
   rerunDigest(sourceId: string): Promise<SourceContent | undefined>;
+  updateSourceFacets(sourceId: string, patch: SourceFacetsPatch): Promise<void | undefined>;
   previewPlaylist(listId: string, url: string): Promise<PreviewResponse | undefined>;
   previewPlaylistMetadata(videoIds: string[]): Promise<VideoMetadataMap | undefined>;
   ingestUrl(listId: string, videos: IngestVideoIn[]): Promise<IngestResult | undefined>;
@@ -405,6 +414,7 @@ export function createApiClient(baseUrl?: string): ApiClient {
     getSource: (id, opts) => sources.getSource(id, opts),
     deleteSource: (listId, sourceId) => sources.deleteSource(listId, sourceId),
     rerunDigest: (id) => sources.rerunDigest(id),
+    updateSourceFacets: (id, patch) => sources.updateSourceFacets(id, patch),
     previewPlaylist: (listId, url) => ingest.previewPlaylist(listId, url),
     previewPlaylistMetadata: (videoIds) => ingest.previewPlaylistMetadata(videoIds),
     ingestUrl: (listId, videos) => ingest.ingestUrl(listId, videos),

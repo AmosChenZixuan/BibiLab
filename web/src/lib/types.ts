@@ -45,6 +45,16 @@ export type SourceContent = {
   cover_url: string | null;
   transcript: string;
   settings_snapshot: Record<string, unknown>;
+  series_name?: string | null;
+  sequence_number?: number | null;
+  sequence_kind?: string | null;
+  season_number?: number | null;
+};
+
+export type SourceFacetsPatch = {
+  series_name?: string | null;
+  sequence_number?: number | null;
+  season_number?: number | null;
 };
 
 export type JobStatus =

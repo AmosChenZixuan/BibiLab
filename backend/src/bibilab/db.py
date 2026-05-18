@@ -351,6 +351,30 @@ async def update_source_digest(
         await db.commit()
 
 
+# Manual-edit facet writer. Replace semantics (explicit None clears), distinct
+# from update_source_digest's COALESCE-preserve. sequence_kind is intentionally
+# absent — the UI does not edit it, so an existing extracted value survives.
+_FACET_WRITE_COLUMNS = ("series_name", "sequence_number", "season_number")
+
+
+async def update_source_facets(source_id: str, **fields: object) -> None:
+    cols = [c for c in _FACET_WRITE_COLUMNS if c in fields]
+    if not cols:
+        return
+    # Column names come from the fixed allowlist above (never user input);
+    # values stay parameterized — db.py's no-f-string-values rule holds.
+    set_clause = ", ".join(f"{c}=?" for c in cols)
+    params = [fields[c] for c in cols]
+    params.append(source_id)
+    async with get_db() as db:
+        cursor = await db.execute(f"UPDATE sources SET {set_clause} WHERE id=?", params)
+        if cursor.rowcount == 0:
+            # Source vanished between the router's existence check and this
+            # write (TOCTOU). Don't commit a no-op as success.
+            raise LookupError(source_id)
+        await db.commit()
+
+
 async def get_source(source_id: str) -> aiosqlite.Row | None:
     async with get_db() as db:
         cursor = await db.execute("SELECT * FROM sources WHERE id=?", (source_id,))

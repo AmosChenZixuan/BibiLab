@@ -1,8 +1,10 @@
 import { useState } from "react";
-import { ChevronUp, ChevronDown, MoreVertical, RotateCcw } from "lucide-react";
+import { ChevronUp, ChevronDown, MoreVertical, RotateCcw, Pencil } from "lucide-react";
 
 import { useLanguage } from "@/app/LanguageContext";
 import { ContextMenu } from "@/components/ui/ContextMenu";
+import { DigestFacets, type Facets } from "@/components/lists/DigestFacets";
+import type { SourceFacetsPatch } from "@/lib/types";
 
 function LoadingDots() {
   return (
@@ -25,15 +27,20 @@ export function DigestAccordion({
   summary,
   keywords,
   onRerun,
+  facets,
+  onSaveFacets,
 }: {
   source: { id: string };
   summary: string;
   keywords: string[];
   onRerun: (sourceId: string) => void;
+  facets: Facets;
+  onSaveFacets: (patch: SourceFacetsPatch) => Promise<void>;
 }) {
   const { t } = useLanguage();
   const [expanded, setExpanded] = useState(true);
   const [loading, setLoading] = useState(false);
+  const [editingFacets, setEditingFacets] = useState(false);
 
   const handleRerun = async () => {
     setLoading(true);
@@ -57,6 +64,14 @@ export function DigestAccordion({
           ) : (
             <ContextMenu
               items={[
+                {
+                  label: t("lists.facets.edit"),
+                  icon: <Pencil size={14} />,
+                  onClick: () => {
+                    setExpanded(true);
+                    setEditingFacets(true);
+                  },
+                },
                 {
                   label: t("lists.rerunDigest"),
                   icon: <RotateCcw size={14} />,
@@ -90,6 +105,13 @@ export function DigestAccordion({
       {/* Content */}
       {expanded && (
         <div className="border-t border-border px-4 py-4 space-y-3">
+          <DigestFacets
+            key={editingFacets ? "facets-edit" : "facets-read"}
+            facets={facets}
+            editing={editingFacets}
+            onSave={onSaveFacets}
+            onExitEdit={() => setEditingFacets(false)}
+          />
           <div className={`transition-opacity duration-300 ${loading ? "opacity-30" : "opacity-100"}`}>
             {summary ? (
               <p className="m-0 text-sm leading-relaxed text-muted">{summary}</p>

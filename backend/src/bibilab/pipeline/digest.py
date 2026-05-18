@@ -33,6 +33,53 @@ DIGEST_MAX_TOKENS = 32768
 _MAX_KEYWORDS = 8
 
 
+def parse_facet_int(v: object) -> int | None:
+    """Coerce a facet ordinal to an int >= 1.
+
+    None / empty-string -> None ("unknown"). A present-but-unusable value
+    (non-numeric, < 1, bool, non-finite float, wrong type) raises ValueError.
+    The digest path catches that and degrades to None; the manual-edit path
+    lets it surface as a 422 (a typed value is deliberate, not a guess).
+    """
+    if v is None:
+        return None
+    if isinstance(v, bool):  # bool is an int subclass; true/false is not an ordinal
+        raise ValueError(f"not an integer: {v!r}")
+    if isinstance(v, int):
+        n = v
+    elif isinstance(v, float) and math.isfinite(v) and v == int(v):
+        n = int(v)
+    elif isinstance(v, str):
+        s = v.strip()
+        if s == "":
+            return None
+        try:
+            n = int(s)
+        except ValueError as exc:
+            raise ValueError(f"not an integer: {v!r}") from exc
+    else:
+        raise ValueError(f"not an integer: {v!r}")
+    if n < 1:
+        raise ValueError(f"must be >= 1: {n}")
+    return n
+
+
+def clean_str_facet(v: object, *, lower: bool = False) -> str | None:
+    """Trim a string facet; '' / None -> None. Non-string raises ValueError.
+
+    Shared core for series_name/sequence_kind. The digest path catches the
+    ValueError and degrades to None; the manual-edit path lets it 422.
+    """
+    if v is None:
+        return None
+    if not isinstance(v, str):
+        raise ValueError(f"not a string: {v!r}")
+    cleaned = v.strip()
+    if lower:
+        cleaned = cleaned.lower()
+    return cleaned or None
+
+
 class DigestResult(BaseModel):
     summary: str
     keywords: list[str]
@@ -44,45 +91,21 @@ class DigestResult(BaseModel):
     @field_validator("sequence_number", "season_number", mode="before")
     @classmethod
     def _coerce_int(cls, v: object, info: ValidationInfo) -> int | None:
-        # Facets are best-effort: an unparseable or out-of-range value degrades
-        # to None (logged) rather than raising. A null facet is "unknown" and
-        # falls back to normal behavior; a bad facet must never abort the digest.
-        if v is None:
-            return None
-        if isinstance(v, bool):  # bool is an int subclass; JSON true/false is not an ordinal
-            n = None
-        elif isinstance(v, int):
-            n = v
-        elif isinstance(v, float) and math.isfinite(v) and v == int(v):
-            n = int(v)
-        elif isinstance(v, str):
-            try:
-                n = int(v.strip())
-            except ValueError:
-                n = None
-        else:
-            n = None
-        if n is None or n < 1:
+        try:
+            return parse_facet_int(v)
+        except ValueError:
             logger.warning("digest: dropping unusable %s=%r", info.field_name, v)
             return None
-        return n
 
     @field_validator("series_name", "sequence_kind", mode="before")
     @classmethod
     def _clean_str_facet(cls, v: object, info: ValidationInfo) -> str | None:
-        # Best-effort like the int facets: a non-string or blank value degrades
-        # to None (logged), never raises — a bad facet must not abort the
-        # digest. sequence_kind is lowercased (a label); series_name is not (a
-        # proper noun).
-        if v is None:
+        # sequence_kind is a label (lowercased); series_name is a proper noun.
+        try:
+            return clean_str_facet(v, lower=info.field_name == "sequence_kind")
+        except ValueError:
+            logger.warning("digest: dropping unusable %s=%r", info.field_name, v)
             return None
-        if isinstance(v, str):
-            cleaned = v.strip()
-            if info.field_name == "sequence_kind":
-                cleaned = cleaned.lower()
-            return cleaned or None
-        logger.warning("digest: dropping unusable %s=%r", info.field_name, v)
-        return None
 
     @model_validator(mode="after")
     def _require_kind_with_number(self) -> "DigestResult":

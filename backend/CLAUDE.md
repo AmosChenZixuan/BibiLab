@@ -24,7 +24,7 @@ routers/          — one APIRouter per module; aggregated in main.py
   chat.py           /lists/:id/chat (SSE streaming + cancel), /lists/:id/chat/:msg_id/stream (reattach), /lists/:id/conversation (CRUD); stream_with_tools loop; classify_error (SDK exception → i18n error code)
   lists.py          /lists/* (CRUD), /lists/:id/overview (POST)
   ingest.py         /ingest/url (POST)
-  sources.py        /sources/* (source content, covers, rerun)
+  sources.py        /sources/* (source content, covers, rerun, PATCH facets manual edit)
 models/           — Pydantic request/response models + domain errors
   chat.py           ChatRequest, MessageResponse, ConversationResponse
 pipeline/         — one file per stage
