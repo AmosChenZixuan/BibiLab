@@ -19,14 +19,12 @@ class TestRetrieveToolSchema:
         props = RETRIEVE_TOOL.parameters["properties"]
         assert "source_filter" not in props
 
-    def test_retrieve_tool_has_source_ids(self):
+    def test_retrieve_tool_has_no_index_scope_params(self):
         from bibilab.pipeline.chat_tools import RETRIEVE_TOOL
 
         props = RETRIEVE_TOOL.parameters["properties"]
-        assert "source_ids" in props
-        assert props["source_ids"]["type"] == "array"
-        assert props["source_ids"]["items"] == {"type": "string"}
-        assert "nullable" not in props["source_ids"]
+        assert "source_ids" not in props
+        assert "exclude_source_ids" not in props
 
     def test_retrieve_tool_has_expected_hits(self):
         from bibilab.pipeline.chat_tools import RETRIEVE_TOOL
@@ -35,19 +33,19 @@ class TestRetrieveToolSchema:
         assert "expected_hits" in props
         assert props["expected_hits"]["enum"] == ["one", "few", "many"]
 
-    def test_retrieve_tool_required_includes_exclude_source_ids(self):
+    def test_retrieve_tool_required_is_query_only(self):
         from bibilab.pipeline.chat_tools import RETRIEVE_TOOL
 
-        required = RETRIEVE_TOOL.parameters["required"]
-        assert "query" in required
-        assert "exclude_source_ids" in required
+        assert RETRIEVE_TOOL.parameters["required"] == ["query"]
 
-    def test_retrieve_tool_description_mentions_source_list(self):
+    def test_retrieve_tool_description_has_no_index_workflow(self):
         from bibilab.pipeline.chat_tools import RETRIEVE_TOOL
 
         desc = RETRIEVE_TOOL.description
-        assert "source_ids" in desc
-        assert "source numbers" in desc or "Sources" in desc
+        assert "exclude_source_ids" not in desc
+        assert "source numbers" not in desc
+        assert "Sources list" not in desc
+        assert "sequence_number" in desc
 
 
 class TestGenerateReportToolDefinition:

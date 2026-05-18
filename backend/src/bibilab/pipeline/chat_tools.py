@@ -134,31 +134,26 @@ GENERATE_REPORT_TOOL = ToolDefinition(
 RETRIEVE_TOOL = ToolDefinition(
     name="retrieve",
     description=(
-        "Retrieve information from video transcripts.\n\n"
-        "Default workflow: list source numbers in `exclude_source_ids` whose "
-        "titles/keywords are clearly unrelated to the query. The retrieve will "
-        "search all other sources. When unsure whether a source is relevant, "
-        "LEAVE IT IN (do not exclude). Excluding too aggressively misses correct "
-        "answers.\n\n"
-        "Use `source_ids` (whitelist) ONLY when the user explicitly limits scope, "
-        "e.g. 'only check episode 7' or 'compare ep7 and ep8'.\n\n"
-        "Use expected_hits='one' for single-fact questions, 'few' (default) for "
-        "narrow content questions, 'many' for survey/summary questions.\n\n"
+        "Retrieve information from video transcripts. Searches all sources "
+        "by default.\n\n"
+        "If the user's question explicitly references an episode / part or a "
+        "season number (e.g. 第八集, 'part 3', 第二季), pass sequence_number / "
+        "season_number — the backend scopes the search to matching sources. "
+        "Omit them otherwise (omission searches all sources).\n\n"
+        "Use expected_hits='one' for single-fact questions, 'few' (default) "
+        "for narrow content questions, 'many' for survey/summary questions.\n\n"
         "Do NOT use for pure greetings or conversation-control messages.\n\n"
         "Excerpts you already retrieved remain in the conversation as tool "
         "results. If they already answer the question, cite them directly — "
         "do not call retrieve again. Call retrieve only when the conversation "
         "lacks the needed excerpts.\n\n"
         "Examples:\n"
-        "  # Typical: list contains many sources, exclude obviously off-topic ones\n"
-        '  retrieve(query="长期情景记忆如何保存",\n'
-        '           exclude_source_ids=["2","3","7","10","14","16"])\n\n'
-        "  # Topic spans most or all sources\n"
-        '  retrieve(query="大模型面试常见问题概览",\n'
-        "           exclude_source_ids=[])\n\n"
-        "  # User explicitly scoped (rare): use whitelist\n"
-        '  retrieve(query="第八集主要讲什么",\n'
-        '           source_ids=["8"])'
+        "  # General question — searches all sources\n"
+        '  retrieve(query="长期情景记忆如何保存")\n\n'
+        "  # User scoped to an episode\n"
+        '  retrieve(query="第八集主要讲什么", sequence_number=8)\n\n'
+        "  # User scoped to a season\n"
+        '  retrieve(query="第二季讲了什么", season_number=2)'
     ),
     parameters={
         "type": "object",
@@ -166,24 +161,6 @@ RETRIEVE_TOOL = ToolDefinition(
             "query": {
                 "type": "string",
                 "description": "Search query — key terms or question in the user's language",
-            },
-            "exclude_source_ids": {
-                "type": "array",
-                "items": {"type": "string"},
-                "description": (
-                    "Source numbers (from the Sources list in the system prompt) "
-                    "whose titles/keywords are clearly unrelated to the query. "
-                    "Empty list if all sources may be relevant."
-                ),
-            },
-            "source_ids": {
-                "type": "array",
-                "items": {"type": "string"},
-                "description": (
-                    "Source numbers to search — use ONLY when the user explicitly "
-                    "limits scope (e.g. 'only check episode 7'). "
-                    "In most cases, use exclude_source_ids instead."
-                ),
             },
             "expected_hits": {
                 "type": "string",
@@ -212,7 +189,7 @@ RETRIEVE_TOOL = ToolDefinition(
                 ),
             },
         },
-        "required": ["query", "exclude_source_ids"],
+        "required": ["query"],
     },
 )
 
