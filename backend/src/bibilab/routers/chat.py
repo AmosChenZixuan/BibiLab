@@ -440,7 +440,6 @@ async def run_chat_turn(
     summary: str | None,
     source_ids: list[str],
     source_map: dict[str, str],
-    source_list_str: str,
     ui_lang: str,
     cfg: BibilabConfig,
     registry: ChatRunRegistry,
@@ -463,7 +462,6 @@ async def run_chat_turn(
     try:
         response_language = resolve_response_language(cfg.ai, ui_lang)
         system_parts = [build_grounding_prompt(response_language=response_language)]
-        system_parts.append(source_list_str)
         if summary:
             system_parts.append(
                 "Historical conversation summary (for context only — the current "
@@ -553,8 +551,6 @@ async def run_chat_turn(
                             "source_coverage": result.get("source_coverage", []),
                             "dropped_by_gate": result.get("dropped_by_gate", 0),
                             "reranked": result.get("reranked", False),
-                            "scope_choice": result.get("scope_choice", "none"),
-                            "excluded_count": result.get("excluded_count"),
                             "scoped_pool_size": result.get("scoped_pool_size"),
                             "facet_scope": result.get("facet_scope"),
                             "gate_margin": result.get("gate_margin"),
@@ -621,8 +617,6 @@ async def run_chat_turn(
                                 }
                             )
                     call["context"] = context_entries
-                    call["scope_choice"] = call.get("scope_choice", "none")
-                    call["excluded_count"] = call.get("excluded_count")
                     call["scoped_pool_size"] = call.get("scoped_pool_size")
                     call["facet_scope"] = call.get("facet_scope")
                     call["gate_margin"] = call.get("gate_margin")
@@ -731,19 +725,6 @@ async def chat_endpoint(
         raise HTTPException(409, "Conversation already has an active stream")
 
     source_map: dict[str, str] = {row["video_id"]: row["id"] for row in source_rows}
-    id_to_title = {row["id"]: row["title"] for row in source_rows}
-    id_to_keywords = {row["id"]: json.loads(row["keywords"]) for row in source_rows}
-    source_list_str = (
-        "Sources (scan for clearly unrelated items to exclude):\n"
-        + "\n".join(
-            f"[{i + 1}] {id_to_title[sid]}"
-            + (f" ({', '.join(id_to_keywords[sid])})" if id_to_keywords.get(sid) else "")
-            for i, sid in enumerate(source_ids)
-        )
-        + "\n\nCall retrieve with exclude_source_ids listing only obvious mismatches. "
-        "Empty list is fine when all sources may be relevant. "
-        "Use source_ids whitelist ONLY when the user explicitly scopes to specific sources."
-    )
     ui_lang = http_request.headers.get("X-UI-Lang", "en")
 
     # Spawn producer
@@ -757,7 +738,6 @@ async def chat_endpoint(
             summary=existing_summary,
             source_ids=source_ids,
             source_map=source_map,
-            source_list_str=source_list_str,
             ui_lang=ui_lang,
             cfg=cfg,
             registry=run_registry,
