@@ -8,7 +8,7 @@ import pytest
 from bibilab.adapters.base import VideoMeta
 from bibilab.config import AIConfig
 from bibilab.pipeline.audio import PipelineError
-from bibilab.pipeline.digest import _MAX_KEYWORDS, DigestResult, _parse_response, digest
+from bibilab.pipeline.digest import _MAX_KEYWORDS, DigestResult, _parse_response, digest, parse_facet_int
 
 
 def _make_video_meta(title="Test Video") -> VideoMeta:
@@ -376,3 +376,24 @@ class TestDigestRetry:
             with pytest.raises(PipelineError, match="exhausted all retries"):
                 digest("transcript", _make_video_meta(), _make_ai_cfg())
         assert m.call_count == 3
+
+
+class TestParseFacetInt:
+    def test_none_and_blank_return_none(self):
+        assert parse_facet_int(None) is None
+        assert parse_facet_int("") is None
+        assert parse_facet_int("   ") is None
+
+    def test_valid_int_float_str(self):
+        assert parse_facet_int(8) == 8
+        assert parse_facet_int(8.0) == 8
+        assert parse_facet_int(" 12 ") == 12
+
+    def test_invalid_raises_valueerror(self):
+        for bad in ["第八集", "abc", 0, -1, 8.5, True, False, ["x"], {}]:
+            with pytest.raises(ValueError):
+                parse_facet_int(bad)
+
+    def test_non_finite_raises(self):
+        with pytest.raises(ValueError):
+            parse_facet_int(float("inf"))
