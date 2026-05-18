@@ -14,6 +14,15 @@ from bibilab.pipeline.embed import retrieve
 
 logger = logging.getLogger(__name__)
 
+# Prepended to the LLM-visible retrieve result when facet scoping found no
+# matching source and failed open to the full pool. The deleted source list
+# (#310) was the LLM's only "episode not in library" signal; this restores it
+# LLM-side. English by design: _chunks is LLM-facing and already English;
+# build_grounding_prompt drives the user-visible response language separately.
+_NO_MATCH_NOTE = (
+    "No source matched the requested episode/season; searched all sources instead — say so before answering."
+)
+
 
 @dataclass
 class CitationRegistryEntry:
@@ -134,31 +143,26 @@ GENERATE_REPORT_TOOL = ToolDefinition(
 RETRIEVE_TOOL = ToolDefinition(
     name="retrieve",
     description=(
-        "Retrieve information from video transcripts.\n\n"
-        "Default workflow: list source numbers in `exclude_source_ids` whose "
-        "titles/keywords are clearly unrelated to the query. The retrieve will "
-        "search all other sources. When unsure whether a source is relevant, "
-        "LEAVE IT IN (do not exclude). Excluding too aggressively misses correct "
-        "answers.\n\n"
-        "Use `source_ids` (whitelist) ONLY when the user explicitly limits scope, "
-        "e.g. 'only check episode 7' or 'compare ep7 and ep8'.\n\n"
-        "Use expected_hits='one' for single-fact questions, 'few' (default) for "
-        "narrow content questions, 'many' for survey/summary questions.\n\n"
+        "Retrieve information from video transcripts. Searches all sources "
+        "by default.\n\n"
+        "If the user's question explicitly references an episode / part or a "
+        "season number (e.g. 第八集, 'part 3', 第二季), pass sequence_number / "
+        "season_number — the backend scopes the search to matching sources. "
+        "Omit them otherwise (omission searches all sources).\n\n"
+        "Use expected_hits='one' for single-fact questions, 'few' (default) "
+        "for narrow content questions, 'many' for survey/summary questions.\n\n"
         "Do NOT use for pure greetings or conversation-control messages.\n\n"
         "Excerpts you already retrieved remain in the conversation as tool "
         "results. If they already answer the question, cite them directly — "
         "do not call retrieve again. Call retrieve only when the conversation "
         "lacks the needed excerpts.\n\n"
         "Examples:\n"
-        "  # Typical: list contains many sources, exclude obviously off-topic ones\n"
-        '  retrieve(query="长期情景记忆如何保存",\n'
-        '           exclude_source_ids=["2","3","7","10","14","16"])\n\n'
-        "  # Topic spans most or all sources\n"
-        '  retrieve(query="大模型面试常见问题概览",\n'
-        "           exclude_source_ids=[])\n\n"
-        "  # User explicitly scoped (rare): use whitelist\n"
-        '  retrieve(query="第八集主要讲什么",\n'
-        '           source_ids=["8"])'
+        "  # General question — searches all sources\n"
+        '  retrieve(query="长期情景记忆如何保存")\n\n'
+        "  # User scoped to an episode\n"
+        '  retrieve(query="第八集主要讲什么", sequence_number=8)\n\n'
+        "  # User scoped to a season\n"
+        '  retrieve(query="第二季讲了什么", season_number=2)'
     ),
     parameters={
         "type": "object",
@@ -166,24 +170,6 @@ RETRIEVE_TOOL = ToolDefinition(
             "query": {
                 "type": "string",
                 "description": "Search query — key terms or question in the user's language",
-            },
-            "exclude_source_ids": {
-                "type": "array",
-                "items": {"type": "string"},
-                "description": (
-                    "Source numbers (from the Sources list in the system prompt) "
-                    "whose titles/keywords are clearly unrelated to the query. "
-                    "Empty list if all sources may be relevant."
-                ),
-            },
-            "source_ids": {
-                "type": "array",
-                "items": {"type": "string"},
-                "description": (
-                    "Source numbers to search — use ONLY when the user explicitly "
-                    "limits scope (e.g. 'only check episode 7'). "
-                    "In most cases, use exclude_source_ids instead."
-                ),
             },
             "expected_hits": {
                 "type": "string",
@@ -212,7 +198,7 @@ RETRIEVE_TOOL = ToolDefinition(
                 ),
             },
         },
-        "required": ["query", "exclude_source_ids"],
+        "required": ["query"],
     },
 )
 
@@ -280,29 +266,6 @@ async def execute_generate_report(
     }
 
 
-def _coerce_to_str_list(val, key: str) -> list[str] | None:
-    if val is None:
-        return None
-    if isinstance(val, list):
-        coerced = []
-        for x in val:
-            if isinstance(x, (str, int, float, bool)):
-                coerced.append(str(x))
-            else:
-                logger.warning("retrieve: %s contains non-scalar item %r, skipping", key, type(x).__name__)
-        return coerced
-    if isinstance(val, str):
-        try:
-            parsed = json.loads(val)
-            if isinstance(parsed, list):
-                logger.info("retrieve: coerced stringified list for %s", key)
-                return [str(x) for x in parsed]
-        except json.JSONDecodeError:
-            pass
-    logger.warning("retrieve: %s=%r unparseable, treating as None", key, val)
-    return None
-
-
 def _facet_int(v: object, key: str) -> int | None:
     """Coerce an LLM facet arg via the shared `parse_facet_int` primitive,
     degrading unusable values to None (a bad LLM guess drops the predicate,
@@ -318,38 +281,12 @@ def _facet_int(v: object, key: str) -> int | None:
         return None
 
 
-def _map_indices_to_uuids(indices: list[str], source_ids: list[str]) -> list[str]:
-    """Map a list of index strings or raw UUIDs to the corresponding source_ids UUIDs.
-
-    Handles 1-based positional indices ("1", "3") and direct UUID strings.
-    Out-of-range indices are logged and skipped.
-    """
-    id_set = set(source_ids)
-    mapped: list[str] = []
-    for s in indices:
-        if s in id_set:
-            mapped.append(s)
-            continue
-        try:
-            idx = int(s) - 1
-            if 0 <= idx < len(source_ids):
-                mapped.append(source_ids[idx])
-            else:
-                logger.warning("Source index out of range: %r (max %d)", s, len(source_ids))
-        except (ValueError, TypeError):
-            logger.warning("Unrecognized source identifier: %r", s)
-    return mapped
-
-
 async def execute_retrieve(
     query: str,
     source_ids: list[str],
     cfg: BibilabConfig,
     registry: dict[str, CitationRegistryEntry] | None = None,
     source_map: dict[str, str] | None = None,
-    selected_source_ids: list[str] | None = None,
-    exclude_source_ids: list[str] | None = None,
-    scope_choice: str | None = None,
     sequence_number: int | None = None,
     season_number: int | None = None,
     expected_hits: str = DEFAULT_EXPECTED_HITS,
@@ -359,41 +296,30 @@ async def execute_retrieve(
     if source_map is None:
         source_map = {}
 
-    # Compute scoped_source_ids based on scope_choice
-    scoped_source_ids: list[str] | None = None
-    excluded_count: int | None = None
-    if scope_choice == "exclude" and exclude_source_ids is not None:
-        excluded_uuids = _map_indices_to_uuids(exclude_source_ids, source_ids)
-        scoped_source_ids = [s for s in source_ids if s not in excluded_uuids]
-        excluded_count = len(excluded_uuids)
-    elif scope_choice == "whitelist" and selected_source_ids is not None:
-        scoped_source_ids = _map_indices_to_uuids(selected_source_ids, source_ids)
-        if not scoped_source_ids:
-            logger.warning("retrieve: whitelist mapped to empty pool; all indices unrecognized or out of range")
-
     params = params_for_expected_hits(expected_hits)
-    pool_size = len(scoped_source_ids) if scoped_source_ids is not None else len(source_ids)
+    pool_size = len(source_ids)
 
-    # Deterministic facet scoping (#309). Intersect with the pre-facet pool
-    # (= post exclude/whitelist). Fail-open: zero match restores the pre-facet
-    # pool. scoped_pool_size stays pre-facet by design — see facet_scope.matched_count.
+    # Deterministic facet scoping (#309). Facet matching is the sole
+    # pre-retrieval narrowing (#310 removed exclude/whitelist). Fail-open:
+    # zero match (or facet-subquery DB error) → full pool, never empty.
+    # scoped_pool_size is the full pool by design — see facet_scope.matched_count.
     facet_predicates = {
         k: v for k, v in (("sequence_number", sequence_number), ("season_number", season_number)) if v is not None
     }
     facet_matched_count: int | None = None
     facet_no_match = False
+    scoped_source_ids: list[str] | None = None
     if facet_predicates:
-        pre_facet_pool = scoped_source_ids if scoped_source_ids is not None else source_ids
         try:
-            facets = await get_source_facets(pre_facet_pool)
+            facets = await get_source_facets(source_ids)
         except Exception:  # noqa: BLE001 - facet scoping is best-effort; a DB
-            # error here must fail open to the pre-facet pool, not nuke an
+            # error here must fail open to the full pool, not nuke an
             # otherwise-fine retrieve (consistent with the zero-match contract).
-            logger.warning("retrieve: get_source_facets failed, fail-open to pre-facet pool", exc_info=True)
+            logger.warning("retrieve: get_source_facets failed, fail-open to full pool", exc_info=True)
             facets = {}
         matched = [
             sid
-            for sid in pre_facet_pool
+            for sid in source_ids
             if sid in facets and all(facets[sid].get(k) == v for k, v in facet_predicates.items())
         ]
         facet_matched_count = len(matched)
@@ -401,16 +327,14 @@ async def execute_retrieve(
             scoped_source_ids = matched
         else:
             facet_no_match = True
-            scoped_source_ids = pre_facet_pool if scoped_source_ids is not None else None
             logger.warning(
-                "retrieve: facet %s matched 0 sources, fail-open to pre-facet pool",
+                "retrieve: facet %s matched 0 sources, fail-open to full pool",
                 facet_predicates,
             )
 
     logger.info(
-        "retrieve dispatch: query=%r scope=%s params(top_k=%d depth=%d) pool_size=%d",
+        "retrieve dispatch: query=%r params(top_k=%d depth=%d) pool_size=%d",
         query,
-        scope_choice or "none",
         params.top_k,
         params.depth_per_source,
         pool_size,
@@ -497,8 +421,6 @@ async def execute_retrieve(
         "dropped_by_gate": result.dropped_by_gate,
         "reranked": result.reranked,
         "gate_margin": result.gate_margin,
-        "scope_choice": scope_choice or "none",
-        "excluded_count": excluded_count,
         "scoped_pool_size": pool_size,
         "facet_scope": {
             "sequence_number": sequence_number,
@@ -515,7 +437,8 @@ async def execute_retrieve(
             for s in result.source_coverage
         ],
         "_chunks": (
-            f"Sources retrieved this turn: {', '.join(f'[{i}]' for i in turn_indices)}. "
+            (f"{_NO_MATCH_NOTE}\n\n" if facet_no_match else "")
+            + f"Sources retrieved this turn: {', '.join(f'[{i}]' for i in turn_indices)}. "
             "Cite only these indices.\n\n"
             f"{_build_source_headers(registry)}\n\n" + "\n".join(chunks_formatted)
         ),
@@ -565,8 +488,6 @@ async def execute_tool(
     source_map: dict[str, str] | None = None,
 ) -> dict:
     if tool_name == RETRIEVE_TOOL.name:
-        exclude = _coerce_to_str_list(arguments.get("exclude_source_ids"), "exclude_source_ids")
-        whitelist = _coerce_to_str_list(arguments.get("source_ids"), "source_ids")
         query = arguments.get("query")
         if not query or not isinstance(query, str):
             raise ValueError(f"retrieve requires a non-empty 'query' string, got {query!r}")
@@ -574,22 +495,11 @@ async def execute_tool(
         sequence_number = _facet_int(arguments.get("sequence_number"), "sequence_number")
         season_number = _facet_int(arguments.get("season_number"), "season_number")
 
-        if exclude is not None:
-            scope_choice = "exclude"
-            if whitelist is not None:
-                logger.warning("retrieve: both exclude_source_ids and source_ids given; using exclude")
-        elif whitelist is not None:
-            scope_choice = "whitelist"
-        else:
-            scope_choice = "none"
-            logger.warning("retrieve: neither exclude nor whitelist given; searching all sources")
-
         logger.info(
-            "retrieve tool call: query=%r scope=%s exclude=%s whitelist=%s expected_hits=%r",
+            "retrieve tool call: query=%r seq=%s season=%s expected_hits=%r",
             query,
-            scope_choice,
-            exclude,
-            whitelist,
+            sequence_number,
+            season_number,
             arguments.get("expected_hits", DEFAULT_EXPECTED_HITS),
         )
         return await execute_retrieve(
@@ -598,9 +508,6 @@ async def execute_tool(
             cfg=cfg,
             registry=registry,
             source_map=source_map,
-            selected_source_ids=whitelist,
-            exclude_source_ids=exclude,
-            scope_choice=scope_choice,
             sequence_number=sequence_number,
             season_number=season_number,
             expected_hits=arguments.get("expected_hits", DEFAULT_EXPECTED_HITS),

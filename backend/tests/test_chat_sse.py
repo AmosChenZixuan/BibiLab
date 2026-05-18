@@ -16,10 +16,6 @@ from bibilab.routers.chat import (
 )
 from tests import an_async_generator
 
-_SRC_LIST_INSTRUCTION = (
-    "\n\nTo search, call retrieve. Include all source numbers except those clearly unrelated to the query."
-)
-
 
 def _parse_sse(text: str) -> list[dict]:
     events = []
@@ -821,7 +817,6 @@ async def test_run_chat_turn_persists_tool_blocks(monkeypatch, tmp_path):
         summary=None,
         source_ids=["s1"],
         source_map={"v1": "s1"},
-        source_list_str="Sources:\n[1] Test" + _SRC_LIST_INSTRUCTION,
         ui_lang="en",
         cfg=cfg,
         registry=registry,
@@ -831,6 +826,58 @@ async def test_run_chat_turn_persists_tool_blocks(monkeypatch, tmp_path):
     assert len(captured["tool_blocks"]) == 1
     assert captured["tool_blocks"][0]["name"] == "retrieve"
     assert captured["tool_blocks"][0]["result"]["chunks"][0]["content"] == "verbatim"
+
+
+@pytest.mark.asyncio
+async def test_system_message_is_stable_across_turns(monkeypatch):
+    """#310: for a fixed response_language the assembled system prompt is
+    byte-identical turn to turn (no per-turn source list) — prompt-cache stable."""
+    from bibilab.config import AIConfig, BackendConfig, BibilabConfig
+    from bibilab.pipeline._shared import StreamEvent
+    from bibilab.pipeline.chat_runs import ChatRunRegistry
+    from bibilab.routers import chat as chat_module
+
+    captured_systems: list[str] = []
+
+    async def fake_stream_llm(messages, cfg, tools=None, system=None, llm_max_tokens=2048):
+        captured_systems.append(system)
+        yield StreamEvent(type="delta", content="ok")
+        yield StreamEvent(type="done")
+
+    async def noop(*a, **kw):
+        return None
+
+    monkeypatch.setattr(chat_module, "stream_llm", fake_stream_llm)
+    monkeypatch.setattr(chat_module, "update_message_content", noop)
+    monkeypatch.setattr(chat_module, "set_active_stream", noop)
+
+    cfg = BibilabConfig(
+        ai=AIConfig(protocol="openai", model="x", api_key="k", base_url=""),
+        backend=BackendConfig(),
+    )
+
+    for _ in range(2):
+        registry = ChatRunRegistry()
+        msg_id = "msg-stable"
+        registry.register(msg_id, task=None)
+        await chat_module.run_chat_turn(
+            message_id=msg_id,
+            conversation_id="c1",
+            list_id="l1",
+            user_message_text="q",
+            history=[],
+            summary=None,
+            source_ids=["s1", "s2"],
+            source_map={"v1": "s1", "v2": "s2"},
+            ui_lang="en",
+            cfg=cfg,
+            registry=registry,
+        )
+
+    assert len(captured_systems) == 2
+    assert captured_systems[0] == captured_systems[1]
+    assert "Sources (scan" not in captured_systems[0]
+    assert "Empty list is fine" not in captured_systems[0]
 
 
 @pytest.mark.asyncio
@@ -1148,7 +1195,6 @@ async def test_run_chat_turn_replays_tool_blocks_on_turn_2(monkeypatch):
         summary=None,
         source_ids=[],
         source_map={},
-        source_list_str="Sources:\n" + _SRC_LIST_INSTRUCTION,
         ui_lang="en",
         cfg=cfg,
         registry=registry,
@@ -1211,7 +1257,6 @@ async def test_chat_uses_resolved_response_language_in_system_prompt(monkeypatch
         summary=None,
         source_ids=[],
         source_map={},
-        source_list_str="Sources:\n" + _SRC_LIST_INSTRUCTION,
         ui_lang="zh",
         cfg=cfg,
         registry=registry,
@@ -1310,7 +1355,6 @@ async def test_run_chat_turn_reseeds_citation_registry_from_history_tool_blocks(
         summary=None,
         source_ids=["s1"],
         source_map={"v1": "s1"},
-        source_list_str="Sources:\n[1] Test" + _SRC_LIST_INSTRUCTION,
         ui_lang="en",
         cfg=cfg,
         registry=registry,
@@ -1359,8 +1403,6 @@ async def test_rag_call_carries_facet_scope(client):
             "sources_with_hits": 1,
             "sources_total": 5,
             "source_coverage": [],
-            "scope_choice": "none",
-            "excluded_count": None,
             "scoped_pool_size": 5,
             "facet_scope": {
                 "sequence_number": 8,

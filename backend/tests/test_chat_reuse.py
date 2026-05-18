@@ -4,10 +4,6 @@ import pytest
 
 from bibilab.pipeline.chat_tools import trivial_ack_note
 
-_SRC_LIST_INSTRUCTION = (
-    "\n\nTo search, call retrieve. Include all source numbers except those clearly unrelated to the query."
-)
-
 
 class TestTrivialAckNote:
     """trivial_ack_note() returns the note for trivial acks, None otherwise."""
@@ -101,7 +97,6 @@ class TestReuseCallerMechanics:
             summary=None,
             source_ids=[],
             source_map={},
-            source_list_str="Sources:\n" + _SRC_LIST_INSTRUCTION,
             ui_lang="en",
             cfg=cfg,
             registry=registry,
@@ -155,7 +150,6 @@ class TestReuseCallerMechanics:
             summary=None,
             source_ids=[],
             source_map={},
-            source_list_str="Sources:\n" + _SRC_LIST_INSTRUCTION,
             ui_lang="en",
             cfg=cfg,
             registry=registry,
@@ -217,7 +211,6 @@ class TestReuseCallerMechanics:
             summary=None,
             source_ids=[],
             source_map={},
-            source_list_str="Sources:\n" + _SRC_LIST_INSTRUCTION,
             ui_lang="en",
             cfg=cfg,
             registry=registry,
