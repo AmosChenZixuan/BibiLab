@@ -556,6 +556,7 @@ async def run_chat_turn(
                             "scope_choice": result.get("scope_choice", "none"),
                             "excluded_count": result.get("excluded_count"),
                             "scoped_pool_size": result.get("scoped_pool_size"),
+                            "facet_scope": result.get("facet_scope"),
                             "gate_margin": result.get("gate_margin"),
                         }
                     )
@@ -623,6 +624,7 @@ async def run_chat_turn(
                     call["scope_choice"] = call.get("scope_choice", "none")
                     call["excluded_count"] = call.get("excluded_count")
                     call["scoped_pool_size"] = call.get("scoped_pool_size")
+                    call["facet_scope"] = call.get("facet_scope")
                     call["gate_margin"] = call.get("gate_margin")
 
             meta: dict[str, Any] = {}
