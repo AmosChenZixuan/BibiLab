@@ -344,3 +344,89 @@ async def test_patch_facets_404(client: httpx.AsyncClient, tmp_bibilab_home: Pat
     await bootstrap_db()
     r = await client.patch("/sources/does-not-exist/facets", json={"series_name": "X"})
     assert r.status_code == 404
+
+
+async def test_patch_facets_empty_body_noop(client: httpx.AsyncClient, tmp_bibilab_home: Path):
+    """Empty {} patch on a live source is an idempotent 204 no-op; row unchanged."""
+    import uuid
+
+    from bibilab.db import bootstrap_db, create_list, get_source, write_source
+
+    await bootstrap_db()
+    await create_list("Le", "Le", "2026-01-01T00:00:00")
+    sid = str(uuid.uuid4())
+    await write_source(
+        source_id=sid,
+        video_id="BVpf04",
+        platform="bilibili",
+        list_id="Le",
+        title="T",
+        summary="s",
+        keywords=["k"],
+        cover_url=None,
+        transcript_path=None,
+        source_url="https://example.com/BVpf04",
+        duration_seconds=10,
+        uploader="U",
+        language=None,
+        whisper_model="large-v3",
+        ai_model="gpt-4o",
+        vision_enabled=False,
+        settings_snapshot={},
+        series_name="keep",
+        sequence_number=3,
+        sequence_kind="episode",
+        season_number=1,
+    )
+    r = await client.patch(f"/sources/{sid}/facets", json={})
+    assert r.status_code == 204
+    src = await get_source(sid)
+    assert src["series_name"] == "keep"
+    assert src["sequence_number"] == 3
+    assert src["season_number"] == 1
+
+
+async def test_patch_facets_toctou_lookuperror_maps_to_404(client: httpx.AsyncClient, tmp_bibilab_home: Path):
+    """If the row vanishes between the existence check and the write,
+    update_source_facets raises LookupError and the router returns 404
+    (not a silent 204)."""
+    import uuid
+
+    from bibilab.db import bootstrap_db, create_list, write_source
+
+    await bootstrap_db()
+    await create_list("Lt", "Lt", "2026-01-01T00:00:00")
+    sid = str(uuid.uuid4())
+    await write_source(
+        source_id=sid,
+        video_id="BVpf05",
+        platform="bilibili",
+        list_id="Lt",
+        title="T",
+        summary="s",
+        keywords=["k"],
+        cover_url=None,
+        transcript_path=None,
+        source_url="https://example.com/BVpf05",
+        duration_seconds=10,
+        uploader="U",
+        language=None,
+        whisper_model="large-v3",
+        ai_model="gpt-4o",
+        vision_enabled=False,
+        settings_snapshot={},
+    )
+
+    import bibilab.routers.sources as sources_router
+
+    real_update = sources_router.update_source_facets
+
+    async def raise_lookup(source_id, **fields):
+        raise LookupError(source_id)
+
+    sources_router.update_source_facets = raise_lookup
+    try:
+        r = await client.patch(f"/sources/{sid}/facets", json={"series_name": "X"})
+    finally:
+        sources_router.update_source_facets = real_update
+    assert r.status_code == 404

@@ -367,7 +367,11 @@ async def update_source_facets(source_id: str, **fields: object) -> None:
     params = [fields[c] for c in cols]
     params.append(source_id)
     async with get_db() as db:
-        await db.execute(f"UPDATE sources SET {set_clause} WHERE id=?", params)
+        cursor = await db.execute(f"UPDATE sources SET {set_clause} WHERE id=?", params)
+        if cursor.rowcount == 0:
+            # Source vanished between the router's existence check and this
+            # write (TOCTOU). Don't commit a no-op as success.
+            raise LookupError(source_id)
         await db.commit()
 
 

@@ -4,6 +4,9 @@ import { useLanguage } from "@/app/LanguageContext";
 import { toErrorMessageWithT } from "@/lib/api";
 import type { SourceFacetsPatch } from "@/lib/types";
 
+// null = facet explicitly unset/cleared in the DB; undefined = field absent
+// from the SourceContent payload (older row / not yet loaded). Both render as
+// "no segment", so callers need not normalize.
 export type Facets = {
   seriesName: string | null | undefined;
   sequenceNumber: number | null | undefined;

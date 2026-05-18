@@ -46,9 +46,9 @@ describe("DigestFacets read", () => {
 });
 
 describe("DigestFacets edit", () => {
-  test("invalid number blocks save", async () => {
+  test.each(["0", "abc", "-1", "1.5"])("invalid number %s blocks save", async (bad) => {
     const { onSave } = setup({ editing: true });
-    fireEvent.change(screen.getByLabelText("No.") as HTMLInputElement, { target: { value: "0" } });
+    fireEvent.change(screen.getByLabelText("No.") as HTMLInputElement, { target: { value: bad } });
     fireEvent.click(screen.getByText("Save"));
     expect(await screen.findByText("Must be a whole number ≥ 1")).toBeInTheDocument();
     expect(onSave).not.toHaveBeenCalled();

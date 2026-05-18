@@ -1002,3 +1002,16 @@ async def test_update_source_facets_partial_and_noop(tmp_bibilab_home: Path):
     assert after["sequence_number"] == 5
     assert after["series_name"] == "S"
     assert after["season_number"] == 2
+
+
+async def test_update_source_facets_missing_row_raises_lookuperror(tmp_bibilab_home: Path):
+    """An UPDATE that matches no row raises LookupError (no silent no-op commit)."""
+    import uuid
+
+    import pytest
+
+    from bibilab.db import bootstrap_db, update_source_facets
+
+    await bootstrap_db()
+    with pytest.raises(LookupError):
+        await update_source_facets(str(uuid.uuid4()), series_name="X")

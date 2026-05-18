@@ -8,7 +8,14 @@ import pytest
 from bibilab.adapters.base import VideoMeta
 from bibilab.config import AIConfig
 from bibilab.pipeline.audio import PipelineError
-from bibilab.pipeline.digest import _MAX_KEYWORDS, DigestResult, _parse_response, digest, parse_facet_int
+from bibilab.pipeline.digest import (
+    _MAX_KEYWORDS,
+    DigestResult,
+    _parse_response,
+    clean_str_facet,
+    digest,
+    parse_facet_int,
+)
 
 
 def _make_video_meta(title="Test Video") -> VideoMeta:
@@ -397,3 +404,22 @@ class TestParseFacetInt:
     def test_non_finite_raises(self):
         with pytest.raises(ValueError):
             parse_facet_int(float("inf"))
+
+
+class TestCleanStrFacet:
+    def test_none_returns_none(self):
+        assert clean_str_facet(None) is None
+
+    def test_trim_and_blank(self):
+        assert clean_str_facet("  罗翔说刑法  ") == "罗翔说刑法"
+        assert clean_str_facet("") is None
+        assert clean_str_facet("   ") is None
+
+    def test_lower_flag(self):
+        assert clean_str_facet("Episode") == "Episode"
+        assert clean_str_facet("Episode", lower=True) == "episode"
+
+    def test_non_string_raises(self):
+        for bad in [5, True, 1.5, ["x"], {}]:
+            with pytest.raises(ValueError):
+                clean_str_facet(bad)

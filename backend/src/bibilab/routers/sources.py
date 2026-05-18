@@ -89,6 +89,9 @@ async def patch_source_facets(source_id: str, body: SourceFacetsUpdate) -> Respo
 
     fields = {name: getattr(body, name) for name in body.model_fields_set}
     if fields:
-        await update_source_facets(source_id, **fields)
+        try:
+            await update_source_facets(source_id, **fields)
+        except LookupError:
+            raise HTTPException(status_code=404, detail="Source not found")
 
     return Response(status_code=204)
