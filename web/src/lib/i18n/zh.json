@@ -152,6 +152,17 @@
     "digest": "摘要",
     "rerunDigest": "重新生成摘要",
     "rerunning": "生成中...",
+    "facets": {
+      "edit": "编辑元数据",
+      "series": "系列",
+      "number": "序号",
+      "season": "季",
+      "numberPrefix": "No.",
+      "seasonPrefix": "S",
+      "save": "保存",
+      "cancel": "取消",
+      "invalidInt": "需为 ≥ 1 的整数"
+    },
     "notSignedIn": "未登录",
     "ingest": {
       "alreadyInList": "已在此列表中",

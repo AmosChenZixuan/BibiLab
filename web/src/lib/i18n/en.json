@@ -152,6 +152,17 @@
     "digest": "Digest",
     "rerunDigest": "Re-run digest",
     "rerunning": "Re-running...",
+    "facets": {
+      "edit": "Edit metadata",
+      "series": "Series",
+      "number": "No.",
+      "season": "Season",
+      "numberPrefix": "No.",
+      "seasonPrefix": "S",
+      "save": "Save",
+      "cancel": "Cancel",
+      "invalidInt": "Must be a whole number ≥ 1"
+    },
     "notSignedIn": "Not signed in",
     "ingest": {
       "alreadyInList": "Already in this list",
