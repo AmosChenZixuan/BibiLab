@@ -265,12 +265,10 @@ async def test_patch_facets_replace(client: httpx.AsyncClient, tmp_bibilab_home:
         f"/sources/{sid}/facets",
         json={"series_name": "新系列", "sequence_number": 7, "season_number": None},
     )
-    assert r.status_code == 200
-    body = r.json()
-    assert body["series_name"] == "新系列"
-    assert body["sequence_number"] == 7
-    assert body["season_number"] is None
+    assert r.status_code == 204
     src = await get_source(sid)
+    assert src["series_name"] == "新系列"
+    assert src["sequence_number"] == 7
     assert src["season_number"] is None
     assert src["sequence_kind"] == "episode"
 
@@ -303,7 +301,7 @@ async def test_patch_facets_kindless_number_persists(client: httpx.AsyncClient, 
         settings_snapshot={},
     )
     r = await client.patch(f"/sources/{sid}/facets", json={"sequence_number": 8})
-    assert r.status_code == 200
+    assert r.status_code == 204
     src = await get_source(sid)
     assert src["sequence_number"] == 8
 

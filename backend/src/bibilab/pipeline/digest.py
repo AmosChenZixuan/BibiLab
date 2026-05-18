@@ -64,6 +64,22 @@ def parse_facet_int(v: object) -> int | None:
     return n
 
 
+def clean_str_facet(v: object, *, lower: bool = False) -> str | None:
+    """Trim a string facet; '' / None -> None. Non-string raises ValueError.
+
+    Shared core for series_name/sequence_kind. The digest path catches the
+    ValueError and degrades to None; the manual-edit path lets it 422.
+    """
+    if v is None:
+        return None
+    if not isinstance(v, str):
+        raise ValueError(f"not a string: {v!r}")
+    cleaned = v.strip()
+    if lower:
+        cleaned = cleaned.lower()
+    return cleaned or None
+
+
 class DigestResult(BaseModel):
     summary: str
     keywords: list[str]
@@ -75,8 +91,6 @@ class DigestResult(BaseModel):
     @field_validator("sequence_number", "season_number", mode="before")
     @classmethod
     def _coerce_int(cls, v: object, info: ValidationInfo) -> int | None:
-        # Facets are best-effort here: a present-but-bad value degrades to
-        # None (logged) rather than aborting the digest.
         try:
             return parse_facet_int(v)
         except ValueError:
@@ -86,19 +100,12 @@ class DigestResult(BaseModel):
     @field_validator("series_name", "sequence_kind", mode="before")
     @classmethod
     def _clean_str_facet(cls, v: object, info: ValidationInfo) -> str | None:
-        # Best-effort like the int facets: a non-string or blank value degrades
-        # to None (logged), never raises — a bad facet must not abort the
-        # digest. sequence_kind is lowercased (a label); series_name is not (a
-        # proper noun).
-        if v is None:
+        # sequence_kind is a label (lowercased); series_name is a proper noun.
+        try:
+            return clean_str_facet(v, lower=info.field_name == "sequence_kind")
+        except ValueError:
+            logger.warning("digest: dropping unusable %s=%r", info.field_name, v)
             return None
-        if isinstance(v, str):
-            cleaned = v.strip()
-            if info.field_name == "sequence_kind":
-                cleaned = cleaned.lower()
-            return cleaned or None
-        logger.warning("digest: dropping unusable %s=%r", info.field_name, v)
-        return None
 
     @model_validator(mode="after")
     def _require_kind_with_number(self) -> "DigestResult":

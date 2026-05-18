@@ -1,6 +1,6 @@
 import asyncio
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import FileResponse
 
 from bibilab.adapters.base import VideoMeta
@@ -76,9 +76,13 @@ async def rerun_source(
     return SourceContentResponse.from_source(source, transcript_text)
 
 
-@router.patch("/sources/{source_id}/facets", status_code=200)
-async def patch_source_facets(source_id: str, body: SourceFacetsUpdate) -> SourceContentResponse:
-    """Manually correct series/number/season. Replace semantics; sequence_kind untouched."""
+@router.patch("/sources/{source_id}/facets", status_code=204)
+async def patch_source_facets(source_id: str, body: SourceFacetsUpdate) -> Response:
+    """Manually correct series/number/season. Replace semantics; sequence_kind untouched.
+
+    Returns 204 — the client refetches via GET /sources/{id}; echoing the
+    transcript-laden SourceContentResponse here would be read twice and discarded.
+    """
     source = await get_source(source_id)
     if source is None:
         raise HTTPException(status_code=404, detail="Source not found")
@@ -86,8 +90,5 @@ async def patch_source_facets(source_id: str, body: SourceFacetsUpdate) -> Sourc
     fields = {name: getattr(body, name) for name in body.model_fields_set}
     if fields:
         await update_source_facets(source_id, **fields)
-        source = await get_source(source_id)
 
-    _transcript_path = transcript_path(source["id"])
-    transcript = _transcript_path.read_text(encoding="utf-8") if _transcript_path.exists() else ""
-    return SourceContentResponse.from_source(source, transcript)
+    return Response(status_code=204)

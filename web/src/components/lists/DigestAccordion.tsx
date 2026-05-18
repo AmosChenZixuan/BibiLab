@@ -3,7 +3,7 @@ import { ChevronUp, ChevronDown, MoreVertical, RotateCcw, Pencil } from "lucide-
 
 import { useLanguage } from "@/app/LanguageContext";
 import { ContextMenu } from "@/components/ui/ContextMenu";
-import { DigestFacets } from "@/components/lists/DigestFacets";
+import { DigestFacets, type Facets } from "@/components/lists/DigestFacets";
 import type { SourceFacetsPatch } from "@/lib/types";
 
 function LoadingDots() {
@@ -27,18 +27,14 @@ export function DigestAccordion({
   summary,
   keywords,
   onRerun,
-  seriesName,
-  sequenceNumber,
-  seasonNumber,
+  facets,
   onSaveFacets,
 }: {
   source: { id: string };
   summary: string;
   keywords: string[];
   onRerun: (sourceId: string) => void;
-  seriesName: string | null | undefined;
-  sequenceNumber: number | null | undefined;
-  seasonNumber: number | null | undefined;
+  facets: Facets;
   onSaveFacets: (patch: SourceFacetsPatch) => Promise<void>;
 }) {
   const { t } = useLanguage();
@@ -110,9 +106,8 @@ export function DigestAccordion({
       {expanded && (
         <div className="border-t border-border px-4 py-4 space-y-3">
           <DigestFacets
-            seriesName={seriesName}
-            sequenceNumber={sequenceNumber}
-            seasonNumber={seasonNumber}
+            key={editingFacets ? "facets-edit" : "facets-read"}
+            facets={facets}
             editing={editingFacets}
             onSave={onSaveFacets}
             onExitEdit={() => setEditingFacets(false)}

@@ -13,9 +13,7 @@ const baseProps = {
   summary: "foo bar",
   keywords: ["alpha", "beta"],
   onRerun: vi.fn(),
-  seriesName: "罗翔说刑法",
-  sequenceNumber: 8,
-  seasonNumber: null,
+  facets: { seriesName: "罗翔说刑法", sequenceNumber: 8, seasonNumber: null },
   onSaveFacets: vi.fn().mockResolvedValue(undefined),
 };
 

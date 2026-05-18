@@ -78,8 +78,6 @@ class SourceFacetsUpdate(BaseModel):
     @field_validator("series_name", mode="before")
     @classmethod
     def _series(cls, v: object) -> str | None:
-        if v is None:
-            return None
-        if isinstance(v, str):
-            return v.strip() or None
-        raise ValueError("series_name must be a string")
+        from bibilab.pipeline.digest import clean_str_facet
+
+        return clean_str_facet(v)

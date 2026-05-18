@@ -190,7 +190,7 @@ export class SourcesClient {
   }
 
   updateSourceFacets(sourceId: string, patch: SourceFacetsPatch) {
-    return this.request<SourceContent>(this.baseUrl, `/sources/${sourceId}/facets`, {
+    return this.request<void>(this.baseUrl, `/sources/${sourceId}/facets`, {
       method: "PATCH",
       body: JSON.stringify(patch),
     });
@@ -356,7 +356,7 @@ export interface ApiClient {
   getSource(sourceId: string, opts?: { signal?: AbortSignal }): Promise<SourceContent | undefined>;
   deleteSource(listId: string, sourceId: string): Promise<void | undefined>;
   rerunDigest(sourceId: string): Promise<SourceContent | undefined>;
-  updateSourceFacets(sourceId: string, patch: SourceFacetsPatch): Promise<SourceContent | undefined>;
+  updateSourceFacets(sourceId: string, patch: SourceFacetsPatch): Promise<void | undefined>;
   previewPlaylist(listId: string, url: string): Promise<PreviewResponse | undefined>;
   previewPlaylistMetadata(videoIds: string[]): Promise<VideoMetadataMap | undefined>;
   ingestUrl(listId: string, videos: IngestVideoIn[]): Promise<IngestResult | undefined>;
