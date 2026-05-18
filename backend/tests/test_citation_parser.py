@@ -97,3 +97,162 @@ class TestFlushBuffer:
 
     def test_flush_empty(self):
         assert flush_buffer("") == []
+
+
+def _citations(events: list) -> list[int]:
+    return [json.loads(e.content)["index"] for e in events if e.type == "citation"]
+
+
+def _delta_text(events: list) -> str:
+    return "".join(e.content or "" for e in events if e.type == "delta")
+
+
+class TestNonCanonicalWrappers:
+    """AC1 — D1 wrappers normalize to the same citation event as [N]."""
+
+    def test_bracket_source_label(self):
+        events, buf = parse_delta("see [Source 1] there", "", _lk(_e(1)))
+        assert _citations(events) == [1]
+        assert _delta_text(events) == "see  there"
+        assert buf == ""
+
+    def test_paren_source_label(self):
+        events, _ = parse_delta("see (Source 1) there", "", _lk(_e(1)))
+        assert _citations(events) == [1]
+        assert _delta_text(events) == "see  there"
+
+    def test_fullwidth_paren_source_label(self):
+        events, _ = parse_delta("see （Source 1） there", "", _lk(_e(1)))
+        assert _citations(events) == [1]
+        assert _delta_text(events) == "see  there"
+
+    def test_bracket_chinese_label(self):
+        events, _ = parse_delta("见[来源1]处", "", _lk(_e(1)))
+        assert _citations(events) == [1]
+        assert _delta_text(events) == "见处"
+
+    def test_fullwidth_paren_chinese_label(self):
+        events, _ = parse_delta("见（来源1）处", "", _lk(_e(1)))
+        assert _citations(events) == [1]
+        assert _delta_text(events) == "见处"
+
+    def test_halfwidth_paren_chinese_label(self):
+        events, _ = parse_delta("见(来源1)处", "", _lk(_e(1)))
+        assert _citations(events) == [1]
+
+    def test_lenticular_bare(self):
+        events, _ = parse_delta("见【1】处", "", _lk(_e(1)))
+        assert _citations(events) == [1]
+        assert _delta_text(events) == "见处"
+
+    def test_lenticular_chinese_label(self):
+        events, _ = parse_delta("见【来源1】处", "", _lk(_e(1)))
+        assert _citations(events) == [1]
+
+    def test_source_label_case_insensitive(self):
+        events, _ = parse_delta("see [source 1] and [SOURCE 1]", "", _lk(_e(1)))
+        assert _citations(events) == [1, 1]
+
+    def test_source_label_no_space(self):
+        events, _ = parse_delta("see [Source1] there", "", _lk(_e(1)))
+        assert _citations(events) == [1]
+
+    def test_canonical_still_works(self):
+        events, _ = parse_delta("see [1] there", "", _lk(_e(1)))
+        assert _citations(events) == [1]
+
+
+class TestMultiIndex:
+    """AC2 — D2 multi-index: one citation event per index, in order, no text between."""
+
+    def test_comma_ascii(self):
+        events, _ = parse_delta("see [1,2]", "", _lk(_e(1), _e(2)))
+        assert _citations(events) == [1, 2]
+        assert _delta_text(events) == "see "
+
+    def test_comma_space(self):
+        events, _ = parse_delta("see [1, 2]", "", _lk(_e(1), _e(2)))
+        assert _citations(events) == [1, 2]
+        assert _delta_text(events) == "see "
+
+    def test_ideographic_comma_fullwidth(self):
+        events, _ = parse_delta("见【1，2】", "", _lk(_e(1), _e(2)))
+        assert _citations(events) == [1, 2]
+        assert _delta_text(events) == "见"
+
+    def test_enumeration_comma(self):
+        events, _ = parse_delta("见[1、2]", "", _lk(_e(1), _e(2)))
+        assert _citations(events) == [1, 2]
+
+    def test_multi_index_no_delta_between(self):
+        events, _ = parse_delta("[1,2]", "", _lk(_e(1), _e(2)))
+        types = [e.type for e in events]
+        assert types == ["citation", "citation"]
+
+
+class TestMultiIndexOutOfRange:
+    """AC3/D3 — per-index handling: known→citation, unknown→own numeric text delta."""
+
+    def test_single_out_of_range_unchanged(self):
+        events, _ = parse_delta("see [Source 7]", "", _lk(_e(1), _e(2)))
+        assert _citations(events) == []
+        assert "[Source 7]" in _delta_text(events)
+
+    def test_multi_index_partial_known(self):
+        events, _ = parse_delta("[1,7]", "", _lk(_e(1), _e(2)))
+        assert _citations(events) == [1]
+        # unknown index emitted as its own numeric text delta
+        assert "7" in _delta_text(events)
+
+
+class TestNonCanonicalFalsePositives:
+    """AC3/D4 — no digit run in D1/D2 shape → no match, text passes through."""
+
+    def test_source_word_in_prose(self):
+        events, _ = parse_delta("Source code is open", "", _lk(_e(1)))
+        assert _citations(events) == []
+        assert _delta_text(events) == "Source code is open"
+
+    def test_bare_chinese_label_no_digit(self):
+        events, _ = parse_delta("参考来源很多", "", _lk(_e(1)))
+        assert _citations(events) == []
+        assert _delta_text(events) == "参考来源很多"
+
+    def test_spaced_canonical_bracket_still_passthrough(self):
+        events, _ = parse_delta("see [ 1 ]", "", _lk(_e(1)))
+        assert _citations(events) == []
+        assert "[ 1 ]" in _delta_text(events)
+
+
+class TestNonCanonicalPartialBuffer:
+    """AC4/D5 — non-canonical wrapper split across deltas resolves to one event."""
+
+    def test_fullwidth_paren_split(self):
+        events1, buf1 = parse_delta("see （来源", "", _lk(_e(1)))
+        assert all(e.type == "delta" for e in events1)
+        events2, buf2 = parse_delta("1）done", buf1, _lk(_e(1)))
+        assert _citations(events2) == [1]
+        assert buf2 == ""
+
+    def test_lenticular_multi_index_split(self):
+        events1, buf1 = parse_delta("x 【1", "", _lk(_e(1), _e(2)))
+        events2, buf2 = parse_delta("，2】y", buf1, _lk(_e(1), _e(2)))
+        assert _citations(events1) + _citations(events2) == [1, 2]
+        assert buf2 == ""
+
+    def test_bracket_source_label_split(self):
+        events1, buf1 = parse_delta("see [Source ", "", _lk(_e(1)))
+        events2, _ = parse_delta("1] done", buf1, _lk(_e(1)))
+        assert _citations(events1) + _citations(events2) == [1]
+
+    def test_flush_unclosed_non_canonical_is_text(self):
+        _, buf1 = parse_delta("tail （来源", "", _lk(_e(1)))
+        events = flush_buffer(buf1)
+        assert all(e.type == "delta" for e in events)
+        assert "来源" in "".join(e.content or "" for e in events)
+
+    def test_non_viable_prefix_flushed_as_text(self):
+        # "(abc" is not a viable prefix of any D1/D2 token → flush, don't hold
+        events, buf = parse_delta("see (abc", "", _lk(_e(1)))
+        assert _delta_text(events) == "see (abc"
+        assert buf == ""

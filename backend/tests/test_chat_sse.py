@@ -495,6 +495,42 @@ async def test_chat_persists_paragraph_breaks_in_content_blocks(client):
 
 
 @pytest.mark.asyncio
+async def test_chat_citation_after_lone_break_not_isolated(client):
+    """AC6 — `a\\n\\n[1]` persists with the citation inline, not behind a lone break.
+
+    Parity with the frontend coalescing rule (D6): a citation that would land at
+    the head of a fresh paragraph attaches to the previous paragraph instead.
+    """
+    list_id = (await client.post("/lists", json={"name": "T"})).json()["id"]
+
+    async def fake_stream(*args, **kwargs):
+        async for ev in an_async_generator(
+            [
+                StreamEvent(type="delta", content="a\n\n"),
+                StreamEvent(type="citation", content='{"index":1,"source_id":"s1"}'),
+                StreamEvent(type="done"),
+            ]
+        ):
+            yield ev
+
+    with patch("bibilab.routers.chat.stream_with_tools", side_effect=fake_stream):
+        await client.post(f"/lists/{list_id}/chat", json={"message": "hi"})
+
+    msgs = await _get_assistant_msgs(client, list_id)
+    blocks = msgs[0]["metadata"]["content_blocks"]
+    # The citation must not be isolated behind a trailing-only paragraph_break.
+    # No paragraph_break may be immediately followed by a citation with no
+    # intervening text, and the run must not end with [break, citation].
+    types = [b["type"] for b in blocks]
+    for i, t in enumerate(types):
+        if t == "paragraph_break":
+            assert types[i + 1 :][:1] != ["citation"], f"citation isolated after break: {types}"
+    assert types[0] == "text" and types[0:1] != ["paragraph_break"]
+    citation_blocks = [b for b in blocks if b["type"] == "citation"]
+    assert len(citation_blocks) == 1 and citation_blocks[0]["index"] == 1
+
+
+@pytest.mark.asyncio
 async def test_chat_sse_multi_retrieve_no_crash(client):
     """Smoke test: two retrieve calls in one turn do not crash the SSE stream.
 

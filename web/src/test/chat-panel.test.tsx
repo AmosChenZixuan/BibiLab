@@ -256,6 +256,69 @@ describe("chat panel", () => {
     });
   });
 
+  test("citation after a lone paragraph_break attaches to the previous paragraph", async () => {
+    vi.spyOn(window, "fetch").mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : (input as Request).url;
+      const method = init?.method ?? "GET";
+      if (url.includes("/conversation") && method === "GET") {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              conversation: { id: "conv-1", list_id: "list-1" },
+              messages: [
+                {
+                  id: "msg-1",
+                  role: "assistant",
+                  content: "",
+                  created_at: "2026-04-08T12:00:00Z",
+                  metadata: {
+                    content_blocks: [
+                      { type: "text", text: "a" },
+                      { type: "paragraph_break" },
+                      { type: "citation", index: 1, source_id: "src-1", chunk_ids: [] },
+                    ],
+                  },
+                },
+              ],
+            }),
+          ),
+        );
+      }
+      if (url.includes("/chat") && method === "POST") {
+        return Promise.resolve(
+          new Response(
+            new ReadableStream({
+              start(c) {
+                c.enqueue(new TextEncoder().encode('data: {"type":"done"}\n\n'));
+                c.close();
+              },
+            }),
+            { headers: { "Content-Type": "text/event-stream" } },
+          ),
+        );
+      }
+      return Promise.resolve(new Response(JSON.stringify([])));
+    });
+
+    renderChatPanel(
+      { selectedSourceIds: ["src-1"], sources: [SOURCE_1] },
+      { skipMock: true },
+    );
+
+    await waitFor(() => {
+      const paras = document.querySelectorAll(".citation-paragraph");
+      // Exactly one paragraph: "a" with the chip inline. No citation-only para.
+      expect(paras.length).toBe(1);
+      expect(paras[0].querySelector(".cite-chip")).not.toBeNull();
+      expect(paras[0].textContent).toContain("a");
+      for (const p of paras) {
+        const hasChip = p.querySelector(".cite-chip") !== null;
+        const text = (p.textContent ?? "").replace(/\[\d+\]/g, "").trim();
+        expect(hasChip && text === "").toBe(false);
+      }
+    });
+  });
+
   test("shows 'Nothing selected' empty state when no sources selected", () => {
     renderChatPanel({ selectedSourceIds: [], sources: [] });
 
