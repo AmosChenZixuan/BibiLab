@@ -571,6 +571,9 @@ async def execute_tool(
         if not query or not isinstance(query, str):
             raise ValueError(f"retrieve requires a non-empty 'query' string, got {query!r}")
 
+        sequence_number = _coerce_to_int(arguments.get("sequence_number"), "sequence_number")
+        season_number = _coerce_to_int(arguments.get("season_number"), "season_number")
+
         if exclude is not None:
             scope_choice = "exclude"
             if whitelist is not None:
@@ -598,6 +601,8 @@ async def execute_tool(
             selected_source_ids=whitelist,
             exclude_source_ids=exclude,
             scope_choice=scope_choice,
+            sequence_number=sequence_number,
+            season_number=season_number,
             expected_hits=arguments.get("expected_hits", DEFAULT_EXPECTED_HITS),
         )
     if tool_name == GENERATE_REPORT_TOOL.name:

@@ -1872,3 +1872,58 @@ class TestExecuteRetrieveFacetScoping:
         # zero facet match → fall back to PRE-FACET pool (post-exclude), NOT full source_ids
         assert sorted(captured["scoped"]) == ["ub", "uc"]
         assert result["facet_scope"]["no_match"] is True
+
+
+class TestExecuteToolFacetArgs:
+    """#309: execute_tool parses + coerces facet args from raw LLM arguments."""
+
+    @staticmethod
+    def _cfg():
+        from bibilab.config import AIConfig, BibilabConfig
+
+        return BibilabConfig(ai=AIConfig(protocol="openai", model="x", api_key="k"))
+
+    @pytest.mark.asyncio
+    async def test_string_facet_arg_coerced_and_forwarded(self, monkeypatch):
+        from bibilab.pipeline import chat_tools
+
+        seen = {}
+
+        async def fake_execute_retrieve(**kwargs):
+            seen.update(kwargs)
+            return {"facet_scope": {}, "_chunks": "", "_turn_indices": [], "_raw_chunks": []}
+
+        monkeypatch.setattr(chat_tools, "execute_retrieve", fake_execute_retrieve)
+
+        await chat_tools.execute_tool(
+            tool_name="retrieve",
+            arguments={"query": "第八集", "exclude_source_ids": [], "sequence_number": "8"},
+            list_id="l1",
+            source_ids=["a"],
+            ui_lang="zh",
+            cfg=self._cfg(),
+        )
+        assert seen["sequence_number"] == 8  # "8" → 8
+        assert seen["season_number"] is None  # absent → None
+
+    @pytest.mark.asyncio
+    async def test_non_numeric_facet_arg_dropped(self, monkeypatch):
+        from bibilab.pipeline import chat_tools
+
+        seen = {}
+
+        async def fake_execute_retrieve(**kwargs):
+            seen.update(kwargs)
+            return {"facet_scope": {}, "_chunks": "", "_turn_indices": [], "_raw_chunks": []}
+
+        monkeypatch.setattr(chat_tools, "execute_retrieve", fake_execute_retrieve)
+
+        await chat_tools.execute_tool(
+            tool_name="retrieve",
+            arguments={"query": "q", "exclude_source_ids": [], "sequence_number": "eight"},
+            list_id="l1",
+            source_ids=["a"],
+            ui_lang="zh",
+            cfg=self._cfg(),
+        )
+        assert seen["sequence_number"] is None  # "eight" → dropped
