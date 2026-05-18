@@ -687,3 +687,47 @@ async def test_message_tool_blocks_round_trip(tmp_bibilab_home: Path):
     assert row["tool_blocks"] is not None
     stored = json.loads(row["tool_blocks"])
     assert stored == blocks
+
+
+@pytest.mark.asyncio
+async def test_get_source_facets(tmp_bibilab_home: Path):
+    from bibilab.db import bootstrap_db, create_list, get_source_facets, write_source
+
+    await bootstrap_db()
+    await create_list("list-1", "Course", "2026-01-01T00:00:00")
+
+    async def _write(sid: str, vid: str, seq, season):
+        await write_source(
+            source_id=sid,
+            video_id=vid,
+            platform="bilibili",
+            list_id="list-1",
+            title=vid,
+            summary="s",
+            keywords=[],
+            cover_url=None,
+            transcript_path=None,
+            source_url="u",
+            duration_seconds=1,
+            uploader="u",
+            language="en",
+            whisper_model="w",
+            ai_model="a",
+            vision_enabled=False,
+            settings_snapshot={},
+            sequence_number=seq,
+            season_number=season,
+        )
+
+    await _write("s1", "v1", 8, 2)
+    await _write("s2", "v2", 9, None)
+    await _write("s3", "v3", None, None)
+
+    facets = await get_source_facets(["s1", "s2", "s3", "missing"])
+
+    assert facets == {
+        "s1": {"sequence_number": 8, "season_number": 2},
+        "s2": {"sequence_number": 9, "season_number": None},
+        "s3": {"sequence_number": None, "season_number": None},
+    }
+    assert await get_source_facets([]) == {}
