@@ -275,6 +275,13 @@
       "summary": "%{chunks} chunks · %{sources} sources",
       "summaryEmpty": "0 chunks (%{dropped} dropped)",
       "summaryPending": "retrieving…",
+      "facetNoMatch": "No source matched %{facets} — searched all sources instead.",
+      "facetNoMatchGeneric": "No source matched the requested filter — searched all sources instead.",
+      "facetNoMatchLabel": "Facet",
+      "facet": {
+        "sequence": "#%{n}",
+        "season": "season %{n}"
+      },
       "field": {
         "query": "Query",
         "mode": "Mode",

@@ -275,6 +275,13 @@
       "summary": "%{chunks} 个块 · %{sources} 个来源",
       "summaryEmpty": "0 个块（%{dropped} 被筛掉）",
       "summaryPending": "检索中…",
+      "facetNoMatch": "没有来源匹配%{facets}，已改为搜索全部来源。",
+      "facetNoMatchGeneric": "没有来源匹配请求的范围，已改为搜索全部来源。",
+      "facetNoMatchLabel": "范围",
+      "facet": {
+        "sequence": "序号 %{n}",
+        "season": "第 %{n} 季"
+      },
       "field": {
         "query": "查询",
         "mode": "模式",

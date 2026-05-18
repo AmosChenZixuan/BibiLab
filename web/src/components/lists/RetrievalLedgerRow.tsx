@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Search, Loader2, AlertTriangle, ChevronRight } from "lucide-react";
 import { useLanguage } from "@/app/LanguageContext";
-import { formatMediaTimestamp, type RetrievalCall, type PendingRagCall, type PendingMetadataCall } from "@/lib/chat-utils";
+import { formatMediaTimestamp, facetNoMatchHint, type RetrievalCall, type PendingRagCall, type PendingMetadataCall } from "@/lib/chat-utils";
 
 export type RowVariant = "default" | "empty" | "pending";
 
@@ -52,6 +52,19 @@ export function RetrievalLedgerRow({ variant, call, pending, streaming = false }
   const source_coverage = call.source_coverage ?? [];
   const context = call.context ?? [];
 
+  // #319 fail-open visibility. Hoisted so every collapsed/streaming/expanded
+  // branch shares one definition.
+  const facetHint = call.facet_scope?.no_match ? facetNoMatchHint(t, call.facet_scope) : null;
+  const facetIcon = facetHint ? (
+    <AlertTriangle size={12} className="shrink-0 self-center text-amber" aria-label={facetHint} />
+  ) : null;
+  const facetDetailLine = facetHint ? (
+    <span>
+      <span className="text-muted">{t("chat.ledger.facetNoMatchLabel")} </span>
+      <span className="font-medium text-amber">{facetHint}</span>
+    </span>
+  ) : null;
+
   if (variant === "empty") {
     const summaryText = t("chat.ledger.summaryEmpty", { dropped: call.dropped_by_gate });
     if (streaming) {
@@ -59,6 +72,7 @@ export function RetrievalLedgerRow({ variant, call, pending, streaming = false }
         <div className="flex w-full items-center gap-1.5 text-xs text-amber">
           <AlertTriangle size={12} className="shrink-0" />
           <span className="truncate">{summaryText}</span>
+          {facetIcon}
         </div>
       );
     }
@@ -73,6 +87,7 @@ export function RetrievalLedgerRow({ variant, call, pending, streaming = false }
         >
           <AlertTriangle size={12} className="shrink-0" />
           <span className="truncate">{summaryText}</span>
+          {facetIcon}
           <ChevronRight size={12} className={`ml-auto shrink-0 transition-transform ${expanded ? "rotate-90" : ""}`} />
         </button>
         {expanded && (
@@ -85,6 +100,7 @@ export function RetrievalLedgerRow({ variant, call, pending, streaming = false }
               <span className="text-muted">{t("chat.ledger.field.result")}</span>
               <span className="font-medium text-ink">{summaryText}</span>
             </div>
+            {facetDetailLine}
           </div>
         )}
       </div>
@@ -103,6 +119,7 @@ export function RetrievalLedgerRow({ variant, call, pending, streaming = false }
         <span className="min-w-0 truncate font-mono">{call.query}</span>
         <span className="shrink-0 opacity-40">·</span>
         <span className="shrink-0">{summaryText}</span>
+        {facetIcon}
       </div>
     );
   }
@@ -119,6 +136,7 @@ export function RetrievalLedgerRow({ variant, call, pending, streaming = false }
         <span className="min-w-0 truncate font-mono">{call.query}</span>
         <span className="shrink-0 opacity-40">·</span>
         <span className="shrink-0">{summaryText}</span>
+        {facetIcon}
         <ChevronRight size={12} className={`ml-auto shrink-0 self-center transition-transform ${expanded ? "rotate-90" : ""}`} />
       </button>
 
@@ -137,6 +155,7 @@ export function RetrievalLedgerRow({ variant, call, pending, streaming = false }
               <span className="text-muted">{t("chat.ledger.field.scope")} </span>
               <span className="font-medium text-ink"><ScopeDisplay call={call} t={t} /></span>
             </span>
+            {facetDetailLine}
           </div>
 
           {context.length > 0 && (

@@ -24,6 +24,15 @@ export type RetrievalChunk = {
   rerank_score: number;
   preview: string;
 };
+/** Echo of the LLM-extracted facet predicate + deterministic match outcome (#309).
+ * `no_match` is true iff a predicate was given AND zero sources matched (the
+ * backend then fails open to the full pre-facet pool — surfaced by #319). */
+export type FacetScope = {
+  sequence_number: number | null;
+  season_number: number | null;
+  matched_count: number | null;
+  no_match: boolean;
+};
 /** source_coverage lists only sources whose [N] actually appeared in the assistant text. */
 export type RetrievalCall = {
   query: string;
@@ -40,6 +49,7 @@ export type RetrievalCall = {
   scope_choice: ScopeChoice;
   excluded_count: number | null;
   scoped_pool_size: number;
+  facet_scope?: FacetScope;
   gate_margin: number | null;
 };
 export type RagMetadata = { calls: RetrievalCall[] };
@@ -67,6 +77,20 @@ export function formatSubtitle(t: (key: string, params?: Record<string, string |
     count: sourceCount,
     duration: formatDurationHuman(totalSeconds),
   });
+}
+
+/** Human sentence for a fail-open facet no-match (#319). Empty facet set →
+ * generic copy (backend contract says no_match implies a predicate existed,
+ * but stay defensive). */
+export function facetNoMatchHint(
+  t: (key: string, params?: Record<string, string | number>) => string,
+  scope: FacetScope,
+): string {
+  const parts: string[] = [];
+  if (scope.sequence_number != null) parts.push(t("chat.ledger.facet.sequence", { n: scope.sequence_number }));
+  if (scope.season_number != null) parts.push(t("chat.ledger.facet.season", { n: scope.season_number }));
+  if (parts.length === 0) return t("chat.ledger.facetNoMatchGeneric");
+  return t("chat.ledger.facetNoMatch", { facets: parts.join(", ") });
 }
 
 const LEGACY_CITATION_RE = /\[([^\]]+?) @ (\d+)s-(\d+)s\]/g;
