@@ -1677,3 +1677,18 @@ class TestCoerceToInt:
         from bibilab.pipeline.chat_tools import _coerce_to_int
 
         assert _coerce_to_int(val, "sequence_number") == expected
+
+
+class TestRetrieveToolFacetSchema:
+    """#309: schema exposes optional sequence_number/season_number; no series_name."""
+
+    def test_facet_params_present_and_typed(self):
+        from bibilab.pipeline.chat_tools import RETRIEVE_TOOL
+
+        props = RETRIEVE_TOOL.parameters["properties"]
+        assert props["sequence_number"]["type"] == "integer"
+        assert props["season_number"]["type"] == "integer"
+        assert "series_name" not in props
+        # facet params are optional
+        assert "sequence_number" not in RETRIEVE_TOOL.parameters["required"]
+        assert "season_number" not in RETRIEVE_TOOL.parameters["required"]

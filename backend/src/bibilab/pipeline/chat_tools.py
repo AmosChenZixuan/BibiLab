@@ -194,6 +194,22 @@ RETRIEVE_TOOL = ToolDefinition(
                     "many = survey/summary, depth_per_source=5, top_k=24"
                 ),
             },
+            "sequence_number": {
+                "type": "integer",
+                "description": (
+                    "Episode / part number, ONLY if the user's question explicitly "
+                    "references it — e.g. 第八集 → sequence_number=8, 'part 3' → 3. "
+                    "Omit if not mentioned (omission searches all sources)."
+                ),
+            },
+            "season_number": {
+                "type": "integer",
+                "description": (
+                    "Season number, ONLY if the user's question explicitly references "
+                    "it — e.g. 第二季 → season_number=2. "
+                    "Omit if not mentioned (omission searches all sources)."
+                ),
+            },
         },
         "required": ["query", "exclude_source_ids"],
     },
