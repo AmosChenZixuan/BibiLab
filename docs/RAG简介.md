@@ -47,13 +47,13 @@ LLM 在 stream 中判断问题类型后调用 `retrieve` 工具，参数通过 `
 Focused 模式：直接给 LLM 那 5 个 top chunk（深度 > 覆盖）。
 Broad 模式：用 best_by_source 字典，每个视频只保留它内部最相关的那一块，按分数排序输出（覆盖 > 深度）。
 
-4. 检索范围语义（#295 + #309）
+4. 检索范围语义（#309 + #310）
 
-`retrieve` 工具支持 `source_ids`（白名单）和 `exclude_source_ids`（排除黑名单）。两者并存时 blacklist 优先。白名单为空时默认搜全部。
+`retrieve` 的预检索范围**只由确定性 facet 匹配决定**。#310 移除了 `source_ids`/`exclude_source_ids` 索引决策与系统提示里的来源清单——系统提示因此变成 per-language 静态文本，Anthropic prompt cache 可覆盖整个前缀。
 
-#309 在此之上加了一层**确定性 facet 预筛**：`retrieve` 还接 `sequence_number` / `season_number`（整数，可选）。LLM 只负责从问题里**抽取**这两个数（解析，可靠），后端拿它们和 `sources` 表里的列做**精确匹配**（集合运算，确定），在 `hybrid_search` **之前**把池子缩到匹配子集。语义是先 exclude/whitelist 解析出"pre-facet 池"，facet 再和它取交集。
+#309/#310：`retrieve` 接 `sequence_number` / `season_number`（整数，可选）。LLM 只负责从问题里**抽取**这两个数（解析，可靠），后端拿它们和 `sources` 表里的列做**精确匹配**（集合运算，确定），在 `hybrid_search` **之前**把全量来源池缩到匹配子集。
 
-▎ Fail-open 是硬规则：facet 没传 → 不筛；传了但零匹配（或 facet 子查询 DB 报错）→ **退回 pre-facet 池，绝不清空**，并打 `facet_scope.no_match=true`。`scoped_pool_size` 仍记 pre-facet 大小，narrowed 数量看 `facet_scope.matched_count`。`series_name` 的模糊匹配被推迟（见 #309，单独 follow-up）。
+▎ Fail-open 是硬规则：facet 没传 → 不筛；传了但零匹配（或 facet 子查询 DB 报错）→ **退回全量来源池，绝不清空**，并打 `facet_scope.no_match=true`；同时在 LLM 可见的工具结果（`_chunks`）里加一行提示，让模型先声明"按全部来源搜索"再作答。`scoped_pool_size` 记全量池大小，narrowed 数量看 `facet_scope.matched_count`。`series_name` 的模糊匹配被推迟（见 #309，单独 follow-up）。
 
 ---
 
