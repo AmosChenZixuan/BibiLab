@@ -9,6 +9,7 @@ from bibilab.config import BibilabConfig
 from bibilab.db import count_sources, create_job, get_source_facets, language_breakdown, longest_source
 from bibilab.models._enums import RetrievalParams
 from bibilab.pipeline._shared import ToolDefinition
+from bibilab.pipeline.digest import parse_facet_int
 from bibilab.pipeline.embed import retrieve
 
 logger = logging.getLogger(__name__)
@@ -302,26 +303,19 @@ def _coerce_to_str_list(val, key: str) -> list[str] | None:
     return None
 
 
-def _coerce_to_int(val: object, key: str) -> int | None:
-    """Coerce an LLM-supplied facet arg to int. Non-coercible → None (drop predicate, never raise).
+def _facet_int(v: object, key: str) -> int | None:
+    """Coerce an LLM facet arg via the shared `parse_facet_int` primitive,
+    degrading unusable values to None (a bad LLM guess drops the predicate,
+    never raises — same best-effort contract as the digest path).
 
-    bool is rejected (Python's bool is an int subclass; True/False are never a facet).
-    Floats and numeric strings are accepted only when integral (8.0, "8" — yes; 8.5, "8.5" — no).
+    Single-sources the coercion rules (>=1, bool/non-integral rejected) in
+    parse_facet_int; only the degrade-and-log wrapper lives here.
     """
-    if val is None or isinstance(val, bool):
+    try:
+        return parse_facet_int(v)
+    except ValueError:
+        logger.warning("retrieve: %s=%r unusable, dropping predicate", key, v)
         return None
-    if isinstance(val, int):
-        return val
-    if isinstance(val, float):
-        return int(val) if val.is_integer() else None
-    if isinstance(val, str):
-        try:
-            return int(val.strip())
-        except ValueError:
-            logger.warning("retrieve: %s=%r not an integer, dropping predicate", key, val)
-            return None
-    logger.warning("retrieve: %s=%r not coercible to int, dropping predicate", key, val)
-    return None
 
 
 def _map_indices_to_uuids(indices: list[str], source_ids: list[str]) -> list[str]:
@@ -390,7 +384,13 @@ async def execute_retrieve(
     facet_no_match = False
     if facet_predicates:
         pre_facet_pool = scoped_source_ids if scoped_source_ids is not None else source_ids
-        facets = await get_source_facets(pre_facet_pool)
+        try:
+            facets = await get_source_facets(pre_facet_pool)
+        except Exception:  # noqa: BLE001 - facet scoping is best-effort; a DB
+            # error here must fail open to the pre-facet pool, not nuke an
+            # otherwise-fine retrieve (consistent with the zero-match contract).
+            logger.warning("retrieve: get_source_facets failed, fail-open to pre-facet pool", exc_info=True)
+            facets = {}
         matched = [
             sid
             for sid in pre_facet_pool
@@ -571,8 +571,8 @@ async def execute_tool(
         if not query or not isinstance(query, str):
             raise ValueError(f"retrieve requires a non-empty 'query' string, got {query!r}")
 
-        sequence_number = _coerce_to_int(arguments.get("sequence_number"), "sequence_number")
-        season_number = _coerce_to_int(arguments.get("season_number"), "season_number")
+        sequence_number = _facet_int(arguments.get("sequence_number"), "sequence_number")
+        season_number = _facet_int(arguments.get("season_number"), "season_number")
 
         if exclude is not None:
             scope_choice = "exclude"

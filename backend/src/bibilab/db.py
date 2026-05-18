@@ -452,7 +452,7 @@ async def get_video_ids_for_sources(source_ids: list[str]) -> dict[str, str]:
         return {row["id"]: row["video_id"] for row in rows}
 
 
-async def get_source_facets(source_ids: list[str]) -> dict[str, dict]:
+async def get_source_facets(source_ids: list[str]) -> dict[str, dict[str, int | None]]:
     """Return {source_id: {"sequence_number": int|None, "season_number": int|None}}.
 
     Only sources found in the table are included. Empty input → {}.

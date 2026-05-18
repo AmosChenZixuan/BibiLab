@@ -1650,8 +1650,10 @@ class TestRetrieveToolSchemaUpdate:
         assert "whitelist" in desc.lower() or "ONLY when the user explicitly" in desc
 
 
-class TestCoerceToInt:
-    """#309: LLM facet args may arrive as int, float, or numeric string; non-numeric degrades to None."""
+class TestFacetInt:
+    """#309: _facet_int wraps the shared parse_facet_int, degrading unusable LLM
+    args to None (never raises). Coercion rules (>=1, bool/non-integral rejected)
+    are single-sourced in parse_facet_int — see digest.py."""
 
     @pytest.mark.parametrize(
         ("val", "expected"),
@@ -1660,9 +1662,11 @@ class TestCoerceToInt:
             ("8", 8),
             (8.0, 8),
             (" 8 ", 8),
-            (0, 0),
-            (-3, -3),
+            (1, 1),
             (None, None),
+            # < 1 rejected by parse_facet_int (every stored facet is >= 1) → drop
+            (0, None),
+            (-3, None),
             ("eight", None),
             ("", None),
             ("8.5", None),
@@ -1673,10 +1677,19 @@ class TestCoerceToInt:
             ({"n": 8}, None),
         ],
     )
-    def test_coerce(self, val, expected):
-        from bibilab.pipeline.chat_tools import _coerce_to_int
+    def test_facet_int(self, val, expected):
+        from bibilab.pipeline.chat_tools import _facet_int
 
-        assert _coerce_to_int(val, "sequence_number") == expected
+        assert _facet_int(val, "sequence_number") == expected
+
+    def test_unusable_value_logs_drop(self, caplog):
+        """M2: a nonsensical episode (0/negative/garbage) is logged + dropped,
+        not silently turned into a guaranteed zero-match."""
+        from bibilab.pipeline.chat_tools import _facet_int
+
+        with caplog.at_level(logging.WARNING, logger="bibilab.pipeline.chat_tools"):
+            assert _facet_int(0, "sequence_number") is None
+        assert "unusable, dropping predicate" in caplog.text
 
 
 class TestRetrieveToolFacetSchema:
@@ -1804,7 +1817,11 @@ class TestExecuteRetrieveFacetScoping:
         }
 
     @pytest.mark.asyncio
-    async def test_season_none_ignored_sequence_filters(self, monkeypatch):
+    async def test_season_omitted_does_not_filter(self, monkeypatch):
+        """Both sources share sequence_number but differ in season; season is
+        omitted from the call → season must NOT narrow (both kept). Distinguishes
+        'season ignored' from 'season coincidentally shared' (the latter is false
+        here: seasons are 2 vs 5)."""
         from bibilab.pipeline import chat_tools
 
         captured = self._patch(
@@ -1821,9 +1838,39 @@ class TestExecuteRetrieveFacetScoping:
             scope_choice="none",
             sequence_number=1,
         )
-        # season omitted → both kept
         assert sorted(captured["scoped"]) == ["a", "b"]
         assert result["facet_scope"]["matched_count"] == 2
+
+    @pytest.mark.asyncio
+    async def test_season_predicate_and_two_key_intersection(self, monkeypatch):
+        """season_number IS passed and must AND with sequence_number. 'a' and 'b'
+        share sequence_number=1; only 'a' has season_number=2. Guards: all→any
+        regression (would wrongly keep 'b'), and dropping season_number from the
+        predicate dict (would wrongly keep 'b')."""
+        from bibilab.pipeline import chat_tools
+
+        captured = self._patch(
+            monkeypatch,
+            {
+                "a": {"sequence_number": 1, "season_number": 2},
+                "b": {"sequence_number": 1, "season_number": 5},
+            },
+        )
+        result = await chat_tools.execute_retrieve(
+            query="q",
+            source_ids=["a", "b"],
+            cfg=self._cfg(),
+            scope_choice="none",
+            sequence_number=1,
+            season_number=2,
+        )
+        assert captured["scoped"] == ["a"]  # b excluded: season 5 != 2
+        assert result["facet_scope"] == {
+            "sequence_number": 1,
+            "season_number": 2,
+            "matched_count": 1,
+            "no_match": False,
+        }
 
     @pytest.mark.asyncio
     async def test_facet_intersects_exclude_pool(self, monkeypatch):
@@ -1848,6 +1895,9 @@ class TestExecuteRetrieveFacetScoping:
         )
         assert sorted(captured["scoped"]) == ["ub", "uc"]  # ua excluded, not re-added
         assert result["facet_scope"]["matched_count"] == 2
+        # Decision B on the non-trivial path: scoped_pool_size = post-exclude
+        # PRE-facet pool ([ub, uc] = 2), NOT the post-facet narrowed count.
+        assert result["scoped_pool_size"] == 2
 
     @pytest.mark.asyncio
     async def test_zero_match_fails_open_to_exclude_pool_not_full(self, monkeypatch):
