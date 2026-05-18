@@ -49,6 +49,7 @@ Single-port deployment: FastAPI serves the React build as static files in produc
 |---|---|---|
 | Path storage | Relative paths in DB, resolved at read time | Enables home directory migration without DB updates |
 | Digest storage | Summary and keywords in `sources` table | No intermediate .md file needed |
+| Facet edit vs extract | `parse_facet_int`/`clean_str_facet` shared; digest path degrades bad values to `null`, manual `PATCH /sources/:id/facets` raises → 422; number↔kind co-occurrence enforced digest-only; manual write is REPLACE (`update_source_facets`, explicit null clears) vs digest COALESCE-preserve; PATCH returns 204 | A typed edit is deliberate (reject), an LLM guess is best-effort (degrade); manual must persist a kind-less number |
 | Overview generation | On-demand `POST /lists/:id/overview` | User controls when to generate; no silent LLM calls in pipeline |
 | Job vs source dedup | `sources` is the dedup source; `jobs` is ephemeral | A video is "processed" if it has a `sources` row |
 | Transcript storage | Files on disk, not in DB | Re-chunking never requires re-transcription |
