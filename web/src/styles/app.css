@@ -36,6 +36,7 @@
   --color-border:  rgba(100, 116, 139, 0.18);  /* universal panel/input border — slate-500/18 */
   --color-scrim: rgba(17, 35, 63, 0.3);
   --color-surface: #e2e8f0;       /* placeholder backgrounds — slate-200 */
+  --color-amber:   #d97706;       /* warning signal — amber-600 */
 
   /* ── Typography ──────────────────────────────────────────────────────────── */
   --font-sans: "Plus Jakarta Sans", "Segoe UI", sans-serif;
