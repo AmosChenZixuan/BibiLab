@@ -36,7 +36,7 @@ pipeline/         — one file per stage
   embed.py          ChromaDB embed + retrieve() (hybrid search → rerank → aggregation), FTS5 populate
   extract.py        LLM knowledge synthesis (overview generation)
   rerank.py         lazy ONNX cross-encoder reranker (Xenova/bge-reranker-base, XLM-RoBERTa zh+en; batched inference)
-  chat_tools.py     tool definitions (retrieve + query_list_metadata + generate_report) + execution dispatcher + chunk formatting + CitationRegistry + cross-turn reuse classifier (decide_reuse)
+  chat_tools.py     tool definitions (retrieve + query_list_metadata + generate_report) + execution dispatcher + chunk formatting + CitationRegistry + trivial-acknowledgment guard (trivial_ack_note)
   chat_summary.py   conversation compression (sliding window + LLM summary; preserves [N] RAG citations)
   citation_parser.py incremental citation parser — strips [N] tokens from LLM deltas, emits citation SSE events with {index, source_id, chunk_ids}
   chat_runs.py       StreamBuffer + ChatRunRegistry; in-memory buffer decouples LLM producer from HTTP request lifetime
@@ -132,7 +132,7 @@ whisper_models.py — Whisper model management
 | `content` | Message text |
 | `status` | `"streaming"` → `"done"` \| `"failed"` \| `"cancelled"` |
 | `error` | Error code (e.g. `llm_rate_limit_error`, `internal_error`), nullable; set on producer failure or server restart sweep; mapped by `classify_error()` from SDK exceptions; frontend resolves via `chat.errors.*` i18n keys |
-| `metadata` | JSON blob, nullable. Shape: `{"tool_calls": [...], "rag": {"calls": [{"query", "expected_hits", "candidates_evaluated", "sources_with_hits", "sources_total", "source_coverage", "context": [{"chunk_id", "citation_index", "source_id", "source_title", "timestamp_start", "timestamp_end", "rerank_score", "preview"}], "dropped_by_gate", "reranked", "scope_choice", "excluded_count", "scoped_pool_size", "gate_margin", "reused_from_prior_call_id"}]}}`. Set by `run_chat_turn` post-stream from retrieve `tool_result` events (one entry per retrieve call). No backward compatibility with pre-I-4 persisted messages — clear DB if needed after this issue ships. |
+| `metadata` | JSON blob, nullable. Shape: `{"tool_calls": [...], "rag": {"calls": [{"query", "expected_hits", "candidates_evaluated", "sources_with_hits", "sources_total", "source_coverage", "context": [{"chunk_id", "citation_index", "source_id", "source_title", "timestamp_start", "timestamp_end", "rerank_score", "preview"}], "dropped_by_gate", "reranked", "scope_choice", "excluded_count", "scoped_pool_size", "gate_margin"}]}}`. Set by `run_chat_turn` post-stream from retrieve `tool_result` events (one entry per retrieve call). No backward compatibility with pre-I-4 persisted messages — clear DB if needed after this issue ships. |
 | `created_at` | ISO timestamp |
 
 ### `chunks_fts` — FTS5 virtual table
@@ -187,7 +187,7 @@ Shutdown: cancel all active tasks, drain with 5s timeout
 ### Chat execution
 
 ```
-decide_reuse(current_msg, prior_user_msg) → strip or keep prior tool_blocks in history
+trivial_ack_note(current_msg) → strip prior tool_blocks + inject no-retrieve note on a trivial ack; otherwise pass through (prior excerpts replay; LLM self-judges reuse from the grounding prompt)
 stream_with_tools(stream_llm loop):
     LLM yields tool_call (retrieve) → execute_retrieve() → hybrid_search (BM25 + vector RRF) → rerank → _diverse_top_k
     → tool_call_start emitted → tool_result (with citation-formatted _chunks) fed back to LLM → second turn yields text with [N] citations
@@ -203,7 +203,7 @@ stream_with_tools(stream_llm loop):
 - `stream_with_tools` wraps `stream_llm` in a bounded loop (max 3 iterations). Loopback tools (`retrieve`, `query_list_metadata`) feed results back for another LLM turn; terminal tools (`generate_report`) exit the loop. When iterations are exhausted, `active_tools` is forced to `[]` so the LLM synthesizes from accumulated results instead of yielding a hard error. If tools were used but no text was generated, a forced follow-up LLM call (no tools) ensures the user always gets an answer.
 - **Preamble streaming**: Text generated before a loopback tool call is streamed to the client immediately (parsed incrementally via `parse_delta`). Trade-off: short filler like "Let me look that up..." reaches the client before the retrieve runs.
 - **Sequential-retrieve guard**: After the first `retrieve` call succeeds, `retrieve` is removed from the active tool list for the remainder of the turn. A second retrieve within the same turn is rejected.
-- **Cross-turn reuse**: Before expanding history for the LLM, `decide_reuse()` computes cosine similarity (MiniLM, local ONNX) between current and prior user messages. Three-path output: TRIVIAL (acknowledgment guard) → strip tool blocks + inject note; FORCE_FRESH (cosine < 0.55) → strip prior tool blocks; KEEP (cosine ≥ 0.55) → preserve tool blocks (today's behavior). On KEEP, the reuse is the turn's **first** retrieval action (decided before the stream loop): a synthetic `tool_result` (`reused_from_prior_call_id`, bypasses `stream_with_tools` so it is not double-counted) is appended to the buffer *and* to `retrieve_calls` at a single emission point — order emerges from emission sequence, so fresh retrieves the loop appends land after it and the streamed order matches persisted `rag.calls` exactly.
+- **Cross-turn reuse**: Prior `retrieve` results replay into the LLM messages via `expand_message_for_provider`; the LLM self-judges reuse from the `build_grounding_prompt` `## Workflow` instruction (no cosine gate). `trivial_ack_note()` is the only code path that strips replayed blocks — for len<3 / pure-digit / stopword acknowledgments — and injects a no-retrieve note (unconditional: fires even when no prior retrieve exists). Reuse horizon ≈ sliding window of 20 / ~10 turns.
 - Retrieve result `_chunks` are formatted as citation-ready `[N]: "content"` strings for the LLM; stripped from the client-bound `tool_result` SSE payload by `_client_tool_result()`.
 - `citation_parser.parse_delta()` strips `[N]` markers from LLM output and emits `citation` SSE events with `{index, source_id, chunk_ids}`. A partial `[` at delta end is held in a buffer for the next delta. `flush_buffer()` drains remaining buffer at stream end.
 - `stream_llm` supports both OpenAI and Anthropic protocols via `AsyncOpenAI`/`AsyncAnthropic`
