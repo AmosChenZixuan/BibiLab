@@ -302,7 +302,7 @@ async def execute_retrieve(
     # Deterministic facet scoping (#309). Facet matching is the sole
     # pre-retrieval narrowing (#310 removed exclude/whitelist). Fail-open:
     # zero match (or facet-subquery DB error) → full pool, never empty.
-    # scoped_pool_size stays pre-facet by design — see facet_scope.matched_count.
+    # scoped_pool_size is the full pool by design — see facet_scope.matched_count.
     facet_predicates = {
         k: v for k, v in (("sequence_number", sequence_number), ("season_number", season_number)) if v is not None
     }
