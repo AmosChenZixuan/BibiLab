@@ -13,7 +13,7 @@
 
 ### v1
 
-9. ~~**RAG Q&A**~~ — List-scoped multi-turn chat with transcript citation, timestamp references, hybrid search, reranking, and query routing. Implemented (epic #193, redesign #229).
+9. ~~**RAG Q&A**~~ — List-scoped multi-turn chat with transcript citations, hybrid search, cross-encoder reranking, a per-query quantile gate, and LLM-driven tool-calling retrieval (the classifier was eliminated). Implemented (epic #193 → redesign #229 → tool-calling epic #285).
 10. **Multimodal vision** — Opt-in frame sampling pass. Open: which multimodal model? Does this run in pipeline or on-demand like overview?
 11. **Source truth panel** — User-supplied corrections injected into RAG context. Open: stored as annotations on the note file, or a separate overlay table?
 

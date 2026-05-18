@@ -37,7 +37,7 @@ pipeline/         — one file per stage
   extract.py        LLM knowledge synthesis (overview generation)
   rerank.py         lazy ONNX cross-encoder reranker (Xenova/bge-reranker-base, XLM-RoBERTa zh+en; batched inference)
   chat_tools.py     tool definitions (retrieve + query_list_metadata + generate_report) + execution dispatcher + chunk formatting + CitationRegistry + trivial-acknowledgment guard (trivial_ack_note)
-  chat_summary.py   conversation compression (sliding window + LLM summary; preserves [N] RAG citations)
+  chat_summary.py   conversation compression (sliding window + LLM summary; summary is prose only — [N] markers not preserved)
   citation_parser.py incremental citation parser — strips [N] tokens from LLM deltas, emits citation SSE events with {index, source_id, chunk_ids}
   chat_runs.py       StreamBuffer + ChatRunRegistry; in-memory buffer decouples LLM producer from HTTP request lifetime
 adapters/         — platform-specific download + resolution (base + bilibili)
@@ -133,7 +133,7 @@ whisper_models.py — Whisper model management
 | `content` | Message text |
 | `status` | `"streaming"` → `"done"` \| `"failed"` \| `"cancelled"` |
 | `error` | Error code (e.g. `llm_rate_limit_error`, `internal_error`), nullable; set on producer failure or server restart sweep; mapped by `classify_error()` from SDK exceptions; frontend resolves via `chat.errors.*` i18n keys |
-| `metadata` | JSON blob, nullable. Shape: `{"tool_calls": [...], "rag": {"calls": [{"query", "expected_hits", "candidates_evaluated", "sources_with_hits", "sources_total", "source_coverage", "context": [{"chunk_id", "citation_index", "source_id", "source_title", "timestamp_start", "timestamp_end", "rerank_score", "preview"}], "dropped_by_gate", "reranked", "scoped_pool_size", "facet_scope": {"sequence_number", "season_number", "matched_count", "no_match"}, "gate_margin"}]}}`. `scoped_pool_size` is the **full source pool** (exclude/whitelist removed #310); `facet_scope.matched_count` carries the facet-narrowed count. Set by `run_chat_turn` post-stream from retrieve `tool_result` events (one entry per retrieve call). No backward compatibility with pre-I-4 persisted messages — clear DB if needed after this issue ships. |
+| `metadata` | JSON blob, nullable. Shape: `{"tool_calls": [...], "rag": {"calls": [{"query", "expected_hits", "candidates_evaluated", "sources_with_hits", "sources_total", "source_coverage", "context": [{"chunk_id", "citation_index", "source_id", "source_title", "timestamp_start", "timestamp_end", "rerank_score", "preview"}], "dropped_by_gate", "reranked", "scoped_pool_size", "facet_scope": {"sequence_number", "season_number", "matched_count", "no_match"}, "gate_margin"}]}}`. `scoped_pool_size` is the **full source pool** (exclude/whitelist removed); `facet_scope.matched_count` carries the facet-narrowed count. Set by `run_chat_turn` post-stream from retrieve `tool_result` events (one entry per retrieve call). No migration for legacy persisted messages — the ledger renders best-effort from whatever fields exist. |
 | `created_at` | ISO timestamp |
 
 ### `chunks_fts` — FTS5 virtual table
@@ -183,7 +183,7 @@ Shutdown: cancel all active tasks, drain with 5s timeout
 ### System prompt context
 
 - **Grounding prompt**: `build_grounding_prompt(response_language)` produces a four-section markdown document: `## Workflow` (tool routing), `## Grounding` (excerpts-only), `## Citation` (`[N]` markers), `## Style` (direct, no follow-up). `response_language` is interpolated ≥2× to match the user's UI/config language for both directives and fallback refusals.
-- **Source scoping**: No per-turn source list in the prompt (#310). The system prompt is static-per-language, so Anthropic prompt caching covers the whole grounding prefix. Search scope is set solely by deterministic facet matching: the LLM passes `sequence_number` / `season_number` to `retrieve` only when the question references them; the backend matches them against `sources`. No `exclude_source_ids` / `source_ids` index decision. When facet matching finds no source (fail-open to the full pool), `execute_retrieve` prepends `_NO_MATCH_NOTE` to the LLM-visible `_chunks` so the model states the degraded scope before answering.
+- **Source scoping**: No per-turn source list in the prompt. The system prompt is static-per-language, so Anthropic prompt caching covers the whole grounding prefix. Search scope is set solely by deterministic facet matching: the LLM passes `sequence_number` / `season_number` to `retrieve` only when the question references them; the backend matches them against `sources`. No `exclude_source_ids` / `source_ids` index decision. When facet matching finds no source (fail-open to the full pool), `execute_retrieve` prepends `_NO_MATCH_NOTE` to the LLM-visible `_chunks` so the model states the degraded scope before answering.
 
 ### Chat execution
 
@@ -212,7 +212,7 @@ stream_with_tools(stream_llm loop):
 - **Reattach**: Frontend reads `active_stream_message_id` from conversation; if set, GETs the stream endpoint to replay buffered events + tail live ones. Returns 204 after buffer eviction.
 - **Cancel**: POST sets `status='cancelled'` + emits `cancelled` SSE event. Producer catches `CancelledError` and persists partial content.
 - **Lifecycle**: Startup sweep marks leftover `status='streaming'` rows as `failed`. Shutdown cancels all tasks, drains with 5s timeout. Buffer eviction fires 60s after terminal status.
-- Compression: triggered when message count > 30; keeps sliding window of 20; summarizes older messages via `_call_llm` in `asyncio.create_task`; LLM prompt instructs preservation of `[N]` RAG citations
+- Compression: triggered when message count > 30; keeps sliding window of 20; summarizes older messages via `_call_llm` in `asyncio.create_task`. The summary is prose only — the compression prompt does **not** preserve `[N]` markers (deliberate; see `docs/citation_system.md`). Only post-window messages retain live citations.
 - Summary injected into system prompt on subsequent requests
 
 ## Platform Adapters
@@ -243,4 +243,4 @@ v0: `BilibiliAdapter` — single video. Cookie-based auth in config.
   "rag": { "max_distance": 0.8, "hybrid_enabled": true, "reranking_enabled": true, "rerank_min_score": null }
 }
 ```
-Reranker model is fixed to `Xenova/bge-reranker-base` (XLM-RoBERTa, Chinese + English). `_quantile_gate` replaces the deprecated `rerank_min_score` floor — margin (bge logit units) is selected per retrieval from `_RELEVANCE_MARGIN_BY_HITS[expected_hits]` (one=1.0, few=2.0, many=2.5). `RetrievalResult.gate_margin` telemetry records the margin used. See `docs/internal/rag_tuning.md`.
+Reranker model is fixed to `Xenova/bge-reranker-base` (XLM-RoBERTa, Chinese + English). `rerank_min_score` is a **deprecated no-op**: retained for config back-compat, logs a startup warning, never applied — removal pending one release cycle. The static floor was replaced by `_quantile_gate`; margin (bge logit units) is selected per retrieval from `_RELEVANCE_MARGIN_BY_HITS[expected_hits]` (one=1.0, few=2.0, many=2.5). `RetrievalResult.gate_margin` telemetry records the margin used. See `docs/internal/rag_tuning.md`.
