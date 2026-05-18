@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 
 import {
   autoResize,
+  facetNoMatchHint,
   formatDurationHuman,
   formatSubtitle,
   formatTimestamp,
@@ -161,5 +162,39 @@ describe("RetrievalCall", () => {
       gate_margin: null,
     };
     expect(call.context).toHaveLength(0);
+  });
+});
+
+describe("facetNoMatchHint", () => {
+  const t = (key: string, params?: Record<string, string | number>) => {
+    const map: Record<string, string> = {
+      "chat.ledger.facet.sequence": "#%{n}",
+      "chat.ledger.facet.season": "season %{n}",
+      "chat.ledger.facetNoMatch": "No source matched %{facets} — searched all sources instead.",
+      "chat.ledger.facetNoMatchGeneric": "No source matched the requested filter — searched all sources instead.",
+    };
+    const value = map[key] ?? key;
+    if (!params) return value;
+    return value.replace(/%\{(\w+)\}/g, (_, k) => String(params[k]));
+  };
+
+  test("sequence only", () => {
+    expect(facetNoMatchHint(t, { sequence_number: 8, season_number: null, matched_count: 0, no_match: true }))
+      .toBe("No source matched #8 — searched all sources instead.");
+  });
+
+  test("season only", () => {
+    expect(facetNoMatchHint(t, { sequence_number: null, season_number: 2, matched_count: 0, no_match: true }))
+      .toBe("No source matched season 2 — searched all sources instead.");
+  });
+
+  test("both facets joined", () => {
+    expect(facetNoMatchHint(t, { sequence_number: 8, season_number: 2, matched_count: 0, no_match: true }))
+      .toBe("No source matched #8, season 2 — searched all sources instead.");
+  });
+
+  test("no facets falls back to generic", () => {
+    expect(facetNoMatchHint(t, { sequence_number: null, season_number: null, matched_count: null, no_match: true }))
+      .toBe("No source matched the requested filter — searched all sources instead.");
   });
 });
