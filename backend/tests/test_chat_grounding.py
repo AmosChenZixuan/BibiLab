@@ -42,3 +42,11 @@ class TestBuildGroundingPrompt:
         assert prompt.count("English") >= 2, (
             f"response_language interpolated {prompt.count('English')} times, expected >= 2"
         )
+
+    def test_citation_section_has_same_line_directive(self):
+        """AC7/D7 — `## Citation` instructs same-line placement, no own-line citation."""
+        prompt = build_grounding_prompt("English")
+        citation_section = prompt.split("## Citation\n", 1)[1].split("\n## ", 1)[0]
+        lowered = citation_section.lower()
+        assert "same line" in lowered, citation_section
+        assert "own line" in lowered, citation_section

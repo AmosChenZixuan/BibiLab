@@ -333,6 +333,47 @@ describe("chat panel — SSE streaming (phase 6.2)", () => {
       expect(screen.getByText(/response interrupted/i)).toBeInTheDocument();
     });
   });
+
+  test("streamed citation after a \\n\\n renders inline, not on its own line", async () => {
+    vi.spyOn(window, "fetch").mockImplementation((input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : (input as Request).url;
+      if (url.includes("/conversation")) {
+        return Promise.resolve(new Response(JSON.stringify({ conversation: null, messages: [] })));
+      }
+      if (url.includes("/chat")) {
+        return Promise.resolve(
+          makeSseStream([
+            'data: {"type":"delta","content":"出香味\\n\\n"}\n\n',
+            'data: {"type":"citation","index":1,"source_id":"src-1","chunk_ids":[]}\n\n',
+            'data: {"type":"done"}\n\n',
+          ]),
+        );
+      }
+      return Promise.resolve(new Response(JSON.stringify([])));
+    });
+
+    renderChatPanel({
+      selectedSourceIds: ["src-1"],
+      sources: [SOURCE_1],
+      listId: "list-1",
+    });
+
+    const textarea = screen.getByRole("textbox");
+    await userEvent.type(textarea, "How to cook");
+    await userEvent.keyboard("{Enter}");
+
+    await waitFor(() => {
+      const paras = document.querySelectorAll(".citation-paragraph");
+      expect(paras.length).toBe(1);
+      expect(paras[0].querySelector(".cite-chip")).not.toBeNull();
+      expect(paras[0].textContent).toContain("出香味");
+      for (const p of paras) {
+        const hasChip = p.querySelector(".cite-chip") !== null;
+        const text = (p.textContent ?? "").replace(/\[\d+\]/g, "").trim();
+        expect(hasChip && text === "").toBe(false);
+      }
+    });
+  });
 });
 
 describe("chat panel — conversation history (phase 6.3)", () => {

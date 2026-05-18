@@ -68,14 +68,21 @@ function renderParagraphs(
   onOpenSource?: (source: Source, opts?: { highlightChunks?: string[] }) => void,
   isStreaming?: boolean,
 ) {
+  // D6: a citation must never start a fresh paragraph. When a citation lands at
+  // the head of an empty paragraph (i.e. right after a paragraph_break with no
+  // intervening text), attach it to the previous non-empty paragraph so it
+  // renders inline at the end of the sentence it supports.
   const paragraphs: Array<Array<ContentBlock>> = [[]];
+  const last = () => paragraphs[paragraphs.length - 1];
   for (const block of contentBlocks) {
     if (block.type === "paragraph_break") {
-      if (paragraphs[paragraphs.length - 1].length > 0) {
+      if (last().length > 0) {
         paragraphs.push([]);
       }
+    } else if (block.type === "citation" && last().length === 0 && paragraphs.length > 1) {
+      paragraphs[paragraphs.length - 2].push(block);
     } else {
-      paragraphs[paragraphs.length - 1].push(block);
+      last().push(block);
     }
   }
 

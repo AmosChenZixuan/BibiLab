@@ -128,6 +128,26 @@ def _flush_pending_text(content_blocks: list[dict], text: str) -> None:
             content_blocks.append({"type": "paragraph_break"})
 
 
+def _append_citation_block(content_blocks: list[dict], data: dict) -> None:
+    """Append a citation block, applying the D6 coalescing rule for persist parity.
+
+    A citation must never start a new paragraph (mirrors the frontend
+    `renderParagraphs` rule so a history reload matches the live stream): a
+    trailing lone `paragraph_break` before the citation is dropped so the chip
+    stays at the end of the preceding paragraph.
+    """
+    if content_blocks and content_blocks[-1]["type"] == "paragraph_break":
+        content_blocks.pop()
+    content_blocks.append(
+        {
+            "type": "citation",
+            "index": data["index"],
+            "source_id": data["source_id"],
+            "chunk_ids": data.get("chunk_ids", []),
+        }
+    )
+
+
 @router.get("/lists/{list_id}/conversation")
 async def get_conversation(
     list_id: str,
@@ -207,9 +227,11 @@ def build_grounding_prompt(response_language: str) -> str:
         "details.\n\n"
         "## Citation\n"
         "Cite each claim with `[N]`, where N is the source index from the "
-        "retrieve result. Cite only sources you actually retrieved. For long "
-        'sources, include the relevant timestamp inline, e.g. "around 2:00 '
-        '[1]". Use natural phrasing, not a structured format.\n\n'
+        "retrieve result. Cite only sources you actually retrieved. Place `[N]` "
+        "immediately after the sentence it supports, on the same line; do not "
+        "put a citation on its own line. For long sources, include the relevant "
+        'timestamp inline, e.g. "around 2:00 [1]". Use natural phrasing, not a '
+        "structured format.\n\n"
         "## Style\n"
         f"Answer in {response_language}. Be direct and concise. Do not ask "
         "follow-up questions or offer unsolicited next steps."
@@ -528,14 +550,7 @@ async def run_chat_turn(
                     _flush_pending_text(content_blocks, pending_text)
                     pending_text = ""
                 data = json.loads(event.content)
-                content_blocks.append(
-                    {
-                        "type": "citation",
-                        "index": data["index"],
-                        "source_id": data["source_id"],
-                        "chunk_ids": data.get("chunk_ids", []),
-                    }
-                )
+                _append_citation_block(content_blocks, data)
             elif event.type == "tool_result":
                 parsed = json.loads(event.content)
                 if parsed["name"] == "retrieve":
