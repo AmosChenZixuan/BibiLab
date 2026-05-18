@@ -228,3 +228,121 @@ async def test_rerun_source_respects_ui_lang_header(client: httpx.AsyncClient, t
     assert resp.status_code == 200
     assert captured_prompt is not None
     assert "请用中文回答" in captured_prompt
+
+
+async def test_patch_facets_replace(client: httpx.AsyncClient, tmp_bibilab_home: Path):
+    import uuid
+
+    from bibilab.db import bootstrap_db, create_list, get_source, write_source
+
+    await bootstrap_db()
+    await create_list("L", "L", "2026-01-01T00:00:00")
+    sid = str(uuid.uuid4())
+    await write_source(
+        source_id=sid,
+        video_id="BVpf01",
+        platform="bilibili",
+        list_id="L",
+        title="T",
+        summary="s",
+        keywords=["k"],
+        cover_url=None,
+        transcript_path=None,
+        source_url="https://example.com/BVpf01",
+        duration_seconds=10,
+        uploader="U",
+        language=None,
+        whisper_model="large-v3",
+        ai_model="gpt-4o",
+        vision_enabled=False,
+        settings_snapshot={},
+        series_name="老系列",
+        sequence_number=3,
+        sequence_kind="episode",
+        season_number=5,
+    )
+    r = await client.patch(
+        f"/sources/{sid}/facets",
+        json={"series_name": "新系列", "sequence_number": 7, "season_number": None},
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["series_name"] == "新系列"
+    assert body["sequence_number"] == 7
+    assert body["season_number"] is None
+    src = await get_source(sid)
+    assert src["season_number"] is None
+    assert src["sequence_kind"] == "episode"
+
+
+async def test_patch_facets_kindless_number_persists(client: httpx.AsyncClient, tmp_bibilab_home: Path):
+    import uuid
+
+    from bibilab.db import bootstrap_db, create_list, get_source, write_source
+
+    await bootstrap_db()
+    await create_list("L2", "L2", "2026-01-01T00:00:00")
+    sid = str(uuid.uuid4())
+    await write_source(
+        source_id=sid,
+        video_id="BVpf02",
+        platform="bilibili",
+        list_id="L2",
+        title="T",
+        summary="s",
+        keywords=["k"],
+        cover_url=None,
+        transcript_path=None,
+        source_url="https://example.com/BVpf02",
+        duration_seconds=10,
+        uploader="U",
+        language=None,
+        whisper_model="large-v3",
+        ai_model="gpt-4o",
+        vision_enabled=False,
+        settings_snapshot={},
+    )
+    r = await client.patch(f"/sources/{sid}/facets", json={"sequence_number": 8})
+    assert r.status_code == 200
+    src = await get_source(sid)
+    assert src["sequence_number"] == 8
+
+
+async def test_patch_facets_invalid_int_422(client: httpx.AsyncClient, tmp_bibilab_home: Path):
+    import uuid
+
+    from bibilab.db import bootstrap_db, create_list, write_source
+
+    await bootstrap_db()
+    await create_list("L3", "L3", "2026-01-01T00:00:00")
+    sid = str(uuid.uuid4())
+    await write_source(
+        source_id=sid,
+        video_id="BVpf03",
+        platform="bilibili",
+        list_id="L3",
+        title="T",
+        summary="s",
+        keywords=["k"],
+        cover_url=None,
+        transcript_path=None,
+        source_url="https://example.com/BVpf03",
+        duration_seconds=10,
+        uploader="U",
+        language=None,
+        whisper_model="large-v3",
+        ai_model="gpt-4o",
+        vision_enabled=False,
+        settings_snapshot={},
+    )
+    for bad in [{"sequence_number": 0}, {"sequence_number": "abc"}, {"season_number": -1}]:
+        r = await client.patch(f"/sources/{sid}/facets", json=bad)
+        assert r.status_code == 422
+
+
+async def test_patch_facets_404(client: httpx.AsyncClient, tmp_bibilab_home: Path):
+    from bibilab.db import bootstrap_db
+
+    await bootstrap_db()
+    r = await client.patch("/sources/does-not-exist/facets", json={"series_name": "X"})
+    assert r.status_code == 404
