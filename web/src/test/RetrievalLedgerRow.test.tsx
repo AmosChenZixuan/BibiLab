@@ -197,3 +197,56 @@ describe("mode rendering", () => {
     expect(container.innerHTML).toContain("one");
   });
 });
+
+const NO_MATCH = {
+  sequence_number: 8,
+  season_number: null,
+  matched_count: 0,
+  no_match: true,
+};
+
+describe("facet no-match hint (#319)", () => {
+  test("default collapsed shows amber warning icon with hint aria-label", () => {
+    renderRow({ variant: "default", call: { ...BASE_CALL, facet_scope: NO_MATCH } });
+    const icon = screen.getByLabelText(
+      "No source matched #8 — searched all sources instead.",
+    );
+    expect(icon).toBeTruthy();
+    expect(screen.getByText(/2 chunks/)).toBeTruthy();
+  });
+
+  test("default expanded shows amber Facet detail line", async () => {
+    const { container } = renderRow({ variant: "default", call: { ...BASE_CALL, facet_scope: NO_MATCH } });
+    await userEvent.click(container.querySelector('button[aria-label="Toggle retrieval details"]')!);
+    expect(container.innerHTML).toContain("Facet");
+    expect(container.innerHTML).toContain("No source matched #8 — searched all sources instead.");
+  });
+
+  test("no hint when no_match is false", () => {
+    renderRow({
+      variant: "default",
+      call: { ...BASE_CALL, facet_scope: { ...NO_MATCH, no_match: false } },
+    });
+    expect(screen.queryByLabelText(/No source matched/)).toBeNull();
+  });
+
+  test("no hint when facet_scope absent (legacy message)", () => {
+    renderRow({ variant: "default", call: BASE_CALL });
+    expect(screen.queryByLabelText(/No source matched/)).toBeNull();
+  });
+
+  test("streaming default still shows the icon (visible without expand)", () => {
+    renderRow({ variant: "default", call: { ...BASE_CALL, facet_scope: NO_MATCH }, streaming: true });
+    expect(
+      screen.getByLabelText("No source matched #8 — searched all sources instead."),
+    ).toBeTruthy();
+  });
+
+  test("empty variant also surfaces the hint", () => {
+    const emptyCall = { ...BASE_CALL, context: [], dropped_by_gate: 3, facet_scope: NO_MATCH };
+    renderRow({ variant: "empty", call: emptyCall });
+    expect(
+      screen.getByLabelText("No source matched #8 — searched all sources instead."),
+    ).toBeTruthy();
+  });
+});
