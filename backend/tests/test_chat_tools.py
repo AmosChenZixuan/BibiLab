@@ -1648,3 +1648,32 @@ class TestRetrieveToolSchemaUpdate:
         desc = RETRIEVE_TOOL.description
         assert "source_ids" in desc
         assert "whitelist" in desc.lower() or "ONLY when the user explicitly" in desc
+
+
+class TestCoerceToInt:
+    """#309: LLM facet args may arrive as int, float, or numeric string; non-numeric degrades to None."""
+
+    @pytest.mark.parametrize(
+        ("val", "expected"),
+        [
+            (8, 8),
+            ("8", 8),
+            (8.0, 8),
+            (" 8 ", 8),
+            (0, 0),
+            (-3, -3),
+            (None, None),
+            ("eight", None),
+            ("", None),
+            ("8.5", None),
+            (8.5, None),
+            (True, None),
+            (False, None),
+            ([8], None),
+            ({"n": 8}, None),
+        ],
+    )
+    def test_coerce(self, val, expected):
+        from bibilab.pipeline.chat_tools import _coerce_to_int
+
+        assert _coerce_to_int(val, "sequence_number") == expected

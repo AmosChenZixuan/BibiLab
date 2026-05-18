@@ -286,6 +286,28 @@ def _coerce_to_str_list(val, key: str) -> list[str] | None:
     return None
 
 
+def _coerce_to_int(val: object, key: str) -> int | None:
+    """Coerce an LLM-supplied facet arg to int. Non-coercible → None (drop predicate, never raise).
+
+    bool is rejected (Python's bool is an int subclass; True/False are never a facet).
+    Floats and numeric strings are accepted only when integral (8.0, "8" — yes; 8.5, "8.5" — no).
+    """
+    if val is None or isinstance(val, bool):
+        return None
+    if isinstance(val, int):
+        return val
+    if isinstance(val, float):
+        return int(val) if val.is_integer() else None
+    if isinstance(val, str):
+        try:
+            return int(val.strip())
+        except ValueError:
+            logger.warning("retrieve: %s=%r not an integer, dropping predicate", key, val)
+            return None
+    logger.warning("retrieve: %s=%r not coercible to int, dropping predicate", key, val)
+    return None
+
+
 def _map_indices_to_uuids(indices: list[str], source_ids: list[str]) -> list[str]:
     """Map a list of index strings or raw UUIDs to the corresponding source_ids UUIDs.
 
