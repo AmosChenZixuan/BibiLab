@@ -11,7 +11,6 @@ interface RetrievalLedgerProps {
 }
 
 function callVariant(call: RetrievalCall): RowVariant {
-  if (call.reused_from_prior_call_id != null) return "reused";
   // context is absent (not []) on the streaming payload — only an explicit
   // empty array (persisted, everything gated out) is the "empty" variant.
   if (call.context != null && call.context.length === 0 && call.dropped_by_gate > 0) return "empty";
@@ -21,7 +20,6 @@ function callVariant(call: RetrievalCall): RowVariant {
 const DOT_CLASS: Record<RowVariant, string> = {
   default: "ledger-dot",
   empty: "ledger-dot",
-  reused: "ledger-dot ledger-dot--faint",
   pending: "ledger-dot ledger-dot--pending",
 };
 

@@ -157,10 +157,6 @@
     background: var(--color-muted);
   }
 
-  .ledger-dot--faint {
-    opacity: 0.4;
-  }
-
   .ledger-dot--pending {
     background: var(--color-blue);
   }

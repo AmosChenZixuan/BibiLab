@@ -263,7 +263,6 @@
     "ledger": {
       "summary": "%{chunks} chunks · %{sources} sources",
       "summaryEmpty": "0 chunks (%{dropped} dropped)",
-      "summaryReused": "reused from previous turn",
       "summaryPending": "retrieving…",
       "field": {
         "query": "Query",

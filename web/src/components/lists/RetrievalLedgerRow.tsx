@@ -1,9 +1,9 @@
 import { useState } from "react";
-import { Search, RefreshCw, Loader2, AlertTriangle, ChevronRight } from "lucide-react";
+import { Search, Loader2, AlertTriangle, ChevronRight } from "lucide-react";
 import { useLanguage } from "@/app/LanguageContext";
 import { formatMediaTimestamp, type RetrievalCall, type PendingRagCall, type PendingMetadataCall } from "@/lib/chat-utils";
 
-export type RowVariant = "default" | "empty" | "reused" | "pending";
+export type RowVariant = "default" | "empty" | "pending";
 
 interface RetrievalLedgerRowProps {
   variant: RowVariant;
@@ -33,15 +33,6 @@ function ModeDisplay({ expected_hits, t }: { expected_hits: RetrievalCall["expec
 export function RetrievalLedgerRow({ variant, call, pending, streaming = false }: RetrievalLedgerRowProps) {
   const { t } = useLanguage();
   const [expanded, setExpanded] = useState(false);
-
-  if (variant === "reused") {
-    return (
-      <div className="flex items-center gap-1.5 py-0.5 text-xs text-muted opacity-60">
-        <RefreshCw size={12} className="shrink-0" />
-        <span>{t("chat.ledger.summaryReused")}</span>
-      </div>
-    );
-  }
 
   if (variant === "pending" && pending) {
     const isRag = "expected_hits" in pending;

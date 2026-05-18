@@ -136,7 +136,6 @@ describe("RetrievalCall", () => {
       excluded_count: null,
       scoped_pool_size: 3,
       gate_margin: null,
-      reused_from_prior_call_id: null,
     };
     expect(call.expected_hits).toBe("few");
     expect(call.context![0].chunk_id).toBe("v1_120_145");
@@ -160,7 +159,6 @@ describe("RetrievalCall", () => {
       excluded_count: null,
       scoped_pool_size: 1,
       gate_margin: null,
-      reused_from_prior_call_id: null,
     };
     expect(call.context).toHaveLength(0);
   });
