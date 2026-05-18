@@ -1325,3 +1325,69 @@ async def test_run_chat_turn_reseeds_citation_registry_from_history_tool_blocks(
     assert entry.title == "Video One"
     assert "v1_0_10" in entry.chunk_ids
     assert "v1_30_40" in entry.chunk_ids
+
+
+@pytest.mark.asyncio
+async def test_rag_call_carries_facet_scope(client):
+    """#309: facet_scope from execute_retrieve must survive the router copy into metadata.rag."""
+    list_id = (await client.post("/lists", json={"name": "FacetTel"})).json()["id"]
+    iteration_count = 0
+
+    async def fake_stream_llm(messages, cfg, tools=None, system=None, llm_max_tokens=None, **kwargs):
+        nonlocal iteration_count
+        iteration_count += 1
+        if iteration_count == 1:
+            yield StreamEvent(
+                type="tool_call",
+                tool_call=ToolCall(
+                    id="tc1",
+                    name="retrieve",
+                    arguments={"query": "第八集", "expected_hits": "few", "sequence_number": 8},
+                ),
+            )
+            yield StreamEvent(type="done")
+        else:
+            yield StreamEvent(type="delta", content="ok")
+            yield StreamEvent(type="done")
+
+    async def fake_execute_tool(**kwargs):
+        args = kwargs.get("arguments", {})
+        return {
+            "query": args.get("query", ""),
+            "expected_hits": args.get("expected_hits"),
+            "candidates_evaluated": 1,
+            "sources_with_hits": 1,
+            "sources_total": 5,
+            "source_coverage": [],
+            "scope_choice": "none",
+            "excluded_count": None,
+            "scoped_pool_size": 5,
+            "facet_scope": {
+                "sequence_number": 8,
+                "season_number": None,
+                "matched_count": 2,
+                "no_match": False,
+            },
+            "_chunks": "",
+            "_turn_indices": [],
+        }
+
+    with (
+        patch("bibilab.routers.chat.stream_llm", fake_stream_llm),
+        patch("bibilab.routers.chat.execute_tool", fake_execute_tool),
+    ):
+        resp = await client.post(f"/lists/{list_id}/chat", json={"message": "q"})
+    assert resp.status_code == 200
+
+    conv = (await client.get(f"/lists/{list_id}/conversation")).json()
+    assistant_msgs = [m for m in conv["messages"] if m["role"] == "assistant"]
+    assert assistant_msgs, "no assistant message persisted"
+    rag = assistant_msgs[-1]["metadata"]["rag"]
+    assert len(rag["calls"]) == 1
+    fs = rag["calls"][0]["facet_scope"]
+    assert fs == {
+        "sequence_number": 8,
+        "season_number": None,
+        "matched_count": 2,
+        "no_match": False,
+    }

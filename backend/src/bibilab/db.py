@@ -452,6 +452,30 @@ async def get_video_ids_for_sources(source_ids: list[str]) -> dict[str, str]:
         return {row["id"]: row["video_id"] for row in rows}
 
 
+async def get_source_facets(source_ids: list[str]) -> dict[str, dict[str, int | None]]:
+    """Return {source_id: {"sequence_number": int|None, "season_number": int|None}}.
+
+    Only sources found in the table are included. Empty input → {}.
+    series_name is intentionally not returned (#309: fuzzy string match deferred).
+    """
+    if not source_ids:
+        return {}
+    async with get_db() as db:
+        placeholders = _in_placeholders(source_ids)
+        cursor = await db.execute(
+            f"SELECT id, sequence_number, season_number FROM sources WHERE id IN ({placeholders})",
+            source_ids,
+        )
+        rows = await cursor.fetchall()
+        return {
+            row["id"]: {
+                "sequence_number": row["sequence_number"],
+                "season_number": row["season_number"],
+            }
+            for row in rows
+        }
+
+
 async def delete_source(source_id: str) -> None:
     async with get_db() as db:
         await db.execute("UPDATE lists SET thumbnail_source_id = NULL WHERE thumbnail_source_id = ?", (source_id,))

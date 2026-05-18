@@ -6,9 +6,10 @@ import uuid
 from dataclasses import dataclass, field
 
 from bibilab.config import BibilabConfig
-from bibilab.db import count_sources, create_job, language_breakdown, longest_source
+from bibilab.db import count_sources, create_job, get_source_facets, language_breakdown, longest_source
 from bibilab.models._enums import RetrievalParams
 from bibilab.pipeline._shared import ToolDefinition
+from bibilab.pipeline.digest import parse_facet_int
 from bibilab.pipeline.embed import retrieve
 
 logger = logging.getLogger(__name__)
@@ -194,6 +195,22 @@ RETRIEVE_TOOL = ToolDefinition(
                     "many = survey/summary, depth_per_source=5, top_k=24"
                 ),
             },
+            "sequence_number": {
+                "type": "integer",
+                "description": (
+                    "Episode / part number, ONLY if the user's question explicitly "
+                    "references it — e.g. 第八集 → sequence_number=8, 'part 3' → 3. "
+                    "Omit if not mentioned (omission searches all sources)."
+                ),
+            },
+            "season_number": {
+                "type": "integer",
+                "description": (
+                    "Season number, ONLY if the user's question explicitly references "
+                    "it — e.g. 第二季 → season_number=2. "
+                    "Omit if not mentioned (omission searches all sources)."
+                ),
+            },
         },
         "required": ["query", "exclude_source_ids"],
     },
@@ -286,6 +303,21 @@ def _coerce_to_str_list(val, key: str) -> list[str] | None:
     return None
 
 
+def _facet_int(v: object, key: str) -> int | None:
+    """Coerce an LLM facet arg via the shared `parse_facet_int` primitive,
+    degrading unusable values to None (a bad LLM guess drops the predicate,
+    never raises — same best-effort contract as the digest path).
+
+    Single-sources the coercion rules (>=1, bool/non-integral rejected) in
+    parse_facet_int; only the degrade-and-log wrapper lives here.
+    """
+    try:
+        return parse_facet_int(v)
+    except ValueError:
+        logger.warning("retrieve: %s=%r unusable, dropping predicate", key, v)
+        return None
+
+
 def _map_indices_to_uuids(indices: list[str], source_ids: list[str]) -> list[str]:
     """Map a list of index strings or raw UUIDs to the corresponding source_ids UUIDs.
 
@@ -318,6 +350,8 @@ async def execute_retrieve(
     selected_source_ids: list[str] | None = None,
     exclude_source_ids: list[str] | None = None,
     scope_choice: str | None = None,
+    sequence_number: int | None = None,
+    season_number: int | None = None,
     expected_hits: str = DEFAULT_EXPECTED_HITS,
 ) -> dict:
     if registry is None:
@@ -339,6 +373,40 @@ async def execute_retrieve(
 
     params = params_for_expected_hits(expected_hits)
     pool_size = len(scoped_source_ids) if scoped_source_ids is not None else len(source_ids)
+
+    # Deterministic facet scoping (#309). Intersect with the pre-facet pool
+    # (= post exclude/whitelist). Fail-open: zero match restores the pre-facet
+    # pool. scoped_pool_size stays pre-facet by design — see facet_scope.matched_count.
+    facet_predicates = {
+        k: v for k, v in (("sequence_number", sequence_number), ("season_number", season_number)) if v is not None
+    }
+    facet_matched_count: int | None = None
+    facet_no_match = False
+    if facet_predicates:
+        pre_facet_pool = scoped_source_ids if scoped_source_ids is not None else source_ids
+        try:
+            facets = await get_source_facets(pre_facet_pool)
+        except Exception:  # noqa: BLE001 - facet scoping is best-effort; a DB
+            # error here must fail open to the pre-facet pool, not nuke an
+            # otherwise-fine retrieve (consistent with the zero-match contract).
+            logger.warning("retrieve: get_source_facets failed, fail-open to pre-facet pool", exc_info=True)
+            facets = {}
+        matched = [
+            sid
+            for sid in pre_facet_pool
+            if sid in facets and all(facets[sid].get(k) == v for k, v in facet_predicates.items())
+        ]
+        facet_matched_count = len(matched)
+        if matched:
+            scoped_source_ids = matched
+        else:
+            facet_no_match = True
+            scoped_source_ids = pre_facet_pool if scoped_source_ids is not None else None
+            logger.warning(
+                "retrieve: facet %s matched 0 sources, fail-open to pre-facet pool",
+                facet_predicates,
+            )
+
     logger.info(
         "retrieve dispatch: query=%r scope=%s params(top_k=%d depth=%d) pool_size=%d",
         query,
@@ -432,6 +500,12 @@ async def execute_retrieve(
         "scope_choice": scope_choice or "none",
         "excluded_count": excluded_count,
         "scoped_pool_size": pool_size,
+        "facet_scope": {
+            "sequence_number": sequence_number,
+            "season_number": season_number,
+            "matched_count": facet_matched_count,
+            "no_match": facet_no_match,
+        },
         "source_coverage": [
             {
                 "source_id": source_map.get(s.video_id, ""),
@@ -497,6 +571,9 @@ async def execute_tool(
         if not query or not isinstance(query, str):
             raise ValueError(f"retrieve requires a non-empty 'query' string, got {query!r}")
 
+        sequence_number = _facet_int(arguments.get("sequence_number"), "sequence_number")
+        season_number = _facet_int(arguments.get("season_number"), "season_number")
+
         if exclude is not None:
             scope_choice = "exclude"
             if whitelist is not None:
@@ -524,6 +601,8 @@ async def execute_tool(
             selected_source_ids=whitelist,
             exclude_source_ids=exclude,
             scope_choice=scope_choice,
+            sequence_number=sequence_number,
+            season_number=season_number,
             expected_hits=arguments.get("expected_hits", DEFAULT_EXPECTED_HITS),
         )
     if tool_name == GENERATE_REPORT_TOOL.name:
