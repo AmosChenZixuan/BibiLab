@@ -1692,3 +1692,183 @@ class TestRetrieveToolFacetSchema:
         # facet params are optional
         assert "sequence_number" not in RETRIEVE_TOOL.parameters["required"]
         assert "season_number" not in RETRIEVE_TOOL.parameters["required"]
+
+
+class TestExecuteRetrieveFacetScoping:
+    """#309: deterministic facet scoping with fail-open."""
+
+    @staticmethod
+    def _cfg():
+        from bibilab.config import AIConfig, BibilabConfig
+
+        return BibilabConfig(ai=AIConfig(protocol="openai", model="x", api_key="k"))
+
+    @staticmethod
+    def _empty_result():
+        from bibilab.pipeline.embed import RetrievalResult
+
+        return RetrievalResult(
+            chunks=[],
+            source_coverage=[],
+            candidates_evaluated=0,
+            sources_with_hits=0,
+            sources_total=3,
+        )
+
+    def _patch(self, monkeypatch, facets):
+        """Patch retrieve (capture scoped_source_ids) and get_source_facets."""
+        from bibilab.pipeline import chat_tools
+
+        captured = {}
+
+        async def fake_retrieve(query_text, source_ids, cfg, params, scoped_source_ids=None, **kw):
+            captured["scoped"] = scoped_source_ids
+            return self._empty_result()
+
+        async def fake_get_source_facets(ids):
+            return {k: v for k, v in facets.items() if k in ids}
+
+        monkeypatch.setattr(chat_tools, "retrieve", fake_retrieve)
+        monkeypatch.setattr(chat_tools, "get_source_facets", fake_get_source_facets)
+        return captured
+
+    @pytest.mark.asyncio
+    async def test_sequence_number_scopes_pool(self, monkeypatch):
+        from bibilab.pipeline import chat_tools
+
+        captured = self._patch(
+            monkeypatch,
+            {
+                "a": {"sequence_number": 8, "season_number": None},
+                "b": {"sequence_number": 9, "season_number": None},
+                "c": {"sequence_number": 8, "season_number": None},
+            },
+        )
+        result = await chat_tools.execute_retrieve(
+            query="q",
+            source_ids=["a", "b", "c"],
+            cfg=self._cfg(),
+            scope_choice="none",
+            sequence_number=8,
+        )
+        assert sorted(captured["scoped"]) == ["a", "c"]
+        assert result["facet_scope"] == {
+            "sequence_number": 8,
+            "season_number": None,
+            "matched_count": 2,
+            "no_match": False,
+        }
+        # Decision B: scoped_pool_size stays PRE-facet (scope none → len(source_ids)=3),
+        # while facet_scope.matched_count carries the narrowed count (2).
+        assert result["scoped_pool_size"] == 3
+
+    @pytest.mark.asyncio
+    async def test_zero_match_fails_open_to_prefacet_pool(self, monkeypatch):
+        from bibilab.pipeline import chat_tools
+
+        captured = self._patch(
+            monkeypatch,
+            {
+                "a": {"sequence_number": 8, "season_number": None},
+                "b": {"sequence_number": 9, "season_number": None},
+            },
+        )
+        result = await chat_tools.execute_retrieve(
+            query="q",
+            source_ids=["a", "b"],
+            cfg=self._cfg(),
+            scope_choice="none",
+            sequence_number=99,
+        )
+        assert captured["scoped"] is None  # pre-facet pool was None (scope none) — unchanged
+        assert result["facet_scope"]["no_match"] is True
+        assert result["facet_scope"]["matched_count"] == 0
+
+    @pytest.mark.asyncio
+    async def test_no_facet_params_byte_identical(self, monkeypatch):
+        from bibilab.pipeline import chat_tools
+
+        captured = self._patch(monkeypatch, {})
+        result = await chat_tools.execute_retrieve(
+            query="q",
+            source_ids=["a", "b"],
+            cfg=self._cfg(),
+            scope_choice="none",
+        )
+        assert captured["scoped"] is None  # regression guard: unchanged from pre-#309
+        assert result["facet_scope"] == {
+            "sequence_number": None,
+            "season_number": None,
+            "matched_count": None,
+            "no_match": False,
+        }
+
+    @pytest.mark.asyncio
+    async def test_season_none_ignored_sequence_filters(self, monkeypatch):
+        from bibilab.pipeline import chat_tools
+
+        captured = self._patch(
+            monkeypatch,
+            {
+                "a": {"sequence_number": 1, "season_number": 2},
+                "b": {"sequence_number": 1, "season_number": 5},
+            },
+        )
+        result = await chat_tools.execute_retrieve(
+            query="q",
+            source_ids=["a", "b"],
+            cfg=self._cfg(),
+            scope_choice="none",
+            sequence_number=1,
+        )
+        # season omitted → both kept
+        assert sorted(captured["scoped"]) == ["a", "b"]
+        assert result["facet_scope"]["matched_count"] == 2
+
+    @pytest.mark.asyncio
+    async def test_facet_intersects_exclude_pool(self, monkeypatch):
+        from bibilab.pipeline import chat_tools
+
+        captured = self._patch(
+            monkeypatch,
+            {
+                "ua": {"sequence_number": 8, "season_number": None},
+                "ub": {"sequence_number": 8, "season_number": None},
+                "uc": {"sequence_number": 8, "season_number": None},
+            },
+        )
+        # exclude_source_ids=["1"] removes index 1 → "ua"; pre-facet pool = [ub, uc]
+        result = await chat_tools.execute_retrieve(
+            query="q",
+            source_ids=["ua", "ub", "uc"],
+            cfg=self._cfg(),
+            exclude_source_ids=["1"],
+            scope_choice="exclude",
+            sequence_number=8,
+        )
+        assert sorted(captured["scoped"]) == ["ub", "uc"]  # ua excluded, not re-added
+        assert result["facet_scope"]["matched_count"] == 2
+
+    @pytest.mark.asyncio
+    async def test_zero_match_fails_open_to_exclude_pool_not_full(self, monkeypatch):
+        from bibilab.pipeline import chat_tools
+
+        captured = self._patch(
+            monkeypatch,
+            {
+                "ua": {"sequence_number": 1, "season_number": None},
+                "ub": {"sequence_number": 2, "season_number": None},
+                "uc": {"sequence_number": 3, "season_number": None},
+            },
+        )
+        result = await chat_tools.execute_retrieve(
+            query="q",
+            source_ids=["ua", "ub", "uc"],
+            cfg=self._cfg(),
+            exclude_source_ids=["1"],
+            scope_choice="exclude",
+            sequence_number=99,
+        )
+        # zero facet match → fall back to PRE-FACET pool (post-exclude), NOT full source_ids
+        assert sorted(captured["scoped"]) == ["ub", "uc"]
+        assert result["facet_scope"]["no_match"] is True
