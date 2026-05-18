@@ -918,3 +918,87 @@ async def test_update_source_digest_coalesces_facets(tmp_bibilab_home: Path):
     assert source["sequence_number"] == 3
     assert source["sequence_kind"] == "part"
     assert source["season_number"] == 2
+
+
+async def test_update_source_facets_replace_semantics(tmp_bibilab_home: Path):
+    """update_source_facets REPLACES (explicit None clears), unlike the digest COALESCE path."""
+    import uuid
+
+    from bibilab.db import bootstrap_db, create_list, get_source, update_source_facets, write_source
+
+    await bootstrap_db()
+    list_id = "list-usf"
+    await create_list(list_id, "USF", "2026-01-01T00:00:00")
+    source_id = str(uuid.uuid4())
+    await write_source(
+        source_id=source_id,
+        video_id="BVusf01",
+        platform="bilibili",
+        list_id=list_id,
+        title="T",
+        summary="s",
+        keywords=["k"],
+        cover_url=None,
+        transcript_path=None,
+        source_url="https://example.com/BVusf01",
+        duration_seconds=10,
+        uploader="U",
+        language=None,
+        whisper_model="large-v3",
+        ai_model="gpt-4o",
+        vision_enabled=False,
+        settings_snapshot={},
+        series_name="罗翔说刑法",
+        sequence_number=8,
+        sequence_kind="episode",
+        season_number=1,
+    )
+    before = await get_source(source_id)
+
+    await update_source_facets(source_id, series_name="新系列", sequence_number=9, season_number=None)
+    after = await get_source(source_id)
+    assert after["series_name"] == "新系列"
+    assert after["sequence_number"] == 9
+    assert after["season_number"] is None
+    assert after["sequence_kind"] == "episode"
+    assert after["processed_at"] == before["processed_at"]
+
+
+async def test_update_source_facets_partial_and_noop(tmp_bibilab_home: Path):
+    import uuid
+
+    from bibilab.db import bootstrap_db, create_list, get_source, update_source_facets, write_source
+
+    await bootstrap_db()
+    list_id = "list-usf2"
+    await create_list(list_id, "USF2", "2026-01-01T00:00:00")
+    source_id = str(uuid.uuid4())
+    await write_source(
+        source_id=source_id,
+        video_id="BVusf02",
+        platform="bilibili",
+        list_id=list_id,
+        title="T",
+        summary="s",
+        keywords=["k"],
+        cover_url=None,
+        transcript_path=None,
+        source_url="https://example.com/BVusf02",
+        duration_seconds=10,
+        uploader="U",
+        language=None,
+        whisper_model="large-v3",
+        ai_model="gpt-4o",
+        vision_enabled=False,
+        settings_snapshot={},
+        series_name="S",
+        sequence_number=1,
+        sequence_kind="part",
+        season_number=2,
+    )
+    await update_source_facets(source_id, sequence_number=5)
+    await update_source_facets(source_id)
+    after = await get_source(source_id)
+    assert after["sequence_number"] == 5
+    assert after["series_name"] == "S"
+    assert after["season_number"] == 2
