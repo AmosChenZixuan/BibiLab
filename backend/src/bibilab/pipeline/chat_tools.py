@@ -14,6 +14,15 @@ from bibilab.pipeline.embed import retrieve
 
 logger = logging.getLogger(__name__)
 
+# Prepended to the LLM-visible retrieve result when facet scoping found no
+# matching source and failed open to the full pool. The deleted source list
+# (#310) was the LLM's only "episode not in library" signal; this restores it
+# LLM-side. English by design: _chunks is LLM-facing and already English;
+# build_grounding_prompt drives the user-visible response language separately.
+_NO_MATCH_NOTE = (
+    "No source matched the requested episode/season; searched all sources instead — say so before answering."
+)
+
 
 @dataclass
 class CitationRegistryEntry:
@@ -492,7 +501,8 @@ async def execute_retrieve(
             for s in result.source_coverage
         ],
         "_chunks": (
-            f"Sources retrieved this turn: {', '.join(f'[{i}]' for i in turn_indices)}. "
+            (f"{_NO_MATCH_NOTE}\n\n" if facet_no_match else "")
+            + f"Sources retrieved this turn: {', '.join(f'[{i}]' for i in turn_indices)}. "
             "Cite only these indices.\n\n"
             f"{_build_source_headers(registry)}\n\n" + "\n".join(chunks_formatted)
         ),

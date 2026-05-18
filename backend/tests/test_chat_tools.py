@@ -1815,6 +1815,50 @@ class TestExecuteRetrieveFacetScoping:
         }
 
     @pytest.mark.asyncio
+    async def test_no_match_prepends_note_to_llm_chunks(self, monkeypatch):
+        """#310: facet_scope.no_match true ⇒ _chunks carries the LLM-visible note."""
+        from bibilab.pipeline import chat_tools
+        from bibilab.pipeline.chat_tools import _NO_MATCH_NOTE
+
+        self._patch(
+            monkeypatch,
+            {
+                "a": {"sequence_number": 1, "season_number": None},
+                "b": {"sequence_number": 2, "season_number": None},
+            },
+        )
+        result = await chat_tools.execute_retrieve(
+            query="q",
+            source_ids=["a", "b"],
+            cfg=self._cfg(),
+            sequence_number=99,  # no source has seq 99 → no_match
+        )
+        assert result["facet_scope"]["no_match"] is True
+        assert result["_chunks"].startswith(_NO_MATCH_NOTE)
+
+    @pytest.mark.asyncio
+    async def test_match_does_not_prepend_note(self, monkeypatch):
+        """#310: matched (or no-facet) path leaves _chunks free of the note."""
+        from bibilab.pipeline import chat_tools
+        from bibilab.pipeline.chat_tools import _NO_MATCH_NOTE
+
+        self._patch(
+            monkeypatch,
+            {
+                "a": {"sequence_number": 1, "season_number": None},
+                "b": {"sequence_number": 2, "season_number": None},
+            },
+        )
+        result = await chat_tools.execute_retrieve(
+            query="q",
+            source_ids=["a", "b"],
+            cfg=self._cfg(),
+            sequence_number=1,
+        )
+        assert result["facet_scope"]["no_match"] is False
+        assert _NO_MATCH_NOTE not in result["_chunks"]
+
+    @pytest.mark.asyncio
     async def test_season_omitted_does_not_filter(self, monkeypatch):
         """Both sources share sequence_number but differ in season; season is
         omitted from the call → season must NOT narrow (both kept). Distinguishes
