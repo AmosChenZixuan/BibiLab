@@ -49,8 +49,8 @@ class SourceContentResponse(BaseModel):
             keywords=keywords,
             cover_url=source["cover_url"],
             transcript=transcript,
-            series_name=source["series_name"] if "series_name" in source.keys() else None,
-            sequence_number=source["sequence_number"] if "sequence_number" in source.keys() else None,
-            sequence_kind=source["sequence_kind"] if "sequence_kind" in source.keys() else None,
-            season_number=source["season_number"] if "season_number" in source.keys() else None,
+            series_name=source["series_name"],
+            sequence_number=source["sequence_number"],
+            sequence_kind=source["sequence_kind"],
+            season_number=source["season_number"],
         )

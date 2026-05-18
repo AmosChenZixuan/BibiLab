@@ -2,6 +2,7 @@
 
 import json
 import logging
+import math
 
 import httpx
 from pydantic import BaseModel, ValidationError, ValidationInfo, field_validator, model_validator
@@ -52,7 +53,7 @@ class DigestResult(BaseModel):
             n = None
         elif isinstance(v, int):
             n = v
-        elif isinstance(v, float) and v == int(v):
+        elif isinstance(v, float) and math.isfinite(v) and v == int(v):
             n = int(v)
         elif isinstance(v, str):
             try:
@@ -66,15 +67,21 @@ class DigestResult(BaseModel):
             return None
         return n
 
-    @field_validator("sequence_kind", mode="before")
+    @field_validator("series_name", "sequence_kind", mode="before")
     @classmethod
-    def _normalize_kind(cls, v: object) -> str | None:
+    def _clean_str_facet(cls, v: object, info: ValidationInfo) -> str | None:
+        # Best-effort like the int facets: a non-string or blank value degrades
+        # to None (logged), never raises — a bad facet must not abort the
+        # digest. sequence_kind is lowercased (a label); series_name is not (a
+        # proper noun).
         if v is None:
             return None
         if isinstance(v, str):
-            cleaned = v.strip().lower()
+            cleaned = v.strip()
+            if info.field_name == "sequence_kind":
+                cleaned = cleaned.lower()
             return cleaned or None
-        logger.warning("digest: dropping unusable sequence_kind=%r", v)
+        logger.warning("digest: dropping unusable %s=%r", info.field_name, v)
         return None
 
     @model_validator(mode="after")
@@ -153,8 +160,7 @@ Transcript:
 
 def _parse_response(text: str) -> DigestResult:
     result: DigestResult = _parse_llm_json_response(text, DigestResult)
-    if len(result.keywords) > _MAX_KEYWORDS:
-        result.keywords = result.keywords[:_MAX_KEYWORDS]
+    result.keywords = result.keywords[:_MAX_KEYWORDS]
     return result
 
 

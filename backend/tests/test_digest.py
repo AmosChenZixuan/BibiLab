@@ -313,6 +313,36 @@ class TestDigestResultFacets:
         assert result.sequence_kind == "episode"
         assert result.season_number is None
 
+    def test_series_name_non_string_degrades_to_none(self):
+        # A non-string series_name must degrade to None, not abort the digest.
+        json_str = '{"summary": "S", "keywords": [], "series_name": 123}'
+        result = _parse_response(json_str)
+        assert result.summary == "S"
+        assert result.series_name is None
+
+    def test_series_name_boolean_degrades_to_none(self):
+        json_str = '{"summary": "S", "keywords": [], "series_name": false}'
+        result = _parse_response(json_str)
+        assert result.series_name is None
+
+    def test_series_name_empty_string_becomes_none(self):
+        json_str = '{"summary": "S", "keywords": [], "series_name": "   "}'
+        result = _parse_response(json_str)
+        assert result.series_name is None
+
+    def test_series_name_whitespace_trimmed(self):
+        json_str = '{"summary": "S", "keywords": [], "series_name": "  罗翔说刑法  "}'
+        result = _parse_response(json_str)
+        assert result.series_name == "罗翔说刑法"
+
+    def test_sequence_number_non_finite_degrades_to_none(self):
+        # json.loads accepts bare Infinity/NaN — must degrade, not raise.
+        json_str = '{"summary": "S", "keywords": [], "sequence_number": Infinity, "sequence_kind": "episode"}'
+        result = _parse_response(json_str)
+        assert result.summary == "S"
+        assert result.sequence_number is None
+        assert result.sequence_kind is None  # co-occurrence drops the orphan
+
 
 class TestDigestRetry:
     def test_bad_facet_does_not_trigger_retry(self):
