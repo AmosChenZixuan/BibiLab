@@ -18,6 +18,10 @@ class SourceContentResponse(BaseModel):
     keywords: list[str]
     cover_url: str | None
     transcript: str
+    series_name: str | None = None
+    sequence_number: int | None = None
+    sequence_kind: str | None = None
+    season_number: int | None = None
 
     @classmethod
     def from_source(cls, source: dict, transcript: str) -> "SourceContentResponse":
@@ -45,4 +49,8 @@ class SourceContentResponse(BaseModel):
             keywords=keywords,
             cover_url=source["cover_url"],
             transcript=transcript,
+            series_name=source["series_name"],
+            sequence_number=source["sequence_number"],
+            sequence_kind=source["sequence_kind"],
+            season_number=source["season_number"],
         )

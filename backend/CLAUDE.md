@@ -32,7 +32,7 @@ pipeline/         — one file per stage
   audio.py          FFmpeg audio extraction (video → .wav)
   transcribe.py     Faster Whisper transcription → raw segments
   chunk.py          greedy segment merger → ~300-token RAG chunks
-  digest.py         LLM summary + keywords → denormalized into sources
+  digest.py         LLM summary + keywords + facets (series_name, sequence_number, sequence_kind, season_number) → denormalized into sources
   embed.py          ChromaDB embed + retrieve() (hybrid search → rerank → aggregation), FTS5 populate
   extract.py        LLM knowledge synthesis (overview generation)
   rerank.py         lazy ONNX cross-encoder reranker (Xenova/bge-reranker-base, XLM-RoBERTa zh+en; batched inference)
@@ -95,6 +95,7 @@ whisper_models.py — Whisper model management
 | `transcript_path` | Relative path from `~/.bibilab/`, nullable |
 | `whisper_model`, `ai_model`, `vision_enabled` | Processing config at ingest time |
 | `cover_url`, `processed_at`, `settings_snapshot` | Ingest-time state |
+| `series_name`, `sequence_number`, `sequence_kind`, `season_number` | Facet metadata extracted by LLM digest (nullable) |
 
 ### `artifacts` — Lab-generated content
 

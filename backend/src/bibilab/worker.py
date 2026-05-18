@@ -362,7 +362,15 @@ All output fields MUST be written in {_LANG_NAME.get(lang, "English")}."""
             cfg.ai.output_language,
             meta_raw.get("ui_lang"),
         )
-        await update_source_digest(source_id, extraction.summary, extraction.keywords)
+        await update_source_digest(
+            source_id,
+            extraction.summary,
+            extraction.keywords,
+            series_name=extraction.series_name,
+            sequence_number=extraction.sequence_number,
+            sequence_kind=extraction.sequence_kind,
+            season_number=extraction.season_number,
+        )
         await update_job_status(job_id, JobStatus.DONE.value, progress=100)
 
     # -------------------------------------------------------------------------
@@ -605,6 +613,10 @@ All output fields MUST be written in {_LANG_NAME.get(lang, "English")}."""
             ai_model=cfg.ai.model,
             vision_enabled=cfg.vision.enabled,
             settings_snapshot=cfg.model_dump(),
+            series_name=extraction.series_name,
+            sequence_number=extraction.sequence_number,
+            sequence_kind=extraction.sequence_kind,
+            season_number=extraction.season_number,
         )
 
         # Cleanup downloads

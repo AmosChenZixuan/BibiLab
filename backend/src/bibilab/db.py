@@ -66,6 +66,10 @@ CREATE TABLE IF NOT EXISTS sources (
     vision_enabled    INTEGER DEFAULT 0,
     processed_at      DATETIME,
     settings_snapshot TEXT,
+    series_name       TEXT,
+    sequence_number   INTEGER,
+    sequence_kind     TEXT,
+    season_number     INTEGER,
     UNIQUE (video_id, list_id)
 )
 """
@@ -238,6 +242,10 @@ async def write_source(
     ai_model: str,
     vision_enabled: bool,
     settings_snapshot: dict[str, Any],
+    series_name: str | None = None,
+    sequence_number: int | None = None,
+    sequence_kind: str | None = None,
+    season_number: int | None = None,
 ) -> None:
     async with get_db() as db:
         cursor = await db.execute("SELECT id FROM sources WHERE video_id = ? AND list_id = ?", (video_id, list_id))
@@ -249,8 +257,10 @@ async def write_source(
                 (id, video_id, platform, list_id, title, summary, keywords,
                  cover_url, transcript_path, source_url, duration_seconds, uploader,
                  language, whisper_model, ai_model, vision_enabled,
-                 processed_at, settings_snapshot)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 processed_at, settings_snapshot,
+                 series_name, sequence_number, sequence_kind, season_number)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                    ?, ?, ?, ?)
             ON CONFLICT(video_id, list_id) DO UPDATE SET
                 platform=excluded.platform,
                 title=excluded.title,
@@ -266,7 +276,11 @@ async def write_source(
                 ai_model=excluded.ai_model,
                 vision_enabled=excluded.vision_enabled,
                 processed_at=excluded.processed_at,
-                settings_snapshot=excluded.settings_snapshot
+                settings_snapshot=excluded.settings_snapshot,
+                series_name=COALESCE(excluded.series_name, series_name),
+                sequence_number=COALESCE(excluded.sequence_number, sequence_number),
+                sequence_kind=COALESCE(excluded.sequence_kind, sequence_kind),
+                season_number=COALESCE(excluded.season_number, season_number)
             """,
             (
                 source_id,
@@ -287,6 +301,10 @@ async def write_source(
                 int(vision_enabled),
                 _now(),
                 json.dumps(settings_snapshot),
+                series_name,
+                sequence_number,
+                sequence_kind,
+                season_number,
             ),
         )
 
@@ -302,11 +320,33 @@ async def write_source(
         await db.commit()
 
 
-async def update_source_digest(source_id: str, summary: str, keywords: list[str]) -> None:
+async def update_source_digest(
+    source_id: str,
+    summary: str,
+    keywords: list[str],
+    series_name: str | None = None,
+    sequence_number: int | None = None,
+    sequence_kind: str | None = None,
+    season_number: int | None = None,
+) -> None:
     async with get_db() as db:
         await db.execute(
-            "UPDATE sources SET summary=?, keywords=?, processed_at=? WHERE id=?",
-            (summary, json.dumps(keywords), _now(), source_id),
+            "UPDATE sources SET summary=?, keywords=?,"
+            " series_name=COALESCE(?, series_name),"
+            " sequence_number=COALESCE(?, sequence_number),"
+            " sequence_kind=COALESCE(?, sequence_kind),"
+            " season_number=COALESCE(?, season_number),"
+            " processed_at=? WHERE id=?",
+            (
+                summary,
+                json.dumps(keywords),
+                series_name,
+                sequence_number,
+                sequence_kind,
+                season_number,
+                _now(),
+                source_id,
+            ),
         )
         await db.commit()
 
