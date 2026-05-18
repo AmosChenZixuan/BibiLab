@@ -61,7 +61,7 @@ describe("RAG observability via SSE tool_result", () => {
     vi.spyOn(window, "fetch").mockImplementation(() =>
       Promise.resolve(
         makeSseStream([
-          'data: {"type":"tool_result","name":"retrieve","result":{"query":"A","expected_hits":"few","candidates_evaluated":30,"sources_with_hits":1,"sources_total":1,"source_coverage":[{"source_id":"s1","video_id":"BV1test","title":"Test Video A"}],"context":[{"chunk_id":"c1","citation_index":1,"source_id":"s1","source_title":"Test Video A","timestamp_start":0,"timestamp_end":132,"rerank_score":4.53,"preview":"test preview"}],"dropped_by_gate":0,"reranked":true,"scope_choice":"none","excluded_count":null,"scoped_pool_size":1,"gate_margin":null,"reused_from_prior_call_id":null}}\n\n',
+          'data: {"type":"tool_result","name":"retrieve","result":{"query":"A","expected_hits":"few","candidates_evaluated":30,"sources_with_hits":1,"sources_total":1,"source_coverage":[{"source_id":"s1","video_id":"BV1test","title":"Test Video A"}],"context":[{"chunk_id":"c1","citation_index":1,"source_id":"s1","source_title":"Test Video A","timestamp_start":0,"timestamp_end":132,"rerank_score":4.53,"preview":"test preview"}],"dropped_by_gate":0,"reranked":true,"scope_choice":"none","excluded_count":null,"scoped_pool_size":1,"gate_margin":null}}\n\n',
           'data: {"type":"delta","content":"Hello"}\n\n',
           'data: {"type":"done"}\n\n',
         ]),
@@ -87,7 +87,7 @@ describe("RAG observability via SSE tool_result", () => {
     vi.spyOn(window, "fetch").mockImplementation(() =>
       Promise.resolve(
         makeSseStream([
-          'data: {"type":"tool_result","name":"retrieve","result":{"query":"长期情景记忆","expected_hits":"many","candidates_evaluated":10,"sources_with_hits":1,"sources_total":16,"source_coverage":[{"source_id":"s1","video_id":"BV1test","title":"Test Video A"}],"context":[{"chunk_id":"c1","citation_index":1,"source_id":"s1","source_title":"Test Video A","timestamp_start":0,"timestamp_end":132,"rerank_score":4.53,"preview":"test preview"}],"dropped_by_gate":0,"reranked":true,"scope_choice":"exclude","excluded_count":6,"scoped_pool_size":10,"gate_margin":0.25,"reused_from_prior_call_id":null}}\n\n',
+          'data: {"type":"tool_result","name":"retrieve","result":{"query":"长期情景记忆","expected_hits":"many","candidates_evaluated":10,"sources_with_hits":1,"sources_total":16,"source_coverage":[{"source_id":"s1","video_id":"BV1test","title":"Test Video A"}],"context":[{"chunk_id":"c1","citation_index":1,"source_id":"s1","source_title":"Test Video A","timestamp_start":0,"timestamp_end":132,"rerank_score":4.53,"preview":"test preview"}],"dropped_by_gate":0,"reranked":true,"scope_choice":"exclude","excluded_count":6,"scoped_pool_size":10,"gate_margin":0.25}}\n\n',
           'data: {"type":"delta","content":"Answer"}\n\n',
           'data: {"type":"done"}\n\n',
         ]),
@@ -116,8 +116,8 @@ describe("RAG observability via SSE tool_result", () => {
         makeSseStream([
           'data: {"type":"tool_call_start","id":"tc1","name":"retrieve","arguments":{"query":"A","expected_hits":"many"}}\n\n',
           'data: {"type":"tool_call_start","id":"tc2","name":"retrieve","arguments":{"query":"B","expected_hits":"few"}}\n\n',
-          'data: {"type":"tool_result","id":"tc1","name":"retrieve","result":{"query":"A","expected_hits":"many","candidates_evaluated":10,"sources_with_hits":2,"sources_total":4,"source_coverage":[{"source_id":"s1","video_id":"v1","title":"Video A"},{"source_id":"s2","video_id":"v2","title":"Video B"}],"context":[{"chunk_id":"c1","citation_index":1,"source_id":"s1","source_title":"Video A","timestamp_start":0,"timestamp_end":60,"rerank_score":3.5,"preview":"preview A"}],"dropped_by_gate":0,"reranked":true,"scope_choice":"none","excluded_count":null,"scoped_pool_size":4,"gate_margin":null,"reused_from_prior_call_id":null}}\n\n',
-          'data: {"type":"tool_result","id":"tc2","name":"retrieve","result":{"query":"B","expected_hits":"few","candidates_evaluated":20,"sources_with_hits":1,"sources_total":3,"source_coverage":[{"source_id":"s3","video_id":"v3","title":"Video C"}],"context":[{"chunk_id":"c2","citation_index":2,"source_id":"s3","source_title":"Video C","timestamp_start":10,"timestamp_end":90,"rerank_score":2.8,"preview":"preview B"}],"dropped_by_gate":0,"reranked":true,"scope_choice":"exclude","excluded_count":1,"scoped_pool_size":2,"gate_margin":0.1,"reused_from_prior_call_id":null}}\n\n',
+          'data: {"type":"tool_result","id":"tc1","name":"retrieve","result":{"query":"A","expected_hits":"many","candidates_evaluated":10,"sources_with_hits":2,"sources_total":4,"source_coverage":[{"source_id":"s1","video_id":"v1","title":"Video A"},{"source_id":"s2","video_id":"v2","title":"Video B"}],"context":[{"chunk_id":"c1","citation_index":1,"source_id":"s1","source_title":"Video A","timestamp_start":0,"timestamp_end":60,"rerank_score":3.5,"preview":"preview A"}],"dropped_by_gate":0,"reranked":true,"scope_choice":"none","excluded_count":null,"scoped_pool_size":4,"gate_margin":null}}\n\n',
+          'data: {"type":"tool_result","id":"tc2","name":"retrieve","result":{"query":"B","expected_hits":"few","candidates_evaluated":20,"sources_with_hits":1,"sources_total":3,"source_coverage":[{"source_id":"s3","video_id":"v3","title":"Video C"}],"context":[{"chunk_id":"c2","citation_index":2,"source_id":"s3","source_title":"Video C","timestamp_start":10,"timestamp_end":90,"rerank_score":2.8,"preview":"preview B"}],"dropped_by_gate":0,"reranked":true,"scope_choice":"exclude","excluded_count":1,"scoped_pool_size":2,"gate_margin":0.1}}\n\n',
           'data: {"type":"delta","content":"Answer"}\n\n',
           'data: {"type":"done"}\n\n',
         ]),
@@ -144,7 +144,7 @@ describe("RAG observability via SSE tool_result", () => {
     vi.spyOn(window, "fetch").mockImplementation(() =>
       Promise.resolve(
         makeSseStream([
-          'data: {"type":"tool_result","name":"retrieve","result":{"query":"narrow query","expected_hits":"one","candidates_evaluated":5,"sources_with_hits":0,"sources_total":3,"source_coverage":[],"context":[],"dropped_by_gate":3,"reranked":false,"scope_choice":"whitelist","excluded_count":null,"scoped_pool_size":1,"gate_margin":null,"reused_from_prior_call_id":null}}\n\n',
+          'data: {"type":"tool_result","name":"retrieve","result":{"query":"narrow query","expected_hits":"one","candidates_evaluated":5,"sources_with_hits":0,"sources_total":3,"source_coverage":[],"context":[],"dropped_by_gate":3,"reranked":false,"scope_choice":"whitelist","excluded_count":null,"scoped_pool_size":1,"gate_margin":null}}\n\n',
           'data: {"type":"delta","content":"Empty answer"}\n\n',
           'data: {"type":"done"}\n\n',
         ]),
@@ -166,28 +166,4 @@ describe("RAG observability via SSE tool_result", () => {
     expect(screen.getByText(/0 chunks.*3 dropped/i)).toBeInTheDocument();
   });
 
-  test("reused_from_prior_call_id renders reused variant", async () => {
-    vi.spyOn(window, "fetch").mockImplementation(() =>
-      Promise.resolve(
-        makeSseStream([
-          'data: {"type":"tool_result","name":"retrieve","result":{"query":"(reused)","expected_hits":null,"candidates_evaluated":0,"sources_with_hits":0,"sources_total":0,"source_coverage":[],"context":[],"dropped_by_gate":0,"reranked":false,"scope_choice":"none","excluded_count":null,"scoped_pool_size":0,"gate_margin":null,"reused_from_prior_call_id":"prior-call-id"}}\n\n',
-          'data: {"type":"delta","content":"Follow-up answer"}\n\n',
-          'data: {"type":"done"}\n\n',
-        ]),
-      ),
-    );
-
-    renderChatPanel({
-      selectedSourceIds: ["src-1"],
-      sources: [SOURCE_1],
-      listId: "list-1",
-    });
-
-    const textarea = screen.getByRole("textbox");
-    await userEvent.type(textarea, "Hi");
-    await userEvent.keyboard("{Enter}");
-
-    await waitFor(() => screen.getByText("Follow-up answer"));
-    expect(screen.getByText(/reused from previous turn/i)).toBeInTheDocument();
-  });
 });

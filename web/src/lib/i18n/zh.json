@@ -263,7 +263,6 @@
     "ledger": {
       "summary": "%{chunks} 个块 · %{sources} 个来源",
       "summaryEmpty": "0 个块（%{dropped} 被筛掉）",
-      "summaryReused": "复用上一轮",
       "summaryPending": "检索中…",
       "field": {
         "query": "查询",

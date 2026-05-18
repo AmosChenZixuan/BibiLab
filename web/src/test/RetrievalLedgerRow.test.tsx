@@ -56,7 +56,6 @@ const BASE_CALL: RetrievalCall = {
   excluded_count: 6,
   scoped_pool_size: 10,
   gate_margin: 0.25,
-  reused_from_prior_call_id: null,
 };
 
 // ---------- variant: default ----------
@@ -128,26 +127,6 @@ describe("variant=empty", () => {
     expect(container.innerHTML).toContain("长期情景记忆");
     expect(container.innerHTML).toContain("Result");
     expect(container.innerHTML).not.toContain("[1]");
-  });
-});
-
-// ---------- variant: reused ----------
-describe("variant=reused", () => {
-  const REUSED_CALL: RetrievalCall = {
-    ...BASE_CALL,
-    query: "(reused)",
-    context: [],
-    reused_from_prior_call_id: "prior-call-id",
-  };
-
-  test("renders single-line reused row", () => {
-    const { container } = renderRow({ variant: "reused", call: REUSED_CALL });
-    expect(container.innerHTML).toContain("reused from previous turn");
-  });
-
-  test("has no toggle button", () => {
-    const { container } = renderRow({ variant: "reused", call: REUSED_CALL });
-    expect(container.querySelector('button[aria-label="Toggle retrieval details"]')).toBeNull();
   });
 });
 

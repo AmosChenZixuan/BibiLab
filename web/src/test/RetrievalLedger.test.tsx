@@ -49,7 +49,6 @@ const DEFAULT_CALL: RetrievalCall = {
   excluded_count: 6,
   scoped_pool_size: 10,
   gate_margin: 0.25,
-  reused_from_prior_call_id: null,
 };
 
 describe("RetrievalLedger", () => {
@@ -93,7 +92,7 @@ describe("RetrievalLedger", () => {
   });
 
   test("streaming-shaped call (context absent) renders as default, not empty", () => {
-    // The SSE tool_result payload omits context[] / reused_from_prior_call_id
+    // The SSE tool_result payload omits context[]
     // (those are reconstructed only at persist time). dropped_by_gate can be
     // >0 even on a successful retrieval. callVariant must NOT misclassify a
     // context-absent streaming call as the amber "empty" variant.
