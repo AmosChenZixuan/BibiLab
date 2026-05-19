@@ -133,8 +133,6 @@ describe("RetrievalCall", () => {
       ],
       dropped_by_gate: 0,
       reranked: true,
-      scope_choice: "none",
-      excluded_count: null,
       scoped_pool_size: 3,
       gate_margin: null,
     };
@@ -156,8 +154,6 @@ describe("RetrievalCall", () => {
       context: [],
       dropped_by_gate: 0,
       reranked: false,
-      scope_choice: "none",
-      excluded_count: null,
       scoped_pool_size: 1,
       gate_margin: null,
     };

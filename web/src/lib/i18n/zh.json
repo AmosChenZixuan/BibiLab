@@ -289,8 +289,6 @@
         "result": "结果"
       },
       "scope": {
-        "exclude": "排除 %{count} / %{total}",
-        "whitelist": "仅 %{count} / %{total}",
         "none": "全部 %{total} 个来源"
       },
       "mode": {

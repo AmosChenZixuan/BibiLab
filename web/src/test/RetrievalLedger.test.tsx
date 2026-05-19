@@ -45,8 +45,6 @@ const DEFAULT_CALL: RetrievalCall = {
   ],
   dropped_by_gate: 0,
   reranked: true,
-  scope_choice: "exclude",
-  excluded_count: 6,
   scoped_pool_size: 10,
   gate_margin: 0.25,
 };
@@ -105,8 +103,6 @@ describe("RetrievalLedger", () => {
       source_coverage: [{ source_id: "s1", video_id: "v1", title: "Vid" }],
       dropped_by_gate: 3,
       reranked: true,
-      scope_choice: "none",
-      excluded_count: null,
       scoped_pool_size: 16,
       gate_margin: 2.0,
     } as unknown as RetrievalCall;

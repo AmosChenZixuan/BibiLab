@@ -289,8 +289,6 @@
         "result": "Result"
       },
       "scope": {
-        "exclude": "excluded %{count} of %{total}",
-        "whitelist": "only %{count} of %{total}",
         "none": "all %{total} sources"
       },
       "mode": {
