@@ -52,8 +52,6 @@ const BASE_CALL: RetrievalCall = {
   ],
   dropped_by_gate: 0,
   reranked: true,
-  scope_choice: "exclude",
-  excluded_count: 6,
   scoped_pool_size: 10,
   gate_margin: 0.25,
 };
@@ -75,7 +73,7 @@ describe("variant=default", () => {
     // After expand: metadata is visible
     expect(container.innerHTML).toContain("长期情景记忆");
     expect(container.innerHTML).toContain("many");
-    expect(container.innerHTML).toContain("excluded 6 of 16");
+    expect(container.innerHTML).toContain("all 16 sources");
     // chunk list — source_title is "Test Video" (exact case)
     expect(container.innerHTML).toContain("Test Video");
     expect(container.innerHTML).toContain("[1]");
@@ -101,7 +99,7 @@ describe("variant=default", () => {
     await userEvent.click(toggle);
     await userEvent.click(toggle);
     // After re-collapse: metadata should not be visible
-    expect(container.innerHTML).not.toContain("excluded 6 of 16");
+    expect(container.innerHTML).not.toContain("all 16 sources");
   });
 });
 
@@ -154,30 +152,6 @@ describe("variant=pending", () => {
       pending: { id: "p1", query: "test", expected_hits: "one" },
     });
     expect(container.querySelector('button[aria-label="Toggle retrieval details"]')).toBeNull();
-  });
-});
-
-// ---------- scope_choice mapping ----------
-describe("scope_choice rendering", () => {
-  test('scope_choice=exclude renders "excluded N of T"', async () => {
-    const { container } = renderRow({ variant: "default", call: { ...BASE_CALL, scope_choice: "exclude", excluded_count: 6, scoped_pool_size: 10 } });
-    const toggle = container.querySelector('button[aria-label="Toggle retrieval details"]');
-    await userEvent.click(toggle!);
-    expect(container.innerHTML).toContain("excluded 6 of 16");
-  });
-
-  test('scope_choice=whitelist renders "only N of T"', async () => {
-    const { container } = renderRow({ variant: "default", call: { ...BASE_CALL, scope_choice: "whitelist", excluded_count: null, scoped_pool_size: 3 } });
-    const toggle = container.querySelector('button[aria-label="Toggle retrieval details"]');
-    await userEvent.click(toggle!);
-    expect(container.innerHTML).toContain("only 3 of 16");
-  });
-
-  test('scope_choice=none renders "all N sources"', async () => {
-    const { container } = renderRow({ variant: "default", call: { ...BASE_CALL, scope_choice: "none", excluded_count: null, scoped_pool_size: 16 } });
-    const toggle = container.querySelector('button[aria-label="Toggle retrieval details"]');
-    await userEvent.click(toggle!);
-    expect(container.innerHTML).toContain("all 16 sources");
   });
 });
 

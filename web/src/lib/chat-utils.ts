@@ -10,7 +10,6 @@ export interface ToolCallData {
   name: string;
   result: ToolResult;
 }
-export type ScopeChoice = "exclude" | "whitelist" | "none";
 export type ExpectedHits = "one" | "few" | "many" | null;
 export type RagSource = { source_id: string; video_id: string; title: string };
 /** Single chunk in the persisted context[] array. */
@@ -46,8 +45,6 @@ export type RetrievalCall = {
   context?: RetrievalChunk[];
   dropped_by_gate: number;
   reranked: boolean;
-  scope_choice: ScopeChoice;
-  excluded_count: number | null;
   scoped_pool_size: number;
   facet_scope?: FacetScope;
   gate_margin: number | null;

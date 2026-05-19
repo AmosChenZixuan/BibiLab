@@ -15,14 +15,7 @@ interface RetrievalLedgerRowProps {
 }
 
 function ScopeDisplay({ call, t }: { call: RetrievalCall; t: (key: string, params?: Record<string, string | number>) => string }) {
-  const { scope_choice, excluded_count, scoped_pool_size, sources_total } = call;
-  if (scope_choice === "exclude") {
-    return <>{t("chat.ledger.scope.exclude", { count: excluded_count ?? 0, total: sources_total })}</>;
-  }
-  if (scope_choice === "whitelist") {
-    return <>{t("chat.ledger.scope.whitelist", { count: scoped_pool_size, total: sources_total })}</>;
-  }
-  return <>{t("chat.ledger.scope.none", { total: sources_total })}</>;
+  return <>{t("chat.ledger.scope.none", { total: call.sources_total })}</>;
 }
 
 function ModeDisplay({ expected_hits, t }: { expected_hits: RetrievalCall["expected_hits"]; t: (key: string) => string }) {
