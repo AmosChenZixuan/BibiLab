@@ -59,7 +59,6 @@ async def test_ingest_dedup(client: httpx.AsyncClient, tmp_bibilab_home: Path):
         settings_snapshot={},
         series_name=None,
         sequence_number=None,
-        sequence_kind=None,
         season_number=None,
     )
     resp = await client.post(
@@ -127,7 +126,6 @@ async def test_rerun_digest_only(tmp_bibilab_home: Path):
         settings_snapshot={},
         series_name=None,
         sequence_number=None,
-        sequence_kind=None,
         season_number=None,
     )
 
@@ -205,7 +203,6 @@ async def test_write_source_stores_relative_paths(tmp_bibilab_home: Path):
         settings_snapshot={},
         series_name=None,
         sequence_number=None,
-        sequence_kind=None,
         season_number=None,
     )
 
@@ -493,7 +490,6 @@ async def test_preview_processed_status(client: httpx.AsyncClient, mock_resolve_
         settings_snapshot={},
         series_name=None,
         sequence_number=None,
-        sequence_kind=None,
         season_number=None,
     )
     resp = await client.post(
@@ -719,7 +715,7 @@ async def test_preview_flat_unknown_list(client: httpx.AsyncClient, mock_resolve
 
 
 async def test_write_source_persists_facet_columns(tmp_bibilab_home: Path):
-    """write_source persists series_name, sequence_number, sequence_kind, season_number."""
+    """write_source persists series_name, sequence_number, season_number."""
     import uuid
 
     from bibilab.db import bootstrap_db, create_list, get_source, write_source
@@ -749,7 +745,6 @@ async def test_write_source_persists_facet_columns(tmp_bibilab_home: Path):
         settings_snapshot={},
         series_name="罗翔说刑法",
         sequence_number=8,
-        sequence_kind="episode",
         season_number=None,
     )
 
@@ -757,12 +752,11 @@ async def test_write_source_persists_facet_columns(tmp_bibilab_home: Path):
     assert source is not None
     assert source["series_name"] == "罗翔说刑法"
     assert source["sequence_number"] == 8
-    assert source["sequence_kind"] == "episode"
     assert source["season_number"] is None
 
 
 async def test_update_source_digest_persists_facets(tmp_bibilab_home: Path):
-    """update_source_digest writes all 4 facet columns."""
+    """update_source_digest writes all 3 facet columns."""
     import uuid
 
     from bibilab.db import (
@@ -804,7 +798,6 @@ async def test_update_source_digest_persists_facets(tmp_bibilab_home: Path):
         ["new"],
         series_name="Test Series",
         sequence_number=42,
-        sequence_kind="chapter",
         season_number=2,
     )
 
@@ -813,7 +806,6 @@ async def test_update_source_digest_persists_facets(tmp_bibilab_home: Path):
     assert source["summary"] == "New summary"
     assert source["series_name"] == "Test Series"
     assert source["sequence_number"] == 42
-    assert source["sequence_kind"] == "chapter"
     assert source["season_number"] == 2
 
 
@@ -848,19 +840,18 @@ async def test_write_source_reingest_coalesces_facets(tmp_bibilab_home: Path):
         settings_snapshot={},
     )
 
-    await write_source(**base, series_name="罗翔说刑法", sequence_number=8, sequence_kind="episode", season_number=1)
+    await write_source(**base, series_name="罗翔说刑法", sequence_number=8, season_number=1)
 
     # Re-ingest where the digest found no facets — prior values must survive.
-    await write_source(**base, series_name=None, sequence_number=None, sequence_kind=None, season_number=None)
+    await write_source(**base, series_name=None, sequence_number=None, season_number=None)
     source = await get_source(source_id)
     assert source is not None
     assert source["series_name"] == "罗翔说刑法"
     assert source["sequence_number"] == 8
-    assert source["sequence_kind"] == "episode"
     assert source["season_number"] == 1
 
     # Re-ingest with a fresh non-null value — that field is overwritten.
-    await write_source(**base, series_name=None, sequence_number=9, sequence_kind="episode", season_number=None)
+    await write_source(**base, series_name=None, sequence_number=9, season_number=None)
     source = await get_source(source_id)
     assert source is not None
     assert source["series_name"] == "罗翔说刑法"  # still preserved (null this run)
@@ -905,7 +896,6 @@ async def test_update_source_digest_coalesces_facets(tmp_bibilab_home: Path):
         settings_snapshot={},
         series_name="Keep Me",
         sequence_number=3,
-        sequence_kind="part",
         season_number=2,
     )
 
@@ -916,7 +906,6 @@ async def test_update_source_digest_coalesces_facets(tmp_bibilab_home: Path):
     assert source["summary"] == "new summary"
     assert source["series_name"] == "Keep Me"
     assert source["sequence_number"] == 3
-    assert source["sequence_kind"] == "part"
     assert source["season_number"] == 2
 
 
@@ -950,7 +939,6 @@ async def test_update_source_facets_replace_semantics(tmp_bibilab_home: Path):
         settings_snapshot={},
         series_name="罗翔说刑法",
         sequence_number=8,
-        sequence_kind="episode",
         season_number=1,
     )
     before = await get_source(source_id)
@@ -960,7 +948,6 @@ async def test_update_source_facets_replace_semantics(tmp_bibilab_home: Path):
     assert after["series_name"] == "新系列"
     assert after["sequence_number"] == 9
     assert after["season_number"] is None
-    assert after["sequence_kind"] == "episode"
     assert after["processed_at"] == before["processed_at"]
 
 
@@ -993,7 +980,6 @@ async def test_update_source_facets_partial_and_noop(tmp_bibilab_home: Path):
         settings_snapshot={},
         series_name="S",
         sequence_number=1,
-        sequence_kind="part",
         season_number=2,
     )
     await update_source_facets(source_id, sequence_number=5)

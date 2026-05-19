@@ -68,7 +68,6 @@ CREATE TABLE IF NOT EXISTS sources (
     settings_snapshot TEXT,
     series_name       TEXT,
     sequence_number   INTEGER,
-    sequence_kind     TEXT,
     season_number     INTEGER,
     UNIQUE (video_id, list_id)
 )
@@ -140,6 +139,10 @@ async def bootstrap_db() -> None:
         await db.execute("DROP TABLE IF EXISTS query_classifications")
         try:
             await db.execute("ALTER TABLE conversations DROP COLUMN mode")
+        except aiosqlite.OperationalError:
+            pass  # column already dropped, or SQLite < 3.35 doesn't support DROP COLUMN
+        try:
+            await db.execute("ALTER TABLE sources DROP COLUMN sequence_kind")
         except aiosqlite.OperationalError:
             pass  # column already dropped, or SQLite < 3.35 doesn't support DROP COLUMN
         await db.execute("PRAGMA journal_mode=WAL")
@@ -244,7 +247,6 @@ async def write_source(
     settings_snapshot: dict[str, Any],
     series_name: str | None = None,
     sequence_number: int | None = None,
-    sequence_kind: str | None = None,
     season_number: int | None = None,
 ) -> None:
     async with get_db() as db:
@@ -258,9 +260,8 @@ async def write_source(
                  cover_url, transcript_path, source_url, duration_seconds, uploader,
                  language, whisper_model, ai_model, vision_enabled,
                  processed_at, settings_snapshot,
-                 series_name, sequence_number, sequence_kind, season_number)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                    ?, ?, ?, ?)
+                 series_name, sequence_number, season_number)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(video_id, list_id) DO UPDATE SET
                 platform=excluded.platform,
                 title=excluded.title,
@@ -279,7 +280,6 @@ async def write_source(
                 settings_snapshot=excluded.settings_snapshot,
                 series_name=COALESCE(excluded.series_name, series_name),
                 sequence_number=COALESCE(excluded.sequence_number, sequence_number),
-                sequence_kind=COALESCE(excluded.sequence_kind, sequence_kind),
                 season_number=COALESCE(excluded.season_number, season_number)
             """,
             (
@@ -303,7 +303,6 @@ async def write_source(
                 json.dumps(settings_snapshot),
                 series_name,
                 sequence_number,
-                sequence_kind,
                 season_number,
             ),
         )
@@ -326,7 +325,6 @@ async def update_source_digest(
     keywords: list[str],
     series_name: str | None = None,
     sequence_number: int | None = None,
-    sequence_kind: str | None = None,
     season_number: int | None = None,
 ) -> None:
     async with get_db() as db:
@@ -334,7 +332,6 @@ async def update_source_digest(
             "UPDATE sources SET summary=?, keywords=?,"
             " series_name=COALESCE(?, series_name),"
             " sequence_number=COALESCE(?, sequence_number),"
-            " sequence_kind=COALESCE(?, sequence_kind),"
             " season_number=COALESCE(?, season_number),"
             " processed_at=? WHERE id=?",
             (
@@ -342,7 +339,6 @@ async def update_source_digest(
                 json.dumps(keywords),
                 series_name,
                 sequence_number,
-                sequence_kind,
                 season_number,
                 _now(),
                 source_id,
@@ -352,8 +348,7 @@ async def update_source_digest(
 
 
 # Manual-edit facet writer. Replace semantics (explicit None clears), distinct
-# from update_source_digest's COALESCE-preserve. sequence_kind is intentionally
-# absent — the UI does not edit it, so an existing extracted value survives.
+# from update_source_digest's COALESCE-preserve.
 _FACET_WRITE_COLUMNS = ("series_name", "sequence_number", "season_number")
 
 

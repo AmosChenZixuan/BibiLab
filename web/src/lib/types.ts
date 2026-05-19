@@ -47,7 +47,6 @@ export type SourceContent = {
   settings_snapshot: Record<string, unknown>;
   series_name?: string | null;
   sequence_number?: number | null;
-  sequence_kind?: string | null;
   season_number?: number | null;
 };
 

@@ -152,8 +152,7 @@ async def test_rerun_source_success(client: httpx.AsyncClient, tmp_bibilab_home:
     # Mock the LLM call to return new digest with facets
     new_digest = (
         '{"summary": "new summary from rerun", "keywords": ["new", "rerun", "test"], '
-        '"series_name": "Rerun Series", "sequence_number": 5, '
-        '"sequence_kind": "episode", "season_number": 1}'
+        '"series_name": "Rerun Series", "sequence_number": 5, "season_number": 1}'
     )
 
     def mock_call_llm(prompt, cfg, llm_timeout=120, llm_max_tokens=2048):
@@ -173,7 +172,6 @@ async def test_rerun_source_success(client: httpx.AsyncClient, tmp_bibilab_home:
     assert json.loads(source["keywords"]) == ["new", "rerun", "test"]
     assert source["series_name"] == "Rerun Series"
     assert source["sequence_number"] == 5
-    assert source["sequence_kind"] == "episode"
     assert source["season_number"] == 1
 
     # Verify transcript file was not modified
@@ -258,7 +256,6 @@ async def test_patch_facets_replace(client: httpx.AsyncClient, tmp_bibilab_home:
         settings_snapshot={},
         series_name="老系列",
         sequence_number=3,
-        sequence_kind="episode",
         season_number=5,
     )
     r = await client.patch(
@@ -270,7 +267,6 @@ async def test_patch_facets_replace(client: httpx.AsyncClient, tmp_bibilab_home:
     assert src["series_name"] == "新系列"
     assert src["sequence_number"] == 7
     assert src["season_number"] is None
-    assert src["sequence_kind"] == "episode"
 
 
 async def test_patch_facets_kindless_number_persists(client: httpx.AsyncClient, tmp_bibilab_home: Path):
@@ -375,7 +371,6 @@ async def test_patch_facets_empty_body_noop(client: httpx.AsyncClient, tmp_bibil
         settings_snapshot={},
         series_name="keep",
         sequence_number=3,
-        sequence_kind="episode",
         season_number=1,
     )
     r = await client.patch(f"/sources/{sid}/facets", json={})

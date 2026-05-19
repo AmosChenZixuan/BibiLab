@@ -5,7 +5,7 @@ import logging
 import math
 
 import httpx
-from pydantic import BaseModel, ValidationError, ValidationInfo, field_validator, model_validator
+from pydantic import BaseModel, ValidationError, ValidationInfo, field_validator
 
 from bibilab.adapters.base import VideoMeta
 from bibilab.config import AIConfig
@@ -64,19 +64,17 @@ def parse_facet_int(v: object) -> int | None:
     return n
 
 
-def clean_str_facet(v: object, *, lower: bool = False) -> str | None:
+def clean_str_facet(v: object) -> str | None:
     """Trim a string facet; '' / None -> None. Non-string raises ValueError.
 
-    Shared core for series_name/sequence_kind. The digest path catches the
-    ValueError and degrades to None; the manual-edit path lets it 422.
+    Used for series_name. The digest path catches the ValueError and degrades
+    to None; the manual-edit path lets it 422.
     """
     if v is None:
         return None
     if not isinstance(v, str):
         raise ValueError(f"not a string: {v!r}")
     cleaned = v.strip()
-    if lower:
-        cleaned = cleaned.lower()
     return cleaned or None
 
 
@@ -85,7 +83,6 @@ class DigestResult(BaseModel):
     keywords: list[str]
     series_name: str | None = None
     sequence_number: int | None = None
-    sequence_kind: str | None = None
     season_number: int | None = None
 
     @field_validator("sequence_number", "season_number", mode="before")
@@ -97,30 +94,14 @@ class DigestResult(BaseModel):
             logger.warning("digest: dropping unusable %s=%r", info.field_name, v)
             return None
 
-    @field_validator("series_name", "sequence_kind", mode="before")
+    @field_validator("series_name", mode="before")
     @classmethod
-    def _clean_str_facet(cls, v: object, info: ValidationInfo) -> str | None:
-        # sequence_kind is a label (lowercased); series_name is a proper noun.
+    def _clean_str_facet(cls, v: object) -> str | None:
         try:
-            return clean_str_facet(v, lower=info.field_name == "sequence_kind")
+            return clean_str_facet(v)
         except ValueError:
-            logger.warning("digest: dropping unusable %s=%r", info.field_name, v)
+            logger.warning("digest: dropping unusable series_name=%r", v)
             return None
-
-    @model_validator(mode="after")
-    def _require_kind_with_number(self) -> "DigestResult":
-        # sequence_number and sequence_kind are a unit: a number with no label
-        # is unrenderable ("8 of what?"), a label with no number is meaningless.
-        # If the LLM emits exactly one, drop both rather than persist a half-facet.
-        if (self.sequence_number is None) != (self.sequence_kind is None):
-            logger.warning(
-                "digest: dropping mismatched sequence facet (number=%r, kind=%r)",
-                self.sequence_number,
-                self.sequence_kind,
-            )
-            self.sequence_number = None
-            self.sequence_kind = None
-        return self
 
 
 _DIGEST_PROMPT = """\
@@ -154,14 +135,10 @@ sequence_number (integer or null)
   e.g. "第8集"->8, "第12期"->12, "Chapter 5"->5, "上篇/中篇/下篇"->1/2/3.
   null if no ordinal is stated.
 
-sequence_kind (string or null)
-  What sequence_number counts, free-form: episode, chapter, part, issue,
-  volume, ... null if unclear.
-
 season_number (integer or null)
   e.g. "S2"->2, "第2季"->2. Usually null.
 
-Rule for the four series_* fields: extract ONLY a value explicitly stated in
+Rule for the three series fields: extract ONLY a value explicitly stated in
 the title or transcript. Never guess. When unsure, use null - a wrong value
 silently hides correct content later, while null just falls back to normal.
 
@@ -171,7 +148,6 @@ Output JSON in exactly this shape:
   "keywords": ["string", ...],
   "series_name": "string | null",
   "sequence_number": "integer | null",
-  "sequence_kind": "string | null",
   "season_number": "integer | null"
 }}
 
