@@ -14,10 +14,6 @@ interface RetrievalLedgerRowProps {
   streaming?: boolean;
 }
 
-function ScopeDisplay({ call, t }: { call: RetrievalCall; t: (key: string, params?: Record<string, string | number>) => string }) {
-  return <>{t("chat.ledger.scope.none", { total: call.sources_total })}</>;
-}
-
 function ModeDisplay({ expected_hits, t }: { expected_hits: RetrievalCall["expected_hits"]; t: (key: string) => string }) {
   const key = expected_hits ? `chat.ledger.mode.${expected_hits}` : "chat.ledger.modeUnknown";
   return <>{t(key)}</>;
@@ -146,7 +142,7 @@ export function RetrievalLedgerRow({ variant, call, pending, streaming = false }
             </span>
             <span>
               <span className="text-muted">{t("chat.ledger.field.scope")} </span>
-              <span className="font-medium text-ink"><ScopeDisplay call={call} t={t} /></span>
+              <span className="font-medium text-ink">{t("chat.ledger.scope.none", { total: call.sources_total })}</span>
             </span>
             {facetDetailLine}
           </div>
