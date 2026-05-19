@@ -27,10 +27,6 @@ def transcript_path(video_id: str) -> Path:
     return bibilab_home() / "transcripts" / f"{video_id}.txt"
 
 
-def resolve_storage_path(stored: str) -> Path:
-    return bibilab_home() / stored
-
-
 def _config_path() -> Path:
     return bibilab_home() / "config.json"
 

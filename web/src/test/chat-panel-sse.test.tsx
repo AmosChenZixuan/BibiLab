@@ -292,48 +292,6 @@ describe("chat panel — SSE streaming (phase 6.2)", () => {
     expect(retryBtn).toBeInTheDocument();
   });
 
-  // Skipped: JSDOM ReadableStream doesn't reliably deliver chunks from start()
-  // callback to a reader that starts reading after fetch() resolves.
-  // The stop-button-during-streaming and abort-on-click behaviors are covered
-  // by the "error event" test which properly uses makeSseStream().
-  test.skip("stop button appears during streaming", async () => {
-    vi.spyOn(window, "fetch").mockImplementation((input: RequestInfo | URL) => {
-      const url = typeof input === "string" ? input : input instanceof URL ? input.href : (input as Request).url;
-      if (url.includes("/conversation")) {
-        return Promise.resolve(new Response(JSON.stringify({ conversation: null, messages: [] })));
-      }
-      if (url.includes("/chat")) {
-        return Promise.resolve(
-          makeSseStream([
-            'data: {"type":"delta","content":"Long response"}\n\n',
-            'data: {"type":"done"}\n\n',
-          ]),
-        );
-      }
-      return Promise.resolve(new Response(JSON.stringify([])));
-    });
-
-    renderChatPanel({
-      selectedSourceIds: ["src-1"],
-      sources: [SOURCE_1],
-      listId: "list-1",
-    });
-
-    const textarea = screen.getByRole("textbox");
-    await userEvent.type(textarea, "Tell me everything");
-    await userEvent.keyboard("{Enter}");
-
-    await waitFor(() => {
-      expect(screen.getByRole("button", { name: /stop/i })).toBeInTheDocument();
-    });
-
-    await userEvent.click(screen.getByRole("button", { name: /stop/i }));
-
-    await waitFor(() => {
-      expect(screen.getByText(/response interrupted/i)).toBeInTheDocument();
-    });
-  });
-
   test("streamed citation after a \\n\\n renders inline, not on its own line", async () => {
     vi.spyOn(window, "fetch").mockImplementation((input: RequestInfo | URL) => {
       const url = typeof input === "string" ? input : input instanceof URL ? input.href : (input as Request).url;
