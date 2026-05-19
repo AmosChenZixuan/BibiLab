@@ -50,3 +50,10 @@ class TestBuildGroundingPrompt:
         lowered = citation_section.lower()
         assert "same line" in lowered, citation_section
         assert "own line" in lowered, citation_section
+
+    def test_grounding_section_has_fence_pointer(self):
+        """#297 — Grounding rule points at the per-source fence structure."""
+        prompt = build_grounding_prompt("English")
+        grounding = prompt.split("## Grounding\n", 1)[1].split("\n## ", 1)[0]
+        assert "===== Source [N] =====" in grounding, grounding
+        assert "across a fence" in grounding.lower(), grounding
