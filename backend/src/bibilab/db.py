@@ -143,8 +143,11 @@ async def bootstrap_db() -> None:
             pass  # column already dropped, or SQLite < 3.35 doesn't support DROP COLUMN
         try:
             await db.execute("ALTER TABLE sources DROP COLUMN sequence_kind")
-        except aiosqlite.OperationalError:
-            pass  # column already dropped, or SQLite < 3.35 doesn't support DROP COLUMN
+        except aiosqlite.OperationalError as exc:
+            if "no such column" in str(exc):
+                pass  # already dropped
+            else:
+                raise
         await db.execute("PRAGMA journal_mode=WAL")
         await db.commit()
 
