@@ -99,6 +99,26 @@ def _build_source_headers(registry: dict[str, CitationRegistryEntry]) -> str:
     return "\n".join(lines)
 
 
+def _build_fenced_chunks(
+    chunks_by_index: dict[int, list[str]],
+    registry: dict[str, CitationRegistryEntry],
+) -> str:
+    """Render chunks grouped by citation index, each group fenced by its source.
+
+    Buckets are emitted in ascending index order; the caller-supplied order
+    within each bucket (rerank order) is preserved. The fence makes the
+    source boundary structural so the LLM does not graft a proper noun from
+    one source onto another (#297).
+    """
+    title_by_index = {e.index: e.title for e in registry.values()}
+    blocks = []
+    for idx in sorted(chunks_by_index):
+        title = title_by_index.get(idx, "")
+        header = f'===== Source [{idx}]: "{title}" ====='
+        blocks.append(header + "\n" + "\n".join(chunks_by_index[idx]))
+    return "\n\n".join(blocks)
+
+
 _VALID_ARTIFACT_TYPES = frozenset({"brief", "study_guide", "blog_post", "custom_report"})
 
 
@@ -388,13 +408,13 @@ async def execute_retrieve(
     # Collect indices actually retrieved this turn (for the enumeration line)
     turn_indices = sorted(set(video_id_to_index.values()))
 
-    chunks_formatted = []
+    chunks_by_index: dict[int, list[str]] = {}
     raw_chunks = []
     for c in result.chunks:
         if c.video_id not in video_id_to_index:
             continue
         idx = video_id_to_index[c.video_id]
-        chunks_formatted.append(
+        chunks_by_index.setdefault(idx, []).append(
             _format_chunk_for_llm(
                 {"start": c.timestamp_start, "end": c.timestamp_end, "content": c.content},
                 index=idx,
@@ -440,7 +460,7 @@ async def execute_retrieve(
             (f"{_NO_MATCH_NOTE}\n\n" if facet_no_match else "")
             + f"Sources retrieved this turn: {', '.join(f'[{i}]' for i in turn_indices)}. "
             "Cite only these indices.\n\n"
-            f"{_build_source_headers(registry)}\n\n" + "\n".join(chunks_formatted)
+            f"{_build_source_headers(registry)}\n\n" + _build_fenced_chunks(chunks_by_index, registry)
         ),
         "_turn_indices": turn_indices,
         "_raw_chunks": raw_chunks,

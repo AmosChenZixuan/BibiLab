@@ -23,7 +23,7 @@ LLM delta stream
 
 | File | Role |
 |---|---|
-| `backend/src/bibilab/pipeline/chat_tools.py` | `CitationRegistryEntry`, `_format_chunk_for_llm`, `_build_source_headers`, `execute_retrieve` |
+| `backend/src/bibilab/pipeline/chat_tools.py` | `CitationRegistryEntry`, `_format_chunk_for_llm`, `_build_source_headers`, `_build_fenced_chunks`, `execute_retrieve` |
 | `backend/src/bibilab/pipeline/citation_parser.py` | `parse_delta`, `flush_buffer` — incremental regex parser |
 | `backend/src/bibilab/routers/chat.py` | `SSE_EVENT_CITATION`, `stream_with_tools` registry+parser integration, `chat_endpoint` content_blocks persistence |
 | `backend/src/bibilab/pipeline/chat_summary.py` | Compression prompt (citation preservation removed) |
@@ -38,7 +38,7 @@ LLM delta stream
 1. User sends message → `chat_endpoint` builds `source_map` (video_id → source_id)
 2. `stream_with_tools` starts with empty `registry: dict[str, CitationRegistryEntry]`
 3. LLM calls `retrieve` → `execute_retrieve` assigns indices, formats chunks with `[N @ Ts-Ts]`
-4. Tool result includes `Source [N]: "Title"` headers + enumeration line
+4. Tool result includes `Source [N]: "Title"` headers + enumeration line; chunks grouped under per-source `===== Source [N]: "title" =====` fences (#297)
 5. LLM responds with deltas containing `[N]` tokens
 6. `CitationParser` strips `[N]`, emits `citation` SSE events with `{index, source_id}`
 7. Frontend assembles `ContentBlock[]` from interleaved delta + citation events
