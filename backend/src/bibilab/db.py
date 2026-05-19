@@ -141,13 +141,12 @@ async def bootstrap_db() -> None:
             await db.execute("ALTER TABLE conversations DROP COLUMN mode")
         except aiosqlite.OperationalError:
             pass  # column already dropped, or SQLite < 3.35 doesn't support DROP COLUMN
-        try:
+        cursor = await db.execute("PRAGMA table_info(sources)")
+        if any(row["name"] == "sequence_kind" for row in await cursor.fetchall()):
+            # Idempotent without parsing exception text or masking real DB
+            # errors (locked / corrupt): only DROP when the column is present,
+            # let any genuine OperationalError propagate.
             await db.execute("ALTER TABLE sources DROP COLUMN sequence_kind")
-        except aiosqlite.OperationalError as exc:
-            if "no such column" in str(exc):
-                pass  # already dropped
-            else:
-                raise
         await db.execute("PRAGMA journal_mode=WAL")
         await db.commit()
 
