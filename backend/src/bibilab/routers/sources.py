@@ -69,7 +69,6 @@ async def rerun_source(
         extraction.keywords,
         series_name=extraction.series_name,
         sequence_number=extraction.sequence_number,
-        sequence_kind=extraction.sequence_kind,
         season_number=extraction.season_number,
     )
 
@@ -78,7 +77,7 @@ async def rerun_source(
 
 @router.patch("/sources/{source_id}/facets", status_code=204)
 async def patch_source_facets(source_id: str, body: SourceFacetsUpdate) -> Response:
-    """Manually correct series/number/season. Replace semantics; sequence_kind untouched.
+    """Manually correct series/number/season. Replace semantics.
 
     Returns 204 — the client refetches via GET /sources/{id}; echoing the
     transcript-laden SourceContentResponse here would be read twice and discarded.

@@ -20,7 +20,6 @@ class SourceContentResponse(BaseModel):
     transcript: str
     series_name: str | None = None
     sequence_number: int | None = None
-    sequence_kind: str | None = None
     season_number: int | None = None
 
     @classmethod
@@ -51,13 +50,12 @@ class SourceContentResponse(BaseModel):
             transcript=transcript,
             series_name=source["series_name"],
             sequence_number=source["sequence_number"],
-            sequence_kind=source["sequence_kind"],
             season_number=source["season_number"],
         )
 
 
 class SourceFacetsUpdate(BaseModel):
-    """Manual facet edit. sequence_kind is intentionally NOT editable here.
+    """Manual facet edit.
 
     `model_fields_set` lets the router distinguish an absent key (leave the
     column alone) from an explicit null (clear it). Invalid ints raise

@@ -368,7 +368,6 @@ All output fields MUST be written in {_LANG_NAME.get(lang, "English")}."""
             extraction.keywords,
             series_name=extraction.series_name,
             sequence_number=extraction.sequence_number,
-            sequence_kind=extraction.sequence_kind,
             season_number=extraction.season_number,
         )
         await update_job_status(job_id, JobStatus.DONE.value, progress=100)
@@ -615,7 +614,6 @@ All output fields MUST be written in {_LANG_NAME.get(lang, "English")}."""
             settings_snapshot=cfg.model_dump(),
             series_name=extraction.series_name,
             sequence_number=extraction.sequence_number,
-            sequence_kind=extraction.sequence_kind,
             season_number=extraction.season_number,
         )
 

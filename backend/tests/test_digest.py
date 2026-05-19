@@ -189,21 +189,19 @@ class TestDigestResultFacets:
         result = DigestResult(summary="S", keywords=["k"])
         assert result.series_name is None
         assert result.sequence_number is None
-        assert result.sequence_kind is None
         assert result.season_number is None
 
     def test_facets_populated_from_json(self):
         json_str = (
             '{"summary": "S", "keywords": ["k"], '
             '"series_name": "罗翔说刑法", "sequence_number": 8, '
-            '"sequence_kind": "episode", "season_number": null}'
+            '"season_number": null}'
         )
         result = _parse_response(json_str)
         assert result.summary == "S"
         assert result.keywords == ["k"]
         assert result.series_name == "罗翔说刑法"
         assert result.sequence_number == 8
-        assert result.sequence_kind == "episode"
         assert result.season_number is None
 
     def test_facets_missing_keys_default_to_none(self):
@@ -211,17 +209,16 @@ class TestDigestResultFacets:
         result = _parse_response(json_str)
         assert result.series_name is None
         assert result.sequence_number is None
-        assert result.sequence_kind is None
         assert result.season_number is None
 
     def test_sequence_number_coerces_string_to_int(self):
-        json_str = '{"summary": "S", "keywords": [], "sequence_number": "8", "sequence_kind": "episode"}'
+        json_str = '{"summary": "S", "keywords": [], "sequence_number": "8"}'
         result = _parse_response(json_str)
         assert result.sequence_number == 8
         assert isinstance(result.sequence_number, int)
 
     def test_sequence_number_coerces_float_to_int(self):
-        json_str = '{"summary": "S", "keywords": [], "sequence_number": 8.0, "sequence_kind": "episode"}'
+        json_str = '{"summary": "S", "keywords": [], "sequence_number": 8.0}'
         result = _parse_response(json_str)
         assert result.sequence_number == 8
         assert isinstance(result.sequence_number, int)
@@ -234,59 +231,37 @@ class TestDigestResultFacets:
 
     def test_sequence_number_non_numeric_degrades_to_none(self):
         # Unparseable facet must not abort the digest — degrade to None, keep summary.
-        json_str = '{"summary": "S", "keywords": [], "sequence_number": "第八集", "sequence_kind": "episode"}'
+        json_str = '{"summary": "S", "keywords": [], "sequence_number": "第八集"}'
         result = _parse_response(json_str)
         assert result.summary == "S"
         assert result.sequence_number is None
-        assert result.sequence_kind is None  # co-occurrence drops the orphaned kind
 
     def test_sequence_number_fractional_float_degrades_to_none(self):
-        json_str = '{"summary": "S", "keywords": [], "sequence_number": 8.5, "sequence_kind": "episode"}'
+        json_str = '{"summary": "S", "keywords": [], "sequence_number": 8.5}'
         result = _parse_response(json_str)
         assert result.sequence_number is None
 
     def test_sequence_number_below_one_degrades_to_none(self):
-        json_str = '{"summary": "S", "keywords": [], "sequence_number": 0, "sequence_kind": "episode"}'
+        json_str = '{"summary": "S", "keywords": [], "sequence_number": 0}'
         result = _parse_response(json_str)
         assert result.sequence_number is None
 
     def test_sequence_number_boolean_degrades_to_none(self):
-        json_str = '{"summary": "S", "keywords": [], "sequence_number": true, "sequence_kind": "episode"}'
+        json_str = '{"summary": "S", "keywords": [], "sequence_number": true}'
         result = _parse_response(json_str)
         assert result.sequence_number is None
 
-    def test_sequence_kind_lowercased(self):
-        json_str = '{"summary": "S", "keywords": [], "sequence_number": 1, "sequence_kind": "Episode"}'
-        result = _parse_response(json_str)
-        assert result.sequence_kind == "episode"
-
-    def test_sequence_kind_free_form_accepted(self):
-        json_str = '{"summary": "S", "keywords": [], "sequence_number": 1, "sequence_kind": "volume"}'
-        result = _parse_response(json_str)
-        assert result.sequence_kind == "volume"
-
-    def test_sequence_kind_non_string_degrades_to_none(self):
-        json_str = '{"summary": "S", "keywords": [], "sequence_number": 1, "sequence_kind": 5}'
-        result = _parse_response(json_str)
-        assert result.sequence_kind is None
-        assert result.sequence_number is None  # co-occurrence drops the orphaned number
-
-    def test_sequence_kind_empty_string_becomes_none(self):
-        json_str = '{"summary": "S", "keywords": [], "sequence_kind": ""}'
-        result = _parse_response(json_str)
-        assert result.sequence_kind is None
-
-    def test_sequence_number_without_kind_drops_both(self):
+    def test_bare_sequence_number_persists_after_removal(self):
+        # AC3: after removing _require_kind_with_number, a bare sequence_number
+        # with no sequence_kind persists (was previously dropped).
         json_str = '{"summary": "S", "keywords": [], "sequence_number": 8}'
         result = _parse_response(json_str)
-        assert result.sequence_number is None
-        assert result.sequence_kind is None
+        assert result.sequence_number == 8
 
-    def test_sequence_kind_without_number_drops_both(self):
-        json_str = '{"summary": "S", "keywords": [], "sequence_kind": "episode"}'
-        result = _parse_response(json_str)
-        assert result.sequence_number is None
-        assert result.sequence_kind is None
+    def test_sequence_kind_not_in_model(self):
+        # DigestResult no longer has sequence_kind after #320 removal.
+        result = DigestResult(summary="S", keywords=["k"])
+        assert not hasattr(result, "sequence_kind")
 
     def test_full_digest_pipeline_includes_facets(self):
         video_meta = VideoMeta(
@@ -309,7 +284,7 @@ class TestDigestResultFacets:
         mock_response = (
             '{"summary": "A lecture on law.", "keywords": ["law", "criminal"], '
             '"series_name": "罗翔说刑法", "sequence_number": 8, '
-            '"sequence_kind": "episode", "season_number": null}'
+            '"season_number": null}'
         )
 
         with patch("bibilab.pipeline.digest._call_llm", return_value=mock_response):
@@ -317,7 +292,6 @@ class TestDigestResultFacets:
 
         assert result.series_name == "罗翔说刑法"
         assert result.sequence_number == 8
-        assert result.sequence_kind == "episode"
         assert result.season_number is None
 
     def test_series_name_non_string_degrades_to_none(self):
@@ -344,24 +318,22 @@ class TestDigestResultFacets:
 
     def test_sequence_number_non_finite_degrades_to_none(self):
         # json.loads accepts bare Infinity/NaN — must degrade, not raise.
-        json_str = '{"summary": "S", "keywords": [], "sequence_number": Infinity, "sequence_kind": "episode"}'
+        json_str = '{"summary": "S", "keywords": [], "sequence_number": Infinity}'
         result = _parse_response(json_str)
         assert result.summary == "S"
         assert result.sequence_number is None
-        assert result.sequence_kind is None  # co-occurrence drops the orphan
 
 
 class TestDigestRetry:
     def test_bad_facet_does_not_trigger_retry(self):
         # A malformed facet degrades to None in-place; the digest is good and
         # must be returned on the first call — no retry, no PipelineError.
-        bad_facet = '{"summary": "S", "keywords": ["k"], "sequence_number": "第八集", "sequence_kind": "episode"}'
+        bad_facet = '{"summary": "S", "keywords": ["k"], "sequence_number": "第八集"}'
         with patch("bibilab.pipeline.digest._call_llm", return_value=bad_facet) as m:
             result = digest("transcript", _make_video_meta(), _make_ai_cfg())
         assert m.call_count == 1
         assert result.summary == "S"
         assert result.sequence_number is None
-        assert result.sequence_kind is None
 
     def test_transient_http_error_recovers_on_retry(self):
         import httpx
@@ -414,10 +386,6 @@ class TestCleanStrFacet:
         assert clean_str_facet("  罗翔说刑法  ") == "罗翔说刑法"
         assert clean_str_facet("") is None
         assert clean_str_facet("   ") is None
-
-    def test_lower_flag(self):
-        assert clean_str_facet("Episode") == "Episode"
-        assert clean_str_facet("Episode", lower=True) == "episode"
 
     def test_non_string_raises(self):
         for bad in [5, True, 1.5, ["x"], {}]:
