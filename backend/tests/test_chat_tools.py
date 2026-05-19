@@ -1304,3 +1304,39 @@ class TestExecuteToolFacetArgs:
             cfg=self._cfg(),
         )
         assert seen["sequence_number"] is None  # "eight" → dropped
+
+
+def test_build_fenced_chunks_groups_and_fences():
+    from bibilab.pipeline.chat_tools import (
+        CitationRegistryEntry,
+        _build_fenced_chunks,
+    )
+
+    registry = {
+        "s1": CitationRegistryEntry(index=1, source_id="s1", title="Video One"),
+        "s2": CitationRegistryEntry(index=2, source_id="s2", title="Video Two"),
+    }
+    # Insertion order deliberately interleaved + index 2 before 1 to prove
+    # the helper groups by index and emits ascending, not insertion order.
+    chunks_by_index = {
+        2: ['[2 @ 0s-9s]: "b1"', '[2 @ 9s-18s]: "b2"'],
+        1: ['[1 @ 0s-9s]: "a1"', '[1 @ 9s-18s]: "a2"'],
+    }
+
+    out = _build_fenced_chunks(chunks_by_index, registry)
+
+    assert out == (
+        '===== Source [1]: "Video One" =====\n'
+        '[1 @ 0s-9s]: "a1"\n'
+        '[1 @ 9s-18s]: "a2"\n'
+        "\n"
+        '===== Source [2]: "Video Two" =====\n'
+        '[2 @ 0s-9s]: "b1"\n'
+        '[2 @ 9s-18s]: "b2"'
+    )
+
+
+def test_build_fenced_chunks_empty_returns_empty_string():
+    from bibilab.pipeline.chat_tools import _build_fenced_chunks
+
+    assert _build_fenced_chunks({}, {}) == ""

@@ -99,6 +99,26 @@ def _build_source_headers(registry: dict[str, CitationRegistryEntry]) -> str:
     return "\n".join(lines)
 
 
+def _build_fenced_chunks(
+    chunks_by_index: dict[int, list[str]],
+    registry: dict[str, CitationRegistryEntry],
+) -> str:
+    """Render chunks grouped by citation index, each group fenced by its source.
+
+    Buckets are emitted in ascending index order; the caller-supplied order
+    within each bucket (rerank order) is preserved. The fence makes the
+    source boundary structural so the LLM does not graft a proper noun from
+    one source onto another (#297).
+    """
+    title_by_index = {e.index: e.title for e in registry.values()}
+    blocks = []
+    for idx in sorted(chunks_by_index):
+        title = title_by_index.get(idx, "")
+        header = f'===== Source [{idx}]: "{title}" ====='
+        blocks.append(header + "\n" + "\n".join(chunks_by_index[idx]))
+    return "\n\n".join(blocks)
+
+
 _VALID_ARTIFACT_TYPES = frozenset({"brief", "study_guide", "blog_post", "custom_report"})
 
 
