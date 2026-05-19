@@ -1340,3 +1340,108 @@ def test_build_fenced_chunks_empty_returns_empty_string():
     from bibilab.pipeline.chat_tools import _build_fenced_chunks
 
     assert _build_fenced_chunks({}, {}) == ""
+
+
+@pytest.mark.asyncio
+async def test_execute_retrieve_chunks_grouped_and_fenced(monkeypatch):
+    """#297: _chunks groups by source + fences each group; _raw_chunks
+    preserves the original interleaved rerank order (invariant)."""
+    import json
+
+    from bibilab.config import AIConfig, BackendConfig, BibilabConfig
+    from bibilab.pipeline import chat_tools
+    from bibilab.pipeline.chat_tools import build_tool_block_entry
+    from bibilab.pipeline.embed import RetrievalResult, RetrievedChunk, SourceHit
+
+    async def fake_retrieve(query_text, source_ids, cfg, params, **kwargs):
+        # Rerank-interleaved order: v1, v2, v1, v2.
+        return RetrievalResult(
+            chunks=[
+                RetrievedChunk(
+                    content="a1",
+                    video_title="Video One",
+                    timestamp_start=0.0,
+                    timestamp_end=9.0,
+                    video_id="v1",
+                    distance=0.1,
+                    score=0.9,
+                ),
+                RetrievedChunk(
+                    content="b1",
+                    video_title="Video Two",
+                    timestamp_start=0.0,
+                    timestamp_end=9.0,
+                    video_id="v2",
+                    distance=0.1,
+                    score=0.8,
+                ),
+                RetrievedChunk(
+                    content="a2",
+                    video_title="Video One",
+                    timestamp_start=9.0,
+                    timestamp_end=18.0,
+                    video_id="v1",
+                    distance=0.2,
+                    score=0.7,
+                ),
+                RetrievedChunk(
+                    content="b2",
+                    video_title="Video Two",
+                    timestamp_start=9.0,
+                    timestamp_end=18.0,
+                    video_id="v2",
+                    distance=0.2,
+                    score=0.6,
+                ),
+            ],
+            candidates_evaluated=4,
+            sources_with_hits=2,
+            sources_total=2,
+            source_coverage=[
+                SourceHit(video_id="v1", video_title="Video One", best_score=-0.9),
+                SourceHit(video_id="v2", video_title="Video Two", best_score=-0.8),
+            ],
+        )
+
+    monkeypatch.setattr(chat_tools, "retrieve", fake_retrieve)
+
+    cfg = BibilabConfig(
+        ai=AIConfig(protocol="openai", model="x", api_key="k", base_url=""),
+        backend=BackendConfig(),
+    )
+    registry: dict = {}
+    source_map = {"v1": "s1", "v2": "s2"}
+
+    result = await chat_tools.execute_retrieve(
+        query="q",
+        source_ids=["s1", "s2"],
+        cfg=cfg,
+        registry=registry,
+        source_map=source_map,
+    )
+
+    chunks = result["_chunks"]
+
+    # Fences present, both sources, ascending order.
+    f1 = chunks.index('===== Source [1]: "Video One" =====')
+    f2 = chunks.index('===== Source [2]: "Video Two" =====')
+    assert f1 < f2
+
+    # Grouping: both v1 chunk lines precede any v2 chunk line.
+    a2 = chunks.index('[1 @ 9s-18s]: "a2"')
+    b1 = chunks.index('[2 @ 0s-9s]: "b1"')
+    assert a2 < b1, "v1 chunks must cluster before v2 chunks (no interleave)"
+
+    # Cumulative _build_source_headers anchor still present (non-fenced line).
+    assert 'Source [1]: "Video One"' in chunks
+    assert "Sources retrieved this turn:" in chunks
+
+    # INVARIANT: _raw_chunks keeps original interleaved order + indices.
+    raw = result["_raw_chunks"]
+    assert [r["citation_index"] for r in raw] == [1, 2, 1, 2]
+    assert [r["content"] for r in raw] == ["a1", "b1", "a2", "b2"]
+
+    # INVARIANT: fences must not leak into the persisted replay block.
+    entry = build_tool_block_entry("tu1", "retrieve", {}, result, result["_raw_chunks"])
+    assert "=====" not in json.dumps(entry, ensure_ascii=False)
+    assert "_chunks" not in entry["result"]
