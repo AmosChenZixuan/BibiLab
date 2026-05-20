@@ -87,8 +87,7 @@ class RagConfig(BaseModel):
     # Disabled by default — bge-reranker-base logits are not calibrated to a
     # fixed floor. Proper calibration pending #220 eval set.
     rerank_min_score: float | None = None
-    # Pull immediately-adjacent chunks (±1) when post-rerank chunk count is at
-    # or below this threshold. Set to 0 to disable. Default 2 (fires on 1-2 hits).
+    # Pull ±1 neighbors when post-rerank hits <= threshold. 0 disables.
     neighbor_scarcity_threshold: int = 2
 
 

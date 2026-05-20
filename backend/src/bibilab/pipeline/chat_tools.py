@@ -452,6 +452,7 @@ async def execute_retrieve(
         "dropped_by_gate": result.dropped_by_gate,
         "reranked": result.reranked,
         "gate_margin": result.gate_margin,
+        "neighbors_pulled": result.neighbors_pulled,
         "scoped_pool_size": pool_size,
         "facet_scope": {
             "sequence_number": sequence_number,
