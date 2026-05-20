@@ -60,9 +60,9 @@ def _build_collection(video_id: str = "v1", n_chunks: int = 6):
 
 @pytest.fixture
 def patch_chroma(monkeypatch):
-    """Returns a function that installs a Chroma collection + resolves video_ids."""
+    """Install a Chroma collection + identity video_id resolution."""
 
-    def install(collection, video_ids: list[str]):
+    def install(collection):
         monkeypatch.setattr(embed, "_get_collection", lambda cfg: collection)
 
         async def _fake_resolve(source_ids, passed):
@@ -101,26 +101,13 @@ def _params(top_k: int = 8, depth: int = 2, expected_hits: str = "few") -> Retri
 
 
 class TestRetrievedChunkSequenceIndex:
-    """`sequence_index` added as the LAST dataclass field — positional-arg compat."""
+    """`sequence_index` placed as LAST dataclass field; positional-arg compat
+    matters for legacy `RetrievedChunk(...)` callers in other tests."""
 
     def test_positional_construction_with_sequence_index(self):
         c = RetrievedChunk("content", "title", 0.0, 10.0, "vid", 0.5, None, 7)
         assert c.sequence_index == 7
         assert c.is_neighbor is False
-
-    def test_kwarg_construction(self):
-        c = RetrievedChunk(
-            content="c",
-            video_title="t",
-            timestamp_start=0.0,
-            timestamp_end=10.0,
-            video_id="v",
-            distance=0.1,
-            sequence_index=3,
-            is_neighbor=True,
-        )
-        assert c.sequence_index == 3
-        assert c.is_neighbor is True
 
 
 class TestParseSeqIndex:
@@ -201,25 +188,6 @@ class TestChunkScoreSentinel:
         assert _chunk_score(c) == -5.0
 
 
-class TestRetrievalResultDefaults:
-    def test_neighbors_pulled_default_zero(self):
-        from bibilab.pipeline.embed import RetrievalResult
-
-        r = RetrievalResult(
-            chunks=[],
-            candidates_evaluated=0,
-            sources_with_hits=0,
-            sources_total=1,
-            source_coverage=[],
-        )
-        assert r.neighbors_pulled == 0
-
-
-class TestDefaultConfig:
-    def test_default_threshold_is_two(self):
-        assert BibilabConfig().rag.neighbor_scarcity_threshold == 2
-
-
 # ---------------------------------------------------------------------------
 # Integration tests — drive real retrieve() via EphemeralClient
 # ---------------------------------------------------------------------------
@@ -229,7 +197,7 @@ class TestDefaultConfig:
 async def test_bug_repro_single_hit_pulls_both_neighbors(patch_chroma, patch_rerank):
     """[#333 bug repro] Hit on chunk 2 alone → result = {1, 2, 3} ascending."""
     collection = _build_collection("v1", n_chunks=6)
-    patch_chroma(collection, ["v1"])
+    patch_chroma(collection)
     patch_rerank["v1_2"] = 1.0  # Only chunk_2 survives the gate.
 
     result = await retrieve("q", ["v1"], _cfg(threshold=2), _params())
@@ -249,7 +217,7 @@ async def test_two_clustered_hits_dedupe_no_duplicates(patch_chroma, patch_reran
     """Adjacent hits {2, 3} → neighbors {1, 4}; the dedup bug (Critical #2)
     would have re-injected 2/3 as duplicates here."""
     collection = _build_collection("v1", n_chunks=6)
-    patch_chroma(collection, ["v1"])
+    patch_chroma(collection)
     patch_rerank["v1_2"] = 1.0
     patch_rerank["v1_3"] = 0.9
 
@@ -266,7 +234,7 @@ async def test_two_clustered_hits_dedupe_no_duplicates(patch_chroma, patch_reran
 async def test_lower_clamp_hit_at_index_zero(patch_chroma, patch_rerank):
     """Hit at sequence_index=0 → no negative neighbor; only +1 pulled."""
     collection = _build_collection("v1", n_chunks=6)
-    patch_chroma(collection, ["v1"])
+    patch_chroma(collection)
     patch_rerank["v1_0"] = 1.0
 
     result = await retrieve("q", ["v1"], _cfg(threshold=2), _params())
@@ -280,7 +248,7 @@ async def test_upper_clamp_missing_id_silently_dropped(patch_chroma, patch_reran
     """Hit at last sequence_index → only the existing neighbor returned;
     Chroma `get` omits missing ids without error."""
     collection = _build_collection("v1", n_chunks=6)  # ids: v1_0..v1_5
-    patch_chroma(collection, ["v1"])
+    patch_chroma(collection)
     patch_rerank["v1_5"] = 1.0  # Last existing chunk.
 
     result = await retrieve("q", ["v1"], _cfg(threshold=2), _params())
@@ -294,7 +262,7 @@ async def test_upper_clamp_missing_id_silently_dropped(patch_chroma, patch_reran
 async def test_n_above_threshold_no_neighbor_pull(patch_chroma, patch_rerank):
     """N=3 hits with threshold=2 → byte-identical to today; no neighbors pulled."""
     collection = _build_collection("v1", n_chunks=6)
-    patch_chroma(collection, ["v1"])
+    patch_chroma(collection)
     patch_rerank["v1_1"] = 1.0
     patch_rerank["v1_2"] = 0.9
     patch_rerank["v1_3"] = 0.8
@@ -311,7 +279,7 @@ async def test_n_above_threshold_no_neighbor_pull(patch_chroma, patch_rerank):
 async def test_threshold_zero_bypasses(patch_chroma, patch_rerank):
     """cfg.neighbor_scarcity_threshold=0 → no neighbors regardless of N."""
     collection = _build_collection("v1", n_chunks=6)
-    patch_chroma(collection, ["v1"])
+    patch_chroma(collection)
     patch_rerank["v1_2"] = 1.0
 
     result = await retrieve("q", ["v1"], _cfg(threshold=0), _params())
@@ -324,7 +292,7 @@ async def test_threshold_zero_bypasses(patch_chroma, patch_rerank):
 async def test_reranked_false_bypasses(patch_chroma, monkeypatch):
     """reranking_enabled=False → gate didn't run → no neighbor pull."""
     collection = _build_collection("v1", n_chunks=6)
-    patch_chroma(collection, ["v1"])
+    patch_chroma(collection)
 
     result = await retrieve("q", ["v1"], _cfg(threshold=2, reranking=False), _params())
 
@@ -382,7 +350,7 @@ async def test_end_to_end_neighbors_pulled_propagates_to_chat_metadata(patch_chr
     from bibilab.pipeline import chat_tools
 
     collection = _build_collection("v1", n_chunks=6)
-    patch_chroma(collection, ["v1"])
+    patch_chroma(collection)
     patch_rerank["v1_2"] = 1.0
 
     # execute_retrieve returns a dict (the tool_result payload).

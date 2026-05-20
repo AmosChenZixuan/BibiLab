@@ -128,26 +128,27 @@ def _row_from_chroma(
 def _chunks_from_chroma_get(results: dict, *, is_neighbor: bool = False) -> list[RetrievedChunk]:
     """Parse ChromaDB collection.get() flat-shape result into RetrievedChunks.
 
-    collection.get returns flat lists (ids, documents, metadatas); no
-    distances (id-based fetch carries no relevance score). Missing ids
+    collection.get returns flat parallel lists (ids, documents, metadatas);
+    no distances (id-based fetch carries no relevance score). Missing ids
     are omitted from the result by Chroma — caller treats as end-of-source.
+    Chunks whose chroma_id fails to parse are dropped (caller needs
+    sequence_index for ordering).
     """
     ids = results.get("ids") or []
     documents = results.get("documents") or []
     metadatas = results.get("metadatas") or []
-    chunks: list[RetrievedChunk] = []
-    for i, cid in enumerate(ids):
-        chunks.append(
-            _row_from_chroma(
-                content=documents[i] if i < len(documents) else "",
-                metadata=metadatas[i] if i < len(metadatas) else {},
-                distance=float("inf"),
-                chroma_id=cid,
-                score=None,
-                is_neighbor=is_neighbor,
-            )
+    chunks = [
+        _row_from_chroma(
+            content=doc,
+            metadata=md,
+            distance=float("inf"),
+            chroma_id=cid,
+            score=None,
+            is_neighbor=is_neighbor,
         )
-    return chunks
+        for cid, doc, md in zip(ids, documents, metadatas, strict=False)
+    ]
+    return [c for c in chunks if c.sequence_index is not None]
 
 
 def _diverse_top_k(ranked: list[RetrievedChunk], depth: int, k: int) -> list[RetrievedChunk]:
@@ -614,33 +615,27 @@ async def retrieve(
     effective_depth = _adaptive_depth(params.depth_per_source, params.top_k, num_sources_in_pool)
     result_chunks = _diverse_top_k(chunks, effective_depth, params.top_k)
 
-    # Pull ±1 adjacent chunks per hit when rerank returned few chunks, so the
-    # LLM sees enough surrounding transcript to anchor pronouns / contrastive
-    # concepts. Bypassed when threshold=0, gate did not run, or breadth carries.
+    # Pull ±1 chunks when rerank left few hits so the LLM sees enough
+    # surrounding transcript to anchor pronouns and contrastive concepts.
     neighbors_pulled = 0
     threshold = cfg.rag.neighbor_scarcity_threshold
     if threshold > 0 and reranked and len(result_chunks) <= threshold:
-        video_to_hits: dict[str, list[int]] = {}
-        for c in result_chunks:
-            if c.sequence_index is not None:
-                video_to_hits.setdefault(c.video_id, []).append(c.sequence_index)
-
-        # Hit-id set in chroma-id format ({vid}_{seq}) so subtraction matches
-        # candidate-id format (was previously using _chunk_key which has the
-        # vid_tsStart_tsEnd shape and never intersected — silent duplicate bug).
-        hit_ids = {f"{vid}_{i}" for vid, idxs in video_to_hits.items() for i in idxs}
+        # Hit ids in chroma-id shape {vid}_{seq} so subtraction matches the
+        # candidate format (any other key shape silently misses the dedup).
+        hit_ids = {f"{c.video_id}_{c.sequence_index}" for c in result_chunks if c.sequence_index is not None}
         candidate_ids: list[str] = []
         seen: set[str] = set()
-        for vid, hit_indices in video_to_hits.items():
-            for idx in hit_indices:
-                for n in (idx - 1, idx + 1):
-                    if n < 0:
-                        continue
-                    cid = f"{vid}_{n}"
-                    if cid in hit_ids or cid in seen:
-                        continue
-                    candidate_ids.append(cid)
-                    seen.add(cid)
+        for c in result_chunks:
+            if c.sequence_index is None:
+                continue
+            for n in (c.sequence_index - 1, c.sequence_index + 1):
+                if n < 0:
+                    continue
+                cid = f"{c.video_id}_{n}"
+                if cid in hit_ids or cid in seen:
+                    continue
+                candidate_ids.append(cid)
+                seen.add(cid)
 
         if candidate_ids:
 
@@ -654,34 +649,34 @@ async def retrieve(
                 logger.warning("Neighbor-fetch failed: %s", exc)
                 neighbor_rows = {}
 
-            n_chunks = _chunks_from_chroma_get(neighbor_rows, is_neighbor=True) if neighbor_rows else []
-            # Filter chunks whose chroma_id failed to parse: spec says skip rather
-            # than guess ordering (sequence_index is None).
-            n_chunks = [c for c in n_chunks if c.sequence_index is not None]
+            n_chunks = _chunks_from_chroma_get(neighbor_rows, is_neighbor=True)
+            # Defensive: a neighbor whose metadata.video_id differs from any
+            # current hit's video_id means Chroma metadata is desynced from
+            # the chroma_id prefix. Drop with warn so source_coverage never
+            # ends up with a neighbor-only entry (StopIteration risk).
+            hit_videos = {c.video_id for c in result_chunks}
+            unexpected = [c for c in n_chunks if c.video_id not in hit_videos]
+            if unexpected:
+                logger.warning(
+                    "neighbor-pull: dropping %d chunks with unexpected video_id (metadata corruption?)",
+                    len(unexpected),
+                )
+                n_chunks = [c for c in n_chunks if c.video_id in hit_videos]
             if not n_chunks and candidate_ids:
                 logger.debug(
-                    "neighbor-fetch returned 0 of %d candidate ids (deleted source or stale id format?)",
+                    "neighbor-fetch returned 0 of %d candidate ids (deleted source or stale ids?)",
                     len(candidate_ids),
                 )
             if n_chunks:
-                # Group all chunks (hits + neighbors) by video_id, preserving
-                # the source's first-appearance order; sort within each source
-                # by sequence_index ascending so the LLM reads continuous
-                # transcript under the #297 fence.
-                source_order: list[str] = []
-                by_source: dict[str, list[RetrievedChunk]] = {}
-                for c in result_chunks:
-                    if c.video_id not in by_source:
-                        source_order.append(c.video_id)
-                        by_source[c.video_id] = []
-                    by_source[c.video_id].append(c)
-                for nc in n_chunks:
-                    by_source.setdefault(nc.video_id, []).append(nc)
-                    if nc.video_id not in source_order:
-                        source_order.append(nc.video_id)
-                for vid in by_source:
-                    by_source[vid].sort(key=lambda c: c.sequence_index if c.sequence_index is not None else -1)
-                result_chunks = [c for vid in source_order for c in by_source[vid]]
+                # Merge hits + neighbors; sort within each source by
+                # sequence_index ascending so the LLM reads continuous
+                # transcript under the #297 fence. Inter-source order
+                # preserved via the original-hit appearance rank.
+                source_rank = {vid: i for i, vid in enumerate(dict.fromkeys(c.video_id for c in result_chunks))}
+                result_chunks = sorted(
+                    result_chunks + n_chunks,
+                    key=lambda c: (source_rank[c.video_id], c.sequence_index),
+                )
                 neighbors_pulled = len(n_chunks)
 
     final_src_counts: dict[str, int] = {}

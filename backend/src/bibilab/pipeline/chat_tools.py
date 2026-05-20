@@ -400,16 +400,16 @@ async def execute_retrieve(
             video_id_to_index[s.video_id] = registry[sid].index
 
     # Accumulate chunk_ids per source (synthetic key: video_id_start_end).
-    # Also populate CitationRegistryEntry fields from the first chunk per source.
+    # Entry-level fields (preview / timestamps / rerank_score) are seeded from
+    # the first HIT per source — never from a neighbor — so the persisted
+    # context[] describes the gated chunk, not its surrounding context.
     for c in result.chunks:
         sid = source_map.get(c.video_id)
         if sid and sid in registry:
             cid = f"{c.video_id}_{int(c.timestamp_start)}_{int(c.timestamp_end)}"
             registry[sid].chunk_ids.add(cid)
-            # Populate entry fields from the first chunk for this source.
-            # Content arrives already stripped (no [N] markers).
             entry = registry[sid]
-            if entry.timestamp_start is None:
+            if not getattr(c, "is_neighbor", False) and entry.timestamp_start is None:
                 entry.first_chunk_id = cid
                 entry.timestamp_start = c.timestamp_start
                 entry.timestamp_end = c.timestamp_end
