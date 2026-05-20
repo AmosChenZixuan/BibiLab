@@ -1024,7 +1024,7 @@ async def query_fts_rows(
     async with get_db() as db:
         try:
             cursor = await db.execute(
-                f"SELECT content, video_id, video_title, timestamp_start, timestamp_end, rank "
+                f"SELECT content, video_id, video_title, timestamp_start, timestamp_end, rank, chunk_id "
                 f"FROM chunks_fts "
                 f"WHERE chunks_fts MATCH ? AND video_id IN ({placeholders}) "
                 f"ORDER BY rank "

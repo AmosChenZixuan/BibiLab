@@ -46,6 +46,7 @@ class RetrievedChunk:
     video_id: str
     distance: float
     score: float | None = None
+    sequence_index: int | None = None
 
 
 @dataclass
@@ -70,6 +71,8 @@ class RetrievalResult:
     # Actual margin used by _quantile_gate (derived from expected_hits).
     # None when gate did not run (rerank disabled or failed); actual margin when it did.
     gate_margin: float | None = None
+    # Count of neighbor chunks pulled by the scarcity algorithm (#333).
+    neighbors_pulled: int = 0
 
 
 def _chunk_score(chunk: RetrievedChunk) -> float:
@@ -80,6 +83,39 @@ def _chunk_score(chunk: RetrievedChunk) -> float:
 def _chunk_key(chunk: RetrievedChunk) -> str:
     """Stable dedup key for a RetrievedChunk."""
     return f"{chunk.video_id}_{chunk.timestamp_start}_{chunk.timestamp_end}"
+
+
+def _parse_seq_index(chroma_id: str) -> int | None:
+    """Parse sequence_index from a ChromaDB id of the form '{video_id}_{sequence_index}'."""
+    try:
+        return int(chroma_id.rsplit("_", 1)[-1])
+    except (ValueError, IndexError):
+        return None
+
+
+def _chunks_from_chroma_rows(results: dict) -> list[RetrievedChunk]:
+    """Parse ChromaDB collection.get() result rows into RetrievedChunk list."""
+    documents = results.get("documents") or []
+    metadatas = results.get("metadatas") or []
+    distances = results.get("distances") or []
+    ids_batch = results.get("ids") or [[]]  # Chroma returns [[id0, id1, ...]]
+
+    # ids_batch[0] is the list of ids (collection.get has no query wrapper)
+    ids = ids_batch[0] if ids_batch else []
+    chunks = []
+    for i in range(len(documents)):
+        chunks.append(
+            RetrievedChunk(
+                content=documents[i],
+                video_title=metadatas[i].get("video_title", "") if metadatas else "",
+                timestamp_start=metadatas[i].get("timestamp_start", 0.0) if metadatas else 0.0,
+                timestamp_end=metadatas[i].get("timestamp_end", 0.0) if metadatas else 0.0,
+                video_id=metadatas[i].get("video_id", "") if metadatas else "",
+                distance=distances[i] if i < len(distances) else 0.0,
+                sequence_index=_parse_seq_index(ids[i]) if i < len(ids) else None,
+            )
+        )
+    return chunks
 
 
 def _diverse_top_k(ranked: list[RetrievedChunk], depth: int, k: int) -> list[RetrievedChunk]:
@@ -373,6 +409,7 @@ async def query_chunks(
     documents = results.get("documents") or [[]]
     metadatas = results.get("metadatas") or [[]]
     distances = results.get("distances") or [[]]
+    ids = results.get("ids") or [[]]
 
     if not documents[0]:
         return []
@@ -388,6 +425,7 @@ async def query_chunks(
             timestamp_end=metadatas[0][i].get("timestamp_end", 0.0),
             video_id=metadatas[0][i].get("video_id", ""),
             distance=distances[0][i],
+            sequence_index=_parse_seq_index(ids[0][i]) if ids and ids[0] else None,
         )
         for i in range(len(documents[0]))
         if distances[0][i] <= floor
@@ -432,6 +470,7 @@ async def query_fts(
             video_id=row["video_id"],
             distance=0.0,
             score=-row["rank"],
+            sequence_index=_parse_seq_index(row["chunk_id"]),
         )
         for row in rows
     ]
@@ -544,6 +583,71 @@ async def retrieve(
     effective_depth = _adaptive_depth(params.depth_per_source, params.top_k, num_sources_in_pool)
     result_chunks = _diverse_top_k(chunks, effective_depth, params.top_k)
 
+    # Neighbor-pull: restore surrounding context when scarcity threshold is met (#333).
+    # Runs after _diverse_top_k so we know the final hit set and their sequence indices.
+    neighbors_pulled = 0
+    threshold = cfg.rag.neighbor_scarcity_threshold
+    if threshold > 0 and reranked and len(result_chunks) <= threshold:
+        video_to_hits: dict[str, list[int]] = {}
+        for c in result_chunks:
+            if c.sequence_index is not None:
+                video_to_hits.setdefault(c.video_id, []).append(c.sequence_index)
+
+        # Build candidate neighbor indices (i-1 and i+1 for each hit), skip duplicates
+        # and anything already in result_chunks.
+        existing_keys = {_chunk_key(c) for c in result_chunks}
+        candidate_ids: list[str] = []
+        for vid, hit_indices in video_to_hits.items():
+            candidates = set()
+            for idx in hit_indices:
+                for delta in (-1, 1):
+                    n = idx + delta
+                    if n >= 0:
+                        candidates.add(f"{vid}_{n}")
+            for cid in candidates:
+                if cid not in existing_keys:
+                    candidate_ids.append(cid)
+                    existing_keys.add(cid)  # prevent dup neighbors
+
+        if candidate_ids:
+            collection = _get_collection(cfg)
+            try:
+                neighbor_rows = collection.get(ids=candidate_ids)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Neighbor-fetch failed: %s", exc)
+                neighbor_rows = {}
+
+            if neighbor_rows and neighbor_rows.get("ids"):
+                n_chunks = _chunks_from_chroma_rows(neighbor_rows)
+                if n_chunks:
+                    for nc in n_chunks:
+                        # Sentinel so _chunk_score puts neighbors at the bottom of any relevance sort.
+                        nc.score = None
+                        nc.distance = float("inf")
+                    # Partition neighbors from originals; sort neighbors by sequence_index per video.
+                    neighbors_by_video: dict[str, list[RetrievedChunk]] = {}
+                    for nc in n_chunks:
+                        neighbors_by_video.setdefault(nc.video_id, []).append(nc)
+
+                    def _seq_index(c: RetrievedChunk) -> int:
+                        return c.sequence_index if c.sequence_index is not None else -1
+
+                    for vid in neighbors_by_video:
+                        neighbors_by_video[vid].sort(key=_seq_index)
+                    # Append neighbors after each video's existing chunks, preserving
+                    # inter-source ordering (original chunks already sorted by score).
+                    merged: list[RetrievedChunk] = []
+                    for c in result_chunks:
+                        merged.append(c)
+                        if c.video_id in neighbors_by_video:
+                            merged.extend(neighbors_by_video[c.video_id])
+                            del neighbors_by_video[c.video_id]
+                    # Any leftover neighbors (from videos with no original hits) go at the end.
+                    for vid in neighbors_by_video:
+                        merged.extend(neighbors_by_video[vid])
+                    result_chunks = merged
+                    neighbors_pulled = len(n_chunks)
+
     final_src_counts: dict[str, int] = {}
     for c in result_chunks:
         final_src_counts[c.video_id] = final_src_counts.get(c.video_id, 0) + 1
@@ -555,6 +659,12 @@ async def retrieve(
         params.depth_per_source,
         num_sources_in_pool,
     )
+    if neighbors_pulled:
+        logger.info(
+            "retrieve neighbor-pull: hits=%d pulled=%d",
+            len(result_chunks) - neighbors_pulled,
+            neighbors_pulled,
+        )
 
     # source_coverage derived from result_chunks so the chip reflects what the LLM actually saw
     source_video_ids = list(dict.fromkeys(c.video_id for c in result_chunks))
@@ -576,4 +686,5 @@ async def retrieve(
         dropped_by_gate=dropped_by_gate,
         reranked=reranked,
         gate_margin=gate_margin,
+        neighbors_pulled=neighbors_pulled,
     )
