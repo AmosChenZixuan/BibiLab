@@ -23,6 +23,17 @@ _NO_MATCH_NOTE = (
     "No source matched the requested episode/season; searched all sources instead — say so before answering."
 )
 
+# Prepended to the LLM-visible retrieve result when retrieve returned zero
+# chunks above the relevance gate. Anchors refusal to evidence: the LLM only
+# learns the library lacks coverage from a completed retrieve, never from
+# pre-retrieve judgment. English by design — see _NO_MATCH_NOTE.
+_NO_COVERAGE_NOTE = (
+    "Retrieve returned zero excerpts relevant to this query. The library does "
+    "not cover this topic. Tell the user in their response language that the "
+    "library has no content on this topic, and stop. Do not provide outside "
+    "knowledge, real-world analogies, or encyclopedic definitions."
+)
+
 
 @dataclass
 class CitationRegistryEntry:
@@ -457,7 +468,8 @@ async def execute_retrieve(
             for s in result.source_coverage
         ],
         "_chunks": (
-            (f"{_NO_MATCH_NOTE}\n\n" if facet_no_match else "")
+            (f"{_NO_COVERAGE_NOTE}\n\n" if not result.chunks else "")
+            + (f"{_NO_MATCH_NOTE}\n\n" if facet_no_match else "")
             + f"Sources retrieved this turn: {', '.join(f'[{i}]' for i in turn_indices)}. "
             "Cite only these indices.\n\n"
             f"{_build_source_headers(registry)}\n\n" + _build_fenced_chunks(chunks_by_index, registry)

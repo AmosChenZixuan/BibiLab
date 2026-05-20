@@ -575,15 +575,32 @@ class TestBuildGroundingPrompt:
         prompt = build_grounding_prompt(response_language="zh")
         assert prompt.startswith("Respond in zh.")
 
-    def test_build_grounding_prompt_localizes_fallback_sentence(self):
+    def test_build_grounding_prompt_localizes_style_directive(self):
         from bibilab.routers.chat import build_grounding_prompt
 
         prompt = build_grounding_prompt(response_language="zh")
-        # The fallback rule must reference the response_language, not hard-coded English.
-        assert "say so in zh" in prompt
-        assert "do not call `retrieve` again" in prompt
+        # Style directive still interpolates the response language.
+        assert "Answer in zh" in prompt
         # And the old hard-coded English string must be gone.
         assert "The provided sources do not cover this topic" not in prompt
+
+    def test_build_grounding_prompt_forces_retrieve_on_topic_shift(self):
+        """Prompt must not offer a pre-retrieve refusal path. Topic shift =
+        call retrieve again; refusal can only come from a completed retrieve.
+        """
+        from bibilab.routers.chat import build_grounding_prompt
+
+        prompt = build_grounding_prompt(response_language="zh")
+        # Pre-retrieve refusal shortcut must be absent.
+        assert "say so in zh" not in prompt
+        assert "say so in en" not in build_grounding_prompt(response_language="en")
+        # Old "do not call retrieve again" reuse shortcut must be absent.
+        assert "do not call `retrieve` again" not in prompt
+        # Topic-shift directive present.
+        assert "call `retrieve` again" in prompt
+        # Outside-knowledge / analogy ban present.
+        assert "outside knowledge" in prompt
+        assert "real-world analogies" in prompt
 
     # (fresh retrieve directive removed — now handled by build_grounding_prompt reuse
     #  instruction + retrieve tool description)
@@ -1172,7 +1189,9 @@ class TestExecuteRetrieveFacetScoping:
             sequence_number=99,  # no source has seq 99 → no_match
         )
         assert result["facet_scope"]["no_match"] is True
-        assert result["_chunks"].startswith(_NO_MATCH_NOTE)
+        # _NO_MATCH_NOTE present (coexists with _NO_COVERAGE_NOTE when retrieve
+        # also returned zero chunks — the empty-result mock always does so).
+        assert _NO_MATCH_NOTE in result["_chunks"]
 
     @pytest.mark.asyncio
     async def test_match_does_not_prepend_note(self, monkeypatch):
@@ -1249,6 +1268,82 @@ class TestExecuteRetrieveFacetScoping:
             "matched_count": 1,
             "no_match": False,
         }
+
+
+class TestExecuteRetrieveZeroChunkNote:
+    """Refusal must be anchored to evidence: zero chunks above the relevance
+    gate ⇒ _NO_COVERAGE_NOTE prepended to _chunks so the LLM follows a
+    deterministic refusal instruction instead of inventing one pre-retrieve."""
+
+    @staticmethod
+    def _cfg():
+        from bibilab.config import AIConfig, BackendConfig, BibilabConfig
+
+        return BibilabConfig(
+            ai=AIConfig(protocol="openai", model="x", api_key="k", base_url=""),
+            backend=BackendConfig(),
+        )
+
+    @pytest.mark.asyncio
+    async def test_zero_chunks_prepends_no_coverage_note(self, monkeypatch):
+        from bibilab.pipeline import chat_tools
+        from bibilab.pipeline.chat_tools import _NO_COVERAGE_NOTE
+        from bibilab.pipeline.embed import RetrievalResult
+
+        async def fake_retrieve(query_text, source_ids, cfg, params, **kwargs):
+            return RetrievalResult(
+                chunks=[],
+                source_coverage=[],
+                candidates_evaluated=42,
+                sources_with_hits=0,
+                sources_total=3,
+            )
+
+        monkeypatch.setattr(chat_tools, "retrieve", fake_retrieve)
+
+        result = await chat_tools.execute_retrieve(
+            query="什么是多元主义",
+            source_ids=["s1", "s2", "s3"],
+            cfg=self._cfg(),
+        )
+
+        assert result["_chunks"].startswith(_NO_COVERAGE_NOTE)
+
+    @pytest.mark.asyncio
+    async def test_non_zero_chunks_omits_no_coverage_note(self, monkeypatch):
+        from bibilab.pipeline import chat_tools
+        from bibilab.pipeline.chat_tools import _NO_COVERAGE_NOTE
+        from bibilab.pipeline.embed import RetrievalResult, RetrievedChunk, SourceHit
+
+        async def fake_retrieve(query_text, source_ids, cfg, params, **kwargs):
+            return RetrievalResult(
+                chunks=[
+                    RetrievedChunk(
+                        content="hit",
+                        video_title="V1",
+                        timestamp_start=0.0,
+                        timestamp_end=5.0,
+                        video_id="v1",
+                        distance=0.1,
+                        score=0.9,
+                    ),
+                ],
+                source_coverage=[SourceHit(video_id="v1", video_title="V1", best_score=-0.9)],
+                candidates_evaluated=1,
+                sources_with_hits=1,
+                sources_total=1,
+            )
+
+        monkeypatch.setattr(chat_tools, "retrieve", fake_retrieve)
+
+        result = await chat_tools.execute_retrieve(
+            query="q",
+            source_ids=["s1"],
+            cfg=self._cfg(),
+            source_map={"v1": "s1"},
+        )
+
+        assert _NO_COVERAGE_NOTE not in result["_chunks"]
 
 
 class TestExecuteToolFacetArgs:
