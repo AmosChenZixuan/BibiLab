@@ -46,6 +46,11 @@ class RetrievedChunk:
     video_id: str
     distance: float
     score: float | None = None
+    # None when chroma_id lacks the {video_id}_{N} suffix (malformed / legacy).
+    sequence_index: int | None = None
+    # True for chunks added by neighbor-pull. Excludes them from source_coverage
+    # best_score and from any future relevance sort.
+    is_neighbor: bool = False
 
 
 @dataclass
@@ -70,16 +75,80 @@ class RetrievalResult:
     # Actual margin used by _quantile_gate (derived from expected_hits).
     # None when gate did not run (rerank disabled or failed); actual margin when it did.
     gate_margin: float | None = None
+    neighbors_pulled: int = 0
 
 
 def _chunk_score(chunk: RetrievedChunk) -> float:
     """Canonical relevance where lower = more relevant."""
+    if chunk.is_neighbor:
+        return float("inf")
     return -chunk.score if chunk.score is not None else chunk.distance
 
 
 def _chunk_key(chunk: RetrievedChunk) -> str:
     """Stable dedup key for a RetrievedChunk."""
     return f"{chunk.video_id}_{chunk.timestamp_start}_{chunk.timestamp_end}"
+
+
+def _parse_seq_index(chroma_id: str) -> int | None:
+    """Parse sequence_index from a ChromaDB id of the form '{video_id}_{sequence_index}'."""
+    try:
+        return int(chroma_id.rsplit("_", 1)[-1])
+    except (ValueError, IndexError):
+        return None
+
+
+def _row_from_chroma(
+    *,
+    content: str,
+    metadata: dict,
+    distance: float,
+    chroma_id: str,
+    score: float | None = None,
+    is_neighbor: bool = False,
+) -> RetrievedChunk:
+    """Build a RetrievedChunk from one Chroma row (id + document + metadata + distance).
+
+    Shared by query_chunks (vector), query_fts, and neighbor fetch so row
+    parsing lives in one place (CLAUDE.md code health rule #3).
+    """
+    return RetrievedChunk(
+        content=content,
+        video_title=metadata.get("video_title", ""),
+        timestamp_start=metadata.get("timestamp_start", 0.0),
+        timestamp_end=metadata.get("timestamp_end", 0.0),
+        video_id=metadata.get("video_id", ""),
+        distance=distance,
+        score=score,
+        sequence_index=_parse_seq_index(chroma_id),
+        is_neighbor=is_neighbor,
+    )
+
+
+def _chunks_from_chroma_get(results: dict, *, is_neighbor: bool = False) -> list[RetrievedChunk]:
+    """Parse ChromaDB collection.get() flat-shape result into RetrievedChunks.
+
+    collection.get returns flat parallel lists (ids, documents, metadatas);
+    no distances (id-based fetch carries no relevance score). Missing ids
+    are omitted from the result by Chroma — caller treats as end-of-source.
+    Chunks whose chroma_id fails to parse are dropped (caller needs
+    sequence_index for ordering).
+    """
+    ids = results.get("ids") or []
+    documents = results.get("documents") or []
+    metadatas = results.get("metadatas") or []
+    chunks = [
+        _row_from_chroma(
+            content=doc,
+            metadata=md,
+            distance=float("inf"),
+            chroma_id=cid,
+            score=None,
+            is_neighbor=is_neighbor,
+        )
+        for cid, doc, md in zip(ids, documents, metadatas, strict=False)
+    ]
+    return [c for c in chunks if c.sequence_index is not None]
 
 
 def _diverse_top_k(ranked: list[RetrievedChunk], depth: int, k: int) -> list[RetrievedChunk]:
@@ -373,6 +442,7 @@ async def query_chunks(
     documents = results.get("documents") or [[]]
     metadatas = results.get("metadatas") or [[]]
     distances = results.get("distances") or [[]]
+    ids = results.get("ids") or [[]]
 
     if not documents[0]:
         return []
@@ -381,13 +451,11 @@ async def query_chunks(
 
     # ChromaDB returns results sorted by distance ascending; preserve order
     return [
-        RetrievedChunk(
+        _row_from_chroma(
             content=documents[0][i],
-            video_title=metadatas[0][i].get("video_title", ""),
-            timestamp_start=metadatas[0][i].get("timestamp_start", 0.0),
-            timestamp_end=metadatas[0][i].get("timestamp_end", 0.0),
-            video_id=metadatas[0][i].get("video_id", ""),
+            metadata=metadatas[0][i],
             distance=distances[0][i],
+            chroma_id=ids[0][i] if ids and ids[0] else "",
         )
         for i in range(len(documents[0]))
         if distances[0][i] <= floor
@@ -424,13 +492,16 @@ async def query_fts(
     rows = await query_fts_rows(escaped, video_ids, top_k)
 
     return [
-        RetrievedChunk(
+        _row_from_chroma(
             content=row["content"],
-            video_title=row["video_title"],
-            timestamp_start=float(row["timestamp_start"]),
-            timestamp_end=float(row["timestamp_end"]),
-            video_id=row["video_id"],
+            metadata={
+                "video_id": row["video_id"],
+                "video_title": row["video_title"],
+                "timestamp_start": float(row["timestamp_start"]),
+                "timestamp_end": float(row["timestamp_end"]),
+            },
             distance=0.0,
+            chroma_id=row["chunk_id"],
             score=-row["rank"],
         )
         for row in rows
@@ -544,6 +615,70 @@ async def retrieve(
     effective_depth = _adaptive_depth(params.depth_per_source, params.top_k, num_sources_in_pool)
     result_chunks = _diverse_top_k(chunks, effective_depth, params.top_k)
 
+    # Pull ±1 chunks when rerank left few hits so the LLM sees enough
+    # surrounding transcript to anchor pronouns and contrastive concepts.
+    neighbors_pulled = 0
+    threshold = cfg.rag.neighbor_scarcity_threshold
+    if threshold > 0 and reranked and len(result_chunks) <= threshold:
+        # Hit ids in chroma-id shape {vid}_{seq} so subtraction matches the
+        # candidate format (any other key shape silently misses the dedup).
+        hit_ids = {f"{c.video_id}_{c.sequence_index}" for c in result_chunks if c.sequence_index is not None}
+        candidate_ids: list[str] = []
+        seen: set[str] = set()
+        for c in result_chunks:
+            if c.sequence_index is None:
+                continue
+            for n in (c.sequence_index - 1, c.sequence_index + 1):
+                if n < 0:
+                    continue
+                cid = f"{c.video_id}_{n}"
+                if cid in hit_ids or cid in seen:
+                    continue
+                candidate_ids.append(cid)
+                seen.add(cid)
+
+        if candidate_ids:
+
+            def _sync_get() -> dict:
+                return _get_collection(cfg).get(ids=candidate_ids)
+
+            try:
+                loop = asyncio.get_running_loop()
+                neighbor_rows = await loop.run_in_executor(get_chat_pool(), _sync_get)
+            except Exception as exc:  # noqa: BLE001 - Chroma errors vary by version
+                logger.warning("Neighbor-fetch failed: %s", exc)
+                neighbor_rows = {}
+
+            n_chunks = _chunks_from_chroma_get(neighbor_rows, is_neighbor=True)
+            # Defensive: a neighbor whose metadata.video_id differs from any
+            # current hit's video_id means Chroma metadata is desynced from
+            # the chroma_id prefix. Drop with warn so source_coverage never
+            # ends up with a neighbor-only entry (StopIteration risk).
+            hit_videos = {c.video_id for c in result_chunks}
+            unexpected = [c for c in n_chunks if c.video_id not in hit_videos]
+            if unexpected:
+                logger.warning(
+                    "neighbor-pull: dropping %d chunks with unexpected video_id (metadata corruption?)",
+                    len(unexpected),
+                )
+                n_chunks = [c for c in n_chunks if c.video_id in hit_videos]
+            if not n_chunks and candidate_ids:
+                logger.debug(
+                    "neighbor-fetch returned 0 of %d candidate ids (deleted source or stale ids?)",
+                    len(candidate_ids),
+                )
+            if n_chunks:
+                # Merge hits + neighbors; sort within each source by
+                # sequence_index ascending so the LLM reads continuous
+                # transcript under the #297 fence. Inter-source order
+                # preserved via the original-hit appearance rank.
+                source_rank = {vid: i for i, vid in enumerate(dict.fromkeys(c.video_id for c in result_chunks))}
+                result_chunks = sorted(
+                    result_chunks + n_chunks,
+                    key=lambda c: (source_rank[c.video_id], c.sequence_index),
+                )
+                neighbors_pulled = len(n_chunks)
+
     final_src_counts: dict[str, int] = {}
     for c in result_chunks:
         final_src_counts[c.video_id] = final_src_counts.get(c.video_id, 0) + 1
@@ -555,14 +690,22 @@ async def retrieve(
         params.depth_per_source,
         num_sources_in_pool,
     )
+    if neighbors_pulled:
+        logger.info(
+            "retrieve neighbor-pull: hits=%d pulled=%d",
+            len(result_chunks) - neighbors_pulled,
+            neighbors_pulled,
+        )
 
-    # source_coverage derived from result_chunks so the chip reflects what the LLM actually saw
+    # source_coverage derived from result_chunks so the chip reflects what the LLM actually saw.
+    # best_score uses the first non-neighbor chunk so neighbor sentinel (+inf) does not
+    # poison the source ordering on threshold-met turns.
     source_video_ids = list(dict.fromkeys(c.video_id for c in result_chunks))
     source_coverage = [
         SourceHit(
             video_id=vid,
             video_title=next(c.video_title for c in result_chunks if c.video_id == vid),
-            best_score=_chunk_score(next(c for c in result_chunks if c.video_id == vid)),
+            best_score=_chunk_score(next(c for c in result_chunks if c.video_id == vid and not c.is_neighbor)),
         )
         for vid in source_video_ids
     ]
@@ -576,4 +719,5 @@ async def retrieve(
         dropped_by_gate=dropped_by_gate,
         reranked=reranked,
         gate_margin=gate_margin,
+        neighbors_pulled=neighbors_pulled,
     )

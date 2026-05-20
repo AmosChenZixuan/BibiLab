@@ -577,6 +577,7 @@ async def run_chat_turn(
                             "scoped_pool_size": result.get("scoped_pool_size"),
                             "facet_scope": result.get("facet_scope"),
                             "gate_margin": result.get("gate_margin"),
+                            "neighbors_pulled": result.get("neighbors_pulled", 0),
                         }
                     )
                 elif parsed["name"] == "generate_report":
