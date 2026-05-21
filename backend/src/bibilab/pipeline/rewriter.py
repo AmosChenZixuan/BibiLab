@@ -2,7 +2,7 @@
 
 Owns the retrieve decision (retrieve true/false), query extraction, mode,
 and facet detection (sequence_number / season_number). Runs over an
-asymmetric context that excludes all assistant history. See issue #334.
+asymmetric context that excludes all assistant history.
 """
 
 import json
@@ -12,7 +12,7 @@ import time
 from dataclasses import dataclass
 from typing import Literal
 
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, ConfigDict, model_validator
 
 from bibilab.config import AIConfig
 from bibilab.pipeline._shared import _call_llm
@@ -21,6 +21,8 @@ logger = logging.getLogger(__name__)
 
 
 class RewriterIntent(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
     retrieve: bool
     query: str | None = None
     mode: Literal["narrow", "survey"] | None = None
@@ -35,6 +37,8 @@ class RewriterIntent(BaseModel):
         else:
             if self.query is None or self.mode is None:
                 raise ValueError("retrieve=true requires query and mode")
+            if not self.query.strip():
+                raise ValueError("retrieve=true requires non-empty query")
         return self
 
 
@@ -115,11 +119,8 @@ _SURVEY_RE = re.compile(
 
 
 def build_rewriter_prompt(*, current: str, prior: list[PriorUserTurn]) -> str:
-    """Concatenate system prompt, tagged prior user turns, and the current message.
-
-    Asymmetric-context invariant: this function returns the COMPLETE input
-    to the rewriter LLM. Anything not appended here cannot leak.
-    """
+    """Build the COMPLETE rewriter LLM input. Asymmetric-context invariant:
+    anything not appended here cannot leak."""
     windowed = prior[-_REWRITER_WINDOW:]
     parts = [_REWRITER_SYSTEM, "\n--- prior user messages ---"]
     for turn in windowed:
@@ -134,37 +135,35 @@ def build_rewriter_prompt(*, current: str, prior: list[PriorUserTurn]) -> str:
 
 
 def parse_rewriter_response(raw: str) -> RewriterIntent | None:
-    """Parse rewriter LLM output. Returns None on any failure (invalid JSON,
-    Pydantic invariant violation, missing fields)."""
+    """Returns None on JSON or invariant failure."""
     text = _FENCE_RE.sub("", raw).strip()
     try:
         data = json.loads(text)
     except json.JSONDecodeError:
-        logger.warning("rewriter: invalid JSON: %r", raw[:200])
+        logger.exception("rewriter: invalid JSON (len=%d, tail=%r)", len(raw), raw[-200:])
         return None
     try:
         return RewriterIntent(**data)
-    except (ValueError, TypeError) as exc:
-        logger.warning("rewriter: invariant violation: %s; data=%r", exc, data)
+    except (ValueError, TypeError):
+        logger.exception("rewriter: invariant violation (data=%r)", data)
         return None
 
 
 def fallback_intent(user_message: str, prior: list[PriorUserTurn] | None = None) -> RewriterIntent:
-    """Construct a safe-default intent when the rewriter LLM fails."""
+    """Safe-default intent when the rewriter LLM fails."""
     text = user_message.strip()
+    if not text:
+        return RewriterIntent(retrieve=False)
 
-    # Pure acknowledgments → no retrieval
     if _ACK_RE.match(text):
         return RewriterIntent(retrieve=False)
 
-    # Continuation signals — inherit from last-retrieved prior turn
     if _CONTINUATION_RE.match(text) and prior:
         for turn in reversed(prior):
             if turn.retrieved:
                 return RewriterIntent(retrieve=True, query=turn.text, mode="narrow")
         return RewriterIntent(retrieve=False)
 
-    # Extract sequence_number from current message only
     sequence_number = None
     m = _SEQ_NUM_RE.search(user_message)
     if not m:
@@ -184,11 +183,7 @@ def run_rewriter(
     llm_timeout: int = 30,
     llm_max_tokens: int = 1024,
 ) -> tuple[RewriterIntent, dict]:
-    """Run the rewriter LLM stage.
-
-    Returns (intent, telemetry) where telemetry is the dict persisted at
-    metadata.rag.rewriter — includes latency_ms and fallback flag.
-    """
+    """Returns (intent, telemetry). telemetry persists at metadata.rag.rewriter."""
     prompt = build_rewriter_prompt(current=current, prior=prior)
     started = time.monotonic()
     fallback = False
@@ -198,9 +193,9 @@ def run_rewriter(
         if intent is None:
             intent = fallback_intent(current, prior)
             fallback = True
-    except Exception:  # noqa: BLE001 - rewriter must always return; downstream owns retry/UX
+    except Exception:  # noqa: BLE001 - rewriter must always return; fallback owns recovery
         logger.exception("rewriter: LLM call failed; falling back")
-        intent = fallback_intent(current)
+        intent = fallback_intent(current, prior)
         fallback = True
 
     latency_ms = int((time.monotonic() - started) * 1000)

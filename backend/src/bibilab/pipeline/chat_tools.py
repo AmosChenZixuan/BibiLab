@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 
 from bibilab.config import BibilabConfig
 from bibilab.db import count_sources, create_job, get_source_facets, language_breakdown, longest_source
-from bibilab.models._enums import RetrievalParams
+from bibilab.models._enums import Mode, RetrievalParams
 from bibilab.pipeline._shared import ToolDefinition
 from bibilab.pipeline.digest import parse_facet_int
 from bibilab.pipeline.embed import retrieve
@@ -87,7 +87,7 @@ def _build_fenced_chunks(
 _VALID_ARTIFACT_TYPES = frozenset({"brief", "study_guide", "blog_post", "custom_report"})
 
 
-_REWRITER_MODE_TO_PARAMS: dict[str, RetrievalParams] = {
+_REWRITER_MODE_TO_PARAMS: dict[Mode, RetrievalParams] = {
     "narrow": RetrievalParams(depth_per_source=2, top_k=8, mode="narrow"),
     "survey": RetrievalParams(depth_per_source=5, top_k=24, mode="survey"),
 }
@@ -203,14 +203,14 @@ async def execute_retrieve(
     source_map: dict[str, str] | None = None,
     sequence_number: int | None = None,
     season_number: int | None = None,
-    mode: str = "narrow",
+    mode: Mode = "narrow",
 ) -> dict:
     if registry is None:
         registry = {}
     if source_map is None:
         source_map = {}
 
-    params = _REWRITER_MODE_TO_PARAMS.get(mode, _REWRITER_MODE_TO_PARAMS["narrow"])
+    params = _REWRITER_MODE_TO_PARAMS[mode]
     pool_size = len(source_ids)
 
     # Deterministic facet scoping (#309). Facet matching is the sole

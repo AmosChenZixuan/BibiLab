@@ -596,7 +596,7 @@ async def retrieve(
 
         if reranked:
             pre_gate = len(chunks)
-            gate_margin = _RELEVANCE_MARGIN_BY_MODE.get(params.mode, _RELEVANCE_MARGIN_BY_MODE["narrow"])
+            gate_margin = _RELEVANCE_MARGIN_BY_MODE[params.mode]
             chunks = _quantile_gate(chunks, margin=gate_margin)
             dropped_by_gate = pre_gate - len(chunks)
             logger.info(

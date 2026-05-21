@@ -196,11 +196,7 @@ def _client_tool_result(result: dict) -> dict:
 
 
 def build_grounding_prompt(response_language: str) -> str:
-    """Build the system prompt for chat grounding.
-
-    This prompts the answer LLM (second stage). Retriever excerpts arrive as
-    synthetic tool results pre-injected into the conversation. The answer LLM
-    does NOT have a retrieve tool — the rewriter handles that before this runs.
+    """Build the system prompt for the answer LLM.
 
     response_language is interpolated into the language directive and the
     fallback sentence so refusals match the user's UI/config language.
@@ -214,10 +210,6 @@ def build_grounding_prompt(response_language: str) -> str:
         "about source counts, durations, or languages, call "
         "`query_list_metadata`. For requests to generate summaries, study "
         "guides, blog posts, or custom reports, call `generate_report`.\n\n"
-        "Excerpts from prior turns remain in the conversation as tool "
-        "results. Reuse them when the new question is about the same "
-        "topic, entity, or episode; cite them directly. Prior excerpts "
-        "about an unrelated topic are not evidence for the new question.\n\n"
         "## Grounding\n"
         "Build your answer from the retrieved excerpts alone. Do not draw on "
         "outside knowledge. Treat the excerpts as authoritative whether the "
@@ -245,16 +237,14 @@ def build_grounding_prompt(response_language: str) -> str:
 
 
 def _build_prior_user_turns(history: list[dict]) -> list[PriorUserTurn]:
-    """Build PriorUserTurn list from chat history for the rewriter.
-
-    Walks history chronologically, pairing each user message with the next
-    assistant message to determine whether that turn's response used retrieve.
-    """
+    """Pair each user message with whether its assistant turn called retrieve."""
     prior: list[PriorUserTurn] = []
     for i, msg in enumerate(history):
         if msg.get("role") != "user":
             continue
-        text = msg.get("content", "")
+        text = msg.get("content") or ""
+        if not isinstance(text, str) or not text.strip():
+            continue
         retrieved = False
         for j in range(i + 1, len(history)):
             if history[j].get("role") == "assistant":
@@ -507,6 +497,7 @@ async def run_chat_turn(
     pending_text = ""
     error_reason: str | None = None
     rewriter_telemetry: dict | None = None
+    tool_blocks: list[dict] = []
 
     try:
         response_language = resolve_response_language(cfg.ai, ui_lang)
@@ -529,54 +520,11 @@ async def run_chat_turn(
         # Reseed citation registry from history for prior-turn [N] resolution.
         reseed_citation_registry(citation_registry, history)
 
-        # Pre-execute retrieve when the rewriter decides it is needed.
+        retrieve_result: dict | None = None
+        retrieve_failed = False
+        synthetic_tool_use_id: str | None = None
         if rewriter_intent.retrieve:
-            retrieve_result = await execute_retrieve(
-                query=rewriter_intent.query,
-                source_ids=source_ids,
-                cfg=cfg,
-                registry=citation_registry,
-                source_map=source_map,
-                sequence_number=rewriter_intent.sequence_number,
-                season_number=rewriter_intent.season_number,
-                mode=rewriter_intent.mode,
-            )
-
             synthetic_tool_use_id = str(uuid4())
-            tool_blocks = [
-                build_tool_block_entry(
-                    tool_use_id=synthetic_tool_use_id,
-                    name="retrieve",
-                    arguments={
-                        "query": rewriter_intent.query,
-                        "mode": rewriter_intent.mode,
-                        "sequence_number": rewriter_intent.sequence_number,
-                        "season_number": rewriter_intent.season_number,
-                    },
-                    result=retrieve_result,
-                    raw_chunks=retrieve_result.get("_raw_chunks"),
-                )
-            ]
-
-            retrieve_calls.append(
-                {
-                    "query": retrieve_result.get("query", ""),
-                    "mode": retrieve_result.get("mode"),
-                    "candidates_evaluated": retrieve_result.get("candidates_evaluated"),
-                    "sources_with_hits": retrieve_result.get("sources_with_hits"),
-                    "sources_total": retrieve_result.get("sources_total"),
-                    "source_coverage": retrieve_result.get("source_coverage", []),
-                    "dropped_by_gate": retrieve_result.get("dropped_by_gate", 0),
-                    "reranked": retrieve_result.get("reranked", False),
-                    "scoped_pool_size": retrieve_result.get("scoped_pool_size"),
-                    "facet_scope": retrieve_result.get("facet_scope"),
-                    "gate_margin": retrieve_result.get("gate_margin"),
-                    "neighbors_pulled": retrieve_result.get("neighbors_pulled", 0),
-                }
-            )
-
-            # Emit synthetic tool events so the client sees the pre-executed
-            # retrieve alongside any answer-LLM tool results.
             buf.append(
                 {
                     "type": SSE_EVENT_TOOL_CALL_START,
@@ -585,16 +533,67 @@ async def run_chat_turn(
                     "arguments": {"query": rewriter_intent.query, "mode": rewriter_intent.mode},
                 }
             )
-            buf.append(
-                {
-                    "type": SSE_EVENT_TOOL_RESULT,
-                    "id": synthetic_tool_use_id,
-                    "name": "retrieve",
-                    "result": _client_tool_result(retrieve_result),
-                }
-            )
-        else:
-            tool_blocks = []
+            try:
+                retrieve_result = await execute_retrieve(
+                    query=rewriter_intent.query,
+                    source_ids=source_ids,
+                    cfg=cfg,
+                    registry=citation_registry,
+                    source_map=source_map,
+                    sequence_number=rewriter_intent.sequence_number,
+                    season_number=rewriter_intent.season_number,
+                    mode=rewriter_intent.mode,
+                )
+            except Exception as exc:
+                logger.exception("rewriter pre-retrieve failed message_id=%s", message_id)
+                retrieve_failed = True
+                buf.append(
+                    {
+                        "type": SSE_EVENT_TOOL_RESULT,
+                        "id": synthetic_tool_use_id,
+                        "name": "retrieve",
+                        "result": {"error": classify_error(exc)},
+                    }
+                )
+            else:
+                tool_blocks = [
+                    build_tool_block_entry(
+                        tool_use_id=synthetic_tool_use_id,
+                        name="retrieve",
+                        arguments={
+                            "query": rewriter_intent.query,
+                            "mode": rewriter_intent.mode,
+                            "sequence_number": rewriter_intent.sequence_number,
+                            "season_number": rewriter_intent.season_number,
+                        },
+                        result=retrieve_result,
+                        raw_chunks=retrieve_result.get("_raw_chunks"),
+                    )
+                ]
+                retrieve_calls.append(
+                    {
+                        "query": retrieve_result.get("query", ""),
+                        "mode": retrieve_result.get("mode"),
+                        "candidates_evaluated": retrieve_result.get("candidates_evaluated"),
+                        "sources_with_hits": retrieve_result.get("sources_with_hits"),
+                        "sources_total": retrieve_result.get("sources_total"),
+                        "source_coverage": retrieve_result.get("source_coverage", []),
+                        "dropped_by_gate": retrieve_result.get("dropped_by_gate", 0),
+                        "reranked": retrieve_result.get("reranked", False),
+                        "scoped_pool_size": retrieve_result.get("scoped_pool_size"),
+                        "facet_scope": retrieve_result.get("facet_scope"),
+                        "gate_margin": retrieve_result.get("gate_margin"),
+                        "neighbors_pulled": retrieve_result.get("neighbors_pulled", 0),
+                    }
+                )
+                buf.append(
+                    {
+                        "type": SSE_EVENT_TOOL_RESULT,
+                        "id": synthetic_tool_use_id,
+                        "name": "retrieve",
+                        "result": _client_tool_result(retrieve_result),
+                    }
+                )
 
         # Build messages for the answer LLM: strip prior tool_blocks so the
         # pre-executed synthetic retrieve is the only retrieve result in view.
@@ -604,8 +603,7 @@ async def run_chat_turn(
             expanded_history.extend(expand_message_for_provider(h, protocol=cfg.ai.protocol))
         messages_for_llm = expanded_history + [{"role": "user", "content": user_message_text}]
 
-        # Inject synthetic tool_use + tool_result for the answer LLM.
-        if rewriter_intent.retrieve:
+        if rewriter_intent.retrieve and retrieve_result is not None:
             messages_for_llm.append(
                 {
                     "role": "assistant",
@@ -630,6 +628,11 @@ async def run_chat_turn(
                         }
                     ],
                 }
+            )
+        elif retrieve_failed:
+            system_message += (
+                "\n\nThe retrieval system failed for this question. Apologize briefly "
+                "in one sentence and ask the user to retry. Do not fabricate excerpts."
             )
 
         async def execute_tool_bound(name: str, args: dict, **kwargs) -> dict:
@@ -672,26 +675,7 @@ async def run_chat_turn(
                 _append_citation_block(content_blocks, data)
             elif event.type == "tool_result":
                 parsed = json.loads(event.content)
-                if parsed["name"] == "retrieve":
-                    result = parsed["result"]
-                    # Store raw source_coverage for now; narrow by emitted citations in finally.
-                    retrieve_calls.append(
-                        {
-                            "query": result.get("query", ""),
-                            "mode": result.get("mode"),
-                            "candidates_evaluated": result.get("candidates_evaluated"),
-                            "sources_with_hits": result.get("sources_with_hits"),
-                            "sources_total": result.get("sources_total"),
-                            "source_coverage": result.get("source_coverage", []),
-                            "dropped_by_gate": result.get("dropped_by_gate", 0),
-                            "reranked": result.get("reranked", False),
-                            "scoped_pool_size": result.get("scoped_pool_size"),
-                            "facet_scope": result.get("facet_scope"),
-                            "gate_margin": result.get("gate_margin"),
-                            "neighbors_pulled": result.get("neighbors_pulled", 0),
-                        }
-                    )
-                elif parsed["name"] == "generate_report":
+                if parsed["name"] == "generate_report":
                     generate_report_result = parsed["result"]
             elif event.type == "error":
                 logger.error("stream_with_tools error: %s", event.content)
