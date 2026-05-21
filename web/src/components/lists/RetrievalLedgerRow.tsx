@@ -14,8 +14,8 @@ interface RetrievalLedgerRowProps {
   streaming?: boolean;
 }
 
-function ModeDisplay({ expected_hits, t }: { expected_hits: RetrievalCall["expected_hits"]; t: (key: string) => string }) {
-  const key = expected_hits ? `chat.ledger.mode.${expected_hits}` : "chat.ledger.modeUnknown";
+function ModeDisplay({ mode, t }: { mode: RetrievalCall["mode"]; t: (key: string) => string }) {
+  const key = mode ? `chat.ledger.mode.${mode}` : "chat.ledger.modeUnknown";
   return <>{t(key)}</>;
 }
 
@@ -24,7 +24,7 @@ export function RetrievalLedgerRow({ variant, call, pending, streaming = false }
   const [expanded, setExpanded] = useState(false);
 
   if (variant === "pending" && pending) {
-    const isRag = "expected_hits" in pending;
+    const isRag = "mode" in pending;
     const label = isRag
       ? t("chat.ledger.summaryPending")
       : t(`chat.ledger.metadataPending.${(pending as PendingMetadataCall).query_type}`, {});
@@ -138,7 +138,7 @@ export function RetrievalLedgerRow({ variant, call, pending, streaming = false }
             </span>
             <span>
               <span className="text-muted">{t("chat.ledger.field.mode")} </span>
-              <span className="font-medium text-ink"><ModeDisplay expected_hits={call.expected_hits} t={t} /></span>
+              <span className="font-medium text-ink"><ModeDisplay mode={call.mode} t={t} /></span>
             </span>
             <span>
               <span className="text-muted">{t("chat.ledger.field.scope")} </span>

@@ -128,7 +128,7 @@ async def test_chat_endpoint_uses_conversation_history(client):
 
 @pytest.mark.asyncio
 async def test_chat_endpoint_includes_tools(client):
-    """Both retrieve and generate_report tools are passed to stream_with_tools."""
+    """Answer LLM gets query_list_metadata and generate_report tools (no retrieve)."""
     list_id = (await client.post("/lists", json={"name": "Test"})).json()["id"]
 
     captured_tools = []
@@ -142,7 +142,8 @@ async def test_chat_endpoint_includes_tools(client):
 
     assert resp.status_code == 200
     tool_names = [t.name for t in captured_tools[0]]
-    assert "retrieve" in tool_names
+    assert "retrieve" not in tool_names
+    assert "query_list_metadata" in tool_names
     assert "generate_report" in tool_names
 
 
@@ -173,7 +174,7 @@ async def test_retrieve_tool_result_has_coverage(client):
     list_id = (await client.post("/lists", json={"name": "Test"})).json()["id"]
 
     async def fake_stream(messages, cfg, tools=None, execute_tool_fn=None, system=None, llm_max_tokens=2048, **kwargs):
-        result = await execute_tool_fn("retrieve", {"query": "test", "expected_hits": "few"})
+        result = await execute_tool_fn("retrieve", {"query": "test", "mode": "narrow"})
         yield StreamEvent(
             type="tool_result",
             content=json.dumps({"name": "retrieve", "result": _client_tool_result(result)}),
@@ -217,14 +218,22 @@ async def test_patch_conversation_endpoint_gone(client):
 
 @pytest.mark.asyncio
 async def test_smoke_scenario_1_chitchat_no_tool_calls(client):
-    """Chitchat: LLM responds directly, no retrieve tool, no tool_result in SSE."""
+    """Chitchat: rewriter decides no retrieve, answer LLM responds directly, no tool_result in SSE."""
+    from bibilab.pipeline.rewriter import RewriterIntent
+
     list_id = await _create_list(client, "Smoke 1")
 
     async def fake_stream(messages, cfg, tools=None, execute_tool_fn=None, system=None, llm_max_tokens=2048, **kwargs):
         yield StreamEvent(type=SSE_EVENT_DELTA, content="You're welcome!")
         yield StreamEvent(type=SSE_EVENT_DONE)
 
-    with patch("bibilab.routers.chat.stream_with_tools", fake_stream):
+    def fake_rewriter(*, current, prior, cfg, **kw):
+        return RewriterIntent(retrieve=False), {"retrieve": False, "fallback": False, "latency_ms": 0}
+
+    with (
+        patch("bibilab.routers.chat.stream_with_tools", fake_stream),
+        patch("bibilab.routers.chat.run_rewriter", fake_rewriter),
+    ):
         resp = await client.post(f"/lists/{list_id}/chat", json={"message": "thanks"})
 
     assert resp.status_code == 200
@@ -241,10 +250,10 @@ async def test_smoke_scenario_1_chitchat_no_tool_calls(client):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "expected_hits,query,user_message,delta_text,result_overrides",
+    "mode,query,user_message,delta_text,result_overrides",
     [
         (
-            "one",
+            "narrow",
             "test query",
             "What does the video say about transformers?",
             "Based on the transcript, the answer is...",
@@ -257,7 +266,7 @@ async def test_smoke_scenario_1_chitchat_no_tool_calls(client):
             },
         ),
         (
-            "few",
+            "survey",
             "核心观点",
             "汇总所有视频的核心观点",
             "汇总如下...",
@@ -275,57 +284,60 @@ async def test_smoke_scenario_1_chitchat_no_tool_calls(client):
         ),
     ],
 )
-async def test_smoke_scenario_2_retrieve(client, expected_hits, query, user_message, delta_text, result_overrides):
-    """LLM calls retrieve tool with correct expected_hits before answering."""
-    list_id = await _create_list(client, f"Smoke retrieve {expected_hits}")
+async def test_smoke_scenario_2_retrieve(client, mode, query, user_message, delta_text, result_overrides):
+    """Rewriter decides retrieve → pre-execute retrieve → answer LLM responds with excerpts."""
+    from bibilab.pipeline.rewriter import RewriterIntent
 
-    retrieve_result = {"expected_hits": expected_hits, **result_overrides}
+    list_id = await _create_list(client, f"Smoke retrieve {mode}")
 
-    async def fake_stream(messages, cfg, tools=None, execute_tool_fn=None, system=None, llm_max_tokens=2048, **kwargs):
-        yield StreamEvent(
-            type="tool_call",
-            tool_call=ToolCall(id="c1", name="retrieve", arguments={"query": query, "expected_hits": expected_hits}),
-        )
-        result = await execute_tool_fn("retrieve", {"query": query, "expected_hits": expected_hits})
-        tool_result_data = {"name": "retrieve", "result": _client_tool_result(result)}
-        yield StreamEvent(type="tool_result", content=json.dumps(tool_result_data))
+    def fake_rewriter(*, current, prior, cfg, **kw):
+        return RewriterIntent(retrieve=True, query=query, mode=mode), {
+            "retrieve": True,
+            "mode": mode,
+            "fallback": False,
+            "latency_ms": 0,
+        }
+
+    async def fake_stream_llm(messages, cfg, tools=None, system=None, llm_max_tokens=2048, **kwargs):
         yield StreamEvent(type=SSE_EVENT_DELTA, content=delta_text)
         yield StreamEvent(type=SSE_EVENT_DONE)
 
-    with patch("bibilab.routers.chat.stream_with_tools", fake_stream):
-        with patch("bibilab.routers.chat.execute_tool", new_callable=AsyncMock) as mock_exec:
-            mock_exec.return_value = retrieve_result
-            resp = await client.post(f"/lists/{list_id}/chat", json={"message": user_message})
+    async def fake_execute_retrieve(query, source_ids, cfg, registry=None, source_map=None, **kw):
+        return {"query": query, "mode": mode, **result_overrides}
+
+    with (
+        patch("bibilab.routers.chat.run_rewriter", fake_rewriter),
+        patch("bibilab.routers.chat.stream_llm", fake_stream_llm),
+        patch("bibilab.routers.chat.execute_retrieve", fake_execute_retrieve),
+    ):
+        resp = await client.post(f"/lists/{list_id}/chat", json={"message": user_message})
 
     assert resp.status_code == 200
     events = _parse_sse(resp.text)
     types = [e["type"] for e in events]
 
+    # Pre-execute retrieve emits tool_call_start + tool_result from rewriter path.
     assert SSE_EVENT_TOOL_RESULT in types
-    tool_results = [e for e in events if e["type"] == SSE_EVENT_TOOL_RESULT]
-    assert len(tool_results) == 1, "one tool_result from stream (metadata saved to DB, not SSE)"
-
-    stream_result = tool_results[0]
-    assert stream_result["name"] == "retrieve"
-    assert stream_result["result"]["expected_hits"] == expected_hits
-    assert stream_result["result"]["candidates_evaluated"] == result_overrides["candidates_evaluated"]
-    assert "_chunks" not in stream_result["result"], "_chunks must be stripped before sending to client"
-
     assert SSE_EVENT_DELTA in types
     assert SSE_EVENT_DONE in types
 
     assistant_msgs = await _get_assistant_msgs(client, list_id)
     assert len(assistant_msgs) == 1
     assert assistant_msgs[0]["metadata"] is not None
-    assert assistant_msgs[0]["metadata"]["rag"]["calls"][0]["expected_hits"] == expected_hits
+    assert assistant_msgs[0]["metadata"]["rag"]["calls"][0]["mode"] == mode
 
 
 @pytest.mark.asyncio
 async def test_smoke_scenario_3_generate_report_no_retrieve(client):
-    """Report request: LLM calls generate_report directly, no retrieve tool involved."""
+    """Report request: rewriter opts out of retrieve, answer LLM calls generate_report directly."""
+    from bibilab.pipeline.rewriter import RewriterIntent
+
     list_id = await _create_list(client, "Smoke 3")
 
     report_result = {"artifact_id": "art-123", "job_id": "job-456", "name": "brief", "type": "brief"}
+
+    def fake_rewriter(*, current, prior, cfg, **kw):
+        return RewriterIntent(retrieve=False), {"retrieve": False, "fallback": False, "latency_ms": 0}
 
     async def fake_stream(messages, cfg, tools=None, execute_tool_fn=None, system=None, llm_max_tokens=2048, **kwargs):
         yield StreamEvent(type=SSE_EVENT_DELTA, content="Let me generate a brief for you.")
@@ -333,10 +345,13 @@ async def test_smoke_scenario_3_generate_report_no_retrieve(client):
         yield StreamEvent(type="tool_result", content=json.dumps({"name": "generate_report", "result": result}))
         yield StreamEvent(type=SSE_EVENT_DONE)
 
-    with patch("bibilab.routers.chat.stream_with_tools", fake_stream):
-        with patch("bibilab.routers.chat.execute_tool", new_callable=AsyncMock) as mock_exec:
-            mock_exec.return_value = report_result
-            resp = await client.post(f"/lists/{list_id}/chat", json={"message": "make a brief summarizing all videos"})
+    with (
+        patch("bibilab.routers.chat.stream_with_tools", fake_stream),
+        patch("bibilab.routers.chat.execute_tool", new_callable=AsyncMock) as mock_exec,
+        patch("bibilab.routers.chat.run_rewriter", fake_rewriter),
+    ):
+        mock_exec.return_value = report_result
+        resp = await client.post(f"/lists/{list_id}/chat", json={"message": "make a brief summarizing all videos"})
 
     assert resp.status_code == 200
     events = _parse_sse(resp.text)
@@ -368,7 +383,6 @@ async def test_query_list_metadata_tool_registered_for_chat(client):
     from bibilab.pipeline.chat_tools import (
         GENERATE_REPORT_TOOL,
         QUERY_LIST_METADATA_TOOL,
-        RETRIEVE_TOOL,
     )
     from bibilab.routers.chat import SSE_EVENT_DELTA, SSE_EVENT_DONE
 
@@ -389,7 +403,7 @@ async def test_query_list_metadata_tool_registered_for_chat(client):
     assert resp.status_code == 200
     assert captured_tools is not None, "stream_llm was never called"
     tool_names = {t.name for t in captured_tools}
-    assert tool_names == {RETRIEVE_TOOL.name, QUERY_LIST_METADATA_TOOL.name, GENERATE_REPORT_TOOL.name}
+    assert tool_names == {QUERY_LIST_METADATA_TOOL.name, GENERATE_REPORT_TOOL.name}
 
 
 def test_grounding_prompt_routes_counts_to_metadata_tool():
@@ -531,18 +545,18 @@ async def test_chat_citation_after_lone_break_not_isolated(client):
 
 
 @pytest.mark.asyncio
-async def test_chat_sse_multi_retrieve_no_crash(client):
-    """Smoke test: two retrieve calls in one turn do not crash the SSE stream.
+async def test_chat_sse_multi_tool_no_crash(client):
+    """Smoke test: two loopback tool calls in one turn do not crash the SSE stream.
 
-    The registry ordering and dedup logic is exercised in
-    test_citation_registry.py; this test verifies the SSE layer
-    handles the multi-call flow without internal errors.
+    The rewriter pre-executes retrieve, so loopback tools in stream_with_tools
+    are query_list_metadata and generate_report. This test verifies the SSE
+    layer handles multiple tool calls without internal errors.
     """
     list_id = (await client.post("/lists", json={"name": "T"})).json()["id"]
 
     async def fake_stream_with_tools(*args, **kwargs):
-        tc1 = ToolCall(id="tc1", name="retrieve", arguments={"query": "q1", "expected_hits": "few"})
-        tc2 = ToolCall(id="tc2", name="retrieve", arguments={"query": "q2", "expected_hits": "few"})
+        tc1 = ToolCall(id="tc1", name="query_list_metadata", arguments={"query_type": "count"})
+        tc2 = ToolCall(id="tc2", name="query_list_metadata", arguments={"query_type": "longest"})
         yield StreamEvent(type="tool_call", tool_call=tc1)
         yield StreamEvent(type="done")
         yield StreamEvent(type="tool_call", tool_call=tc2)
@@ -560,126 +574,6 @@ async def test_chat_sse_multi_retrieve_no_crash(client):
 
 
 @pytest.mark.asyncio
-async def test_retrieve_filtered_after_first_use(client):
-    """After retrieve runs in iteration 1, iteration 2's tools list excludes retrieve."""
-    from bibilab.pipeline.chat_tools import (
-        GENERATE_REPORT_TOOL,
-        QUERY_LIST_METADATA_TOOL,
-        RETRIEVE_TOOL,
-    )
-
-    list_id = (await client.post("/lists", json={"name": "T"})).json()["id"]
-
-    captured_tools_per_iteration: list[list[str]] = []
-    iteration_count = 0
-
-    async def fake_stream_llm(messages, cfg, tools=None, system=None, llm_max_tokens=None, **kwargs):
-        nonlocal iteration_count
-        iteration_count += 1
-        captured_tools_per_iteration.append([t.name for t in (tools or [])])
-        if iteration_count == 1:
-            yield StreamEvent(
-                type="tool_call",
-                tool_call=ToolCall(id="tc1", name="retrieve", arguments={"query": "x", "expected_hits": "few"}),
-            )
-            yield StreamEvent(type="done")
-        else:
-            yield StreamEvent(type="delta", content="answer")
-            yield StreamEvent(type="done")
-
-    async def fake_execute_tool(**kwargs):
-        return {
-            "query": kwargs.get("arguments", {}).get("query", ""),
-            "expected_hits": "few",
-            "candidates_evaluated": 0,
-            "sources_with_hits": 0,
-            "sources_total": 1,
-            "source_coverage": [],
-            "_chunks": "",
-            "_turn_indices": [],
-        }
-
-    with (
-        patch("bibilab.routers.chat.stream_llm", fake_stream_llm),
-        patch("bibilab.routers.chat.execute_tool", fake_execute_tool),
-    ):
-        resp = await client.post(f"/lists/{list_id}/chat", json={"message": "q"})
-
-    assert resp.status_code == 200
-    assert iteration_count == 2
-    assert RETRIEVE_TOOL.name in captured_tools_per_iteration[0]
-    assert RETRIEVE_TOOL.name not in captured_tools_per_iteration[1]
-    # Other tools remain available
-    assert QUERY_LIST_METADATA_TOOL.name in captured_tools_per_iteration[1]
-    assert GENERATE_REPORT_TOOL.name in captured_tools_per_iteration[1]
-
-
-@pytest.mark.asyncio
-async def test_metadata_then_retrieve_allowed(client):
-    """query_list_metadata in iteration 1 must NOT block retrieve in iteration 2."""
-    from bibilab.pipeline.chat_tools import (
-        QUERY_LIST_METADATA_TOOL,
-        RETRIEVE_TOOL,
-    )
-
-    list_id = (await client.post("/lists", json={"name": "T"})).json()["id"]
-
-    captured_tools_per_iteration: list[list[str]] = []
-    iteration_count = 0
-
-    async def fake_stream_llm(messages, cfg, tools=None, system=None, llm_max_tokens=None, **kwargs):
-        nonlocal iteration_count
-        iteration_count += 1
-        captured_tools_per_iteration.append([t.name for t in (tools or [])])
-        if iteration_count == 1:
-            yield StreamEvent(
-                type="tool_call",
-                tool_call=ToolCall(id="tc1", name="query_list_metadata", arguments={"query_type": "count"}),
-            )
-            yield StreamEvent(type="done")
-        elif iteration_count == 2:
-            yield StreamEvent(
-                type="tool_call",
-                tool_call=ToolCall(id="tc2", name="retrieve", arguments={"query": "x", "expected_hits": "few"}),
-            )
-            yield StreamEvent(type="done")
-        else:
-            yield StreamEvent(type="delta", content="answer")
-            yield StreamEvent(type="done")
-
-    async def fake_execute_tool(**kwargs):
-        name = kwargs.get("name", "")
-        args = kwargs.get("arguments", {})
-        if name == "query_list_metadata":
-            return {"count": 8}
-        return {
-            "query": args.get("query", ""),
-            "expected_hits": "few",
-            "candidates_evaluated": 0,
-            "sources_with_hits": 0,
-            "sources_total": 1,
-            "source_coverage": [],
-            "_chunks": "",
-            "_turn_indices": [],
-        }
-
-    with (
-        patch("bibilab.routers.chat.stream_llm", fake_stream_llm),
-        patch("bibilab.routers.chat.execute_tool", fake_execute_tool),
-    ):
-        resp = await client.post(f"/lists/{list_id}/chat", json={"message": "q"})
-
-    assert resp.status_code == 200
-    assert iteration_count == 3
-    # Iteration 1: all tools available including retrieve
-    assert RETRIEVE_TOOL.name in captured_tools_per_iteration[0]
-    assert QUERY_LIST_METADATA_TOOL.name in captured_tools_per_iteration[0]
-    # Iteration 2: retrieve is still available — metadata didn't consume the allowance
-    assert RETRIEVE_TOOL.name in captured_tools_per_iteration[1]
-    assert "answer" in resp.text
-
-
-@pytest.mark.asyncio
 async def test_deltas_streamed_immediately_during_tool_iteration(client):
     """Deltas from a tool iteration reach the client immediately (not buffered until stream end)."""
     list_id = (await client.post("/lists", json={"name": "T"})).json()["id"]
@@ -692,7 +586,7 @@ async def test_deltas_streamed_immediately_during_tool_iteration(client):
             yield StreamEvent(type="delta", content="Let me look that up again.")
             yield StreamEvent(
                 type="tool_call",
-                tool_call=ToolCall(id="tc1", name="retrieve", arguments={"query": "x", "expected_hits": "few"}),
+                tool_call=ToolCall(id="tc1", name="query_list_metadata", arguments={"query_type": "count"}),
             )
             yield StreamEvent(type="done")
         else:
@@ -703,7 +597,7 @@ async def test_deltas_streamed_immediately_during_tool_iteration(client):
         args = kwargs.get("arguments", {})
         return {
             "query": args.get("query", ""),
-            "expected_hits": "few",
+            "mode": "narrow",
             "candidates_evaluated": 0,
             "sources_with_hits": 0,
             "sources_total": 1,
@@ -746,18 +640,26 @@ async def test_chat_sse_hallucinated_index_emitted_as_text(client, caplog):
     """[7] when registry only has 1-2 → emitted as text delta, warning logged.
 
     Mocks stream_llm (not stream_with_tools) so the real parser runs.
-    The registry stays empty (no retrieve triggered), so [7] is out of range
-    and the parser logs citation_hallucinated_index.
+    The registry stays empty (rewriter returns retrieve=false), so [7]
+    is out of range and the parser logs citation_hallucinated_index.
     """
+    from bibilab.pipeline.rewriter import RewriterIntent
+
     list_id = (await client.post("/lists", json={"name": "T"})).json()["id"]
 
     async def fake_stream_llm(*args, **kwargs):
         yield StreamEvent(type="delta", content="see [7]")
         yield StreamEvent(type="done")
 
+    def fake_rewriter(*, current, prior, cfg, **kw):
+        return RewriterIntent(retrieve=False), {"retrieve": False, "fallback": False, "latency_ms": 0}
+
     import logging
 
-    with patch("bibilab.routers.chat.stream_llm", side_effect=fake_stream_llm):
+    with (
+        patch("bibilab.routers.chat.stream_llm", side_effect=fake_stream_llm),
+        patch("bibilab.routers.chat.run_rewriter", fake_rewriter),
+    ):
         with caplog.at_level(logging.WARNING, logger="bibilab.pipeline.citation_parser"):
             resp = await client.post(f"/lists/{list_id}/chat", json={"message": "hi"})
 
@@ -779,27 +681,29 @@ async def test_chat_sse_hallucinated_index_emitted_as_text(client, caplog):
 
 @pytest.mark.asyncio
 async def test_run_chat_turn_persists_tool_blocks(monkeypatch, tmp_path):
-    """When the producer runs a retrieve tool, tool_blocks must be persisted via update_message_content."""
+    """tool_blocks persisted from rewriter pre-execute."""
     from bibilab.config import AIConfig, BackendConfig, BibilabConfig
-    from bibilab.pipeline._shared import StreamEvent, ToolCall
+    from bibilab.pipeline._shared import StreamEvent
+    from bibilab.pipeline.rewriter import RewriterIntent
     from bibilab.routers import chat as chat_module
 
-    call_count = 0
-    retrieve_tc = ToolCall(id="c1", name="retrieve", arguments={"query": "x", "expected_hits": "few"})
+    def fake_rewriter(*, current, prior, cfg, **kw):
+        return RewriterIntent(retrieve=True, query="x", mode="narrow"), {
+            "retrieve": True,
+            "fallback": False,
+            "latency_ms": 0,
+        }
+
+    monkeypatch.setattr(chat_module, "run_rewriter", fake_rewriter)
 
     async def fake_stream_llm(messages, cfg, tools=None, system=None, llm_max_tokens=2048):
-        nonlocal call_count
-        call_count += 1
-        if call_count == 1:
-            yield StreamEvent(type="tool_call", tool_call=retrieve_tc)
-        else:
-            yield StreamEvent(type="delta", content="Answer [1]")
-            yield StreamEvent(type="done")
+        yield StreamEvent(type="delta", content="Answer [1]")
+        yield StreamEvent(type="done")
 
-    async def fake_execute(tool_name, arguments, **kwargs):
+    async def fake_execute_retrieve(**kwargs):
         return {
             "query": "x",
-            "expected_hits": "few",
+            "mode": "narrow",
             "candidates_evaluated": 1,
             "sources_with_hits": 1,
             "sources_total": 1,
@@ -817,10 +721,16 @@ async def test_run_chat_turn_persists_tool_blocks(monkeypatch, tmp_path):
                     "citation_index": 1,
                 },
             ],
+            "dropped_by_gate": 0,
+            "reranked": False,
+            "scoped_pool_size": 1,
+            "facet_scope": None,
+            "gate_margin": None,
+            "neighbors_pulled": 0,
         }
 
     monkeypatch.setattr(chat_module, "stream_llm", fake_stream_llm)
-    monkeypatch.setattr(chat_module, "execute_tool", fake_execute)
+    monkeypatch.setattr(chat_module, "execute_retrieve", fake_execute_retrieve)
 
     captured: dict = {}
 
@@ -928,7 +838,7 @@ async def test_tool_call_start_emitted_before_tool_result(client):
         if iteration_count == 1:
             yield StreamEvent(
                 type="tool_call",
-                tool_call=ToolCall(id="tc1", name="retrieve", arguments={"query": "noodles", "expected_hits": "few"}),
+                tool_call=ToolCall(id="tc1", name="retrieve", arguments={"query": "noodles", "mode": "narrow"}),
             )
             yield StreamEvent(type="done")
         else:
@@ -939,7 +849,7 @@ async def test_tool_call_start_emitted_before_tool_result(client):
         args = kwargs.get("arguments", {})
         return {
             "query": args.get("query", ""),
-            "expected_hits": args.get("expected_hits"),
+            "mode": args.get("mode"),
             "candidates_evaluated": 5,
             "sources_with_hits": 2,
             "sources_total": 3,
@@ -963,48 +873,45 @@ async def test_tool_call_start_emitted_before_tool_result(client):
     assert start_idx < result_idx, "tool_call_start must precede tool_result"
     assert '"name": "retrieve"' in body
     assert '"query": "noodles"' in body
-    assert '"expected_hits": "few"' in body
+    assert '"mode": "narrow"' in body
 
 
 @pytest.mark.asyncio
 async def test_rag_metadata_persists_calls_list(client):
-    """metadata.rag.calls must contain one entry per retrieve call in the turn."""
+    """metadata.rag.calls must contain one entry from pre-execute retrieve per turn."""
+    from bibilab.pipeline.rewriter import RewriterIntent
+
     list_id = (await client.post("/lists", json={"name": "T"})).json()["id"]
-    iteration_count = 0
+
+    def fake_rewriter(*, current, prior, cfg, **kw):
+        return RewriterIntent(retrieve=True, query="test query", mode="narrow"), {
+            "retrieve": True,
+            "mode": "narrow",
+            "fallback": False,
+            "latency_ms": 0,
+        }
 
     async def fake_stream_llm(messages, cfg, tools=None, system=None, llm_max_tokens=None, **kwargs):
-        nonlocal iteration_count
-        iteration_count += 1
-        if iteration_count == 1:
-            yield StreamEvent(
-                type="tool_call",
-                tool_call=ToolCall(id="tc1", name="retrieve", arguments={"query": "A", "expected_hits": "few"}),
-            )
-            yield StreamEvent(
-                type="tool_call",
-                tool_call=ToolCall(id="tc2", name="retrieve", arguments={"query": "B", "expected_hits": "one"}),
-            )
-            yield StreamEvent(type="done")
-        else:
-            yield StreamEvent(type="delta", content="ok")
-            yield StreamEvent(type="done")
+        yield StreamEvent(type="delta", content="ok")
+        yield StreamEvent(type="done")
 
-    async def fake_execute_tool(**kwargs):
-        args = kwargs.get("arguments", {})
+    async def fake_execute_retrieve(query, source_ids, cfg, registry=None, source_map=None, **kw):
         return {
-            "query": args.get("query", ""),
-            "expected_hits": args.get("expected_hits"),
+            "query": query,
+            "mode": "narrow",
             "candidates_evaluated": 1,
             "sources_with_hits": 1,
             "sources_total": 5,
             "source_coverage": [],
             "_chunks": "",
             "_turn_indices": [],
+            "_raw_chunks": [],
         }
 
     with (
+        patch("bibilab.routers.chat.run_rewriter", fake_rewriter),
         patch("bibilab.routers.chat.stream_llm", fake_stream_llm),
-        patch("bibilab.routers.chat.execute_tool", fake_execute_tool),
+        patch("bibilab.routers.chat.execute_retrieve", fake_execute_retrieve),
     ):
         resp = await client.post(f"/lists/{list_id}/chat", json={"message": "q"})
     assert resp.status_code == 200
@@ -1014,40 +921,33 @@ async def test_rag_metadata_persists_calls_list(client):
     assert assistant_msgs, "no assistant message persisted"
     rag = assistant_msgs[-1]["metadata"]["rag"]
     assert "calls" in rag
-    assert len(rag["calls"]) == 2
-    queries = sorted(c["query"] for c in rag["calls"])
-    assert queries == ["A", "B"]
-    expected_hits_sorted = sorted(c["expected_hits"] for c in rag["calls"])
-    assert expected_hits_sorted == ["few", "one"]
+    assert len(rag["calls"]) == 1
+    assert rag["calls"][0]["query"] == "test query"
+    assert rag["calls"][0]["mode"] == "narrow"
 
 
-# AC1+AC2: expected_hits and context[] in persisted metadata
+# AC1+AC2: mode and context[] in persisted metadata
 @pytest.mark.asyncio
-async def test_rag_metadata_persists_expected_hits_and_context(client, monkeypatch):
-    """metadata.rag.calls[i] must have expected_hits and non-empty context[]."""
+async def test_rag_metadata_persists_mode_and_context(client, monkeypatch):
+    """metadata.rag.calls[i] must have mode and non-empty context[]."""
     from bibilab.pipeline import chat_tools
+    from bibilab.pipeline.rewriter import RewriterIntent
 
-    iteration_count = 0
+    def fake_rewriter(*, current, prior, cfg, **kw):
+        return RewriterIntent(retrieve=True, query="test", mode="narrow"), {
+            "retrieve": True,
+            "mode": "narrow",
+            "fallback": False,
+            "latency_ms": 0,
+        }
 
     async def fake_stream_llm(messages, cfg, tools=None, system=None, llm_max_tokens=None, **kwargs):
-        nonlocal iteration_count
-        iteration_count += 1
-        if iteration_count == 1:
-            yield StreamEvent(
-                type="tool_call",
-                tool_call=ToolCall(id="tc1", name="retrieve", arguments={"query": "test", "expected_hits": "few"}),
-            )
-            yield StreamEvent(type="done")
-        else:
-            yield StreamEvent(type="delta", content="Answer [1]")
-            yield StreamEvent(type="done")
+        yield StreamEvent(type="delta", content="Answer [1]")
+        yield StreamEvent(type="done")
 
-    async def fake_execute_tool(tool_name, arguments, **kwargs):
-        # Simulate execute_retrieve populating the citation registry via execute_tool.
-        # The registry is passed via kwargs["registry"] from stream_with_tools.
-        reg = kwargs.get("registry")
-        if reg is not None:
-            # Simulate chunk registration with the required fields.
+    async def fake_execute_retrieve(query, source_ids, cfg, registry=None, source_map=None, **kw):
+        # Populate the citation registry as execute_retrieve would.
+        if registry is not None:
             entry = chat_tools.CitationRegistryEntry(
                 index=1,
                 source_id="s1",
@@ -1058,21 +958,25 @@ async def test_rag_metadata_persists_expected_hits_and_context(client, monkeypat
             entry.rerank_score = 0.95
             entry.preview = "test chunk content"
             entry.chunk_ids.add("v1_120_145")
-            reg["s1"] = entry
+            registry["s1"] = entry
         return {
-            "query": arguments.get("query", ""),
-            "expected_hits": arguments.get("expected_hits"),
+            "query": query,
+            "mode": "narrow",
             "candidates_evaluated": 2,
             "sources_with_hits": 1,
             "sources_total": 1,
             "source_coverage": [
                 {"source_id": "s1", "video_id": "v1", "title": "Video s1"},
             ],
+            "_raw_chunks": [],
+            "_chunks": "",
+            "_turn_indices": [1],
         }
 
     with (
+        patch("bibilab.routers.chat.run_rewriter", fake_rewriter),
         patch("bibilab.routers.chat.stream_llm", fake_stream_llm),
-        patch("bibilab.routers.chat.execute_tool", fake_execute_tool),
+        patch("bibilab.routers.chat.execute_retrieve", fake_execute_retrieve),
     ):
         list_id = (await client.post("/lists", json={"name": "CtxTest"})).json()["id"]
         resp = await client.post(f"/lists/{list_id}/chat", json={"message": "q"})
@@ -1086,8 +990,8 @@ async def test_rag_metadata_persists_expected_hits_and_context(client, monkeypat
     call = rag["calls"][0]
 
     # AC1
-    assert "expected_hits" in call, "expected_hits must be present"
-    assert call["expected_hits"] == "few", f"expected 'few', got {call['expected_hits']}"
+    assert "mode" in call, "mode must be present"
+    assert call["mode"] == "narrow", f"expected 'narrow', got {call['mode']}"
 
     # AC2: context is non-empty array with required fields
     assert "context" in call, "context field must be present"
@@ -1178,6 +1082,7 @@ async def test_run_chat_turn_replays_tool_blocks_on_turn_2(monkeypatch):
     """Turn 2 must include the turn-1 retrieve's tool_use + tool_result blocks in the LLM messages."""
     from bibilab.config import AIConfig, BackendConfig, BibilabConfig
     from bibilab.pipeline._shared import StreamEvent
+    from bibilab.pipeline.rewriter import RewriterIntent
     from bibilab.routers import chat as chat_module
 
     captured_messages: list[list[dict]] = []
@@ -1188,6 +1093,11 @@ async def test_run_chat_turn_replays_tool_blocks_on_turn_2(monkeypatch):
         yield StreamEvent(type="done")
 
     monkeypatch.setattr(chat_module, "stream_llm", fake_stream_llm)
+
+    def fake_rewriter(*, current, prior, cfg, **kw):
+        return RewriterIntent(retrieve=False), {"retrieve": False, "fallback": False, "latency_ms": 0}
+
+    monkeypatch.setattr(chat_module, "run_rewriter", fake_rewriter)
 
     async def noop(*a, **kw):
         return None
@@ -1210,7 +1120,7 @@ async def test_run_chat_turn_replays_tool_blocks_on_turn_2(monkeypatch):
                 {
                     "tool_use_id": "toolu_a",
                     "name": "retrieve",
-                    "arguments": {"query": "x", "expected_hits": "few"},
+                    "arguments": {"query": "x", "mode": "narrow"},
                     "result": {"chunks": [{"content": "verbatim"}], "summary": {"sources_total": 1}},
                 }
             ],
@@ -1238,15 +1148,11 @@ async def test_run_chat_turn_replays_tool_blocks_on_turn_2(monkeypatch):
 
     assert captured_messages, "stream_llm not called"
     sent = captured_messages[0]
-    # Expect: original user → assistant{tool_use+text} → user{tool_result} → new user
+    # Prior tool_blocks are stripped from history before expansion (chat.py:601).
+    # With retrieve=False no synthetic blocks are injected, so the answer LLM
+    # sees: history user → history assistant (text only) → current user message.
     roles = [m["role"] for m in sent]
-    assert roles == ["user", "assistant", "user", "user"]
-    # Verify the assistant message has the tool_use block (anthropic shape)
-    assert sent[1]["content"][0]["type"] == "tool_use"
-    assert sent[1]["content"][0]["id"] == "toolu_a"
-    # Verify the synthetic user message carries the tool_result
-    assert sent[2]["content"][0]["type"] == "tool_result"
-    assert sent[2]["content"][0]["tool_use_id"] == "toolu_a"
+    assert roles == ["user", "assistant", "user"], f"got {roles}"
 
 
 @pytest.mark.asyncio
@@ -1352,7 +1258,7 @@ async def test_run_chat_turn_reseeds_citation_registry_from_history_tool_blocks(
                 {
                     "tool_use_id": "toolu_a",
                     "name": "retrieve",
-                    "arguments": {"query": "x", "expected_hits": "few"},
+                    "arguments": {"query": "x", "mode": "narrow"},
                     "result": {
                         "chunks": [
                             {
@@ -1410,31 +1316,26 @@ async def test_run_chat_turn_reseeds_citation_registry_from_history_tool_blocks(
 @pytest.mark.asyncio
 async def test_rag_call_carries_facet_scope(client):
     """#309: facet_scope from execute_retrieve must survive the router copy into metadata.rag."""
+    from bibilab.pipeline.rewriter import RewriterIntent
+
     list_id = (await client.post("/lists", json={"name": "FacetTel"})).json()["id"]
-    iteration_count = 0
+
+    def fake_rewriter(*, current, prior, cfg, **kw):
+        return RewriterIntent(retrieve=True, query="第八集", mode="narrow", sequence_number=8), {
+            "retrieve": True,
+            "mode": "narrow",
+            "fallback": False,
+            "latency_ms": 0,
+        }
 
     async def fake_stream_llm(messages, cfg, tools=None, system=None, llm_max_tokens=None, **kwargs):
-        nonlocal iteration_count
-        iteration_count += 1
-        if iteration_count == 1:
-            yield StreamEvent(
-                type="tool_call",
-                tool_call=ToolCall(
-                    id="tc1",
-                    name="retrieve",
-                    arguments={"query": "第八集", "expected_hits": "few", "sequence_number": 8},
-                ),
-            )
-            yield StreamEvent(type="done")
-        else:
-            yield StreamEvent(type="delta", content="ok")
-            yield StreamEvent(type="done")
+        yield StreamEvent(type="delta", content="ok")
+        yield StreamEvent(type="done")
 
-    async def fake_execute_tool(**kwargs):
-        args = kwargs.get("arguments", {})
+    async def fake_execute_retrieve(query, source_ids, cfg, registry=None, source_map=None, **kw):
         return {
-            "query": args.get("query", ""),
-            "expected_hits": args.get("expected_hits"),
+            "query": query,
+            "mode": "narrow",
             "candidates_evaluated": 1,
             "sources_with_hits": 1,
             "sources_total": 5,
@@ -1448,11 +1349,13 @@ async def test_rag_call_carries_facet_scope(client):
             },
             "_chunks": "",
             "_turn_indices": [],
+            "_raw_chunks": [],
         }
 
     with (
+        patch("bibilab.routers.chat.run_rewriter", fake_rewriter),
         patch("bibilab.routers.chat.stream_llm", fake_stream_llm),
-        patch("bibilab.routers.chat.execute_tool", fake_execute_tool),
+        patch("bibilab.routers.chat.execute_retrieve", fake_execute_retrieve),
     ):
         resp = await client.post(f"/lists/{list_id}/chat", json={"message": "q"})
     assert resp.status_code == 200

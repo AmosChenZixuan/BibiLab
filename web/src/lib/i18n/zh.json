@@ -292,9 +292,8 @@
         "none": "全部 %{total} 个来源"
       },
       "mode": {
-        "one": "一个",
-        "few": "少数",
-        "many": "多个"
+        "narrow": "精确",
+        "survey": "宽泛"
       },
       "modeUnknown": "—",
       "ariaToggle": "切换检索详情",

@@ -6,48 +6,6 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 
-class TestRetrieveToolSchema:
-    def test_retrieve_tool_no_search_mode(self):
-        from bibilab.pipeline.chat_tools import RETRIEVE_TOOL
-
-        props = RETRIEVE_TOOL.parameters["properties"]
-        assert "search_mode" not in props
-
-    def test_retrieve_tool_no_source_filter(self):
-        from bibilab.pipeline.chat_tools import RETRIEVE_TOOL
-
-        props = RETRIEVE_TOOL.parameters["properties"]
-        assert "source_filter" not in props
-
-    def test_retrieve_tool_has_no_index_scope_params(self):
-        from bibilab.pipeline.chat_tools import RETRIEVE_TOOL
-
-        props = RETRIEVE_TOOL.parameters["properties"]
-        assert "source_ids" not in props
-        assert "exclude_source_ids" not in props
-
-    def test_retrieve_tool_has_expected_hits(self):
-        from bibilab.pipeline.chat_tools import RETRIEVE_TOOL
-
-        props = RETRIEVE_TOOL.parameters["properties"]
-        assert "expected_hits" in props
-        assert props["expected_hits"]["enum"] == ["one", "few", "many"]
-
-    def test_retrieve_tool_required_is_query_only(self):
-        from bibilab.pipeline.chat_tools import RETRIEVE_TOOL
-
-        assert RETRIEVE_TOOL.parameters["required"] == ["query"]
-
-    def test_retrieve_tool_description_has_no_index_workflow(self):
-        from bibilab.pipeline.chat_tools import RETRIEVE_TOOL
-
-        desc = RETRIEVE_TOOL.description
-        assert "exclude_source_ids" not in desc
-        assert "source numbers" not in desc
-        assert "Sources list" not in desc
-        assert "sequence_number" in desc
-
-
 class TestGenerateReportToolDefinition:
     def test_generate_report_tool_schema(self):
         from bibilab.pipeline.chat_tools import GENERATE_REPORT_TOOL
@@ -369,10 +327,10 @@ async def test_execute_retrieve_returns_raw_chunks_for_replay(monkeypatch):
     assert raw[0]["chunk_id"] == "v1_120_145"
 
 
-# AC1: expected_hits is present in execute_retrieve result
+# AC1: mode is present in execute_retrieve result
 @pytest.mark.asyncio
-async def test_execute_retrieve_includes_expected_hits_in_result(monkeypatch):
-    """execute_retrieve result dict must include expected_hits key."""
+async def test_execute_retrieve_includes_mode_in_result(monkeypatch):
+    """execute_retrieve result dict must include mode key."""
     from bibilab.config import AIConfig, BibilabConfig
     from bibilab.pipeline import chat_tools
     from bibilab.pipeline.embed import RetrievalResult, RetrievedChunk, SourceHit
@@ -405,17 +363,17 @@ async def test_execute_retrieve_includes_expected_hits_in_result(monkeypatch):
         cfg=cfg,
         registry={},
         source_map={"v1": "s1"},
-        expected_hits="few",
+        mode="few",
     )
 
-    assert "expected_hits" in result
-    assert result["expected_hits"] == "few"
+    assert "mode" in result
+    assert result["mode"] == "few"
 
 
-# AC1: default expected_hits is "few"
+# AC1: default mode is "narrow"
 @pytest.mark.asyncio
-async def test_execute_retrieve_default_expected_hits_is_few(monkeypatch):
-    """When expected_hits is not provided, defaults to 'few'."""
+async def test_execute_retrieve_default_mode_is_narrow(monkeypatch):
+    """When mode is not provided, defaults to 'narrow'."""
     from bibilab.config import AIConfig, BibilabConfig
     from bibilab.pipeline import chat_tools
     from bibilab.pipeline.embed import RetrievalResult
@@ -438,7 +396,7 @@ async def test_execute_retrieve_default_expected_hits_is_few(monkeypatch):
         cfg=cfg,
     )
 
-    assert result["expected_hits"] == "few"
+    assert result["mode"] == "narrow"
 
 
 # AC2: CitationRegistryEntry gets timestamp_start, timestamp_end, rerank_score, preview
@@ -584,44 +542,26 @@ class TestBuildGroundingPrompt:
         # And the old hard-coded English string must be gone.
         assert "The provided sources do not cover this topic" not in prompt
 
-    def test_build_grounding_prompt_forces_retrieve_on_topic_shift(self):
-        """Prompt must not offer a pre-retrieve refusal path. Topic shift =
-        call retrieve again; refusal can only come from a completed retrieve.
+    def test_build_grounding_prompt_no_retrieve_tool(self):
+        """Answer LLM no longer has retrieve — prompt must frame excerpts as
+        pre-retrieved, not ask for new retrieval. Refusal only from completed
+        retrieve result (no pre-retrieve shortcut).
         """
         from bibilab.routers.chat import build_grounding_prompt
 
         prompt = build_grounding_prompt(response_language="zh")
-        # Pre-retrieve refusal shortcut must be absent.
+        # No retrieve instruction — answer LLM doesn't have the tool.
+        assert "call `retrieve`" not in prompt
+        assert "do not call `retrieve`" not in prompt
+        # Pre-retrieve refusal shortcut absent.
         assert "say so in zh" not in prompt
         assert "say so in en" not in build_grounding_prompt(response_language="en")
-        # Old "do not call retrieve again" reuse shortcut must be absent.
-        assert "do not call `retrieve` again" not in prompt
-        # Topic-shift directive present.
-        assert "call `retrieve` again" in prompt
         # Outside-knowledge / analogy ban present.
         assert "outside knowledge" in prompt
         assert "real-world analogies" in prompt
-
-    # (fresh retrieve directive removed — now handled by build_grounding_prompt reuse
-    #  instruction + retrieve tool description)
-    # (verbatim proper noun rule removed — replaced by ## Grounding "Copy proper nouns ... verbatim")
-    # (no real-world parallels rule removed — covered by fiction-authoritative sentence in ## Grounding)
-
-
-class TestRetrieveToolDescription:
-    def test_retrieve_tool_description_drops_rephrasing_exclusion(self):
-        from bibilab.pipeline.chat_tools import RETRIEVE_TOOL
-
-        desc = RETRIEVE_TOOL.description
-        # The "rephrasing" exclusion conflated user rephrasing with model rephrasing
-        # and caused short content questions to skip retrieval.
-        assert "rephrasing" not in desc
-
-    def test_retrieve_tool_description_biases_toward_retrieve_for_short_questions(self):
-        from bibilab.pipeline.chat_tools import RETRIEVE_TOOL
-
-        desc = RETRIEVE_TOOL.description
-        assert "expected_hits" in desc
+        # Mentions pre-retrieved excerpts.
+        assert "have been retrieved" in prompt
+        assert "tool results" in prompt
 
 
 class TestBuildToolBlockEntry:
@@ -630,7 +570,7 @@ class TestBuildToolBlockEntry:
 
         retrieve_result = {
             "query": "test",
-            "expected_hits": "few",
+            "mode": "narrow",
             "candidates_evaluated": 5,
             "sources_with_hits": 2,
             "sources_total": 3,
@@ -655,14 +595,14 @@ class TestBuildToolBlockEntry:
         entry = build_tool_block_entry(
             tool_use_id="toolu_1",
             name="retrieve",
-            arguments={"query": "test", "expected_hits": "few"},
+            arguments={"query": "test", "mode": "narrow"},
             result=retrieve_result,
             raw_chunks=raw_chunks,
         )
 
         assert entry["tool_use_id"] == "toolu_1"
         assert entry["name"] == "retrieve"
-        assert entry["arguments"] == {"query": "test", "expected_hits": "few"}
+        assert entry["arguments"] == {"query": "test", "mode": "narrow"}
         assert "_chunks" not in entry["result"]
         assert "_turn_indices" not in entry["result"]
         assert entry["result"]["chunks"] == raw_chunks
@@ -1048,21 +988,6 @@ class TestFacetInt:
         assert "unusable, dropping predicate" in caplog.text
 
 
-class TestRetrieveToolFacetSchema:
-    """#309: schema exposes optional sequence_number/season_number; no series_name."""
-
-    def test_facet_params_present_and_typed(self):
-        from bibilab.pipeline.chat_tools import RETRIEVE_TOOL
-
-        props = RETRIEVE_TOOL.parameters["properties"]
-        assert props["sequence_number"]["type"] == "integer"
-        assert props["season_number"]["type"] == "integer"
-        assert "series_name" not in props
-        # facet params are optional
-        assert "sequence_number" not in RETRIEVE_TOOL.parameters["required"]
-        assert "season_number" not in RETRIEVE_TOOL.parameters["required"]
-
-
 class TestExecuteRetrieveFacetScoping:
     """#309: deterministic facet scoping with fail-open."""
 
@@ -1344,61 +1269,6 @@ class TestExecuteRetrieveZeroChunkNote:
         )
 
         assert _NO_COVERAGE_NOTE not in result["_chunks"]
-
-
-class TestExecuteToolFacetArgs:
-    """#309: execute_tool parses + coerces facet args from raw LLM arguments."""
-
-    @staticmethod
-    def _cfg():
-        from bibilab.config import AIConfig, BibilabConfig
-
-        return BibilabConfig(ai=AIConfig(protocol="openai", model="x", api_key="k"))
-
-    @pytest.mark.asyncio
-    async def test_string_facet_arg_coerced_and_forwarded(self, monkeypatch):
-        from bibilab.pipeline import chat_tools
-
-        seen = {}
-
-        async def fake_execute_retrieve(**kwargs):
-            seen.update(kwargs)
-            return {"facet_scope": {}, "_chunks": "", "_turn_indices": [], "_raw_chunks": []}
-
-        monkeypatch.setattr(chat_tools, "execute_retrieve", fake_execute_retrieve)
-
-        await chat_tools.execute_tool(
-            tool_name="retrieve",
-            arguments={"query": "第八集", "sequence_number": "8"},
-            list_id="l1",
-            source_ids=["a"],
-            ui_lang="zh",
-            cfg=self._cfg(),
-        )
-        assert seen["sequence_number"] == 8  # "8" → 8
-        assert seen["season_number"] is None  # absent → None
-
-    @pytest.mark.asyncio
-    async def test_non_numeric_facet_arg_dropped(self, monkeypatch):
-        from bibilab.pipeline import chat_tools
-
-        seen = {}
-
-        async def fake_execute_retrieve(**kwargs):
-            seen.update(kwargs)
-            return {"facet_scope": {}, "_chunks": "", "_turn_indices": [], "_raw_chunks": []}
-
-        monkeypatch.setattr(chat_tools, "execute_retrieve", fake_execute_retrieve)
-
-        await chat_tools.execute_tool(
-            tool_name="retrieve",
-            arguments={"query": "q", "sequence_number": "eight"},
-            list_id="l1",
-            source_ids=["a"],
-            ui_lang="zh",
-            cfg=self._cfg(),
-        )
-        assert seen["sequence_number"] is None  # "eight" → dropped
 
 
 def test_build_fenced_chunks_groups_and_fences():

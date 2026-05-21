@@ -292,9 +292,8 @@
         "none": "all %{total} sources"
       },
       "mode": {
-        "one": "one",
-        "few": "few",
-        "many": "many"
+        "narrow": "specific",
+        "survey": "broad"
       },
       "modeUnknown": "—",
       "ariaToggle": "Toggle retrieval details",

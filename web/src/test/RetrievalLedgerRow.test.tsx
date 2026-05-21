@@ -23,7 +23,7 @@ function renderRow(props: React.ComponentProps<typeof RetrievalLedgerRow>) {
 
 const BASE_CALL: RetrievalCall = {
   query: "长期情景记忆",
-  expected_hits: "many",
+  mode: "survey",
   candidates_evaluated: 10,
   sources_with_hits: 1,
   sources_total: 16,
@@ -72,7 +72,7 @@ describe("variant=default", () => {
 
     // After expand: metadata is visible
     expect(container.innerHTML).toContain("长期情景记忆");
-    expect(container.innerHTML).toContain("many");
+    expect(container.innerHTML).toContain("broad");
     expect(container.innerHTML).toContain("all 16 sources");
     // chunk list — source_title is "Test Video" (exact case)
     expect(container.innerHTML).toContain("Test Video");
@@ -133,7 +133,7 @@ describe("variant=pending", () => {
   test("pending retrieve row shows spinner + label", () => {
     const { container } = renderRow({
       variant: "pending",
-      pending: { id: "p1", query: "pending query", expected_hits: "few" },
+      pending: { id: "p1", query: "pending query", mode: "narrow" },
     });
     expect(container.innerHTML).toContain("retrieving…");
   });
@@ -149,7 +149,7 @@ describe("variant=pending", () => {
   test("has no toggle button", () => {
     const { container } = renderRow({
       variant: "pending",
-      pending: { id: "p1", query: "test", expected_hits: "one" },
+      pending: { id: "p1", query: "test", mode: "narrow" },
     });
     expect(container.querySelector('button[aria-label="Toggle retrieval details"]')).toBeNull();
   });
@@ -157,18 +157,18 @@ describe("variant=pending", () => {
 
 // ---------- mode rendering ----------
 describe("mode rendering", () => {
-  test('null expected_hits renders "—"', async () => {
-    const { container } = renderRow({ variant: "default", call: { ...BASE_CALL, expected_hits: null } });
+  test('null mode renders "—"', async () => {
+    const { container } = renderRow({ variant: "default", call: { ...BASE_CALL, mode: null } });
     const toggle = container.querySelector('button[aria-label="Toggle retrieval details"]');
     await userEvent.click(toggle!);
     expect(container.innerHTML).toContain("—");
   });
 
-  test('"one" renders "one"', async () => {
-    const { container } = renderRow({ variant: "default", call: { ...BASE_CALL, expected_hits: "one" } });
+  test('"narrow" renders "specific"', async () => {
+    const { container } = renderRow({ variant: "default", call: { ...BASE_CALL, mode: "narrow" } });
     const toggle = container.querySelector('button[aria-label="Toggle retrieval details"]');
     await userEvent.click(toggle!);
-    expect(container.innerHTML).toContain("one");
+    expect(container.innerHTML).toContain("specific");
   });
 });
 

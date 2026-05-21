@@ -92,7 +92,7 @@ def patch_rerank(monkeypatch):
 
 
 def _params(top_k: int = 8, depth: int = 2, expected_hits: str = "few") -> RetrievalParams:
-    return RetrievalParams(top_k=top_k, depth_per_source=depth, expected_hits=expected_hits)
+    return RetrievalParams(top_k=top_k, depth_per_source=depth, mode=expected_hits)
 
 
 # ---------------------------------------------------------------------------

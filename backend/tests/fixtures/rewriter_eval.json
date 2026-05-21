@@ -1,0 +1,72 @@
+[
+  {
+    "id": "harvested-7e424a7e-1",
+    "current": "什么是多元主义",
+    "prior": [],
+    "expect": {"retrieve": true, "mode": "narrow"}
+  },
+  {
+    "id": "harvested-7e424a7e-2",
+    "current": "第五集讲了什么",
+    "prior": [],
+    "expect": {"retrieve": true, "mode": "survey", "sequence_number": 5}
+  },
+  {
+    "id": "harvested-7e424a7e-3-continuation",
+    "current": "继续",
+    "prior": [
+      {"text": "第五集讲了什么", "retrieved": true}
+    ],
+    "expect": {"retrieve": true, "query_inherits_from_prior_index": 0}
+  },
+  {
+    "id": "harvested-0b2f01cc-1-bug4",
+    "current": "女巫的死期是哪一天",
+    "prior": [
+      {"text": "第六集发生了什么", "retrieved": true}
+    ],
+    "expect": {"retrieve": true, "sequence_number": null}
+  },
+  {"id": "short-ack-en", "current": "ok", "prior": [], "expect": {"retrieve": false}},
+  {"id": "short-ack-zh", "current": "嗯", "prior": [], "expect": {"retrieve": false}},
+  {"id": "ack-thanks", "current": "thanks", "prior": [], "expect": {"retrieve": false}},
+  {"id": "ack-wo-dong-le", "current": "我懂了", "prior": [], "expect": {"retrieve": false}},
+  {"id": "pure-digit-year", "current": "2024", "prior": [], "expect": {"retrieve": true}},
+  {"id": "pure-digit-num", "current": "300", "prior": [], "expect": {"retrieve": true}},
+  {
+    "id": "continuation-walkback-past-ack",
+    "current": "继续",
+    "prior": [
+      {"text": "第五集讲了什么", "retrieved": true},
+      {"text": "嗯", "retrieved": false}
+    ],
+    "expect": {"retrieve": true, "query_inherits_from_prior_index": 0}
+  },
+  {
+    "id": "continuation-no-source",
+    "current": "继续",
+    "prior": [
+      {"text": "嗯", "retrieved": false},
+      {"text": "ok", "retrieved": false}
+    ],
+    "expect": {"retrieve": false}
+  },
+  {
+    "id": "survey-summarize",
+    "current": "summarize the whole series",
+    "prior": [],
+    "expect": {"retrieve": true, "mode": "survey"}
+  },
+  {
+    "id": "narrow-definition",
+    "current": "define backpropagation",
+    "prior": [],
+    "expect": {"retrieve": true, "mode": "narrow"}
+  },
+  {
+    "id": "facet-episode-zh",
+    "current": "第八集主要讲什么",
+    "prior": [],
+    "expect": {"retrieve": true, "sequence_number": 8}
+  }
+]

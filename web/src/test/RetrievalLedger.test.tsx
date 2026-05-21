@@ -16,7 +16,7 @@ function renderLedger(props: React.ComponentProps<typeof RetrievalLedger>) {
 
 const DEFAULT_CALL: RetrievalCall = {
   query: "长期情景记忆",
-  expected_hits: "many",
+  mode: "survey",
   candidates_evaluated: 10,
   sources_with_hits: 1,
   sources_total: 16,
@@ -69,7 +69,7 @@ describe("RetrievalLedger", () => {
   });
 
   test("renders pending retrieve rows", () => {
-    const pending: PendingRagCall = { id: "p1", query: "pending query", expected_hits: "few" };
+    const pending: PendingRagCall = { id: "p1", query: "pending query", mode: "narrow" };
     renderLedger({
       calls: [],
       pendingRetrieve: [pending],
@@ -96,7 +96,7 @@ describe("RetrievalLedger", () => {
     // context-absent streaming call as the amber "empty" variant.
     const streamingCall = {
       query: "streaming-query",
-      expected_hits: "few",
+      mode: "narrow",
       candidates_evaluated: 8,
       sources_with_hits: 2,
       sources_total: 16,
@@ -121,7 +121,7 @@ describe("RetrievalLedger", () => {
 
   test("ordering: calls first, then pending retrieve, then pending metadata", () => {
     const call1: RetrievalCall = { ...DEFAULT_CALL, query: "call-query" };
-    const pending1: PendingRagCall = { id: "p1", query: "pending-retrieve", expected_hits: "one" };
+    const pending1: PendingRagCall = { id: "p1", query: "pending-retrieve", mode: "narrow" };
     const pending2: PendingMetadataCall = { id: "pm1", query_type: "longest" };
 
     renderLedger({

@@ -65,7 +65,9 @@ Otherwise true.
 When the current message is a continuation signal ("继续", "然后呢",
 "再讲讲", "go on", "tell me more") with no new content words:
   - Find the most-recent prior user message tagged retrieve=true.
-  - Copy that message's query, mode, and facets verbatim.
+  - Set query to the EXACT text of that prior message, character for
+    character. Do not rewrite, shorten, or summarize it.
+  - Copy that prior message's mode and facets verbatim.
   - Do NOT set retrieve=false — the answer model needs fresh excerpts.
   - If no prior user message in the visible window is tagged retrieve=true,
     emit retrieve=false (nothing to continue from).
@@ -89,6 +91,27 @@ assistant output.
 """
 
 _FENCE_RE = re.compile(r"^```(?:json)?\s*|\s*```$", re.MULTILINE)
+
+_CONTINUATION_RE = re.compile(
+    r"^(继续|然后呢|接着|再讲讲|还有呢|还有吗|go on|tell me more|continue|more)$",
+    re.IGNORECASE,
+)
+
+_ACK_RE = re.compile(
+    r"^(ok|okay|k|thanks|thank you|got it|sure|"
+    r"嗯|哦|好的?|行|知道了|我懂了|明白|了解了?|了解)$",
+    re.IGNORECASE,
+)
+
+_SEQ_NUM_RE = re.compile(r"第?(\d+)\s*(集|话|章)", re.IGNORECASE)
+
+_EP_NUM_RE = re.compile(r"(?:episode|ep)\s*(\d+)", re.IGNORECASE)
+
+_SURVEY_RE = re.compile(
+    r"(讲了什么|主要讲|概述|总结|全部|所有|"
+    r"summarize|summary|overview|what happens|whole|compare)",
+    re.IGNORECASE,
+)
 
 
 def build_rewriter_prompt(*, current: str, prior: list[PriorUserTurn]) -> str:
@@ -126,9 +149,31 @@ def parse_rewriter_response(raw: str) -> RewriterIntent | None:
         return None
 
 
-def fallback_intent(user_message: str) -> RewriterIntent:
+def fallback_intent(user_message: str, prior: list[PriorUserTurn] | None = None) -> RewriterIntent:
     """Construct a safe-default intent when the rewriter LLM fails."""
-    return RewriterIntent(retrieve=True, query=user_message, mode="narrow")
+    text = user_message.strip()
+
+    # Pure acknowledgments → no retrieval
+    if _ACK_RE.match(text):
+        return RewriterIntent(retrieve=False)
+
+    # Continuation signals — inherit from last-retrieved prior turn
+    if _CONTINUATION_RE.match(text) and prior:
+        for turn in reversed(prior):
+            if turn.retrieved:
+                return RewriterIntent(retrieve=True, query=turn.text, mode="narrow")
+        return RewriterIntent(retrieve=False)
+
+    # Extract sequence_number from current message only
+    sequence_number = None
+    m = _SEQ_NUM_RE.search(user_message)
+    if not m:
+        m = _EP_NUM_RE.search(user_message)
+    if m:
+        sequence_number = int(m.group(1))
+
+    mode = "survey" if _SURVEY_RE.search(user_message) else "narrow"
+    return RewriterIntent(retrieve=True, query=user_message, mode=mode, sequence_number=sequence_number)
 
 
 def run_rewriter(
@@ -137,7 +182,7 @@ def run_rewriter(
     prior: list[PriorUserTurn],
     cfg: AIConfig,
     llm_timeout: int = 30,
-    llm_max_tokens: int = 256,
+    llm_max_tokens: int = 1024,
 ) -> tuple[RewriterIntent, dict]:
     """Run the rewriter LLM stage.
 
@@ -151,7 +196,7 @@ def run_rewriter(
         raw = _call_llm(prompt, cfg, llm_timeout=llm_timeout, llm_max_tokens=llm_max_tokens)
         intent = parse_rewriter_response(raw)
         if intent is None:
-            intent = fallback_intent(current)
+            intent = fallback_intent(current, prior)
             fallback = True
     except Exception:  # noqa: BLE001 - rewriter must always return; downstream owns retry/UX
         logger.exception("rewriter: LLM call failed; falling back")
