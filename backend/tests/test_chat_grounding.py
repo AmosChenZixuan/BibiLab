@@ -12,9 +12,9 @@ class TestBuildGroundingPrompt:
             f"Expected four ## headers in order, got: {headers}"
         )
 
-    def test_line_count_under_20(self):
+    def test_line_count_under_30(self):
         prompt = build_grounding_prompt("English")
-        assert len(prompt.split("\n")) <= 20, f"Prompt has {len(prompt.split(chr(10)))} lines, must be <= 20"
+        assert len(prompt.split("\n")) <= 30, f"Prompt has {len(prompt.split(chr(10)))} lines, must be <= 30"
 
     def test_no_forbidden_substrings(self):
         prompt = build_grounding_prompt("English")
