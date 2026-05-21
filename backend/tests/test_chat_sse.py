@@ -173,7 +173,7 @@ async def test_retrieve_tool_result_has_coverage(client):
     list_id = (await client.post("/lists", json={"name": "Test"})).json()["id"]
 
     async def fake_stream(messages, cfg, tools=None, execute_tool_fn=None, system=None, llm_max_tokens=2048, **kwargs):
-        result = await execute_tool_fn("retrieve", {"query": "test", "expected_hits": "few"})
+        result = await execute_tool_fn("retrieve", {"query": "test"})
         yield StreamEvent(
             type="tool_result",
             content=json.dumps({"name": "retrieve", "result": _client_tool_result(result)}),
@@ -241,10 +241,11 @@ async def test_smoke_scenario_1_chitchat_no_tool_calls(client):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "expected_hits,query,user_message,delta_text,result_overrides",
+    "tool_name,mode,query,user_message,delta_text,result_overrides",
     [
         (
-            "one",
+            "retrieve",
+            "narrow",
             "test query",
             "What does the video say about transformers?",
             "Based on the transcript, the answer is...",
@@ -257,7 +258,8 @@ async def test_smoke_scenario_1_chitchat_no_tool_calls(client):
             },
         ),
         (
-            "few",
+            "survey",
+            "survey",
             "核心观点",
             "汇总所有视频的核心观点",
             "汇总如下...",
@@ -275,19 +277,19 @@ async def test_smoke_scenario_1_chitchat_no_tool_calls(client):
         ),
     ],
 )
-async def test_smoke_scenario_2_retrieve(client, expected_hits, query, user_message, delta_text, result_overrides):
-    """LLM calls retrieve tool with correct expected_hits before answering."""
-    list_id = await _create_list(client, f"Smoke retrieve {expected_hits}")
+async def test_smoke_scenario_2_retrieve(client, tool_name, mode, query, user_message, delta_text, result_overrides):
+    """LLM calls retrieve tool with correct tool_name/mode before answering."""
+    list_id = await _create_list(client, f"Smoke retrieve {tool_name}")
 
-    retrieve_result = {"expected_hits": expected_hits, **result_overrides}
+    retrieve_result = {"tool_name": tool_name, "mode": mode, **result_overrides}
 
     async def fake_stream(messages, cfg, tools=None, execute_tool_fn=None, system=None, llm_max_tokens=2048, **kwargs):
         yield StreamEvent(
             type="tool_call",
-            tool_call=ToolCall(id="c1", name="retrieve", arguments={"query": query, "expected_hits": expected_hits}),
+            tool_call=ToolCall(id="c1", name=tool_name, arguments={"query": query}),
         )
-        result = await execute_tool_fn("retrieve", {"query": query, "expected_hits": expected_hits})
-        tool_result_data = {"name": "retrieve", "result": _client_tool_result(result)}
+        result = await execute_tool_fn(tool_name, {"query": query})
+        tool_result_data = {"name": tool_name, "result": _client_tool_result(result)}
         yield StreamEvent(type="tool_result", content=json.dumps(tool_result_data))
         yield StreamEvent(type=SSE_EVENT_DELTA, content=delta_text)
         yield StreamEvent(type=SSE_EVENT_DONE)
@@ -306,8 +308,8 @@ async def test_smoke_scenario_2_retrieve(client, expected_hits, query, user_mess
     assert len(tool_results) == 1, "one tool_result from stream (metadata saved to DB, not SSE)"
 
     stream_result = tool_results[0]
-    assert stream_result["name"] == "retrieve"
-    assert stream_result["result"]["expected_hits"] == expected_hits
+    assert stream_result["name"] == tool_name
+    assert stream_result["result"]["mode"] == mode
     assert stream_result["result"]["candidates_evaluated"] == result_overrides["candidates_evaluated"]
     assert "_chunks" not in stream_result["result"], "_chunks must be stripped before sending to client"
 
@@ -317,7 +319,8 @@ async def test_smoke_scenario_2_retrieve(client, expected_hits, query, user_mess
     assistant_msgs = await _get_assistant_msgs(client, list_id)
     assert len(assistant_msgs) == 1
     assert assistant_msgs[0]["metadata"] is not None
-    assert assistant_msgs[0]["metadata"]["rag"]["calls"][0]["expected_hits"] == expected_hits
+    assert assistant_msgs[0]["metadata"]["rag"]["calls"][0]["tool_name"] == tool_name
+    assert assistant_msgs[0]["metadata"]["rag"]["calls"][0]["mode"] == mode
 
 
 @pytest.mark.asyncio
@@ -368,7 +371,9 @@ async def test_query_list_metadata_tool_registered_for_chat(client):
     from bibilab.pipeline.chat_tools import (
         GENERATE_REPORT_TOOL,
         QUERY_LIST_METADATA_TOOL,
+        RETRIEVE_SCOPED_TOOL,
         RETRIEVE_TOOL,
+        SURVEY_TOOL,
     )
     from bibilab.routers.chat import SSE_EVENT_DELTA, SSE_EVENT_DONE
 
@@ -389,7 +394,13 @@ async def test_query_list_metadata_tool_registered_for_chat(client):
     assert resp.status_code == 200
     assert captured_tools is not None, "stream_llm was never called"
     tool_names = {t.name for t in captured_tools}
-    assert tool_names == {RETRIEVE_TOOL.name, QUERY_LIST_METADATA_TOOL.name, GENERATE_REPORT_TOOL.name}
+    assert tool_names == {
+        RETRIEVE_TOOL.name,
+        SURVEY_TOOL.name,
+        RETRIEVE_SCOPED_TOOL.name,
+        QUERY_LIST_METADATA_TOOL.name,
+        GENERATE_REPORT_TOOL.name,
+    }
 
 
 def test_grounding_prompt_routes_counts_to_metadata_tool():
@@ -541,8 +552,8 @@ async def test_chat_sse_multi_retrieve_no_crash(client):
     list_id = (await client.post("/lists", json={"name": "T"})).json()["id"]
 
     async def fake_stream_with_tools(*args, **kwargs):
-        tc1 = ToolCall(id="tc1", name="retrieve", arguments={"query": "q1", "expected_hits": "few"})
-        tc2 = ToolCall(id="tc2", name="retrieve", arguments={"query": "q2", "expected_hits": "few"})
+        tc1 = ToolCall(id="tc1", name="retrieve", arguments={"query": "q1"})
+        tc2 = ToolCall(id="tc2", name="retrieve", arguments={"query": "q2"})
         yield StreamEvent(type="tool_call", tool_call=tc1)
         yield StreamEvent(type="done")
         yield StreamEvent(type="tool_call", tool_call=tc2)
@@ -580,7 +591,7 @@ async def test_retrieve_filtered_after_first_use(client):
         if iteration_count == 1:
             yield StreamEvent(
                 type="tool_call",
-                tool_call=ToolCall(id="tc1", name="retrieve", arguments={"query": "x", "expected_hits": "few"}),
+                tool_call=ToolCall(id="tc1", name="retrieve", arguments={"query": "x"}),
             )
             yield StreamEvent(type="done")
         else:
@@ -590,7 +601,8 @@ async def test_retrieve_filtered_after_first_use(client):
     async def fake_execute_tool(**kwargs):
         return {
             "query": kwargs.get("arguments", {}).get("query", ""),
-            "expected_hits": "few",
+            "tool_name": "retrieve",
+            "mode": "narrow",
             "candidates_evaluated": 0,
             "sources_with_hits": 0,
             "sources_total": 1,
@@ -612,6 +624,96 @@ async def test_retrieve_filtered_after_first_use(client):
     # Other tools remain available
     assert QUERY_LIST_METADATA_TOOL.name in captured_tools_per_iteration[1]
     assert GENERATE_REPORT_TOOL.name in captured_tools_per_iteration[1]
+
+
+@pytest.mark.asyncio
+async def test_three_tool_sequential_guard_survey_blocks_all(client):
+    """After survey runs in iter 1, iter 2 excludes retrieve / survey / retrieve_scoped."""
+    from bibilab.pipeline.chat_tools import (
+        GENERATE_REPORT_TOOL,
+        QUERY_LIST_METADATA_TOOL,
+        RETRIEVE_SCOPED_TOOL,
+        RETRIEVE_TOOL,
+        SURVEY_TOOL,
+    )
+
+    list_id = (await client.post("/lists", json={"name": "T"})).json()["id"]
+
+    captured_tools_per_iteration: list[list[str]] = []
+    iteration_count = 0
+
+    async def fake_stream_llm(messages, cfg, tools=None, system=None, llm_max_tokens=None, **kwargs):
+        nonlocal iteration_count
+        iteration_count += 1
+        captured_tools_per_iteration.append([t.name for t in (tools or [])])
+        if iteration_count == 1:
+            yield StreamEvent(
+                type="tool_call",
+                tool_call=ToolCall(id="tc1", name="survey", arguments={"query": "x"}),
+            )
+            yield StreamEvent(type="done")
+        else:
+            yield StreamEvent(type="delta", content="answer")
+            yield StreamEvent(type="done")
+
+    async def fake_execute_tool(**kwargs):
+        return {
+            "query": kwargs.get("arguments", {}).get("query", ""),
+            "tool_name": "survey",
+            "mode": "survey",
+            "candidates_evaluated": 0,
+            "sources_with_hits": 0,
+            "sources_total": 1,
+            "source_coverage": [],
+            "_chunks": "",
+            "_turn_indices": [],
+        }
+
+    with (
+        patch("bibilab.routers.chat.stream_llm", fake_stream_llm),
+        patch("bibilab.routers.chat.execute_tool", fake_execute_tool),
+    ):
+        resp = await client.post(f"/lists/{list_id}/chat", json={"message": "q"})
+
+    assert resp.status_code == 200
+    assert iteration_count == 2
+    assert SURVEY_TOOL.name in captured_tools_per_iteration[0]
+    assert RETRIEVE_TOOL.name not in captured_tools_per_iteration[1]
+    assert SURVEY_TOOL.name not in captured_tools_per_iteration[1]
+    assert RETRIEVE_SCOPED_TOOL.name not in captured_tools_per_iteration[1]
+    # Non-retrieve tools remain available
+    assert QUERY_LIST_METADATA_TOOL.name in captured_tools_per_iteration[1]
+    assert GENERATE_REPORT_TOOL.name in captured_tools_per_iteration[1]
+
+
+@pytest.mark.asyncio
+async def test_pure_ack_no_retrieve_called(client):
+    """
+    User sends '嗯' — LLM yields text directly, no tool_call. trivial_ack_note
+    is deleted; this verifies behavior relies on LLM tool_choice.
+    """
+    list_id = (await client.post("/lists", json={"name": "T"})).json()["id"]
+
+    tool_calls_seen: list[str] = []
+
+    async def fake_stream_llm(messages, cfg, tools=None, system=None, llm_max_tokens=None, **kwargs):
+        # LLM looks at "嗯", chooses to reply with text only.
+        yield StreamEvent(type="delta", content="好的，您还有别的问题吗？")
+        yield StreamEvent(type="done")
+
+    async def fake_execute_tool(**kwargs):
+        tool_calls_seen.append(kwargs.get("tool_name", "?"))
+        return {}
+
+    with (
+        patch("bibilab.routers.chat.stream_llm", fake_stream_llm),
+        patch("bibilab.routers.chat.execute_tool", fake_execute_tool),
+    ):
+        resp = await client.post(f"/lists/{list_id}/chat", json={"message": "嗯"})
+
+    assert resp.status_code == 200
+    assert b"tool_call_start" not in resp.content
+    assert tool_calls_seen == [], f"expected no tool calls, got {tool_calls_seen}"
 
 
 @pytest.mark.asyncio
@@ -640,7 +742,7 @@ async def test_metadata_then_retrieve_allowed(client):
         elif iteration_count == 2:
             yield StreamEvent(
                 type="tool_call",
-                tool_call=ToolCall(id="tc2", name="retrieve", arguments={"query": "x", "expected_hits": "few"}),
+                tool_call=ToolCall(id="tc2", name="retrieve", arguments={"query": "x"}),
             )
             yield StreamEvent(type="done")
         else:
@@ -654,7 +756,8 @@ async def test_metadata_then_retrieve_allowed(client):
             return {"count": 8}
         return {
             "query": args.get("query", ""),
-            "expected_hits": "few",
+            "tool_name": "retrieve",
+            "mode": "narrow",
             "candidates_evaluated": 0,
             "sources_with_hits": 0,
             "sources_total": 1,
@@ -692,7 +795,7 @@ async def test_deltas_streamed_immediately_during_tool_iteration(client):
             yield StreamEvent(type="delta", content="Let me look that up again.")
             yield StreamEvent(
                 type="tool_call",
-                tool_call=ToolCall(id="tc1", name="retrieve", arguments={"query": "x", "expected_hits": "few"}),
+                tool_call=ToolCall(id="tc1", name="retrieve", arguments={"query": "x"}),
             )
             yield StreamEvent(type="done")
         else:
@@ -703,7 +806,8 @@ async def test_deltas_streamed_immediately_during_tool_iteration(client):
         args = kwargs.get("arguments", {})
         return {
             "query": args.get("query", ""),
-            "expected_hits": "few",
+            "tool_name": "retrieve",
+            "mode": "narrow",
             "candidates_evaluated": 0,
             "sources_with_hits": 0,
             "sources_total": 1,
@@ -785,7 +889,7 @@ async def test_run_chat_turn_persists_tool_blocks(monkeypatch, tmp_path):
     from bibilab.routers import chat as chat_module
 
     call_count = 0
-    retrieve_tc = ToolCall(id="c1", name="retrieve", arguments={"query": "x", "expected_hits": "few"})
+    retrieve_tc = ToolCall(id="c1", name="retrieve", arguments={"query": "x"})
 
     async def fake_stream_llm(messages, cfg, tools=None, system=None, llm_max_tokens=2048):
         nonlocal call_count
@@ -799,7 +903,8 @@ async def test_run_chat_turn_persists_tool_blocks(monkeypatch, tmp_path):
     async def fake_execute(tool_name, arguments, **kwargs):
         return {
             "query": "x",
-            "expected_hits": "few",
+            "tool_name": "retrieve",
+            "mode": "narrow",
             "candidates_evaluated": 1,
             "sources_with_hits": 1,
             "sources_total": 1,
@@ -928,7 +1033,7 @@ async def test_tool_call_start_emitted_before_tool_result(client):
         if iteration_count == 1:
             yield StreamEvent(
                 type="tool_call",
-                tool_call=ToolCall(id="tc1", name="retrieve", arguments={"query": "noodles", "expected_hits": "few"}),
+                tool_call=ToolCall(id="tc1", name="retrieve", arguments={"query": "noodles"}),
             )
             yield StreamEvent(type="done")
         else:
@@ -939,7 +1044,8 @@ async def test_tool_call_start_emitted_before_tool_result(client):
         args = kwargs.get("arguments", {})
         return {
             "query": args.get("query", ""),
-            "expected_hits": args.get("expected_hits"),
+            "tool_name": "retrieve",
+            "mode": "narrow",
             "candidates_evaluated": 5,
             "sources_with_hits": 2,
             "sources_total": 3,
@@ -963,7 +1069,7 @@ async def test_tool_call_start_emitted_before_tool_result(client):
     assert start_idx < result_idx, "tool_call_start must precede tool_result"
     assert '"name": "retrieve"' in body
     assert '"query": "noodles"' in body
-    assert '"expected_hits": "few"' in body
+    assert '"tool_name": "retrieve", "mode": "narrow"' in body
 
 
 @pytest.mark.asyncio
@@ -978,11 +1084,11 @@ async def test_rag_metadata_persists_calls_list(client):
         if iteration_count == 1:
             yield StreamEvent(
                 type="tool_call",
-                tool_call=ToolCall(id="tc1", name="retrieve", arguments={"query": "A", "expected_hits": "few"}),
+                tool_call=ToolCall(id="tc1", name="retrieve", arguments={"query": "A"}),
             )
             yield StreamEvent(
                 type="tool_call",
-                tool_call=ToolCall(id="tc2", name="retrieve", arguments={"query": "B", "expected_hits": "one"}),
+                tool_call=ToolCall(id="tc2", name="survey", arguments={"query": "B"}),
             )
             yield StreamEvent(type="done")
         else:
@@ -991,9 +1097,11 @@ async def test_rag_metadata_persists_calls_list(client):
 
     async def fake_execute_tool(**kwargs):
         args = kwargs.get("arguments", {})
+        tool_name_val = kwargs.get("tool_name", "retrieve")
         return {
             "query": args.get("query", ""),
-            "expected_hits": args.get("expected_hits"),
+            "tool_name": tool_name_val,
+            "mode": "survey" if tool_name_val == "survey" else "narrow",
             "candidates_evaluated": 1,
             "sources_with_hits": 1,
             "sources_total": 5,
@@ -1017,14 +1125,14 @@ async def test_rag_metadata_persists_calls_list(client):
     assert len(rag["calls"]) == 2
     queries = sorted(c["query"] for c in rag["calls"])
     assert queries == ["A", "B"]
-    expected_hits_sorted = sorted(c["expected_hits"] for c in rag["calls"])
-    assert expected_hits_sorted == ["few", "one"]
+    modes_sorted = sorted(c["mode"] for c in rag["calls"])
+    assert modes_sorted == ["narrow", "survey"]
 
 
-# AC1+AC2: expected_hits and context[] in persisted metadata
+# AC1+AC2: tool_name/mode and context[] in persisted metadata
 @pytest.mark.asyncio
-async def test_rag_metadata_persists_expected_hits_and_context(client, monkeypatch):
-    """metadata.rag.calls[i] must have expected_hits and non-empty context[]."""
+async def test_rag_metadata_persists_mode_and_context(client, monkeypatch):
+    """metadata.rag.calls[i] must have tool_name, mode, and non-empty context[]."""
     from bibilab.pipeline import chat_tools
 
     iteration_count = 0
@@ -1035,7 +1143,7 @@ async def test_rag_metadata_persists_expected_hits_and_context(client, monkeypat
         if iteration_count == 1:
             yield StreamEvent(
                 type="tool_call",
-                tool_call=ToolCall(id="tc1", name="retrieve", arguments={"query": "test", "expected_hits": "few"}),
+                tool_call=ToolCall(id="tc1", name="retrieve", arguments={"query": "test"}),
             )
             yield StreamEvent(type="done")
         else:
@@ -1061,7 +1169,8 @@ async def test_rag_metadata_persists_expected_hits_and_context(client, monkeypat
             reg["s1"] = entry
         return {
             "query": arguments.get("query", ""),
-            "expected_hits": arguments.get("expected_hits"),
+            "tool_name": tool_name,
+            "mode": "narrow",
             "candidates_evaluated": 2,
             "sources_with_hits": 1,
             "sources_total": 1,
@@ -1086,8 +1195,8 @@ async def test_rag_metadata_persists_expected_hits_and_context(client, monkeypat
     call = rag["calls"][0]
 
     # AC1
-    assert "expected_hits" in call, "expected_hits must be present"
-    assert call["expected_hits"] == "few", f"expected 'few', got {call['expected_hits']}"
+    assert call["tool_name"] == "retrieve", f"expected retrieve, got {call.get('tool_name')}"
+    assert call["mode"] == "narrow", f"expected narrow, got {call.get('mode')}"
 
     # AC2: context is non-empty array with required fields
     assert "context" in call, "context field must be present"
@@ -1210,7 +1319,7 @@ async def test_run_chat_turn_replays_tool_blocks_on_turn_2(monkeypatch):
                 {
                     "tool_use_id": "toolu_a",
                     "name": "retrieve",
-                    "arguments": {"query": "x", "expected_hits": "few"},
+                    "arguments": {"query": "x"},
                     "result": {"chunks": [{"content": "verbatim"}], "summary": {"sources_total": 1}},
                 }
             ],
@@ -1352,7 +1461,7 @@ async def test_run_chat_turn_reseeds_citation_registry_from_history_tool_blocks(
                 {
                     "tool_use_id": "toolu_a",
                     "name": "retrieve",
-                    "arguments": {"query": "x", "expected_hits": "few"},
+                    "arguments": {"query": "x"},
                     "result": {
                         "chunks": [
                             {
@@ -1422,7 +1531,7 @@ async def test_rag_call_carries_facet_scope(client):
                 tool_call=ToolCall(
                     id="tc1",
                     name="retrieve",
-                    arguments={"query": "第八集", "expected_hits": "few", "sequence_number": 8},
+                    arguments={"query": "第八集", "tool_name": "retrieve", "mode": "narrow", "sequence_number": 8},
                 ),
             )
             yield StreamEvent(type="done")
@@ -1434,7 +1543,8 @@ async def test_rag_call_carries_facet_scope(client):
         args = kwargs.get("arguments", {})
         return {
             "query": args.get("query", ""),
-            "expected_hits": args.get("expected_hits"),
+            "tool_name": "retrieve",
+            "mode": "narrow",
             "candidates_evaluated": 1,
             "sources_with_hits": 1,
             "sources_total": 5,
