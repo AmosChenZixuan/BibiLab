@@ -91,8 +91,8 @@ def patch_rerank(monkeypatch):
     return score_map
 
 
-def _params(top_k: int = 8, depth: int = 2, expected_hits: str = "few") -> RetrievalParams:
-    return RetrievalParams(top_k=top_k, depth_per_source=depth, expected_hits=expected_hits)
+def _params(top_k: int = 8, depth: int = 2, mode: str = "narrow") -> RetrievalParams:
+    return RetrievalParams(top_k=top_k, depth_per_source=depth, mode=mode)
 
 
 # ---------------------------------------------------------------------------
@@ -355,6 +355,7 @@ async def test_end_to_end_neighbors_pulled_propagates_to_chat_metadata(patch_chr
 
     # execute_retrieve returns a dict (the tool_result payload).
     result_dict = await chat_tools.execute_retrieve(
+        tool_name="retrieve",
         query="q",
         source_ids=["v1"],
         cfg=_cfg(threshold=2),

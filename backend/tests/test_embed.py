@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from bibilab.models._enums import _RELEVANCE_MARGIN_BY_HITS
+from bibilab.models._enums import _RELEVANCE_MARGIN_BY_MODE
 from bibilab.pipeline.embed import (
     RetrievedChunk,
     _quantile_gate,
@@ -98,8 +98,8 @@ class TestQuantileGate:
         assert len(r4) == 3
         assert [c.score for c in r4] == [10.0, 8.0, 6.0]
 
-    def test_quantile_gate_margin_3_many(self):
-        """AC5-many: expected_hits='many' margin=3.0 filters less aggressively."""
+    def test_quantile_gate_margin_survey(self):
+        """AC5-survey: mode='survey' margin=2.5 filters less aggressively."""
         chunks = [
             RetrievedChunk(
                 content="a",
@@ -138,40 +138,34 @@ class TestQuantileGate:
                 score=2.5,
             ),
         ]
-        margin = _RELEVANCE_MARGIN_BY_HITS["many"]  # 3.0
+        margin = _RELEVANCE_MARGIN_BY_MODE["survey"]  # 2.5
         result = _quantile_gate(chunks, margin=margin)
         # top=10, median=5, threshold=max(0,5,10-3=7)=7 → keep score >= 7 (10, 7.5)
         assert len(result) == 2
         assert [c.score for c in result] == [10.0, 7.5]
 
 
-class TestRelevanceMarginByHitsMap:
-    def test_relevance_margin_by_hits_map(self):
-        """AC4: _RELEVANCE_MARGIN_BY_HITS maps expected_hits to correct margins."""
-        assert _RELEVANCE_MARGIN_BY_HITS["one"] == 1.0
-        assert _RELEVANCE_MARGIN_BY_HITS["few"] == 2.0
-        assert _RELEVANCE_MARGIN_BY_HITS["many"] == 2.5
+class TestRelevanceMarginByModeMap:
+    def test_relevance_margin_by_mode_map(self):
+        """AC4: _RELEVANCE_MARGIN_BY_MODE maps mode to correct margins."""
+        assert _RELEVANCE_MARGIN_BY_MODE["narrow"] == 2.0
+        assert _RELEVANCE_MARGIN_BY_MODE["survey"] == 2.5
 
 
-class TestRetrievalParamsExpectedHits:
-    def test_retrieval_params_expected_hits(self):
-        """AC2: params_for_expected_hits sets expected_hits in returned RetrievalParams."""
-        from bibilab.pipeline.chat_tools import params_for_expected_hits
+class TestToolNameToParamsMapping:
+    def test_tool_name_to_params(self):
+        """AC2: _TOOL_NAME_TO_PARAMS maps tool names to RetrievalParams."""
+        from bibilab.models._enums import RetrievalParams
+        from bibilab.pipeline.chat_tools import _TOOL_NAME_TO_PARAMS
 
-        p_one = params_for_expected_hits("one")
-        assert p_one.expected_hits == "one"
-        assert p_one.depth_per_source == 1
-        assert p_one.top_k == 2
+        r = _TOOL_NAME_TO_PARAMS["retrieve"]
+        assert r == RetrievalParams(depth_per_source=2, top_k=8, mode="narrow")
 
-        p_few = params_for_expected_hits("few")
-        assert p_few.expected_hits == "few"
-        assert p_few.depth_per_source == 2
-        assert p_few.top_k == 8
+        s = _TOOL_NAME_TO_PARAMS["survey"]
+        assert s == RetrievalParams(depth_per_source=5, top_k=24, mode="survey")
 
-        p_many = params_for_expected_hits("many")
-        assert p_many.expected_hits == "many"
-        assert p_many.depth_per_source == 5
-        assert p_many.top_k == 24
+        sc = _TOOL_NAME_TO_PARAMS["retrieve_scoped"]
+        assert sc == RetrievalParams(depth_per_source=2, top_k=8, mode="narrow")
 
 
 class TestRetrievalResultGateMargin:
