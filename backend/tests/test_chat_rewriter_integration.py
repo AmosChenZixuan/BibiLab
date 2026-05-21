@@ -204,6 +204,9 @@ async def _run_with_fakes(monkeypatch, *, rewriter_return, retrieve_side_effect=
 
 @pytest.mark.asyncio
 async def test_synthetic_injection_shape_when_retrieve_true(monkeypatch):
+    """Synthetic injection runs through expand_message_for_provider so the
+    shape matches whatever protocol is configured. Test fixture is openai;
+    assert tool_call_id round-trip + serialized result content."""
     intent = RewriterIntent(retrieve=True, query="q", mode="narrow")
     telemetry = {"retrieve": True, "mode": "narrow", "attempts": 1, "latency_ms": 5}
     _, captured_messages = await _run_with_fakes(
@@ -211,23 +214,22 @@ async def test_synthetic_injection_shape_when_retrieve_true(monkeypatch):
         rewriter_return=(intent, telemetry),
         retrieve_return=_retrieve_result_stub(),
     )
-    # Final answer-LLM input: [...user, assistant(tool_use), user(tool_result)]
     assert len(captured_messages) == 1
     msgs = captured_messages[0]
-    # Last user turn + 2 synthetic
+    # openai protocol: trailing pair is assistant{tool_calls} + tool{content}.
     assistant_msg = msgs[-2]
-    tool_result_msg = msgs[-1]
+    tool_msg = msgs[-1]
     assert assistant_msg["role"] == "assistant"
-    assert assistant_msg["content"][0]["type"] == "tool_use"
-    assert assistant_msg["content"][0]["name"] == "retrieve"
-    tool_use_id = assistant_msg["content"][0]["id"]
-    assert tool_result_msg["role"] == "user"
-    block = tool_result_msg["content"][0]
-    assert block["type"] == "tool_result"
-    assert block["tool_use_id"] == tool_use_id  # round-trip
-    payload = json.loads(block["content"])
-    assert payload["query"] == "q"
-    assert payload["mode"] == "narrow"
+    tool_calls = assistant_msg["tool_calls"]
+    assert len(tool_calls) == 1
+    assert tool_calls[0]["function"]["name"] == "retrieve"
+    tool_call_id = tool_calls[0]["id"]
+    assert tool_msg["role"] == "tool"
+    assert tool_msg["tool_call_id"] == tool_call_id
+    payload = json.loads(tool_msg["content"])
+    assert payload["chunks"] == _retrieve_result_stub()["_raw_chunks"]
+    assert payload["summary"]["query"] == "q"
+    assert payload["summary"]["mode"] == "narrow"
 
 
 @pytest.mark.asyncio

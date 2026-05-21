@@ -94,6 +94,13 @@ export function useSSEStream({
 
     let accBlocks: ContentBlock[] = [];
     let pendingText = "";
+    let rewriterCleared = false;
+
+    const clearRewriterOnce = (): { rewriterPending: false } | undefined => {
+      if (rewriterCleared) return undefined;
+      rewriterCleared = true;
+      return { rewriterPending: false };
+    };
 
     const flushText = () => {
       if (!pendingText) return;
@@ -124,7 +131,7 @@ export function useSSEStream({
         updateAssistantMsg(assistantMsgId, (m) => ({
           content: m.content + content,
           contentBlocks: [...accBlocks, { type: "text", text: pendingText }],
-          rewriterPending: false,
+          ...clearRewriterOnce(),
         }));
       } else if (event.type === SSE_EVENT_TOOL_CALL_START) {
         const toolName = event.name as string;
@@ -140,7 +147,7 @@ export function useSSEStream({
               ...m.pendingRagCalls,
               { kind: "rag", id, query: args.query, mode: args.mode },
             ],
-            rewriterPending: false,
+            ...clearRewriterOnce(),
           }));
         } else if (toolName === "query_list_metadata") {
           const args = event.arguments as { query_type: string };
@@ -149,7 +156,7 @@ export function useSSEStream({
               ...m.pendingMetadataCalls,
               { kind: "metadata", id, query_type: args.query_type },
             ],
-            rewriterPending: false,
+            ...clearRewriterOnce(),
           }));
         }
       } else if (event.type === SSE_EVENT_TOOL_RESULT) {

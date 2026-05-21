@@ -239,6 +239,29 @@ def build_grounding_prompt(response_language: str) -> str:
     )
 
 
+_RAG_CALL_FIELDS = (
+    "query",
+    "mode",
+    "candidates_evaluated",
+    "sources_with_hits",
+    "sources_total",
+    "source_coverage",
+    "dropped_by_gate",
+    "reranked",
+    "scoped_pool_size",
+    "facet_scope",
+    "gate_margin",
+    "neighbors_pulled",
+)
+
+
+def _rag_call_from_retrieve_result(result: dict) -> dict:
+    """Project the persisted-shape rag.calls[] entry from execute_retrieve's
+    return dict. Centralizes the field list so additions to execute_retrieve
+    propagate in one place."""
+    return {k: result.get(k) for k in _RAG_CALL_FIELDS}
+
+
 def _build_prior_user_turns(history: list[dict]) -> list[PriorUserTurn]:
     """Pair each user message with whether its assistant turn called retrieve."""
     prior: list[PriorUserTurn] = []
@@ -515,7 +538,10 @@ async def run_chat_turn(
         # --- Rewriter stage (determines whether to retrieve) ---
         buf.append({"type": SSE_EVENT_REWRITER_START})
         prior = _build_prior_user_turns(history)
-        rewriter_intent, rewriter_telemetry = run_rewriter(
+        # run_rewriter is sync (uses sync _call_llm + time.sleep on retry); offload
+        # to a thread so the event loop is not blocked during LLM/backoff waits.
+        rewriter_intent, rewriter_telemetry = await asyncio.to_thread(
+            run_rewriter,
             current=user_message_text,
             prior=prior,
             cfg=cfg.ai,
@@ -574,22 +600,7 @@ async def run_chat_turn(
                         raw_chunks=retrieve_result.get("_raw_chunks"),
                     )
                 ]
-                retrieve_calls.append(
-                    {
-                        "query": retrieve_result.get("query", ""),
-                        "mode": retrieve_result.get("mode"),
-                        "candidates_evaluated": retrieve_result.get("candidates_evaluated"),
-                        "sources_with_hits": retrieve_result.get("sources_with_hits"),
-                        "sources_total": retrieve_result.get("sources_total"),
-                        "source_coverage": retrieve_result.get("source_coverage", []),
-                        "dropped_by_gate": retrieve_result.get("dropped_by_gate", 0),
-                        "reranked": retrieve_result.get("reranked", False),
-                        "scoped_pool_size": retrieve_result.get("scoped_pool_size"),
-                        "facet_scope": retrieve_result.get("facet_scope"),
-                        "gate_margin": retrieve_result.get("gate_margin"),
-                        "neighbors_pulled": retrieve_result.get("neighbors_pulled", 0),
-                    }
-                )
+                retrieve_calls.append(_rag_call_from_retrieve_result(retrieve_result))
                 buf.append(
                     {
                         "type": SSE_EVENT_TOOL_RESULT,
@@ -608,31 +619,10 @@ async def run_chat_turn(
         messages_for_llm = expanded_history + [{"role": "user", "content": user_message_text}]
 
         if rewriter_intent.retrieve and retrieve_result is not None:
-            messages_for_llm.append(
-                {
-                    "role": "assistant",
-                    "content": [
-                        {
-                            "type": "tool_use",
-                            "id": synthetic_tool_use_id,
-                            "name": "retrieve",
-                            "input": {"query": rewriter_intent.query, "mode": rewriter_intent.mode},
-                        }
-                    ],
-                }
-            )
-            messages_for_llm.append(
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "tool_result",
-                            "tool_use_id": synthetic_tool_use_id,
-                            "content": json.dumps(retrieve_result),
-                        }
-                    ],
-                }
-            )
+            # Reuse the canonical serializer instead of hand-rolling Anthropic
+            # blocks — keeps OpenAI protocol working and matches history shape.
+            synthetic_msg = {"role": "assistant", "content": "", "tool_blocks": tool_blocks}
+            messages_for_llm.extend(expand_message_for_provider(synthetic_msg, protocol=cfg.ai.protocol))
         elif retrieve_failed:
             system_message += (
                 "\n\nThe retrieval system failed for this question. Apologize briefly "

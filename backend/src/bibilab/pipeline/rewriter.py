@@ -1,25 +1,20 @@
 """Query rewriter — first LLM stage in chat retrieval.
 
-Owns the retrieve decision (retrieve true/false), query extraction, mode,
-and facet detection (sequence_number / season_number). Runs over an
-asymmetric context that excludes all assistant history.
-
-Failure policy: retry until the LLM returns a schema-valid intent or the
-retry budget is exhausted. No regex fallback — a degraded answer is worse
-than a surfaced error.
+Failure policy: retry until schema-valid intent or budget exhausted. No regex
+fallback — a degraded answer is worse than a surfaced error.
 """
 
 import json
 import logging
-import re
 import time
 from dataclasses import dataclass
-from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, ValidationError, model_validator
 
 from bibilab.config import AIConfig
-from bibilab.pipeline._shared import _call_llm
+from bibilab.models._enums import Mode
+from bibilab.pipeline._shared import _call_llm, _parse_llm_json_response
+from bibilab.pipeline.audio import PipelineError
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +24,7 @@ class RewriterIntent(BaseModel):
 
     retrieve: bool
     query: str | None = None
-    mode: Literal["narrow", "survey"] | None = None
+    mode: Mode | None = None
     sequence_number: int | None = None
     season_number: int | None = None
 
@@ -52,12 +47,8 @@ class PriorUserTurn:
     retrieved: bool
 
 
-class RewriterError(RuntimeError):
-    """Rewriter exhausted retry budget without a schema-valid response.
-
-    Raised by run_rewriter on terminal failure. The outer chat handler
-    surfaces this as an SSE error event — no degraded fallback.
-    """
+class RewriterError(PipelineError):
+    """Rewriter exhausted retry budget without a schema-valid response."""
 
 
 _REWRITER_WINDOW = 5
@@ -113,12 +104,10 @@ _CORRECTION_SUFFIX = (
     "Return ONLY a JSON object matching the schema above. No prose, no fences."
 )
 
-_FENCE_RE = re.compile(r"^```(?:json)?\s*|\s*```$", re.MULTILINE)
-
 
 def build_rewriter_prompt(*, current: str, prior: list[PriorUserTurn]) -> str:
-    """Build the COMPLETE rewriter LLM input. Asymmetric-context invariant:
-    anything not appended here cannot leak."""
+    """Asymmetric-context invariant: this returns the COMPLETE rewriter input.
+    Anything not appended here cannot leak from prior turns."""
     windowed = prior[-_REWRITER_WINDOW:]
     parts = [_REWRITER_SYSTEM, "\n--- prior user messages ---"]
     for turn in windowed:
@@ -133,17 +122,14 @@ def build_rewriter_prompt(*, current: str, prior: list[PriorUserTurn]) -> str:
 
 
 def parse_rewriter_response(raw: str) -> RewriterIntent | None:
-    """Returns None on JSON or invariant failure."""
-    text = _FENCE_RE.sub("", raw).strip()
+    """None on JSON or invariant failure."""
     try:
-        data = json.loads(text)
+        return _parse_llm_json_response(raw, RewriterIntent)
     except json.JSONDecodeError:
         logger.warning("rewriter: invalid JSON (len=%d, tail=%r)", len(raw), raw[-200:])
         return None
-    try:
-        return RewriterIntent(**data)
     except (ValidationError, ValueError, TypeError) as exc:
-        logger.warning("rewriter: invariant violation (%s, data=%r)", exc, data)
+        logger.warning("rewriter: invariant violation (%s)", exc)
         return None
 
 
@@ -155,13 +141,6 @@ def run_rewriter(
     llm_timeout: int = 30,
     llm_max_tokens: int = 1024,
 ) -> tuple[RewriterIntent, dict]:
-    """Retry until the LLM returns a schema-valid intent or budget is exhausted.
-
-    Provider errors (timeouts, 429, 5xx) are retried with exponential backoff.
-    JSON / schema errors are retried with a correction suffix appended to the
-    prompt. On exhaustion, raises RewriterError — the caller MUST surface this
-    to the user; degraded answers are not allowed.
-    """
     base_prompt = build_rewriter_prompt(current=current, prior=prior)
     started = time.monotonic()
     last_error: Exception | None = None
