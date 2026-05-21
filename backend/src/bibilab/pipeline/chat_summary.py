@@ -15,7 +15,7 @@ from bibilab.pipeline._shared import _call_llm
 logger = logging.getLogger(__name__)
 
 COMPRESSION_THRESHOLD = 30
-SLIDING_WINDOW_SIZE = 20
+SLIDING_WINDOW_SIZE = 10
 # Target length the model should aim for in the summary text itself.
 SUMMARY_TARGET_TOKENS = 500
 # API budget — must accommodate thinking tokens + the ~500-token output for reasoning
