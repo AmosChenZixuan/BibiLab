@@ -50,52 +50,6 @@ class CitationRegistryEntry:
     preview: str | None = None
 
 
-# Messages shorter than 3 non-whitespace chars, pure digits, or matching these
-# stopwords get the trivial-acknowledgment path (#272 fix).
-_TRIVIAL_STOPWORDS = frozenset(
-    {
-        "嗯",
-        "ok",
-        "好的",
-        "好",
-        "是",
-        "对",
-        "yes",
-        "no",
-        "thanks",
-        "谢谢",
-        "k",
-        "kk",
-    }
-)
-
-_TRIVIAL_PATH_NOTE = "The user sent a short acknowledgment. Respond naturally without calling retrieve."
-
-
-def trivial_ack_note(message: str) -> str | None:
-    """Return a system note when `message` is a trivial acknowledgment.
-
-    Short (<3 non-whitespace chars), pure-digit, or stopword messages
-    ("嗯"/"ok"/"thanks"/...) are conversation-control, not content queries —
-    return _TRIVIAL_PATH_NOTE so the caller strips replayed retrieve blocks
-    and instructs the LLM not to call retrieve. Returns None otherwise
-    (pass-through: prior excerpts stay in context, LLM self-judges reuse
-    from the prompt instruction in build_grounding_prompt).
-    """
-    stripped = message.strip()
-    non_ws = "".join(stripped.split())
-    if len(non_ws) < 3:
-        logger.info("trivial_ack_note → trivial (short, len=%d)", len(non_ws))
-        return _TRIVIAL_PATH_NOTE
-    if non_ws.isdigit():
-        logger.info("trivial_ack_note → trivial (digits)")
-        return _TRIVIAL_PATH_NOTE
-    if stripped.lower() in _TRIVIAL_STOPWORDS:
-        logger.info("trivial_ack_note → trivial (stopword=%r)", stripped.lower())
-        return _TRIVIAL_PATH_NOTE
-    return None
-
-
 def _format_chunk_for_llm(chunk: dict, index: int) -> str:
     ts_start = int(chunk["start"])
     ts_end = int(chunk["end"])
@@ -133,19 +87,10 @@ def _build_fenced_chunks(
 _VALID_ARTIFACT_TYPES = frozenset({"brief", "study_guide", "blog_post", "custom_report"})
 
 
-DEFAULT_EXPECTED_HITS = "few"
-
-
-_PARAMS_BY_HITS = {
-    "one": RetrievalParams(depth_per_source=1, top_k=2, expected_hits="one"),
-    "few": RetrievalParams(depth_per_source=2, top_k=8, expected_hits="few"),
-    "many": RetrievalParams(depth_per_source=5, top_k=24, expected_hits="many"),
+_REWRITER_MODE_TO_PARAMS: dict[str, RetrievalParams] = {
+    "narrow": RetrievalParams(depth_per_source=2, top_k=8, mode="narrow"),
+    "survey": RetrievalParams(depth_per_source=5, top_k=24, mode="survey"),
 }
-
-
-def params_for_expected_hits(expected_hits: str) -> RetrievalParams:
-    """Map expected_hits to RetrievalParams. Defaults to 'few' for unknown values."""
-    return _PARAMS_BY_HITS.get(expected_hits, _PARAMS_BY_HITS[DEFAULT_EXPECTED_HITS])
 
 
 GENERATE_REPORT_TOOL = ToolDefinition(
@@ -168,68 +113,6 @@ GENERATE_REPORT_TOOL = ToolDefinition(
             },
         },
         "required": ["type", "prompt"],
-    },
-)
-
-RETRIEVE_TOOL = ToolDefinition(
-    name="retrieve",
-    description=(
-        "Retrieve information from video transcripts. Searches all sources "
-        "by default.\n\n"
-        "If the user's question explicitly references an episode / part or a "
-        "season number (e.g. 第八集, 'part 3', 第二季), pass sequence_number / "
-        "season_number — the backend scopes the search to matching sources. "
-        "Omit them otherwise (omission searches all sources).\n\n"
-        "Use expected_hits='one' for single-fact questions, 'few' (default) "
-        "for narrow content questions, 'many' for survey/summary questions.\n\n"
-        "Do NOT use for pure greetings or conversation-control messages.\n\n"
-        "Excerpts you already retrieved remain in the conversation as tool "
-        "results. If they already answer the question, cite them directly — "
-        "do not call retrieve again. Call retrieve only when the conversation "
-        "lacks the needed excerpts.\n\n"
-        "Examples:\n"
-        "  # General question — searches all sources\n"
-        '  retrieve(query="长期情景记忆如何保存")\n\n'
-        "  # User scoped to an episode\n"
-        '  retrieve(query="第八集主要讲什么", sequence_number=8)\n\n'
-        "  # User scoped to a season\n"
-        '  retrieve(query="第二季讲了什么", season_number=2)'
-    ),
-    parameters={
-        "type": "object",
-        "properties": {
-            "query": {
-                "type": "string",
-                "description": "Search query — key terms or question in the user's language",
-            },
-            "expected_hits": {
-                "type": "string",
-                "enum": ["one", "few", "many"],
-                "description": (
-                    "Expected retrieval breadth. "
-                    "one = single-fact, depth_per_source=1, top_k=2; "
-                    "few = default, depth_per_source=2, top_k=8; "
-                    "many = survey/summary, depth_per_source=5, top_k=24"
-                ),
-            },
-            "sequence_number": {
-                "type": "integer",
-                "description": (
-                    "Episode / part number, ONLY if the user's question explicitly "
-                    "references it — e.g. 第八集 → sequence_number=8, 'part 3' → 3. "
-                    "Omit if not mentioned (omission searches all sources)."
-                ),
-            },
-            "season_number": {
-                "type": "integer",
-                "description": (
-                    "Season number, ONLY if the user's question explicitly references "
-                    "it — e.g. 第二季 → season_number=2. "
-                    "Omit if not mentioned (omission searches all sources)."
-                ),
-            },
-        },
-        "required": ["query"],
     },
 )
 
@@ -320,14 +203,14 @@ async def execute_retrieve(
     source_map: dict[str, str] | None = None,
     sequence_number: int | None = None,
     season_number: int | None = None,
-    expected_hits: str = DEFAULT_EXPECTED_HITS,
+    mode: str = "narrow",
 ) -> dict:
     if registry is None:
         registry = {}
     if source_map is None:
         source_map = {}
 
-    params = params_for_expected_hits(expected_hits)
+    params = _REWRITER_MODE_TO_PARAMS.get(mode, _REWRITER_MODE_TO_PARAMS["narrow"])
     pool_size = len(source_ids)
 
     # Deterministic facet scoping (#309). Facet matching is the sole
@@ -445,7 +328,7 @@ async def execute_retrieve(
 
     return {
         "query": query,
-        "expected_hits": expected_hits,
+        "mode": mode,
         "candidates_evaluated": result.candidates_evaluated,
         "sources_with_hits": result.sources_with_hits,
         "sources_total": result.sources_total,
@@ -494,7 +377,7 @@ def build_tool_block_entry(
     attached so replay survives re-embedding. For other tools, the result
     is stored as-is.
     """
-    if name == RETRIEVE_TOOL.name:
+    if name == "retrieve":
         summary = {k: v for k, v in result.items() if not k.startswith("_")}
         return {
             "tool_use_id": tool_use_id,
@@ -520,31 +403,6 @@ async def execute_tool(
     registry: dict[str, CitationRegistryEntry] | None = None,
     source_map: dict[str, str] | None = None,
 ) -> dict:
-    if tool_name == RETRIEVE_TOOL.name:
-        query = arguments.get("query")
-        if not query or not isinstance(query, str):
-            raise ValueError(f"retrieve requires a non-empty 'query' string, got {query!r}")
-
-        sequence_number = _facet_int(arguments.get("sequence_number"), "sequence_number")
-        season_number = _facet_int(arguments.get("season_number"), "season_number")
-
-        logger.info(
-            "retrieve tool call: query=%r seq=%s season=%s expected_hits=%r",
-            query,
-            sequence_number,
-            season_number,
-            arguments.get("expected_hits", DEFAULT_EXPECTED_HITS),
-        )
-        return await execute_retrieve(
-            query=query,
-            source_ids=source_ids,
-            cfg=cfg,
-            registry=registry,
-            source_map=source_map,
-            sequence_number=sequence_number,
-            season_number=season_number,
-            expected_hits=arguments.get("expected_hits", DEFAULT_EXPECTED_HITS),
-        )
     if tool_name == GENERATE_REPORT_TOOL.name:
         artifact_type = arguments.get("type")
         prompt = arguments.get("prompt")
@@ -655,7 +513,7 @@ def reseed_citation_registry(
     """
     for msg in history:
         for block in msg.get("tool_blocks") or []:
-            if block.get("name") != RETRIEVE_TOOL.name:
+            if block.get("name") != "retrieve":
                 continue
             chunks = block.get("result", {}).get("chunks", [])
             for ch in chunks:

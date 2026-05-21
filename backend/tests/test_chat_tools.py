@@ -1542,6 +1542,33 @@ async def test_execute_retrieve_chunks_grouped_and_fenced(monkeypatch):
     assert "_chunks" not in entry["result"]
 
 
+def test_retrieve_tool_definition_deleted():
+    import bibilab.pipeline.chat_tools as ct
+
+    assert not hasattr(ct, "RETRIEVE_TOOL")
+    assert not hasattr(ct, "_PARAMS_BY_HITS")
+    assert not hasattr(ct, "params_for_expected_hits")
+    assert not hasattr(ct, "DEFAULT_EXPECTED_HITS")
+
+
+def test_trivial_ack_helpers_deleted():
+    import bibilab.pipeline.chat_tools as ct
+
+    assert not hasattr(ct, "trivial_ack_note")
+    assert not hasattr(ct, "_TRIVIAL_STOPWORDS")
+    assert not hasattr(ct, "_TRIVIAL_PATH_NOTE")
+
+
+def test_rewriter_mode_to_params_mapping():
+    from bibilab.pipeline.chat_tools import _REWRITER_MODE_TO_PARAMS
+
+    narrow = _REWRITER_MODE_TO_PARAMS["narrow"]
+    assert (narrow.depth_per_source, narrow.top_k, narrow.mode) == (2, 8, "narrow")
+
+    survey = _REWRITER_MODE_TO_PARAMS["survey"]
+    assert (survey.depth_per_source, survey.top_k, survey.mode) == (5, 24, "survey")
+
+
 def test_retrieval_params_uses_mode_field():
     from bibilab.models._enums import _RELEVANCE_MARGIN_BY_MODE, RetrievalParams
 
