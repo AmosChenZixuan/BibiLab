@@ -36,7 +36,7 @@ pipeline/         — one file per stage
   embed.py          ChromaDB embed + retrieve() (hybrid search → rerank → aggregation), FTS5 populate
   extract.py        LLM knowledge synthesis (overview generation)
   rerank.py         lazy ONNX cross-encoder reranker (Xenova/bge-reranker-base, XLM-RoBERTa zh+en; batched inference)
-  chat_tools.py     tool definitions (retrieve + query_list_metadata + generate_report) + execution dispatcher + chunk formatting + CitationRegistry + trivial-acknowledgment guard (trivial_ack_note)
+  chat_tools.py     tool definitions (retrieve, survey, retrieve_scoped + query_list_metadata + generate_report) + execution dispatcher + chunk formatting + CitationRegistry
   chat_summary.py   conversation compression (sliding window + LLM summary; summary is prose only — [N] markers not preserved)
   citation_parser.py incremental citation parser — strips [N] tokens from LLM deltas, emits citation SSE events with {index, source_id, chunk_ids}
   chat_runs.py       StreamBuffer + ChatRunRegistry; in-memory buffer decouples LLM producer from HTTP request lifetime
@@ -133,7 +133,7 @@ whisper_models.py — Whisper model management
 | `content` | Message text |
 | `status` | `"streaming"` → `"done"` \| `"failed"` \| `"cancelled"` |
 | `error` | Error code (e.g. `llm_rate_limit_error`, `internal_error`), nullable; set on producer failure or server restart sweep; mapped by `classify_error()` from SDK exceptions; frontend resolves via `chat.errors.*` i18n keys |
-| `metadata` | JSON blob, nullable. Shape: `{"tool_calls": [...], "rag": {"calls": [{"query", "expected_hits", "candidates_evaluated", "sources_with_hits", "sources_total", "source_coverage", "context": [{"chunk_id", "citation_index", "source_id", "source_title", "timestamp_start", "timestamp_end", "rerank_score", "preview"}], "dropped_by_gate", "reranked", "scoped_pool_size", "facet_scope": {"sequence_number", "season_number", "matched_count", "no_match"}, "gate_margin"}]}}`. `scoped_pool_size` is the **full source pool** (exclude/whitelist removed); `facet_scope.matched_count` carries the facet-narrowed count. Set by `run_chat_turn` post-stream from retrieve `tool_result` events (one entry per retrieve call). No migration for legacy persisted messages — the ledger renders best-effort from whatever fields exist. |
+| `metadata` | JSON blob, nullable. Shape: `{"tool_calls": [...], "rag": {"calls": [{"query", "mode", "tool_name", "candidates_evaluated", "sources_with_hits", "sources_total", "source_coverage", "context": [{"chunk_id", "citation_index", "source_id", "source_title", "timestamp_start", "timestamp_end", "rerank_score", "preview"}], "dropped_by_gate", "reranked", "scoped_pool_size", "facet_scope": {"sequence_number", "season_number", "matched_count", "no_match"}, "gate_margin"}]}}`. `scoped_pool_size` is the **full source pool** (exclude/whitelist removed); `facet_scope.matched_count` carries the facet-narrowed count. Set by `run_chat_turn` post-stream from retrieve `tool_result` events (one entry per retrieve call). No migration for legacy persisted messages — the ledger renders best-effort from whatever fields exist. |
 | `created_at` | ISO timestamp |
 
 ### `chunks_fts` — FTS5 virtual table
@@ -183,14 +183,13 @@ Shutdown: cancel all active tasks, drain with 5s timeout
 ### System prompt context
 
 - **Grounding prompt**: `build_grounding_prompt(response_language)` produces a four-section markdown document: `## Workflow` (tool routing), `## Grounding` (excerpts-only), `## Citation` (`[N]` markers), `## Style` (direct, no follow-up). `response_language` is interpolated ≥2× to match the user's UI/config language for both directives and fallback refusals.
-- **Source scoping**: No per-turn source list in the prompt. The system prompt is static-per-language, so Anthropic prompt caching covers the whole grounding prefix. Search scope is set solely by deterministic facet matching: the LLM passes `sequence_number` / `season_number` to `retrieve` only when the question references them; the backend matches them against `sources`. No `exclude_source_ids` / `source_ids` index decision. When facet matching finds no source (fail-open to the full pool), `execute_retrieve` prepends `_NO_MATCH_NOTE` to the LLM-visible `_chunks` so the model states the degraded scope before answering.
+- **Source scoping**: No per-turn source list in the prompt. The system prompt is static-per-language, so Anthropic prompt caching covers the whole grounding prefix. Search scope is set solely by deterministic facet matching: the LLM passes `sequence_number` / `season_number` to `retrieve_scoped` only when the question references them; the backend matches them against `sources`. Non-scoped tools (`retrieve`, `survey`) that receive facets trigger a defensive strip with warning. No `exclude_source_ids` / `source_ids` index decision. When facet matching finds no source (fail-open to the full pool), `execute_retrieve` prepends `_NO_MATCH_NOTE` to the LLM-visible `_chunks` so the model states the degraded scope before answering.
 
 ### Chat execution
 
 ```
-trivial_ack_note(current_msg) → strip prior tool_blocks + inject no-retrieve note on a trivial ack; otherwise pass through (prior excerpts replay; LLM self-judges reuse from the grounding prompt)
 stream_with_tools(stream_llm loop):
-    LLM yields tool_call (retrieve) → execute_retrieve() → hybrid_search (BM25 + vector RRF) → rerank → _diverse_top_k
+    LLM yields tool_call (retrieve/survey/retrieve_scoped) → execute_retrieve() → hybrid_search (BM25 + vector RRF) → rerank → _diverse_top_k
     → tool_call_start emitted → tool_result (with citation-formatted _chunks) fed back to LLM → second turn yields text with [N] citations
     → parse_delta strips [N] markers, emits citation SSE events ({index, source_id, chunk_ids}) interleaved with delta events
     LLM yields tool_call (query_list_metadata) → execute_query_list_metadata() → tool_result → fed back to LLM
@@ -201,10 +200,10 @@ stream_with_tools(stream_llm loop):
 ```
 
 - **Producer/consumer split**: `run_chat_turn` (async Task) writes SSE events into `StreamBuffer`; `_sse_consumer` reads from buffer. Decouples LLM lifetime from HTTP request.
-- `stream_with_tools` wraps `stream_llm` in a bounded loop (max 3 iterations). Loopback tools (`retrieve`, `query_list_metadata`) feed results back for another LLM turn; terminal tools (`generate_report`) exit the loop. When iterations are exhausted, `active_tools` is forced to `[]` so the LLM synthesizes from accumulated results instead of yielding a hard error. If tools were used but no text was generated, a forced follow-up LLM call (no tools) ensures the user always gets an answer.
+- `stream_with_tools` wraps `stream_llm` in a bounded loop (max 3 iterations). Loopback tools (`retrieve`, `survey`, `retrieve_scoped`, `query_list_metadata`) feed results back for another LLM turn; terminal tools (`generate_report`) exit the loop. When iterations are exhausted, `active_tools` is forced to `[]` so the LLM synthesizes from accumulated results instead of yielding a hard error. If tools were used but no text was generated, a forced follow-up LLM call (no tools) ensures the user always gets an answer.
 - **Preamble streaming**: Text generated before a loopback tool call is streamed to the client immediately (parsed incrementally via `parse_delta`). Trade-off: short filler like "Let me look that up..." reaches the client before the retrieve runs.
-- **Sequential-retrieve guard**: After the first `retrieve` call succeeds, `retrieve` is removed from the active tool list for the remainder of the turn. A second retrieve within the same turn is rejected.
-- **Cross-turn reuse**: Prior `retrieve` results replay into the LLM messages via `expand_message_for_provider`; the LLM self-judges reuse from the `build_grounding_prompt` `## Workflow` instruction (no cosine gate). `trivial_ack_note()` is the only code path that strips replayed blocks — for len<3 / pure-digit / stopword acknowledgments — and injects a no-retrieve note (unconditional: fires even when no prior retrieve exists). Reuse horizon ≈ sliding window of 20 / ~10 turns.
+- **Sequential-retrieve guard**: After the first retrieve-family call succeeds (`retrieve`, `survey`, or `retrieve_scoped`), all three tools are removed from the active tool list for the remainder of the turn. A second retrieve within the same turn is rejected regardless of which variant was used first.
+- **Cross-turn reuse**: Prior retrieve results replay into the LLM messages via `expand_message_for_provider`; the LLM self-judges reuse from the `build_grounding_prompt` `## Workflow` instruction (no cosine gate). No code path strips replayed blocks — acknowledgment routing is handled by the grounding prompt. Reuse horizon ≈ sliding window of 10 / ~5 turns.
 - Retrieve result `_chunks` are grouped by source under `===== Source [N]: "title" =====` fences then formatted as citation-ready `[N]: "content"` strings for the LLM (#297); stripped from the client-bound `tool_result` SSE payload by `_client_tool_result()`.
 - `citation_parser.parse_delta()` strips `[N]` markers from LLM output and emits `citation` SSE events with `{index, source_id, chunk_ids}`. A partial `[` at delta end is held in a buffer for the next delta. `flush_buffer()` drains remaining buffer at stream end.
 - `stream_llm` supports both OpenAI and Anthropic protocols via `AsyncOpenAI`/`AsyncAnthropic`
@@ -243,4 +242,4 @@ v0: `BilibiliAdapter` — single video. Cookie-based auth in config.
   "rag": { "max_distance": 0.8, "hybrid_enabled": true, "reranking_enabled": true, "rerank_min_score": null }
 }
 ```
-Reranker model is fixed to `Xenova/bge-reranker-base` (XLM-RoBERTa, Chinese + English). `rerank_min_score` is a **deprecated no-op**: retained for config back-compat, logs a startup warning, never applied — removal pending one release cycle. The static floor was replaced by `_quantile_gate`; margin (bge logit units) is selected per retrieval from `_RELEVANCE_MARGIN_BY_HITS[expected_hits]` (one=1.0, few=2.0, many=2.5). `RetrievalResult.gate_margin` telemetry records the margin used. See `docs/internal/rag_tuning.md`.
+Reranker model is fixed to `Xenova/bge-reranker-base` (XLM-RoBERTa, Chinese + English). `rerank_min_score` is a **deprecated no-op**: retained for config back-compat, logs a startup warning, never applied — removal pending one release cycle. The static floor was replaced by `_quantile_gate`; margin (bge logit units) is selected per retrieval from `_RELEVANCE_MARGIN_BY_MODE[mode]` (narrow=2.0, survey=2.5). `RetrievalResult.gate_margin` telemetry records the margin used. See `docs/internal/rag_tuning.md`.
