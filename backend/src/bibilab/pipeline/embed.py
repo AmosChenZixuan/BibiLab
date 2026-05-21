@@ -18,7 +18,7 @@ from pathlib import Path
 from bibilab.adapters.base import VideoMeta
 from bibilab.config import BibilabConfig, bibilab_home, models_dir
 from bibilab.db import _escape_fts_query, _tokenize_cjk, get_db_path, get_video_ids_for_sources, query_fts_rows
-from bibilab.models._enums import _RELEVANCE_MARGIN_BY_HITS, RetrievalParams
+from bibilab.models._enums import _RELEVANCE_MARGIN_BY_MODE, RetrievalParams
 from bibilab.pipeline.chat_inference_pool import get_chat_pool
 from bibilab.pipeline.chunk import RagChunk
 
@@ -72,7 +72,7 @@ class RetrievalResult:
     # (rerank disabled or failed); reranked disambiguates that case.
     dropped_by_gate: int = 0
     reranked: bool = False
-    # Actual margin used by _quantile_gate (derived from expected_hits).
+    # Actual margin used by _quantile_gate (derived from mode).
     # None when gate did not run (rerank disabled or failed); actual margin when it did.
     gate_margin: float | None = None
     neighbors_pulled: int = 0
@@ -204,7 +204,7 @@ def _quantile_gate(chunks: list[RetrievedChunk], margin: float = 2.0) -> list[Re
     Args:
         chunks: Reranked RetrievedChunk list (score = bge logit).
         margin: bge logit units within which to keep chunks below the top.
-            Derived from _RELEVANCE_MARGIN_BY_HITS based on expected_hits.
+            Derived from _RELEVANCE_MARGIN_BY_MODE based on mode.
     """
     if not chunks:
         return chunks
@@ -596,17 +596,17 @@ async def retrieve(
 
         if reranked:
             pre_gate = len(chunks)
-            gate_margin = _RELEVANCE_MARGIN_BY_HITS.get(params.expected_hits, _RELEVANCE_MARGIN_BY_HITS["few"])
+            gate_margin = _RELEVANCE_MARGIN_BY_MODE.get(params.mode, _RELEVANCE_MARGIN_BY_MODE["narrow"])
             chunks = _quantile_gate(chunks, margin=gate_margin)
             dropped_by_gate = pre_gate - len(chunks)
             logger.info(
-                "retrieve post-rerank+gate: pre=%d post=%d dropped=%d top_score=%.4f margin=%.1f(expected_hits=%s)",
+                "retrieve post-rerank+gate: pre=%d post=%d dropped=%d top_score=%.4f margin=%.1f(mode=%s)",
                 pre_gate,
                 len(chunks),
                 dropped_by_gate,
                 chunks[0].score if chunks else -999,
                 gate_margin,
-                params.expected_hits,
+                params.mode,
             )
 
     # candidates_evaluated: pool size (pre-diverse-top-k); used for logs, not UI.

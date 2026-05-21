@@ -10,21 +10,20 @@ class VideoStatus(str, Enum):
     NEEDS_AUTH = "needs_auth"
 
 
-ExpectedHits = Literal["one", "few", "many"]
+Mode = Literal["narrow", "survey"]
 
 
 @dataclass(frozen=True)
 class RetrievalParams:
     depth_per_source: int
     top_k: int
-    expected_hits: ExpectedHits = "few"
+    mode: Mode = "narrow"
 
 
-# Margin values (bge logit units) indexed by expected_hits.
+# Margin values (bge logit units) indexed by mode.
 # Higher margin = more aggressive filtering (keep fewer chunks).
-# "one" targets a single answer; "many" lets broader matches through.
-_RELEVANCE_MARGIN_BY_HITS: dict[ExpectedHits, float] = {
-    "one": 1.0,
-    "few": 2.0,
-    "many": 2.5,
+# narrow targets a specific answer; survey lets broader matches through.
+_RELEVANCE_MARGIN_BY_MODE: dict[Mode, float] = {
+    "narrow": 2.0,
+    "survey": 2.5,
 }

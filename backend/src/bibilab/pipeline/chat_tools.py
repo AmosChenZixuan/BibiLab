@@ -50,52 +50,6 @@ class CitationRegistryEntry:
     preview: str | None = None
 
 
-# Messages shorter than 3 non-whitespace chars, pure digits, or matching these
-# stopwords get the trivial-acknowledgment path (#272 fix).
-_TRIVIAL_STOPWORDS = frozenset(
-    {
-        "嗯",
-        "ok",
-        "好的",
-        "好",
-        "是",
-        "对",
-        "yes",
-        "no",
-        "thanks",
-        "谢谢",
-        "k",
-        "kk",
-    }
-)
-
-_TRIVIAL_PATH_NOTE = "The user sent a short acknowledgment. Respond naturally without calling retrieve."
-
-
-def trivial_ack_note(message: str) -> str | None:
-    """Return a system note when `message` is a trivial acknowledgment.
-
-    Short (<3 non-whitespace chars), pure-digit, or stopword messages
-    ("嗯"/"ok"/"thanks"/...) are conversation-control, not content queries —
-    return _TRIVIAL_PATH_NOTE so the caller strips replayed retrieve blocks
-    and instructs the LLM not to call retrieve. Returns None otherwise
-    (pass-through: prior excerpts stay in context, LLM self-judges reuse
-    from the prompt instruction in build_grounding_prompt).
-    """
-    stripped = message.strip()
-    non_ws = "".join(stripped.split())
-    if len(non_ws) < 3:
-        logger.info("trivial_ack_note → trivial (short, len=%d)", len(non_ws))
-        return _TRIVIAL_PATH_NOTE
-    if non_ws.isdigit():
-        logger.info("trivial_ack_note → trivial (digits)")
-        return _TRIVIAL_PATH_NOTE
-    if stripped.lower() in _TRIVIAL_STOPWORDS:
-        logger.info("trivial_ack_note → trivial (stopword=%r)", stripped.lower())
-        return _TRIVIAL_PATH_NOTE
-    return None
-
-
 def _format_chunk_for_llm(chunk: dict, index: int) -> str:
     ts_start = int(chunk["start"])
     ts_end = int(chunk["end"])
@@ -133,19 +87,13 @@ def _build_fenced_chunks(
 _VALID_ARTIFACT_TYPES = frozenset({"brief", "study_guide", "blog_post", "custom_report"})
 
 
-DEFAULT_EXPECTED_HITS = "few"
-
-
-_PARAMS_BY_HITS = {
-    "one": RetrievalParams(depth_per_source=1, top_k=2, expected_hits="one"),
-    "few": RetrievalParams(depth_per_source=2, top_k=8, expected_hits="few"),
-    "many": RetrievalParams(depth_per_source=5, top_k=24, expected_hits="many"),
+_TOOL_NAME_TO_PARAMS: dict[str, RetrievalParams] = {
+    "retrieve": RetrievalParams(depth_per_source=2, top_k=8, mode="narrow"),
+    "survey": RetrievalParams(depth_per_source=5, top_k=24, mode="survey"),
+    "retrieve_scoped": RetrievalParams(depth_per_source=2, top_k=8, mode="narrow"),
 }
 
-
-def params_for_expected_hits(expected_hits: str) -> RetrievalParams:
-    """Map expected_hits to RetrievalParams. Defaults to 'few' for unknown values."""
-    return _PARAMS_BY_HITS.get(expected_hits, _PARAMS_BY_HITS[DEFAULT_EXPECTED_HITS])
+_RETRIEVE_TOOL_NAMES: frozenset[str] = frozenset(_TOOL_NAME_TO_PARAMS.keys())
 
 
 GENERATE_REPORT_TOOL = ToolDefinition(
@@ -174,59 +122,89 @@ GENERATE_REPORT_TOOL = ToolDefinition(
 RETRIEVE_TOOL = ToolDefinition(
     name="retrieve",
     description=(
-        "Retrieve information from video transcripts. Searches all sources "
-        "by default.\n\n"
-        "If the user's question explicitly references an episode / part or a "
-        "season number (e.g. 第八集, 'part 3', 第二季), pass sequence_number / "
-        "season_number — the backend scopes the search to matching sources. "
-        "Omit them otherwise (omission searches all sources).\n\n"
-        "Use expected_hits='one' for single-fact questions, 'few' (default) "
-        "for narrow content questions, 'many' for survey/summary questions.\n\n"
-        "Do NOT use for pure greetings or conversation-control messages.\n\n"
-        "Excerpts you already retrieved remain in the conversation as tool "
-        "results. If they already answer the question, cite them directly — "
-        "do not call retrieve again. Call retrieve only when the conversation "
-        "lacks the needed excerpts.\n\n"
+        "Retrieve from video transcripts for a single-fact / narrow content question.\n\n"
+        "Extract keywords verbatim from the user's message. Copy proper nouns and "
+        "technical terms exactly.\n\n"
+        "Use this tool when the user asks a specific question with a clear answer — "
+        "definitions, dates, names, single events, 'what is X', 'when did X happen', "
+        "'who is X'.\n\n"
+        "If the user explicitly references an episode or season (第八集, episode 3, "
+        "第二季), use retrieve_scoped instead.\n\n"
+        "If the user asks a survey / list / comparison question, use survey instead.\n\n"
         "Examples:\n"
-        "  # General question — searches all sources\n"
-        '  retrieve(query="长期情景记忆如何保存")\n\n'
-        "  # User scoped to an episode\n"
-        '  retrieve(query="第八集主要讲什么", sequence_number=8)\n\n'
-        "  # User scoped to a season\n"
-        '  retrieve(query="第二季讲了什么", season_number=2)'
+        '  retrieve(query="拉格朗日点 稳定性 证明")\n'
+        '  retrieve(query="长期情景记忆")'
     ),
     parameters={
         "type": "object",
         "properties": {
             "query": {
                 "type": "string",
-                "description": "Search query — key terms or question in the user's language",
+                "description": "Keywords extracted verbatim from the user's question",
             },
-            "expected_hits": {
+        },
+        "required": ["query"],
+    },
+)
+
+SURVEY_TOOL = ToolDefinition(
+    name="survey",
+    description=(
+        "Retrieve from video transcripts for a broad / list-summary / comparison "
+        "question.\n\n"
+        "Expand the query with related or synonymous terms to widen recall — do not "
+        "just copy the user's words. The retrieval pool is larger (top_k=24, "
+        "depth_per_source=5) than retrieve.\n\n"
+        "Use this tool when the user asks for an overview, a list of items, a "
+        "summary, a comparison, or anything that expects multiple sources — "
+        "'what are the ways to X', 'compare A and B', 'list all the X', 'summarize'.\n\n"
+        "If the user explicitly references an episode or season, use retrieve_scoped "
+        "instead.\n\n"
+        "Examples:\n"
+        '  survey(query="面食 面条 面 主食 面粉 做 制作 烹饪")\n'
+        '  survey(query="政治哲学 多元主义 自由主义 民主 思想流派")'
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "query": {
                 "type": "string",
-                "enum": ["one", "few", "many"],
-                "description": (
-                    "Expected retrieval breadth. "
-                    "one = single-fact, depth_per_source=1, top_k=2; "
-                    "few = default, depth_per_source=2, top_k=8; "
-                    "many = survey/summary, depth_per_source=5, top_k=24"
-                ),
+                "description": "Expanded keyword set including synonyms / related terms",
+            },
+        },
+        "required": ["query"],
+    },
+)
+
+RETRIEVE_SCOPED_TOOL = ToolDefinition(
+    name="retrieve_scoped",
+    description=(
+        "Retrieve from video transcripts, scoped to a specific episode or season.\n\n"
+        "Use this tool ONLY when the current user message explicitly references an "
+        "episode (第八集, episode 3, part 5) or a season (第二季, season 2). "
+        "Do not infer the scope from prior conversation turns — if the current "
+        "message has no explicit reference, use retrieve instead.\n\n"
+        "Pass sequence_number for episode references and season_number for season "
+        "references. Pass both when the user references both (第二季第八集).\n\n"
+        "Examples:\n"
+        '  retrieve_scoped(query="女巫 死期", sequence_number=5)\n'
+        '  retrieve_scoped(query="第二季总览", season_number=2)\n'
+        '  retrieve_scoped(query="主要事件", sequence_number=3, season_number=2)'
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "query": {
+                "type": "string",
+                "description": "Keywords extracted from the user's question",
             },
             "sequence_number": {
                 "type": "integer",
-                "description": (
-                    "Episode / part number, ONLY if the user's question explicitly "
-                    "references it — e.g. 第八集 → sequence_number=8, 'part 3' → 3. "
-                    "Omit if not mentioned (omission searches all sources)."
-                ),
+                "description": "Episode / part number — only if explicitly named in the CURRENT user message",
             },
             "season_number": {
                 "type": "integer",
-                "description": (
-                    "Season number, ONLY if the user's question explicitly references "
-                    "it — e.g. 第二季 → season_number=2. "
-                    "Omit if not mentioned (omission searches all sources)."
-                ),
+                "description": "Season number — only if explicitly named in the CURRENT user message",
             },
         },
         "required": ["query"],
@@ -316,18 +294,18 @@ async def execute_retrieve(
     query: str,
     source_ids: list[str],
     cfg: BibilabConfig,
+    tool_name: str,
     registry: dict[str, CitationRegistryEntry] | None = None,
     source_map: dict[str, str] | None = None,
     sequence_number: int | None = None,
     season_number: int | None = None,
-    expected_hits: str = DEFAULT_EXPECTED_HITS,
 ) -> dict:
     if registry is None:
         registry = {}
     if source_map is None:
         source_map = {}
 
-    params = params_for_expected_hits(expected_hits)
+    params = _TOOL_NAME_TO_PARAMS.get(tool_name, _TOOL_NAME_TO_PARAMS["retrieve"])
     pool_size = len(source_ids)
 
     # Deterministic facet scoping (#309). Facet matching is the sole
@@ -445,7 +423,8 @@ async def execute_retrieve(
 
     return {
         "query": query,
-        "expected_hits": expected_hits,
+        "tool_name": tool_name,
+        "mode": params.mode,
         "candidates_evaluated": result.candidates_evaluated,
         "sources_with_hits": result.sources_with_hits,
         "sources_total": result.sources_total,
@@ -494,7 +473,7 @@ def build_tool_block_entry(
     attached so replay survives re-embedding. For other tools, the result
     is stored as-is.
     """
-    if name == RETRIEVE_TOOL.name:
+    if name in _RETRIEVE_TOOL_NAMES:
         summary = {k: v for k, v in result.items() if not k.startswith("_")}
         return {
             "tool_use_id": tool_use_id,
@@ -520,30 +499,41 @@ async def execute_tool(
     registry: dict[str, CitationRegistryEntry] | None = None,
     source_map: dict[str, str] | None = None,
 ) -> dict:
-    if tool_name == RETRIEVE_TOOL.name:
+    if tool_name in _RETRIEVE_TOOL_NAMES:
         query = arguments.get("query")
         if not query or not isinstance(query, str):
-            raise ValueError(f"retrieve requires a non-empty 'query' string, got {query!r}")
+            raise ValueError(f"{tool_name} requires a non-empty 'query' string, got {query!r}")
 
         sequence_number = _facet_int(arguments.get("sequence_number"), "sequence_number")
         season_number = _facet_int(arguments.get("season_number"), "season_number")
 
+        # Non-scoped tools ignore facet args even if present (defensive — LLM may misroute).
+        if tool_name != RETRIEVE_SCOPED_TOOL.name and (sequence_number is not None or season_number is not None):
+            logger.warning(
+                "%s called with facet args (seq=%s season=%s); ignoring — only retrieve_scoped honors facets",
+                tool_name,
+                sequence_number,
+                season_number,
+            )
+            sequence_number = None
+            season_number = None
+
         logger.info(
-            "retrieve tool call: query=%r seq=%s season=%s expected_hits=%r",
+            "retrieve tool call: tool=%s query=%r seq=%s season=%s",
+            tool_name,
             query,
             sequence_number,
             season_number,
-            arguments.get("expected_hits", DEFAULT_EXPECTED_HITS),
         )
         return await execute_retrieve(
             query=query,
             source_ids=source_ids,
             cfg=cfg,
+            tool_name=tool_name,
             registry=registry,
             source_map=source_map,
             sequence_number=sequence_number,
             season_number=season_number,
-            expected_hits=arguments.get("expected_hits", DEFAULT_EXPECTED_HITS),
         )
     if tool_name == GENERATE_REPORT_TOOL.name:
         artifact_type = arguments.get("type")
@@ -655,7 +645,7 @@ def reseed_citation_registry(
     """
     for msg in history:
         for block in msg.get("tool_blocks") or []:
-            if block.get("name") != RETRIEVE_TOOL.name:
+            if block.get("name") not in _RETRIEVE_TOOL_NAMES:
                 continue
             chunks = block.get("result", {}).get("chunks", [])
             for ch in chunks:
