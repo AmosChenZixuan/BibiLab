@@ -47,15 +47,15 @@ from bibilab.pipeline.chat_summary import maybe_compress_conversation
 from bibilab.pipeline.chat_tools import (
     GENERATE_REPORT_TOOL,
     QUERY_LIST_METADATA_TOOL,
-    RETRIEVE_TOOL,
     CitationRegistryEntry,
     build_tool_block_entry,
+    execute_retrieve,
     execute_tool,
     expand_message_for_provider,
     reseed_citation_registry,
-    trivial_ack_note,
 )
 from bibilab.pipeline.citation_parser import flush_buffer, parse_delta
+from bibilab.pipeline.rewriter import PriorUserTurn, run_rewriter
 
 logger = logging.getLogger(__name__)
 
@@ -198,28 +198,26 @@ def _client_tool_result(result: dict) -> dict:
 def build_grounding_prompt(response_language: str) -> str:
     """Build the system prompt for chat grounding.
 
+    This prompts the answer LLM (second stage). Retriever excerpts arrive as
+    synthetic tool results pre-injected into the conversation. The answer LLM
+    does NOT have a retrieve tool — the rewriter handles that before this runs.
+
     response_language is interpolated into the language directive and the
     fallback sentence so refusals match the user's UI/config language.
     """
     return (
         f"Respond in {response_language}.\n\n"
         "## Workflow\n"
-        "You answer questions about the user's personal video library. For every "
-        "question about video content (facts, comparisons, summaries), call "
-        "`retrieve`. For questions about source counts, durations, or languages, "
-        "call `query_list_metadata`. For requests to generate summaries, study "
-        "guides, blog posts, or custom reports, call `generate_report`. Use "
-        "`expected_hits` to control retrieval breadth: `one` for single facts, "
-        "`few` for narrow content questions (default), `many` for survey or "
-        'full-source summary questions (e.g. "第八集讲了什么").\n\n'
-        "Excerpts you already retrieved remain in the conversation as tool "
-        "results. Reuse them only when the new question is about the same "
-        "topic, entity, or episode as the prior retrieve; cite them directly "
-        "in that case. When the question shifts to a different topic — even "
-        "slightly — call `retrieve` again before answering. Prior excerpts "
-        "about an unrelated topic are not evidence for the new question and "
-        "are not grounds to refuse: only a fresh `retrieve` result can "
-        "establish whether the library covers the new topic.\n\n"
+        "You answer questions about the user's personal video library. "
+        "Relevant excerpts from the library have been retrieved and are "
+        "provided as tool results in the conversation. For questions "
+        "about source counts, durations, or languages, call "
+        "`query_list_metadata`. For requests to generate summaries, study "
+        "guides, blog posts, or custom reports, call `generate_report`.\n\n"
+        "Excerpts from prior turns remain in the conversation as tool "
+        "results. Reuse them when the new question is about the same "
+        "topic, entity, or episode; cite them directly. Prior excerpts "
+        "about an unrelated topic are not evidence for the new question.\n\n"
         "## Grounding\n"
         "Build your answer from the retrieved excerpts alone. Do not draw on "
         "outside knowledge. Treat the excerpts as authoritative whether the "
@@ -246,6 +244,28 @@ def build_grounding_prompt(response_language: str) -> str:
     )
 
 
+def _build_prior_user_turns(history: list[dict]) -> list[PriorUserTurn]:
+    """Build PriorUserTurn list from chat history for the rewriter.
+
+    Walks history chronologically, pairing each user message with the next
+    assistant message to determine whether that turn's response used retrieve.
+    """
+    prior: list[PriorUserTurn] = []
+    for i, msg in enumerate(history):
+        if msg.get("role") != "user":
+            continue
+        text = msg.get("content", "")
+        retrieved = False
+        for j in range(i + 1, len(history)):
+            if history[j].get("role") == "assistant":
+                blocks = history[j].get("tool_blocks") or []
+                if any(b.get("name") == "retrieve" for b in blocks):
+                    retrieved = True
+                break
+        prior.append(PriorUserTurn(text=text, retrieved=retrieved))
+    return prior
+
+
 async def stream_with_tools(
     messages: list[dict],
     cfg: AIConfig,
@@ -266,8 +286,8 @@ async def stream_with_tools(
     iteration = 0
     parse_buffer = ""
     citation_emitted = False
-    retrieve_used = False
     text_generated = False
+    any_tool_used = False
 
     def _build_lookup() -> dict[int, CitationRegistryEntry]:
         return {e.index: e for e in registry.values()}
@@ -280,9 +300,7 @@ async def stream_with_tools(
         tool_calls: list[ToolCall] = []
         lookup = _build_lookup()
         is_synthesis_turn = iteration > MAX_TOOL_ITERATIONS
-        active_tools = (
-            [] if is_synthesis_turn else [t for t in tools if not (retrieve_used and t.name == RETRIEVE_TOOL.name)]
-        )
+        active_tools = [] if is_synthesis_turn else list(tools)
         async for event in stream_llm(messages, cfg, active_tools, system=system, llm_max_tokens=llm_max_tokens):
             if event.type == "tool_call":
                 tool_calls.append(event.tool_call)
@@ -305,9 +323,10 @@ async def stream_with_tools(
         if not tool_calls or is_synthesis_turn:
             for pe in flush_buffer(parse_buffer):
                 yield pe
-            # If tools were used but no answer text was ever generated, force one
-            # more LLM call with no tools so the user always gets a text response.
-            if not text_generated and retrieve_used:
+            # If loopback tools were used but no answer text was ever generated,
+            # force one more LLM call with no tools so the user always gets a
+            # text response.
+            if not text_generated and any_tool_used:
                 messages.append(
                     {
                         "role": "user",
@@ -377,8 +396,7 @@ async def stream_with_tools(
             )
 
         if any(tc.name in LOOPBACK_TOOLS for tc in tool_calls):
-            if any(tc.name == RETRIEVE_TOOL.name for tc in tool_calls):
-                retrieve_used = True
+            any_tool_used = True
             if cfg.protocol == "anthropic":
                 messages.append(
                     {
@@ -488,6 +506,7 @@ async def run_chat_turn(
     content_blocks: list[dict] = []
     pending_text = ""
     error_reason: str | None = None
+    rewriter_telemetry: dict | None = None
 
     try:
         response_language = resolve_response_language(cfg.ai, ui_lang)
@@ -499,22 +518,119 @@ async def run_chat_turn(
             )
         system_message = "\n\n".join(system_parts)
 
-        # #308: prior retrieve excerpts replay into the LLM messages, so the
-        # LLM self-judges reuse from the prompt instruction. Only the
-        # deterministic trivial-ack guard strips them (and tells the LLM not
-        # to retrieve on a bare acknowledgment).
-        trivial_note = trivial_ack_note(user_message_text)
-        if trivial_note:
-            history_for_expansion = [{k: v for k, v in h.items() if k != "tool_blocks"} for h in history]
-        else:
-            history_for_expansion = history
+        # --- Rewriter stage (determines whether to retrieve) ---
+        prior = _build_prior_user_turns(history)
+        rewriter_intent, rewriter_telemetry = run_rewriter(
+            current=user_message_text,
+            prior=prior,
+            cfg=cfg.ai,
+        )
 
-        # Reseed citation registry and expand history tool blocks for replay.
-        reseed_citation_registry(citation_registry, history_for_expansion)
+        # Reseed citation registry from history for prior-turn [N] resolution.
+        reseed_citation_registry(citation_registry, history)
+
+        # Pre-execute retrieve when the rewriter decides it is needed.
+        if rewriter_intent.retrieve:
+            retrieve_result = await execute_retrieve(
+                query=rewriter_intent.query,
+                source_ids=source_ids,
+                cfg=cfg,
+                registry=citation_registry,
+                source_map=source_map,
+                sequence_number=rewriter_intent.sequence_number,
+                season_number=rewriter_intent.season_number,
+                mode=rewriter_intent.mode,
+            )
+
+            synthetic_tool_use_id = str(uuid4())
+            tool_blocks = [
+                build_tool_block_entry(
+                    tool_use_id=synthetic_tool_use_id,
+                    name="retrieve",
+                    arguments={
+                        "query": rewriter_intent.query,
+                        "mode": rewriter_intent.mode,
+                        "sequence_number": rewriter_intent.sequence_number,
+                        "season_number": rewriter_intent.season_number,
+                    },
+                    result=retrieve_result,
+                    raw_chunks=retrieve_result.get("_raw_chunks"),
+                )
+            ]
+
+            retrieve_calls.append(
+                {
+                    "query": retrieve_result.get("query", ""),
+                    "mode": retrieve_result.get("mode"),
+                    "candidates_evaluated": retrieve_result.get("candidates_evaluated"),
+                    "sources_with_hits": retrieve_result.get("sources_with_hits"),
+                    "sources_total": retrieve_result.get("sources_total"),
+                    "source_coverage": retrieve_result.get("source_coverage", []),
+                    "dropped_by_gate": retrieve_result.get("dropped_by_gate", 0),
+                    "reranked": retrieve_result.get("reranked", False),
+                    "scoped_pool_size": retrieve_result.get("scoped_pool_size"),
+                    "facet_scope": retrieve_result.get("facet_scope"),
+                    "gate_margin": retrieve_result.get("gate_margin"),
+                    "neighbors_pulled": retrieve_result.get("neighbors_pulled", 0),
+                }
+            )
+
+            # Emit synthetic tool events so the client sees the pre-executed
+            # retrieve alongside any answer-LLM tool results.
+            buf.append(
+                {
+                    "type": SSE_EVENT_TOOL_CALL_START,
+                    "id": synthetic_tool_use_id,
+                    "name": "retrieve",
+                    "arguments": {"query": rewriter_intent.query, "mode": rewriter_intent.mode},
+                }
+            )
+            buf.append(
+                {
+                    "type": SSE_EVENT_TOOL_RESULT,
+                    "id": synthetic_tool_use_id,
+                    "name": "retrieve",
+                    "result": _client_tool_result(retrieve_result),
+                }
+            )
+        else:
+            tool_blocks = []
+
+        # Build messages for the answer LLM: strip prior tool_blocks so the
+        # pre-executed synthetic retrieve is the only retrieve result in view.
+        history_for_expansion = [{k: v for k, v in h.items() if k != "tool_blocks"} for h in history]
         expanded_history: list[dict] = []
         for h in history_for_expansion:
             expanded_history.extend(expand_message_for_provider(h, protocol=cfg.ai.protocol))
         messages_for_llm = expanded_history + [{"role": "user", "content": user_message_text}]
+
+        # Inject synthetic tool_use + tool_result for the answer LLM.
+        if rewriter_intent.retrieve:
+            messages_for_llm.append(
+                {
+                    "role": "assistant",
+                    "content": [
+                        {
+                            "type": "tool_use",
+                            "id": synthetic_tool_use_id,
+                            "name": "retrieve",
+                            "input": {"query": rewriter_intent.query, "mode": rewriter_intent.mode},
+                        }
+                    ],
+                }
+            )
+            messages_for_llm.append(
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": synthetic_tool_use_id,
+                            "content": json.dumps(retrieve_result),
+                        }
+                    ],
+                }
+            )
 
         async def execute_tool_bound(name: str, args: dict, **kwargs) -> dict:
             return await execute_tool(
@@ -527,12 +643,7 @@ async def run_chat_turn(
                 **kwargs,
             )
 
-        if trivial_note:
-            system_message += "\n\n" + trivial_note
-
-        tools = [RETRIEVE_TOOL, QUERY_LIST_METADATA_TOOL, GENERATE_REPORT_TOOL]
-
-        tool_blocks: list[dict] = []
+        tools = [QUERY_LIST_METADATA_TOOL, GENERATE_REPORT_TOOL]
 
         async for event in stream_with_tools(
             messages=messages_for_llm,
@@ -567,7 +678,7 @@ async def run_chat_turn(
                     retrieve_calls.append(
                         {
                             "query": result.get("query", ""),
-                            "expected_hits": result.get("expected_hits"),
+                            "mode": result.get("mode"),
                             "candidates_evaluated": result.get("candidates_evaluated"),
                             "sources_with_hits": result.get("sources_with_hits"),
                             "sources_total": result.get("sources_total"),
@@ -649,8 +760,13 @@ async def run_chat_turn(
             if tool_call_meta:
                 meta["tool_calls"] = tool_call_meta
 
+            rag_entry: dict[str, Any] = {}
             if retrieve_calls:
-                meta["rag"] = {"calls": retrieve_calls}
+                rag_entry["calls"] = retrieve_calls
+            if rewriter_telemetry:
+                rag_entry["rewriter"] = rewriter_telemetry
+            if rag_entry:
+                meta["rag"] = rag_entry
             if content_blocks:
                 meta["content_blocks"] = content_blocks
 
