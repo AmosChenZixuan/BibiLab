@@ -10,7 +10,7 @@ export interface ToolCallData {
   name: string;
   result: ToolResult;
 }
-export type ExpectedHits = "one" | "few" | "many" | null;
+export type Mode = "narrow" | "survey" | null;
 export type RagSource = { source_id: string; video_id: string; title: string };
 /** Single chunk in the persisted context[] array. */
 export type RetrievalChunk = {
@@ -35,7 +35,8 @@ export type FacetScope = {
 /** source_coverage lists only sources whose [N] actually appeared in the assistant text. */
 export type RetrievalCall = {
   query: string;
-  expected_hits: ExpectedHits;
+  mode: Mode;
+  tool_name?: string;
   candidates_evaluated: number;
   sources_with_hits: number;
   sources_total: number;
@@ -53,7 +54,8 @@ export type RagMetadata = { calls: RetrievalCall[] };
 export type PendingRagCall = {
   id: string;
   query: string;
-  expected_hits: ExpectedHits;
+  mode: Mode;
+  tool_name?: string;
 };
 export type PendingMetadataCall = {
   id: string;

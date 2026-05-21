@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 
 import type { JobRegistration } from "@/components/jobs/JobActivityProvider";
 import type { MessageUI } from "@/components/lists/hooks/useConversationHistory";
-import { formatTimestamp, type ContentBlock, type PendingMetadataCall, type PendingRagCall, type RetrievalCall, type ExpectedHits } from "@/lib/chat-utils";
+import { formatTimestamp, type ContentBlock, type PendingMetadataCall, type PendingRagCall, type RetrievalCall, type Mode } from "@/lib/chat-utils";
 import type { ToolResult } from "@/lib/chat-utils";
 import {
   SSE_EVENT_CANCELLED,
@@ -127,12 +127,13 @@ export function useSSEStream({
           console.warn("tool_call_start missing required fields", event);
           return;
         }
-        if (toolName === "retrieve") {
-          const args = event.arguments as { query: string; expected_hits: ExpectedHits };
+        if (toolName === "retrieve" || toolName === "survey" || toolName === "retrieve_scoped") {
+          const args = event.arguments as { query: string };
+          const mode: Mode = toolName === "survey" ? "survey" : "narrow";
           updateAssistantMsg(assistantMsgId, (m) => ({
             pendingRagCalls: [
               ...m.pendingRagCalls,
-              { id, query: args.query, expected_hits: args.expected_hits },
+              { id, query: args.query, mode, tool_name: toolName },
             ],
           }));
         } else if (toolName === "query_list_metadata") {
