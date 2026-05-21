@@ -208,11 +208,14 @@ def build_grounding_prompt(response_language: str) -> str:
         f"Respond in {response_language}.\n\n"
         "## Workflow\n"
         "You answer questions about the user's personal video library. "
-        "Relevant excerpts from the library have been retrieved and are "
-        "provided as tool results in the conversation. For questions "
-        "about source counts, durations, or languages, call "
-        "`query_list_metadata`. For requests to generate summaries, study "
-        "guides, blog posts, or custom reports, call `generate_report`.\n\n"
+        "Relevant excerpts from the library have already been retrieved and are "
+        "provided inside a `<retrieved_excerpts>` block at the start of the "
+        "user message. You do NOT have a `retrieve` tool — retrieval was "
+        "performed before this turn. Answer from the excerpts shown; do not "
+        "attempt to call `retrieve`. For questions about source counts, "
+        "durations, or languages, call `query_list_metadata`. For requests to "
+        "generate summaries, study guides, blog posts, or custom reports, "
+        "call `generate_report`.\n\n"
         "## Grounding\n"
         "Build your answer from the retrieved excerpts alone. Do not draw on "
         "outside knowledge. Treat the excerpts as authoritative whether the "
@@ -610,24 +613,32 @@ async def run_chat_turn(
                     }
                 )
 
-        # Build messages for the answer LLM: strip prior tool_blocks so the
-        # pre-executed synthetic retrieve is the only retrieve result in view.
+        # Build messages for the answer LLM: strip prior tool_blocks so prior
+        # excerpts are not replayed (rewriter owns retrieval per turn).
         history_for_expansion = [{k: v for k, v in h.items() if k != "tool_blocks"} for h in history]
         expanded_history: list[dict] = []
         for h in history_for_expansion:
             expanded_history.extend(expand_message_for_provider(h, protocol=cfg.ai.protocol))
-        messages_for_llm = expanded_history + [{"role": "user", "content": user_message_text}]
 
+        # Inject the pre-retrieved excerpts as plain text wrapped in the user
+        # message rather than as a synthetic tool_use/tool_result pair. The
+        # tool-pair shape teaches non-conformant providers (e.g. MiniMax via
+        # Anthropic-compatible endpoint) that `retrieve` is a callable tool —
+        # they then hallucinate a retrieve call despite it being absent from
+        # the tools list. Plain text removes the pattern entirely.
         if rewriter_intent.retrieve and retrieve_result is not None:
-            # Reuse the canonical serializer instead of hand-rolling Anthropic
-            # blocks — keeps OpenAI protocol working and matches history shape.
-            synthetic_msg = {"role": "assistant", "content": "", "tool_blocks": tool_blocks}
-            messages_for_llm.extend(expand_message_for_provider(synthetic_msg, protocol=cfg.ai.protocol))
+            excerpts = retrieve_result.get("_chunks", "")
+            user_content = f"<retrieved_excerpts>\n{excerpts}\n</retrieved_excerpts>\n\n{user_message_text}"
         elif retrieve_failed:
             system_message += (
                 "\n\nThe retrieval system failed for this question. Apologize briefly "
                 "in one sentence and ask the user to retry. Do not fabricate excerpts."
             )
+            user_content = user_message_text
+        else:
+            user_content = user_message_text
+
+        messages_for_llm = expanded_history + [{"role": "user", "content": user_content}]
 
         async def execute_tool_bound(name: str, args: dict, **kwargs) -> dict:
             return await execute_tool(

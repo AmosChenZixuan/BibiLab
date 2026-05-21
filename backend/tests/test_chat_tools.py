@@ -543,16 +543,17 @@ class TestBuildGroundingPrompt:
         assert "The provided sources do not cover this topic" not in prompt
 
     def test_build_grounding_prompt_no_retrieve_tool(self):
-        """Answer LLM no longer has retrieve — prompt must frame excerpts as
-        pre-retrieved, not ask for new retrieval. Refusal only from completed
-        retrieve result (no pre-retrieve shortcut).
-        """
+        """Answer LLM has no retrieve tool. Excerpts arrive inside a
+        <retrieved_excerpts> block on the user message. Prompt must direct
+        the model to that block and forbid calling retrieve."""
         from bibilab.routers.chat import build_grounding_prompt
 
         prompt = build_grounding_prompt(response_language="zh")
-        # No retrieve instruction — answer LLM doesn't have the tool.
-        assert "call `retrieve`" not in prompt
-        assert "do not call `retrieve`" not in prompt
+        # Excerpts location explicit.
+        assert "<retrieved_excerpts>" in prompt
+        # Explicit anti-retrieve directive.
+        assert "do not attempt to call `retrieve`" in prompt
+        assert "do NOT have a `retrieve` tool" in prompt
         # Pre-retrieve refusal shortcut absent.
         assert "say so in zh" not in prompt
         assert "say so in en" not in build_grounding_prompt(response_language="en")
@@ -560,8 +561,7 @@ class TestBuildGroundingPrompt:
         assert "outside knowledge" in prompt
         assert "real-world analogies" in prompt
         # Mentions pre-retrieved excerpts.
-        assert "have been retrieved" in prompt
-        assert "tool results" in prompt
+        assert "already been retrieved" in prompt
 
 
 class TestBuildToolBlockEntry:

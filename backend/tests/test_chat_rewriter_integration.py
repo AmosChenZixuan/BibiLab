@@ -2,8 +2,6 @@
 plus the synthetic-injection / fallback-telemetry / retrieve-failure paths
 in run_chat_turn."""
 
-import json
-
 import pytest
 
 from bibilab.pipeline.rewriter import PriorUserTurn, RewriterIntent, build_rewriter_prompt
@@ -203,10 +201,11 @@ async def _run_with_fakes(monkeypatch, *, rewriter_return, retrieve_side_effect=
 
 
 @pytest.mark.asyncio
-async def test_synthetic_injection_shape_when_retrieve_true(monkeypatch):
-    """Synthetic injection runs through expand_message_for_provider so the
-    shape matches whatever protocol is configured. Test fixture is openai;
-    assert tool_call_id round-trip + serialized result content."""
+async def test_synthetic_injection_uses_plain_text_excerpts(monkeypatch):
+    """Excerpts inject into the user message as a <retrieved_excerpts> block —
+    no synthetic tool_use/tool_result pair. The tool-pair shape would teach
+    non-conformant providers that retrieve is callable, causing hallucinated
+    tool calls."""
     intent = RewriterIntent(retrieve=True, query="q", mode="narrow")
     telemetry = {"retrieve": True, "mode": "narrow", "attempts": 1, "latency_ms": 5}
     _, captured_messages = await _run_with_fakes(
@@ -216,20 +215,18 @@ async def test_synthetic_injection_shape_when_retrieve_true(monkeypatch):
     )
     assert len(captured_messages) == 1
     msgs = captured_messages[0]
-    # openai protocol: trailing pair is assistant{tool_calls} + tool{content}.
-    assistant_msg = msgs[-2]
-    tool_msg = msgs[-1]
-    assert assistant_msg["role"] == "assistant"
-    tool_calls = assistant_msg["tool_calls"]
-    assert len(tool_calls) == 1
-    assert tool_calls[0]["function"]["name"] == "retrieve"
-    tool_call_id = tool_calls[0]["id"]
-    assert tool_msg["role"] == "tool"
-    assert tool_msg["tool_call_id"] == tool_call_id
-    payload = json.loads(tool_msg["content"])
-    assert payload["chunks"] == _retrieve_result_stub()["_raw_chunks"]
-    assert payload["summary"]["query"] == "q"
-    assert payload["summary"]["mode"] == "narrow"
+    # The trailing message is a single user message carrying both excerpts and question.
+    last = msgs[-1]
+    assert last["role"] == "user"
+    content = last["content"]
+    assert "<retrieved_excerpts>" in content
+    assert "</retrieved_excerpts>" in content
+    assert _retrieve_result_stub()["_chunks"] in content
+    assert "q" in content  # user_message_text preserved
+    # No assistant tool_calls / tool message anywhere in the sequence.
+    for m in msgs:
+        assert m.get("role") != "tool"
+        assert "tool_calls" not in m or not m["tool_calls"]
 
 
 @pytest.mark.asyncio
