@@ -138,8 +138,11 @@ def run_rewriter(
     current: str,
     prior: list[PriorUserTurn],
     cfg: AIConfig,
-    llm_timeout: int = 30,
-    llm_max_tokens: int = 1024,
+    llm_timeout: int = 60,
+    # Output JSON is ~100 tokens, but thinking-capable models can burn the
+    # entire budget on reasoning before emitting text (stop_reason=max_tokens
+    # with empty content). Generous budget covers thinking + JSON.
+    llm_max_tokens: int = 4096,
 ) -> tuple[RewriterIntent, dict]:
     base_prompt = build_rewriter_prompt(current=current, prior=prior)
     started = time.monotonic()
