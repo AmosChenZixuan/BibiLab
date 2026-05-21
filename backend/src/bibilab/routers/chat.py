@@ -45,15 +45,17 @@ from bibilab.pipeline.chat_runs import (
 )
 from bibilab.pipeline.chat_summary import maybe_compress_conversation
 from bibilab.pipeline.chat_tools import (
+    _RETRIEVE_TOOL_NAMES,
     GENERATE_REPORT_TOOL,
     QUERY_LIST_METADATA_TOOL,
+    RETRIEVE_SCOPED_TOOL,
     RETRIEVE_TOOL,
+    SURVEY_TOOL,
     CitationRegistryEntry,
     build_tool_block_entry,
     execute_tool,
     expand_message_for_provider,
     reseed_citation_registry,
-    trivial_ack_note,
 )
 from bibilab.pipeline.citation_parser import flush_buffer, parse_delta
 
@@ -88,7 +90,7 @@ SSE_EVENT_RAG = "rag"
 # Sized for thinking-capable models with potentially long chat responses + tool turns.
 CHAT_MAX_TOKENS = 16384
 
-LOOPBACK_TOOLS = {"retrieve", "query_list_metadata"}
+LOOPBACK_TOOLS = {"retrieve", "survey", "retrieve_scoped", "query_list_metadata"}
 MAX_TOOL_ITERATIONS = 3
 
 
@@ -204,22 +206,32 @@ def build_grounding_prompt(response_language: str) -> str:
     return (
         f"Respond in {response_language}.\n\n"
         "## Workflow\n"
-        "You answer questions about the user's personal video library. For every "
-        "question about video content (facts, comparisons, summaries), call "
-        "`retrieve`. For questions about source counts, durations, or languages, "
-        "call `query_list_metadata`. For requests to generate summaries, study "
-        "guides, blog posts, or custom reports, call `generate_report`. Use "
-        "`expected_hits` to control retrieval breadth: `one` for single facts, "
-        "`few` for narrow content questions (default), `many` for survey or "
-        'full-source summary questions (e.g. "第八集讲了什么").\n\n'
+        "For content questions, choose ONE retrieval tool per turn:\n\n"
+        "- `retrieve(query)`: single-fact lookups, definitions, "
+        '"what / when / who / why" questions. Extract keywords verbatim '
+        "from the user's message.\n\n"
+        "- `survey(query)`: list-summary, comparison, episode-wide recap, "
+        '"what are the ways to X", "what\'s covered in". Expand the '
+        "query with related or synonymous terms.\n\n"
+        "- `retrieve_scoped(query, sequence_number?, season_number?)`: use "
+        "ONLY when the CURRENT user message explicitly references an "
+        "episode (第八集, episode 3) or a season (第二季). Do not infer "
+        "scope from prior turns.\n\n"
+        "For questions about source counts, durations, or languages, call "
+        "`query_list_metadata`. For requests to generate summaries, study "
+        "guides, blog posts, or custom reports, call `generate_report`.\n\n"
         "Excerpts you already retrieved remain in the conversation as tool "
         "results. Reuse them only when the new question is about the same "
         "topic, entity, or episode as the prior retrieve; cite them directly "
         "in that case. When the question shifts to a different topic — even "
-        "slightly — call `retrieve` again before answering. Prior excerpts "
-        "about an unrelated topic are not evidence for the new question and "
-        "are not grounds to refuse: only a fresh `retrieve` result can "
-        "establish whether the library covers the new topic.\n\n"
+        "slightly — call retrieve / survey / retrieve_scoped again before "
+        "answering. Prior excerpts about an unrelated topic are not evidence "
+        "for the new question and are not grounds to refuse: only a fresh "
+        "retrieve result can establish whether the library covers the new "
+        "topic.\n\n"
+        'If the user sends a pure acknowledgment ("嗯", "ok", "thanks", '
+        '"我懂了") with no new question, respond naturally without calling '
+        "any retrieve tool.\n\n"
         "## Grounding\n"
         "Build your answer from the retrieved excerpts alone. Do not draw on "
         "outside knowledge. Treat the excerpts as authoritative whether the "
@@ -281,7 +293,7 @@ async def stream_with_tools(
         lookup = _build_lookup()
         is_synthesis_turn = iteration > MAX_TOOL_ITERATIONS
         active_tools = (
-            [] if is_synthesis_turn else [t for t in tools if not (retrieve_used and t.name == RETRIEVE_TOOL.name)]
+            [] if is_synthesis_turn else [t for t in tools if not (retrieve_used and t.name in _RETRIEVE_TOOL_NAMES)]
         )
         async for event in stream_llm(messages, cfg, active_tools, system=system, llm_max_tokens=llm_max_tokens):
             if event.type == "tool_call":
@@ -377,7 +389,7 @@ async def stream_with_tools(
             )
 
         if any(tc.name in LOOPBACK_TOOLS for tc in tool_calls):
-            if any(tc.name == RETRIEVE_TOOL.name for tc in tool_calls):
+            if any(tc.name in _RETRIEVE_TOOL_NAMES for tc in tool_calls):
                 retrieve_used = True
             if cfg.protocol == "anthropic":
                 messages.append(
@@ -499,15 +511,11 @@ async def run_chat_turn(
             )
         system_message = "\n\n".join(system_parts)
 
-        # #308: prior retrieve excerpts replay into the LLM messages, so the
-        # LLM self-judges reuse from the prompt instruction. Only the
-        # deterministic trivial-ack guard strips them (and tells the LLM not
-        # to retrieve on a bare acknowledgment).
-        trivial_note = trivial_ack_note(user_message_text)
-        if trivial_note:
-            history_for_expansion = [{k: v for k, v in h.items() if k != "tool_blocks"} for h in history]
-        else:
-            history_for_expansion = history
+        # Prior retrieve excerpts replay into the LLM messages; the LLM self-
+        # judges reuse from the grounding prompt instruction. Pure acks are
+        # handled by the LLM choosing not to call any retrieve tool — there is
+        # no deterministic strip step.
+        history_for_expansion = history
 
         # Reseed citation registry and expand history tool blocks for replay.
         reseed_citation_registry(citation_registry, history_for_expansion)
@@ -527,10 +535,13 @@ async def run_chat_turn(
                 **kwargs,
             )
 
-        if trivial_note:
-            system_message += "\n\n" + trivial_note
-
-        tools = [RETRIEVE_TOOL, QUERY_LIST_METADATA_TOOL, GENERATE_REPORT_TOOL]
+        tools = [
+            RETRIEVE_TOOL,
+            SURVEY_TOOL,
+            RETRIEVE_SCOPED_TOOL,
+            QUERY_LIST_METADATA_TOOL,
+            GENERATE_REPORT_TOOL,
+        ]
 
         tool_blocks: list[dict] = []
 
@@ -561,13 +572,14 @@ async def run_chat_turn(
                 _append_citation_block(content_blocks, data)
             elif event.type == "tool_result":
                 parsed = json.loads(event.content)
-                if parsed["name"] == "retrieve":
+                if parsed["name"] in _RETRIEVE_TOOL_NAMES:
                     result = parsed["result"]
                     # Store raw source_coverage for now; narrow by emitted citations in finally.
                     retrieve_calls.append(
                         {
                             "query": result.get("query", ""),
-                            "expected_hits": result.get("expected_hits"),
+                            "tool_name": result.get("tool_name", parsed["name"]),
+                            "mode": result.get("mode"),
                             "candidates_evaluated": result.get("candidates_evaluated"),
                             "sources_with_hits": result.get("sources_with_hits"),
                             "sources_total": result.get("sources_total"),
