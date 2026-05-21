@@ -1540,3 +1540,19 @@ async def test_execute_retrieve_chunks_grouped_and_fenced(monkeypatch):
     entry = build_tool_block_entry("tu1", "retrieve", {}, result, result["_raw_chunks"])
     assert "=====" not in json.dumps(entry, ensure_ascii=False)
     assert "_chunks" not in entry["result"]
+
+
+def test_retrieval_params_uses_mode_field():
+    from bibilab.models._enums import _RELEVANCE_MARGIN_BY_MODE, RetrievalParams
+
+    p = RetrievalParams(depth_per_source=2, top_k=8, mode="narrow")
+    assert p.mode == "narrow"
+    assert _RELEVANCE_MARGIN_BY_MODE["narrow"] == 2.0
+    assert _RELEVANCE_MARGIN_BY_MODE["survey"] == 2.5
+
+
+def test_expected_hits_symbols_deleted():
+    import bibilab.models._enums as e
+
+    assert not hasattr(e, "ExpectedHits")
+    assert not hasattr(e, "_RELEVANCE_MARGIN_BY_HITS")
