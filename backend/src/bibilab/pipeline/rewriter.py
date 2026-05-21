@@ -74,21 +74,46 @@ Otherwise true.
 When the current message is a continuation signal ("继续", "然后呢",
 "再讲讲", "go on", "tell me more") with no new content words:
   - Find the most-recent prior user message tagged retrieve=true.
-  - Set query to the EXACT text of that prior message, character for
-    character. Do not rewrite, shorten, or summarize it.
+  - Treat that prior message as the question to retrieve for. Apply the
+    same query-construction rules below (narrow vs survey) to its text.
   - Copy that prior message's mode and facets verbatim.
   - Do NOT set retrieve=false — the answer model needs fresh excerpts.
   - If no prior user message in the visible window is tagged retrieve=true,
     emit retrieve=false (nothing to continue from).
 
 When retrieve is true:
-  query: short search query (1-8 keywords) extracted from the message;
-    copy proper nouns and technical terms verbatim.
+  query: a search query optimized for hybrid BM25 + vector retrieval over
+    spoken-language transcripts. Construction rules depend on mode:
+
+    - narrow mode: include EVERY content noun, number, and proper noun
+      from the message. Drop only stopwords (的, 了, 是, 吗, what, the, is,
+      a, an) and pure interrogatives (多少, 哪, how, which) when they carry
+      no lexical weight. Do not collapse the question down to its "main"
+      noun — every content word in the question is potentially the one
+      that anchors the answer passage, so all must survive into the query.
+      "拉格朗日点稳定性是怎么证明的" → "拉格朗日点 稳定性 证明".
+
+    - survey mode: the goal is to widen lexical coverage of the TOPIC, not
+      to guess which instances the source covers. NEVER invent specific
+      named entities the user did not mention — you have not read the
+      source and your guesses will miss. Instead:
+        a) keep the topic anchor noun from the question (面食, 哲学, 战争);
+        b) add 3-6 synonyms, near-synonyms, or hypernyms of the topic
+           anchor and of the category word (流派 → 学派, 思想, 主义;
+           做法 → 做, 制作, 烹饪, 食谱);
+        c) drop pure enumeration words ("哪些", "有什么", "list", "kinds
+           of") — they carry no lexical weight.
+      "有哪些面食做法" → "面食 面条 面 主食 面粉 做 制作 烹饪".
+      "讲了哪些哲学流派" → "哲学 流派 学派 思想 主义 哲学家".
+
+    Keep proper nouns and technical terms verbatim in both modes.
+
   mode:
     - "narrow" for single-fact lookups, definitions, specific scenes,
       specific concepts. Default for most questions.
     - "survey" for list-summary or "what happens in episode X" /
-      "summarize the whole series" / "compare across sources".
+      "summarize the whole series" / "compare across sources" /
+      "有哪些 X" / "列举一下 Y".
   sequence_number / season_number: parse from THIS MESSAGE only when the
     user explicitly names an episode or season (e.g. "第八集", "episode 3").
     Do not infer from prior turns. Null otherwise.
