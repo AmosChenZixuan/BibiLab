@@ -297,6 +297,7 @@
       },
       "modeUnknown": "—",
       "ariaToggle": "Toggle retrieval details",
+      "rewriterPending": "analyzing query",
       "metadataPending": {
         "count": "counting sources",
         "longest": "checking longest",

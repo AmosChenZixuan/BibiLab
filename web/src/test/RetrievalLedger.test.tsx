@@ -69,7 +69,7 @@ describe("RetrievalLedger", () => {
   });
 
   test("renders pending retrieve rows", () => {
-    const pending: PendingRagCall = { id: "p1", query: "pending query", mode: "narrow" };
+    const pending: PendingRagCall = { kind: "rag", id: "p1", query: "pending query", mode: "narrow" };
     renderLedger({
       calls: [],
       pendingRetrieve: [pending],
@@ -80,7 +80,7 @@ describe("RetrievalLedger", () => {
   });
 
   test("renders pending metadata rows", () => {
-    const pending: PendingMetadataCall = { id: "pm1", query_type: "count" };
+    const pending: PendingMetadataCall = { kind: "metadata", id: "pm1", query_type: "count" };
     renderLedger({
       calls: [],
       pendingRetrieve: [],
@@ -121,8 +121,8 @@ describe("RetrievalLedger", () => {
 
   test("ordering: calls first, then pending retrieve, then pending metadata", () => {
     const call1: RetrievalCall = { ...DEFAULT_CALL, query: "call-query" };
-    const pending1: PendingRagCall = { id: "p1", query: "pending-retrieve", mode: "narrow" };
-    const pending2: PendingMetadataCall = { id: "pm1", query_type: "longest" };
+    const pending1: PendingRagCall = { kind: "rag", id: "p1", query: "pending-retrieve", mode: "narrow" };
+    const pending2: PendingMetadataCall = { kind: "metadata", id: "pm1", query_type: "longest" };
 
     renderLedger({
       calls: [call1],

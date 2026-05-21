@@ -133,7 +133,7 @@ describe("variant=pending", () => {
   test("pending retrieve row shows spinner + label", () => {
     const { container } = renderRow({
       variant: "pending",
-      pending: { id: "p1", query: "pending query", mode: "narrow" },
+      pending: { kind: "rag", id: "p1", query: "pending query", mode: "narrow" },
     });
     expect(container.innerHTML).toContain("retrieving…");
   });
@@ -141,7 +141,7 @@ describe("variant=pending", () => {
   test("pending metadata row shows spinner + query_type label", () => {
     const { container } = renderRow({
       variant: "pending",
-      pending: { id: "pm1", query_type: "count" },
+      pending: { kind: "metadata", id: "pm1", query_type: "count" },
     });
     expect(container.innerHTML).toContain("counting sources");
   });
@@ -149,7 +149,7 @@ describe("variant=pending", () => {
   test("has no toggle button", () => {
     const { container } = renderRow({
       variant: "pending",
-      pending: { id: "p1", query: "test", mode: "narrow" },
+      pending: { kind: "rag", id: "p1", query: "test", mode: "narrow" },
     });
     expect(container.querySelector('button[aria-label="Toggle retrieval details"]')).toBeNull();
   });

@@ -51,11 +51,13 @@ export type RetrievalCall = {
 };
 export type RagMetadata = { calls: RetrievalCall[] };
 export type PendingRagCall = {
+  kind: "rag";
   id: string;
   query: string;
   mode: Mode;
 };
 export type PendingMetadataCall = {
+  kind: "metadata";
   id: string;
   query_type: string;
 };

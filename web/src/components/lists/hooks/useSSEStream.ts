@@ -12,6 +12,7 @@ import {
   SSE_EVENT_ERROR,
   SSE_EVENT_META,
   SSE_EVENT_RAG,
+  SSE_EVENT_REWRITER_START,
   SSE_EVENT_TOOL_CALL_START,
   SSE_EVENT_TOOL_RESULT,
 } from "@/lib/constants";
@@ -113,12 +114,17 @@ export function useSSEStream({
         currentAssistantMsgIdRef.current = event.message_id as string;
         return;
       }
+      if (event.type === SSE_EVENT_REWRITER_START) {
+        updateAssistantMsg(assistantMsgId, { rewriterPending: true });
+        return;
+      }
       if (event.type === SSE_EVENT_DELTA) {
         const content = event.content as string;
         pendingText += content;
         updateAssistantMsg(assistantMsgId, (m) => ({
           content: m.content + content,
           contentBlocks: [...accBlocks, { type: "text", text: pendingText }],
+          rewriterPending: false,
         }));
       } else if (event.type === SSE_EVENT_TOOL_CALL_START) {
         const toolName = event.name as string;
@@ -132,16 +138,18 @@ export function useSSEStream({
           updateAssistantMsg(assistantMsgId, (m) => ({
             pendingRagCalls: [
               ...m.pendingRagCalls,
-              { id, query: args.query, mode: args.mode },
+              { kind: "rag", id, query: args.query, mode: args.mode },
             ],
+            rewriterPending: false,
           }));
         } else if (toolName === "query_list_metadata") {
           const args = event.arguments as { query_type: string };
           updateAssistantMsg(assistantMsgId, (m) => ({
             pendingMetadataCalls: [
               ...m.pendingMetadataCalls,
-              { id, query_type: args.query_type },
+              { kind: "metadata", id, query_type: args.query_type },
             ],
+            rewriterPending: false,
           }));
         }
       } else if (event.type === SSE_EVENT_TOOL_RESULT) {
@@ -199,6 +207,7 @@ export function useSSEStream({
           contentBlocks: [...accBlocks],
           pendingRagCalls: [],
           pendingMetadataCalls: [],
+          rewriterPending: false,
         });
         safeSetIsStreaming(false);
         isStreamingRef.current = false;
@@ -210,12 +219,19 @@ export function useSSEStream({
           contentBlocks: [...accBlocks],
           pendingRagCalls: [],
           pendingMetadataCalls: [],
+          rewriterPending: false,
         });
         safeSetIsStreaming(false);
         isStreamingRef.current = false;
       } else if (event.type === SSE_EVENT_ERROR) {
         const errorMsg = event.message as string;
-        updateAssistantMsg(assistantMsgId, { isStreaming: false, error: errorMsg, pendingRagCalls: [], pendingMetadataCalls: [] });
+        updateAssistantMsg(assistantMsgId, {
+          isStreaming: false,
+          error: errorMsg,
+          pendingRagCalls: [],
+          pendingMetadataCalls: [],
+          rewriterPending: false,
+        });
         safeSetIsStreaming(false);
         isStreamingRef.current = false;
       }
@@ -296,6 +312,7 @@ export function useSSEStream({
       timestamp: formatTimestamp(new Date().toISOString()),
       pendingRagCalls: [],
       pendingMetadataCalls: [],
+      rewriterPending: false,
     };
 
     const assistantMsg: MessageUI = {
@@ -310,6 +327,7 @@ export function useSSEStream({
       rag: null,
       pendingRagCalls: [],
       pendingMetadataCalls: [],
+      rewriterPending: false,
     };
 
     setMessages((prev) => [...prev, userMsg, assistantMsg]);
@@ -385,6 +403,7 @@ export function useSSEStream({
         rag: null,
         pendingRagCalls: [],
         pendingMetadataCalls: [],
+        rewriterPending: false,
       };
       return [...prev, newMsg];
     });

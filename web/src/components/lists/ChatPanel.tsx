@@ -315,6 +315,7 @@ export function ChatPanel({
                 msg.content ||
                 msg.pendingRagCalls.length > 0 ||
                 msg.pendingMetadataCalls.length > 0 ||
+                msg.rewriterPending ||
                 (msg.rag?.calls?.length ?? 0) > 0;
               return (
               <div key={msg.id} className={`msg ${msg.role}`}>
@@ -330,6 +331,7 @@ export function ChatPanel({
                         calls={msg.rag?.calls ?? []}
                         pendingRetrieve={msg.pendingRagCalls}
                         pendingMetadata={msg.pendingMetadataCalls}
+                        rewriterPending={msg.rewriterPending}
                         streaming={msg.isStreaming}
                       />
                     ) : null}

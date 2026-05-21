@@ -7,3 +7,4 @@ export const SSE_EVENT_CITATION = "citation" as const;
 export const SSE_EVENT_CANCELLED = "cancelled" as const;
 export const SSE_EVENT_META = "meta" as const;
 export const SSE_EVENT_RAG = "rag" as const;
+export const SSE_EVENT_REWRITER_START = "rewriter_start" as const;

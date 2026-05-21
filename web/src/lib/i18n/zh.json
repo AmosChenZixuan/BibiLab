@@ -297,6 +297,7 @@
       },
       "modeUnknown": "—",
       "ariaToggle": "切换检索详情",
+      "rewriterPending": "分析问题中",
       "metadataPending": {
         "count": "统计来源",
         "longest": "检查最长",

@@ -24,6 +24,7 @@ export interface MessageUI {
   rag: RagMetadata | null;
   pendingRagCalls: PendingRagCall[];
   pendingMetadataCalls: PendingMetadataCall[];
+  rewriterPending: boolean;
 }
 
 export function useConversationHistory(
@@ -89,6 +90,7 @@ export function useConversationHistory(
             rag,
             pendingRagCalls: [],
             pendingMetadataCalls: [],
+            rewriterPending: false,
           };
         });
         setMessages(loaded);

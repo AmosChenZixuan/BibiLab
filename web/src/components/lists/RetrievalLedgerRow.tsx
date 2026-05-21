@@ -24,7 +24,7 @@ export function RetrievalLedgerRow({ variant, call, pending, streaming = false }
   const [expanded, setExpanded] = useState(false);
 
   if (variant === "pending" && pending) {
-    const isRag = "mode" in pending;
+    const isRag = pending.kind === "rag";
     const label = isRag
       ? t("chat.ledger.summaryPending")
       : t(`chat.ledger.metadataPending.${(pending as PendingMetadataCall).query_type}`, {});
