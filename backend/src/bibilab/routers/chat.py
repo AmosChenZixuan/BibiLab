@@ -80,6 +80,9 @@ SSE_EVENT_TOOL_RESULT = "tool_result"
 SSE_EVENT_TOOL_CALL_START = "tool_call_start"
 SSE_EVENT_CITATION = "citation"
 SSE_EVENT_CANCELLED = "cancelled"
+# Emitted before run_rewriter so the client renders an "analyzing query" hint
+# during the rewriter LLM call (up to llm_timeout seconds of otherwise-silent wait).
+SSE_EVENT_REWRITER_START = "rewriter_start"
 # Final authoritative rag.calls (persisted shape, with context[]) emitted just
 # before the terminal event so the client ledger matches post-refresh state
 # without a manual reload.
@@ -510,6 +513,7 @@ async def run_chat_turn(
         system_message = "\n\n".join(system_parts)
 
         # --- Rewriter stage (determines whether to retrieve) ---
+        buf.append({"type": SSE_EVENT_REWRITER_START})
         prior = _build_prior_user_turns(history)
         rewriter_intent, rewriter_telemetry = run_rewriter(
             current=user_message_text,

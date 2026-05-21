@@ -24,6 +24,6 @@ class RetrievalParams:
 # Higher margin = more aggressive filtering (keep fewer chunks).
 # "narrow" targets specific facts; "survey" lets broader matches through.
 _RELEVANCE_MARGIN_BY_MODE: dict[Mode, float] = {
-    "narrow": 2.0,
+    "narrow": 1.5,
     "survey": 2.5,
 }

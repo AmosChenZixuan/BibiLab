@@ -3,6 +3,10 @@
 Owns the retrieve decision (retrieve true/false), query extraction, mode,
 and facet detection (sequence_number / season_number). Runs over an
 asymmetric context that excludes all assistant history.
+
+Failure policy: retry until the LLM returns a schema-valid intent or the
+retry budget is exhausted. No regex fallback — a degraded answer is worse
+than a surfaced error.
 """
 
 import json
@@ -12,7 +16,7 @@ import time
 from dataclasses import dataclass
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, ValidationError, model_validator
 
 from bibilab.config import AIConfig
 from bibilab.pipeline._shared import _call_llm
@@ -48,7 +52,17 @@ class PriorUserTurn:
     retrieved: bool
 
 
+class RewriterError(RuntimeError):
+    """Rewriter exhausted retry budget without a schema-valid response.
+
+    Raised by run_rewriter on terminal failure. The outer chat handler
+    surfaces this as an SSE error event — no degraded fallback.
+    """
+
+
 _REWRITER_WINDOW = 5
+_REWRITER_MAX_ATTEMPTS = 3
+_REWRITER_BACKOFF_SECONDS = (0.0, 1.0, 3.0)
 
 _REWRITER_SYSTEM = """\
 You translate a user's chat message into a retrieval intent for a private
@@ -94,28 +108,12 @@ and continuation inheritance ("继续", "然后呢"). You do not see any prior
 assistant output.
 """
 
+_CORRECTION_SUFFIX = (
+    "\n\nYour previous output was not valid JSON or violated the schema. "
+    "Return ONLY a JSON object matching the schema above. No prose, no fences."
+)
+
 _FENCE_RE = re.compile(r"^```(?:json)?\s*|\s*```$", re.MULTILINE)
-
-_CONTINUATION_RE = re.compile(
-    r"^(继续|然后呢|接着|再讲讲|还有呢|还有吗|go on|tell me more|continue|more)$",
-    re.IGNORECASE,
-)
-
-_ACK_RE = re.compile(
-    r"^(ok|okay|k|thanks|thank you|got it|sure|"
-    r"嗯|哦|好的?|行|知道了|我懂了|明白|了解了?|了解)$",
-    re.IGNORECASE,
-)
-
-_SEQ_NUM_RE = re.compile(r"第?(\d+)\s*(集|话|章)", re.IGNORECASE)
-
-_EP_NUM_RE = re.compile(r"(?:episode|ep)\s*(\d+)", re.IGNORECASE)
-
-_SURVEY_RE = re.compile(
-    r"(讲了什么|主要讲|概述|总结|全部|所有|"
-    r"summarize|summary|overview|what happens|whole|compare)",
-    re.IGNORECASE,
-)
 
 
 def build_rewriter_prompt(*, current: str, prior: list[PriorUserTurn]) -> str:
@@ -140,39 +138,13 @@ def parse_rewriter_response(raw: str) -> RewriterIntent | None:
     try:
         data = json.loads(text)
     except json.JSONDecodeError:
-        logger.exception("rewriter: invalid JSON (len=%d, tail=%r)", len(raw), raw[-200:])
+        logger.warning("rewriter: invalid JSON (len=%d, tail=%r)", len(raw), raw[-200:])
         return None
     try:
         return RewriterIntent(**data)
-    except (ValueError, TypeError):
-        logger.exception("rewriter: invariant violation (data=%r)", data)
+    except (ValidationError, ValueError, TypeError) as exc:
+        logger.warning("rewriter: invariant violation (%s, data=%r)", exc, data)
         return None
-
-
-def fallback_intent(user_message: str, prior: list[PriorUserTurn] | None = None) -> RewriterIntent:
-    """Safe-default intent when the rewriter LLM fails."""
-    text = user_message.strip()
-    if not text:
-        return RewriterIntent(retrieve=False)
-
-    if _ACK_RE.match(text):
-        return RewriterIntent(retrieve=False)
-
-    if _CONTINUATION_RE.match(text) and prior:
-        for turn in reversed(prior):
-            if turn.retrieved:
-                return RewriterIntent(retrieve=True, query=turn.text, mode="narrow")
-        return RewriterIntent(retrieve=False)
-
-    sequence_number = None
-    m = _SEQ_NUM_RE.search(user_message)
-    if not m:
-        m = _EP_NUM_RE.search(user_message)
-    if m:
-        sequence_number = int(m.group(1))
-
-    mode = "survey" if _SURVEY_RE.search(user_message) else "narrow"
-    return RewriterIntent(retrieve=True, query=user_message, mode=mode, sequence_number=sequence_number)
 
 
 def run_rewriter(
@@ -183,28 +155,41 @@ def run_rewriter(
     llm_timeout: int = 30,
     llm_max_tokens: int = 1024,
 ) -> tuple[RewriterIntent, dict]:
-    """Returns (intent, telemetry). telemetry persists at metadata.rag.rewriter."""
-    prompt = build_rewriter_prompt(current=current, prior=prior)
-    started = time.monotonic()
-    fallback = False
-    try:
-        raw = _call_llm(prompt, cfg, llm_timeout=llm_timeout, llm_max_tokens=llm_max_tokens)
-        intent = parse_rewriter_response(raw)
-        if intent is None:
-            intent = fallback_intent(current, prior)
-            fallback = True
-    except Exception:  # noqa: BLE001 - rewriter must always return; fallback owns recovery
-        logger.exception("rewriter: LLM call failed; falling back")
-        intent = fallback_intent(current, prior)
-        fallback = True
+    """Retry until the LLM returns a schema-valid intent or budget is exhausted.
 
-    latency_ms = int((time.monotonic() - started) * 1000)
-    telemetry = {
-        "retrieve": intent.retrieve,
-        "mode": intent.mode,
-        "sequence_number": intent.sequence_number,
-        "season_number": intent.season_number,
-        "fallback": fallback,
-        "latency_ms": latency_ms,
-    }
-    return intent, telemetry
+    Provider errors (timeouts, 429, 5xx) are retried with exponential backoff.
+    JSON / schema errors are retried with a correction suffix appended to the
+    prompt. On exhaustion, raises RewriterError — the caller MUST surface this
+    to the user; degraded answers are not allowed.
+    """
+    base_prompt = build_rewriter_prompt(current=current, prior=prior)
+    started = time.monotonic()
+    last_error: Exception | None = None
+
+    for attempt in range(_REWRITER_MAX_ATTEMPTS):
+        if attempt > 0:
+            time.sleep(_REWRITER_BACKOFF_SECONDS[attempt])
+        prompt = base_prompt if attempt == 0 else base_prompt + _CORRECTION_SUFFIX
+        try:
+            raw = _call_llm(prompt, cfg, llm_timeout=llm_timeout, llm_max_tokens=llm_max_tokens)
+        except Exception as exc:  # noqa: BLE001 - retry every provider error class
+            last_error = exc
+            logger.warning("rewriter: LLM call failed (attempt %d/%d): %s", attempt + 1, _REWRITER_MAX_ATTEMPTS, exc)
+            continue
+
+        intent = parse_rewriter_response(raw)
+        if intent is not None:
+            latency_ms = int((time.monotonic() - started) * 1000)
+            telemetry = {
+                "retrieve": intent.retrieve,
+                "mode": intent.mode,
+                "sequence_number": intent.sequence_number,
+                "season_number": intent.season_number,
+                "attempts": attempt + 1,
+                "latency_ms": latency_ms,
+            }
+            return intent, telemetry
+        last_error = ValueError("rewriter returned schema-invalid JSON")
+
+    logger.error("rewriter: exhausted %d attempts; last error: %s", _REWRITER_MAX_ATTEMPTS, last_error)
+    raise RewriterError("rewriter exhausted retry budget") from last_error
