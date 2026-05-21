@@ -170,6 +170,16 @@ def run_rewriter(
                 "attempts": attempt + 1,
                 "latency_ms": latency_ms,
             }
+            logger.info(
+                "rewriter intent: retrieve=%s query=%r mode=%s seq=%s season=%s attempts=%d latency_ms=%d",
+                intent.retrieve,
+                intent.query,
+                intent.mode,
+                intent.sequence_number,
+                intent.season_number,
+                attempt + 1,
+                latency_ms,
+            )
             return intent, telemetry
         last_error = ValueError("rewriter returned schema-invalid JSON")
 
