@@ -205,7 +205,7 @@ async def _run_with_fakes(monkeypatch, *, rewriter_return, retrieve_side_effect=
 @pytest.mark.asyncio
 async def test_synthetic_injection_shape_when_retrieve_true(monkeypatch):
     intent = RewriterIntent(retrieve=True, query="q", mode="narrow")
-    telemetry = {"retrieve": True, "mode": "narrow", "fallback": False, "latency_ms": 5}
+    telemetry = {"retrieve": True, "mode": "narrow", "attempts": 1, "latency_ms": 5}
     _, captured_messages = await _run_with_fakes(
         monkeypatch,
         rewriter_return=(intent, telemetry),
@@ -231,32 +231,91 @@ async def test_synthetic_injection_shape_when_retrieve_true(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_rewriter_fallback_telemetry_persisted(monkeypatch):
+async def test_rewriter_attempts_telemetry_persisted(monkeypatch):
+    """metadata.rag.rewriter records attempts + mode + latency."""
     intent = RewriterIntent(retrieve=True, query="q", mode="narrow")
-    telemetry = {"retrieve": True, "mode": "narrow", "fallback": True, "latency_ms": 1}
+    telemetry = {"retrieve": True, "mode": "narrow", "attempts": 2, "latency_ms": 12}
     captured, _ = await _run_with_fakes(
         monkeypatch,
         rewriter_return=(intent, telemetry),
         retrieve_return=_retrieve_result_stub(),
     )
-    assert captured["metadata"]["rag"]["rewriter"]["fallback"] is True
-    assert captured["metadata"]["rag"]["rewriter"]["mode"] == "narrow"
+    rewriter_meta = captured["metadata"]["rag"]["rewriter"]
+    assert rewriter_meta["attempts"] == 2
+    assert rewriter_meta["mode"] == "narrow"
+    assert "fallback" not in rewriter_meta  # legacy field removed
 
 
 @pytest.mark.asyncio
 async def test_execute_retrieve_failure_completes_with_apology(monkeypatch):
-    """When pre-retrieve raises, the turn must still finalize with a 'done'
-    status (the answer LLM gets an apology directive) and tool_blocks must
-    be empty (no synthetic block to persist)."""
+    """When pre-retrieve raises (after rewriter succeeded), the turn must still
+    finalize with a 'done' status — the answer LLM gets an apology directive
+    and tool_blocks remain empty (no synthetic block to persist)."""
     intent = RewriterIntent(retrieve=True, query="q", mode="narrow")
-    telemetry = {"retrieve": True, "mode": "narrow", "fallback": False, "latency_ms": 1}
+    telemetry = {"retrieve": True, "mode": "narrow", "attempts": 1, "latency_ms": 1}
     captured, _ = await _run_with_fakes(
         monkeypatch,
         rewriter_return=(intent, telemetry),
         retrieve_side_effect=RuntimeError("reranker dead"),
     )
-    # Turn must complete (LLM still streams the apology); no tool_blocks persisted.
     assert captured["status"] == "done"
     assert captured["tool_blocks"] is None
-    # No rag.calls because retrieve raised before any result was captured.
     assert "calls" not in captured["metadata"].get("rag", {})
+
+
+@pytest.mark.asyncio
+async def test_rewriter_error_surfaces_as_sse_error(monkeypatch):
+    """Rewriter exhausting its retry budget must surface as a failed turn,
+    not a degraded answer. The user can then retry."""
+    from bibilab.pipeline.rewriter import RewriterError
+
+    def boom(*, current, prior, cfg, **kw):
+        raise RewriterError("exhausted retries")
+
+    from bibilab.config import AIConfig, BackendConfig, BibilabConfig
+    from bibilab.pipeline.chat_runs import ChatRunRegistry
+    from bibilab.routers import chat as chat_module
+
+    captured: dict = {}
+
+    async def capture_update(message_id, content, metadata, status, error=None, tool_blocks=None):
+        captured["status"] = status
+        captured["error"] = error
+
+    async def noop(*a, **kw):
+        return None
+
+    async def fake_stream_llm(*a, **kw):
+        if False:  # pragma: no cover - must not be called
+            yield None
+
+    monkeypatch.setattr(chat_module, "run_rewriter", boom)
+    monkeypatch.setattr(chat_module, "stream_llm", fake_stream_llm)
+    monkeypatch.setattr(chat_module, "update_message_content", capture_update)
+    monkeypatch.setattr(chat_module, "set_active_stream", noop)
+
+    registry = ChatRunRegistry()
+    msg_id = "msg-rew-err"
+    registry.register(msg_id, task=None)
+
+    cfg = BibilabConfig(
+        ai=AIConfig(protocol="openai", model="x", api_key="k", base_url=""),
+        backend=BackendConfig(),
+    )
+
+    await chat_module.run_chat_turn(
+        message_id=msg_id,
+        conversation_id="c1",
+        list_id="l1",
+        user_message_text="q",
+        history=[],
+        summary=None,
+        source_ids=["s1"],
+        source_map={"v1": "s1"},
+        ui_lang="en",
+        cfg=cfg,
+        registry=registry,
+    )
+
+    assert captured["status"] == "failed"
+    assert captured["error"]  # classify_error populated it

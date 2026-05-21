@@ -1444,7 +1444,7 @@ def test_retrieval_params_uses_mode_field():
 
     p = RetrievalParams(depth_per_source=2, top_k=8, mode="narrow")
     assert p.mode == "narrow"
-    assert _RELEVANCE_MARGIN_BY_MODE["narrow"] == 2.0
+    assert _RELEVANCE_MARGIN_BY_MODE["narrow"] == 1.5
     assert _RELEVANCE_MARGIN_BY_MODE["survey"] == 2.5
 
 

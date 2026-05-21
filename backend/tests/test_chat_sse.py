@@ -8,13 +8,34 @@ import openai
 import pytest
 
 from bibilab.pipeline._shared import StreamEvent, ToolCall
+from bibilab.pipeline.rewriter import RewriterIntent
 from bibilab.routers.chat import (
     SSE_EVENT_DELTA,
     SSE_EVENT_DONE,
     SSE_EVENT_TOOL_RESULT,
-    _client_tool_result,
 )
 from tests import an_async_generator
+
+
+@pytest.fixture(autouse=True)
+def _default_rewriter_mock(monkeypatch):
+    """Most tests in this file don't care about the rewriter; default to
+    retrieve=False so they never touch the live LLM. Tests that exercise
+    retrieve must override via monkeypatch.setattr or with patch(...)."""
+
+    def _fake(*, current, prior, cfg, **kw):
+        return RewriterIntent(retrieve=False), {
+            "retrieve": False,
+            "mode": None,
+            "sequence_number": None,
+            "season_number": None,
+            "attempts": 1,
+            "latency_ms": 0,
+        }
+
+    from bibilab.routers import chat as chat_module
+
+    monkeypatch.setattr(chat_module, "run_rewriter", _fake)
 
 
 def _parse_sse(text: str) -> list[dict]:
@@ -32,6 +53,26 @@ async def _get_assistant_msgs(client, list_id: str) -> list[dict]:
 
 async def _create_list(client, name: str) -> str:
     return (await client.post("/lists", json={"name": name})).json()["id"]
+
+
+@pytest.mark.asyncio
+async def test_rewriter_start_event_emitted_first(client):
+    """rewriter_start fires before any delta/tool_call_start so the client
+    can render an analyzing-query hint during the rewriter LLM call."""
+    list_id = (await client.post("/lists", json={"name": "Test"})).json()["id"]
+
+    with patch("bibilab.routers.chat.stream_with_tools") as mock:
+        mock.return_value = an_async_generator([StreamEvent(type="delta", content="hi"), StreamEvent(type="done")])
+        resp = await client.post(f"/lists/{list_id}/chat", json={"message": "q"})
+
+    assert resp.status_code == 200
+    events = _parse_sse(resp.text)
+    types = [e["type"] for e in events]
+    # meta first (message_id), then rewriter_start before any delta
+    assert "rewriter_start" in types
+    rewriter_idx = types.index("rewriter_start")
+    delta_idx = types.index("delta")
+    assert rewriter_idx < delta_idx
 
 
 @pytest.mark.asyncio
@@ -169,19 +210,48 @@ async def test_chat_endpoint_handles_generate_report_tool(client):
 
 
 @pytest.mark.asyncio
-async def test_retrieve_tool_result_has_coverage(client):
-    """retrieve tool_result includes coverage metadata."""
+async def test_retrieve_tool_result_has_coverage(client, monkeypatch):
+    """retrieve tool_result includes coverage metadata. After rewriter refactor
+    retrieve is pre-executed in run_chat_turn, not dispatched by the answer LLM."""
     list_id = (await client.post("/lists", json={"name": "Test"})).json()["id"]
 
+    def fake_rewriter(*, current, prior, cfg, **kw):
+        return RewriterIntent(retrieve=True, query="test", mode="narrow"), {
+            "retrieve": True,
+            "mode": "narrow",
+            "sequence_number": None,
+            "season_number": None,
+            "attempts": 1,
+            "latency_ms": 0,
+        }
+
+    async def fake_execute_retrieve(**kwargs):
+        return {
+            "query": "test",
+            "mode": "narrow",
+            "candidates_evaluated": 0,
+            "sources_with_hits": 0,
+            "sources_total": 1,
+            "source_coverage": [],
+            "_chunks": "",
+            "_turn_indices": [],
+            "_raw_chunks": [],
+            "dropped_by_gate": 0,
+            "reranked": False,
+            "scoped_pool_size": 1,
+            "facet_scope": None,
+            "gate_margin": None,
+            "neighbors_pulled": 0,
+        }
+
     async def fake_stream(messages, cfg, tools=None, execute_tool_fn=None, system=None, llm_max_tokens=2048, **kwargs):
-        result = await execute_tool_fn("retrieve", {"query": "test", "mode": "narrow"})
-        yield StreamEvent(
-            type="tool_result",
-            content=json.dumps({"name": "retrieve", "result": _client_tool_result(result)}),
-        )
         yield StreamEvent(type="delta", content="Answer")
         yield StreamEvent(type="done")
 
+    from bibilab.routers import chat as chat_module
+
+    monkeypatch.setattr(chat_module, "run_rewriter", fake_rewriter)
+    monkeypatch.setattr(chat_module, "execute_retrieve", fake_execute_retrieve)
     with patch("bibilab.routers.chat.stream_with_tools", fake_stream):
         resp = await client.post(f"/lists/{list_id}/chat", json={"message": "what is this?"})
 
@@ -228,7 +298,7 @@ async def test_smoke_scenario_1_chitchat_no_tool_calls(client):
         yield StreamEvent(type=SSE_EVENT_DONE)
 
     def fake_rewriter(*, current, prior, cfg, **kw):
-        return RewriterIntent(retrieve=False), {"retrieve": False, "fallback": False, "latency_ms": 0}
+        return RewriterIntent(retrieve=False), {"retrieve": False, "attempts": 1, "latency_ms": 0}
 
     with (
         patch("bibilab.routers.chat.stream_with_tools", fake_stream),
@@ -294,7 +364,7 @@ async def test_smoke_scenario_2_retrieve(client, mode, query, user_message, delt
         return RewriterIntent(retrieve=True, query=query, mode=mode), {
             "retrieve": True,
             "mode": mode,
-            "fallback": False,
+            "attempts": 1,
             "latency_ms": 0,
         }
 
@@ -337,7 +407,7 @@ async def test_smoke_scenario_3_generate_report_no_retrieve(client):
     report_result = {"artifact_id": "art-123", "job_id": "job-456", "name": "brief", "type": "brief"}
 
     def fake_rewriter(*, current, prior, cfg, **kw):
-        return RewriterIntent(retrieve=False), {"retrieve": False, "fallback": False, "latency_ms": 0}
+        return RewriterIntent(retrieve=False), {"retrieve": False, "attempts": 1, "latency_ms": 0}
 
     async def fake_stream(messages, cfg, tools=None, execute_tool_fn=None, system=None, llm_max_tokens=2048, **kwargs):
         yield StreamEvent(type=SSE_EVENT_DELTA, content="Let me generate a brief for you.")
@@ -652,7 +722,7 @@ async def test_chat_sse_hallucinated_index_emitted_as_text(client, caplog):
         yield StreamEvent(type="done")
 
     def fake_rewriter(*, current, prior, cfg, **kw):
-        return RewriterIntent(retrieve=False), {"retrieve": False, "fallback": False, "latency_ms": 0}
+        return RewriterIntent(retrieve=False), {"retrieve": False, "attempts": 1, "latency_ms": 0}
 
     import logging
 
@@ -665,7 +735,7 @@ async def test_chat_sse_hallucinated_index_emitted_as_text(client, caplog):
 
     assert resp.status_code == 200
     events = _parse_sse(resp.text)
-    assert all(e["type"] in ("delta", "done", "meta") for e in events)
+    assert all(e["type"] in ("delta", "done", "meta", "rewriter_start") for e in events)
     delta_text = "".join(e.get("content", "") for e in events if e["type"] == "delta")
     assert "[7]" in delta_text
     assert any("citation_hallucinated_index" in rec.message for rec in caplog.records)
@@ -690,7 +760,7 @@ async def test_run_chat_turn_persists_tool_blocks(monkeypatch, tmp_path):
     def fake_rewriter(*, current, prior, cfg, **kw):
         return RewriterIntent(retrieve=True, query="x", mode="narrow"), {
             "retrieve": True,
-            "fallback": False,
+            "attempts": 1,
             "latency_ms": 0,
         }
 
@@ -887,7 +957,7 @@ async def test_rag_metadata_persists_calls_list(client):
         return RewriterIntent(retrieve=True, query="test query", mode="narrow"), {
             "retrieve": True,
             "mode": "narrow",
-            "fallback": False,
+            "attempts": 1,
             "latency_ms": 0,
         }
 
@@ -937,7 +1007,7 @@ async def test_rag_metadata_persists_mode_and_context(client, monkeypatch):
         return RewriterIntent(retrieve=True, query="test", mode="narrow"), {
             "retrieve": True,
             "mode": "narrow",
-            "fallback": False,
+            "attempts": 1,
             "latency_ms": 0,
         }
 
@@ -1095,7 +1165,7 @@ async def test_run_chat_turn_replays_tool_blocks_on_turn_2(monkeypatch):
     monkeypatch.setattr(chat_module, "stream_llm", fake_stream_llm)
 
     def fake_rewriter(*, current, prior, cfg, **kw):
-        return RewriterIntent(retrieve=False), {"retrieve": False, "fallback": False, "latency_ms": 0}
+        return RewriterIntent(retrieve=False), {"retrieve": False, "attempts": 1, "latency_ms": 0}
 
     monkeypatch.setattr(chat_module, "run_rewriter", fake_rewriter)
 
@@ -1324,7 +1394,7 @@ async def test_rag_call_carries_facet_scope(client):
         return RewriterIntent(retrieve=True, query="第八集", mode="narrow", sequence_number=8), {
             "retrieve": True,
             "mode": "narrow",
-            "fallback": False,
+            "attempts": 1,
             "latency_ms": 0,
         }
 

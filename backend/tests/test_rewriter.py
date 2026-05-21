@@ -66,8 +66,8 @@ class TestBuildRewriterPrompt:
 
         prior = [PriorUserTurn(text=f"msg{i}", retrieved=True) for i in range(10)]
         prompt = build_rewriter_prompt(current="继续", prior=prior)
-        assert "msg9" in prompt  # most recent kept
-        assert "msg4" not in prompt  # 5th-from-last dropped
+        assert "msg9" in prompt
+        assert "msg4" not in prompt
 
     def test_no_assistant_content_in_prompt(self):
         from bibilab.pipeline.rewriter import PriorUserTurn, build_rewriter_prompt
@@ -108,52 +108,91 @@ class TestParseRewriterResponse:
         assert parse_rewriter_response(raw) is None
 
 
-class TestFallbackIntent:
-    def test_uses_raw_message_and_narrow_mode(self):
-        from bibilab.pipeline.rewriter import fallback_intent
-
-        intent = fallback_intent("hello there")
-        assert intent.retrieve is True
-        assert intent.query == "hello there"
-        assert intent.mode == "narrow"
-
-
 class TestRunRewriter:
     def _cfg(self):
         from bibilab.config import AIConfig
 
         return AIConfig(protocol="anthropic", model="claude-haiku-4-5-20251001", api_key="test")
 
-    def test_happy_path_returns_intent_and_telemetry(self):
-        from unittest.mock import patch
+    def test_happy_path_first_attempt_succeeds(self, monkeypatch):
+        from bibilab.pipeline import rewriter as mod
 
-        from bibilab.pipeline.rewriter import run_rewriter
+        # Zero out backoff so tests are fast.
+        monkeypatch.setattr(mod, "_REWRITER_BACKOFF_SECONDS", (0.0, 0.0, 0.0))
 
         raw = '{"retrieve": true, "query": "x", "mode": "narrow", "sequence_number": null, "season_number": null}'
-        with patch("bibilab.pipeline.rewriter._call_llm", return_value=raw):
-            intent, tel = run_rewriter(current="x?", prior=[], cfg=self._cfg())
+        calls: list = []
+
+        def fake_call(prompt, cfg, **kw):
+            calls.append(prompt)
+            return raw
+
+        monkeypatch.setattr(mod, "_call_llm", fake_call)
+        intent, tel = mod.run_rewriter(current="x?", prior=[], cfg=self._cfg())
         assert intent.retrieve is True
-        assert tel["fallback"] is False
+        assert tel["attempts"] == 1
         assert tel["mode"] == "narrow"
-        assert tel["latency_ms"] >= 0
+        assert len(calls) == 1
+        # First attempt uses base prompt — no correction suffix.
+        assert "previous output was not valid JSON" not in calls[0]
 
-    def test_invalid_json_falls_back(self):
-        from unittest.mock import patch
+    def test_invalid_json_then_success_on_retry(self, monkeypatch):
+        from bibilab.pipeline import rewriter as mod
 
-        from bibilab.pipeline.rewriter import run_rewriter
+        monkeypatch.setattr(mod, "_REWRITER_BACKOFF_SECONDS", (0.0, 0.0, 0.0))
 
-        with patch("bibilab.pipeline.rewriter._call_llm", return_value="not json"):
-            intent, tel = run_rewriter(current="hello", prior=[], cfg=self._cfg())
-        assert tel["fallback"] is True
-        assert intent.query == "hello"
-        assert intent.mode == "narrow"
+        good = '{"retrieve": false, "query": null, "mode": null, "sequence_number": null, "season_number": null}'
+        responses = iter(["not json", good])
+        seen_prompts: list = []
 
-    def test_llm_exception_falls_back(self):
-        from unittest.mock import patch
+        def fake_call(prompt, cfg, **kw):
+            seen_prompts.append(prompt)
+            return next(responses)
 
-        from bibilab.pipeline.rewriter import run_rewriter
+        monkeypatch.setattr(mod, "_call_llm", fake_call)
+        intent, tel = mod.run_rewriter(current="hi", prior=[], cfg=self._cfg())
+        assert intent.retrieve is False
+        assert tel["attempts"] == 2
+        # Second attempt appends the correction suffix.
+        assert "previous output was not valid JSON" in seen_prompts[1]
+        assert "previous output was not valid JSON" not in seen_prompts[0]
 
-        with patch("bibilab.pipeline.rewriter._call_llm", side_effect=RuntimeError("timeout")):
-            intent, tel = run_rewriter(current="hello", prior=[], cfg=self._cfg())
-        assert tel["fallback"] is True
-        assert intent.retrieve is True
+    def test_provider_error_then_success(self, monkeypatch):
+        from bibilab.pipeline import rewriter as mod
+
+        monkeypatch.setattr(mod, "_REWRITER_BACKOFF_SECONDS", (0.0, 0.0, 0.0))
+
+        good = '{"retrieve": false}'
+        attempt = {"n": 0}
+
+        def fake_call(prompt, cfg, **kw):
+            attempt["n"] += 1
+            if attempt["n"] == 1:
+                raise RuntimeError("timeout")
+            return good
+
+        monkeypatch.setattr(mod, "_call_llm", fake_call)
+        intent, tel = mod.run_rewriter(current="hi", prior=[], cfg=self._cfg())
+        assert intent.retrieve is False
+        assert tel["attempts"] == 2
+
+    def test_exhausted_budget_raises_rewriter_error(self, monkeypatch):
+        from bibilab.pipeline import rewriter as mod
+
+        monkeypatch.setattr(mod, "_REWRITER_BACKOFF_SECONDS", (0.0, 0.0, 0.0))
+        monkeypatch.setattr(mod, "_call_llm", lambda *a, **kw: "still not json")
+
+        with pytest.raises(mod.RewriterError):
+            mod.run_rewriter(current="hi", prior=[], cfg=self._cfg())
+
+    def test_exhausted_provider_errors_raise_rewriter_error(self, monkeypatch):
+        from bibilab.pipeline import rewriter as mod
+
+        monkeypatch.setattr(mod, "_REWRITER_BACKOFF_SECONDS", (0.0, 0.0, 0.0))
+
+        def fake_call(*a, **kw):
+            raise RuntimeError("timeout")
+
+        monkeypatch.setattr(mod, "_call_llm", fake_call)
+        with pytest.raises(mod.RewriterError):
+            mod.run_rewriter(current="hi", prior=[], cfg=self._cfg())

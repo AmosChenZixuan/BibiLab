@@ -148,7 +148,7 @@ class TestQuantileGate:
 class TestRelevanceMarginByModeMap:
     def test_relevance_margin_by_mode_map(self):
         """AC4: _RELEVANCE_MARGIN_BY_MODE maps mode to correct margins."""
-        assert _RELEVANCE_MARGIN_BY_MODE["narrow"] == 2.0
+        assert _RELEVANCE_MARGIN_BY_MODE["narrow"] == 1.5
         assert _RELEVANCE_MARGIN_BY_MODE["survey"] == 2.5
 
 
