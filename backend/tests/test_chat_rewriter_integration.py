@@ -1,6 +1,12 @@
-"""Tests for rewriter integration in chat.py — _build_prior_user_turns."""
+"""Tests for rewriter integration in chat.py — _build_prior_user_turns
+plus the synthetic-injection / fallback-telemetry / retrieve-failure paths
+in run_chat_turn."""
 
-from bibilab.pipeline.rewriter import PriorUserTurn
+import json
+
+import pytest
+
+from bibilab.pipeline.rewriter import PriorUserTurn, RewriterIntent, build_rewriter_prompt
 from bibilab.routers.chat import _build_prior_user_turns
 
 
@@ -71,9 +77,10 @@ class TestBuildPriorUserTurns:
         assert len(result) == 2
         assert result[1] == PriorUserTurn(text="last", retrieved=False)
 
-    def test_missing_content_key_defaults_to_empty(self):
-        result = _build_prior_user_turns([{"role": "user"}])
-        assert result == [PriorUserTurn(text="", retrieved=False)]
+    def test_missing_or_empty_content_skipped(self):
+        # Empty content would inject literal "" into the rewriter prompt; skip instead.
+        result = _build_prior_user_turns([{"role": "user"}, {"role": "user", "content": "  "}])
+        assert result == []
 
     def test_tool_blocks_is_none(self):
         history = [
@@ -82,3 +89,174 @@ class TestBuildPriorUserTurns:
         ]
         result = _build_prior_user_turns(history)
         assert result == [PriorUserTurn(text="hi", retrieved=False)]
+
+
+class TestRewriterPromptAsymmetricContext:
+    """Bug 4 regression: rewriter prompt must exclude all assistant content."""
+
+    def test_assistant_text_not_in_prompt(self):
+        # Prior assistant replied with "第六集" content. Rewriter must not see it,
+        # so sequence_number inference cannot bleed from assistant turn.
+        assistant_leak = "ASSISTANT_LEAK_SENTINEL_第六集"
+        prior = [PriorUserTurn(text="第六集发生了什么", retrieved=True)]
+        prompt = build_rewriter_prompt(current="女巫的死期是哪一天", prior=prior)
+        assert "第六集发生了什么" in prompt  # prior USER message is fine
+        assert "女巫的死期是哪一天" in prompt
+        assert assistant_leak not in prompt  # nothing from assistant role is injected
+
+
+# --- run_chat_turn integration: synthetic injection + fallback + failure paths ---
+
+
+def _retrieve_result_stub(query: str = "q", mode: str = "narrow") -> dict:
+    return {
+        "query": query,
+        "mode": mode,
+        "candidates_evaluated": 1,
+        "sources_with_hits": 1,
+        "sources_total": 1,
+        "source_coverage": [{"source_id": "s1", "video_id": "v1", "title": "V1"}],
+        "_chunks": "fmt",
+        "_turn_indices": [1],
+        "_raw_chunks": [
+            {
+                "source_id": "s1",
+                "chunk_id": "v1_0_10",
+                "content": "verbatim",
+                "video_title": "V1",
+                "timestamp_start": 0.0,
+                "timestamp_end": 10.0,
+                "citation_index": 1,
+            }
+        ],
+        "dropped_by_gate": 0,
+        "reranked": False,
+        "scoped_pool_size": 1,
+        "facet_scope": None,
+        "gate_margin": None,
+        "neighbors_pulled": 0,
+    }
+
+
+async def _run_with_fakes(monkeypatch, *, rewriter_return, retrieve_side_effect=None, retrieve_return=None):
+    """Drive run_chat_turn with patched LLM/retrieve. Return captured kwargs from update_message_content."""
+    from bibilab.config import AIConfig, BackendConfig, BibilabConfig
+    from bibilab.pipeline._shared import StreamEvent
+    from bibilab.pipeline.chat_runs import ChatRunRegistry
+    from bibilab.routers import chat as chat_module
+
+    captured_messages: list = []
+
+    def fake_rewriter(*, current, prior, cfg, **kw):
+        return rewriter_return
+
+    async def fake_stream_llm(messages, cfg, tools=None, system=None, llm_max_tokens=2048):
+        captured_messages.append(messages)
+        yield StreamEvent(type="delta", content="ok")
+        yield StreamEvent(type="done")
+
+    async def fake_execute_retrieve(**kwargs):
+        if retrieve_side_effect is not None:
+            raise retrieve_side_effect
+        return retrieve_return
+
+    captured_update: dict = {}
+
+    async def capture_update(message_id, content, metadata, status, error=None, tool_blocks=None):
+        captured_update["metadata"] = metadata
+        captured_update["status"] = status
+        captured_update["error"] = error
+        captured_update["tool_blocks"] = tool_blocks
+
+    async def noop(*a, **kw):
+        return None
+
+    monkeypatch.setattr(chat_module, "run_rewriter", fake_rewriter)
+    monkeypatch.setattr(chat_module, "stream_llm", fake_stream_llm)
+    monkeypatch.setattr(chat_module, "execute_retrieve", fake_execute_retrieve)
+    monkeypatch.setattr(chat_module, "update_message_content", capture_update)
+    monkeypatch.setattr(chat_module, "set_active_stream", noop)
+
+    registry = ChatRunRegistry()
+    msg_id = "msg-integ"
+    registry.register(msg_id, task=None)
+
+    cfg = BibilabConfig(
+        ai=AIConfig(protocol="openai", model="x", api_key="k", base_url=""),
+        backend=BackendConfig(),
+    )
+
+    await chat_module.run_chat_turn(
+        message_id=msg_id,
+        conversation_id="c1",
+        list_id="l1",
+        user_message_text="q",
+        history=[],
+        summary=None,
+        source_ids=["s1"],
+        source_map={"v1": "s1"},
+        ui_lang="en",
+        cfg=cfg,
+        registry=registry,
+    )
+    return captured_update, captured_messages
+
+
+@pytest.mark.asyncio
+async def test_synthetic_injection_shape_when_retrieve_true(monkeypatch):
+    intent = RewriterIntent(retrieve=True, query="q", mode="narrow")
+    telemetry = {"retrieve": True, "mode": "narrow", "fallback": False, "latency_ms": 5}
+    _, captured_messages = await _run_with_fakes(
+        monkeypatch,
+        rewriter_return=(intent, telemetry),
+        retrieve_return=_retrieve_result_stub(),
+    )
+    # Final answer-LLM input: [...user, assistant(tool_use), user(tool_result)]
+    assert len(captured_messages) == 1
+    msgs = captured_messages[0]
+    # Last user turn + 2 synthetic
+    assistant_msg = msgs[-2]
+    tool_result_msg = msgs[-1]
+    assert assistant_msg["role"] == "assistant"
+    assert assistant_msg["content"][0]["type"] == "tool_use"
+    assert assistant_msg["content"][0]["name"] == "retrieve"
+    tool_use_id = assistant_msg["content"][0]["id"]
+    assert tool_result_msg["role"] == "user"
+    block = tool_result_msg["content"][0]
+    assert block["type"] == "tool_result"
+    assert block["tool_use_id"] == tool_use_id  # round-trip
+    payload = json.loads(block["content"])
+    assert payload["query"] == "q"
+    assert payload["mode"] == "narrow"
+
+
+@pytest.mark.asyncio
+async def test_rewriter_fallback_telemetry_persisted(monkeypatch):
+    intent = RewriterIntent(retrieve=True, query="q", mode="narrow")
+    telemetry = {"retrieve": True, "mode": "narrow", "fallback": True, "latency_ms": 1}
+    captured, _ = await _run_with_fakes(
+        monkeypatch,
+        rewriter_return=(intent, telemetry),
+        retrieve_return=_retrieve_result_stub(),
+    )
+    assert captured["metadata"]["rag"]["rewriter"]["fallback"] is True
+    assert captured["metadata"]["rag"]["rewriter"]["mode"] == "narrow"
+
+
+@pytest.mark.asyncio
+async def test_execute_retrieve_failure_completes_with_apology(monkeypatch):
+    """When pre-retrieve raises, the turn must still finalize with a 'done'
+    status (the answer LLM gets an apology directive) and tool_blocks must
+    be empty (no synthetic block to persist)."""
+    intent = RewriterIntent(retrieve=True, query="q", mode="narrow")
+    telemetry = {"retrieve": True, "mode": "narrow", "fallback": False, "latency_ms": 1}
+    captured, _ = await _run_with_fakes(
+        monkeypatch,
+        rewriter_return=(intent, telemetry),
+        retrieve_side_effect=RuntimeError("reranker dead"),
+    )
+    # Turn must complete (LLM still streams the apology); no tool_blocks persisted.
+    assert captured["status"] == "done"
+    assert captured["tool_blocks"] is None
+    # No rag.calls because retrieve raised before any result was captured.
+    assert "calls" not in captured["metadata"].get("rag", {})

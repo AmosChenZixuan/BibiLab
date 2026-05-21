@@ -363,11 +363,11 @@ async def test_execute_retrieve_includes_mode_in_result(monkeypatch):
         cfg=cfg,
         registry={},
         source_map={"v1": "s1"},
-        mode="few",
+        mode="survey",
     )
 
     assert "mode" in result
-    assert result["mode"] == "few"
+    assert result["mode"] == "survey"
 
 
 # AC1: default mode is "narrow"
