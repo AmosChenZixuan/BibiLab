@@ -142,7 +142,7 @@ describe("chat panel — SSE streaming (phase 6.2)", () => {
 
     ctrl.enqueue(
       new TextEncoder().encode(
-        'data: {"type":"tool_call_start","id":"t1","name":"retrieve","arguments":{"query":"X","expected_hits":"few"}}\n\n',
+        'data: {"type":"tool_call_start","id":"t1","name":"retrieve","arguments":{"query":"X"}}\n\n',
       ),
     );
 
@@ -177,7 +177,7 @@ describe("chat panel — SSE streaming (phase 6.2)", () => {
     ctrl.enqueue(enc.encode('data: {"type":"meta","message_id":"srv-1"}\n\n'));
     ctrl.enqueue(
       enc.encode(
-        'data: {"type":"tool_result","id":"r1","name":"retrieve","result":{"query":"X","expected_hits":"few","sources_total":1,"source_coverage":[{"source_id":"s1","video_id":"v1","title":"Vid"}],"dropped_by_gate":0,"reranked":true,"scoped_pool_size":1,"gate_margin":1}}\n\n',
+        'data: {"type":"tool_result","id":"r1","name":"retrieve","result":{"query":"X","mode":"narrow","sources_total":1,"source_coverage":[{"source_id":"s1","video_id":"v1","title":"Vid"}],"dropped_by_gate":0,"reranked":true,"scoped_pool_size":1,"gate_margin":1}}\n\n',
       ),
     );
 
@@ -192,7 +192,7 @@ describe("chat panel — SSE streaming (phase 6.2)", () => {
     // Final authoritative rag (with context[]) then done.
     ctrl.enqueue(
       enc.encode(
-        'data: {"type":"rag","calls":[{"query":"X","expected_hits":"few","candidates_evaluated":5,"sources_with_hits":1,"sources_total":1,"source_coverage":[{"source_id":"s1","video_id":"v1","title":"Vid"}],"context":[{"chunk_id":"c1","citation_index":1,"source_id":"s1","source_title":"Vid","timestamp_start":0,"timestamp_end":10,"rerank_score":2.5,"preview":"unique-preview-text"}],"dropped_by_gate":0,"reranked":true,"scoped_pool_size":1,"gate_margin":1}]}\n\n',
+        'data: {"type":"rag","calls":[{"query":"X","mode":"narrow","candidates_evaluated":5,"sources_with_hits":1,"sources_total":1,"source_coverage":[{"source_id":"s1","video_id":"v1","title":"Vid"}],"context":[{"chunk_id":"c1","citation_index":1,"source_id":"s1","source_title":"Vid","timestamp_start":0,"timestamp_end":10,"rerank_score":2.5,"preview":"unique-preview-text"}],"dropped_by_gate":0,"reranked":true,"scoped_pool_size":1,"gate_margin":1}]}\n\n',
       ),
     );
     ctrl.enqueue(enc.encode('data: {"type":"delta","content":"answer"}\n\n'));

@@ -7,7 +7,7 @@ import {
   formatSubtitle,
   formatTimestamp,
   stripLegacyTokens,
-  ExpectedHits,
+  Mode,
   RetrievalCall,
 } from "@/lib/chat-utils";
 
@@ -101,12 +101,10 @@ describe("autoResize", () => {
   });
 });
 
-describe("ExpectedHits type", () => {
+describe("Mode type", () => {
   test("is one of the expected literal values or null", () => {
-    // Type-level test: these assignments must compile without error.
-    // We test the union by casting to verify the type exists.
-    const values: ExpectedHits[] = ["one", "few", "many", null];
-    expect(values).toHaveLength(4);
+    const values: Mode[] = ["narrow", "survey", null];
+    expect(values).toHaveLength(3);
   });
 });
 
@@ -114,7 +112,8 @@ describe("RetrievalCall", () => {
   test("has all required fields", () => {
     const call: RetrievalCall = {
       query: "test query",
-      expected_hits: "few",
+      mode: "narrow",
+      tool_name: "retrieve",
       candidates_evaluated: 5,
       sources_with_hits: 2,
       sources_total: 3,
@@ -136,7 +135,7 @@ describe("RetrievalCall", () => {
       scoped_pool_size: 3,
       gate_margin: null,
     };
-    expect(call.expected_hits).toBe("few");
+    expect(call.mode).toBe("narrow");
     expect(call.context![0].chunk_id).toBe("v1_120_145");
     expect(call.context![0].citation_index).toBe(1);
     expect(call.context![0].timestamp_start).toBe(120.4);
@@ -146,7 +145,8 @@ describe("RetrievalCall", () => {
   test("context can be empty array", () => {
     const call: RetrievalCall = {
       query: "test",
-      expected_hits: "one",
+      mode: "narrow",
+      tool_name: "retrieve",
       candidates_evaluated: 0,
       sources_with_hits: 0,
       sources_total: 1,
