@@ -45,11 +45,11 @@ from bibilab.pipeline.chat_runs import (
 )
 from bibilab.pipeline.chat_summary import maybe_compress_conversation
 from bibilab.pipeline.chat_tools import (
-    _RETRIEVE_TOOL_NAMES,
     GENERATE_REPORT_TOOL,
     QUERY_LIST_METADATA_TOOL,
     RETRIEVE_SCOPED_TOOL,
     RETRIEVE_TOOL,
+    RETRIEVE_TOOL_NAMES,
     SURVEY_TOOL,
     CitationRegistryEntry,
     build_tool_block_entry,
@@ -90,7 +90,7 @@ SSE_EVENT_RAG = "rag"
 # Sized for thinking-capable models with potentially long chat responses + tool turns.
 CHAT_MAX_TOKENS = 16384
 
-LOOPBACK_TOOLS = {"retrieve", "survey", "retrieve_scoped", "query_list_metadata"}
+LOOPBACK_TOOLS = RETRIEVE_TOOL_NAMES | {QUERY_LIST_METADATA_TOOL.name}
 MAX_TOOL_ITERATIONS = 3
 
 
@@ -298,7 +298,7 @@ async def stream_with_tools(
         lookup = _build_lookup()
         is_synthesis_turn = iteration > MAX_TOOL_ITERATIONS
         active_tools = (
-            [] if is_synthesis_turn else [t for t in tools if not (retrieve_used and t.name in _RETRIEVE_TOOL_NAMES)]
+            [] if is_synthesis_turn else [t for t in tools if not (retrieve_used and t.name in RETRIEVE_TOOL_NAMES)]
         )
         async for event in stream_llm(messages, cfg, active_tools, system=system, llm_max_tokens=llm_max_tokens):
             if event.type == "tool_call":
@@ -394,7 +394,7 @@ async def stream_with_tools(
             )
 
         if any(tc.name in LOOPBACK_TOOLS for tc in tool_calls):
-            if any(tc.name in _RETRIEVE_TOOL_NAMES for tc in tool_calls):
+            if any(tc.name in RETRIEVE_TOOL_NAMES for tc in tool_calls):
                 retrieve_used = True
             if cfg.protocol == "anthropic":
                 messages.append(
@@ -577,7 +577,7 @@ async def run_chat_turn(
                 _append_citation_block(content_blocks, data)
             elif event.type == "tool_result":
                 parsed = json.loads(event.content)
-                if parsed["name"] in _RETRIEVE_TOOL_NAMES:
+                if parsed["name"] in RETRIEVE_TOOL_NAMES:
                     result = parsed["result"]
                     # Store raw source_coverage for now; narrow by emitted citations in finally.
                     retrieve_calls.append(

@@ -93,7 +93,7 @@ _TOOL_NAME_TO_PARAMS: dict[str, RetrievalParams] = {
     "retrieve_scoped": RetrievalParams(depth_per_source=2, top_k=8, mode="narrow"),
 }
 
-_RETRIEVE_TOOL_NAMES: frozenset[str] = frozenset(_TOOL_NAME_TO_PARAMS.keys())
+RETRIEVE_TOOL_NAMES: frozenset[str] = frozenset(_TOOL_NAME_TO_PARAMS.keys())
 
 
 GENERATE_REPORT_TOOL = ToolDefinition(
@@ -315,7 +315,7 @@ async def execute_retrieve(
     if source_map is None:
         source_map = {}
 
-    params = _TOOL_NAME_TO_PARAMS.get(tool_name, _TOOL_NAME_TO_PARAMS["retrieve"])
+    params = _TOOL_NAME_TO_PARAMS[tool_name]
     pool_size = len(source_ids)
 
     # Deterministic facet scoping (#309). Facet matching is the sole
@@ -483,7 +483,7 @@ def build_tool_block_entry(
     attached so replay survives re-embedding. For other tools, the result
     is stored as-is.
     """
-    if name in _RETRIEVE_TOOL_NAMES:
+    if name in RETRIEVE_TOOL_NAMES:
         summary = {k: v for k, v in result.items() if not k.startswith("_")}
         return {
             "tool_use_id": tool_use_id,
@@ -509,7 +509,7 @@ async def execute_tool(
     registry: dict[str, CitationRegistryEntry] | None = None,
     source_map: dict[str, str] | None = None,
 ) -> dict:
-    if tool_name in _RETRIEVE_TOOL_NAMES:
+    if tool_name in RETRIEVE_TOOL_NAMES:
         query = arguments.get("query")
         if not query or not isinstance(query, str):
             raise ValueError(f"{tool_name} requires a non-empty 'query' string, got {query!r}")
@@ -620,7 +620,7 @@ def expand_message_for_provider(
                 logger.warning("expand_message_for_provider skipping malformed block: missing keys")
                 continue
             assistant_content.append({"type": "tool_use", "id": tool_use_id, "name": name, "input": arguments})
-            result_payload = _summarize_stale_retrieve_block(b) if name in _RETRIEVE_TOOL_NAMES else json.dumps(result)
+            result_payload = _summarize_stale_retrieve_block(b) if name in RETRIEVE_TOOL_NAMES else json.dumps(result)
             tool_result_content.append({"type": "tool_result", "tool_use_id": tool_use_id, "content": result_payload})
         if text:
             assistant_content.append({"type": "text", "text": text})
@@ -650,7 +650,7 @@ def expand_message_for_provider(
                     "function": {"name": name, "arguments": json.dumps(arguments)},
                 }
             )
-            result_payload = _summarize_stale_retrieve_block(b) if name in _RETRIEVE_TOOL_NAMES else json.dumps(result)
+            result_payload = _summarize_stale_retrieve_block(b) if name in RETRIEVE_TOOL_NAMES else json.dumps(result)
             out.append(
                 {
                     "role": "tool",
@@ -677,7 +677,7 @@ def reseed_citation_registry(
     """
     for msg in history:
         for block in msg.get("tool_blocks") or []:
-            if block.get("name") not in _RETRIEVE_TOOL_NAMES:
+            if block.get("name") not in RETRIEVE_TOOL_NAMES:
                 continue
             chunks = block.get("result", {}).get("chunks", [])
             for ch in chunks:
