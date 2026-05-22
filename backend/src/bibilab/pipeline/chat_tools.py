@@ -557,6 +557,28 @@ async def execute_tool(
     raise ValueError(f"Unknown tool: {tool_name}")
 
 
+def _summarize_stale_retrieve_block(block: dict) -> str:
+    """Compact replacement for a prior-turn retrieve tool_result.
+
+    Prior-turn raw excerpts pollute the current turn: the LLM treats stale
+    chunks the same as fresh results and regenerates them, and survey query
+    expansion borrows stale entities. Replay only a salient tag (query +
+    which sources) so the LLM knows what was retrieved before without the
+    raw text. To reuse the content, it must retrieve again this turn.
+    """
+    summary = block.get("result", {}).get("summary", {})
+    query = summary.get("query") or block.get("arguments", {}).get("query", "")
+    coverage = summary.get("source_coverage", []) or []
+    chunks = block.get("result", {}).get("chunks", []) or []
+    titles = ", ".join(f'"{c.get("title", "")}"' for c in coverage) or "(none)"
+    return (
+        f'[Prior-turn retrieval — query: "{query}"] '
+        f"Retrieved {len(chunks)} excerpts from: {titles}. "
+        "Excerpt text omitted to avoid stale-context contamination; "
+        "call retrieve / survey / retrieve_scoped again if this turn needs the content."
+    )
+
+
 def expand_message_for_provider(
     msg: dict,
     protocol: str,  # "anthropic" or "openai"
@@ -588,9 +610,8 @@ def expand_message_for_provider(
                 logger.warning("expand_message_for_provider skipping malformed block: missing keys")
                 continue
             assistant_content.append({"type": "tool_use", "id": tool_use_id, "name": name, "input": arguments})
-            tool_result_content.append(
-                {"type": "tool_result", "tool_use_id": tool_use_id, "content": json.dumps(result)}
-            )
+            result_payload = _summarize_stale_retrieve_block(b) if name in _RETRIEVE_TOOL_NAMES else json.dumps(result)
+            tool_result_content.append({"type": "tool_result", "tool_use_id": tool_use_id, "content": result_payload})
         if text:
             assistant_content.append({"type": "text", "text": text})
 
@@ -619,11 +640,12 @@ def expand_message_for_provider(
                     "function": {"name": name, "arguments": json.dumps(arguments)},
                 }
             )
+            result_payload = _summarize_stale_retrieve_block(b) if name in _RETRIEVE_TOOL_NAMES else json.dumps(result)
             out.append(
                 {
                     "role": "tool",
                     "tool_call_id": tool_use_id,
-                    "content": json.dumps(result),
+                    "content": result_payload,
                 }
             )
         return out
