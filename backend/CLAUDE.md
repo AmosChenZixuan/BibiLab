@@ -41,7 +41,7 @@ pipeline/         — one file per stage
   citation_parser.py incremental citation parser — strips [N] tokens from LLM deltas, emits citation SSE events with {index, source_id, chunk_ids}
   chat_runs.py       StreamBuffer + ChatRunRegistry; in-memory buffer decouples LLM producer from HTTP request lifetime
 adapters/         — platform-specific download + resolution (base + bilibili)
-db.py             — SQLite schema + query helpers (840 lines)
+db.py             — SQLite schema + query helpers (1094 lines)
 video_status.py   — derive_video_statuses (status mapping extracted from db.py per Code Health Rule #4)
 config.py         — settings persisted to ~/.bibilab/config.json; includes models_dir() helper
 worker.py         — SQLite-polling job dispatcher; accepts config/adapter/home via constructor for testability
@@ -211,7 +211,7 @@ stream_with_tools(stream_llm loop):
 - **Reattach**: Frontend reads `active_stream_message_id` from conversation; if set, GETs the stream endpoint to replay buffered events + tail live ones. Returns 204 after buffer eviction.
 - **Cancel**: POST sets `status='cancelled'` + emits `cancelled` SSE event. Producer catches `CancelledError` and persists partial content.
 - **Lifecycle**: Startup sweep marks leftover `status='streaming'` rows as `failed`. Shutdown cancels all tasks, drains with 5s timeout. Buffer eviction fires 60s after terminal status.
-- Compression: triggered when message count > 30; keeps sliding window of 20; summarizes older messages via `_call_llm` in `asyncio.create_task`. The summary is prose only — the compression prompt does **not** preserve `[N]` markers (deliberate; see `docs/citation_system.md`). Only post-window messages retain live citations.
+- Compression: triggered when message count > 30; keeps sliding window of 10; summarizes older messages via `_call_llm` in `asyncio.create_task`. The summary is prose only — the compression prompt does **not** preserve `[N]` markers (deliberate; see `docs/citation_system.md`). Only post-window messages retain live citations.
 - Summary injected into system prompt on subsequent requests
 
 ## Platform Adapters
