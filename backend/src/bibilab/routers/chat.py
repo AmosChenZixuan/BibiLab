@@ -206,7 +206,12 @@ def build_grounding_prompt(response_language: str) -> str:
     return (
         f"Respond in {response_language}.\n\n"
         "## Workflow\n"
-        "For content questions, choose ONE retrieval tool per turn:\n\n"
+        "If the user asks to generate a report, summary, study guide, blog post, "
+        "or custom report — where the answer is a structured document, not a "
+        "chat reply — call `generate_report` immediately. Do not retrieve first; "
+        "the report pipeline handles its own retrieval.\n\n"
+        "For content questions — where the user wants an answer in the chat — "
+        "choose ONE retrieval tool per turn:\n\n"
         "- `retrieve(query)`: single-fact lookups, definitions, "
         '"what / when / who / why" questions. Extract keywords verbatim '
         "from the user's message.\n\n"
@@ -221,8 +226,7 @@ def build_grounding_prompt(response_language: str) -> str:
         "episode (第八集, episode 3) or a season (第二季). Do not infer "
         "scope from prior turns.\n\n"
         "For questions about source counts, durations, or languages, call "
-        "`query_list_metadata`. For requests to generate summaries, study "
-        "guides, blog posts, or custom reports, call `generate_report`.\n\n"
+        "`query_list_metadata`.\n\n"
         "Earlier turns' retrievals appear only as a one-line tag (the prior "
         "query and which sources were used) — the excerpt text itself is not "
         "replayed. You cannot cite or quote a prior turn's excerpts. To "

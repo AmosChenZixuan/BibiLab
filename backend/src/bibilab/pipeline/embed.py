@@ -17,7 +17,7 @@ from pathlib import Path
 
 from bibilab.adapters.base import VideoMeta
 from bibilab.config import BibilabConfig, bibilab_home, models_dir
-from bibilab.db import _escape_fts_query, _tokenize_cjk, get_db_path, get_video_ids_for_sources, query_fts_rows
+from bibilab.db import _tokenize_cjk, get_db_path, get_video_ids_for_sources, query_fts_rows
 from bibilab.models._enums import _RELEVANCE_MARGIN_BY_MODE, RetrievalParams
 from bibilab.pipeline.chat_inference_pool import get_chat_pool
 from bibilab.pipeline.chunk import RagChunk
@@ -488,8 +488,7 @@ async def query_fts(
         return []
     video_ids = resolved
 
-    escaped = _escape_fts_query(query_text)
-    rows = await query_fts_rows(escaped, video_ids, top_k)
+    rows = await query_fts_rows(query_text, video_ids, top_k)
 
     return [
         _row_from_chroma(

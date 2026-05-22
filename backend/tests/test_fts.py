@@ -10,6 +10,7 @@ from bibilab.adapters.base import VideoMeta
 from bibilab.config import BibilabConfig, _reset_cache
 from bibilab.db import (
     _cjk_bigram_tokens,
+    _cjk_query_tokens,
     _cjk_runs,
     _escape_fts_query,
     _tokenize_cjk,
@@ -208,34 +209,57 @@ def test_cjk_runs_multiple_cjk_segments():
 
 
 def test_cjk_bigram_tokens_cjk_only():
-    assert _cjk_bigram_tokens("面食做法") == ["面食", "食做", "做法"]
+    assert _cjk_bigram_tokens("面食做法") == ["面", "食", "做", "法", "面食", "食做", "做法"]
 
 
 def test_cjk_bigram_tokens_two_chars():
-    assert _cjk_bigram_tokens("面食") == ["面食"]
+    assert _cjk_bigram_tokens("面食") == ["面", "食", "面食"]
 
 
 def test_cjk_bigram_tokens_single_cjk_char():
-    assert _cjk_bigram_tokens("面") == []
+    assert _cjk_bigram_tokens("面") == ["面"]
 
 
 def test_cjk_bigram_tokens_mixed():
-    assert _cjk_bigram_tokens("103岁生日这天") == ["103", "岁生", "生日", "日这", "这天"]
+    assert _cjk_bigram_tokens("103岁生日这天") == ["103", "岁", "生", "日", "这", "天", "岁生", "生日", "日这", "这天"]
 
 
 def test_cjk_bigram_tokens_non_cjk():
     assert _cjk_bigram_tokens("hello world") == ["hello", "world"]
 
 
-# --- _tokenize_cjk (bigram) ---
+# --- _cjk_query_tokens (bigrams-only for multi-char, unigrams for single-char) ---
 
 
-def test_tokenize_cjk_bigram_cjk_phrase():
-    assert _tokenize_cjk("面食做法") == "面食 食做 做法"
+def test_cjk_query_tokens_multi_char_cjk():
+    assert _cjk_query_tokens("面食做法") == ["面食", "食做", "做法"]
 
 
-def test_tokenize_cjk_bigram_two_chars():
-    assert _tokenize_cjk("面食") == "面食"
+def test_cjk_query_tokens_two_chars():
+    assert _cjk_query_tokens("面食") == ["面食"]
+
+
+def test_cjk_query_tokens_single_cjk_char():
+    assert _cjk_query_tokens("面") == ["面"]
+
+
+def test_cjk_query_tokens_mixed():
+    assert _cjk_query_tokens("103岁生日这天") == ["103", "岁生", "生日", "日这", "这天"]
+
+
+def test_cjk_query_tokens_non_cjk():
+    assert _cjk_query_tokens("hello world") == ["hello", "world"]
+
+
+# --- _tokenize_cjk (unigram + bigram) ---
+
+
+def test_tokenize_cjk_unigram_bigram_cjk_phrase():
+    assert _tokenize_cjk("面食做法") == "面 食 做 法 面食 食做 做法"
+
+
+def test_tokenize_cjk_unigram_bigram_two_chars():
+    assert _tokenize_cjk("面食") == "面 食 面食"
 
 
 def test_tokenize_cjk_preserves_non_cjk():
@@ -243,49 +267,57 @@ def test_tokenize_cjk_preserves_non_cjk():
 
 
 def test_tokenize_cjk_mixed_text():
-    assert _tokenize_cjk("103岁生日这天") == "103 岁生 生日 日这 这天"
+    assert _tokenize_cjk("103岁生日这天") == "103 岁 生 日 这 天 岁生 生日 日这 这天"
 
 
 def test_tokenize_cjk_normalizes_segment_boundary_spaces():
     # chunk.py:51 joins segments with " " → CJK-adjacent spaces must be
     # collapsed so bigrams can span the boundary
-    assert _tokenize_cjk("第五 集") == "第五 五集"
+    assert _tokenize_cjk("第五 集") == "第 五 集 第五 五集"
 
 
 def test_tokenize_cjk_empty_string():
     assert _tokenize_cjk("") == ""
 
 
-# --- _escape_fts_query with CJK bigram ---
+# --- _escape_fts_query with CJK unigram + bigram ---
 
 
 def test_escape_fts_query_chinese_phrase():
+    # Multi-char CJK → bigrams only (no unigrams) to avoid AND-term explosion
     escaped = _escape_fts_query("面食做法")
     assert escaped == '"面食" "食做" "做法"'
 
 
 def test_escape_fts_query_chinese_two_words():
+    # Per-word bigram: "女巫" + "生日" → no cross-boundary "巫生"
     escaped = _escape_fts_query("女巫 生日")
     assert escaped == '"女巫" "生日"'
 
 
 def test_escape_fts_query_chinese_no_whitespace_single_word():
-    # No space → one word → bigrams across the whole string (stricter, phrase-like)
+    # No space → one word → bigrams across the whole string
     escaped = _escape_fts_query("女巫生日")
     assert escaped == '"女巫" "巫生" "生日"'
 
 
-def test_escape_fts_query_single_cjk_word_two_chars():
+def test_escape_fts_query_single_cjk_word_three_chars():
     escaped = _escape_fts_query("多少岁")
     assert escaped == '"多少" "少岁"'
 
 
-def test_escape_fts_query_single_cjk_char_dropped():
-    # Single CJK char per word → no bigram → dropped (vector fallback)
+def test_escape_fts_query_single_cjk_char_preserved():
+    # "茶" is a single-char word → unigram preserved
     escaped = _escape_fts_query("女巫 茶")
-    assert escaped == '"女巫"'
+    assert escaped == '"女巫" "茶"'
 
 
-def test_escape_fts_query_all_single_cjk_chars():
+def test_escape_fts_query_single_cjk_char_alone():
     escaped = _escape_fts_query("茶")
-    assert escaped == ""
+    assert escaped == '"茶"'
+
+
+def test_escape_fts_query_high_idf_single_char():
+    # 死 (death) — single-char word with critical semantic weight
+    escaped = _escape_fts_query("死")
+    assert escaped == '"死"'

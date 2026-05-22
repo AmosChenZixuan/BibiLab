@@ -996,42 +996,68 @@ def _cjk_runs(text: str):
 
 
 def _cjk_bigram_tokens(text: str) -> list[str]:
-    """Produce overlapping bigrams for each CJK run; split non-CJK runs on whitespace.
+    """Produce unigrams + overlapping bigrams for each CJK run; split non-CJK on whitespace.
 
-    Length-1 CJK runs produce no tokens (bigram-only — vector fallback for
-    single-char CJK queries). Non-CJK runs are split on whitespace.
+    Unigrams ensure single-char CJK words (e.g. 死, 岁, 杀) are searchable.
+    Bigrams add adjacency signal so compound words rank above scattered co-occurrence.
+    Length-1 CJK runs emit just the unigram. Non-CJK runs are split on whitespace.
     """
     out: list[str] = []
     for is_cjk, seg in _cjk_runs(text):
         if is_cjk:
-            out += [seg[i : i + 2] for i in range(len(seg) - 1)]
+            out += list(seg)  # unigrams
+            out += [seg[i : i + 2] for i in range(len(seg) - 1)]  # bigrams
         else:
             out += seg.split()
     return out
 
 
 def _tokenize_cjk(text: str) -> str:
-    """Bigram-tokenize text for FTS5 indexing.
+    """Unigram + bigram tokenize text for FTS5 indexing.
 
     Removes whitespace between adjacent CJK characters (introduced by
     chunk.py segment-boundary joining) so bigrams can span segment gaps,
-    then emits overlapping character bigrams for each CJK run.
+    then emits each CJK character as a unigram plus overlapping bigrams.
     Non-CJK tokens pass through unchanged.
     """
     normalized = re.sub(r"(?<=[一-鿿㐀-䶿])\s+(?=[一-鿿㐀-䶿])", "", text)
     return " ".join(_cjk_bigram_tokens(normalized))
 
 
+def _cjk_query_tokens(text: str) -> list[str]:
+    """Produce FTS5 query tokens for a single whitespace-delimited word.
+
+    Differs from _cjk_bigram_tokens: multi-char CJK runs emit bigrams only
+    (no unigrams). Adding unigrams for every character in multi-char words
+    explodes AND-term count and kills recall — e.g. "女巫 死 多少岁" would
+    produce 9 AND terms. Single-char CJK runs still emit their unigram so
+    high-IDF single-character words (死, 岁, 杀) survive.
+    Non-CJK runs are split on whitespace.
+    """
+    out: list[str] = []
+    for is_cjk, seg in _cjk_runs(text):
+        if is_cjk:
+            if len(seg) == 1:
+                out.append(seg)
+            else:
+                out += [seg[i : i + 2] for i in range(len(seg) - 1)]
+        else:
+            out += seg.split()
+    return out
+
+
 def _escape_fts_query(query_text: str) -> str:
     """Escape user input for safe FTS5 MATCH evaluation.
 
     Splits on whitespace first to respect LLM-supplied word boundaries, then
-    bigram-tokenizes each word independently so cross-boundary pseudo-bigrams
+    query-tokenizes each word independently so cross-boundary pseudo-bigrams
     (e.g. "巫生" from "女巫 生日") are never generated.
+    Uses _cjk_query_tokens (bigrams-only for multi-char CJK) to avoid
+    AND-term explosion while preserving single-char CJK word recall.
     Each token is double-quoted to disable FTS5 operator parsing
     (`AND`, `OR`, `:`, `*`, `^`).
     """
-    tokens = [tok for word in query_text.split() for tok in _cjk_bigram_tokens(word)]
+    tokens = [tok for word in query_text.split() for tok in _cjk_query_tokens(word)]
     if not tokens:
         return ""
     return " ".join('"' + t.replace('"', '""') + '"' for t in tokens)
