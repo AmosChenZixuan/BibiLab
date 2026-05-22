@@ -142,7 +142,14 @@ export function RetrievalLedgerRow({ variant, call, pending, streaming = false }
             </span>
             <span>
               <span className="text-muted">{t("chat.ledger.field.scope")} </span>
-              <span className="font-medium text-ink">{t("chat.ledger.scope.none", { total: call.sources_total })}</span>
+              <span className="font-medium text-ink">{
+                (() => {
+                  const fs = call.facet_scope;
+                  return !fs || fs.no_match || fs.matched_count == null
+                    ? t("chat.ledger.scope.none", { total: call.sources_total })
+                    : t("chat.ledger.scope.scoped", { matched: fs.matched_count, total: call.sources_total });
+                })()
+              }</span>
             </span>
             {facetDetailLine}
           </div>

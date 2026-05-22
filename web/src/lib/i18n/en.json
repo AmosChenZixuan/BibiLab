@@ -289,7 +289,8 @@
         "result": "Result"
       },
       "scope": {
-        "none": "all %{total} sources"
+        "none": "all %{total} sources",
+        "scoped": "%{matched} / %{total} sources"
       },
       "mode": {
         "narrow": "Narrow",

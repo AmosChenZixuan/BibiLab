@@ -289,7 +289,8 @@
         "result": "结果"
       },
       "scope": {
-        "none": "全部 %{total} 个来源"
+        "none": "全部 %{total} 个来源",
+        "scoped": "%{matched}/%{total} 个来源"
       },
       "mode": {
         "narrow": "精确",
