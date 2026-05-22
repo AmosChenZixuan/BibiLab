@@ -186,16 +186,16 @@ def _adaptive_depth(spec_depth: int, top_k: int, num_sources_in_pool: int) -> in
 
 
 def _quantile_gate(chunks: list[RetrievedChunk], margin: float = 2.0) -> list[RetrievedChunk]:
-    """Keep chunks whose rerank score is meaningful relative to the pool.
+    """Keep chunks whose rerank score clears the relevance threshold.
 
     threshold = max(0, median(scores), top - margin)
-    The 0 floor rejects chunks the model scores below relevance-neutral.
-    The median term floors aggression: when the top itself is low (the
-    "all chunks marginal" case from #277), threshold rises to median and
-    forces a half-cut, killing junk that would otherwise pad top_k.
-    The margin term caps aggression: when the pool has a clear winner,
-    threshold stays within margin of top so multiple
-    similarly-good chunks survive. Always keeps the top chunk.
+    - 0 floor: rejects chunks scored below relevance-neutral.
+    - median: when the whole pool is marginal, forces a half-cut (#277).
+    - margin: when there is a clear winner, keeps chunks within margin of top.
+
+    Returns [] when no chunk clears the threshold. The caller treats an empty
+    result as "library has no coverage" (#332); never pads with a sub-threshold
+    chunk.
 
     Caller must ensure chunks were reranked (score = bge logit). For
     RRF-domain scores the margin is uncalibrated; gate is bypassed in that
@@ -215,7 +215,7 @@ def _quantile_gate(chunks: list[RetrievedChunk], margin: float = 2.0) -> list[Re
     median = scores[len(scores) // 2]
     threshold = max(0.0, median, top - margin)
     kept = [c for c in chunks if c.score is not None and c.score >= threshold]
-    return kept if kept else [chunks[0]]
+    return kept
 
 
 def _rrf_fuse(

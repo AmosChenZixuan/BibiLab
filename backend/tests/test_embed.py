@@ -15,7 +15,7 @@ class TestQuantileGate:
         assert _quantile_gate([], margin=2.0) == []
 
     def test_quantile_gate_all_negative_scores(self):
-        """AC1-happy: chunks with all-negative scores keeps top (above 0 floor)."""
+        """All-negative scores → nothing clears 0 floor → empty."""
         chunks = [
             RetrievedChunk(
                 content="a",
@@ -38,9 +38,8 @@ class TestQuantileGate:
         ]
         result = _quantile_gate(chunks, margin=2.0)
         # top=-5, median=-8, top-margin=-7 → threshold=max(0,-8,-7)=0
-        # 0 floor is highest → keeps all chunks above 0
-        # but no scores >= 0, so fallback to [chunks[0]]
-        assert result == [chunks[0]]
+        # no scores >= 0 → []
+        assert result == []
 
     def test_quantile_gate_margin_various_values(self):
         """AC3: higher margin = more aggressive filtering (fewer chunks kept)."""
