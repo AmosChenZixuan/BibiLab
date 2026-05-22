@@ -978,29 +978,60 @@ async def clear_fts_for_list(list_id: str) -> None:
         await db.commit()
 
 
-_CJK = re.compile(r"([一-鿿㐀-䶿])")
+_CJK = re.compile(r"[一-鿿㐀-䶿]")  # BMP + Ext A; Ext B+ (U+20000+) and kana not covered — adequate for zh
+
+_CJK_RUN = re.compile(r"[一-鿿㐀-䶿]+")
+
+
+def _cjk_runs(text: str):
+    """Yield (is_cjk: bool, segment: str) pairs, splitting on CJK/non-CJK boundaries."""
+    pos = 0
+    for m in _CJK_RUN.finditer(text):
+        if m.start() > pos:
+            yield (False, text[pos : m.start()])
+        yield (True, m.group(0))
+        pos = m.end()
+    if pos < len(text):
+        yield (False, text[pos:])
+
+
+def _cjk_bigram_tokens(text: str) -> list[str]:
+    """Produce overlapping bigrams for each CJK run; split non-CJK runs on whitespace.
+
+    Length-1 CJK runs produce no tokens (bigram-only — vector fallback for
+    single-char CJK queries). Non-CJK runs are split on whitespace.
+    """
+    out: list[str] = []
+    for is_cjk, seg in _cjk_runs(text):
+        if is_cjk:
+            out += [seg[i : i + 2] for i in range(len(seg) - 1)]
+        else:
+            out += seg.split()
+    return out
 
 
 def _tokenize_cjk(text: str) -> str:
-    """Insert spaces between consecutive CJK characters.
+    """Bigram-tokenize text for FTS5 indexing.
 
-    FTS5's unicode61 tokenizer treats unbroken CJK sequences as a single token,
-    making substring matching impossible. Inserting a space after each CJK
-    character forces FTS5 to index and match them individually.
+    Removes whitespace between adjacent CJK characters (introduced by
+    chunk.py segment-boundary joining) so bigrams can span segment gaps,
+    then emits overlapping character bigrams for each CJK run.
+    Non-CJK tokens pass through unchanged.
     """
-    return _CJK.sub(r"\1 ", text)
+    normalized = re.sub(r"(?<=[一-鿿㐀-䶿])\s+(?=[一-鿿㐀-䶿])", "", text)
+    return " ".join(_cjk_bigram_tokens(normalized))
 
 
 def _escape_fts_query(query_text: str) -> str:
     """Escape user input for safe FTS5 MATCH evaluation.
 
-    CJK characters are space-separated first so FTS5 can match them individually.
-    Then each whitespace-separated token is quoted to disable FTS5 operator
-    parsing (`AND`, `OR`, `:`, `*`, `^`) so arbitrary user queries cannot raise
-    `OperationalError`. Inner double-quotes are doubled per FTS5 syntax.
+    Splits on whitespace first to respect LLM-supplied word boundaries, then
+    bigram-tokenizes each word independently so cross-boundary pseudo-bigrams
+    (e.g. "巫生" from "女巫 生日") are never generated.
+    Each token is double-quoted to disable FTS5 operator parsing
+    (`AND`, `OR`, `:`, `*`, `^`).
     """
-    tokenized = _tokenize_cjk(query_text)
-    tokens = [t for t in tokenized.split() if t]
+    tokens = [tok for word in query_text.split() for tok in _cjk_bigram_tokens(word)]
     if not tokens:
         return ""
     return " ".join('"' + t.replace('"', '""') + '"' for t in tokens)
