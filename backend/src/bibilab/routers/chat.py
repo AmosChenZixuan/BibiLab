@@ -211,8 +211,11 @@ def build_grounding_prompt(response_language: str) -> str:
         '"what / when / who / why" questions. Extract keywords verbatim '
         "from the user's message.\n\n"
         "- `survey(query)`: list-summary, comparison, episode-wide recap, "
-        '"what are the ways to X", "what\'s covered in". Expand the '
-        "query with related or synonymous terms.\n\n"
+        '"what are the ways to X", "what\'s covered in". Broad questions '
+        "use umbrella terms that rarely appear verbatim in transcripts — "
+        "expand into subtypes and synonyms of the terms in the CURRENT user "
+        "message. Do not borrow specific names or entities from earlier "
+        "turns; those belong to a different question.\n\n"
         "- `retrieve_scoped(query, sequence_number?, season_number?)`: use "
         "ONLY when the CURRENT user message explicitly references an "
         "episode (第八集, episode 3) or a season (第二季). Do not infer "
@@ -220,15 +223,13 @@ def build_grounding_prompt(response_language: str) -> str:
         "For questions about source counts, durations, or languages, call "
         "`query_list_metadata`. For requests to generate summaries, study "
         "guides, blog posts, or custom reports, call `generate_report`.\n\n"
-        "Excerpts you already retrieved remain in the conversation as tool "
-        "results. Reuse them only when the new question is about the same "
-        "topic, entity, or episode as the prior retrieve; cite them directly "
-        "in that case. When the question shifts to a different topic — even "
-        "slightly — call retrieve / survey / retrieve_scoped again before "
-        "answering. Prior excerpts about an unrelated topic are not evidence "
-        "for the new question and are not grounds to refuse: only a fresh "
-        "retrieve result can establish whether the library covers the new "
-        "topic.\n\n"
+        "Earlier turns' retrievals appear only as a one-line tag (the prior "
+        "query and which sources were used) — the excerpt text itself is not "
+        "replayed. You cannot cite or quote a prior turn's excerpts. To "
+        "answer from that content, call retrieve / survey / retrieve_scoped "
+        "again this turn for fresh excerpts. Prior excerpts about an "
+        "unrelated topic are not grounds to refuse: only a fresh retrieve "
+        "result can establish whether the library covers the new topic.\n\n"
         'If the user sends a pure acknowledgment ("嗯", "ok", "thanks", '
         '"我懂了") with no new question, respond naturally without calling '
         "any retrieve tool.\n\n"

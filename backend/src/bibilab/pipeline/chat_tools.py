@@ -152,16 +152,23 @@ SURVEY_TOOL = ToolDefinition(
     description=(
         "Retrieve from video transcripts for a broad / list-summary / comparison "
         "question.\n\n"
-        "Expand the query with related or synonymous terms to widen recall — do not "
-        "just copy the user's words. The retrieval pool is larger (top_k=24, "
-        "depth_per_source=5) than retrieve.\n\n"
+        "Broad questions use umbrella terms ('面食', 'political philosophy') that "
+        "rarely appear verbatim in transcripts — the source says '牛肉面', '米粉'. "
+        "Expand the query into subtypes and synonyms of the terms IN THE CURRENT "
+        "USER MESSAGE, using general knowledge of the topic. The retrieval pool is "
+        "larger (top_k=24, depth_per_source=5) than retrieve.\n\n"
+        "Expand ONLY from the current user message. Do NOT borrow specific names, "
+        "dishes, characters, or entities mentioned in earlier conversation turns — "
+        "those belong to a different question and pollute this retrieval.\n\n"
         "Use this tool when the user asks for an overview, a list of items, a "
         "summary, a comparison, or anything that expects multiple sources — "
         "'what are the ways to X', 'compare A and B', 'list all the X', 'summarize'.\n\n"
         "If the user explicitly references an episode or season, use retrieve_scoped "
         "instead.\n\n"
         "Examples:\n"
-        '  survey(query="面食 面条 面 主食 面粉 做 制作 烹饪")\n'
+        "  # user asks '有哪些面食做法' — expand the umbrella term '面食'\n"
+        '  survey(query="面食 面条 牛肉面 拉面 米粉 馒头 饺子 做法")\n'
+        "  # user asks '介绍政治哲学的流派' — expand '政治哲学'\n"
         '  survey(query="政治哲学 多元主义 自由主义 民主 思想流派")'
     ),
     parameters={
@@ -169,7 +176,10 @@ SURVEY_TOOL = ToolDefinition(
         "properties": {
             "query": {
                 "type": "string",
-                "description": "Expanded keyword set including synonyms / related terms",
+                "description": (
+                    "Subtype / synonym expansion of the CURRENT user message's terms. "
+                    "Do not borrow entities from prior turns."
+                ),
             },
         },
         "required": ["query"],
