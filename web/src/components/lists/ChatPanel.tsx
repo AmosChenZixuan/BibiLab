@@ -3,6 +3,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useAutoScroll } from "@/components/lists/hooks/useAutoScroll";
 import { useSSEStream } from "@/components/lists/hooks/useSSEStream";
 import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import type { Root, Element, Text, RootContent } from "hast";
 import {
   AlertCircle,
@@ -196,6 +197,7 @@ function renderParagraphs(
             <ReactMarkdown
               components={MARKDOWN_COMPONENTS}
               rehypePlugins={[makeRehypeCitePlugin(citations)]}
+              remarkPlugins={[remarkGfm]}
             >
               {merged}
             </ReactMarkdown>
