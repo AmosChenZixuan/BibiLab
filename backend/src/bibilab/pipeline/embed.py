@@ -187,10 +187,10 @@ def _adaptive_depth(spec_depth: int, top_k: int, num_sources_in_pool: int) -> in
 def _quantile_gate(chunks: list[RetrievedChunk], margin: float = 2.0) -> list[RetrievedChunk]:
     """Keep chunks whose rerank score clears the relevance threshold.
 
-    threshold = max(0, median(scores), top - margin)
-    - 0 floor: rejects chunks scored below relevance-neutral.
+    threshold = max(median(scores), top - margin)
     - median: when the whole pool is marginal, forces a half-cut (#277).
     - margin: when there is a clear winner, keeps chunks within margin of top.
+    No 0 floor — bge logits have no "relevance-neutral" zero point.
 
     Returns [] when no chunk clears the threshold. The caller treats an empty
     result as "library has no coverage" (#332); never pads with a sub-threshold
@@ -212,7 +212,7 @@ def _quantile_gate(chunks: list[RetrievedChunk], margin: float = 2.0) -> list[Re
         return chunks
     top = scores[0]
     median = scores[len(scores) // 2]
-    threshold = max(0.0, median, top - margin)
+    threshold = max(median, top - margin)
     kept = [c for c in chunks if c.score is not None and c.score >= threshold]
     return kept
 

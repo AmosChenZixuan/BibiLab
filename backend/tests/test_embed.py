@@ -37,9 +37,10 @@ class TestQuantileGate:
             ),
         ]
         result = _quantile_gate(chunks, margin=2.0)
-        # top=-5, median=-8, top-margin=-7 → threshold=max(0,-8,-7)=0
-        # no scores >= 0 → []
-        assert result == []
+        # top=-5, median=-8, top-margin=-7 → threshold=max(-8,-7)=-5
+        # score -5.0 >= -5 → keep 'a'; -8.0 < -5 → drop 'b'
+        assert len(result) == 1
+        assert result[0].score == -5.0
 
     def test_quantile_gate_margin_various_values(self):
         """AC3: higher margin = more aggressive filtering (fewer chunks kept)."""

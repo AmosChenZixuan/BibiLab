@@ -353,10 +353,11 @@ async def test_broad_mode_respects_floor(tmp_bibilab_home):
     ):
         result = await retrieve("q", ["src1"], cfg, params=RetrievalParams(depth_per_source=1, top_k=4))
 
-    # 0-floor cuts v1 (score -1.0 < 0), keeps v2 (0.5) and v3 (1.0)
-    assert {c.video_id for c in result.chunks} == {"v2", "v3"}
-    # sources_with_hits now reflects result_chunks (what the LLM actually saw), not pool size
-    assert result.sources_with_hits == 2
+    # No 0-floor — bge logits use relative threshold (median vs top-margin).
+    # scores [1.0, 0.5, -0.5, -1.0] → top=1.0, median=-0.5, margin=2.0
+    # threshold=max(-0.5, -1.0)=-0.5 → keeps v3(1.0), v2(0.5), v1(-0.5), drops v0(-1.0)
+    assert {c.video_id for c in result.chunks} == {"v1", "v2", "v3"}
+    assert result.sources_with_hits == 3
 
 
 @pytest.mark.asyncio
