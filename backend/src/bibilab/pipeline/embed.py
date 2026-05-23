@@ -266,7 +266,6 @@ class ONNXMultilingualEmbedding:
     def __init__(self) -> None:
         import numpy as np  # noqa: PLC0415
 
-        self._np = np
         model_dir = _embedding_model_dir()
         self._ensure_downloaded(model_dir)
         import onnxruntime as ort  # noqa: PLC0415
@@ -286,6 +285,7 @@ class ONNXMultilingualEmbedding:
 
         # pad_token_id from BERT config (0), not tokenizer's <pad> id (1)
         self._pad_id = 0
+        self._np = np
 
     def _ensure_downloaded(self, model_dir: Path) -> None:
         model_path = model_dir / "onnx" / "model.onnx"
