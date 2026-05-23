@@ -17,8 +17,8 @@ from pathlib import Path
 
 from bibilab.adapters.base import VideoMeta
 from bibilab.config import BibilabConfig, bibilab_home, models_dir
-from bibilab.db import _escape_fts_query, _tokenize_cjk, get_db_path, get_video_ids_for_sources, query_fts_rows
-from bibilab.models._enums import _RELEVANCE_MARGIN_BY_HITS, RetrievalParams
+from bibilab.db import _tokenize_cjk, get_db_path, get_video_ids_for_sources, query_fts_rows
+from bibilab.models._enums import _RELEVANCE_MARGIN_BY_MODE, RetrievalParams
 from bibilab.pipeline.chat_inference_pool import get_chat_pool
 from bibilab.pipeline.chunk import RagChunk
 
@@ -72,7 +72,7 @@ class RetrievalResult:
     # (rerank disabled or failed); reranked disambiguates that case.
     dropped_by_gate: int = 0
     reranked: bool = False
-    # Actual margin used by _quantile_gate (derived from expected_hits).
+    # Actual margin used by _quantile_gate (derived from mode).
     # None when gate did not run (rerank disabled or failed); actual margin when it did.
     gate_margin: float | None = None
     neighbors_pulled: int = 0
@@ -186,16 +186,16 @@ def _adaptive_depth(spec_depth: int, top_k: int, num_sources_in_pool: int) -> in
 
 
 def _quantile_gate(chunks: list[RetrievedChunk], margin: float = 2.0) -> list[RetrievedChunk]:
-    """Keep chunks whose rerank score is meaningful relative to the pool.
+    """Keep chunks whose rerank score clears the relevance threshold.
 
     threshold = max(0, median(scores), top - margin)
-    The 0 floor rejects chunks the model scores below relevance-neutral.
-    The median term floors aggression: when the top itself is low (the
-    "all chunks marginal" case from #277), threshold rises to median and
-    forces a half-cut, killing junk that would otherwise pad top_k.
-    The margin term caps aggression: when the pool has a clear winner,
-    threshold stays within margin of top so multiple
-    similarly-good chunks survive. Always keeps the top chunk.
+    - 0 floor: rejects chunks scored below relevance-neutral.
+    - median: when the whole pool is marginal, forces a half-cut (#277).
+    - margin: when there is a clear winner, keeps chunks within margin of top.
+
+    Returns [] when no chunk clears the threshold. The caller treats an empty
+    result as "library has no coverage" (#332); never pads with a sub-threshold
+    chunk.
 
     Caller must ensure chunks were reranked (score = bge logit). For
     RRF-domain scores the margin is uncalibrated; gate is bypassed in that
@@ -204,7 +204,7 @@ def _quantile_gate(chunks: list[RetrievedChunk], margin: float = 2.0) -> list[Re
     Args:
         chunks: Reranked RetrievedChunk list (score = bge logit).
         margin: bge logit units within which to keep chunks below the top.
-            Derived from _RELEVANCE_MARGIN_BY_HITS based on expected_hits.
+            Derived from _RELEVANCE_MARGIN_BY_MODE based on mode.
     """
     if not chunks:
         return chunks
@@ -215,7 +215,7 @@ def _quantile_gate(chunks: list[RetrievedChunk], margin: float = 2.0) -> list[Re
     median = scores[len(scores) // 2]
     threshold = max(0.0, median, top - margin)
     kept = [c for c in chunks if c.score is not None and c.score >= threshold]
-    return kept if kept else [chunks[0]]
+    return kept
 
 
 def _rrf_fuse(
@@ -488,8 +488,7 @@ async def query_fts(
         return []
     video_ids = resolved
 
-    escaped = _escape_fts_query(query_text)
-    rows = await query_fts_rows(escaped, video_ids, top_k)
+    rows = await query_fts_rows(query_text, video_ids, top_k)
 
     return [
         _row_from_chroma(
@@ -596,17 +595,17 @@ async def retrieve(
 
         if reranked:
             pre_gate = len(chunks)
-            gate_margin = _RELEVANCE_MARGIN_BY_HITS.get(params.expected_hits, _RELEVANCE_MARGIN_BY_HITS["few"])
+            gate_margin = _RELEVANCE_MARGIN_BY_MODE.get(params.mode, _RELEVANCE_MARGIN_BY_MODE["narrow"])
             chunks = _quantile_gate(chunks, margin=gate_margin)
             dropped_by_gate = pre_gate - len(chunks)
             logger.info(
-                "retrieve post-rerank+gate: pre=%d post=%d dropped=%d top_score=%.4f margin=%.1f(expected_hits=%s)",
+                "retrieve post-rerank+gate: pre=%d post=%d dropped=%d top_score=%.4f margin=%.1f(mode=%s)",
                 pre_gate,
                 len(chunks),
                 dropped_by_gate,
                 chunks[0].score if chunks else -999,
                 gate_margin,
-                params.expected_hits,
+                params.mode,
             )
 
     # candidates_evaluated: pool size (pre-diverse-top-k); used for logs, not UI.

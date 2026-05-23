@@ -26,17 +26,33 @@ class TestRetrieveToolSchema:
         assert "source_ids" not in props
         assert "exclude_source_ids" not in props
 
-    def test_retrieve_tool_has_expected_hits(self):
+    def test_retrieve_tool_schema(self):
         from bibilab.pipeline.chat_tools import RETRIEVE_TOOL
 
         props = RETRIEVE_TOOL.parameters["properties"]
-        assert "expected_hits" in props
-        assert props["expected_hits"]["enum"] == ["one", "few", "many"]
-
-    def test_retrieve_tool_required_is_query_only(self):
-        from bibilab.pipeline.chat_tools import RETRIEVE_TOOL
-
+        assert "query" in props
+        assert "expected_hits" not in props
+        assert "sequence_number" not in props
+        assert "season_number" not in props
         assert RETRIEVE_TOOL.parameters["required"] == ["query"]
+
+    def test_survey_tool_schema(self):
+        from bibilab.pipeline.chat_tools import SURVEY_TOOL
+
+        assert SURVEY_TOOL.name == "survey"
+        props = SURVEY_TOOL.parameters["properties"]
+        assert "query" in props
+        assert SURVEY_TOOL.parameters["required"] == ["query"]
+
+    def test_retrieve_scoped_tool_schema(self):
+        from bibilab.pipeline.chat_tools import RETRIEVE_SCOPED_TOOL
+
+        assert RETRIEVE_SCOPED_TOOL.name == "retrieve_scoped"
+        props = RETRIEVE_SCOPED_TOOL.parameters["properties"]
+        assert "query" in props
+        assert "sequence_number" in props
+        assert "season_number" in props
+        assert RETRIEVE_SCOPED_TOOL.parameters["required"] == ["query"]
 
     def test_retrieve_tool_description_has_no_index_workflow(self):
         from bibilab.pipeline.chat_tools import RETRIEVE_TOOL
@@ -45,7 +61,6 @@ class TestRetrieveToolSchema:
         assert "exclude_source_ids" not in desc
         assert "source numbers" not in desc
         assert "Sources list" not in desc
-        assert "sequence_number" in desc
 
 
 class TestGenerateReportToolDefinition:
@@ -306,6 +321,7 @@ class TestExecuteRetrieve:
         monkeypatch.setattr(chat_tools, "retrieve", fake_retrieve)
 
         result = await chat_tools.execute_retrieve(
+            tool_name="retrieve",
             query="面食 种类",
             source_ids=["s1"],
             cfg=None,
@@ -350,6 +366,7 @@ async def test_execute_retrieve_returns_raw_chunks_for_replay(monkeypatch):
     source_map = {"v1": "s1"}
 
     result = await chat_tools.execute_retrieve(
+        tool_name="retrieve",
         query="test",
         source_ids=["s1"],
         cfg=cfg,
@@ -369,10 +386,10 @@ async def test_execute_retrieve_returns_raw_chunks_for_replay(monkeypatch):
     assert raw[0]["chunk_id"] == "v1_120_145"
 
 
-# AC1: expected_hits is present in execute_retrieve result
+# AC1: tool_name + mode present in execute_retrieve result
 @pytest.mark.asyncio
-async def test_execute_retrieve_includes_expected_hits_in_result(monkeypatch):
-    """execute_retrieve result dict must include expected_hits key."""
+async def test_execute_retrieve_includes_tool_name_and_mode(monkeypatch):
+    """execute_retrieve result dict must include tool_name and mode keys."""
     from bibilab.config import AIConfig, BibilabConfig
     from bibilab.pipeline import chat_tools
     from bibilab.pipeline.embed import RetrievalResult, RetrievedChunk, SourceHit
@@ -400,22 +417,22 @@ async def test_execute_retrieve_includes_expected_hits_in_result(monkeypatch):
 
     cfg = BibilabConfig(ai=AIConfig(protocol="openai", model="x", api_key="k"))
     result = await chat_tools.execute_retrieve(
+        tool_name="retrieve",
         query="test",
         source_ids=["s1"],
         cfg=cfg,
         registry={},
         source_map={"v1": "s1"},
-        expected_hits="few",
     )
 
-    assert "expected_hits" in result
-    assert result["expected_hits"] == "few"
+    assert result["tool_name"] == "retrieve"
+    assert result["mode"] == "narrow"
 
 
-# AC1: default expected_hits is "few"
+# AC1: default mode is "narrow"
 @pytest.mark.asyncio
-async def test_execute_retrieve_default_expected_hits_is_few(monkeypatch):
-    """When expected_hits is not provided, defaults to 'few'."""
+async def test_execute_retrieve_default_mode_is_narrow(monkeypatch):
+    """When tool_name is unrecognized, defaults to 'retrieve' params (mode='narrow')."""
     from bibilab.config import AIConfig, BibilabConfig
     from bibilab.pipeline import chat_tools
     from bibilab.pipeline.embed import RetrievalResult
@@ -433,12 +450,46 @@ async def test_execute_retrieve_default_expected_hits_is_few(monkeypatch):
 
     cfg = BibilabConfig(ai=AIConfig(protocol="openai", model="x", api_key="k"))
     result = await chat_tools.execute_retrieve(
+        tool_name="retrieve",
         query="test",
         source_ids=["s1"],
         cfg=cfg,
     )
 
-    assert result["expected_hits"] == "few"
+    assert result["mode"] == "narrow"
+
+
+def test_tool_name_to_params():
+    from bibilab.models._enums import RetrievalParams
+    from bibilab.pipeline.chat_tools import _TOOL_NAME_TO_PARAMS
+
+    assert _TOOL_NAME_TO_PARAMS["retrieve"] == RetrievalParams(depth_per_source=2, top_k=8, mode="narrow")
+    assert _TOOL_NAME_TO_PARAMS["survey"] == RetrievalParams(depth_per_source=5, top_k=24, mode="survey")
+    assert _TOOL_NAME_TO_PARAMS["retrieve_scoped"] == RetrievalParams(depth_per_source=2, top_k=8, mode="narrow")
+
+
+@pytest.mark.asyncio
+async def test_execute_tool_strips_facets_for_non_scoped(monkeypatch):
+    from bibilab.pipeline import chat_tools
+
+    captured = {}
+
+    async def fake_execute_retrieve(**kwargs):
+        captured.update(kwargs)
+        return {"_chunks": "", "_turn_indices": [], "_raw_chunks": []}
+
+    monkeypatch.setattr(chat_tools, "execute_retrieve", fake_execute_retrieve)
+
+    await chat_tools.execute_tool(
+        tool_name="retrieve",
+        arguments={"query": "x", "sequence_number": 5, "season_number": 2},
+        list_id="l",
+        source_ids=["s"],
+        ui_lang="en",
+        cfg=None,
+    )
+    assert captured["sequence_number"] is None
+    assert captured["season_number"] is None
 
 
 # AC2: CitationRegistryEntry gets timestamp_start, timestamp_end, rerank_score, preview
@@ -475,6 +526,7 @@ async def test_citation_registry_entry_gets_chunk_fields_on_execute_retrieve(mon
     source_map = {"v1": "s1"}
 
     await chat_tools.execute_retrieve(
+        tool_name="retrieve",
         query="test",
         source_ids=["s1"],
         cfg=cfg,
@@ -533,6 +585,7 @@ async def test_citation_registry_entry_uses_first_chunk_fields(monkeypatch):
     source_map = {"v1": "s1"}
 
     await chat_tools.execute_retrieve(
+        tool_name="retrieve",
         query="test",
         source_ids=["s1"],
         cfg=cfg,
@@ -597,7 +650,7 @@ class TestBuildGroundingPrompt:
         # Old "do not call retrieve again" reuse shortcut must be absent.
         assert "do not call `retrieve` again" not in prompt
         # Topic-shift directive present.
-        assert "call `retrieve` again" in prompt
+        assert "call retrieve" in prompt and "survey" in prompt and "retrieve_scoped" in prompt
         # Outside-knowledge / analogy ban present.
         assert "outside knowledge" in prompt
         assert "real-world analogies" in prompt
@@ -617,11 +670,11 @@ class TestRetrieveToolDescription:
         # and caused short content questions to skip retrieval.
         assert "rephrasing" not in desc
 
-    def test_retrieve_tool_description_biases_toward_retrieve_for_short_questions(self):
+    def test_retrieve_tool_description_has_no_expected_hits(self):
         from bibilab.pipeline.chat_tools import RETRIEVE_TOOL
 
         desc = RETRIEVE_TOOL.description
-        assert "expected_hits" in desc
+        assert "expected_hits" not in desc
 
 
 class TestBuildToolBlockEntry:
@@ -630,7 +683,8 @@ class TestBuildToolBlockEntry:
 
         retrieve_result = {
             "query": "test",
-            "expected_hits": "few",
+            "tool_name": "retrieve",
+            "mode": "narrow",
             "candidates_evaluated": 5,
             "sources_with_hits": 2,
             "sources_total": 3,
@@ -655,14 +709,14 @@ class TestBuildToolBlockEntry:
         entry = build_tool_block_entry(
             tool_use_id="toolu_1",
             name="retrieve",
-            arguments={"query": "test", "expected_hits": "few"},
+            arguments={"query": "test"},
             result=retrieve_result,
             raw_chunks=raw_chunks,
         )
 
         assert entry["tool_use_id"] == "toolu_1"
         assert entry["name"] == "retrieve"
-        assert entry["arguments"] == {"query": "test", "expected_hits": "few"}
+        assert entry["arguments"] == {"query": "test"}
         assert "_chunks" not in entry["result"]
         assert "_turn_indices" not in entry["result"]
         assert entry["result"]["chunks"] == raw_chunks
@@ -718,7 +772,7 @@ def test_expand_message_for_provider_anthropic_shape():
             {
                 "tool_use_id": "toolu_1",
                 "name": "retrieve",
-                "arguments": {"query": "q", "expected_hits": "few"},
+                "arguments": {"query": "q"},
                 "result": {"chunks": [{"content": "x"}], "summary": {"sources_total": 1}},
             }
         ],
@@ -731,7 +785,7 @@ def test_expand_message_for_provider_anthropic_shape():
         "type": "tool_use",
         "id": "toolu_1",
         "name": "retrieve",
-        "input": {"query": "q", "expected_hits": "few"},
+        "input": {"query": "q"},
     }
     assert out[0]["content"][-1] == {"type": "text", "text": "Answer [1]"}
     assert out[1]["role"] == "user"
@@ -749,7 +803,7 @@ def test_expand_message_for_provider_openai_shape():
             {
                 "tool_use_id": "call_1",
                 "name": "retrieve",
-                "arguments": {"query": "q", "expected_hits": "few"},
+                "arguments": {"query": "q"},
                 "result": {"chunks": [{"content": "x"}], "summary": {"sources_total": 1}},
             }
         ],
@@ -766,7 +820,6 @@ def test_expand_message_for_provider_openai_shape():
 
     assert json.loads(out[0]["tool_calls"][0]["function"]["arguments"]) == {
         "query": "q",
-        "expected_hits": "few",
     }
     assert out[0]["content"] == "Answer [1]"
     assert out[1]["role"] == "tool"
@@ -1052,15 +1105,15 @@ class TestRetrieveToolFacetSchema:
     """#309: schema exposes optional sequence_number/season_number; no series_name."""
 
     def test_facet_params_present_and_typed(self):
-        from bibilab.pipeline.chat_tools import RETRIEVE_TOOL
+        from bibilab.pipeline.chat_tools import RETRIEVE_SCOPED_TOOL
 
-        props = RETRIEVE_TOOL.parameters["properties"]
+        props = RETRIEVE_SCOPED_TOOL.parameters["properties"]
         assert props["sequence_number"]["type"] == "integer"
         assert props["season_number"]["type"] == "integer"
         assert "series_name" not in props
         # facet params are optional
-        assert "sequence_number" not in RETRIEVE_TOOL.parameters["required"]
-        assert "season_number" not in RETRIEVE_TOOL.parameters["required"]
+        assert "sequence_number" not in RETRIEVE_SCOPED_TOOL.parameters["required"]
+        assert "season_number" not in RETRIEVE_SCOPED_TOOL.parameters["required"]
 
 
 class TestExecuteRetrieveFacetScoping:
@@ -1114,6 +1167,7 @@ class TestExecuteRetrieveFacetScoping:
             },
         )
         result = await chat_tools.execute_retrieve(
+            tool_name="retrieve",
             query="q",
             source_ids=["a", "b", "c"],
             cfg=self._cfg(),
@@ -1142,6 +1196,7 @@ class TestExecuteRetrieveFacetScoping:
             },
         )
         result = await chat_tools.execute_retrieve(
+            tool_name="retrieve",
             query="q",
             source_ids=["a", "b"],
             cfg=self._cfg(),
@@ -1157,6 +1212,7 @@ class TestExecuteRetrieveFacetScoping:
 
         captured = self._patch(monkeypatch, {})
         result = await chat_tools.execute_retrieve(
+            tool_name="retrieve",
             query="q",
             source_ids=["a", "b"],
             cfg=self._cfg(),
@@ -1183,6 +1239,7 @@ class TestExecuteRetrieveFacetScoping:
             },
         )
         result = await chat_tools.execute_retrieve(
+            tool_name="retrieve",
             query="q",
             source_ids=["a", "b"],
             cfg=self._cfg(),
@@ -1207,6 +1264,7 @@ class TestExecuteRetrieveFacetScoping:
             },
         )
         result = await chat_tools.execute_retrieve(
+            tool_name="retrieve",
             query="q",
             source_ids=["a", "b"],
             cfg=self._cfg(),
@@ -1231,6 +1289,7 @@ class TestExecuteRetrieveFacetScoping:
             },
         )
         result = await chat_tools.execute_retrieve(
+            tool_name="retrieve",
             query="q",
             source_ids=["a", "b"],
             cfg=self._cfg(),
@@ -1255,6 +1314,7 @@ class TestExecuteRetrieveFacetScoping:
             },
         )
         result = await chat_tools.execute_retrieve(
+            tool_name="retrieve",
             query="q",
             source_ids=["a", "b"],
             cfg=self._cfg(),
@@ -1302,6 +1362,7 @@ class TestExecuteRetrieveZeroChunkNote:
         monkeypatch.setattr(chat_tools, "retrieve", fake_retrieve)
 
         result = await chat_tools.execute_retrieve(
+            tool_name="retrieve",
             query="什么是多元主义",
             source_ids=["s1", "s2", "s3"],
             cfg=self._cfg(),
@@ -1337,6 +1398,7 @@ class TestExecuteRetrieveZeroChunkNote:
         monkeypatch.setattr(chat_tools, "retrieve", fake_retrieve)
 
         result = await chat_tools.execute_retrieve(
+            tool_name="retrieve",
             query="q",
             source_ids=["s1"],
             cfg=self._cfg(),
@@ -1368,7 +1430,7 @@ class TestExecuteToolFacetArgs:
         monkeypatch.setattr(chat_tools, "execute_retrieve", fake_execute_retrieve)
 
         await chat_tools.execute_tool(
-            tool_name="retrieve",
+            tool_name="retrieve_scoped",
             arguments={"query": "第八集", "sequence_number": "8"},
             list_id="l1",
             source_ids=["a"],
@@ -1391,7 +1453,7 @@ class TestExecuteToolFacetArgs:
         monkeypatch.setattr(chat_tools, "execute_retrieve", fake_execute_retrieve)
 
         await chat_tools.execute_tool(
-            tool_name="retrieve",
+            tool_name="retrieve_scoped",
             arguments={"query": "q", "sequence_number": "eight"},
             list_id="l1",
             source_ids=["a"],
@@ -1508,6 +1570,7 @@ async def test_execute_retrieve_chunks_grouped_and_fenced(monkeypatch):
     source_map = {"v1": "s1", "v2": "s2"}
 
     result = await chat_tools.execute_retrieve(
+        tool_name="retrieve",
         query="q",
         source_ids=["s1", "s2"],
         cfg=cfg,

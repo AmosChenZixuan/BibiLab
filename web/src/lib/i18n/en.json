@@ -289,12 +289,12 @@
         "result": "Result"
       },
       "scope": {
-        "none": "all %{total} sources"
+        "none": "all %{total} sources",
+        "scoped": "%{matched} / %{total} sources"
       },
       "mode": {
-        "one": "one",
-        "few": "few",
-        "many": "many"
+        "narrow": "Narrow",
+        "survey": "Survey"
       },
       "modeUnknown": "—",
       "ariaToggle": "Toggle retrieval details",

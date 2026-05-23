@@ -64,7 +64,7 @@ class TestFirstRetrieveAssignsIndicesStartingAtOne:
 
             result = await execute_retrieve(
                 query="test",
-                expected_hits="few",
+                tool_name="retrieve",
                 source_ids=["s1", "s2"],
                 cfg=cfg,
                 registry=registry,
@@ -103,7 +103,7 @@ class TestSecondRetrieveDeduplicatesExistingSources:
 
             await execute_retrieve(
                 query="first",
-                expected_hits="few",
+                tool_name="retrieve",
                 source_ids=["s1", "s2"],
                 cfg=cfg,
                 registry=registry,
@@ -130,7 +130,7 @@ class TestSecondRetrieveDeduplicatesExistingSources:
 
             result = await execute_retrieve(
                 query="second",
-                expected_hits="few",
+                tool_name="retrieve",
                 source_ids=["s2", "s3"],
                 cfg=cfg,
                 registry=registry,
@@ -169,7 +169,7 @@ class TestChunkIdsAccumulateAcrossCalls:
 
             await execute_retrieve(
                 query="first",
-                expected_hits="few",
+                tool_name="retrieve",
                 source_ids=["s1"],
                 cfg=cfg,
                 registry=registry,
@@ -194,7 +194,7 @@ class TestChunkIdsAccumulateAcrossCalls:
 
             await execute_retrieve(
                 query="second",
-                expected_hits="few",
+                tool_name="retrieve",
                 source_ids=["s1"],
                 cfg=cfg,
                 registry=registry,
@@ -238,7 +238,7 @@ class TestTurnIndicesReflectsOnlyCurrentCall:
 
             r1 = await execute_retrieve(
                 query="first",
-                expected_hits="few",
+                tool_name="retrieve",
                 source_ids=["s1", "s2"],
                 cfg=cfg,
                 registry=registry,
@@ -262,7 +262,7 @@ class TestTurnIndicesReflectsOnlyCurrentCall:
 
             r2 = await execute_retrieve(
                 query="second",
-                expected_hits="few",
+                tool_name="retrieve",
                 source_ids=["s2"],
                 cfg=cfg,
                 registry=registry,
@@ -299,7 +299,7 @@ class TestSourceHeadersMatchRegistryStateAfterEachCall:
 
             r1 = await execute_retrieve(
                 query="first",
-                expected_hits="few",
+                tool_name="retrieve",
                 source_ids=["s1", "s2"],
                 cfg=cfg,
                 registry=registry,
@@ -330,7 +330,7 @@ class TestSourceHeadersMatchRegistryStateAfterEachCall:
 
             r2 = await execute_retrieve(
                 query="second",
-                expected_hits="few",
+                tool_name="retrieve",
                 source_ids=["s2", "s3"],
                 cfg=cfg,
                 registry=registry,
