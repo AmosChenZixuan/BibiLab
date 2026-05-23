@@ -15,7 +15,7 @@ class TestQuantileGate:
         assert _quantile_gate([], margin=2.0) == []
 
     def test_quantile_gate_all_negative_scores(self):
-        """All-negative scores → nothing clears 0 floor → empty."""
+        """All-negative scores → relative threshold keeps highest score, drops rest."""
         chunks = [
             RetrievedChunk(
                 content="a",
@@ -37,9 +37,10 @@ class TestQuantileGate:
             ),
         ]
         result = _quantile_gate(chunks, margin=2.0)
-        # top=-5, median=-8, top-margin=-7 → threshold=max(0,-8,-7)=0
-        # no scores >= 0 → []
-        assert result == []
+        # top=-5, median=-8, top-margin=-7 → threshold=max(-8,-7)=-5
+        # score -5.0 >= -5 → keep 'a'; -8.0 < -5 → drop 'b'
+        assert len(result) == 1
+        assert result[0].score == -5.0
 
     def test_quantile_gate_margin_various_values(self):
         """AC3: higher margin = more aggressive filtering (fewer chunks kept)."""
@@ -81,17 +82,17 @@ class TestQuantileGate:
                 score=4.0,
             ),
         ]
-        # margin=1.0: threshold = max(0, 6, 10-1=9) = 9 → only score >= 9 (10.0)
+        # margin=1.0: threshold = max(6, 10-1=9) = 9 → only score >= 9 (10.0)
         r1 = _quantile_gate(chunks, margin=1.0)
         assert len(r1) == 1
         assert r1[0].score == 10.0
 
-        # margin=2.0: threshold = max(0, 6, 10-2=8) = 8 → score >= 8 (10.0, 8.0)
+        # margin=2.0: threshold = max(6, 10-2=8) = 8 → score >= 8 (10.0, 8.0)
         r2 = _quantile_gate(chunks, margin=2.0)
         assert len(r2) == 2
         assert [c.score for c in r2] == [10.0, 8.0]
 
-        # margin=4.0: threshold = max(0, 6, 10-4=6) = 6 → median term dominates
+        # margin=4.0: threshold = max(6, 10-4=6) = 6 → median term dominates
         # score >= 6 (10.0, 8.0, 6.0); score=4.0 is below median so dropped
         r4 = _quantile_gate(chunks, margin=4.0)
         assert len(r4) == 3
@@ -139,7 +140,7 @@ class TestQuantileGate:
         ]
         margin = _RELEVANCE_MARGIN_BY_MODE["survey"]  # 2.5
         result = _quantile_gate(chunks, margin=margin)
-        # top=10, median=5, threshold=max(0,5,10-3=7)=7 → keep score >= 7 (10, 7.5)
+        # top=10, median=5, threshold=max(5, 10-2.5=7.5)=7.5 → keep score >= 7.5 (10, 7.5)
         assert len(result) == 2
         assert [c.score for c in result] == [10.0, 7.5]
 
@@ -192,3 +193,84 @@ class TestRetrievalResultGateMargin:
             gate_margin=2.0,
         )
         assert r2.gate_margin == 2.0
+
+
+class _MockEncoding:
+    """Minimal tokenizer encoding that ONNXMultilingualEmbedding.__call__ expects."""
+
+    def __init__(self, ids: list[int], attention_mask: list[int], type_ids: list[int]):
+        self.ids = ids
+        self.attention_mask = attention_mask
+        self.type_ids = type_ids
+
+
+def _make_mock_tokenizer():
+    from unittest.mock import MagicMock
+
+    def fake_encode(text):
+        n = max(len(text), 1)
+        return _MockEncoding(list(range(n)), [1] * n, [0] * n)
+
+    tokenizer = MagicMock()
+    tokenizer.encode = fake_encode
+    return tokenizer
+
+
+def _make_mock_session(dim=384):
+    from unittest.mock import MagicMock
+
+    import numpy as np
+
+    def fake_run(_, onnx_input):
+        batch_size = onnx_input["input_ids"].shape[0]
+        seq_len = onnx_input["input_ids"].shape[1]
+        return [np.random.randn(batch_size, seq_len, dim).astype(np.float32)]
+
+    session = MagicMock()
+    session.run = fake_run
+    return session
+
+
+class TestONNXMultilingualEmbedding:
+    def test_multilingual_embedding_dimension(self):
+        """Multilingual model returns 384-dim vectors for mixed English/Chinese input."""
+        import math
+        from unittest.mock import patch
+
+        from bibilab.pipeline.embed import ONNXMultilingualEmbedding
+
+        mock_session = _make_mock_session()
+        mock_tokenizer = _make_mock_tokenizer()
+
+        with (
+            patch.object(ONNXMultilingualEmbedding, "_ensure_downloaded", return_value=None),
+            patch("onnxruntime.InferenceSession", return_value=mock_session),
+            patch("tokenizers.Tokenizer.from_file", return_value=mock_tokenizer),
+        ):
+            emb = ONNXMultilingualEmbedding()
+            result = emb(["hello world", "你好世界"])
+        assert len(result) == 2
+        assert len(result[0]) == 384
+        assert all(math.isfinite(v) for v in result[0])
+        assert all(math.isfinite(v) for v in result[1])
+        assert result[0] != result[1]
+
+    def test_multilingual_embedding_empty_input(self):
+        """Empty input returns empty list without touching ONNX session."""
+        from unittest.mock import patch
+
+        from bibilab.pipeline.embed import ONNXMultilingualEmbedding
+
+        with (
+            patch.object(ONNXMultilingualEmbedding, "_ensure_downloaded", return_value=None),
+            patch("onnxruntime.InferenceSession"),
+            patch("tokenizers.Tokenizer.from_file"),
+        ):
+            emb = ONNXMultilingualEmbedding()
+            assert emb([]) == []
+
+    def test_multilingual_embedding_download_check(self):
+        """is_embedding_model_downloaded returns a bool."""
+        from bibilab.pipeline.embed import is_embedding_model_downloaded
+
+        assert isinstance(is_embedding_model_downloaded(), bool)

@@ -353,10 +353,11 @@ async def test_broad_mode_respects_floor(tmp_bibilab_home):
     ):
         result = await retrieve("q", ["src1"], cfg, params=RetrievalParams(depth_per_source=1, top_k=4))
 
-    # 0-floor cuts v1 (score -1.0 < 0), keeps v2 (0.5) and v3 (1.0)
-    assert {c.video_id for c in result.chunks} == {"v2", "v3"}
-    # sources_with_hits now reflects result_chunks (what the LLM actually saw), not pool size
-    assert result.sources_with_hits == 2
+    # No 0-floor — bge logits use relative threshold (median vs top-margin).
+    # scores [1.0, 0.5, -0.5, -1.0] → top=1.0, median=-0.5, margin=2.0
+    # threshold=max(-0.5, -1.0)=-0.5 → keeps v3(1.0), v2(0.5), v1(-0.5), drops v0(-1.0)
+    assert {c.video_id for c in result.chunks} == {"v1", "v2", "v3"}
+    assert result.sources_with_hits == 3
 
 
 @pytest.mark.asyncio
@@ -446,22 +447,23 @@ def test_get_collection_keys_by_name(tmp_bibilab_home):
     # chromadb is imported lazily inside _get_collection, so patch the
     # top-level chromadb module so the local import picks up the mock.
     with patch("chromadb.PersistentClient", return_value=fake_client):
-        cfg1 = BibilabConfig(transcript_collection_name="collection_a")
-        cfg2 = BibilabConfig(transcript_collection_name="collection_b")
+        with patch.object(embed_mod, "_default_embedding_function", return_value=MagicMock()):
+            cfg1 = BibilabConfig(transcript_collection_name="collection_a")
+            cfg2 = BibilabConfig(transcript_collection_name="collection_b")
 
-        coll_a = embed_mod._get_collection(cfg1)
-        coll_b = embed_mod._get_collection(cfg2)
+            coll_a = embed_mod._get_collection(cfg1)
+            coll_b = embed_mod._get_collection(cfg2)
 
-        # Two different configs must produce distinct collections
-        assert coll_a is not coll_b
-        assert coll_a.name == "collection_a"
-        assert coll_b.name == "collection_b"
+            # Two different configs must produce distinct collections
+            assert coll_a is not coll_b
+            assert coll_a.name == "collection_a"
+            assert coll_b.name == "collection_b"
 
-        # Calling again with the same name returns the cached collection
-        coll_a2 = embed_mod._get_collection(cfg1)
-        assert coll_a2 is coll_a
+            # Calling again with the same name returns the cached collection
+            coll_a2 = embed_mod._get_collection(cfg1)
+            assert coll_a2 is coll_a
 
-        assert len(collections_created) == 2
+            assert len(collections_created) == 2
 
     # Clean up
     embed_mod._chroma_collections = {}

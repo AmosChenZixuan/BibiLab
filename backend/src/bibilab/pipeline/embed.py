@@ -10,7 +10,6 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     import chromadb
-    from chromadb.utils.embedding_functions import ONNXMiniLM_L6_V2
 
 import sqlite3
 from pathlib import Path
@@ -188,10 +187,10 @@ def _adaptive_depth(spec_depth: int, top_k: int, num_sources_in_pool: int) -> in
 def _quantile_gate(chunks: list[RetrievedChunk], margin: float = 2.0) -> list[RetrievedChunk]:
     """Keep chunks whose rerank score clears the relevance threshold.
 
-    threshold = max(0, median(scores), top - margin)
-    - 0 floor: rejects chunks scored below relevance-neutral.
+    threshold = max(median(scores), top - margin)
     - median: when the whole pool is marginal, forces a half-cut (#277).
     - margin: when there is a clear winner, keeps chunks within margin of top.
+    No 0 floor — bge logits have no "relevance-neutral" zero point.
 
     Returns [] when no chunk clears the threshold. The caller treats an empty
     result as "library has no coverage" (#332); never pads with a sub-threshold
@@ -213,7 +212,7 @@ def _quantile_gate(chunks: list[RetrievedChunk], margin: float = 2.0) -> list[Re
         return chunks
     top = scores[0]
     median = scores[len(scores) // 2]
-    threshold = max(0.0, median, top - margin)
+    threshold = max(median, top - margin)
     kept = [c for c in chunks if c.score is not None and c.score >= threshold]
     return kept
 
@@ -248,23 +247,120 @@ def _rrf_fuse(
     return [chunk for _, chunk in scored]
 
 
+_MODEL_REPO = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+_EMBEDDING_DIM = 384
+
+
+class ONNXMultilingualEmbedding:
+    """ChromaDB-compatible embedding function using a multilingual ONNX model.
+
+    Mirrors the ONNXCrossEncoder pattern from rerank.py:
+    - onnxruntime + tokenizers only (no torch / sentence-transformers)
+    - Mean-pooled ONNX forward pass (no query instruction needed)
+    - Downloads model files to ~/.bibilab/models/embedding/
+    """
+
+    def name(self) -> str:
+        return "onnx_multilingual_embedding"
+
+    def embed_query(self, input: list[str]) -> list[list[float]]:
+        """Embed query strings. Same as __call__ for this model."""
+        return self(input)
+
+    def __init__(self) -> None:
+        import numpy as np  # noqa: PLC0415
+
+        model_dir = _embedding_model_dir()
+        self._ensure_downloaded(model_dir)
+        import onnxruntime as ort  # noqa: PLC0415
+
+        so = ort.SessionOptions()
+        so.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+        so.log_severity_level = 3
+        self._session = ort.InferenceSession(
+            str(model_dir / "onnx" / "model.onnx"),
+            providers=ort.get_available_providers(),
+            sess_options=so,
+        )
+        from tokenizers import Tokenizer  # noqa: PLC0415
+
+        self._tokenizer = Tokenizer.from_file(str(model_dir / "onnx" / "tokenizer.json"))
+        self._tokenizer.enable_truncation(max_length=512)
+
+        # pad_token_id from BERT config (0), not tokenizer's <pad> id (1)
+        self._pad_id = 0
+        self._np = np
+
+    def _ensure_downloaded(self, model_dir: Path) -> None:
+        model_path = model_dir / "onnx" / "model.onnx"
+        tokenizer_path = model_dir / "onnx" / "tokenizer.json"
+        if model_path.exists() and tokenizer_path.exists():
+            return
+        model_dir.mkdir(parents=True, exist_ok=True)
+        (model_dir / "onnx").mkdir(parents=True, exist_ok=True)
+        import httpx  # noqa: PLC0415
+
+        base = f"https://huggingface.co/{_MODEL_REPO}/resolve/main"
+        for remote_path, local_path in [
+            ("onnx/model.onnx", model_path),
+            ("tokenizer.json", tokenizer_path),
+        ]:
+            if local_path.exists():
+                continue
+            url = f"{base}/{remote_path}"
+            logger.info("Downloading %s → %s", url, local_path)
+            with httpx.stream("GET", url, follow_redirects=True) as resp:
+                resp.raise_for_status()
+                with open(local_path, "wb") as f:
+                    for chunk in resp.iter_bytes(1024 * 1024):
+                        f.write(chunk)
+
+    def __call__(self, input: list[str]) -> list[list[float]]:
+        """Encode texts to embedding vectors. Mean-pooled."""
+        if not input:
+            return []
+
+        encoded = [self._tokenizer.encode(t) for t in input]
+        max_len = max(len(e.ids) for e in encoded)
+        pad_id = self._pad_id
+
+        batch_ids = []
+        batch_mask = []
+        batch_type_ids = []
+        for enc in encoded:
+            pad_len = max_len - len(enc.ids)
+            batch_ids.append(enc.ids + [pad_id] * pad_len)
+            batch_mask.append(enc.attention_mask + [0] * pad_len)
+            batch_type_ids.append(enc.type_ids + [0] * pad_len)
+
+        onnx_input = {
+            "input_ids": self._np.array(batch_ids, dtype=self._np.int64),
+            "attention_mask": self._np.array(batch_mask, dtype=self._np.int64),
+            "token_type_ids": self._np.array(batch_type_ids, dtype=self._np.int64),
+        }
+
+        # Mean pooling: (batch, seq, hidden) → (batch, hidden)
+        hidden = self._session.run(None, onnx_input)[0]
+        mask = self._np.array(batch_mask, dtype=self._np.float32)
+        masked = hidden * mask[:, :, self._np.newaxis]
+        summed = masked.sum(axis=1)
+        counts = mask.sum(axis=1, keepdims=True)
+        embeddings = summed / counts
+
+        return [emb.tolist() for emb in embeddings]
+
+
 def _embedding_model_dir() -> Path:
     return models_dir("embedding")
 
 
 def is_embedding_model_downloaded() -> bool:
-    """Return True if the ONNX embedding model files are present locally."""
+    """Return True if the multilingual ONNX embedding model files are present locally."""
     return (_embedding_model_dir() / "onnx" / "model.onnx").exists()
 
 
-def _default_embedding_function() -> "ONNXMiniLM_L6_V2":
-    from chromadb.utils.embedding_functions import ONNXMiniLM_L6_V2  # noqa: PLC0415
-
-    class LocalONNXMiniLM(ONNXMiniLM_L6_V2):
-        DOWNLOAD_PATH = _embedding_model_dir()
-
-    _embedding_model_dir().mkdir(parents=True, exist_ok=True)
-    return LocalONNXMiniLM()
+def _default_embedding_function() -> ONNXMultilingualEmbedding:
+    return ONNXMultilingualEmbedding()
 
 
 def _get_collection(cfg: BibilabConfig) -> "chromadb.Collection":
