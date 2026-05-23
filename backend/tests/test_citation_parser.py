@@ -256,3 +256,47 @@ class TestNonCanonicalPartialBuffer:
         events, buf = parse_delta("see (abc", "", _lk(_e(1)))
         assert _delta_text(events) == "see (abc"
         assert buf == ""
+
+
+class TestTimestampSuffix:
+    """D7 — optional @ Xs-Ys timestamp suffix after index is silently consumed."""
+
+    def test_bare_with_timestamp(self):
+        events, buf = parse_delta("see [2 @ 460s-635s] there", "", _lk(_e(2)))
+        assert _citations(events) == [2]
+        assert _delta_text(events) == "see  there"
+        assert buf == ""
+
+    def test_no_space_before_at(self):
+        events, _ = parse_delta("[2@460s-635s]", "", _lk(_e(2)))
+        assert _citations(events) == [2]
+
+    def test_source_label_with_timestamp(self):
+        events, _ = parse_delta("see [Source 2 @ 460s-635s] there", "", _lk(_e(2)))
+        assert _citations(events) == [2]
+        assert _delta_text(events) == "see  there"
+
+    def test_chinese_label_with_timestamp(self):
+        events, _ = parse_delta("见[来源2 @ 460s-635s]处", "", _lk(_e(2)))
+        assert _citations(events) == [2]
+        assert _delta_text(events) == "见处"
+
+    def test_multi_index_with_timestamp(self):
+        events, _ = parse_delta("see [1, 2 @ 460s-635s]", "", _lk(_e(1), _e(2)))
+        assert _citations(events) == [1, 2]
+        assert _delta_text(events) == "see "
+
+    def test_lenticular_with_timestamp(self):
+        events, _ = parse_delta("见【2 @ 460s-635s】处", "", _lk(_e(2)))
+        assert _citations(events) == [2]
+        assert _delta_text(events) == "见处"
+
+    def test_no_timestamp_still_works(self):
+        events, _ = parse_delta("see [2] there", "", _lk(_e(2)))
+        assert _citations(events) == [2]
+        assert _delta_text(events) == "see  there"
+
+    def test_out_of_range_with_timestamp_stays_text(self):
+        events, _ = parse_delta("see [7 @ 460s-635s]", "", _lk(_e(1), _e(2)))
+        assert _citations(events) == []
+        assert "[7 @ 460s-635s]" in _delta_text(events)
