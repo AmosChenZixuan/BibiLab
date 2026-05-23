@@ -3,6 +3,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useAutoScroll } from "@/components/lists/hooks/useAutoScroll";
 import { useSSEStream } from "@/components/lists/hooks/useSSEStream";
 import ReactMarkdown from "react-markdown";
+import type { Root, Element, Text, RootContent } from "hast";
 import {
   AlertCircle,
   ChevronDown,
@@ -62,46 +63,33 @@ function CitationChip({
 }
 
 
-const CITE_TOKEN_RE = /​⁣CITE(\d+)⁣​/g;
+const CITE_TOKEN_RE = /​⁣CITE(\d+)⁣​/;
 
 function makeCiteToken(idx: number): string {
+  // U+200B (ZWSP) + U+2063 (invisible separator) — both zero-width,
+  // survive markdown parsing as inline text, won't be stripped by formatters.
   return `​⁣CITE${idx}⁣​`;
 }
 
-// rehype plugin: replaces citation placeholder tokens in text nodes with
-// <citation-el> elements so they survive markdown parsing as inline elements.
-function rehypeCiteTokens() {
-  return (tree: any) => {
-    walk(tree);
-    function walk(node: any) {
-      if (!node.children) return;
-      for (let i = node.children.length - 1; i >= 0; i--) {
-        const child = node.children[i];
-        if (child.type === "text" && typeof child.value === "string") {
-          CITE_TOKEN_RE.lastIndex = 0;
-          if (!CITE_TOKEN_RE.test(child.value)) continue;
-          CITE_TOKEN_RE.lastIndex = 0;
-          const parts = child.value.split(CITE_TOKEN_RE);
-          const replacements: any[] = [];
-          for (let j = 0; j < parts.length; j++) {
-            if (j % 2 === 0) {
-              if (parts[j]) replacements.push({ type: "text", value: parts[j] });
-            } else {
-              replacements.push({
-                type: "element",
-                tagName: "citation-el",
-                properties: { "data-cite-idx": parts[j] },
-                children: [],
-              });
-            }
-          }
-          node.children.splice(i, 1, ...replacements);
-        } else {
-          walk(child);
-        }
-      }
-    }
-  };
+// Stable refs so CiteEl (used in ReactMarkdown components) has a fixed
+// identity across re-renders; avoids remounting citation chips on every
+// parent render during streaming.
+let _citeSources: Source[] = [];
+let _citeOnOpenSource: ((source: Source, opts?: { highlightChunks?: string[] }) => void) | undefined;
+
+function CiteEl(props: Record<string, any>) {
+  const idx = Number(props["data-cite-idx"]);
+  const c: { index: number; source_id: string; chunk_ids: string[] } | undefined = props["_cite"] as any;
+  if (!c) return null;
+  return (
+    <CitationChip
+      index={c.index}
+      sourceId={c.source_id}
+      chunkIds={c.chunk_ids}
+      sources={_citeSources}
+      onOpenSource={_citeOnOpenSource}
+    />
+  );
 }
 
 function renderParagraphs(
@@ -110,6 +98,9 @@ function renderParagraphs(
   onOpenSource?: (source: Source, opts?: { highlightChunks?: string[] }) => void,
   isStreaming?: boolean,
 ) {
+  _citeSources = sources;
+  _citeOnOpenSource = onOpenSource;
+
   // Split into paragraphs on paragraph_break
   const paragraphs: Array<Array<ContentBlock>> = [[]];
   const last = () => paragraphs[paragraphs.length - 1];
@@ -132,7 +123,14 @@ function renderParagraphs(
   }
 
   // Merge each paragraph into a single markdown string, render with one ReactMarkdown.
-  // The rehype plugin converts placeholder tokens to <citation-el> elements.
+  // The rehype plugin converts placeholder tokens to <citation-el> elements with
+  // citation data embedded directly in properties, so the module-level CiteEl
+  // component reads everything from props without closure capture.
+  const components: Record<string, any> = {
+    p: ({ children }: any) => <>{children}</>,
+    "citation-el": CiteEl,
+  };
+
   return (
     <>
       {paragraphs.map((para, pi) => {
@@ -149,31 +147,47 @@ function renderParagraphs(
           }
         }
 
-        function CiteEl(props: any) {
-          const idx = Number(props["data-cite-idx"]);
-          const c = citations[idx];
-          if (!c) return null;
-          return (
-            <CitationChip
-              index={c.index}
-              sourceId={c.source_id}
-              chunkIds={c.chunk_ids}
-              sources={sources}
-              onOpenSource={onOpenSource}
-            />
-          );
-        }
+        function rehypeCiteTokensWithData() {
+          return (tree: Root) => {
+            walk(tree);
 
-        const components: Record<string, any> = {
-          p: ({ children }: any) => <>{children}</>,
-          "citation-el": CiteEl,
-        };
+            function walk(node: Root | Element): void {
+              for (let i = node.children.length - 1; i >= 0; i--) {
+                const child = node.children[i];
+                if (child.type === "text") {
+                  if (!CITE_TOKEN_RE.test(child.value)) continue;
+                  const parts = child.value.split(CITE_TOKEN_RE);
+                  const replacements: (Text | Element)[] = [];
+                  for (let j = 0; j < parts.length; j++) {
+                    if (j % 2 === 0) {
+                      if (parts[j]) replacements.push({ type: "text", value: parts[j] });
+                    } else {
+                      const c = citations[Number(parts[j])];
+                      replacements.push({
+                        type: "element",
+                        tagName: "citation-el",
+                        properties: {
+                          "data-cite-idx": parts[j],
+                          _cite: c as any,
+                        },
+                        children: [],
+                      });
+                    }
+                  }
+                  node.children.splice(i, 1, ...replacements as RootContent[]);
+                } else if (child.type === "element") {
+                  walk(child);
+                }
+              }
+            }
+          };
+        }
 
         return (
           <div key={pi} className="citation-paragraph">
             <ReactMarkdown
               components={components}
-              rehypePlugins={[rehypeCiteTokens]}
+              rehypePlugins={[rehypeCiteTokensWithData]}
             >
               {merged}
             </ReactMarkdown>
