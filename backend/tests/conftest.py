@@ -16,11 +16,20 @@ def _clear_llm_client_caches():
     _client_cache.clear()
 
 
+class _MockEmbeddingFunction:
+    def __call__(self, input):
+        return [[0.0] * 384 for _ in input]
+
+    def name(self):
+        return "mock_embedding"
+
+
 @pytest.fixture()
 def tmp_bibilab_home(tmp_path: Path):
     from bibilab.config import _reset_cache
 
     _reset_cache()
+    mock_ef = _MockEmbeddingFunction()
     with patch("bibilab.config.bibilab_home", return_value=tmp_path):
         with patch("bibilab.main.bibilab_home", return_value=tmp_path):
             with patch("bibilab.cleanup.bibilab_home", return_value=tmp_path):
@@ -32,7 +41,11 @@ def tmp_bibilab_home(tmp_path: Path):
                                     with patch("bibilab.routers.sources.bibilab_home", return_value=tmp_path):
                                         with patch("bibilab.adapters.bilibili.bibilab_home", return_value=tmp_path):
                                             with patch("pathlib.Path.home", return_value=tmp_path):
-                                                yield tmp_path
+                                                with patch(
+                                                    "bibilab.pipeline.embed._default_embedding_function",
+                                                    return_value=mock_ef,
+                                                ):
+                                                    yield tmp_path
 
 
 @pytest_asyncio.fixture()

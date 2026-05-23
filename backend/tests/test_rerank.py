@@ -447,22 +447,23 @@ def test_get_collection_keys_by_name(tmp_bibilab_home):
     # chromadb is imported lazily inside _get_collection, so patch the
     # top-level chromadb module so the local import picks up the mock.
     with patch("chromadb.PersistentClient", return_value=fake_client):
-        cfg1 = BibilabConfig(transcript_collection_name="collection_a")
-        cfg2 = BibilabConfig(transcript_collection_name="collection_b")
+        with patch.object(embed_mod, "_default_embedding_function", return_value=MagicMock()):
+            cfg1 = BibilabConfig(transcript_collection_name="collection_a")
+            cfg2 = BibilabConfig(transcript_collection_name="collection_b")
 
-        coll_a = embed_mod._get_collection(cfg1)
-        coll_b = embed_mod._get_collection(cfg2)
+            coll_a = embed_mod._get_collection(cfg1)
+            coll_b = embed_mod._get_collection(cfg2)
 
-        # Two different configs must produce distinct collections
-        assert coll_a is not coll_b
-        assert coll_a.name == "collection_a"
-        assert coll_b.name == "collection_b"
+            # Two different configs must produce distinct collections
+            assert coll_a is not coll_b
+            assert coll_a.name == "collection_a"
+            assert coll_b.name == "collection_b"
 
-        # Calling again with the same name returns the cached collection
-        coll_a2 = embed_mod._get_collection(cfg1)
-        assert coll_a2 is coll_a
+            # Calling again with the same name returns the cached collection
+            coll_a2 = embed_mod._get_collection(cfg1)
+            assert coll_a2 is coll_a
 
-        assert len(collections_created) == 2
+            assert len(collections_created) == 2
 
     # Clean up
     embed_mod._chroma_collections = {}

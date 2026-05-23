@@ -15,7 +15,7 @@ class TestQuantileGate:
         assert _quantile_gate([], margin=2.0) == []
 
     def test_quantile_gate_all_negative_scores(self):
-        """All-negative scores → nothing clears 0 floor → empty."""
+        """All-negative scores → relative threshold keeps highest score, drops rest."""
         chunks = [
             RetrievedChunk(
                 content="a",
@@ -82,17 +82,17 @@ class TestQuantileGate:
                 score=4.0,
             ),
         ]
-        # margin=1.0: threshold = max(0, 6, 10-1=9) = 9 → only score >= 9 (10.0)
+        # margin=1.0: threshold = max(6, 10-1=9) = 9 → only score >= 9 (10.0)
         r1 = _quantile_gate(chunks, margin=1.0)
         assert len(r1) == 1
         assert r1[0].score == 10.0
 
-        # margin=2.0: threshold = max(0, 6, 10-2=8) = 8 → score >= 8 (10.0, 8.0)
+        # margin=2.0: threshold = max(6, 10-2=8) = 8 → score >= 8 (10.0, 8.0)
         r2 = _quantile_gate(chunks, margin=2.0)
         assert len(r2) == 2
         assert [c.score for c in r2] == [10.0, 8.0]
 
-        # margin=4.0: threshold = max(0, 6, 10-4=6) = 6 → median term dominates
+        # margin=4.0: threshold = max(6, 10-4=6) = 6 → median term dominates
         # score >= 6 (10.0, 8.0, 6.0); score=4.0 is below median so dropped
         r4 = _quantile_gate(chunks, margin=4.0)
         assert len(r4) == 3
@@ -140,7 +140,7 @@ class TestQuantileGate:
         ]
         margin = _RELEVANCE_MARGIN_BY_MODE["survey"]  # 2.5
         result = _quantile_gate(chunks, margin=margin)
-        # top=10, median=5, threshold=max(0,5,10-3=7)=7 → keep score >= 7 (10, 7.5)
+        # top=10, median=5, threshold=max(5, 10-2.5=7.5)=7.5 → keep score >= 7.5 (10, 7.5)
         assert len(result) == 2
         assert [c.score for c in result] == [10.0, 7.5]
 
@@ -198,12 +198,25 @@ class TestRetrievalResultGateMargin:
 class TestONNXMultilingualEmbedding:
     def test_multilingual_embedding_dimension(self):
         """Multilingual model returns 384-dim vectors for mixed English/Chinese input."""
+        import math
+
         from bibilab.pipeline.embed import ONNXMultilingualEmbedding
 
         emb = ONNXMultilingualEmbedding()
         result = emb(["hello world", "你好世界"])
         assert len(result) == 2
         assert len(result[0]) == 384
+        # Verify outputs are finite and distinct
+        assert all(math.isfinite(v) for v in result[0])
+        assert all(math.isfinite(v) for v in result[1])
+        assert result[0] != result[1]
+
+    def test_multilingual_embedding_empty_input(self):
+        """Empty input returns empty list."""
+        from bibilab.pipeline.embed import ONNXMultilingualEmbedding
+
+        emb = ONNXMultilingualEmbedding()
+        assert emb([]) == []
 
     def test_multilingual_embedding_download_check(self):
         """is_embedding_model_downloaded returns a bool."""
