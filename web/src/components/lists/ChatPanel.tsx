@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 
 import { useAutoScroll } from "@/components/lists/hooks/useAutoScroll";
 import { useSSEStream } from "@/components/lists/hooks/useSSEStream";
@@ -62,16 +62,55 @@ function CitationChip({
 }
 
 
+const CITE_TOKEN_RE = /​⁣CITE(\d+)⁣​/g;
+
+function makeCiteToken(idx: number): string {
+  return `​⁣CITE${idx}⁣​`;
+}
+
+// rehype plugin: replaces citation placeholder tokens in text nodes with
+// <citation-el> elements so they survive markdown parsing as inline elements.
+function rehypeCiteTokens() {
+  return (tree: any) => {
+    walk(tree);
+    function walk(node: any) {
+      if (!node.children) return;
+      for (let i = node.children.length - 1; i >= 0; i--) {
+        const child = node.children[i];
+        if (child.type === "text" && typeof child.value === "string") {
+          CITE_TOKEN_RE.lastIndex = 0;
+          if (!CITE_TOKEN_RE.test(child.value)) continue;
+          CITE_TOKEN_RE.lastIndex = 0;
+          const parts = child.value.split(CITE_TOKEN_RE);
+          const replacements: any[] = [];
+          for (let j = 0; j < parts.length; j++) {
+            if (j % 2 === 0) {
+              if (parts[j]) replacements.push({ type: "text", value: parts[j] });
+            } else {
+              replacements.push({
+                type: "element",
+                tagName: "citation-el",
+                properties: { "data-cite-idx": parts[j] },
+                children: [],
+              });
+            }
+          }
+          node.children.splice(i, 1, ...replacements);
+        } else {
+          walk(child);
+        }
+      }
+    }
+  };
+}
+
 function renderParagraphs(
   contentBlocks: ContentBlock[],
   sources: Source[],
   onOpenSource?: (source: Source, opts?: { highlightChunks?: string[] }) => void,
   isStreaming?: boolean,
 ) {
-  // D6: a citation must never start a fresh paragraph. When a citation lands at
-  // the head of an empty paragraph (i.e. right after a paragraph_break with no
-  // intervening text), attach it to the previous non-empty paragraph so it
-  // renders inline at the end of the sentence it supports.
+  // Split into paragraphs on paragraph_break
   const paragraphs: Array<Array<ContentBlock>> = [[]];
   const last = () => paragraphs[paragraphs.length - 1];
   for (const block of contentBlocks) {
@@ -79,40 +118,68 @@ function renderParagraphs(
       if (last().length > 0) {
         paragraphs.push([]);
       }
-    } else if (block.type === "citation" && last().length === 0 && paragraphs.length > 1) {
-      paragraphs[paragraphs.length - 2].push(block);
     } else {
       last().push(block);
     }
   }
 
+  // Post-merge fold: citation-only trailing paragraphs attach to previous
+  for (let i = paragraphs.length - 1; i > 0; i--) {
+    if (paragraphs[i].length > 0 && paragraphs[i].every((b) => b.type === "citation")) {
+      paragraphs[i - 1].push(...paragraphs[i]);
+      paragraphs[i] = [];
+    }
+  }
+
+  // Merge each paragraph into a single markdown string, render with one ReactMarkdown.
+  // The rehype plugin converts placeholder tokens to <citation-el> elements.
   return (
     <>
-      {paragraphs.map((para, pi) =>
-        para.length === 0 ? null : (
+      {paragraphs.map((para, pi) => {
+        if (para.length === 0) return null;
+
+        const citations: Array<{ index: number; source_id: string; chunk_ids: string[] }> = [];
+        let merged = "";
+        for (const block of para) {
+          if (block.type === "text") {
+            merged += block.text;
+          } else if (block.type === "citation") {
+            merged += makeCiteToken(citations.length);
+            citations.push({ index: block.index, source_id: block.source_id, chunk_ids: block.chunk_ids });
+          }
+        }
+
+        function CiteEl(props: any) {
+          const idx = Number(props["data-cite-idx"]);
+          const c = citations[idx];
+          if (!c) return null;
+          return (
+            <CitationChip
+              index={c.index}
+              sourceId={c.source_id}
+              chunkIds={c.chunk_ids}
+              sources={sources}
+              onOpenSource={onOpenSource}
+            />
+          );
+        }
+
+        const components: Record<string, any> = {
+          p: ({ children }: any) => <>{children}</>,
+          "citation-el": CiteEl,
+        };
+
+        return (
           <div key={pi} className="citation-paragraph">
-            {para.map((block, bi) =>
-              block.type === "text" ? (
-                <ReactMarkdown
-                  key={bi}
-                  components={{ p: ({ children }) => <>{children}</> }}
-                >
-                  {block.text}
-                </ReactMarkdown>
-              ) : block.type === "citation" ? (
-                <CitationChip
-                  key={bi}
-                  index={block.index}
-                  sourceId={block.source_id}
-                  chunkIds={block.chunk_ids}
-                  sources={sources}
-                  onOpenSource={onOpenSource}
-                />
-              ) : null,
-            )}
+            <ReactMarkdown
+              components={components}
+              rehypePlugins={[rehypeCiteTokens]}
+            >
+              {merged}
+            </ReactMarkdown>
           </div>
-        ),
-      )}
+        );
+      })}
       {isStreaming && <span className="chat-cursor" />}
     </>
   );
