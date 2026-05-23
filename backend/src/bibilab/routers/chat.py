@@ -131,15 +131,7 @@ def _flush_pending_text(content_blocks: list[dict], text: str) -> None:
 
 
 def _append_citation_block(content_blocks: list[dict], data: dict) -> None:
-    """Append a citation block, applying the D6 coalescing rule for persist parity.
-
-    A citation must never start a new paragraph (mirrors the frontend
-    `renderParagraphs` rule so a history reload matches the live stream): a
-    trailing lone `paragraph_break` before the citation is dropped so the chip
-    stays at the end of the preceding paragraph.
-    """
-    if content_blocks and content_blocks[-1]["type"] == "paragraph_break":
-        content_blocks.pop()
+    """Append a citation block to the content_blocks list."""
     content_blocks.append(
         {
             "type": "citation",
