@@ -195,28 +195,79 @@ class TestRetrievalResultGateMargin:
         assert r2.gate_margin == 2.0
 
 
+class _MockEncoding:
+    """Minimal tokenizer encoding that ONNXMultilingualEmbedding.__call__ expects."""
+
+    def __init__(self, ids: list[int], attention_mask: list[int], type_ids: list[int]):
+        self.ids = ids
+        self.attention_mask = attention_mask
+        self.type_ids = type_ids
+
+
+def _make_mock_tokenizer():
+    from unittest.mock import MagicMock
+
+    def fake_encode(text):
+        n = max(len(text), 1)
+        return _MockEncoding(list(range(n)), [1] * n, [0] * n)
+
+    tokenizer = MagicMock()
+    tokenizer.encode = fake_encode
+    return tokenizer
+
+
+def _make_mock_session(dim=384):
+    from unittest.mock import MagicMock
+
+    import numpy as np
+
+    def fake_run(_, onnx_input):
+        batch_size = onnx_input["input_ids"].shape[0]
+        seq_len = onnx_input["input_ids"].shape[1]
+        return [np.random.randn(batch_size, seq_len, dim).astype(np.float32)]
+
+    session = MagicMock()
+    session.run = fake_run
+    return session
+
+
 class TestONNXMultilingualEmbedding:
     def test_multilingual_embedding_dimension(self):
         """Multilingual model returns 384-dim vectors for mixed English/Chinese input."""
         import math
+        from unittest.mock import patch
 
         from bibilab.pipeline.embed import ONNXMultilingualEmbedding
 
-        emb = ONNXMultilingualEmbedding()
-        result = emb(["hello world", "你好世界"])
+        mock_session = _make_mock_session()
+        mock_tokenizer = _make_mock_tokenizer()
+
+        with (
+            patch.object(ONNXMultilingualEmbedding, "_ensure_downloaded", return_value=None),
+            patch("onnxruntime.InferenceSession", return_value=mock_session),
+            patch("tokenizers.Tokenizer.from_file", return_value=mock_tokenizer),
+        ):
+            emb = ONNXMultilingualEmbedding()
+            result = emb(["hello world", "你好世界"])
         assert len(result) == 2
         assert len(result[0]) == 384
-        # Verify outputs are finite and distinct
         assert all(math.isfinite(v) for v in result[0])
         assert all(math.isfinite(v) for v in result[1])
         assert result[0] != result[1]
 
     def test_multilingual_embedding_empty_input(self):
-        """Empty input returns empty list."""
+        """Empty input returns empty list without touching ONNX session."""
+        from unittest.mock import patch
+
         from bibilab.pipeline.embed import ONNXMultilingualEmbedding
 
-        emb = ONNXMultilingualEmbedding()
-        assert emb([]) == []
+        with (
+            patch.object(ONNXMultilingualEmbedding, "_ensure_downloaded", return_value=None),
+            patch("onnxruntime.InferenceSession"),
+            patch("tokenizers.Tokenizer.from_file"),
+        ):
+            emb = ONNXMultilingualEmbedding()
+            assert emb([]) == []
 
     def test_multilingual_embedding_download_check(self):
         """is_embedding_model_downloaded returns a bool."""
