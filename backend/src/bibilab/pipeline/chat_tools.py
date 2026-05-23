@@ -150,8 +150,8 @@ RETRIEVE_TOOL = ToolDefinition(
 SURVEY_TOOL = ToolDefinition(
     name="survey",
     description=(
-        "Retrieve from video transcripts for a broad / list-summary / comparison "
-        "question.\n\n"
+        "Retrieve from video transcripts for a broad / list-summary question "
+        "about a SINGLE subject.\n\n"
         "Broad questions use umbrella terms ('面食', 'political philosophy') that "
         "rarely appear verbatim in transcripts — the source says '牛肉面', '米粉'. "
         "Expand the query into subtypes and synonyms of the terms IN THE CURRENT "
@@ -161,8 +161,13 @@ SURVEY_TOOL = ToolDefinition(
         "dishes, characters, or entities mentioned in earlier conversation turns — "
         "those belong to a different question and pollute this retrieval.\n\n"
         "Use this tool when the user asks for an overview, a list of items, a "
-        "summary, a comparison, or anything that expects multiple sources — "
-        "'what are the ways to X', 'compare A and B', 'list all the X', 'summarize'.\n\n"
+        "summary, or anything that expects multiple sources for one umbrella topic — "
+        "'what are the ways to X', 'list all the X', 'summarize X'.\n\n"
+        "For comparison questions ('compare A and B', 'A 和 B 的区别'), do NOT "
+        "use a single survey — those are multi-subject; issue parallel calls, "
+        "one per subject, picking the appropriate tool per subject (retrieve "
+        "for concrete entities, survey if a subject is itself an umbrella term, "
+        "retrieve_scoped if a subject is an episode/season).\n\n"
         "If the user explicitly references an episode or season, use retrieve_scoped "
         "instead.\n\n"
         "Examples:\n"

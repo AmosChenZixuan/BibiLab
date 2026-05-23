@@ -210,21 +210,24 @@ def build_grounding_prompt(response_language: str) -> str:
         "or custom report — where the answer is a structured document, not a "
         "chat reply — call `generate_report` immediately. Do not retrieve first; "
         "the report pipeline handles its own retrieval.\n\n"
-        "For content questions — where the user wants an answer in the chat — "
-        "choose ONE retrieval tool per turn:\n\n"
-        "- `retrieve(query)`: single-fact lookups, definitions, "
-        '"what / when / who / why" questions. Extract keywords verbatim '
-        "from the user's message.\n\n"
-        "- `survey(query)`: list-summary, comparison, episode-wide recap, "
-        '"what are the ways to X", "what\'s covered in". Broad questions '
-        "use umbrella terms that rarely appear verbatim in transcripts — "
-        "expand into subtypes and synonyms of the terms in the CURRENT user "
-        "message. Do not borrow specific names or entities from earlier "
-        "turns; those belong to a different question.\n\n"
-        "- `retrieve_scoped(query, sequence_number?, season_number?)`: use "
-        "ONLY when the CURRENT user message explicitly references an "
-        "episode (第八集, episode 3) or a season (第二季). Do not infer "
-        "scope from prior turns.\n\n"
+        "For content questions, first decompose the user's message into distinct "
+        "SUBJECTS (entities, episodes, seasons, items compared). ONE subject → "
+        "call ONE retrieval tool; do NOT hedge by calling multiple variants on "
+        "the same subject. MULTIPLE subjects ('A 和 B 的区别', '第一集 xxx 第三集 yyy', "
+        "multi-entity questions) → call the appropriate tool ONCE PER SUBJECT "
+        "in parallel, each scoped to its own subject.\n\n"
+        "Tools per subject:\n"
+        "- `retrieve(query)`: single-fact lookups, definitions, what/when/who/why. "
+        "Extract keywords verbatim from the user's message.\n"
+        "- `survey(query)`: list-summary / episode-wide recap for ONE umbrella "
+        "subject (e.g. '有哪些面食做法'). Umbrella terms rarely appear verbatim — "
+        "expand into subtypes / synonyms from the CURRENT message only; do not "
+        "borrow entities from earlier turns. Multi-subject comparisons use "
+        "parallel calls (one per subject, appropriate tool each), not a single "
+        "survey.\n"
+        "- `retrieve_scoped(query, sequence_number?, season_number?)`: use ONLY "
+        "when the CURRENT message explicitly names an episode (第八集) or season "
+        "(第二季); do not infer scope from prior turns.\n\n"
         "For questions about source counts, durations, or languages, call "
         "`query_list_metadata`.\n\n"
         "Earlier turns' retrievals appear only as a one-line tag (the prior "
@@ -358,6 +361,15 @@ async def stream_with_tools(
         # Reset: a partial [ left over from preamble text should not bleed into
         # iteration 2's citation parsing.
         parse_buffer = ""
+
+        retrieve_calls = [tc for tc in tool_calls if tc.name in RETRIEVE_TOOL_NAMES]
+        if len(retrieve_calls) > 1:
+            logger.info(
+                "parallel_retrieve count=%d names=%r queries=%r",
+                len(retrieve_calls),
+                [tc.name for tc in retrieve_calls],
+                [str(tc.arguments.get("query", ""))[:80] for tc in retrieve_calls],
+            )
 
         results: dict[str, dict] = {}
         for tc in tool_calls:
