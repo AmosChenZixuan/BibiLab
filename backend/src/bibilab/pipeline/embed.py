@@ -260,6 +260,9 @@ class ONNXMultilingualEmbedding:
     - Downloads model files to ~/.bibilab/models/embedding/
     """
 
+    def name(self) -> str:
+        return "onnx_multilingual_embedding"
+
     def __init__(self) -> None:
         import numpy as np  # noqa: PLC0415
 
@@ -308,12 +311,12 @@ class ONNXMultilingualEmbedding:
                     for chunk in resp.iter_bytes(1024 * 1024):
                         f.write(chunk)
 
-    def __call__(self, texts: list[str]) -> list[list[float]]:
+    def __call__(self, input: list[str]) -> list[list[float]]:
         """Encode texts to embedding vectors. Mean-pooled."""
-        if not texts:
+        if not input:
             return []
 
-        encoded = [self._tokenizer.encode(t) for t in texts]
+        encoded = [self._tokenizer.encode(t) for t in input]
         max_len = max(len(e.ids) for e in encoded)
         pad_id = self._pad_id
 
