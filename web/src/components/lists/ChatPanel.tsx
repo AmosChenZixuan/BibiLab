@@ -63,7 +63,7 @@ function CitationChip({
 }
 
 
-const CITE_TOKEN_RE = /​⁣CITE(\d+)⁣​/;
+export const CITE_TOKEN_RE = /​⁣CITE(\d+)⁣​/;
 
 function makeCiteToken(idx: number): string {
   // U+200B (ZWSP) + U+2063 (invisible separator) — both zero-width,
@@ -81,7 +81,10 @@ type CiteData = {
 
 function CiteEl(props: Record<string, any>) {
   const cite: CiteData | undefined = props["_cite"] as any;
-  if (!cite) return null;
+  if (!cite) {
+    console.warn("CiteEl: missing _cite prop — possible citation index mismatch");
+    return null;
+  }
   return (
     <CitationChip
       index={cite.index}
@@ -105,6 +108,7 @@ function makeRehypeCitePlugin(citations: CiteData[]) {
       walk(tree);
 
       function walk(node: Root | Element): void {
+        if (!node.children) return;
         for (let i = node.children.length - 1; i >= 0; i--) {
           const child = node.children[i];
           if (child.type === "text") {
@@ -115,10 +119,15 @@ function makeRehypeCitePlugin(citations: CiteData[]) {
               if (j % 2 === 0) {
                 if (parts[j]) replacements.push({ type: "text", value: parts[j] });
               } else {
+                const idx = Number(parts[j]);
+                if (!citations[idx]) {
+                  console.warn("rehypeCiteTokens: cite token out of bounds", parts[j], citations.length);
+                  continue;
+                }
                 replacements.push({
                   type: "element",
                   tagName: "citation-el",
-                  properties: { _cite: citations[Number(parts[j])] as any },
+                  properties: { _cite: citations[idx] as any },
                   children: [],
                 });
               }
