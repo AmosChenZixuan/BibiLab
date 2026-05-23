@@ -263,6 +263,10 @@ class ONNXMultilingualEmbedding:
     def name(self) -> str:
         return "onnx_multilingual_embedding"
 
+    def embed_query(self, input: list[str]) -> list[list[float]]:
+        """Embed query strings. Same as __call__ for this model."""
+        return self(input)
+
     def __init__(self) -> None:
         import numpy as np  # noqa: PLC0415
 
