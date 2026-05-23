@@ -303,7 +303,7 @@ class ONNXMultilingualEmbedding:
         base = f"https://huggingface.co/{_MODEL_REPO}/resolve/main"
         for remote_path, local_path in [
             ("onnx/model.onnx", model_path),
-            ("onnx/tokenizer.json", tokenizer_path),
+            ("tokenizer.json", tokenizer_path),
         ]:
             if local_path.exists():
                 continue
