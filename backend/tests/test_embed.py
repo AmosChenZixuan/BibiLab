@@ -192,3 +192,20 @@ class TestRetrievalResultGateMargin:
             gate_margin=2.0,
         )
         assert r2.gate_margin == 2.0
+
+
+class TestONNXMultilingualEmbedding:
+    def test_multilingual_embedding_dimension(self):
+        """Multilingual model returns 384-dim vectors for mixed English/Chinese input."""
+        from bibilab.pipeline.embed import ONNXMultilingualEmbedding
+
+        emb = ONNXMultilingualEmbedding()
+        result = emb(["hello world", "你好世界"])
+        assert len(result) == 2
+        assert len(result[0]) == 384
+
+    def test_multilingual_embedding_download_check(self):
+        """is_embedding_model_downloaded returns a bool."""
+        from bibilab.pipeline.embed import is_embedding_model_downloaded
+
+        assert isinstance(is_embedding_model_downloaded(), bool)
