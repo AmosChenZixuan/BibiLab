@@ -319,6 +319,208 @@ describe("chat panel", () => {
     });
   });
 
+  test("citation inside bullet list renders chip inline within <li>", async () => {
+    vi.spyOn(window, "fetch").mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : (input as Request).url;
+      const method = init?.method ?? "GET";
+      if (url.includes("/conversation") && method === "GET") {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              conversation: { id: "conv-1", list_id: "list-1" },
+              messages: [
+                {
+                  id: "msg-1",
+                  role: "assistant",
+                  content: "",
+                  created_at: "2026-04-08T12:00:00Z",
+                  metadata: {
+                    content_blocks: [
+                      { type: "text", text: "- first point" },
+                      { type: "citation", index: 1, source_id: "src-1", chunk_ids: [] },
+                      { type: "text", text: "\n- second point" },
+                      { type: "citation", index: 1, source_id: "src-1", chunk_ids: [] },
+                    ],
+                  },
+                },
+              ],
+            }),
+          ),
+        );
+      }
+      if (url.includes("/chat") && method === "POST") {
+        return Promise.resolve(
+          new Response(
+            new ReadableStream({
+              start(c) {
+                c.enqueue(new TextEncoder().encode('data: {"type":"done"}\n\n'));
+                c.close();
+              },
+            }),
+            { headers: { "Content-Type": "text/event-stream" } },
+          ),
+        );
+      }
+      return Promise.resolve(new Response(JSON.stringify([])));
+    });
+
+    renderChatPanel(
+      { selectedSourceIds: ["src-1"], sources: [SOURCE_1] },
+      { skipMock: true },
+    );
+
+    await waitFor(() => {
+      // Exactly one <ul> — not two separate lists
+      const uls = document.querySelectorAll("ul");
+      expect(uls.length).toBe(1);
+      // Both chips are inside <li> elements
+      const chipsInLi = document.querySelectorAll("li .cite-chip");
+      expect(chipsInLi.length).toBe(2);
+    });
+  });
+
+  test("citation after heading keeps chip inline within the heading block", async () => {
+    vi.spyOn(window, "fetch").mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : (input as Request).url;
+      const method = init?.method ?? "GET";
+      if (url.includes("/conversation") && method === "GET") {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              conversation: { id: "conv-1", list_id: "list-1" },
+              messages: [
+                {
+                  id: "msg-1",
+                  role: "assistant",
+                  content: "",
+                  created_at: "2026-04-08T12:00:00Z",
+                  metadata: {
+                    content_blocks: [
+                      { type: "text", text: "## The Title" },
+                      { type: "citation", index: 1, source_id: "src-1", chunk_ids: [] },
+                      { type: "text", text: " trailing text" },
+                    ],
+                  },
+                },
+              ],
+            }),
+          ),
+        );
+      }
+      if (url.includes("/chat") && method === "POST") {
+        return Promise.resolve(
+          new Response(
+            new ReadableStream({
+              start(c) {
+                c.enqueue(new TextEncoder().encode('data: {"type":"done"}\n\n'));
+                c.close();
+              },
+            }),
+            { headers: { "Content-Type": "text/event-stream" } },
+          ),
+        );
+      }
+      return Promise.resolve(new Response(JSON.stringify([])));
+    });
+
+    renderChatPanel(
+      { selectedSourceIds: ["src-1"], sources: [SOURCE_1] },
+      { skipMock: true },
+    );
+
+    await waitFor(() => {
+      // Chip is inside the same paragraph as the heading
+      const headingPara = document.querySelector(".citation-paragraph:has(h2)");
+      expect(headingPara).not.toBeNull();
+      expect(headingPara!.querySelector(".cite-chip")).not.toBeNull();
+      const h2 = headingPara!.querySelector("h2");
+      expect(h2).not.toBeNull();
+      expect(h2!.textContent).toContain("The Title");
+    });
+  });
+
+  test("consecutive citations in same paragraph both render as chips", async () => {
+    vi.spyOn(window, "fetch").mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : (input as Request).url;
+      const method = init?.method ?? "GET";
+      if (url.includes("/conversation") && method === "GET") {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              conversation: { id: "conv-1", list_id: "list-1" },
+              messages: [
+                {
+                  id: "msg-1",
+                  role: "assistant",
+                  content: "",
+                  created_at: "2026-04-08T12:00:00Z",
+                  metadata: {
+                    content_blocks: [
+                      { type: "text", text: "Sources " },
+                      { type: "citation", index: 1, source_id: "src-1", chunk_ids: [] },
+                      { type: "citation", index: 2, source_id: "src-2", chunk_ids: [] },
+                      { type: "text", text: " agree." },
+                    ],
+                  },
+                },
+              ],
+            }),
+          ),
+        );
+      }
+      if (url.includes("/chat") && method === "POST") {
+        return Promise.resolve(
+          new Response(
+            new ReadableStream({
+              start(c) {
+                c.enqueue(new TextEncoder().encode('data: {"type":"done"}\n\n'));
+                c.close();
+              },
+            }),
+            { headers: { "Content-Type": "text/event-stream" } },
+          ),
+        );
+      }
+      return Promise.resolve(new Response(JSON.stringify([])));
+    });
+
+    renderChatPanel(
+      { selectedSourceIds: ["src-1", "src-2"], sources: [SOURCE_1, SOURCE_2] },
+      { skipMock: true },
+    );
+
+    await waitFor(() => {
+      const chips = document.querySelectorAll(".cite-chip");
+      expect(chips.length).toBe(2);
+      // Both chips in same paragraph
+      const para = document.querySelector(".citation-paragraph");
+      expect(para).not.toBeNull();
+      expect(para!.querySelectorAll(".cite-chip").length).toBe(2);
+    });
+  });
+
+  test("CITE_TOKEN_RE split handles edge cases", async () => {
+    const { CITE_TOKEN_RE: RE } = await import("@/components/lists/ChatPanel");
+
+    // Adjacent tokens
+    expect("​⁣CITE0⁣​​⁣CITE1⁣​".split(RE)).toEqual(["", "0", "", "1", ""]);
+
+    // Token at start
+    expect("​⁣CITE0⁣​text".split(RE)).toEqual(["", "0", "text"]);
+
+    // Token at end
+    expect("text​⁣CITE0⁣​".split(RE)).toEqual(["text", "0", ""]);
+
+    // Token-only string
+    expect("​⁣CITE3⁣​".split(RE)).toEqual(["", "3", ""]);
+
+    // No token
+    expect("plain text".split(RE)).toEqual(["plain text"]);
+
+    // Text with token in middle
+    expect("before ​⁣CITE2⁣​ after".split(RE)).toEqual(["before ", "2", " after"]);
+  });
+
   test("shows 'Nothing selected' empty state when no sources selected", () => {
     renderChatPanel({ selectedSourceIds: [], sources: [] });
 

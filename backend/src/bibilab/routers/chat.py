@@ -130,26 +130,6 @@ def _flush_pending_text(content_blocks: list[dict], text: str) -> None:
             content_blocks.append({"type": "paragraph_break"})
 
 
-def _append_citation_block(content_blocks: list[dict], data: dict) -> None:
-    """Append a citation block, applying the D6 coalescing rule for persist parity.
-
-    A citation must never start a new paragraph (mirrors the frontend
-    `renderParagraphs` rule so a history reload matches the live stream): a
-    trailing lone `paragraph_break` before the citation is dropped so the chip
-    stays at the end of the preceding paragraph.
-    """
-    if content_blocks and content_blocks[-1]["type"] == "paragraph_break":
-        content_blocks.pop()
-    content_blocks.append(
-        {
-            "type": "citation",
-            "index": data["index"],
-            "source_id": data["source_id"],
-            "chunk_ids": data.get("chunk_ids", []),
-        }
-    )
-
-
 @router.get("/lists/{list_id}/conversation")
 async def get_conversation(
     list_id: str,
@@ -591,7 +571,14 @@ async def run_chat_turn(
                     _flush_pending_text(content_blocks, pending_text)
                     pending_text = ""
                 data = json.loads(event.content)
-                _append_citation_block(content_blocks, data)
+                content_blocks.append(
+                    {
+                        "type": "citation",
+                        "index": data["index"],
+                        "source_id": data["source_id"],
+                        "chunk_ids": data.get("chunk_ids", []),
+                    }
+                )
             elif event.type == "tool_result":
                 parsed = json.loads(event.content)
                 if parsed["name"] in RETRIEVE_TOOL_NAMES:

@@ -507,10 +507,10 @@ async def test_chat_persists_paragraph_breaks_in_content_blocks(client):
 
 @pytest.mark.asyncio
 async def test_chat_citation_after_lone_break_not_isolated(client):
-    """AC6 — `a\\n\\n[1]` persists with the citation inline, not behind a lone break.
+    """`a\\n\\n[1]` persists as [text, paragraph_break, citation].
 
-    Parity with the frontend coalescing rule (D6): a citation that would land at
-    the head of a fresh paragraph attaches to the previous paragraph instead.
+    Backend no longer pops the paragraph_break before a citation — the frontend
+    post-merge fold in renderParagraphs handles citation-only trailing paragraphs.
     """
     list_id = (await client.post("/lists", json={"name": "T"})).json()["id"]
 
@@ -529,16 +529,10 @@ async def test_chat_citation_after_lone_break_not_isolated(client):
 
     msgs = await _get_assistant_msgs(client, list_id)
     blocks = msgs[0]["metadata"]["content_blocks"]
-    # The citation must not be isolated behind a trailing-only paragraph_break.
-    # No paragraph_break may be immediately followed by a citation with no
-    # intervening text, and the run must not end with [break, citation].
-    types = [b["type"] for b in blocks]
-    for i, t in enumerate(types):
-        if t == "paragraph_break":
-            assert types[i + 1 :][:1] != ["citation"], f"citation isolated after break: {types}"
-    assert types[0] == "text" and types[0:1] != ["paragraph_break"]
-    citation_blocks = [b for b in blocks if b["type"] == "citation"]
-    assert len(citation_blocks) == 1 and citation_blocks[0]["index"] == 1
+    assert len(blocks) == 3
+    assert blocks[0] == {"type": "text", "text": "a"}
+    assert blocks[1] == {"type": "paragraph_break"}
+    assert blocks[2] == {"type": "citation", "index": 1, "source_id": "s1", "chunk_ids": []}
 
 
 @pytest.mark.asyncio
