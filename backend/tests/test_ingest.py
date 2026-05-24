@@ -92,7 +92,7 @@ async def test_rerun_digest_only(tmp_bibilab_home: Path):
     """stages=["digest"] with rerun=True re-runs LLM only; skips download/transcribe."""
     import json
 
-    from bibilab.db import bootstrap_db, create_list, get_pending_jobs, get_source, write_source
+    from bibilab.db import bootstrap_db, create_list, get_job, get_pending_jobs, get_source, write_source
     from bibilab.worker import WorkerLoop
 
     await bootstrap_db()
@@ -163,6 +163,8 @@ async def test_rerun_digest_only(tmp_bibilab_home: Path):
         jobs = [dict(j) for j in await get_pending_jobs()]
         assert len(jobs) == 1
         await worker._run_job(jobs[0])
+        job_row = await get_job(jobs[0]["id"])
+        assert job_row["status"] == "done"
 
     # Verify summary and keywords were updated
     source_row = await get_source(source_id)
