@@ -1,4 +1,4 @@
-import { TOOL_DISPLAY } from "@/lib/tool-display";
+import { METADATA_TOOL_NAME, TOOL_DISPLAY } from "@/lib/tool-display";
 import type { RetrievalCall, MetadataCall, PendingRagCall, PendingMetadataCall } from "@/lib/chat-utils";
 import { ToolLedgerRow } from "./ToolLedgerRow";
 
@@ -32,10 +32,10 @@ export function ToolLedger({
 
   const getConfig = (s: Step) => {
     if ("call" in s) {
-      const name = "query_type" in s.call ? "query_list_metadata" : (s.call as RetrievalCall).tool_name ?? "retrieve";
+      const name = "query_type" in s.call ? METADATA_TOOL_NAME : (s.call as RetrievalCall).tool_name ?? "retrieve";
       return TOOL_DISPLAY[name] ?? TOOL_DISPLAY.retrieve;
     }
-    const name = "query_type" in s.pending ? "query_list_metadata" : (s.pending as PendingRagCall).tool_name ?? "retrieve";
+    const name = "query_type" in s.pending ? METADATA_TOOL_NAME : (s.pending as PendingRagCall).tool_name ?? "retrieve";
     return TOOL_DISPLAY[name] ?? TOOL_DISPLAY.retrieve;
   };
 

@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Search, Loader2, AlertTriangle, ChevronRight } from "lucide-react";
 import { useLanguage } from "@/app/LanguageContext";
 import { formatMediaTimestamp, facetNoMatchHint, type RetrievalCall, type MetadataCall, type PendingRagCall, type PendingMetadataCall } from "@/lib/chat-utils";
-import { type ToolDisplayConfig } from "@/lib/tool-display";
+import { METADATA_TOOL_NAME, type ToolDisplayConfig } from "@/lib/tool-display";
 
 interface ToolLedgerRowProps {
   config: ToolDisplayConfig;
@@ -12,7 +12,7 @@ interface ToolLedgerRowProps {
 }
 
 function isMetadataCall(call: RetrievalCall | MetadataCall): call is MetadataCall {
-  return (call as MetadataCall).name === "query_list_metadata";
+  return (call as MetadataCall).name === METADATA_TOOL_NAME;
 }
 
 function ModeDisplay({ mode, t }: { mode: RetrievalCall["mode"]; t: (key: string) => string }) {

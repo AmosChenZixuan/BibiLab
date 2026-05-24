@@ -1,14 +1,15 @@
 import { Search, BarChart3 } from "lucide-react";
 
+export const METADATA_TOOL_NAME = "query_list_metadata";
+
 export interface ToolDisplayConfig {
   icon: typeof Search;
   labelKey?: string;
-  expand: boolean;
 }
 
 export const TOOL_DISPLAY: Record<string, ToolDisplayConfig> = {
-  retrieve: { icon: Search, expand: true },
-  survey: { icon: Search, expand: true },
-  retrieve_scoped: { icon: Search, expand: true },
-  query_list_metadata: { icon: BarChart3, labelKey: "chat.ledger.metadataLabel", expand: true },
+  retrieve: { icon: Search },
+  survey: { icon: Search },
+  retrieve_scoped: { icon: Search },
+  [METADATA_TOOL_NAME]: { icon: BarChart3, labelKey: "chat.ledger.metadataLabel" },
 };
