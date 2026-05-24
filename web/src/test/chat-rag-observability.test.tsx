@@ -83,7 +83,7 @@ describe("RAG observability via SSE tool_result", () => {
     });
   });
 
-  test("RetrievalLedger renders above bubble with one row per call", async () => {
+  test("ToolLedger renders above bubble with one row per call", async () => {
     vi.spyOn(window, "fetch").mockImplementation(() =>
       Promise.resolve(
         makeSseStream([
@@ -106,8 +106,8 @@ describe("RAG observability via SSE tool_result", () => {
 
     await waitFor(() => screen.getByText("Answer"));
     await waitFor(() => screen.getByText(/长期情景记忆/));
-    // Summary line shows chunk count and source count
-    expect(screen.getByText(/1 chunks.*1 source/)).toBeInTheDocument();
+    // Summary line shows source count only (chunks moved to expanded detail)
+    expect(screen.getByText(/1 sources/)).toBeInTheDocument();
   });
 
   test("two parallel retrieve calls produce two pending rows replaced independently", async () => {

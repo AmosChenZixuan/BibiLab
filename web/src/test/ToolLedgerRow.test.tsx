@@ -4,18 +4,19 @@ import userEvent from "@testing-library/user-event";
 
 import { LanguageProvider } from "@/app/LanguageContext";
 import { JobActivityProvider } from "@/components/jobs/JobActivityProvider";
-import { RetrievalLedgerRow } from "@/components/lists/RetrievalLedgerRow";
-import type { RetrievalCall } from "@/lib/chat-utils";
+import { ToolLedgerRow } from "@/components/lists/ToolLedgerRow";
+import { TOOL_DISPLAY } from "@/lib/tool-display";
+import type { RetrievalCall, MetadataCall } from "@/lib/chat-utils";
 
 afterEach(() => {
   cleanup();
 });
 
-function renderRow(props: React.ComponentProps<typeof RetrievalLedgerRow>) {
+function renderRow(props: React.ComponentProps<typeof ToolLedgerRow>) {
   return render(
     <LanguageProvider>
       <JobActivityProvider>
-        <RetrievalLedgerRow {...props} />
+        <ToolLedgerRow {...props} />
       </JobActivityProvider>
     </LanguageProvider>,
   );
@@ -56,55 +57,46 @@ const BASE_CALL: RetrievalCall = {
   gate_margin: 0.25,
 };
 
-// ---------- variant: default ----------
-describe("variant=default", () => {
-  test("renders default row with summary text", () => {
-    const { container } = renderRow({ variant: "default", call: BASE_CALL });
-    expect(container.innerHTML).toContain("2 chunks");
-    expect(container.innerHTML).toContain("1 source");
+// ---------- search row ----------
+describe("search row", () => {
+  test("collapsed shows source count only, no chunk count", () => {
+    const { container } = renderRow({ config: TOOL_DISPLAY.retrieve, call: BASE_CALL });
+    expect(container.innerHTML).toContain("1 sources");
+    expect(container.innerHTML).not.toContain("2 chunks");
   });
 
-  test("expands on click showing metadata + chunk list", async () => {
-    const { container } = renderRow({ variant: "default", call: BASE_CALL });
+  test("expands on click showing cited chunks + metadata + chunk list", async () => {
+    const { container } = renderRow({ config: TOOL_DISPLAY.retrieve, call: BASE_CALL });
     const toggle = container.querySelector('button[aria-label="Toggle retrieval details"]');
     expect(toggle).not.toBeNull();
     await userEvent.click(toggle!);
 
-    // After expand: metadata is visible
+    expect(container.innerHTML).toContain("2 chunks cited");
     expect(container.innerHTML).toContain("长期情景记忆");
     expect(container.innerHTML).toContain("Survey");
     expect(container.innerHTML).toContain("all 16 sources");
-    // chunk list — source_title is "Test Video" (exact case)
     expect(container.innerHTML).toContain("Test Video");
     expect(container.innerHTML).toContain("[1]");
   });
 
   test("streaming disables expand: no toggle button, collapsed only", async () => {
-    const { container } = renderRow({ variant: "default", call: BASE_CALL, streaming: true });
+    const { container } = renderRow({ config: TOOL_DISPLAY.retrieve, call: BASE_CALL, streaming: true });
     expect(container.querySelector('button[aria-label="Toggle retrieval details"]')).toBeNull();
-    // collapsed summary still shows the query; chunk previews stay hidden
     expect(container.innerHTML).toContain("长期情景记忆");
     expect(container.innerHTML).not.toContain("Another preview text");
   });
 
-  test("streaming empty variant is non-expandable", async () => {
-    const emptyCall: RetrievalCall = { ...BASE_CALL, context: [], dropped_by_gate: 4 };
-    const { container } = renderRow({ variant: "empty", call: emptyCall, streaming: true });
-    expect(container.querySelector('button[aria-label="Toggle retrieval details"]')).toBeNull();
-  });
-
   test("toggle collapses", async () => {
-    const { container } = renderRow({ variant: "default", call: BASE_CALL });
+    const { container } = renderRow({ config: TOOL_DISPLAY.retrieve, call: BASE_CALL });
     const toggle = container.querySelector('button[aria-label="Toggle retrieval details"]')!;
     await userEvent.click(toggle);
     await userEvent.click(toggle);
-    // After re-collapse: metadata should not be visible
     expect(container.innerHTML).not.toContain("all 16 sources");
   });
 });
 
-// ---------- variant: empty ----------
-describe("variant=empty", () => {
+// ---------- empty variant ----------
+describe("empty search row", () => {
   const EMPTY_CALL: RetrievalCall = {
     ...BASE_CALL,
     context: [],
@@ -112,13 +104,13 @@ describe("variant=empty", () => {
   };
 
   test("renders amber empty row with dropped count", () => {
-    const { container } = renderRow({ variant: "empty", call: EMPTY_CALL });
+    const { container } = renderRow({ config: TOOL_DISPLAY.retrieve, call: EMPTY_CALL });
     expect(container.innerHTML).toContain("0 chunks");
     expect(container.innerHTML).toContain("3 dropped");
   });
 
   test("expands to show metadata + Result line, no chunk list", async () => {
-    const { container } = renderRow({ variant: "empty", call: EMPTY_CALL });
+    const { container } = renderRow({ config: TOOL_DISPLAY.retrieve, call: EMPTY_CALL });
     const toggle = container.querySelector('button[aria-label="Toggle retrieval details"]');
     await userEvent.click(toggle!);
 
@@ -126,31 +118,65 @@ describe("variant=empty", () => {
     expect(container.innerHTML).toContain("Result");
     expect(container.innerHTML).not.toContain("[1]");
   });
+
+  test("streaming empty variant is non-expandable", async () => {
+    const emptyCall: RetrievalCall = { ...BASE_CALL, context: [], dropped_by_gate: 4 };
+    const { container } = renderRow({ config: TOOL_DISPLAY.retrieve, call: emptyCall, streaming: true });
+    expect(container.querySelector('button[aria-label="Toggle retrieval details"]')).toBeNull();
+  });
 });
 
-// ---------- variant: pending ----------
-describe("variant=pending", () => {
+// ---------- pending ----------
+describe("pending rows", () => {
   test("pending retrieve row shows spinner + label", () => {
     const { container } = renderRow({
-      variant: "pending",
+      config: TOOL_DISPLAY.retrieve,
       pending: { id: "p1", query: "pending query", mode: "narrow", tool_name: "retrieve" },
     });
     expect(container.innerHTML).toContain("retrieving…");
   });
 
-  test("pending metadata row shows spinner + query_type label", () => {
+  test("pending metadata row shows spinner + unified label", () => {
     const { container } = renderRow({
-      variant: "pending",
+      config: TOOL_DISPLAY.query_list_metadata,
       pending: { id: "pm1", query_type: "count" },
     });
-    expect(container.innerHTML).toContain("counting sources");
+    expect(container.innerHTML).toContain("querying list…");
   });
 
   test("has no toggle button", () => {
     const { container } = renderRow({
-      variant: "pending",
+      config: TOOL_DISPLAY.retrieve,
       pending: { id: "p1", query: "test", mode: "narrow", tool_name: "retrieve" },
     });
+    expect(container.querySelector('button[aria-label="Toggle retrieval details"]')).toBeNull();
+  });
+});
+
+// ---------- metadata row ----------
+describe("metadata row", () => {
+  const META_CALL: MetadataCall = {
+    name: "query_list_metadata",
+    query_type: "count_sources",
+    result: { source_count: 42 },
+  };
+
+  test("collapsed shows icon + label", () => {
+    const { container } = renderRow({ config: TOOL_DISPLAY.query_list_metadata, call: META_CALL });
+    expect(container.innerHTML).toContain("Querying list info");
+  });
+
+  test("expands to show raw JSON", async () => {
+    const { container } = renderRow({ config: TOOL_DISPLAY.query_list_metadata, call: META_CALL });
+    const toggle = container.querySelector('button[aria-label="Toggle retrieval details"]');
+    await userEvent.click(toggle!);
+    expect(container.innerHTML).toContain("source_count");
+    expect(container.innerHTML).toContain("42");
+  });
+
+  test("streaming metadata row shows label, no expand", () => {
+    const { container } = renderRow({ config: TOOL_DISPLAY.query_list_metadata, call: META_CALL, streaming: true });
+    expect(container.innerHTML).toContain("Querying list info");
     expect(container.querySelector('button[aria-label="Toggle retrieval details"]')).toBeNull();
   });
 });
@@ -158,14 +184,14 @@ describe("variant=pending", () => {
 // ---------- mode rendering ----------
 describe("mode rendering", () => {
   test('null mode renders "—"', async () => {
-    const { container } = renderRow({ variant: "default", call: { ...BASE_CALL, mode: null } });
+    const { container } = renderRow({ config: TOOL_DISPLAY.retrieve, call: { ...BASE_CALL, mode: null } });
     const toggle = container.querySelector('button[aria-label="Toggle retrieval details"]');
     await userEvent.click(toggle!);
     expect(container.innerHTML).toContain("—");
   });
 
   test('"narrow" renders "Narrow"', async () => {
-    const { container } = renderRow({ variant: "default", call: { ...BASE_CALL, mode: "narrow" } });
+    const { container } = renderRow({ config: TOOL_DISPLAY.retrieve, call: { ...BASE_CALL, mode: "narrow" } });
     const toggle = container.querySelector('button[aria-label="Toggle retrieval details"]');
     await userEvent.click(toggle!);
     expect(container.innerHTML).toContain("Narrow");
@@ -181,16 +207,16 @@ const NO_MATCH = {
 
 describe("facet no-match hint (#319)", () => {
   test("default collapsed shows amber warning icon with hint aria-label", () => {
-    renderRow({ variant: "default", call: { ...BASE_CALL, facet_scope: NO_MATCH } });
+    renderRow({ config: TOOL_DISPLAY.retrieve, call: { ...BASE_CALL, facet_scope: NO_MATCH } });
     const icon = screen.getByLabelText(
       "No source matched #8 — searched all sources instead.",
     );
     expect(icon).toBeTruthy();
-    expect(screen.getByText(/2 chunks/)).toBeTruthy();
+    expect(screen.getByText(/1 sources/)).toBeTruthy();
   });
 
   test("default expanded shows amber Facet detail line", async () => {
-    const { container } = renderRow({ variant: "default", call: { ...BASE_CALL, facet_scope: NO_MATCH } });
+    const { container } = renderRow({ config: TOOL_DISPLAY.retrieve, call: { ...BASE_CALL, facet_scope: NO_MATCH } });
     await userEvent.click(container.querySelector('button[aria-label="Toggle retrieval details"]')!);
     expect(container.innerHTML).toContain("Facet");
     expect(container.innerHTML).toContain("No source matched #8 — searched all sources instead.");
@@ -198,19 +224,19 @@ describe("facet no-match hint (#319)", () => {
 
   test("no hint when no_match is false", () => {
     renderRow({
-      variant: "default",
+      config: TOOL_DISPLAY.retrieve,
       call: { ...BASE_CALL, facet_scope: { ...NO_MATCH, no_match: false } },
     });
     expect(screen.queryByLabelText(/No source matched/)).toBeNull();
   });
 
   test("no hint when facet_scope absent (legacy message)", () => {
-    renderRow({ variant: "default", call: BASE_CALL });
+    renderRow({ config: TOOL_DISPLAY.retrieve, call: BASE_CALL });
     expect(screen.queryByLabelText(/No source matched/)).toBeNull();
   });
 
   test("streaming default still shows the icon (visible without expand)", () => {
-    renderRow({ variant: "default", call: { ...BASE_CALL, facet_scope: NO_MATCH }, streaming: true });
+    renderRow({ config: TOOL_DISPLAY.retrieve, call: { ...BASE_CALL, facet_scope: NO_MATCH }, streaming: true });
     expect(
       screen.getByLabelText("No source matched #8 — searched all sources instead."),
     ).toBeTruthy();
@@ -218,7 +244,7 @@ describe("facet no-match hint (#319)", () => {
 
   test("empty variant also surfaces the hint", () => {
     const emptyCall = { ...BASE_CALL, context: [], dropped_by_gate: 3, facet_scope: NO_MATCH };
-    renderRow({ variant: "empty", call: emptyCall });
+    renderRow({ config: TOOL_DISPLAY.retrieve, call: emptyCall });
     expect(
       screen.getByLabelText("No source matched #8 — searched all sources instead."),
     ).toBeTruthy();
