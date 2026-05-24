@@ -20,7 +20,7 @@ import {
 import { useLanguage } from "@/app/LanguageContext";
 import { useJobActivity } from "@/components/jobs/JobActivityProvider";
 import { useConversationHistory, type MessageUI } from "@/components/lists/hooks/useConversationHistory";
-import { RetrievalLedger } from "@/components/lists/RetrievalLedger";
+import { ToolLedger } from "@/components/lists/ToolLedger";
 import { PulseRing } from "@/components/ui/PulseRing";
 import type { Source } from "@/lib/types";
 import { api } from "@/lib/api";
@@ -406,7 +406,8 @@ export function ChatPanel({
                 msg.content ||
                 msg.pendingRagCalls.length > 0 ||
                 msg.pendingMetadataCalls.length > 0 ||
-                (msg.rag?.calls?.length ?? 0) > 0;
+                (msg.rag?.calls?.length ?? 0) > 0 ||
+                (msg.metadataCalls?.length ?? 0) > 0;
               return (
               <div key={msg.id} className={`msg ${msg.role}`}>
                 {msg.role === "user" ? (
@@ -417,10 +418,11 @@ export function ChatPanel({
                 ) : (
                   <>
                     {showLedger ? (
-                      <RetrievalLedger
-                        calls={msg.rag?.calls ?? []}
-                        pendingRetrieve={msg.pendingRagCalls}
-                        pendingMetadata={msg.pendingMetadataCalls}
+                      <ToolLedger
+                        ragCalls={msg.rag?.calls ?? []}
+                        metadataCalls={msg.metadataCalls ?? []}
+                        pendingRagCalls={msg.pendingRagCalls}
+                        pendingMetadataCalls={msg.pendingMetadataCalls}
                         streaming={msg.isStreaming}
                       />
                     ) : null}

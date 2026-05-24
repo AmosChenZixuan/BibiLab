@@ -61,6 +61,11 @@ export type PendingMetadataCall = {
   id: string;
   query_type: string;
 };
+export type MetadataCall = {
+  name: string;
+  query_type: string;
+  result: unknown;
+};
 
 export function formatDurationHuman(seconds: number): string {
   if (seconds < 60) return `${seconds}s`;

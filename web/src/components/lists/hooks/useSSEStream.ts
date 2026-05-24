@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import type { JobRegistration } from "@/components/jobs/JobActivityProvider";
 import type { MessageUI } from "@/components/lists/hooks/useConversationHistory";
 import { formatTimestamp, type ContentBlock, type PendingMetadataCall, type PendingRagCall, type RetrievalCall, type Mode } from "@/lib/chat-utils";
+import { METADATA_TOOL_NAME } from "@/lib/tool-display";
 import type { ToolResult } from "@/lib/chat-utils";
 import {
   SSE_EVENT_CANCELLED,
@@ -136,7 +137,7 @@ export function useSSEStream({
               { id, query: args.query, mode, tool_name: toolName },
             ],
           }));
-        } else if (toolName === "query_list_metadata") {
+        } else if (toolName === METADATA_TOOL_NAME) {
           const args = event.arguments as { query_type: string };
           updateAssistantMsg(assistantMsgId, (m) => ({
             pendingMetadataCalls: [
@@ -160,15 +161,29 @@ export function useSSEStream({
           if (!callId) {
             console.warn("retrieve tool_result missing id, pending chip not cleared");
           }
-        } else if (toolName === "query_list_metadata") {
+        } else if (toolName === METADATA_TOOL_NAME) {
           const callId = event.id as string;
-          updateAssistantMsg(assistantMsgId, (m) => ({
-            pendingMetadataCalls: callId
-              ? m.pendingMetadataCalls.filter((p) => p.id !== callId)
-              : m.pendingMetadataCalls,
-          }));
+          updateAssistantMsg(assistantMsgId, (m) => {
+            const pendingEntry = m.pendingMetadataCalls.find((p) => p.id === callId);
+            if (callId && !pendingEntry) {
+              console.warn(`${METADATA_TOOL_NAME} tool_result id=${callId} has no matching pending entry`);
+            }
+            return {
+              pendingMetadataCalls: callId
+                ? m.pendingMetadataCalls.filter((p) => p.id !== callId)
+                : m.pendingMetadataCalls,
+              metadataCalls: [
+                ...(m.metadataCalls ?? []),
+                {
+                  name: METADATA_TOOL_NAME,
+                  query_type: pendingEntry?.query_type ?? "unknown",
+                  result: event.result ?? {},
+                },
+              ],
+            };
+          });
           if (!callId) {
-            console.warn("query_list_metadata tool_result missing id, pending chip not cleared");
+            console.warn(`${METADATA_TOOL_NAME} tool_result missing id, pending chip not cleared`);
           }
         } else if (toolName === "generate_report") {
           const result = event.result as ToolResult;
@@ -297,6 +312,7 @@ export function useSSEStream({
       timestamp: formatTimestamp(new Date().toISOString()),
       pendingRagCalls: [],
       pendingMetadataCalls: [],
+      metadataCalls: null,
     };
 
     const assistantMsg: MessageUI = {
@@ -311,6 +327,7 @@ export function useSSEStream({
       rag: null,
       pendingRagCalls: [],
       pendingMetadataCalls: [],
+      metadataCalls: null,
     };
 
     setMessages((prev) => [...prev, userMsg, assistantMsg]);
@@ -386,6 +403,7 @@ export function useSSEStream({
         rag: null,
         pendingRagCalls: [],
         pendingMetadataCalls: [],
+        metadataCalls: null,
       };
       return [...prev, newMsg];
     });
