@@ -162,10 +162,19 @@ export function useSSEStream({
           }
         } else if (toolName === "query_list_metadata") {
           const callId = event.id as string;
+          const args = event.result as Record<string, unknown> | undefined;
           updateAssistantMsg(assistantMsgId, (m) => ({
             pendingMetadataCalls: callId
               ? m.pendingMetadataCalls.filter((p) => p.id !== callId)
               : m.pendingMetadataCalls,
+            metadataCalls: [
+              ...(m.metadataCalls ?? []),
+              {
+                name: "query_list_metadata",
+                query_type: (args?.query_type as string) ?? "unknown",
+                result: event.result ?? {},
+              },
+            ],
           }));
           if (!callId) {
             console.warn("query_list_metadata tool_result missing id, pending chip not cleared");
@@ -297,6 +306,7 @@ export function useSSEStream({
       timestamp: formatTimestamp(new Date().toISOString()),
       pendingRagCalls: [],
       pendingMetadataCalls: [],
+      metadataCalls: null,
     };
 
     const assistantMsg: MessageUI = {
@@ -311,6 +321,7 @@ export function useSSEStream({
       rag: null,
       pendingRagCalls: [],
       pendingMetadataCalls: [],
+      metadataCalls: null,
     };
 
     setMessages((prev) => [...prev, userMsg, assistantMsg]);
