@@ -125,7 +125,7 @@
   .msg.assistant {
     align-self: flex-start;
     align-items: flex-start;
-    width: 88%;
+    max-width: 88%;
   }
 
   /* Retrieval ledger — faded tool-call trace, locked to the message column */
@@ -268,11 +268,10 @@
     font-weight: 400;
     line-height: 1.4;
     border-radius: 6px;
-    white-space: normal;
-    overflow: hidden;
-    text-overflow: ellipsis;
     pointer-events: none;
     z-index: var(--z-tooltip, 50);
+    word-break: break-word;
+    width: max-content;
   }
 
   .cite-chip-wrap:hover .cite-chip-tooltip,
