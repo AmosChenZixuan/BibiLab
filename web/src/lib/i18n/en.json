@@ -272,7 +272,6 @@
       "saving": "Saving..."
     },
     "ledger": {
-      "summary": "%{chunks} chunks · %{sources} sources",
       "summaryEmpty": "0 chunks (%{dropped} dropped)",
       "summaryPending": "retrieving…",
       "sourceSummary": "%{sources} sources",

@@ -129,7 +129,7 @@ describe("ToolLedger", () => {
     expect(screen.getByText(/"source_count"/)).toBeInTheDocument();
   });
 
-  test("search row collapsed shows source count only, no chunk count", () => {
+  test("search row collapsed shows source count and cited chunks", () => {
     renderLedger({
       ragCalls: [DEFAULT_CALL],
       metadataCalls: [],
@@ -137,7 +137,7 @@ describe("ToolLedger", () => {
       pendingMetadataCalls: [],
     });
     expect(screen.getByText(/1 sources/)).toBeInTheDocument();
-    expect(screen.queryByText(/2 chunks/)).not.toBeInTheDocument();
+    expect(screen.getByText(/2 chunks cited/)).toBeInTheDocument();
   });
 
   test("search row expanded shows cited chunks", async () => {

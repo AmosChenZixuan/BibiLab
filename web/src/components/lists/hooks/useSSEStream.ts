@@ -162,7 +162,6 @@ export function useSSEStream({
           }
         } else if (toolName === "query_list_metadata") {
           const callId = event.id as string;
-          const args = event.result as Record<string, unknown> | undefined;
           updateAssistantMsg(assistantMsgId, (m) => ({
             pendingMetadataCalls: callId
               ? m.pendingMetadataCalls.filter((p) => p.id !== callId)
@@ -171,7 +170,7 @@ export function useSSEStream({
               ...(m.metadataCalls ?? []),
               {
                 name: "query_list_metadata",
-                query_type: (args?.query_type as string) ?? "unknown",
+                query_type: m.pendingMetadataCalls.find((p) => p.id === callId)?.query_type ?? "unknown",
                 result: event.result ?? {},
               },
             ],

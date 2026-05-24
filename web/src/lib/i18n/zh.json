@@ -272,7 +272,6 @@
       "saving": "保存中…"
     },
     "ledger": {
-      "summary": "%{chunks} 个片段 · %{sources} 个来源",
       "summaryEmpty": "0 个片段（%{dropped} 被筛掉）",
       "summaryPending": "检索中…",
       "sourceSummary": "%{sources} 个来源",

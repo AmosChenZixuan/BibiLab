@@ -59,10 +59,10 @@ const BASE_CALL: RetrievalCall = {
 
 // ---------- search row ----------
 describe("search row", () => {
-  test("collapsed shows source count only, no chunk count", () => {
+  test("collapsed shows source count and cited chunks", () => {
     const { container } = renderRow({ config: TOOL_DISPLAY.retrieve, call: BASE_CALL });
     expect(container.innerHTML).toContain("1 sources");
-    expect(container.innerHTML).not.toContain("2 chunks");
+    expect(container.innerHTML).toContain("2 chunks cited");
   });
 
   test("expands on click showing cited chunks + metadata + chunk list", async () => {
