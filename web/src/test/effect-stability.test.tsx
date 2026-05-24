@@ -65,14 +65,6 @@ afterEach(() => {
  * A component that uses `t` in a useEffect dep should NOT re-run that effect
  * when `lang` is unchanged but the component re-renders for other reasons.
  */
-test("language context t() is stable when lang is unchanged", () => {
-  // This test documents the expected behavior: `t` must be wrapped in
-  // useCallback(..., [lang]) so callers can safely put it in their effect
-  // deps without causing extra fires. The implementation is verified by
-  // ensuring the t function reference is stable — callers can depend on it.
-  expect(true).toBe(true);
-});
-
 // ─── Modal getFocusableElements stability ─────────────────────────────────────
 
 /**

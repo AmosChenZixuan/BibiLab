@@ -1,7 +1,5 @@
 """Tests for conversation summary compression."""
 
-import asyncio
-
 import pytest
 
 
@@ -66,7 +64,6 @@ async def test_compression_triggers_above_threshold(tmp_bibilab_home):
 
     for i in range(COMPRESSION_THRESHOLD + 5):
         await create_message(conv_id, "user", f"Message {i}", None)
-        await asyncio.sleep(0.001)
 
     assert await get_message_count(conv_id) == COMPRESSION_THRESHOLD + 5
 
@@ -112,7 +109,6 @@ async def test_existing_summary_included_in_prompt(tmp_bibilab_home):
 
     for i in range(COMPRESSION_THRESHOLD + 3):
         await create_message(conv_id, "user", f"Message {i}", None)
-        await asyncio.sleep(0.001)
 
     from bibilab.config import BibilabConfig
 
@@ -155,7 +151,6 @@ async def test_compression_deletes_old_messages(tmp_bibilab_home):
 
     for i in range(COMPRESSION_THRESHOLD + 5):
         await create_message(conv_id, "user", f"Message {i}", None)
-        await asyncio.sleep(0.001)
 
     from bibilab.config import BibilabConfig
 
@@ -189,7 +184,6 @@ async def test_no_compression_when_no_messages_to_compress(tmp_bibilab_home):
 
     for i in range(SLIDING_WINDOW_SIZE + 5):
         await create_message(conv_id, "user", f"Message {i}", None)
-        await asyncio.sleep(0.001)
 
     from bibilab.config import BibilabConfig
 
@@ -257,7 +251,6 @@ async def test_compression_prompt_no_legacy_citation_preservation(tmp_bibilab_ho
 
     for i in range(COMPRESSION_THRESHOLD + 3):
         await create_message(conv_id, "user", f"Message {i}", None)
-        await asyncio.sleep(0.001)
 
     from bibilab.config import BibilabConfig
 

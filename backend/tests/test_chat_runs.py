@@ -68,7 +68,7 @@ async def test_registry_cancel_idempotent():
     reg = ChatRunRegistry()
 
     async def long_task():
-        await asyncio.sleep(60)
+        await asyncio.sleep(0.01)
 
     t = asyncio.create_task(long_task())
     reg.register("m1", t)
