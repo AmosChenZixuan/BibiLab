@@ -397,6 +397,7 @@ export function useSSEStream({
         rag: null,
         pendingRagCalls: [],
         pendingMetadataCalls: [],
+        metadataCalls: null,
       };
       return [...prev, newMsg];
     });
