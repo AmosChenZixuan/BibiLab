@@ -272,9 +272,13 @@
       "saving": "保存中…"
     },
     "ledger": {
-      "summary": "%{chunks} 个块 · %{sources} 个来源",
-      "summaryEmpty": "0 个块（%{dropped} 被筛掉）",
+      "summary": "%{chunks} 个片段 · %{sources} 个来源",
+      "summaryEmpty": "0 个片段（%{dropped} 被筛掉）",
       "summaryPending": "检索中…",
+      "sourceSummary": "%{sources} 个来源",
+      "citedChunks": "引用 %{n} 个片段",
+      "metadataLabel": "查询全列表",
+      "metadataPending": "查询列表中…",
       "facetNoMatch": "没有来源匹配%{facets}，已改为搜索全部来源。",
       "facetNoMatchGeneric": "没有来源匹配请求的范围，已改为搜索全部来源。",
       "facetNoMatchLabel": "范围",
@@ -297,16 +301,11 @@
         "survey": "概览"
       },
       "modeUnknown": "—",
-      "ariaToggle": "切换检索详情",
-      "metadataPending": {
-        "count": "统计来源",
-        "longest": "检查最长",
-        "languages": "检查语言"
-      }
+      "ariaToggle": "切换检索详情"
     },
     "mode": {
       "broad": {
-        "description": "宽泛模式从每个来源中检索一个相关块，最大化跨视频的覆盖范围。"
+        "description": "宽泛模式从每个来源中检索一个相关片段，最大化跨视频的覆盖范围。"
       }
     },
     "citationMissing": "来源已不在列表中",
