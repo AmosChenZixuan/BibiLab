@@ -158,15 +158,18 @@ export function ToolLedgerRow({ config, call, pending, streaming = false }: Tool
         <span className="min-w-0 truncate font-mono">{ragCall.query}</span>
         <span className="shrink-0 opacity-40">·</span>
         <span className="shrink-0">{sourceSummary}</span>
+        {citedCount > 0 && (
+            <>
+              <span className="shrink-0 opacity-40">·</span>
+              <div className="shrink-0">{t("chat.ledger.citedChunks", { n: citedCount })}</div>
+            </>
+          )}
         {facetIcon}
         <ChevronRight size={12} className={`ml-auto shrink-0 self-center transition-transform ${expanded ? "rotate-90" : ""}`} />
       </button>
 
       {expanded && (
         <div className="mt-1.5 flex flex-col gap-2 border-t border-border pt-1.5">
-          {citedCount > 0 && (
-            <div className="text-ink font-medium">{t("chat.ledger.citedChunks", { n: citedCount })}</div>
-          )}
           <div className="flex flex-wrap gap-x-4 gap-y-1">
             <span>
               <span className="text-muted">{t("chat.ledger.field.query")} </span>
