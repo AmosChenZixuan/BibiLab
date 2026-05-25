@@ -5,18 +5,18 @@ import json
 import time
 import uuid
 
-from bibilab.routers.chat import stream_with_tools, build_grounding_prompt
+from bibilab.routers.chat import stream_with_tools, build_grounding_prompt, CHAT_MAX_TOKENS
 from bibilab.pipeline._shared import ToolDefinition
 from bibilab.pipeline.chat_tools import (
     RETRIEVE_TOOL,
     SURVEY_TOOL,
     RETRIEVE_SCOPED_TOOL,
     RETRIEVE_TOOL_NAMES,
+    QUERY_LIST_METADATA_TOOL,
+    GENERATE_REPORT_TOOL,
     execute_tool,
     CitationRegistryEntry,
-    build_tool_block_entry,
 )
-from bibilab.pipeline.citation_parser import parse_delta
 from bibilab.config import AIConfig, BibilabConfig, load_config
 
 from eval._utils import now_iso
@@ -28,9 +28,9 @@ CHAT_TOOLS: list[ToolDefinition] = [
     RETRIEVE_TOOL,
     SURVEY_TOOL,
     RETRIEVE_SCOPED_TOOL,
+    QUERY_LIST_METADATA_TOOL,
+    GENERATE_REPORT_TOOL,
 ]
-
-CHAT_MAX_TOKENS = 4096
 
 
 async def run_single_case(
@@ -49,30 +49,16 @@ async def run_single_case(
         tool_block_sink: list[dict] = []
 
         async def execute_tool_fn(name, args, registry=registry, source_map=source_map):
-            result = await execute_tool(
+            return await execute_tool(
                 name, args, list_id=list_id, source_ids=source_ids,
                 ui_lang="ui", cfg=backend_cfg,
                 registry=registry, source_map=source_map,
             )
 
-            if name in RETRIEVE_TOOL_NAMES:
-                raw_chunks = result.get("_raw_chunks")
-                entry = build_tool_block_entry(
-                    tool_use_id=f"tool_{uuid.uuid4().hex[:8]}",
-                    name=name,
-                    arguments=args,
-                    result=result,
-                    raw_chunks=raw_chunks,
-                )
-                tool_block_sink.append(entry)
-
-            return result
-
         messages = [{"role": "user", "content": case.question}]
 
         text_deltas: list[str] = []
         citations: list[dict] = []
-        parse_buffer = ""
 
         # LLM timing: sum gaps between consecutive events, excluding tool execution gaps
         # (tool_call_start → tool_result). This isolates actual model inference time.
@@ -96,6 +82,7 @@ async def run_single_case(
             llm_max_tokens=CHAT_MAX_TOKENS,
             registry=registry,
             source_map=source_map,
+            tool_block_sink=tool_block_sink,
         ):
             now = time.monotonic()
 
@@ -119,23 +106,17 @@ async def run_single_case(
                 if not first_delta_seen and (event.content or "").strip():
                     first_delta_seen = True
                     _status("writing answer")
-                index_to_entry = {e.index: e for e in registry.values()}
-                parsed_events, parse_buffer = parse_delta(
-                    event.content or "", parse_buffer, index_to_entry,
-                )
-                for pe in parsed_events:
-                    if pe.type == "delta":
-                        text_deltas.append(pe.content or "")
-                    elif pe.type == "citation":
-                        try:
-                            data = json.loads(pe.content or "{}")
-                        except json.JSONDecodeError:
-                            data = {}
-                        citations.append({
-                            "index": data.get("index", 0),
-                            "source_id": data.get("source_id", ""),
-                            "chunk_ids": data.get("chunk_ids", []),
-                        })
+                text_deltas.append(event.content or "")
+            elif event.type == "citation":
+                try:
+                    data = json.loads(event.content or "{}")
+                except json.JSONDecodeError:
+                    data = {}
+                citations.append({
+                    "index": data.get("index", 0),
+                    "source_id": data.get("source_id", ""),
+                    "chunk_ids": data.get("chunk_ids", []),
+                })
             elif event.type == "done":
                 break
             elif event.type == "error":
@@ -148,7 +129,13 @@ async def run_single_case(
             case_id=case.id,
             answer=answer,
             citations=citations,
-            rag_calls=[b.get("result", {}).get("summary", {}) for b in tool_block_sink],
+            rag_calls=[
+                b["result"]["summary"]
+                for b in tool_block_sink
+                if b.get("name") in RETRIEVE_TOOL_NAMES
+                and isinstance(b.get("result"), dict)
+                and isinstance(b["result"].get("summary"), dict)
+            ],
             tool_blocks=tool_block_sink,
             llm_duration_ms=llm_duration_ms,
             error=None,
@@ -166,10 +153,14 @@ async def run_single_case(
         )
 
 
+DEFAULT_CONCURRENCY = 4
+
+
 async def run_eval(
     eval_set_id: str,
     ai_cfg: AIConfig | None = None,
     system_prompt: str | None = None,
+    concurrency: int = DEFAULT_CONCURRENCY,
 ) -> EvalRun:
     from bibilab.db import get_sources_for_list
     from eval.config import get_response_language
@@ -197,25 +188,27 @@ async def run_eval(
     run_id = str(uuid.uuid4())
 
     task_rows = [(c.id, f"{c.category:<12} {c.id[:8]}") for c in locked]
+    sem = asyncio.Semaphore(max(1, concurrency))
     with TaskDashboard("Runner", task_rows) as dash:
 
         async def _run_one(case: EvalCase) -> RunCaseResult:
-            dash.start(case.id, status="dispatched")
-            result = await run_single_case(
-                case=case,
-                list_id=eval_set.list_id,
-                source_ids=source_ids,
-                source_map=source_map,
-                ai_cfg=ai_cfg,
-                backend_cfg=backend_cfg,
-                system_prompt=system_prompt,
-                on_status=lambda s, _id=case.id: dash.update(_id, s),
-            )
-            if result.error:
-                dash.done(case.id, ok=False, status="failed", error=result.error)
-            else:
-                dash.done(case.id, ok=True, status="answered")
-            return result
+            async with sem:
+                dash.start(case.id, status="dispatched")
+                result = await run_single_case(
+                    case=case,
+                    list_id=eval_set.list_id,
+                    source_ids=source_ids,
+                    source_map=source_map,
+                    ai_cfg=ai_cfg,
+                    backend_cfg=backend_cfg,
+                    system_prompt=system_prompt,
+                    on_status=lambda s, _id=case.id: dash.update(_id, s),
+                )
+                if result.error:
+                    dash.done(case.id, ok=False, status="failed", error=result.error)
+                else:
+                    dash.done(case.id, ok=True, status="answered")
+                return result
 
         tasks = [asyncio.create_task(_run_one(c)) for c in locked]
         results: list[RunCaseResult] = []

@@ -78,9 +78,12 @@ def parse_grade_response(response: str) -> tuple[int | None, str]:
         data = json.loads(raw)
         score = data.get("score")
         reasoning = data.get("reasoning", "")
-        if not isinstance(score, int) or score < 1 or score > 5:
+        if not isinstance(score, (int, float)) or isinstance(score, bool):
+            return (None, f"Score not numeric: {score!r}")
+        score_int = int(round(score))
+        if score_int < 1 or score_int > 5:
             return (None, f"Score out of range: {score}")
-        return (score, reasoning)
+        return (score_int, reasoning)
     except (json.JSONDecodeError, ValueError) as e:
         return (None, f"Failed to parse grade response: {e}")
 

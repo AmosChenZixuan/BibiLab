@@ -77,7 +77,7 @@ def resolve_profile(profile: str) -> AIConfig:
         protocol=entry.get("protocol", "openai"),
         model=entry.get("model", ""),
         api_key=entry.get("api_key") or "ollama",
-        base_url=entry.get("base_url", ""),
+        base_url=entry.get("base_url") or None,
     )
 
 

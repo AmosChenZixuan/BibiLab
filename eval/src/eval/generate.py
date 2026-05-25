@@ -14,6 +14,30 @@ from eval.models import EvalCase, EvalSet
 
 MAX_SOURCES = 10
 MAX_WORDS = 20000
+# Rough CJK char → word budget multiplier. Chinese has no whitespace, so str.split()
+# treats a transcript as one giant token. Count chars and divide by ~1.5 to approximate
+# token budget against the same MAX_WORDS ceiling used for whitespace-segmented text.
+_CJK_CHARS_PER_WORD = 1.5
+
+
+def _count_words(text: str) -> int:
+    """Word count that handles CJK text (no whitespace) via char-based fallback."""
+    whitespace_tokens = len(text.split())
+    if whitespace_tokens >= max(1, len(text) // 10):
+        return whitespace_tokens
+    return int(len(text) / _CJK_CHARS_PER_WORD)
+
+
+def _truncate_to_words(text: str, word_budget: int) -> str:
+    words = text.split()
+    if len(words) >= max(1, len(text) // 10):
+        if len(words) > word_budget:
+            return " ".join(words[:word_budget]) + "\n[...truncated...]"
+        return text
+    char_budget = int(word_budget * _CJK_CHARS_PER_WORD)
+    if len(text) > char_budget:
+        return text[:char_budget] + "\n[...truncated...]"
+    return text
 
 _LANG_INSTRUCTION = {
     "zh": "",
@@ -148,9 +172,7 @@ def _load_sources(sources: list[dict]) -> str:
         raw = _read_transcript(s.get("transcript_path", ""))
         if not raw:
             continue
-        words = raw.split()
-        if len(words) > word_budget:
-            raw = " ".join(words[:word_budget]) + "\n[...truncated...]"
+        raw = _truncate_to_words(raw, word_budget)
         lines.append(f"=== [{s['id']}] {s.get('title', '')} ===")
         lines.append(raw)
         lines.append("")
@@ -198,6 +220,9 @@ async def generate_eval_set(
 ) -> EvalSet:
     from bibilab.db import get_sources_for_list
 
+    if not categories:
+        raise ValueError("No categories specified.")
+
     rows = await get_sources_for_list(list_id)
     all_sources = [dict(r) for r in rows]
     selected = random.sample(all_sources, min(MAX_SOURCES, len(all_sources)))
@@ -205,7 +230,7 @@ async def generate_eval_set(
     if not source_block:
         raise ValueError("No transcript content found for this list.")
 
-    word_count = len(source_block.split())
+    word_count = _count_words(source_block)
 
     task_rows = [("__facts__", "extract facts")] + [(cat, cat) for cat in categories]
 
@@ -220,7 +245,7 @@ async def generate_eval_set(
         if not facts_block.strip():
             dash.done("__facts__", ok=False, status="empty result")
             raise ValueError("Fact extraction produced empty results. Check transcript quality or LLM config.")
-        fact_word_count = len(facts_block.split())
+        fact_word_count = _count_words(facts_block)
         dash.done(
             "__facts__",
             ok=True,

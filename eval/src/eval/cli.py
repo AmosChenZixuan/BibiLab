@@ -72,9 +72,10 @@ def review(eval_set_id):
 @main.command()
 @click.argument("eval_set_id")
 @click.option("--model", default=None, help="Override test model.")
-def run(eval_set_id, model):
+@click.option("--concurrency", default=None, type=int, help="Max parallel cases (default 4).")
+def run(eval_set_id, model, concurrency):
     """Run locked cases against test model."""
-    from eval.runner import run_eval
+    from eval.runner import run_eval, DEFAULT_CONCURRENCY
 
     try:
         ai_cfg = resolve_profile("test")
@@ -85,10 +86,11 @@ def run(eval_set_id, model):
     if model:
         ai_cfg.model = model
 
-    click.echo(f"Running eval with model: {ai_cfg.model} (lang={get_language()})...")
+    conc = concurrency if concurrency is not None else DEFAULT_CONCURRENCY
+    click.echo(f"Running eval with model: {ai_cfg.model} (lang={get_language()}, concurrency={conc})...")
 
     try:
-        run_result = asyncio.run(run_eval(eval_set_id, ai_cfg))
+        run_result = asyncio.run(run_eval(eval_set_id, ai_cfg, concurrency=conc))
     except Exception as e:
         click.echo(f"Error running eval: {e}", err=True)
         sys.exit(1)
@@ -217,10 +219,10 @@ def list():
             click.echo(f"  {r.id} — {r.timestamp} ({r.test_profile.get('model', '?')}) — {status}")
 
 
-@main.command()
+@main.command("export-skeleton")
 @click.argument("eval_set_id")
 @click.option("--target-list", required=True, help="Target list ID.")
-def export_skeleton(eval_set_id, target_list):
+def export_skeleton_cmd(eval_set_id, target_list):
     """Export question-only skeleton for a new list."""
     try:
         skeleton = export_skeleton(eval_set_id, target_list)
