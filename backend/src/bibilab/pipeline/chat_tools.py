@@ -3,6 +3,7 @@
 import json
 import logging
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, field
 
 from bibilab.config import BibilabConfig
@@ -623,9 +624,9 @@ def _summarize_stale_metadata_block(block: dict) -> str:
     )
 
 
-_STALE_SUMMARIZERS: dict[str, "object"] = {
-    "generate_report": _summarize_stale_report_block,
-    "query_list_metadata": _summarize_stale_metadata_block,
+_STALE_SUMMARIZERS: dict[str, Callable[[dict], str]] = {
+    GENERATE_REPORT_TOOL.name: _summarize_stale_report_block,
+    QUERY_LIST_METADATA_TOOL.name: _summarize_stale_metadata_block,
 }
 
 
