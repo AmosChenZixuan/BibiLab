@@ -604,6 +604,7 @@ class ReportApp(App):
         self.prev_agg: dict | None = None
         self.prev_grade_by_id: dict = {}
         self.compare_model: str | None = None
+        self._compare_missing: str | None = None
         if self.compare_run_id:
             try:
                 prev_gr = load_graded_run(self.compare_run_id)
@@ -646,9 +647,8 @@ class ReportApp(App):
 
     def on_mount(self):
         self._refresh()
-        missing = getattr(self, "_compare_missing", None)
-        if missing:
-            self.notify(f"Compare run not found: {missing}", severity="warning", timeout=5)
+        if self._compare_missing:
+            self.notify(f"Compare run not found: {self._compare_missing}", severity="warning", timeout=5)
             self._compare_missing = None
 
     def _header_text(self) -> str:

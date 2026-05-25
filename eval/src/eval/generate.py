@@ -402,21 +402,18 @@ def _format_facts(facts: list[dict]) -> str:
     return "\n".join(lines)
 
 
-async def generate_eval_set(
+def generate_eval_set(
     list_id: str,
+    sources: list[dict],
     categories: list[str],
     count: int,
     ai_cfg: Any,
     language: str = "zh",
 ) -> EvalSet:
-    from bibilab.db import get_sources_for_list
-
     if not categories:
         raise ValueError("No categories specified.")
 
-    rows = await get_sources_for_list(list_id)
-    all_sources = [dict(r) for r in rows]
-    selected = random.sample(all_sources, min(MAX_SOURCES, len(all_sources)))
+    selected = random.sample(sources, min(MAX_SOURCES, len(sources)))
     per_source = _load_per_source(selected)
     if not per_source:
         raise ValueError("No transcript content found for this list.")

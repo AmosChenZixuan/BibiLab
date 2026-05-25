@@ -2,12 +2,11 @@ from __future__ import annotations
 
 import json
 import os
-import uuid
 from pathlib import Path
 
 from bibilab.config import bibilab_home
 
-from eval.models import EvalSet, EvalRun, GradedRun, EvalCase
+from eval.models import EvalSet, EvalRun, GradedRun
 
 
 def _evals_root() -> Path:
@@ -107,29 +106,3 @@ def load_graded_run(run_id: str) -> GradedRun:
             if candidate.exists():
                 return GradedRun.model_validate_json(candidate.read_text())
     raise FileNotFoundError(f"Graded run '{run_id}' not found")
-
-
-# -- Export --------------------------------------------------------------
-
-def export_skeleton(eval_set_id: str, target_list_id: str) -> EvalSet:
-    original = load_eval_set(eval_set_id)
-    skeleton_cases = []
-    for case in original.cases:
-        skeleton_cases.append(
-            EvalCase(
-                id=str(uuid.uuid4()),
-                category=case.category,
-                question=case.question,
-                expected_answer_draft="",
-                expected_sources=[],
-                locked=False,
-                notes="",
-            )
-        )
-    return EvalSet(
-        id=str(uuid.uuid4()),
-        list_id=target_list_id,
-        created_at=original.created_at,
-        updated_at=original.created_at,
-        cases=skeleton_cases,
-    )

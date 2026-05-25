@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import sys
-from pathlib import Path
 
 import click
 
@@ -14,9 +13,7 @@ from eval.storage import (
     list_runs as list_runs_storage,
     load_eval_run,
     load_graded_run,
-    export_skeleton,
 )
-from eval.models import EvalSet
 
 
 @click.group()
@@ -35,6 +32,7 @@ def main():
 def create(list_id, categories, count):
     """Generate eval set for a list."""
     from eval.generate import generate_eval_set
+    from bibilab.db import get_sources_for_list
 
     cats = [c.strip() for c in categories.split(",") if c.strip()]
 
@@ -48,7 +46,9 @@ def create(list_id, categories, count):
     click.echo(f"Generating eval set for list {list_id} ({len(cats)} categories, {count} each, lang={language})...")
 
     try:
-        es = asyncio.run(generate_eval_set(list_id, cats, count, ai_cfg, language))
+        rows = asyncio.run(get_sources_for_list(list_id))
+        all_sources = [dict(r) for r in rows]
+        es = generate_eval_set(list_id, all_sources, cats, count, ai_cfg, language)
     except Exception as e:
         click.echo(f"Error generating eval set: {e}", err=True)
         sys.exit(1)
@@ -226,19 +226,3 @@ def list():
                 pass
             status = f"graded ({gr.grade_profile.model})" if gr else "not graded"
             click.echo(f"  {r.id} — {r.timestamp} ({r.test_profile.model}) — {status}")
-
-
-@main.command("export-skeleton")
-@click.argument("eval_set_id")
-@click.option("--target-list", required=True, help="Target list ID.")
-def export_skeleton_cmd(eval_set_id, target_list):
-    """Export question-only skeleton for a new list."""
-    try:
-        skeleton = export_skeleton(eval_set_id, target_list)
-    except FileNotFoundError as e:
-        click.echo(f"Error: {e}", err=True)
-        sys.exit(1)
-
-    save_eval_set(skeleton)
-    click.echo(f"Skeleton saved: {skeleton.id} (target list: {target_list})")
-    click.echo(f"  {len(skeleton.cases)} questions, all unlocked.")

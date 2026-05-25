@@ -48,8 +48,6 @@ uv run bibilab-eval report <run-id>
 uv run bibilab-eval report <run-id> --compare <prev-run-id>  # pre-load diff in TUI
 uv run bibilab-eval report <run-id> --json                    # machine-readable, skip TUI
 
-# 5. Bootstrap another list
-uv run bibilab-eval export-skeleton <eval-set-id> --target-list <other-list-id>
 ```
 
 ## Eval Categories

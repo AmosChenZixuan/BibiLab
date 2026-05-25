@@ -10,7 +10,6 @@ from eval.storage import (
     list_runs,
     save_graded_run,
     load_graded_run,
-    export_skeleton,
 )
 from eval.models import EvalCase, EvalSet, EvalRun, RunCaseResult, GradeResult, GradedRun
 
@@ -141,29 +140,6 @@ def test_save_and_load_graded_run(tmp_path, monkeypatch):
     save_graded_run(gr)
     loaded = load_graded_run(gr.run_id)
     assert loaded.grades[0].context_relevance == 4
-
-
-def test_export_skeleton(tmp_path, monkeypatch):
-    monkeypatch.setattr("eval.storage.bibilab_home", lambda: tmp_path)
-    es = _make_eval_set()
-    es.cases = [
-        EvalCase(
-            id="c1",
-            category="narrow",
-            question="什么是X？",
-            expected_answer_draft="X is...",
-            expected_sources=["s1"],
-            locked=True,
-            notes="",
-        )
-    ]
-    save_eval_set(es)
-    skeleton = export_skeleton(es.id, "list-2")
-    assert skeleton.list_id == "list-2"
-    assert skeleton.cases[0].question == "什么是X？"
-    assert skeleton.cases[0].locked is False
-    assert skeleton.cases[0].expected_answer_draft == ""
-    assert skeleton.cases[0].expected_sources == []
 
 
 def test_eval_set_not_found(tmp_path, monkeypatch):
