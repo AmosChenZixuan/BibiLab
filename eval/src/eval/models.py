@@ -20,7 +20,6 @@ class EvalCase(BaseModel):
     category: CATEGORY
     question: str
     expected_answer_draft: str = ""
-    expected_sources: list[str] = Field(default_factory=list)
     locked: bool = False
     notes: str = ""
 

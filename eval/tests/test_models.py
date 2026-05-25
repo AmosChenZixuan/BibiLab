@@ -8,7 +8,6 @@ def test_eval_case_creation():
         category="narrow",
         question="什么是RAG？",
         expected_answer_draft="RAG 是检索增强生成...",
-        expected_sources=["src-1"],
         locked=False,
         notes="",
     )
@@ -26,7 +25,6 @@ def test_eval_case_invalid_category():
             category="invalid",
             question="x",
             expected_answer_draft="x",
-            expected_sources=[],
             locked=False,
             notes="",
         )
@@ -96,11 +94,11 @@ def test_eval_set_locked_cases():
         cases=[
             EvalCase(
                 id="c1", category="narrow", question="q1",
-                expected_answer_draft="a", expected_sources=[], locked=True, notes="",
+                expected_answer_draft="a", locked=True, notes="",
             ),
             EvalCase(
                 id="c2", category="broad", question="q2",
-                expected_answer_draft="a", expected_sources=[], locked=False, notes="",
+                expected_answer_draft="a", locked=False, notes="",
             ),
         ],
     )

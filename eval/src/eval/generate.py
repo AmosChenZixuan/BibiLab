@@ -97,10 +97,9 @@ CATEGORY_PROMPTS: dict[str, str] = {
 
 字段约束：
 - expected_answer_draft：必须能从提供的要点中**直接抽取或合成**。不要编造要点中没有的事实。如果要点不足以草拟答案，跳过此题。
-- expected_sources：恰好 1 个 source id（即答案所在的那个来源）。
 
 只返回 JSON：
-{{"questions": [{{"question": "...", "expected_answer_draft": "...", "expected_sources": ["<single-source-id>"]}}]}}
+{{"questions": [{{"question": "...", "expected_answer_draft": "..."}}]}}
 如果确实没有满足条件的题可问，返回 {{"questions": []}}（这是允许的，不要为了凑数编造）。""",
 
     "broad": """你是一个知识库的普通用户。下面是一些视频内容的要点摘要。你还没有看过原视频。
@@ -131,10 +130,9 @@ CATEGORY_PROMPTS: dict[str, str] = {
 
 字段约束：
 - expected_answer_draft：必须能从提供的要点中**直接抽取或合成**。不要编造要点中没有的项目。如果可聚合的项目少于 2 个，跳过此题（聚合至少 2 项才有意义）。
-- expected_sources：列出回答会用到的所有 source id（至少 2 个；具体数量取决于聚合范围）。
 
 只返回 JSON：
-{{"questions": [{{"question": "...", "expected_answer_draft": "...", "expected_sources": ["id1","id2","..."]}}]}}
+{{"questions": [{{"question": "...", "expected_answer_draft": "..."}}]}}
 如果确实没有满足条件的题可问，返回 {{"questions": []}}（这是允许的，不要为了凑数编造）。""",
 
     "cross_ref": """你是一个知识库的普通用户。下面是一些视频内容的要点摘要。你还没有看过原视频。
@@ -171,10 +169,9 @@ CATEGORY_PROMPTS: dict[str, str] = {
 
 字段约束：
 - expected_answer_draft：必须能从提供的要点中**直接抽取或合成**，对每个信息位标注其来源。不要编造要点中没有的事实。
-- expected_sources：列出回答用到的所有来源 source id（至少 2 个；具体数量取决于信息位数）。
 
 只返回 JSON：
-{{"questions": [{{"question": "...", "expected_answer_draft": "...", "expected_sources": ["id1","id2","..."]}}]}}
+{{"questions": [{{"question": "...", "expected_answer_draft": "..."}}]}}
 如果要点中找不到足够的跨源素材，返回 {{"questions": []}}（这是允许的，跨源综合题对素材要求高，没有就是没有）。""",
 
     "absence": """你是一个知识库的普通用户。下面是一些视频内容的要点摘要。你还没有看过原视频。
@@ -208,10 +205,9 @@ CATEGORY_PROMPTS: dict[str, str] = {
 
 字段约束：
 - expected_answer_draft：必须形如「当前资料里没有涉及 X。」可以补充 1 句说明为什么这看起来合理但实际未覆盖。**不要**编造虚假事实当作答案。
-- expected_sources：[]（缺失题无来源，这是该维度的标志）。
 
 只返回 JSON：
-{{"questions": [{{"question": "...", "expected_answer_draft": "当前资料里没有涉及……", "expected_sources": []}}]}}
+{{"questions": [{{"question": "...", "expected_answer_draft": "当前资料里没有涉及……"}}]}}
 如果要点领域窄到想不出合理的缺失话题，返回 {{"questions": []}}（允许，不要硬凑无关题）。""",
 
     "temporal": """你是一个知识库的普通用户。下面是一些视频内容的要点摘要。你还没有看过原视频。
@@ -245,10 +241,9 @@ CATEGORY_PROMPTS: dict[str, str] = {
 
 字段约束：
 - expected_answer_draft：必须能从要点中**直接抽取或合成**时间轴上的两个或多个状态，明示「旧状态：……，新状态：……」或「时间 T1：……，时间 T2：……」。不要编造要点中没有的时间标记或版本信息。
-- expected_sources：列出涉及不同时间点的所有 source id（通常 ≥2 个；若同一 source 内部讨论了多个时间点，可以是 1 个）。
 
 只返回 JSON：
-{{"questions": [{{"question": "...", "expected_answer_draft": "...", "expected_sources": ["id1","id2","..."]}}]}}
+{{"questions": [{{"question": "...", "expected_answer_draft": "..."}}]}}
 如果要点里没有可识别的时间演变素材，返回 {{"questions": []}}（这是允许的，时效演变题对素材要求高，没有就是没有）。""",
 }
 
@@ -483,7 +478,6 @@ def generate_eval_set(
                             category=cat,
                             question=q.get("question", ""),
                             expected_answer_draft=q.get("expected_answer_draft", ""),
-                            expected_sources=q.get("expected_sources", []),
                             locked=False,
                             notes="",
                         )

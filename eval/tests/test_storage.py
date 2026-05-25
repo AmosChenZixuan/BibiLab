@@ -43,7 +43,6 @@ def test_save_and_load_eval_set(tmp_path, monkeypatch):
             category="narrow",
             question="什么是X？",
             expected_answer_draft="X is...",
-            expected_sources=["s1"],
             locked=True,
             notes="",
         )

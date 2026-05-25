@@ -122,8 +122,6 @@ class ReviewApp(App):
             else:
                 main.mount(Static(value or "(empty)", classes="field-body"))
 
-        if case.expected_sources:
-            main.mount(Static(f"  Expected Sources: {', '.join(case.expected_sources)}", classes="field-body"))
 
     def action_next_case(self):
         if self._editing_field is not None:
