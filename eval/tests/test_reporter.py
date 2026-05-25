@@ -63,11 +63,21 @@ def test_format_report_text():
     assert "4.5" in text
 
 
-def test_aggregate_ignores_zero_scores():
+def test_aggregate_ignores_failed_grades():
     grades = [
-        make_grade("n1", cr=4, g=0, ar=3),  # g=0 means grading failed
+        make_grade("n1", cr=4, g=None, ar=3),  # g=None means grading failed
         make_grade("n2", cr=5, g=4, ar=4),
     ]
     categories = {"n1": "narrow", "n2": "narrow"}
     agg = aggregate_scores(grades, categories)
     assert agg["narrow"]["groundedness"] == 4.0  # only n2 counted
+
+
+def test_count_failed_grades():
+    from eval.reporter import count_failed_grades
+    grades = [
+        make_grade("n1", cr=4, g=None, ar=3),
+        make_grade("n2", cr=None, g=4, ar=None),
+    ]
+    failed = count_failed_grades(grades)
+    assert failed == {"context_relevance": 1, "groundedness": 1, "answer_relevance": 1}

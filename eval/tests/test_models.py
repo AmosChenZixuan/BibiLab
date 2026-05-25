@@ -52,7 +52,7 @@ def test_grade_result_range_validation():
     with pytest.raises(ValidationError):
         GradeResult(
             case_id="c1",
-            context_relevance=-1,  # below 0
+            context_relevance=0,  # rubric is 1-5; 0 invalid
             context_relevance_reasoning="",
             groundedness=3,
             groundedness_reasoning="",

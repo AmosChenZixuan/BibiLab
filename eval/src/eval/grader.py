@@ -9,7 +9,7 @@ from bibilab.config import AIConfig
 
 from eval._utils import now_iso, strip_json_fences
 from eval.dashboard import TaskDashboard
-from eval.models import GradeResult, GradedRun, RunCaseResult
+from eval.models import GradeResult, GradedRun, ProfileSnapshot, RunCaseResult
 from eval.storage import load_eval_set, load_eval_run, save_graded_run
 
 RUBRIC = """Rating scale:
@@ -149,11 +149,11 @@ async def _grade_case(
 
     return GradeResult(
         case_id=case_result.case_id,
-        context_relevance=cr_score or 0,
+        context_relevance=cr_score,
         context_relevance_reasoning=cr_reasoning or "Failed to grade",
-        groundedness=g_score or 0,
+        groundedness=g_score,
         groundedness_reasoning=g_reasoning or "Failed to grade",
-        answer_relevance=ar_score or 0,
+        answer_relevance=ar_score,
         answer_relevance_reasoning=ar_reasoning or "Failed to grade",
         llm_duration_ms=cr_ms + g_ms + ar_ms,
     )
@@ -191,7 +191,7 @@ async def grade_run(
             question = eval_case.question if eval_case else case_result.case_id
             grade = await _grade_case(case_result, question, ai_cfg, language, on_dim_done=_dim_done)
             scores = f"CR={grade.context_relevance} G={grade.groundedness} AR={grade.answer_relevance}"
-            ok = grade.context_relevance > 0 and grade.groundedness > 0 and grade.answer_relevance > 0
+            ok = grade.context_relevance is not None and grade.groundedness is not None and grade.answer_relevance is not None
             dash.done(case_result.case_id, ok=ok, status=scores)
             return grade
 
@@ -202,11 +202,11 @@ async def grade_run(
 
     gr = GradedRun(
         run_id=run_id,
-        grade_profile={
-            "model": ai_cfg.model,
-            "protocol": ai_cfg.protocol,
-            "base_url": ai_cfg.base_url,
-        },
+        grade_profile=ProfileSnapshot(
+            model=ai_cfg.model,
+            protocol=ai_cfg.protocol,
+            base_url=ai_cfg.base_url,
+        ),
         timestamp=now_iso(),
         grades=grades,
     )

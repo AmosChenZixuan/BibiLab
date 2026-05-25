@@ -6,7 +6,7 @@ from pathlib import Path
 
 import click
 
-from eval.config import resolve_profile, get_language, load_eval_config, save_eval_config
+from eval.config import resolve_profile, get_language
 from eval.storage import (
     save_eval_set,
     load_eval_set,
@@ -110,7 +110,7 @@ def run(eval_set_id, model, concurrency):
 def grade(run_id):
     """Grade a run using the grade profile LLM."""
     from eval.grader import grade_run
-    from eval.reporter import aggregate_scores, format_report_text
+    from eval.reporter import aggregate_scores, format_report_text, count_failed_grades
 
     try:
         ai_cfg = resolve_profile("grade")
@@ -133,14 +133,21 @@ def grade(run_id):
     es = load_eval_set(eval_run.eval_set_id)
     cat_map = {c.id: c.category for c in es.cases}
     agg = aggregate_scores(gr.grades, cat_map)
+    failed = count_failed_grades(gr.grades)
     click.echo()
     click.echo(
         format_report_text(
             es.id, len(gr.grades),
-            eval_run.test_profile.get("model", "?"),
+            eval_run.test_profile.model,
             ai_cfg.model, agg,
         )
     )
+    if any(failed.values()):
+        click.echo()
+        click.echo(
+            f"  ⚠ failed grades: CR={failed['context_relevance']} "
+            f"G={failed['groundedness']} AR={failed['answer_relevance']}"
+        )
 
 
 @main.command()
@@ -166,10 +173,11 @@ def report(run_id, compare, json_out):
     es = load_eval_set(eval_run.eval_set_id)
     cat_map = {c.id: c.category for c in es.cases}
     agg = aggregate_scores(gr.grades, cat_map)
-    test_model = eval_run.test_profile.get("model", "?")
-    grade_model = gr.grade_profile.get("model", "?")
+    test_model = eval_run.test_profile.model
+    grade_model = gr.grade_profile.model
 
     diff = None
+    compared_id = compare
     if compare:
         try:
             prev_gr = load_graded_run(compare)
@@ -180,8 +188,9 @@ def report(run_id, compare, json_out):
             diff = diff_scores(agg, prev_agg)
         except FileNotFoundError as e:
             click.echo(f"Warning: comparison run not found: {e}", err=True)
+            compared_id = None
 
-    click.echo(report_json(run_id, es.id, test_model, grade_model, agg, diff, gr, compare))
+    click.echo(report_json(run_id, es.id, test_model, grade_model, agg, diff, gr, compared_id))
 
 
 @main.command()
@@ -213,10 +222,10 @@ def list():
             gr = None
             try:
                 gr = load_graded_run(r.id)
-            except Exception:
+            except FileNotFoundError:
                 pass
-            status = f"graded ({gr.grade_profile.get('model', '?')})" if gr else "not graded"
-            click.echo(f"  {r.id} — {r.timestamp} ({r.test_profile.get('model', '?')}) — {status}")
+            status = f"graded ({gr.grade_profile.model})" if gr else "not graded"
+            click.echo(f"  {r.id} — {r.timestamp} ({r.test_profile.model}) — {status}")
 
 
 @main.command("export-skeleton")

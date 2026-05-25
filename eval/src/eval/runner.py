@@ -21,7 +21,7 @@ from bibilab.config import AIConfig, BibilabConfig, load_config
 
 from eval._utils import now_iso
 from eval.dashboard import TaskDashboard
-from eval.models import EvalCase, EvalRun, RunCaseResult
+from eval.models import EvalCase, EvalRun, ProfileSnapshot, RunCaseResult
 from eval.storage import load_eval_set, save_eval_run
 
 CHAT_TOOLS: list[ToolDefinition] = [
@@ -43,7 +43,6 @@ async def run_single_case(
     system_prompt: str,
     on_status=None,
 ) -> RunCaseResult:
-    start = time.monotonic()
     try:
         registry: dict[str, CitationRegistryEntry] = {}
         tool_block_sink: list[dict] = []
@@ -96,7 +95,7 @@ async def run_single_case(
                     tc = json.loads(event.content or "{}")
                     q = (tc.get("arguments") or {}).get("query", "")
                     _status(f"retrieving \"{q[:40]}\"")
-                except Exception:
+                except json.JSONDecodeError:
                     _status("retrieving")
             elif event.type == "tool_result":
                 in_tool_exec = False
@@ -140,8 +139,9 @@ async def run_single_case(
             llm_duration_ms=llm_duration_ms,
             error=None,
         )
+    except asyncio.CancelledError:
+        raise
     except Exception as exc:
-        duration_ms = int((time.monotonic() - start) * 1000)
         return RunCaseResult(
             case_id=case.id,
             answer="",
@@ -218,11 +218,11 @@ async def run_eval(
     run = EvalRun(
         id=run_id,
         eval_set_id=eval_set_id,
-        test_profile={
-            "model": ai_cfg.model,
-            "protocol": ai_cfg.protocol,
-            "base_url": ai_cfg.base_url,
-        },
+        test_profile=ProfileSnapshot(
+            model=ai_cfg.model,
+            protocol=ai_cfg.protocol,
+            base_url=ai_cfg.base_url,
+        ),
         timestamp=now_iso(),
         cases=results,
     )

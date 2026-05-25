@@ -6,6 +6,15 @@ from typing import Any
 from eval.models import GradeResult, GradedRun
 
 
+def count_failed_grades(grades: list[GradeResult]) -> dict[str, int]:
+    """Per-dimension count of grades that failed (score is None)."""
+    return {
+        "context_relevance": sum(1 for g in grades if g.context_relevance is None),
+        "groundedness": sum(1 for g in grades if g.groundedness is None),
+        "answer_relevance": sum(1 for g in grades if g.answer_relevance is None),
+    }
+
+
 def aggregate_scores(
     grades: list[GradeResult], category_map: dict[str, str]
 ) -> dict[str, dict[str, float]]:
@@ -15,11 +24,11 @@ def aggregate_scores(
         cat = category_map.get(g.case_id, "unknown")
         if cat not in by_cat:
             by_cat[cat] = {"context_relevance": [], "groundedness": [], "answer_relevance": []}
-        if g.context_relevance > 0:
+        if g.context_relevance is not None:
             by_cat[cat]["context_relevance"].append(float(g.context_relevance))
-        if g.groundedness > 0:
+        if g.groundedness is not None:
             by_cat[cat]["groundedness"].append(float(g.groundedness))
-        if g.answer_relevance > 0:
+        if g.answer_relevance is not None:
             by_cat[cat]["answer_relevance"].append(float(g.answer_relevance))
 
     result: dict[str, dict[str, float]] = {}

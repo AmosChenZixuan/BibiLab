@@ -165,30 +165,41 @@ def _read_transcript(transcript_relpath: str) -> str:
 
 
 def _load_sources(sources: list[dict]) -> str:
-    """Load full transcripts, format into a single block."""
+    """Per-source word budget = MAX_WORDS / len(sources), min 500."""
+    import sys
     word_budget = max(500, MAX_WORDS // max(1, len(sources)))
     lines: list[str] = []
+    missing: list[str] = []
     for s in sources:
-        raw = _read_transcript(s.get("transcript_path", ""))
+        path = s.get("transcript_path", "")
+        raw = _read_transcript(path)
         if not raw:
+            missing.append(path or f"<no path for {s.get('id', '?')}>")
             continue
         raw = _truncate_to_words(raw, word_budget)
         lines.append(f"=== [{s['id']}] {s.get('title', '')} ===")
         lines.append(raw)
         lines.append("")
+    if missing:
+        print(f"[generate] missing transcripts ({len(missing)}): {missing}", file=sys.stderr)
     return "\n".join(lines)
 
 
-def _extract_facts(source_block: str, ai_cfg: Any, language: str = "zh") -> list[dict]:
-    """Step 1: Extract structured facts from transcripts. Low-hallucination — extraction only."""
+def _extract_facts(source_block: str, ai_cfg: Any, language: str = "zh") -> tuple[list[dict], str | None]:
+    """Extract structured facts from transcripts (step 1 of 2).
+
+    Returns (sources, parse_error). parse_error is None on success; otherwise a
+    short diagnostic including the LLM's raw output prefix so a downstream caller
+    can surface *why* extraction failed rather than just "empty result".
+    """
     full_prompt = _with_language(f"{FACTS_PROMPT}\n\n文字稿内容：\n{source_block}", language)
     raw = _call_llm(full_prompt, ai_cfg, llm_timeout=180, llm_max_tokens=16384)
-    raw = strip_json_fences(raw)
+    stripped = strip_json_fences(raw)
     try:
-        data = json.loads(raw)
-        return data.get("sources", [])
-    except json.JSONDecodeError:
-        return []
+        data = json.loads(stripped)
+        return (data.get("sources", []), None)
+    except json.JSONDecodeError as e:
+        return ([], f"JSONDecodeError: {e}; raw prefix: {raw[:200]!r}")
 
 
 def _format_facts(facts: list[dict]) -> str:
@@ -240,10 +251,13 @@ async def generate_eval_set(
         banner=f"{len(selected)} sources, ~{word_count} words, lang={language}",
     ) as dash:
         dash.start("__facts__", status="calling LLM")
-        facts = _extract_facts(source_block, ai_cfg, language)
+        facts, facts_err = _extract_facts(source_block, ai_cfg, language)
         facts_block = _format_facts(facts)
         if not facts_block.strip():
-            dash.done("__facts__", ok=False, status="empty result")
+            status = facts_err or "empty result"
+            dash.done("__facts__", ok=False, status=status[:80])
+            if facts_err:
+                raise ValueError(f"Fact extraction failed to parse LLM response. {facts_err}")
             raise ValueError("Fact extraction produced empty results. Check transcript quality or LLM config.")
         fact_word_count = _count_words(facts_block)
         dash.done(
@@ -260,14 +274,14 @@ async def generate_eval_set(
             prompt = CATEGORY_PROMPTS[category].format(count=count)
             full_prompt = _with_language(f"{prompt}\n\n视频内容要点：\n{facts_block}", language)
             raw = _call_llm(full_prompt, ai_cfg, llm_timeout=180, llm_max_tokens=16384)
-            raw = strip_json_fences(raw)
+            stripped = strip_json_fences(raw)
             try:
-                data = json.loads(raw)
+                data = json.loads(stripped)
                 qs = data.get("questions", [])
                 dash.done(category, ok=bool(qs), status=f"{len(qs)} generated")
                 return (category, qs)
-            except json.JSONDecodeError:
-                dash.done(category, ok=False, status="JSON parse failed")
+            except json.JSONDecodeError as e:
+                dash.done(category, ok=False, status=f"JSON parse: {e}; raw: {raw[:60]!r}"[:80])
                 return (category, [])
 
         cases: list[EvalCase] = []

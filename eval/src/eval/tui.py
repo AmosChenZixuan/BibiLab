@@ -181,7 +181,8 @@ class ReviewApp(App):
         field = self._editing_field
         try:
             new_val = self.query_one(f"#edit-{field}", TextArea).text
-        except Exception:
+        except Exception as e:
+            self.notify(f"Edit lost ({e}); restoring previous value.", severity="error", timeout=5)
             new_val = self._edit_backup
         if field == "question":
             new_val = new_val.strip()
@@ -275,7 +276,9 @@ class ConfigApp(App):
         super().__init__()
         from eval.config import PROFILE_NAMES, load_eval_config
 
-        self.cfg: dict[str, Any] = load_eval_config()
+        # Edit as a plain dict (mode="json" so Language enum → "zh"/"en");
+        # validate back into EvalConfig on save.
+        self.cfg: dict[str, Any] = load_eval_config().model_dump(mode="json")
         self.profile_names = PROFILE_NAMES
         self.rows: list[_Row] = []
         self.cursor = 0
@@ -399,7 +402,8 @@ class ConfigApp(App):
                 "base_url": ai.base_url,
                 "api_key": ai.api_key,
             }
-        except Exception:
+        except Exception as e:
+            self.notify(f"Backend config unavailable: {e}", severity="warning", timeout=5)
             return {"protocol": "openai", "model": "", "base_url": "", "api_key": ""}
 
     def action_edit(self):
@@ -420,7 +424,8 @@ class ConfigApp(App):
         try:
             inp = self.query_one("#field-edit", Input)
             new_val = inp.value
-        except Exception:
+        except Exception as e:
+            self.notify(f"Edit lost ({e}); restoring previous value.", severity="error", timeout=5)
             new_val = self._edit_backup
         profile, field = self._editing_field
         entry = self.cfg["profiles"].get(profile)
@@ -436,11 +441,16 @@ class ConfigApp(App):
         self._refresh()
 
     def action_save(self):
-        from eval.config import save_eval_config
+        from eval.config import EvalConfig, save_eval_config
 
         if self._editing_field is not None:
             self._commit_field()
-        save_eval_config(self.cfg)
+        try:
+            validated = EvalConfig.model_validate(self.cfg)
+        except Exception as e:
+            self.notify(f"Config invalid: {e}", severity="error", timeout=8)
+            return
+        save_eval_config(validated)
         self._dirty = False
         self.notify("Saved!", timeout=2)
 
@@ -602,9 +612,12 @@ class ReportApp(App):
                 prev_cat_map = {c.id: c.category for c in prev_es.cases}
                 self.prev_agg = aggregate_scores(prev_gr.grades, prev_cat_map)
                 self.prev_grade_by_id = {g.case_id: g for g in prev_gr.grades}
-                self.compare_model = prev_run.test_profile.get("model", "?")
+                self.compare_model = prev_run.test_profile.model
             except FileNotFoundError:
+                missing = self.compare_run_id
                 self.compare_run_id = None
+                # Defer notify until after mount — App may not be running yet during __init__._load
+                self._compare_missing = missing
 
     def _agg_diff(self, cat: str, dim: str) -> str:
         if not self.prev_agg or cat not in self.prev_agg:
@@ -617,9 +630,9 @@ class ReportApp(App):
         prev = self.prev_grade_by_id.get(cid)
         if not prev:
             return ""
-        cur_v = getattr(self.grade_by_id[cid], attr, 0)
-        prev_v = getattr(prev, attr, 0)
-        if cur_v == 0 or prev_v == 0:
+        cur_v = getattr(self.grade_by_id[cid], attr, None)
+        prev_v = getattr(prev, attr, None)
+        if cur_v is None or prev_v is None:
             return ""
         return " " + _fmt_diff(cur_v - prev_v)
 
@@ -633,10 +646,14 @@ class ReportApp(App):
 
     def on_mount(self):
         self._refresh()
+        missing = getattr(self, "_compare_missing", None)
+        if missing:
+            self.notify(f"Compare run not found: {missing}", severity="warning", timeout=5)
+            self._compare_missing = None
 
     def _header_text(self) -> str:
-        test_model = self.eval_run.test_profile.get("model", "?")
-        grade_model = self.gr.grade_profile.get("model", "?")
+        test_model = self.eval_run.test_profile.model
+        grade_model = self.gr.grade_profile.model
         overall = self.agg.get("overall", {})
         cmp_line = f"   vs {self.compare_model} ({self.compare_run_id[:8]})" if self.compare_model else ""
         return (
@@ -765,7 +782,7 @@ class ReportApp(App):
                 load_graded_run(r.id)
             except FileNotFoundError:
                 continue
-            candidates.append((r.id, r.timestamp, r.test_profile.get("model", "?")))
+            candidates.append((r.id, r.timestamp, r.test_profile.model))
 
         def handle(result: str | None):
             if result is None:

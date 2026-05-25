@@ -5,6 +5,8 @@ import pytest
 from eval.config import (
     DEFAULT_LANGUAGE,
     PROFILE_NAMES,
+    EvalConfig,
+    Language,
     _eval_config_path,
     get_language,
     load_eval_config,
@@ -36,18 +38,18 @@ def test_eval_config_path(tmp_path, monkeypatch):
 def test_load_defaults_when_missing(tmp_path, monkeypatch):
     monkeypatch.setattr("eval.config.bibilab_home", lambda: tmp_path)
     cfg = load_eval_config()
-    assert cfg["profiles"]["generate"] is None
-    assert cfg["profiles"]["grade"] is None
-    assert cfg["profiles"]["test"]["model"] == "glm-4.7-flash"
-    assert cfg["language"] == DEFAULT_LANGUAGE
+    assert cfg.profiles["generate"] is None
+    assert cfg.profiles["grade"] is None
+    assert cfg.profiles["test"].model == "glm-4.7-flash"
+    assert cfg.language == DEFAULT_LANGUAGE
 
 
 def test_load_from_file(tmp_path, monkeypatch):
     monkeypatch.setattr("eval.config.bibilab_home", lambda: tmp_path)
     tmp_path.joinpath("eval_config.json").write_text(json.dumps(SAMPLE_CONFIG))
     cfg = load_eval_config()
-    assert cfg["profiles"]["test"]["model"] == "glm-4.7-flash"
-    assert cfg["language"] == "en"
+    assert cfg.profiles["test"].model == "glm-4.7-flash"
+    assert cfg.language == Language.EN
 
 
 def test_invalid_language_falls_back_to_default(tmp_path, monkeypatch):
@@ -55,7 +57,16 @@ def test_invalid_language_falls_back_to_default(tmp_path, monkeypatch):
     bad = dict(SAMPLE_CONFIG)
     bad["language"] = "fr"
     tmp_path.joinpath("eval_config.json").write_text(json.dumps(bad))
-    assert load_eval_config()["language"] == DEFAULT_LANGUAGE
+    assert load_eval_config().language == DEFAULT_LANGUAGE
+
+
+def test_unknown_profile_names_filtered(tmp_path, monkeypatch):
+    monkeypatch.setattr("eval.config.bibilab_home", lambda: tmp_path)
+    bad = {"profiles": {"bogus": {"model": "x"}, "test": None}, "language": "zh"}
+    tmp_path.joinpath("eval_config.json").write_text(json.dumps(bad))
+    cfg = load_eval_config()
+    assert "bogus" not in cfg.profiles
+    assert cfg.profiles["test"] is None
 
 
 def test_resolve_profile_null_uses_backend(tmp_path, monkeypatch):
@@ -98,7 +109,7 @@ def test_resolve_unknown_profile_raises(tmp_path, monkeypatch):
 
 def test_save_eval_config(tmp_path, monkeypatch):
     monkeypatch.setattr("eval.config.bibilab_home", lambda: tmp_path)
-    save_eval_config(SAMPLE_CONFIG)
+    save_eval_config(EvalConfig.model_validate(SAMPLE_CONFIG))
     loaded = json.loads((tmp_path / "eval_config.json").read_text())
     assert loaded["profiles"]["test"]["model"] == "glm-4.7-flash"
     assert loaded["language"] == "en"
@@ -107,8 +118,13 @@ def test_save_eval_config(tmp_path, monkeypatch):
 def test_get_language(tmp_path, monkeypatch):
     monkeypatch.setattr("eval.config.bibilab_home", lambda: tmp_path)
     tmp_path.joinpath("eval_config.json").write_text(json.dumps(SAMPLE_CONFIG))
-    assert get_language() == "en"
+    assert get_language() == Language.EN
 
 
 def test_profile_names_constant():
     assert PROFILE_NAMES == ("generate", "test", "grade")
+
+
+def test_language_display_name():
+    assert Language.ZH.display_name == "Chinese"
+    assert Language.EN.display_name == "English"
