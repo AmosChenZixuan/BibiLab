@@ -594,6 +594,57 @@ def _summarize_stale_retrieve_block(block: dict) -> str:
     )
 
 
+def _summarize_stale_report_block(block: dict) -> str:
+    """Compact replacement for a prior-turn generate_report tool_result.
+
+    Symmetric with retrieve: replaying the full result (artifact_id/job_id)
+    plus the empty assistant text that terminal tools leave behind anchors
+    the LLM into re-calling generate_report on later, unrelated questions.
+    Tag the prior dispatch and drop the payload.
+    """
+    artifact_type = block.get("arguments", {}).get("type", "")
+    return (
+        f'[Prior-turn generate_report(type="{artifact_type}") dispatched.] '
+        "Result omitted; call again only if this turn explicitly asks for a report."
+    )
+
+
+def _summarize_stale_metadata_block(block: dict) -> str:
+    """Compact replacement for a prior-turn query_list_metadata tool_result.
+
+    Same staleness principle as retrieve: the source list may have changed
+    since the prior call (add/remove/rerun), so the stored counts/longest/
+    languages can mislead the current turn. Tag and drop.
+    """
+    query_type = block.get("arguments", {}).get("query_type", "")
+    return (
+        f'[Prior-turn query_list_metadata(query_type="{query_type}") dispatched.] '
+        "Result omitted (may be stale); call again if this turn needs it."
+    )
+
+
+_STALE_SUMMARIZERS: dict[str, "object"] = {
+    "generate_report": _summarize_stale_report_block,
+    "query_list_metadata": _summarize_stale_metadata_block,
+}
+
+
+def _stale_payload(block: dict, name: str) -> str:
+    """Return the LLM-visible payload for a prior-turn tool_block.
+
+    Retrieve-family tools and non-content tools (generate_report,
+    query_list_metadata) all replay as compact tags. Unknown tools fall
+    through to a JSON dump of the original result — same as before — so
+    new tools default to full replay until their own summarizer is added.
+    """
+    if name in RETRIEVE_TOOL_NAMES:
+        return _summarize_stale_retrieve_block(block)
+    summarizer = _STALE_SUMMARIZERS.get(name)
+    if summarizer is not None:
+        return summarizer(block)
+    return json.dumps(block.get("result"))
+
+
 def expand_message_for_provider(
     msg: dict,
     protocol: str,  # "anthropic" or "openai"
@@ -625,7 +676,7 @@ def expand_message_for_provider(
                 logger.warning("expand_message_for_provider skipping malformed block: missing keys")
                 continue
             assistant_content.append({"type": "tool_use", "id": tool_use_id, "name": name, "input": arguments})
-            result_payload = _summarize_stale_retrieve_block(b) if name in RETRIEVE_TOOL_NAMES else json.dumps(result)
+            result_payload = _stale_payload(b, name)
             tool_result_content.append({"type": "tool_result", "tool_use_id": tool_use_id, "content": result_payload})
         if text:
             assistant_content.append({"type": "text", "text": text})
@@ -655,7 +706,7 @@ def expand_message_for_provider(
                     "function": {"name": name, "arguments": json.dumps(arguments)},
                 }
             )
-            result_payload = _summarize_stale_retrieve_block(b) if name in RETRIEVE_TOOL_NAMES else json.dumps(result)
+            result_payload = _stale_payload(b, name)
             out.append(
                 {
                     "role": "tool",

@@ -207,10 +207,9 @@ class TestExpandMessageForProviderCompaction:
         assert "Prior-turn retrieval" in tool_msg["content"]
         assert "牛肉面做法详解" not in tool_msg["content"]
 
-    def test_expand_non_retrieve_block_still_full_json(self):
-        """query_list_metadata / generate_report blocks are NOT compacted."""
-        import json
-
+    def test_expand_metadata_block_replays_tag_not_result(self):
+        """query_list_metadata replays as a compact tag — result omitted to prevent
+        stale-count contamination after the source list changes."""
         from bibilab.pipeline.chat_tools import expand_message_for_provider
 
         msg = {
@@ -228,4 +227,61 @@ class TestExpandMessageForProviderCompaction:
 
         out = expand_message_for_provider(msg, protocol="anthropic")
         replayed = out[1]["content"][0]["content"]
-        assert json.loads(replayed) == {"count": 5}
+        assert "Prior-turn query_list_metadata" in replayed
+        assert "count" in replayed  # query_type echoed
+        assert "5" not in replayed  # raw count not replayed
+
+    def test_expand_generate_report_block_replays_tag_not_result(self):
+        """generate_report replays as a compact tag — terminal-tool full replay
+        anchors the LLM into re-calling generate_report on unrelated questions."""
+        from bibilab.pipeline.chat_tools import expand_message_for_provider
+
+        msg = {
+            "role": "assistant",
+            "content": "",
+            "tool_blocks": [
+                {
+                    "tool_use_id": "tc1",
+                    "name": "generate_report",
+                    "arguments": {
+                        "type": "custom_report",
+                        "prompt": "compare ep1 and ep9",
+                        "source_ids": ["s1", "s2"],
+                    },
+                    "result": {
+                        "artifact_id": "a1",
+                        "job_id": "j1",
+                        "name": "custom_report",
+                        "type": "custom_report",
+                    },
+                }
+            ],
+        }
+
+        out = expand_message_for_provider(msg, protocol="anthropic")
+        replayed = out[1]["content"][0]["content"]
+        assert "Prior-turn generate_report" in replayed
+        assert 'type="custom_report"' in replayed
+        assert "a1" not in replayed  # artifact_id not replayed
+        assert "j1" not in replayed  # job_id not replayed
+
+    def test_expand_generate_report_block_openai_protocol_also_tagged(self):
+        from bibilab.pipeline.chat_tools import expand_message_for_provider
+
+        msg = {
+            "role": "assistant",
+            "content": "",
+            "tool_blocks": [
+                {
+                    "tool_use_id": "tc1",
+                    "name": "generate_report",
+                    "arguments": {"type": "study_guide", "prompt": "p", "source_ids": []},
+                    "result": {"artifact_id": "a1", "job_id": "j1", "name": "x", "type": "study_guide"},
+                }
+            ],
+        }
+
+        out = expand_message_for_provider(msg, protocol="openai")
+        tool_msg = next(m for m in out if m.get("role") == "tool")
+        assert "Prior-turn generate_report" in tool_msg["content"]
+        assert "a1" not in tool_msg["content"]
