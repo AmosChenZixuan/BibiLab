@@ -59,7 +59,6 @@ uv run bibilab-eval export-skeleton <eval-set-id> --target-list <other-list-id>
 | narrow | Precision — answer exists in one chunk |
 | broad | Recall — answers across many sources |
 | cross_ref | Multi-source synthesis |
-| ambiguous | Context resolution |
 | absence | Proving a topic is NOT in sources |
 | temporal | Timestamp reasoning across versions |
 

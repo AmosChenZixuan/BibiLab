@@ -4,7 +4,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-CATEGORY = Literal["narrow", "broad", "cross_ref", "ambiguous", "absence", "temporal"]
+CATEGORY = Literal["narrow", "broad", "cross_ref", "absence", "temporal"]
 
 
 class ProfileSnapshot(BaseModel):

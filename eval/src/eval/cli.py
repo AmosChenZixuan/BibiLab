@@ -28,7 +28,7 @@ def main():
 @click.argument("list_id")
 @click.option(
     "--categories",
-    default="narrow,broad,cross_ref,ambiguous,absence,temporal",
+    default="narrow,broad,cross_ref,absence,temporal",
     help="Comma-separated categories to generate.",
 )
 @click.option("--count", default=3, help="Questions per category.")

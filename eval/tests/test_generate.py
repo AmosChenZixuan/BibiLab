@@ -10,7 +10,7 @@ from eval.generate import (
 
 
 def test_category_prompts_exist():
-    for cat in ("narrow", "broad", "cross_ref", "ambiguous", "absence", "temporal"):
+    for cat in ("narrow", "broad", "cross_ref", "absence", "temporal"):
         assert cat in CATEGORY_PROMPTS
 
 
