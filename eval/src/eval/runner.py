@@ -153,6 +153,7 @@ async def run_eval(
     system_prompt: str | None = None,
 ) -> EvalRun:
     from bibilab.db import get_sources_for_list
+    from eval.config import get_response_language
 
     if ai_cfg is None:
         backend_cfg = load_config()
@@ -161,7 +162,7 @@ async def run_eval(
         backend_cfg = load_config()
 
     if system_prompt is None:
-        system_prompt = build_grounding_prompt(response_language="Chinese")
+        system_prompt = build_grounding_prompt(response_language=get_response_language())
 
     eval_set = load_eval_set(eval_set_id)
     locked = eval_set.locked_cases

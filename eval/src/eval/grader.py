@@ -18,8 +18,17 @@ RUBRIC = """Rating scale:
 4 - Mostly correct, minor issues
 5 - Perfect"""
 
+_LANG_INSTRUCTION = {
+    "en": "Write the `reasoning` field in English.",
+    "zh": "Write the `reasoning` field in Chinese (用中文).",
+}
 
-def build_context_relevance_prompt(question: str, chunks_text: str) -> str:
+
+def _lang_suffix(language: str) -> str:
+    return "\n" + _LANG_INSTRUCTION.get(language, _LANG_INSTRUCTION["zh"])
+
+
+def build_context_relevance_prompt(question: str, chunks_text: str, language: str = "zh") -> str:
     return f"""Evaluate CONTEXT RELEVANCE: do the retrieved chunks contain the information needed to answer the question?
 
 Question: {question}
@@ -30,10 +39,10 @@ Retrieved chunks:
 {RUBRIC}
 
 Return ONLY valid JSON. Do not add any explanation or markdown fences.
-Format: {{"score": <1-5>, "reasoning": "<quote specific gaps or confirm coverage>"}}"""
+Format: {{"score": <1-5>, "reasoning": "<quote specific gaps or confirm coverage>"}}{_lang_suffix(language)}"""
 
 
-def build_groundedness_prompt(answer: str, chunks_text: str) -> str:
+def build_groundedness_prompt(answer: str, chunks_text: str, language: str = "zh") -> str:
     return f"""Evaluate GROUNDEDNESS: does every claim in the answer have support in the retrieved chunks?
 
 Answer:
@@ -45,10 +54,10 @@ Retrieved chunks:
 {RUBRIC}
 
 Return ONLY valid JSON. Do not add any explanation or markdown fences.
-Format: {{"score": <1-5>, "reasoning": "<quote unsupported claims or confirm all claims sourced>"}}"""
+Format: {{"score": <1-5>, "reasoning": "<quote unsupported claims or confirm all claims sourced>"}}{_lang_suffix(language)}"""
 
 
-def build_answer_relevance_prompt(question: str, answer: str) -> str:
+def build_answer_relevance_prompt(question: str, answer: str, language: str = "zh") -> str:
     return f"""Evaluate ANSWER RELEVANCE: does the answer directly and completely address the question?
 
 Question: {question}
@@ -59,7 +68,7 @@ Answer:
 {RUBRIC}
 
 Return ONLY valid JSON. Do not add any explanation or markdown fences.
-Format: {{"score": <1-5>, "reasoning": "<explain completeness and directness>"}}"""
+Format: {{"score": <1-5>, "reasoning": "<explain completeness and directness>"}}{_lang_suffix(language)}"""
 
 
 def parse_grade_response(response: str) -> tuple[int | None, str]:
@@ -116,14 +125,15 @@ async def _grade_case(
     case_result: RunCaseResult,
     question: str,
     ai_cfg: AIConfig,
+    language: str = "zh",
 ) -> GradeResult:
     chunks_text = _chunks_text_from_case(case_result)
     answer = case_result.answer or "(no answer)"
 
     (cr_score, cr_reasoning, cr_ms), (g_score, g_reasoning, g_ms), (ar_score, ar_reasoning, ar_ms) = await asyncio.gather(
-        _grade_one(build_context_relevance_prompt(question, chunks_text), ai_cfg),
-        _grade_one(build_groundedness_prompt(answer, chunks_text), ai_cfg),
-        _grade_one(build_answer_relevance_prompt(question, answer), ai_cfg),
+        _grade_one(build_context_relevance_prompt(question, chunks_text, language), ai_cfg),
+        _grade_one(build_groundedness_prompt(answer, chunks_text, language), ai_cfg),
+        _grade_one(build_answer_relevance_prompt(question, answer, language), ai_cfg),
     )
 
     return GradeResult(
@@ -141,6 +151,7 @@ async def _grade_case(
 async def grade_run(
     run_id: str,
     ai_cfg: AIConfig | None = None,
+    language: str = "zh",
 ) -> GradedRun:
     if ai_cfg is None:
         from bibilab.config import load_config
@@ -156,7 +167,7 @@ async def grade_run(
     async def _run_one(case_result: RunCaseResult) -> GradeResult:
         eval_case = case_map.get(case_result.case_id)
         question = eval_case.question if eval_case else case_result.case_id
-        return await _grade_case(case_result, question, ai_cfg)
+        return await _grade_case(case_result, question, ai_cfg, language)
 
     tasks = [asyncio.create_task(_run_one(cr)) for cr in run.cases]
     grades: list[GradeResult] = []

@@ -6,7 +6,7 @@ from pathlib import Path
 
 import click
 
-from eval.config import resolve_profile, load_eval_config, save_eval_config
+from eval.config import resolve_profile, get_language, load_eval_config, save_eval_config
 from eval.storage import (
     save_eval_set,
     load_eval_set,
@@ -44,10 +44,11 @@ def create(list_id, categories, count):
         click.echo(f"Error: {e}", err=True)
         sys.exit(1)
 
-    click.echo(f"Generating eval set for list {list_id} ({len(cats)} categories, {count} each)...")
+    language = get_language()
+    click.echo(f"Generating eval set for list {list_id} ({len(cats)} categories, {count} each, lang={language})...")
 
     try:
-        es = asyncio.run(generate_eval_set(list_id, cats, count, ai_cfg))
+        es = asyncio.run(generate_eval_set(list_id, cats, count, ai_cfg, language))
     except Exception as e:
         click.echo(f"Error generating eval set: {e}", err=True)
         sys.exit(1)
@@ -84,7 +85,7 @@ def run(eval_set_id, model):
     if model:
         ai_cfg.model = model
 
-    click.echo(f"Running eval with model: {ai_cfg.model}...")
+    click.echo(f"Running eval with model: {ai_cfg.model} (lang={get_language()})...")
 
     try:
         run_result = asyncio.run(run_eval(eval_set_id, ai_cfg))
@@ -115,10 +116,11 @@ def grade(run_id):
         click.echo(f"Error: {e}", err=True)
         sys.exit(1)
 
-    click.echo(f"Grading run {run_id} with {ai_cfg.model}...")
+    language = get_language()
+    click.echo(f"Grading run {run_id} with {ai_cfg.model} (lang={language})...")
 
     try:
-        gr = asyncio.run(grade_run(run_id, ai_cfg))
+        gr = asyncio.run(grade_run(run_id, ai_cfg, language))
     except Exception as e:
         click.echo(f"Error grading run: {e}", err=True)
         sys.exit(1)

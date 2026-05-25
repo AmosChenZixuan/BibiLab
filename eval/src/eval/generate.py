@@ -14,6 +14,15 @@ from eval.models import EvalCase, EvalSet
 MAX_SOURCES = 10
 MAX_WORDS = 20000
 
+_LANG_INSTRUCTION = {
+    "zh": "",
+    "en": "\n\nIMPORTANT: All output (questions, expected_answer_draft, reasoning) MUST be in English. Ignore any Chinese-language instructions above about output language and respond in English only.",
+}
+
+
+def _with_language(prompt: str, language: str) -> str:
+    return prompt + _LANG_INSTRUCTION.get(language, "")
+
 FACTS_PROMPT = """你是一个研究助理。下面是几段视频的文字稿。请从每段文字稿中提取关键事实。
 
 严格要求：
@@ -147,9 +156,9 @@ def _load_sources(sources: list[dict]) -> str:
     return "\n".join(lines)
 
 
-def _extract_facts(source_block: str, ai_cfg: Any) -> list[dict]:
+def _extract_facts(source_block: str, ai_cfg: Any, language: str = "zh") -> list[dict]:
     """Step 1: Extract structured facts from transcripts. Low-hallucination — extraction only."""
-    full_prompt = f"{FACTS_PROMPT}\n\n文字稿内容：\n{source_block}"
+    full_prompt = _with_language(f"{FACTS_PROMPT}\n\n文字稿内容：\n{source_block}", language)
     raw = _call_llm(full_prompt, ai_cfg, llm_timeout=180, llm_max_tokens=16384)
     raw = strip_json_fences(raw)
     try:
@@ -184,6 +193,7 @@ async def generate_eval_set(
     categories: list[str],
     count: int,
     ai_cfg: Any,
+    language: str = "zh",
 ) -> EvalSet:
     from bibilab.db import get_sources_for_list
 
@@ -203,7 +213,7 @@ async def generate_eval_set(
 
     # Step 1: Extract facts (one LLM call, low hallucination risk)
     print("Extracting key facts from transcripts...", flush=True)
-    facts = _extract_facts(source_block, ai_cfg)
+    facts = _extract_facts(source_block, ai_cfg, language)
     facts_block = _format_facts(facts)
     if not facts_block.strip():
         raise ValueError("Fact extraction produced empty results. Check transcript quality or LLM config.")
@@ -218,7 +228,7 @@ async def generate_eval_set(
         if category not in CATEGORY_PROMPTS:
             return (category, [])
         prompt = CATEGORY_PROMPTS[category].format(count=count)
-        full_prompt = f"{prompt}\n\n视频内容要点：\n{facts_block}"
+        full_prompt = _with_language(f"{prompt}\n\n视频内容要点：\n{facts_block}", language)
         raw = _call_llm(full_prompt, ai_cfg, llm_timeout=180, llm_max_tokens=16384)
         raw = strip_json_fences(raw)
         try:

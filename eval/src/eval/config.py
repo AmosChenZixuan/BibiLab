@@ -12,15 +12,24 @@ from bibilab.config import AIConfig, bibilab_home
 _EVAL_CONFIG_NAME = "eval_config.json"
 _config_lock = threading.Lock()
 
-DEFAULT_EVAL_CONFIG: dict[str, dict[str, Any]] = {
-    "generate": {"source": "inherit"},
-    "test": {
-        "source": "custom",
-        "protocol": "openai",
-        "model": "glm-4.7-flash",
-        "base_url": "http://localhost:11434/v1",
+VALID_LANGUAGES = ("zh", "en")
+DEFAULT_LANGUAGE = "zh"
+LANGUAGE_DISPLAY_NAMES = {"zh": "Chinese", "en": "English"}
+
+PROFILE_NAMES = ("generate", "test", "grade")
+
+DEFAULT_EVAL_CONFIG: dict[str, Any] = {
+    "profiles": {
+        "generate": None,
+        "test": {
+            "protocol": "openai",
+            "model": "glm-4.7-flash",
+            "base_url": "http://localhost:11434/v1",
+            "api_key": "ollama",
+        },
+        "grade": None,
     },
-    "grade": {"source": "inherit"},
+    "language": DEFAULT_LANGUAGE,
 }
 
 
@@ -28,26 +37,23 @@ def _eval_config_path() -> Path:
     return bibilab_home() / _EVAL_CONFIG_NAME
 
 
-def load_eval_config() -> dict[str, dict[str, Any]]:
+def load_eval_config() -> dict[str, Any]:
     path = _eval_config_path()
+    cfg = deepcopy(DEFAULT_EVAL_CONFIG)
     if not path.exists():
-        return deepcopy(DEFAULT_EVAL_CONFIG)
+        return cfg
     with path.open() as f:
         data = json.load(f)
-    merged = deepcopy(DEFAULT_EVAL_CONFIG)
-    _deep_merge(merged, data)
-    return merged
+    if isinstance(data.get("profiles"), dict):
+        for name in PROFILE_NAMES:
+            if name in data["profiles"]:
+                cfg["profiles"][name] = data["profiles"][name]
+    if data.get("language") in VALID_LANGUAGES:
+        cfg["language"] = data["language"]
+    return cfg
 
 
-def _deep_merge(base: dict, override: dict) -> None:
-    for key, value in override.items():
-        if key in base and isinstance(base[key], dict) and isinstance(value, dict):
-            _deep_merge(base[key], value)
-        else:
-            base[key] = value
-
-
-def save_eval_config(cfg: dict[str, dict[str, Any]]) -> None:
+def save_eval_config(cfg: dict[str, Any]) -> None:
     path = _eval_config_path()
     with _config_lock:
         tmp = path.with_suffix(f".tmp.{threading.current_thread().name}")
@@ -57,18 +63,15 @@ def save_eval_config(cfg: dict[str, dict[str, Any]]) -> None:
 
 
 def resolve_profile(profile: str) -> AIConfig:
+    if profile not in PROFILE_NAMES:
+        raise KeyError(f"Unknown eval profile '{profile}'. Valid: {list(PROFILE_NAMES)}")
+
     eval_cfg = load_eval_config()
-    entry = eval_cfg.get(profile)
+    entry = eval_cfg["profiles"].get(profile)
+
     if entry is None:
-        valid = list(DEFAULT_EVAL_CONFIG.keys())
-        raise KeyError(f"Unknown eval profile '{profile}'. Valid: {valid}")
-
-    source = entry.get("source", "inherit")
-    if source == "inherit":
         from bibilab.config import load_config
-
-        backend_cfg = load_config()
-        return backend_cfg.ai
+        return load_config().ai
 
     return AIConfig(
         protocol=entry.get("protocol", "openai"),
@@ -76,3 +79,12 @@ def resolve_profile(profile: str) -> AIConfig:
         api_key=entry.get("api_key") or "ollama",
         base_url=entry.get("base_url", ""),
     )
+
+
+def get_language() -> str:
+    return load_eval_config().get("language", DEFAULT_LANGUAGE)
+
+
+def get_response_language() -> str:
+    """Display name used in LLM prompts (e.g. 'Chinese', 'English')."""
+    return LANGUAGE_DISPLAY_NAMES[get_language()]
