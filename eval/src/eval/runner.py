@@ -20,6 +20,7 @@ from bibilab.pipeline.citation_parser import parse_delta
 from bibilab.config import AIConfig, BibilabConfig, load_config
 
 from eval._utils import now_iso
+from eval.dashboard import TaskDashboard
 from eval.models import EvalCase, EvalRun, RunCaseResult
 from eval.storage import load_eval_set, save_eval_run
 
@@ -40,6 +41,7 @@ async def run_single_case(
     ai_cfg: AIConfig,
     backend_cfg: BibilabConfig,
     system_prompt: str,
+    on_status=None,
 ) -> RunCaseResult:
     start = time.monotonic()
     try:
@@ -77,6 +79,13 @@ async def run_single_case(
         llm_total_s = 0.0
         prev_ts = time.monotonic()
         in_tool_exec = False
+        first_delta_seen = False
+
+        def _status(s: str):
+            if on_status:
+                on_status(s)
+
+        _status("waiting LLM")
 
         async for event in stream_with_tools(
             messages=messages,
@@ -96,10 +105,20 @@ async def run_single_case(
 
             if event.type == "tool_call_start":
                 in_tool_exec = True
+                try:
+                    tc = json.loads(event.content or "{}")
+                    q = (tc.get("arguments") or {}).get("query", "")
+                    _status(f"retrieving \"{q[:40]}\"")
+                except Exception:
+                    _status("retrieving")
             elif event.type == "tool_result":
                 in_tool_exec = False
+                _status("synthesizing")
 
             if event.type == "delta":
+                if not first_delta_seen and (event.content or "").strip():
+                    first_delta_seen = True
+                    _status("writing answer")
                 index_to_entry = {e.index: e for e in registry.values()}
                 parsed_events, parse_buffer = parse_delta(
                     event.content or "", parse_buffer, index_to_entry,
@@ -176,31 +195,32 @@ async def run_eval(
     source_map = {r["video_id"]: r["id"] for r in rows_dict}
 
     run_id = str(uuid.uuid4())
-    total = len(locked)
 
-    async def _run_one(case: EvalCase) -> RunCaseResult:
-        return await run_single_case(
-            case=case,
-            list_id=eval_set.list_id,
-            source_ids=source_ids,
-            source_map=source_map,
-            ai_cfg=ai_cfg,
-            backend_cfg=backend_cfg,
-            system_prompt=system_prompt,
-        )
+    task_rows = [(c.id, f"{c.category:<12} {c.id[:8]}") for c in locked]
+    with TaskDashboard("Runner", task_rows) as dash:
 
-    tasks = [asyncio.create_task(_run_one(c)) for c in locked]
-    results: list[RunCaseResult] = []
-    done_count = 0
+        async def _run_one(case: EvalCase) -> RunCaseResult:
+            dash.start(case.id, status="dispatched")
+            result = await run_single_case(
+                case=case,
+                list_id=eval_set.list_id,
+                source_ids=source_ids,
+                source_map=source_map,
+                ai_cfg=ai_cfg,
+                backend_cfg=backend_cfg,
+                system_prompt=system_prompt,
+                on_status=lambda s, _id=case.id: dash.update(_id, s),
+            )
+            if result.error:
+                dash.done(case.id, ok=False, status="failed", error=result.error)
+            else:
+                dash.done(case.id, ok=True, status="answered")
+            return result
 
-    for task in asyncio.as_completed(tasks):
-        result = await task
-        results.append(result)
-        done_count += 1
-        if result.error:
-            print(f"[{done_count}/{total}] {result.case_id[:8]} ✗ {result.error}", flush=True)
-        else:
-            print(f"[{done_count}/{total}] {result.case_id[:8]} ✓ {result.llm_duration_ms}ms", flush=True)
+        tasks = [asyncio.create_task(_run_one(c)) for c in locked]
+        results: list[RunCaseResult] = []
+        for task in asyncio.as_completed(tasks):
+            results.append(await task)
 
     run = EvalRun(
         id=run_id,

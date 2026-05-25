@@ -8,6 +8,7 @@ from bibilab.pipeline._shared import _call_llm
 from bibilab.config import AIConfig
 
 from eval._utils import now_iso, strip_json_fences
+from eval.dashboard import TaskDashboard
 from eval.models import GradeResult, GradedRun, RunCaseResult
 from eval.storage import load_eval_set, load_eval_run, save_graded_run
 
@@ -126,14 +127,21 @@ async def _grade_case(
     question: str,
     ai_cfg: AIConfig,
     language: str = "zh",
+    on_dim_done=None,
 ) -> GradeResult:
     chunks_text = _chunks_text_from_case(case_result)
     answer = case_result.answer or "(no answer)"
 
+    async def _wrap(prompt, dim):
+        out = await _grade_one(prompt, ai_cfg)
+        if on_dim_done:
+            on_dim_done(dim, out[0] is not None)
+        return out
+
     (cr_score, cr_reasoning, cr_ms), (g_score, g_reasoning, g_ms), (ar_score, ar_reasoning, ar_ms) = await asyncio.gather(
-        _grade_one(build_context_relevance_prompt(question, chunks_text, language), ai_cfg),
-        _grade_one(build_groundedness_prompt(answer, chunks_text, language), ai_cfg),
-        _grade_one(build_answer_relevance_prompt(question, answer, language), ai_cfg),
+        _wrap(build_context_relevance_prompt(question, chunks_text, language), "CR"),
+        _wrap(build_groundedness_prompt(answer, chunks_text, language), "G"),
+        _wrap(build_answer_relevance_prompt(question, answer, language), "AR"),
     )
 
     return GradeResult(
@@ -162,22 +170,32 @@ async def grade_run(
     eval_set = load_eval_set(run.eval_set_id)
     case_map = {c.id: c for c in eval_set.cases}
 
-    total = len(run.cases)
+    task_rows = [(cr.case_id, f"{(case_map.get(cr.case_id).category if case_map.get(cr.case_id) else '?'):<12} {cr.case_id[:8]}") for cr in run.cases]
 
-    async def _run_one(case_result: RunCaseResult) -> GradeResult:
-        eval_case = case_map.get(case_result.case_id)
-        question = eval_case.question if eval_case else case_result.case_id
-        return await _grade_case(case_result, question, ai_cfg, language)
+    with TaskDashboard("Grader", task_rows) as dash:
+        async def _run_one(case_result: RunCaseResult) -> GradeResult:
+            dash.start(case_result.case_id, status="CR ⠋  G ⠋  AR ⠋")
+            dim_state = {"CR": "⠋", "G": "⠋", "AR": "⠋"}
 
-    tasks = [asyncio.create_task(_run_one(cr)) for cr in run.cases]
-    grades: list[GradeResult] = []
-    done_count = 0
+            def _dim_done(dim: str, ok: bool):
+                dim_state[dim] = "✓" if ok else "✗"
+                dash.update(
+                    case_result.case_id,
+                    f"CR {dim_state['CR']}  G {dim_state['G']}  AR {dim_state['AR']}",
+                )
 
-    for task in asyncio.as_completed(tasks):
-        grade = await task
-        grades.append(grade)
-        done_count += 1
-        print(f"[{done_count}/{total}] {grade.case_id[:8]} ✓ (CR={grade.context_relevance}, G={grade.groundedness}, AR={grade.answer_relevance}) {grade.llm_duration_ms}ms", flush=True)
+            eval_case = case_map.get(case_result.case_id)
+            question = eval_case.question if eval_case else case_result.case_id
+            grade = await _grade_case(case_result, question, ai_cfg, language, on_dim_done=_dim_done)
+            scores = f"CR={grade.context_relevance} G={grade.groundedness} AR={grade.answer_relevance}"
+            ok = grade.context_relevance > 0 and grade.groundedness > 0 and grade.answer_relevance > 0
+            dash.done(case_result.case_id, ok=ok, status=scores)
+            return grade
+
+        tasks = [asyncio.create_task(_run_one(cr)) for cr in run.cases]
+        grades: list[GradeResult] = []
+        for task in asyncio.as_completed(tasks):
+            grades.append(await task)
 
     gr = GradedRun(
         run_id=run_id,

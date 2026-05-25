@@ -9,6 +9,7 @@ from typing import Any
 from bibilab.pipeline._shared import _call_llm
 
 from eval._utils import now_iso, strip_json_fences
+from eval.dashboard import TaskDashboard
 from eval.models import EvalCase, EvalSet
 
 MAX_SOURCES = 10
@@ -199,54 +200,56 @@ async def generate_eval_set(
 
     rows = await get_sources_for_list(list_id)
     all_sources = [dict(r) for r in rows]
-
-    print(f"Selecting {min(MAX_SOURCES, len(all_sources))}/{len(all_sources)} sources...", flush=True)
     selected = random.sample(all_sources, min(MAX_SOURCES, len(all_sources)))
-
-    print("Loading transcripts...", flush=True)
     source_block = _load_sources(selected)
     if not source_block:
         raise ValueError("No transcript content found for this list.")
 
     word_count = len(source_block.split())
-    print(f"Loaded {len(selected)} sources, ~{word_count} words.", flush=True)
 
-    # Step 1: Extract facts (one LLM call, low hallucination risk)
-    print("Extracting key facts from transcripts...", flush=True)
-    facts = _extract_facts(source_block, ai_cfg, language)
-    facts_block = _format_facts(facts)
-    if not facts_block.strip():
-        raise ValueError("Fact extraction produced empty results. Check transcript quality or LLM config.")
+    task_rows = [("__facts__", "extract facts")] + [(cat, cat) for cat in categories]
 
-    fact_word_count = len(facts_block.split())
-    print(f"Facts extracted: ~{fact_word_count} words (compressed {word_count // max(1, fact_word_count)}:1).", flush=True)
+    with TaskDashboard(
+        "Generate",
+        task_rows,
+        banner=f"{len(selected)} sources, ~{word_count} words, lang={language}",
+    ) as dash:
+        dash.start("__facts__", status="calling LLM")
+        facts = _extract_facts(source_block, ai_cfg, language)
+        facts_block = _format_facts(facts)
+        if not facts_block.strip():
+            dash.done("__facts__", ok=False, status="empty result")
+            raise ValueError("Fact extraction produced empty results. Check transcript quality or LLM config.")
+        fact_word_count = len(facts_block.split())
+        dash.done(
+            "__facts__",
+            ok=True,
+            status=f"{fact_word_count} words ({word_count // max(1, fact_word_count)}:1 compression)",
+        )
 
-    # Step 2: Generate questions from facts only (all categories in parallel)
-    print(f"Generating {count} questions × {len(categories)} categories...", flush=True)
+        def _generate_one(category: str) -> tuple[str, list[dict]]:
+            dash.start(category, status=f"generating {count} questions")
+            if category not in CATEGORY_PROMPTS:
+                dash.done(category, ok=False, status="unknown category")
+                return (category, [])
+            prompt = CATEGORY_PROMPTS[category].format(count=count)
+            full_prompt = _with_language(f"{prompt}\n\n视频内容要点：\n{facts_block}", language)
+            raw = _call_llm(full_prompt, ai_cfg, llm_timeout=180, llm_max_tokens=16384)
+            raw = strip_json_fences(raw)
+            try:
+                data = json.loads(raw)
+                qs = data.get("questions", [])
+                dash.done(category, ok=bool(qs), status=f"{len(qs)} generated")
+                return (category, qs)
+            except json.JSONDecodeError:
+                dash.done(category, ok=False, status="JSON parse failed")
+                return (category, [])
 
-    def _generate_one(category: str) -> tuple[str, list[dict]]:
-        if category not in CATEGORY_PROMPTS:
-            return (category, [])
-        prompt = CATEGORY_PROMPTS[category].format(count=count)
-        full_prompt = _with_language(f"{prompt}\n\n视频内容要点：\n{facts_block}", language)
-        raw = _call_llm(full_prompt, ai_cfg, llm_timeout=180, llm_max_tokens=16384)
-        raw = strip_json_fences(raw)
-        try:
-            data = json.loads(raw)
-            return (category, data.get("questions", []))
-        except json.JSONDecodeError:
-            return (category, [])
-
-    cases: list[EvalCase] = []
-    total = len(categories)
-
-    with ThreadPoolExecutor(max_workers=len(categories)) as pool:
-        futures = {pool.submit(_generate_one, cat): cat for cat in categories}
-        done = 0
-        for future in as_completed(futures):
-            cat, qs = future.result()
-            done += 1
-            if qs:
+        cases: list[EvalCase] = []
+        with ThreadPoolExecutor(max_workers=len(categories)) as pool:
+            futures = {pool.submit(_generate_one, cat): cat for cat in categories}
+            for future in as_completed(futures):
+                cat, qs = future.result()
                 for q in qs:
                     cases.append(
                         EvalCase(
@@ -259,9 +262,6 @@ async def generate_eval_set(
                             notes="",
                         )
                     )
-                print(f"  [{done}/{total}] {cat} ✓ {len(qs)} generated", flush=True)
-            else:
-                print(f"  [{done}/{total}] {cat} — skipped", flush=True)
 
     now = now_iso()
     return EvalSet(
