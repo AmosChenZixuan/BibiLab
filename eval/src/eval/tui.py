@@ -36,20 +36,32 @@ class _QuitConfirm(ModalScreen[bool]):
         self.dismiss(False)
 
 
+_FIELDS = ("question", "expected_answer_draft")
+_FIELD_LABELS_REVIEW = {
+    "question": "Question",
+    "expected_answer_draft": "Expected Answer",
+}
+
+
 class ReviewApp(App):
-    """Single-panel eval case review. j/k navigate, space toggles lock, e edits inline."""
+    """Eval case review. left/right switch case, up/down select field, enter edit."""
 
     CSS = """
     #main { padding: 1 2; }
-    #status-bar { height: 3; background: $surface; padding: 0 1; }
-    TextArea { margin-bottom: 1; }
+    #status-bar { height: 1; background: $surface; padding: 0 1; }
+    .row { padding: 0 1; }
+    .row-selected { background: $boost; }
+    .field-body { padding: 0 1 1 4; }
+    TextArea { margin: 0 1 1 4; height: auto; max-height: 20; }
     """
 
     BINDINGS = [
-        Binding("down,j", "next", "Next"),
-        Binding("up,k", "prev", "Prev"),
+        Binding("left,h", "prev_case", "Prev case"),
+        Binding("right,l", "next_case", "Next case"),
+        Binding("down,j", "next_field", "Next field"),
+        Binding("up,k", "prev_field", "Prev field"),
         Binding("space", "toggle_lock", "Lock/unlock"),
-        Binding("e", "edit", "Edit"),
+        Binding("enter,e", "edit", "Edit"),
         Binding("ctrl+s", "save", "Save"),
         Binding("q", "quit_app", "Quit"),
     ]
@@ -59,9 +71,10 @@ class ReviewApp(App):
         self.eval_set_id = eval_set_id
         self.eval_set = load_eval_set(eval_set_id)
         self.case_index = 0
+        self.field_index = 0
         self._dirty = False
-        self._editing = False
-        self._edit_backup: tuple[str, str] = ("", "")
+        self._editing_field: str | None = None
+        self._edit_backup: str = ""
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -85,47 +98,63 @@ class ReviewApp(App):
 
         if not self.eval_set.cases:
             main.mount(Static("No cases."))
+            status.update("")
             return
 
         self.case_index = max(0, min(self.case_index, len(self.eval_set.cases) - 1))
         case = self.eval_set.cases[self.case_index]
+        lock_str = "🔒 LOCKED" if case.locked else "🔓 UNLOCKED"
+        dirty_str = "   *unsaved*" if self._dirty else ""
+        status.update(
+            f"Case {self.case_index + 1}/{len(self.eval_set.cases)} — {case.category}   "
+            f"{lock_str}   (←/→ case · ↑/↓ field · enter edit · space lock · ctrl+s save){dirty_str}"
+        )
 
-        sb = [f"Case {self.case_index + 1}/{len(self.eval_set.cases)} — {case.category}"]
-        status.update("".join(sb))
+        for i, field in enumerate(_FIELDS):
+            sel = "→" if i == self.field_index else " "
+            cls = "row row-selected" if i == self.field_index else "row"
+            main.mount(Static(f"{sel} {_FIELD_LABELS_REVIEW[field]}:", classes=cls))
+            value = getattr(case, field, "")
+            if self._editing_field == field:
+                ta = TextArea(value, id=f"edit-{field}")
+                main.mount(ta)
+                ta.focus()
+            else:
+                main.mount(Static(value or "(empty)", classes="field-body"))
 
-        if case.locked:
-            main.mount(Static("🔒 LOCKED — included in eval run"))
-        else:
-            main.mount(Static("🔓 UNLOCKED — skipped during eval run"))
+        if case.expected_sources:
+            main.mount(Static(f"  Expected Sources: {', '.join(case.expected_sources)}", classes="field-body"))
 
-        if self._editing:
-            main.mount(Static("Question (edit, Ctrl+S save, Esc cancel):"))
-            main.mount(TextArea(case.question, id="edit-question"))
-            main.mount(Static("Expected answer:"))
-            main.mount(TextArea(case.expected_answer_draft, id="edit-answer"))
-        else:
-            main.mount(Static(f"Question:\n{case.question}"))
-            if case.expected_answer_draft:
-                main.mount(Static(f"Expected Answer:\n{case.expected_answer_draft}"))
-            if case.expected_sources:
-                main.mount(Static(f"Expected Sources: {', '.join(case.expected_sources)}"))
-
-    def action_next(self):
-        if self._editing:
+    def action_next_case(self):
+        if self._editing_field is not None:
             return
         if self.case_index < len(self.eval_set.cases) - 1:
             self.case_index += 1
             self._refresh()
 
-    def action_prev(self):
-        if self._editing:
+    def action_prev_case(self):
+        if self._editing_field is not None:
             return
         if self.case_index > 0:
             self.case_index -= 1
             self._refresh()
 
+    def action_next_field(self):
+        if self._editing_field is not None:
+            return
+        if self.field_index < len(_FIELDS) - 1:
+            self.field_index += 1
+            self._refresh()
+
+    def action_prev_field(self):
+        if self._editing_field is not None:
+            return
+        if self.field_index > 0:
+            self.field_index -= 1
+            self._refresh()
+
     def action_toggle_lock(self):
-        if self._editing:
+        if self._editing_field is not None:
             return
         if self.eval_set.cases:
             case = self.eval_set.cases[self.case_index]
@@ -136,62 +165,65 @@ class ReviewApp(App):
     def action_edit(self):
         if not self.eval_set.cases:
             return
-        case = self.eval_set.cases[self.case_index]
-        if self._editing:
+        if self._editing_field is not None:
             self._commit_edit()
-        else:
-            self._edit_backup = (case.question, case.expected_answer_draft)
-            self._editing = True
-            self._refresh()
+            return
+        field = _FIELDS[self.field_index]
+        case = self.eval_set.cases[self.case_index]
+        self._edit_backup = getattr(case, field, "")
+        self._editing_field = field
+        self._refresh()
 
     def _commit_edit(self):
+        if self._editing_field is None:
+            return
         case = self.eval_set.cases[self.case_index]
+        field = self._editing_field
         try:
-            q = self.query_one("#edit-question").text
-            a = self.query_one("#edit-answer").text
-            if q.strip():
-                case.question = q.strip()
-            case.expected_answer_draft = a.strip()
-            self._dirty = True
+            new_val = self.query_one(f"#edit-{field}", TextArea).text
         except Exception:
-            pass
-        self._editing = False
+            new_val = self._edit_backup
+        if field == "question":
+            new_val = new_val.strip()
+            if not new_val:
+                new_val = self._edit_backup
+        if getattr(case, field, "") != new_val:
+            setattr(case, field, new_val)
+            self._dirty = True
+        self._editing_field = None
         self._refresh()
 
     def _cancel_edit(self):
-        case = self.eval_set.cases[self.case_index]
-        case.question, case.expected_answer_draft = self._edit_backup
-        self._editing = False
+        self._editing_field = None
         self._refresh()
 
     def action_save(self):
-        if self._editing:
+        if self._editing_field is not None:
             self._commit_edit()
         save_eval_set(self.eval_set)
         self._dirty = False
+        self._refresh()
         self.notify("Saved!", timeout=2)
 
     def action_quit_app(self):
-        if self._editing:
+        if self._editing_field is not None:
             self._cancel_edit()
         if self._dirty:
-            self._confirm_quit()
+            def handle(result: bool):
+                if result:
+                    self.exit()
+            self.push_screen(_QuitConfirm(), handle)
         else:
             self.exit()
 
-    def _confirm_quit(self):
-        def handle(result: bool):
-            if result:
-                self.exit()
-        self.push_screen(_QuitConfirm(), handle)
-
     def on_key(self, event):
-        if self._editing and event.key == "escape":
-            self._cancel_edit()
-            event.prevent_default()
-        elif self._editing and event.key == "ctrl+s":
-            self._commit_edit()
-            event.prevent_default()
+        if self._editing_field is not None:
+            if event.key == "escape":
+                self._cancel_edit()
+                event.prevent_default()
+            elif event.key == "ctrl+s":
+                self._commit_edit()
+                event.prevent_default()
 
 
 def run_review_tui(eval_set_id: str):
