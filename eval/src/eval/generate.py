@@ -4,6 +4,7 @@ import json
 import random
 import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from pathlib import Path
 from typing import Any
 
 from bibilab.pipeline._shared import _call_llm
@@ -48,23 +49,24 @@ _LANG_INSTRUCTION = {
 def _with_language(prompt: str, language: str) -> str:
     return prompt + _LANG_INSTRUCTION.get(language, "")
 
-FACTS_PROMPT = """你是一个研究助理。下面是几段视频的文字稿。请从每段文字稿中提取关键事实。
+SOURCE_FACTS_PROMPT = """你是一个研究助理。下面是一段视频的文字稿。请从中提取关键事实。
 
 严格要求：
 - 只提取文字稿中明确陈述的内容，不要推断、不要补充、不要联想
 - 每条事实必须能在原文中找到对应
 - 中文输出
 
-对每个来源提取：
+提取以下五类：
 - topics: 讨论了哪些主题/话题
 - claims: 明确提出的观点、结论、定义（"X是Y"、"X导致Y"这类断言）
 - entities: 提到的专有名词、术语、人名、工具名、方法名
 - contrasts: 文中提到的对比、不同观点或方案差异
 - temporal: 涉及时间、版本、时效性的信息
 
-只返回 JSON，不要任何额外文字：
-{{"sources": [{{"id": "...", "topics": ["..."], "claims": ["..."], "entities": ["..."], "contrasts": ["..."], "temporal": ["..."]}}]}}
-如果某来源没有某类信息，对应字段返回空列表。"""
+只返回单个 JSON 对象，不要数组包裹，不要 markdown fences，不要额外文字。Schema：
+{{"topics": ["..."], "claims": ["..."], "entities": ["..."], "contrasts": ["..."], "temporal": ["..."]}}
+
+如果某类没有信息，对应字段返回空列表。"""
 
 CATEGORY_PROMPTS: dict[str, str] = {
     "narrow": """你是一个知识库的普通用户。下面是一些视频内容的要点摘要。你还没有看过原视频。
@@ -164,11 +166,18 @@ def _read_transcript(transcript_relpath: str) -> str:
     return p.read_text()
 
 
-def _load_sources(sources: list[dict]) -> str:
-    """Per-source word budget = MAX_WORDS / len(sources), min 500."""
+def _load_per_source(sources: list[dict]) -> list[dict]:
+    """Load truncated transcripts per source.
+
+    Per-source word budget = MAX_WORDS / len(sources), min 500. Returns sources
+    enriched with a 'transcript' field; missing transcripts are dropped and
+    logged to stderr. Splitting per source (vs one giant block) bounds each
+    extraction call's input — keeps reasoning-model thinking budget from
+    swallowing the whole max_tokens.
+    """
     import sys
     word_budget = max(500, MAX_WORDS // max(1, len(sources)))
-    lines: list[str] = []
+    loaded: list[dict] = []
     missing: list[str] = []
     for s in sources:
         path = s.get("transcript_path", "")
@@ -176,30 +185,106 @@ def _load_sources(sources: list[dict]) -> str:
         if not raw:
             missing.append(path or f"<no path for {s.get('id', '?')}>")
             continue
-        raw = _truncate_to_words(raw, word_budget)
-        lines.append(f"=== [{s['id']}] {s.get('title', '')} ===")
-        lines.append(raw)
-        lines.append("")
+        loaded.append({
+            "id": s["id"],
+            "title": s.get("title", ""),
+            "transcript": _truncate_to_words(raw, word_budget),
+        })
     if missing:
         print(f"[generate] missing transcripts ({len(missing)}): {missing}", file=sys.stderr)
-    return "\n".join(lines)
+    return loaded
 
 
-def _extract_facts(source_block: str, ai_cfg: Any, language: str = "zh") -> tuple[list[dict], str | None]:
-    """Extract structured facts from transcripts (step 1 of 2).
+_RETRY_HINT = (
+    "\n\nYour previous response had invalid JSON. Return ONLY a single JSON "
+    'object {"topics": [...], "claims": [...], "entities": [...], '
+    '"contrasts": [...], "temporal": [...]} with no fences, no array wrapping, '
+    "no extra text."
+)
 
-    Returns (sources, parse_error). parse_error is None on success; otherwise a
-    short diagnostic including the LLM's raw output prefix so a downstream caller
-    can surface *why* extraction failed rather than just "empty result".
-    """
-    full_prompt = _with_language(f"{FACTS_PROMPT}\n\n文字稿内容：\n{source_block}", language)
-    raw = _call_llm(full_prompt, ai_cfg, llm_timeout=180, llm_max_tokens=16384)
+
+def _persist_failed_raw(kind: str, raw: str) -> Path:
+    """Write the raw LLM response to ~/.bibilab/evals/_failed/ for inspection."""
+    from bibilab.config import bibilab_home
+    from datetime import datetime, timezone
+
+    failed_dir = bibilab_home() / "evals" / "_failed"
+    failed_dir.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%f")
+    path = failed_dir / f"{kind}_{stamp}.txt"
+    path.write_text(raw)
+    return path
+
+
+def _try_parse_object(raw: str) -> tuple[dict | None, str | None]:
     stripped = strip_json_fences(raw)
     try:
         data = json.loads(stripped)
-        return (data.get("sources", []), None)
+        if not isinstance(data, dict):
+            return (None, f"Expected JSON object, got {type(data).__name__}; raw prefix: {raw[:200]!r}")
+        return (data, None)
     except json.JSONDecodeError as e:
-        return ([], f"JSONDecodeError: {e}; raw prefix: {raw[:200]!r}")
+        return (None, f"JSONDecodeError: {e}; raw prefix: {raw[:200]!r}")
+
+
+def _extract_one_source(source: dict, ai_cfg: Any, language: str = "zh") -> tuple[dict | None, str | None]:
+    """Extract facts for a single source. Retries once on malformed JSON.
+
+    Returns (fact_dict | None, error | None). On success, fact_dict carries the
+    source id (set by caller, not LLM, to prevent id hallucination). On final
+    failure, raw responses persisted to ~/.bibilab/evals/_failed/.
+    """
+    sid = source["id"]
+    body = f"{SOURCE_FACTS_PROMPT}\n\n文字稿内容：\n{source.get('transcript', '')}"
+    base_prompt = _with_language(body, language)
+    raw = _call_llm(base_prompt, ai_cfg, llm_timeout=120, llm_max_tokens=4096)
+    data, err = _try_parse_object(raw)
+    if data is None:
+        raw2 = _call_llm(base_prompt + _RETRY_HINT, ai_cfg, llm_timeout=120, llm_max_tokens=4096)
+        data, err2 = _try_parse_object(raw2)
+        if data is None:
+            artifact = _persist_failed_raw(
+                f"facts_{sid}",
+                f"--- attempt 1 ---\n{raw}\n\n--- attempt 2 ---\n{raw2}",
+            )
+            return (None, f"source {sid}: {err2 or err} (raw persisted: {artifact.name})")
+
+    data["id"] = sid
+    return (data, None)
+
+
+def _extract_facts(
+    sources: list[dict],
+    ai_cfg: Any,
+    language: str = "zh",
+    on_progress=None,
+) -> tuple[list[dict], list[str]]:
+    """Step 1 of 2: extract facts per source in parallel.
+
+    Returns (facts, errors). Partial success allowed — a source whose extraction
+    fails twice is skipped and its error appended; the rest still produce facts.
+    Caller decides whether `len(facts) == 0` is fatal.
+    """
+    if not sources:
+        return ([], [])
+
+    facts: list[dict] = []
+    errors: list[str] = []
+    done = 0
+
+    with ThreadPoolExecutor(max_workers=len(sources)) as pool:
+        futures = {pool.submit(_extract_one_source, s, ai_cfg, language): s for s in sources}
+        for fut in as_completed(futures):
+            data, err = fut.result()
+            if data is not None:
+                facts.append(data)
+            if err is not None:
+                errors.append(err)
+            done += 1
+            if on_progress is not None:
+                on_progress(done, len(sources), len(errors))
+
+    return (facts, errors)
 
 
 def _format_facts(facts: list[dict]) -> str:
@@ -237,34 +322,44 @@ async def generate_eval_set(
     rows = await get_sources_for_list(list_id)
     all_sources = [dict(r) for r in rows]
     selected = random.sample(all_sources, min(MAX_SOURCES, len(all_sources)))
-    source_block = _load_sources(selected)
-    if not source_block:
+    per_source = _load_per_source(selected)
+    if not per_source:
         raise ValueError("No transcript content found for this list.")
 
-    word_count = _count_words(source_block)
+    word_count = sum(_count_words(s["transcript"]) for s in per_source)
+    n_sources = len(per_source)
 
     task_rows = [("__facts__", "extract facts")] + [(cat, cat) for cat in categories]
 
     with TaskDashboard(
         "Generate",
         task_rows,
-        banner=f"{len(selected)} sources, ~{word_count} words, lang={language}",
+        banner=f"{n_sources} sources, ~{word_count} words, lang={language}",
     ) as dash:
-        dash.start("__facts__", status="calling LLM")
-        facts, facts_err = _extract_facts(source_block, ai_cfg, language)
+        dash.start("__facts__", status=f"extracting 0/{n_sources}")
+
+        def _on_progress(done: int, total: int, n_errors: int):
+            dash.update("__facts__", f"extracting {done}/{total} ({n_errors} failed)")
+
+        facts, facts_errors = _extract_facts(per_source, ai_cfg, language, on_progress=_on_progress)
         facts_block = _format_facts(facts)
-        if not facts_block.strip():
-            status = facts_err or "empty result"
-            dash.done("__facts__", ok=False, status=status[:80])
-            if facts_err:
-                raise ValueError(f"Fact extraction failed to parse LLM response. {facts_err}")
-            raise ValueError("Fact extraction produced empty results. Check transcript quality or LLM config.")
+
+        if not facts:
+            sample = "; ".join(facts_errors[:3]) if facts_errors else "no transcript content"
+            dash.done("__facts__", ok=False, status=f"all {n_sources} failed")
+            raise ValueError(f"Fact extraction failed for all sources. Errors: {sample}")
+
         fact_word_count = _count_words(facts_block)
-        dash.done(
-            "__facts__",
-            ok=True,
-            status=f"{fact_word_count} words ({word_count // max(1, fact_word_count)}:1 compression)",
-        )
+        compression = word_count // max(1, fact_word_count)
+        n_ok = len(facts)
+        ok_all = n_ok == n_sources
+        status = f"{n_ok}/{n_sources} sources, {fact_word_count} words ({compression}:1)"
+        dash.done("__facts__", ok=ok_all, status=status)
+        if facts_errors:
+            import sys
+            print(f"[generate] {len(facts_errors)} source(s) failed extraction:", file=sys.stderr)
+            for e in facts_errors:
+                print(f"  - {e}", file=sys.stderr)
 
         def _generate_one(category: str) -> tuple[str, list[dict]]:
             dash.start(category, status=f"generating {count} questions")
