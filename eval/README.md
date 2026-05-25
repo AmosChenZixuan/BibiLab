@@ -15,12 +15,14 @@ uv sync
 uv run bibilab-eval config
 ```
 
-Three profiles:
-- **generate** — LLM that creates eval questions (defaults to backend config)
-- **test** — less-capable model for robustness testing (custom: ollama glm-4.7-flash)
-- **grade** — LLM that judges answer quality (defaults to backend config)
+Three profiles (each null → falls back to backend `~/.bibilab/config.json`):
+- **generate** — LLM that creates eval questions
+- **test** — model under test (e.g. ollama glm-4.7-flash)
+- **grade** — LLM that judges answer quality
 
-Each profile can inherit from `~/.bibilab/config.json` or be configured independently.
+Plus **language** (`zh`|`en`): test set + answer output language.
+
+TUI: ↑/↓ navigate, space toggle profile (null↔custom) or language, enter edit field, ctrl+s save, q quit.
 
 ## Workflow
 
@@ -40,10 +42,11 @@ uv run bibilab-eval run <eval-set-id>
 uv run bibilab-eval grade <run-id>
 # → 3 LLM calls per case → scores 0-5 for context relevance, groundedness, answer relevance
 
-# 4. View report
+# 4. View report (TUI by default)
 uv run bibilab-eval report <run-id>
-uv run bibilab-eval report <run-id> --compare <prev-run-id>  # diff
-uv run bibilab-eval report <run-id> --json                    # machine-readable
+#   ↑/↓ pick category, enter drill in, ←/→ cycle cases, c compare, esc back, q quit
+uv run bibilab-eval report <run-id> --compare <prev-run-id>  # pre-load diff in TUI
+uv run bibilab-eval report <run-id> --json                    # machine-readable, skip TUI
 
 # 5. Bootstrap another list
 uv run bibilab-eval export-skeleton <eval-set-id> --target-list <other-list-id>

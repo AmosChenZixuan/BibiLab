@@ -143,18 +143,10 @@ def grade(run_id):
 
 @main.command()
 @click.argument("run_id")
-@click.option("--compare", default=None, help="Previous run ID to diff against.")
-@click.option("--json", "json_out", is_flag=True, help="Machine-readable output.")
+@click.option("--compare", default=None, help="Previous run ID to diff against (use with --json or pre-load in TUI).")
+@click.option("--json", "json_out", is_flag=True, help="Machine-readable JSON output (skip TUI).")
 def report(run_id, compare, json_out):
-    """Print eval report."""
-    from eval.reporter import (
-        aggregate_scores,
-        diff_scores,
-        format_report_text,
-        format_per_question,
-        report_json,
-    )
-
+    """View eval report (TUI by default; --json for machine output)."""
     try:
         gr = load_graded_run(run_id)
         eval_run = load_eval_run(run_id)
@@ -162,15 +154,20 @@ def report(run_id, compare, json_out):
         click.echo(f"Error: {e}", err=True)
         sys.exit(1)
 
+    if not json_out:
+        from eval.tui import run_report_tui
+        run_report_tui(run_id, compare)
+        return
+
+    from eval.reporter import aggregate_scores, diff_scores, report_json
+
     es = load_eval_set(eval_run.eval_set_id)
     cat_map = {c.id: c.category for c in es.cases}
     agg = aggregate_scores(gr.grades, cat_map)
-
     test_model = eval_run.test_profile.get("model", "?")
     grade_model = gr.grade_profile.get("model", "?")
 
     diff = None
-    compare_model = None
     if compare:
         try:
             prev_gr = load_graded_run(compare)
@@ -179,19 +176,10 @@ def report(run_id, compare, json_out):
             prev_cat_map = {c.id: c.category for c in prev_es.cases}
             prev_agg = aggregate_scores(prev_gr.grades, prev_cat_map)
             diff = diff_scores(agg, prev_agg)
-            compare_model = prev_run.test_profile.get("model", "?")
         except FileNotFoundError as e:
             click.echo(f"Warning: comparison run not found: {e}", err=True)
 
-    if json_out:
-        click.echo(report_json(run_id, es.id, test_model, grade_model, agg, diff, gr, compare))
-    else:
-        click.echo(
-            format_report_text(
-                es.id, len(gr.grades), test_model, grade_model, agg, diff, compare_model
-            )
-        )
-        click.echo(format_per_question(gr, cat_map, es.id))
+    click.echo(report_json(run_id, es.id, test_model, grade_model, agg, diff, gr, compare))
 
 
 @main.command()

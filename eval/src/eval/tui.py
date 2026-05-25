@@ -468,3 +468,318 @@ class ConfigApp(App):
 def run_config_tui():
     app = ConfigApp()
     app.run()
+
+
+# -- Report TUI --
+
+from eval.reporter import aggregate_scores  # noqa: E402
+from eval.storage import load_eval_run, load_graded_run, list_runs as _list_runs  # noqa: E402
+
+
+def _fmt_diff(dv: float) -> str:
+    if dv > 0:
+        return f"(+{dv})"
+    if dv < 0:
+        return f"({dv})"
+    return "(=)"
+
+
+class _CompareModal(ModalScreen[str | None]):
+    CSS = """
+    #compare-dialog { width: 80; padding: 1 2; background: $surface; }
+    .crow { padding: 0 1; }
+    .crow-selected { background: $boost; }
+    """
+
+    BINDINGS = [
+        Binding("down,j", "next", "Next"),
+        Binding("up,k", "prev", "Prev"),
+        Binding("enter", "pick", "Pick"),
+        Binding("c", "clear", "Clear"),
+        Binding("escape,q", "cancel", "Cancel"),
+    ]
+
+    def __init__(self, runs: list[tuple[str, str, str]]):
+        super().__init__()
+        self.runs = runs
+        self.cursor = 0
+
+    def compose(self):
+        self._box = Vertical(id="compare-dialog")
+        yield self._box
+
+    def on_mount(self):
+        self._refresh()
+
+    def _refresh(self):
+        self._box.remove_children()
+        self._box.mount(Static("Compare against: (enter pick · c clear · esc cancel)"))
+        if not self.runs:
+            self._box.mount(Static("(no other graded runs)", classes="crow"))
+            return
+        for i, (rid, ts, model) in enumerate(self.runs):
+            sel = "→" if i == self.cursor else " "
+            cls = "crow crow-selected" if i == self.cursor else "crow"
+            self._box.mount(Static(f"{sel} {rid[:8]}  {ts}  {model}", classes=cls))
+
+    def action_next(self):
+        if self.runs and self.cursor < len(self.runs) - 1:
+            self.cursor += 1
+            self._refresh()
+
+    def action_prev(self):
+        if self.runs and self.cursor > 0:
+            self.cursor -= 1
+            self._refresh()
+
+    def action_pick(self):
+        if self.runs:
+            self.dismiss(self.runs[self.cursor][0])
+
+    def action_clear(self):
+        self.dismiss("")  # sentinel: clear compare
+
+    def action_cancel(self):
+        self.dismiss(None)
+
+
+class ReportApp(App):
+    """Eval report. Root: per-category aggregate; enter dives into case-by-case."""
+
+    CSS = """
+    #main { padding: 1 2; }
+    #status-bar { height: 1; background: $surface; padding: 0 1; }
+    .row { padding: 0 1; }
+    .row-selected { background: $boost; }
+    .header { color: $accent; padding: 0 0 1 0; }
+    .judge { padding: 0 1 1 2; }
+    """
+
+    BINDINGS = [
+        Binding("down,j", "next", "Next"),
+        Binding("up,k", "prev", "Prev"),
+        Binding("right,l", "next_case", "Next case"),
+        Binding("left,h", "prev_case", "Prev case"),
+        Binding("enter", "enter_cat", "Open"),
+        Binding("c", "compare", "Compare"),
+        Binding("escape,backspace", "back", "Back"),
+        Binding("q", "quit_app", "Quit"),
+    ]
+
+    def __init__(self, run_id: str, compare_run_id: str | None = None):
+        super().__init__()
+        self.run_id = run_id
+        self.compare_run_id = compare_run_id
+        self.view = "cats"        # "cats" | "cases"
+        self.cat_cursor = 0
+        self.case_cursor = 0
+        self.active_cat = ""
+        self._load()
+
+    def _load(self):
+        self.gr = load_graded_run(self.run_id)
+        self.eval_run = load_eval_run(self.run_id)
+        self.eval_set = load_eval_set(self.eval_run.eval_set_id)
+        self.case_map = {c.id: c for c in self.eval_set.cases}
+        self.cat_map = {c.id: c.category for c in self.eval_set.cases}
+        self.agg = aggregate_scores(self.gr.grades, self.cat_map)
+        self.grade_by_id = {g.case_id: g for g in self.gr.grades}
+        self.answer_by_id = {c.case_id: c for c in self.eval_run.cases}
+        self.cats = sorted(c for c in self.agg if c != "overall")
+        self.cases_by_cat: dict[str, list[str]] = {}
+        for g in self.gr.grades:
+            cat = self.cat_map.get(g.case_id, "?")
+            self.cases_by_cat.setdefault(cat, []).append(g.case_id)
+
+        self.prev_agg: dict | None = None
+        self.prev_grade_by_id: dict = {}
+        self.compare_model: str | None = None
+        if self.compare_run_id:
+            try:
+                prev_gr = load_graded_run(self.compare_run_id)
+                prev_run = load_eval_run(self.compare_run_id)
+                prev_es = load_eval_set(prev_run.eval_set_id)
+                prev_cat_map = {c.id: c.category for c in prev_es.cases}
+                self.prev_agg = aggregate_scores(prev_gr.grades, prev_cat_map)
+                self.prev_grade_by_id = {g.case_id: g for g in prev_gr.grades}
+                self.compare_model = prev_run.test_profile.get("model", "?")
+            except FileNotFoundError:
+                self.compare_run_id = None
+
+    def _agg_diff(self, cat: str, dim: str) -> str:
+        if not self.prev_agg or cat not in self.prev_agg:
+            return ""
+        cur = self.agg.get(cat, {}).get(dim, 0.0)
+        prev = self.prev_agg.get(cat, {}).get(dim, 0.0)
+        return " " + _fmt_diff(round(cur - prev, 1))
+
+    def _case_diff(self, cid: str, attr: str) -> str:
+        prev = self.prev_grade_by_id.get(cid)
+        if not prev:
+            return ""
+        cur_v = getattr(self.grade_by_id[cid], attr, 0)
+        prev_v = getattr(prev, attr, 0)
+        if cur_v == 0 or prev_v == 0:
+            return ""
+        return " " + _fmt_diff(cur_v - prev_v)
+
+    def compose(self) -> ComposeResult:
+        yield Header()
+        yield Vertical(
+            VerticalScroll(id="main"),
+            Static("", id="status-bar"),
+        )
+        yield Footer()
+
+    def on_mount(self):
+        self._refresh()
+
+    def _header_text(self) -> str:
+        test_model = self.eval_run.test_profile.get("model", "?")
+        grade_model = self.gr.grade_profile.get("model", "?")
+        overall = self.agg.get("overall", {})
+        cmp_line = f"   vs {self.compare_model} ({self.compare_run_id[:8]})" if self.compare_model else ""
+        return (
+            f"Eval Set: {self.eval_set.id[:8]}   Cases: {len(self.gr.grades)}   "
+            f"Test: {test_model}   Grade: {grade_model}{cmp_line}\n"
+            f"OVERALL  CR={overall.get('context_relevance', 0.0)}{self._agg_diff('overall', 'context_relevance')}  "
+            f"G={overall.get('groundedness', 0.0)}{self._agg_diff('overall', 'groundedness')}  "
+            f"AR={overall.get('answer_relevance', 0.0)}{self._agg_diff('overall', 'answer_relevance')}"
+        )
+
+    def _refresh(self):
+        main = self.query_one("#main")
+        main.remove_children()
+        status = self.query_one("#status-bar")
+
+        main.mount(Static(self._header_text(), classes="header"))
+
+        if self.view == "cats":
+            main.mount(Static(f"{'category':<14} {'n':>3}  CR     G      AR", classes="row"))
+            for i, cat in enumerate(self.cats):
+                s = self.agg[cat]
+                n = len(self.cases_by_cat.get(cat, []))
+                sel = "→" if i == self.cat_cursor else " "
+                cls = "row row-selected" if i == self.cat_cursor else "row"
+                main.mount(Static(
+                    f"{sel}{cat:<14} {n:>3}  "
+                    f"CR={s.get('context_relevance', 0.0)}{self._agg_diff(cat, 'context_relevance')}  "
+                    f"G={s.get('groundedness', 0.0)}{self._agg_diff(cat, 'groundedness')}  "
+                    f"AR={s.get('answer_relevance', 0.0)}{self._agg_diff(cat, 'answer_relevance')}",
+                    classes=cls,
+                ))
+            status.update(
+                f"Category {self.cat_cursor + 1}/{len(self.cats)}   "
+                f"(↑/↓ select · enter open · c compare · q quit)"
+            )
+            return
+
+        # cases view
+        cids = self.cases_by_cat.get(self.active_cat, [])
+        if not cids:
+            main.mount(Static(f"(no cases in {self.active_cat})", classes="row"))
+            status.update("(esc back · q quit)")
+            return
+        self.case_cursor = max(0, min(self.case_cursor, len(cids) - 1))
+        cid = cids[self.case_cursor]
+        case = self.case_map.get(cid)
+        g = self.grade_by_id[cid]
+        rc = self.answer_by_id.get(cid)
+        answer = (rc.answer or "(no answer)") if rc else "(missing)"
+        if rc and rc.error:
+            answer = f"ERROR: {rc.error}"
+        q = case.question if case else cid
+        expected = case.expected_answer_draft if case else ""
+
+        main.mount(Static(
+            f"[{self.active_cat}] case {self.case_cursor + 1}/{len(cids)}  "
+            f"CR={g.context_relevance}{self._case_diff(cid, 'context_relevance')}  "
+            f"G={g.groundedness}{self._case_diff(cid, 'groundedness')}  "
+            f"AR={g.answer_relevance}{self._case_diff(cid, 'answer_relevance')}",
+            classes="row",
+        ))
+        main.mount(Static(""))
+        main.mount(Static(f"Q: {q}", classes="row"))
+        main.mount(Static(""))
+        main.mount(Static(f"A: {answer}", classes="row"))
+        main.mount(Static(""))
+        if expected:
+            main.mount(Static(f"Expected: {expected}", classes="row"))
+            main.mount(Static(""))
+        main.mount(Static("Judge:", classes="row"))
+        main.mount(Static(f"  CR({g.context_relevance}/5): {g.context_relevance_reasoning}", classes="judge"))
+        main.mount(Static(f"  G ({g.groundedness}/5): {g.groundedness_reasoning}", classes="judge"))
+        main.mount(Static(f"  AR({g.answer_relevance}/5): {g.answer_relevance_reasoning}", classes="judge"))
+
+        status.update(
+            f"[{self.active_cat}] case {self.case_cursor + 1}/{len(cids)}   "
+            f"(←/→ case · esc back · q quit)"
+        )
+
+    def action_next(self):
+        if self.view == "cats":
+            if self.cat_cursor < len(self.cats) - 1:
+                self.cat_cursor += 1
+                self._refresh()
+
+    def action_prev(self):
+        if self.view == "cats":
+            if self.cat_cursor > 0:
+                self.cat_cursor -= 1
+                self._refresh()
+
+    def action_next_case(self):
+        if self.view != "cases":
+            return
+        cids = self.cases_by_cat.get(self.active_cat, [])
+        if self.case_cursor < len(cids) - 1:
+            self.case_cursor += 1
+            self._refresh()
+
+    def action_prev_case(self):
+        if self.view != "cases":
+            return
+        if self.case_cursor > 0:
+            self.case_cursor -= 1
+            self._refresh()
+
+    def action_enter_cat(self):
+        if self.view != "cats" or not self.cats:
+            return
+        self.active_cat = self.cats[self.cat_cursor]
+        self.case_cursor = 0
+        self.view = "cases"
+        self._refresh()
+
+    def action_back(self):
+        if self.view == "cases":
+            self.view = "cats"
+            self._refresh()
+
+    def action_compare(self):
+        candidates: list[tuple[str, str, str]] = []
+        for r in _list_runs(self.eval_set.id):
+            if r.id == self.run_id:
+                continue
+            try:
+                load_graded_run(r.id)
+            except FileNotFoundError:
+                continue
+            candidates.append((r.id, r.timestamp, r.test_profile.get("model", "?")))
+
+        def handle(result: str | None):
+            if result is None:
+                return
+            self.compare_run_id = result or None
+            self._load()
+            self._refresh()
+
+        self.push_screen(_CompareModal(candidates), handle)
+
+    def action_quit_app(self):
+        self.exit()
+
+
+def run_report_tui(run_id: str, compare_run_id: str | None = None):
+    app = ReportApp(run_id, compare_run_id)
+    app.run()

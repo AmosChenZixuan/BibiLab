@@ -4,7 +4,6 @@ import json
 from typing import Any
 
 from eval.models import GradeResult, GradedRun
-from eval.storage import load_eval_set
 
 
 def aggregate_scores(
@@ -115,45 +114,6 @@ def format_report_text(
     lines.append("  ".join(ov_parts))
 
     return "\n".join(lines)
-
-
-def format_per_question(
-    graded_run: GradedRun, category_map: dict[str, str], eval_set_id: str
-) -> str:
-    eval_set = load_eval_set(eval_set_id)
-    case_map = {c.id: c for c in eval_set.cases}
-
-    by_cat: dict[str, list[tuple[GradeResult, str]]] = {}
-    for g in graded_run.grades:
-        cat = category_map.get(g.case_id, "unknown")
-        if cat not in by_cat:
-            by_cat[cat] = []
-        case = case_map.get(g.case_id)
-        question = case.question if case else g.case_id
-        by_cat[cat].append((g, question))
-
-    sections: list[str] = []
-    for cat in sorted(by_cat):
-        items = by_cat[cat]
-        sections.append(f"\n{cat} ({len(items)} cases)")
-        for g, question in items:
-            sections.append(f'  "{question}"')
-            sections.append(
-                f"  Context: {g.context_relevance}/5  "
-                f"Groundedness: {g.groundedness}/5  "
-                f"Answer: {g.answer_relevance}/5"
-            )
-            reasons = [
-                r for r in [
-                    g.context_relevance_reasoning,
-                    g.groundedness_reasoning,
-                    g.answer_relevance_reasoning,
-                ] if r
-            ]
-            sections.append(f'  Judge: "{"; ".join(reasons)}"')
-            sections.append("")
-
-    return "\n".join(sections)
 
 
 def report_json(
