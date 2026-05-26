@@ -24,15 +24,6 @@ from bibilab.pipeline.chunk import RagChunk
 logger = logging.getLogger(__name__)
 
 
-def _dynamic_pool(num_sources: int) -> int:
-    """Candidate pool size that scales with source count.
-
-    Floor of 10 (avoids under-sampling tiny lists), ceiling of 60 (bounds
-    ChromaDB + FTS latency on huge lists), factor of 3× sources in between.
-    """
-    return min(max(num_sources * 3, 10), 60)
-
-
 _chroma_collections: dict[str, "chromadb.Collection"] = {}
 
 
@@ -136,7 +127,7 @@ def _chunks_from_chroma_get(results: dict, *, is_neighbor: bool = False) -> list
     ids = results.get("ids") or []
     documents = results.get("documents") or []
     metadatas = results.get("metadatas") or []
-    chunks = [
+    return [
         _row_from_chroma(
             content=doc,
             metadata=md,
@@ -147,7 +138,6 @@ def _chunks_from_chroma_get(results: dict, *, is_neighbor: bool = False) -> list
         )
         for cid, doc, md in zip(ids, documents, metadatas, strict=False)
     ]
-    return [c for c in chunks if c.sequence_index is not None]
 
 
 def _diverse_top_k(ranked: list[RetrievedChunk], depth: int, k: int) -> list[RetrievedChunk]:
@@ -388,11 +378,7 @@ def embed_chunks(
 
     collection = _get_collection(cfg)
 
-    # Remove any existing chunks for this video (idempotent re-run)
-    try:
-        collection.delete(where={"video_id": meta.video_id})
-    except Exception as exc:
-        logger.warning("Failed to delete existing embeddings for video %s: %s", meta.video_id, exc)
+    clear_embeddings_for_video(meta.video_id, cfg)
 
     ids = [f"{meta.video_id}_{chunk.sequence_index}" for chunk in chunks]
     documents = [chunk.text for chunk in chunks]
@@ -421,8 +407,6 @@ def populate_fts(chunks: list[RagChunk], meta: VideoMeta) -> None:
     db_path = get_db_path()
     conn = sqlite3.connect(str(db_path))
     try:
-        # Clear existing FTS rows for this video (idempotent re-run)
-        conn.execute("DELETE FROM chunks_fts WHERE video_id = ?", (meta.video_id,))
         conn.executemany(
             "INSERT INTO chunks_fts (content, video_id, video_title, timestamp_start, timestamp_end, chunk_id) "
             "VALUES (?, ?, ?, ?, ?, ?)",
@@ -659,7 +643,7 @@ async def retrieve(
     """
     sources_total = len(source_ids)
     search_pool = scoped_source_ids if scoped_source_ids is not None else source_ids
-    effective_top_k = max(_dynamic_pool(sources_total), params.top_k)
+    effective_top_k = min(max(sources_total * 3, params.top_k, 10), 60)
 
     if cfg.rag.hybrid_enabled:
         chunks = await hybrid_search(query_text, search_pool, cfg, effective_top_k=effective_top_k)

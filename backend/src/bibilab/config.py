@@ -84,9 +84,6 @@ class RagConfig(BaseModel):
     max_distance: float = 0.8
     reranking_enabled: bool = True
     hybrid_enabled: bool = True
-    # Disabled by default — bge-reranker-base logits are not calibrated to a
-    # fixed floor. Proper calibration pending #220 eval set.
-    rerank_min_score: float | None = None
     # Pull ±1 neighbors when post-rerank hits <= threshold. 0 disables.
     neighbor_scarcity_threshold: int = 2
 
@@ -127,11 +124,6 @@ def load_config() -> BibilabConfig:
         with path.open() as f:
             data = json.load(f)
         _config_cache = BibilabConfig.model_validate(data)
-        if _config_cache.rag.rerank_min_score is not None:
-            logger.warning(
-                "config.rag.rerank_min_score is deprecated (#277); "
-                "the value is no longer applied. Remove it from ~/.bibilab/config.json."
-            )
         return _config_cache.model_copy(deep=True)
 
 
