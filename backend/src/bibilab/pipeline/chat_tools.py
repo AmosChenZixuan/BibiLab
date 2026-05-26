@@ -124,7 +124,7 @@ RETRIEVE_TOOL = ToolDefinition(
     name="retrieve",
     description=(
         "Retrieve from video transcripts for a single-fact / narrow content question.\n\n"
-        "Extract keywords verbatim from the user's message. Copy proper nouns and "
+        "Pass the user's question in natural form, copying proper nouns and "
         "technical terms exactly.\n\n"
         "Use this tool when the user asks a specific question with a clear answer — "
         "definitions, dates, names, single events, 'what is X', 'when did X happen', "
@@ -133,15 +133,15 @@ RETRIEVE_TOOL = ToolDefinition(
         "第二季), use retrieve_scoped instead.\n\n"
         "If the user asks a survey / list / comparison question, use survey instead.\n\n"
         "Examples:\n"
-        '  retrieve(query="拉格朗日点 稳定性 证明")\n'
-        '  retrieve(query="长期情景记忆")'
+        '  retrieve(query="如何证明拉格朗日点的稳定性?")\n'
+        '  retrieve(query="什么是长期情景记忆?")'
     ),
     parameters={
         "type": "object",
         "properties": {
             "query": {
                 "type": "string",
-                "description": "Keywords extracted verbatim from the user's question",
+                "description": "The user's question in natural form.",
             },
         },
         "required": ["query"],
@@ -152,15 +152,9 @@ SURVEY_TOOL = ToolDefinition(
     name="survey",
     description=(
         "Retrieve from video transcripts for a broad / list-summary question "
-        "about a SINGLE subject.\n\n"
-        "Broad questions use umbrella terms ('面食', 'political philosophy') that "
-        "rarely appear verbatim in transcripts — the source says '牛肉面', '米粉'. "
-        "Expand the query into subtypes and synonyms of the terms IN THE CURRENT "
-        "USER MESSAGE, using general knowledge of the topic. The retrieval pool is "
-        "larger (top_k=24, depth_per_source=5) than retrieve.\n\n"
-        "Expand ONLY from the current user message. Do NOT borrow specific names, "
-        "dishes, characters, or entities mentioned in earlier conversation turns — "
-        "those belong to a different question and pollute this retrieval.\n\n"
+        "about a SINGLE subject. Uses a wider retrieval pool (top_k=24, "
+        "depth_per_source=5) than retrieve.\n\n"
+        "Pass the user's question in natural form.\n\n"
         "Use this tool when the user asks for an overview, a list of items, a "
         "summary, or anything that expects multiple sources for one umbrella topic — "
         "'what are the ways to X', 'list all the X', 'summarize X'.\n\n"
@@ -172,20 +166,15 @@ SURVEY_TOOL = ToolDefinition(
         "If the user explicitly references an episode or season, use retrieve_scoped "
         "instead.\n\n"
         "Examples:\n"
-        "  # user asks '有哪些面食做法' — expand the umbrella term '面食'\n"
-        '  survey(query="面食 面条 牛肉面 拉面 米粉 馒头 饺子 做法")\n'
-        "  # user asks '介绍政治哲学的流派' — expand '政治哲学'\n"
-        '  survey(query="政治哲学 多元主义 自由主义 民主 思想流派")'
+        '  survey(query="有哪些面食的做法?")\n'
+        '  survey(query="政治哲学有哪些思想流派?")'
     ),
     parameters={
         "type": "object",
         "properties": {
             "query": {
                 "type": "string",
-                "description": (
-                    "Subtype / synonym expansion of the CURRENT user message's terms. "
-                    "Do not borrow entities from prior turns."
-                ),
+                "description": "The user's question in natural form.",
             },
         },
         "required": ["query"],
@@ -196,6 +185,8 @@ RETRIEVE_SCOPED_TOOL = ToolDefinition(
     name="retrieve_scoped",
     description=(
         "Retrieve from video transcripts, scoped to a specific episode or season.\n\n"
+        "Pass the user's question in natural form. The episode / season reference "
+        "goes in sequence_number / season_number, not in query.\n\n"
         "Use this tool ONLY when the current user message explicitly references an "
         "episode (第八集, episode 3, part 5) or a season (第二季, season 2). "
         "Do not infer the scope from prior conversation turns — if the current "
@@ -203,16 +194,19 @@ RETRIEVE_SCOPED_TOOL = ToolDefinition(
         "Pass sequence_number for episode references and season_number for season "
         "references. Pass both when the user references both (第二季第八集).\n\n"
         "Examples:\n"
-        '  retrieve_scoped(query="女巫 死期", sequence_number=5)\n'
-        '  retrieve_scoped(query="第二季总览", season_number=2)\n'
-        '  retrieve_scoped(query="主要事件", sequence_number=3, season_number=2)'
+        '  retrieve_scoped(query="女巫的死期是什么时候?", sequence_number=5)\n'
+        '  retrieve_scoped(query="这一季的总览是什么?", season_number=2)\n'
+        '  retrieve_scoped(query="主要事件有哪些?", sequence_number=3, season_number=2)'
     ),
     parameters={
         "type": "object",
         "properties": {
             "query": {
                 "type": "string",
-                "description": "Keywords extracted from the user's question",
+                "description": (
+                    "The user's question in natural form. The episode / season "
+                    "reference goes in sequence_number / season_number."
+                ),
             },
             "sequence_number": {
                 "type": "integer",
