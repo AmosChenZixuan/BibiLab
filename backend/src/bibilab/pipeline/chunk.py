@@ -1,10 +1,13 @@
 """Greedy segment merger — produces RAG-ready chunks from Whisper segments."""
 
+import logging
 from dataclasses import dataclass
 
 import tiktoken
 
 from bibilab.pipeline.transcribe import WhisperSegment
+
+logger = logging.getLogger(__name__)
 
 _enc = tiktoken.get_encoding("cl100k_base")
 
@@ -18,6 +21,10 @@ _LANG_TARGET_TOKENS: dict[str, int] = {
     "en": _DEFAULT_TARGET_TOKENS,
 }
 _MAX_TOKEN_RATIO = 4 / 3
+
+# Minimum fraction of target_tokens before a pause triggers a flush.
+# Prevents flushing near-empty buffers on every short pause.
+_MIN_TARGET_RATIO = 0.5
 
 
 @dataclass
@@ -33,6 +40,8 @@ def chunk_segments(
     target_tokens: int | None = None,
     chunk_max_tokens: int | None = None,
     language: str = "en",
+    # Default must match RagConfig.chunk_pause_threshold in config.py.
+    pause_threshold_seconds: float = 1.5,
 ) -> list[RagChunk]:
     resolved_target = (
         target_tokens if target_tokens is not None else _LANG_TARGET_TOKENS.get(language, _DEFAULT_TARGET_TOKENS)
@@ -42,6 +51,9 @@ def chunk_segments(
     chunks: list[RagChunk] = []
     buf_segs: list[WhisperSegment] = []
     buf_tokens = 0
+    pause_flushes = 0
+    token_flushes = 0
+    oversized_flushes = 0
 
     def flush(idx: int) -> None:
         if not buf_segs:
@@ -63,6 +75,7 @@ def chunk_segments(
             # Oversized segment — flush current buffer first, then emit as its own chunk
             if buf_segs:
                 flush(chunk_idx)
+                oversized_flushes += 1
                 chunk_idx += 1
                 buf_segs, buf_tokens = [], 0
             chunks.append(
@@ -76,13 +89,43 @@ def chunk_segments(
             chunk_idx += 1
             continue
 
+        # Pause-aware flush: if buffer has enough content and a long pause
+        # precedes this segment, flush before merging across the boundary.
+        if buf_segs:
+            gap = seg.start - buf_segs[-1].end
+            if gap > pause_threshold_seconds and buf_tokens >= resolved_target * _MIN_TARGET_RATIO:
+                flush(chunk_idx)
+                pause_flushes += 1
+                chunk_idx += 1
+                buf_segs, buf_tokens = [], 0
+
+        # Token-target flush: soft upper bound when buffer would overflow.
+        # Min_target_ratio guard avoids orphan chunks when a recent pause
+        # flush left a single small segment. When suppressed, the buffer
+        # may temporarily exceed resolved_target (bounded by resolved_max
+        # via per-segment oversized checks above).
         if buf_tokens + seg_tokens > resolved_target and buf_segs:
-            flush(chunk_idx)
-            chunk_idx += 1
-            buf_segs, buf_tokens = [], 0
+            if buf_tokens >= resolved_target * _MIN_TARGET_RATIO:
+                flush(chunk_idx)
+                token_flushes += 1
+                chunk_idx += 1
+                buf_segs, buf_tokens = [], 0
 
         buf_segs.append(seg)
         buf_tokens += seg_tokens
 
     flush(chunk_idx)
+
+    total_flushes = pause_flushes + token_flushes + oversized_flushes
+    if total_flushes:
+        logger.info(
+            "chunk_segments: %d chunks from %d segments (pause=%d, token=%d, oversized=%d, target=%d)",
+            len(chunks),
+            len(segments),
+            pause_flushes,
+            token_flushes,
+            oversized_flushes,
+            resolved_target,
+        )
+
     return chunks
