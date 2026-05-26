@@ -147,7 +147,9 @@ POST /ingest/url → resolve → dedup check → create job(s)
   → worker: download → audio → transcribe → chunk → digest ∥ embed → write_source
 ```
 
-- Dedup via `sources.video_id`; skip if found unless `?rerun=true`
+- Dedup via `get_video_statuses` (sources + jobs); skip if processed or in-flight.
+- Full re-process: DELETE /sources/:id then re-ingest.
+- POST /sources/:id/rerun re-runs digest only (LLM summary, keywords, facets); transcript is reused.
 - Delete removes transcript file, ChromaDB embeddings, and `sources` row
 
 ### Pipeline stages (per video)
@@ -240,7 +242,7 @@ v0: `BilibiliAdapter` — single video. Cookie-based auth in config.
   "transcription": { "engine": "faster-whisper", "model_size": "large-v3", "device": "cuda|cpu", "language": "auto" },
   "vision": { "enabled": false, "frame_sample_rate": 30, "model": null },
   "backend": { "port": 8765, "worker_concurrency": 1 },
-  "rag": { "max_distance": 0.8, "hybrid_enabled": true, "reranking_enabled": true, "rerank_min_score": null }
+  "rag": { "max_distance": 0.8, "hybrid_enabled": true, "reranking_enabled": true }
 }
 ```
-Reranker model is fixed to `Xenova/bge-reranker-base` (XLM-RoBERTa, Chinese + English). `rerank_min_score` is a **deprecated no-op**: retained for config back-compat, logs a startup warning, never applied — removal pending one release cycle. The static floor was replaced by `_quantile_gate`; margin (bge logit units) is selected per retrieval from `_RELEVANCE_MARGIN_BY_MODE[mode]` (narrow=2.0, survey=2.5). `RetrievalResult.gate_margin` telemetry records the margin used. See `docs/internal/rag_tuning.md`.
+Reranker model is fixed to `Xenova/bge-reranker-base` (XLM-RoBERTa, Chinese + English). Relevance gating uses `_quantile_gate`; margin (bge logit units) is selected per retrieval from `_RELEVANCE_MARGIN_BY_MODE[mode]` (narrow=2.0, survey=2.5). `RetrievalResult.gate_margin` telemetry records the margin used. See `docs/internal/rag_tuning.md`.

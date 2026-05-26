@@ -168,9 +168,7 @@ async def test_broad_mode_covers_candidate_pool_sources(tmp_bibilab_home):
     from bibilab.models._enums import RetrievalParams
     from bibilab.pipeline.embed import retrieve
 
-    cfg = BibilabConfig(
-        rag=RagConfig(max_distance=1.0, reranking_enabled=True, hybrid_enabled=False, rerank_min_score=0.0)
-    )
+    cfg = BibilabConfig(rag=RagConfig(max_distance=1.0, reranking_enabled=True, hybrid_enabled=False))
 
     chunks = [_make_chunk(content=f"c{i}", video_id=f"v{i}", video_title=f"vid{i}") for i in range(8)]
 
@@ -199,9 +197,7 @@ async def test_focused_mode_unchanged(tmp_bibilab_home):
     from bibilab.models._enums import RetrievalParams
     from bibilab.pipeline.embed import retrieve
 
-    cfg = BibilabConfig(
-        rag=RagConfig(max_distance=1.0, reranking_enabled=True, hybrid_enabled=False, rerank_min_score=0.0)
-    )
+    cfg = BibilabConfig(rag=RagConfig(max_distance=1.0, reranking_enabled=True, hybrid_enabled=False))
 
     chunks = [_make_chunk(content=f"c{i}", video_id=f"v{i}", video_title=f"vid{i}") for i in range(8)]
 
@@ -228,9 +224,7 @@ async def test_rerank_floor_drops_low_scores(tmp_bibilab_home):
     from bibilab.models._enums import RetrievalParams
     from bibilab.pipeline.embed import retrieve
 
-    cfg = BibilabConfig(
-        rag=RagConfig(max_distance=1.0, reranking_enabled=True, hybrid_enabled=False, rerank_min_score=0.0)
-    )
+    cfg = BibilabConfig(rag=RagConfig(max_distance=1.0, reranking_enabled=True, hybrid_enabled=False))
 
     chunks = [_make_chunk(content=f"c{i}") for i in range(5)]
     reranked = [_make_chunk(content=f"c{i}", distance=0.0) for i in range(5)]
@@ -262,9 +256,7 @@ async def test_rerank_min_score_null_still_runs_quantile_gate(tmp_bibilab_home):
     from bibilab.models._enums import RetrievalParams
     from bibilab.pipeline.embed import retrieve
 
-    cfg = BibilabConfig(
-        rag=RagConfig(max_distance=1.0, reranking_enabled=True, hybrid_enabled=False, rerank_min_score=None)
-    )
+    cfg = BibilabConfig(rag=RagConfig(max_distance=1.0, reranking_enabled=True, hybrid_enabled=False))
 
     chunks = [_make_chunk(content=f"c{i}") for i in range(5)]
     reranked = [_make_chunk(content=f"c{i}", distance=0.0) for i in range(5)]
@@ -299,9 +291,7 @@ async def test_rerank_failure_skips_floor(tmp_bibilab_home, caplog):
     from bibilab.models._enums import RetrievalParams
     from bibilab.pipeline.embed import retrieve
 
-    cfg = BibilabConfig(
-        rag=RagConfig(max_distance=1.0, reranking_enabled=True, hybrid_enabled=False, rerank_min_score=0.5)
-    )
+    cfg = BibilabConfig(rag=RagConfig(max_distance=1.0, reranking_enabled=True, hybrid_enabled=False))
 
     chunks = [_make_chunk(content=f"c{i}", distance=0.1 * i) for i in range(5)]
 
@@ -331,7 +321,7 @@ async def test_broad_mode_respects_floor(tmp_bibilab_home):
     from bibilab.models._enums import RetrievalParams
     from bibilab.pipeline.embed import retrieve
 
-    cfg = BibilabConfig(rag=RagConfig(reranking_enabled=True, hybrid_enabled=False, rerank_min_score=0.0))
+    cfg = BibilabConfig(rag=RagConfig(reranking_enabled=True, hybrid_enabled=False))
 
     chunks = [_make_chunk(content=f"c{i}", video_id=f"v{i}") for i in range(4)]
 
@@ -370,9 +360,7 @@ async def test_sources_with_hits_reflects_result_chunks(tmp_bibilab_home):
     from bibilab.models._enums import RetrievalParams
     from bibilab.pipeline.embed import retrieve
 
-    cfg = BibilabConfig(
-        rag=RagConfig(max_distance=1.0, reranking_enabled=True, hybrid_enabled=False, rerank_min_score=0.0)
-    )
+    cfg = BibilabConfig(rag=RagConfig(max_distance=1.0, reranking_enabled=True, hybrid_enabled=False))
 
     chunks = [_make_chunk(content=f"c{i}", video_id=f"v{i}", video_title=f"vid{i}") for i in range(8)]
 

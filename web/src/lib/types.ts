@@ -83,7 +83,6 @@ export type IngestMeta = {
   cover_url?: string;
   duration_seconds?: number;
   uploader?: string;
-  rerun?: boolean;
 };
 
 export type ModelDownloadMeta = {

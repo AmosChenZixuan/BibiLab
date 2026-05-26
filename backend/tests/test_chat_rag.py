@@ -428,29 +428,6 @@ async def test_diverse_top_k_depth_one_keeps_best_per_source(tmp_bibilab_home):
     assert result.candidates_evaluated == 6
 
 
-def test_dynamic_pool_floor():
-    from bibilab.pipeline.embed import _dynamic_pool
-
-    assert _dynamic_pool(1) == 10  # 1*3=3, floored at 10
-    assert _dynamic_pool(2) == 10  # 2*3=6, floored at 10
-    assert _dynamic_pool(3) == 10  # 3*3=9, floored at 10
-
-
-def test_dynamic_pool_scaling():
-    from bibilab.pipeline.embed import _dynamic_pool
-
-    assert _dynamic_pool(5) == 15
-    assert _dynamic_pool(10) == 30
-
-
-def test_dynamic_pool_ceiling():
-    from bibilab.pipeline.embed import _dynamic_pool
-
-    assert _dynamic_pool(20) == 60  # 20*3=60, exactly at ceiling
-    assert _dynamic_pool(50) == 60  # capped
-    assert _dynamic_pool(200) == 60  # capped
-
-
 @pytest.mark.asyncio
 async def test_retrieve_pool_at_least_top_k(tmp_bibilab_home):
     """effective_top_k must be >= params.top_k even when _dynamic_pool is smaller.
@@ -475,7 +452,7 @@ async def test_retrieve_pool_at_least_top_k(tmp_bibilab_home):
 async def test_retrieve_uses_candidate_pool(tmp_bibilab_home):
     from bibilab.config import BibilabConfig, RagConfig
     from bibilab.models._enums import RetrievalParams
-    from bibilab.pipeline.embed import _dynamic_pool, retrieve
+    from bibilab.pipeline.embed import retrieve
 
     cfg = BibilabConfig(rag=RagConfig(max_distance=0.5))
 
@@ -488,7 +465,7 @@ async def test_retrieve_uses_candidate_pool(tmp_bibilab_home):
 
         await retrieve("test query", ["s1"], cfg, params=RetrievalParams(depth_per_source=1, top_k=10))
 
-        mock_qc.assert_called_once_with("test query", ["s1"], cfg, top_k=_dynamic_pool(1), video_ids=["v1"])
+        mock_qc.assert_called_once_with("test query", ["s1"], cfg, top_k=10, video_ids=["v1"])
 
 
 # --- _adaptive_depth unit tests ---
@@ -737,7 +714,7 @@ async def test_hybrid_search_deduplicates_same_chunk(tmp_bibilab_home):
 async def test_retrieve_uses_hybrid_search(tmp_bibilab_home):
     from bibilab.config import BibilabConfig, RagConfig
     from bibilab.models._enums import RetrievalParams
-    from bibilab.pipeline.embed import _dynamic_pool, retrieve
+    from bibilab.pipeline.embed import retrieve
 
     cfg = BibilabConfig(rag=RagConfig(max_distance=1.0, reranking_enabled=False))
 
@@ -750,7 +727,7 @@ async def test_retrieve_uses_hybrid_search(tmp_bibilab_home):
     ) as mock_hybrid:
         result = await retrieve("query", ["src1"], cfg, params=RetrievalParams(depth_per_source=2, top_k=5))
 
-    mock_hybrid.assert_called_once_with("query", ["src1"], cfg, effective_top_k=_dynamic_pool(1))
+    mock_hybrid.assert_called_once_with("query", ["src1"], cfg, effective_top_k=10)
     assert result.chunks == chunks
 
 
@@ -758,7 +735,7 @@ async def test_retrieve_uses_hybrid_search(tmp_bibilab_home):
 async def test_retrieve_hybrid_disabled_skips_fts(tmp_bibilab_home):
     from bibilab.config import BibilabConfig, RagConfig
     from bibilab.models._enums import RetrievalParams
-    from bibilab.pipeline.embed import _dynamic_pool, retrieve
+    from bibilab.pipeline.embed import retrieve
 
     cfg = BibilabConfig(rag=RagConfig(max_distance=1.0, hybrid_enabled=False, reranking_enabled=False))
 
@@ -778,7 +755,7 @@ async def test_retrieve_hybrid_disabled_skips_fts(tmp_bibilab_home):
         result = await retrieve("query", ["src1"], cfg, params=RetrievalParams(depth_per_source=2, top_k=5))
 
     mock_hybrid.assert_not_called()
-    mock_vector.assert_called_once_with("query", ["src1"], cfg, top_k=_dynamic_pool(1))
+    mock_vector.assert_called_once_with("query", ["src1"], cfg, top_k=10)
     assert result.chunks == chunks
 
 
@@ -789,7 +766,7 @@ async def test_retrieve_uses_candidate_pool_before_rerank(tmp_bibilab_home):
     trims to params.top_k for the LLM input."""
     from bibilab.config import BibilabConfig, RagConfig
     from bibilab.models._enums import RetrievalParams
-    from bibilab.pipeline.embed import _dynamic_pool, retrieve
+    from bibilab.pipeline.embed import retrieve
 
     cfg = BibilabConfig(rag=RagConfig(max_distance=1.0, reranking_enabled=True))
 
@@ -809,7 +786,7 @@ async def test_retrieve_uses_candidate_pool_before_rerank(tmp_bibilab_home):
     ):
         result = await retrieve("query", ["src1"], cfg, params=RetrievalParams(depth_per_source=2, top_k=5))
 
-    mock_hybrid.assert_called_once_with("query", ["src1"], cfg, effective_top_k=_dynamic_pool(1))
+    mock_hybrid.assert_called_once_with("query", ["src1"], cfg, effective_top_k=10)
     mock_rerank.assert_called_once_with("query", candidate_chunks, top_k=len(candidate_chunks))
     assert len(result.chunks) == 5
     assert result.candidates_evaluated == len(candidate_chunks)
@@ -1203,42 +1180,3 @@ async def test_retrieve_reranked_flag_false_on_exception(tmp_bibilab_home):
         )
         assert result.reranked is False
         assert result.dropped_by_gate == 0
-
-
-def test_rerank_min_score_logs_deprecation_when_set(tmp_path, monkeypatch, caplog):
-    """Setting rerank_min_score to a non-null value logs a one-time deprecation."""
-    import json
-    import logging
-
-    monkeypatch.setenv("HOME", str(tmp_path))
-    cfg_dir = tmp_path / ".bibilab"
-    cfg_dir.mkdir()
-    (cfg_dir / "config.json").write_text(json.dumps({"rag": {"rerank_min_score": 0.5}}))
-
-    from bibilab.config import _reset_cache, load_config
-
-    _reset_cache()
-    with caplog.at_level(logging.WARNING, logger="bibilab.config"):
-        load_config()
-
-    assert any(
-        "rerank_min_score" in record.message and "deprecated" in record.message.lower() for record in caplog.records
-    )
-
-
-def test_rerank_min_score_no_warning_when_null(tmp_path, monkeypatch, caplog):
-    import json
-    import logging
-
-    monkeypatch.setenv("HOME", str(tmp_path))
-    cfg_dir = tmp_path / ".bibilab"
-    cfg_dir.mkdir()
-    (cfg_dir / "config.json").write_text(json.dumps({"rag": {}}))
-
-    from bibilab.config import _reset_cache, load_config
-
-    _reset_cache()
-    with caplog.at_level(logging.WARNING, logger="bibilab.config"):
-        load_config()
-
-    assert not any("rerank_min_score" in r.message for r in caplog.records)
