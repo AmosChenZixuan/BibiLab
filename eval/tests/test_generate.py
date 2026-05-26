@@ -1,7 +1,7 @@
 from eval.generate import (
     CATEGORY_PROMPTS,
     MAX_SOURCES,
-    MAX_WORDS,
+    MAX_WORDS_PER_SOURCE,
     _extract_facts,
     _extract_one_source,
     _load_per_source,
@@ -16,7 +16,7 @@ def test_category_prompts_exist():
 
 def test_max_constants():
     assert MAX_SOURCES > 0
-    assert MAX_WORDS > 0
+    assert MAX_WORDS_PER_SOURCE > 0
 
 
 def test_read_transcript(monkeypatch, tmp_path):
@@ -34,7 +34,7 @@ def test_read_transcript_missing(monkeypatch, tmp_path):
 
 def test_load_per_source_truncation(monkeypatch, tmp_path):
     monkeypatch.setattr("bibilab.config.bibilab_home", lambda: tmp_path)
-    monkeypatch.setattr("eval.generate.MAX_WORDS", 1000)
+    monkeypatch.setattr("eval.generate.MAX_WORDS_PER_SOURCE", 500)
     d = tmp_path / "transcripts"
     d.mkdir()
     (d / "t1.txt").write_text("word " * 600)
@@ -69,12 +69,12 @@ def test_load_per_source_skips_missing(monkeypatch, tmp_path):
 def test_extract_one_source_succeeds(monkeypatch):
     monkeypatch.setattr(
         "eval.generate._call_llm",
-        lambda p, *a, **k: '{"topics":["t"],"claims":[],"entities":[],"contrasts":[],"temporal":[]}',
+        lambda p, *a, **k: '{"facts":["t"]}',
     )
     fact, err = _extract_one_source({"id": "s1", "transcript": "hello"}, ai_cfg=None)
     assert err is None
     assert fact["id"] == "s1"  # id supplied by caller, not LLM
-    assert fact["topics"] == ["t"]
+    assert fact["facts"] == ["t"]
 
 
 def test_extract_one_source_retries_on_malformed(monkeypatch):
@@ -82,12 +82,12 @@ def test_extract_one_source_retries_on_malformed(monkeypatch):
 
     def fake_call(prompt, *a, **k):
         calls.append(prompt)
-        return "[[[broken" if len(calls) == 1 else '{"topics":["t"]}'
+        return "[[[broken" if len(calls) == 1 else '{"facts":["t"]}'
 
     monkeypatch.setattr("eval.generate._call_llm", fake_call)
     fact, err = _extract_one_source({"id": "s1", "transcript": "hello"}, ai_cfg=None)
     assert err is None
-    assert fact["topics"] == ["t"]
+    assert fact["facts"] == ["t"]
     assert len(calls) == 2
 
 
@@ -115,7 +115,7 @@ def test_extract_one_source_rejects_non_object(monkeypatch, tmp_path):
 def test_extract_facts_all_succeed(monkeypatch):
     monkeypatch.setattr(
         "eval.generate._call_llm",
-        lambda p, *a, **k: '{"topics":["t"]}',
+        lambda p, *a, **k: '{"facts":["t"]}',
     )
     sources = [
         {"id": "s1", "transcript": "hello"},
@@ -134,7 +134,7 @@ def test_extract_facts_partial_failure(monkeypatch, tmp_path):
         # source s2's transcript is the only one containing "world"
         if "world" in prompt:
             return "[[[broken"
-        return '{"topics":["t"]}'
+        return '{"facts":["t"]}'
 
     monkeypatch.setattr("eval.generate._call_llm", fake_call)
     sources = [
@@ -149,7 +149,7 @@ def test_extract_facts_partial_failure(monkeypatch, tmp_path):
 
 
 def test_extract_facts_reports_progress(monkeypatch):
-    monkeypatch.setattr("eval.generate._call_llm", lambda p, *a, **k: '{"topics":[]}')
+    monkeypatch.setattr("eval.generate._call_llm", lambda p, *a, **k: '{"facts":[]}')
     sources = [{"id": f"s{i}", "transcript": f"text {i}"} for i in range(3)]
     progress = []
     _extract_facts(sources, ai_cfg=None, on_progress=lambda d, t, e: progress.append((d, t, e)))

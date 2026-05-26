@@ -8,6 +8,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
+LLM_MAX_TOKENS = 65536
+
 from bibilab.config import AIConfig, bibilab_home
 
 from eval.models import ProfileSnapshot

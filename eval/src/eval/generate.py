@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import random
 import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
@@ -10,14 +9,16 @@ from typing import Any
 from bibilab.pipeline._shared import _call_llm
 
 from eval._utils import now_iso, strip_json_fences
+from eval.config import LLM_MAX_TOKENS
 from eval.dashboard import TaskDashboard
 from eval.models import EvalCase, EvalSet
 
 MAX_SOURCES = 10
-MAX_WORDS = 20000
+MAX_WORDS_PER_SOURCE = 3000
+MAX_FACTS_PER_SOURCE = 30
 # Rough CJK char → word budget multiplier. Chinese has no whitespace, so str.split()
 # treats a transcript as one giant token. Count chars and divide by ~1.5 to approximate
-# token budget against the same MAX_WORDS ceiling used for whitespace-segmented text.
+# token budget against the word-budget ceiling used for whitespace-segmented text.
 _CJK_CHARS_PER_WORD = 1.5
 
 
@@ -52,23 +53,16 @@ def _with_language(prompt: str, language: str) -> str:
 SOURCE_FACTS_PROMPT = """你是一个研究助理。下面是一段视频的文字稿。请从中提取关键事实。
 
 强约束：
-- 只提取原文**逐字出现**或**近义表达**的内容；不要推断、不要补充、不要联想
-- 如果文字稿明显空白、纯非语言标记（如 [Music]、[Applause]）、或重复无意义，**所有字段返回空数组**，不要凭领域知识填充
-- 中文输出
-- 所有字段都有数量上限，超过就**只保留最重要的**
-
-字段定义：
-- topics（讨论主题，最多 15 条）：这段内容**整体在讲什么**——抽象的主题/方向/领域。例：「RAG 系统优化」「向量检索原理」。**不是**具体术语（那是 entities）。
-- claims（明确断言，最多 20 条，每条 ≤1 句话且贴近原文用词）：原文中**明确说出**的观点、结论、定义、数值、做法。例：「BM25 的 k1 默认值为 1.2」「dense retrieval 在长尾问题上召回率低」。不要把多个 claim 合并成一句长论述。
-- entities（专有名词，最多 30 条）：术语、工具名、产品名、人名、模型名、方法名等**有名字的具体事物**。例：「BM25」「HNSW」「OpenAI」「sentence-window chunking」。**不是**主题描述。
-- contrasts（同源内部对比，最多 8 条）：**本段视频内部**明确做出的对比——同一文字稿里 A 与 B 被并列比较。例：「文中对比了 BM25 与 dense retrieval 在召回上的差异」。**不要**做跨视频对比（那是下游任务）；**不要**把两个独立 claim 重写成"对比"。
-- temporal（时间演变，最多 8 条）：**同一事物**在原文中提到 ≥2 个时间点 / 版本 / 新旧状态的内容。例：「v3.5 → v4 引入 tool use」「2023 推荐 X，2024 改用 Y」「之前用 sliding window，现在改用 semantic chunking」。**单一时间提及**（"今天"、"下次"、单一年份无对比）不算，跳过。
+- 只提取原文**逐字出现**或**近义表达**的内容；不要推断、不要补充、不要联想。
+- 如果文字稿明显空白、纯非语言标记（如 [Music]、[Applause]）或重复无意义，返回空数组。
+- 每条事实 ≤1 句话，保持原意。不要把多条事实合并成一句长论述。
+- 时间/版本/新旧信息直接写在事实内部（例：「2023 年推荐 BM25」「v4 新增 tool use」「之前用 A，现在用 B」），不要单独抽字段。
+- 最多 {max_facts} 条。超过就只保留最重要的。重要性：具体断言 > 泛泛描述，带数值 > 不带数值。
 
 格式要求：
 - 只返回**单个 JSON 对象**，不要数组包裹，不要 markdown fences，不要额外文字
-- Schema：{{"topics": [...], "claims": [...], "entities": [...], "contrasts": [...], "temporal": [...]}}
-- **禁止** {{"sources": [...]}} 这种数组包裹（旧 schema，已废弃）
-- 如果某字段没有合格内容，返回空数组 `[]`"""
+- Schema：{{"facts": ["事实1", "事实2", ...]}}
+- 如果原文没有合格内容，返回 {{"facts": []}}"""
 
 CATEGORY_PROMPTS: dict[str, str] = {
     "narrow": """你是一个知识库的普通用户。下面是一些视频内容的要点摘要。你还没有看过原视频。
@@ -184,7 +178,7 @@ CATEGORY_PROMPTS: dict[str, str] = {
 
 设计要领（强制按顺序做）：
 1. 先识别要点的主题领域（例如：RAG / 向量检索 / embedding 模型）
-2. 选一个**该领域的子话题或邻近话题**，要点中**没有任何痕迹**（既不在 topics、claims、entities，也不在 contrasts/temporal）
+2. 选一个**该领域的子话题或邻近话题**，要点中**没有任何痕迹**
 3. 用一个普通用户会问的方式表达；问题本身要看起来"应该可以问"，但要点里查无此事
 4. 如果想不出合理的缺失话题，**跳过此题**，不要问完全不沾边的内容（"今天天气如何"不算缺失题，是无关题）
 
@@ -220,9 +214,9 @@ CATEGORY_PROMPTS: dict[str, str] = {
 - 与跨源对比（cross_ref）的关键区别：cross_ref 是「不同来源同一时刻的差异」，temporal 是「同一事物时间轴上的变化」
 
 设计要领（强制按顺序做）：
-1. 先扫描要点中所有 source 的 temporal 字段
-2. 找到**同一主题**至少有 2 个时间点的内容（例如同一工具的 v1 与 v3、早期做法 vs 当前做法、过时方案 vs 推荐方案）
-3. 如果要点里 temporal 字段稀疏（少于 2 个 source 提到时间）或找不到「同一主题的两个时间点」，**跳过此题**，返回空。不要凭"最新"两字硬编。
+1. 先扫描所有 source 的事实，找出带时间/版本/新旧标记的条目（如"2023 年推荐 X""v4 新增 Y""之前用 A 现在用 B"）
+2. 找到**同一主题**有 ≥2 个时间点的内容（例如同一工具的 v1 与 v3、早期做法 vs 当前做法、过时方案 vs 推荐方案）
+3. 如果带时间标记的事实不足（<2 个 source 有提到时间/版本）或找不到「同一主题的两个时间点」，**跳过此题**，返回空。不要凭"最新"两字硬编。
 
 良好示例：
 - "现在做 RAG 还推荐 BM25 + dense 的混合方案，还是已经被新方法替代了？" （要点提到旧推荐与新做法）
@@ -259,14 +253,11 @@ def _read_transcript(transcript_relpath: str) -> str:
 def _load_per_source(sources: list[dict]) -> list[dict]:
     """Load truncated transcripts per source.
 
-    Per-source word budget = MAX_WORDS / len(sources), min 500. Returns sources
-    enriched with a 'transcript' field; missing transcripts are dropped and
-    logged to stderr. Splitting per source (vs one giant block) bounds each
-    extraction call's input — keeps reasoning-model thinking budget from
-    swallowing the whole max_tokens.
+    Each source truncated to MAX_WORDS_PER_SOURCE words (flat, not divided).
+    Returns sources enriched with a 'transcript' field; missing transcripts are
+    dropped and logged to stderr.
     """
     import sys
-    word_budget = max(500, MAX_WORDS // max(1, len(sources)))
     loaded: list[dict] = []
     missing: list[str] = []
     for s in sources:
@@ -278,7 +269,7 @@ def _load_per_source(sources: list[dict]) -> list[dict]:
         loaded.append({
             "id": s["id"],
             "title": s.get("title", ""),
-            "transcript": _truncate_to_words(raw, word_budget),
+            "transcript": _truncate_to_words(raw, MAX_WORDS_PER_SOURCE),
         })
     if missing:
         print(f"[generate] missing transcripts ({len(missing)}): {missing}", file=sys.stderr)
@@ -287,8 +278,7 @@ def _load_per_source(sources: list[dict]) -> list[dict]:
 
 _RETRY_HINT = (
     "\n\nYour previous response had invalid JSON. Return ONLY a single JSON "
-    'object {"topics": [...], "claims": [...], "entities": [...], '
-    '"contrasts": [...], "temporal": [...]} with no fences, no array wrapping, '
+    'object {"facts": [...]} with no fences, no array wrapping, '
     "no extra text."
 )
 
@@ -325,12 +315,13 @@ def _extract_one_source(source: dict, ai_cfg: Any, language: str = "zh") -> tupl
     failure, raw responses persisted to ~/.bibilab/evals/_failed/.
     """
     sid = source["id"]
-    body = f"{SOURCE_FACTS_PROMPT}\n\n文字稿内容：\n{source.get('transcript', '')}"
+    prompt = SOURCE_FACTS_PROMPT.format(max_facts=MAX_FACTS_PER_SOURCE)
+    body = f"{prompt}\n\n文字稿内容：\n{source.get('transcript', '')}"
     base_prompt = _with_language(body, language)
-    raw = _call_llm(base_prompt, ai_cfg, llm_timeout=120, llm_max_tokens=4096)
+    raw = _call_llm(base_prompt, ai_cfg, llm_timeout=120, llm_max_tokens=LLM_MAX_TOKENS)
     data, err = _try_parse_object(raw)
     if data is None:
-        raw2 = _call_llm(base_prompt + _RETRY_HINT, ai_cfg, llm_timeout=120, llm_max_tokens=4096)
+        raw2 = _call_llm(base_prompt + _RETRY_HINT, ai_cfg, llm_timeout=120, llm_max_tokens=LLM_MAX_TOKENS)
         data, err2 = _try_parse_object(raw2)
         if data is None:
             artifact = _persist_failed_raw(
@@ -379,20 +370,17 @@ def _extract_facts(
 
 def _format_facts(facts: list[dict]) -> str:
     """Format extracted facts into a compact readable block for question generation."""
-    lines: list[str] = []
+    lines: list[str] = [
+        '（编号仅供内部索引。expected_answer_draft 中禁止引用「第x条」或任何编号，直接写出事实内容即可。）',
+        "",
+    ]
     for s in facts:
         sid = s.get("id", "?")
-        lines.append(f"=== [{sid}] ===")
-        for field, label in [
-            ("topics", "主题"),
-            ("claims", "观点"),
-            ("entities", "术语"),
-            ("contrasts", "对比"),
-            ("temporal", "时效"),
-        ]:
-            items = s.get(field, [])
-            if items:
-                lines.append(f"{label}: {'; '.join(items)}")
+        title = s.get("title", "")
+        items = s.get("facts", [])
+        lines.append(f"=== [{sid}] {title} ===")
+        for i, f in enumerate(items, 1):
+            lines.append(f"{i}. {f}")
         lines.append("")
     return "\n".join(lines)
 
@@ -408,7 +396,7 @@ def generate_eval_set(
     if not categories:
         raise ValueError("No categories specified.")
 
-    selected = random.sample(sources, min(MAX_SOURCES, len(sources)))
+    selected = sources[:MAX_SOURCES]
     per_source = _load_per_source(selected)
     if not per_source:
         raise ValueError("No transcript content found for this list.")
@@ -455,7 +443,7 @@ def generate_eval_set(
                 return (category, [])
             prompt = CATEGORY_PROMPTS[category].format(count=count)
             full_prompt = _with_language(f"{prompt}\n\n视频内容要点：\n{facts_block}", language)
-            raw = _call_llm(full_prompt, ai_cfg, llm_timeout=180, llm_max_tokens=16384)
+            raw = _call_llm(full_prompt, ai_cfg, llm_timeout=180, llm_max_tokens=LLM_MAX_TOKENS)
             stripped = strip_json_fences(raw)
             try:
                 data = json.loads(stripped)

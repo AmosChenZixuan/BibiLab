@@ -8,6 +8,7 @@ from bibilab.pipeline._shared import _call_llm
 from bibilab.config import AIConfig
 
 from eval._utils import now_iso, strip_json_fences
+from eval.config import LLM_MAX_TOKENS
 from eval.dashboard import TaskDashboard
 from eval.models import GradeResult, GradedRun, ProfileSnapshot, RunCaseResult
 from eval.storage import load_eval_set, load_eval_run, save_graded_run
@@ -104,14 +105,14 @@ def _chunks_text_from_case(case_result: RunCaseResult) -> str:
 async def _grade_one(prompt: str, ai_cfg: AIConfig) -> tuple[int | None, str, int]:
     t0 = time.monotonic()
     try:
-        raw = await asyncio.to_thread(_call_llm, prompt, ai_cfg, llm_timeout=120, llm_max_tokens=4096)
+        raw = await asyncio.to_thread(_call_llm, prompt, ai_cfg, llm_timeout=120, llm_max_tokens=LLM_MAX_TOKENS)
         score, reasoning = parse_grade_response(raw)
         if score is None:
             raw2 = await asyncio.to_thread(
                 _call_llm,
                 prompt + "\n\nYour previous response was invalid. Return ONLY valid JSON.",
                 ai_cfg,
-                llm_timeout=120, llm_max_tokens=4096,
+                llm_timeout=120, llm_max_tokens=LLM_MAX_TOKENS,
             )
             score2, reasoning2 = parse_grade_response(raw2)
             llm_ms = int((time.monotonic() - t0) * 1000)
