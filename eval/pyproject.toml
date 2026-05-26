@@ -1,0 +1,28 @@
+[project]
+name = "bibilab-eval"
+version = "0.1.0"
+description = "RAG answer evaluation framework for Bibilab"
+requires-python = ">=3.12"
+dependencies = [
+    "bibilab",
+    "click>=8.1.0",
+    "textual>=0.50.0",
+]
+
+[tool.uv.sources]
+bibilab = { path = "../backend", editable = true }
+
+[project.scripts]
+bibilab-eval = "eval.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.3",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/eval"]
