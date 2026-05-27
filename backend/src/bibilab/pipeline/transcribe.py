@@ -82,14 +82,24 @@ def _load_model(cfg: TranscriptionConfig) -> "WhisperModel":
     return _model
 
 
-def _is_prompt_echo(seg_text: str, prompt: str | None) -> bool:
-    """True when Whisper hallucinated the prompt verbatim (typically at trailing silence)."""
-    if not prompt:
+# Whisper's default no_speech_threshold. Segments above this are decoded
+# from windows the model itself flagged as silence — prompt echoes here are
+# hallucinations, not transcription. Real speech sits well below this.
+_SILENCE_PROB_THRESHOLD = 0.6
+
+
+def _is_prompt_echo(seg_text: str, no_speech_prob: float, prompt: str | None) -> bool:
+    """Drop prompt hallucinations on silent windows.
+
+    Requires both a textual match against the prompt AND a high no_speech_prob
+    so legitimate speech that happens to overlap the prompt wording
+    ('请使用标点符号' in a typing tutorial) is preserved.
+    """
+    if not prompt or no_speech_prob < _SILENCE_PROB_THRESHOLD:
         return False
     text = seg_text.strip()
     if not text:
         return False
-    # Exact, or a contiguous substring of the prompt of meaningful length.
     return text == prompt.strip() or (len(text) >= 4 and text in prompt)
 
 
@@ -97,13 +107,16 @@ def transcribe(audio_path: Path, cfg: TranscriptionConfig) -> tuple[list[Whisper
     """Transcribe audio to segments. Returns (segments, detected_language)."""
     model = _load_model(cfg)
     language = None if cfg.language == "auto" else cfg.language
-    is_zh = language in (None, "zh")
-    # zh punctuation strategy: sentence-shaped initial_prompt + hotwords seed
-    # punctuated style. hotwords re-bias every window so the style survives
-    # past the first 30s. condition_on_previous_text=False because prior-text
-    # conditioning (a) overwrites the hotword bias in get_prompt's token
-    # order (previous_tokens sit closer to decode start than hotwords) and
-    # (b) opens a repetition cascade on long audio.
+    # zh punctuation strategy applies only when the user explicitly selects zh.
+    # `auto` skips it — applying the Chinese prompt to detect-time-unknown
+    # audio risks biasing non-zh decoding toward Chinese tokens.
+    is_zh = language == "zh"
+    # Sentence-shaped initial_prompt + hotwords seed punctuated style every
+    # window. condition_on_previous_text=False on the zh path because prior
+    # decoded tokens sit closer to decode start than hotwords in
+    # WhisperModel.get_prompt, drowning the bias and opening a repetition
+    # cascade on long audio. Non-zh keeps faster-whisper's default (True)
+    # for cross-window proper-noun consistency.
     zh_prompt = "以下是普通话的句子，请使用标点符号。" if is_zh else None
     segments, info = model.transcribe(
         str(audio_path),
@@ -112,12 +125,12 @@ def transcribe(audio_path: Path, cfg: TranscriptionConfig) -> tuple[list[Whisper
         language=language,
         initial_prompt=zh_prompt,
         hotwords=zh_prompt,
-        condition_on_previous_text=False,
+        condition_on_previous_text=not is_zh,
     )
     segment_list = [
         WhisperSegment(start=s.start, end=s.end, text=s.text.strip())
         for s in segments
-        if not _is_prompt_echo(s.text, zh_prompt)
+        if not _is_prompt_echo(s.text, s.no_speech_prob, zh_prompt)
     ]
     detected_language: str | None = None if cfg.language != "auto" else info.language
     return segment_list, detected_language
