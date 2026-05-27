@@ -175,6 +175,117 @@ def test_chunk_unknown_language_falls_back_to_default():
 
 
 # ---------------------------------------------------------------------------
+# chunk.py — pause-aware boundary
+# ---------------------------------------------------------------------------
+
+
+def _word_seg(count: int, start: float, end: float) -> WhisperSegment:
+    """Segment with `count` tokens of filler text."""
+    return _seg("word " * count, start=start, end=end)
+
+
+def test_chunk_pause_boundary_splits_at_long_gap():
+    """3s gap between groups produces chunk boundary when buffer past min_target."""
+    group1 = [
+        _word_seg(30, start=0.0, end=5.0),
+        _word_seg(30, start=5.0, end=10.0),
+    ]
+    # 3s gap (10.0 → 13.0)
+    group2 = [
+        _word_seg(30, start=13.0, end=18.0),
+        _word_seg(30, start=18.0, end=23.0),
+    ]
+    chunks = chunk_segments(group1 + group2, target_tokens=100)
+    assert len(chunks) == 2
+    assert chunks[0].timestamp_end == 10.0
+    assert chunks[1].timestamp_start == 13.0
+
+
+def test_chunk_small_gap_no_pause_split():
+    """Gaps under default threshold fall back to token-target flush only."""
+    segs = [
+        _word_seg(30, start=0.0, end=5.0),
+        _word_seg(30, start=5.5, end=10.0),  # 0.5s gap
+        _word_seg(30, start=10.8, end=15.0),  # 0.8s gap
+        _word_seg(30, start=15.0, end=20.0),
+    ]
+    # All gaps < 1.5s, buffer accumulates to ~120 tokens, target=200 → one chunk
+    chunks = chunk_segments(segs, target_tokens=200)
+    assert len(chunks) == 1
+
+
+def test_chunk_pause_below_min_target_no_split():
+    """Long pause with buffer below min_target_ratio does not trigger flush."""
+    segs = [
+        _seg("tiny buffer", start=0.0, end=2.0),
+        # 3s gap but buffer too small (~2 tokens vs min 100 for target=200)
+        _word_seg(30, start=5.0, end=10.0),
+    ]
+    chunks = chunk_segments(segs, target_tokens=200)
+    assert len(chunks) == 1
+
+
+def test_chunk_pause_threshold_configurable():
+    """Lower pause_threshold_seconds triggers split on smaller gaps."""
+    group1 = [
+        _word_seg(30, start=0.0, end=5.0),
+        _word_seg(30, start=5.0, end=10.0),
+    ]
+    # 1.0s gap (10.0 → 11.0)
+    group2 = [_word_seg(30, start=11.0, end=16.0)]
+    segs = group1 + group2
+
+    # Default 1.5s threshold: 1.0s gap → no split
+    chunks_default = chunk_segments(segs, target_tokens=100)
+    assert len(chunks_default) == 1
+
+    # Custom 0.5s threshold: 1.0s gap → split
+    chunks_low = chunk_segments(segs, target_tokens=100, pause_threshold_seconds=0.5)
+    assert len(chunks_low) == 2
+
+
+def test_chunk_token_flush_skipped_when_buffer_below_min_target():
+    """Token-target flush skips when buffer < min_target_ratio to avoid orphans.
+
+    After a pause flush empties the buffer, a single small segment may sit
+    alone. When the next segment would overflow, the min_target guard skips
+    the flush, letting the small buffer merge into a larger chunk instead.
+    """
+    # _word_seg(10) ≈ 11 tokens, _word_seg(30) ≈ 31 tokens
+    # target=50, min=25 (50*0.5), max=66 (50*4/3)
+    segs = [
+        _word_seg(10, start=0.0, end=2.0),
+        _word_seg(10, start=2.0, end=4.0),  # buffer ~22t (< 25 min)
+        _word_seg(30, start=4.0, end=6.0),  # 22+31=53 > 50, but 22<25 → skip
+    ]
+    chunks = chunk_segments(segs, target_tokens=50)
+    assert len(chunks) == 1
+
+
+def test_chunk_pause_flush_before_oversized_segment():
+    """Oversized branch flushes buffer; pause block never reached for it.
+
+    The oversized check runs first in the loop body. When an oversized
+    segment arrives, its precursor path flushes any accumulated buffer
+    before emitting the oversized segment as its own chunk. This holds
+    regardless of pause gaps — the pause-aware block is unreachable
+    for oversized segments due to the continue on line 89.
+    """
+    # _word_seg(30) ≈ 31 tokens × 2 = ~62 tokens buffer (>= 50 min for target=100)
+    # _word_seg(140) ≈ 141 tokens (> 133 max) → oversized
+    group1 = [
+        _word_seg(30, start=0.0, end=5.0),
+        _word_seg(30, start=5.0, end=10.0),
+    ]
+    # 3s gap (10.0 → 13.0) — oversized path flushes buffer, not pause path
+    oversized = _word_seg(140, start=13.0, end=18.0)
+    chunks = chunk_segments(group1 + [oversized], target_tokens=100)
+    assert len(chunks) == 2
+    assert chunks[0].timestamp_end == 10.0
+    assert chunks[1].timestamp_start == 13.0
+
+
+# ---------------------------------------------------------------------------
 # _shared.py
 # ---------------------------------------------------------------------------
 

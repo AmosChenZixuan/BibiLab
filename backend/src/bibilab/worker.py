@@ -551,6 +551,7 @@ All output fields MUST be written in {_LANG_NAME.get(lang, "English")}."""
         chunks = chunk_segments(
             segments,
             language=effective_language,
+            pause_threshold_seconds=cfg.rag.chunk_pause_threshold,
         )
 
         meta_raw = _parse_job_meta(job)
