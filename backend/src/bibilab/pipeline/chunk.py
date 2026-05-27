@@ -26,6 +26,9 @@ _MAX_TOKEN_RATIO = 4 / 3
 # Prevents flushing near-empty buffers on every short pause.
 _MIN_TARGET_RATIO = 0.5
 
+# Sentence-ending punctuation — token flush prefers these as boundaries.
+_SENT_END: tuple[str, ...] = ("。", "！", "？", ".", "!", "?")
+
 
 @dataclass
 class RagChunk:
@@ -53,6 +56,7 @@ def chunk_segments(
     buf_tokens = 0
     pause_flushes = 0
     token_flushes = 0
+    sentence_flushes = 0
     oversized_flushes = 0
 
     def flush(idx: int) -> None:
@@ -99,13 +103,20 @@ def chunk_segments(
                 chunk_idx += 1
                 buf_segs, buf_tokens = [], 0
 
-        # Token-target flush: soft upper bound when buffer would overflow.
-        # Min_target_ratio guard avoids orphan chunks when a recent pause
-        # flush left a single small segment. When suppressed, the buffer
-        # may temporarily exceed resolved_target (bounded by resolved_max
-        # via per-segment oversized checks above).
+        # Token-target flush: prefers sentence-ending punctuation as
+        # boundary. Falls back to hard-cap flush near resolved_max to
+        # bound worst-case chunk size when no sentence end appears.
         if buf_tokens + seg_tokens > resolved_target and buf_segs:
-            if buf_tokens >= resolved_target * _MIN_TARGET_RATIO:
+            last_text = buf_segs[-1].text.rstrip()
+            ends_at_sentence = last_text.endswith(_SENT_END)
+            near_hard_cap = buf_tokens + seg_tokens > resolved_max * 0.9
+
+            if ends_at_sentence and buf_tokens >= resolved_target * _MIN_TARGET_RATIO:
+                flush(chunk_idx)
+                sentence_flushes += 1
+                chunk_idx += 1
+                buf_segs, buf_tokens = [], 0
+            elif near_hard_cap and buf_tokens >= resolved_target * _MIN_TARGET_RATIO:
                 flush(chunk_idx)
                 token_flushes += 1
                 chunk_idx += 1
@@ -116,14 +127,15 @@ def chunk_segments(
 
     flush(chunk_idx)
 
-    total_flushes = pause_flushes + token_flushes + oversized_flushes
+    total_flushes = pause_flushes + token_flushes + sentence_flushes + oversized_flushes
     if total_flushes:
         logger.info(
-            "chunk_segments: %d chunks from %d segments (pause=%d, token=%d, oversized=%d, target=%d)",
+            "chunk_segments: %d chunks from %d segments (pause=%d, token=%d, sentence=%d, oversized=%d, target=%d)",
             len(chunks),
             len(segments),
             pause_flushes,
             token_flushes,
+            sentence_flushes,
             oversized_flushes,
             resolved_target,
         )
