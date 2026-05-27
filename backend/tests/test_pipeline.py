@@ -5,13 +5,16 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from bibilab.config import TranscriptionConfig
+from bibilab.pipeline import transcribe as transcribe_mod
 from bibilab.pipeline._shared import _resolved_lang
 from bibilab.pipeline.audio import PipelineError, extract_audio
-from bibilab.pipeline.chunk import RagChunk, chunk_segments
+from bibilab.pipeline.chunk import _SENT_END, RagChunk, chunk_segments
 from bibilab.pipeline.extract import generate_overview
 from bibilab.pipeline.transcribe import (
     WhisperSegment,
     _compute_type_for_device,
+    transcribe,
     write_transcript,
 )
 
@@ -90,6 +93,117 @@ def test_write_transcript_hours(tmp_path: Path):
 def test_compute_type_for_device():
     assert _compute_type_for_device("cpu") == "int8"
     assert _compute_type_for_device("cuda") == "float16"
+
+
+def _fake_whisper_model(monkeypatch, segs=None) -> MagicMock:
+    """Replace _load_model with a MagicMock whose .transcribe returns (segs, info).
+
+    Each entry: (start, end, text) for default low no_speech_prob, or
+    (start, end, text, no_speech_prob) to set silence probability explicitly.
+    """
+    model = MagicMock()
+    info = MagicMock()
+    info.language = "zh"
+    fake_segs = []
+    for entry in segs or []:
+        if len(entry) == 4:
+            start, end, text, no_speech = entry
+        else:
+            start, end, text = entry
+            no_speech = 0.05
+        m = MagicMock()
+        m.start, m.end, m.text, m.no_speech_prob = start, end, text, no_speech
+        fake_segs.append(m)
+    model.transcribe.return_value = (fake_segs, info)
+    monkeypatch.setattr(transcribe_mod, "_load_model", lambda cfg: model)
+    return model
+
+
+@pytest.mark.parametrize(
+    "lang,expected_strategy_key",
+    [
+        # 'auto' uses default strategy — applying a per-language prompt before
+        # language detection would bias decoding toward that language's tokens.
+        ("auto", None),
+        ("zh", "zh"),
+        ("en", None),
+        ("ja", None),
+    ],
+)
+def test_transcribe_language_dispatch(monkeypatch, tmp_path: Path, lang, expected_strategy_key):
+    model = _fake_whisper_model(monkeypatch)
+    cfg = TranscriptionConfig(language=lang)
+    audio = tmp_path / "a.wav"
+    audio.write_bytes(b"")
+
+    transcribe(audio, cfg)
+
+    expected = (
+        transcribe_mod._LANG_STRATEGIES[expected_strategy_key]
+        if expected_strategy_key
+        else transcribe_mod._DEFAULT_STRATEGY
+    )
+    kwargs = model.transcribe.call_args.kwargs
+    assert kwargs["initial_prompt"] == expected.initial_prompt
+    assert kwargs["hotwords"] == expected.hotwords
+    assert kwargs["condition_on_previous_text"] is expected.condition_on_previous_text
+
+
+def test_transcribe_strips_silent_prompt_echo(monkeypatch, tmp_path: Path):
+    """Prompt-shaped segments on silent windows are dropped."""
+    prompt = "以下是普通话的句子，请使用标点符号。"
+    _fake_whisper_model(
+        monkeypatch,
+        segs=[
+            (0.0, 2.0, "真正的句子。", 0.05),
+            (2.0, 4.0, prompt, 0.95),  # exact echo on silence
+            (4.0, 6.0, "请使用标点符号", 0.85),  # substring echo on silence
+            (6.0, 8.0, "另一句正常内容。", 0.10),
+        ],
+    )
+    cfg = TranscriptionConfig(language="zh")
+    audio = tmp_path / "a.wav"
+    audio.write_bytes(b"")
+
+    segs, _ = transcribe(audio, cfg)
+    assert [s.text for s in segs] == ["真正的句子。", "另一句正常内容。"]
+
+
+def test_transcribe_keeps_prompt_substring_on_real_speech(monkeypatch, tmp_path: Path):
+    """Segments matching prompt text but with low no_speech_prob are kept.
+
+    Real speaker uttering '请使用标点符号' (a 7-char substring of the prompt)
+    in a typing tutorial must survive — only silence-window hallucinations
+    should be filtered.
+    """
+    _fake_whisper_model(
+        monkeypatch,
+        segs=[
+            (0.0, 2.0, "今天我们来讲打字。", 0.05),
+            (2.0, 4.0, "请使用标点符号", 0.03),  # legitimate speech
+            (4.0, 6.0, "普通话的句子", 0.10),  # legitimate speech
+        ],
+    )
+    cfg = TranscriptionConfig(language="zh")
+    audio = tmp_path / "a.wav"
+    audio.write_bytes(b"")
+
+    segs, _ = transcribe(audio, cfg)
+    assert [s.text for s in segs] == ["今天我们来讲打字。", "请使用标点符号", "普通话的句子"]
+
+
+def test_transcribe_keeps_non_zh_segments_verbatim(monkeypatch, tmp_path: Path):
+    """Non-zh path has no prompt, so echo-strip is a no-op even on high no_speech_prob."""
+    _fake_whisper_model(
+        monkeypatch,
+        segs=[(0.0, 2.0, "hello world", 0.9), (2.0, 4.0, "second", 0.05)],
+    )
+    cfg = TranscriptionConfig(language="en")
+    audio = tmp_path / "a.wav"
+    audio.write_bytes(b"")
+
+    segs, _ = transcribe(audio, cfg)
+    assert [s.text for s in segs] == ["hello world", "second"]
 
 
 # ---------------------------------------------------------------------------
@@ -283,6 +397,100 @@ def test_chunk_pause_flush_before_oversized_segment():
     assert len(chunks) == 2
     assert chunks[0].timestamp_end == 10.0
     assert chunks[1].timestamp_start == 13.0
+
+
+# ---------------------------------------------------------------------------
+# chunk.py — sentence-boundary-aware token flush
+# ---------------------------------------------------------------------------
+
+
+def test_chunk_sentence_end_triggers_flush(caplog):
+    """Segment ending with 。triggers flush at sentence boundary when past target."""
+    filler = "word " * 25  # 26 tokens/seg with cl100k
+    segs = [_seg(filler, start=float(i), end=float(i + 1)) for i in range(11)]
+    segs.append(_seg(filler + "。", start=11.0, end=12.0))
+    segs.append(_seg(filler, start=12.0, end=13.0))
+
+    with caplog.at_level("INFO", logger="bibilab.pipeline.chunk"):
+        chunks = chunk_segments(segs, target_tokens=300)
+
+    assert len(chunks) == 2
+    assert chunks[0].text.endswith("。")
+    # Telemetry: sentence_flushes must be credited (not miscredited to token=)
+    assert "sentence=1" in caplog.text
+    assert "token=0" in caplog.text
+
+
+def test_chunk_no_sentence_end_flushes_at_target(caplog):
+    """Without any sentence-end in buffer, token-flush bounds chunk at target."""
+    filler = "word " * 25
+    segs = [_seg(filler, start=float(i), end=float(i + 1)) for i in range(14)]
+
+    with caplog.at_level("INFO", logger="bibilab.pipeline.chunk"):
+        chunks = chunk_segments(segs, target_tokens=300)
+
+    assert len(chunks) == 2
+    # No sentence boundary anywhere → first chunk credited to token, not sentence.
+    assert "token=1" in caplog.text
+    assert "sentence=0" in caplog.text
+    assert not chunks[0].text.endswith(_SENT_END)
+
+
+@pytest.mark.parametrize("punct", ["!", "?", "．", "…", "。", "！", "？"])
+def test_chunk_punctuation_variants_trigger_sentence_flush(punct):
+    """Each entry in _SENT_END acts as a sentence boundary when scan finds it."""
+    filler = "word " * 25
+    segs = [_seg(filler, start=float(i), end=float(i + 1)) for i in range(11)]
+    segs.append(_seg(filler + punct, start=11.0, end=12.0))
+    segs.append(_seg(filler, start=12.0, end=13.0))
+
+    chunks = chunk_segments(segs, target_tokens=300)
+    assert len(chunks) == 2, f"punct={punct!r} should trigger flush"
+    assert chunks[0].text.endswith(punct)
+
+
+@pytest.mark.parametrize("ambiguous", [".", ";"])
+def test_chunk_ascii_period_semicolon_not_sentence_end(ambiguous):
+    """ASCII '.' and ';' are excluded — decimals, abbreviations, list separators."""
+    filler = "word " * 25
+    segs = [_seg(filler, start=float(i), end=float(i + 1)) for i in range(11)]
+    segs.append(_seg(filler + ambiguous, start=11.0, end=12.0))
+    segs.append(_seg(filler, start=12.0, end=13.0))
+
+    chunks = chunk_segments(segs, target_tokens=300)
+    # Buffer flushes at target (token branch), not on the ambiguous character.
+    assert len(chunks) == 2
+    assert not chunks[0].text.endswith(ambiguous)
+
+
+def test_chunk_sentence_boundary_in_middle_of_buffer(caplog):
+    """Sentence boundary at buf[i<-1] still triggers split (scan, not last-only)."""
+    filler = "word " * 25
+    # s0..s9 = 10 segs no punct (260 tokens). s10 = filler+"。" (26). s11..s14 no punct (104).
+    # Incoming s15 (26) → buf = 390 > 300. Scan finds s10 as boundary;
+    # head s0..s10 (286 tokens, >= 150) flushes; tail s11..s14 retained.
+    segs = [_seg(filler, start=float(i), end=float(i + 1)) for i in range(10)]
+    segs.append(_seg(filler + "。", start=10.0, end=11.0))
+    segs.extend(_seg(filler, start=float(i), end=float(i + 1)) for i in range(11, 16))
+
+    with caplog.at_level("INFO", logger="bibilab.pipeline.chunk"):
+        chunks = chunk_segments(segs, target_tokens=300)
+
+    assert len(chunks) >= 2
+    assert chunks[0].text.endswith("。"), "split must land on the boundary, not after it"
+    assert "sentence=1" in caplog.text
+
+
+def test_chunk_sentence_flush_below_min_target_skips():
+    """Buffer ends at 。but is below min_target_ratio → boundary not qualifying, segment merged in."""
+    segs = [
+        _seg("hello world this ends。", start=0.0, end=1.0),
+        _seg("word " * 220, start=1.0, end=2.0),
+    ]
+
+    chunks = chunk_segments(segs, target_tokens=200)
+    assert len(chunks) == 1
+    assert chunks[0].text.endswith(("word", "word "))
 
 
 # ---------------------------------------------------------------------------
