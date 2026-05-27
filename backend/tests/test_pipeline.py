@@ -5,13 +5,16 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from bibilab.config import TranscriptionConfig
+from bibilab.pipeline import transcribe as transcribe_mod
 from bibilab.pipeline._shared import _resolved_lang
 from bibilab.pipeline.audio import PipelineError, extract_audio
-from bibilab.pipeline.chunk import RagChunk, chunk_segments
+from bibilab.pipeline.chunk import _SENT_END, RagChunk, chunk_segments
 from bibilab.pipeline.extract import generate_overview
 from bibilab.pipeline.transcribe import (
     WhisperSegment,
     _compute_type_for_device,
+    transcribe,
     write_transcript,
 )
 
@@ -90,6 +93,38 @@ def test_write_transcript_hours(tmp_path: Path):
 def test_compute_type_for_device():
     assert _compute_type_for_device("cpu") == "int8"
     assert _compute_type_for_device("cuda") == "float16"
+
+
+def _fake_whisper_model(monkeypatch) -> MagicMock:
+    """Replace _load_model with a MagicMock whose .transcribe returns ([], info)."""
+    model = MagicMock()
+    info = MagicMock()
+    info.language = "zh"
+    model.transcribe.return_value = ([], info)
+    monkeypatch.setattr(transcribe_mod, "_load_model", lambda cfg: model)
+    return model
+
+
+@pytest.mark.parametrize(
+    "lang,expect_prompt,expect_condition",
+    [
+        ("auto", True, True),  # auto → language=None → treated as zh
+        ("zh", True, True),
+        ("en", False, False),
+        ("ja", False, False),
+    ],
+)
+def test_transcribe_language_dispatch(monkeypatch, tmp_path: Path, lang, expect_prompt, expect_condition):
+    model = _fake_whisper_model(monkeypatch)
+    cfg = TranscriptionConfig(language=lang)
+    audio = tmp_path / "a.wav"
+    audio.write_bytes(b"")
+
+    transcribe(audio, cfg)
+
+    kwargs = model.transcribe.call_args.kwargs
+    assert (kwargs["initial_prompt"] is not None) is expect_prompt
+    assert kwargs["condition_on_previous_text"] is expect_condition
 
 
 # ---------------------------------------------------------------------------
@@ -290,70 +325,75 @@ def test_chunk_pause_flush_before_oversized_segment():
 # ---------------------------------------------------------------------------
 
 
-def test_chunk_sentence_end_triggers_flush():
+def test_chunk_sentence_end_triggers_flush(caplog):
     """Segment ending with 。triggers flush at sentence boundary when past target."""
-    filler = "word " * 25  # 26 tokens per seg
+    filler = "word " * 25  # 26 tokens/seg with cl100k
     segs = [_seg(filler, start=float(i), end=float(i + 1)) for i in range(11)]
     segs.append(_seg(filler + "。", start=11.0, end=12.0))
     segs.append(_seg(filler, start=12.0, end=13.0))
-    # target=300, max=400, hard_cap=360.  11×26=286 < 300.
-    # s12(。) check: 286+26=312 > 300, buf[-1]=s11 no punct, near_hard 312≤360 → wait. buf=312.
-    # s13 check: 312+26=338 > 300, buf[-1]=s12 ends 。, buf≥150 → sentence flush.
-    chunks = chunk_segments(segs, target_tokens=300)
+
+    with caplog.at_level("INFO", logger="bibilab.pipeline.chunk"):
+        chunks = chunk_segments(segs, target_tokens=300)
+
     assert len(chunks) == 2
     assert chunks[0].text.endswith("。")
+    # Telemetry: sentence_flushes must be credited (not miscredited to token=)
+    assert "sentence=1" in caplog.text
+    assert "token=0" in caplog.text
 
 
-def test_chunk_no_sentence_end_waits():
-    """Without sentence-ending punctuation, buffer accumulates past target."""
-    filler = "word " * 25  # 26 tokens per seg
+def test_chunk_no_sentence_end_falls_back_to_hard_cap():
+    """Without sentence-ending punctuation, buffer flushes via hard-cap branch."""
+    filler = "word " * 25
     segs = [_seg(filler, start=float(i), end=float(i + 1)) for i in range(12)]
     segs.append(_seg(filler + "。", start=12.0, end=13.0))
-    # target=200, max=266, hard_cap=239.  12×26=312 > 200 but check-by-check:
-    # After s7: buf=182, s8: 182+26=208 > 200, buf[-1]=s7 no punct,
-    #   near_hard 208 ≤ 239 → wait. buf=208.
-    # s9: 208+26=234 > 200, near_hard 234 ≤ 239 → wait. buf=234.
-    # s10: 234+26=260 > 200, near_hard 260 > 239 → hard cap flush. buf=26.
-    # s11–s13 accumulate, final flush. → 2 chunks (vs ≥4 with old blind-token flush).
+
     chunks = chunk_segments(segs, target_tokens=200)
-    assert len(chunks) == 2
-    # First chunk should be the hard-cap flush (no sentence end in it)
-    assert not chunks[0].text.endswith(("。", "！", "？"))
+    # First chunk is the hard-cap flush — no sentence terminal at its end.
+    assert len(chunks) >= 2
+    assert not chunks[0].text.endswith(_SENT_END)
 
 
-def test_chunk_hard_cap_flush_without_sentence_end():
-    """Near resolved_max, hard-cap flush fires even without sentence-ending punctuation."""
-    filler = "word " * 25  # 26 tokens per seg
+def test_chunk_hard_cap_flush_logs_token_counter(caplog):
+    """Hard-cap fallback (no sentence end available) increments token_flushes."""
+    filler = "word " * 25
     segs = [_seg(filler, start=float(i), end=float(i + 1)) for i in range(14)]
-    # target=300, max=400, hard_cap=360.
-    # s1–s13: buf=338. s14: 338+26=364 > 300, near_hard 364 > 360 → hard cap flush.
-    chunks = chunk_segments(segs, target_tokens=300)
-    assert len(chunks) == 2
 
-
-def test_chunk_english_punctuation_triggers_sentence_flush():
-    """English sentence-ending punctuation .!? also triggers flush."""
-    for punct in (".", "!", "?"):
-        filler = "word " * 25  # 26 tokens per seg
-        segs = [_seg(filler, start=float(i), end=float(i + 1)) for i in range(11)]
-        segs.append(_seg(filler + punct, start=11.0, end=12.0))
-        segs.append(_seg(filler, start=12.0, end=13.0))
-        # Same layout as test_chunk_sentence_end_triggers_flush
+    with caplog.at_level("INFO", logger="bibilab.pipeline.chunk"):
         chunks = chunk_segments(segs, target_tokens=300)
-        assert len(chunks) == 2, f"punct={punct!r} should trigger flush"
-        assert chunks[0].text.endswith(punct)
+
+    assert len(chunks) == 2
+    assert "token=1" in caplog.text
+    assert "sentence=0" in caplog.text
+
+
+@pytest.mark.parametrize("punct", [".", "!", "?", "．", "；", ";", "…"])
+def test_chunk_punctuation_variants_trigger_sentence_flush(punct):
+    """Each entry in _SENT_END (sampled) acts as a sentence boundary."""
+    filler = "word " * 25
+    segs = [_seg(filler, start=float(i), end=float(i + 1)) for i in range(11)]
+    segs.append(_seg(filler + punct, start=11.0, end=12.0))
+    segs.append(_seg(filler, start=12.0, end=13.0))
+
+    chunks = chunk_segments(segs, target_tokens=300)
+    assert len(chunks) == 2, f"punct={punct!r} should trigger flush"
+    assert chunks[0].text.endswith(punct)
 
 
 def test_chunk_sentence_flush_below_min_target_skips():
-    """Sentence end with buffer below min_target_ratio does not trigger flush."""
+    """Buffer ends at 。but is below min_target_ratio → sentence branch skipped, segment merged in."""
+    # target=200, min_ratio=0.5 → 100 token floor. Buf~10 tokens ending in 。,
+    # then a big segment (~150 tokens) pushes total over target but buf is < 100.
+    # ends_at_sentence True but min-ratio False → both branches skip, segment appends.
     segs = [
-        _seg("tiny", start=0.0, end=1.0),
-        _seg("ok。", start=1.0, end=2.0),
-        _seg("word " * 30, start=2.0, end=3.0),  # ~31 tokens
+        _seg("hello world this ends。", start=0.0, end=1.0),
+        _seg("word " * 220, start=1.0, end=2.0),
     ]
-    # target=200, min=100. buf after s2 ≈ 2. 2+31=33 > 200? No — check never fires.
+
     chunks = chunk_segments(segs, target_tokens=200)
     assert len(chunks) == 1
+    # The 。is not the chunk boundary — both segments merged.
+    assert chunks[0].text.endswith(("word", "word "))
 
 
 # ---------------------------------------------------------------------------

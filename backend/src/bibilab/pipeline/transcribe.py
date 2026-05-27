@@ -86,14 +86,15 @@ def transcribe(audio_path: Path, cfg: TranscriptionConfig) -> tuple[list[Whisper
     """Transcribe audio to segments. Returns (segments, detected_language)."""
     model = _load_model(cfg)
     language = None if cfg.language == "auto" else cfg.language
-    initial_prompt = "以下是普通话的句子，请使用标点符号。" if language in (None, "zh") else None
+    is_zh = language in (None, "zh")
+    initial_prompt = "以下是普通话的句子，请使用标点符号。" if is_zh else None
     segments, info = model.transcribe(
         str(audio_path),
         beam_size=cfg.beam_size,
         vad_filter=True,
         language=language,
         initial_prompt=initial_prompt,
-        condition_on_previous_text=True,
+        condition_on_previous_text=is_zh,
     )
     segment_list = [WhisperSegment(start=s.start, end=s.end, text=s.text.strip()) for s in segments]
     detected_language: str | None = None if cfg.language != "auto" else info.language

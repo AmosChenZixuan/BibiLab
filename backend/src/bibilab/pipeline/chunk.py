@@ -27,7 +27,12 @@ _MAX_TOKEN_RATIO = 4 / 3
 _MIN_TARGET_RATIO = 0.5
 
 # Sentence-ending punctuation — token flush prefers these as boundaries.
-_SENT_END: tuple[str, ...] = ("。", "！", "？", ".", "!", "?")
+# Covers CJK terminals (incl. ellipsis, full-width period/semicolon) and ASCII.
+_SENT_END: tuple[str, ...] = ("。", "！", "？", "．", "；", "…", ".", "!", "?", ";")
+
+# Fraction of resolved_max at which a token-overflow flush fires even
+# without a sentence-ending boundary — bounds worst-case chunk size.
+_NEAR_HARD_CAP_RATIO = 0.9
 
 
 @dataclass
@@ -109,7 +114,7 @@ def chunk_segments(
         if buf_tokens + seg_tokens > resolved_target and buf_segs:
             last_text = buf_segs[-1].text.rstrip()
             ends_at_sentence = last_text.endswith(_SENT_END)
-            near_hard_cap = buf_tokens + seg_tokens > resolved_max * 0.9
+            near_hard_cap = buf_tokens + seg_tokens > resolved_max * _NEAR_HARD_CAP_RATIO
 
             if ends_at_sentence and buf_tokens >= resolved_target * _MIN_TARGET_RATIO:
                 flush(chunk_idx)
