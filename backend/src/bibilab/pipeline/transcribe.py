@@ -88,6 +88,37 @@ def _load_model(cfg: TranscriptionConfig) -> "WhisperModel":
 _SILENCE_PROB_THRESHOLD = 0.6
 
 
+@dataclass(frozen=True)
+class _LangStrategy:
+    """Per-language Whisper decoding strategy."""
+
+    initial_prompt: str | None
+    hotwords: str | None
+    # When True, each decode window conditions on the previous window's text.
+    # Off for languages whose training data biases the decoder into repetition
+    # cascades or whose prompt bias would otherwise be drowned out (see zh).
+    condition_on_previous_text: bool
+
+
+# Per-language transcription strategy. Languages absent from the table fall
+# back to _DEFAULT_STRATEGY (faster-whisper defaults, no prompt biasing).
+# Add a language by inserting an entry — no other code changes required.
+_LANG_STRATEGIES: dict[str, _LangStrategy] = {
+    # zh: training data is largely subtitle-style without punctuation.
+    # initial_prompt seeds the first window; hotwords re-bias every window so
+    # punctuation survives past 30s. condition_on_previous_text=False because
+    # prior tokens sit closer to decode start than hotwords in
+    # WhisperModel.get_prompt, drowning the bias and opening a repetition
+    # cascade on long audio.
+    "zh": _LangStrategy(
+        initial_prompt="以下是普通话的句子，请使用标点符号。",
+        hotwords="以下是普通话的句子，请使用标点符号。",
+        condition_on_previous_text=False,
+    ),
+}
+_DEFAULT_STRATEGY = _LangStrategy(initial_prompt=None, hotwords=None, condition_on_previous_text=True)
+
+
 def _is_prompt_echo(seg_text: str, no_speech_prob: float, prompt: str | None) -> bool:
     """Drop prompt hallucinations on silent windows.
 
@@ -106,31 +137,23 @@ def _is_prompt_echo(seg_text: str, no_speech_prob: float, prompt: str | None) ->
 def transcribe(audio_path: Path, cfg: TranscriptionConfig) -> tuple[list[WhisperSegment], str | None]:
     """Transcribe audio to segments. Returns (segments, detected_language)."""
     model = _load_model(cfg)
+    # `auto` skips per-language strategy — applying a language-specific prompt
+    # before detection risks biasing decoding toward that language's tokens.
     language = None if cfg.language == "auto" else cfg.language
-    # zh punctuation strategy applies only when the user explicitly selects zh.
-    # `auto` skips it — applying the Chinese prompt to detect-time-unknown
-    # audio risks biasing non-zh decoding toward Chinese tokens.
-    is_zh = language == "zh"
-    # Sentence-shaped initial_prompt + hotwords seed punctuated style every
-    # window. condition_on_previous_text=False on the zh path because prior
-    # decoded tokens sit closer to decode start than hotwords in
-    # WhisperModel.get_prompt, drowning the bias and opening a repetition
-    # cascade on long audio. Non-zh keeps faster-whisper's default (True)
-    # for cross-window proper-noun consistency.
-    zh_prompt = "以下是普通话的句子，请使用标点符号。" if is_zh else None
+    strategy = _LANG_STRATEGIES.get(language, _DEFAULT_STRATEGY)
     segments, info = model.transcribe(
         str(audio_path),
         beam_size=cfg.beam_size,
         vad_filter=True,
         language=language,
-        initial_prompt=zh_prompt,
-        hotwords=zh_prompt,
-        condition_on_previous_text=not is_zh,
+        initial_prompt=strategy.initial_prompt,
+        hotwords=strategy.hotwords,
+        condition_on_previous_text=strategy.condition_on_previous_text,
     )
     segment_list = [
         WhisperSegment(start=s.start, end=s.end, text=s.text.strip())
         for s in segments
-        if not _is_prompt_echo(s.text, s.no_speech_prob, zh_prompt)
+        if not _is_prompt_echo(s.text, s.no_speech_prob, strategy.initial_prompt)
     ]
     detected_language: str | None = None if cfg.language != "auto" else info.language
     return segment_list, detected_language

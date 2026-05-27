@@ -120,17 +120,17 @@ def _fake_whisper_model(monkeypatch, segs=None) -> MagicMock:
 
 
 @pytest.mark.parametrize(
-    "lang,is_zh",
+    "lang,expected_strategy_key",
     [
-        # 'auto' no longer treated as zh — applying the Chinese prompt before
-        # language detection biased non-Chinese audio toward CJK tokens.
-        ("auto", False),
-        ("zh", True),
-        ("en", False),
-        ("ja", False),
+        # 'auto' uses default strategy — applying a per-language prompt before
+        # language detection would bias decoding toward that language's tokens.
+        ("auto", None),
+        ("zh", "zh"),
+        ("en", None),
+        ("ja", None),
     ],
 )
-def test_transcribe_language_dispatch(monkeypatch, tmp_path: Path, lang, is_zh):
+def test_transcribe_language_dispatch(monkeypatch, tmp_path: Path, lang, expected_strategy_key):
     model = _fake_whisper_model(monkeypatch)
     cfg = TranscriptionConfig(language=lang)
     audio = tmp_path / "a.wav"
@@ -138,12 +138,15 @@ def test_transcribe_language_dispatch(monkeypatch, tmp_path: Path, lang, is_zh):
 
     transcribe(audio, cfg)
 
+    expected = (
+        transcribe_mod._LANG_STRATEGIES[expected_strategy_key]
+        if expected_strategy_key
+        else transcribe_mod._DEFAULT_STRATEGY
+    )
     kwargs = model.transcribe.call_args.kwargs
-    assert (kwargs["initial_prompt"] is not None) is is_zh
-    assert (kwargs["hotwords"] is not None) is is_zh
-    # zh: condition_on_previous_text=False to avoid repetition cascade.
-    # non-zh: keep faster-whisper default True for cross-window context.
-    assert kwargs["condition_on_previous_text"] is (not is_zh)
+    assert kwargs["initial_prompt"] == expected.initial_prompt
+    assert kwargs["hotwords"] == expected.hotwords
+    assert kwargs["condition_on_previous_text"] is expected.condition_on_previous_text
 
 
 def test_transcribe_strips_silent_prompt_echo(monkeypatch, tmp_path: Path):
