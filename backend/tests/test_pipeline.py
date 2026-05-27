@@ -95,26 +95,31 @@ def test_compute_type_for_device():
     assert _compute_type_for_device("cuda") == "float16"
 
 
-def _fake_whisper_model(monkeypatch) -> MagicMock:
-    """Replace _load_model with a MagicMock whose .transcribe returns ([], info)."""
+def _fake_whisper_model(monkeypatch, segs=None) -> MagicMock:
+    """Replace _load_model with a MagicMock whose .transcribe returns (segs, info)."""
     model = MagicMock()
     info = MagicMock()
     info.language = "zh"
-    model.transcribe.return_value = ([], info)
+    fake_segs = []
+    for start, end, text in segs or []:
+        m = MagicMock()
+        m.start, m.end, m.text = start, end, text
+        fake_segs.append(m)
+    model.transcribe.return_value = (fake_segs, info)
     monkeypatch.setattr(transcribe_mod, "_load_model", lambda cfg: model)
     return model
 
 
 @pytest.mark.parametrize(
-    "lang,expect_prompt,expect_condition",
+    "lang,is_zh",
     [
-        ("auto", True, True),  # auto → language=None → treated as zh
-        ("zh", True, True),
-        ("en", False, False),
-        ("ja", False, False),
+        ("auto", True),  # auto → language=None → treated as zh
+        ("zh", True),
+        ("en", False),
+        ("ja", False),
     ],
 )
-def test_transcribe_language_dispatch(monkeypatch, tmp_path: Path, lang, expect_prompt, expect_condition):
+def test_transcribe_language_dispatch(monkeypatch, tmp_path: Path, lang, is_zh):
     model = _fake_whisper_model(monkeypatch)
     cfg = TranscriptionConfig(language=lang)
     audio = tmp_path / "a.wav"
@@ -123,8 +128,47 @@ def test_transcribe_language_dispatch(monkeypatch, tmp_path: Path, lang, expect_
     transcribe(audio, cfg)
 
     kwargs = model.transcribe.call_args.kwargs
-    assert (kwargs["initial_prompt"] is not None) is expect_prompt
-    assert kwargs["condition_on_previous_text"] is expect_condition
+    # zh path: sentence prompt + hotwords seed punctuated style every window.
+    # condition_on_previous_text always False to avoid cascade + hotword dilution.
+    assert (kwargs["initial_prompt"] is not None) is is_zh
+    assert (kwargs["hotwords"] is not None) is is_zh
+    assert kwargs["condition_on_previous_text"] is False
+
+
+def test_transcribe_strips_prompt_echo(monkeypatch, tmp_path: Path):
+    """Segments hallucinating the prompt (at trailing silence) are dropped."""
+    prompt = "以下是普通话的句子，请使用标点符号。"
+    _fake_whisper_model(
+        monkeypatch,
+        segs=[
+            (0.0, 2.0, "真正的句子。"),
+            (2.0, 4.0, prompt),  # exact echo
+            (4.0, 6.0, "请使用标点符号"),  # substring echo
+            (6.0, 8.0, "另一句正常内容。"),
+        ],
+    )
+    cfg = TranscriptionConfig(language="zh")
+    audio = tmp_path / "a.wav"
+    audio.write_bytes(b"")
+
+    segs, _ = transcribe(audio, cfg)
+
+    texts = [s.text for s in segs]
+    assert texts == ["真正的句子。", "另一句正常内容。"]
+
+
+def test_transcribe_keeps_non_zh_segments_verbatim(monkeypatch, tmp_path: Path):
+    """Non-zh path has no prompt, so echo-strip is a no-op."""
+    _fake_whisper_model(
+        monkeypatch,
+        segs=[(0.0, 2.0, "hello world"), (2.0, 4.0, "second")],
+    )
+    cfg = TranscriptionConfig(language="en")
+    audio = tmp_path / "a.wav"
+    audio.write_bytes(b"")
+
+    segs, _ = transcribe(audio, cfg)
+    assert [s.text for s in segs] == ["hello world", "second"]
 
 
 # ---------------------------------------------------------------------------

@@ -82,21 +82,43 @@ def _load_model(cfg: TranscriptionConfig) -> "WhisperModel":
     return _model
 
 
+def _is_prompt_echo(seg_text: str, prompt: str | None) -> bool:
+    """True when Whisper hallucinated the prompt verbatim (typically at trailing silence)."""
+    if not prompt:
+        return False
+    text = seg_text.strip()
+    if not text:
+        return False
+    # Exact, or a contiguous substring of the prompt of meaningful length.
+    return text == prompt.strip() or (len(text) >= 4 and text in prompt)
+
+
 def transcribe(audio_path: Path, cfg: TranscriptionConfig) -> tuple[list[WhisperSegment], str | None]:
     """Transcribe audio to segments. Returns (segments, detected_language)."""
     model = _load_model(cfg)
     language = None if cfg.language == "auto" else cfg.language
     is_zh = language in (None, "zh")
-    initial_prompt = "以下是普通话的句子，请使用标点符号。" if is_zh else None
+    # zh punctuation strategy: sentence-shaped initial_prompt + hotwords seed
+    # punctuated style. hotwords re-bias every window so the style survives
+    # past the first 30s. condition_on_previous_text=False because prior-text
+    # conditioning (a) overwrites the hotword bias in get_prompt's token
+    # order (previous_tokens sit closer to decode start than hotwords) and
+    # (b) opens a repetition cascade on long audio.
+    zh_prompt = "以下是普通话的句子，请使用标点符号。" if is_zh else None
     segments, info = model.transcribe(
         str(audio_path),
         beam_size=cfg.beam_size,
         vad_filter=True,
         language=language,
-        initial_prompt=initial_prompt,
-        condition_on_previous_text=is_zh,
+        initial_prompt=zh_prompt,
+        hotwords=zh_prompt,
+        condition_on_previous_text=False,
     )
-    segment_list = [WhisperSegment(start=s.start, end=s.end, text=s.text.strip()) for s in segments]
+    segment_list = [
+        WhisperSegment(start=s.start, end=s.end, text=s.text.strip())
+        for s in segments
+        if not _is_prompt_echo(s.text, zh_prompt)
+    ]
     detected_language: str | None = None if cfg.language != "auto" else info.language
     return segment_list, detected_language
 
