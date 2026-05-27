@@ -56,6 +56,10 @@ def _check_ffmpeg() -> dict:
 
 
 def _check_cuda() -> dict:
+    # Reuse transcribe.py's RTLD_GLOBAL preload (idempotent — repeat calls are
+    # no-ops in glibc's dlopen). Calling it here both verifies the libs and
+    # makes their symbols available to any later ctranslate2 dlopen in this
+    # process, so health-green implies transcription-ready.
     try:
         import ctypes
         from pathlib import Path
@@ -64,9 +68,9 @@ def _check_cuda() -> dict:
             import nvidia.cublas
 
             lib_path = Path(nvidia.cublas.__path__[0]) / "lib" / "libcublas.so.12"
-            ctypes.CDLL(str(lib_path))
+            ctypes.CDLL(str(lib_path), mode=ctypes.RTLD_GLOBAL)
         except ImportError:
-            ctypes.CDLL("libcublas.so.12")
+            ctypes.CDLL("libcublas.so.12", mode=ctypes.RTLD_GLOBAL)
         return {"status": "ok", "message": "CUDA available"}
     except OSError as exc:
         return {

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ctypes
 import logging
 import os
 from dataclasses import dataclass
@@ -15,6 +16,29 @@ from bibilab.config import TranscriptionConfig, bibilab_home
 from bibilab.whisper_models import download_whisper_model, resolve_local_model_path
 
 logger = logging.getLogger(__name__)
+
+
+def _preload_bundled_cuda_libs() -> None:
+    # ctranslate2 loads CUDA libs via dlopen(soname). Soname resolution uses
+    # the search-path list cached by ld.so at process startup — mutating
+    # LD_LIBRARY_PATH post-startup does not affect it. Preload bundled libs
+    # by absolute path with RTLD_GLOBAL so their symbols are visible when
+    # ctranslate2 later calls dlopen.
+    for pkg, soname in (
+        ("nvidia.cublas", "libcublas.so.12"),
+        ("nvidia.cudnn", "libcudnn.so.9"),
+    ):
+        try:
+            mod = __import__(pkg, fromlist=[""])
+            lib = Path(mod.__path__[0]) / "lib" / soname
+            if lib.exists():
+                ctypes.CDLL(str(lib), mode=ctypes.RTLD_GLOBAL)
+                logger.debug("preloaded %s", lib)
+        except (ImportError, OSError) as exc:
+            logger.debug("skip preload %s: %s", soname, exc)
+
+
+_preload_bundled_cuda_libs()
 
 # Module-level singleton — avoid reloading the model on every job
 _model = None
