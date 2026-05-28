@@ -5,19 +5,24 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
+from bibilab.asr_models import SENSEVOICE_MODEL_ID
 from bibilab.config import TranscriptionConfig
+from bibilab.pipeline.audio import PipelineError
 
 logger = logging.getLogger(__name__)
 
 _pipeline = None
 _pipeline_key: tuple[str, str] | None = None  # (model_size, device)
 
-SENSEVOICE_MODEL_ID = "iic/SenseVoiceSmall"
-
 
 def _load_sensevoice(cfg: TranscriptionConfig):
     global _pipeline, _pipeline_key
-    from funasr import AutoModel  # noqa: PLC0415
+    try:
+        from funasr import AutoModel  # noqa: PLC0415
+    except ImportError as exc:
+        raise PipelineError(
+            "SenseVoice engine selected but funasr is not installed. Run: uv sync --extra sensevoice"
+        ) from exc
 
     key = (cfg.model_size, cfg.device)
     if _pipeline is None or _pipeline_key != key:
@@ -50,11 +55,11 @@ def _transcribe_sensevoice(audio_path: Path, cfg: TranscriptionConfig) -> tuple[
         merge_length_s=15,
     )
     if not res:
+        logger.warning("SenseVoice returned no results for %s", audio_path)
         return [], None
     first = res[0]
-    segments = [
-        WhisperSegment(start=s["start"], end=s["end"], text=s["text"].strip()) for s in first.get("segments", [])
-    ]
+    raw = first.get("sentence_info") or first.get("segments") or []
+    segments = [WhisperSegment(start=float(s["start"]), end=float(s["end"]), text=s["text"].strip()) for s in raw]
     lang = first.get("language")
     if lang == "auto":
         lang = None

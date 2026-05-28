@@ -4,7 +4,7 @@ import httpx
 from fastapi import APIRouter, Depends
 
 from bibilab.asr_models import is_model_downloaded, resolve_model_path
-from bibilab.config import SUPPORTED_MODELS, BibilabConfig, get_config
+from bibilab.config import BibilabConfig, get_config
 from bibilab.pipeline.embed import _embedding_model_dir, is_embedding_model_downloaded
 from bibilab.pipeline.rerank import _model_dir, is_reranker_model_downloaded
 
@@ -41,8 +41,6 @@ async def _check_llm(cfg: BibilabConfig) -> dict:
 def _check_asr(cfg: BibilabConfig) -> dict:
     engine = cfg.transcription.engine
     model_size = cfg.transcription.model_size
-    if engine not in SUPPORTED_MODELS:
-        return {"status": "error", "message": f"Unknown engine {engine!r}"}
     if not is_model_downloaded(engine, model_size):
         return {
             "status": "error",

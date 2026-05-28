@@ -17,6 +17,7 @@ from bibilab.asr_models import (
     resolve_model_path,
 )
 from bibilab.config import TranscriptionConfig, bibilab_home
+from bibilab.pipeline.audio import PipelineError
 
 logger = logging.getLogger(__name__)
 
@@ -75,18 +76,10 @@ def _load_whisper(cfg: TranscriptionConfig) -> "BatchedInferencePipeline":
             cfg.device,
             compute_type,
         )
-        model = WhisperModel(
-            model_source,
-            device=cfg.device,
-            compute_type=compute_type,
-            cpu_threads=4,
-        )
-        logger.info(
-            "Whisper encoder runs on %s (%s), decoder on CPU (%d threads)",
-            cfg.device,
-            compute_type,
-            4,
-        )
+        kwargs: dict = {"device": cfg.device, "compute_type": compute_type}
+        if cfg.device == "cpu":
+            kwargs["cpu_threads"] = 4
+        model = WhisperModel(model_source, **kwargs)
         _whisper_pipeline = BatchedInferencePipeline(model)
         _whisper_key = key
     return _whisper_pipeline
@@ -110,11 +103,15 @@ def _transcribe_whisper(audio_path: Path, cfg: TranscriptionConfig) -> tuple[lis
         vad_filter=True,
         language=language,
     )
-    segment_list = [
-        WhisperSegment(start=s.start, end=s.end, text=s.text.strip())
-        for s in segments
-        if not (s.no_speech_prob > _SILENCE_PROB_THRESHOLD)
-    ]
+    segment_list: list[WhisperSegment] = []
+    dropped = 0
+    for s in segments:
+        if s.no_speech_prob > _SILENCE_PROB_THRESHOLD:
+            dropped += 1
+            continue
+        segment_list.append(WhisperSegment(start=s.start, end=s.end, text=s.text.strip()))
+    if dropped:
+        logger.info("silence guard dropped %d segments (kept %d)", dropped, len(segment_list))
     detected_language: str | None = None if cfg.language != "auto" else info.language
     return segment_list, detected_language
 
@@ -144,22 +141,24 @@ def _best_speaker(seg: WhisperSegment, speaker_segs: list) -> str | None:
 def transcribe(audio_path: Path, cfg: TranscriptionConfig) -> tuple[list[WhisperSegment], str | None]:
     """Transcribe audio to segments. Returns (segments, detected_language)."""
 
-    # Diarization pre-pass (engine-agnostic, if model downloaded)
     speaker_segs: list = []
-    if is_diarization_model_downloaded():
-        from bibilab.pipeline.diarize import diarize
+    if cfg.diarization_enabled:
+        if is_diarization_model_downloaded():
+            from bibilab.pipeline.diarize import diarize
 
-        speaker_segs = diarize(audio_path, cfg.device)
+            speaker_segs = diarize(audio_path, cfg.device)
+        else:
+            logger.warning("Diarization enabled but cam++ model not downloaded; skipping")
 
-    # Engine dispatch
     if cfg.engine == "sensevoice":
         from bibilab.pipeline.sensevoice import _transcribe_sensevoice
 
         segments, detected_language = _transcribe_sensevoice(audio_path, cfg)
-    else:
+    elif cfg.engine == "whisper":
         segments, detected_language = _transcribe_whisper(audio_path, cfg)
+    else:
+        raise PipelineError(f"Unknown ASR engine: {cfg.engine!r}")
 
-    # Merge speaker labels
     if speaker_segs:
         for seg in segments:
             seg.speaker = _best_speaker(seg, speaker_segs)

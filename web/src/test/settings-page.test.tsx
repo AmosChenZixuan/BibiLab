@@ -15,7 +15,7 @@ vi.mock("../lib/api", () => {
       accounts: { bilibili: { cookie: "", last_verified: "", username: "", avatar_url: "" } },
       ai: { protocol: "openai", model: "gpt-4o", api_key: "", base_url: "" },
       transcription: {
-        engine: "faster-whisper",
+        engine: "whisper",
         model_size: "base",
         device: "cpu",
         language: "auto",
@@ -162,7 +162,7 @@ describe("settings page", () => {
       accounts: { bilibili: { cookie: "", last_verified: "", username: "", avatar_url: "" } },
       ai: { protocol: "openai", model: "gpt-4o", api_key: "", base_url: "" },
       transcription: {
-        engine: "faster-whisper",
+        engine: "whisper",
         model_size: "base",
         device: "cpu",
         language: "auto",
@@ -196,7 +196,7 @@ describe("settings page", () => {
       accounts: { bilibili: { cookie: "", last_verified: "", username: "", avatar_url: "" } },
       ai: { protocol: "openai", model: "gpt-4o", api_key: "", base_url: "" },
       transcription: {
-        engine: "faster-whisper",
+        engine: "whisper",
         model_size: "base",
         device: "cpu",
         language: "auto",

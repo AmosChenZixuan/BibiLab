@@ -267,7 +267,7 @@ describe("home page", () => {
           accounts: { bilibili: { cookie: "***", last_verified: "" } },
           ai: { protocol: "openai", model: "gpt-4o", api_key: "***", base_url: "" },
           transcription: {
-            engine: "faster-whisper",
+            engine: "whisper",
             model_size: "large-v3",
             device: "cuda",
             language: "auto",

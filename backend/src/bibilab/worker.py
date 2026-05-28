@@ -11,7 +11,7 @@ import httpx
 from pydantic import BaseModel
 
 from bibilab.adapters.base import AuthRequiredError, VideoMeta
-from bibilab.asr_models import download_diarization_model, download_model
+from bibilab.asr_models import download_model
 from bibilab.cleanup import cleanup_job_artifacts
 from bibilab.config import BibilabConfig, bibilab_home, load_config
 from bibilab.db import (
@@ -174,14 +174,11 @@ class WorkerLoop:
     async def _download_model_job(self, job: dict) -> None:
         job_id = job["id"]
         meta_raw = _parse_job_meta(job)
-        engine = meta_raw.get("engine") or meta_raw.get("model_family", "whisper")
-        model_size = meta_raw.get("model_size", "")
+        engine = meta_raw["engine"]
+        model_size = meta_raw["model_size"]
 
         await update_job_status(job_id, JobStatus.DOWNLOADING.value, progress=10)
-        if engine == "diarization":
-            await asyncio.to_thread(download_diarization_model)
-        else:
-            await asyncio.to_thread(download_model, engine, model_size)
+        await asyncio.to_thread(download_model, engine, model_size)
         await update_job_status(job_id, JobStatus.DONE.value, progress=100)
         logger.info("Model download job %s completed for %s:%s", job_id, engine, model_size)
 

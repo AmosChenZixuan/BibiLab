@@ -16,7 +16,7 @@ export const TERMINAL_JOB_STATUSES = new Set(["done", "failed", "needs_auth"]);
 
 const POLL_INTERVAL_MS = 5_000;
 
-type JobProducer = "ingest" | "whisper_download" | "model_download" | "artifact";
+type JobProducer = "ingest" | "model_download" | "artifact";
 
 export type JobRegistration = {
   id: string;
@@ -58,7 +58,7 @@ type JobActivityContextValue = {
 const JobActivityContext = createContext<JobActivityContextValue | null>(null);
 
 function createPlaceholderJob(id: string, meta: TrackedJobMeta): Job {
-  if (meta.producer === "whisper_download") {
+  if (meta.producer === "model_download") {
     return {
       id,
       type: "model_download",
@@ -67,7 +67,7 @@ function createPlaceholderJob(id: string, meta: TrackedJobMeta): Job {
       error: null,
       created_at: "",
       updated_at: "",
-      meta: { model_family: "whisper", model_size: meta.label },
+      meta: { model_size: meta.label },
     };
   }
 
@@ -131,7 +131,7 @@ function inferTrackedMeta(job: Job): TrackedJobMeta {
   if (isModelDownloadJob(job)) {
     const modelSize = typeof job.meta.model_size === "string" ? job.meta.model_size : "model";
     return {
-      producer: "whisper_download",
+      producer: "model_download",
       label: modelSize,
       contextKey: modelSize,
     };

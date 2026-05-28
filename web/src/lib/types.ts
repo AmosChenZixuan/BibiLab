@@ -86,7 +86,7 @@ export type IngestMeta = {
 };
 
 export type ModelDownloadMeta = {
-  model_family?: string;
+  engine?: AsrModelKind;
   model_size?: string;
 };
 
@@ -149,10 +149,11 @@ export type BibilabConfig = {
     output_language?: OutputLanguage;
   };
   transcription: {
-    engine: string;
+    engine: AsrEngine;
     model_size: string;
     device: string;
     language: string;
+    diarization_enabled?: boolean;
   };
   vision: {
     enabled: boolean;
@@ -177,9 +178,12 @@ export type HealthResponse = {
   dependencies: Record<string, HealthDependency>;
 };
 
+export type AsrEngine = "whisper" | "sensevoice";
+export type AsrModelKind = AsrEngine | "diarization";
+
 export type AsrModel = {
   name: string;
-  engine: "whisper" | "sensevoice" | "diarization";
+  engine: AsrModelKind;
   installed: boolean;
   path: string | null;
   selected: boolean;
@@ -187,8 +191,8 @@ export type AsrModel = {
 
 export type AsrModelDownloadResponse = {
   job_id: string;
-  status: string;
-  engine: string;
+  status: "queued";
+  engine: AsrModelKind;
   model_size: string;
 };
 

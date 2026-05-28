@@ -3,11 +3,14 @@ import logging
 import os
 import threading
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
+
+AsrEngine = Literal["whisper", "sensevoice"]
+AsrModelKind = Literal["whisper", "sensevoice", "diarization"]
 
 
 def bibilab_home() -> Path:
@@ -53,24 +56,16 @@ class AIConfig(BaseModel):
 
 
 class TranscriptionConfig(BaseModel):
-    engine: str = "whisper"  # "whisper" | "sensevoice"
+    engine: AsrEngine = "whisper"
     model_size: str = "large-v3"
     device: str = "cuda"  # cuda | cpu
     language: str = "auto"  # auto | zh | en
-    # LLM call timeout in seconds (per-request)
+    diarization_enabled: bool = False
     llm_timeout: int = 120
-    # Transcription
     beam_size: int = 5
 
-    @field_validator("engine", mode="before")
-    @classmethod
-    def _normalize_engine(cls, v: str) -> str:
-        if v == "faster-whisper":
-            return "whisper"
-        return v
 
-
-SUPPORTED_MODELS: dict[str, tuple[str, ...]] = {
+SUPPORTED_MODELS: dict[AsrModelKind, tuple[str, ...]] = {
     "whisper": ("medium", "large-v3"),
     "sensevoice": ("small",),
     "diarization": ("cam++",),

@@ -96,9 +96,32 @@ async def test_download_model_job_diarization(tmp_bibilab_home: Path):
     worker = WorkerLoop(home=tmp_bibilab_home)
     job = {"id": job_id, "type": "model_download", "meta": json.dumps(meta)}
 
-    with patch("bibilab.worker.download_diarization_model") as mock_dl:
+    with patch("bibilab.worker.download_model") as mock_dl:
         await worker._download_model_job(job)
-        mock_dl.assert_called_once_with()
+        mock_dl.assert_called_once_with("diarization", "cam++")
+
+
+@pytest.mark.asyncio
+async def test_download_model_job_unsupported_engine(tmp_bibilab_home: Path):
+    from bibilab.db import bootstrap_db, create_job
+
+    await bootstrap_db()
+    meta = {"engine": "garbage", "model_size": "x"}
+    job_id = await create_job("model_download", meta)
+
+    worker = WorkerLoop(home=tmp_bibilab_home)
+    worker._in_flight.add(job_id)
+    job = {"id": job_id, "type": "model_download", "meta": json.dumps(meta)}
+
+    await worker._run_job(job)
+
+    from bibilab.db import get_db
+
+    async with get_db() as db:
+        cursor = await db.execute("SELECT status, error FROM jobs WHERE id=?", (job_id,))
+        row = await cursor.fetchone()
+    assert row["status"] == "failed"
+    assert "Unsupported engine" in row["error"]
 
 
 # ---------------------------------------------------------------------------

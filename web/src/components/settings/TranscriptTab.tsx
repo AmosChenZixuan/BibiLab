@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useId, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useId, useMemo, useState } from "react";
 
 import { useLanguage } from "@/app/LanguageContext";
 import { useJobActivity } from "@/components/jobs/JobActivityProvider";
 import type { JobActivityItem } from "@/components/jobs/JobActivityProvider";
 import { api } from "@/lib/api";
-import type { AsrModel, BibilabConfig, HealthDependency } from "@/lib/types";
+import type { AsrEngine, AsrModel, BibilabConfig, HealthDependency } from "@/lib/types";
 import { Download } from "lucide-react";
 
 import { Select, SettingsField, Spinner } from "@/components/ui";
@@ -37,10 +37,7 @@ function ModelDownloadCell({ model, modelJob, downloading, onDownload, t }: Mode
   );
 }
 
-const ENGINE_MODELS: Record<string, string[]> = {
-  whisper: ["medium", "large-v3"],
-  sensevoice: ["small"],
-};
+const ENGINE_ORDER: ReadonlyArray<AsrEngine | "diarization"> = ["whisper", "sensevoice", "diarization"];
 
 type TranscriptTabProps = {
   config: BibilabConfig;
@@ -114,8 +111,11 @@ export function TranscriptTab({ config, dependencies, onBlur }: TranscriptTabPro
     }
   }
 
-  const currentEngine = localTranscription.engine || "whisper";
-  const availableModels = ENGINE_MODELS[currentEngine] ?? [];
+  const currentEngine: AsrEngine = localTranscription.engine || "whisper";
+  const availableModels = useMemo(
+    () => models.filter((m) => m.engine === currentEngine).map((m) => m.name),
+    [models, currentEngine],
+  );
 
   const installedModels = useMemo(
     () => models.filter((m) => m.installed && m.engine === currentEngine),
@@ -129,12 +129,11 @@ export function TranscriptTab({ config, dependencies, onBlur }: TranscriptTabPro
   const cudaSupported = dependencies.cuda?.status === "ok";
 
   const modelsByEngine = useMemo(() => {
-    const order = ["whisper", "sensevoice", "diarization"];
     const grouped: Record<string, AsrModel[]> = {};
     for (const m of models) {
       (grouped[m.engine] ??= []).push(m);
     }
-    return order.filter((e) => grouped[e]).map((e) => ({ engine: e, models: grouped[e] }));
+    return ENGINE_ORDER.filter((e) => grouped[e]).map((e) => ({ engine: e, models: grouped[e] }));
   }, [models]);
 
   return (
@@ -146,8 +145,8 @@ export function TranscriptTab({ config, dependencies, onBlur }: TranscriptTabPro
             id={engineId}
             onBlur={handleBlur}
             onChange={(event) => {
-              const engine = event.target.value;
-              const defaultModel = ENGINE_MODELS[engine]?.[0] ?? "large-v3";
+              const engine = event.target.value as AsrEngine;
+              const defaultModel = models.find((m) => m.engine === engine)?.name ?? "";
               setLocalTranscription((current) => ({
                 ...current,
                 engine,
@@ -236,8 +235,8 @@ export function TranscriptTab({ config, dependencies, onBlur }: TranscriptTabPro
           <table className="w-full border-collapse text-left">
             <tbody>
               {modelsByEngine.map(({ engine, models: engineModels }) => (
-                <>
-                  <tr key={`hdr-${engine}`} className="border-t border-border">
+                <Fragment key={engine}>
+                  <tr className="border-t border-border">
                     <td colSpan={2} className="px-4 py-2 text-xs font-semibold text-muted uppercase">
                       {engine === "diarization" ? "Shared" : engine}
                     </td>
@@ -262,7 +261,7 @@ export function TranscriptTab({ config, dependencies, onBlur }: TranscriptTabPro
                       </td>
                     </tr>
                   ))}
-                </>
+                </Fragment>
               ))}
             </tbody>
           </table>
