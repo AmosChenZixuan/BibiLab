@@ -10,9 +10,9 @@ import { JobActivityProvider } from "@/components/jobs/JobActivityProvider";
 vi.mock("../lib/api", () => {
   const mockApi = {
     listAsrModels: vi.fn().mockResolvedValue([
-      { name: "large-v3", kind: "transcription", installed: true, path: "/models/asr/large-v3/large-v3.pt", selected: true, size_mb: 3000 },
-      { name: "sensevoice-small", kind: "transcription", installed: false, path: null, selected: false, size_mb: 936 },
-      { name: "cam++", kind: "diarization", installed: false, path: null, selected: false, size_mb: 28 },
+      { name: "large-v3", display_name: "Faster Whisper large-v3", kind: "transcription", installed: true, path: "/models/asr/large-v3/large-v3.pt", selected: true, size_mb: 3000 },
+      { name: "sensevoice-small", display_name: "SenseVoice Small", kind: "transcription", installed: false, path: null, selected: false, size_mb: 936 },
+      { name: "cam++", display_name: "CAM++ (Speaker Diarization)", kind: "diarization", installed: false, path: null, selected: false, size_mb: 28 },
     ]),
     downloadAsrModel: vi.fn(),
     listJobs: vi.fn().mockResolvedValue([]),
@@ -68,7 +68,7 @@ describe("transcript tab", () => {
     renderTab();
 
     expect(await screen.findByRole("table")).toBeInTheDocument();
-    expect(await screen.findByRole("option", { name: "large-v3" })).toBeInTheDocument();
+    expect(await screen.findByRole("option", { name: /Faster Whisper large-v3/i })).toBeInTheDocument();
     expect(await screen.findByText(/\/models\/asr\/large-v3\/large-v3\.pt/i)).toBeInTheDocument();
   });
 
@@ -83,24 +83,20 @@ describe("transcript tab", () => {
     renderTab();
 
     expect(screen.getByText(/cuda is unavailable, so transcription will run on cpu/i)).toBeInTheDocument();
-    expect(
-      await screen.findByText(/at least one transcription model must be downloaded/i),
-    ).toBeInTheDocument();
   });
 
   test("model dropdown only lists installed transcription models", async () => {
     renderTab();
 
-    expect(await screen.findByRole("option", { name: "large-v3" })).toBeInTheDocument();
+    expect(await screen.findByRole("option", { name: /Faster Whisper large-v3/i })).toBeInTheDocument();
     expect(screen.queryByRole("option", { name: /sensevoice-small/i })).not.toBeInTheDocument();
   });
 
-  test("diarization row shows auto-install hint instead of download button", async () => {
+  test("diarization shown as separate row with auto-install hint", async () => {
     renderTab();
 
-    expect(await screen.findByText(/auto-installs on first ingest/i)).toBeInTheDocument();
-    const camButtons = screen.queryAllByRole("button", { name: /download/i });
-    expect(camButtons.length).toBe(1);
+    expect(await screen.findByText(/speaker diarization/i)).toBeInTheDocument();
+    expect(screen.getByText(/auto-installs on first ingest/i)).toBeInTheDocument();
   });
 
   test("renders bundle sizes in download table", async () => {
@@ -108,7 +104,6 @@ describe("transcript tab", () => {
 
     expect(await screen.findByText("3.0 GB")).toBeInTheDocument();
     expect(await screen.findByText("936 MB")).toBeInTheDocument();
-    expect(await screen.findByText("28 MB")).toBeInTheDocument();
   });
 
   test("disables cuda when health reports it unavailable", () => {

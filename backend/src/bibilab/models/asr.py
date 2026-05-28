@@ -9,6 +9,7 @@ from bibilab.config import AsrModelKind
 
 class AsrModelInfo(BaseModel):
     name: str
+    display_name: str
     kind: AsrModelKind
     installed: bool
     path: str | None

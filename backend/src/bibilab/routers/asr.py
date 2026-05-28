@@ -26,6 +26,7 @@ async def list_asr_models(cfg: BibilabConfig = Depends(get_config)) -> list[AsrM
         out.append(
             AsrModelInfo(
                 name=spec.name,
+                display_name=spec.display_name,
                 kind=spec.kind,
                 installed=is_model_downloaded(spec.name),
                 path=str(path) if path is not None else None,

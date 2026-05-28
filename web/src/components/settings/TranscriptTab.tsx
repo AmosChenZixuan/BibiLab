@@ -4,12 +4,10 @@ import { useLanguage } from "@/app/LanguageContext";
 import { useJobActivity } from "@/components/jobs/JobActivityProvider";
 import type { JobActivityItem } from "@/components/jobs/JobActivityProvider";
 import { api } from "@/lib/api";
-import type { AsrModel, AsrModelKind, BibilabConfig, HealthDependency } from "@/lib/types";
+import type { AsrModel, BibilabConfig, HealthDependency } from "@/lib/types";
 import { Download } from "lucide-react";
 
 import { Select, SettingsField, Spinner } from "@/components/ui";
-
-const KIND_ORDER: ReadonlyArray<AsrModelKind> = ["transcription", "diarization"];
 
 function formatBundleSize(sizeMb: number | null): string {
   if (sizeMb == null) return "—";
@@ -116,49 +114,59 @@ export function TranscriptTab({ config, dependencies, onBlur }: TranscriptTabPro
     }
   }
 
-  const installedTranscriptionModels = useMemo(
-    () => models.filter((m) => m.kind === "transcription" && m.installed),
+  const transcriptionModels = useMemo(
+    () => models.filter((m) => m.kind === "transcription"),
     [models],
   );
-  const hasSelectedInstalled = useMemo(
-    () => installedTranscriptionModels.some((m) => m.name === localTranscription.model),
-    [installedTranscriptionModels, localTranscription.model],
+  const installedTranscriptionModels = useMemo(
+    () => transcriptionModels.filter((m) => m.installed),
+    [transcriptionModels],
   );
 
   const cudaSupported = dependencies.cuda?.status === "ok";
 
   const modelsByKind = useMemo(() => {
     const grouped: Record<string, AsrModel[]> = {};
-    for (const m of models) {
+    for (const m of transcriptionModels) {
       (grouped[m.kind] ??= []).push(m);
     }
-    return KIND_ORDER.filter((k) => grouped[k]).map((k) => ({ kind: k, models: grouped[k] }));
-  }, [models]);
+    return grouped["transcription"]
+      ? [{ kind: "transcription" as const, models: grouped["transcription"] }]
+      : [];
+  }, [transcriptionModels]);
 
   return (
     <div className="grid gap-4">
       <div className="flex flex-col gap-3">
-        <SettingsField label={t("settings.model")} htmlFor={modelId}>
+        <SettingsField label={t("settings.transcriptionModel")} hint={t("settings.transcriptionModelRequired")} htmlFor={modelId}>
           <Select
             aria-label="Model"
             id={modelId}
+            disabled={installedTranscriptionModels.length === 0}
             onBlur={handleBlur}
             onChange={(event) =>
               setLocalTranscription((current) => ({ ...current, model: event.target.value }))
             }
             value={localTranscription.model}
           >
-            {!hasSelectedInstalled ? (
+            {installedTranscriptionModels.length === 0 ? (
               <option disabled value={localTranscription.model}>
-                {localTranscription.model} {t("settings.downloadRequired")}
+                {t("settings.noInstalledModel")}
               </option>
-            ) : null}
-            {installedTranscriptionModels.map((model) => (
-              <option key={model.name} value={model.name}>
-                {model.name}
-              </option>
-            ))}
+            ) : (
+              installedTranscriptionModels.map((model) => (
+                <option key={model.name} value={model.name}>
+                  {model.display_name}
+                </option>
+              ))
+            )}
           </Select>
+        </SettingsField>
+
+        <SettingsField label={t("settings.diarization")} hint={t("settings.diarizationDesc")}>
+          <p className="flex items-center text-sm text-muted">
+            {t("settings.autoInstalls")}
+          </p>
         </SettingsField>
 
         <SettingsField
@@ -201,20 +209,14 @@ export function TranscriptTab({ config, dependencies, onBlur }: TranscriptTabPro
         <p className="text-xs font-semibold uppercase tracking-widest text-muted">
           {t("settings.modelDownloads")}
         </p>
-        <p className="text-sm leading-5 text-muted">{t("settings.modelDownloadsRequired")}</p>
         <div className="overflow-hidden rounded-2xl border border-border bg-white/64">
           <table className="w-full border-collapse text-left">
             <tbody>
               {modelsByKind.map(({ kind, models: kindModels }) => (
                 <Fragment key={kind}>
-                  <tr className="border-t border-border">
-                    <td colSpan={3} className="px-4 py-2 text-xs font-semibold text-muted uppercase">
-                      {kind}
-                    </td>
-                  </tr>
                   {kindModels.map((model) => (
                     <tr key={model.name} className="border-t border-border">
-                      <td className="px-4 py-3 pl-6 font-semibold text-ink">{model.name}</td>
+                      <td className="px-4 py-3 pl-6 font-semibold text-ink">{model.display_name}</td>
                       <td className="px-4 py-3 font-mono text-sm text-muted whitespace-nowrap">
                         {formatBundleSize(model.size_mb)}
                       </td>

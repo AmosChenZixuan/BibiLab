@@ -21,6 +21,7 @@ _Backend = Literal["whisper", "funasr"]
 @dataclass(frozen=True)
 class ModelSpec:
     name: str
+    display_name: str
     kind: AsrModelKind  # "transcription" | "diarization"
     backend: _Backend
     size_mb: int
@@ -30,12 +31,14 @@ class ModelSpec:
 _SPECS: dict[str, ModelSpec] = {
     "large-v3": ModelSpec(
         name="large-v3",
+        display_name="Faster Whisper large-v3",
         kind="transcription",
         backend="whisper",
         size_mb=3000,
     ),
     "sensevoice-small": ModelSpec(
         name="sensevoice-small",
+        display_name="SenseVoice Small",
         kind="transcription",
         backend="funasr",
         size_mb=936,
@@ -43,6 +46,7 @@ _SPECS: dict[str, ModelSpec] = {
     ),
     "cam++": ModelSpec(
         name="cam++",
+        display_name="CAM++ (Speaker Diarization)",
         kind="diarization",
         backend="funasr",
         size_mb=28,

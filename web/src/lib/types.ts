@@ -179,6 +179,7 @@ export type AsrModelKind = "transcription" | "diarization";
 
 export type AsrModel = {
   name: string;
+  display_name: string;
   kind: AsrModelKind;
   installed: boolean;
   path: string | null;
