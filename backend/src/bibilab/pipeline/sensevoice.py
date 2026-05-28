@@ -49,9 +49,13 @@ def _transcribe_sensevoice(audio_path: Path, cfg: TranscriptionConfig) -> tuple[
         merge_vad=True,
         merge_length_s=15,
     )
+    if not res:
+        return [], None
     first = res[0]
     segments = [
         WhisperSegment(start=s["start"], end=s["end"], text=s["text"].strip()) for s in first.get("segments", [])
     ]
-    lang = first.get("language", cfg.language)
+    lang = first.get("language")
+    if lang == "auto":
+        lang = None
     return segments, lang

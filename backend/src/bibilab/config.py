@@ -73,9 +73,8 @@ class TranscriptionConfig(BaseModel):
 SUPPORTED_MODELS: dict[str, tuple[str, ...]] = {
     "whisper": ("medium", "large-v3"),
     "sensevoice": ("small",),
+    "diarization": ("cam++",),
 }
-
-DIARIZATION_MODELS: tuple[str, ...] = ("cam++",)
 
 
 class VisionConfig(BaseModel):

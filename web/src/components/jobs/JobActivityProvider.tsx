@@ -16,7 +16,7 @@ export const TERMINAL_JOB_STATUSES = new Set(["done", "failed", "needs_auth"]);
 
 const POLL_INTERVAL_MS = 5_000;
 
-type JobProducer = "ingest" | "whisper_download" | "artifact";
+type JobProducer = "ingest" | "whisper_download" | "model_download" | "artifact";
 
 export type JobRegistration = {
   id: string;

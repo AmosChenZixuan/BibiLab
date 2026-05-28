@@ -96,6 +96,8 @@ def _load_whisper(cfg: TranscriptionConfig) -> "BatchedInferencePipeline":
 # Whisper transcription
 # ---------------------------------------------------------------------------
 
+_SILENCE_PROB_THRESHOLD = 0.6
+
 
 def _transcribe_whisper(audio_path: Path, cfg: TranscriptionConfig) -> tuple[list[WhisperSegment], str | None]:
     pipeline = _load_whisper(cfg)
@@ -108,7 +110,11 @@ def _transcribe_whisper(audio_path: Path, cfg: TranscriptionConfig) -> tuple[lis
         vad_filter=True,
         language=language,
     )
-    segment_list = [WhisperSegment(start=s.start, end=s.end, text=s.text.strip()) for s in segments]
+    segment_list = [
+        WhisperSegment(start=s.start, end=s.end, text=s.text.strip())
+        for s in segments
+        if not (s.no_speech_prob > _SILENCE_PROB_THRESHOLD)
+    ]
     detected_language: str | None = None if cfg.language != "auto" else info.language
     return segment_list, detected_language
 
