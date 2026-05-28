@@ -43,7 +43,7 @@ function renderFrame(healthPayload: HealthResponse, configPayload?: BibilabConfi
     configPayload ?? ({
       accounts: { bilibili: { cookie: "", last_verified: "", username: "", avatar_url: "" } },
       ai: { protocol: "", model: "", api_key: "", base_url: "" },
-      transcription: { engine: "whisper", model_size: "", device: "cuda", language: "" },
+      transcription: { model: "large-v3", device: "cuda", language: "" },
       vision: { enabled: false, frame_sample_rate: 0, model: null },
       backend: { port: 8765, worker_concurrency: 1 },
     }),
@@ -99,7 +99,7 @@ describe("app frame", () => {
       {
         accounts: { bilibili: { cookie: "", last_verified: "", username: "", avatar_url: "" } },
         ai: { protocol: "", model: "", api_key: "", base_url: "" },
-        transcription: { engine: "whisper", model_size: "", device: "cpu", language: "" },
+        transcription: { model: "large-v3", device: "cpu", language: "" },
         vision: { enabled: false, frame_sample_rate: 0, model: null },
         backend: { port: 8765, worker_concurrency: 1 },
       },
@@ -210,7 +210,7 @@ describe("app frame", () => {
           },
         },
         ai: { protocol: "openai", model: "gpt-4o", api_key: "", base_url: "" },
-        transcription: { engine: "whisper", model_size: "base", device: "cpu", language: "auto" },
+        transcription: { model: "large-v3", device: "cpu", language: "auto" },
         vision: { enabled: false, frame_sample_rate: 30, model: null },
         backend: { port: 8765, worker_concurrency: 1 },
       },

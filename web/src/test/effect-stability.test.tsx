@@ -39,8 +39,7 @@ const baseConfig: BibilabConfig = {
   accounts: { bilibili: { cookie: "", last_verified: "", username: "", avatar_url: "" } },
   ai: { protocol: "openai", model: "gpt-4o", api_key: "", base_url: "" },
   transcription: {
-    engine: "whisper",
-    model_size: "base",
+    model: "large-v3",
     device: "cpu",
     language: "auto",
   },
@@ -216,7 +215,7 @@ test("transcript tab does not re-sync local state on re-render with same transcr
   );
 
   // Use getAll to pick the first (there may be a Modal portal in the DOM from prior tests)
-  expect(screen.getAllByLabelText(/model size/i)[0]).toBeInTheDocument();
+  expect(screen.getAllByLabelText(/^model$/i)[0]).toBeInTheDocument();
 
   // Re-render with same config reference
   rerender(

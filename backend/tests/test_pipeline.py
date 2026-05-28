@@ -11,7 +11,6 @@ from bibilab.pipeline.chunk import _SENT_END, RagChunk, chunk_segments
 from bibilab.pipeline.extract import generate_overview
 from bibilab.pipeline.transcribe import (
     WhisperSegment,
-    _compute_type_for_device,
     write_transcript,
 )
 
@@ -87,147 +86,142 @@ def test_write_transcript_hours(tmp_path: Path):
     assert path.read_text().strip() == "[01:01:01] Late segment"
 
 
-def test_compute_type_for_device():
-    assert _compute_type_for_device("cpu") == "int8"
-    assert _compute_type_for_device("cuda") == "float16"
-
-
-def test_best_speaker_assigns_by_overlap():
-    from bibilab.pipeline.diarize import SpeakerSegment
-    from bibilab.pipeline.transcribe import WhisperSegment, _best_speaker
-
-    seg = WhisperSegment(start=0.0, end=5.0, text="hello")
-    speakers = [
-        SpeakerSegment(start=0.0, end=3.0, speaker="SPK_0"),
-        SpeakerSegment(start=3.0, end=10.0, speaker="SPK_1"),
-    ]
-    assert _best_speaker(seg, speakers) == "SPK_0"
-
-    seg2 = WhisperSegment(start=6.0, end=9.0, text="world")
-    assert _best_speaker(seg2, speakers) == "SPK_1"
-
-    seg3 = WhisperSegment(start=20.0, end=25.0, text="alone")
-    assert _best_speaker(seg3, speakers) is None
-
-
 def test_transcribe_dispatches_to_whisper(tmp_path: Path):
     from bibilab.config import TranscriptionConfig
     from bibilab.pipeline import transcribe as t_mod
 
-    cfg = TranscriptionConfig(engine="whisper", model_size="medium", device="cpu", language="auto")
-    expected = ([WhisperSegment(start=0.0, end=1.0, text="hi")], "en")
+    cfg = TranscriptionConfig(model="large-v3", device="cpu", language="auto")
+    whisper_out = ([WhisperSegment(start=0.0, end=1.0, text="hi")], "en")
     with (
-        patch.object(t_mod, "_transcribe_whisper", return_value=expected) as mock_w,
-        patch.object(t_mod, "is_diarization_model_downloaded", return_value=False),
+        patch.object(t_mod, "_transcribe_whisper", return_value=whisper_out) as mock_w,
+        patch.object(t_mod, "_diarize", return_value=[]),
     ):
         result = t_mod.transcribe(tmp_path / "a.wav", cfg)
     mock_w.assert_called_once()
-    assert result == expected
+    assert result == whisper_out
 
 
 def test_transcribe_dispatches_to_sensevoice(tmp_path: Path):
     from bibilab.config import TranscriptionConfig
-    from bibilab.pipeline import sensevoice as sv_mod
     from bibilab.pipeline import transcribe as t_mod
 
-    cfg = TranscriptionConfig(engine="sensevoice", model_size="small", device="cpu", language="auto")
+    cfg = TranscriptionConfig(model="sensevoice-small", device="cpu", language="auto")
     expected = ([WhisperSegment(start=0.0, end=1.0, text="ni")], None)
-    with (
-        patch.object(sv_mod, "_transcribe_sensevoice", return_value=expected) as mock_sv,
-        patch.object(t_mod, "is_diarization_model_downloaded", return_value=False),
-    ):
+    with patch.object(t_mod, "_transcribe_funasr", return_value=expected) as mock_sv:
         result = t_mod.transcribe(tmp_path / "a.wav", cfg)
     mock_sv.assert_called_once()
     assert result == expected
 
 
-def test_transcribe_unknown_engine_raises(tmp_path: Path):
+def test_transcribe_unknown_model_raises(tmp_path: Path):
     from bibilab.config import TranscriptionConfig
     from bibilab.pipeline import transcribe as t_mod
     from bibilab.pipeline.audio import PipelineError
 
-    cfg = TranscriptionConfig.model_construct(
-        engine="parakeet",  # bypass Literal validation
-        model_size="small",
-        device="cpu",
-        language="auto",
-        diarization_enabled=False,
-        llm_timeout=120,
-        beam_size=5,
-    )
-    with patch.object(t_mod, "is_diarization_model_downloaded", return_value=False):
-        with pytest.raises(PipelineError, match="Unknown ASR engine"):
-            t_mod.transcribe(tmp_path / "a.wav", cfg)
-
-
-def test_transcribe_skips_diarization_when_disabled(tmp_path: Path):
-    from bibilab.config import TranscriptionConfig
-    from bibilab.pipeline import transcribe as t_mod
-
-    cfg = TranscriptionConfig(engine="whisper", model_size="medium", device="cpu", language="auto")
-    assert cfg.diarization_enabled is False
-    expected = ([WhisperSegment(start=0.0, end=1.0, text="x")], "en")
-    with (
-        patch.object(t_mod, "_transcribe_whisper", return_value=expected),
-        patch.object(t_mod, "is_diarization_model_downloaded", return_value=True) as mock_is_dl,
-    ):
+    cfg = TranscriptionConfig(model="parakeet", device="cpu", language="auto")
+    with pytest.raises(PipelineError, match="Unknown ASR model"):
         t_mod.transcribe(tmp_path / "a.wav", cfg)
-    # diarization gate must short-circuit before the download check
-    mock_is_dl.assert_not_called()
 
 
-def test_transcribe_warns_when_diarization_enabled_but_model_missing(tmp_path: Path, caplog):
+def test_transcribe_funasr_propagates_speaker_label(tmp_path: Path):
+    """When CAM++ is downloaded, FunASR returns spk per sentence_info; transcribe maps to speaker."""
     from bibilab.config import TranscriptionConfig
     from bibilab.pipeline import transcribe as t_mod
 
-    cfg = TranscriptionConfig(
-        engine="whisper", model_size="medium", device="cpu", language="auto", diarization_enabled=True
+    cfg = TranscriptionConfig(model="sensevoice-small", device="cpu", language="auto")
+
+    class FakeFunasr:
+        def generate(self, **kwargs):
+            return [
+                {
+                    "sentence_info": [
+                        {"text": "hello", "start": 0.0, "end": 1.0, "spk": 0},
+                        {"text": "world", "start": 1.0, "end": 2.0, "spk": 1},
+                    ],
+                    "language": "en",
+                }
+            ]
+
+    with patch.object(t_mod, "_load_funasr", return_value=FakeFunasr()):
+        segs, lang = t_mod._transcribe_funasr(tmp_path / "a.wav", cfg)
+
+    assert [(s.text, s.speaker) for s in segs] == [("hello", "SPK_0"), ("world", "SPK_1")]
+    assert lang == "en"
+
+
+def test_transcribe_funasr_missing_spk_field_leaves_speaker_none(tmp_path: Path):
+    from bibilab.config import TranscriptionConfig
+    from bibilab.pipeline import transcribe as t_mod
+
+    cfg = TranscriptionConfig(model="sensevoice-small", device="cpu", language="auto")
+
+    class FakeFunasr:
+        def generate(self, **kwargs):
+            return [{"sentence_info": [{"text": "lone", "start": 0.0, "end": 1.0}]}]
+
+    with patch.object(t_mod, "_load_funasr", return_value=FakeFunasr()):
+        segs, _ = t_mod._transcribe_funasr(tmp_path / "a.wav", cfg)
+
+    assert segs[0].speaker is None
+
+
+def test_transcribe_whisper_runs_diarization_and_merges_speakers(tmp_path: Path):
+    from bibilab.config import TranscriptionConfig
+    from bibilab.pipeline import transcribe as t_mod
+
+    cfg = TranscriptionConfig(model="large-v3", device="cpu", language="auto")
+    whisper_out = (
+        [WhisperSegment(start=0.0, end=2.0, text="a"), WhisperSegment(start=5.0, end=7.0, text="b")],
+        "en",
     )
-    expected = ([WhisperSegment(start=0.0, end=1.0, text="x")], "en")
-    with (
-        patch.object(t_mod, "_transcribe_whisper", return_value=expected),
-        patch.object(t_mod, "is_diarization_model_downloaded", return_value=False),
-        caplog.at_level("WARNING", logger="bibilab.pipeline.transcribe"),
-    ):
-        t_mod.transcribe(tmp_path / "a.wav", cfg)
-    assert "Diarization enabled but cam++ model not downloaded" in caplog.text
-
-
-def test_transcribe_whisper_silence_guard_drops_and_logs(caplog):
-    """`no_speech_prob > 0.6` segments are dropped; drop count is logged."""
-    from bibilab.config import TranscriptionConfig
-    from bibilab.pipeline import transcribe as t_mod
-
-    class FakeSeg:
-        def __init__(self, start, end, text, no_speech_prob):
-            self.start = start
-            self.end = end
-            self.text = text
-            self.no_speech_prob = no_speech_prob
-
-    class FakeInfo:
-        language = "en"
-
-    cfg = TranscriptionConfig(engine="whisper", model_size="medium", device="cpu", language="auto")
-    fake_segs = [
-        FakeSeg(0.0, 1.0, "keep me", 0.1),
-        FakeSeg(1.0, 2.0, "silent garbage", 0.9),
-        FakeSeg(2.0, 3.0, "keep me too", 0.2),
+    spans = [
+        t_mod._SpeakerSpan(start=0.0, end=3.0, speaker="SPK_0"),
+        t_mod._SpeakerSpan(start=4.0, end=8.0, speaker="SPK_1"),
     ]
-
-    class FakePipeline:
-        def transcribe(self, *args, **kwargs):
-            return iter(fake_segs), FakeInfo()
-
     with (
-        patch.object(t_mod, "_load_whisper", return_value=FakePipeline()),
-        caplog.at_level("INFO", logger="bibilab.pipeline.transcribe"),
+        patch.object(t_mod, "_transcribe_whisper", return_value=whisper_out),
+        patch.object(t_mod, "_diarize", return_value=spans),
     ):
-        segs, lang = t_mod._transcribe_whisper(Path("/dev/null"), cfg)
+        segs, _ = t_mod.transcribe(tmp_path / "a.wav", cfg)
+
+    assert [s.speaker for s in segs] == ["SPK_0", "SPK_1"]
+
+
+def test_best_speaker_returns_max_overlap_speaker():
+    from bibilab.pipeline import transcribe as t_mod
+
+    spans = [
+        t_mod._SpeakerSpan(start=0.0, end=3.0, speaker="SPK_0"),
+        t_mod._SpeakerSpan(start=3.0, end=10.0, speaker="SPK_1"),
+    ]
+    assert t_mod._best_speaker(WhisperSegment(start=0.0, end=5.0, text="x"), spans) == "SPK_0"
+    assert t_mod._best_speaker(WhisperSegment(start=6.0, end=9.0, text="x"), spans) == "SPK_1"
+    assert t_mod._best_speaker(WhisperSegment(start=20.0, end=25.0, text="x"), spans) is None
+
+
+def test_transcribe_whisper_returns_native_segments(tmp_path: Path):
+    """openai-whisper's model.transcribe returns segments natively with start/end/text in seconds."""
+    from bibilab.config import TranscriptionConfig
+    from bibilab.pipeline import transcribe as t_mod
+
+    cfg = TranscriptionConfig(model="large-v3", device="cpu", language="auto")
+
+    class FakeWhisper:
+        def transcribe(self, *args, **kwargs):
+            return {
+                "segments": [
+                    {"start": 0.0, "end": 1.5, "text": " keep me"},
+                    {"start": 1.5, "end": 3.0, "text": "  "},
+                    {"start": 3.0, "end": 4.0, "text": " keep me too"},
+                ],
+                "language": "en",
+            }
+
+    with patch.object(t_mod, "_load_whisper", return_value=FakeWhisper()):
+        segs, lang = t_mod._transcribe_whisper(tmp_path / "a.wav", cfg)
 
     assert [s.text for s in segs] == ["keep me", "keep me too"]
     assert lang == "en"
-    assert "silence guard dropped 1 segments" in caplog.text
 
 
 # ---------------------------------------------------------------------------

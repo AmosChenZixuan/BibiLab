@@ -174,13 +174,12 @@ class WorkerLoop:
     async def _download_model_job(self, job: dict) -> None:
         job_id = job["id"]
         meta_raw = _parse_job_meta(job)
-        engine = meta_raw["engine"]
-        model_size = meta_raw["model_size"]
+        model_name = meta_raw["model_name"]
 
         await update_job_status(job_id, JobStatus.DOWNLOADING.value, progress=10)
-        await asyncio.to_thread(download_model, engine, model_size)
+        await asyncio.to_thread(download_model, model_name)
         await update_job_status(job_id, JobStatus.DONE.value, progress=100)
-        logger.info("Model download job %s completed for %s:%s", job_id, engine, model_size)
+        logger.info("Model download job %s completed for %s", job_id, model_name)
 
     # -------------------------------------------------------------------------
     # Artifact generation job
@@ -606,7 +605,7 @@ All output fields MUST be written in {_LANG_NAME.get(lang, "English")}."""
             duration_seconds=video_meta.duration_seconds,
             uploader=video_meta.uploader,
             language=detected_language,
-            whisper_model=cfg.transcription.model_size,
+            whisper_model=cfg.transcription.model,
             ai_model=cfg.ai.model,
             vision_enabled=cfg.vision.enabled,
             settings_snapshot=cfg.model_dump(),

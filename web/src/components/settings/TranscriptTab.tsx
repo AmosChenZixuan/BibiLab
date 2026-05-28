@@ -4,16 +4,24 @@ import { useLanguage } from "@/app/LanguageContext";
 import { useJobActivity } from "@/components/jobs/JobActivityProvider";
 import type { JobActivityItem } from "@/components/jobs/JobActivityProvider";
 import { api } from "@/lib/api";
-import type { AsrEngine, AsrModel, BibilabConfig, HealthDependency } from "@/lib/types";
+import type { AsrModel, AsrModelKind, BibilabConfig, HealthDependency } from "@/lib/types";
 import { Download } from "lucide-react";
 
 import { Select, SettingsField, Spinner } from "@/components/ui";
+
+const KIND_ORDER: ReadonlyArray<AsrModelKind> = ["transcription", "diarization"];
+
+function formatBundleSize(sizeMb: number | null): string {
+  if (sizeMb == null) return "—";
+  if (sizeMb >= 1000) return `${(sizeMb / 1000).toFixed(1)} GB`;
+  return `${sizeMb} MB`;
+}
 
 type ModelDownloadCellProps = {
   model: AsrModel;
   modelJob: JobActivityItem | null;
   downloading: string | null;
-  onDownload: (engine: string, modelName: string) => Promise<void>;
+  onDownload: (modelName: string) => Promise<void>;
   t: (key: string, params?: Record<string, string | number>) => string;
 };
 
@@ -30,14 +38,12 @@ function ModelDownloadCell({ model, modelJob, downloading, onDownload, t }: Mode
       className="flex items-center justify-center text-sky"
       aria-label="Download"
       disabled={downloading === model.name}
-      onClick={() => void onDownload(model.engine, model.name)}
+      onClick={() => void onDownload(model.name)}
     >
       <Download size={18} />
     </button>
   );
 }
-
-const ENGINE_ORDER: ReadonlyArray<AsrEngine | "diarization"> = ["whisper", "sensevoice", "diarization"];
 
 type TranscriptTabProps = {
   config: BibilabConfig;
@@ -51,8 +57,7 @@ export function TranscriptTab({ config, dependencies, onBlur }: TranscriptTabPro
   const [localTranscription, setLocalTranscription] = useState(config.transcription);
   const [models, setModels] = useState<AsrModel[]>([]);
   const [downloading, setDownloading] = useState<string | null>(null);
-  const engineId = useId();
-  const modelSizeId = useId();
+  const modelId = useId();
   const deviceId = useId();
   const languageId = useId();
 
@@ -93,16 +98,16 @@ export function TranscriptTab({ config, dependencies, onBlur }: TranscriptTabPro
     onBlur({ ...config, transcription: localTranscription });
   }
 
-  async function handleDownload(engine: string, modelName: string) {
+  async function handleDownload(modelName: string) {
     setDownloading(modelName);
     try {
-      const response = await api.downloadAsrModel(engine, modelName);
+      const response = await api.downloadAsrModel(modelName);
       if (!response) return;
       trackJobs([
         {
           id: response.job_id,
           producer: "model_download",
-          label: `${engine}/${modelName}`,
+          label: modelName,
           contextKey: modelName,
         },
       ]);
@@ -111,82 +116,48 @@ export function TranscriptTab({ config, dependencies, onBlur }: TranscriptTabPro
     }
   }
 
-  const currentEngine: AsrEngine = localTranscription.engine || "whisper";
-  const availableModels = useMemo(
-    () => models.filter((m) => m.engine === currentEngine).map((m) => m.name),
-    [models, currentEngine],
+  const installedTranscriptionModels = useMemo(
+    () => models.filter((m) => m.kind === "transcription" && m.installed),
+    [models],
   );
-
-  const installedModels = useMemo(
-    () => models.filter((m) => m.installed && m.engine === currentEngine),
-    [models, currentEngine],
-  );
-  const hasSelectedInstalledModel = useMemo(
-    () => installedModels.some((m) => m.name === localTranscription.model_size),
-    [installedModels, localTranscription.model_size],
+  const hasSelectedInstalled = useMemo(
+    () => installedTranscriptionModels.some((m) => m.name === localTranscription.model),
+    [installedTranscriptionModels, localTranscription.model],
   );
 
   const cudaSupported = dependencies.cuda?.status === "ok";
 
-  const modelsByEngine = useMemo(() => {
+  const modelsByKind = useMemo(() => {
     const grouped: Record<string, AsrModel[]> = {};
     for (const m of models) {
-      (grouped[m.engine] ??= []).push(m);
+      (grouped[m.kind] ??= []).push(m);
     }
-    return ENGINE_ORDER.filter((e) => grouped[e]).map((e) => ({ engine: e, models: grouped[e] }));
+    return KIND_ORDER.filter((k) => grouped[k]).map((k) => ({ kind: k, models: grouped[k] }));
   }, [models]);
 
   return (
     <div className="grid gap-4">
       <div className="flex flex-col gap-3">
-        <SettingsField label={t("settings.engine")} htmlFor={engineId}>
+        <SettingsField label={t("settings.model")} htmlFor={modelId}>
           <Select
-            aria-label="Engine"
-            id={engineId}
-            onBlur={handleBlur}
-            onChange={(event) => {
-              const engine = event.target.value as AsrEngine;
-              const defaultModel = models.find((m) => m.engine === engine)?.name ?? "";
-              setLocalTranscription((current) => ({
-                ...current,
-                engine,
-                model_size: defaultModel,
-              }));
-            }}
-            value={currentEngine}
-          >
-            <option value="whisper">Whisper</option>
-            <option value="sensevoice">SenseVoice</option>
-          </Select>
-        </SettingsField>
-
-        <SettingsField label={t("settings.modelSize")} htmlFor={modelSizeId}>
-          <Select
-            aria-label="Model Size"
-            id={modelSizeId}
+            aria-label="Model"
+            id={modelId}
             onBlur={handleBlur}
             onChange={(event) =>
-              setLocalTranscription((current) => ({ ...current, model_size: event.target.value }))
+              setLocalTranscription((current) => ({ ...current, model: event.target.value }))
             }
-            value={localTranscription.model_size}
+            value={localTranscription.model}
           >
-            {!hasSelectedInstalledModel ? (
-              <option disabled value={localTranscription.model_size}>
-                {localTranscription.model_size} {t("settings.downloadRequired")}
+            {!hasSelectedInstalled ? (
+              <option disabled value={localTranscription.model}>
+                {localTranscription.model} {t("settings.downloadRequired")}
               </option>
             ) : null}
-            {installedModels.map((model) => (
+            {installedTranscriptionModels.map((model) => (
               <option key={model.name} value={model.name}>
                 {model.name}
               </option>
             ))}
-            {availableModels
-              .filter((name) => !installedModels.some((m) => m.name === name))
-              .map((name) => (
-                <option key={name} value={name}>
-                  {name} ({t("settings.downloadRequired")})
-                </option>
-              ))}
           </Select>
         </SettingsField>
 
@@ -234,20 +205,25 @@ export function TranscriptTab({ config, dependencies, onBlur }: TranscriptTabPro
         <div className="overflow-hidden rounded-2xl border border-border bg-white/64">
           <table className="w-full border-collapse text-left">
             <tbody>
-              {modelsByEngine.map(({ engine, models: engineModels }) => (
-                <Fragment key={engine}>
+              {modelsByKind.map(({ kind, models: kindModels }) => (
+                <Fragment key={kind}>
                   <tr className="border-t border-border">
-                    <td colSpan={2} className="px-4 py-2 text-xs font-semibold text-muted uppercase">
-                      {engine === "diarization" ? "Shared" : engine}
+                    <td colSpan={3} className="px-4 py-2 text-xs font-semibold text-muted uppercase">
+                      {kind}
                     </td>
                   </tr>
-                  {engineModels.map((model) => (
+                  {kindModels.map((model) => (
                     <tr key={model.name} className="border-t border-border">
                       <td className="px-4 py-3 pl-6 font-semibold text-ink">{model.name}</td>
+                      <td className="px-4 py-3 font-mono text-sm text-muted whitespace-nowrap">
+                        {formatBundleSize(model.size_mb)}
+                      </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center justify-end">
                           {model.installed ? (
                             <p className="text-right font-mono text-sm text-muted">{model.path ?? "—"}</p>
+                          ) : model.kind === "diarization" ? (
+                            <span className="text-xs text-muted">{t("settings.autoInstalls")}</span>
                           ) : (
                             <ModelDownloadCell
                               model={model}

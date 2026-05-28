@@ -10,10 +10,9 @@ import { JobActivityProvider } from "@/components/jobs/JobActivityProvider";
 vi.mock("../lib/api", () => {
   const mockApi = {
     listAsrModels: vi.fn().mockResolvedValue([
-      { name: "medium", engine: "whisper", installed: true, path: "/models/whisper/medium", selected: false },
-      { name: "large-v3", engine: "whisper", installed: true, path: "/models/whisper/large-v3", selected: true },
-      { name: "small", engine: "sensevoice", installed: false, path: null, selected: false },
-      { name: "cam++", engine: "diarization", installed: false, path: null, selected: false },
+      { name: "large-v3", kind: "transcription", installed: true, path: "/models/asr/large-v3/large-v3.pt", selected: true, size_mb: 3000 },
+      { name: "sensevoice-small", kind: "transcription", installed: false, path: null, selected: false, size_mb: 936 },
+      { name: "cam++", kind: "diarization", installed: false, path: null, selected: false, size_mb: 28 },
     ]),
     downloadAsrModel: vi.fn(),
     listJobs: vi.fn().mockResolvedValue([]),
@@ -31,8 +30,7 @@ const baseConfig: BibilabConfig = {
   accounts: { bilibili: { cookie: "", last_verified: "", username: "", avatar_url: "" } },
   ai: { protocol: "openai", model: "", api_key: "", base_url: "" },
   transcription: {
-    engine: "whisper",
-    model_size: "medium",
+    model: "large-v3",
     device: "cpu",
     language: "auto",
   },
@@ -70,8 +68,8 @@ describe("transcript tab", () => {
     renderTab();
 
     expect(await screen.findByRole("table")).toBeInTheDocument();
-    expect(await screen.findByRole("option", { name: "medium" })).toBeInTheDocument();
-    expect(await screen.findByText(/\/models\/whisper\/medium/i)).toBeInTheDocument();
+    expect(await screen.findByRole("option", { name: "large-v3" })).toBeInTheDocument();
+    expect(await screen.findByText(/\/models\/asr\/large-v3\/large-v3\.pt/i)).toBeInTheDocument();
   });
 
   test("shows download button for missing model", async () => {
@@ -81,28 +79,36 @@ describe("transcript tab", () => {
     expect(buttons.length).toBeGreaterThan(0);
   });
 
-  test("shows impact messaging for cuda and missing whisper models", async () => {
+  test("shows impact messaging for cuda and missing models", async () => {
     renderTab();
 
     expect(screen.getByText(/cuda is unavailable, so transcription will run on cpu/i)).toBeInTheDocument();
-    expect(await screen.findByText(/transcription cannot start until a model is downloaded/i)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/at least one transcription model must be downloaded/i),
+    ).toBeInTheDocument();
   });
 
-  test("model size dropdown only lists downloaded models", async () => {
+  test("model dropdown only lists installed transcription models", async () => {
     renderTab();
 
-    expect(await screen.findByRole("option", { name: "medium" })).toBeInTheDocument();
     expect(await screen.findByRole("option", { name: "large-v3" })).toBeInTheDocument();
-    expect(screen.queryByRole("option", { name: "small" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: /sensevoice-small/i })).not.toBeInTheDocument();
   });
 
-  test("download table does not render status chips", async () => {
+  test("diarization row shows auto-install hint instead of download button", async () => {
     renderTab();
 
-    expect(await screen.findByRole("table")).toBeInTheDocument();
-    expect(screen.queryByText(/selected/i)).not.toBeInTheDocument();
-    expect(screen.queryByText(/^installed$/i)).not.toBeInTheDocument();
-    expect(screen.queryByText(/^missing$/i)).not.toBeInTheDocument();
+    expect(await screen.findByText(/auto-installs on first ingest/i)).toBeInTheDocument();
+    const camButtons = screen.queryAllByRole("button", { name: /download/i });
+    expect(camButtons.length).toBe(1);
+  });
+
+  test("renders bundle sizes in download table", async () => {
+    renderTab();
+
+    expect(await screen.findByText("3.0 GB")).toBeInTheDocument();
+    expect(await screen.findByText("936 MB")).toBeInTheDocument();
+    expect(await screen.findByText("28 MB")).toBeInTheDocument();
   });
 
   test("disables cuda when health reports it unavailable", () => {
@@ -115,8 +121,7 @@ describe("transcript tab", () => {
     vi.mocked(api.downloadAsrModel).mockResolvedValue({
       job_id: "job-download",
       status: "queued",
-      engine: "sensevoice",
-      model_size: "small",
+      model_name: "sensevoice-small",
     });
     vi.mocked(api.listJobs)
       .mockResolvedValueOnce([])
@@ -129,7 +134,7 @@ describe("transcript tab", () => {
           error: null,
           created_at: "2026-03-31T20:00:00Z",
           updated_at: "2026-03-31T20:01:00Z",
-          meta: { engine: "sensevoice", model_size: "small" },
+          meta: { model_name: "sensevoice-small" },
         },
       ]);
 
@@ -139,7 +144,7 @@ describe("transcript tab", () => {
     await userEvent.click(downloadButtons[0]);
 
     await waitFor(() => {
-      expect(screen.getByRole("status", { name: /downloading small/i })).toBeInTheDocument();
+      expect(screen.getByRole("status", { name: /downloading sensevoice-small/i })).toBeInTheDocument();
     });
   });
 });

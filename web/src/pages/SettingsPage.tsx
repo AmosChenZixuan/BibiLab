@@ -26,7 +26,7 @@ function shouldRefreshHealth(current: BibilabConfig, next: BibilabConfig) {
     current.ai.model !== next.ai.model ||
     current.ai.api_key !== next.ai.api_key ||
     current.ai.base_url !== next.ai.base_url ||
-    current.transcription.model_size !== next.transcription.model_size ||
+    current.transcription.model !== next.transcription.model ||
     current.transcription.device !== next.transcription.device
   );
 }

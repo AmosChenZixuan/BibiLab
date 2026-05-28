@@ -74,7 +74,7 @@ async def test_download_model_job_success(tmp_bibilab_home: Path):
     from bibilab.db import bootstrap_db, create_job
 
     await bootstrap_db()
-    meta = {"engine": "whisper", "model_size": "medium"}
+    meta = {"model_name": "large-v3"}
     job_id = await create_job("model_download", meta)
 
     worker = WorkerLoop(home=tmp_bibilab_home)
@@ -82,7 +82,7 @@ async def test_download_model_job_success(tmp_bibilab_home: Path):
 
     with patch("bibilab.worker.download_model") as mock_dl:
         await worker._download_model_job(job)
-        mock_dl.assert_called_once_with("whisper", "medium")
+        mock_dl.assert_called_once_with("large-v3")
 
 
 @pytest.mark.asyncio
@@ -90,7 +90,7 @@ async def test_download_model_job_diarization(tmp_bibilab_home: Path):
     from bibilab.db import bootstrap_db, create_job
 
     await bootstrap_db()
-    meta = {"engine": "diarization", "model_size": "cam++"}
+    meta = {"model_name": "cam++"}
     job_id = await create_job("model_download", meta)
 
     worker = WorkerLoop(home=tmp_bibilab_home)
@@ -98,15 +98,15 @@ async def test_download_model_job_diarization(tmp_bibilab_home: Path):
 
     with patch("bibilab.worker.download_model") as mock_dl:
         await worker._download_model_job(job)
-        mock_dl.assert_called_once_with("diarization", "cam++")
+        mock_dl.assert_called_once_with("cam++")
 
 
 @pytest.mark.asyncio
-async def test_download_model_job_unsupported_engine(tmp_bibilab_home: Path):
+async def test_download_model_job_unknown_model(tmp_bibilab_home: Path):
     from bibilab.db import bootstrap_db, create_job
 
     await bootstrap_db()
-    meta = {"engine": "garbage", "model_size": "x"}
+    meta = {"model_name": "garbage"}
     job_id = await create_job("model_download", meta)
 
     worker = WorkerLoop(home=tmp_bibilab_home)
@@ -121,7 +121,7 @@ async def test_download_model_job_unsupported_engine(tmp_bibilab_home: Path):
         cursor = await db.execute("SELECT status, error FROM jobs WHERE id=?", (job_id,))
         row = await cursor.fetchone()
     assert row["status"] == "failed"
-    assert "Unsupported engine" in row["error"]
+    assert "Unknown ASR model" in row["error"]
 
 
 # ---------------------------------------------------------------------------

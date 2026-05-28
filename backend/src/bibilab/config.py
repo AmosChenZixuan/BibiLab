@@ -9,8 +9,7 @@ from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
 
-AsrEngine = Literal["whisper", "sensevoice"]
-AsrModelKind = Literal["whisper", "sensevoice", "diarization"]
+AsrModelKind = Literal["transcription", "diarization"]
 
 
 def bibilab_home() -> Path:
@@ -56,20 +55,11 @@ class AIConfig(BaseModel):
 
 
 class TranscriptionConfig(BaseModel):
-    engine: AsrEngine = "whisper"
-    model_size: str = "large-v3"
+    model: str = "sensevoice-small"
     device: str = "cuda"  # cuda | cpu
     language: str = "auto"  # auto | zh | en
-    diarization_enabled: bool = False
     llm_timeout: int = 120
     beam_size: int = 5
-
-
-SUPPORTED_MODELS: dict[AsrModelKind, tuple[str, ...]] = {
-    "whisper": ("medium", "large-v3"),
-    "sensevoice": ("small",),
-    "diarization": ("cam++",),
-}
 
 
 class VisionConfig(BaseModel):

@@ -335,10 +335,10 @@ export class ModelsClient {
     return this.request<AsrModel[]>(this.baseUrl, "/models/asr", opts);
   }
 
-  downloadAsrModel(engine: string, modelSize: string) {
+  downloadAsrModel(modelName: string) {
     return this.request<AsrModelDownloadResponse>(this.baseUrl, "/models/asr/download", {
       method: "POST",
-      body: JSON.stringify({ engine, model_size: modelSize }),
+      body: JSON.stringify({ model_name: modelName }),
     });
   }
 }
@@ -370,7 +370,7 @@ export interface ApiClient {
   listJobs(opts?: { signal?: AbortSignal }): Promise<Job[] | undefined>;
   deleteJob(jobId: string): Promise<void | undefined>;
   listAsrModels(opts?: { signal?: AbortSignal }): Promise<AsrModel[] | undefined>;
-  downloadAsrModel(engine: string, modelSize: string): Promise<AsrModelDownloadResponse | undefined>;
+  downloadAsrModel(modelName: string): Promise<AsrModelDownloadResponse | undefined>;
   getConversation(listId: string, opts?: { signal?: AbortSignal; before?: string; limit?: number }): Promise<GetConversationResponse | undefined>;
   deleteConversation(listId: string): Promise<void | undefined>;
   auth: {
@@ -428,7 +428,7 @@ export function createApiClient(baseUrl?: string): ApiClient {
     listJobs: (opts) => jobs.listJobs(opts),
     deleteJob: (id) => jobs.deleteJob(id),
     listAsrModels: (opts) => models.listAsrModels(opts),
-    downloadAsrModel: (engine, modelSize) => models.downloadAsrModel(engine, modelSize),
+    downloadAsrModel: (modelName) => models.downloadAsrModel(modelName),
     getConversation: (listId, opts) => conversations.getConversation(listId, opts),
     deleteConversation: (listId) => conversations.deleteConversation(listId),
     auth,

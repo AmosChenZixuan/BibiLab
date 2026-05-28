@@ -3,7 +3,12 @@ import shutil
 import httpx
 from fastapi import APIRouter, Depends
 
-from bibilab.asr_models import is_model_downloaded, resolve_model_path
+from bibilab.asr_models import (
+    diarization_model_path,
+    is_diarization_model_downloaded,
+    is_model_downloaded,
+    resolve_model_path,
+)
 from bibilab.config import BibilabConfig, get_config
 from bibilab.pipeline.embed import _embedding_model_dir, is_embedding_model_downloaded
 from bibilab.pipeline.rerank import _model_dir, is_reranker_model_downloaded
@@ -39,14 +44,10 @@ async def _check_llm(cfg: BibilabConfig) -> dict:
 
 
 def _check_asr(cfg: BibilabConfig) -> dict:
-    engine = cfg.transcription.engine
-    model_size = cfg.transcription.model_size
-    if not is_model_downloaded(engine, model_size):
-        return {
-            "status": "error",
-            "message": f"Model {model_size!r} (engine={engine}) not downloaded",
-        }
-    return {"status": "ok", "message": str(resolve_model_path(engine, model_size))}
+    model = cfg.transcription.model
+    if not is_model_downloaded(model):
+        return {"status": "error", "message": f"Model {model!r} not downloaded"}
+    return {"status": "ok", "message": str(resolve_model_path(model))}
 
 
 def _check_ffmpeg() -> dict:
@@ -57,27 +58,23 @@ def _check_ffmpeg() -> dict:
 
 
 def _check_cuda() -> dict:
-    # Reuse transcribe.py's RTLD_GLOBAL preload (idempotent — repeat calls are
-    # no-ops in glibc's dlopen). Calling it here both verifies the libs and
-    # makes their symbols available to any later ctranslate2 dlopen in this
-    # process, so health-green implies transcription-ready.
     try:
-        import ctypes
-        from pathlib import Path
+        import torch  # noqa: PLC0415
 
-        try:
-            import nvidia.cublas
+        if torch.cuda.is_available():
+            return {"status": "ok", "message": f"CUDA available ({torch.cuda.get_device_name(0)})"}
+        return {"status": "unavailable", "message": "CUDA not available on this device"}
+    except Exception as exc:  # noqa: BLE001
+        return {"status": "unavailable", "message": f"CUDA probe failed: {exc}"}
 
-            lib_path = Path(nvidia.cublas.__path__[0]) / "lib" / "libcublas.so.12"
-            ctypes.CDLL(str(lib_path), mode=ctypes.RTLD_GLOBAL)
-        except ImportError:
-            ctypes.CDLL("libcublas.so.12", mode=ctypes.RTLD_GLOBAL)
-        return {"status": "ok", "message": "CUDA available"}
-    except OSError as exc:
-        return {
-            "status": "unavailable",
-            "message": (f"CUDA libraries not available: {exc}. Install with: uv sync --extra cuda"),
-        }
+
+def _check_diarization_model() -> dict:
+    if is_diarization_model_downloaded():
+        return {"status": "ok", "message": str(diarization_model_path())}
+    return {
+        "status": "error",
+        "message": "Diarization model (CAM++, ~28 MB) not found. Auto-downloads on first ingest.",
+    }
 
 
 def _check_embedding_model() -> dict:
@@ -114,6 +111,7 @@ async def health(cfg: BibilabConfig = Depends(get_config)) -> dict:
         "cuda": _check_cuda(),
         "embedding_model": _check_embedding_model(),
         "reranker_model": _check_reranker_model(),
+        "diarization_model": _check_diarization_model(),
     }
 
     blocking = {"llm", "asr_model", "ffmpeg"}

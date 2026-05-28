@@ -69,8 +69,8 @@
     "ffmpegNotFound": "FFmpeg not found",
     "installed": "installed",
     "downloadFfmpeg": "Download FFmpeg",
-    "modelSize": "Model Size",
-    "modelSizeRequired": "Required. Missing the Whisper model blocks transcript generation entirely.",
+    "model": "Model",
+    "modelRequired": "Required. Without a downloaded model, transcription cannot start.",
     "downloadRequired": "(download required)",
     "device": "Device",
     "cudaAvailable": "CUDA speeds up transcription. Without it, transcripts still run but take longer on CPU.",
@@ -78,7 +78,8 @@
     "language": "Language",
     "languageDesc": "Controls decoder accuracy. A wrong language setting can reduce transcript quality.",
     "modelDownloads": "Model Downloads",
-    "modelDownloadsRequired": "Whisper model files are required. If missing, transcription cannot start until a model is downloaded."
+    "modelDownloadsRequired": "At least one transcription model must be downloaded before ingestion can run. Diarization installs automatically on first ingest.",
+    "autoInstalls": "auto-installs on first ingest"
   },
   "lab": {
     "header": {
