@@ -93,48 +93,6 @@ def _load_whisper(cfg: TranscriptionConfig) -> "BatchedInferencePipeline":
 
 
 # ---------------------------------------------------------------------------
-# Whisper-specific: language strategies & prompt echo filter
-# ---------------------------------------------------------------------------
-
-_SILENCE_PROB_THRESHOLD = 0.6
-
-
-@dataclass(frozen=True)
-class _LangStrategy:
-    initial_prompt: str | None
-    hotwords: str | None
-    condition_on_previous_text: bool
-
-
-_LANG_STRATEGIES: dict[str, _LangStrategy] = {
-    "zh": _LangStrategy(
-        initial_prompt="以下是普通话的句子，请使用标点符号。",
-        hotwords="以下是普通话的句子，请使用标点符号。",
-        condition_on_previous_text=False,
-    ),
-}
-_DEFAULT_STRATEGY = _LangStrategy(initial_prompt=None, hotwords=None, condition_on_previous_text=True)
-
-
-def _is_prompt_echo(seg_text: str, no_speech_prob: float, prompt: str | None) -> bool:
-    """Drop prompt hallucinations.
-
-    Exact prompt match is always a hallucination — no real speech is the
-    prompt verbatim. Substring matches require high no_speech_prob.
-    """
-    if not prompt:
-        return False
-    text = seg_text.strip()
-    if not text:
-        return False
-    if text == prompt.strip():
-        return True
-    if no_speech_prob < _SILENCE_PROB_THRESHOLD:
-        return False
-    return len(text) >= 4 and text in prompt
-
-
-# ---------------------------------------------------------------------------
 # Whisper transcription
 # ---------------------------------------------------------------------------
 
@@ -142,7 +100,6 @@ def _is_prompt_echo(seg_text: str, no_speech_prob: float, prompt: str | None) ->
 def _transcribe_whisper(audio_path: Path, cfg: TranscriptionConfig) -> tuple[list[WhisperSegment], str | None]:
     pipeline = _load_whisper(cfg)
     language = None if cfg.language == "auto" else cfg.language
-    strategy = _LANG_STRATEGIES.get(language, _DEFAULT_STRATEGY)
     batch_size = 16 if cfg.device == "cuda" else 1
     segments, info = pipeline.transcribe(
         str(audio_path),
@@ -150,15 +107,8 @@ def _transcribe_whisper(audio_path: Path, cfg: TranscriptionConfig) -> tuple[lis
         batch_size=batch_size,
         vad_filter=True,
         language=language,
-        initial_prompt=strategy.initial_prompt,
-        hotwords=strategy.hotwords,
-        condition_on_previous_text=strategy.condition_on_previous_text,
     )
-    segment_list = [
-        WhisperSegment(start=s.start, end=s.end, text=s.text.strip())
-        for s in segments
-        if not _is_prompt_echo(s.text, s.no_speech_prob, strategy.initial_prompt)
-    ]
+    segment_list = [WhisperSegment(start=s.start, end=s.end, text=s.text.strip()) for s in segments]
     detected_language: str | None = None if cfg.language != "auto" else info.language
     return segment_list, detected_language
 
