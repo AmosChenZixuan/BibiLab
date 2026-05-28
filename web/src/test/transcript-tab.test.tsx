@@ -9,11 +9,13 @@ import { JobActivityProvider } from "@/components/jobs/JobActivityProvider";
 
 vi.mock("../lib/api", () => {
   const mockApi = {
-    listWhisperModels: vi.fn().mockResolvedValue([
-      { name: "base", installed: true, path: "/models/base", selected: true },
-      { name: "large-v3", installed: false, path: null, selected: false },
+    listAsrModels: vi.fn().mockResolvedValue([
+      { name: "medium", engine: "whisper", installed: true, path: "/models/whisper/medium", selected: false },
+      { name: "large-v3", engine: "whisper", installed: true, path: "/models/whisper/large-v3", selected: true },
+      { name: "small", engine: "sensevoice", installed: false, path: null, selected: false },
+      { name: "cam++", engine: "diarization", installed: false, path: null, selected: false },
     ]),
-    downloadWhisperModel: vi.fn(),
+    downloadAsrModel: vi.fn(),
     listJobs: vi.fn().mockResolvedValue([]),
   };
   return {
@@ -29,8 +31,8 @@ const baseConfig: BibilabConfig = {
   accounts: { bilibili: { cookie: "", last_verified: "", username: "", avatar_url: "" } },
   ai: { protocol: "openai", model: "", api_key: "", base_url: "" },
   transcription: {
-    engine: "faster-whisper",
-    model_size: "base",
+    engine: "whisper",
+    model_size: "medium",
     device: "cpu",
     language: "auto",
   },
@@ -68,14 +70,15 @@ describe("transcript tab", () => {
     renderTab();
 
     expect(await screen.findByRole("table")).toBeInTheDocument();
-    expect(await screen.findByRole("option", { name: "base" })).toBeInTheDocument();
-    expect(await screen.findByText(/\/models\/base/i)).toBeInTheDocument();
+    expect(await screen.findByRole("option", { name: "medium" })).toBeInTheDocument();
+    expect(await screen.findByText(/\/models\/whisper\/medium/i)).toBeInTheDocument();
   });
 
   test("shows download button for missing model", async () => {
     renderTab();
 
-    expect(await screen.findByRole("button", { name: /^download$/i })).toBeInTheDocument();
+    const buttons = await screen.findAllByRole("button", { name: /^download$/i });
+    expect(buttons.length).toBeGreaterThan(0);
   });
 
   test("shows impact messaging for cuda and missing whisper models", async () => {
@@ -88,8 +91,9 @@ describe("transcript tab", () => {
   test("model size dropdown only lists downloaded models", async () => {
     renderTab();
 
-    expect(await screen.findByRole("option", { name: "base" })).toBeInTheDocument();
-    expect(screen.queryByRole("option", { name: "large-v3" })).not.toBeInTheDocument();
+    expect(await screen.findByRole("option", { name: "medium" })).toBeInTheDocument();
+    expect(await screen.findByRole("option", { name: "large-v3" })).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: "small" })).not.toBeInTheDocument();
   });
 
   test("download table does not render status chips", async () => {
@@ -107,12 +111,12 @@ describe("transcript tab", () => {
     expect(screen.getByRole("option", { name: "CUDA" })).toBeDisabled();
   });
 
-  test("shows inline progress for a tracked whisper download job", async () => {
-    vi.mocked(api.downloadWhisperModel).mockResolvedValue({
+  test("shows inline progress for a tracked model download job", async () => {
+    vi.mocked(api.downloadAsrModel).mockResolvedValue({
       job_id: "job-download",
       status: "queued",
-      model_family: "whisper",
-      model_size: "large-v3",
+      engine: "sensevoice",
+      model_size: "small",
     });
     vi.mocked(api.listJobs)
       .mockResolvedValueOnce([])
@@ -125,16 +129,17 @@ describe("transcript tab", () => {
           error: null,
           created_at: "2026-03-31T20:00:00Z",
           updated_at: "2026-03-31T20:01:00Z",
-          meta: { model_family: "whisper", model_size: "large-v3" },
+          meta: { engine: "sensevoice", model_size: "small" },
         },
       ]);
 
     renderTab();
 
-    await userEvent.click(await screen.findByRole("button", { name: /^download$/i }));
+    const downloadButtons = await screen.findAllByRole("button", { name: /^download$/i });
+    await userEvent.click(downloadButtons[0]);
 
     await waitFor(() => {
-      expect(screen.getByRole("status", { name: /downloading large-v3/i })).toBeInTheDocument();
+      expect(screen.getByRole("status", { name: /downloading small/i })).toBeInTheDocument();
     });
   });
 });

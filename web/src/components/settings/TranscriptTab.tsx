@@ -4,42 +4,43 @@ import { useLanguage } from "@/app/LanguageContext";
 import { useJobActivity } from "@/components/jobs/JobActivityProvider";
 import type { JobActivityItem } from "@/components/jobs/JobActivityProvider";
 import { api } from "@/lib/api";
-import type { HealthDependency, BibilabConfig, WhisperModel } from "@/lib/types";
+import type { AsrModel, BibilabConfig, HealthDependency } from "@/lib/types";
 import { Download } from "lucide-react";
 
 import { Select, SettingsField, Spinner } from "@/components/ui";
 
 type ModelDownloadCellProps = {
-  modelName: string;
+  model: AsrModel;
   modelJob: JobActivityItem | null;
   downloading: string | null;
-  onDownload: (name: string) => Promise<void>;
+  onDownload: (engine: string, modelName: string) => Promise<void>;
   t: (key: string, params?: Record<string, string | number>) => string;
 };
 
-function ModelDownloadCell({ modelName, modelJob, downloading, onDownload, t }: ModelDownloadCellProps) {
+function ModelDownloadCell({ model, modelJob, downloading, onDownload, t }: ModelDownloadCellProps) {
   if (modelJob && !modelJob.isTerminal) {
-    return (
-      <Spinner label={t("common.downloading", { name: modelName })} />
-    );
+    return <Spinner label={t("common.downloading", { name: model.name })} />;
   }
-
   if (modelJob?.job.status === "failed" || modelJob?.job.status === "needs_auth") {
     return <span className="text-xs text-pink">{modelJob.job.error ?? t("common.failed")}</span>;
   }
-
   return (
     <button
       type="button"
       className="flex items-center justify-center text-sky"
       aria-label="Download"
-      disabled={downloading === modelName}
-      onClick={() => void onDownload(modelName)}
+      disabled={downloading === model.name}
+      onClick={() => void onDownload(model.engine, model.name)}
     >
       <Download size={18} />
     </button>
   );
 }
+
+const ENGINE_MODELS: Record<string, string[]> = {
+  whisper: ["medium", "large-v3"],
+  sensevoice: ["small"],
+};
 
 type TranscriptTabProps = {
   config: BibilabConfig;
@@ -51,8 +52,9 @@ export function TranscriptTab({ config, dependencies, onBlur }: TranscriptTabPro
   const { t } = useLanguage();
   const { dismissJob, getJobs, trackJobs } = useJobActivity();
   const [localTranscription, setLocalTranscription] = useState(config.transcription);
-  const [models, setModels] = useState<WhisperModel[]>([]);
+  const [models, setModels] = useState<AsrModel[]>([]);
   const [downloading, setDownloading] = useState<string | null>(null);
+  const engineId = useId();
   const modelSizeId = useId();
   const deviceId = useId();
   const languageId = useId();
@@ -63,7 +65,7 @@ export function TranscriptTab({ config, dependencies, onBlur }: TranscriptTabPro
 
   const refreshModels = useCallback(async (signal?: AbortSignal) => {
     try {
-      const nextModels = await api.listWhisperModels({ signal });
+      const nextModels = await api.listAsrModels({ signal });
       setModels(nextModels ?? []);
     } catch (err) {
       if (err instanceof Error && err.name === "AbortError") return;
@@ -77,23 +79,16 @@ export function TranscriptTab({ config, dependencies, onBlur }: TranscriptTabPro
     return () => controller.abort();
   }, []);
 
-  const modelJobs = getJobs("whisper_download");
+  const modelJobs = getJobs("model_download");
   const terminalModelJobCount = modelJobs.filter((j) => j.isTerminal).length;
 
   useEffect(() => {
-    if (terminalModelJobCount === 0) {
-      return;
-    }
-
+    if (terminalModelJobCount === 0) return;
     const terminalIds = modelJobs.filter((j) => j.isTerminal).map((j) => j.job.id);
-
     async function refreshAndDismiss() {
       await refreshModels();
-      for (const id of terminalIds) {
-        dismissJob(id);
-      }
+      for (const id of terminalIds) dismissJob(id);
     }
-
     void refreshAndDismiss();
   }, [modelJobs, terminalModelJobCount, dismissJob, refreshModels]);
 
@@ -101,17 +96,17 @@ export function TranscriptTab({ config, dependencies, onBlur }: TranscriptTabPro
     onBlur({ ...config, transcription: localTranscription });
   }
 
-  async function handleDownload(modelName: string) {
+  async function handleDownload(engine: string, modelName: string) {
     setDownloading(modelName);
     try {
-      const response = await api.downloadWhisperModel(modelName);
+      const response = await api.downloadAsrModel(engine, modelName);
       if (!response) return;
       trackJobs([
         {
           id: response.job_id,
-          producer: "whisper_download",
-          label: response.model_size,
-          contextKey: response.model_size,
+          producer: "model_download",
+          label: `${engine}/${modelName}`,
+          contextKey: modelName,
         },
       ]);
     } finally {
@@ -119,26 +114,54 @@ export function TranscriptTab({ config, dependencies, onBlur }: TranscriptTabPro
     }
   }
 
+  const currentEngine = localTranscription.engine || "whisper";
+  const availableModels = ENGINE_MODELS[currentEngine] ?? [];
+
   const installedModels = useMemo(
-    () => models.filter((model) => model.installed),
-    [models],
+    () => models.filter((m) => m.installed && m.engine === currentEngine),
+    [models, currentEngine],
   );
   const hasSelectedInstalledModel = useMemo(
-    () => installedModels.some((model) => model.name === localTranscription.model_size),
+    () => installedModels.some((m) => m.name === localTranscription.model_size),
     [installedModels, localTranscription.model_size],
   );
-  const cudaDependency = dependencies.cuda;
-  const cudaSupported = cudaDependency?.status === "ok";
-  const deviceHint = cudaSupported ? t("settings.cudaAvailable") : t("settings.cudaUnavailable");
+
+  const cudaSupported = dependencies.cuda?.status === "ok";
+
+  const modelsByEngine = useMemo(() => {
+    const order = ["whisper", "sensevoice", "diarization"];
+    const grouped: Record<string, AsrModel[]> = {};
+    for (const m of models) {
+      (grouped[m.engine] ??= []).push(m);
+    }
+    return order.filter((e) => grouped[e]).map((e) => ({ engine: e, models: grouped[e] }));
+  }, [models]);
 
   return (
     <div className="grid gap-4">
       <div className="flex flex-col gap-3">
-        <SettingsField
-          label={t("settings.modelSize")}
-          hint={t("settings.modelSizeRequired")}
-          htmlFor={modelSizeId}
-        >
+        <SettingsField label={t("settings.engine")} htmlFor={engineId}>
+          <Select
+            aria-label="Engine"
+            id={engineId}
+            onBlur={handleBlur}
+            onChange={(event) => {
+              const engine = event.target.value;
+              const defaultModel = ENGINE_MODELS[engine]?.[0] ?? "large-v3";
+              setLocalTranscription((current) => ({
+                ...current,
+                engine,
+                model_size: defaultModel,
+              }));
+            }}
+            value={currentEngine}
+          >
+            <option value="whisper">Whisper</option>
+            <option value="sensevoice">SenseVoice</option>
+          </Select>
+        </SettingsField>
+
+        <SettingsField label={t("settings.modelSize")} htmlFor={modelSizeId}>
           <Select
             aria-label="Model Size"
             id={modelSizeId}
@@ -158,10 +181,21 @@ export function TranscriptTab({ config, dependencies, onBlur }: TranscriptTabPro
                 {model.name}
               </option>
             ))}
+            {availableModels
+              .filter((name) => !installedModels.some((m) => m.name === name))
+              .map((name) => (
+                <option key={name} value={name}>
+                  {name} ({t("settings.downloadRequired")})
+                </option>
+              ))}
           </Select>
         </SettingsField>
 
-        <SettingsField label={t("settings.device")} hint={deviceHint} htmlFor={deviceId}>
+        <SettingsField
+          label={t("settings.device")}
+          hint={cudaSupported ? t("settings.cudaAvailable") : t("settings.cudaUnavailable")}
+          htmlFor={deviceId}
+        >
           <Select
             aria-label="Device"
             id={deviceId}
@@ -172,17 +206,11 @@ export function TranscriptTab({ config, dependencies, onBlur }: TranscriptTabPro
             value={localTranscription.device}
           >
             <option value="cpu">CPU</option>
-            <option value="cuda" disabled={!cudaSupported}>
-              CUDA
-            </option>
+            <option value="cuda" disabled={!cudaSupported}>CUDA</option>
           </Select>
         </SettingsField>
 
-        <SettingsField
-          label={t("settings.language")}
-          hint={t("settings.languageDesc")}
-          htmlFor={languageId}
-        >
+        <SettingsField label={t("settings.language")} hint={t("settings.languageDesc")} htmlFor={languageId}>
           <Select
             aria-label="Language"
             id={languageId}
@@ -207,25 +235,34 @@ export function TranscriptTab({ config, dependencies, onBlur }: TranscriptTabPro
         <div className="overflow-hidden rounded-2xl border border-border bg-white/64">
           <table className="w-full border-collapse text-left">
             <tbody>
-              {models.map((model) => (
-                <tr key={model.name} className="border-t border-border">
-                  <td className="px-4 py-3 font-semibold text-ink">{model.name}</td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center justify-end">
-                      {model.installed ? (
-                        <p className="text-right font-mono text-sm text-muted">{model.path}</p>
-                      ) : (
-                        <ModelDownloadCell
-                          modelName={model.name}
-                          modelJob={modelJobs.find((job) => job.contextKey === model.name) ?? null}
-                          downloading={downloading}
-                          onDownload={handleDownload}
-                          t={t}
-                        />
-                      )}
-                    </div>
-                  </td>
-                </tr>
+              {modelsByEngine.map(({ engine, models: engineModels }) => (
+                <>
+                  <tr key={`hdr-${engine}`} className="border-t border-border">
+                    <td colSpan={2} className="px-4 py-2 text-xs font-semibold text-muted uppercase">
+                      {engine === "diarization" ? "Shared" : engine}
+                    </td>
+                  </tr>
+                  {engineModels.map((model) => (
+                    <tr key={model.name} className="border-t border-border">
+                      <td className="px-4 py-3 pl-6 font-semibold text-ink">{model.name}</td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center justify-end">
+                          {model.installed ? (
+                            <p className="text-right font-mono text-sm text-muted">{model.path ?? "—"}</p>
+                          ) : (
+                            <ModelDownloadCell
+                              model={model}
+                              modelJob={modelJobs.find((job) => job.contextKey === model.name) ?? null}
+                              downloading={downloading}
+                              onDownload={handleDownload}
+                              t={t}
+                            />
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </>
               ))}
             </tbody>
           </table>

@@ -177,17 +177,18 @@ export type HealthResponse = {
   dependencies: Record<string, HealthDependency>;
 };
 
-export type WhisperModel = {
+export type AsrModel = {
   name: string;
+  engine: "whisper" | "sensevoice" | "diarization";
   installed: boolean;
   path: string | null;
   selected: boolean;
 };
 
-export type WhisperDownloadResponse = {
+export type AsrModelDownloadResponse = {
   job_id: string;
   status: string;
-  model_family: string;
+  engine: string;
   model_size: string;
 };
 
