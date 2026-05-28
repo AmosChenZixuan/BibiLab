@@ -1,13 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from bibilab.asr_models import (
-    DIARIZATION_MODELS,
     SUPPORTED_MODELS,
     is_diarization_model_downloaded,
     is_model_downloaded,
     resolve_model_path,
 )
-from bibilab.config import BibilabConfig, get_config
+from bibilab.config import DIARIZATION_MODELS, BibilabConfig, get_config
 from bibilab.db import create_job
 from bibilab.models.asr import (
     AsrModelDownloadRequest,
