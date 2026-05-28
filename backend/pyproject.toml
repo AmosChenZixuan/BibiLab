@@ -29,7 +29,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-cuda = ["nvidia-cublas-cu12"]
+cuda = ["nvidia-cublas-cu12", "funasr>=1.2", "torch>=2.0", "torchaudio>=2.0"]
 
 
 [dependency-groups]

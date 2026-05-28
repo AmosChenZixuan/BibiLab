@@ -1,4 +1,4 @@
-"""Faster Whisper transcription step."""
+"""Transcription step — Whisper + SenseVoice dispatch + speaker diarization."""
 
 from __future__ import annotations
 
@@ -10,20 +10,18 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from faster_whisper import WhisperModel
+    from faster_whisper import BatchedInferencePipeline
 
+from bibilab.asr_models import (
+    is_diarization_model_downloaded,
+    resolve_model_path,
+)
 from bibilab.config import TranscriptionConfig, bibilab_home
-from bibilab.whisper_models import download_whisper_model, resolve_local_model_path
 
 logger = logging.getLogger(__name__)
 
 
 def _preload_bundled_cuda_libs() -> None:
-    # ctranslate2 loads CUDA libs via dlopen(soname). Soname resolution uses
-    # the search-path list cached by ld.so at process startup — mutating
-    # LD_LIBRARY_PATH post-startup does not affect it. Preload bundled libs
-    # by absolute path with RTLD_GLOBAL so their symbols are visible when
-    # ctranslate2 later calls dlopen.
     for pkg, soname in (
         ("nvidia.cublas", "libcublas.so.12"),
         ("nvidia.cudnn", "libcudnn.so.9"),
@@ -40,9 +38,9 @@ def _preload_bundled_cuda_libs() -> None:
 
 _preload_bundled_cuda_libs()
 
-# Module-level singleton — avoid reloading the model on every job
-_model = None
-_model_key: tuple[str, str] | None = None  # (model_size, device)
+# Module-level singletons
+_whisper_pipeline = None
+_whisper_key: tuple[str, str] | None = None  # (model_size, device)
 
 
 @dataclass
@@ -50,66 +48,65 @@ class WhisperSegment:
     start: float
     end: float
     text: str
+    speaker: str | None = None
 
 
 def _compute_type_for_device(device: str) -> str:
     return "float16" if device == "cuda" else "int8"
 
 
-def _load_model(cfg: TranscriptionConfig) -> "WhisperModel":
-    global _model, _model_key
+def _load_whisper(cfg: TranscriptionConfig) -> "BatchedInferencePipeline":
+    global _whisper_pipeline, _whisper_key
 
-    from faster_whisper import WhisperModel  # noqa: PLC0415
+    from faster_whisper import BatchedInferencePipeline, WhisperModel  # noqa: PLC0415
 
     key = (cfg.model_size, cfg.device)
-    if _model is None or _model_key != key:
-        local_path = resolve_local_model_path(cfg.model_size)
+    if _whisper_pipeline is None or _whisper_key != key:
+        local_path = resolve_model_path("whisper", cfg.model_size)
         model_source = str(local_path) if local_path is not None else cfg.model_size
         if local_path is None:
-            download_whisper_model(cfg.model_size)
+            from bibilab.asr_models import download_model
+
+            download_model("whisper", cfg.model_size)
+        compute_type = _compute_type_for_device(cfg.device)
         logger.info(
-            "Loading Whisper model %s on %s from %s",
+            "Loading Whisper model %s on %s (%s)",
             cfg.model_size,
             cfg.device,
-            model_source,
+            compute_type,
         )
-        _model = WhisperModel(
+        model = WhisperModel(
             model_source,
             device=cfg.device,
-            compute_type=_compute_type_for_device(cfg.device),
+            compute_type=compute_type,
+            cpu_threads=4,
         )
-        _model_key = key
-    return _model
+        logger.info(
+            "Whisper encoder runs on %s (%s), decoder on CPU (%d threads)",
+            cfg.device,
+            compute_type,
+            4,
+        )
+        _whisper_pipeline = BatchedInferencePipeline(model)
+        _whisper_key = key
+    return _whisper_pipeline
 
 
-# Whisper's default no_speech_threshold. Segments above this are decoded
-# from windows the model itself flagged as silence — prompt echoes here are
-# hallucinations, not transcription. Real speech sits well below this.
+# ---------------------------------------------------------------------------
+# Whisper-specific: language strategies & prompt echo filter
+# ---------------------------------------------------------------------------
+
 _SILENCE_PROB_THRESHOLD = 0.6
 
 
 @dataclass(frozen=True)
 class _LangStrategy:
-    """Per-language Whisper decoding strategy."""
-
     initial_prompt: str | None
     hotwords: str | None
-    # When True, each decode window conditions on the previous window's text.
-    # Off for languages whose training data biases the decoder into repetition
-    # cascades or whose prompt bias would otherwise be drowned out (see zh).
     condition_on_previous_text: bool
 
 
-# Per-language transcription strategy. Languages absent from the table fall
-# back to _DEFAULT_STRATEGY (faster-whisper defaults, no prompt biasing).
-# Add a language by inserting an entry — no other code changes required.
 _LANG_STRATEGIES: dict[str, _LangStrategy] = {
-    # zh: training data is largely subtitle-style without punctuation.
-    # initial_prompt seeds the first window; hotwords re-bias every window so
-    # punctuation survives past 30s. condition_on_previous_text=False because
-    # prior tokens sit closer to decode start than hotwords in
-    # WhisperModel.get_prompt, drowning the bias and opening a repetition
-    # cascade on long audio.
     "zh": _LangStrategy(
         initial_prompt="以下是普通话的句子，请使用标点符号。",
         hotwords="以下是普通话的句子，请使用标点符号。",
@@ -120,30 +117,37 @@ _DEFAULT_STRATEGY = _LangStrategy(initial_prompt=None, hotwords=None, condition_
 
 
 def _is_prompt_echo(seg_text: str, no_speech_prob: float, prompt: str | None) -> bool:
-    """Drop prompt hallucinations on silent windows.
+    """Drop prompt hallucinations.
 
-    Requires both a textual match against the prompt AND a high no_speech_prob
-    so legitimate speech that happens to overlap the prompt wording
-    ('请使用标点符号' in a typing tutorial) is preserved.
+    Exact prompt match is always a hallucination — no real speech is the
+    prompt verbatim. Substring matches require high no_speech_prob.
     """
-    if not prompt or no_speech_prob < _SILENCE_PROB_THRESHOLD:
+    if not prompt:
         return False
     text = seg_text.strip()
     if not text:
         return False
-    return text == prompt.strip() or (len(text) >= 4 and text in prompt)
+    if text == prompt.strip():
+        return True
+    if no_speech_prob < _SILENCE_PROB_THRESHOLD:
+        return False
+    return len(text) >= 4 and text in prompt
 
 
-def transcribe(audio_path: Path, cfg: TranscriptionConfig) -> tuple[list[WhisperSegment], str | None]:
-    """Transcribe audio to segments. Returns (segments, detected_language)."""
-    model = _load_model(cfg)
-    # `auto` skips per-language strategy — applying a language-specific prompt
-    # before detection risks biasing decoding toward that language's tokens.
+# ---------------------------------------------------------------------------
+# Whisper transcription
+# ---------------------------------------------------------------------------
+
+
+def _transcribe_whisper(audio_path: Path, cfg: TranscriptionConfig) -> tuple[list[WhisperSegment], str | None]:
+    pipeline = _load_whisper(cfg)
     language = None if cfg.language == "auto" else cfg.language
     strategy = _LANG_STRATEGIES.get(language, _DEFAULT_STRATEGY)
-    segments, info = model.transcribe(
+    batch_size = 16 if cfg.device == "cuda" else 1
+    segments, info = pipeline.transcribe(
         str(audio_path),
         beam_size=cfg.beam_size,
+        batch_size=batch_size,
         vad_filter=True,
         language=language,
         initial_prompt=strategy.initial_prompt,
@@ -159,6 +163,59 @@ def transcribe(audio_path: Path, cfg: TranscriptionConfig) -> tuple[list[Whisper
     return segment_list, detected_language
 
 
+# ---------------------------------------------------------------------------
+# Speaker merge
+# ---------------------------------------------------------------------------
+
+
+def _best_speaker(seg: WhisperSegment, speaker_segs: list) -> str | None:
+    """Return speaker with maximum timestamp overlap with seg, or None."""
+    best = None
+    best_overlap = 0.0
+    for spk in speaker_segs:
+        overlap = max(0.0, min(seg.end, spk.end) - max(seg.start, spk.start))
+        if overlap > best_overlap:
+            best_overlap = overlap
+            best = spk.speaker
+    return best if best_overlap > 0 else None
+
+
+# ---------------------------------------------------------------------------
+# Main dispatch
+# ---------------------------------------------------------------------------
+
+
+def transcribe(audio_path: Path, cfg: TranscriptionConfig) -> tuple[list[WhisperSegment], str | None]:
+    """Transcribe audio to segments. Returns (segments, detected_language)."""
+
+    # Diarization pre-pass (engine-agnostic, if model downloaded)
+    speaker_segs: list = []
+    if is_diarization_model_downloaded():
+        from bibilab.pipeline.diarize import diarize
+
+        speaker_segs = diarize(audio_path, cfg.device)
+
+    # Engine dispatch
+    if cfg.engine == "sensevoice":
+        from bibilab.pipeline.sensevoice import _transcribe_sensevoice
+
+        segments, detected_language = _transcribe_sensevoice(audio_path, cfg)
+    else:
+        segments, detected_language = _transcribe_whisper(audio_path, cfg)
+
+    # Merge speaker labels
+    if speaker_segs:
+        for seg in segments:
+            seg.speaker = _best_speaker(seg, speaker_segs)
+
+    return segments, detected_language
+
+
+# ---------------------------------------------------------------------------
+# Persist
+# ---------------------------------------------------------------------------
+
+
 def write_transcript(segments: list[WhisperSegment], video_id: str) -> Path:
     """Write segments to ~/.bibilab/transcripts/{video_id}.txt, one line per segment."""
     transcripts_dir = bibilab_home() / "transcripts"
@@ -170,7 +227,10 @@ def write_transcript(segments: list[WhisperSegment], video_id: str) -> Path:
         h = int(seg.start) // 3600
         m = (int(seg.start) % 3600) // 60
         s = int(seg.start) % 60
-        lines.append(f"[{h:02d}:{m:02d}:{s:02d}] {seg.text}")
+        line = f"[{h:02d}:{m:02d}:{s:02d}] {seg.text}"
+        if seg.speaker:
+            line += f" [{seg.speaker}]"
+        lines.append(line)
 
     tmp.write_text("\n".join(lines), encoding="utf-8")
     os.replace(tmp, out_path)

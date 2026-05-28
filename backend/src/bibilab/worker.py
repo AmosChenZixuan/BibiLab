@@ -11,6 +11,7 @@ import httpx
 from pydantic import BaseModel
 
 from bibilab.adapters.base import AuthRequiredError, VideoMeta
+from bibilab.asr_models import download_diarization_model, download_model
 from bibilab.cleanup import cleanup_job_artifacts
 from bibilab.config import BibilabConfig, bibilab_home, load_config
 from bibilab.db import (
@@ -32,7 +33,6 @@ from bibilab.pipeline.chunk import chunk_segments
 from bibilab.pipeline.digest import DigestResult, digest
 from bibilab.pipeline.embed import embed_chunks
 from bibilab.pipeline.transcribe import WhisperSegment, transcribe, write_transcript
-from bibilab.whisper_models import download_whisper_model
 
 logger = logging.getLogger(__name__)
 
@@ -174,16 +174,16 @@ class WorkerLoop:
     async def _download_model_job(self, job: dict) -> None:
         job_id = job["id"]
         meta_raw = _parse_job_meta(job)
-        model_family = meta_raw.get("model_family", "")
+        engine = meta_raw.get("engine") or meta_raw.get("model_family", "whisper")
         model_size = meta_raw.get("model_size", "")
 
         await update_job_status(job_id, JobStatus.DOWNLOADING.value, progress=10)
-        if model_family != "whisper":
-            raise PipelineError(f"Unsupported model family {model_family!r}")
-
-        await asyncio.to_thread(download_whisper_model, model_size)
+        if engine == "diarization":
+            await asyncio.to_thread(download_diarization_model)
+        else:
+            await asyncio.to_thread(download_model, engine, model_size)
         await update_job_status(job_id, JobStatus.DONE.value, progress=100)
-        logger.info("Model download job %s completed for %s:%s", job_id, model_family, model_size)
+        logger.info("Model download job %s completed for %s:%s", job_id, engine, model_size)
 
     # -------------------------------------------------------------------------
     # Artifact generation job

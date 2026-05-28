@@ -33,7 +33,7 @@ function shouldRefreshHealth(current: BibilabConfig, next: BibilabConfig) {
 
 const TABS: ReadonlyArray<{ key: TabKey; labelKey: string; dependencyKeys: readonly string[] }> = [
   { key: "llm", labelKey: "settings.llm", dependencyKeys: ["llm"] as const },
-  { key: "transcript", labelKey: "settings.transcript", dependencyKeys: ["whisper_model"] as const },
+  { key: "transcript", labelKey: "settings.transcript", dependencyKeys: ["asr_model"] as const },
   { key: "other", labelKey: "settings.other", dependencyKeys: ["backend", "ffmpeg", "embedding_model"] as const },
 ];
 

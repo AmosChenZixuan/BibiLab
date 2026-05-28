@@ -5,7 +5,7 @@ import threading
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +53,7 @@ class AIConfig(BaseModel):
 
 
 class TranscriptionConfig(BaseModel):
-    engine: str = "faster-whisper"
+    engine: str = "whisper"  # "whisper" | "sensevoice"
     model_size: str = "large-v3"
     device: str = "cuda"  # cuda | cpu
     language: str = "auto"  # auto | zh | en
@@ -61,6 +61,21 @@ class TranscriptionConfig(BaseModel):
     llm_timeout: int = 120
     # Transcription
     beam_size: int = 5
+
+    @field_validator("engine", mode="before")
+    @classmethod
+    def _normalize_engine(cls, v: str) -> str:
+        if v == "faster-whisper":
+            return "whisper"
+        return v
+
+
+SUPPORTED_MODELS: dict[str, tuple[str, ...]] = {
+    "whisper": ("medium", "large-v3"),
+    "sensevoice": ("small",),
+}
+
+DIARIZATION_MODELS: tuple[str, ...] = ("cam++",)
 
 
 class VisionConfig(BaseModel):

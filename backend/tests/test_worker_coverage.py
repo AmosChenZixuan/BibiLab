@@ -74,27 +74,31 @@ async def test_download_model_job_success(tmp_bibilab_home: Path):
     from bibilab.db import bootstrap_db, create_job
 
     await bootstrap_db()
-    meta = {"model_family": "whisper", "model_size": "tiny"}
+    meta = {"engine": "whisper", "model_size": "medium"}
     job_id = await create_job("model_download", meta)
 
     worker = WorkerLoop(home=tmp_bibilab_home)
     job = {"id": job_id, "type": "model_download", "meta": json.dumps(meta)}
 
-    with patch("bibilab.worker.download_whisper_model") as mock_dl:
+    with patch("bibilab.worker.download_model") as mock_dl:
         await worker._download_model_job(job)
-        mock_dl.assert_called_once_with("tiny")
+        mock_dl.assert_called_once_with("whisper", "medium")
 
 
 @pytest.mark.asyncio
-async def test_download_model_job_unsupported_family(tmp_bibilab_home: Path):
-    from bibilab.pipeline.audio import PipelineError
+async def test_download_model_job_diarization(tmp_bibilab_home: Path):
+    from bibilab.db import bootstrap_db, create_job
 
     await bootstrap_db()
-    worker = WorkerLoop(home=tmp_bibilab_home)
-    job = {"id": "job-1", "type": "model_download", "meta": json.dumps({"model_family": "llama", "model_size": "7b"})}
+    meta = {"engine": "diarization", "model_size": "cam++"}
+    job_id = await create_job("model_download", meta)
 
-    with pytest.raises(PipelineError, match="Unsupported model family"):
+    worker = WorkerLoop(home=tmp_bibilab_home)
+    job = {"id": job_id, "type": "model_download", "meta": json.dumps(meta)}
+
+    with patch("bibilab.worker.download_diarization_model") as mock_dl:
         await worker._download_model_job(job)
+        mock_dl.assert_called_once_with()
 
 
 # ---------------------------------------------------------------------------

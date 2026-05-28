@@ -3,10 +3,10 @@ import shutil
 import httpx
 from fastapi import APIRouter, Depends
 
+from bibilab.asr_models import is_model_downloaded, resolve_model_path
 from bibilab.config import BibilabConfig, get_config
 from bibilab.pipeline.embed import _embedding_model_dir, is_embedding_model_downloaded
 from bibilab.pipeline.rerank import _model_dir, is_reranker_model_downloaded
-from bibilab.whisper_models import is_whisper_model_downloaded, whisper_model_dir
 
 router = APIRouter()
 
@@ -38,14 +38,15 @@ async def _check_llm(cfg: BibilabConfig) -> dict:
         return {"status": "error", "message": f"Network error: {exc}"}
 
 
-def _check_whisper(cfg: BibilabConfig) -> dict:
+def _check_asr(cfg: BibilabConfig) -> dict:
+    engine = cfg.transcription.engine
     model_size = cfg.transcription.model_size
-    if not is_whisper_model_downloaded(model_size):
+    if not is_model_downloaded(engine, model_size):
         return {
             "status": "error",
-            "message": (f"Model {model_size!r} not downloaded to {whisper_model_dir()}"),
+            "message": f"Model {model_size!r} (engine={engine}) not downloaded",
         }
-    return {"status": "ok", "message": ""}
+    return {"status": "ok", "message": str(resolve_model_path(engine, model_size))}
 
 
 def _check_ffmpeg() -> dict:
@@ -108,14 +109,14 @@ async def health(cfg: BibilabConfig = Depends(get_config)) -> dict:
     deps = {
         "backend": {"status": "ok", "message": ""},
         "llm": await _check_llm(cfg),
-        "whisper_model": _check_whisper(cfg),
+        "asr_model": _check_asr(cfg),
         "ffmpeg": _check_ffmpeg(),
         "cuda": _check_cuda(),
         "embedding_model": _check_embedding_model(),
         "reranker_model": _check_reranker_model(),
     }
 
-    blocking = {"llm", "whisper_model", "ffmpeg"}
+    blocking = {"llm", "asr_model", "ffmpeg"}
     has_error = any(v["status"] == "error" for k, v in deps.items() if k in blocking)
     overall = "error" if has_error else "ok"
 

@@ -29,7 +29,7 @@ vi.mock("../lib/api", () => {
       dependencies: {
         backend: { status: "ok", message: "" },
         llm: { status: "ok", message: "" },
-        whisper_model: { status: "ok", message: "" },
+        asr_model: { status: "ok", message: "" },
         ffmpeg: { status: "ok", message: "" },
         cuda: { status: "unavailable", message: "CPU only" },
         embedding_model: { status: "ok", message: "" },
@@ -141,7 +141,7 @@ describe("settings page", () => {
         dependencies: {
           backend: { status: "ok", message: "" },
           llm: { status: "ok", message: "" },
-          whisper_model: { status: "ok", message: "" },
+          asr_model: { status: "ok", message: "" },
           ffmpeg: { status: "ok", message: "" },
           cuda: { status: "unavailable", message: "CPU only" },
           embedding_model: { status: "ok", message: "" },
@@ -152,7 +152,7 @@ describe("settings page", () => {
         dependencies: {
           backend: { status: "ok", message: "" },
           llm: { status: "error", message: "base_url not configured" },
-          whisper_model: { status: "ok", message: "" },
+          asr_model: { status: "ok", message: "" },
           ffmpeg: { status: "ok", message: "" },
           cuda: { status: "unavailable", message: "CPU only" },
           embedding_model: { status: "ok", message: "" },

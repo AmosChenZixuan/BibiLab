@@ -95,12 +95,11 @@ def test_compute_type_for_device():
     assert _compute_type_for_device("cuda") == "float16"
 
 
-def _fake_whisper_model(monkeypatch, segs=None) -> MagicMock:
-    """Replace _load_model with a MagicMock whose .transcribe returns (segs, info).
+def _fake_whisper_pipeline(monkeypatch, segs=None) -> MagicMock:
+    """Replace _load_whisper with a MagicMock whose .transcribe returns (segs, info)."""
+    # Disable diarization in tests
+    monkeypatch.setattr(transcribe_mod, "is_diarization_model_downloaded", lambda: False)
 
-    Each entry: (start, end, text) for default low no_speech_prob, or
-    (start, end, text, no_speech_prob) to set silence probability explicitly.
-    """
     model = MagicMock()
     info = MagicMock()
     info.language = "zh"
@@ -115,7 +114,7 @@ def _fake_whisper_model(monkeypatch, segs=None) -> MagicMock:
         m.start, m.end, m.text, m.no_speech_prob = start, end, text, no_speech
         fake_segs.append(m)
     model.transcribe.return_value = (fake_segs, info)
-    monkeypatch.setattr(transcribe_mod, "_load_model", lambda cfg: model)
+    monkeypatch.setattr(transcribe_mod, "_load_whisper", lambda cfg: model)
     return model
 
 
@@ -131,7 +130,7 @@ def _fake_whisper_model(monkeypatch, segs=None) -> MagicMock:
     ],
 )
 def test_transcribe_language_dispatch(monkeypatch, tmp_path: Path, lang, expected_strategy_key):
-    model = _fake_whisper_model(monkeypatch)
+    model = _fake_whisper_pipeline(monkeypatch)
     cfg = TranscriptionConfig(language=lang)
     audio = tmp_path / "a.wav"
     audio.write_bytes(b"")
@@ -152,7 +151,7 @@ def test_transcribe_language_dispatch(monkeypatch, tmp_path: Path, lang, expecte
 def test_transcribe_strips_silent_prompt_echo(monkeypatch, tmp_path: Path):
     """Prompt-shaped segments on silent windows are dropped."""
     prompt = "以下是普通话的句子，请使用标点符号。"
-    _fake_whisper_model(
+    _fake_whisper_pipeline(
         monkeypatch,
         segs=[
             (0.0, 2.0, "真正的句子。", 0.05),
@@ -176,7 +175,7 @@ def test_transcribe_keeps_prompt_substring_on_real_speech(monkeypatch, tmp_path:
     in a typing tutorial must survive — only silence-window hallucinations
     should be filtered.
     """
-    _fake_whisper_model(
+    _fake_whisper_pipeline(
         monkeypatch,
         segs=[
             (0.0, 2.0, "今天我们来讲打字。", 0.05),
@@ -194,7 +193,7 @@ def test_transcribe_keeps_prompt_substring_on_real_speech(monkeypatch, tmp_path:
 
 def test_transcribe_keeps_non_zh_segments_verbatim(monkeypatch, tmp_path: Path):
     """Non-zh path has no prompt, so echo-strip is a no-op even on high no_speech_prob."""
-    _fake_whisper_model(
+    _fake_whisper_pipeline(
         monkeypatch,
         segs=[(0.0, 2.0, "hello world", 0.9), (2.0, 4.0, "second", 0.05)],
     )
@@ -204,6 +203,24 @@ def test_transcribe_keeps_non_zh_segments_verbatim(monkeypatch, tmp_path: Path):
 
     segs, _ = transcribe(audio, cfg)
     assert [s.text for s in segs] == ["hello world", "second"]
+
+
+def test_best_speaker_assigns_by_overlap():
+    from bibilab.pipeline.diarize import SpeakerSegment
+    from bibilab.pipeline.transcribe import WhisperSegment, _best_speaker
+
+    seg = WhisperSegment(start=0.0, end=5.0, text="hello")
+    speakers = [
+        SpeakerSegment(start=0.0, end=3.0, speaker="SPK_0"),
+        SpeakerSegment(start=3.0, end=10.0, speaker="SPK_1"),
+    ]
+    assert _best_speaker(seg, speakers) == "SPK_0"
+
+    seg2 = WhisperSegment(start=6.0, end=9.0, text="world")
+    assert _best_speaker(seg2, speakers) == "SPK_1"
+
+    seg3 = WhisperSegment(start=20.0, end=25.0, text="alone")
+    assert _best_speaker(seg3, speakers) is None
 
 
 # ---------------------------------------------------------------------------

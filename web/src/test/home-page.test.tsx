@@ -235,7 +235,7 @@ describe("home page", () => {
           dependencies: {
             backend: { status: "ok", message: "" },
             llm: { status: "ok", message: "" },
-            whisper_model: { status: "ok", message: "" },
+            asr_model: { status: "ok", message: "" },
             ffmpeg: { status: "ok", message: "" },
             cuda: { status: "ok", message: "" },
             bilibili_session: { status: "ok", message: "" },
