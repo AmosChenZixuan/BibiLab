@@ -1,13 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from bibilab.asr_models import (
-    get_spec,
-    is_model_downloaded,
-    list_specs,
-    resolve_model_path,
-)
 from bibilab.config import BibilabConfig, get_config
 from bibilab.db import create_job
+from bibilab.model_registry import _integrity_ok, _target_dir, get_spec, list_specs
 from bibilab.models.asr import (
     AsrModelDownloadRequest,
     AsrModelDownloadResponse,
@@ -20,17 +15,21 @@ router = APIRouter()
 @router.get("/models/asr")
 async def list_asr_models(cfg: BibilabConfig = Depends(get_config)) -> list[AsrModelInfo]:
     selected = cfg.transcription.model
+    asr_kinds = {"transcription", "diarization", "vad"}
     out: list[AsrModelInfo] = []
     for spec in list_specs():
-        path = resolve_model_path(spec.name)
+        if spec.kind not in asr_kinds:
+            continue
+        installed = _integrity_ok(spec)
+        target = _target_dir(spec)
         out.append(
             AsrModelInfo(
-                name=spec.name,
+                name=spec.id,
                 display_name=spec.display_name,
-                kind=spec.kind,
-                installed=is_model_downloaded(spec.name),
-                path=str(path) if path is not None else None,
-                selected=(spec.name == selected),
+                kind=spec.kind,  # type: ignore[arg-type]
+                installed=installed,
+                path=str(target) if installed else None,
+                selected=(spec.id == selected),
                 size_mb=spec.size_mb,
             )
         )
