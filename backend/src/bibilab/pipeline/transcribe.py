@@ -27,14 +27,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from bibilab.asr_models import (
-    DIARIZATION_MODEL,
-    VAD_MODEL,
-    download_model,
-    get_spec,
-    resolve_model_path,
-)
 from bibilab.config import TranscriptionConfig, bibilab_home
+from bibilab.model_registry import DIARIZATION_SPEC_ID, VAD_SPEC_ID, ensure, get_spec
 from bibilab.pipeline.audio import PipelineError
 
 logger = logging.getLogger(__name__)
@@ -59,16 +53,6 @@ class WhisperSegment:
     speaker: str | None = None
 
 
-def _ensure_downloaded(name: str) -> Path:
-    path = resolve_model_path(name)
-    if path is None:
-        download_model(name)
-        path = resolve_model_path(name)
-        if path is None:
-            raise PipelineError(f"Model {name!r} missing after download")
-    return path
-
-
 def _load_funasr(cfg: TranscriptionConfig) -> Any:
     global _funasr_pipeline, _funasr_key
     from funasr import AutoModel  # noqa: PLC0415
@@ -78,16 +62,14 @@ def _load_funasr(cfg: TranscriptionConfig) -> Any:
         return _funasr_pipeline
 
     device = "cuda:0" if cfg.device == "cuda" else "cpu"
-    spk_path = _ensure_downloaded(DIARIZATION_MODEL)
-    vad_path = _ensure_downloaded(VAD_MODEL)
+    spk_path = ensure(DIARIZATION_SPEC_ID)
+    vad_path = ensure(VAD_SPEC_ID)
 
     if cfg.model == "large-v3":
-        # WhisperWarp wraps openai-whisper inside AutoModel.
-        # hub="openai" tells WhisperWarp to use openai-whisper internally;
-        # the model auto-downloads to ~/.cache/whisper/ on first use.
+        ensure("large-v3")
         automodel_kwargs = {"model": "Whisper-large-v3", "hub": "openai"}
     else:
-        model_path = _ensure_downloaded(cfg.model)
+        model_path = ensure(cfg.model)
         automodel_kwargs = {"model": str(model_path)}
 
     logger.info("Loading FunASR model %s on %s (+CAM++)", cfg.model, device)
