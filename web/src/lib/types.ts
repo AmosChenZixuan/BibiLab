@@ -175,7 +175,7 @@ export type HealthResponse = {
   dependencies: Record<string, HealthDependency>;
 };
 
-export type AsrModelKind = "transcription" | "diarization";
+export type AsrModelKind = "transcription" | "diarization" | "punctuation";
 
 export type AsrModel = {
   name: string;

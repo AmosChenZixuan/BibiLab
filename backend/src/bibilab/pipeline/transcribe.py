@@ -17,12 +17,14 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from bibilab.asr_models import (
     DIARIZATION_MODEL,
+    PUNCTUATION_MODEL,
     VAD_MODEL_ID,
     download_model,
     model_backend,
@@ -32,6 +34,14 @@ from bibilab.config import TranscriptionConfig, bibilab_home
 from bibilab.pipeline.audio import PipelineError
 
 logger = logging.getLogger(__name__)
+
+# SenseVoice emits per-segment tags: <|zh|>, <|NEUTRAL|>, <|BGM|>, <|withitn|>, etc.
+_FUNASR_TAG_RE = re.compile(r"<\|[^|]*\|>\s*")
+
+
+def _strip_funasr_tags(text: str) -> str:
+    return _FUNASR_TAG_RE.sub("", text)
+
 
 _whisper_model: Any = None
 _whisper_key: tuple[str, str] | None = None  # (model, device)
@@ -127,6 +137,7 @@ def _load_diarize(device: str) -> Any:
         model=None,
         vad_model=VAD_MODEL_ID,
         spk_model=str(spk_path),
+        spk_mode="vad_segment",
         device=actual_device,
         disable_update=True,
         disable_pbar=True,
@@ -180,12 +191,15 @@ def _load_funasr(cfg: TranscriptionConfig) -> Any:
     device = "cuda:0" if cfg.device == "cuda" else "cpu"
     model_path = _ensure_downloaded(cfg.model)
     spk_path = _ensure_downloaded(DIARIZATION_MODEL)
+    punc_path = _ensure_downloaded(PUNCTUATION_MODEL)
     logger.info("Loading FunASR model %s on %s (+CAM++)", cfg.model, device)
     _funasr_pipeline = AutoModel(
         model=str(model_path),
         device=device,
         vad_model=VAD_MODEL_ID,
+        punc_model=str(punc_path),
         spk_model=str(spk_path),
+        spk_mode="vad_segment",
         disable_update=True,
         disable_pbar=True,
     )
@@ -219,7 +233,7 @@ def _transcribe_funasr(audio_path: Path, cfg: TranscriptionConfig) -> tuple[list
     raw = first.get("sentence_info") or first.get("segments") or []
     segments: list[WhisperSegment] = []
     for s in raw:
-        text = str(s.get("text") or s.get("sentence") or "").strip()
+        text = _strip_funasr_tags(str(s.get("text") or s.get("sentence") or "")).strip()
         if not text:
             continue
         start = _coerce_seconds(float(s.get("start", 0.0)))

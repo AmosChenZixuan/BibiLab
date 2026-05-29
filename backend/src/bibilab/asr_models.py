@@ -52,12 +52,21 @@ _SPECS: dict[str, ModelSpec] = {
         size_mb=28,
         modelscope_id="iic/speech_campplus_sv_zh-cn_16k-common",
     ),
+    "ct-punc": ModelSpec(
+        name="ct-punc",
+        display_name="CT-Transformer (Punctuation)",
+        kind="punctuation",
+        backend="funasr",
+        size_mb=1100,
+        modelscope_id="iic/punc_ct-transformer_cn-en-common-vocab471067-large",
+    ),
 }
 
 # Shared VAD used by FunASR when CAM++ is attached as spk_model.
 VAD_MODEL_ID = "iic/speech_fsmn_vad_zh-cn-16k-common-pytorch"
 
 DIARIZATION_MODEL = "cam++"
+PUNCTUATION_MODEL = "ct-punc"
 
 
 def list_specs() -> list[ModelSpec]:
@@ -154,6 +163,7 @@ def download_model(name: str) -> Path:
 
 __all__ = [
     "DIARIZATION_MODEL",
+    "PUNCTUATION_MODEL",
     "ModelSpec",
     "VAD_MODEL_ID",
     "download_model",

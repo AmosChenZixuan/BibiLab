@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
 
-AsrModelKind = Literal["transcription", "diarization"]
+AsrModelKind = Literal["transcription", "diarization", "punctuation"]
 
 
 def bibilab_home() -> Path:
