@@ -200,9 +200,8 @@ def _download_http_files(spec: ModelSpec, target: Path) -> None:
                         f.write(chunk)
     except Exception:
         logger.exception("HTTP download failed for %s", spec.id)
-        raise
-    finally:
         shutil.rmtree(tmp, ignore_errors=True)
+        raise
     shutil.rmtree(target, ignore_errors=True)
     try:
         tmp.rename(target)
