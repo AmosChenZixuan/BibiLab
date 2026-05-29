@@ -8,6 +8,8 @@ export const HEALTH_META: Record<HealthTier, { label: string; className: string 
   unavailable: { label: "Unavailable", className: "bg-rose-500" },
 };
 
+const HEALTHY_STATUSES = new Set(["ok", "configured"]);
+
 export function deriveOverallHealthTier(
   health: HealthResponse,
   device?: string,
@@ -37,7 +39,7 @@ export function deriveDependencyHealthTier(
     return "unavailable";
   }
 
-  if (statuses.some((status) => status !== "ok")) {
+  if (statuses.some((status) => !HEALTHY_STATUSES.has(status))) {
     return "throttled";
   }
 
