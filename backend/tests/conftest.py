@@ -16,6 +16,13 @@ def _clear_llm_client_caches():
     _client_cache.clear()
 
 
+@pytest.fixture(autouse=True)
+def _mock_model_gate():
+    """Prevent pre-flight 412 in tests — models are never downloaded in CI."""
+    with patch("bibilab.routers._model_gate.missing_required_models", return_value=[]):
+        yield
+
+
 class _MockEmbeddingFunction:
     def __call__(self, input):
         return [[0.0] * 384 for _ in input]

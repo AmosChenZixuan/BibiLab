@@ -17,6 +17,7 @@ from bibilab.models.ingest import (
     VideoMetadataMapResponse,
     VideoMetadataRequest,
 )
+from bibilab.routers._model_gate import require_models_present
 from bibilab.video_status import get_video_statuses
 
 router = APIRouter()
@@ -136,6 +137,8 @@ async def ingest_url(
 
     if await get_list(req.list_id) is None:
         raise HTTPException(status_code=404, detail="List not found")
+
+    require_models_present(cfg)
 
     statuses = await get_video_statuses([v.video_id for v in req.videos], req.list_id)
 

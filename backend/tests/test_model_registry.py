@@ -1,0 +1,84 @@
+"""Tests for bibilab.model_registry."""
+
+from pathlib import Path
+from unittest.mock import patch
+
+import pytest
+
+from bibilab.model_registry import (
+    ModelSpec,
+    _download_http_files,
+    ensure,
+    get_spec,
+)
+
+
+def _make_http_spec(target: Path) -> ModelSpec:
+    return ModelSpec(
+        id="test-http-spec",
+        display_name="Test HTTP",
+        kind="embedding",
+        backend="http_files",
+        size_mb=1,
+        integrity_files=["a.txt", "sub/b.txt"],
+        local_subdir="test-http",
+        http_files=[
+            ("http://example.invalid/a.txt", "a.txt"),
+            ("http://example.invalid/sub/b.txt", "sub/b.txt"),
+        ],
+    )
+
+
+class _FakeStreamResp:
+    def raise_for_status(self) -> None:
+        pass
+
+    def iter_bytes(self, _chunk_size: int):
+        yield b"hello"
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return False
+
+
+def test_download_http_files_writes_integrity_files_and_renames_to_target(tmp_bibilab_home: Path):
+    """Regression: prior `finally: shutil.rmtree(tmp)` wiped tmp before rename,
+    making every http_files download raise 'atomic rename failed'.
+    """
+    target = tmp_bibilab_home / "models" / "test-http"
+    spec = _make_http_spec(target)
+
+    with patch("httpx.stream", return_value=_FakeStreamResp()):
+        _download_http_files(spec, target)
+
+    assert (target / "a.txt").read_bytes() == b"hello"
+    assert (target / "sub" / "b.txt").read_bytes() == b"hello"
+
+
+def test_ensure_raises_when_download_completes_but_integrity_fails(tmp_bibilab_home: Path):
+    """Locks the post-download integrity verify added in 3af33e9."""
+    spec = get_spec("multilingual-e5")
+
+    def empty_download(_spec, target):
+        target.mkdir(parents=True, exist_ok=True)
+
+    with patch("bibilab.model_registry._download_http_files", side_effect=empty_download):
+        with pytest.raises(RuntimeError, match="integrity check failed"):
+            ensure(spec.id)
+
+
+def test_modelspec_rejects_empty_integrity_files():
+    """Empty list would make `_integrity_ok` vacuously True — guard at __post_init__."""
+    with pytest.raises(ValueError, match="integrity_files"):
+        ModelSpec(
+            id="bad",
+            display_name="Bad",
+            kind="embedding",
+            backend="http_files",
+            size_mb=1,
+            integrity_files=[],
+            local_subdir="bad",
+            http_files=[("http://example.invalid/x", "x")],
+        )

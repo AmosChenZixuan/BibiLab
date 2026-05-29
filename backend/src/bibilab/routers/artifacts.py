@@ -19,6 +19,7 @@ from bibilab.models.artifacts import (
     ArtifactResponse,
 )
 from bibilab.models.jobs import JobResponse, JobStatus
+from bibilab.routers._model_gate import require_models_present
 
 router = APIRouter()
 
@@ -42,6 +43,8 @@ async def create_artifact_endpoint(
     row = await get_list(list_id)
     if row is None:
         raise HTTPException(status_code=404, detail="List not found")
+
+    require_models_present(cfg)
 
     artifact_id = str(uuid.uuid4())
 

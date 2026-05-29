@@ -11,7 +11,6 @@ import httpx
 from pydantic import BaseModel
 
 from bibilab.adapters.base import AuthRequiredError, VideoMeta
-from bibilab.asr_models import download_model
 from bibilab.cleanup import cleanup_job_artifacts
 from bibilab.config import BibilabConfig, bibilab_home, load_config
 from bibilab.db import (
@@ -26,6 +25,7 @@ from bibilab.db import (
     update_source_digest,
     write_source,
 )
+from bibilab.model_registry import ensure
 from bibilab.models.jobs import JobStatus
 from bibilab.pipeline._shared import _LANG_INSTRUCTION, _LANG_NAME, _call_llm, _parse_llm_json_response, _resolved_lang
 from bibilab.pipeline.audio import PipelineError, extract_audio
@@ -175,17 +175,17 @@ class WorkerLoop:
     async def _download_model_job(self, job: dict) -> None:
         job_id = job["id"]
         meta_raw = _parse_job_meta(job)
-        model_name = meta_raw["model_name"]
+        spec_id = meta_raw.get("model_name", "")
 
-        try:
-            await update_job_status(job_id, JobStatus.DOWNLOADING.value, progress=10)
-            await asyncio.to_thread(download_model, model_name)
-            await update_job_status(job_id, JobStatus.DONE.value, progress=100)
-            logger.info("Model download job %s completed for %s", job_id, model_name)
-        except Exception:
-            logger.exception("Model download job %s failed for %s", job_id, model_name)
-            await update_job_status(job_id, JobStatus.FAILED.value, error=f"Failed to download model {model_name!r}")
-            raise
+        if not spec_id:
+            logger.error("Model download job %s missing model_name in meta", job_id)
+            await update_job_status(job_id, JobStatus.FAILED.value, error="missing model_name in job meta")
+            return
+
+        await update_job_status(job_id, JobStatus.DOWNLOADING.value, progress=10)
+        await asyncio.to_thread(ensure, spec_id)
+        await update_job_status(job_id, JobStatus.DONE.value, progress=100)
+        logger.info("Model download job %s completed for %s", job_id, spec_id)
 
     # -------------------------------------------------------------------------
     # Artifact generation job

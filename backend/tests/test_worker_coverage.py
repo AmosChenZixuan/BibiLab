@@ -80,9 +80,9 @@ async def test_download_model_job_success(tmp_bibilab_home: Path):
     worker = WorkerLoop(home=tmp_bibilab_home)
     job = {"id": job_id, "type": "model_download", "meta": json.dumps(meta)}
 
-    with patch("bibilab.worker.download_model") as mock_dl:
+    with patch("bibilab.worker.ensure") as mock_ensure:
         await worker._download_model_job(job)
-        mock_dl.assert_called_once_with("large-v3")
+        mock_ensure.assert_called_once_with("large-v3")
 
 
 @pytest.mark.asyncio
@@ -96,9 +96,9 @@ async def test_download_model_job_diarization(tmp_bibilab_home: Path):
     worker = WorkerLoop(home=tmp_bibilab_home)
     job = {"id": job_id, "type": "model_download", "meta": json.dumps(meta)}
 
-    with patch("bibilab.worker.download_model") as mock_dl:
+    with patch("bibilab.worker.ensure") as mock_ensure:
         await worker._download_model_job(job)
-        mock_dl.assert_called_once_with("cam++")
+        mock_ensure.assert_called_once_with("cam++")
 
 
 @pytest.mark.asyncio
@@ -121,7 +121,7 @@ async def test_download_model_job_unknown_model(tmp_bibilab_home: Path):
         cursor = await db.execute("SELECT status, error FROM jobs WHERE id=?", (job_id,))
         row = await cursor.fetchone()
     assert row["status"] == "failed"
-    assert "Unknown ASR model" in row["error"]
+    assert "Unknown model" in row["error"]
 
 
 # ---------------------------------------------------------------------------

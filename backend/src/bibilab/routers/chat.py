@@ -58,6 +58,7 @@ from bibilab.pipeline.chat_tools import (
     reseed_citation_registry,
 )
 from bibilab.pipeline.citation_parser import flush_buffer, parse_delta
+from bibilab.routers._model_gate import require_models_present
 
 logger = logging.getLogger(__name__)
 
@@ -729,6 +730,8 @@ async def chat_endpoint(
     list_row = await get_list(list_id)
     if list_row is None:
         raise HTTPException(status_code=404, detail="List not found")
+
+    require_models_present(cfg)
 
     conversation_id = await get_or_create_conversation(list_id)
 

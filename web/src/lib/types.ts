@@ -175,22 +175,30 @@ export type HealthResponse = {
   dependencies: Record<string, HealthDependency>;
 };
 
-export type AsrModelKind = "transcription" | "diarization" | "vad";
+export type ModelKind = "transcription" | "diarization" | "vad" | "embedding" | "reranker";
 
-export type AsrModel = {
-  name: string;
+export type ModelStatus = "present" | "missing";
+
+export type ModelInfo = {
+  id: string;
   display_name: string;
-  kind: AsrModelKind;
-  installed: boolean;
-  path: string | null;
-  selected: boolean;
+  kind: ModelKind;
   size_mb: number;
+  status: ModelStatus;
+  required_by_config: boolean;
+  path: string | null;
 };
 
-export type AsrModelDownloadResponse = {
+export type ModelDownloadResponse = {
   job_id: string;
   status: "queued";
-  model_name: string;
+  spec_id: string;
+};
+
+export type SyncResponse = {
+  job_ids: string[];
+  synced: string[];
+  skipped: string[];
 };
 
 export type OverviewDownload = {

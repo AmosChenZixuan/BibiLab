@@ -8,7 +8,9 @@
 import { render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
-import { LanguageProvider, useLanguage } from "@/app/LanguageContext";
+import { MemoryRouter } from "react-router-dom";
+
+import { LanguageProvider } from "@/app/LanguageContext";
 import { TranscriptTab } from "@/components/settings/TranscriptTab";
 import { LlmTab } from "@/components/settings/LlmTab";
 import { OtherTab } from "@/components/settings/OtherTab";
@@ -20,10 +22,9 @@ import type { BibilabConfig, HealthDependency } from "@/lib/types";
 
 vi.mock("@/lib/api", () => {
   const mockApi = {
-    listAsrModels: vi.fn().mockResolvedValue([
-      { name: "base", installed: true, path: "/models/base", selected: true },
+    listModels: vi.fn().mockResolvedValue([
+      { id: "base", display_name: "Base", kind: "transcription", status: "present", required_by_config: true, path: "/models/base", size_mb: 1 },
     ]),
-    downloadAsrModel: vi.fn(),
     listJobs: vi.fn().mockResolvedValue([]),
   };
   return {
@@ -112,28 +113,32 @@ test("modal focus-trap effect does not re-run on re-render with same open state"
  */
 test("transcript tab refreshModels effect fires only on mount", async () => {
   const { api } = await import("@/lib/api");
-  const listAsrModelsSpy = vi.spyOn(api, "listAsrModels");
+  const listModelsSpy = vi.spyOn(api, "listModels");
 
   const { rerender } = render(
-    <JobActivityProvider>
-      <LanguageProvider>
-        <TranscriptTab config={baseConfig} dependencies={healthDeps} onBlur={() => {}} />
-      </LanguageProvider>
-    </JobActivityProvider>,
+    <MemoryRouter>
+      <JobActivityProvider>
+        <LanguageProvider>
+          <TranscriptTab config={baseConfig} dependencies={healthDeps} onBlur={() => {}} />
+        </LanguageProvider>
+      </JobActivityProvider>
+    </MemoryRouter>,
   );
 
   // Wait for the initial effect to fire
-  await screen.findByRole("table");
-  const initialCallCount = listAsrModelsSpy.mock.calls.length;
+  await screen.findByRole("option", { name: /base/i });
+  const initialCallCount = listModelsSpy.mock.calls.length;
   expect(initialCallCount).toBeGreaterThanOrEqual(1);
 
   // Re-render with identical props — effect should NOT fire again
   rerender(
-    <JobActivityProvider>
-      <LanguageProvider>
-        <TranscriptTab config={baseConfig} dependencies={healthDeps} onBlur={() => {}} />
-      </LanguageProvider>
-    </JobActivityProvider>,
+    <MemoryRouter>
+      <JobActivityProvider>
+        <LanguageProvider>
+          <TranscriptTab config={baseConfig} dependencies={healthDeps} onBlur={() => {}} />
+        </LanguageProvider>
+      </JobActivityProvider>
+    </MemoryRouter>,
   );
 
   // Give effects a chance to fire
@@ -141,7 +146,7 @@ test("transcript tab refreshModels effect fires only on mount", async () => {
 
   // If refreshModels is memoized with proper deps, the API call count
   // should not increase on re-render
-  expect(listAsrModelsSpy.mock.calls.length).toBe(initialCallCount);
+  expect(listModelsSpy.mock.calls.length).toBe(initialCallCount);
 });
 
 // ─── Settings tab sync-from-props stability ──────────────────────────────────
@@ -207,11 +212,13 @@ test("transcript tab does not re-sync local state on re-render with same transcr
   const onBlur = vi.fn();
 
   const { rerender } = render(
-    <JobActivityProvider>
-      <LanguageProvider>
-        <TranscriptTab config={baseConfig} dependencies={healthDeps} onBlur={onBlur} />
-      </LanguageProvider>
-    </JobActivityProvider>,
+    <MemoryRouter>
+      <JobActivityProvider>
+        <LanguageProvider>
+          <TranscriptTab config={baseConfig} dependencies={healthDeps} onBlur={onBlur} />
+        </LanguageProvider>
+      </JobActivityProvider>
+    </MemoryRouter>,
   );
 
   // Use getAll to pick the first (there may be a Modal portal in the DOM from prior tests)
@@ -219,11 +226,13 @@ test("transcript tab does not re-sync local state on re-render with same transcr
 
   // Re-render with same config reference
   rerender(
-    <JobActivityProvider>
-      <LanguageProvider>
-        <TranscriptTab config={baseConfig} dependencies={healthDeps} onBlur={onBlur} />
-      </LanguageProvider>
-    </JobActivityProvider>,
+    <MemoryRouter>
+      <JobActivityProvider>
+        <LanguageProvider>
+          <TranscriptTab config={baseConfig} dependencies={healthDeps} onBlur={onBlur} />
+        </LanguageProvider>
+      </JobActivityProvider>
+    </MemoryRouter>,
   );
 
   // onBlur should NOT have been called during re-render

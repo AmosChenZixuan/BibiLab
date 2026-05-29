@@ -243,7 +243,7 @@ class TestONNXMultilingualEmbedding:
         mock_tokenizer = _make_mock_tokenizer()
 
         with (
-            patch.object(ONNXMultilingualEmbedding, "_ensure_downloaded", return_value=None),
+            patch("bibilab.pipeline.embed.ensure"),
             patch("onnxruntime.InferenceSession", return_value=mock_session),
             patch("tokenizers.Tokenizer.from_file", return_value=mock_tokenizer),
         ):
@@ -262,7 +262,7 @@ class TestONNXMultilingualEmbedding:
         from bibilab.pipeline.embed import ONNXMultilingualEmbedding
 
         with (
-            patch.object(ONNXMultilingualEmbedding, "_ensure_downloaded", return_value=None),
+            patch("bibilab.pipeline.embed.ensure"),
             patch("onnxruntime.InferenceSession"),
             patch("tokenizers.Tokenizer.from_file"),
         ):

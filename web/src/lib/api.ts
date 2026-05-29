@@ -8,8 +8,9 @@ import type {
   Source,
   SourceContent,
   SourceFacetsPatch,
-  AsrModelDownloadResponse,
-  AsrModel,
+  ModelDownloadResponse,
+  ModelInfo,
+  SyncResponse,
   ArtifactType,
   Artifact,
   PreviewResponse,
@@ -331,15 +332,18 @@ export class AuthClient {
 export class ModelsClient {
   constructor(private readonly baseUrl: string, private readonly request: RequestFn) {}
 
-  listAsrModels(opts?: { signal?: AbortSignal }) {
-    return this.request<AsrModel[]>(this.baseUrl, "/models/asr", opts);
+  listModels(opts?: { signal?: AbortSignal }) {
+    return this.request<ModelInfo[]>(this.baseUrl, "/models", opts);
   }
 
-  downloadAsrModel(modelName: string) {
-    return this.request<AsrModelDownloadResponse>(this.baseUrl, "/models/asr/download", {
+  downloadModel(specId: string) {
+    return this.request<ModelDownloadResponse>(this.baseUrl, `/models/${specId}/download`, {
       method: "POST",
-      body: JSON.stringify({ model_name: modelName }),
     });
+  }
+
+  syncModels() {
+    return this.request<SyncResponse>(this.baseUrl, "/models/sync", { method: "POST" });
   }
 }
 
@@ -369,8 +373,9 @@ export interface ApiClient {
   getHealth(opts?: { signal?: AbortSignal }): Promise<HealthResponse | undefined>;
   listJobs(opts?: { signal?: AbortSignal }): Promise<Job[] | undefined>;
   deleteJob(jobId: string): Promise<void | undefined>;
-  listAsrModels(opts?: { signal?: AbortSignal }): Promise<AsrModel[] | undefined>;
-  downloadAsrModel(modelName: string): Promise<AsrModelDownloadResponse | undefined>;
+  listModels(opts?: { signal?: AbortSignal }): Promise<ModelInfo[] | undefined>;
+  downloadModel(specId: string): Promise<ModelDownloadResponse | undefined>;
+  syncModels(): Promise<SyncResponse | undefined>;
   getConversation(listId: string, opts?: { signal?: AbortSignal; before?: string; limit?: number }): Promise<GetConversationResponse | undefined>;
   deleteConversation(listId: string): Promise<void | undefined>;
   auth: {
@@ -427,8 +432,9 @@ export function createApiClient(baseUrl?: string): ApiClient {
     getHealth: (opts) => health.getHealth(opts),
     listJobs: (opts) => jobs.listJobs(opts),
     deleteJob: (id) => jobs.deleteJob(id),
-    listAsrModels: (opts) => models.listAsrModels(opts),
-    downloadAsrModel: (modelName) => models.downloadAsrModel(modelName),
+    listModels: (opts) => models.listModels(opts),
+    downloadModel: (specId) => models.downloadModel(specId),
+    syncModels: () => models.syncModels(),
     getConversation: (listId, opts) => conversations.getConversation(listId, opts),
     deleteConversation: (listId) => conversations.deleteConversation(listId),
     auth,

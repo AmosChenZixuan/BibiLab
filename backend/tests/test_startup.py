@@ -4,8 +4,8 @@ from unittest.mock import patch
 import httpx
 import pytest
 
-from bibilab.config import AIConfig
-from bibilab.routers.health import _check_llm
+from bibilab.config import AIConfig, TranscriptionConfig
+from bibilab.routers.health import _check_asr, _check_llm
 
 
 @pytest.mark.asyncio
@@ -44,23 +44,21 @@ async def test_health_reports_ffmpeg_install_path(client: httpx.AsyncClient):
 
 @pytest.mark.asyncio
 async def test_health_reports_embedding_model_install_path(tmp_bibilab_home: Path, client: httpx.AsyncClient):  # noqa: ARG001
-    model_file = tmp_bibilab_home / "models" / "embedding" / "onnx" / "model.onnx"
+    model_dir = tmp_bibilab_home / "models" / "embedding"
+    model_file = model_dir / "onnx" / "model.onnx"
     model_file.parent.mkdir(parents=True)
     model_file.write_bytes(b"fake")
 
     with (
-        patch(
-            "bibilab.routers.health._embedding_model_dir",
-            return_value=tmp_bibilab_home / "models" / "embedding",
-        ),
-        patch("bibilab.routers.health.is_embedding_model_downloaded", return_value=True),
+        patch("bibilab.routers.health._integrity_ok", return_value=True),
+        patch("bibilab.routers.health._target_dir", return_value=model_dir),
     ):
         resp = await client.get("/health")
 
     assert resp.status_code == 200
     assert resp.json()["dependencies"]["embedding_model"] == {
         "status": "ok",
-        "message": str(model_file),
+        "message": str(model_dir),
     }
 
 
@@ -79,22 +77,6 @@ async def test_llm_health_requires_base_url():
 
 @pytest.mark.asyncio
 async def test_llm_health_validates_openai_compatible_response_shape():
-    class DummyResponse:
-        status_code = 200
-
-        def json(self):
-            return {"unexpected": []}
-
-    class DummyClient:
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, exc_type, exc, tb):
-            return None
-
-        async def get(self, url, headers=None, follow_redirects=True):
-            return DummyResponse()
-
     cfg = type(
         "Cfg",
         (),
@@ -108,27 +90,52 @@ async def test_llm_health_validates_openai_compatible_response_shape():
         },
     )()
 
-    with patch("bibilab.routers.health.httpx.AsyncClient", return_value=DummyClient()):
-        result = await _check_llm(cfg)
+    result = await _check_llm(cfg)
 
-    assert result == {"status": "ok", "message": "http://localhost:8000/v1"}
+    assert result == {"status": "configured", "message": "http://localhost:8000/v1"}
+
+
+@pytest.mark.asyncio
+async def test_llm_health_requires_model():
+    cfg = type(
+        "Cfg",
+        (),
+        {"ai": AIConfig(protocol="openai", model="", api_key="sk-test", base_url="http://localhost:8000/v1")},
+    )()
+
+    result = await _check_llm(cfg)
+
+    assert result == {"status": "error", "message": "model not configured"}
+
+
+def test_asr_health_reports_unknown_model_as_error():
+    cfg = type("Cfg", (), {"transcription": TranscriptionConfig(model="nonexistent-model")})()
+
+    result = _check_asr(cfg)
+
+    assert result["status"] == "error"
+    assert "nonexistent-model" in result["message"]
+
+
+def test_asr_health_reports_unconfigured_model_as_error():
+    cfg = type("Cfg", (), {"transcription": TranscriptionConfig(model="")})()
+
+    result = _check_asr(cfg)
+
+    assert result == {"status": "error", "message": "Transcription model not configured"}
 
 
 def test_is_embedding_model_downloaded_false_when_absent(tmp_path: Path):
     from bibilab.pipeline.embed import is_embedding_model_downloaded
 
-    with patch("bibilab.pipeline.embed._embedding_model_dir", return_value=tmp_path):
+    with patch("bibilab.pipeline.embed._integrity_ok", return_value=False):
         assert is_embedding_model_downloaded() is False
 
 
 def test_is_embedding_model_downloaded_true_when_present(tmp_path: Path):
     from bibilab.pipeline.embed import is_embedding_model_downloaded
 
-    model_file = tmp_path / "onnx" / "model.onnx"
-    model_file.parent.mkdir(parents=True)
-    model_file.write_bytes(b"fake")
-
-    with patch("bibilab.pipeline.embed._embedding_model_dir", return_value=tmp_path):
+    with patch("bibilab.pipeline.embed._integrity_ok", return_value=True):
         assert is_embedding_model_downloaded() is True
 
 

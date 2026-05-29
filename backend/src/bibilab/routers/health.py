@@ -1,53 +1,41 @@
 import shutil
 
-import httpx
 from fastapi import APIRouter, Depends
 
-from bibilab.asr_models import (
-    diarization_model_path,
-    is_diarization_model_downloaded,
-    is_model_downloaded,
-    resolve_model_path,
-)
 from bibilab.config import BibilabConfig, get_config
-from bibilab.pipeline.embed import _embedding_model_dir, is_embedding_model_downloaded
-from bibilab.pipeline.rerank import _model_dir, is_reranker_model_downloaded
+from bibilab.model_registry import (
+    DIARIZATION_SPEC_ID,
+    EMBEDDING_SPEC_ID,
+    RERANKER_SPEC_ID,
+    _integrity_ok,
+    _target_dir,
+    get_spec,
+)
 
 router = APIRouter()
 
 
 async def _check_llm(cfg: BibilabConfig) -> dict:
-    api_key = cfg.ai.api_key
     base_url = (cfg.ai.base_url or "").strip()
-
+    model = (cfg.ai.model or "").strip()
     if not base_url:
         return {"status": "error", "message": "base_url not configured"}
-
-    hosted = base_url in ("https://api.openai.com/v1", "https://api.anthropic.com/v1")
-    if not api_key and hosted:
-        return {"status": "error", "message": "api_key not configured"}
-
-    try:
-        async with httpx.AsyncClient(timeout=10) as client:
-            resp = await client.get(base_url.rstrip("/"), follow_redirects=True)
-
-        if resp.status_code >= 500:
-            return {"status": "error", "message": f"HTTP {resp.status_code}"}
-
-        return {"status": "ok", "message": base_url}
-    except httpx.TimeoutException as exc:
-        return {"status": "error", "message": f"Request timed out: {exc}"}
-    except (httpx.NetworkError, httpx.ProtocolError, httpx.HTTPError) as exc:
-        return {"status": "error", "message": f"HTTP error: {exc}"}
-    except OSError as exc:
-        return {"status": "error", "message": f"Network error: {exc}"}
+    if not model:
+        return {"status": "error", "message": "model not configured"}
+    return {"status": "configured", "message": base_url}
 
 
 def _check_asr(cfg: BibilabConfig) -> dict:
     model = cfg.transcription.model
-    if not is_model_downloaded(model):
+    if not model:
+        return {"status": "error", "message": "Transcription model not configured"}
+    try:
+        spec = get_spec(model)
+    except ValueError:
+        return {"status": "error", "message": f"Unknown transcription model {model!r}"}
+    if not _integrity_ok(spec):
         return {"status": "error", "message": f"Model {model!r} not downloaded"}
-    return {"status": "ok", "message": str(resolve_model_path(model))}
+    return {"status": "ok", "message": str(_target_dir(spec))}
 
 
 def _check_ffmpeg() -> dict:
@@ -69,8 +57,9 @@ def _check_cuda() -> dict:
 
 
 def _check_diarization_model() -> dict:
-    if is_diarization_model_downloaded():
-        return {"status": "ok", "message": str(diarization_model_path())}
+    spec = get_spec(DIARIZATION_SPEC_ID)
+    if _integrity_ok(spec):
+        return {"status": "ok", "message": str(_target_dir(spec))}
     return {
         "status": "error",
         "message": "Diarization model (CAM++, ~28 MB) not found. Auto-downloads on first ingest.",
@@ -78,24 +67,27 @@ def _check_diarization_model() -> dict:
 
 
 def _check_embedding_model() -> dict:
-    if is_embedding_model_downloaded():
-        return {"status": "ok", "message": str(_embedding_model_dir() / "onnx" / "model.onnx")}
+    spec = get_spec(EMBEDDING_SPEC_ID)
+    if _integrity_ok(spec):
+        return {"status": "ok", "message": str(_target_dir(spec))}
     return {
         "status": "error",
         "message": (
-            f"Embedding model not found at {_embedding_model_dir() / 'onnx' / 'model.onnx'}. "
+            f"Embedding model not found at {_target_dir(spec)}. "
             "It downloads automatically on the first pipeline run (~50 MB)."
         ),
     }
 
 
 def _check_reranker_model() -> dict:
-    if is_reranker_model_downloaded():
-        return {"status": "ok", "message": str(_model_dir())}
+    spec = get_spec(RERANKER_SPEC_ID)
+    if _integrity_ok(spec):
+        return {"status": "ok", "message": str(_target_dir(spec))}
     return {
         "status": "error",
         "message": (
-            f"Reranker model not found at {_model_dir()}. It downloads automatically on first chat query (~140 MB)."
+            f"Reranker model not found at {_target_dir(spec)}. "
+            "It downloads automatically on first chat query (~280 MB)."
         ),
     }
 

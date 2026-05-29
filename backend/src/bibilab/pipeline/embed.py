@@ -17,6 +17,7 @@ from pathlib import Path
 from bibilab.adapters.base import VideoMeta
 from bibilab.config import BibilabConfig, bibilab_home, models_dir
 from bibilab.db import _tokenize_cjk, get_db_path, get_video_ids_for_sources, query_fts_rows
+from bibilab.model_registry import EMBEDDING_SPEC_ID, _integrity_ok, ensure, get_spec
 from bibilab.models._enums import _RELEVANCE_MARGIN_BY_MODE, RetrievalParams
 from bibilab.pipeline.chat_inference_pool import get_chat_pool
 from bibilab.pipeline.chunk import RagChunk
@@ -237,10 +238,6 @@ def _rrf_fuse(
     return [chunk for _, chunk in scored]
 
 
-_MODEL_REPO = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
-_EMBEDDING_DIM = 384
-
-
 class ONNXMultilingualEmbedding:
     """ChromaDB-compatible embedding function using a multilingual ONNX model.
 
@@ -260,8 +257,8 @@ class ONNXMultilingualEmbedding:
     def __init__(self) -> None:
         import numpy as np  # noqa: PLC0415
 
+        ensure(EMBEDDING_SPEC_ID)
         model_dir = _embedding_model_dir()
-        self._ensure_downloaded(model_dir)
         import onnxruntime as ort  # noqa: PLC0415
 
         so = ort.SessionOptions()
@@ -280,30 +277,6 @@ class ONNXMultilingualEmbedding:
         # pad_token_id from BERT config (0), not tokenizer's <pad> id (1)
         self._pad_id = 0
         self._np = np
-
-    def _ensure_downloaded(self, model_dir: Path) -> None:
-        model_path = model_dir / "onnx" / "model.onnx"
-        tokenizer_path = model_dir / "onnx" / "tokenizer.json"
-        if model_path.exists() and tokenizer_path.exists():
-            return
-        model_dir.mkdir(parents=True, exist_ok=True)
-        (model_dir / "onnx").mkdir(parents=True, exist_ok=True)
-        import httpx  # noqa: PLC0415
-
-        base = f"https://huggingface.co/{_MODEL_REPO}/resolve/main"
-        for remote_path, local_path in [
-            ("onnx/model.onnx", model_path),
-            ("tokenizer.json", tokenizer_path),
-        ]:
-            if local_path.exists():
-                continue
-            url = f"{base}/{remote_path}"
-            logger.info("Downloading %s → %s", url, local_path)
-            with httpx.stream("GET", url, follow_redirects=True) as resp:
-                resp.raise_for_status()
-                with open(local_path, "wb") as f:
-                    for chunk in resp.iter_bytes(1024 * 1024):
-                        f.write(chunk)
 
     def __call__(self, input: list[str]) -> list[list[float]]:
         """Encode texts to embedding vectors. Mean-pooled."""
@@ -345,8 +318,7 @@ def _embedding_model_dir() -> Path:
 
 
 def is_embedding_model_downloaded() -> bool:
-    """Return True if the multilingual ONNX embedding model files are present locally."""
-    return (_embedding_model_dir() / "onnx" / "model.onnx").exists()
+    return _integrity_ok(get_spec(EMBEDDING_SPEC_ID))
 
 
 def _default_embedding_function() -> ONNXMultilingualEmbedding:

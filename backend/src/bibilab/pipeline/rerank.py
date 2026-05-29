@@ -12,6 +12,7 @@ if TYPE_CHECKING:
     pass
 
 from bibilab.config import models_dir
+from bibilab.model_registry import RERANKER_SPEC_ID, _integrity_ok, ensure, get_spec
 from bibilab.pipeline.chat_inference_pool import get_chat_pool
 from bibilab.pipeline.embed import RetrievedChunk
 
@@ -34,9 +35,7 @@ def _model_dir() -> Path:
 
 
 def is_reranker_model_downloaded() -> bool:
-    """Return True if the bge-reranker-base ONNX model files are present locally."""
-    model_dir = _model_dir()
-    return (model_dir / "model.onnx").exists() and (model_dir / "tokenizer.json").exists()
+    return _integrity_ok(get_spec(RERANKER_SPEC_ID))
 
 
 class ONNXCrossEncoder:
@@ -45,8 +44,8 @@ class ONNXCrossEncoder:
 
         self._np = np
 
+        ensure(RERANKER_SPEC_ID)
         model_dir = _model_dir()
-        self._ensure_downloaded(model_dir)
         import onnxruntime as ort  # noqa: PLC0415
 
         so = ort.SessionOptions()
@@ -61,29 +60,6 @@ class ONNXCrossEncoder:
 
         self._tokenizer = Tokenizer.from_file(str(model_dir / _TOKENIZER_FILENAME))
         self._tokenizer.enable_truncation(max_length=512)
-
-    def _ensure_downloaded(self, model_dir: Path) -> None:
-        model_path = model_dir / _MODEL_FILENAME
-        tokenizer_path = model_dir / _TOKENIZER_FILENAME
-        if model_path.exists() and tokenizer_path.exists():
-            return
-        model_dir.mkdir(parents=True, exist_ok=True)
-        import httpx  # noqa: PLC0415
-
-        base = f"https://huggingface.co/{_MODEL_REPO}/resolve/main"
-        for remote_path, local_path in [
-            ("onnx/" + _MODEL_FILENAME, model_path),
-            (_TOKENIZER_FILENAME, tokenizer_path),
-        ]:
-            if local_path.exists():
-                continue
-            url = f"{base}/{remote_path}"
-            logger.info("Downloading %s → %s", url, local_path)
-            with httpx.stream("GET", url, follow_redirects=True) as resp:
-                resp.raise_for_status()
-                with open(local_path, "wb") as f:
-                    for chunk in resp.iter_bytes(1024 * 1024):
-                        f.write(chunk)
 
     def predict(self, pairs: list[list[str]]) -> list[float]:
         onnx_input_names = {i.name for i in self._session.get_inputs()}
