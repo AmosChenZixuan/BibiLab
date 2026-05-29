@@ -76,15 +76,18 @@ async def test_download_asr_model_accepts_diarization(client: httpx.AsyncClient,
 
 @pytest.mark.asyncio
 async def test_list_asr_models_reports_whisper_installed(client: httpx.AsyncClient, tmp_bibilab_home: Path):
-    target = tmp_bibilab_home / "models" / "asr" / "large-v3"
-    target.mkdir(parents=True)
-    (target / "large-v3.pt").write_bytes(b"")
-
-    resp = await client.get("/models/asr")
-
-    entry = next(m for m in resp.json() if m["name"] == "large-v3")
-    assert entry["installed"] is True
-    assert entry["path"] == str(target / "large-v3.pt")
+    # WhisperWarp uses openai-whisper's cache (~/.cache/whisper/), not our models_dir.
+    target = Path.home() / ".cache" / "whisper"
+    target.mkdir(parents=True, exist_ok=True)
+    checkpoint = target / "large-v3.pt"
+    checkpoint.write_bytes(b"")
+    try:
+        resp = await client.get("/models/asr")
+        entry = next(m for m in resp.json() if m["name"] == "large-v3")
+        assert entry["installed"] is True
+        assert entry["path"] == str(checkpoint)
+    finally:
+        checkpoint.unlink(missing_ok=True)
 
 
 @pytest.mark.asyncio

@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
 
-AsrModelKind = Literal["transcription", "diarization", "punctuation", "vad"]
+AsrModelKind = Literal["transcription", "diarization", "vad"]
 
 
 def bibilab_home() -> Path:
@@ -59,7 +59,6 @@ class TranscriptionConfig(BaseModel):
     device: str = "cuda"  # cuda | cpu
     language: str = "auto"  # auto | zh | en
     llm_timeout: int = 120
-    beam_size: int = 5
 
 
 class VisionConfig(BaseModel):

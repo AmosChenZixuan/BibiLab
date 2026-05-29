@@ -86,19 +86,16 @@ def test_write_transcript_hours(tmp_path: Path):
     assert path.read_text().strip() == "[01:01:01] Late segment"
 
 
-def test_transcribe_dispatches_to_whisper(tmp_path: Path):
+def test_transcribe_dispatches_large_v3_to_funasr(tmp_path: Path):
     from bibilab.config import TranscriptionConfig
     from bibilab.pipeline import transcribe as t_mod
 
     cfg = TranscriptionConfig(model="large-v3", device="cpu", language="auto")
-    whisper_out = ([WhisperSegment(start=0.0, end=1.0, text="hi")], "en")
-    with (
-        patch.object(t_mod, "_transcribe_whisper", return_value=whisper_out) as mock_w,
-        patch.object(t_mod, "_diarize", return_value=[]),
-    ):
+    funasr_out = ([WhisperSegment(start=0.0, end=1.0, text="hi")], "en")
+    with patch.object(t_mod, "_transcribe_funasr", return_value=funasr_out) as mock_f:
         result = t_mod.transcribe(tmp_path / "a.wav", cfg)
-    mock_w.assert_called_once()
-    assert result == whisper_out
+    mock_f.assert_called_once()
+    assert result == funasr_out
 
 
 def test_transcribe_dispatches_to_sensevoice(tmp_path: Path):
@@ -163,65 +160,6 @@ def test_transcribe_funasr_missing_spk_field_leaves_speaker_none(tmp_path: Path)
         segs, _ = t_mod._transcribe_funasr(tmp_path / "a.wav", cfg)
 
     assert segs[0].speaker is None
-
-
-def test_transcribe_whisper_runs_diarization_and_merges_speakers(tmp_path: Path):
-    from bibilab.config import TranscriptionConfig
-    from bibilab.pipeline import transcribe as t_mod
-
-    cfg = TranscriptionConfig(model="large-v3", device="cpu", language="auto")
-    whisper_out = (
-        [WhisperSegment(start=0.0, end=2.0, text="a"), WhisperSegment(start=5.0, end=7.0, text="b")],
-        "en",
-    )
-    spans = [
-        t_mod._SpeakerSpan(start=0.0, end=3.0, speaker="SPK_0"),
-        t_mod._SpeakerSpan(start=4.0, end=8.0, speaker="SPK_1"),
-    ]
-    with (
-        patch.object(t_mod, "_transcribe_whisper", return_value=whisper_out),
-        patch.object(t_mod, "_diarize", return_value=spans),
-    ):
-        segs, _ = t_mod.transcribe(tmp_path / "a.wav", cfg)
-
-    assert [s.speaker for s in segs] == ["SPK_0", "SPK_1"]
-
-
-def test_best_speaker_returns_max_overlap_speaker():
-    from bibilab.pipeline import transcribe as t_mod
-
-    spans = [
-        t_mod._SpeakerSpan(start=0.0, end=3.0, speaker="SPK_0"),
-        t_mod._SpeakerSpan(start=3.0, end=10.0, speaker="SPK_1"),
-    ]
-    assert t_mod._best_speaker(WhisperSegment(start=0.0, end=5.0, text="x"), spans) == "SPK_0"
-    assert t_mod._best_speaker(WhisperSegment(start=6.0, end=9.0, text="x"), spans) == "SPK_1"
-    assert t_mod._best_speaker(WhisperSegment(start=20.0, end=25.0, text="x"), spans) is None
-
-
-def test_transcribe_whisper_returns_native_segments(tmp_path: Path):
-    """openai-whisper's model.transcribe returns segments natively with start/end/text in seconds."""
-    from bibilab.config import TranscriptionConfig
-    from bibilab.pipeline import transcribe as t_mod
-
-    cfg = TranscriptionConfig(model="large-v3", device="cpu", language="auto")
-
-    class FakeWhisper:
-        def transcribe(self, *args, **kwargs):
-            return {
-                "segments": [
-                    {"start": 0.0, "end": 1.5, "text": " keep me"},
-                    {"start": 1.5, "end": 3.0, "text": "  "},
-                    {"start": 3.0, "end": 4.0, "text": " keep me too"},
-                ],
-                "language": "en",
-            }
-
-    with patch.object(t_mod, "_load_whisper", return_value=FakeWhisper()):
-        segs, lang = t_mod._transcribe_whisper(tmp_path / "a.wav", cfg)
-
-    assert [s.text for s in segs] == ["keep me", "keep me too"]
-    assert lang == "en"
 
 
 # ---------------------------------------------------------------------------

@@ -1,31 +1,27 @@
 """ASR model registry.
 
-Each model self-identifies its kind (transcription vs diarization), size, and
-loader backend. There is no separate "engine" axis — the model name carries
-everything callers need. `large-v3` loads via openai-whisper, the rest via
-FunASR / ModelScope.
+Each model self-identifies its kind (transcription, diarization, or vad).
+All models load through FunASR's AutoModel — SenseVoice natively, Whisper
+via WhisperWarp (which wraps openai-whisper internally).
 """
 
+import os
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
 
 from modelscope.hub.snapshot_download import snapshot_download
 
 from bibilab.config import AsrModelKind, models_dir
-
-_Backend = Literal["whisper", "funasr"]
 
 
 @dataclass(frozen=True)
 class ModelSpec:
     name: str
     display_name: str
-    kind: AsrModelKind  # "transcription" | "diarization"
-    backend: _Backend
+    kind: AsrModelKind  # "transcription" | "diarization" | "vad"
     size_mb: int
-    modelscope_id: str | None = None  # only set for funasr-backed models
+    modelscope_id: str | None = None  # unset for openai-backed models (large-v3)
 
 
 _SPECS: dict[str, ModelSpec] = {
@@ -33,14 +29,12 @@ _SPECS: dict[str, ModelSpec] = {
         name="large-v3",
         display_name="Faster Whisper large-v3",
         kind="transcription",
-        backend="whisper",
         size_mb=3000,
     ),
     "sensevoice-small": ModelSpec(
         name="sensevoice-small",
         display_name="SenseVoice Small",
         kind="transcription",
-        backend="funasr",
         size_mb=936,
         modelscope_id="iic/SenseVoiceSmall",
     ),
@@ -48,30 +42,19 @@ _SPECS: dict[str, ModelSpec] = {
         name="cam++",
         display_name="CAM++ (Speaker Diarization)",
         kind="diarization",
-        backend="funasr",
         size_mb=28,
         modelscope_id="iic/speech_campplus_sv_zh-cn_16k-common",
-    ),
-    "ct-punc": ModelSpec(
-        name="ct-punc",
-        display_name="CT-Transformer (Punctuation)",
-        kind="punctuation",
-        backend="funasr",
-        size_mb=1100,
-        modelscope_id="iic/punc_ct-transformer_cn-en-common-vocab471067-large",
     ),
     "fsmn-vad": ModelSpec(
         name="fsmn-vad",
         display_name="FSMN-VAD (Voice Activity Detection)",
         kind="vad",
-        backend="funasr",
         size_mb=4,
         modelscope_id="iic/speech_fsmn_vad_zh-cn-16k-common-pytorch",
     ),
 }
 
 DIARIZATION_MODEL = "cam++"
-PUNCTUATION_MODEL = "ct-punc"
 VAD_MODEL = "fsmn-vad"
 
 
@@ -89,14 +72,21 @@ def _target_dir(name: str) -> Path:
     return models_dir("asr", name)
 
 
-def _whisper_checkpoint(name: str) -> Path:
-    return _target_dir(name) / f"{name}.pt"
+def _whisper_cache_path() -> Path:
+    """openai-whisper cache location (honours XDG_CACHE_HOME).
+
+    FunASR's WhisperWarp delegates to openai-whisper internally, which
+    downloads to this path. We check it for the UI's installed-status
+    without importing openai-whisper ourselves.
+    """
+    cache_root = os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")
+    return Path(cache_root) / "whisper" / "large-v3.pt"
 
 
 def _is_downloaded(spec: ModelSpec) -> bool:
+    if spec.name == "large-v3":
+        return _whisper_cache_path().exists()
     target = _target_dir(spec.name)
-    if spec.backend == "whisper":
-        return _whisper_checkpoint(spec.name).exists()
     return target.exists() and (target / "configuration.json").exists()
 
 
@@ -114,24 +104,12 @@ def _download_modelscope(model_id: str, target: Path) -> Path:
     return target
 
 
-def _download_whisper(name: str) -> Path:
-    import whisper  # noqa: PLC0415
-
-    whisper_name = name
-    if whisper_name not in whisper._MODELS:
-        raise ValueError(f"Unknown Whisper checkpoint {whisper_name!r}")
-    target = _target_dir(name)
-    target.mkdir(parents=True, exist_ok=True)
-    whisper._download(whisper._MODELS[whisper_name], str(target), False)
-    return target
-
-
 def resolve_model_path(name: str) -> Path | None:
     spec = get_spec(name)
     if not _is_downloaded(spec):
         return None
-    if spec.backend == "whisper":
-        return _whisper_checkpoint(name)
+    if spec.name == "large-v3":
+        return _whisper_cache_path()
     return _target_dir(name)
 
 
@@ -155,21 +133,29 @@ def model_kind(name: str) -> AsrModelKind:
     return get_spec(name).kind
 
 
-def model_backend(name: str) -> _Backend:
-    return get_spec(name).backend
-
-
 def download_model(name: str) -> Path:
     spec = get_spec(name)
-    if spec.backend == "whisper":
-        return _download_whisper(name)
-    assert spec.modelscope_id is not None
+    if spec.name == "large-v3":
+        # WhisperWarp downloads via openai-whisper internally on first
+        # AutoModel init. Trigger the download through FunASR so we
+        # don't import openai-whisper ourselves.
+        from funasr import AutoModel  # noqa: PLC0415
+
+        AutoModel(
+            model="Whisper-large-v3",
+            hub="openai",
+            device="cpu",
+            disable_update=True,
+            disable_pbar=True,
+        )
+        return _whisper_cache_path()
+    if spec.modelscope_id is None:
+        raise ValueError(f"Model {name!r} has no modelscope_id")
     return _download_modelscope(spec.modelscope_id, _target_dir(name))
 
 
 __all__ = [
     "DIARIZATION_MODEL",
-    "PUNCTUATION_MODEL",
     "VAD_MODEL",
     "ModelSpec",
     "download_model",
@@ -177,7 +163,6 @@ __all__ = [
     "is_diarization_model_downloaded",
     "is_model_downloaded",
     "list_specs",
-    "model_backend",
     "model_kind",
     "model_size_mb",
     "resolve_model_path",
