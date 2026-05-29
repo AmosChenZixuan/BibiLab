@@ -1,6 +1,5 @@
 import shutil
 
-import httpx
 from fastapi import APIRouter, Depends
 
 from bibilab.config import BibilabConfig, get_config
@@ -17,30 +16,13 @@ router = APIRouter()
 
 
 async def _check_llm(cfg: BibilabConfig) -> dict:
-    api_key = cfg.ai.api_key
     base_url = (cfg.ai.base_url or "").strip()
-
+    model = (cfg.ai.model or "").strip()
     if not base_url:
         return {"status": "error", "message": "base_url not configured"}
-
-    hosted = base_url in ("https://api.openai.com/v1", "https://api.anthropic.com/v1")
-    if not api_key and hosted:
-        return {"status": "error", "message": "api_key not configured"}
-
-    try:
-        async with httpx.AsyncClient(timeout=10) as client:
-            resp = await client.get(base_url.rstrip("/"), follow_redirects=True)
-
-        if resp.status_code >= 500:
-            return {"status": "error", "message": f"HTTP {resp.status_code}"}
-
-        return {"status": "ok", "message": base_url}
-    except httpx.TimeoutException as exc:
-        return {"status": "error", "message": f"Request timed out: {exc}"}
-    except (httpx.NetworkError, httpx.ProtocolError, httpx.HTTPError) as exc:
-        return {"status": "error", "message": f"HTTP error: {exc}"}
-    except OSError as exc:
-        return {"status": "error", "message": f"Network error: {exc}"}
+    if not model:
+        return {"status": "error", "message": "model not configured"}
+    return {"status": "ok", "message": base_url}
 
 
 def _check_asr(cfg: BibilabConfig) -> dict:
