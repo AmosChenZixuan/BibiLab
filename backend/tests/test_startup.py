@@ -44,23 +44,21 @@ async def test_health_reports_ffmpeg_install_path(client: httpx.AsyncClient):
 
 @pytest.mark.asyncio
 async def test_health_reports_embedding_model_install_path(tmp_bibilab_home: Path, client: httpx.AsyncClient):  # noqa: ARG001
-    model_file = tmp_bibilab_home / "models" / "embedding" / "onnx" / "model.onnx"
+    model_dir = tmp_bibilab_home / "models" / "embedding"
+    model_file = model_dir / "onnx" / "model.onnx"
     model_file.parent.mkdir(parents=True)
     model_file.write_bytes(b"fake")
 
     with (
-        patch(
-            "bibilab.routers.health._embedding_model_dir",
-            return_value=tmp_bibilab_home / "models" / "embedding",
-        ),
-        patch("bibilab.routers.health.is_embedding_model_downloaded", return_value=True),
+        patch("bibilab.routers.health._integrity_ok", return_value=True),
+        patch("bibilab.routers.health._target_dir", return_value=model_dir),
     ):
         resp = await client.get("/health")
 
     assert resp.status_code == 200
     assert resp.json()["dependencies"]["embedding_model"] == {
         "status": "ok",
-        "message": str(model_file),
+        "message": str(model_dir),
     }
 
 
@@ -117,18 +115,14 @@ async def test_llm_health_validates_openai_compatible_response_shape():
 def test_is_embedding_model_downloaded_false_when_absent(tmp_path: Path):
     from bibilab.pipeline.embed import is_embedding_model_downloaded
 
-    with patch("bibilab.pipeline.embed._embedding_model_dir", return_value=tmp_path):
+    with patch("bibilab.pipeline.embed._integrity_ok", return_value=False):
         assert is_embedding_model_downloaded() is False
 
 
 def test_is_embedding_model_downloaded_true_when_present(tmp_path: Path):
     from bibilab.pipeline.embed import is_embedding_model_downloaded
 
-    model_file = tmp_path / "onnx" / "model.onnx"
-    model_file.parent.mkdir(parents=True)
-    model_file.write_bytes(b"fake")
-
-    with patch("bibilab.pipeline.embed._embedding_model_dir", return_value=tmp_path):
+    with patch("bibilab.pipeline.embed._integrity_ok", return_value=True):
         assert is_embedding_model_downloaded() is True
 
 

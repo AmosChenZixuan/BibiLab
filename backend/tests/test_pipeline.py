@@ -116,7 +116,7 @@ def test_transcribe_unknown_model_raises(tmp_path: Path):
     from bibilab.pipeline.audio import PipelineError
 
     cfg = TranscriptionConfig(model="parakeet", device="cpu", language="auto")
-    with pytest.raises(PipelineError, match="Unknown ASR model"):
+    with pytest.raises(PipelineError, match="Unknown model"):
         t_mod.transcribe(tmp_path / "a.wav", cfg)
 
 

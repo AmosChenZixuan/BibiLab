@@ -85,7 +85,7 @@ async def test_list_asr_models_reports_whisper_installed(client: httpx.AsyncClie
         resp = await client.get("/models/asr")
         entry = next(m for m in resp.json() if m["name"] == "large-v3")
         assert entry["installed"] is True
-        assert entry["path"] == str(checkpoint)
+        assert entry["path"] == str(target)
     finally:
         checkpoint.unlink(missing_ok=True)
 
