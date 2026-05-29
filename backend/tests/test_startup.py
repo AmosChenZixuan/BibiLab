@@ -4,8 +4,8 @@ from unittest.mock import patch
 import httpx
 import pytest
 
-from bibilab.config import AIConfig
-from bibilab.routers.health import _check_llm
+from bibilab.config import AIConfig, TranscriptionConfig
+from bibilab.routers.health import _check_asr, _check_llm
 
 
 @pytest.mark.asyncio
@@ -106,6 +106,23 @@ async def test_llm_health_requires_model():
     result = await _check_llm(cfg)
 
     assert result == {"status": "error", "message": "model not configured"}
+
+
+def test_asr_health_reports_unknown_model_as_error():
+    cfg = type("Cfg", (), {"transcription": TranscriptionConfig(model="nonexistent-model")})()
+
+    result = _check_asr(cfg)
+
+    assert result["status"] == "error"
+    assert "nonexistent-model" in result["message"]
+
+
+def test_asr_health_reports_unconfigured_model_as_error():
+    cfg = type("Cfg", (), {"transcription": TranscriptionConfig(model="")})()
+
+    result = _check_asr(cfg)
+
+    assert result == {"status": "error", "message": "Transcription model not configured"}
 
 
 def test_is_embedding_model_downloaded_false_when_absent(tmp_path: Path):

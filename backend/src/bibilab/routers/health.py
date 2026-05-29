@@ -27,7 +27,12 @@ async def _check_llm(cfg: BibilabConfig) -> dict:
 
 def _check_asr(cfg: BibilabConfig) -> dict:
     model = cfg.transcription.model
-    spec = get_spec(model)
+    if not model:
+        return {"status": "error", "message": "Transcription model not configured"}
+    try:
+        spec = get_spec(model)
+    except ValueError:
+        return {"status": "error", "message": f"Unknown transcription model {model!r}"}
     if not _integrity_ok(spec):
         return {"status": "error", "message": f"Model {model!r} not downloaded"}
     return {"status": "ok", "message": str(_target_dir(spec))}
