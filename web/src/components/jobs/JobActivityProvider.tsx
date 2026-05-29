@@ -16,7 +16,7 @@ export const TERMINAL_JOB_STATUSES = new Set(["done", "failed", "needs_auth"]);
 
 const POLL_INTERVAL_MS = 5_000;
 
-type JobProducer = "ingest" | "whisper_download" | "artifact";
+type JobProducer = "ingest" | "model_download" | "artifact";
 
 export type JobRegistration = {
   id: string;
@@ -58,7 +58,7 @@ type JobActivityContextValue = {
 const JobActivityContext = createContext<JobActivityContextValue | null>(null);
 
 function createPlaceholderJob(id: string, meta: TrackedJobMeta): Job {
-  if (meta.producer === "whisper_download") {
+  if (meta.producer === "model_download") {
     return {
       id,
       type: "model_download",
@@ -67,7 +67,7 @@ function createPlaceholderJob(id: string, meta: TrackedJobMeta): Job {
       error: null,
       created_at: "",
       updated_at: "",
-      meta: { model_family: "whisper", model_size: meta.label },
+      meta: { model_name: meta.label },
     };
   }
 
@@ -129,11 +129,11 @@ function extractIngestTitle(meta: Job["meta"]): string {
 
 function inferTrackedMeta(job: Job): TrackedJobMeta {
   if (isModelDownloadJob(job)) {
-    const modelSize = typeof job.meta.model_size === "string" ? job.meta.model_size : "model";
+    const modelName = typeof job.meta.model_name === "string" ? job.meta.model_name : "model";
     return {
-      producer: "whisper_download",
-      label: modelSize,
-      contextKey: modelSize,
+      producer: "model_download",
+      label: modelName,
+      contextKey: modelName,
     };
   }
 
@@ -187,8 +187,8 @@ export function getJobTitle(job: Job, fallbackLabel: string): string {
     }
   }
 
-  if (isModelDownloadJob(job) && typeof job.meta.model_size === "string" && job.meta.model_size.trim()) {
-    return job.meta.model_size;
+  if (isModelDownloadJob(job) && typeof job.meta.model_name === "string" && job.meta.model_name.trim()) {
+    return job.meta.model_name;
   }
 
   return fallbackLabel;

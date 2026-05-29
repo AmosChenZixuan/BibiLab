@@ -32,6 +32,8 @@
     "loading": "正在加载设置...",
     "llm": "大语言模型",
     "transcript": "转录",
+    "transcriptionModel": "模型",
+    "transcriptionModelRequired": "必填。未下载模型则无法开始转录。",
     "other": "其他",
     "provider": "提供商",
     "providerRequired": "必填。没有提供商，大语言模型请求无法启动。",
@@ -69,16 +71,17 @@
     "ffmpegNotFound": "未找到 FFmpeg",
     "installed": "已安装",
     "downloadFfmpeg": "下载 FFmpeg",
-    "modelSize": "模型大小",
-    "modelSizeRequired": "必填。缺失 Whisper 模型会完全阻止转录生成。",
     "downloadRequired": "（需要下载）",
+    "diarization": "声纹分割模型",
+    "diarizationDesc": "首次导入时自动安装",
+    "noInstalledModel": "未安装任何模型",
     "device": "设备",
     "cudaAvailable": "CUDA 可以加速转录。没有它，转录仍会在 CPU 上运行，但速度会更慢。",
     "cudaUnavailable": "CUDA 不可用，因此转录将在 CPU 上运行。",
     "language": "语言",
     "languageDesc": "控制解码器准确性。错误的语言设置会降低转录质量。",
     "modelDownloads": "模型下载",
-    "modelDownloadsRequired": "需要 Whisper 模型文件。如果缺失，在下载模型之前无法开始转录。"
+    "autoInstalls": "首次导入时自动安装"
   },
   "lab": {
     "header": {

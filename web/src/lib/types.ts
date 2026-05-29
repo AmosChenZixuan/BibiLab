@@ -86,8 +86,7 @@ export type IngestMeta = {
 };
 
 export type ModelDownloadMeta = {
-  model_family?: string;
-  model_size?: string;
+  model_name?: string;
 };
 
 export type IngestJob = BaseJob & {
@@ -149,8 +148,7 @@ export type BibilabConfig = {
     output_language?: OutputLanguage;
   };
   transcription: {
-    engine: string;
-    model_size: string;
+    model: string;
     device: string;
     language: string;
   };
@@ -177,18 +175,22 @@ export type HealthResponse = {
   dependencies: Record<string, HealthDependency>;
 };
 
-export type WhisperModel = {
+export type AsrModelKind = "transcription" | "diarization" | "vad";
+
+export type AsrModel = {
   name: string;
+  display_name: string;
+  kind: AsrModelKind;
   installed: boolean;
   path: string | null;
   selected: boolean;
+  size_mb: number;
 };
 
-export type WhisperDownloadResponse = {
+export type AsrModelDownloadResponse = {
   job_id: string;
-  status: string;
-  model_family: string;
-  model_size: string;
+  status: "queued";
+  model_name: string;
 };
 
 export type OverviewDownload = {

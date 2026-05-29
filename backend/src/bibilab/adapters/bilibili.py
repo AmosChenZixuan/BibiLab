@@ -214,7 +214,7 @@ class BilibiliAdapter(PlatformAdapter):
         opts = {
             **_ydl_opts(self._cookie, quiet=False),
             "outtmpl": output_template,
-            "format": "bestvideo+bestaudio/best",
+            "format": "bestaudio/best",
         }
 
         _, part_num = _split_video_id(video_id)

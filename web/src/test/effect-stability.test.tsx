@@ -20,10 +20,10 @@ import type { BibilabConfig, HealthDependency } from "@/lib/types";
 
 vi.mock("@/lib/api", () => {
   const mockApi = {
-    listWhisperModels: vi.fn().mockResolvedValue([
+    listAsrModels: vi.fn().mockResolvedValue([
       { name: "base", installed: true, path: "/models/base", selected: true },
     ]),
-    downloadWhisperModel: vi.fn(),
+    downloadAsrModel: vi.fn(),
     listJobs: vi.fn().mockResolvedValue([]),
   };
   return {
@@ -39,8 +39,7 @@ const baseConfig: BibilabConfig = {
   accounts: { bilibili: { cookie: "", last_verified: "", username: "", avatar_url: "" } },
   ai: { protocol: "openai", model: "gpt-4o", api_key: "", base_url: "" },
   transcription: {
-    engine: "faster-whisper",
-    model_size: "base",
+    model: "large-v3",
     device: "cpu",
     language: "auto",
   },
@@ -113,7 +112,7 @@ test("modal focus-trap effect does not re-run on re-render with same open state"
  */
 test("transcript tab refreshModels effect fires only on mount", async () => {
   const { api } = await import("@/lib/api");
-  const listWhisperModelsSpy = vi.spyOn(api, "listWhisperModels");
+  const listAsrModelsSpy = vi.spyOn(api, "listAsrModels");
 
   const { rerender } = render(
     <JobActivityProvider>
@@ -125,7 +124,7 @@ test("transcript tab refreshModels effect fires only on mount", async () => {
 
   // Wait for the initial effect to fire
   await screen.findByRole("table");
-  const initialCallCount = listWhisperModelsSpy.mock.calls.length;
+  const initialCallCount = listAsrModelsSpy.mock.calls.length;
   expect(initialCallCount).toBeGreaterThanOrEqual(1);
 
   // Re-render with identical props — effect should NOT fire again
@@ -142,7 +141,7 @@ test("transcript tab refreshModels effect fires only on mount", async () => {
 
   // If refreshModels is memoized with proper deps, the API call count
   // should not increase on re-render
-  expect(listWhisperModelsSpy.mock.calls.length).toBe(initialCallCount);
+  expect(listAsrModelsSpy.mock.calls.length).toBe(initialCallCount);
 });
 
 // ─── Settings tab sync-from-props stability ──────────────────────────────────
@@ -216,7 +215,7 @@ test("transcript tab does not re-sync local state on re-render with same transcr
   );
 
   // Use getAll to pick the first (there may be a Modal portal in the DOM from prior tests)
-  expect(screen.getAllByLabelText(/model size/i)[0]).toBeInTheDocument();
+  expect(screen.getAllByLabelText(/^model$/i)[0]).toBeInTheDocument();
 
   // Re-render with same config reference
   rerender(

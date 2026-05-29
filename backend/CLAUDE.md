@@ -6,8 +6,7 @@ Python/FastAPI backend. Managed with `uv`.
 
 ```bash
 uv sync --dev                        # Install all dependencies
-uv sync --extra cuda                 # Install optional CUDA libs (nvidia-cublas-cu12)
-uv run python -c "import ctranslate2; print(ctranslate2.get_supported_compute_types('cuda'))"  # Verify CUDA
+uv run python -c "import torch; print(torch.cuda.is_available())"  # Verify CUDA
 uv run ruff check .                  # Lint
 uv run ruff format .                 # Format
 uv run pytest                        # All tests
@@ -46,7 +45,7 @@ video_status.py   — derive_video_statuses (status mapping extracted from db.py
 config.py         — settings persisted to ~/.bibilab/config.json; includes models_dir() helper
 worker.py         — SQLite-polling job dispatcher; accepts config/adapter/home via constructor for testability
 cleanup.py        — resource cleanup utilities
-whisper_models.py — Whisper model management
+asr_models.py     — Unified ASR model registry (Whisper + SenseVoice + diarization)
 ```
 
 ## Conventions
@@ -156,7 +155,7 @@ POST /ingest/url → resolve → dedup check → create job(s)
 
 1. **download** → temp video file
 2. **audio** → strip to .wav via FFmpeg
-3. **transcribe** → Faster Whisper → raw segments with timestamps
+3. **transcribe** → FunASR AutoModel (SenseVoice or Whisper via WhisperWarp) → raw segments with timestamps + speaker labels
 4. **chunk** → greedily merge consecutive Whisper segments (~5–15s each) until ~300 tokens. Each chunk stores `timestamp_start`, `timestamp_end`, `sequence_index` in ChromaDB metadata.
 5. **digest** → LLM: summary, keywords → denormalized into `sources` (parallel with embed)
 6. **embed** → store chunks in ChromaDB with per-video and per-list scope (parallel with digest)
@@ -239,7 +238,7 @@ v0: `BilibiliAdapter` — single video. Cookie-based auth in config.
 {
   "accounts": { "bilibili": { "cookie": "", "last_verified": "" } },
   "ai": { "protocol": "openai|anthropic", "model": "", "api_key": "", "base_url": null, "output_language": "ui" },
-  "transcription": { "engine": "faster-whisper", "model_size": "large-v3", "device": "cuda|cpu", "language": "auto" },
+  "transcription": { "model": "sensevoice-small|large-v3", "device": "cuda|cpu", "language": "auto" },
   "vision": { "enabled": false, "frame_sample_rate": 30, "model": null },
   "backend": { "port": 8765, "worker_concurrency": 1 },
   "rag": { "max_distance": 0.8, "hybrid_enabled": true, "reranking_enabled": true }

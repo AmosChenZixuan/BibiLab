@@ -1,48 +1,54 @@
-"""Faster Whisper transcription step."""
+"""Transcription stage.
+
+All ASR models flow through FunASR's AutoModel — SenseVoice natively, Whisper
+via FunASR's WhisperWarp wrapper. Speaker diarization (CAM++) is mandatory for
+both paths. Punctuation is native to the ASR: SenseVoice emits `，。？！` from
+its training transcripts; Whisper-large-v3 emits English punctuation.
+
+When punc_model is absent, FunASR auto-falls-back to vad_segment for speaker
+segmentation (auto_model.py:810-812), so each `sentence_info` entry carries
+an `spk` label inline.
+
+VAD is tuned (`max_single_segment_time=15000`, `max_end_silence_time=500`)
+to keep VAD chunks ≤15s — bounds segment length, gives finer speaker
+granularity, and prevents the 60s hard-cap that used to slice through words
+on continuous BGM-laden audio.
+
+CAM++ auto-downloads on first ingest, same pattern as the embedding/reranker
+models.
+"""
 
 from __future__ import annotations
 
-import ctypes
 import logging
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import Any
 
-if TYPE_CHECKING:
-    from faster_whisper import WhisperModel
-
+from bibilab.asr_models import (
+    DIARIZATION_MODEL,
+    VAD_MODEL,
+    download_model,
+    get_spec,
+    resolve_model_path,
+)
 from bibilab.config import TranscriptionConfig, bibilab_home
-from bibilab.whisper_models import download_whisper_model, resolve_local_model_path
+from bibilab.pipeline.audio import PipelineError
 
 logger = logging.getLogger(__name__)
 
-
-def _preload_bundled_cuda_libs() -> None:
-    # ctranslate2 loads CUDA libs via dlopen(soname). Soname resolution uses
-    # the search-path list cached by ld.so at process startup — mutating
-    # LD_LIBRARY_PATH post-startup does not affect it. Preload bundled libs
-    # by absolute path with RTLD_GLOBAL so their symbols are visible when
-    # ctranslate2 later calls dlopen.
-    for pkg, soname in (
-        ("nvidia.cublas", "libcublas.so.12"),
-        ("nvidia.cudnn", "libcudnn.so.9"),
-    ):
-        try:
-            mod = __import__(pkg, fromlist=[""])
-            lib = Path(mod.__path__[0]) / "lib" / soname
-            if lib.exists():
-                ctypes.CDLL(str(lib), mode=ctypes.RTLD_GLOBAL)
-                logger.debug("preloaded %s", lib)
-        except (ImportError, OSError) as exc:
-            logger.debug("skip preload %s: %s", soname, exc)
+# SenseVoice emits per-segment tags: <|zh|>, <|NEUTRAL|>, <|BGM|>, <|withitn|>, etc.
+_FUNASR_TAG_RE = re.compile(r"<\|[^|]*\|>\s*")
 
 
-_preload_bundled_cuda_libs()
+def _strip_funasr_tags(text: str) -> str:
+    return _FUNASR_TAG_RE.sub("", text)
 
-# Module-level singleton — avoid reloading the model on every job
-_model = None
-_model_key: tuple[str, str] | None = None  # (model_size, device)
+
+_funasr_pipeline: Any = None
+_funasr_key: tuple[str, str] | None = None  # (model, device)
 
 
 @dataclass
@@ -50,113 +56,122 @@ class WhisperSegment:
     start: float
     end: float
     text: str
+    speaker: str | None = None
 
 
-def _compute_type_for_device(device: str) -> str:
-    return "float16" if device == "cuda" else "int8"
+def _ensure_downloaded(name: str) -> Path:
+    path = resolve_model_path(name)
+    if path is None:
+        download_model(name)
+        path = resolve_model_path(name)
+        if path is None:
+            raise PipelineError(f"Model {name!r} missing after download")
+    return path
 
 
-def _load_model(cfg: TranscriptionConfig) -> "WhisperModel":
-    global _model, _model_key
+def _load_funasr(cfg: TranscriptionConfig) -> Any:
+    global _funasr_pipeline, _funasr_key
+    from funasr import AutoModel  # noqa: PLC0415
 
-    from faster_whisper import WhisperModel  # noqa: PLC0415
+    key = (cfg.model, cfg.device)
+    if _funasr_pipeline is not None and _funasr_key == key:
+        return _funasr_pipeline
 
-    key = (cfg.model_size, cfg.device)
-    if _model is None or _model_key != key:
-        local_path = resolve_local_model_path(cfg.model_size)
-        model_source = str(local_path) if local_path is not None else cfg.model_size
-        if local_path is None:
-            download_whisper_model(cfg.model_size)
-        logger.info(
-            "Loading Whisper model %s on %s from %s",
-            cfg.model_size,
-            cfg.device,
-            model_source,
+    device = "cuda:0" if cfg.device == "cuda" else "cpu"
+    spk_path = _ensure_downloaded(DIARIZATION_MODEL)
+    vad_path = _ensure_downloaded(VAD_MODEL)
+
+    if cfg.model == "large-v3":
+        # WhisperWarp wraps openai-whisper inside AutoModel.
+        # hub="openai" tells WhisperWarp to use openai-whisper internally;
+        # the model auto-downloads to ~/.cache/whisper/ on first use.
+        automodel_kwargs = {"model": "Whisper-large-v3", "hub": "openai"}
+    else:
+        model_path = _ensure_downloaded(cfg.model)
+        automodel_kwargs = {"model": str(model_path)}
+
+    logger.info("Loading FunASR model %s on %s (+CAM++)", cfg.model, device)
+    try:
+        _funasr_pipeline = AutoModel(
+            device=device,
+            vad_model=str(vad_path),
+            vad_kwargs={"max_single_segment_time": 15000, "max_end_silence_time": 500},
+            spk_model=str(spk_path),
+            disable_update=True,
+            disable_pbar=True,
+            **automodel_kwargs,
         )
-        _model = WhisperModel(
-            model_source,
-            device=cfg.device,
-            compute_type=_compute_type_for_device(cfg.device),
+    except Exception:
+        logger.exception(
+            "Failed to load ASR model %s on %s — check device compatibility and available memory",
+            cfg.model,
+            device,
         )
-        _model_key = key
-    return _model
+        raise
+    _funasr_key = key
+    return _funasr_pipeline
 
 
-# Whisper's default no_speech_threshold. Segments above this are decoded
-# from windows the model itself flagged as silence — prompt echoes here are
-# hallucinations, not transcription. Real speech sits well below this.
-_SILENCE_PROB_THRESHOLD = 0.6
+def _coerce_seconds(value: float) -> float:
+    # FunASR reports ms when spk model is active, seconds otherwise.
+    # CAM++ is always loaded, so values are always ms.
+    return value / 1000.0
 
 
-@dataclass(frozen=True)
-class _LangStrategy:
-    """Per-language Whisper decoding strategy."""
+def _transcribe_funasr(audio_path: Path, cfg: TranscriptionConfig) -> tuple[list[WhisperSegment], str | None]:
+    model = _load_funasr(cfg)
+    gen_kwargs: dict[str, Any] = {
+        "input": str(audio_path),
+        "use_itn": True,
+        "merge_vad": True,
+        "merge_length_s": 15,
+    }
+    if cfg.language and cfg.language != "auto":
+        gen_kwargs["language"] = cfg.language
 
-    initial_prompt: str | None
-    hotwords: str | None
-    # When True, each decode window conditions on the previous window's text.
-    # Off for languages whose training data biases the decoder into repetition
-    # cascades or whose prompt bias would otherwise be drowned out (see zh).
-    condition_on_previous_text: bool
+    try:
+        res = model.generate(**gen_kwargs)
+    except Exception:
+        logger.exception("FunASR generate failed for %s (model=%s)", audio_path, cfg.model)
+        raise
+    if not res:
+        logger.warning("FunASR returned no results for %s", audio_path)
+        return [], None
 
+    first = res[0]
+    raw = first.get("sentence_info") or first.get("segments") or []
+    if not raw:
+        logger.warning("FunASR returned result with no segments for %s: %s", audio_path, list(first.keys()))
+        return [], None
+    segments: list[WhisperSegment] = []
+    for s in raw:
+        text = _strip_funasr_tags(str(s.get("text") or s.get("sentence") or "")).strip()
+        if not text:
+            continue
+        start = _coerce_seconds(float(s.get("start", 0.0)))
+        end = _coerce_seconds(float(s.get("end", 0.0)))
+        spk = s.get("spk")
+        speaker = f"SPK_{spk}" if spk is not None else None
+        segments.append(WhisperSegment(start=start, end=end, text=text, speaker=speaker))
 
-# Per-language transcription strategy. Languages absent from the table fall
-# back to _DEFAULT_STRATEGY (faster-whisper defaults, no prompt biasing).
-# Add a language by inserting an entry — no other code changes required.
-_LANG_STRATEGIES: dict[str, _LangStrategy] = {
-    # zh: training data is largely subtitle-style without punctuation.
-    # initial_prompt seeds the first window; hotwords re-bias every window so
-    # punctuation survives past 30s. condition_on_previous_text=False because
-    # prior tokens sit closer to decode start than hotwords in
-    # WhisperModel.get_prompt, drowning the bias and opening a repetition
-    # cascade on long audio.
-    "zh": _LangStrategy(
-        initial_prompt="以下是普通话的句子，请使用标点符号。",
-        hotwords="以下是普通话的句子，请使用标点符号。",
-        condition_on_previous_text=False,
-    ),
-}
-_DEFAULT_STRATEGY = _LangStrategy(initial_prompt=None, hotwords=None, condition_on_previous_text=True)
-
-
-def _is_prompt_echo(seg_text: str, no_speech_prob: float, prompt: str | None) -> bool:
-    """Drop prompt hallucinations on silent windows.
-
-    Requires both a textual match against the prompt AND a high no_speech_prob
-    so legitimate speech that happens to overlap the prompt wording
-    ('请使用标点符号' in a typing tutorial) is preserved.
-    """
-    if not prompt or no_speech_prob < _SILENCE_PROB_THRESHOLD:
-        return False
-    text = seg_text.strip()
-    if not text:
-        return False
-    return text == prompt.strip() or (len(text) >= 4 and text in prompt)
+    detected = first.get("language")
+    if cfg.language and cfg.language != "auto":
+        detected = cfg.language
+    elif detected == "auto":
+        detected = None
+    return segments, detected
 
 
 def transcribe(audio_path: Path, cfg: TranscriptionConfig) -> tuple[list[WhisperSegment], str | None]:
-    """Transcribe audio to segments. Returns (segments, detected_language)."""
-    model = _load_model(cfg)
-    # `auto` skips per-language strategy — applying a language-specific prompt
-    # before detection risks biasing decoding toward that language's tokens.
-    language = None if cfg.language == "auto" else cfg.language
-    strategy = _LANG_STRATEGIES.get(language, _DEFAULT_STRATEGY)
-    segments, info = model.transcribe(
-        str(audio_path),
-        beam_size=cfg.beam_size,
-        vad_filter=True,
-        language=language,
-        initial_prompt=strategy.initial_prompt,
-        hotwords=strategy.hotwords,
-        condition_on_previous_text=strategy.condition_on_previous_text,
-    )
-    segment_list = [
-        WhisperSegment(start=s.start, end=s.end, text=s.text.strip())
-        for s in segments
-        if not _is_prompt_echo(s.text, s.no_speech_prob, strategy.initial_prompt)
-    ]
-    detected_language: str | None = None if cfg.language != "auto" else info.language
-    return segment_list, detected_language
+    """Transcribe audio. Returns (segments, detected_language).
+
+    Segments carry speaker labels inline from FunASR's CAM++ diarization.
+    """
+    try:
+        get_spec(cfg.model)  # raises ValueError on unknown model
+    except ValueError as exc:
+        raise PipelineError(str(exc)) from exc
+    return _transcribe_funasr(audio_path, cfg)
 
 
 def write_transcript(segments: list[WhisperSegment], video_id: str) -> Path:
@@ -170,9 +185,19 @@ def write_transcript(segments: list[WhisperSegment], video_id: str) -> Path:
         h = int(seg.start) // 3600
         m = (int(seg.start) % 3600) // 60
         s = int(seg.start) % 60
-        lines.append(f"[{h:02d}:{m:02d}:{s:02d}] {seg.text}")
+        line = f"[{h:02d}:{m:02d}:{s:02d}] {seg.text}"
+        if seg.speaker:
+            line += f" [{seg.speaker}]"
+        lines.append(line)
 
     tmp.write_text("\n".join(lines), encoding="utf-8")
     os.replace(tmp, out_path)
     logger.info("Wrote %d segments to %s", len(segments), out_path)
     return out_path
+
+
+__all__ = [
+    "WhisperSegment",
+    "transcribe",
+    "write_transcript",
+]

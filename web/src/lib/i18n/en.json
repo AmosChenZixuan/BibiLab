@@ -32,6 +32,8 @@
     "loading": "Loading settings...",
     "llm": "LLM",
     "transcript": "Transcript",
+    "transcriptionModel": "Model",
+    "transcriptionModelRequired": "Required. Without a downloaded model, transcription cannot start.",
     "other": "Other",
     "provider": "Provider",
     "providerRequired": "Required. Without a provider, LLM requests cannot start.",
@@ -69,16 +71,17 @@
     "ffmpegNotFound": "FFmpeg not found",
     "installed": "installed",
     "downloadFfmpeg": "Download FFmpeg",
-    "modelSize": "Model Size",
-    "modelSizeRequired": "Required. Missing the Whisper model blocks transcript generation entirely.",
     "downloadRequired": "(download required)",
+    "diarization": "Speaker Diarization Model",
+    "diarizationDesc": "Automatically installed on first ingest",
+    "noInstalledModel": "No model installed",
     "device": "Device",
     "cudaAvailable": "CUDA speeds up transcription. Without it, transcripts still run but take longer on CPU.",
     "cudaUnavailable": "CUDA is unavailable, so transcription will run on CPU.",
     "language": "Language",
     "languageDesc": "Controls decoder accuracy. A wrong language setting can reduce transcript quality.",
     "modelDownloads": "Model Downloads",
-    "modelDownloadsRequired": "Whisper model files are required. If missing, transcription cannot start until a model is downloaded."
+    "autoInstalls": "auto-installs on first ingest"
   },
   "lab": {
     "header": {

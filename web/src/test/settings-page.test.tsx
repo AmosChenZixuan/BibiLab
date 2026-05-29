@@ -15,8 +15,7 @@ vi.mock("../lib/api", () => {
       accounts: { bilibili: { cookie: "", last_verified: "", username: "", avatar_url: "" } },
       ai: { protocol: "openai", model: "gpt-4o", api_key: "", base_url: "" },
       transcription: {
-        engine: "faster-whisper",
-        model_size: "base",
+        model: "large-v3",
         device: "cpu",
         language: "auto",
       },
@@ -29,14 +28,14 @@ vi.mock("../lib/api", () => {
       dependencies: {
         backend: { status: "ok", message: "" },
         llm: { status: "ok", message: "" },
-        whisper_model: { status: "ok", message: "" },
+        asr_model: { status: "ok", message: "" },
         ffmpeg: { status: "ok", message: "" },
         cuda: { status: "unavailable", message: "CPU only" },
         embedding_model: { status: "ok", message: "" },
       },
     }),
-    listWhisperModels: vi.fn().mockResolvedValue([]),
-    downloadWhisperModel: vi.fn(),
+    listAsrModels: vi.fn().mockResolvedValue([]),
+    downloadAsrModel: vi.fn(),
   };
   return {
     createApiClient: () => mockApi,
@@ -141,7 +140,7 @@ describe("settings page", () => {
         dependencies: {
           backend: { status: "ok", message: "" },
           llm: { status: "ok", message: "" },
-          whisper_model: { status: "ok", message: "" },
+          asr_model: { status: "ok", message: "" },
           ffmpeg: { status: "ok", message: "" },
           cuda: { status: "unavailable", message: "CPU only" },
           embedding_model: { status: "ok", message: "" },
@@ -152,7 +151,7 @@ describe("settings page", () => {
         dependencies: {
           backend: { status: "ok", message: "" },
           llm: { status: "error", message: "base_url not configured" },
-          whisper_model: { status: "ok", message: "" },
+          asr_model: { status: "ok", message: "" },
           ffmpeg: { status: "ok", message: "" },
           cuda: { status: "unavailable", message: "CPU only" },
           embedding_model: { status: "ok", message: "" },
@@ -162,8 +161,7 @@ describe("settings page", () => {
       accounts: { bilibili: { cookie: "", last_verified: "", username: "", avatar_url: "" } },
       ai: { protocol: "openai", model: "gpt-4o", api_key: "", base_url: "" },
       transcription: {
-        engine: "faster-whisper",
-        model_size: "base",
+        model: "large-v3",
         device: "cpu",
         language: "auto",
       },
@@ -196,8 +194,7 @@ describe("settings page", () => {
       accounts: { bilibili: { cookie: "", last_verified: "", username: "", avatar_url: "" } },
       ai: { protocol: "openai", model: "gpt-4o", api_key: "", base_url: "" },
       transcription: {
-        engine: "faster-whisper",
-        model_size: "base",
+        model: "large-v3",
         device: "cpu",
         language: "auto",
       },

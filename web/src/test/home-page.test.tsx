@@ -235,7 +235,7 @@ describe("home page", () => {
           dependencies: {
             backend: { status: "ok", message: "" },
             llm: { status: "ok", message: "" },
-            whisper_model: { status: "ok", message: "" },
+            asr_model: { status: "ok", message: "" },
             ffmpeg: { status: "ok", message: "" },
             cuda: { status: "ok", message: "" },
             bilibili_session: { status: "ok", message: "" },
@@ -267,8 +267,7 @@ describe("home page", () => {
           accounts: { bilibili: { cookie: "***", last_verified: "" } },
           ai: { protocol: "openai", model: "gpt-4o", api_key: "***", base_url: "" },
           transcription: {
-            engine: "faster-whisper",
-            model_size: "large-v3",
+            model: "large-v3",
             device: "cuda",
             language: "auto",
           },
@@ -277,8 +276,10 @@ describe("home page", () => {
         });
       }
 
-      if (url.endsWith("/api/models/whisper") && method === "GET") {
-        return Response.json([{ name: "large-v3", installed: true, path: "/tmp/large-v3", selected: true }]);
+      if (url.endsWith("/api/models/asr") && method === "GET") {
+        return Response.json([
+          { name: "large-v3", display_name: "Faster Whisper large-v3", kind: "transcription", installed: true, path: "/tmp/large-v3", selected: true, size_mb: 3000 },
+        ]);
       }
 
       if (url.endsWith("/api/jobs") && method === "GET") {

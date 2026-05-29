@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowRight, X, Trash2, AlertCircle, MoreVertical } from "lucide-react";
+import { ArrowRight, X, Trash2, AlertCircle, MoreVertical, RotateCcw } from "lucide-react";
 
 import { useLanguage } from "@/app/LanguageContext";
 import { ContextMenu } from "@/components/ui/ContextMenu";
@@ -7,7 +7,7 @@ import { BilibiliQrModal } from "@/components/auth/BilibiliQrModal";
 import { PlaylistPreviewModal } from "@/components/lists/sources/PlaylistPreviewModal";
 import { useJobActivity } from "@/components/jobs/JobActivityProvider";
 import { api, ApiError, toErrorMessageWithT, notifyBilibiliAuthChanged } from "@/lib/api";
-import type { IngestVideoIn, PreviewVideo, Source } from "@/lib/types";
+import type { IngestJob, IngestVideoIn, PreviewVideo, Source } from "@/lib/types";
 
 export const PIPELINE_STAGES = [
   "queued",
@@ -76,12 +76,14 @@ function IngestingSourceRow({
   title,
   error,
   onDismiss,
+  onRetry,
   t,
 }: {
   stage: string;
   title: string;
   error?: string | null;
   onDismiss: () => void;
+  onRetry?: () => void;
   t: (key: string, params?: Record<string, string | number>) => string;
 }) {
   const isFailed = stage === "failed" || stage === "needs_auth";
@@ -103,6 +105,17 @@ function IngestingSourceRow({
             {t("lists.failedDuring", { stage: getStageLabel(failedStage) })}
           </p>
         </div>
+        {onRetry && (
+          <button
+            type="button"
+            onClick={onRetry}
+            aria-label={t("common.retry")}
+            title={t("common.retry")}
+            className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-muted transition hover:bg-border hover:text-ink"
+          >
+            <RotateCcw size={14} />
+          </button>
+        )}
         <button
           type="button"
           onClick={onDismiss}
@@ -251,6 +264,42 @@ export function SourcesListMode({
       cancelled = true;
     };
   }, [ingestJobs, listId, refreshedJobs]);
+
+  const handleRetry = useCallback(
+    async (job: IngestJob) => {
+      const m = job.meta;
+      if (!m.video_id || !m.source_url || !m.title) return;
+      const payload: IngestVideoIn = {
+        video_id: m.video_id,
+        title: m.title,
+        cover_url: m.cover_url ?? "",
+        duration_seconds: m.duration_seconds ?? 0,
+        uploader: m.uploader ?? "",
+        platform: m.platform ?? "",
+        source_url: m.source_url,
+      };
+      try {
+        const result = await api.ingestUrl(listId, [payload]);
+        if (!result || result.queued.length === 0) return;
+        trackJobs(
+          result.queued.map((id) => ({
+            id,
+            producer: "ingest",
+            label: payload.title,
+            contextKey: listId,
+          })),
+        );
+        await dismissJob(job.id);
+      } catch (err) {
+        if (err instanceof ApiError && err.status === 401) {
+          setShowQrModal(true);
+        } else {
+          setError(toErrorMessageWithT(err, t));
+        }
+      }
+    },
+    [listId, trackJobs, dismissJob, t],
+  );
 
   const submitSelection = useCallback(
     async (selected: IngestVideoIn[]) => {
@@ -454,6 +503,11 @@ export function SourcesListMode({
                 title={item.label}
                 error={item.job.error}
                 onDismiss={() => void dismissJob(item.job.id)}
+                onRetry={
+                  item.job.status === "failed" && item.job.type === "ingest"
+                    ? () => void handleRetry(item.job as IngestJob)
+                    : undefined
+                }
                 t={t}
               />
             ))}

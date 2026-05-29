@@ -3,11 +3,13 @@ import logging
 import os
 import threading
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 logger = logging.getLogger(__name__)
+
+AsrModelKind = Literal["transcription", "diarization", "vad"]
 
 
 def bibilab_home() -> Path:
@@ -53,14 +55,17 @@ class AIConfig(BaseModel):
 
 
 class TranscriptionConfig(BaseModel):
-    engine: str = "faster-whisper"
-    model_size: str = "large-v3"
+    model: str = "sensevoice-small"
     device: str = "cuda"  # cuda | cpu
     language: str = "auto"  # auto | zh | en
-    # LLM call timeout in seconds (per-request)
     llm_timeout: int = 120
-    # Transcription
-    beam_size: int = 5
+
+    @field_validator("device")
+    @classmethod
+    def _check_device(cls, v: str) -> str:
+        if v not in ("cuda", "cpu"):
+            raise ValueError(f"device must be 'cuda' or 'cpu', got {v!r}")
+        return v
 
 
 class VisionConfig(BaseModel):

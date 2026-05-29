@@ -39,3 +39,4 @@ docs/plans/
 docs/specs/
 docs/mocks/
 .worktrees/
+.claude/scheduled_tasks.lock

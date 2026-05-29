@@ -5,16 +5,12 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from bibilab.config import TranscriptionConfig
-from bibilab.pipeline import transcribe as transcribe_mod
 from bibilab.pipeline._shared import _resolved_lang
 from bibilab.pipeline.audio import PipelineError, extract_audio
 from bibilab.pipeline.chunk import _SENT_END, RagChunk, chunk_segments
 from bibilab.pipeline.extract import generate_overview
 from bibilab.pipeline.transcribe import (
     WhisperSegment,
-    _compute_type_for_device,
-    transcribe,
     write_transcript,
 )
 
@@ -90,120 +86,80 @@ def test_write_transcript_hours(tmp_path: Path):
     assert path.read_text().strip() == "[01:01:01] Late segment"
 
 
-def test_compute_type_for_device():
-    assert _compute_type_for_device("cpu") == "int8"
-    assert _compute_type_for_device("cuda") == "float16"
+def test_transcribe_dispatches_large_v3_to_funasr(tmp_path: Path):
+    from bibilab.config import TranscriptionConfig
+    from bibilab.pipeline import transcribe as t_mod
+
+    cfg = TranscriptionConfig(model="large-v3", device="cpu", language="auto")
+    funasr_out = ([WhisperSegment(start=0.0, end=1.0, text="hi")], "en")
+    with patch.object(t_mod, "_transcribe_funasr", return_value=funasr_out) as mock_f:
+        result = t_mod.transcribe(tmp_path / "a.wav", cfg)
+    mock_f.assert_called_once()
+    assert result == funasr_out
 
 
-def _fake_whisper_model(monkeypatch, segs=None) -> MagicMock:
-    """Replace _load_model with a MagicMock whose .transcribe returns (segs, info).
+def test_transcribe_dispatches_to_sensevoice(tmp_path: Path):
+    from bibilab.config import TranscriptionConfig
+    from bibilab.pipeline import transcribe as t_mod
 
-    Each entry: (start, end, text) for default low no_speech_prob, or
-    (start, end, text, no_speech_prob) to set silence probability explicitly.
-    """
-    model = MagicMock()
-    info = MagicMock()
-    info.language = "zh"
-    fake_segs = []
-    for entry in segs or []:
-        if len(entry) == 4:
-            start, end, text, no_speech = entry
-        else:
-            start, end, text = entry
-            no_speech = 0.05
-        m = MagicMock()
-        m.start, m.end, m.text, m.no_speech_prob = start, end, text, no_speech
-        fake_segs.append(m)
-    model.transcribe.return_value = (fake_segs, info)
-    monkeypatch.setattr(transcribe_mod, "_load_model", lambda cfg: model)
-    return model
+    cfg = TranscriptionConfig(model="sensevoice-small", device="cpu", language="auto")
+    expected = ([WhisperSegment(start=0.0, end=1.0, text="ni")], None)
+    with patch.object(t_mod, "_transcribe_funasr", return_value=expected) as mock_sv:
+        result = t_mod.transcribe(tmp_path / "a.wav", cfg)
+    mock_sv.assert_called_once()
+    assert result == expected
 
 
-@pytest.mark.parametrize(
-    "lang,expected_strategy_key",
-    [
-        # 'auto' uses default strategy — applying a per-language prompt before
-        # language detection would bias decoding toward that language's tokens.
-        ("auto", None),
-        ("zh", "zh"),
-        ("en", None),
-        ("ja", None),
-    ],
-)
-def test_transcribe_language_dispatch(monkeypatch, tmp_path: Path, lang, expected_strategy_key):
-    model = _fake_whisper_model(monkeypatch)
-    cfg = TranscriptionConfig(language=lang)
-    audio = tmp_path / "a.wav"
-    audio.write_bytes(b"")
+def test_transcribe_unknown_model_raises(tmp_path: Path):
+    from bibilab.config import TranscriptionConfig
+    from bibilab.pipeline import transcribe as t_mod
+    from bibilab.pipeline.audio import PipelineError
 
-    transcribe(audio, cfg)
-
-    expected = (
-        transcribe_mod._LANG_STRATEGIES[expected_strategy_key]
-        if expected_strategy_key
-        else transcribe_mod._DEFAULT_STRATEGY
-    )
-    kwargs = model.transcribe.call_args.kwargs
-    assert kwargs["initial_prompt"] == expected.initial_prompt
-    assert kwargs["hotwords"] == expected.hotwords
-    assert kwargs["condition_on_previous_text"] is expected.condition_on_previous_text
+    cfg = TranscriptionConfig(model="parakeet", device="cpu", language="auto")
+    with pytest.raises(PipelineError, match="Unknown ASR model"):
+        t_mod.transcribe(tmp_path / "a.wav", cfg)
 
 
-def test_transcribe_strips_silent_prompt_echo(monkeypatch, tmp_path: Path):
-    """Prompt-shaped segments on silent windows are dropped."""
-    prompt = "以下是普通话的句子，请使用标点符号。"
-    _fake_whisper_model(
-        monkeypatch,
-        segs=[
-            (0.0, 2.0, "真正的句子。", 0.05),
-            (2.0, 4.0, prompt, 0.95),  # exact echo on silence
-            (4.0, 6.0, "请使用标点符号", 0.85),  # substring echo on silence
-            (6.0, 8.0, "另一句正常内容。", 0.10),
-        ],
-    )
-    cfg = TranscriptionConfig(language="zh")
-    audio = tmp_path / "a.wav"
-    audio.write_bytes(b"")
+def test_transcribe_funasr_propagates_speaker_label(tmp_path: Path):
+    """When CAM++ is downloaded, FunASR returns spk per sentence_info; transcribe maps to speaker."""
+    from bibilab.config import TranscriptionConfig
+    from bibilab.pipeline import transcribe as t_mod
 
-    segs, _ = transcribe(audio, cfg)
-    assert [s.text for s in segs] == ["真正的句子。", "另一句正常内容。"]
+    cfg = TranscriptionConfig(model="sensevoice-small", device="cpu", language="auto")
 
+    class FakeFunasr:
+        def generate(self, **kwargs):
+            return [
+                {
+                    "sentence_info": [
+                        {"text": "hello", "start": 0.0, "end": 1.0, "spk": 0},
+                        {"text": "world", "start": 1.0, "end": 2.0, "spk": 1},
+                    ],
+                    "language": "en",
+                }
+            ]
 
-def test_transcribe_keeps_prompt_substring_on_real_speech(monkeypatch, tmp_path: Path):
-    """Segments matching prompt text but with low no_speech_prob are kept.
+    with patch.object(t_mod, "_load_funasr", return_value=FakeFunasr()):
+        segs, lang = t_mod._transcribe_funasr(tmp_path / "a.wav", cfg)
 
-    Real speaker uttering '请使用标点符号' (a 7-char substring of the prompt)
-    in a typing tutorial must survive — only silence-window hallucinations
-    should be filtered.
-    """
-    _fake_whisper_model(
-        monkeypatch,
-        segs=[
-            (0.0, 2.0, "今天我们来讲打字。", 0.05),
-            (2.0, 4.0, "请使用标点符号", 0.03),  # legitimate speech
-            (4.0, 6.0, "普通话的句子", 0.10),  # legitimate speech
-        ],
-    )
-    cfg = TranscriptionConfig(language="zh")
-    audio = tmp_path / "a.wav"
-    audio.write_bytes(b"")
-
-    segs, _ = transcribe(audio, cfg)
-    assert [s.text for s in segs] == ["今天我们来讲打字。", "请使用标点符号", "普通话的句子"]
+    assert [(s.text, s.speaker) for s in segs] == [("hello", "SPK_0"), ("world", "SPK_1")]
+    assert lang == "en"
 
 
-def test_transcribe_keeps_non_zh_segments_verbatim(monkeypatch, tmp_path: Path):
-    """Non-zh path has no prompt, so echo-strip is a no-op even on high no_speech_prob."""
-    _fake_whisper_model(
-        monkeypatch,
-        segs=[(0.0, 2.0, "hello world", 0.9), (2.0, 4.0, "second", 0.05)],
-    )
-    cfg = TranscriptionConfig(language="en")
-    audio = tmp_path / "a.wav"
-    audio.write_bytes(b"")
+def test_transcribe_funasr_missing_spk_field_leaves_speaker_none(tmp_path: Path):
+    from bibilab.config import TranscriptionConfig
+    from bibilab.pipeline import transcribe as t_mod
 
-    segs, _ = transcribe(audio, cfg)
-    assert [s.text for s in segs] == ["hello world", "second"]
+    cfg = TranscriptionConfig(model="sensevoice-small", device="cpu", language="auto")
+
+    class FakeFunasr:
+        def generate(self, **kwargs):
+            return [{"sentence_info": [{"text": "lone", "start": 0.0, "end": 1.0}]}]
+
+    with patch.object(t_mod, "_load_funasr", return_value=FakeFunasr()):
+        segs, _ = t_mod._transcribe_funasr(tmp_path / "a.wav", cfg)
+
+    assert segs[0].speaker is None
 
 
 # ---------------------------------------------------------------------------

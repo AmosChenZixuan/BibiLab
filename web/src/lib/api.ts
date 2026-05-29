@@ -8,8 +8,8 @@ import type {
   Source,
   SourceContent,
   SourceFacetsPatch,
-  WhisperDownloadResponse,
-  WhisperModel,
+  AsrModelDownloadResponse,
+  AsrModel,
   ArtifactType,
   Artifact,
   PreviewResponse,
@@ -331,14 +331,14 @@ export class AuthClient {
 export class ModelsClient {
   constructor(private readonly baseUrl: string, private readonly request: RequestFn) {}
 
-  listWhisperModels(opts?: { signal?: AbortSignal }) {
-    return this.request<WhisperModel[]>(this.baseUrl, "/models/whisper", opts);
+  listAsrModels(opts?: { signal?: AbortSignal }) {
+    return this.request<AsrModel[]>(this.baseUrl, "/models/asr", opts);
   }
 
-  downloadWhisperModel(modelSize: string) {
-    return this.request<WhisperDownloadResponse>(this.baseUrl, "/models/whisper/download", {
+  downloadAsrModel(modelName: string) {
+    return this.request<AsrModelDownloadResponse>(this.baseUrl, "/models/asr/download", {
       method: "POST",
-      body: JSON.stringify({ model_size: modelSize }),
+      body: JSON.stringify({ model_name: modelName }),
     });
   }
 }
@@ -369,8 +369,8 @@ export interface ApiClient {
   getHealth(opts?: { signal?: AbortSignal }): Promise<HealthResponse | undefined>;
   listJobs(opts?: { signal?: AbortSignal }): Promise<Job[] | undefined>;
   deleteJob(jobId: string): Promise<void | undefined>;
-  listWhisperModels(opts?: { signal?: AbortSignal }): Promise<WhisperModel[] | undefined>;
-  downloadWhisperModel(modelSize: string): Promise<WhisperDownloadResponse | undefined>;
+  listAsrModels(opts?: { signal?: AbortSignal }): Promise<AsrModel[] | undefined>;
+  downloadAsrModel(modelName: string): Promise<AsrModelDownloadResponse | undefined>;
   getConversation(listId: string, opts?: { signal?: AbortSignal; before?: string; limit?: number }): Promise<GetConversationResponse | undefined>;
   deleteConversation(listId: string): Promise<void | undefined>;
   auth: {
@@ -427,8 +427,8 @@ export function createApiClient(baseUrl?: string): ApiClient {
     getHealth: (opts) => health.getHealth(opts),
     listJobs: (opts) => jobs.listJobs(opts),
     deleteJob: (id) => jobs.deleteJob(id),
-    listWhisperModels: (opts) => models.listWhisperModels(opts),
-    downloadWhisperModel: (modelSize) => models.downloadWhisperModel(modelSize),
+    listAsrModels: (opts) => models.listAsrModels(opts),
+    downloadAsrModel: (modelName) => models.downloadAsrModel(modelName),
     getConversation: (listId, opts) => conversations.getConversation(listId, opts),
     deleteConversation: (listId) => conversations.deleteConversation(listId),
     auth,

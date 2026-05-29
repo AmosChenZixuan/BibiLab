@@ -11,6 +11,7 @@ import httpx
 from pydantic import BaseModel
 
 from bibilab.adapters.base import AuthRequiredError, VideoMeta
+from bibilab.asr_models import download_model
 from bibilab.cleanup import cleanup_job_artifacts
 from bibilab.config import BibilabConfig, bibilab_home, load_config
 from bibilab.db import (
@@ -32,7 +33,6 @@ from bibilab.pipeline.chunk import chunk_segments
 from bibilab.pipeline.digest import DigestResult, digest
 from bibilab.pipeline.embed import embed_chunks
 from bibilab.pipeline.transcribe import WhisperSegment, transcribe, write_transcript
-from bibilab.whisper_models import download_whisper_model
 
 logger = logging.getLogger(__name__)
 
@@ -160,12 +160,13 @@ class WorkerLoop:
             # Re-raise CancelledError - don't swallow it as a job failure
             raise
         except PipelineError as exc:
-            logger.error("Job %s pipeline error: %s", job_id, exc)
+            logger.exception("Job %s pipeline error: %s", job_id, exc)
             await asyncio.to_thread(cleanup_job_artifacts, job)
             await update_job_status(job_id, JobStatus.FAILED.value, error=str(exc))
         except Exception as exc:
-            logger.exception("Job %s failed", job_id)
-            await asyncio.to_thread(cleanup_job_artifacts, job)
+            logger.exception("Job %s (type=%s) failed", job_id, job.get("type", "unknown"))
+            if job.get("type") in (None, "ingest"):
+                await asyncio.to_thread(cleanup_job_artifacts, job)
             await update_job_status(job_id, JobStatus.FAILED.value, error=str(exc))
         finally:
             self._in_flight.discard(job_id)
@@ -174,16 +175,17 @@ class WorkerLoop:
     async def _download_model_job(self, job: dict) -> None:
         job_id = job["id"]
         meta_raw = _parse_job_meta(job)
-        model_family = meta_raw.get("model_family", "")
-        model_size = meta_raw.get("model_size", "")
+        model_name = meta_raw["model_name"]
 
-        await update_job_status(job_id, JobStatus.DOWNLOADING.value, progress=10)
-        if model_family != "whisper":
-            raise PipelineError(f"Unsupported model family {model_family!r}")
-
-        await asyncio.to_thread(download_whisper_model, model_size)
-        await update_job_status(job_id, JobStatus.DONE.value, progress=100)
-        logger.info("Model download job %s completed for %s:%s", job_id, model_family, model_size)
+        try:
+            await update_job_status(job_id, JobStatus.DOWNLOADING.value, progress=10)
+            await asyncio.to_thread(download_model, model_name)
+            await update_job_status(job_id, JobStatus.DONE.value, progress=100)
+            logger.info("Model download job %s completed for %s", job_id, model_name)
+        except Exception:
+            logger.exception("Model download job %s failed for %s", job_id, model_name)
+            await update_job_status(job_id, JobStatus.FAILED.value, error=f"Failed to download model {model_name!r}")
+            raise
 
     # -------------------------------------------------------------------------
     # Artifact generation job
@@ -470,19 +472,11 @@ All output fields MUST be written in {_LANG_NAME.get(lang, "English")}."""
             await delete_job(job_id)
             return None
 
-        try:
-            video_path: Path = await asyncio.to_thread(
-                self._get_adapter().download,
-                video_meta.video_id,
-                video_meta.source_url,
-            )
-        except Exception:
-            cleanup_meta = {"video_id": video_meta.video_id, "source_id": source_id}
-            await asyncio.to_thread(
-                cleanup_job_artifacts,
-                {"id": job_id, "type": "ingest", "status": "downloading", "meta": cleanup_meta},
-            )
-            raise
+        video_path: Path = await asyncio.to_thread(
+            self._get_adapter().download,
+            video_meta.video_id,
+            video_meta.source_url,
+        )
 
         # Download cover
         covers_dir = self._bibilab_home / "covers"
@@ -609,7 +603,7 @@ All output fields MUST be written in {_LANG_NAME.get(lang, "English")}."""
             duration_seconds=video_meta.duration_seconds,
             uploader=video_meta.uploader,
             language=detected_language,
-            whisper_model=cfg.transcription.model_size,
+            whisper_model=cfg.transcription.model,
             ai_model=cfg.ai.model,
             vision_enabled=cfg.vision.enabled,
             settings_snapshot=cfg.model_dump(),

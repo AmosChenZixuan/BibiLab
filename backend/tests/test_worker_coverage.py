@@ -74,27 +74,54 @@ async def test_download_model_job_success(tmp_bibilab_home: Path):
     from bibilab.db import bootstrap_db, create_job
 
     await bootstrap_db()
-    meta = {"model_family": "whisper", "model_size": "tiny"}
+    meta = {"model_name": "large-v3"}
     job_id = await create_job("model_download", meta)
 
     worker = WorkerLoop(home=tmp_bibilab_home)
     job = {"id": job_id, "type": "model_download", "meta": json.dumps(meta)}
 
-    with patch("bibilab.worker.download_whisper_model") as mock_dl:
+    with patch("bibilab.worker.download_model") as mock_dl:
         await worker._download_model_job(job)
-        mock_dl.assert_called_once_with("tiny")
+        mock_dl.assert_called_once_with("large-v3")
 
 
 @pytest.mark.asyncio
-async def test_download_model_job_unsupported_family(tmp_bibilab_home: Path):
-    from bibilab.pipeline.audio import PipelineError
+async def test_download_model_job_diarization(tmp_bibilab_home: Path):
+    from bibilab.db import bootstrap_db, create_job
 
     await bootstrap_db()
-    worker = WorkerLoop(home=tmp_bibilab_home)
-    job = {"id": "job-1", "type": "model_download", "meta": json.dumps({"model_family": "llama", "model_size": "7b"})}
+    meta = {"model_name": "cam++"}
+    job_id = await create_job("model_download", meta)
 
-    with pytest.raises(PipelineError, match="Unsupported model family"):
+    worker = WorkerLoop(home=tmp_bibilab_home)
+    job = {"id": job_id, "type": "model_download", "meta": json.dumps(meta)}
+
+    with patch("bibilab.worker.download_model") as mock_dl:
         await worker._download_model_job(job)
+        mock_dl.assert_called_once_with("cam++")
+
+
+@pytest.mark.asyncio
+async def test_download_model_job_unknown_model(tmp_bibilab_home: Path):
+    from bibilab.db import bootstrap_db, create_job
+
+    await bootstrap_db()
+    meta = {"model_name": "garbage"}
+    job_id = await create_job("model_download", meta)
+
+    worker = WorkerLoop(home=tmp_bibilab_home)
+    worker._in_flight.add(job_id)
+    job = {"id": job_id, "type": "model_download", "meta": json.dumps(meta)}
+
+    await worker._run_job(job)
+
+    from bibilab.db import get_db
+
+    async with get_db() as db:
+        cursor = await db.execute("SELECT status, error FROM jobs WHERE id=?", (job_id,))
+        row = await cursor.fetchone()
+    assert row["status"] == "failed"
+    assert "Unknown ASR model" in row["error"]
 
 
 # ---------------------------------------------------------------------------
