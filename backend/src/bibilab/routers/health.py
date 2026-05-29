@@ -100,7 +100,7 @@ def _check_reranker_model() -> dict:
         "status": "error",
         "message": (
             f"Reranker model not found at {_target_dir(spec)}. "
-            "It downloads automatically on first chat query (~140 MB)."
+            "It downloads automatically on first chat query (~280 MB)."
         ),
     }
 

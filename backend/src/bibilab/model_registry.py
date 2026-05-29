@@ -260,13 +260,17 @@ def ensure(spec_id: str) -> Path:
 
 def required_models(cfg: BibilabConfig) -> list[ModelSpec]:
     """Return model specs required under the current config."""
-    return [
-        get_spec(cfg.transcription.model),
-        get_spec(VAD_SPEC_ID),
-        get_spec(DIARIZATION_SPEC_ID),
-        get_spec(EMBEDDING_SPEC_ID),
-        get_spec(RERANKER_SPEC_ID),
-    ]
+    specs: list[ModelSpec] = []
+    try:
+        specs.append(get_spec(cfg.transcription.model))
+    except ValueError:
+        logger.warning("Unknown transcription model %r — skipping in required-models check", cfg.transcription.model)
+    specs.append(get_spec(VAD_SPEC_ID))
+    specs.append(get_spec(DIARIZATION_SPEC_ID))
+    specs.append(get_spec(EMBEDDING_SPEC_ID))
+    if cfg.rag.reranking_enabled:
+        specs.append(get_spec(RERANKER_SPEC_ID))
+    return specs
 
 
 def missing_required_models(cfg: BibilabConfig) -> list[str]:
