@@ -69,11 +69,6 @@ def _ensure_downloaded(name: str) -> Path:
     return path
 
 
-# ---------------------------------------------------------------------------
-# FunASR (all models via AutoModel; SenseVoice native, Whisper via WhisperWarp)
-# ---------------------------------------------------------------------------
-
-
 def _load_funasr(cfg: TranscriptionConfig) -> Any:
     global _funasr_pipeline, _funasr_key
     from funasr import AutoModel  # noqa: PLC0415
@@ -96,23 +91,31 @@ def _load_funasr(cfg: TranscriptionConfig) -> Any:
         automodel_kwargs = {"model": str(model_path)}
 
     logger.info("Loading FunASR model %s on %s (+CAM++)", cfg.model, device)
-    _funasr_pipeline = AutoModel(
-        device=device,
-        vad_model=str(vad_path),
-        vad_kwargs={"max_single_segment_time": 15000, "max_end_silence_time": 500},
-        spk_model=str(spk_path),
-        disable_update=True,
-        disable_pbar=True,
-        **automodel_kwargs,
-    )
+    try:
+        _funasr_pipeline = AutoModel(
+            device=device,
+            vad_model=str(vad_path),
+            vad_kwargs={"max_single_segment_time": 15000, "max_end_silence_time": 500},
+            spk_model=str(spk_path),
+            disable_update=True,
+            disable_pbar=True,
+            **automodel_kwargs,
+        )
+    except Exception:
+        logger.exception(
+            "Failed to load ASR model %s on %s — check device compatibility and available memory",
+            cfg.model,
+            device,
+        )
+        raise
     _funasr_key = key
     return _funasr_pipeline
 
 
 def _coerce_seconds(value: float) -> float:
-    # FunASR sentence_info entries report seconds for SenseVoice but milliseconds
-    # in some spk-enabled paths. Anything past an hour is almost certainly ms.
-    return value / 1000.0 if value > 3600 else value
+    # FunASR reports ms when spk model is active, seconds otherwise.
+    # CAM++ is always loaded, so values are always ms.
+    return value / 1000.0
 
 
 def _transcribe_funasr(audio_path: Path, cfg: TranscriptionConfig) -> tuple[list[WhisperSegment], str | None]:
@@ -126,13 +129,20 @@ def _transcribe_funasr(audio_path: Path, cfg: TranscriptionConfig) -> tuple[list
     if cfg.language and cfg.language != "auto":
         gen_kwargs["language"] = cfg.language
 
-    res = model.generate(**gen_kwargs)
+    try:
+        res = model.generate(**gen_kwargs)
+    except Exception:
+        logger.exception("FunASR generate failed for %s (model=%s)", audio_path, cfg.model)
+        raise
     if not res:
         logger.warning("FunASR returned no results for %s", audio_path)
         return [], None
 
     first = res[0]
     raw = first.get("sentence_info") or first.get("segments") or []
+    if not raw:
+        logger.warning("FunASR returned result with no segments for %s: %s", audio_path, list(first.keys()))
+        return [], None
     segments: list[WhisperSegment] = []
     for s in raw:
         text = _strip_funasr_tags(str(s.get("text") or s.get("sentence") or "")).strip()
@@ -150,11 +160,6 @@ def _transcribe_funasr(audio_path: Path, cfg: TranscriptionConfig) -> tuple[list
     elif detected == "auto":
         detected = None
     return segments, detected
-
-
-# ---------------------------------------------------------------------------
-# Public dispatch
-# ---------------------------------------------------------------------------
 
 
 def transcribe(audio_path: Path, cfg: TranscriptionConfig) -> tuple[list[WhisperSegment], str | None]:

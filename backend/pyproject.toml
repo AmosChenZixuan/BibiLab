@@ -19,7 +19,6 @@ dependencies = [
     "funasr>=1.2",
     "httpx>=0.28.1",
     "openai>=1.0.0",
-    "openai-whisper>=20240930",
     "pydantic-settings>=2.13.1",
     "tiktoken>=0.12.0",
     "torch>=2.0",

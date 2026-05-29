@@ -276,8 +276,10 @@ describe("home page", () => {
         });
       }
 
-      if (url.endsWith("/api/models/whisper") && method === "GET") {
-        return Response.json([{ name: "large-v3", installed: true, path: "/tmp/large-v3", selected: true }]);
+      if (url.endsWith("/api/models/asr") && method === "GET") {
+        return Response.json([
+          { name: "large-v3", display_name: "Faster Whisper large-v3", kind: "transcription", installed: true, path: "/tmp/large-v3", selected: true, size_mb: 3000 },
+        ]);
       }
 
       if (url.endsWith("/api/jobs") && method === "GET") {

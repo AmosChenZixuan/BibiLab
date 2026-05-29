@@ -5,7 +5,7 @@ import threading
 from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +59,13 @@ class TranscriptionConfig(BaseModel):
     device: str = "cuda"  # cuda | cpu
     language: str = "auto"  # auto | zh | en
     llm_timeout: int = 120
+
+    @field_validator("device")
+    @classmethod
+    def _check_device(cls, v: str) -> str:
+        if v not in ("cuda", "cpu"):
+            raise ValueError(f"device must be 'cuda' or 'cpu', got {v!r}")
+        return v
 
 
 class VisionConfig(BaseModel):

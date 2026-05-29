@@ -5,6 +5,7 @@ All models load through FunASR's AutoModel — SenseVoice natively, Whisper
 via WhisperWarp (which wraps openai-whisper internally).
 """
 
+import logging
 import os
 import shutil
 from dataclasses import dataclass
@@ -14,12 +15,14 @@ from modelscope.hub.snapshot_download import snapshot_download
 
 from bibilab.config import AsrModelKind, models_dir
 
+logger = logging.getLogger(__name__)
+
 
 @dataclass(frozen=True)
 class ModelSpec:
     name: str
     display_name: str
-    kind: AsrModelKind  # "transcription" | "diarization" | "vad"
+    kind: AsrModelKind
     size_mb: int
     modelscope_id: str | None = None  # unset for openai-backed models (large-v3)
 
@@ -94,13 +97,16 @@ def _download_modelscope(model_id: str, target: Path) -> Path:
     target.parent.mkdir(parents=True, exist_ok=True)
     tmp = target.parent / f".{target.name}.partial"
     shutil.rmtree(tmp, ignore_errors=True)
+    logger.info("Downloading ASR model from ModelScope: %s", model_id)
     try:
         snapshot_download(model_id, local_dir=str(tmp))
     except Exception:
+        logger.exception("ModelScope download failed for %s", model_id)
         shutil.rmtree(tmp, ignore_errors=True)
         raise
     shutil.rmtree(target, ignore_errors=True)
     tmp.rename(target)
+    logger.info("ASR model downloaded to %s", target)
     return target
 
 
@@ -125,14 +131,6 @@ def diarization_model_path() -> Path | None:
     return resolve_model_path(DIARIZATION_MODEL)
 
 
-def model_size_mb(name: str) -> int:
-    return get_spec(name).size_mb
-
-
-def model_kind(name: str) -> AsrModelKind:
-    return get_spec(name).kind
-
-
 def download_model(name: str) -> Path:
     spec = get_spec(name)
     if spec.name == "large-v3":
@@ -141,13 +139,19 @@ def download_model(name: str) -> Path:
         # don't import openai-whisper ourselves.
         from funasr import AutoModel  # noqa: PLC0415
 
-        AutoModel(
-            model="Whisper-large-v3",
-            hub="openai",
-            device="cpu",
-            disable_update=True,
-            disable_pbar=True,
-        )
+        logger.info("Downloading Whisper large-v3 (~3 GB) via WhisperWarp — this may take several minutes")
+        try:
+            AutoModel(
+                model="Whisper-large-v3",
+                hub="openai",
+                device="cpu",
+                disable_update=True,
+                disable_pbar=True,
+            )
+        except Exception:
+            logger.exception("Whisper large-v3 download failed")
+            raise
+        logger.info("Whisper large-v3 download complete → %s", _whisper_cache_path())
         return _whisper_cache_path()
     if spec.modelscope_id is None:
         raise ValueError(f"Model {name!r} has no modelscope_id")
@@ -163,7 +167,5 @@ __all__ = [
     "is_diarization_model_downloaded",
     "is_model_downloaded",
     "list_specs",
-    "model_kind",
-    "model_size_mb",
     "resolve_model_path",
 ]

@@ -160,12 +160,13 @@ class WorkerLoop:
             # Re-raise CancelledError - don't swallow it as a job failure
             raise
         except PipelineError as exc:
-            logger.error("Job %s pipeline error: %s", job_id, exc)
+            logger.exception("Job %s pipeline error: %s", job_id, exc)
             await asyncio.to_thread(cleanup_job_artifacts, job)
             await update_job_status(job_id, JobStatus.FAILED.value, error=str(exc))
         except Exception as exc:
-            logger.exception("Job %s failed", job_id)
-            await asyncio.to_thread(cleanup_job_artifacts, job)
+            logger.exception("Job %s (type=%s) failed", job_id, job.get("type", "unknown"))
+            if job.get("type") in (None, "ingest"):
+                await asyncio.to_thread(cleanup_job_artifacts, job)
             await update_job_status(job_id, JobStatus.FAILED.value, error=str(exc))
         finally:
             self._in_flight.discard(job_id)
@@ -176,10 +177,15 @@ class WorkerLoop:
         meta_raw = _parse_job_meta(job)
         model_name = meta_raw["model_name"]
 
-        await update_job_status(job_id, JobStatus.DOWNLOADING.value, progress=10)
-        await asyncio.to_thread(download_model, model_name)
-        await update_job_status(job_id, JobStatus.DONE.value, progress=100)
-        logger.info("Model download job %s completed for %s", job_id, model_name)
+        try:
+            await update_job_status(job_id, JobStatus.DOWNLOADING.value, progress=10)
+            await asyncio.to_thread(download_model, model_name)
+            await update_job_status(job_id, JobStatus.DONE.value, progress=100)
+            logger.info("Model download job %s completed for %s", job_id, model_name)
+        except Exception:
+            logger.exception("Model download job %s failed for %s", job_id, model_name)
+            await update_job_status(job_id, JobStatus.FAILED.value, error=f"Failed to download model {model_name!r}")
+            raise
 
     # -------------------------------------------------------------------------
     # Artifact generation job
