@@ -60,13 +60,19 @@ _SPECS: dict[str, ModelSpec] = {
         size_mb=1100,
         modelscope_id="iic/punc_ct-transformer_cn-en-common-vocab471067-large",
     ),
+    "fsmn-vad": ModelSpec(
+        name="fsmn-vad",
+        display_name="FSMN-VAD (Voice Activity Detection)",
+        kind="vad",
+        backend="funasr",
+        size_mb=4,
+        modelscope_id="iic/speech_fsmn_vad_zh-cn-16k-common-pytorch",
+    ),
 }
-
-# Shared VAD used by FunASR when CAM++ is attached as spk_model.
-VAD_MODEL_ID = "iic/speech_fsmn_vad_zh-cn-16k-common-pytorch"
 
 DIARIZATION_MODEL = "cam++"
 PUNCTUATION_MODEL = "ct-punc"
+VAD_MODEL = "fsmn-vad"
 
 
 def list_specs() -> list[ModelSpec]:
@@ -164,8 +170,8 @@ def download_model(name: str) -> Path:
 __all__ = [
     "DIARIZATION_MODEL",
     "PUNCTUATION_MODEL",
+    "VAD_MODEL",
     "ModelSpec",
-    "VAD_MODEL_ID",
     "download_model",
     "get_spec",
     "is_diarization_model_downloaded",

@@ -25,7 +25,7 @@ from typing import Any
 from bibilab.asr_models import (
     DIARIZATION_MODEL,
     PUNCTUATION_MODEL,
-    VAD_MODEL_ID,
+    VAD_MODEL,
     download_model,
     model_backend,
     resolve_model_path,
@@ -132,10 +132,11 @@ def _load_diarize(device: str) -> Any:
 
     actual_device = "cuda:0" if device == "cuda" else "cpu"
     spk_path = _ensure_downloaded(DIARIZATION_MODEL)
+    vad_path = _ensure_downloaded(VAD_MODEL)
     logger.info("Loading diarization pipeline (CAM++) on %s", actual_device)
     _diarize_pipeline = AutoModel(
         model=None,
-        vad_model=VAD_MODEL_ID,
+        vad_model=str(vad_path),
         spk_model=str(spk_path),
         spk_mode="vad_segment",
         device=actual_device,
@@ -192,11 +193,12 @@ def _load_funasr(cfg: TranscriptionConfig) -> Any:
     model_path = _ensure_downloaded(cfg.model)
     spk_path = _ensure_downloaded(DIARIZATION_MODEL)
     punc_path = _ensure_downloaded(PUNCTUATION_MODEL)
+    vad_path = _ensure_downloaded(VAD_MODEL)
     logger.info("Loading FunASR model %s on %s (+CAM++)", cfg.model, device)
     _funasr_pipeline = AutoModel(
         model=str(model_path),
         device=device,
-        vad_model=VAD_MODEL_ID,
+        vad_model=str(vad_path),
         punc_model=str(punc_path),
         spk_model=str(spk_path),
         spk_mode="vad_segment",
