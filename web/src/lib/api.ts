@@ -10,6 +10,9 @@ import type {
   SourceFacetsPatch,
   AsrModelDownloadResponse,
   AsrModel,
+  ModelDownloadResponse,
+  ModelInfo,
+  SyncResponse,
   ArtifactType,
   Artifact,
   PreviewResponse,
@@ -341,6 +344,20 @@ export class ModelsClient {
       body: JSON.stringify({ model_name: modelName }),
     });
   }
+
+  listModels(opts?: { signal?: AbortSignal }) {
+    return this.request<ModelInfo[]>(this.baseUrl, "/models", opts);
+  }
+
+  downloadModel(specId: string) {
+    return this.request<ModelDownloadResponse>(this.baseUrl, `/models/${specId}/download`, {
+      method: "POST",
+    });
+  }
+
+  syncModels() {
+    return this.request<SyncResponse>(this.baseUrl, "/models/sync", { method: "POST" });
+  }
 }
 
 // ─── ApiClient interface ──────────────────────────────────────────────────────
@@ -371,6 +388,9 @@ export interface ApiClient {
   deleteJob(jobId: string): Promise<void | undefined>;
   listAsrModels(opts?: { signal?: AbortSignal }): Promise<AsrModel[] | undefined>;
   downloadAsrModel(modelName: string): Promise<AsrModelDownloadResponse | undefined>;
+  listModels(opts?: { signal?: AbortSignal }): Promise<ModelInfo[] | undefined>;
+  downloadModel(specId: string): Promise<ModelDownloadResponse | undefined>;
+  syncModels(): Promise<SyncResponse | undefined>;
   getConversation(listId: string, opts?: { signal?: AbortSignal; before?: string; limit?: number }): Promise<GetConversationResponse | undefined>;
   deleteConversation(listId: string): Promise<void | undefined>;
   auth: {
@@ -429,6 +449,9 @@ export function createApiClient(baseUrl?: string): ApiClient {
     deleteJob: (id) => jobs.deleteJob(id),
     listAsrModels: (opts) => models.listAsrModels(opts),
     downloadAsrModel: (modelName) => models.downloadAsrModel(modelName),
+    listModels: (opts) => models.listModels(opts),
+    downloadModel: (specId) => models.downloadModel(specId),
+    syncModels: () => models.syncModels(),
     getConversation: (listId, opts) => conversations.getConversation(listId, opts),
     deleteConversation: (listId) => conversations.deleteConversation(listId),
     auth,

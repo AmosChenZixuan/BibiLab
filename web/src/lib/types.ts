@@ -175,6 +175,31 @@ export type HealthResponse = {
   dependencies: Record<string, HealthDependency>;
 };
 
+export type ModelKind = "transcription" | "diarization" | "vad" | "embedding" | "reranker";
+
+export type ModelStatus = "present" | "missing";
+
+export type ModelInfo = {
+  id: string;
+  display_name: string;
+  kind: ModelKind;
+  size_mb: number;
+  status: ModelStatus;
+  required_by_config: boolean;
+};
+
+export type ModelDownloadResponse = {
+  job_id: string;
+  status: "queued";
+  spec_id: string;
+};
+
+export type SyncResponse = {
+  job_ids: string[];
+  synced: string[];
+  skipped: string[];
+};
+
 export type AsrModelKind = "transcription" | "diarization" | "vad";
 
 export type AsrModel = {

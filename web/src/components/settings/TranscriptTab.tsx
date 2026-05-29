@@ -9,7 +9,7 @@ import { Download } from "lucide-react";
 
 import { Select, SettingsField, Spinner } from "@/components/ui";
 
-function formatBundleSize(sizeMb: number | null): string {
+export function formatBundleSize(sizeMb: number | null): string {
   if (sizeMb == null) return "—";
   if (sizeMb >= 1000) return `${(sizeMb / 1000).toFixed(1)} GB`;
   return `${sizeMb} MB`;

@@ -81,7 +81,18 @@
     "language": "Language",
     "languageDesc": "Controls decoder accuracy. A wrong language setting can reduce transcript quality.",
     "modelDownloads": "Model Downloads",
-    "autoInstalls": "auto-installs on first ingest"
+    "autoInstalls": "auto-installs on first ingest",
+    "models": "Models",
+    "modelsTable": "Local model dependencies",
+    "requiredModels": "Required (%{count})",
+    "optionalModels": "Optional",
+    "syncRequired": "Sync required",
+    "syncingModels": "Syncing models...",
+    "kind": "Kind",
+    "size": "Size",
+    "status": "Status",
+    "download": "Download",
+    "noModels": "No models found"
   },
   "lab": {
     "header": {
