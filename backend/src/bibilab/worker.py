@@ -177,6 +177,11 @@ class WorkerLoop:
         meta_raw = _parse_job_meta(job)
         spec_id = meta_raw.get("model_name", "")
 
+        if not spec_id:
+            logger.error("Model download job %s missing model_name in meta", job_id)
+            await update_job_status(job_id, JobStatus.FAILED.value, error="missing model_name in job meta")
+            return
+
         try:
             await update_job_status(job_id, JobStatus.DOWNLOADING.value, progress=10)
             await asyncio.to_thread(ensure, spec_id)

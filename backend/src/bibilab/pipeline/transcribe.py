@@ -66,7 +66,6 @@ def _load_funasr(cfg: TranscriptionConfig) -> Any:
     vad_path = ensure(VAD_SPEC_ID)
 
     if cfg.model == "large-v3":
-        ensure("large-v3")
         automodel_kwargs = {"model": "Whisper-large-v3", "hub": "openai"}
     else:
         model_path = ensure(cfg.model)

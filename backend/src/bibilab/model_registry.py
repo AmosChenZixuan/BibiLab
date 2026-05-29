@@ -169,7 +169,10 @@ def _download_modelscope(spec: ModelSpec, target: Path) -> None:
         shutil.rmtree(tmp, ignore_errors=True)
         raise
     shutil.rmtree(target, ignore_errors=True)
-    tmp.rename(target)
+    try:
+        tmp.rename(target)
+    except OSError as exc:
+        raise RuntimeError(f"atomic rename failed for {spec.id}: {exc}") from exc
     logger.info("Model downloaded to %s", target)
 
 
@@ -196,7 +199,10 @@ def _download_http_files(spec: ModelSpec, target: Path) -> None:
         shutil.rmtree(tmp, ignore_errors=True)
         raise
     shutil.rmtree(target, ignore_errors=True)
-    tmp.rename(target)
+    try:
+        tmp.rename(target)
+    except OSError as exc:
+        raise RuntimeError(f"atomic rename failed for {spec.id}: {exc}") from exc
     logger.info("Model downloaded to %s", target)
 
 
@@ -216,7 +222,7 @@ def _download_whisper_warp(spec: ModelSpec, target: Path) -> None:
         logger.exception("Whisper large-v3 download failed")
         raise
     if not (target / "large-v3.pt").exists():
-        raise RuntimeError("Whisper large-v3 download failed: checkpoint not found at %s", target)
+        raise RuntimeError(f"Whisper large-v3 download failed: checkpoint not found at {target}")
     logger.info("Whisper large-v3 download complete → %s", target)
 
 
@@ -251,6 +257,9 @@ def ensure(spec_id: str) -> Path:
             _download_whisper_warp(spec, target)
         else:
             raise ValueError(f"Unknown backend {spec.backend!r} for {spec_id!r}")
+
+        if not _integrity_ok(spec):
+            raise RuntimeError(f"download completed but integrity check failed for {spec_id!r}")
 
     return target
 
