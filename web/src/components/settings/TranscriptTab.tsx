@@ -4,7 +4,7 @@ import { Link } from "react-router-dom";
 import { useLanguage } from "@/app/LanguageContext";
 import { useJobActivity } from "@/components/jobs/JobActivityProvider";
 import { api } from "@/lib/api";
-import type { AsrModel, BibilabConfig, HealthDependency } from "@/lib/types";
+import type { BibilabConfig, HealthDependency, ModelInfo } from "@/lib/types";
 
 import { Select, SettingsField } from "@/components/ui";
 
@@ -18,7 +18,7 @@ export function TranscriptTab({ config, dependencies, onBlur }: TranscriptTabPro
   const { t } = useLanguage();
   const { dismissJob, getJobs } = useJobActivity();
   const [localTranscription, setLocalTranscription] = useState(config.transcription);
-  const [models, setModels] = useState<AsrModel[]>([]);
+  const [models, setModels] = useState<ModelInfo[]>([]);
   const modelId = useId();
   const deviceId = useId();
   const languageId = useId();
@@ -29,7 +29,7 @@ export function TranscriptTab({ config, dependencies, onBlur }: TranscriptTabPro
 
   const refreshModels = useCallback(async (signal?: AbortSignal) => {
     try {
-      const nextModels = await api.listAsrModels({ signal });
+      const nextModels = await api.listModels({ signal });
       setModels(nextModels ?? []);
     } catch (err) {
       if (err instanceof Error && err.name === "AbortError") return;
@@ -61,7 +61,7 @@ export function TranscriptTab({ config, dependencies, onBlur }: TranscriptTabPro
   }
 
   const installedTranscriptionModels = useMemo(
-    () => models.filter((m) => m.kind === "transcription" && m.installed),
+    () => models.filter((m) => m.kind === "transcription" && m.status === "present"),
     [models],
   );
 
@@ -92,7 +92,7 @@ export function TranscriptTab({ config, dependencies, onBlur }: TranscriptTabPro
               </option>
             ) : (
               installedTranscriptionModels.map((model) => (
-                <option key={model.name} value={model.name}>
+                <option key={model.id} value={model.id}>
                   {model.display_name}
                 </option>
               ))

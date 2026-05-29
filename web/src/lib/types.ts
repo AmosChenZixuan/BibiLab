@@ -201,18 +201,6 @@ export type SyncResponse = {
   skipped: string[];
 };
 
-export type AsrModelKind = "transcription" | "diarization" | "vad";
-
-export type AsrModel = {
-  name: string;
-  display_name: string;
-  kind: AsrModelKind;
-  installed: boolean;
-  path: string | null;
-  selected: boolean;
-  size_mb: number;
-};
-
 export type OverviewDownload = {
   filename: string;
   content: string;

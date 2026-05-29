@@ -34,7 +34,7 @@ vi.mock("../lib/api", () => {
         embedding_model: { status: "ok", message: "" },
       },
     }),
-    listAsrModels: vi.fn().mockResolvedValue([]),
+    listModels: vi.fn().mockResolvedValue([]),
   };
   return {
     createApiClient: () => mockApi,

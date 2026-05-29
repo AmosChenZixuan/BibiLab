@@ -3,13 +3,11 @@ import logging
 import os
 import threading
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
 logger = logging.getLogger(__name__)
-
-AsrModelKind = Literal["transcription", "diarization", "vad"]
 
 
 def bibilab_home() -> Path:

@@ -13,7 +13,6 @@ from bibilab.config import bibilab_home, load_config
 from bibilab.db import bootstrap_db, get_db
 from bibilab.pipeline.chat_runs import get_chat_run_registry
 from bibilab.routers.artifacts import router as artifacts_router
-from bibilab.routers.asr import router as asr_router
 from bibilab.routers.auth import router as auth_router
 from bibilab.routers.chat import router as chat_router
 from bibilab.routers.config_router import router as config_router
@@ -134,7 +133,6 @@ def create_app(*, start_worker: bool = True) -> FastAPI:
     app.include_router(chat_router)
     app.include_router(proxy_router)
     app.include_router(sources_router)
-    app.include_router(asr_router)
     app.include_router(models_router)
 
     if web_dist.joinpath("index.html").exists():

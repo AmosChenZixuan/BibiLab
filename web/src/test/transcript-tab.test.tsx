@@ -9,10 +9,10 @@ import { JobActivityProvider } from "@/components/jobs/JobActivityProvider";
 
 vi.mock("../lib/api", () => {
   const mockApi = {
-    listAsrModels: vi.fn().mockResolvedValue([
-      { name: "large-v3", display_name: "Faster Whisper large-v3", kind: "transcription", installed: true, path: "/models/asr/large-v3/large-v3.pt", selected: true, size_mb: 3000 },
-      { name: "sensevoice-small", display_name: "SenseVoice Small", kind: "transcription", installed: false, path: null, selected: false, size_mb: 936 },
-      { name: "cam++", display_name: "CAM++ (Speaker Diarization)", kind: "diarization", installed: false, path: null, selected: false, size_mb: 28 },
+    listModels: vi.fn().mockResolvedValue([
+      { id: "large-v3", display_name: "Faster Whisper large-v3", kind: "transcription", status: "present", required_by_config: true, path: "/models/asr/large-v3/large-v3.pt", size_mb: 3000 },
+      { id: "sensevoice-small", display_name: "SenseVoice Small", kind: "transcription", status: "missing", required_by_config: false, path: null, size_mb: 936 },
+      { id: "cam++", display_name: "CAM++ (Speaker Diarization)", kind: "diarization", status: "missing", required_by_config: true, path: null, size_mb: 28 },
     ]),
     listJobs: vi.fn().mockResolvedValue([]),
   };

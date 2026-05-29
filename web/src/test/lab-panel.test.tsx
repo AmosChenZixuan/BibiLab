@@ -32,7 +32,7 @@ vi.mock("@/lib/api", () => ({
     createList: vi.fn(),
     generateOverview: vi.fn(),
     putConfig: vi.fn(),
-    listAsrModels: vi.fn(),
+    listModels: vi.fn(),
     listArtifacts: vi.fn().mockResolvedValue([]),
     getArtifactContent: vi.fn().mockResolvedValue({ content: "# Study Guide\n\nContent here" }),
   },

@@ -276,9 +276,9 @@ describe("home page", () => {
         });
       }
 
-      if (url.endsWith("/api/models/asr") && method === "GET") {
+      if (url.endsWith("/api/models") && method === "GET") {
         return Response.json([
-          { name: "large-v3", display_name: "Faster Whisper large-v3", kind: "transcription", installed: true, path: "/tmp/large-v3", selected: true, size_mb: 3000 },
+          { id: "large-v3", display_name: "Faster Whisper large-v3", kind: "transcription", status: "present", required_by_config: true, path: "/tmp/large-v3", size_mb: 3000 },
         ]);
       }
 

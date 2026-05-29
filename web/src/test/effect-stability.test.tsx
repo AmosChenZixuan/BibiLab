@@ -22,8 +22,8 @@ import type { BibilabConfig, HealthDependency } from "@/lib/types";
 
 vi.mock("@/lib/api", () => {
   const mockApi = {
-    listAsrModels: vi.fn().mockResolvedValue([
-      { name: "base", display_name: "Base", kind: "transcription", installed: true, path: "/models/base", selected: true, size_mb: 1 },
+    listModels: vi.fn().mockResolvedValue([
+      { id: "base", display_name: "Base", kind: "transcription", status: "present", required_by_config: true, path: "/models/base", size_mb: 1 },
     ]),
     listJobs: vi.fn().mockResolvedValue([]),
   };
@@ -113,7 +113,7 @@ test("modal focus-trap effect does not re-run on re-render with same open state"
  */
 test("transcript tab refreshModels effect fires only on mount", async () => {
   const { api } = await import("@/lib/api");
-  const listAsrModelsSpy = vi.spyOn(api, "listAsrModels");
+  const listModelsSpy = vi.spyOn(api, "listModels");
 
   const { rerender } = render(
     <MemoryRouter>
@@ -127,7 +127,7 @@ test("transcript tab refreshModels effect fires only on mount", async () => {
 
   // Wait for the initial effect to fire
   await screen.findByRole("option", { name: /base/i });
-  const initialCallCount = listAsrModelsSpy.mock.calls.length;
+  const initialCallCount = listModelsSpy.mock.calls.length;
   expect(initialCallCount).toBeGreaterThanOrEqual(1);
 
   // Re-render with identical props — effect should NOT fire again
@@ -146,7 +146,7 @@ test("transcript tab refreshModels effect fires only on mount", async () => {
 
   // If refreshModels is memoized with proper deps, the API call count
   // should not increase on re-render
-  expect(listAsrModelsSpy.mock.calls.length).toBe(initialCallCount);
+  expect(listModelsSpy.mock.calls.length).toBe(initialCallCount);
 });
 
 // ─── Settings tab sync-from-props stability ──────────────────────────────────

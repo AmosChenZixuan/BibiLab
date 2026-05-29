@@ -8,7 +8,6 @@ import type {
   Source,
   SourceContent,
   SourceFacetsPatch,
-  AsrModel,
   ModelDownloadResponse,
   ModelInfo,
   SyncResponse,
@@ -333,10 +332,6 @@ export class AuthClient {
 export class ModelsClient {
   constructor(private readonly baseUrl: string, private readonly request: RequestFn) {}
 
-  listAsrModels(opts?: { signal?: AbortSignal }) {
-    return this.request<AsrModel[]>(this.baseUrl, "/models/asr", opts);
-  }
-
   listModels(opts?: { signal?: AbortSignal }) {
     return this.request<ModelInfo[]>(this.baseUrl, "/models", opts);
   }
@@ -378,7 +373,6 @@ export interface ApiClient {
   getHealth(opts?: { signal?: AbortSignal }): Promise<HealthResponse | undefined>;
   listJobs(opts?: { signal?: AbortSignal }): Promise<Job[] | undefined>;
   deleteJob(jobId: string): Promise<void | undefined>;
-  listAsrModels(opts?: { signal?: AbortSignal }): Promise<AsrModel[] | undefined>;
   listModels(opts?: { signal?: AbortSignal }): Promise<ModelInfo[] | undefined>;
   downloadModel(specId: string): Promise<ModelDownloadResponse | undefined>;
   syncModels(): Promise<SyncResponse | undefined>;
@@ -438,7 +432,6 @@ export function createApiClient(baseUrl?: string): ApiClient {
     getHealth: (opts) => health.getHealth(opts),
     listJobs: (opts) => jobs.listJobs(opts),
     deleteJob: (id) => jobs.deleteJob(id),
-    listAsrModels: (opts) => models.listAsrModels(opts),
     listModels: (opts) => models.listModels(opts),
     downloadModel: (specId) => models.downloadModel(specId),
     syncModels: () => models.syncModels(),
