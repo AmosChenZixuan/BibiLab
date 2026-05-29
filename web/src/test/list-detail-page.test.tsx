@@ -153,7 +153,6 @@ vi.mock("../lib/api", () => {
     createList: vi.fn(),
     generateOverview: vi.fn(),
     putConfig: vi.fn(),
-    downloadAsrModel: vi.fn(),
     listAsrModels: vi.fn(),
     listArtifacts: vi.fn().mockResolvedValue([]),
     getConversation: vi.fn().mockResolvedValue({ conversation: null, messages: [] }),

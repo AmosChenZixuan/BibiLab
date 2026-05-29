@@ -10,3 +10,9 @@ export function formatDuration(seconds: number): string {
   const s = seconds % 60;
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
+
+export function formatBundleSize(sizeMb: number | null): string {
+  if (sizeMb == null) return "—";
+  if (sizeMb >= 1000) return `${(sizeMb / 1000).toFixed(1)} GB`;
+  return `${sizeMb} MB`;
+}

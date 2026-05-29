@@ -14,6 +14,7 @@ class ModelInfo(BaseModel):
     size_mb: int
     status: ModelStatus
     required_by_config: bool
+    path: str | None = None
 
 
 class ModelDownloadResponse(BaseModel):

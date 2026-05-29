@@ -120,7 +120,7 @@ describe("app frame", () => {
     expect(await screen.findByTitle("Unavailable")).toBeInTheDocument();
   });
 
-  test("shows EN/ZH language toggle button", async () => {
+  test("does not render a navbar language toggle", async () => {
     renderFrame({
       overall: "ok",
       dependencies: {
@@ -129,7 +129,8 @@ describe("app frame", () => {
       },
     });
 
-    expect(await screen.findByLabelText(/language/i)).toBeInTheDocument();
+    expect(await screen.findByLabelText(/settings/i)).toBeInTheDocument();
+    expect(screen.queryByLabelText(/^language$/i)).not.toBeInTheDocument();
   });
 
   test("does not reserve navbar space for a jobs control", async () => {

@@ -186,6 +186,7 @@ export type ModelInfo = {
   size_mb: number;
   status: ModelStatus;
   required_by_config: boolean;
+  path: string | null;
 };
 
 export type ModelDownloadResponse = {
@@ -210,12 +211,6 @@ export type AsrModel = {
   path: string | null;
   selected: boolean;
   size_mb: number;
-};
-
-export type AsrModelDownloadResponse = {
-  job_id: string;
-  status: "queued";
-  model_name: string;
 };
 
 export type OverviewDownload = {

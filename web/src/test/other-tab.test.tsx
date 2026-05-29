@@ -46,41 +46,31 @@ describe("other tab", () => {
     expect(screen.getByLabelText(/worker concurrency/i)).toBeInTheDocument();
   });
 
-  test("shows ffmpeg ok indicator when installed", () => {
+  test("shows ffmpeg label and install path when installed", () => {
     renderTab();
 
     expect(screen.getByText(/^ffmpeg$/i)).toBeInTheDocument();
-    expect(screen.getByTitle(/ffmpeg installed/i)).toBeInTheDocument();
+    expect(screen.getByText(/\/usr\/bin\/ffmpeg/i)).toBeInTheDocument();
   });
 
-  test("shows embedding model install path when ready", () => {
+  test("does not surface embedding or reranker rows (moved to Models tab)", () => {
     renderTab();
 
-    expect(screen.getByText(/^Embedding Model$/i)).toBeInTheDocument();
-    expect(screen.getByText(/\/home\/test\/\.bibilab\/chroma\/onnx\/model\.onnx/i)).toBeInTheDocument();
+    expect(screen.queryByText(/^Embedding Model$/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/^Reranker Model$/i)).not.toBeInTheDocument();
   });
 
-  test("shows impact messaging for degraded and blocking dependencies", () => {
-    renderTab({
-      dependencies: {
-        ...healthDeps,
-        embedding_model: {
-          status: "error",
-          message:
-            "Embedding model not found at /path/onnx/model.onnx. It downloads automatically on the first pipeline run (~50 MB).",
-        },
-      },
-    });
+  test("shows impact messaging for backend and ffmpeg", () => {
+    renderTab();
 
-    expect(screen.getByText(/first processing run downloads embeddings before indexing/i)).toBeInTheDocument();
     expect(screen.getByText(/backend is offline, the web app cannot load or save configuration/i)).toBeInTheDocument();
     expect(screen.getByText(/without ffmpeg, media audio cannot be extracted/i)).toBeInTheDocument();
   });
 
-  test("shows ffmpeg install path when installed", () => {
+  test("renders interface language selector", () => {
     renderTab();
 
-    expect(screen.getByText(/\/usr\/bin\/ffmpeg/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/interface language/i)).toBeInTheDocument();
   });
 
   test("does not render a session cookie field", () => {

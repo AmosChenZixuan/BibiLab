@@ -35,7 +35,6 @@ vi.mock("../lib/api", () => {
       },
     }),
     listAsrModels: vi.fn().mockResolvedValue([]),
-    downloadAsrModel: vi.fn(),
   };
   return {
     createApiClient: () => mockApi,
@@ -82,11 +81,12 @@ function renderPageAt(entry: string) {
 }
 
 describe("settings page", () => {
-  test("renders three tabs", async () => {
+  test("renders four tabs", async () => {
     renderPage();
 
-    expect(await screen.findByRole("tab", { name: /llm/i })).toBeInTheDocument();
+    expect(await screen.findByRole("tab", { name: /ai service/i })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: /transcript/i })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /local models/i })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: /other/i })).toBeInTheDocument();
   });
 
@@ -128,8 +128,9 @@ describe("settings page", () => {
   test("tab health indicators use the same tiers as the navbar health model", async () => {
     renderPage();
 
-    expect(await screen.findByRole("tab", { name: /llm/i })).toHaveAttribute("title", "Healthy");
+    expect(await screen.findByRole("tab", { name: /ai service/i })).toHaveAttribute("title", "Healthy");
     expect(screen.getByRole("tab", { name: /transcript/i })).toHaveAttribute("title", "Healthy");
+    expect(screen.getByRole("tab", { name: /local models/i })).toHaveAttribute("title", "Healthy");
     expect(screen.getByRole("tab", { name: /other/i })).toHaveAttribute("title", "Healthy");
   });
 
@@ -175,7 +176,7 @@ describe("settings page", () => {
     fireEvent.change(modelInput, { target: { value: "gpt-4.1" } });
     fireEvent.blur(modelInput);
 
-    expect(await screen.findByRole("tab", { name: /llm/i })).toHaveAttribute("title", "Unavailable");
+    expect(await screen.findByRole("tab", { name: /ai service/i })).toHaveAttribute("title", "Unavailable");
     expect(api.getHealth).toHaveBeenCalledTimes(2);
   });
 

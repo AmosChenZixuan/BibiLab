@@ -1,6 +1,6 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
+import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
+import { MemoryRouter } from "react-router-dom";
 
 import { LanguageProvider } from "@/app/LanguageContext";
 import { TranscriptTab } from "@/components/settings/TranscriptTab";
@@ -14,7 +14,6 @@ vi.mock("../lib/api", () => {
       { name: "sensevoice-small", display_name: "SenseVoice Small", kind: "transcription", installed: false, path: null, selected: false, size_mb: 936 },
       { name: "cam++", display_name: "CAM++ (Speaker Diarization)", kind: "diarization", installed: false, path: null, selected: false, size_mb: 28 },
     ]),
-    downloadAsrModel: vi.fn(),
     listJobs: vi.fn().mockResolvedValue([]),
   };
   return {
@@ -23,8 +22,6 @@ vi.mock("../lib/api", () => {
     setCurrentLang: vi.fn(),
   };
 });
-
-import { api } from "@/lib/api";
 
 const baseConfig: BibilabConfig = {
   accounts: { bilibili: { cookie: "", last_verified: "", username: "", avatar_url: "" } },
@@ -47,13 +44,15 @@ const healthDeps: Record<string, HealthDependency> = {
   cuda: { status: "unavailable", message: "CUDA not available; CPU will be used" },
 };
 
-function renderTab() {
+function renderTab(config: BibilabConfig = baseConfig) {
   return render(
-    <JobActivityProvider>
-      <LanguageProvider>
-        <TranscriptTab config={baseConfig} dependencies={healthDeps} onBlur={() => {}} />
-      </LanguageProvider>
-    </JobActivityProvider>,
+    <MemoryRouter>
+      <JobActivityProvider>
+        <LanguageProvider>
+          <TranscriptTab config={config} dependencies={healthDeps} onBlur={() => {}} />
+        </LanguageProvider>
+      </JobActivityProvider>
+    </MemoryRouter>,
   );
 }
 
@@ -64,27 +63,6 @@ describe("transcript tab", () => {
     expect(screen.getByLabelText(/device/i)).toBeInTheDocument();
   });
 
-  test("shows installed path for downloaded model", async () => {
-    renderTab();
-
-    expect(await screen.findByRole("table")).toBeInTheDocument();
-    expect(await screen.findByRole("option", { name: /Faster Whisper large-v3/i })).toBeInTheDocument();
-    expect(await screen.findByText(/\/models\/asr\/large-v3\/large-v3\.pt/i)).toBeInTheDocument();
-  });
-
-  test("shows download button for missing model", async () => {
-    renderTab();
-
-    const buttons = await screen.findAllByRole("button", { name: /^download$/i });
-    expect(buttons.length).toBeGreaterThan(0);
-  });
-
-  test("shows impact messaging for cuda and missing models", async () => {
-    renderTab();
-
-    expect(screen.getByText(/cuda is unavailable, so transcription will run on cpu/i)).toBeInTheDocument();
-  });
-
   test("model dropdown only lists installed transcription models", async () => {
     renderTab();
 
@@ -92,18 +70,10 @@ describe("transcript tab", () => {
     expect(screen.queryByRole("option", { name: /sensevoice-small/i })).not.toBeInTheDocument();
   });
 
-  test("diarization shown as separate row with auto-install hint", async () => {
+  test("does not surface diarization row (moved to Local Models tab)", () => {
     renderTab();
 
-    expect(await screen.findByText(/speaker diarization/i)).toBeInTheDocument();
-    expect(screen.getByText(/auto-installs on first ingest/i)).toBeInTheDocument();
-  });
-
-  test("renders bundle sizes in download table", async () => {
-    renderTab();
-
-    expect(await screen.findByText("3.0 GB")).toBeInTheDocument();
-    expect(await screen.findByText("936 MB")).toBeInTheDocument();
+    expect(screen.queryByText(/speaker diarization/i)).not.toBeInTheDocument();
   });
 
   test("disables cuda when health reports it unavailable", () => {
@@ -112,34 +82,23 @@ describe("transcript tab", () => {
     expect(screen.getByRole("option", { name: "CUDA" })).toBeDisabled();
   });
 
-  test("shows inline progress for a tracked model download job", async () => {
-    vi.mocked(api.downloadAsrModel).mockResolvedValue({
-      job_id: "job-download",
-      status: "queued",
-      model_name: "sensevoice-small",
-    });
-    vi.mocked(api.listJobs)
-      .mockResolvedValueOnce([])
-      .mockResolvedValue([
-        {
-          id: "job-download",
-          type: "model_download",
-          status: "downloading",
-          progress: 32,
-          error: null,
-          created_at: "2026-03-31T20:00:00Z",
-          updated_at: "2026-03-31T20:01:00Z",
-          meta: { model_name: "sensevoice-small" },
-        },
-      ]);
-
+  test("shows impact messaging for cuda", () => {
     renderTab();
 
-    const downloadButtons = await screen.findAllByRole("button", { name: /^download$/i });
-    await userEvent.click(downloadButtons[0]);
+    expect(screen.getByText(/cuda is unavailable, so transcription will run on cpu/i)).toBeInTheDocument();
+  });
 
-    await waitFor(() => {
-      expect(screen.getByRole("status", { name: /downloading sensevoice-small/i })).toBeInTheDocument();
-    });
+  test("renames language label to transcription language", () => {
+    renderTab();
+
+    expect(screen.getByLabelText(/transcription language/i)).toBeInTheDocument();
+  });
+
+  test("does not render an inline model download table", async () => {
+    renderTab();
+
+    expect(await screen.findByRole("option", { name: /Faster Whisper large-v3/i })).toBeInTheDocument();
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^download$/i })).not.toBeInTheDocument();
   });
 });

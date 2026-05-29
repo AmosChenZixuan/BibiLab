@@ -8,7 +8,6 @@ import type {
   Source,
   SourceContent,
   SourceFacetsPatch,
-  AsrModelDownloadResponse,
   AsrModel,
   ModelDownloadResponse,
   ModelInfo,
@@ -338,13 +337,6 @@ export class ModelsClient {
     return this.request<AsrModel[]>(this.baseUrl, "/models/asr", opts);
   }
 
-  downloadAsrModel(modelName: string) {
-    return this.request<AsrModelDownloadResponse>(this.baseUrl, "/models/asr/download", {
-      method: "POST",
-      body: JSON.stringify({ model_name: modelName }),
-    });
-  }
-
   listModels(opts?: { signal?: AbortSignal }) {
     return this.request<ModelInfo[]>(this.baseUrl, "/models", opts);
   }
@@ -387,7 +379,6 @@ export interface ApiClient {
   listJobs(opts?: { signal?: AbortSignal }): Promise<Job[] | undefined>;
   deleteJob(jobId: string): Promise<void | undefined>;
   listAsrModels(opts?: { signal?: AbortSignal }): Promise<AsrModel[] | undefined>;
-  downloadAsrModel(modelName: string): Promise<AsrModelDownloadResponse | undefined>;
   listModels(opts?: { signal?: AbortSignal }): Promise<ModelInfo[] | undefined>;
   downloadModel(specId: string): Promise<ModelDownloadResponse | undefined>;
   syncModels(): Promise<SyncResponse | undefined>;
@@ -448,7 +439,6 @@ export function createApiClient(baseUrl?: string): ApiClient {
     listJobs: (opts) => jobs.listJobs(opts),
     deleteJob: (id) => jobs.deleteJob(id),
     listAsrModels: (opts) => models.listAsrModels(opts),
-    downloadAsrModel: (modelName) => models.downloadAsrModel(modelName),
     listModels: (opts) => models.listModels(opts),
     downloadModel: (specId) => models.downloadModel(specId),
     syncModels: () => models.syncModels(),

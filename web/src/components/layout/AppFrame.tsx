@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Settings, User } from "lucide-react";
-import { Languages } from "lucide-react";
 import { NavLink, Outlet } from "react-router-dom";
 
 import { BilibiliQrModal } from "@/components/auth/BilibiliQrModal";
@@ -20,7 +19,6 @@ export function AppFrame() {
   const [bilibiliUsername, setBilibiliUsername] = useState("");
   const [bilibiliAvatarUrl, setBilibiliAvatarUrl] = useState("");
   const [qrModalOpen, setQrModalOpen] = useState(false);
-  const { lang, setLang } = useLanguage();
   const [navElement, setNavElement] = useState<HTMLElement | null>(null);
 
   const deviceRef = useRef<string | undefined>();
@@ -126,24 +124,6 @@ export function AppFrame() {
                 className={`absolute bottom-1 right-1 size-2 rounded-full border-2 border-white/92 ${healthMeta.className}`}
               />
             </NavLink>
-
-            <button
-              type="button"
-              className="relative inline-flex h-9 w-9 items-center justify-center rounded-lg bg-transparent text-ink transition hover:bg-sky/10"
-              aria-label="Language"
-              title={t(lang === "en" ? "navbar.languageEn" : "navbar.languageZh")}
-              onClick={() => setLang(lang === "en" ? "zh" : "en")}
-            >
-              <span className="inline-flex size-4.5 items-center justify-center text-blue/70" aria-hidden="true">
-                <Languages className="size-4.5" />
-              </span>
-              <span
-                className="absolute bottom-0.5 right-0.5 inline-flex h-3.5 min-w-3.5 items-center justify-center rounded-full border-2 border-white/92 bg-white/96 px-1 text-xs leading-none font-bold text-blue/70"
-                aria-hidden="true"
-              >
-                {lang === "en" ? "EN" : "中"}
-              </span>
-            </button>
 
             <button
               type="button"

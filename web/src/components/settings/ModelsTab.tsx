@@ -1,57 +1,79 @@
-import { useEffect, useId, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Download } from "lucide-react";
 
 import { useLanguage } from "@/app/LanguageContext";
 import { api } from "@/lib/api";
-import type { ModelInfo } from "@/lib/types";
-import { Spinner, StatusChip, Button } from "@/components/ui";
-import { useJobActivity } from "@/components/jobs/JobActivityProvider";
-import { formatBundleSize } from "./TranscriptTab";
+import type { ModelInfo, ModelKind } from "@/lib/types";
+import { Spinner, Button } from "@/components/ui";
+import { useJobActivity, type JobActivityItem } from "@/components/jobs/JobActivityProvider";
+import { formatBundleSize } from "@/lib/utils";
 
 type ModelEntry = ModelInfo & { jobStatus?: "downloading" | "failed" | null };
 
+const TRANSCRIPTION_KINDS: ReadonlyArray<ModelKind> = ["transcription", "vad", "diarization"];
+const KIND_ORDER: Partial<Record<ModelKind, number>> = { transcription: 0, vad: 1, diarization: 2 };
+
+function mergeJobStatus(entries: ModelInfo[], modelJobs: JobActivityItem[]): ModelEntry[] {
+  return entries.map((m) => {
+    const activeJob = modelJobs.find(
+      (j) => "model_name" in j.job.meta && j.job.meta.model_name === m.id,
+    );
+    if (!activeJob || activeJob.isTerminal) return m;
+    if (activeJob.job.status === "failed" || activeJob.job.status === "needs_auth") {
+      return { ...m, jobStatus: "failed" };
+    }
+    return { ...m, jobStatus: "downloading" };
+  });
+}
+
+function sortTranscription(entries: ModelEntry[]): ModelEntry[] {
+  return [...entries].sort((a, b) => {
+    const k = (KIND_ORDER[a.kind] ?? 9) - (KIND_ORDER[b.kind] ?? 9);
+    if (k !== 0) return k;
+    return (b.required_by_config ? 1 : 0) - (a.required_by_config ? 1 : 0);
+  });
+}
+
 export function ModelsTab() {
   const { t } = useLanguage();
-  const [models, setModels] = useState<ModelEntry[]>([]);
+  const [models, setModels] = useState<ModelInfo[]>([]);
   const [syncing, setSyncing] = useState(false);
   const [downloading, setDownloading] = useState<string | null>(null);
   const { getJobs, trackJobs, dismissJob } = useJobActivity();
-  const tableId = useId();
 
-  const modelJobs = getJobs("model_download");
-
-  useEffect(() => {
-    let cancelled = false;
-    api.listModels().then((data) => {
-      if (!cancelled && data) setModels(data);
-    });
-    return () => { cancelled = true; };
+  const refreshModels = useCallback(async (signal?: AbortSignal) => {
+    try {
+      const data = await api.listModels({ signal });
+      if (data) setModels(data);
+    } catch (err) {
+      if (err instanceof Error && err.name === "AbortError") return;
+    }
   }, []);
 
-  // Refresh model list when model_download jobs reach terminal state
   useEffect(() => {
-    const terminalJobs = modelJobs.filter((j) => j.isTerminal);
-    if (terminalJobs.length === 0) return undefined;
+    const controller = new AbortController();
+    void refreshModels(controller.signal);
+    return () => controller.abort();
+  }, [refreshModels]);
 
-    api.listModels().then((data) => {
-      if (data) setModels(data);
-    });
-    for (const j of terminalJobs) dismissJob(j.job.id);
-    return undefined;
-  }, [modelJobs]);
+  const modelJobs = getJobs("model_download");
+  const terminalModelJobCount = modelJobs.filter((j) => j.isTerminal).length;
 
-  function mergeJobStatus(entries: ModelEntry[]): ModelEntry[] {
-    return entries.map((m) => {
-      const activeJob = modelJobs.find(
-        (j) => "model_name" in j.job.meta && j.job.meta.model_name === m.id
-      );
-      if (!activeJob || activeJob.isTerminal) return m;
-      if (activeJob.job.status === "failed" || activeJob.job.status === "needs_auth") {
-        return { ...m, jobStatus: "failed" };
-      }
-      return { ...m, jobStatus: "downloading" };
-    });
-  }
+  useEffect(() => {
+    if (terminalModelJobCount === 0) return;
+    const terminalIds = modelJobs.filter((j) => j.isTerminal).map((j) => j.job.id);
+    async function refreshAndDismiss() {
+      await refreshModels();
+      for (const id of terminalIds) dismissJob(id);
+    }
+    void refreshAndDismiss();
+  }, [modelJobs, terminalModelJobCount, dismissJob, refreshModels]);
+
+  const entries = mergeJobStatus(models, modelJobs);
+  const transcription = sortTranscription(entries.filter((m) => TRANSCRIPTION_KINDS.includes(m.kind)));
+  const embedding = entries.filter((m) => m.kind === "embedding");
+  const reranker = entries.filter((m) => m.kind === "reranker");
+  const missingRequired = entries.some((m) => m.required_by_config && m.status === "missing");
 
   async function handleDownload(specId: string) {
     setDownloading(specId);
@@ -73,95 +95,127 @@ export function ModelsTab() {
         for (let i = 0; i < resp.job_ids.length; i++) {
           trackJobs([{ id: resp.job_ids[i], producer: "model_download", label: resp.synced[i] ?? "" }]);
         }
-        const data = await api.listModels();
-        if (data) setModels(data);
+        await refreshModels();
       }
     } finally {
       setSyncing(false);
     }
   }
 
-  const entries = mergeJobStatus(models);
-  const requiredEntries = entries.filter((m) => m.required_by_config);
-  const optionalEntries = entries.filter((m) => !m.required_by_config);
+  if (entries.length === 0) {
+    return <p className="text-sm text-muted">{t("settings.noModels")}</p>;
+  }
 
   return (
-    <div className="grid gap-4">
+    <div className="grid gap-5">
       <div className="flex items-center justify-between">
-        <h3 className="text-sm font-semibold">{t("settings.requiredModels", { count: requiredEntries.length })}</h3>
-        <Button disabled={syncing} onClick={() => void handleSync()} size="sm" variant="primary">
-          {syncing ? <Spinner label={t("settings.syncingModels")} /> : t("settings.syncRequired")}
+        <h3 className="text-sm font-semibold">{t("settings.models")}</h3>
+        <Button disabled={syncing || !missingRequired} onClick={() => void handleSync()} size="sm" variant="primary">
+          {syncing ? <Spinner label={t("settings.installing")} /> : t("settings.installAll")}
         </Button>
       </div>
 
-      <table className="w-full text-sm" aria-label={t("settings.modelsTable")} id={tableId}>
-        <thead>
-          <tr className="text-left text-xs uppercase text-muted">
-            <th className="pb-2 font-medium">{t("settings.model")}</th>
-            <th className="pb-2 font-medium">{t("settings.kind")}</th>
-            <th className="pb-2 font-medium">{t("settings.size")}</th>
-            <th className="pb-2 font-medium">{t("settings.status")}</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-border">
-          {entries.length === 0 && (
-            <tr><td className="py-6 text-center text-muted" colSpan={5}>{t("settings.noModels")}</td></tr>
-          )}
-          {requiredEntries.map((m) => (
-            <ModelRow key={m.id} model={m} downloading={downloading} onDownload={(id) => void handleDownload(id)} />
-          ))}
-          {optionalEntries.length > 0 && requiredEntries.length > 0 && (
-            <tr className="border-none">
-              <td className="pb-1 pt-4 text-xs font-semibold text-muted" colSpan={5}>
-                {t("settings.optionalModels")}
-              </td>
-            </tr>
-          )}
-          {optionalEntries.map((m) => (
-            <ModelRow key={m.id} model={m} downloading={downloading} onDownload={(id) => void handleDownload(id)} />
-          ))}
-        </tbody>
-      </table>
+      <ModelSection
+        title={t("settings.kindTranscription")}
+        hint={t("settings.kindTranscriptionHint")}
+        entries={transcription}
+        downloading={downloading}
+        onDownload={handleDownload}
+      />
+      {embedding.length > 0 && (
+        <ModelSection
+          title={t("settings.kindEmbedding")}
+          entries={embedding}
+          downloading={downloading}
+          onDownload={handleDownload}
+        />
+      )}
+      {reranker.length > 0 && (
+        <ModelSection
+          title={t("settings.kindReranker")}
+          entries={reranker}
+          downloading={downloading}
+          onDownload={handleDownload}
+        />
+      )}
     </div>
   );
 }
 
-function ModelRow({
-  model,
-  downloading,
-  onDownload,
-}: {
+type SectionProps = {
+  title: string;
+  hint?: string;
+  entries: ModelEntry[];
+  downloading: string | null;
+  onDownload: (specId: string) => void;
+};
+
+function ModelSection({ title, hint, entries, downloading, onDownload }: SectionProps) {
+  if (entries.length === 0) return null;
+  return (
+    <div className="grid gap-2">
+      <p className="text-xs font-semibold uppercase tracking-widest text-muted">{title}</p>
+      {hint && <p className="text-sm text-muted">{hint}</p>}
+      <div className="overflow-hidden rounded-2xl border border-border bg-white/64">
+        {entries.map((m, i) => (
+          <ModelRow
+            key={m.id}
+            model={m}
+            downloading={downloading}
+            onDownload={onDownload}
+            isFirst={i === 0}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+type RowProps = {
   model: ModelEntry;
   downloading: string | null;
-  onDownload: (id: string) => void;
-}) {
+  onDownload: (specId: string) => void;
+  isFirst: boolean;
+};
+
+function ModelRow({ model, downloading, onDownload, isFirst }: RowProps) {
   const { t } = useLanguage();
   const isPresent = model.status === "present";
+  const isEngine = model.kind === "transcription";
+  const engineBadge = isEngine
+    ? model.required_by_config
+      ? t("settings.currentEngine")
+      : t("settings.alternateEngine")
+    : null;
 
   return (
-    <tr key={model.id}>
-      <td className="py-2 pr-4 font-medium">{model.display_name}</td>
-      <td className="py-2 pr-4 text-xs text-muted">{model.kind}</td>
-      <td className="py-2 pr-4 font-mono text-xs text-muted">{formatBundleSize(model.size_mb)}</td>
-      <td className="py-2">
+    <div className={`flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3 ${isFirst ? "" : "border-t border-border"}`}>
+      <div className="flex min-w-48 flex-1 items-baseline gap-2 flex-wrap">
+        <span className="text-sm font-semibold text-ink">{model.display_name}</span>
+        {engineBadge && <span className="text-xs text-muted">· {engineBadge}</span>}
+      </div>
+      <span className="font-mono text-xs text-muted whitespace-nowrap">{formatBundleSize(model.size_mb)}</span>
+      <div className="flex min-w-40 flex-1 items-center justify-end">
         {model.jobStatus === "downloading" ? (
           <Spinner label={t("common.downloading", { name: model.display_name })} />
         ) : model.jobStatus === "failed" ? (
           <span className="text-xs text-pink">{t("common.failed")}</span>
         ) : isPresent ? (
-          <StatusChip status="ok">{t("settings.ready")}</StatusChip>
+          <p className="text-right font-mono text-xs text-muted break-all" title={model.path ?? ""}>
+            {model.path ?? "—"}
+          </p>
         ) : (
-          <Button
+          <button
+            type="button"
+            className="inline-flex items-center justify-center text-sky disabled:opacity-50"
+            aria-label={t("common.download")}
             disabled={downloading === model.id}
             onClick={() => onDownload(model.id)}
-            size="sm"
-            variant="ghost"
           >
-            <Download className="mr-1 size-3.5" />
-            {t("settings.download")}
-          </Button>
+            <Download size={18} />
+          </button>
         )}
-      </td>
-    </tr>
+      </div>
+    </div>
   );
 }

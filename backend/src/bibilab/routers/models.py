@@ -6,6 +6,7 @@ from bibilab.config import BibilabConfig, get_config
 from bibilab.db import create_job
 from bibilab.model_registry import (
     _integrity_ok,
+    _target_dir,
     get_spec,
     list_specs,
     missing_required_models,
@@ -21,14 +22,16 @@ async def list_models(cfg: BibilabConfig = Depends(get_config)) -> list[ModelInf
     required_ids = {s.id for s in required_models(cfg)}
     out: list[ModelInfo] = []
     for spec in list_specs():
+        installed = _integrity_ok(spec)
         out.append(
             ModelInfo(
                 id=spec.id,
                 display_name=spec.display_name,
                 kind=spec.kind,
                 size_mb=spec.size_mb,
-                status="present" if _integrity_ok(spec) else "missing",
+                status="present" if installed else "missing",
                 required_by_config=spec.id in required_ids,
+                path=str(_target_dir(spec)) if installed else None,
             )
         )
     return out
@@ -43,7 +46,7 @@ async def download_model(spec_id: str) -> ModelDownloadResponse:
 
     job_id = await create_job(
         type="model_download",
-        meta={"spec_id": spec_id},
+        meta={"model_name": spec_id},
     )
     return ModelDownloadResponse(job_id=job_id, status="queued", spec_id=spec_id)
 
@@ -57,7 +60,7 @@ async def sync_models(cfg: BibilabConfig = Depends(get_config)) -> SyncResponse:
 
     for spec in required_models(cfg):
         if spec.id in missing:
-            job_id = await create_job(type="model_download", meta={"spec_id": spec.id})
+            job_id = await create_job(type="model_download", meta={"model_name": spec.id})
             job_ids.append(job_id)
             synced.append(spec.id)
         else:

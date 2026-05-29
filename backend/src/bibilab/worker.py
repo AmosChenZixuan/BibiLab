@@ -175,7 +175,7 @@ class WorkerLoop:
     async def _download_model_job(self, job: dict) -> None:
         job_id = job["id"]
         meta_raw = _parse_job_meta(job)
-        spec_id = meta_raw.get("spec_id") or meta_raw.get("model_name", "")
+        spec_id = meta_raw.get("model_name", "")
 
         try:
             await update_job_status(job_id, JobStatus.DOWNLOADING.value, progress=10)
