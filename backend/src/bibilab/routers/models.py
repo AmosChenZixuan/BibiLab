@@ -1,5 +1,7 @@
 """Model registry API — unified listing + download for all local model deps."""
 
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from bibilab.config import BibilabConfig, get_config
@@ -15,6 +17,7 @@ from bibilab.model_registry import (
 from bibilab.models.models import ModelDownloadResponse, ModelInfo, SyncResponse
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 @router.get("/models")
@@ -60,9 +63,12 @@ async def sync_models(cfg: BibilabConfig = Depends(get_config)) -> SyncResponse:
 
     for spec in required_models(cfg):
         if spec.id in missing:
-            job_id = await create_job(type="model_download", meta={"model_name": spec.id})
-            job_ids.append(job_id)
-            synced.append(spec.id)
+            try:
+                job_id = await create_job(type="model_download", meta={"model_name": spec.id})
+                job_ids.append(job_id)
+                synced.append(spec.id)
+            except Exception:
+                logger.exception("Failed to create download job for %s", spec.id)
         else:
             skipped.append(spec.id)
 

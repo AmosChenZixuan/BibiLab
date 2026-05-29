@@ -77,22 +77,6 @@ async def test_llm_health_requires_base_url():
 
 @pytest.mark.asyncio
 async def test_llm_health_validates_openai_compatible_response_shape():
-    class DummyResponse:
-        status_code = 200
-
-        def json(self):
-            return {"unexpected": []}
-
-    class DummyClient:
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, exc_type, exc, tb):
-            return None
-
-        async def get(self, url, headers=None, follow_redirects=True):
-            return DummyResponse()
-
     cfg = type(
         "Cfg",
         (),
@@ -106,10 +90,22 @@ async def test_llm_health_validates_openai_compatible_response_shape():
         },
     )()
 
-    with patch("bibilab.routers.health.httpx.AsyncClient", return_value=DummyClient()):
-        result = await _check_llm(cfg)
+    result = await _check_llm(cfg)
 
     assert result == {"status": "ok", "message": "http://localhost:8000/v1"}
+
+
+@pytest.mark.asyncio
+async def test_llm_health_requires_model():
+    cfg = type(
+        "Cfg",
+        (),
+        {"ai": AIConfig(protocol="openai", model="", api_key="sk-test", base_url="http://localhost:8000/v1")},
+    )()
+
+    result = await _check_llm(cfg)
+
+    assert result == {"status": "error", "message": "model not configured"}
 
 
 def test_is_embedding_model_downloaded_false_when_absent(tmp_path: Path):

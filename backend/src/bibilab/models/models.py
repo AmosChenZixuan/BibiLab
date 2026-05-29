@@ -4,13 +4,15 @@ from typing import Literal
 
 from pydantic import BaseModel
 
+from bibilab.model_registry import ModelKind
+
 ModelStatus = Literal["present", "missing"]
 
 
 class ModelInfo(BaseModel):
     id: str
     display_name: str
-    kind: str
+    kind: ModelKind
     size_mb: int
     status: ModelStatus
     required_by_config: bool

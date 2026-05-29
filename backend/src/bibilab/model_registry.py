@@ -7,7 +7,6 @@ and atomic .partial → rename to prevent concurrent-download corruption.
 from __future__ import annotations
 
 import logging
-import os
 import shutil
 import threading
 from dataclasses import dataclass
@@ -30,9 +29,13 @@ class ModelSpec:
     backend: Backend
     size_mb: int
     integrity_files: list[str]  # rel paths within target dir that must exist post-download
-    local_subdir: str  # relative to models_dir(), except whisper_warp uses XDG_CACHE_HOME
+    local_subdir: str  # relative to models_dir(), except whisper_warp uses ~/.cache/whisper
     modelscope_id: str | None = None
     http_files: list[tuple[str, str]] | None = None  # [(url, rel_path), ...]
+
+    def __post_init__(self) -> None:
+        if not self.integrity_files:
+            raise ValueError(f"{self.id!r}: integrity_files must be non-empty")
 
 
 # ---- Spec definitions ------------------------------------------------
@@ -138,8 +141,8 @@ def get_spec(spec_id: str) -> ModelSpec:
 
 def _target_dir(spec: ModelSpec) -> Path:
     if spec.backend == "whisper_warp":
-        cache_root = os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")
-        return Path(cache_root) / "whisper"
+        # openai-whisper hardcodes ~/.cache/whisper/ — must match exactly
+        return Path.home() / ".cache" / "whisper"
     return models_dir(spec.local_subdir)
 
 
@@ -172,6 +175,7 @@ def _download_modelscope(spec: ModelSpec, target: Path) -> None:
     try:
         tmp.rename(target)
     except OSError as exc:
+        shutil.rmtree(tmp, ignore_errors=True)
         raise RuntimeError(f"atomic rename failed for {spec.id}: {exc}") from exc
     logger.info("Model downloaded to %s", target)
 
@@ -196,12 +200,14 @@ def _download_http_files(spec: ModelSpec, target: Path) -> None:
                         f.write(chunk)
     except Exception:
         logger.exception("HTTP download failed for %s", spec.id)
-        shutil.rmtree(tmp, ignore_errors=True)
         raise
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
     shutil.rmtree(target, ignore_errors=True)
     try:
         tmp.rename(target)
     except OSError as exc:
+        shutil.rmtree(tmp, ignore_errors=True)
         raise RuntimeError(f"atomic rename failed for {spec.id}: {exc}") from exc
     logger.info("Model downloaded to %s", target)
 
@@ -270,10 +276,12 @@ def ensure(spec_id: str) -> Path:
 def required_models(cfg: BibilabConfig) -> list[ModelSpec]:
     """Return model specs required under the current config."""
     specs: list[ModelSpec] = []
-    try:
-        specs.append(get_spec(cfg.transcription.model))
-    except ValueError:
-        logger.warning("Unknown transcription model %r — skipping in required-models check", cfg.transcription.model)
+    model = cfg.transcription.model
+    if model is not None:
+        try:
+            specs.append(get_spec(model))
+        except ValueError:
+            logger.warning("Unknown transcription model %r — skipping in required-models check", model)
     specs.append(get_spec(VAD_SPEC_ID))
     specs.append(get_spec(DIARIZATION_SPEC_ID))
     specs.append(get_spec(EMBEDDING_SPEC_ID))
