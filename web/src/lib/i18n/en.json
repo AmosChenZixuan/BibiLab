@@ -70,7 +70,6 @@
     "interfaceLanguageEn": "English",
     "interfaceLanguageZh": "Chinese",
     "models": "Local Models",
-    "modelsTable": "Local model dependencies",
     "installAll": "Install All",
     "installing": "Installing...",
     "manageModels": "Go to Local Models",
@@ -80,7 +79,6 @@
     "kindReranker": "Reranker",
     "currentEngine": "Current",
     "alternateEngine": "Alternate",
-    "size": "Size",
     "noModels": "No models found"
   },
   "lab": {

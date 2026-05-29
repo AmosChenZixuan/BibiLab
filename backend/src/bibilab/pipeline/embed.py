@@ -238,10 +238,6 @@ def _rrf_fuse(
     return [chunk for _, chunk in scored]
 
 
-_MODEL_REPO = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
-_EMBEDDING_DIM = 384
-
-
 class ONNXMultilingualEmbedding:
     """ChromaDB-compatible embedding function using a multilingual ONNX model.
 

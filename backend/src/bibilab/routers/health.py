@@ -22,7 +22,7 @@ async def _check_llm(cfg: BibilabConfig) -> dict:
         return {"status": "error", "message": "base_url not configured"}
     if not model:
         return {"status": "error", "message": "model not configured"}
-    return {"status": "ok", "message": base_url}
+    return {"status": "configured", "message": base_url}
 
 
 def _check_asr(cfg: BibilabConfig) -> dict:

@@ -70,7 +70,6 @@
     "interfaceLanguageEn": "English",
     "interfaceLanguageZh": "中文",
     "models": "本地模型",
-    "modelsTable": "本地模型依赖",
     "installAll": "一键安装",
     "installing": "安装中...",
     "manageModels": "前往「本地模型」",
@@ -80,7 +79,6 @@
     "kindReranker": "重排",
     "currentEngine": "当前选用",
     "alternateEngine": "备选",
-    "size": "大小",
     "noModels": "未找到模型"
   },
   "lab": {

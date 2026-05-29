@@ -92,7 +92,7 @@ async def test_llm_health_validates_openai_compatible_response_shape():
 
     result = await _check_llm(cfg)
 
-    assert result == {"status": "ok", "message": "http://localhost:8000/v1"}
+    assert result == {"status": "configured", "message": "http://localhost:8000/v1"}
 
 
 @pytest.mark.asyncio
