@@ -182,15 +182,10 @@ class WorkerLoop:
             await update_job_status(job_id, JobStatus.FAILED.value, error="missing model_name in job meta")
             return
 
-        try:
-            await update_job_status(job_id, JobStatus.DOWNLOADING.value, progress=10)
-            await asyncio.to_thread(ensure, spec_id)
-            await update_job_status(job_id, JobStatus.DONE.value, progress=100)
-            logger.info("Model download job %s completed for %s", job_id, spec_id)
-        except Exception:
-            logger.exception("Model download job %s failed for %s", job_id, spec_id)
-            await update_job_status(job_id, JobStatus.FAILED.value, error=f"Failed to download model {spec_id!r}")
-            raise
+        await update_job_status(job_id, JobStatus.DOWNLOADING.value, progress=10)
+        await asyncio.to_thread(ensure, spec_id)
+        await update_job_status(job_id, JobStatus.DONE.value, progress=100)
+        logger.info("Model download job %s completed for %s", job_id, spec_id)
 
     # -------------------------------------------------------------------------
     # Artifact generation job

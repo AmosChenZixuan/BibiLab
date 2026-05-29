@@ -2,7 +2,7 @@ import { useCallback, useEffect, useId, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 
 import { useLanguage } from "@/app/LanguageContext";
-import { useJobActivity } from "@/components/jobs/JobActivityProvider";
+import { useRefreshOnTerminalModelJobs } from "@/components/jobs/useRefreshOnTerminalModelJobs";
 import { api } from "@/lib/api";
 import type { BibilabConfig, HealthDependency, ModelInfo } from "@/lib/types";
 
@@ -16,7 +16,6 @@ type TranscriptTabProps = {
 
 export function TranscriptTab({ config, dependencies, onBlur }: TranscriptTabProps) {
   const { t } = useLanguage();
-  const { dismissJob, getJobs } = useJobActivity();
   const [localTranscription, setLocalTranscription] = useState(config.transcription);
   const [models, setModels] = useState<ModelInfo[]>([]);
   const modelId = useId();
@@ -43,18 +42,7 @@ export function TranscriptTab({ config, dependencies, onBlur }: TranscriptTabPro
     return () => controller.abort();
   }, [refreshModels]);
 
-  const modelJobs = getJobs("model_download");
-  const terminalModelJobCount = modelJobs.filter((j) => j.isTerminal).length;
-
-  useEffect(() => {
-    if (terminalModelJobCount === 0) return;
-    const terminalIds = modelJobs.filter((j) => j.isTerminal).map((j) => j.job.id);
-    async function refreshAndDismiss() {
-      await refreshModels();
-      for (const id of terminalIds) dismissJob(id);
-    }
-    void refreshAndDismiss();
-  }, [modelJobs, terminalModelJobCount, dismissJob, refreshModels]);
+  useRefreshOnTerminalModelJobs(refreshModels);
 
   function handleBlur() {
     onBlur({ ...config, transcription: localTranscription });

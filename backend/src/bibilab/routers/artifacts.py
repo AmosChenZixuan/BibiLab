@@ -13,13 +13,13 @@ from bibilab.db import (
     get_list,
     update_artifact_name,
 )
-from bibilab.model_registry import missing_required_models
 from bibilab.models.artifacts import (
     ArtifactCreateRequest,
     ArtifactPatchRequest,
     ArtifactResponse,
 )
 from bibilab.models.jobs import JobResponse, JobStatus
+from bibilab.routers._model_gate import require_models_present
 
 router = APIRouter()
 
@@ -44,9 +44,7 @@ async def create_artifact_endpoint(
     if row is None:
         raise HTTPException(status_code=404, detail="List not found")
 
-    missing = missing_required_models(cfg)
-    if missing:
-        raise HTTPException(status_code=412, detail={"error": "models_missing", "missing": missing})
+    require_models_present(cfg)
 
     artifact_id = str(uuid.uuid4())
 

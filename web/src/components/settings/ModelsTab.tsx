@@ -6,6 +6,7 @@ import { api } from "@/lib/api";
 import type { ModelInfo, ModelKind } from "@/lib/types";
 import { Spinner, Button } from "@/components/ui";
 import { useJobActivity, type JobActivityItem } from "@/components/jobs/JobActivityProvider";
+import { useRefreshOnTerminalModelJobs } from "@/components/jobs/useRefreshOnTerminalModelJobs";
 import { formatBundleSize } from "@/lib/utils";
 
 type ModelEntry = ModelInfo & { jobStatus?: "downloading" | "failed" | null };
@@ -39,7 +40,7 @@ export function ModelsTab() {
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [syncing, setSyncing] = useState(false);
   const [downloading, setDownloading] = useState<string | null>(null);
-  const { getJobs, trackJobs, dismissJob } = useJobActivity();
+  const { getJobs, trackJobs } = useJobActivity();
 
   const refreshModels = useCallback(async (signal?: AbortSignal) => {
     try {
@@ -56,18 +57,8 @@ export function ModelsTab() {
     return () => controller.abort();
   }, [refreshModels]);
 
+  useRefreshOnTerminalModelJobs(refreshModels);
   const modelJobs = getJobs("model_download");
-  const terminalModelJobCount = modelJobs.filter((j) => j.isTerminal).length;
-
-  useEffect(() => {
-    if (terminalModelJobCount === 0) return;
-    const terminalIds = modelJobs.filter((j) => j.isTerminal).map((j) => j.job.id);
-    async function refreshAndDismiss() {
-      await refreshModels();
-      for (const id of terminalIds) dismissJob(id);
-    }
-    void refreshAndDismiss();
-  }, [modelJobs, terminalModelJobCount, dismissJob, refreshModels]);
 
   const entries = mergeJobStatus(models, modelJobs);
   const transcription = sortTranscription(entries.filter((m) => TRANSCRIPTION_KINDS.includes(m.kind)));

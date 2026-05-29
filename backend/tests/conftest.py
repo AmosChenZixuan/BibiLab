@@ -19,11 +19,7 @@ def _clear_llm_client_caches():
 @pytest.fixture(autouse=True)
 def _mock_model_gate():
     """Prevent pre-flight 412 in tests — models are never downloaded in CI."""
-    with (
-        patch("bibilab.routers.ingest.missing_required_models", return_value=[]),
-        patch("bibilab.routers.chat.missing_required_models", return_value=[]),
-        patch("bibilab.routers.artifacts.missing_required_models", return_value=[]),
-    ):
+    with patch("bibilab.routers._model_gate.missing_required_models", return_value=[]):
         yield
 
 
