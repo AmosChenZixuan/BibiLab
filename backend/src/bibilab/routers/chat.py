@@ -28,6 +28,7 @@ from bibilab.db import (
 from bibilab.db import (
     get_conversation as get_conv_row,
 )
+from bibilab.model_registry import missing_required_models
 from bibilab.models.chat import (
     ChatRequest,
     ConversationResponse,
@@ -729,6 +730,10 @@ async def chat_endpoint(
     list_row = await get_list(list_id)
     if list_row is None:
         raise HTTPException(status_code=404, detail="List not found")
+
+    missing = missing_required_models(cfg)
+    if missing:
+        raise HTTPException(status_code=412, detail={"error": "models_missing", "missing": missing})
 
     conversation_id = await get_or_create_conversation(list_id)
 

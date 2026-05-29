@@ -6,6 +6,7 @@ from bibilab.adapters.base import AuthRequiredError, DownloadError, VideoMeta
 from bibilab.adapters.bilibili import BilibiliAdapter
 from bibilab.config import BibilabConfig, get_config
 from bibilab.db import create_job, get_list
+from bibilab.model_registry import missing_required_models
 from bibilab.models._enums import VideoStatus
 from bibilab.models.ingest import (
     IngestPreviewRequest,
@@ -136,6 +137,10 @@ async def ingest_url(
 
     if await get_list(req.list_id) is None:
         raise HTTPException(status_code=404, detail="List not found")
+
+    missing = missing_required_models(cfg)
+    if missing:
+        raise HTTPException(status_code=412, detail={"error": "models_missing", "missing": missing})
 
     statuses = await get_video_statuses([v.video_id for v in req.videos], req.list_id)
 

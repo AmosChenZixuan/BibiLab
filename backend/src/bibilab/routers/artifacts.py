@@ -13,6 +13,7 @@ from bibilab.db import (
     get_list,
     update_artifact_name,
 )
+from bibilab.model_registry import missing_required_models
 from bibilab.models.artifacts import (
     ArtifactCreateRequest,
     ArtifactPatchRequest,
@@ -42,6 +43,10 @@ async def create_artifact_endpoint(
     row = await get_list(list_id)
     if row is None:
         raise HTTPException(status_code=404, detail="List not found")
+
+    missing = missing_required_models(cfg)
+    if missing:
+        raise HTTPException(status_code=412, detail={"error": "models_missing", "missing": missing})
 
     artifact_id = str(uuid.uuid4())
 
