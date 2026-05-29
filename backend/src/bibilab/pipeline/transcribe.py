@@ -3,14 +3,25 @@
 Dispatches by model name. `large-v3` uses openai-whisper; everything else flows
 through FunASR. Speaker diarization (CAM++) is mandatory:
 
-- SenseVoice runs through FunASR with `spk_model="cam++"`, so each
-  `sentence_info` entry carries an `spk` label inline.
+- SenseVoice runs through FunASR with `spk_model="cam++"` and
+  `spk_mode="vad_segment"`, so each `sentence_info` entry carries an `spk`
+  label inline. `spk_mode="punc_segment"` (FunASR's default) is unsupported
+  for SenseVoice per FunASR's own assertion (auto_model.py:846-848): only
+  paraformer-large-vad-punc and seaco-paraformer produce the per-char
+  timestamps that punc_segment relies on; SenseVoice's word-level timestamps
+  mismatch ct-punc's punc_array → start=None → distribute_spk crashes.
+  vad_segment is FunASR's documented, supported fallback for SenseVoice.
 - Whisper has no native FunASR spk path, so a separate FunASR
   vad+spk-only pass produces speaker spans that get overlap-merged
   onto the Whisper segments.
 
+VAD is tuned (`max_single_segment_time=15000`, `max_end_silence_time=500`)
+to keep VAD chunks ≤15s — bounds segment length, gives finer speaker
+granularity, and prevents the 60s hard-cap that used to slice through words
+on continuous BGM-laden audio.
+
 CAM++ auto-downloads on first ingest, same pattern as the embedding/reranker
-models — no settings page button required.
+models.
 """
 
 from __future__ import annotations
@@ -134,9 +145,12 @@ def _load_diarize(device: str) -> Any:
     spk_path = _ensure_downloaded(DIARIZATION_MODEL)
     vad_path = _ensure_downloaded(VAD_MODEL)
     logger.info("Loading diarization pipeline (CAM++) on %s", actual_device)
+    # FunASR 1.3.7 requires `model` to be a real path; passing None hits
+    # `os.path.exists(None)` inside download_from_ms. Use VAD as the
+    # primary model — its job is to find speech segments, which is exactly
+    # what diarization-only needs. CAM++ runs as the spk_model on top.
     _diarize_pipeline = AutoModel(
-        model=None,
-        vad_model=str(vad_path),
+        model=str(vad_path),
         spk_model=str(spk_path),
         spk_mode="vad_segment",
         device=actual_device,
@@ -177,7 +191,7 @@ def _best_speaker(seg: WhisperSegment, spans: list[_SpeakerSpan]) -> str | None:
 
 
 # ---------------------------------------------------------------------------
-# FunASR (SenseVoice + inline CAM++ via spk_model)
+# FunASR (SenseVoice + inline CAM++ via spk_model, vad_segment mode)
 # ---------------------------------------------------------------------------
 
 
@@ -199,6 +213,7 @@ def _load_funasr(cfg: TranscriptionConfig) -> Any:
         model=str(model_path),
         device=device,
         vad_model=str(vad_path),
+        vad_kwargs={"max_single_segment_time": 15000, "max_end_silence_time": 500},
         punc_model=str(punc_path),
         spk_model=str(spk_path),
         spk_mode="vad_segment",
