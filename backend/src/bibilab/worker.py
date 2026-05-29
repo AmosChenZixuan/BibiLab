@@ -466,19 +466,11 @@ All output fields MUST be written in {_LANG_NAME.get(lang, "English")}."""
             await delete_job(job_id)
             return None
 
-        try:
-            video_path: Path = await asyncio.to_thread(
-                self._get_adapter().download,
-                video_meta.video_id,
-                video_meta.source_url,
-            )
-        except Exception:
-            cleanup_meta = {"video_id": video_meta.video_id, "source_id": source_id}
-            await asyncio.to_thread(
-                cleanup_job_artifacts,
-                {"id": job_id, "type": "ingest", "status": "downloading", "meta": cleanup_meta},
-            )
-            raise
+        video_path: Path = await asyncio.to_thread(
+            self._get_adapter().download,
+            video_meta.video_id,
+            video_meta.source_url,
+        )
 
         # Download cover
         covers_dir = self._bibilab_home / "covers"
