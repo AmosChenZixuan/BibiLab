@@ -280,26 +280,6 @@ class TestExecuteQueryListMetadata:
         assert "Unknown query_type" in caplog.text
 
 
-class TestFormatChunkForLLM:
-    def test_format_with_index(self):
-        from bibilab.pipeline.chat_tools import _format_chunk_for_llm
-
-        result = _format_chunk_for_llm(
-            {"title": "V", "start": 120.0, "end": 145.0, "content": "hi"},
-            index=3,
-        )
-        assert result == '[3 @ 120s-145s]: "hi"'
-
-    def test_truncates_floats(self):
-        from bibilab.pipeline.chat_tools import _format_chunk_for_llm
-
-        result = _format_chunk_for_llm(
-            {"title": "V", "start": 10.9, "end": 20.1, "content": "x"},
-            index=1,
-        )
-        assert result == '[1 @ 10s-20s]: "x"'
-
-
 class TestExecuteRetrieve:
     """Tests for execute_retrieve return shape and registry handling."""
 
@@ -1576,8 +1556,9 @@ async def test_execute_retrieve_chunks_grouped_and_fenced(monkeypatch):
     assert f1 < f2
 
     # Grouping: both v1 chunk lines precede any v2 chunk line.
-    a2 = chunks.index('[1 @ 9s-18s]: "a2"')
-    b1 = chunks.index('[2 @ 0s-9s]: "b1"')
+    # Chunks have no seg_start, so _turn_body falls back to raw content.
+    a2 = chunks.index("a2")
+    b1 = chunks.index("b1")
     assert a2 < b1, "v1 chunks must cluster before v2 chunks (no interleave)"
 
     # Cumulative _build_source_headers anchor still present (non-fenced line).

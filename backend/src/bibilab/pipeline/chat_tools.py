@@ -7,11 +7,19 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 
 from bibilab.config import BibilabConfig
-from bibilab.db import count_sources, create_job, get_source_facets, language_breakdown, longest_source
+from bibilab.db import (
+    count_sources,
+    create_job,
+    get_segments_for_ranges,
+    get_source_facets,
+    language_breakdown,
+    longest_source,
+)
 from bibilab.models._enums import RetrievalParams
 from bibilab.pipeline._shared import ToolDefinition
 from bibilab.pipeline.digest import parse_facet_int
 from bibilab.pipeline.embed import retrieve
+from bibilab.pipeline.transcribe import WhisperSegment, _speaker_namespace, format_turns
 
 logger = logging.getLogger(__name__)
 
@@ -49,12 +57,6 @@ class CitationRegistryEntry:
     timestamp_end: float | None = None
     rerank_score: float | None = None
     preview: str | None = None
-
-
-def _format_chunk_for_llm(chunk: dict, index: int) -> str:
-    ts_start = int(chunk["start"])
-    ts_end = int(chunk["end"])
-    return f'[{index} @ {ts_start}s-{ts_end}s]: "{chunk["content"]}"'
 
 
 def _build_source_headers(registry: dict[str, CitationRegistryEntry]) -> str:
@@ -382,6 +384,44 @@ async def execute_retrieve(
         if sid in registry:
             source_id_to_index[sid] = registry[sid].index
 
+    # Reconstruct the speaker-turn body for each displayed chunk from its
+    # segment seq-range (spec Layer 5). One batched query over all displayed
+    # chunks; namespace speakers per source so S{N}·SPK{k} is stable across a
+    # source's chunks and cross-source labels never collide.
+    displayed = [c for c in result.chunks if c.source_id in source_id_to_index]
+    ranges = [
+        (c.source_id, c.seg_start, c.seg_end) for c in displayed if c.seg_start is not None and c.seg_end is not None
+    ]
+    seg_rows = await get_segments_for_ranges(ranges) if ranges else []
+    segs_by_source: dict[str, list[WhisperSegment]] = {}
+    for r in seg_rows:
+        segs_by_source.setdefault(r["source_id"], []).append(
+            WhisperSegment(start=r["start_s"], end=r["end_s"], text=r["text"], speaker=r["speaker"])
+        )
+    ns_by_source = {sid: _speaker_namespace(segs) for sid, segs in segs_by_source.items()}
+
+    def _turn_body(c):
+        """Grouped + time + namespaced turns for one chunk; raw content fallback."""
+        if c.seg_start is None or c.source_id not in segs_by_source:
+            return c.content
+        idx = source_id_to_index[c.source_id]
+        rows = [r for r in seg_rows if r["source_id"] == c.source_id and c.seg_start <= r["seq"] <= c.seg_end]
+        chunk_segs = [
+            WhisperSegment(start=r["start_s"], end=r["end_s"], text=r["text"], speaker=r["speaker"]) for r in rows
+        ]
+        if not chunk_segs:
+            return c.content
+        return format_turns(
+            chunk_segs, include_time=True, citation_index=idx, speaker_namespace=ns_by_source[c.source_id]
+        )
+
+    logger.info(
+        "reconstruct top-k: %d displayed chunks, %d segments fetched, speakers/source=%s",
+        len(displayed),
+        len(seg_rows),
+        {source_id_to_index[sid]: len(ns) for sid, ns in ns_by_source.items()},
+    )
+
     # Accumulate chunk_ids per source (synthetic key: source_id_start_end).
     # Entry-level fields (preview / timestamps / rerank_score) are seeded from
     # the first HIT per source — never from a neighbor — so the persisted
@@ -397,7 +437,7 @@ async def execute_retrieve(
                 entry.timestamp_start = c.timestamp_start
                 entry.timestamp_end = c.timestamp_end
                 entry.rerank_score = c.score
-                entry.preview = c.content
+                entry.preview = _turn_body(c)
 
     # Collect indices actually retrieved this turn (for the enumeration line)
     turn_indices = sorted(set(source_id_to_index.values()))
@@ -408,12 +448,7 @@ async def execute_retrieve(
         if c.source_id not in source_id_to_index:
             continue
         idx = source_id_to_index[c.source_id]
-        chunks_by_index.setdefault(idx, []).append(
-            _format_chunk_for_llm(
-                {"start": c.timestamp_start, "end": c.timestamp_end, "content": c.content},
-                index=idx,
-            )
-        )
+        chunks_by_index.setdefault(idx, []).append(_turn_body(c))
         raw_chunks.append(
             {
                 "source_id": c.source_id,
