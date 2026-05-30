@@ -402,7 +402,7 @@ async def execute_retrieve(
 
     def _turn_body(c):
         """Grouped + time + namespaced turns for one chunk; raw content fallback."""
-        if c.seg_start is None or c.source_id not in segs_by_source:
+        if c.seg_start is None or c.seg_end is None or c.source_id not in segs_by_source:
             return c.content
         idx = source_id_to_index[c.source_id]
         rows = [r for r in seg_rows if r["source_id"] == c.source_id and c.seg_start <= r["seq"] <= c.seg_end]
