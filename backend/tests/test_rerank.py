@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 
-def _make_chunk(content="chunk", video_title="vid", ts_start=0.0, ts_end=1.0, video_id="v1", distance=0.5):
+def _make_chunk(content="chunk", video_title="vid", ts_start=0.0, ts_end=1.0, source_id="v1", distance=0.5):
     from bibilab.pipeline.embed import RetrievedChunk
 
     return RetrievedChunk(
@@ -11,7 +11,7 @@ def _make_chunk(content="chunk", video_title="vid", ts_start=0.0, ts_end=1.0, vi
         video_title=video_title,
         timestamp_start=ts_start,
         timestamp_end=ts_end,
-        video_id=video_id,
+        source_id=source_id,
         distance=distance,
     )
 
@@ -170,7 +170,7 @@ async def test_broad_mode_covers_candidate_pool_sources(tmp_bibilab_home):
 
     cfg = BibilabConfig(rag=RagConfig(max_distance=1.0, reranking_enabled=True, hybrid_enabled=False))
 
-    chunks = [_make_chunk(content=f"c{i}", video_id=f"v{i}", video_title=f"vid{i}") for i in range(8)]
+    chunks = [_make_chunk(content=f"c{i}", source_id=f"v{i}", video_title=f"vid{i}") for i in range(8)]
 
     with (
         patch(
@@ -188,7 +188,7 @@ async def test_broad_mode_covers_candidate_pool_sources(tmp_bibilab_home):
 
     assert len(result.source_coverage) == 8
     assert len(result.chunks) == 8
-    assert len({c.video_id for c in result.chunks}) == 8
+    assert len({c.source_id for c in result.chunks}) == 8
 
 
 @pytest.mark.asyncio
@@ -199,7 +199,7 @@ async def test_focused_mode_unchanged(tmp_bibilab_home):
 
     cfg = BibilabConfig(rag=RagConfig(max_distance=1.0, reranking_enabled=True, hybrid_enabled=False))
 
-    chunks = [_make_chunk(content=f"c{i}", video_id=f"v{i}", video_title=f"vid{i}") for i in range(8)]
+    chunks = [_make_chunk(content=f"c{i}", source_id=f"v{i}", video_title=f"vid{i}") for i in range(8)]
 
     with (
         patch(
@@ -323,7 +323,7 @@ async def test_broad_mode_respects_floor(tmp_bibilab_home):
 
     cfg = BibilabConfig(rag=RagConfig(reranking_enabled=True, hybrid_enabled=False))
 
-    chunks = [_make_chunk(content=f"c{i}", video_id=f"v{i}") for i in range(4)]
+    chunks = [_make_chunk(content=f"c{i}", source_id=f"v{i}") for i in range(4)]
 
     reranked = list(chunks)
     for c, s in zip(reranked, [-1.0, -0.5, 0.5, 1.0]):
@@ -346,13 +346,13 @@ async def test_broad_mode_respects_floor(tmp_bibilab_home):
     # No 0-floor — bge logits use relative threshold (median vs top-margin).
     # scores [1.0, 0.5, -0.5, -1.0] → top=1.0, median=-0.5, margin=2.0
     # threshold=max(-0.5, -1.0)=-0.5 → keeps v3(1.0), v2(0.5), v1(-0.5), drops v0(-1.0)
-    assert {c.video_id for c in result.chunks} == {"v1", "v2", "v3"}
+    assert {c.source_id for c in result.chunks} == {"v1", "v2", "v3"}
     assert result.sources_with_hits == 3
 
 
 @pytest.mark.asyncio
 async def test_sources_with_hits_reflects_result_chunks(tmp_bibilab_home):
-    """sources_with_hits reflects the distinct video_ids in result_chunks (post diverse-top-k), not the rerank pool.
+    """sources_with_hits reflects the distinct source_ids in result_chunks (post diverse-top-k), not the rerank pool.
 
     Regression for #9 — ObsChip should show real retrieval coverage, not the LLM-input slice.
     """
@@ -362,7 +362,7 @@ async def test_sources_with_hits_reflects_result_chunks(tmp_bibilab_home):
 
     cfg = BibilabConfig(rag=RagConfig(max_distance=1.0, reranking_enabled=True, hybrid_enabled=False))
 
-    chunks = [_make_chunk(content=f"c{i}", video_id=f"v{i}", video_title=f"vid{i}") for i in range(8)]
+    chunks = [_make_chunk(content=f"c{i}", source_id=f"v{i}", video_title=f"vid{i}") for i in range(8)]
 
     async def mock_rerank(query, chunks_arg, top_k):
         for c in chunks_arg:

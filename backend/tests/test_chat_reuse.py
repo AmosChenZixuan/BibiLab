@@ -57,7 +57,6 @@ class TestReuseCallerMechanics:
             history=history,
             summary=None,
             source_ids=[],
-            source_map={},
             ui_lang="en",
             cfg=cfg,
             registry=registry,
@@ -122,7 +121,6 @@ class TestReuseCallerMechanics:
             history=history,
             summary=None,
             source_ids=[],
-            source_map={},
             ui_lang="en",
             cfg=cfg,
             registry=registry,
@@ -156,7 +154,7 @@ class TestExpandMessageForProviderCompaction:
                         ],
                         "summary": {
                             "query": "什么是决定主义",
-                            "source_coverage": [{"source_id": "s1", "video_id": "v1", "title": "血族"}],
+                            "source_coverage": [{"source_id": "s1", "title": "血族"}],
                         },
                     },
                 }
@@ -195,7 +193,7 @@ class TestExpandMessageForProviderCompaction:
                         ],
                         "summary": {
                             "query": "面食",
-                            "source_coverage": [{"source_id": "s1", "video_id": "v1", "title": "美食"}],
+                            "source_coverage": [{"source_id": "s1", "title": "美食"}],
                         },
                     },
                 }

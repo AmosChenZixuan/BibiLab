@@ -1,4 +1,4 @@
-"""Greedy segment merger — produces RAG-ready chunks from Whisper segments."""
+"""Greedy segment merger — produces RAG-ready chunks from punctuated sentence segments."""
 
 import logging
 from dataclasses import dataclass
@@ -41,6 +41,10 @@ class RagChunk:
     seg_start: int
     seg_end: int
 
+    def __post_init__(self):
+        if self.seg_start < 0 or self.seg_end < self.seg_start:
+            raise ValueError(f"Invalid seg range: [{self.seg_start}, {self.seg_end}]")
+
 
 def _find_sentence_split(
     segs: list[WhisperSegment],
@@ -74,7 +78,7 @@ def chunk_segments(
 
     chunks: list[RagChunk] = []
     buf_segs: list[WhisperSegment] = []
-    buf_seg_idxs: list[int] = []
+    buf_seg_idxs: list[int] = []  # original segment indices for seg_start/seg_end
     buf_seg_tokens: list[int] = []
     buf_tokens = 0
     pause_flushes = 0

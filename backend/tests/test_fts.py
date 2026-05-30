@@ -15,6 +15,7 @@ from bibilab.db import (
     _escape_fts_query,
     _tokenize_cjk,
     bootstrap_db,
+    clear_fts_for_list,
     get_db,
     query_fts_rows,
 )
@@ -327,3 +328,97 @@ def test_escape_fts_query_high_idf_single_char():
     # 死 (death) — single-char word with critical semantic weight
     escaped = _escape_fts_query("死")
     assert escaped == '"死"'
+
+
+# --- P3: source_id keying behavioral tests ---
+
+
+@pytest.mark.asyncio
+async def test_two_sources_same_video_id_independent_scoping(tmp_bibilab_home: Path):
+    """#379: Two sources sharing one video_id scope independently.
+
+    Under the old video_id-based keying, re-embedding source B could overwrite
+    source A's Chroma data, and retrieval for one list could return chunks from
+    another.  With source_id keying, each source is isolated even when both
+    reference the same platform video_id.
+    """
+    await bootstrap_db()
+
+    # Same video_id for both sources — the key regression scenario
+    shared_video_id = "BV123"
+    meta_a = _make_meta(shared_video_id, "Video Shared")
+    meta_b = _make_meta(shared_video_id, "Video Shared")
+
+    populate_fts(_make_chunks(["alpha only in list one"]), "src-a", meta_a)
+    populate_fts(_make_chunks(["beta only in list two"]), "src-b", meta_b)
+
+    # Query src-a — must return only src-a's chunk
+    rows_a = await query_fts_rows("alpha", ["src-a"], top_k=10)
+    assert len(rows_a) == 1
+    assert rows_a[0]["source_id"] == "src-a"
+    assert "alpha only in list one" in rows_a[0]["content"]
+
+    # Query src-b — must return only src-b's chunk
+    rows_b = await query_fts_rows("beta", ["src-b"], top_k=10)
+    assert len(rows_b) == 1
+    assert rows_b[0]["source_id"] == "src-b"
+    assert "beta only in list two" in rows_b[0]["content"]
+
+    # Cross-query: src-a should not see src-b's content
+    rows_cross = await query_fts_rows("beta", ["src-a"], top_k=10)
+    assert len(rows_cross) == 0
+
+
+@pytest.mark.asyncio
+async def test_clear_fts_for_list_independent_per_list(tmp_bibilab_home: Path):
+    """#379: Deleting one list only clears FTS for its own sources.
+
+    Under the old video_id-keyed query (WHERE video_id IN (SELECT video_id FROM
+    sources WHERE list_id = ?)), deleting list 1 would also purge FTS rows for
+    list 2's sources when both lists contained the same video_id.  The source_id
+    subquery (WHERE source_id IN (SELECT id FROM sources WHERE list_id = ?))
+    fixes this by keying on the source UUID directly.
+    """
+    await bootstrap_db()
+
+    shared_video_id = "BV_SHARED"
+    meta = _make_meta(shared_video_id, "Shared Video")
+
+    # Create two lists, each with one source pointing to the same video_id
+    async with get_db() as db:
+        await db.execute(
+            "INSERT INTO lists (id, name, created_at) VALUES (?, ?, ?)",
+            ("list-1", "List One", "2026-01-01T00:00:00"),
+        )
+        await db.execute(
+            "INSERT INTO lists (id, name, created_at) VALUES (?, ?, ?)",
+            ("list-2", "List Two", "2026-01-01T00:00:00"),
+        )
+        await db.execute(
+            "INSERT INTO sources (id, video_id, platform, list_id, title, source_url) VALUES (?, ?, ?, ?, ?, ?)",
+            ("src-list1", shared_video_id, "bilibili", "list-1", "T1", "http://x.com"),
+        )
+        await db.execute(
+            "INSERT INTO sources (id, video_id, platform, list_id, title, source_url) VALUES (?, ?, ?, ?, ?, ?)",
+            ("src-list2", shared_video_id, "bilibili", "list-2", "T2", "http://x.com"),
+        )
+        await db.commit()
+
+    populate_fts(_make_chunks(["list one chunk"]), "src-list1", meta)
+    populate_fts(_make_chunks(["list two chunk"]), "src-list2", meta)
+
+    # Verify both sets exist
+    rows_all = await query_fts_rows("chunk", ["src-list1", "src-list2"], top_k=10)
+    assert len(rows_all) == 2
+
+    # Delete list 1 — should only clear src-list1's FTS rows
+    await clear_fts_for_list("list-1")
+
+    # List 1's data gone
+    rows_list1 = await query_fts_rows("chunk", ["src-list1"], top_k=10)
+    assert len(rows_list1) == 0
+
+    # List 2's data still intact
+    rows_list2 = await query_fts_rows("chunk", ["src-list2"], top_k=10)
+    assert len(rows_list2) == 1
+    assert rows_list2[0]["source_id"] == "src-list2"
