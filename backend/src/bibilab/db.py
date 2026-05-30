@@ -148,18 +148,6 @@ async def bootstrap_db() -> None:
         await db.execute("CREATE INDEX IF NOT EXISTS idx_messages_conversation_id ON messages(conversation_id)")
         await db.execute(_CREATE_TRANSCRIPT_SEGMENTS)
         await db.execute("CREATE INDEX IF NOT EXISTS idx_segments_source ON transcript_segments(source_id, seq)")
-        # Migrate away from removed tables/columns (safe to run on every boot).
-        await db.execute("DROP TABLE IF EXISTS query_classifications")
-        try:
-            await db.execute("ALTER TABLE conversations DROP COLUMN mode")
-        except aiosqlite.OperationalError:
-            pass  # column already dropped, or SQLite < 3.35 doesn't support DROP COLUMN
-        cursor = await db.execute("PRAGMA table_info(sources)")
-        if any(row["name"] == "sequence_kind" for row in await cursor.fetchall()):
-            # Idempotent without parsing exception text or masking real DB
-            # errors (locked / corrupt): only DROP when the column is present,
-            # let any genuine OperationalError propagate.
-            await db.execute("ALTER TABLE sources DROP COLUMN sequence_kind")
         await db.execute("PRAGMA journal_mode=WAL")
         await db.commit()
 
