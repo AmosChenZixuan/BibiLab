@@ -34,7 +34,13 @@ from bibilab.pipeline.chunk import chunk_segments
 from bibilab.pipeline.digest import DigestResult, digest
 from bibilab.pipeline.embed import embed_chunks
 from bibilab.pipeline.punctuate import punctuate
-from bibilab.pipeline.transcribe import WhisperSegment, format_transcript_text, transcribe, write_transcript
+from bibilab.pipeline.transcribe import (
+    WhisperSegment,
+    format_transcript_text,
+    load_transcript_text,
+    transcribe,
+    write_transcript,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -214,10 +220,9 @@ class WorkerLoop:
                 source = await get_source(source_id)
                 if source is None:
                     raise PipelineError(f"Source {source_id!r} not found")
-                if source["transcript_path"] is None:
+                transcript_text = await load_transcript_text(source_id)
+                if not transcript_text:
                     raise PipelineError(f"Source {source_id!r} has no transcript")
-                transcript_path = self._bibilab_home / source["transcript_path"]
-                transcript_text = transcript_path.read_text(encoding="utf-8")
                 transcripts.append(f"=== Source: {source['title']} ===\n{transcript_text}")
 
             combined_transcript = "\n\n".join(transcripts)
@@ -345,11 +350,9 @@ All output fields MUST be written in {_LANG_NAME.get(lang, "English")}."""
         source = await get_source(source_id)
         if source is None:
             raise PipelineError(f"Source {source_id!r} not found")
-        if source["transcript_path"] is None:
+        transcript_text = await load_transcript_text(source_id)
+        if not transcript_text:
             raise PipelineError(f"Source {source_id!r} has no transcript")
-
-        transcript_path = self._bibilab_home / source["transcript_path"]
-        transcript_text = transcript_path.read_text(encoding="utf-8")
 
         video_meta = VideoMeta.from_source(source)
 

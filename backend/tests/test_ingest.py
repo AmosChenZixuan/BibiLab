@@ -92,7 +92,16 @@ async def test_rerun_digest_only(tmp_bibilab_home: Path):
     """stages=["digest"] with rerun=True re-runs LLM only; skips download/transcribe."""
     import json
 
-    from bibilab.db import bootstrap_db, create_list, get_job, get_pending_jobs, get_source, write_source
+    from bibilab.db import (
+        bootstrap_db,
+        create_list,
+        get_job,
+        get_pending_jobs,
+        get_source,
+        write_source,
+        write_transcript_segments,
+    )
+    from bibilab.pipeline.transcribe import WhisperSegment
     from bibilab.worker import WorkerLoop
 
     await bootstrap_db()
@@ -100,11 +109,6 @@ async def test_rerun_digest_only(tmp_bibilab_home: Path):
 
     source_id = "digest-rerun-src-001"
     video_id = "BV1abc123"
-
-    # Seed source row with existing transcript file
-    (tmp_bibilab_home / "transcripts").mkdir(parents=True, exist_ok=True)
-    transcript_file = tmp_bibilab_home / "transcripts" / f"{source_id}.txt"
-    transcript_file.write_text("old transcript text", encoding="utf-8")
 
     await write_source(
         source_id=source_id,
@@ -115,7 +119,7 @@ async def test_rerun_digest_only(tmp_bibilab_home: Path):
         summary="old summary",
         keywords=["old", "keyword"],
         cover_url="https://example.com/cover.jpg",
-        transcript_path=f"transcripts/{source_id}.txt",
+        transcript_path=None,
         source_url=f"https://bilibili.com/video/{video_id}",
         duration_seconds=3600,
         uploader="TestUser",
@@ -127,6 +131,10 @@ async def test_rerun_digest_only(tmp_bibilab_home: Path):
         series_name=None,
         sequence_number=None,
         season_number=None,
+    )
+
+    await write_transcript_segments(
+        source_id, [WhisperSegment(start=0.0, end=5.0, text="old transcript text", speaker=None)]
     )
 
     # Create a job as if it was queued by the ingest endpoint
@@ -172,8 +180,12 @@ async def test_rerun_digest_only(tmp_bibilab_home: Path):
     assert source_row["summary"] == "new summary from LLM"
     assert json.loads(source_row["keywords"]) == ["new", "keywords"]
 
-    # Verify transcript file content unchanged
-    assert transcript_file.read_text(encoding="utf-8") == "old transcript text"
+    # Verify transcript segments unchanged
+    from bibilab.db import get_transcript_segments
+
+    segs = await get_transcript_segments(source_id)
+    assert len(segs) == 1
+    assert segs[0]["text"] == "old transcript text"
 
 
 @pytest.mark.asyncio
