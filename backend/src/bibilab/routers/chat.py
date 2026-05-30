@@ -259,13 +259,10 @@ async def stream_with_tools(
     system: str | None = None,
     llm_max_tokens: int = CHAT_MAX_TOKENS,
     registry: dict[str, CitationRegistryEntry] | None = None,
-    source_map: dict[str, str] | None = None,
     tool_block_sink: list[dict] | None = None,
 ) -> AsyncGenerator[StreamEvent, None]:
     if registry is None:
         registry = {}
-    if source_map is None:
-        source_map = {}
 
     messages = list(messages)
     iteration = 0
@@ -278,7 +275,7 @@ async def stream_with_tools(
         return {e.index: e for e in registry.values()}
 
     async def _execute_with_registry(name: str, args: dict) -> dict:
-        return await execute_tool_fn(name, args, registry=registry, source_map=source_map)
+        return await execute_tool_fn(name, args, registry=registry)
 
     while True:
         iteration += 1
@@ -483,7 +480,6 @@ async def run_chat_turn(
     history: list[dict],
     summary: str | None,
     source_ids: list[str],
-    source_map: dict[str, str],
     ui_lang: str,
     cfg: BibilabConfig,
     registry: ChatRunRegistry,
@@ -555,7 +551,6 @@ async def run_chat_turn(
             system=system_message if system_message.strip() else None,
             llm_max_tokens=CHAT_MAX_TOKENS,
             registry=citation_registry,
-            source_map=source_map,
             tool_block_sink=tool_blocks,
         ):
             payload = _serialize_event_for_buffer(event)
@@ -771,7 +766,6 @@ async def chat_endpoint(
     except ActiveStreamConflict:
         raise HTTPException(409, "Conversation already has an active stream")
 
-    source_map: dict[str, str] = {row["video_id"]: row["id"] for row in source_rows}
     ui_lang = http_request.headers.get("X-UI-Lang", "en")
 
     # Spawn producer
@@ -784,7 +778,6 @@ async def chat_endpoint(
             history=history,
             summary=existing_summary,
             source_ids=source_ids,
-            source_map=source_map,
             ui_lang=ui_lang,
             cfg=cfg,
             registry=run_registry,

@@ -568,7 +568,7 @@ All output fields MUST be written in {_LANG_NAME.get(lang, "English")}."""
             )
 
         async def _embed() -> None:
-            await asyncio.to_thread(embed_chunks, chunks, video_meta, list_id, cfg)
+            await asyncio.to_thread(embed_chunks, chunks, source_id, video_meta, list_id, cfg)
 
         extraction: DigestResult
         extraction, _ = await asyncio.gather(_digest(), _embed())
