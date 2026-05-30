@@ -167,6 +167,53 @@ def transcribe(audio_path: Path, cfg: TranscriptionConfig) -> tuple[list[Whisper
     return _transcribe_funasr(audio_path, cfg)
 
 
+def _speaker_namespace(segments: list[WhisperSegment]) -> dict[str | None, int]:
+    """Map each distinct speaker to a per-source ordinal in first-seen order.
+
+    Used to namespace speaker labels at render (``SPK{k}``). CAM++ labels are
+    source-local; the ordinal + citation index (``S{N}·SPK{k}``) makes
+    cross-source speaker conflation structurally impossible (spec Layer 5).
+    """
+    ns: dict[str | None, int] = {}
+    for seg in segments:
+        if seg.speaker not in ns:
+            ns[seg.speaker] = len(ns)
+    return ns
+
+
+def format_turns(
+    segments: list[WhisperSegment],
+    *,
+    include_time: bool = False,
+    citation_index: int | None = None,
+    speaker_namespace: dict[str | None, int] | None = None,
+) -> str:
+    """Group consecutive same-speaker segments into speaker-turn lines.
+
+    Shared by chat top-k reconstruction (``include_time`` + ``citation_index`` +
+    ``speaker_namespace`` → ``[S{N}·SPK{k} @{t}s] text``), the UI viewer
+    (``include_time``, raw label → ``[SPK_0 @{t}s] text``) and digest (neither →
+    ``[SPK_0] text``). One helper, three variants (spec "Turn-text formatter").
+    """
+    lines: list[str] = []
+    i, n = 0, len(segments)
+    while i < n:
+        spk = segments[i].speaker
+        start = segments[i].start
+        texts = [segments[i].text]
+        i += 1
+        while i < n and segments[i].speaker == spk:
+            texts.append(segments[i].text)
+            i += 1
+        if citation_index is not None and speaker_namespace is not None:
+            label = f"S{citation_index}·SPK{speaker_namespace.get(spk, 0)}"
+        else:
+            label = spk or "SPK?"
+        time = f" @{int(start)}s" if include_time else ""
+        lines.append(f"[{label}{time}] {' '.join(texts)}")
+    return "\n".join(lines)
+
+
 def format_transcript_text(segments: list[WhisperSegment]) -> str:
     """Render segments as one line per segment: `[HH:MM:SS] text [SPK]`.
 
@@ -201,6 +248,7 @@ async def load_transcript_text(source_id: str) -> str:
 __all__ = [
     "WhisperSegment",
     "format_transcript_text",
+    "format_turns",
     "load_transcript_text",
     "transcribe",
 ]

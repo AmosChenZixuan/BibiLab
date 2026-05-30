@@ -1,0 +1,41 @@
+from bibilab.pipeline.transcribe import WhisperSegment, _speaker_namespace, format_turns
+
+
+def _seg(text, start=0.0, end=1.0, speaker="SPK_0"):
+    return WhisperSegment(start=start, end=end, text=text, speaker=speaker)
+
+
+def test_format_turns_digest_variant_grouped_no_time_raw_label():
+    segs = [
+        _seg("你好。", 0.0, 2.0, "SPK_0"),
+        _seg("今天天气不错。", 2.0, 5.0, "SPK_0"),
+        _seg("是啊。", 5.0, 7.0, "SPK_1"),
+    ]
+    out = format_turns(segs)
+    assert out == "[SPK_0] 你好。 今天天气不错。\n[SPK_1] 是啊。"
+
+
+def test_format_turns_ui_variant_grouped_with_time_raw_label():
+    segs = [_seg("你好。", 157.0, 160.0, "SPK_0")]
+    out = format_turns(segs, include_time=True)
+    assert out == "[SPK_0 @157s] 你好。"
+
+
+def test_format_turns_chat_variant_namespaced_with_time():
+    segs = [
+        _seg("你好。", 157.0, 160.0, "SPK_0"),
+        _seg("再见。", 160.0, 162.0, "SPK_1"),
+    ]
+    ns = _speaker_namespace(segs)  # SPK_0 -> 0, SPK_1 -> 1
+    out = format_turns(segs, include_time=True, citation_index=3, speaker_namespace=ns)
+    assert out == "[S3·SPK0 @157s] 你好。\n[S3·SPK1 @160s] 再见。"
+
+
+def test_speaker_namespace_first_seen_order():
+    segs = [_seg("a", 0, 1, "SPK_2"), _seg("b", 1, 2, "SPK_0"), _seg("c", 2, 3, "SPK_2")]
+    assert _speaker_namespace(segs) == {"SPK_2": 0, "SPK_0": 1}
+
+
+def test_format_turns_none_speaker_renders_placeholder():
+    out = format_turns([_seg("text", 0.0, 1.0, None)])
+    assert out == "[SPK?] text"
