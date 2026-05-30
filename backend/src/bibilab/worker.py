@@ -16,6 +16,7 @@ from bibilab.config import BibilabConfig, bibilab_home, load_config
 from bibilab.db import (
     create_artifact,
     delete_job,
+    delete_source,
     get_list,
     get_pending_jobs,
     get_source,
@@ -519,11 +520,11 @@ All output fields MUST be written in {_LANG_NAME.get(lang, "English")}."""
         """Stage 3: Transcribe audio, punctuate (zh-gated) into sentence segments."""
         await update_job_status(job_id, JobStatus.TRANSCRIBING.value, progress=30)
         vad_segments, detected_language = await asyncio.to_thread(transcribe, wav_path, cfg.transcription)
+        wav_path.unlink(missing_ok=True)  # clean up early — punctuate only needs text
         effective_language = (
             cfg.transcription.language if cfg.transcription.language != "auto" else (detected_language or "en")
         )
         sentence_segments = await asyncio.to_thread(punctuate, vad_segments, effective_language)
-        wav_path.unlink(missing_ok=True)
 
         if job_id in self._cancelled:
             self._cancelled.discard(job_id)
@@ -614,7 +615,13 @@ All output fields MUST be written in {_LANG_NAME.get(lang, "English")}."""
             sequence_number=extraction.sequence_number,
             season_number=extraction.season_number,
         )
-        await write_transcript_segments(source_id, sentence_segments)
+        try:
+            await write_transcript_segments(source_id, sentence_segments)
+        except Exception:
+            # If segments write fails, clean up the source row to avoid a
+            # permanently orphaned source (two separate get_db transactions).
+            await delete_source(source_id)
+            raise
 
         # Cleanup downloads
         for path in (self._bibilab_home / "downloads").glob(f"{video_id}.*"):
