@@ -150,7 +150,7 @@ Index: `idx_segments_source` on `(source_id, seq)`. Replaces the on-disk `transc
 
 ### `chunks_fts` — FTS5 virtual table
 
-BM25-ranked full-text index over transcript chunks. Populated by `populate_fts()` during the embed stage; cleared per-video on re-ingest. Columns: `content`, `video_id`, `video_title`, `timestamp_start`, `timestamp_end`, `chunk_id`. Query via `query_fts_rows()` in `db.py`.
+BM25-ranked full-text index over transcript chunks. Populated by `populate_fts()` during the embed stage; cleared per-source on re-ingest. Columns: `content`, `source_id`, `video_title`, `timestamp_start`, `timestamp_end`, `chunk_id`, `seg_start`, `seg_end`. Query via `query_fts_rows()` in `db.py`.
 
 ## Ingestion Pipeline
 
@@ -170,9 +170,9 @@ POST /ingest/url → resolve → dedup check → create job(s)
 2. **audio** → strip to .wav via FFmpeg
 3. **transcribe** → FunASR AutoModel (SenseVoice or Whisper via WhisperWarp) → raw VAD segments with timestamps + speaker labels
 4. **punctuate** → ct-punc (zh-gated) → punctuated sentence segments persisted to `transcript_segments`
-5. **chunk** → greedily merge consecutive VAD segments (~5–15s each) until ~300 tokens. Each chunk stores `timestamp_start`, `timestamp_end`, `sequence_index` in ChromaDB metadata.
+5. **chunk** → greedily merge consecutive **sentence** segments to token target, split at trustworthy sentence boundary. Records `seg_start`/`seg_end` per chunk (input-index range).
 6. **digest** → LLM: summary, keywords → denormalized into `sources` (parallel with embed)
-7. **embed** → store chunks in ChromaDB with per-video and per-list scope (parallel with digest)
+7. **embed** → store chunks in ChromaDB with per-source and per-list scope (parallel with digest). Chroma metadata keys on `source_id` (+ `seg_start`/`seg_end`), not `video_id`.
 8. **write_source** → upsert row into `sources`
 
 ## Chat Pipeline
