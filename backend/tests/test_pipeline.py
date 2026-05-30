@@ -346,9 +346,8 @@ def test_chunk_sentence_end_triggers_flush(caplog):
 
     assert len(chunks) == 2
     assert chunks[0].text.endswith("。")
-    # Telemetry: sentence_flushes must be credited (not miscredited to token=)
-    assert "sentence=1" in caplog.text
-    assert "token=0" in caplog.text
+    # Cut landed on a sentence boundary → no forced-fallback warning.
+    assert "non-sentence boundary" not in caplog.text
 
 
 def test_chunk_no_sentence_end_flushes_at_target(caplog):
@@ -360,9 +359,8 @@ def test_chunk_no_sentence_end_flushes_at_target(caplog):
         chunks = chunk_segments(segs, target_tokens=300)
 
     assert len(chunks) == 2
-    # No sentence boundary anywhere → first chunk credited to token, not sentence.
-    assert "token=1" in caplog.text
-    assert "sentence=0" in caplog.text
+    # No sentence boundary anywhere → token-forced cut warns.
+    assert "token-forced=1" in caplog.text
     assert not chunks[0].text.endswith(_SENT_END)
 
 
@@ -408,7 +406,8 @@ def test_chunk_sentence_boundary_in_middle_of_buffer(caplog):
 
     assert len(chunks) >= 2
     assert chunks[0].text.endswith("。"), "split must land on the boundary, not after it"
-    assert "sentence=1" in caplog.text
+    # Sentence-boundary cut → no forced-fallback warning.
+    assert "non-sentence boundary" not in caplog.text
 
 
 def test_chunk_sentence_flush_below_min_target_skips():

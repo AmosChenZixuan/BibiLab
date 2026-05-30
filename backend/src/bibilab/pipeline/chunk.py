@@ -175,17 +175,25 @@ def chunk_segments(
 
     emit(chunk_idx, buf_segs, buf_seg_idxs)
 
-    total_flushes = pause_flushes + token_flushes + sentence_flushes + oversized_flushes
-    if total_flushes:
-        logger.info(
-            "chunk_segments: %d chunks from %d segments (pause=%d, token=%d, sentence=%d, oversized=%d, target=%d)",
-            len(chunks),
-            len(segments),
-            pause_flushes,
+    logger.info(
+        "chunk_segments: %d chunks from %d segments (target=%d tokens)",
+        len(chunks),
+        len(segments),
+        resolved_target,
+    )
+    # Only forced cuts are actionable: a token/oversized flush means no trustworthy
+    # sentence boundary was available, so the chunk was cut mid-meaning. Pause and
+    # sentence flushes are the healthy path and not worth reporting per run.
+    forced = token_flushes + oversized_flushes
+    if forced:
+        total_flushes = pause_flushes + token_flushes + sentence_flushes + oversized_flushes
+        logger.warning(
+            "chunk_segments: %d of %d cuts fell back to a non-sentence boundary "
+            "(token-forced=%d, oversized=%d) — punctuation may be sparse",
+            forced,
+            total_flushes,
             token_flushes,
-            sentence_flushes,
             oversized_flushes,
-            resolved_target,
         )
 
     return chunks
