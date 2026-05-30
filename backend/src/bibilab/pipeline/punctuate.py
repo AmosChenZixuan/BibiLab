@@ -9,7 +9,10 @@ time exactly. Non-`zh` passes through unchanged (ASR punctuates other languages)
 from __future__ import annotations
 
 import logging
+import threading
+from typing import Any
 
+from bibilab.model_registry import PUNC_SPEC_ID, ensure
 from bibilab.pipeline.chunk import _SENT_END  # reuse — Code Health #3, correctness coupling
 from bibilab.pipeline.transcribe import WhisperSegment
 
@@ -18,6 +21,7 @@ logger = logging.getLogger(__name__)
 # Punctuation ct-punc may emit (stripped to build the alignment stream).
 # Superset of _SENT_END (every terminal must also be strippable for the invariant).
 _PUNC = frozenset("。，、！？；：．,.!?;:…　 ")
+assert all(ch in _PUNC for ch in _SENT_END), "_PUNC must be a superset of _SENT_END"
 # Sentence-terminal set shared with the chunker (chunk._SENT_END): unambiguous
 # ASCII !? split, ambiguous ASCII . / ; do not. Reused, never redefined.
 
@@ -89,3 +93,43 @@ def _align(segments: list[WhisperSegment], punctuated: str) -> list[WhisperSegme
         cur_segs.append(seg_idx)
     flush()
     return out
+
+
+# ---- ct-punc invocation -------------------------------------------------
+
+_ctpunc_model: Any = None
+_ctpunc_lock = threading.Lock()
+
+
+def _run_ctpunc(raw: str) -> str:
+    """Run standalone ct-punc on a raw (unpunctuated) char stream. Lazy singleton."""
+    global _ctpunc_model
+    from funasr import AutoModel  # noqa: PLC0415
+
+    if _ctpunc_model is None:
+        with _ctpunc_lock:
+            if _ctpunc_model is None:
+                model_path = ensure(PUNC_SPEC_ID)
+                logger.info("Loading ct-punc (standalone) from %s", model_path)
+                _ctpunc_model = AutoModel(model=str(model_path), disable_update=True, disable_pbar=True)
+    try:
+        return _ctpunc_model.generate(input=raw)[0]["text"]
+    except Exception:
+        logger.exception("ct-punc generate failed — resetting model for next attempt")
+        with _ctpunc_lock:
+            _ctpunc_model = None
+        raise
+
+
+def punctuate(segments: list[WhisperSegment], language: str | None) -> list[WhisperSegment]:
+    """Punctuate `zh` VAD segments into sentence segments; pass others through.
+
+    Char-offset alignment strips spaces (correct for CJK, destructive for English),
+    and the false-。 VAD defect is CJK-specific — so ct-punc is gated to `zh`.
+    """
+    if language != "zh" or not segments:
+        return segments
+    raw = "".join(_strip_punc(s.text) for s in segments)
+    if not raw:
+        return segments
+    return _align(segments, _run_ctpunc(raw))

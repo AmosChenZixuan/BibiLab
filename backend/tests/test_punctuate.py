@@ -61,3 +61,41 @@ def test_align_trailing_buffer_flushed_without_terminal_punctuation():
     out = _align(segs, "没有句号")  # ct-punc left no terminal punctuation
     assert [s.text for s in out] == ["没有句号"]
     assert out[0].start == 0.0 and out[0].end == 3.0
+
+
+# ---- punctuate() gate tests (mock _run_ctpunc) ----
+
+
+def test_punctuate_non_zh_passthrough_no_model_call():
+    from unittest.mock import patch
+
+    from bibilab.pipeline.punctuate import punctuate
+
+    segs = [_seg("hello world", 0.0, 3.0)]
+    with patch("bibilab.pipeline.punctuate._run_ctpunc") as run:
+        out = punctuate(segs, language="en")
+    run.assert_not_called()
+    assert out is segs
+
+
+def test_punctuate_empty_segments_passthrough():
+    from unittest.mock import patch
+
+    from bibilab.pipeline.punctuate import punctuate
+
+    with patch("bibilab.pipeline.punctuate._run_ctpunc") as run:
+        out = punctuate([], language="zh")
+    run.assert_not_called()
+    assert out == []
+
+
+def test_punctuate_zh_runs_ctpunc_and_aligns():
+    from unittest.mock import patch
+
+    from bibilab.pipeline.punctuate import punctuate
+
+    segs = [_seg("天花板明显是地板", 10.0, 25.0)]
+    with patch("bibilab.pipeline.punctuate._run_ctpunc", return_value="天花板。明显是地板。") as run:
+        out = punctuate(segs, language="zh")
+    run.assert_called_once_with("天花板明显是地板")
+    assert [s.text for s in out] == ["天花板。", "明显是地板。"]
