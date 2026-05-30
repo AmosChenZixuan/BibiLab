@@ -37,8 +37,11 @@ def _align(segments: list[WhisperSegment], punctuated: str) -> list[WhisperSegme
     on speaker change (G3). Each segment's time is derived from the VAD segments
     its characters came from (first.start..last.end).
 
-    Raises ValueError if the invariant `strip_punc(punctuated) == raw` is broken
-    (ct-punc rewrote a character rather than only inserting punctuation).
+    Raises ValueError if source content is dropped or rewritten — i.e. the
+    punctuated stream does not contain every raw char in order (ct-punc did more
+    than insert punctuation). A char that does not match the raw cursor is
+    treated as inserted punctuation regardless of which mark it is, so ct-punc
+    may emit any punctuation outside `_PUNC` without tripping the invariant.
     """
     # Per-source-char parallel arrays: speaker + index of the contributing VAD seg.
     char_spk: list[str | None] = []
@@ -48,9 +51,6 @@ def _align(segments: list[WhisperSegment], punctuated: str) -> list[WhisperSegme
             char_spk.append(seg.speaker)
             char_seg.append(i)
     raw = "".join(_strip_punc(s.text) for s in segments)
-
-    if _strip_punc(punctuated) != raw:
-        raise ValueError("ct-punc alignment invariant violated: output is not raw + inserted punctuation")
 
     out: list[WhisperSegment] = []
     cur_text: list[str] = []
@@ -73,25 +73,31 @@ def _align(segments: list[WhisperSegment], punctuated: str) -> list[WhisperSegme
         cur_text, cur_spk, cur_segs = [], None, []
 
     for ch in punctuated:
-        if ch in _PUNC and ch not in _SENT_END:
-            cur_text.append(ch)  # inserted comma / decimal point etc. — kept, does not advance raw
-            continue
-        if ch in _SENT_END:
+        if raw_i < len(raw) and ch == raw[raw_i]:
+            # content char: matches the raw cursor, advances it
+            spk = char_spk[raw_i]
+            seg_idx = char_seg[raw_i]
+            raw_i += 1
+            if cur_spk is None:
+                cur_spk = spk
+            elif spk != cur_spk:  # G3: speaker change forces a cut
+                flush()
+                cur_spk = spk
             cur_text.append(ch)
-            flush()
-            continue
-        # content char: advances the raw cursor
-        spk = char_spk[raw_i]
-        seg_idx = char_seg[raw_i]
-        raw_i += 1
-        if cur_spk is None:
-            cur_spk = spk
-        elif spk != cur_spk:  # G3: speaker change forces a cut
-            flush()
-            cur_spk = spk
-        cur_text.append(ch)
-        cur_segs.append(seg_idx)
+            cur_segs.append(seg_idx)
+        else:
+            # inserted punctuation (any mark) — kept, does not advance raw
+            cur_text.append(ch)
+            if ch in _SENT_END:
+                flush()
     flush()
+
+    if raw_i != len(raw):
+        raise ValueError(
+            f"ct-punc alignment invariant violated: consumed {raw_i}/{len(raw)} source chars "
+            f"(model dropped or rewrote content, not pure punctuation insertion). "
+            f"diverged near {raw[max(0, raw_i - 8) : raw_i + 8]!r}"
+        )
     return out
 
 
@@ -137,4 +143,11 @@ def punctuate(segments: list[WhisperSegment], language: str | None) -> list[Whis
     raw = "".join(_strip_punc(s.text) for s in segments)
     if not raw:
         return segments
-    return _align(segments, _run_ctpunc(raw))
+    try:
+        return _align(segments, _run_ctpunc(raw))
+    except ValueError as exc:
+        # Punctuation is an enhancement, never fatal: if ct-punc rewrote/dropped
+        # content the alignment can't be trusted, so fall back to the raw VAD
+        # segments (unpunctuated) and keep transcription succeeding.
+        logger.warning("ct-punc alignment failed — using unpunctuated segments: %s", exc)
+        return segments
