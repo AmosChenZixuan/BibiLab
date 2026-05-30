@@ -24,6 +24,7 @@ from bibilab.db import (
     update_job_status,
     update_source_digest,
     write_source,
+    write_transcript_segments,
 )
 from bibilab.model_registry import ensure
 from bibilab.models.jobs import JobStatus
@@ -32,7 +33,8 @@ from bibilab.pipeline.audio import PipelineError, extract_audio
 from bibilab.pipeline.chunk import chunk_segments
 from bibilab.pipeline.digest import DigestResult, digest
 from bibilab.pipeline.embed import embed_chunks
-from bibilab.pipeline.transcribe import WhisperSegment, transcribe, write_transcript
+from bibilab.pipeline.punctuate import punctuate
+from bibilab.pipeline.transcribe import WhisperSegment, format_transcript_text, transcribe, write_transcript
 
 logger = logging.getLogger(__name__)
 
@@ -425,15 +427,12 @@ All output fields MUST be written in {_LANG_NAME.get(lang, "English")}."""
             raise PipelineError(f"[transcribing] {exc}") from exc
         if result is None:
             return  # cancelled
-        segments, detected_language, transcript_path = result
-        effective_language = (
-            cfg.transcription.language if cfg.transcription.language != "auto" else (detected_language or "en")
-        )
+        vad_segments, detected_language, effective_language, sentence_segments = result
 
         # Stage 4: Chunk, digest + embed in parallel
         try:
             extraction = await self._stage_process(
-                job_id, job, segments, video_meta, list_id, cfg, transcript_path, effective_language
+                job_id, job, vad_segments, sentence_segments, video_meta, list_id, cfg, effective_language
             )
         except Exception as exc:
             raise PipelineError(f"[processing] {exc}") from exc
@@ -451,7 +450,7 @@ All output fields MUST be written in {_LANG_NAME.get(lang, "English")}."""
                 extraction,
                 detected_language,
                 cfg,
-                transcript_path,
+                sentence_segments,
             )
         except Exception as exc:
             raise PipelineError(f"[processing] {exc}") from exc
@@ -515,10 +514,14 @@ All output fields MUST be written in {_LANG_NAME.get(lang, "English")}."""
         source_id: str,
         cfg: BibilabConfig,
     ) -> tuple | None:
-        """Stage 3: Transcribe audio and write transcript file."""
+        """Stage 3: Transcribe audio, punctuate (zh-gated) into sentence segments."""
         await update_job_status(job_id, JobStatus.TRANSCRIBING.value, progress=30)
-        segments, detected_language = await asyncio.to_thread(transcribe, wav_path, cfg.transcription)
-        transcript_path = write_transcript(segments, source_id)
+        vad_segments, detected_language = await asyncio.to_thread(transcribe, wav_path, cfg.transcription)
+        effective_language = (
+            cfg.transcription.language if cfg.transcription.language != "auto" else (detected_language or "en")
+        )
+        sentence_segments = await asyncio.to_thread(punctuate, vad_segments, effective_language)
+        write_transcript(sentence_segments, source_id)  # .txt — removed in P2 Task 5
         wav_path.unlink(missing_ok=True)
 
         if job_id in self._cancelled:
@@ -527,29 +530,29 @@ All output fields MUST be written in {_LANG_NAME.get(lang, "English")}."""
             await delete_job(job_id)
             return None
 
-        return segments, detected_language, transcript_path
+        return vad_segments, detected_language, effective_language, sentence_segments
 
     async def _stage_process(
         self,
         job_id: str,
         job: dict,
-        segments: list[WhisperSegment],
+        vad_segments: list[WhisperSegment],
+        sentence_segments: list[WhisperSegment],
         video_meta: VideoMeta,
         list_id: str,
         cfg: BibilabConfig,
-        transcript_path: Path,
         effective_language: str,
     ) -> DigestResult | None:
-        """Stage 4: Chunk segments, run digest + embed in parallel."""
+        """Stage 4: Chunk VAD segments, run digest + embed in parallel."""
         await update_job_status(job_id, JobStatus.PROCESSING.value, progress=40)
         chunks = chunk_segments(
-            segments,
+            vad_segments,
             language=effective_language,
             pause_threshold_seconds=cfg.rag.chunk_pause_threshold,
         )
 
         meta_raw = _parse_job_meta(job)
-        transcript_text = transcript_path.read_text(encoding="utf-8")
+        transcript_text = format_transcript_text(sentence_segments)
 
         async def _digest() -> DigestResult:
             return await asyncio.to_thread(
@@ -586,9 +589,9 @@ All output fields MUST be written in {_LANG_NAME.get(lang, "English")}."""
         extraction: DigestResult,
         detected_language: str,
         cfg: BibilabConfig,
-        transcript_path: Path,
+        sentence_segments: list[WhisperSegment],
     ) -> None:
-        """Stage 5: Persist processed source metadata and cleanup downloads."""
+        """Stage 5: Persist source row, then transcript segments (FK child), then cleanup."""
         await write_source(
             source_id=source_id,
             video_id=video_id,
@@ -598,7 +601,7 @@ All output fields MUST be written in {_LANG_NAME.get(lang, "English")}."""
             summary=extraction.summary,
             keywords=extraction.keywords,
             cover_url=video_meta.cover_url,
-            transcript_path=str(transcript_path.relative_to(self._bibilab_home)),
+            transcript_path=None,  # .txt store removed in P2; column dropped in Task 5
             source_url=video_meta.source_url,
             duration_seconds=video_meta.duration_seconds,
             uploader=video_meta.uploader,
@@ -611,6 +614,7 @@ All output fields MUST be written in {_LANG_NAME.get(lang, "English")}."""
             sequence_number=extraction.sequence_number,
             season_number=extraction.season_number,
         )
+        await write_transcript_segments(source_id, sentence_segments)
 
         # Cleanup downloads
         for path in (self._bibilab_home / "downloads").glob(f"{video_id}.*"):

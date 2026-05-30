@@ -244,6 +244,42 @@ async def test_artifact_job_missing_source(tmp_bibilab_home: Path):
 
 
 @pytest.mark.asyncio
+async def test_stage_transcribe_punctuates_and_returns_sentences(tmp_bibilab_home: Path, monkeypatch):
+    from bibilab.config import BibilabConfig
+    from bibilab.db import bootstrap_db, create_job
+    from bibilab.pipeline.transcribe import WhisperSegment
+
+    await bootstrap_db()
+    job_id = await create_job("ingest", {})
+
+    vad = [WhisperSegment(start=0.0, end=5.0, text="天花板明显是地板", speaker="SPK_0")]
+    sentences = [
+        WhisperSegment(start=0.0, end=5.0, text="天花板。", speaker="SPK_0"),
+        WhisperSegment(start=0.0, end=5.0, text="明显是地板。", speaker="SPK_0"),
+    ]
+
+    monkeypatch.setattr("bibilab.worker.transcribe", lambda *a, **k: (vad, "zh"))
+    called = {}
+
+    def _fake_punctuate(segs, language):
+        called["language"] = language
+        return sentences
+
+    monkeypatch.setattr("bibilab.worker.punctuate", _fake_punctuate)
+    monkeypatch.setattr("bibilab.worker.write_transcript", lambda *a, **k: Path("/tmp/x.txt"))
+
+    loop = WorkerLoop(config=BibilabConfig(), home=tmp_bibilab_home)
+    wav = tmp_bibilab_home / "a.wav"
+    wav.write_bytes(b"")
+    result = await loop._stage_transcribe(job_id, wav, "src-1", BibilabConfig())
+
+    vad_segments, detected_language, effective_language, sentence_segments = result
+    assert called["language"] == "zh"
+    assert sentence_segments == sentences
+    assert vad_segments == vad  # chunk still consumes VAD segments in P2
+
+
+@pytest.mark.asyncio
 async def test_worker_start_stop(tmp_bibilab_home: Path):
     await bootstrap_db()
     worker = WorkerLoop(home=tmp_bibilab_home)
