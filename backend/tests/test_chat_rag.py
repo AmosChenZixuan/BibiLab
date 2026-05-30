@@ -91,15 +91,7 @@ async def test_query_chunks_applies_relevance_floor(tmp_bibilab_home):
         "distances": [[0.15, 0.25, 0.28, 0.4]],
     }
 
-    with (
-        patch(
-            "bibilab.pipeline.embed.get_source_ids_for_sources",
-            new_callable=AsyncMock,
-        ) as mock_map,
-        patch("bibilab.pipeline.embed._get_collection", return_value=mock_collection),
-    ):
-        mock_map.return_value = {"s1": "bvid1", "s2": "bvid2", "s3": "bvid3", "s4": "bvid4"}
-
+    with patch("bibilab.pipeline.embed._get_collection", return_value=mock_collection):
         result = await query_chunks("test query", ["s1", "s2", "s3", "s4"], cfg)
 
         assert len(result) == 3
@@ -130,15 +122,7 @@ async def test_query_chunks_returns_chunk_metadata(tmp_bibilab_home):
         "distances": [[0.15]],
     }
 
-    with (
-        patch(
-            "bibilab.pipeline.embed.get_source_ids_for_sources",
-            new_callable=AsyncMock,
-        ) as mock_map,
-        patch("bibilab.pipeline.embed._get_collection", return_value=mock_collection),
-    ):
-        mock_map.return_value = {"src-abc": "bvid999"}
-
+    with patch("bibilab.pipeline.embed._get_collection", return_value=mock_collection):
         result = await query_chunks("test query", ["src-abc"], cfg)
 
         assert len(result) == 1
@@ -171,15 +155,7 @@ async def test_query_chunks_sorts_by_distance_ascending(tmp_bibilab_home):
         "distances": [[0.1, 0.2, 0.25]],
     }
 
-    with (
-        patch(
-            "bibilab.pipeline.embed.get_source_ids_for_sources",
-            new_callable=AsyncMock,
-        ) as mock_map,
-        patch("bibilab.pipeline.embed._get_collection", return_value=mock_collection),
-    ):
-        mock_map.return_value = {"s1": "v1", "s2": "v2", "s3": "v3"}
-
+    with patch("bibilab.pipeline.embed._get_collection", return_value=mock_collection):
         result = await query_chunks("test query", ["s1", "s2", "s3"], cfg)
 
         assert len(result) == 3
@@ -201,36 +177,13 @@ async def test_query_chunks_chroma_error_returns_empty(tmp_bibilab_home, caplog)
     mock_collection.query.side_effect = Exception("ChromaDB connection error")
 
     with (
-        patch(
-            "bibilab.pipeline.embed.get_source_ids_for_sources",
-            new_callable=AsyncMock,
-        ) as mock_map,
         patch("bibilab.pipeline.embed._get_collection", return_value=mock_collection),
         caplog.at_level(logging.WARNING),
     ):
-        mock_map.return_value = {"src-1": "bvid1"}
-
         result = await query_chunks("test query", ["src-1"], cfg)
 
         assert result == []
         assert "ChromaDB query failed" in caplog.text
-
-
-@pytest.mark.asyncio
-async def test_get_source_ids_for_sources(tmp_bibilab_home):
-    # P3: get_source_ids_for_sources removed — test deleted
-    return
-
-
-@pytest.mark.asyncio
-async def test_get_source_ids_for_sources_no_matches(tmp_bibilab_home):
-    from bibilab.db import bootstrap_db
-
-    await bootstrap_db()
-
-    return  # P3: function removed
-
-    # deleted in P3
 
 
 # --- retrieve() wrapper tests ---
@@ -257,12 +210,7 @@ async def test_retrieve_returns_result_with_metadata(tmp_bibilab_home):
         "distances": [[0.1, 0.2, 0.3]],
     }
 
-    with (
-        patch("bibilab.pipeline.embed.get_source_ids_for_sources", new_callable=AsyncMock) as mock_map,
-        patch("bibilab.pipeline.embed._get_collection", return_value=mock_collection),
-    ):
-        mock_map.return_value = {"s1": "v1", "s2": "v2"}
-
+    with patch("bibilab.pipeline.embed._get_collection", return_value=mock_collection):
         result = await retrieve("test query", ["s1", "s2"], cfg, params=RetrievalParams(depth_per_source=2, top_k=5))
 
     assert isinstance(result, RetrievalResult)
@@ -297,7 +245,7 @@ async def test_retrieve_empty_sources(tmp_bibilab_home):
 async def test_retrieve_single_source_returns_top_k_chunks(tmp_bibilab_home):
     """When LLM scopes to one source (#287), retrieve must return up to top_k
     chunks from that source, not be capped at spec_depth=2."""
-    from unittest.mock import AsyncMock, MagicMock, patch
+    from unittest.mock import MagicMock, patch
 
     from bibilab.config import BibilabConfig, RagConfig
     from bibilab.models._enums import RetrievalParams
@@ -323,12 +271,7 @@ async def test_retrieve_single_source_returns_top_k_chunks(tmp_bibilab_home):
         "distances": [[0.1, 0.2, 0.3, 0.4, 0.5, 0.5]],
     }
 
-    with (
-        patch("bibilab.pipeline.embed.get_source_ids_for_sources", new_callable=AsyncMock) as mock_map,
-        patch("bibilab.pipeline.embed._get_collection", return_value=mock_collection),
-    ):
-        mock_map.return_value = {"source-1": "v1"}
-
+    with patch("bibilab.pipeline.embed._get_collection", return_value=mock_collection):
         result = await retrieve(
             query_text="ramen",
             source_ids=["source-1"],
@@ -369,12 +312,7 @@ async def test_diverse_top_k_depth_one_keeps_best_per_source(tmp_bibilab_home):
         "distances": [[0.05, 0.15, 0.10, 0.20, 0.12, 0.25]],
     }
 
-    with (
-        patch("bibilab.pipeline.embed.get_source_ids_for_sources", new_callable=AsyncMock) as mock_map,
-        patch("bibilab.pipeline.embed._get_collection", return_value=mock_collection),
-    ):
-        mock_map.return_value = {"s1": "v1", "s2": "v2", "s3": "v3"}
-
+    with patch("bibilab.pipeline.embed._get_collection", return_value=mock_collection):
         result = await retrieve(
             "test query", ["s1", "s2", "s3"], cfg, params=RetrievalParams(depth_per_source=1, top_k=3)
         )
@@ -493,7 +431,6 @@ async def test_retrieve_depth_two_keeps_multiple_per_source(tmp_bibilab_home):
         return c
 
     with (
-        patch("bibilab.pipeline.embed.get_source_ids_for_sources", new_callable=AsyncMock) as mock_map,
         patch("bibilab.pipeline.embed._get_collection", return_value=mock_collection),
         patch(
             "bibilab.pipeline.rerank.rerank",
@@ -501,8 +438,6 @@ async def test_retrieve_depth_two_keeps_multiple_per_source(tmp_bibilab_home):
             return_value=[make_chunk("c1", 0.5), make_chunk("c2", 0.3), make_chunk("c3", 0.1)],
         ),
     ):
-        mock_map.return_value = {"s1": "v1"}
-
         result = await retrieve("test query", ["s1"], cfg, params=RetrievalParams(depth_per_source=2, top_k=5))
 
     assert len(result.chunks) == 3
@@ -572,11 +507,6 @@ async def test_hybrid_search_fallback_when_fts_returns_empty(tmp_bibilab_home):
 
     with (
         patch(
-            "bibilab.pipeline.embed.get_source_ids_for_sources",
-            new_callable=AsyncMock,
-            return_value={"s1": "v1"},
-        ),
-        patch(
             "bibilab.pipeline.embed.query_chunks",
             new_callable=AsyncMock,
             return_value=vector_chunks,
@@ -602,11 +532,6 @@ async def test_hybrid_search_fallback_when_fts_errors(tmp_bibilab_home):
     vector_chunks = [_make_chunk(content="vec chunk", source_id="v1")]
 
     with (
-        patch(
-            "bibilab.pipeline.embed.get_source_ids_for_sources",
-            new_callable=AsyncMock,
-            return_value={"s1": "v1"},
-        ),
         patch(
             "bibilab.pipeline.embed.query_chunks",
             new_callable=AsyncMock,
@@ -642,11 +567,6 @@ async def test_hybrid_search_deduplicates_same_chunk(tmp_bibilab_home):
     fts_chunks = [same_chunk]
 
     with (
-        patch(
-            "bibilab.pipeline.embed.get_source_ids_for_sources",
-            new_callable=AsyncMock,
-            return_value={"s1": "v1"},
-        ),
         patch(
             "bibilab.pipeline.embed.query_chunks",
             new_callable=AsyncMock,
@@ -860,12 +780,9 @@ async def test_candidates_evaluated_reflects_pre_rerank_count(tmp_bibilab_home):
     ]
 
     with (
-        patch("bibilab.pipeline.embed.get_source_ids_for_sources", new_callable=AsyncMock) as mock_map,
         patch("bibilab.pipeline.embed._get_collection", return_value=mock_collection),
         patch("bibilab.pipeline.rerank.rerank", new_callable=AsyncMock, return_value=reranked_chunks),
     ):
-        mock_map.return_value = {"s1": "v1", "s2": "v2", "s3": "v3"}
-
         result = await retrieve(
             "test query", ["s1", "s2", "s3"], cfg, params=RetrievalParams(depth_per_source=2, top_k=2)
         )
@@ -1042,12 +959,9 @@ async def test_retrieve_reranked_flag_true_on_success(tmp_bibilab_home):
         return chunks
 
     with (
-        patch("bibilab.pipeline.embed.get_source_ids_for_sources", new_callable=AsyncMock) as mock_map,
         patch("bibilab.pipeline.embed._get_collection", return_value=mock_collection),
         patch("bibilab.pipeline.rerank.rerank", side_effect=fake_rerank),
     ):
-        mock_map.return_value = {"source-1": "v1"}
-
         result = await embed_mod.retrieve(
             query_text="q",
             source_ids=["source-1"],
@@ -1077,12 +991,7 @@ async def test_retrieve_reranked_flag_false_when_disabled(tmp_bibilab_home):
         "distances": [[0.1]],
     }
 
-    with (
-        patch("bibilab.pipeline.embed.get_source_ids_for_sources", new_callable=AsyncMock) as mock_map,
-        patch("bibilab.pipeline.embed._get_collection", return_value=mock_collection),
-    ):
-        mock_map.return_value = {"source-1": "v1"}
-
+    with patch("bibilab.pipeline.embed._get_collection", return_value=mock_collection):
         result = await embed_mod.retrieve(
             query_text="q",
             source_ids=["source-1"],
@@ -1119,12 +1028,9 @@ async def test_retrieve_reranked_flag_false_on_exception(tmp_bibilab_home):
         raise RuntimeError("model missing")
 
     with (
-        patch("bibilab.pipeline.embed.get_source_ids_for_sources", new_callable=AsyncMock) as mock_map,
         patch("bibilab.pipeline.embed._get_collection", return_value=mock_collection),
         patch("bibilab.pipeline.rerank.rerank", side_effect=boom),
     ):
-        mock_map.return_value = {"source-1": "v1"}
-
         result = await embed_mod.retrieve(
             query_text="q",
             source_ids=["source-1"],

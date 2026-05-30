@@ -22,10 +22,6 @@ from bibilab.models._enums import _RELEVANCE_MARGIN_BY_MODE, RetrievalParams
 from bibilab.pipeline.chat_inference_pool import get_chat_pool
 from bibilab.pipeline.chunk import RagChunk
 
-# Backward-compat for P3 tests: old mocks patch this name on the embed module.
-# Remove when test_chat_rag.py is rewritten for direct source_id keying.
-get_source_ids_for_sources = None  # noqa: F841
-
 logger = logging.getLogger(__name__)
 
 
