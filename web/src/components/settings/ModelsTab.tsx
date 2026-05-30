@@ -11,8 +11,8 @@ import { formatBundleSize } from "@/lib/utils";
 
 type ModelEntry = ModelInfo & { jobStatus?: "downloading" | "failed" | null };
 
-const TRANSCRIPTION_KINDS: ReadonlyArray<ModelKind> = ["transcription", "vad", "diarization"];
-const KIND_ORDER: Partial<Record<ModelKind, number>> = { transcription: 0, vad: 1, diarization: 2 };
+const TRANSCRIPTION_KINDS: ReadonlyArray<ModelKind> = ["transcription", "vad", "diarization", "punctuation"];
+const KIND_ORDER: Partial<Record<ModelKind, number>> = { transcription: 0, vad: 1, diarization: 2, punctuation: 3 };
 
 function mergeJobStatus(entries: ModelInfo[], modelJobs: JobActivityItem[]): ModelEntry[] {
   return entries.map((m) => {

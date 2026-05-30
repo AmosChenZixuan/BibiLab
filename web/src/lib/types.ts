@@ -175,7 +175,7 @@ export type HealthResponse = {
   dependencies: Record<string, HealthDependency>;
 };
 
-export type ModelKind = "transcription" | "diarization" | "vad" | "embedding" | "reranker";
+export type ModelKind = "transcription" | "diarization" | "vad" | "punctuation" | "embedding" | "reranker";
 
 export type ModelStatus = "present" | "missing";
 
