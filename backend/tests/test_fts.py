@@ -45,7 +45,14 @@ def _make_meta(video_id: str = "VID1", title: str = "Test Video") -> VideoMeta:
 
 def _make_chunks(texts: list[str]) -> list[RagChunk]:
     return [
-        RagChunk(text=t, timestamp_start=float(i * 10), timestamp_end=float(i * 10 + 9), sequence_index=i)
+        RagChunk(
+            text=t,
+            timestamp_start=float(i * 10),
+            timestamp_end=float(i * 10 + 9),
+            sequence_index=i,
+            seg_start=i,
+            seg_end=i,
+        )
         for i, t in enumerate(texts)
     ]
 

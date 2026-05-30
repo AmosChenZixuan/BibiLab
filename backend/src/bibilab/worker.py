@@ -387,6 +387,8 @@ All output fields MUST be written in {_LANG_NAME.get(lang, "English")}."""
         cfg = self._get_config()
 
         source_id: str = meta_raw.get("source_id") or str(uuid.uuid4())
+        meta_raw["source_id"] = source_id
+        job["meta"] = meta_raw  # cleanup snapshot must carry source_id (Q1)
         await update_job_meta(job_id, {"source_id": source_id})
         video_id: str = meta_raw["video_id"]
         list_id: str = meta_raw["list_id"]
@@ -428,12 +430,12 @@ All output fields MUST be written in {_LANG_NAME.get(lang, "English")}."""
             raise PipelineError(f"[transcribing] {exc}") from exc
         if result is None:
             return  # cancelled
-        vad_segments, detected_language, effective_language, sentence_segments = result
+        detected_language, effective_language, sentence_segments = result
 
         # Stage 4: Chunk, digest + embed in parallel
         try:
             extraction = await self._stage_process(
-                job_id, job, vad_segments, sentence_segments, video_meta, list_id, cfg, effective_language
+                job_id, job, sentence_segments, source_id, video_meta, list_id, cfg, effective_language
             )
         except Exception as exc:
             raise PipelineError(f"[processing] {exc}") from exc
@@ -530,23 +532,23 @@ All output fields MUST be written in {_LANG_NAME.get(lang, "English")}."""
             await delete_job(job_id)
             return None
 
-        return vad_segments, detected_language, effective_language, sentence_segments
+        return detected_language, effective_language, sentence_segments
 
     async def _stage_process(
         self,
         job_id: str,
         job: dict,
-        vad_segments: list[WhisperSegment],
         sentence_segments: list[WhisperSegment],
+        source_id: str,
         video_meta: VideoMeta,
         list_id: str,
         cfg: BibilabConfig,
         effective_language: str,
     ) -> DigestResult | None:
-        """Stage 4: Chunk VAD segments, run digest + embed in parallel."""
+        """Stage 4: Chunk sentence segments, run digest + embed in parallel."""
         await update_job_status(job_id, JobStatus.PROCESSING.value, progress=40)
         chunks = chunk_segments(
-            vad_segments,
+            sentence_segments,
             language=effective_language,
             pause_threshold_seconds=cfg.rag.chunk_pause_threshold,
         )

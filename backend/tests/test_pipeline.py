@@ -424,6 +424,43 @@ def test_chunk_sentence_flush_below_min_target_skips():
 
 
 # ---------------------------------------------------------------------------
+# chunk.py — seg-range tracking (P3)
+# ---------------------------------------------------------------------------
+
+
+def test_chunk_seg_range_covers_every_segment_contiguously():
+    """3 short zh sentences → one chunk; seg-range spans 0..2."""
+    segs = [
+        _seg("第一句。", start=0.0, end=1.0),
+        _seg("第二句。", start=1.0, end=2.0),
+        _seg("第三句。", start=2.0, end=3.0),
+    ]
+    chunks = chunk_segments(segs, target_tokens=1000, language="zh")
+    assert len(chunks) == 1
+    assert (chunks[0].seg_start, chunks[0].seg_end) == (0, 2)
+
+
+def test_chunk_seg_range_partitions_input_with_no_gap_or_overlap():
+    """Force multiple chunks via tiny token target; ranges tile [0, N-1] exactly."""
+    segs = [_seg(f"句子{i}。", start=float(i), end=float(i) + 1) for i in range(10)]
+    chunks = chunk_segments(segs, target_tokens=2, chunk_max_tokens=3, language="zh")
+    # contiguous, ascending, no gap, no overlap across the whole input
+    assert chunks[0].seg_start == 0
+    assert chunks[-1].seg_end == 9
+    for prev, nxt in zip(chunks, chunks[1:]):
+        assert nxt.seg_start == prev.seg_end + 1
+
+
+def test_chunk_seg_range_oversized_segment_is_its_own_range():
+    """Oversized segment (index 1) is a standalone chunk with its own range."""
+    big = _seg("超长" * 500, start=0.0, end=5.0)  # exceeds max → own chunk
+    segs = [_seg("短句。", start=5.0, end=6.0), big, _seg("另一句。", start=6.0, end=7.0)]
+    chunks = chunk_segments(segs, target_tokens=50, language="zh")
+    oversized = [c for c in chunks if c.seg_start == 1 and c.seg_end == 1]
+    assert len(oversized) == 1
+
+
+# ---------------------------------------------------------------------------
 # _shared.py
 # ---------------------------------------------------------------------------
 

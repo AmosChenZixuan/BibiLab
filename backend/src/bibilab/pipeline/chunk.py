@@ -38,6 +38,8 @@ class RagChunk:
     timestamp_start: float
     timestamp_end: float
     sequence_index: int
+    seg_start: int
+    seg_end: int
 
 
 def _find_sentence_split(
@@ -72,6 +74,7 @@ def chunk_segments(
 
     chunks: list[RagChunk] = []
     buf_segs: list[WhisperSegment] = []
+    buf_seg_idxs: list[int] = []
     buf_seg_tokens: list[int] = []
     buf_tokens = 0
     pause_flushes = 0
@@ -79,7 +82,7 @@ def chunk_segments(
     sentence_flushes = 0
     oversized_flushes = 0
 
-    def emit(idx: int, segs: list[WhisperSegment]) -> None:
+    def emit(idx: int, segs: list[WhisperSegment], idxs: list[int]) -> None:
         if not segs:
             return
         chunks.append(
@@ -88,26 +91,30 @@ def chunk_segments(
                 timestamp_start=segs[0].start,
                 timestamp_end=segs[-1].end,
                 sequence_index=idx,
+                seg_start=idxs[0],
+                seg_end=idxs[-1],
             )
         )
 
     chunk_idx = 0
-    for seg in segments:
+    for seg_i, seg in enumerate(segments):
         seg_tokens = len(_enc.encode(seg.text))
 
         if seg_tokens >= resolved_max:
             # Oversized segment — flush current buffer first, then emit as its own chunk
             if buf_segs:
-                emit(chunk_idx, buf_segs)
+                emit(chunk_idx, buf_segs, buf_seg_idxs)
                 oversized_flushes += 1
                 chunk_idx += 1
-                buf_segs, buf_seg_tokens, buf_tokens = [], [], 0
+                buf_segs, buf_seg_idxs, buf_seg_tokens, buf_tokens = [], [], [], 0
             chunks.append(
                 RagChunk(
                     text=seg.text,
                     timestamp_start=seg.start,
                     timestamp_end=seg.end,
                     sequence_index=chunk_idx,
+                    seg_start=seg_i,
+                    seg_end=seg_i,
                 )
             )
             chunk_idx += 1
@@ -118,10 +125,10 @@ def chunk_segments(
         if buf_segs:
             gap = seg.start - buf_segs[-1].end
             if gap > pause_threshold_seconds and buf_tokens >= min_flush_tokens:
-                emit(chunk_idx, buf_segs)
+                emit(chunk_idx, buf_segs, buf_seg_idxs)
                 pause_flushes += 1
                 chunk_idx += 1
-                buf_segs, buf_seg_tokens, buf_tokens = [], [], 0
+                buf_segs, buf_seg_idxs, buf_seg_tokens, buf_tokens = [], [], [], 0
 
         # Token-target flush. Considers buf + incoming seg together. Prefers
         # the latest sentence boundary anywhere in that window; if none,
@@ -134,33 +141,35 @@ def chunk_segments(
             )
             if split_idx == len(buf_segs):
                 # boundary is on the incoming seg — flush buf + seg together
-                emit(chunk_idx, buf_segs + [seg])
+                emit(chunk_idx, buf_segs + [seg], buf_seg_idxs + [seg_i])
                 sentence_flushes += 1
                 chunk_idx += 1
-                buf_segs, buf_seg_tokens, buf_tokens = [], [], 0
+                buf_segs, buf_seg_idxs, buf_seg_tokens, buf_tokens = [], [], [], 0
                 continue  # seg already consumed
             if split_idx is not None:
                 # boundary inside buf — flush head, keep tail
                 head_count = split_idx + 1
                 head_tokens = sum(buf_seg_tokens[:head_count])
-                emit(chunk_idx, buf_segs[:head_count])
+                emit(chunk_idx, buf_segs[:head_count], buf_seg_idxs[:head_count])
                 sentence_flushes += 1
                 chunk_idx += 1
                 buf_segs = buf_segs[head_count:]
+                buf_seg_idxs = buf_seg_idxs[head_count:]
                 buf_seg_tokens = buf_seg_tokens[head_count:]
                 buf_tokens -= head_tokens
             elif buf_tokens >= min_flush_tokens:
                 # no boundary visible — bound chunk size at target
-                emit(chunk_idx, buf_segs)
+                emit(chunk_idx, buf_segs, buf_seg_idxs)
                 token_flushes += 1
                 chunk_idx += 1
-                buf_segs, buf_seg_tokens, buf_tokens = [], [], 0
+                buf_segs, buf_seg_idxs, buf_seg_tokens, buf_tokens = [], [], [], 0
 
         buf_segs.append(seg)
+        buf_seg_idxs.append(seg_i)
         buf_seg_tokens.append(seg_tokens)
         buf_tokens += seg_tokens
 
-    emit(chunk_idx, buf_segs)
+    emit(chunk_idx, buf_segs, buf_seg_idxs)
 
     total_flushes = pause_flushes + token_flushes + sentence_flushes + oversized_flushes
     if total_flushes:
