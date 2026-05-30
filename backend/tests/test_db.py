@@ -798,3 +798,68 @@ async def test_sources_has_no_transcript_path_column(tmp_bibilab_home: Path):
         cursor = await db.execute("PRAGMA table_info(sources)")
         cols = [r["name"] for r in await cursor.fetchall()]
     assert "transcript_path" not in cols
+
+
+_SOURCE_FIELDS = dict(
+    source_id="src-1",
+    video_id="BV1",
+    platform="bilibili",
+    list_id="list-1",
+    title="T",
+    summary="S",
+    keywords=[],
+    cover_url=None,
+    source_url="https://bilibili.com/video/BV1",
+    duration_seconds=1,
+    uploader="U",
+    language="zh",
+    whisper_model="m",
+    ai_model="a",
+    vision_enabled=False,
+    settings_snapshot={},
+)
+
+
+@pytest.mark.asyncio
+async def test_write_source_with_segments_atomic_happy(tmp_bibilab_home: Path):
+    from bibilab.db import (
+        bootstrap_db,
+        create_list,
+        get_source,
+        get_transcript_segments,
+        write_source_with_segments,
+    )
+    from bibilab.pipeline.transcribe import WhisperSegment
+
+    await bootstrap_db()
+    await create_list("list-1", "L", "2026-01-01T00:00:00")
+    await write_source_with_segments(
+        segments=[WhisperSegment(start=0.0, end=2.0, text="你好。", speaker="SPK_0")],
+        **_SOURCE_FIELDS,
+    )
+    assert await get_source("src-1") is not None
+    assert len(await get_transcript_segments("src-1")) == 1
+
+
+@pytest.mark.asyncio
+async def test_write_source_with_segments_rolls_back_on_segment_failure(tmp_bibilab_home: Path, monkeypatch):
+    """If the segment write fails, the source upsert rolls back with it — no
+    orphaned source row (the bug the old compensating delete tried to patch)."""
+    import bibilab.db as db
+    from bibilab.db import bootstrap_db, create_list, get_source, write_source_with_segments
+    from bibilab.pipeline.transcribe import WhisperSegment
+
+    await bootstrap_db()
+    await create_list("list-1", "L", "2026-01-01T00:00:00")
+
+    async def _boom(*args, **kwargs):
+        raise RuntimeError("segment write failed")
+
+    monkeypatch.setattr(db, "_exec_write_transcript_segments", _boom)
+
+    with pytest.raises(RuntimeError):
+        await write_source_with_segments(
+            segments=[WhisperSegment(start=0.0, end=2.0, text="你好。", speaker="SPK_0")],
+            **_SOURCE_FIELDS,
+        )
+    assert await get_source("src-1") is None

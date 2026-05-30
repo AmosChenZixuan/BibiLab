@@ -16,7 +16,6 @@ from bibilab.config import BibilabConfig, bibilab_home, load_config
 from bibilab.db import (
     create_artifact,
     delete_job,
-    delete_source,
     get_list,
     get_pending_jobs,
     get_source,
@@ -24,8 +23,7 @@ from bibilab.db import (
     update_job_meta,
     update_job_status,
     update_source_digest,
-    write_source,
-    write_transcript_segments,
+    write_source_with_segments,
 )
 from bibilab.model_registry import ensure
 from bibilab.models.jobs import JobStatus
@@ -593,8 +591,11 @@ All output fields MUST be written in {_LANG_NAME.get(lang, "English")}."""
         cfg: BibilabConfig,
         sentence_segments: list[WhisperSegment],
     ) -> None:
-        """Stage 5: Persist source row, then transcript segments (FK child), then cleanup."""
-        await write_source(
+        """Stage 5: Persist source row + transcript segments atomically, then cleanup."""
+        # One transaction: a source row never commits without its segments (no
+        # orphaned-source state, no compensating delete). See write_source_with_segments.
+        await write_source_with_segments(
+            segments=sentence_segments,
             source_id=source_id,
             video_id=video_id,
             platform=video_meta.platform,
@@ -615,23 +616,6 @@ All output fields MUST be written in {_LANG_NAME.get(lang, "English")}."""
             sequence_number=extraction.sequence_number,
             season_number=extraction.season_number,
         )
-        try:
-            await write_transcript_segments(source_id, sentence_segments)
-        except Exception:
-            logger.exception(
-                "Failed to write transcript segments for source %s; rolling back source row",
-                source_id,
-            )
-            try:
-                await delete_source(source_id)
-                logger.info("Rolled back source %s after segment write failure", source_id)
-            except Exception:
-                logger.exception(
-                    "CRITICAL: Failed to delete orphaned source %s during rollback — "
-                    "source row may persist without segments",
-                    source_id,
-                )
-            raise
 
         # Cleanup downloads
         for path in (self._bibilab_home / "downloads").glob(f"{video_id}.*"):

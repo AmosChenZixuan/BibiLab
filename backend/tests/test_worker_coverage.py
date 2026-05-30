@@ -264,8 +264,10 @@ async def test_stage_transcribe_punctuates_and_returns_sentences(tmp_bibilab_hom
 
 
 @pytest.mark.asyncio
-async def test_stage_persist_compensation_deletes_source_on_segment_write_failure(tmp_bibilab_home: Path):
-    """If write_transcript_segments fails, the source row is rolled back."""
+async def test_stage_persist_atomic_no_orphan_on_segment_write_failure(tmp_bibilab_home: Path):
+    """Source + segments persist in one transaction. A segment-write failure rolls
+    the source upsert back too — no orphaned source row (atomicity, not compensation)."""
+    import bibilab.db as db
     from bibilab.db import bootstrap_db, create_job, create_list, get_source
     from bibilab.pipeline.transcribe import WhisperSegment
 
@@ -280,7 +282,10 @@ async def test_stage_persist_compensation_deletes_source_on_segment_write_failur
         platform="bilibili", title="T", cover_url=None, source_url="url", duration_seconds=1, uploader="U"
     )
 
-    with patch("bibilab.worker.write_transcript_segments", side_effect=Exception("disk full")):
+    async def _boom(*args, **kwargs):
+        raise Exception("disk full")
+
+    with patch.object(db, "_exec_write_transcript_segments", _boom):
         with pytest.raises(Exception, match="disk full"):
             await loop._stage_persist(
                 job_id=job_id,
@@ -301,7 +306,7 @@ async def test_stage_persist_compensation_deletes_source_on_segment_write_failur
                 sentence_segments=sentences,
             )
 
-    # Compensation should have deleted the orphaned source row
+    # The source upsert rolled back with the failed segment write — no orphan
     assert await get_source("orphan-src") is None
 
 
