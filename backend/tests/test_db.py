@@ -731,3 +731,72 @@ async def test_get_source_facets(tmp_bibilab_home: Path):
         "s3": {"sequence_number": None, "season_number": None},
     }
     assert await get_source_facets([]) == {}
+
+
+# ── transcript_segments ──────────────────────────────────────────────
+
+
+async def _insert_source(
+    source_id: str = "src-1",
+    video_id: str = "BV1",
+    list_id: str = "list-1",
+) -> str:
+    from datetime import datetime, timezone
+
+    from bibilab.db import create_list, get_db
+
+    now = datetime.now(timezone.utc).isoformat()
+    await create_list(list_id, "L", now)
+    async with get_db() as db:
+        await db.execute(
+            "INSERT INTO sources (id, video_id, platform, list_id) VALUES (?, ?, ?, ?)",
+            (source_id, video_id, "bilibili", list_id),
+        )
+        await db.commit()
+    return source_id
+
+
+@pytest.mark.asyncio
+async def test_transcript_segments_roundtrip(tmp_bibilab_home: Path):
+    from bibilab.db import bootstrap_db, get_transcript_segments, write_transcript_segments
+    from bibilab.pipeline.transcribe import WhisperSegment
+
+    await bootstrap_db()
+    source_id = await _insert_source()
+    segs = [
+        WhisperSegment(start=0.0, end=2.0, text="你好。", speaker="SPK_0"),
+        WhisperSegment(start=2.0, end=4.0, text="再见。", speaker="SPK_1"),
+    ]
+    await write_transcript_segments(source_id, segs)
+    rows = await get_transcript_segments(source_id)
+    assert [r["seq"] for r in rows] == [0, 1]
+    assert [r["text"] for r in rows] == ["你好。", "再见。"]
+    assert [r["speaker"] for r in rows] == ["SPK_0", "SPK_1"]
+    assert rows[0]["start_s"] == 0.0 and rows[1]["end_s"] == 4.0
+
+
+@pytest.mark.asyncio
+async def test_transcript_segments_cascade_on_source_delete(tmp_bibilab_home: Path):
+    from bibilab.db import bootstrap_db, delete_source, get_transcript_segments, write_transcript_segments
+    from bibilab.pipeline.transcribe import WhisperSegment
+
+    await bootstrap_db()
+    source_id = await _insert_source()
+    await write_transcript_segments(source_id, [WhisperSegment(start=0.0, end=1.0, text="x。", speaker="SPK_0")])
+    assert len(await get_transcript_segments(source_id)) == 1
+    await delete_source(source_id)
+    assert await get_transcript_segments(source_id) == []
+
+
+@pytest.mark.asyncio
+async def test_transcript_segments_rejects_orphan(tmp_bibilab_home: Path):
+    import aiosqlite
+
+    from bibilab.db import bootstrap_db, write_transcript_segments
+    from bibilab.pipeline.transcribe import WhisperSegment
+
+    await bootstrap_db()
+    with pytest.raises(aiosqlite.IntegrityError):
+        await write_transcript_segments(
+            "no-such-source", [WhisperSegment(start=0.0, end=1.0, text="x。", speaker=None)]
+        )
