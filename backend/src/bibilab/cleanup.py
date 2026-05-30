@@ -25,12 +25,6 @@ def cleanup_job_artifacts(job: dict[str, Any]) -> None:
         return
 
     home = bibilab_home()
-    paths = [
-        home / "transcripts" / f"{video_id}.txt",
-    ]
-
-    for path in paths:
-        path.unlink(missing_ok=True)
 
     for path in (home / "downloads").glob(f"{video_id}.*"):
         path.unlink(missing_ok=True)

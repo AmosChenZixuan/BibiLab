@@ -2,7 +2,7 @@
 
 ## What This Project Is
 
-**Project Bibilab** transforms video content into searchable, AI-assisted private notebooks. A FastAPI backend runs the local processing pipeline (download → transcribe → chunk → digest ∥ embed), and a React + TypeScript SPA under `web/` provides the primary user interface.
+**Project Bibilab** transforms video content into searchable, AI-assisted private notebooks. A FastAPI backend runs the local processing pipeline (download → transcribe → punctuate → chunk → digest ∥ embed), and a React + TypeScript SPA under `web/` provides the primary user interface.
 
 Platform-specific context lives in `backend/CLAUDE.md` and `web/CLAUDE.md`.
 

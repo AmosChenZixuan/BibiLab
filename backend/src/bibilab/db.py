@@ -380,12 +380,19 @@ async def write_transcript_segments(source_id: str, segments: list) -> None:
     """Replace all transcript segments for a source. `segments` is a list of
     WhisperSegment (start, end, text, speaker). Idempotent (DELETE then INSERT)."""
     async with get_db() as db:
-        await db.execute("DELETE FROM transcript_segments WHERE source_id = ?", (source_id,))
-        await db.executemany(
-            "INSERT INTO transcript_segments (source_id, seq, start_s, end_s, speaker, text) VALUES (?, ?, ?, ?, ?, ?)",
-            [(source_id, i, s.start, s.end, s.speaker, s.text) for i, s in enumerate(segments)],
-        )
-        await db.commit()
+        await db.execute("BEGIN IMMEDIATE")
+        try:
+            await db.execute("DELETE FROM transcript_segments WHERE source_id = ?", (source_id,))
+            await db.executemany(
+                "INSERT INTO transcript_segments "
+                "(source_id, seq, start_s, end_s, speaker, text) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                [(source_id, i, s.start, s.end, s.speaker, s.text) for i, s in enumerate(segments)],
+            )
+            await db.commit()
+        except Exception:
+            await db.execute("ROLLBACK")
+            raise
 
 
 async def get_transcript_segments(source_id: str) -> list[aiosqlite.Row]:

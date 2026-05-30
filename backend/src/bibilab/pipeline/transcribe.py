@@ -189,7 +189,11 @@ async def load_transcript_text(source_id: str) -> str:
     """Load a source's transcript from the segments table, formatted for LLM/UI."""
     from bibilab.db import get_transcript_segments  # local import avoids db<->pipeline cycle
 
-    rows = await get_transcript_segments(source_id)
+    try:
+        rows = await get_transcript_segments(source_id)
+    except Exception:
+        logger.exception("Failed to load transcript segments for source %s", source_id)
+        raise
     segs = [WhisperSegment(start=r["start_s"], end=r["end_s"], text=r["text"], speaker=r["speaker"]) for r in rows]
     return format_transcript_text(segs)
 

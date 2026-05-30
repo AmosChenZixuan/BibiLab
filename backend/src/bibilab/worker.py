@@ -618,9 +618,19 @@ All output fields MUST be written in {_LANG_NAME.get(lang, "English")}."""
         try:
             await write_transcript_segments(source_id, sentence_segments)
         except Exception:
-            # If segments write fails, clean up the source row to avoid a
-            # permanently orphaned source (two separate get_db transactions).
-            await delete_source(source_id)
+            logger.exception(
+                "Failed to write transcript segments for source %s; rolling back source row",
+                source_id,
+            )
+            try:
+                await delete_source(source_id)
+                logger.info("Rolled back source %s after segment write failure", source_id)
+            except Exception:
+                logger.exception(
+                    "CRITICAL: Failed to delete orphaned source %s during rollback — "
+                    "source row may persist without segments",
+                    source_id,
+                )
             raise
 
         # Cleanup downloads

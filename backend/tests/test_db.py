@@ -72,9 +72,6 @@ async def test_write_and_get_source(tmp_bibilab_home: Path):
 
     await bootstrap_db()
     await create_list("list-1", "ML Course", "2026-01-01T00:00:00")
-    transcript_file = tmp_bibilab_home / "transcripts" / "BV1abc.txt"
-    transcript_file.parent.mkdir(parents=True, exist_ok=True)
-    transcript_file.write_text("Intro to ML transcript.", encoding="utf-8")
     source_id = "source-uuid-abc"
     await write_source(
         source_id=source_id,

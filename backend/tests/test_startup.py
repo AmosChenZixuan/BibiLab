@@ -228,7 +228,7 @@ async def test_serves_built_spa_without_shadowing_api_routes(tmp_bibilab_home: P
 
 @pytest.mark.asyncio
 async def test_bibilab_dirs_bootstrapped(client: httpx.AsyncClient, tmp_bibilab_home: Path):
-    for subdir in ("covers", "transcripts", "downloads", "chroma"):
+    for subdir in ("covers", "downloads", "chroma"):
         assert (tmp_bibilab_home / subdir).is_dir(), f"Missing {subdir}/"
     assert (tmp_bibilab_home / "bibilab.db").exists()
 

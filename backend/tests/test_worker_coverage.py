@@ -70,11 +70,12 @@ class TestParseJobMeta:
 
 
 @pytest.mark.asyncio
-async def test_download_model_job_success(tmp_bibilab_home: Path):
+@pytest.mark.parametrize("model_name", ["large-v3", "cam++"])
+async def test_download_model_job_success(model_name: str, tmp_bibilab_home: Path):
     from bibilab.db import bootstrap_db, create_job
 
     await bootstrap_db()
-    meta = {"model_name": "large-v3"}
+    meta = {"model_name": model_name}
     job_id = await create_job("model_download", meta)
 
     worker = WorkerLoop(home=tmp_bibilab_home)
@@ -82,23 +83,7 @@ async def test_download_model_job_success(tmp_bibilab_home: Path):
 
     with patch("bibilab.worker.ensure") as mock_ensure:
         await worker._download_model_job(job)
-        mock_ensure.assert_called_once_with("large-v3")
-
-
-@pytest.mark.asyncio
-async def test_download_model_job_diarization(tmp_bibilab_home: Path):
-    from bibilab.db import bootstrap_db, create_job
-
-    await bootstrap_db()
-    meta = {"model_name": "cam++"}
-    job_id = await create_job("model_download", meta)
-
-    worker = WorkerLoop(home=tmp_bibilab_home)
-    job = {"id": job_id, "type": "model_download", "meta": json.dumps(meta)}
-
-    with patch("bibilab.worker.ensure") as mock_ensure:
-        await worker._download_model_job(job)
-        mock_ensure.assert_called_once_with("cam++")
+        mock_ensure.assert_called_once_with(model_name)
 
 
 @pytest.mark.asyncio
@@ -276,6 +261,48 @@ async def test_stage_transcribe_punctuates_and_returns_sentences(tmp_bibilab_hom
     assert called["language"] == "zh"
     assert sentence_segments == sentences
     assert vad_segments == vad  # chunk still consumes VAD segments in P2
+
+
+@pytest.mark.asyncio
+async def test_stage_persist_compensation_deletes_source_on_segment_write_failure(tmp_bibilab_home: Path):
+    """If write_transcript_segments fails, the source row is rolled back."""
+    from bibilab.db import bootstrap_db, create_job, create_list, get_source
+    from bibilab.pipeline.transcribe import WhisperSegment
+
+    await bootstrap_db()
+    await create_list("list-1", "Test List", "2026-01-01T00:00:00")
+    job_id = await create_job("ingest", {})
+
+    sentences = [WhisperSegment(start=0.0, end=1.0, text="test。", speaker=None)]
+
+    loop = WorkerLoop(home=tmp_bibilab_home)
+    video_meta = MagicMock(
+        platform="bilibili", title="T", cover_url=None, source_url="url", duration_seconds=1, uploader="U"
+    )
+
+    with patch("bibilab.worker.write_transcript_segments", side_effect=Exception("disk full")):
+        with pytest.raises(Exception, match="disk full"):
+            await loop._stage_persist(
+                job_id=job_id,
+                source_id="orphan-src",
+                video_id="BVorphan",
+                video_meta=video_meta,
+                list_id="list-1",
+                extraction=MagicMock(
+                    summary="s", keywords=[], series_name=None, sequence_number=None, season_number=None
+                ),
+                detected_language="en",
+                cfg=MagicMock(
+                    transcription=MagicMock(model="base"),
+                    ai=MagicMock(model="gpt"),
+                    vision=MagicMock(enabled=False),
+                    model_dump=lambda: {},
+                ),
+                sentence_segments=sentences,
+            )
+
+    # Compensation should have deleted the orphaned source row
+    assert await get_source("orphan-src") is None
 
 
 @pytest.mark.asyncio

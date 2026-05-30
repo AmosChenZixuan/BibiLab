@@ -75,7 +75,6 @@ def make_lifespan(*, start_worker: bool) -> Callable[[], AsyncGenerator[None, No
         home = bibilab_home()
         for subdir in (
             "covers",
-            "transcripts",
             "downloads",
             "chroma",
             "tmp",

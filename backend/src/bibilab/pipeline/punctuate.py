@@ -35,7 +35,7 @@ def _align(segments: list[WhisperSegment], punctuated: str) -> list[WhisperSegme
 
     Emits punctuated sentence segments. Splits on sentence-final punctuation and
     on speaker change (G3). Each segment's time is derived from the VAD segments
-    its characters came from (G1: first.start..last.end; G2: shared span).
+    its characters came from (first.start..last.end).
 
     Raises ValueError if the invariant `strip_punc(punctuated) == raw` is broken
     (ct-punc rewrote a character rather than only inserting punctuation).
