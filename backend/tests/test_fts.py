@@ -19,7 +19,7 @@ from bibilab.db import (
     query_fts_rows,
 )
 from bibilab.pipeline.chunk import RagChunk
-from bibilab.pipeline.embed import clear_fts_for_video_sync, populate_fts, query_fts
+from bibilab.pipeline.embed import clear_fts_for_source_sync, populate_fts, query_fts
 
 
 @pytest.fixture()
@@ -71,7 +71,7 @@ async def test_populate_fts_inserts_rows(tmp_bibilab_home: Path):
     await bootstrap_db()
     meta = _make_meta()
     chunks = _make_chunks(["hello world", "foo bar baz"])
-    populate_fts(chunks, meta)
+    populate_fts(chunks, "SRC1", meta)
 
     async with get_db() as db:
         cursor = await db.execute("SELECT COUNT(*) FROM chunks_fts")
@@ -84,27 +84,27 @@ async def test_query_fts_returns_matching_chunks(tmp_bibilab_home: Path):
     await bootstrap_db()
     meta = _make_meta()
     chunks = _make_chunks(["the quick brown fox", "lazy dog sleeping", "fox jumps over fence"])
-    populate_fts(chunks, meta)
+    populate_fts(chunks, "SRC1", meta)
 
-    rows = await query_fts_rows("fox", ["VID1"], top_k=10)
+    rows = await query_fts_rows("fox", ["SRC1"], top_k=10)
     assert len(rows) >= 1
     contents = [r["content"] for r in rows]
     assert any("fox" in c for c in contents)
 
 
 @pytest.mark.asyncio
-async def test_query_fts_filters_by_video_id(tmp_bibilab_home: Path):
+async def test_query_fts_filters_by_source_id(tmp_bibilab_home: Path):
     await bootstrap_db()
     meta1 = _make_meta("VID1", "Video One")
     meta2 = _make_meta("VID2", "Video Two")
-    populate_fts(_make_chunks(["alpha beta gamma"]), meta1)
-    populate_fts(_make_chunks(["alpha delta epsilon"]), meta2)
+    populate_fts(_make_chunks(["alpha beta gamma"]), "S1", meta1)
+    populate_fts(_make_chunks(["alpha delta epsilon"]), "S2", meta2)
 
-    rows = await query_fts_rows("alpha", ["VID1"], top_k=10)
+    rows = await query_fts_rows("alpha", ["S1"], top_k=10)
     assert len(rows) == 1
-    assert rows[0]["video_id"] == "VID1"
+    assert rows[0]["source_id"] == "S1"
 
-    rows_both = await query_fts_rows("alpha", ["VID1", "VID2"], top_k=10)
+    rows_both = await query_fts_rows("alpha", ["S1", "S2"], top_k=10)
     assert len(rows_both) == 2
 
 
@@ -119,13 +119,13 @@ async def test_query_fts_empty_sources_returns_empty(tmp_bibilab_home: Path):
 async def test_clear_fts_for_video(tmp_bibilab_home: Path):
     await bootstrap_db()
     meta = _make_meta()
-    populate_fts(_make_chunks(["some text here"]), meta)
+    populate_fts(_make_chunks(["some text here"]), "SRC1", meta)
 
     async with get_db() as db:
         cursor = await db.execute("SELECT COUNT(*) FROM chunks_fts")
         assert (await cursor.fetchone())[0] == 1
 
-    await asyncio.to_thread(clear_fts_for_video_sync, "VID1")
+    await asyncio.to_thread(clear_fts_for_source_sync, "SRC1")
 
     async with get_db() as db:
         cursor = await db.execute("SELECT COUNT(*) FROM chunks_fts")
@@ -143,9 +143,9 @@ async def test_query_fts_bm25_ranking(tmp_bibilab_home: Path):
             "fish whale shark",
         ]
     )
-    populate_fts(chunks, meta)
+    populate_fts(chunks, "SRC1", meta)
 
-    rows = await query_fts_rows("cat", ["VID1"], top_k=10)
+    rows = await query_fts_rows("cat", ["SRC1"], top_k=10)
     assert len(rows) == 2
     # FTS5 rank: more negative = better match. First result should be the better match.
     assert rows[0]["rank"] <= rows[1]["rank"]
@@ -156,10 +156,9 @@ async def test_query_fts_integration(tmp_bibilab_home: Path):
     """Test query_fts (the high-level async function) with mocked source lookup."""
     await bootstrap_db()
     meta = _make_meta()
-    populate_fts(_make_chunks(["machine learning is great", "deep learning rocks"]), meta)
+    populate_fts(_make_chunks(["machine learning is great", "deep learning rocks"]), "SRC1", meta)
 
-    with patch("bibilab.pipeline.embed.get_video_ids_for_sources", return_value={"src1": "VID1"}):
-        results = await query_fts("learning", ["src1"], BibilabConfig())
+    results = await query_fts("learning", ["SRC1"], BibilabConfig())
 
     assert len(results) == 2
     assert all(r.score is not None and r.score > 0 for r in results)  # negated BM25 rank; higher = more relevant

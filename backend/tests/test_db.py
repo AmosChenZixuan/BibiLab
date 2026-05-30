@@ -456,11 +456,11 @@ async def test_get_video_statuses_precedence_needs_auth_over_processed(tmp_bibil
     assert result == {"BV1": "needs_auth"}
 
 
-def test_clear_embeddings_for_video_does_not_raise(tmp_path: Path):
+def test_clear_embeddings_for_source_does_not_raise(tmp_path: Path):
     from unittest.mock import MagicMock, patch
 
     from bibilab.config import BibilabConfig
-    from bibilab.pipeline.embed import clear_embeddings_for_video
+    from bibilab.pipeline.embed import clear_embeddings_for_source
 
     mock_col = MagicMock()
     mock_col.delete.return_value = None
@@ -469,8 +469,8 @@ def test_clear_embeddings_for_video_does_not_raise(tmp_path: Path):
         patch("bibilab.pipeline.embed.bibilab_home", return_value=tmp_path),
     ):
         (tmp_path / "chroma").mkdir(parents=True, exist_ok=True)
-        clear_embeddings_for_video("BV1abc", BibilabConfig())
-    mock_col.delete.assert_called_once_with(where={"video_id": "BV1abc"})
+        clear_embeddings_for_source("src-1", BibilabConfig())
+    mock_col.delete.assert_called_once_with(where={"source_id": "src-1"})
 
 
 class TestDeriveVideoStatuses:
