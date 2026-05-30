@@ -810,6 +810,41 @@ async def test_transcript_segments_rejects_orphan(tmp_bibilab_home: Path):
 
 
 @pytest.mark.asyncio
+async def test_get_segments_for_ranges_batches_multiple_sources(tmp_bibilab_home: Path):
+    from bibilab.db import bootstrap_db, get_segments_for_ranges, write_transcript_segments
+    from bibilab.pipeline.transcribe import WhisperSegment
+
+    await bootstrap_db()
+    s1 = await _insert_source("s1", "BV1", "list-1")
+    s2 = await _insert_source("s2", "BV2", "list-2")
+    await write_transcript_segments(
+        s1,
+        [
+            WhisperSegment(start=0.0, end=1.0, text="a", speaker="SPK_0"),
+            WhisperSegment(start=1.0, end=2.0, text="b", speaker="SPK_0"),
+            WhisperSegment(start=2.0, end=3.0, text="c", speaker="SPK_1"),
+        ],
+    )
+    await write_transcript_segments(
+        s2,
+        [
+            WhisperSegment(start=0.0, end=1.0, text="d", speaker="SPK_0"),
+        ],
+    )
+
+    rows = await get_segments_for_ranges([("s1", 1, 2), ("s2", 0, 0)])
+    got = {(r["source_id"], r["seq"], r["text"]) for r in rows}
+    assert got == {("s1", 1, "b"), ("s1", 2, "c"), ("s2", 0, "d")}
+
+
+@pytest.mark.asyncio
+async def test_get_segments_for_ranges_empty_returns_empty():
+    from bibilab.db import get_segments_for_ranges
+
+    assert await get_segments_for_ranges([]) == []
+
+
+@pytest.mark.asyncio
 async def test_sources_has_no_transcript_path_column(tmp_bibilab_home: Path):
     from bibilab.db import bootstrap_db, get_db
 

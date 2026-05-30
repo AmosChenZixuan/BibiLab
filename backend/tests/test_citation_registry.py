@@ -25,6 +25,9 @@ class FakeRetrievedChunk:
     source_id: str
     distance: float = 0.0
     score: float | None = None
+    seg_start: int | None = None
+    seg_end: int | None = None
+    is_neighbor: bool = False
 
 
 def _make_result(source_hits, chunks):

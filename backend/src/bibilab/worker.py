@@ -35,7 +35,7 @@ from bibilab.pipeline.embed import embed_chunks
 from bibilab.pipeline.punctuate import punctuate
 from bibilab.pipeline.transcribe import (
     WhisperSegment,
-    format_transcript_text,
+    format_turns,
     load_transcript_text,
     transcribe,
 )
@@ -218,7 +218,7 @@ class WorkerLoop:
                 source = await get_source(source_id)
                 if source is None:
                     raise PipelineError(f"Source {source_id!r} not found")
-                transcript_text = await load_transcript_text(source_id)
+                transcript_text = await load_transcript_text(source_id, include_time=False)
                 if not transcript_text:
                     raise PipelineError(f"Source {source_id!r} has no transcript")
                 transcripts.append(f"=== Source: {source['title']} ===\n{transcript_text}")
@@ -348,7 +348,7 @@ All output fields MUST be written in {_LANG_NAME.get(lang, "English")}."""
         source = await get_source(source_id)
         if source is None:
             raise PipelineError(f"Source {source_id!r} not found")
-        transcript_text = await load_transcript_text(source_id)
+        transcript_text = await load_transcript_text(source_id, include_time=False)
         if not transcript_text:
             raise PipelineError(f"Source {source_id!r} has no transcript")
 
@@ -554,7 +554,7 @@ All output fields MUST be written in {_LANG_NAME.get(lang, "English")}."""
         )
 
         meta_raw = _parse_job_meta(job)
-        transcript_text = format_transcript_text(sentence_segments)
+        transcript_text = format_turns(sentence_segments, include_time=False)
 
         async def _digest() -> DigestResult:
             return await asyncio.to_thread(

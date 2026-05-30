@@ -274,3 +274,24 @@ class TestONNXMultilingualEmbedding:
         from bibilab.pipeline.embed import is_embedding_model_downloaded
 
         assert isinstance(is_embedding_model_downloaded(), bool)
+
+
+class TestRowFromChromaSegRange:
+    def test_row_from_chroma_hydrates_seg_range(self):
+        from bibilab.pipeline.embed import _row_from_chroma
+
+        chunk = _row_from_chroma(
+            content="x",
+            metadata={"source_id": "s1", "seg_start": 4, "seg_end": 9, "video_title": "t"},
+            distance=0.1,
+            chroma_id="s1_2",
+        )
+        assert chunk.seg_start == 4
+        assert chunk.seg_end == 9
+
+    def test_row_from_chroma_seg_range_defaults_when_absent(self):
+        from bibilab.pipeline.embed import _row_from_chroma
+
+        chunk = _row_from_chroma(content="x", metadata={"source_id": "s1"}, distance=0.1, chroma_id="s1_0")
+        assert chunk.seg_start is None
+        assert chunk.seg_end is None

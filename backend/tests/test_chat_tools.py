@@ -280,26 +280,6 @@ class TestExecuteQueryListMetadata:
         assert "Unknown query_type" in caplog.text
 
 
-class TestFormatChunkForLLM:
-    def test_format_with_index(self):
-        from bibilab.pipeline.chat_tools import _format_chunk_for_llm
-
-        result = _format_chunk_for_llm(
-            {"title": "V", "start": 120.0, "end": 145.0, "content": "hi"},
-            index=3,
-        )
-        assert result == '[3 @ 120s-145s]: "hi"'
-
-    def test_truncates_floats(self):
-        from bibilab.pipeline.chat_tools import _format_chunk_for_llm
-
-        result = _format_chunk_for_llm(
-            {"title": "V", "start": 10.9, "end": 20.1, "content": "x"},
-            index=1,
-        )
-        assert result == '[1 @ 10s-20s]: "x"'
-
-
 class TestExecuteRetrieve:
     """Tests for execute_retrieve return shape and registry handling."""
 
@@ -1576,8 +1556,9 @@ async def test_execute_retrieve_chunks_grouped_and_fenced(monkeypatch):
     assert f1 < f2
 
     # Grouping: both v1 chunk lines precede any v2 chunk line.
-    a2 = chunks.index('[1 @ 9s-18s]: "a2"')
-    b1 = chunks.index('[2 @ 0s-9s]: "b1"')
+    # Chunks have no seg_start, so _turn_body falls back to raw content.
+    a2 = chunks.index("a2")
+    b1 = chunks.index("b1")
     assert a2 < b1, "v1 chunks must cluster before v2 chunks (no interleave)"
 
     # Cumulative _build_source_headers anchor still present (non-fenced line).
@@ -1593,3 +1574,85 @@ async def test_execute_retrieve_chunks_grouped_and_fenced(monkeypatch):
     entry = build_tool_block_entry("tu1", "retrieve", {}, result, result["_raw_chunks"])
     assert "=====" not in json.dumps(entry, ensure_ascii=False)
     assert "_chunks" not in entry["result"]
+
+
+@pytest.mark.asyncio
+async def test_execute_retrieve_reconstructs_namespaced_turn_body(monkeypatch):
+    """P4 Layer 5: displayed chunks with a seg-range get a speaker-turn body
+    (grouped + time + S{N}·SPK{k}) reconstructed from transcript_segments, fed
+    into both the fence body and the persisted preview. Namespacing is stable
+    across a source's chunks."""
+    from unittest.mock import AsyncMock
+
+    from bibilab.config import AIConfig, BackendConfig, BibilabConfig
+    from bibilab.pipeline import chat_tools
+    from bibilab.pipeline.embed import RetrievalResult, RetrievedChunk, SourceHit
+
+    async def fake_retrieve(query_text, source_ids, cfg, params, **kwargs):
+        # Two chunks from one source, each carrying a seg-range.
+        return RetrievalResult(
+            chunks=[
+                RetrievedChunk(
+                    content="raw-a1",
+                    video_title="Video One",
+                    timestamp_start=0.0,
+                    timestamp_end=8.0,
+                    source_id="v1",
+                    distance=0.1,
+                    score=0.9,
+                    seg_start=0,
+                    seg_end=1,
+                ),
+                RetrievedChunk(
+                    content="raw-a2",
+                    video_title="Video One",
+                    timestamp_start=9.0,
+                    timestamp_end=12.0,
+                    source_id="v1",
+                    distance=0.2,
+                    score=0.7,
+                    seg_start=2,
+                    seg_end=2,
+                ),
+            ],
+            candidates_evaluated=2,
+            sources_with_hits=1,
+            sources_total=1,
+            source_coverage=[SourceHit(source_id="v1", video_title="Video One", best_score=-0.9)],
+        )
+
+    # Union of both chunks' ranges; two speakers → namespace SPK_0->0, SPK_1->1.
+    seg_rows = [
+        {"source_id": "v1", "seq": 0, "start_s": 0.0, "end_s": 4.0, "speaker": "SPK_0", "text": "你好。"},
+        {"source_id": "v1", "seq": 1, "start_s": 5.0, "end_s": 8.0, "speaker": "SPK_1", "text": "再见。"},
+        {"source_id": "v1", "seq": 2, "start_s": 9.0, "end_s": 12.0, "speaker": "SPK_0", "text": "结束。"},
+    ]
+    monkeypatch.setattr(chat_tools, "retrieve", fake_retrieve)
+    monkeypatch.setattr(chat_tools, "get_segments_for_ranges", AsyncMock(return_value=seg_rows))
+
+    cfg = BibilabConfig(
+        ai=AIConfig(protocol="openai", model="x", api_key="k", base_url=""),
+        backend=BackendConfig(),
+    )
+    registry: dict = {}
+
+    result = await chat_tools.execute_retrieve(
+        tool_name="retrieve",
+        query="q",
+        source_ids=["v1"],
+        cfg=cfg,
+        registry=registry,
+    )
+
+    chunks = result["_chunks"]
+    # Reconstructed turns, namespaced + timed; first chunk spans both speakers.
+    assert "[S1·SPK0 @0:00] 你好。" in chunks
+    assert "[S1·SPK1 @0:05] 再见。" in chunks
+    # Second chunk: same source → SPK_0 keeps ordinal 0 across chunks.
+    assert "[S1·SPK0 @0:09] 结束。" in chunks
+    # Raw chunk content is NOT the body — reconstruction ran, not the fallback.
+    assert "raw-a1" not in chunks
+    assert "raw-a2" not in chunks
+
+    # Preview (first hit) carries the reconstructed body, not raw content.
+    assert registry["v1"].preview == "[S1·SPK0 @0:00] 你好。\n[S1·SPK1 @0:05] 再见。"
