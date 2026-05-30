@@ -63,6 +63,15 @@ def test_align_trailing_buffer_flushed_without_terminal_punctuation():
     assert out[0].start == 0.0 and out[0].end == 3.0
 
 
+def test_align_inserted_punctuation_outside_punc_set_is_kept():
+    # ct-punc may emit marks outside _PUNC (quotes here). They must be treated as
+    # inserted punctuation, not as a rewrite — the old fixed-set check raised here.
+    segs = [_seg("他说你好", 0.0, 5.0)]
+    out = _align(segs, '他说"你好"。')
+    assert [s.text for s in out] == ['他说"你好"。']
+    assert out[0].start == 0.0 and out[0].end == 5.0
+
+
 # ---- punctuate() gate tests (mock _run_ctpunc) ----
 
 
@@ -99,6 +108,22 @@ def test_punctuate_zh_runs_ctpunc_and_aligns():
         out = punctuate(segs, language="zh")
     run.assert_called_once_with("天花板明显是地板")
     assert [s.text for s in out] == ["天花板。", "明显是地板。"]
+
+
+def test_punctuate_degrades_to_passthrough_on_alignment_failure(caplog):
+    # A genuine rewrite (板 -> 版) breaks alignment. punctuate() must not crash
+    # the pipeline — it degrades to the raw segments and logs a warning.
+    import logging
+    from unittest.mock import patch
+
+    from bibilab.pipeline.punctuate import punctuate
+
+    segs = [_seg("天花板", 0.0, 5.0)]
+    with patch("bibilab.pipeline.punctuate._run_ctpunc", return_value="天花版。"):
+        with caplog.at_level(logging.WARNING):
+            out = punctuate(segs, language="zh")
+    assert out is segs
+    assert "ct-punc alignment failed" in caplog.text
 
 
 def test_run_ctpunc_serialises_generate_under_lock():

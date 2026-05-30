@@ -253,7 +253,7 @@ async def test_smoke_scenario_1_chitchat_no_tool_calls(client):
                 "candidates_evaluated": 30,
                 "sources_with_hits": 1,
                 "sources_total": 1,
-                "source_coverage": [{"source_id": "src-1", "video_id": "bv1", "title": "Test Video"}],
+                "source_coverage": [{"source_id": "src-1", "title": "Test Video"}],
                 "_chunks": [{"title": "Test Video", "start": 10.0, "end": 25.0, "content": "relevant chunk"}],
             },
         ),
@@ -268,9 +268,9 @@ async def test_smoke_scenario_1_chitchat_no_tool_calls(client):
                 "sources_with_hits": 3,
                 "sources_total": 5,
                 "source_coverage": [
-                    {"source_id": "src-1", "video_id": "v1", "title": "Video A"},
-                    {"source_id": "src-2", "video_id": "v2", "title": "Video B"},
-                    {"source_id": "src-3", "video_id": "v3", "title": "Video C"},
+                    {"source_id": "src-1", "title": "Video A"},
+                    {"source_id": "src-2", "title": "Video B"},
+                    {"source_id": "src-3", "title": "Video C"},
                 ],
                 "_chunks": [],
             },
@@ -902,7 +902,7 @@ async def test_run_chat_turn_persists_tool_blocks(monkeypatch, tmp_path):
             "candidates_evaluated": 1,
             "sources_with_hits": 1,
             "sources_total": 1,
-            "source_coverage": [{"source_id": "s1", "video_id": "v1", "title": "V1"}],
+            "source_coverage": [{"source_id": "s1", "title": "V1"}],
             "_chunks": "fmt",
             "_turn_indices": [1],
             "_raw_chunks": [
@@ -951,7 +951,6 @@ async def test_run_chat_turn_persists_tool_blocks(monkeypatch, tmp_path):
         history=[],
         summary=None,
         source_ids=["s1"],
-        source_map={"v1": "s1"},
         ui_lang="en",
         cfg=cfg,
         registry=registry,
@@ -1003,7 +1002,6 @@ async def test_system_message_is_stable_across_turns(monkeypatch):
             history=[],
             summary=None,
             source_ids=["s1", "s2"],
-            source_map={"v1": "s1", "v2": "s2"},
             ui_lang="en",
             cfg=cfg,
             registry=registry,
@@ -1169,7 +1167,7 @@ async def test_rag_metadata_persists_mode_and_context(client, monkeypatch):
             "sources_with_hits": 1,
             "sources_total": 1,
             "source_coverage": [
-                {"source_id": "s1", "video_id": "v1", "title": "Video s1"},
+                {"source_id": "s1", "title": "Video s1"},
             ],
         }
 
@@ -1333,7 +1331,6 @@ async def test_run_chat_turn_replays_tool_blocks_on_turn_2(monkeypatch):
         history=history,
         summary=None,
         source_ids=[],
-        source_map={},
         ui_lang="en",
         cfg=cfg,
         registry=registry,
@@ -1395,7 +1392,6 @@ async def test_chat_uses_resolved_response_language_in_system_prompt(monkeypatch
         history=[],
         summary=None,
         source_ids=[],
-        source_map={},
         ui_lang="zh",
         cfg=cfg,
         registry=registry,
@@ -1424,7 +1420,6 @@ async def test_run_chat_turn_reseeds_citation_registry_from_history_tool_blocks(
         system=None,
         llm_max_tokens=2048,
         registry=None,
-        source_map=None,
         tool_block_sink=None,
     ):
         # Capture a copy of registry after reseed has populated it.
@@ -1493,7 +1488,6 @@ async def test_run_chat_turn_reseeds_citation_registry_from_history_tool_blocks(
         history=history,
         summary=None,
         source_ids=["s1"],
-        source_map={"v1": "s1"},
         ui_lang="en",
         cfg=cfg,
         registry=registry,

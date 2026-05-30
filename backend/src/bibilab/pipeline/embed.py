@@ -16,7 +16,7 @@ from pathlib import Path
 
 from bibilab.adapters.base import VideoMeta
 from bibilab.config import BibilabConfig, bibilab_home, models_dir
-from bibilab.db import _tokenize_cjk, get_db_path, get_video_ids_for_sources, query_fts_rows
+from bibilab.db import _tokenize_cjk, get_db_path, query_fts_rows
 from bibilab.model_registry import EMBEDDING_SPEC_ID, _integrity_ok, ensure, get_spec
 from bibilab.models._enums import _RELEVANCE_MARGIN_BY_MODE, RetrievalParams
 from bibilab.pipeline.chat_inference_pool import get_chat_pool
@@ -34,10 +34,10 @@ class RetrievedChunk:
     video_title: str
     timestamp_start: float
     timestamp_end: float
-    video_id: str
+    source_id: str
     distance: float
     score: float | None = None
-    # None when chroma_id lacks the {video_id}_{N} suffix (malformed / legacy).
+    # None when chroma_id lacks the {source_id}_{N} suffix (malformed / legacy).
     sequence_index: int | None = None
     # True for chunks added by neighbor-pull. Excludes them from source_coverage
     # best_score and from any future relevance sort.
@@ -46,7 +46,7 @@ class RetrievedChunk:
 
 @dataclass
 class SourceHit:
-    video_id: str
+    source_id: str
     video_title: str
     # lower = more relevant (stores -score after RRF/rerank)
     best_score: float
@@ -78,11 +78,11 @@ def _chunk_score(chunk: RetrievedChunk) -> float:
 
 def _chunk_key(chunk: RetrievedChunk) -> str:
     """Stable dedup key for a RetrievedChunk."""
-    return f"{chunk.video_id}_{chunk.timestamp_start}_{chunk.timestamp_end}"
+    return f"{chunk.source_id}_{chunk.timestamp_start}_{chunk.timestamp_end}"
 
 
 def _parse_seq_index(chroma_id: str) -> int | None:
-    """Parse sequence_index from a ChromaDB id of the form '{video_id}_{sequence_index}'."""
+    """Parse sequence_index from a ChromaDB id of the form '{source_id}_{sequence_index}'."""
     try:
         return int(chroma_id.rsplit("_", 1)[-1])
     except (ValueError, IndexError):
@@ -108,7 +108,7 @@ def _row_from_chroma(
         video_title=metadata.get("video_title", ""),
         timestamp_start=metadata.get("timestamp_start", 0.0),
         timestamp_end=metadata.get("timestamp_end", 0.0),
-        video_id=metadata.get("video_id", ""),
+        source_id=metadata.get("source_id", ""),
         distance=distance,
         score=score,
         sequence_index=_parse_seq_index(chroma_id),
@@ -153,10 +153,10 @@ def _diverse_top_k(ranked: list[RetrievedChunk], depth: int, k: int) -> list[Ret
     per_src: dict[str, int] = {}
     picked: list[RetrievedChunk] = []
     for c in ranked:
-        cur = per_src.get(c.video_id, 0)
+        cur = per_src.get(c.source_id, 0)
         if cur < depth:
             picked.append(c)
-            per_src[c.video_id] = cur + 1
+            per_src[c.source_id] = cur + 1
             if len(picked) == k:
                 return picked
     return picked
@@ -341,6 +341,7 @@ def _get_collection(cfg: BibilabConfig) -> "chromadb.Collection":
 
 def embed_chunks(
     chunks: list[RagChunk],
+    source_id: str,
     meta: VideoMeta,
     list_id: str,
     cfg: BibilabConfig,
@@ -350,29 +351,31 @@ def embed_chunks(
 
     collection = _get_collection(cfg)
 
-    clear_embeddings_for_video(meta.video_id, cfg)
+    clear_embeddings_for_source(source_id, cfg)
 
-    ids = [f"{meta.video_id}_{chunk.sequence_index}" for chunk in chunks]
+    ids = [f"{source_id}_{chunk.sequence_index}" for chunk in chunks]
     documents = [chunk.text for chunk in chunks]
     metadatas = [
         {
-            "video_id": meta.video_id,
+            "source_id": source_id,
             "list_id": list_id,
             "video_title": meta.title,
             "timestamp_start": chunk.timestamp_start,
             "timestamp_end": chunk.timestamp_end,
             "sequence_index": chunk.sequence_index,
+            "seg_start": chunk.seg_start,
+            "seg_end": chunk.seg_end,
         }
         for chunk in chunks
     ]
 
     collection.add(ids=ids, documents=documents, metadatas=metadatas)
-    logger.info("Embedded %d chunks for %s", len(chunks), meta.video_id)
+    logger.info("Embedded %d chunks for source %s", len(chunks), source_id)
 
-    populate_fts(chunks, meta)
+    populate_fts(chunks, source_id, meta)
 
 
-def populate_fts(chunks: list[RagChunk], meta: VideoMeta) -> None:
+def populate_fts(chunks: list[RagChunk], source_id: str, meta: VideoMeta) -> None:
     """Insert transcript chunks into the FTS5 index (sync, called from embed thread)."""
     if not chunks:
         return
@@ -380,16 +383,19 @@ def populate_fts(chunks: list[RagChunk], meta: VideoMeta) -> None:
     conn = sqlite3.connect(str(db_path))
     try:
         conn.executemany(
-            "INSERT INTO chunks_fts (content, video_id, video_title, timestamp_start, timestamp_end, chunk_id) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
+            "INSERT INTO chunks_fts "
+            "(content, source_id, video_title, timestamp_start, timestamp_end, chunk_id, seg_start, seg_end) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             [
                 (
                     _tokenize_cjk(chunk.text),
-                    meta.video_id,
+                    source_id,
                     meta.title,
                     chunk.timestamp_start,
                     chunk.timestamp_end,
-                    f"{meta.video_id}_{chunk.sequence_index}",
+                    f"{source_id}_{chunk.sequence_index}",
+                    chunk.seg_start,
+                    chunk.seg_end,
                 )
                 for chunk in chunks
             ],
@@ -397,17 +403,17 @@ def populate_fts(chunks: list[RagChunk], meta: VideoMeta) -> None:
         conn.commit()
     finally:
         conn.close()
-    logger.info("FTS indexed %d chunks for %s", len(chunks), meta.video_id)
+    logger.info("FTS indexed %d chunks for source %s", len(chunks), source_id)
 
 
-def clear_fts_for_video_sync(video_id: str) -> None:
-    """Delete all FTS rows for a video (sync, for use from worker threads)."""
+def clear_fts_for_source_sync(source_id: str) -> None:
+    """Delete all FTS rows for a source (sync, for use from worker threads)."""
     db_path = get_db_path()
     if not db_path.exists():
         return
     conn = sqlite3.connect(str(db_path))
     try:
-        conn.execute("DELETE FROM chunks_fts WHERE video_id = ?", (video_id,))
+        conn.execute("DELETE FROM chunks_fts WHERE source_id = ?", (source_id,))
         conn.commit()
     finally:
         conn.close()
@@ -422,31 +428,16 @@ def clear_embeddings_for_list(list_id: str, cfg: BibilabConfig) -> None:
         logger.warning("Failed to delete embeddings for list %s: %s", list_id, exc)
 
 
-def clear_embeddings_for_video(video_id: str, cfg: BibilabConfig) -> None:
-    """Delete all ChromaDB chunks belonging to the given video."""
+def clear_embeddings_for_source(source_id: str, cfg: BibilabConfig) -> None:
+    """Delete all ChromaDB chunks belonging to the given source."""
     chroma_path = bibilab_home() / "chroma"
     if not chroma_path.exists():
         return
     collection = _get_collection(cfg)
     try:
-        collection.delete(where={"video_id": video_id})
+        collection.delete(where={"source_id": source_id})
     except Exception as exc:
-        logger.warning("Failed to delete embeddings for video %s: %s", video_id, exc)
-
-
-async def _resolve_video_ids(
-    source_ids: list[str],
-    video_ids: list[str] | None,
-) -> list[str] | None:
-    """Resolve video_ids from source_ids if not already provided."""
-    if video_ids is not None:
-        return video_ids
-    if not source_ids:
-        return None
-    id_to_video_id = await get_video_ids_for_sources(source_ids)
-    if not id_to_video_id:
-        return None
-    return list(id_to_video_id.values())
+        logger.warning("Failed to delete embeddings for source %s: %s", source_id, exc)
 
 
 async def query_chunks(
@@ -454,8 +445,6 @@ async def query_chunks(
     source_ids: list[str],
     cfg: BibilabConfig,
     top_k: int = 10,
-    *,
-    video_ids: list[str] | None = None,
 ) -> list[RetrievedChunk]:
     """Query ChromaDB for transcript chunks relevant to the query, filtered by source.
 
@@ -464,24 +453,21 @@ async def query_chunks(
         source_ids: List of source UUIDs to filter chunks by.
         cfg: BibilabConfig instance.
         top_k: Maximum number of chunks to return.
-        video_ids: Optional pre-resolved video IDs. If not provided, resolved from source_ids.
 
     Returns:
         List of RetrievedChunk sorted by distance ascending (most relevant first).
         Returns empty list when no sources match, all results are below the
         relevance floor, or ChromaDB errors.
     """
-    resolved = await _resolve_video_ids(source_ids, video_ids)
-    if resolved is None:
+    if not source_ids:
         return []
-    video_ids = resolved
 
     def _sync_query() -> dict:
         collection = _get_collection(cfg)
         return collection.query(
             query_texts=[query_text],
             n_results=top_k,
-            where={"video_id": {"$in": video_ids}},
+            where={"source_id": {"$in": source_ids}},
         )
 
     try:
@@ -519,8 +505,6 @@ async def query_fts(
     source_ids: list[str],
     cfg: BibilabConfig,
     top_k: int = 30,
-    *,
-    video_ids: list[str] | None = None,
 ) -> list[RetrievedChunk]:
     """Query FTS5 index for transcript chunks matching the query, filtered by source.
 
@@ -529,24 +513,21 @@ async def query_fts(
         source_ids: List of source UUIDs to filter by.
         cfg: BibilabConfig instance.
         top_k: Maximum number of chunks to return.
-        video_ids: Optional pre-resolved video IDs. If not provided, resolved from source_ids.
 
     Returns list of RetrievedChunk with score set to the negated FTS5 BM25 rank
     (positive, higher = more relevant) and distance set to 0.0. _chunk_score()
     negates the score to recover "lower = more relevant" ordering.
     """
-    resolved = await _resolve_video_ids(source_ids, video_ids)
-    if resolved is None:
+    if not source_ids:
         return []
-    video_ids = resolved
 
-    rows = await query_fts_rows(query_text, video_ids, top_k)
+    rows = await query_fts_rows(query_text, source_ids, top_k)
 
     return [
         _row_from_chroma(
             content=row["content"],
             metadata={
-                "video_id": row["video_id"],
+                "source_id": row["source_id"],
                 "video_title": row["video_title"],
                 "timestamp_start": float(row["timestamp_start"]),
                 "timestamp_end": float(row["timestamp_end"]),
@@ -569,12 +550,11 @@ async def hybrid_search(
 
     Falls back to vector-only if FTS returns empty or errors.
     """
-    video_ids = await _resolve_video_ids(source_ids, None)
-    if video_ids is None:
+    if not source_ids:
         return []
 
-    vec_task = query_chunks(query_text, source_ids, cfg, top_k=effective_top_k, video_ids=video_ids)
-    fts_task = query_fts(query_text, source_ids, cfg, top_k=effective_top_k, video_ids=video_ids)
+    vec_task = query_chunks(query_text, source_ids, cfg, top_k=effective_top_k)
+    fts_task = query_fts(query_text, source_ids, cfg, top_k=effective_top_k)
 
     vec_result, fts_result = await asyncio.gather(vec_task, fts_task, return_exceptions=True)
 
@@ -625,7 +605,7 @@ async def retrieve(
     candidates_evaluated = len(chunks)
     pool_src_counts: dict[str, int] = {}
     for c in chunks:
-        pool_src_counts[c.video_id] = pool_src_counts.get(c.video_id, 0) + 1
+        pool_src_counts[c.source_id] = pool_src_counts.get(c.source_id, 0) + 1
     logger.info(
         "retrieve post-hybrid: candidates=%d per_source=%s effective_top_k=%d",
         candidates_evaluated,
@@ -662,7 +642,7 @@ async def retrieve(
 
     # candidates_evaluated: pool size (pre-diverse-top-k); used for logs, not UI.
     # adaptive depth ensures #287 scoped queries (1-3 sources) aren't capped at spec.
-    num_sources_in_pool = len({c.video_id for c in chunks})
+    num_sources_in_pool = len({c.source_id for c in chunks})
     effective_depth = _adaptive_depth(params.depth_per_source, params.top_k, num_sources_in_pool)
     result_chunks = _diverse_top_k(chunks, effective_depth, params.top_k)
 
@@ -671,9 +651,9 @@ async def retrieve(
     neighbors_pulled = 0
     threshold = cfg.rag.neighbor_scarcity_threshold
     if threshold > 0 and reranked and len(result_chunks) <= threshold:
-        # Hit ids in chroma-id shape {vid}_{seq} so subtraction matches the
+        # Hit ids in chroma-id shape {src}_{seq} so subtraction matches the
         # candidate format (any other key shape silently misses the dedup).
-        hit_ids = {f"{c.video_id}_{c.sequence_index}" for c in result_chunks if c.sequence_index is not None}
+        hit_ids = {f"{c.source_id}_{c.sequence_index}" for c in result_chunks if c.sequence_index is not None}
         candidate_ids: list[str] = []
         seen: set[str] = set()
         for c in result_chunks:
@@ -682,7 +662,7 @@ async def retrieve(
             for n in (c.sequence_index - 1, c.sequence_index + 1):
                 if n < 0:
                     continue
-                cid = f"{c.video_id}_{n}"
+                cid = f"{c.source_id}_{n}"
                 if cid in hit_ids or cid in seen:
                     continue
                 candidate_ids.append(cid)
@@ -701,18 +681,18 @@ async def retrieve(
                 neighbor_rows = {}
 
             n_chunks = _chunks_from_chroma_get(neighbor_rows, is_neighbor=True)
-            # Defensive: a neighbor whose metadata.video_id differs from any
-            # current hit's video_id means Chroma metadata is desynced from
+            # Defensive: a neighbor whose metadata.source_id differs from any
+            # current hit's source_id means Chroma metadata is desynced from
             # the chroma_id prefix. Drop with warn so source_coverage never
             # ends up with a neighbor-only entry (StopIteration risk).
-            hit_videos = {c.video_id for c in result_chunks}
-            unexpected = [c for c in n_chunks if c.video_id not in hit_videos]
+            hit_sources = {c.source_id for c in result_chunks}
+            unexpected = [c for c in n_chunks if c.source_id not in hit_sources]
             if unexpected:
                 logger.warning(
-                    "neighbor-pull: dropping %d chunks with unexpected video_id (metadata corruption?)",
+                    "neighbor-pull: dropping %d chunks with unexpected source_id (metadata corruption?)",
                     len(unexpected),
                 )
-                n_chunks = [c for c in n_chunks if c.video_id in hit_videos]
+                n_chunks = [c for c in n_chunks if c.source_id in hit_sources]
             if not n_chunks and candidate_ids:
                 logger.debug(
                     "neighbor-fetch returned 0 of %d candidate ids (deleted source or stale ids?)",
@@ -723,16 +703,16 @@ async def retrieve(
                 # sequence_index ascending so the LLM reads continuous
                 # transcript under the #297 fence. Inter-source order
                 # preserved via the original-hit appearance rank.
-                source_rank = {vid: i for i, vid in enumerate(dict.fromkeys(c.video_id for c in result_chunks))}
+                source_rank = {sid: i for i, sid in enumerate(dict.fromkeys(c.source_id for c in result_chunks))}
                 result_chunks = sorted(
                     result_chunks + n_chunks,
-                    key=lambda c: (source_rank[c.video_id], c.sequence_index),
+                    key=lambda c: (source_rank[c.source_id], c.sequence_index),
                 )
                 neighbors_pulled = len(n_chunks)
 
     final_src_counts: dict[str, int] = {}
     for c in result_chunks:
-        final_src_counts[c.video_id] = final_src_counts.get(c.video_id, 0) + 1
+        final_src_counts[c.source_id] = final_src_counts.get(c.source_id, 0) + 1
     logger.info(
         "retrieve post-diverse: final=%d per_source=%s depth=%d(adaptive_from=%d) sources_in_pool=%d",
         len(result_chunks),
@@ -751,20 +731,20 @@ async def retrieve(
     # source_coverage derived from result_chunks so the chip reflects what the LLM actually saw.
     # best_score uses the first non-neighbor chunk so neighbor sentinel (+inf) does not
     # poison the source ordering on threshold-met turns.
-    source_video_ids = list(dict.fromkeys(c.video_id for c in result_chunks))
+    source_ids_in_result = list(dict.fromkeys(c.source_id for c in result_chunks))
     source_coverage = [
         SourceHit(
-            video_id=vid,
-            video_title=next(c.video_title for c in result_chunks if c.video_id == vid),
-            best_score=_chunk_score(next(c for c in result_chunks if c.video_id == vid and not c.is_neighbor)),
+            source_id=sid,
+            video_title=next(c.video_title for c in result_chunks if c.source_id == sid),
+            best_score=_chunk_score(next(c for c in result_chunks if c.source_id == sid and not c.is_neighbor)),
         )
-        for vid in source_video_ids
+        for sid in source_ids_in_result
     ]
 
     return RetrievalResult(
         chunks=result_chunks,
         candidates_evaluated=candidates_evaluated,
-        sources_with_hits=len(source_video_ids),
+        sources_with_hits=len(source_ids_in_result),
         sources_total=sources_total,
         source_coverage=source_coverage,
         dropped_by_gate=dropped_by_gate,

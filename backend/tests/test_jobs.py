@@ -109,6 +109,7 @@ async def test_delete_job_cleans_up_ingest_artifacts(client: httpx.AsyncClient, 
     from bibilab.db import bootstrap_db, create_job, get_job
 
     await bootstrap_db()
+    source_id = "src-cleanup"
     video_id = "BV1cleanup"
     download_path = tmp_bibilab_home / "downloads" / f"{video_id}.mp4"
 
@@ -119,6 +120,7 @@ async def test_delete_job_cleans_up_ingest_artifacts(client: httpx.AsyncClient, 
     job_id = await create_job(
         type="ingest",
         meta={
+            "source_id": source_id,
             "video_id": video_id,
             "list_id": "list-1",
             "title": "Cleanup Me",
@@ -132,14 +134,19 @@ async def test_delete_job_cleans_up_ingest_artifacts(client: httpx.AsyncClient, 
         db.execute("UPDATE jobs SET status='failed' WHERE id=?", (job_id,))
         db.commit()
 
-    with patch("bibilab.cleanup.clear_embeddings_for_video") as mock_clear:
+    with (
+        patch("bibilab.cleanup.clear_embeddings_for_source") as mock_clear_embed,
+        patch("bibilab.cleanup.clear_fts_for_source_sync") as mock_clear_fts,
+    ):
         resp = await client.delete(f"/jobs/{job_id}")
 
     assert resp.status_code == 204
     assert await get_job(job_id) is None
     assert not download_path.exists()
-    mock_clear.assert_called_once()
-    assert mock_clear.call_args[0][0] == video_id
+    mock_clear_embed.assert_called_once()
+    assert mock_clear_embed.call_args[0][0] == source_id
+    mock_clear_fts.assert_called_once()
+    assert mock_clear_fts.call_args[0][0] == source_id
 
 
 @pytest.mark.asyncio
@@ -170,7 +177,7 @@ async def test_delete_job_cleans_up_cover_when_source_id_in_meta(client: httpx.A
         db.execute("UPDATE jobs SET status='failed' WHERE id=?", (job_id,))
         db.commit()
 
-    with patch("bibilab.cleanup.clear_embeddings_for_video"):
+    with patch("bibilab.cleanup.clear_embeddings_for_source"):
         resp = await client.delete(f"/jobs/{job_id}")
 
     assert resp.status_code == 204

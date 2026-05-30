@@ -90,11 +90,13 @@ CREATE TABLE IF NOT EXISTS artifacts (
 _CREATE_CHUNKS_FTS = """
 CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(
     content,
-    video_id UNINDEXED,
+    source_id UNINDEXED,
     video_title UNINDEXED,
     timestamp_start UNINDEXED,
     timestamp_end UNINDEXED,
-    chunk_id UNINDEXED
+    chunk_id UNINDEXED,
+    seg_start UNINDEXED,
+    seg_end UNINDEXED
 )
 """
 
@@ -518,23 +520,6 @@ async def language_breakdown(source_ids: list[str]) -> dict[str, int]:
         )
         rows = await cursor.fetchall()
         return {row["lang"]: row["n"] for row in rows}
-
-
-async def get_video_ids_for_sources(source_ids: list[str]) -> dict[str, str]:
-    """Map source UUIDs to platform video_ids for ChromaDB filtering.
-    Returns {source_id: video_id} for each source found.
-    Silently returns empty dict if no sources match.
-    """
-    if not source_ids:
-        return {}
-    async with get_db() as db:
-        placeholders = _in_placeholders(source_ids)
-        cursor = await db.execute(
-            f"SELECT id, video_id FROM sources WHERE id IN ({placeholders})",
-            source_ids,
-        )
-        rows = await cursor.fetchall()
-        return {row["id"]: row["video_id"] for row in rows}
 
 
 async def get_source_facets(source_ids: list[str]) -> dict[str, dict[str, int | None]]:
@@ -1057,10 +1042,10 @@ async def assert_message_in_list(message_id: str, list_id: str) -> bool:
 
 
 async def clear_fts_for_list(list_id: str) -> None:
-    """Delete all FTS rows whose video_id belongs to sources in the given list."""
+    """Delete all FTS rows whose source_id belongs to sources in the given list."""
     async with get_db() as db:
         await db.execute(
-            "DELETE FROM chunks_fts WHERE video_id IN (SELECT video_id FROM sources WHERE list_id = ?)",
+            "DELETE FROM chunks_fts WHERE source_id IN (SELECT id FROM sources WHERE list_id = ?)",
             (list_id,),
         )
         await db.commit()
@@ -1153,28 +1138,29 @@ def _escape_fts_query(query_text: str) -> str:
 
 async def query_fts_rows(
     query_text: str,
-    video_ids: list[str],
+    source_ids: list[str],
     top_k: int = 30,
 ) -> list[aiosqlite.Row]:
-    """Run FTS5 MATCH query filtered by video_ids, return rows ranked by BM25.
+    """Run FTS5 MATCH query filtered by source_ids, return rows ranked by BM25.
 
     Returns an empty list if the query is empty or FTS5 raises a syntax error.
     """
-    if not video_ids:
+    if not source_ids:
         return []
     match_query = _escape_fts_query(query_text)
     if not match_query:
         return []
-    placeholders = _in_placeholders(video_ids)
+    placeholders = _in_placeholders(source_ids)
     async with get_db() as db:
         try:
             cursor = await db.execute(
-                f"SELECT content, video_id, video_title, timestamp_start, timestamp_end, rank, chunk_id "
+                f"SELECT content, source_id, video_title, timestamp_start, timestamp_end, rank, chunk_id, "
+                f"seg_start, seg_end "
                 f"FROM chunks_fts "
-                f"WHERE chunks_fts MATCH ? AND video_id IN ({placeholders}) "
+                f"WHERE chunks_fts MATCH ? AND source_id IN ({placeholders}) "
                 f"ORDER BY rank "
                 f"LIMIT ?",
-                [match_query, *video_ids, top_k],
+                [match_query, *source_ids, top_k],
             )
             return await cursor.fetchall()
         except aiosqlite.OperationalError as exc:

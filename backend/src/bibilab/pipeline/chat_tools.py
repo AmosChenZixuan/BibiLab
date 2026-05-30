@@ -306,14 +306,11 @@ async def execute_retrieve(
     cfg: BibilabConfig,
     tool_name: str,
     registry: dict[str, CitationRegistryEntry] | None = None,
-    source_map: dict[str, str] | None = None,
     sequence_number: int | None = None,
     season_number: int | None = None,
 ) -> dict:
     if registry is None:
         registry = {}
-    if source_map is None:
-        source_map = {}
 
     params = _TOOL_NAME_TO_PARAMS[tool_name]
     pool_size = len(source_ids)
@@ -369,9 +366,7 @@ async def execute_retrieve(
     # Assign indices: new sources get next available index
     next_index = max((e.index for e in registry.values()), default=0) + 1
     for s in result.source_coverage:
-        sid = source_map.get(s.video_id)
-        if sid is None:
-            continue
+        sid = s.source_id
         if sid not in registry:
             registry[sid] = CitationRegistryEntry(
                 index=next_index,
@@ -380,21 +375,21 @@ async def execute_retrieve(
             )
             next_index += 1
 
-    # Build video_id → registry index lookup for chunk formatting
-    video_id_to_index: dict[str, int] = {}
+    # Build source_id → registry index lookup for chunk formatting
+    source_id_to_index: dict[str, int] = {}
     for s in result.source_coverage:
-        sid = source_map.get(s.video_id)
-        if sid and sid in registry:
-            video_id_to_index[s.video_id] = registry[sid].index
+        sid = s.source_id
+        if sid in registry:
+            source_id_to_index[sid] = registry[sid].index
 
-    # Accumulate chunk_ids per source (synthetic key: video_id_start_end).
+    # Accumulate chunk_ids per source (synthetic key: source_id_start_end).
     # Entry-level fields (preview / timestamps / rerank_score) are seeded from
     # the first HIT per source — never from a neighbor — so the persisted
     # context[] describes the gated chunk, not its surrounding context.
     for c in result.chunks:
-        sid = source_map.get(c.video_id)
-        if sid and sid in registry:
-            cid = f"{c.video_id}_{int(c.timestamp_start)}_{int(c.timestamp_end)}"
+        sid = c.source_id
+        if sid in registry:
+            cid = f"{sid}_{int(c.timestamp_start)}_{int(c.timestamp_end)}"
             registry[sid].chunk_ids.add(cid)
             entry = registry[sid]
             if not getattr(c, "is_neighbor", False) and entry.timestamp_start is None:
@@ -405,14 +400,14 @@ async def execute_retrieve(
                 entry.preview = c.content
 
     # Collect indices actually retrieved this turn (for the enumeration line)
-    turn_indices = sorted(set(video_id_to_index.values()))
+    turn_indices = sorted(set(source_id_to_index.values()))
 
     chunks_by_index: dict[int, list[str]] = {}
     raw_chunks = []
     for c in result.chunks:
-        if c.video_id not in video_id_to_index:
+        if c.source_id not in source_id_to_index:
             continue
-        idx = video_id_to_index[c.video_id]
+        idx = source_id_to_index[c.source_id]
         chunks_by_index.setdefault(idx, []).append(
             _format_chunk_for_llm(
                 {"start": c.timestamp_start, "end": c.timestamp_end, "content": c.content},
@@ -421,8 +416,8 @@ async def execute_retrieve(
         )
         raw_chunks.append(
             {
-                "source_id": source_map.get(c.video_id, ""),
-                "chunk_id": f"{c.video_id}_{int(c.timestamp_start)}_{int(c.timestamp_end)}",
+                "source_id": c.source_id,
+                "chunk_id": f"{c.source_id}_{int(c.timestamp_start)}_{int(c.timestamp_end)}",
                 "content": c.content,
                 "video_title": c.video_title,
                 "timestamp_start": c.timestamp_start,
@@ -451,8 +446,7 @@ async def execute_retrieve(
         },
         "source_coverage": [
             {
-                "source_id": source_map.get(s.video_id, ""),
-                "video_id": s.video_id,
+                "source_id": s.source_id,
                 "title": s.video_title,
             }
             for s in result.source_coverage
@@ -507,7 +501,6 @@ async def execute_tool(
     ui_lang: str,
     cfg: BibilabConfig,
     registry: dict[str, CitationRegistryEntry] | None = None,
-    source_map: dict[str, str] | None = None,
 ) -> dict:
     if tool_name in RETRIEVE_TOOL_NAMES:
         query = arguments.get("query")
@@ -541,7 +534,6 @@ async def execute_tool(
             cfg=cfg,
             tool_name=tool_name,
             registry=registry,
-            source_map=source_map,
             sequence_number=sequence_number,
             season_number=season_number,
         )

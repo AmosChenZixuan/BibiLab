@@ -35,7 +35,7 @@ from bibilab.models.lists import (
     OverviewResponse,
     SourceResponse,
 )
-from bibilab.pipeline.embed import clear_embeddings_for_list, clear_embeddings_for_video, clear_fts_for_video_sync
+from bibilab.pipeline.embed import clear_embeddings_for_list, clear_embeddings_for_source, clear_fts_for_source_sync
 
 router = APIRouter()
 
@@ -205,8 +205,8 @@ async def delete_list_source(list_id: str, source_id: str, cfg: BibilabConfig = 
         await update_list_thumbnail(list_id, None)
 
     _purge_source_resources(source_id)
-    await asyncio.to_thread(clear_embeddings_for_video, source["video_id"], cfg)
-    await asyncio.to_thread(clear_fts_for_video_sync, source["video_id"])
+    await asyncio.to_thread(clear_embeddings_for_source, source_id, cfg)
+    await asyncio.to_thread(clear_fts_for_source_sync, source_id)
     await delete_source(source_id)
 
 

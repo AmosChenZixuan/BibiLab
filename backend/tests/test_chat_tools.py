@@ -345,7 +345,7 @@ async def test_execute_retrieve_returns_raw_chunks_for_replay(monkeypatch):
                     video_title="Video One",
                     timestamp_start=120.4,
                     timestamp_end=145.0,
-                    video_id="v1",
+                    source_id="s1",
                     distance=0.1,
                     score=0.9,
                 ),
@@ -353,7 +353,7 @@ async def test_execute_retrieve_returns_raw_chunks_for_replay(monkeypatch):
             candidates_evaluated=5,
             sources_with_hits=1,
             sources_total=1,
-            source_coverage=[SourceHit(video_id="v1", video_title="Video One", best_score=-0.9)],
+            source_coverage=[SourceHit(source_id="s1", video_title="Video One", best_score=-0.9)],
         )
 
     monkeypatch.setattr(chat_tools, "retrieve", fake_retrieve)
@@ -363,7 +363,6 @@ async def test_execute_retrieve_returns_raw_chunks_for_replay(monkeypatch):
         backend=BackendConfig(),
     )
     registry: dict = {}
-    source_map = {"v1": "s1"}
 
     result = await chat_tools.execute_retrieve(
         tool_name="retrieve",
@@ -371,7 +370,6 @@ async def test_execute_retrieve_returns_raw_chunks_for_replay(monkeypatch):
         source_ids=["s1"],
         cfg=cfg,
         registry=registry,
-        source_map=source_map,
     )
 
     assert "_raw_chunks" in result
@@ -383,7 +381,7 @@ async def test_execute_retrieve_returns_raw_chunks_for_replay(monkeypatch):
     assert raw[0]["timestamp_start"] == 120.4
     assert raw[0]["timestamp_end"] == 145.0
     assert raw[0]["citation_index"] == 1
-    assert raw[0]["chunk_id"] == "v1_120_145"
+    assert raw[0]["chunk_id"] == "s1_120_145"
 
 
 # AC1: tool_name + mode present in execute_retrieve result
@@ -402,7 +400,7 @@ async def test_execute_retrieve_includes_tool_name_and_mode(monkeypatch):
                     video_title="V",
                     timestamp_start=0.0,
                     timestamp_end=10.0,
-                    video_id="v1",
+                    source_id="v1",
                     distance=0.0,
                     score=0.9,
                 ),
@@ -410,7 +408,7 @@ async def test_execute_retrieve_includes_tool_name_and_mode(monkeypatch):
             candidates_evaluated=1,
             sources_with_hits=1,
             sources_total=1,
-            source_coverage=[SourceHit(video_id="v1", video_title="V", best_score=-0.9)],
+            source_coverage=[SourceHit(source_id="v1", video_title="V", best_score=-0.9)],
         )
 
     monkeypatch.setattr(chat_tools, "retrieve", fake_retrieve)
@@ -422,7 +420,6 @@ async def test_execute_retrieve_includes_tool_name_and_mode(monkeypatch):
         source_ids=["s1"],
         cfg=cfg,
         registry={},
-        source_map={"v1": "s1"},
     )
 
     assert result["tool_name"] == "retrieve"
@@ -508,7 +505,7 @@ async def test_citation_registry_entry_gets_chunk_fields_on_execute_retrieve(mon
                     video_title="Test Video",
                     timestamp_start=120.4,
                     timestamp_end=145.0,
-                    video_id="v1",
+                    source_id="s1",
                     distance=0.0,
                     score=0.95,
                 ),
@@ -516,14 +513,13 @@ async def test_citation_registry_entry_gets_chunk_fields_on_execute_retrieve(mon
             candidates_evaluated=1,
             sources_with_hits=1,
             sources_total=1,
-            source_coverage=[SourceHit(video_id="v1", video_title="Test Video", best_score=-0.95)],
+            source_coverage=[SourceHit(source_id="s1", video_title="Test Video", best_score=-0.95)],
         )
 
     monkeypatch.setattr(chat_tools, "retrieve", fake_retrieve)
 
     cfg = BibilabConfig(ai=AIConfig(protocol="openai", model="x", api_key="k"))
     registry: dict = {}
-    source_map = {"v1": "s1"}
 
     await chat_tools.execute_retrieve(
         tool_name="retrieve",
@@ -531,7 +527,6 @@ async def test_citation_registry_entry_gets_chunk_fields_on_execute_retrieve(mon
         source_ids=["s1"],
         cfg=cfg,
         registry=registry,
-        source_map=source_map,
     )
 
     assert "s1" in registry
@@ -558,7 +553,7 @@ async def test_citation_registry_entry_uses_first_chunk_fields(monkeypatch):
                     video_title="V",
                     timestamp_start=10.0,
                     timestamp_end=20.0,
-                    video_id="v1",
+                    source_id="s1",
                     distance=0.0,
                     score=0.8,
                 ),
@@ -567,7 +562,7 @@ async def test_citation_registry_entry_uses_first_chunk_fields(monkeypatch):
                     video_title="V",
                     timestamp_start=30.0,
                     timestamp_end=40.0,
-                    video_id="v1",
+                    source_id="s1",
                     distance=0.0,
                     score=0.9,
                 ),
@@ -575,14 +570,13 @@ async def test_citation_registry_entry_uses_first_chunk_fields(monkeypatch):
             candidates_evaluated=2,
             sources_with_hits=1,
             sources_total=1,
-            source_coverage=[SourceHit(video_id="v1", video_title="V", best_score=-0.9)],
+            source_coverage=[SourceHit(source_id="s1", video_title="V", best_score=-0.9)],
         )
 
     monkeypatch.setattr(chat_tools, "retrieve", fake_retrieve)
 
     cfg = BibilabConfig(ai=AIConfig(protocol="openai", model="x", api_key="k"))
     registry: dict = {}
-    source_map = {"v1": "s1"}
 
     await chat_tools.execute_retrieve(
         tool_name="retrieve",
@@ -590,7 +584,6 @@ async def test_citation_registry_entry_uses_first_chunk_fields(monkeypatch):
         source_ids=["s1"],
         cfg=cfg,
         registry=registry,
-        source_map=source_map,
     )
 
     entry = registry["s1"]
@@ -689,7 +682,7 @@ class TestBuildToolBlockEntry:
             "sources_with_hits": 2,
             "sources_total": 3,
             "source_coverage": [
-                {"source_id": "s1", "video_id": "v1", "title": "Video One"},
+                {"source_id": "s1", "title": "Video One"},
             ],
             "_chunks": "internal formatted string — must not be stored",
             "_turn_indices": [1],
@@ -1384,12 +1377,12 @@ class TestExecuteRetrieveZeroChunkNote:
                         video_title="V1",
                         timestamp_start=0.0,
                         timestamp_end=5.0,
-                        video_id="v1",
+                        source_id="v1",
                         distance=0.1,
                         score=0.9,
                     ),
                 ],
-                source_coverage=[SourceHit(video_id="v1", video_title="V1", best_score=-0.9)],
+                source_coverage=[SourceHit(source_id="v1", video_title="V1", best_score=-0.9)],
                 candidates_evaluated=1,
                 sources_with_hits=1,
                 sources_total=1,
@@ -1402,7 +1395,6 @@ class TestExecuteRetrieveZeroChunkNote:
             query="q",
             source_ids=["s1"],
             cfg=self._cfg(),
-            source_map={"v1": "s1"},
         )
 
         assert _NO_COVERAGE_NOTE not in result["_chunks"]
@@ -1519,7 +1511,7 @@ async def test_execute_retrieve_chunks_grouped_and_fenced(monkeypatch):
                     video_title="Video One",
                     timestamp_start=0.0,
                     timestamp_end=9.0,
-                    video_id="v1",
+                    source_id="v1",
                     distance=0.1,
                     score=0.9,
                 ),
@@ -1528,7 +1520,7 @@ async def test_execute_retrieve_chunks_grouped_and_fenced(monkeypatch):
                     video_title="Video Two",
                     timestamp_start=0.0,
                     timestamp_end=9.0,
-                    video_id="v2",
+                    source_id="v2",
                     distance=0.1,
                     score=0.8,
                 ),
@@ -1537,7 +1529,7 @@ async def test_execute_retrieve_chunks_grouped_and_fenced(monkeypatch):
                     video_title="Video One",
                     timestamp_start=9.0,
                     timestamp_end=18.0,
-                    video_id="v1",
+                    source_id="v1",
                     distance=0.2,
                     score=0.7,
                 ),
@@ -1546,7 +1538,7 @@ async def test_execute_retrieve_chunks_grouped_and_fenced(monkeypatch):
                     video_title="Video Two",
                     timestamp_start=9.0,
                     timestamp_end=18.0,
-                    video_id="v2",
+                    source_id="v2",
                     distance=0.2,
                     score=0.6,
                 ),
@@ -1555,8 +1547,8 @@ async def test_execute_retrieve_chunks_grouped_and_fenced(monkeypatch):
             sources_with_hits=2,
             sources_total=2,
             source_coverage=[
-                SourceHit(video_id="v1", video_title="Video One", best_score=-0.9),
-                SourceHit(video_id="v2", video_title="Video Two", best_score=-0.8),
+                SourceHit(source_id="v1", video_title="Video One", best_score=-0.9),
+                SourceHit(source_id="v2", video_title="Video Two", best_score=-0.8),
             ],
         )
 
@@ -1567,7 +1559,6 @@ async def test_execute_retrieve_chunks_grouped_and_fenced(monkeypatch):
         backend=BackendConfig(),
     )
     registry: dict = {}
-    source_map = {"v1": "s1", "v2": "s2"}
 
     result = await chat_tools.execute_retrieve(
         tool_name="retrieve",
@@ -1575,7 +1566,6 @@ async def test_execute_retrieve_chunks_grouped_and_fenced(monkeypatch):
         source_ids=["s1", "s2"],
         cfg=cfg,
         registry=registry,
-        source_map=source_map,
     )
 
     chunks = result["_chunks"]

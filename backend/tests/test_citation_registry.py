@@ -11,7 +11,7 @@ from bibilab.pipeline.chat_tools import CitationRegistryEntry, execute_retrieve
 
 @dataclass
 class FakeSourceHit:
-    video_id: str
+    source_id: str
     video_title: str
     best_score: float = -1.0
 
@@ -22,7 +22,7 @@ class FakeRetrievedChunk:
     video_title: str
     timestamp_start: float
     timestamp_end: float
-    video_id: str
+    source_id: str
     distance: float = 0.0
     score: float | None = None
 
@@ -46,8 +46,8 @@ class TestFirstRetrieveAssignsIndicesStartingAtOne:
         with patch("bibilab.pipeline.chat_tools.retrieve", new_callable=AsyncMock) as mock_retrieve:
             mock_retrieve.return_value = _make_result(
                 [
-                    FakeSourceHit(video_id="v1", video_title="Video One"),
-                    FakeSourceHit(video_id="v2", video_title="Video Two"),
+                    FakeSourceHit(source_id="s1", video_title="Video One"),
+                    FakeSourceHit(source_id="s2", video_title="Video Two"),
                 ],
                 [
                     FakeRetrievedChunk(
@@ -55,12 +55,11 @@ class TestFirstRetrieveAssignsIndicesStartingAtOne:
                         video_title="Video One",
                         timestamp_start=0.0,
                         timestamp_end=30.0,
-                        video_id="v1",
+                        source_id="s1",
                     )
                 ],
             )
             registry = {}
-            source_map = {"v1": "s1", "v2": "s2"}
 
             result = await execute_retrieve(
                 query="test",
@@ -68,7 +67,6 @@ class TestFirstRetrieveAssignsIndicesStartingAtOne:
                 source_ids=["s1", "s2"],
                 cfg=cfg,
                 registry=registry,
-                source_map=source_map,
             )
 
         assert registry["s1"].index == 1
@@ -85,8 +83,8 @@ class TestSecondRetrieveDeduplicatesExistingSources:
             # First call returns X, Y
             mock_retrieve.return_value = _make_result(
                 [
-                    FakeSourceHit(video_id="v1", video_title="Video One"),
-                    FakeSourceHit(video_id="v2", video_title="Video Two"),
+                    FakeSourceHit(source_id="s1", video_title="Video One"),
+                    FakeSourceHit(source_id="s2", video_title="Video Two"),
                 ],
                 [
                     FakeRetrievedChunk(
@@ -94,12 +92,11 @@ class TestSecondRetrieveDeduplicatesExistingSources:
                         video_title="Video One",
                         timestamp_start=0.0,
                         timestamp_end=30.0,
-                        video_id="v1",
+                        source_id="s1",
                     )
                 ],
             )
             registry: dict[str, CitationRegistryEntry] = {}
-            source_map = {"v1": "s1", "v2": "s2"}
 
             await execute_retrieve(
                 query="first",
@@ -107,14 +104,13 @@ class TestSecondRetrieveDeduplicatesExistingSources:
                 source_ids=["s1", "s2"],
                 cfg=cfg,
                 registry=registry,
-                source_map=source_map,
             )
 
             # Second call returns Y, Z — Y already in registry
             mock_retrieve.return_value = _make_result(
                 [
-                    FakeSourceHit(video_id="v2", video_title="Video Two"),
-                    FakeSourceHit(video_id="v3", video_title="Video Three"),
+                    FakeSourceHit(source_id="s2", video_title="Video Two"),
+                    FakeSourceHit(source_id="s3", video_title="Video Three"),
                 ],
                 [
                     FakeRetrievedChunk(
@@ -122,11 +118,10 @@ class TestSecondRetrieveDeduplicatesExistingSources:
                         video_title="Video Two",
                         timestamp_start=0.0,
                         timestamp_end=30.0,
-                        video_id="v2",
+                        source_id="s2",
                     )
                 ],
             )
-            source_map3 = {"v2": "s2", "v3": "s3"}
 
             result = await execute_retrieve(
                 query="second",
@@ -134,7 +129,6 @@ class TestSecondRetrieveDeduplicatesExistingSources:
                 source_ids=["s2", "s3"],
                 cfg=cfg,
                 registry=registry,
-                source_map=source_map3,
             )
 
         # X kept index 1, Y kept index 2, Z got index 3
@@ -153,19 +147,18 @@ class TestChunkIdsAccumulateAcrossCalls:
         with patch("bibilab.pipeline.chat_tools.retrieve", new_callable=AsyncMock) as mock_retrieve:
             # First call: X at 0-30
             mock_retrieve.return_value = _make_result(
-                [FakeSourceHit(video_id="v1", video_title="Video One")],
+                [FakeSourceHit(source_id="s1", video_title="Video One")],
                 [
                     FakeRetrievedChunk(
                         content="c1",
                         video_title="Video One",
                         timestamp_start=0.0,
                         timestamp_end=30.0,
-                        video_id="v1",
+                        source_id="s1",
                     )
                 ],
             )
             registry: dict[str, CitationRegistryEntry] = {}
-            source_map = {"v1": "s1"}
 
             await execute_retrieve(
                 query="first",
@@ -173,21 +166,20 @@ class TestChunkIdsAccumulateAcrossCalls:
                 source_ids=["s1"],
                 cfg=cfg,
                 registry=registry,
-                source_map=source_map,
             )
 
-            assert registry["s1"].chunk_ids == {"v1_0_30"}
+            assert registry["s1"].chunk_ids == {"s1_0_30"}
 
             # Second call: X at 60-90
             mock_retrieve.return_value = _make_result(
-                [FakeSourceHit(video_id="v1", video_title="Video One")],
+                [FakeSourceHit(source_id="s1", video_title="Video One")],
                 [
                     FakeRetrievedChunk(
                         content="c2",
                         video_title="Video One",
                         timestamp_start=60.0,
                         timestamp_end=90.0,
-                        video_id="v1",
+                        source_id="s1",
                     )
                 ],
             )
@@ -198,10 +190,9 @@ class TestChunkIdsAccumulateAcrossCalls:
                 source_ids=["s1"],
                 cfg=cfg,
                 registry=registry,
-                source_map=source_map,
             )
 
-        assert registry["s1"].chunk_ids == {"v1_0_30", "v1_60_90"}
+        assert registry["s1"].chunk_ids == {"s1_0_30", "s1_60_90"}
 
 
 class TestTurnIndicesReflectsOnlyCurrentCall:
@@ -213,8 +204,8 @@ class TestTurnIndicesReflectsOnlyCurrentCall:
             # First call: X, Y
             mock_retrieve.return_value = _make_result(
                 [
-                    FakeSourceHit(video_id="v1", video_title="Video One"),
-                    FakeSourceHit(video_id="v2", video_title="Video Two"),
+                    FakeSourceHit(source_id="s1", video_title="Video One"),
+                    FakeSourceHit(source_id="s2", video_title="Video Two"),
                 ],
                 [
                     FakeRetrievedChunk(
@@ -222,19 +213,18 @@ class TestTurnIndicesReflectsOnlyCurrentCall:
                         video_title="Video One",
                         timestamp_start=0.0,
                         timestamp_end=30.0,
-                        video_id="v1",
+                        source_id="s1",
                     ),
                     FakeRetrievedChunk(
                         content="c2",
                         video_title="Video Two",
                         timestamp_start=0.0,
                         timestamp_end=30.0,
-                        video_id="v2",
+                        source_id="s2",
                     ),
                 ],
             )
             registry: dict[str, CitationRegistryEntry] = {}
-            source_map = {"v1": "s1", "v2": "s2"}
 
             r1 = await execute_retrieve(
                 query="first",
@@ -242,20 +232,19 @@ class TestTurnIndicesReflectsOnlyCurrentCall:
                 source_ids=["s1", "s2"],
                 cfg=cfg,
                 registry=registry,
-                source_map=source_map,
             )
             assert r1["_turn_indices"] == [1, 2]
 
             # Second call: only Y
             mock_retrieve.return_value = _make_result(
-                [FakeSourceHit(video_id="v2", video_title="Video Two")],
+                [FakeSourceHit(source_id="s2", video_title="Video Two")],
                 [
                     FakeRetrievedChunk(
                         content="c2",
                         video_title="Video Two",
                         timestamp_start=0.0,
                         timestamp_end=30.0,
-                        video_id="v2",
+                        source_id="s2",
                     )
                 ],
             )
@@ -266,7 +255,6 @@ class TestTurnIndicesReflectsOnlyCurrentCall:
                 source_ids=["s2"],
                 cfg=cfg,
                 registry=registry,
-                source_map=source_map,
             )
             # Turn indices only reflect sources retrieved in THIS call
             assert r2["_turn_indices"] == [2]
@@ -281,8 +269,8 @@ class TestSourceHeadersMatchRegistryStateAfterEachCall:
             # First call: X, Y
             mock_retrieve.return_value = _make_result(
                 [
-                    FakeSourceHit(video_id="v1", video_title="Video One"),
-                    FakeSourceHit(video_id="v2", video_title="Video Two"),
+                    FakeSourceHit(source_id="s1", video_title="Video One"),
+                    FakeSourceHit(source_id="s2", video_title="Video Two"),
                 ],
                 [
                     FakeRetrievedChunk(
@@ -290,12 +278,11 @@ class TestSourceHeadersMatchRegistryStateAfterEachCall:
                         video_title="Video One",
                         timestamp_start=0.0,
                         timestamp_end=30.0,
-                        video_id="v1",
+                        source_id="s1",
                     )
                 ],
             )
             registry: dict[str, CitationRegistryEntry] = {}
-            source_map = {"v1": "s1", "v2": "s2"}
 
             r1 = await execute_retrieve(
                 query="first",
@@ -303,7 +290,6 @@ class TestSourceHeadersMatchRegistryStateAfterEachCall:
                 source_ids=["s1", "s2"],
                 cfg=cfg,
                 registry=registry,
-                source_map=source_map,
             )
 
             headers1 = r1["_chunks"]
@@ -313,8 +299,8 @@ class TestSourceHeadersMatchRegistryStateAfterEachCall:
             # Second call: Y, Z — headers must include X, Y, Z (full registry)
             mock_retrieve.return_value = _make_result(
                 [
-                    FakeSourceHit(video_id="v2", video_title="Video Two"),
-                    FakeSourceHit(video_id="v3", video_title="Video Three"),
+                    FakeSourceHit(source_id="s2", video_title="Video Two"),
+                    FakeSourceHit(source_id="s3", video_title="Video Three"),
                 ],
                 [
                     FakeRetrievedChunk(
@@ -322,11 +308,10 @@ class TestSourceHeadersMatchRegistryStateAfterEachCall:
                         video_title="Video Two",
                         timestamp_start=0.0,
                         timestamp_end=30.0,
-                        video_id="v2",
+                        source_id="s2",
                     )
                 ],
             )
-            source_map3 = {"v2": "s2", "v3": "s3"}
 
             r2 = await execute_retrieve(
                 query="second",
@@ -334,7 +319,6 @@ class TestSourceHeadersMatchRegistryStateAfterEachCall:
                 source_ids=["s2", "s3"],
                 cfg=cfg,
                 registry=registry,
-                source_map=source_map3,
             )
 
             headers2 = r2["_chunks"]

@@ -15,11 +15,12 @@ from bibilab.db import (
     _escape_fts_query,
     _tokenize_cjk,
     bootstrap_db,
+    clear_fts_for_list,
     get_db,
     query_fts_rows,
 )
 from bibilab.pipeline.chunk import RagChunk
-from bibilab.pipeline.embed import clear_fts_for_video_sync, populate_fts, query_fts
+from bibilab.pipeline.embed import clear_fts_for_source_sync, populate_fts, query_fts
 
 
 @pytest.fixture()
@@ -45,7 +46,14 @@ def _make_meta(video_id: str = "VID1", title: str = "Test Video") -> VideoMeta:
 
 def _make_chunks(texts: list[str]) -> list[RagChunk]:
     return [
-        RagChunk(text=t, timestamp_start=float(i * 10), timestamp_end=float(i * 10 + 9), sequence_index=i)
+        RagChunk(
+            text=t,
+            timestamp_start=float(i * 10),
+            timestamp_end=float(i * 10 + 9),
+            sequence_index=i,
+            seg_start=i,
+            seg_end=i,
+        )
         for i, t in enumerate(texts)
     ]
 
@@ -64,7 +72,7 @@ async def test_populate_fts_inserts_rows(tmp_bibilab_home: Path):
     await bootstrap_db()
     meta = _make_meta()
     chunks = _make_chunks(["hello world", "foo bar baz"])
-    populate_fts(chunks, meta)
+    populate_fts(chunks, "SRC1", meta)
 
     async with get_db() as db:
         cursor = await db.execute("SELECT COUNT(*) FROM chunks_fts")
@@ -77,27 +85,27 @@ async def test_query_fts_returns_matching_chunks(tmp_bibilab_home: Path):
     await bootstrap_db()
     meta = _make_meta()
     chunks = _make_chunks(["the quick brown fox", "lazy dog sleeping", "fox jumps over fence"])
-    populate_fts(chunks, meta)
+    populate_fts(chunks, "SRC1", meta)
 
-    rows = await query_fts_rows("fox", ["VID1"], top_k=10)
+    rows = await query_fts_rows("fox", ["SRC1"], top_k=10)
     assert len(rows) >= 1
     contents = [r["content"] for r in rows]
     assert any("fox" in c for c in contents)
 
 
 @pytest.mark.asyncio
-async def test_query_fts_filters_by_video_id(tmp_bibilab_home: Path):
+async def test_query_fts_filters_by_source_id(tmp_bibilab_home: Path):
     await bootstrap_db()
     meta1 = _make_meta("VID1", "Video One")
     meta2 = _make_meta("VID2", "Video Two")
-    populate_fts(_make_chunks(["alpha beta gamma"]), meta1)
-    populate_fts(_make_chunks(["alpha delta epsilon"]), meta2)
+    populate_fts(_make_chunks(["alpha beta gamma"]), "S1", meta1)
+    populate_fts(_make_chunks(["alpha delta epsilon"]), "S2", meta2)
 
-    rows = await query_fts_rows("alpha", ["VID1"], top_k=10)
+    rows = await query_fts_rows("alpha", ["S1"], top_k=10)
     assert len(rows) == 1
-    assert rows[0]["video_id"] == "VID1"
+    assert rows[0]["source_id"] == "S1"
 
-    rows_both = await query_fts_rows("alpha", ["VID1", "VID2"], top_k=10)
+    rows_both = await query_fts_rows("alpha", ["S1", "S2"], top_k=10)
     assert len(rows_both) == 2
 
 
@@ -112,13 +120,13 @@ async def test_query_fts_empty_sources_returns_empty(tmp_bibilab_home: Path):
 async def test_clear_fts_for_video(tmp_bibilab_home: Path):
     await bootstrap_db()
     meta = _make_meta()
-    populate_fts(_make_chunks(["some text here"]), meta)
+    populate_fts(_make_chunks(["some text here"]), "SRC1", meta)
 
     async with get_db() as db:
         cursor = await db.execute("SELECT COUNT(*) FROM chunks_fts")
         assert (await cursor.fetchone())[0] == 1
 
-    await asyncio.to_thread(clear_fts_for_video_sync, "VID1")
+    await asyncio.to_thread(clear_fts_for_source_sync, "SRC1")
 
     async with get_db() as db:
         cursor = await db.execute("SELECT COUNT(*) FROM chunks_fts")
@@ -136,9 +144,9 @@ async def test_query_fts_bm25_ranking(tmp_bibilab_home: Path):
             "fish whale shark",
         ]
     )
-    populate_fts(chunks, meta)
+    populate_fts(chunks, "SRC1", meta)
 
-    rows = await query_fts_rows("cat", ["VID1"], top_k=10)
+    rows = await query_fts_rows("cat", ["SRC1"], top_k=10)
     assert len(rows) == 2
     # FTS5 rank: more negative = better match. First result should be the better match.
     assert rows[0]["rank"] <= rows[1]["rank"]
@@ -149,10 +157,9 @@ async def test_query_fts_integration(tmp_bibilab_home: Path):
     """Test query_fts (the high-level async function) with mocked source lookup."""
     await bootstrap_db()
     meta = _make_meta()
-    populate_fts(_make_chunks(["machine learning is great", "deep learning rocks"]), meta)
+    populate_fts(_make_chunks(["machine learning is great", "deep learning rocks"]), "SRC1", meta)
 
-    with patch("bibilab.pipeline.embed.get_video_ids_for_sources", return_value={"src1": "VID1"}):
-        results = await query_fts("learning", ["src1"], BibilabConfig())
+    results = await query_fts("learning", ["SRC1"], BibilabConfig())
 
     assert len(results) == 2
     assert all(r.score is not None and r.score > 0 for r in results)  # negated BM25 rank; higher = more relevant
@@ -321,3 +328,97 @@ def test_escape_fts_query_high_idf_single_char():
     # 死 (death) — single-char word with critical semantic weight
     escaped = _escape_fts_query("死")
     assert escaped == '"死"'
+
+
+# --- P3: source_id keying behavioral tests ---
+
+
+@pytest.mark.asyncio
+async def test_two_sources_same_video_id_independent_scoping(tmp_bibilab_home: Path):
+    """#379: Two sources sharing one video_id scope independently.
+
+    Under the old video_id-based keying, re-embedding source B could overwrite
+    source A's Chroma data, and retrieval for one list could return chunks from
+    another.  With source_id keying, each source is isolated even when both
+    reference the same platform video_id.
+    """
+    await bootstrap_db()
+
+    # Same video_id for both sources — the key regression scenario
+    shared_video_id = "BV123"
+    meta_a = _make_meta(shared_video_id, "Video Shared")
+    meta_b = _make_meta(shared_video_id, "Video Shared")
+
+    populate_fts(_make_chunks(["alpha only in list one"]), "src-a", meta_a)
+    populate_fts(_make_chunks(["beta only in list two"]), "src-b", meta_b)
+
+    # Query src-a — must return only src-a's chunk
+    rows_a = await query_fts_rows("alpha", ["src-a"], top_k=10)
+    assert len(rows_a) == 1
+    assert rows_a[0]["source_id"] == "src-a"
+    assert "alpha only in list one" in rows_a[0]["content"]
+
+    # Query src-b — must return only src-b's chunk
+    rows_b = await query_fts_rows("beta", ["src-b"], top_k=10)
+    assert len(rows_b) == 1
+    assert rows_b[0]["source_id"] == "src-b"
+    assert "beta only in list two" in rows_b[0]["content"]
+
+    # Cross-query: src-a should not see src-b's content
+    rows_cross = await query_fts_rows("beta", ["src-a"], top_k=10)
+    assert len(rows_cross) == 0
+
+
+@pytest.mark.asyncio
+async def test_clear_fts_for_list_independent_per_list(tmp_bibilab_home: Path):
+    """#379: Deleting one list only clears FTS for its own sources.
+
+    Under the old video_id-keyed query (WHERE video_id IN (SELECT video_id FROM
+    sources WHERE list_id = ?)), deleting list 1 would also purge FTS rows for
+    list 2's sources when both lists contained the same video_id.  The source_id
+    subquery (WHERE source_id IN (SELECT id FROM sources WHERE list_id = ?))
+    fixes this by keying on the source UUID directly.
+    """
+    await bootstrap_db()
+
+    shared_video_id = "BV_SHARED"
+    meta = _make_meta(shared_video_id, "Shared Video")
+
+    # Create two lists, each with one source pointing to the same video_id
+    async with get_db() as db:
+        await db.execute(
+            "INSERT INTO lists (id, name, created_at) VALUES (?, ?, ?)",
+            ("list-1", "List One", "2026-01-01T00:00:00"),
+        )
+        await db.execute(
+            "INSERT INTO lists (id, name, created_at) VALUES (?, ?, ?)",
+            ("list-2", "List Two", "2026-01-01T00:00:00"),
+        )
+        await db.execute(
+            "INSERT INTO sources (id, video_id, platform, list_id, title, source_url) VALUES (?, ?, ?, ?, ?, ?)",
+            ("src-list1", shared_video_id, "bilibili", "list-1", "T1", "http://x.com"),
+        )
+        await db.execute(
+            "INSERT INTO sources (id, video_id, platform, list_id, title, source_url) VALUES (?, ?, ?, ?, ?, ?)",
+            ("src-list2", shared_video_id, "bilibili", "list-2", "T2", "http://x.com"),
+        )
+        await db.commit()
+
+    populate_fts(_make_chunks(["list one chunk"]), "src-list1", meta)
+    populate_fts(_make_chunks(["list two chunk"]), "src-list2", meta)
+
+    # Verify both sets exist
+    rows_all = await query_fts_rows("chunk", ["src-list1", "src-list2"], top_k=10)
+    assert len(rows_all) == 2
+
+    # Delete list 1 — should only clear src-list1's FTS rows
+    await clear_fts_for_list("list-1")
+
+    # List 1's data gone
+    rows_list1 = await query_fts_rows("chunk", ["src-list1"], top_k=10)
+    assert len(rows_list1) == 0
+
+    # List 2's data still intact
+    rows_list2 = await query_fts_rows("chunk", ["src-list2"], top_k=10)
+    assert len(rows_list2) == 1
+    assert rows_list2[0]["source_id"] == "src-list2"

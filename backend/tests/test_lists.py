@@ -198,12 +198,12 @@ async def test_delete_source_from_list(client: httpx.AsyncClient, tmp_bibilab_ho
         vision_enabled=False,
         settings_snapshot={},
     )
-    with patch("bibilab.routers.lists.clear_embeddings_for_video") as mock_clear:
+    with patch("bibilab.routers.lists.clear_embeddings_for_source") as mock_clear:
         resp = await client.delete(f"/lists/{list_id}/sources/{source_id}")
     assert resp.status_code == 204
     assert await get_source(source_id) is None
     mock_clear.assert_called_once()
-    assert mock_clear.call_args[0][0] == "BV1abc"
+    assert mock_clear.call_args[0][0] == source_id
 
 
 @pytest.mark.asyncio
@@ -241,7 +241,7 @@ async def test_delete_source_clears_thumbnail_and_cover(
     # Assign the source as the list's thumbnail
     await client.patch(f"/lists/{list_id}", json={"thumbnail_source_id": source_id})
 
-    with patch("bibilab.routers.lists.clear_embeddings_for_video"):
+    with patch("bibilab.routers.lists.clear_embeddings_for_source"):
         resp = await client.delete(f"/lists/{list_id}/sources/{source_id}")
     assert resp.status_code == 204
 

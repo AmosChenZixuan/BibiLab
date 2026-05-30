@@ -456,11 +456,11 @@ async def test_get_video_statuses_precedence_needs_auth_over_processed(tmp_bibil
     assert result == {"BV1": "needs_auth"}
 
 
-def test_clear_embeddings_for_video_does_not_raise(tmp_path: Path):
+def test_clear_embeddings_for_source_does_not_raise(tmp_path: Path):
     from unittest.mock import MagicMock, patch
 
     from bibilab.config import BibilabConfig
-    from bibilab.pipeline.embed import clear_embeddings_for_video
+    from bibilab.pipeline.embed import clear_embeddings_for_source
 
     mock_col = MagicMock()
     mock_col.delete.return_value = None
@@ -469,8 +469,28 @@ def test_clear_embeddings_for_video_does_not_raise(tmp_path: Path):
         patch("bibilab.pipeline.embed.bibilab_home", return_value=tmp_path),
     ):
         (tmp_path / "chroma").mkdir(parents=True, exist_ok=True)
-        clear_embeddings_for_video("BV1abc", BibilabConfig())
-    mock_col.delete.assert_called_once_with(where={"video_id": "BV1abc"})
+        clear_embeddings_for_source("src-1", BibilabConfig())
+    mock_col.delete.assert_called_once_with(where={"source_id": "src-1"})
+
+
+def test_seg_range_exact_at_token_cap_boundary():
+    """Seg-range exactly covers chunks at token-cap boundary (timestamp-trap).
+
+    Adjacent chunks at a token-cap split are timestamp-contiguous — a
+    time-range query would double-count the boundary segment. Seg-range
+    (source-scoped seq) is exact: ranges tile [0, N-1] with no gap/overlap.
+    Verified by driving chunk_segments directly — the stored range is tested
+    in T4 manual smoke (fresh-DB re-ingest).
+    """
+    from bibilab.pipeline.chunk import chunk_segments
+    from bibilab.pipeline.transcribe import WhisperSegment
+
+    segs = [WhisperSegment(start=float(i), end=float(i) + 1, text=f"句{i}。", speaker="S") for i in range(8)]
+    chunks = chunk_segments(segs, target_tokens=2, chunk_max_tokens=3, language="zh")
+    ranges = [(c.seg_start, c.seg_end) for c in chunks]
+    assert ranges[0][0] == 0 and ranges[-1][1] == 7
+    for (_, prev_end), (nxt_start, _) in zip(ranges, ranges[1:]):
+        assert nxt_start == prev_end + 1  # contiguous, no gap/overlap
 
 
 class TestDeriveVideoStatuses:

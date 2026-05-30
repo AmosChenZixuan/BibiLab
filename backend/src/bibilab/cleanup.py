@@ -3,7 +3,7 @@ import logging
 from typing import Any
 
 from bibilab.config import bibilab_home, load_config
-from bibilab.pipeline.embed import clear_embeddings_for_video, clear_fts_for_video_sync
+from bibilab.pipeline.embed import clear_embeddings_for_source, clear_fts_for_source_sync
 
 logger = logging.getLogger(__name__)
 
@@ -29,12 +29,11 @@ def cleanup_job_artifacts(job: dict[str, Any]) -> None:
     for path in (home / "downloads").glob(f"{video_id}.*"):
         path.unlink(missing_ok=True)
 
-    # Clean up cover image using source_id from meta
+    # Clean up cover image and embeddings using source_id from meta
     source_id = meta.get("source_id")
     if isinstance(source_id, str) and source_id:
         cover_path = home / "covers" / f"{source_id}.jpg"
         cover_path.unlink(missing_ok=True)
-
-    clear_embeddings_for_video(video_id, load_config())
-    clear_fts_for_video_sync(video_id)
-    logger.info("Cleaned up artifacts for job %s (%s)", job.get("id", ""), video_id)
+        clear_embeddings_for_source(source_id, load_config())
+        clear_fts_for_source_sync(source_id)
+        logger.info("Cleaned up artifacts for job %s (source %s)", job.get("id", ""), source_id)

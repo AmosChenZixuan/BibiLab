@@ -257,10 +257,48 @@ async def test_stage_transcribe_punctuates_and_returns_sentences(tmp_bibilab_hom
     wav.write_bytes(b"")
     result = await loop._stage_transcribe(job_id, wav, "src-1", BibilabConfig())
 
-    vad_segments, detected_language, effective_language, sentence_segments = result
+    detected_language, effective_language, sentence_segments = result
     assert called["language"] == "zh"
     assert sentence_segments == sentences
-    assert vad_segments == vad  # chunk still consumes VAD segments in P2
+
+
+@pytest.mark.asyncio
+async def test_stage_process_chunks_sentence_segments(tmp_bibilab_home: Path, monkeypatch):
+    """_stage_process chunks sentence_segments, not vad_segments."""
+    from bibilab.config import BibilabConfig
+    from bibilab.db import bootstrap_db
+    from bibilab.pipeline.transcribe import WhisperSegment
+    from bibilab.worker import WorkerLoop
+
+    await bootstrap_db()
+
+    sentences = [WhisperSegment(start=0.0, end=2.0, text="第一句。", speaker="SPK_0")]
+    captured: dict = {}
+
+    def _fake_chunk(segs, **kw):
+        captured["segs"] = segs
+        return []
+
+    monkeypatch.setattr("bibilab.worker.chunk_segments", _fake_chunk)
+    monkeypatch.setattr("bibilab.worker.embed_chunks", lambda *a, **k: None)
+    monkeypatch.setattr(
+        "bibilab.worker.digest",
+        lambda *a, **k: __import__("bibilab.pipeline.digest", fromlist=["DigestResult"]).DigestResult(
+            summary="s", keywords=[], series_name=None, sequence_number=None, season_number=None
+        ),
+    )
+    loop = WorkerLoop(config=BibilabConfig(), home=tmp_bibilab_home)
+    await loop._stage_process(
+        job_id="j",
+        job={"meta": {}},
+        sentence_segments=sentences,
+        source_id="src-1",
+        video_meta=__import__("unittest.mock", fromlist=["MagicMock"]).MagicMock(),
+        list_id="l",
+        cfg=BibilabConfig(),
+        effective_language="zh",
+    )
+    assert captured["segs"] is sentences
 
 
 @pytest.mark.asyncio
