@@ -56,7 +56,6 @@ CREATE TABLE IF NOT EXISTS sources (
     summary           TEXT NOT NULL DEFAULT '',
     keywords          TEXT NOT NULL DEFAULT '[]',
     cover_url         TEXT,
-    transcript_path   TEXT,
     source_url        TEXT NOT NULL DEFAULT '',
     duration_seconds  INTEGER NOT NULL DEFAULT 0,
     uploader          TEXT NOT NULL DEFAULT '',
@@ -124,6 +123,18 @@ CREATE TABLE IF NOT EXISTS messages (
 )
 """
 
+_CREATE_TRANSCRIPT_SEGMENTS = """
+CREATE TABLE IF NOT EXISTS transcript_segments (
+    id        INTEGER PRIMARY KEY,
+    source_id TEXT NOT NULL REFERENCES sources(id) ON DELETE CASCADE,
+    seq       INTEGER NOT NULL,
+    start_s   REAL NOT NULL,
+    end_s     REAL NOT NULL,
+    speaker   TEXT,
+    text      TEXT NOT NULL
+)
+"""
+
 
 async def bootstrap_db() -> None:
     async with get_db() as db:
@@ -135,18 +146,8 @@ async def bootstrap_db() -> None:
         await db.execute(_CREATE_CONVERSATIONS)
         await db.execute(_CREATE_MESSAGES)
         await db.execute("CREATE INDEX IF NOT EXISTS idx_messages_conversation_id ON messages(conversation_id)")
-        # Migrate away from removed tables/columns (safe to run on every boot).
-        await db.execute("DROP TABLE IF EXISTS query_classifications")
-        try:
-            await db.execute("ALTER TABLE conversations DROP COLUMN mode")
-        except aiosqlite.OperationalError:
-            pass  # column already dropped, or SQLite < 3.35 doesn't support DROP COLUMN
-        cursor = await db.execute("PRAGMA table_info(sources)")
-        if any(row["name"] == "sequence_kind" for row in await cursor.fetchall()):
-            # Idempotent without parsing exception text or masking real DB
-            # errors (locked / corrupt): only DROP when the column is present,
-            # let any genuine OperationalError propagate.
-            await db.execute("ALTER TABLE sources DROP COLUMN sequence_kind")
+        await db.execute(_CREATE_TRANSCRIPT_SEGMENTS)
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_segments_source ON transcript_segments(source_id, seq)")
         await db.execute("PRAGMA journal_mode=WAL")
         await db.commit()
 
@@ -229,6 +230,106 @@ async def update_list_thumbnail(list_id: str, thumbnail_source_id: str | None) -
         await db.commit()
 
 
+async def _exec_write_source(
+    db: aiosqlite.Connection,
+    *,
+    source_id: str,
+    video_id: str,
+    platform: str,
+    list_id: str,
+    title: str,
+    summary: str,
+    keywords: list[str],
+    cover_url: str | None,
+    source_url: str,
+    duration_seconds: int,
+    uploader: str,
+    language: str | None,
+    whisper_model: str,
+    ai_model: str,
+    vision_enabled: bool,
+    settings_snapshot: dict[str, Any],
+    series_name: str | None = None,
+    sequence_number: int | None = None,
+    season_number: int | None = None,
+) -> None:
+    """Upsert a source row on the given connection. Does NOT commit — the caller
+    owns the transaction (lets a source + its segments commit atomically)."""
+    cursor = await db.execute("SELECT id FROM sources WHERE video_id = ? AND list_id = ?", (video_id, list_id))
+    existing = await cursor.fetchone()
+
+    await db.execute(
+        """
+        INSERT INTO sources
+            (id, video_id, platform, list_id, title, summary, keywords,
+             cover_url, source_url, duration_seconds, uploader,
+             language, whisper_model, ai_model, vision_enabled,
+             processed_at, settings_snapshot,
+             series_name, sequence_number, season_number)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(video_id, list_id) DO UPDATE SET
+            platform=excluded.platform,
+            title=excluded.title,
+            summary=excluded.summary,
+            keywords=excluded.keywords,
+            cover_url=excluded.cover_url,
+            source_url=excluded.source_url,
+            duration_seconds=excluded.duration_seconds,
+            uploader=excluded.uploader,
+            language=excluded.language,
+            whisper_model=excluded.whisper_model,
+            ai_model=excluded.ai_model,
+            vision_enabled=excluded.vision_enabled,
+            processed_at=excluded.processed_at,
+            settings_snapshot=excluded.settings_snapshot,
+            series_name=COALESCE(excluded.series_name, series_name),
+            sequence_number=COALESCE(excluded.sequence_number, sequence_number),
+            season_number=COALESCE(excluded.season_number, season_number)
+        """,
+        (
+            source_id,
+            video_id,
+            platform,
+            list_id,
+            title,
+            summary,
+            json.dumps(keywords),
+            cover_url,
+            source_url,
+            duration_seconds,
+            uploader,
+            language,
+            whisper_model,
+            ai_model,
+            int(vision_enabled),
+            _now(),
+            json.dumps(settings_snapshot),
+            series_name,
+            sequence_number,
+            season_number,
+        ),
+    )
+
+    if existing is None:
+        cursor = await db.execute("SELECT thumbnail_source_id FROM lists WHERE id = ?", (list_id,))
+        list_row = await cursor.fetchone()
+        if list_row is not None and list_row["thumbnail_source_id"] is None:
+            await db.execute(
+                "UPDATE lists SET thumbnail_source_id = ? WHERE id = ?",
+                (source_id, list_id),
+            )
+
+
+async def _exec_write_transcript_segments(db: aiosqlite.Connection, source_id: str, segments: list) -> None:
+    """Replace a source's transcript segments on the given connection. Does NOT
+    commit. `segments` is a list of WhisperSegment (start, end, text, speaker)."""
+    await db.execute("DELETE FROM transcript_segments WHERE source_id = ?", (source_id,))
+    await db.executemany(
+        "INSERT INTO transcript_segments (source_id, seq, start_s, end_s, speaker, text) VALUES (?, ?, ?, ?, ?, ?)",
+        [(source_id, i, s.start, s.end, s.speaker, s.text) for i, s in enumerate(segments)],
+    )
+
+
 async def write_source(
     source_id: str,
     video_id: str,
@@ -238,7 +339,6 @@ async def write_source(
     summary: str,
     keywords: list[str],
     cover_url: str | None,
-    transcript_path: str | None,
     source_url: str,
     duration_seconds: int,
     uploader: str,
@@ -252,72 +352,43 @@ async def write_source(
     season_number: int | None = None,
 ) -> None:
     async with get_db() as db:
-        cursor = await db.execute("SELECT id FROM sources WHERE video_id = ? AND list_id = ?", (video_id, list_id))
-        existing = await cursor.fetchone()
-
-        await db.execute(
-            """
-            INSERT INTO sources
-                (id, video_id, platform, list_id, title, summary, keywords,
-                 cover_url, transcript_path, source_url, duration_seconds, uploader,
-                 language, whisper_model, ai_model, vision_enabled,
-                 processed_at, settings_snapshot,
-                 series_name, sequence_number, season_number)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(video_id, list_id) DO UPDATE SET
-                platform=excluded.platform,
-                title=excluded.title,
-                summary=excluded.summary,
-                keywords=excluded.keywords,
-                cover_url=excluded.cover_url,
-                transcript_path=excluded.transcript_path,
-                source_url=excluded.source_url,
-                duration_seconds=excluded.duration_seconds,
-                uploader=excluded.uploader,
-                language=excluded.language,
-                whisper_model=excluded.whisper_model,
-                ai_model=excluded.ai_model,
-                vision_enabled=excluded.vision_enabled,
-                processed_at=excluded.processed_at,
-                settings_snapshot=excluded.settings_snapshot,
-                series_name=COALESCE(excluded.series_name, series_name),
-                sequence_number=COALESCE(excluded.sequence_number, sequence_number),
-                season_number=COALESCE(excluded.season_number, season_number)
-            """,
-            (
-                source_id,
-                video_id,
-                platform,
-                list_id,
-                title,
-                summary,
-                json.dumps(keywords),
-                cover_url,
-                transcript_path,
-                source_url,
-                duration_seconds,
-                uploader,
-                language,
-                whisper_model,
-                ai_model,
-                int(vision_enabled),
-                _now(),
-                json.dumps(settings_snapshot),
-                series_name,
-                sequence_number,
-                season_number,
-            ),
+        await _exec_write_source(
+            db,
+            source_id=source_id,
+            video_id=video_id,
+            platform=platform,
+            list_id=list_id,
+            title=title,
+            summary=summary,
+            keywords=keywords,
+            cover_url=cover_url,
+            source_url=source_url,
+            duration_seconds=duration_seconds,
+            uploader=uploader,
+            language=language,
+            whisper_model=whisper_model,
+            ai_model=ai_model,
+            vision_enabled=vision_enabled,
+            settings_snapshot=settings_snapshot,
+            series_name=series_name,
+            sequence_number=sequence_number,
+            season_number=season_number,
         )
+        await db.commit()
 
-        if existing is None:
-            cursor = await db.execute("SELECT thumbnail_source_id FROM lists WHERE id = ?", (list_id,))
-            list_row = await cursor.fetchone()
-            if list_row is not None and list_row["thumbnail_source_id"] is None:
-                await db.execute(
-                    "UPDATE lists SET thumbnail_source_id = ? WHERE id = ?",
-                    (source_id, list_id),
-                )
 
+async def write_source_with_segments(*, segments: list, **source_fields: Any) -> None:
+    """Atomically upsert a source row and its transcript segments in one
+    transaction. Either both land or neither — no orphaned source row, no
+    compensating delete. `source_fields` are the keyword args of `write_source`.
+
+    On any failure the exception propagates and the connection closes without a
+    commit, so SQLite rolls the whole transaction back. FK holds within the
+    transaction: the uncommitted parent source row is visible to the child
+    segment INSERTs on the same connection."""
+    async with get_db() as db:
+        await _exec_write_source(db, **source_fields)
+        await _exec_write_transcript_segments(db, source_fields["source_id"], segments)
         await db.commit()
 
 
@@ -376,6 +447,23 @@ async def get_source(source_id: str) -> aiosqlite.Row | None:
     async with get_db() as db:
         cursor = await db.execute("SELECT * FROM sources WHERE id=?", (source_id,))
         return await cursor.fetchone()
+
+
+async def write_transcript_segments(source_id: str, segments: list) -> None:
+    """Replace all transcript segments for a source. `segments` is a list of
+    WhisperSegment (start, end, text, speaker). Idempotent (DELETE then INSERT)."""
+    async with get_db() as db:
+        await _exec_write_transcript_segments(db, source_id, segments)
+        await db.commit()
+
+
+async def get_transcript_segments(source_id: str) -> list[aiosqlite.Row]:
+    async with get_db() as db:
+        cursor = await db.execute(
+            "SELECT seq, start_s, end_s, speaker, text FROM transcript_segments WHERE source_id = ? ORDER BY seq",
+            (source_id,),
+        )
+        return await cursor.fetchall()
 
 
 async def get_sources_for_list(list_id: str) -> list[aiosqlite.Row]:

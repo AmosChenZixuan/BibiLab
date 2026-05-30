@@ -9,19 +9,14 @@ from bibilab.db import write_source
 
 @pytest.mark.asyncio
 async def test_get_source_returns_digest_and_transcript(client: httpx.AsyncClient, tmp_bibilab_home: Path):
-    from bibilab.db import create_list
+    from bibilab.db import create_list, write_transcript_segments
+    from bibilab.pipeline.transcribe import WhisperSegment
 
     list_id = "list-for-source-test"
     await create_list(list_id, "Test List", "2025-01-01T00:00:00Z")
 
     source_id = "src-abc123"
     video_id = "BVtest456"
-    transcript_path = f"transcripts/{source_id}.txt"
-
-    # Write the transcript file
-    transcript_file = tmp_bibilab_home / transcript_path
-    transcript_file.parent.mkdir(parents=True, exist_ok=True)
-    transcript_file.write_text("hello transcript", encoding="utf-8")
 
     # Write the cover file
     cover_file = tmp_bibilab_home / "covers" / f"{source_id}.jpg"
@@ -37,7 +32,6 @@ async def test_get_source_returns_digest_and_transcript(client: httpx.AsyncClien
         summary="A test summary.",
         keywords=["ai", "video"],
         cover_url="https://example.com/cover.jpg",
-        transcript_path=transcript_path,
         source_url="https://www.bilibili.com/video/BVtest456",
         duration_seconds=120,
         uploader="TestUploader",
@@ -48,6 +42,10 @@ async def test_get_source_returns_digest_and_transcript(client: httpx.AsyncClien
         settings_snapshot={"language": "en"},
     )
 
+    await write_transcript_segments(
+        source_id, [WhisperSegment(start=0.0, end=2.0, text="hello transcript", speaker=None)]
+    )
+
     resp = await client.get(f"/sources/{source_id}")
     assert resp.status_code == 200
     data = resp.json()
@@ -55,7 +53,7 @@ async def test_get_source_returns_digest_and_transcript(client: httpx.AsyncClien
     assert data["id"] == source_id
     assert data["summary"] == "A test summary."
     assert data["keywords"] == ["ai", "video"]
-    assert data["transcript"] == "hello transcript"
+    assert data["transcript"] == "[00:00:00] hello transcript"
     assert data["cover_url"] == "https://example.com/cover.jpg"
     assert data["video_id"] == video_id
 
@@ -81,7 +79,6 @@ async def test_get_source_cover(client: httpx.AsyncClient, tmp_bibilab_home: Pat
         summary="S",
         keywords=[],
         cover_url=None,
-        transcript_path=None,
         source_url="https://www.bilibili.com/video/BVcoverVid",
         duration_seconds=60,
         uploader="Uploader",
@@ -119,15 +116,12 @@ async def test_rerun_source_not_found(client: httpx.AsyncClient):
 @pytest.mark.asyncio
 async def test_rerun_source_success(client: httpx.AsyncClient, tmp_bibilab_home: Path, monkeypatch):
     """POST /sources/{source_id}/rerun re-runs digest and updates summary/keywords."""
-    from bibilab.db import create_list, get_source, write_source
+    from bibilab.db import create_list, get_source, write_source, write_transcript_segments
+    from bibilab.pipeline.transcribe import WhisperSegment
 
     await create_list("list-rerun-test", "Rerun Test", "2025-01-01T00:00:00Z")
 
     source_id = "src-rerun-001"
-    transcript_path = f"transcripts/{source_id}.txt"
-    transcript_file = tmp_bibilab_home / transcript_path
-    transcript_file.parent.mkdir(parents=True, exist_ok=True)
-    transcript_file.write_text("original transcript text", encoding="utf-8")
 
     await write_source(
         source_id=source_id,
@@ -138,7 +132,6 @@ async def test_rerun_source_success(client: httpx.AsyncClient, tmp_bibilab_home:
         summary="old summary",
         keywords=["old", "keyword"],
         cover_url=None,
-        transcript_path=transcript_path,
         source_url="https://www.bilibili.com/video/BVrerun001",
         duration_seconds=120,
         uploader="TestUser",
@@ -147,6 +140,10 @@ async def test_rerun_source_success(client: httpx.AsyncClient, tmp_bibilab_home:
         ai_model="gpt-4o",
         vision_enabled=False,
         settings_snapshot={},
+    )
+
+    await write_transcript_segments(
+        source_id, [WhisperSegment(start=0.0, end=5.0, text="original transcript text", speaker=None)]
     )
 
     # Mock the LLM call to return new digest with facets
@@ -174,22 +171,16 @@ async def test_rerun_source_success(client: httpx.AsyncClient, tmp_bibilab_home:
     assert source["sequence_number"] == 5
     assert source["season_number"] == 1
 
-    # Verify transcript file was not modified
-    assert transcript_file.read_text(encoding="utf-8") == "original transcript text"
-
 
 @pytest.mark.asyncio
 async def test_rerun_source_respects_ui_lang_header(client: httpx.AsyncClient, tmp_bibilab_home: Path, monkeypatch):
     """POST /sources/{source_id}/rerun with X-UI-Lang:zh passes Chinese lang instruction to LLM."""
-    from bibilab.db import create_list, write_source
+    from bibilab.db import create_list, write_source, write_transcript_segments
+    from bibilab.pipeline.transcribe import WhisperSegment
 
     await create_list("list-lang-test", "Lang Test", "2025-01-01T00:00:00Z")
 
     source_id = "src-lang-001"
-    transcript_path = f"transcripts/{source_id}.txt"
-    transcript_file = tmp_bibilab_home / transcript_path
-    transcript_file.parent.mkdir(parents=True, exist_ok=True)
-    transcript_file.write_text("test transcript", encoding="utf-8")
 
     await write_source(
         source_id=source_id,
@@ -200,7 +191,6 @@ async def test_rerun_source_respects_ui_lang_header(client: httpx.AsyncClient, t
         summary="old",
         keywords=[],
         cover_url=None,
-        transcript_path=transcript_path,
         source_url="https://www.bilibili.com/video/BVlang001",
         duration_seconds=60,
         uploader="TestUser",
@@ -209,6 +199,10 @@ async def test_rerun_source_respects_ui_lang_header(client: httpx.AsyncClient, t
         ai_model="gpt-4o",
         vision_enabled=False,
         settings_snapshot={},
+    )
+
+    await write_transcript_segments(
+        source_id, [WhisperSegment(start=0.0, end=2.0, text="test transcript", speaker=None)]
     )
 
     captured_prompt = None
@@ -245,7 +239,6 @@ async def test_patch_facets_replace(client: httpx.AsyncClient, tmp_bibilab_home:
         summary="s",
         keywords=["k"],
         cover_url=None,
-        transcript_path=None,
         source_url="https://example.com/BVpf01",
         duration_seconds=10,
         uploader="U",
@@ -286,7 +279,6 @@ async def test_patch_facets_kindless_number_persists(client: httpx.AsyncClient, 
         summary="s",
         keywords=["k"],
         cover_url=None,
-        transcript_path=None,
         source_url="https://example.com/BVpf02",
         duration_seconds=10,
         uploader="U",
@@ -319,7 +311,6 @@ async def test_patch_facets_invalid_int_422(client: httpx.AsyncClient, tmp_bibil
         summary="s",
         keywords=["k"],
         cover_url=None,
-        transcript_path=None,
         source_url="https://example.com/BVpf03",
         duration_seconds=10,
         uploader="U",
@@ -360,7 +351,6 @@ async def test_patch_facets_empty_body_noop(client: httpx.AsyncClient, tmp_bibil
         summary="s",
         keywords=["k"],
         cover_url=None,
-        transcript_path=None,
         source_url="https://example.com/BVpf04",
         duration_seconds=10,
         uploader="U",
@@ -401,7 +391,6 @@ async def test_patch_facets_toctou_lookuperror_maps_to_404(client: httpx.AsyncCl
         summary="s",
         keywords=["k"],
         cover_url=None,
-        transcript_path=None,
         source_url="https://example.com/BVpf05",
         duration_seconds=10,
         uploader="U",
@@ -425,3 +414,23 @@ async def test_patch_facets_toctou_lookuperror_maps_to_404(client: httpx.AsyncCl
     finally:
         sources_router.update_source_facets = real_update
     assert r.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_source_content_reads_transcript_from_segments_table(client: httpx.AsyncClient, tmp_bibilab_home: Path):
+    from bibilab.db import _now, bootstrap_db, create_list, get_db, write_transcript_segments
+    from bibilab.pipeline.transcribe import WhisperSegment
+
+    await bootstrap_db()
+    await create_list("list-1", "L", _now())
+    async with get_db() as db:
+        await db.execute(
+            "INSERT INTO sources (id, video_id, platform, list_id, title) VALUES (?, ?, ?, ?, ?)",
+            ("src-1", "BV1", "bilibili", "list-1", "T"),
+        )
+        await db.commit()
+    await write_transcript_segments("src-1", [WhisperSegment(start=0.0, end=2.0, text="你好。", speaker="SPK_0")])
+
+    resp = await client.get("/sources/src-1")
+    assert resp.status_code == 200
+    assert resp.json()["transcript"] == "[00:00:00] 你好。 [SPK_0]"

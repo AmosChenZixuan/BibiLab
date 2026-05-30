@@ -35,7 +35,7 @@ def _align(segments: list[WhisperSegment], punctuated: str) -> list[WhisperSegme
 
     Emits punctuated sentence segments. Splits on sentence-final punctuation and
     on speaker change (G3). Each segment's time is derived from the VAD segments
-    its characters came from (G1: first.start..last.end; G2: shared span).
+    its characters came from (first.start..last.end).
 
     Raises ValueError if the invariant `strip_punc(punctuated) == raw` is broken
     (ct-punc rewrote a character rather than only inserting punctuation).
@@ -102,7 +102,12 @@ _ctpunc_lock = threading.Lock()
 
 
 def _run_ctpunc(raw: str) -> str:
-    """Run standalone ct-punc on a raw (unpunctuated) char stream. Lazy singleton."""
+    """Run standalone ct-punc on a raw (unpunctuated) char stream. Lazy singleton.
+
+    Serialised via _ctpunc_lock: FunASR AutoModel.generate() mutates internal
+    state (same class of bug as the ASR model — transcribe.py:47-51), so
+    concurrent calls corrupt output.
+    """
     global _ctpunc_model
     from funasr import AutoModel  # noqa: PLC0415
 
@@ -112,13 +117,13 @@ def _run_ctpunc(raw: str) -> str:
                 model_path = ensure(PUNC_SPEC_ID)
                 logger.info("Loading ct-punc (standalone) from %s", model_path)
                 _ctpunc_model = AutoModel(model=str(model_path), disable_update=True, disable_pbar=True)
-    try:
-        return _ctpunc_model.generate(input=raw)[0]["text"]
-    except Exception:
-        logger.exception("ct-punc generate failed — resetting model for next attempt")
-        with _ctpunc_lock:
+    with _ctpunc_lock:
+        try:
+            return _ctpunc_model.generate(input=raw)[0]["text"]
+        except Exception:
+            logger.exception("ct-punc generate failed — resetting model for next attempt")
             _ctpunc_model = None
-        raise
+            raise
 
 
 def punctuate(segments: list[WhisperSegment], language: str | None) -> list[WhisperSegment]:

@@ -91,7 +91,6 @@ asr_models.py     — Unified ASR model registry (Whisper + SenseVoice + diariza
 | `list_id` | FK to `lists.id` |
 | `title`, `summary`, `keywords` | Denormalized from platform metadata + LLM output |
 | `language`, `uploader`, `duration_seconds` | Video metadata |
-| `transcript_path` | Relative path from `~/.bibilab/`, nullable |
 | `whisper_model`, `ai_model`, `vision_enabled` | Processing config at ingest time |
 | `cover_url`, `processed_at`, `settings_snapshot` | Ingest-time state |
 | `series_name`, `sequence_number`, `season_number` | Facet metadata extracted by LLM digest (nullable) |
@@ -135,6 +134,20 @@ asr_models.py     — Unified ASR model registry (Whisper + SenseVoice + diariza
 | `metadata` | JSON blob, nullable. Shape: `{"tool_calls": [...], "rag": {"calls": [{"query", "mode", "tool_name", "candidates_evaluated", "sources_with_hits", "sources_total", "source_coverage", "context": [{"chunk_id", "citation_index", "source_id", "source_title", "timestamp_start", "timestamp_end", "rerank_score", "preview"}], "dropped_by_gate", "reranked", "scoped_pool_size", "facet_scope": {"sequence_number", "season_number", "matched_count", "no_match"}, "gate_margin"}]}}`. `scoped_pool_size` is the **full source pool** (exclude/whitelist removed); `facet_scope.matched_count` carries the facet-narrowed count. Set by `run_chat_turn` post-stream from retrieve `tool_result` events (one entry per retrieve call). No migration for legacy persisted messages — the ledger renders best-effort from whatever fields exist. |
 | `created_at` | ISO timestamp |
 
+### `transcript_segments` — punctuated sentence segments
+
+| Column | Notes |
+|---|---|
+| `id` | INTEGER, primary key |
+| `source_id` | FK to `sources.id`, ON DELETE CASCADE |
+| `seq` | Segment order within a source |
+| `start_s` | Start time in seconds |
+| `end_s` | End time in seconds |
+| `speaker` | Speaker label (e.g. `SPK_0`), nullable |
+| `text` | Punctuated sentence text |
+
+Index: `idx_segments_source` on `(source_id, seq)`. Replaces the on-disk `transcripts/{source_id}.txt` (P2).
+
 ### `chunks_fts` — FTS5 virtual table
 
 BM25-ranked full-text index over transcript chunks. Populated by `populate_fts()` during the embed stage; cleared per-video on re-ingest. Columns: `content`, `video_id`, `video_title`, `timestamp_start`, `timestamp_end`, `chunk_id`. Query via `query_fts_rows()` in `db.py`.
@@ -143,23 +156,24 @@ BM25-ranked full-text index over transcript chunks. Populated by `populate_fts()
 
 ```
 POST /ingest/url → resolve → dedup check → create job(s)
-  → worker: download → audio → transcribe → chunk → digest ∥ embed → write_source
+  → worker: download → audio → transcribe → punctuate → chunk → digest ∥ embed → write_source + write_transcript_segments
 ```
 
 - Dedup via `get_video_statuses` (sources + jobs); skip if processed or in-flight.
 - Full re-process: DELETE /sources/:id then re-ingest.
 - POST /sources/:id/rerun re-runs digest only (LLM summary, keywords, facets); transcript is reused.
-- Delete removes transcript file, ChromaDB embeddings, and `sources` row
+- Delete removes ChromaDB embeddings and `sources` row (transcript segments cascade via FK)
 
 ### Pipeline stages (per video)
 
 1. **download** → temp video file
 2. **audio** → strip to .wav via FFmpeg
-3. **transcribe** → FunASR AutoModel (SenseVoice or Whisper via WhisperWarp) → raw segments with timestamps + speaker labels
-4. **chunk** → greedily merge consecutive Whisper segments (~5–15s each) until ~300 tokens. Each chunk stores `timestamp_start`, `timestamp_end`, `sequence_index` in ChromaDB metadata.
-5. **digest** → LLM: summary, keywords → denormalized into `sources` (parallel with embed)
-6. **embed** → store chunks in ChromaDB with per-video and per-list scope (parallel with digest)
-7. **write_source** → upsert row into `sources`
+3. **transcribe** → FunASR AutoModel (SenseVoice or Whisper via WhisperWarp) → raw VAD segments with timestamps + speaker labels
+4. **punctuate** → ct-punc (zh-gated) → punctuated sentence segments persisted to `transcript_segments`
+5. **chunk** → greedily merge consecutive VAD segments (~5–15s each) until ~300 tokens. Each chunk stores `timestamp_start`, `timestamp_end`, `sequence_index` in ChromaDB metadata.
+6. **digest** → LLM: summary, keywords → denormalized into `sources` (parallel with embed)
+7. **embed** → store chunks in ChromaDB with per-video and per-list scope (parallel with digest)
+8. **write_source** → upsert row into `sources`
 
 ## Chat Pipeline
 

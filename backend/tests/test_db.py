@@ -72,9 +72,6 @@ async def test_write_and_get_source(tmp_bibilab_home: Path):
 
     await bootstrap_db()
     await create_list("list-1", "ML Course", "2026-01-01T00:00:00")
-    transcript_file = tmp_bibilab_home / "transcripts" / "BV1abc.txt"
-    transcript_file.parent.mkdir(parents=True, exist_ok=True)
-    transcript_file.write_text("Intro to ML transcript.", encoding="utf-8")
     source_id = "source-uuid-abc"
     await write_source(
         source_id=source_id,
@@ -85,7 +82,6 @@ async def test_write_and_get_source(tmp_bibilab_home: Path):
         summary="A great intro.",
         keywords=["ml", "intro"],
         cover_url=None,
-        transcript_path=str(transcript_file),
         source_url="https://bilibili.com/video/BV1abc",
         duration_seconds=600,
         uploader="Uploader",
@@ -122,7 +118,6 @@ async def test_delete_source(tmp_bibilab_home: Path):
         summary="S",
         keywords=[],
         cover_url=None,
-        transcript_path=None,
         source_url="https://bilibili.com/video/BV1abc",
         duration_seconds=600,
         uploader="Uploader",
@@ -163,7 +158,6 @@ async def test_sources_unique_constraint(tmp_bibilab_home: Path):
         summary="Summary",
         keywords=[],
         cover_url=None,
-        transcript_path=None,
         source_url="https://bilibili.com/video/BV1abc",
         duration_seconds=600,
         uploader="Uploader",
@@ -184,7 +178,6 @@ async def test_sources_unique_constraint(tmp_bibilab_home: Path):
         summary="Summary",
         keywords=[],
         cover_url=None,
-        transcript_path=None,
         source_url="https://bilibili.com/video/BV1abc",
         duration_seconds=600,
         uploader="Uploader",
@@ -215,7 +208,6 @@ async def test_sources_unique_constraint(tmp_bibilab_home: Path):
         summary="Updated Summary",
         keywords=["new", "keywords"],
         cover_url=None,
-        transcript_path=None,
         source_url="https://bilibili.com/video/BV1abc",
         duration_seconds=600,
         uploader="Uploader",
@@ -252,7 +244,6 @@ async def test_get_sources_for_list(tmp_bibilab_home: Path):
             summary="",
             keywords=[],
             cover_url=None,
-            transcript_path=None,
             source_url=f"https://bilibili.com/video/{vid}",
             duration_seconds=600,
             uploader="Uploader",
@@ -304,7 +295,6 @@ async def test_get_video_statuses_all_processed(tmp_bibilab_home: Path) -> None:
             summary="",
             keywords=[],
             cover_url=None,
-            transcript_path=None,
             source_url=f"https://bilibili.com/video/{vid}",
             duration_seconds=600,
             uploader="Uploader",
@@ -363,7 +353,6 @@ async def test_get_video_statuses_mixed(tmp_bibilab_home: Path) -> None:
         summary="",
         keywords=[],
         cover_url=None,
-        transcript_path=None,
         source_url="url",
         duration_seconds=600,
         uploader="U",
@@ -450,7 +439,6 @@ async def test_get_video_statuses_precedence_needs_auth_over_processed(tmp_bibil
         summary="",
         keywords=[],
         cover_url=None,
-        transcript_path=None,
         source_url="url",
         duration_seconds=600,
         uploader="U",
@@ -706,7 +694,6 @@ async def test_get_source_facets(tmp_bibilab_home: Path):
             summary="s",
             keywords=[],
             cover_url=None,
-            transcript_path=None,
             source_url="u",
             duration_seconds=1,
             uploader="u",
@@ -731,3 +718,148 @@ async def test_get_source_facets(tmp_bibilab_home: Path):
         "s3": {"sequence_number": None, "season_number": None},
     }
     assert await get_source_facets([]) == {}
+
+
+# ── transcript_segments ──────────────────────────────────────────────
+
+
+async def _insert_source(
+    source_id: str = "src-1",
+    video_id: str = "BV1",
+    list_id: str = "list-1",
+) -> str:
+    from datetime import datetime, timezone
+
+    from bibilab.db import create_list, get_db
+
+    now = datetime.now(timezone.utc).isoformat()
+    await create_list(list_id, "L", now)
+    async with get_db() as db:
+        await db.execute(
+            "INSERT INTO sources (id, video_id, platform, list_id) VALUES (?, ?, ?, ?)",
+            (source_id, video_id, "bilibili", list_id),
+        )
+        await db.commit()
+    return source_id
+
+
+@pytest.mark.asyncio
+async def test_transcript_segments_roundtrip(tmp_bibilab_home: Path):
+    from bibilab.db import bootstrap_db, get_transcript_segments, write_transcript_segments
+    from bibilab.pipeline.transcribe import WhisperSegment
+
+    await bootstrap_db()
+    source_id = await _insert_source()
+    segs = [
+        WhisperSegment(start=0.0, end=2.0, text="你好。", speaker="SPK_0"),
+        WhisperSegment(start=2.0, end=4.0, text="再见。", speaker="SPK_1"),
+    ]
+    await write_transcript_segments(source_id, segs)
+    rows = await get_transcript_segments(source_id)
+    assert [r["seq"] for r in rows] == [0, 1]
+    assert [r["text"] for r in rows] == ["你好。", "再见。"]
+    assert [r["speaker"] for r in rows] == ["SPK_0", "SPK_1"]
+    assert rows[0]["start_s"] == 0.0 and rows[1]["end_s"] == 4.0
+
+
+@pytest.mark.asyncio
+async def test_transcript_segments_cascade_on_source_delete(tmp_bibilab_home: Path):
+    from bibilab.db import bootstrap_db, delete_source, get_transcript_segments, write_transcript_segments
+    from bibilab.pipeline.transcribe import WhisperSegment
+
+    await bootstrap_db()
+    source_id = await _insert_source()
+    await write_transcript_segments(source_id, [WhisperSegment(start=0.0, end=1.0, text="x。", speaker="SPK_0")])
+    assert len(await get_transcript_segments(source_id)) == 1
+    await delete_source(source_id)
+    assert await get_transcript_segments(source_id) == []
+
+
+@pytest.mark.asyncio
+async def test_transcript_segments_rejects_orphan(tmp_bibilab_home: Path):
+    import aiosqlite
+
+    from bibilab.db import bootstrap_db, write_transcript_segments
+    from bibilab.pipeline.transcribe import WhisperSegment
+
+    await bootstrap_db()
+    with pytest.raises(aiosqlite.IntegrityError):
+        await write_transcript_segments(
+            "no-such-source", [WhisperSegment(start=0.0, end=1.0, text="x。", speaker=None)]
+        )
+
+
+@pytest.mark.asyncio
+async def test_sources_has_no_transcript_path_column(tmp_bibilab_home: Path):
+    from bibilab.db import bootstrap_db, get_db
+
+    await bootstrap_db()
+    async with get_db() as db:
+        cursor = await db.execute("PRAGMA table_info(sources)")
+        cols = [r["name"] for r in await cursor.fetchall()]
+    assert "transcript_path" not in cols
+
+
+_SOURCE_FIELDS = dict(
+    source_id="src-1",
+    video_id="BV1",
+    platform="bilibili",
+    list_id="list-1",
+    title="T",
+    summary="S",
+    keywords=[],
+    cover_url=None,
+    source_url="https://bilibili.com/video/BV1",
+    duration_seconds=1,
+    uploader="U",
+    language="zh",
+    whisper_model="m",
+    ai_model="a",
+    vision_enabled=False,
+    settings_snapshot={},
+)
+
+
+@pytest.mark.asyncio
+async def test_write_source_with_segments_atomic_happy(tmp_bibilab_home: Path):
+    from bibilab.db import (
+        bootstrap_db,
+        create_list,
+        get_source,
+        get_transcript_segments,
+        write_source_with_segments,
+    )
+    from bibilab.pipeline.transcribe import WhisperSegment
+
+    await bootstrap_db()
+    await create_list("list-1", "L", "2026-01-01T00:00:00")
+    await write_source_with_segments(
+        segments=[WhisperSegment(start=0.0, end=2.0, text="你好。", speaker="SPK_0")],
+        **_SOURCE_FIELDS,
+    )
+    assert await get_source("src-1") is not None
+    assert len(await get_transcript_segments("src-1")) == 1
+
+
+@pytest.mark.asyncio
+async def test_write_source_with_segments_rolls_back_on_segment_failure(tmp_bibilab_home: Path, monkeypatch):
+    """If the segment write fails, the source upsert rolls back with it — no
+    orphaned source row (the bug the old compensating delete tried to patch)."""
+    import bibilab.db as db
+    from bibilab.db import bootstrap_db, create_list, get_source, write_source_with_segments
+    from bibilab.pipeline.transcribe import WhisperSegment
+
+    await bootstrap_db()
+    await create_list("list-1", "L", "2026-01-01T00:00:00")
+
+    async def _boom(*args, **kwargs):
+        raise RuntimeError("segment write failed")
+
+    monkeypatch.setattr(db, "_exec_write_transcript_segments", _boom)
+
+    with pytest.raises(RuntimeError):
+        await write_source_with_segments(
+            segments=[WhisperSegment(start=0.0, end=2.0, text="你好。", speaker="SPK_0")],
+            **_SOURCE_FIELDS,
+        )
+    assert await get_source("src-1") is None

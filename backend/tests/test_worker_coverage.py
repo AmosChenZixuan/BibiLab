@@ -70,11 +70,12 @@ class TestParseJobMeta:
 
 
 @pytest.mark.asyncio
-async def test_download_model_job_success(tmp_bibilab_home: Path):
+@pytest.mark.parametrize("model_name", ["large-v3", "cam++"])
+async def test_download_model_job_success(model_name: str, tmp_bibilab_home: Path):
     from bibilab.db import bootstrap_db, create_job
 
     await bootstrap_db()
-    meta = {"model_name": "large-v3"}
+    meta = {"model_name": model_name}
     job_id = await create_job("model_download", meta)
 
     worker = WorkerLoop(home=tmp_bibilab_home)
@@ -82,23 +83,7 @@ async def test_download_model_job_success(tmp_bibilab_home: Path):
 
     with patch("bibilab.worker.ensure") as mock_ensure:
         await worker._download_model_job(job)
-        mock_ensure.assert_called_once_with("large-v3")
-
-
-@pytest.mark.asyncio
-async def test_download_model_job_diarization(tmp_bibilab_home: Path):
-    from bibilab.db import bootstrap_db, create_job
-
-    await bootstrap_db()
-    meta = {"model_name": "cam++"}
-    job_id = await create_job("model_download", meta)
-
-    worker = WorkerLoop(home=tmp_bibilab_home)
-    job = {"id": job_id, "type": "model_download", "meta": json.dumps(meta)}
-
-    with patch("bibilab.worker.ensure") as mock_ensure:
-        await worker._download_model_job(job)
-        mock_ensure.assert_called_once_with("cam++")
+        mock_ensure.assert_called_once_with(model_name)
 
 
 @pytest.mark.asyncio
@@ -241,6 +226,88 @@ async def test_artifact_job_missing_source(tmp_bibilab_home: Path):
 # ---------------------------------------------------------------------------
 # WorkerLoop start / stop
 # ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_stage_transcribe_punctuates_and_returns_sentences(tmp_bibilab_home: Path, monkeypatch):
+    from bibilab.config import BibilabConfig
+    from bibilab.db import bootstrap_db, create_job
+    from bibilab.pipeline.transcribe import WhisperSegment
+
+    await bootstrap_db()
+    job_id = await create_job("ingest", {})
+
+    vad = [WhisperSegment(start=0.0, end=5.0, text="天花板明显是地板", speaker="SPK_0")]
+    sentences = [
+        WhisperSegment(start=0.0, end=5.0, text="天花板。", speaker="SPK_0"),
+        WhisperSegment(start=0.0, end=5.0, text="明显是地板。", speaker="SPK_0"),
+    ]
+
+    monkeypatch.setattr("bibilab.worker.transcribe", lambda *a, **k: (vad, "zh"))
+    called = {}
+
+    def _fake_punctuate(segs, language):
+        called["language"] = language
+        return sentences
+
+    monkeypatch.setattr("bibilab.worker.punctuate", _fake_punctuate)
+
+    loop = WorkerLoop(config=BibilabConfig(), home=tmp_bibilab_home)
+    wav = tmp_bibilab_home / "a.wav"
+    wav.write_bytes(b"")
+    result = await loop._stage_transcribe(job_id, wav, "src-1", BibilabConfig())
+
+    vad_segments, detected_language, effective_language, sentence_segments = result
+    assert called["language"] == "zh"
+    assert sentence_segments == sentences
+    assert vad_segments == vad  # chunk still consumes VAD segments in P2
+
+
+@pytest.mark.asyncio
+async def test_stage_persist_atomic_no_orphan_on_segment_write_failure(tmp_bibilab_home: Path):
+    """Source + segments persist in one transaction. A segment-write failure rolls
+    the source upsert back too — no orphaned source row (atomicity, not compensation)."""
+    import bibilab.db as db
+    from bibilab.db import bootstrap_db, create_job, create_list, get_source
+    from bibilab.pipeline.transcribe import WhisperSegment
+
+    await bootstrap_db()
+    await create_list("list-1", "Test List", "2026-01-01T00:00:00")
+    job_id = await create_job("ingest", {})
+
+    sentences = [WhisperSegment(start=0.0, end=1.0, text="test。", speaker=None)]
+
+    loop = WorkerLoop(home=tmp_bibilab_home)
+    video_meta = MagicMock(
+        platform="bilibili", title="T", cover_url=None, source_url="url", duration_seconds=1, uploader="U"
+    )
+
+    async def _boom(*args, **kwargs):
+        raise Exception("disk full")
+
+    with patch.object(db, "_exec_write_transcript_segments", _boom):
+        with pytest.raises(Exception, match="disk full"):
+            await loop._stage_persist(
+                job_id=job_id,
+                source_id="orphan-src",
+                video_id="BVorphan",
+                video_meta=video_meta,
+                list_id="list-1",
+                extraction=MagicMock(
+                    summary="s", keywords=[], series_name=None, sequence_number=None, season_number=None
+                ),
+                detected_language="en",
+                cfg=MagicMock(
+                    transcription=MagicMock(model="base"),
+                    ai=MagicMock(model="gpt"),
+                    vision=MagicMock(enabled=False),
+                    model_dump=lambda: {},
+                ),
+                sentence_segments=sentences,
+            )
+
+    # The source upsert rolled back with the failed segment write — no orphan
+    assert await get_source("orphan-src") is None
 
 
 @pytest.mark.asyncio

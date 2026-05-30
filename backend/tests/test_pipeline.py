@@ -9,10 +9,7 @@ from bibilab.pipeline._shared import _resolved_lang
 from bibilab.pipeline.audio import PipelineError, extract_audio
 from bibilab.pipeline.chunk import _SENT_END, RagChunk, chunk_segments
 from bibilab.pipeline.extract import generate_overview
-from bibilab.pipeline.transcribe import (
-    WhisperSegment,
-    write_transcript,
-)
+from bibilab.pipeline.transcribe import WhisperSegment
 
 # ---------------------------------------------------------------------------
 # audio.py
@@ -61,29 +58,6 @@ def test_extract_audio_ffmpeg_error(tmp_path: Path):
 # ---------------------------------------------------------------------------
 # transcribe.py
 # ---------------------------------------------------------------------------
-
-
-def test_write_transcript(tmp_path: Path):
-    segs = [
-        WhisperSegment(start=0.0, end=5.0, text="Hello world"),
-        WhisperSegment(start=5.0, end=10.0, text="Second segment"),
-    ]
-    with patch("bibilab.pipeline.transcribe.bibilab_home", return_value=tmp_path):
-        (tmp_path / "transcripts").mkdir()
-        path = write_transcript(segs, "BV1abc")
-
-    lines = path.read_text().splitlines()
-    assert lines[0] == "[00:00:00] Hello world"
-    assert lines[1] == "[00:00:05] Second segment"
-
-
-def test_write_transcript_hours(tmp_path: Path):
-    segs = [WhisperSegment(start=3661.0, end=3665.0, text="Late segment")]
-    with patch("bibilab.pipeline.transcribe.bibilab_home", return_value=tmp_path):
-        (tmp_path / "transcripts").mkdir()
-        path = write_transcript(segs, "BV2xyz")
-
-    assert path.read_text().strip() == "[01:01:01] Late segment"
 
 
 def test_transcribe_dispatches_large_v3_to_funasr(tmp_path: Path):

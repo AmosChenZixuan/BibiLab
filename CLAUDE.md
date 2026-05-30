@@ -2,7 +2,7 @@
 
 ## What This Project Is
 
-**Project Bibilab** transforms video content into searchable, AI-assisted private notebooks. A FastAPI backend runs the local processing pipeline (download → transcribe → chunk → digest ∥ embed), and a React + TypeScript SPA under `web/` provides the primary user interface.
+**Project Bibilab** transforms video content into searchable, AI-assisted private notebooks. A FastAPI backend runs the local processing pipeline (download → transcribe → punctuate → chunk → digest ∥ embed), and a React + TypeScript SPA under `web/` provides the primary user interface.
 
 Platform-specific context lives in `backend/CLAUDE.md` and `web/CLAUDE.md`.
 
@@ -34,9 +34,8 @@ Single-port deployment: FastAPI serves the React build as static files in produc
 ```
 ~/.bibilab/
 ├── config.json        Pydantic settings, credentials
-├── bibilab.db         SQLite (lists, jobs, sources, artifacts, conversations, messages, chunks_fts)
+├── bibilab.db         SQLite (lists, jobs, sources, artifacts, conversations, messages, chunks_fts, transcript_segments)
 ├── covers/            cached cover images
-├── transcripts/       raw Whisper segments
 ├── artifacts/         generated artifact content
 ├── chroma/            ChromaDB vector data
 ├── models/            cached embedding + reranker models (downloaded on first use)
@@ -52,7 +51,7 @@ Single-port deployment: FastAPI serves the React build as static files in produc
 | Facet edit vs extract | `parse_facet_int`/`clean_str_facet` shared; digest path degrades bad values to `null`, manual `PATCH /sources/:id/facets` raises → 422; manual write is REPLACE (`update_source_facets`, explicit null clears) vs digest COALESCE-preserve; PATCH returns 204 | A typed edit is deliberate (reject), an LLM guess is best-effort (degrade) |
 | Overview generation | On-demand `POST /lists/:id/overview` | User controls when to generate; no silent LLM calls in pipeline |
 | Job vs source dedup | `sources` is the dedup source; `jobs` is ephemeral | A video is "processed" if it has a `sources` row |
-| Transcript storage | Files on disk, not in DB | Re-chunking never requires re-transcription |
+| Transcript storage | Punctuated sentence segments in `transcript_segments` table, keyed by `source_id` with FK cascade | Re-chunking never requires re-transcription (segments persist, ASR not re-run) |
 | Artifact storage | Content on disk (`artifacts/{id}.md`), metadata in SQLite | Same pattern as transcripts |
 | Backend serves SPA | FastAPI mounts `/assets` + catch-all → `index.html` | Single-port; no separate frontend server |
 | Worker concurrency | Configurable via `config.backend.worker_concurrency` | Default 1 |

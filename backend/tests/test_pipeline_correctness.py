@@ -18,11 +18,9 @@ def setup_pipeline_test(tmp_path: Path):
             with patch("bibilab.cleanup.bibilab_home", return_value=tmp_path):
                 with patch("bibilab.routers.lists.bibilab_home", return_value=tmp_path):
                     with patch("bibilab.worker.bibilab_home", return_value=tmp_path):
-                        with patch("bibilab.pipeline.transcribe.bibilab_home", return_value=tmp_path):
-                            with patch("bibilab.pipeline.embed.bibilab_home", return_value=tmp_path):
-                                with patch("bibilab.routers.sources.bibilab_home", return_value=tmp_path):
-                                    with patch("pathlib.Path.home", return_value=tmp_path):
-                                        yield tmp_path
+                        with patch("bibilab.pipeline.embed.bibilab_home", return_value=tmp_path):
+                            with patch("pathlib.Path.home", return_value=tmp_path):
+                                yield tmp_path
 
 
 @pytest.mark.asyncio

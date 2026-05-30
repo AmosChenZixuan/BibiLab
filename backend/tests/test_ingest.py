@@ -48,7 +48,6 @@ async def test_ingest_dedup(client: httpx.AsyncClient, tmp_bibilab_home: Path):
         summary="S",
         keywords=[],
         cover_url=None,
-        transcript_path=None,
         source_url="https://www.bilibili.com/video/BV1abc123",
         duration_seconds=0,
         uploader="",
@@ -92,7 +91,16 @@ async def test_rerun_digest_only(tmp_bibilab_home: Path):
     """stages=["digest"] with rerun=True re-runs LLM only; skips download/transcribe."""
     import json
 
-    from bibilab.db import bootstrap_db, create_list, get_job, get_pending_jobs, get_source, write_source
+    from bibilab.db import (
+        bootstrap_db,
+        create_list,
+        get_job,
+        get_pending_jobs,
+        get_source,
+        write_source,
+        write_transcript_segments,
+    )
+    from bibilab.pipeline.transcribe import WhisperSegment
     from bibilab.worker import WorkerLoop
 
     await bootstrap_db()
@@ -100,11 +108,6 @@ async def test_rerun_digest_only(tmp_bibilab_home: Path):
 
     source_id = "digest-rerun-src-001"
     video_id = "BV1abc123"
-
-    # Seed source row with existing transcript file
-    (tmp_bibilab_home / "transcripts").mkdir(parents=True, exist_ok=True)
-    transcript_file = tmp_bibilab_home / "transcripts" / f"{source_id}.txt"
-    transcript_file.write_text("old transcript text", encoding="utf-8")
 
     await write_source(
         source_id=source_id,
@@ -115,7 +118,6 @@ async def test_rerun_digest_only(tmp_bibilab_home: Path):
         summary="old summary",
         keywords=["old", "keyword"],
         cover_url="https://example.com/cover.jpg",
-        transcript_path=f"transcripts/{source_id}.txt",
         source_url=f"https://bilibili.com/video/{video_id}",
         duration_seconds=3600,
         uploader="TestUser",
@@ -127,6 +129,10 @@ async def test_rerun_digest_only(tmp_bibilab_home: Path):
         series_name=None,
         sequence_number=None,
         season_number=None,
+    )
+
+    await write_transcript_segments(
+        source_id, [WhisperSegment(start=0.0, end=5.0, text="old transcript text", speaker=None)]
     )
 
     # Create a job as if it was queued by the ingest endpoint
@@ -172,13 +178,17 @@ async def test_rerun_digest_only(tmp_bibilab_home: Path):
     assert source_row["summary"] == "new summary from LLM"
     assert json.loads(source_row["keywords"]) == ["new", "keywords"]
 
-    # Verify transcript file content unchanged
-    assert transcript_file.read_text(encoding="utf-8") == "old transcript text"
+    # Verify transcript segments unchanged
+    from bibilab.db import get_transcript_segments
+
+    segs = await get_transcript_segments(source_id)
+    assert len(segs) == 1
+    assert segs[0]["text"] == "old transcript text"
 
 
 @pytest.mark.asyncio
 async def test_write_source_stores_relative_paths(tmp_bibilab_home: Path):
-    """After write_source, note_path and transcript_path are stored as relative paths."""
+    """After write_source, the source row is persisted correctly."""
     from bibilab.db import bootstrap_db, create_list, get_source, write_source
 
     await bootstrap_db()
@@ -194,7 +204,6 @@ async def test_write_source_stores_relative_paths(tmp_bibilab_home: Path):
         summary="Test summary.",
         keywords=["test"],
         cover_url="https://example.com/cover.jpg",
-        transcript_path="transcripts/BV1relative.txt",
         source_url="https://bilibili.com/video/BV1relative",
         duration_seconds=3600,
         uploader="TestUser",
@@ -208,15 +217,14 @@ async def test_write_source_stores_relative_paths(tmp_bibilab_home: Path):
         season_number=None,
     )
 
-    # Read back and verify paths are stored as relative
+    # Read back and verify source was written
     row = await get_source("test-uuid-1234")
     assert row["id"] == "test-uuid-1234"
-    assert row["transcript_path"] == "transcripts/BV1relative.txt"
 
 
 @pytest.mark.asyncio
-async def test_pipeline_creates_covers_and_transcripts(tmp_bibilab_home: Path):
-    """Full pipeline with mocks: covers + transcripts created."""
+async def test_pipeline_creates_covers_and_segments(tmp_bibilab_home: Path):
+    """Full pipeline with mocks: covers + transcript segments persisted."""
     import uuid
 
     from bibilab.db import bootstrap_db, create_list, get_source
@@ -294,10 +302,11 @@ async def test_pipeline_creates_covers_and_transcripts(tmp_bibilab_home: Path):
         "cover should be saved as covers/{source_id}.jpg"
     )
 
-    # Verify transcript was written
-    assert (tmp_bibilab_home / "transcripts" / f"{source_id}.txt").exists(), (
-        "transcript should be saved as transcripts/{source_id}.txt"
-    )
+    # Verify transcript segments were written
+    from bibilab.db import get_transcript_segments
+
+    segs = await get_transcript_segments(source_id)
+    assert len(segs) > 0, "transcript segments should be persisted"
 
     # Verify source row in DB has UUID id
     source_row = await get_source(source_id)
@@ -481,7 +490,6 @@ async def test_preview_processed_status(client: httpx.AsyncClient, mock_resolve_
         summary="S",
         keywords=[],
         cover_url=None,
-        transcript_path=None,
         source_url="https://www.bilibili.com/video/BV1abc123",
         duration_seconds=0,
         uploader="",
@@ -736,7 +744,6 @@ async def test_write_source_persists_facet_columns(tmp_bibilab_home: Path):
         summary="A lecture on criminal law.",
         keywords=["law"],
         cover_url=None,
-        transcript_path=None,
         source_url="https://example.com/BVfacet001",
         duration_seconds=600,
         uploader="UploaderX",
@@ -783,7 +790,6 @@ async def test_update_source_digest_persists_facets(tmp_bibilab_home: Path):
         summary="Old summary",
         keywords=["old"],
         cover_url=None,
-        transcript_path=None,
         source_url="https://example.com/BVfacet002",
         duration_seconds=300,
         uploader="U",
@@ -831,7 +837,6 @@ async def test_write_source_reingest_coalesces_facets(tmp_bibilab_home: Path):
         summary="s",
         keywords=["k"],
         cover_url=None,
-        transcript_path=None,
         source_url="https://example.com/BVcoalesce01",
         duration_seconds=10,
         uploader="U",
@@ -887,7 +892,6 @@ async def test_update_source_digest_coalesces_facets(tmp_bibilab_home: Path):
         summary="old",
         keywords=["old"],
         cover_url=None,
-        transcript_path=None,
         source_url="https://example.com/BVcoalesce02",
         duration_seconds=10,
         uploader="U",
@@ -930,7 +934,6 @@ async def test_update_source_facets_replace_semantics(tmp_bibilab_home: Path):
         summary="s",
         keywords=["k"],
         cover_url=None,
-        transcript_path=None,
         source_url="https://example.com/BVusf01",
         duration_seconds=10,
         uploader="U",
@@ -971,7 +974,6 @@ async def test_update_source_facets_partial_and_noop(tmp_bibilab_home: Path):
         summary="s",
         keywords=["k"],
         cover_url=None,
-        transcript_path=None,
         source_url="https://example.com/BVusf02",
         duration_seconds=10,
         uploader="U",

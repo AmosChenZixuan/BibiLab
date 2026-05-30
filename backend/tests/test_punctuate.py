@@ -99,3 +99,19 @@ def test_punctuate_zh_runs_ctpunc_and_aligns():
         out = punctuate(segs, language="zh")
     run.assert_called_once_with("天花板明显是地板")
     assert [s.text for s in out] == ["天花板。", "明显是地板。"]
+
+
+def test_run_ctpunc_serialises_generate_under_lock():
+    """Verify _ctpunc_model.generate() is called via _run_ctpunc (lock coverage)."""
+    from unittest.mock import MagicMock, patch
+
+    from bibilab.pipeline import punctuate as pmod
+
+    fake_model = MagicMock()
+    fake_model.generate.return_value = [{"text": "测试。"}]
+
+    with patch.object(pmod, "_ctpunc_model", fake_model):
+        result = pmod._run_ctpunc("测试")
+
+    assert result == "测试。"
+    fake_model.generate.assert_called_once_with(input="测试")

@@ -42,10 +42,8 @@ router = APIRouter()
 _ACTIVE_JOB_STATUSES = ("queued", "downloading", "transcribing", "processing")
 
 
-def _purge_source_resources(source_id: str, transcript_path: str | None) -> None:
+def _purge_source_resources(source_id: str) -> None:
     cover_path(source_id).unlink(missing_ok=True)
-    if transcript_path:
-        (bibilab_home() / transcript_path).unlink(missing_ok=True)
 
 
 async def _build_list_response(row: aiosqlite.Row, request: Request) -> ListResponse:
@@ -149,7 +147,7 @@ async def delete_list(list_id: str, cfg: BibilabConfig = Depends(get_config)) ->
 
     sources = await get_sources_for_list(list_id)
     for source in sources:
-        _purge_source_resources(source["id"], source["transcript_path"])
+        _purge_source_resources(source["id"])
 
     await delete_sources_for_list(list_id)
     await asyncio.to_thread(clear_embeddings_for_list, list_id, cfg)
@@ -206,7 +204,7 @@ async def delete_list_source(list_id: str, source_id: str, cfg: BibilabConfig = 
     if row is not None and row["thumbnail_source_id"] == source_id:
         await update_list_thumbnail(list_id, None)
 
-    _purge_source_resources(source_id, source["transcript_path"])
+    _purge_source_resources(source_id)
     await asyncio.to_thread(clear_embeddings_for_video, source["video_id"], cfg)
     await asyncio.to_thread(clear_fts_for_video_sync, source["video_id"])
     await delete_source(source_id)

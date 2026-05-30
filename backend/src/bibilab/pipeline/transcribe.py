@@ -21,14 +21,13 @@ models.
 from __future__ import annotations
 
 import logging
-import os
 import re
 import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from bibilab.config import TranscriptionConfig, bibilab_home
+from bibilab.config import TranscriptionConfig
 from bibilab.model_registry import DIARIZATION_SPEC_ID, VAD_SPEC_ID, ensure, get_spec
 from bibilab.pipeline.audio import PipelineError
 
@@ -168,12 +167,12 @@ def transcribe(audio_path: Path, cfg: TranscriptionConfig) -> tuple[list[Whisper
     return _transcribe_funasr(audio_path, cfg)
 
 
-def write_transcript(segments: list[WhisperSegment], video_id: str) -> Path:
-    """Write segments to ~/.bibilab/transcripts/{video_id}.txt, one line per segment."""
-    transcripts_dir = bibilab_home() / "transcripts"
-    out_path = transcripts_dir / f"{video_id}.txt"
-    tmp = out_path.with_suffix(".tmp")
+def format_transcript_text(segments: list[WhisperSegment]) -> str:
+    """Render segments as one line per segment: `[HH:MM:SS] text [SPK]`.
 
+    Interim presentation shared by digest + web source-content + artifact reads.
+    The rich grouped speaker-turn formatter (time + S{N}·SPK{k} namespace) is P4.
+    """
     lines = []
     for seg in segments:
         h = int(seg.start) // 3600
@@ -183,15 +182,25 @@ def write_transcript(segments: list[WhisperSegment], video_id: str) -> Path:
         if seg.speaker:
             line += f" [{seg.speaker}]"
         lines.append(line)
+    return "\n".join(lines)
 
-    tmp.write_text("\n".join(lines), encoding="utf-8")
-    os.replace(tmp, out_path)
-    logger.info("Wrote %d segments to %s", len(segments), out_path)
-    return out_path
+
+async def load_transcript_text(source_id: str) -> str:
+    """Load a source's transcript from the segments table, formatted for LLM/UI."""
+    from bibilab.db import get_transcript_segments  # local import avoids db<->pipeline cycle
+
+    try:
+        rows = await get_transcript_segments(source_id)
+    except Exception:
+        logger.exception("Failed to load transcript segments for source %s", source_id)
+        raise
+    segs = [WhisperSegment(start=r["start_s"], end=r["end_s"], text=r["text"], speaker=r["speaker"]) for r in rows]
+    return format_transcript_text(segs)
 
 
 __all__ = [
     "WhisperSegment",
+    "format_transcript_text",
+    "load_transcript_text",
     "transcribe",
-    "write_transcript",
 ]
