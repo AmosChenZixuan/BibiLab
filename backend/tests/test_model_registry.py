@@ -82,3 +82,22 @@ def test_modelspec_rejects_empty_integrity_files():
             local_subdir="bad",
             http_files=[("http://example.invalid/x", "x")],
         )
+
+
+def test_ctpunc_spec_registered():
+    spec = get_spec("ct-punc")
+    assert spec.kind == "punctuation"
+    assert spec.backend == "modelscope"
+    assert spec.modelscope_id == "iic/punc_ct-transformer_cn-en-common-vocab471067-large"
+    assert spec.integrity_files == ["configuration.json"]
+    assert spec.local_subdir == "asr/ct-punc"
+
+
+def test_ctpunc_is_required_unconditionally():
+    from bibilab.config import BibilabConfig
+    from bibilab.model_registry import PUNC_SPEC_ID, required_models
+
+    cfg = BibilabConfig()
+    ids = [s.id for s in required_models(cfg)]
+    assert "ct-punc" in ids
+    assert PUNC_SPEC_ID == "ct-punc"

@@ -17,7 +17,7 @@ from bibilab.config import BibilabConfig, models_dir
 
 logger = logging.getLogger(__name__)
 
-ModelKind = Literal["transcription", "vad", "diarization", "embedding", "reranker"]
+ModelKind = Literal["transcription", "vad", "diarization", "embedding", "reranker", "punctuation"]
 Backend = Literal["http_files", "modelscope", "whisper_warp"]
 
 
@@ -80,6 +80,16 @@ _SPECS: dict[str, ModelSpec] = {
         local_subdir="asr/fsmn-vad",
         modelscope_id="iic/speech_fsmn_vad_zh-cn-16k-common-pytorch",
     ),
+    "ct-punc": ModelSpec(
+        id="ct-punc",
+        display_name="CT-Transformer Punctuation (zh-en)",
+        kind="punctuation",
+        backend="modelscope",
+        size_mb=1050,
+        integrity_files=["configuration.json"],
+        local_subdir="asr/ct-punc",
+        modelscope_id="iic/punc_ct-transformer_cn-en-common-vocab471067-large",
+    ),
     "multilingual-e5": ModelSpec(
         id="multilingual-e5",
         display_name="Multilingual Embedding (MiniLM-L12-v2)",
@@ -124,6 +134,7 @@ EMBEDDING_SPEC_ID = "multilingual-e5"
 RERANKER_SPEC_ID = "bge-reranker-base"
 DIARIZATION_SPEC_ID = "cam++"
 VAD_SPEC_ID = "fsmn-vad"
+PUNC_SPEC_ID = "ct-punc"
 
 
 def list_specs() -> list[ModelSpec]:
@@ -283,6 +294,7 @@ def required_models(cfg: BibilabConfig) -> list[ModelSpec]:
             logger.warning("Unknown transcription model %r — skipping in required-models check", model)
     specs.append(get_spec(VAD_SPEC_ID))
     specs.append(get_spec(DIARIZATION_SPEC_ID))
+    specs.append(get_spec(PUNC_SPEC_ID))
     specs.append(get_spec(EMBEDDING_SPEC_ID))
     if cfg.rag.reranking_enabled:
         specs.append(get_spec(RERANKER_SPEC_ID))
@@ -299,6 +311,7 @@ __all__ = [
     "EMBEDDING_SPEC_ID",
     "ModelKind",
     "ModelSpec",
+    "PUNC_SPEC_ID",
     "RERANKER_SPEC_ID",
     "VAD_SPEC_ID",
     "ensure",
