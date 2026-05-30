@@ -2,7 +2,7 @@ from unittest.mock import patch
 
 import pytest
 
-from bibilab.pipeline.transcribe import WhisperSegment, _speaker_namespace, format_turns
+from bibilab.pipeline.transcribe import WhisperSegment, build_speaker_namespace, format_turns
 
 
 def _seg(text, start=0.0, end=1.0, speaker="SPK_0"):
@@ -30,14 +30,14 @@ def test_format_turns_chat_variant_namespaced_with_time():
         _seg("你好。", 157.0, 160.0, "SPK_0"),
         _seg("再见。", 160.0, 162.0, "SPK_1"),
     ]
-    ns = _speaker_namespace(segs)  # SPK_0 -> 0, SPK_1 -> 1
+    ns = build_speaker_namespace(segs)  # SPK_0 -> 0, SPK_1 -> 1
     out = format_turns(segs, include_time=True, citation_index=3, speaker_namespace=ns)
     assert out == "[S3·SPK0 @2:37] 你好。\n[S3·SPK1 @2:40] 再见。"
 
 
-def test_speaker_namespace_first_seen_order():
+def test_build_speaker_namespace_first_seen_order():
     segs = [_seg("a", 0, 1, "SPK_2"), _seg("b", 1, 2, "SPK_0"), _seg("c", 2, 3, "SPK_2")]
-    assert _speaker_namespace(segs) == {"SPK_2": 0, "SPK_0": 1}
+    assert build_speaker_namespace(segs) == {"SPK_2": 0, "SPK_0": 1}
 
 
 def test_format_turns_none_speaker_renders_placeholder():

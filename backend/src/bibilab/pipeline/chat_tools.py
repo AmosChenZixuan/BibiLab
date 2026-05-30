@@ -19,7 +19,7 @@ from bibilab.models._enums import RetrievalParams
 from bibilab.pipeline._shared import ToolDefinition
 from bibilab.pipeline.digest import parse_facet_int
 from bibilab.pipeline.embed import retrieve
-from bibilab.pipeline.transcribe import WhisperSegment, _speaker_namespace, format_turns
+from bibilab.pipeline.transcribe import WhisperSegment, build_speaker_namespace, format_turns
 
 logger = logging.getLogger(__name__)
 
@@ -386,8 +386,10 @@ async def execute_retrieve(
 
     # Reconstruct the speaker-turn body for each displayed chunk from its
     # segment seq-range (spec Layer 5). One batched query over all displayed
-    # chunks; namespace speakers per source so S{N}·SPK{k} is stable across a
-    # source's chunks and cross-source labels never collide.
+    # chunks; namespace speakers per source so S{N}·SPK{k} stays consistent
+    # across a source's chunks this turn and cross-source labels never collide.
+    # SPK{k} is a per-turn render label (ordinal over the retrieved ranges),
+    # not a durable per-source speaker id — see build_speaker_namespace.
     displayed = [c for c in result.chunks if c.source_id in source_id_to_index]
     ranges = [
         (c.source_id, c.seg_start, c.seg_end) for c in displayed if c.seg_start is not None and c.seg_end is not None
@@ -398,7 +400,7 @@ async def execute_retrieve(
         segs_by_source.setdefault(r["source_id"], []).append(
             WhisperSegment(start=r["start_s"], end=r["end_s"], text=r["text"], speaker=r["speaker"])
         )
-    ns_by_source = {sid: _speaker_namespace(segs) for sid, segs in segs_by_source.items()}
+    ns_by_source = {sid: build_speaker_namespace(segs) for sid, segs in segs_by_source.items()}
 
     def _turn_body(c):
         """Grouped + time + namespaced turns for one chunk; raw content fallback."""
@@ -414,6 +416,9 @@ async def execute_retrieve(
         return format_turns(
             chunk_segs, include_time=True, citation_index=idx, speaker_namespace=ns_by_source[c.source_id]
         )
+
+    # Compute each displayed chunk's body once; preview + fence both read this.
+    body_by_chunk = {id(c): _turn_body(c) for c in displayed}
 
     logger.info(
         "reconstruct top-k: %d displayed chunks, %d segments fetched, speakers/source=%s",
@@ -437,7 +442,7 @@ async def execute_retrieve(
                 entry.timestamp_start = c.timestamp_start
                 entry.timestamp_end = c.timestamp_end
                 entry.rerank_score = c.score
-                entry.preview = _turn_body(c)
+                entry.preview = body_by_chunk.get(id(c), c.content)
 
     # Collect indices actually retrieved this turn (for the enumeration line)
     turn_indices = sorted(set(source_id_to_index.values()))
@@ -448,7 +453,7 @@ async def execute_retrieve(
         if c.source_id not in source_id_to_index:
             continue
         idx = source_id_to_index[c.source_id]
-        chunks_by_index.setdefault(idx, []).append(_turn_body(c))
+        chunks_by_index.setdefault(idx, []).append(body_by_chunk[id(c)])
         raw_chunks.append(
             {
                 "source_id": c.source_id,

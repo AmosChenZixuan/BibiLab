@@ -167,12 +167,16 @@ def transcribe(audio_path: Path, cfg: TranscriptionConfig) -> tuple[list[Whisper
     return _transcribe_funasr(audio_path, cfg)
 
 
-def _speaker_namespace(segments: list[WhisperSegment]) -> dict[str | None, int]:
-    """Map each distinct speaker to a per-source ordinal in first-seen order.
+def build_speaker_namespace(segments: list[WhisperSegment]) -> dict[str | None, int]:
+    """Map each distinct speaker in ``segments`` to an ordinal in first-seen order.
 
     Used to namespace speaker labels at render (``SPK{k}``). CAM++ labels are
     source-local; the ordinal + citation index (``S{N}·SPK{k}``) makes
     cross-source speaker conflation structurally impossible (spec Layer 5).
+
+    The ordinal spans only the segments passed in. At chat time that is one
+    turn's retrieved ranges, so ``SPK{k}`` is a per-turn render label, not a
+    durable per-source speaker id.
     """
     ns: dict[str | None, int] = {}
     for seg in segments:
@@ -240,6 +244,7 @@ async def load_transcript_text(source_id: str, *, include_time: bool = True) -> 
 
 __all__ = [
     "WhisperSegment",
+    "build_speaker_namespace",
     "format_turns",
     "load_transcript_text",
     "transcribe",
