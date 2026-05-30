@@ -22,7 +22,7 @@ def test_format_turns_digest_variant_grouped_no_time_raw_label():
 def test_format_turns_ui_variant_grouped_with_time_raw_label():
     segs = [_seg("你好。", 157.0, 160.0, "SPK_0")]
     out = format_turns(segs, include_time=True)
-    assert out == "[SPK_0 @157s] 你好。"
+    assert out == "[SPK_0 @2:37] 你好。"
 
 
 def test_format_turns_chat_variant_namespaced_with_time():
@@ -32,7 +32,7 @@ def test_format_turns_chat_variant_namespaced_with_time():
     ]
     ns = _speaker_namespace(segs)  # SPK_0 -> 0, SPK_1 -> 1
     out = format_turns(segs, include_time=True, citation_index=3, speaker_namespace=ns)
-    assert out == "[S3·SPK0 @157s] 你好。\n[S3·SPK1 @160s] 再见。"
+    assert out == "[S3·SPK0 @2:37] 你好。\n[S3·SPK1 @2:40] 再见。"
 
 
 def test_speaker_namespace_first_seen_order():
@@ -55,7 +55,7 @@ async def test_load_transcript_text_default_includes_time_grouped():
     ]
     with patch("bibilab.db.get_transcript_segments", return_value=rows):
         out = await load_transcript_text("sid")
-    assert out == "[SPK_0 @0s] 你好。 再说一句。"  # grouped + time, raw label
+    assert out == "[SPK_0 @0:00] 你好。 再说一句。"  # grouped + time, raw label
 
 
 @pytest.mark.asyncio

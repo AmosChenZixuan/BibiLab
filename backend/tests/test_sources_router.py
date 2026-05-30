@@ -53,7 +53,7 @@ async def test_get_source_returns_digest_and_transcript(client: httpx.AsyncClien
     assert data["id"] == source_id
     assert data["summary"] == "A test summary."
     assert data["keywords"] == ["ai", "video"]
-    assert data["transcript"] == "[SPK? @0s] hello transcript"
+    assert data["transcript"] == "[SPK? @0:00] hello transcript"
     assert data["cover_url"] == "https://example.com/cover.jpg"
     assert data["video_id"] == video_id
 
@@ -433,4 +433,4 @@ async def test_source_content_reads_transcript_from_segments_table(client: httpx
 
     resp = await client.get("/sources/src-1")
     assert resp.status_code == 200
-    assert resp.json()["transcript"] == "[SPK_0 @0s] 你好。"
+    assert resp.json()["transcript"] == "[SPK_0 @0:00] 你好。"
