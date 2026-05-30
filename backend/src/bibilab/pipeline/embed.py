@@ -42,6 +42,10 @@ class RetrievedChunk:
     # True for chunks added by neighbor-pull. Excludes them from source_coverage
     # best_score and from any future relevance sort.
     is_neighbor: bool = False
+    # Segment seq-range covered by this chunk (None for legacy/malformed rows).
+    # Used by chat top-k reconstruction to fetch the speaker-turn body.
+    seg_start: int | None = None
+    seg_end: int | None = None
 
 
 @dataclass
@@ -113,6 +117,8 @@ def _row_from_chroma(
         score=score,
         sequence_index=_parse_seq_index(chroma_id),
         is_neighbor=is_neighbor,
+        seg_start=metadata.get("seg_start"),
+        seg_end=metadata.get("seg_end"),
     )
 
 
@@ -531,6 +537,8 @@ async def query_fts(
                 "video_title": row["video_title"],
                 "timestamp_start": float(row["timestamp_start"]),
                 "timestamp_end": float(row["timestamp_end"]),
+                "seg_start": row["seg_start"],
+                "seg_end": row["seg_end"],
             },
             distance=0.0,
             chroma_id=row["chunk_id"],
