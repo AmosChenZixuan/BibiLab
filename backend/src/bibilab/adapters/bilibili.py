@@ -31,6 +31,9 @@ _ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 _AUTH_RE = re.compile(r"log\s*in|sign\s*in|403", re.IGNORECASE)
 
 _METADATA_CONCURRENCY = 8
+# Parallel DASH-fragment downloads per video (audio is served fragmented).
+# Modest so N jobs × this stays friendly to Bilibili rate limits.
+_FRAGMENT_CONCURRENCY = 4
 _BILIBILI_NAV_URL = "https://api.bilibili.com/x/web-interface/nav"
 _cookie_file_cache: tuple[str, Path] | None = None
 
@@ -215,6 +218,7 @@ class BilibiliAdapter(PlatformAdapter):
             **_ydl_opts(self._cookie, quiet=False),
             "outtmpl": output_template,
             "format": "bestaudio/best",
+            "concurrent_fragment_downloads": _FRAGMENT_CONCURRENCY,
         }
 
         _, part_num = _split_video_id(video_id)

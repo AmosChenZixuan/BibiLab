@@ -74,7 +74,10 @@ class VisionConfig(BaseModel):
 
 class BackendConfig(BaseModel):
     port: int = 8765
-    worker_concurrency: int = 1
+    # Max ingest jobs in flight. Governs IO-stage (download + digest LLM call)
+    # parallelism only — transcription is serialized by a lock regardless, since
+    # it is GPU-compute/GIL-bound and gains nothing from concurrency.
+    max_concurrent_jobs: int = 4
     cors_origins: list[str] = [
         "http://localhost",
         "http://localhost:5173",

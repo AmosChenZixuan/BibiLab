@@ -14,7 +14,7 @@ const baseConfig: BibilabConfig = {
     language: "auto",
   },
   vision: { enabled: false, model: "", frame_sample_rate: 60 },
-  backend: { port: 8765, worker_concurrency: 2 },
+  backend: { port: 8765, max_concurrent_jobs: 2 },
 };
 
 const healthDeps: Record<string, HealthDependency> = {
@@ -38,12 +38,12 @@ describe("other tab", () => {
       </LanguageProvider>,
     );
 
-  test("shows backend connected status and worker concurrency together", () => {
+  test("shows backend connected status and max concurrent jobs together", () => {
     renderTab();
 
     expect(screen.getByText(/backend api/i)).toBeInTheDocument();
     expect(screen.getByText(/localhost:8765/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/worker concurrency/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/max concurrent jobs/i)).toBeInTheDocument();
   });
 
   test("shows ffmpeg label and install path when installed", () => {

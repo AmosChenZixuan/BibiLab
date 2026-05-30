@@ -23,6 +23,7 @@ from __future__ import annotations
 import logging
 import os
 import re
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -43,6 +44,13 @@ def _strip_funasr_tags(text: str) -> str:
 
 _funasr_pipeline: Any = None
 _funasr_key: tuple[str, str] | None = None  # (model, device)
+
+# Serializes the shared FunASR instance (load + generate). generate() mutates
+# internal state, so concurrent calls (worker max_concurrent_jobs > 1) race and
+# corrupt output. Transcription is also CPU/GIL-bound with the GPU only ~17%
+# busy, so parallel transcribes give no throughput gain anyway — serializing
+# costs nothing and is safe.
+_transcribe_lock = threading.Lock()
 
 
 @dataclass
@@ -100,7 +108,6 @@ def _coerce_seconds(value: float) -> float:
 
 
 def _transcribe_funasr(audio_path: Path, cfg: TranscriptionConfig) -> tuple[list[WhisperSegment], str | None]:
-    model = _load_funasr(cfg)
     gen_kwargs: dict[str, Any] = {
         "input": str(audio_path),
         "use_itn": True,
@@ -110,8 +117,14 @@ def _transcribe_funasr(audio_path: Path, cfg: TranscriptionConfig) -> tuple[list
     if cfg.language and cfg.language != "auto":
         gen_kwargs["language"] = cfg.language
 
+    # Lock spans load + generate: the first concurrent burst would otherwise
+    # each build the singleton (~3.8GB transient), and generate() mutates
+    # shared state. Holding it across both serializes the whole shared-model
+    # critical section.
     try:
-        res = model.generate(**gen_kwargs)
+        with _transcribe_lock:
+            model = _load_funasr(cfg)
+            res = model.generate(**gen_kwargs)
     except Exception:
         logger.exception("FunASR generate failed for %s (model=%s)", audio_path, cfg.model)
         raise

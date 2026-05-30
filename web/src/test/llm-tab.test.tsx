@@ -14,7 +14,7 @@ const baseConfig: BibilabConfig = {
     language: "auto",
   },
   vision: { enabled: false, model: "", frame_sample_rate: 60 },
-  backend: { port: 8765, worker_concurrency: 2 },
+  backend: { port: 8765, max_concurrent_jobs: 2 },
 };
 
 afterEach(() => {

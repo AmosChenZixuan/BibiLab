@@ -272,7 +272,7 @@ describe("home page", () => {
             language: "auto",
           },
           vision: { enabled: false, frame_sample_rate: 30, model: null },
-          backend: { port: 8765, worker_concurrency: 1 },
+          backend: { port: 8765, max_concurrent_jobs: 1 },
         });
       }
 

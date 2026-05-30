@@ -45,7 +45,7 @@ const baseConfig: BibilabConfig = {
     language: "auto",
   },
   vision: { enabled: false, model: "", frame_sample_rate: 60 },
-  backend: { port: 8765, worker_concurrency: 2 },
+  backend: { port: 8765, max_concurrent_jobs: 2 },
 };
 
 const healthDeps: Record<string, HealthDependency> = {
@@ -195,7 +195,7 @@ test("other tab does not re-sync local state on re-render with same backend conf
     </LanguageProvider>,
   );
 
-  expect(screen.getByLabelText(/worker concurrency/i)).toBeInTheDocument();
+  expect(screen.getByLabelText(/max concurrent jobs/i)).toBeInTheDocument();
 
   // Re-render with same config reference
   rerender(

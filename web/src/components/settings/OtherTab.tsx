@@ -13,23 +13,23 @@ type OtherTabProps = {
 export function OtherTab({ config, dependencies, onBlur }: OtherTabProps) {
   const { lang, setLang, t } = useLanguage();
   const [local, setLocal] = useState({
-    workerConcurrency: config.backend.worker_concurrency,
+    maxConcurrentJobs: config.backend.max_concurrent_jobs,
   });
   const interfaceLanguageId = useId();
-  const workerConcurrencyId = useId();
+  const maxConcurrentJobsId = useId();
 
   useEffect(() => {
     setLocal({
-      workerConcurrency: config.backend.worker_concurrency,
+      maxConcurrentJobs: config.backend.max_concurrent_jobs,
     });
-  }, [config.backend.worker_concurrency]);
+  }, [config.backend.max_concurrent_jobs]);
 
   function handleBlur() {
     onBlur({
       ...config,
       backend: {
         ...config.backend,
-        worker_concurrency: local.workerConcurrency,
+        max_concurrent_jobs: local.maxConcurrentJobs,
       },
     });
   }
@@ -64,25 +64,25 @@ export function OtherTab({ config, dependencies, onBlur }: OtherTabProps) {
       </SettingsField>
 
       <SettingsField
-        label={t("settings.workerConcurrency")}
-        hint={t("settings.workerConcurrencyDesc")}
-        htmlFor={workerConcurrencyId}
+        label={t("settings.maxConcurrentJobs")}
+        hint={t("settings.maxConcurrentJobsDesc")}
+        htmlFor={maxConcurrentJobsId}
       >
         <Input
-          aria-label={t("settings.workerConcurrency")}
-          id={workerConcurrencyId}
+          aria-label={t("settings.maxConcurrentJobs")}
+          id={maxConcurrentJobsId}
           max={8}
           min={1}
           onBlur={handleBlur}
           onChange={(event) =>
             setLocal((current) => ({
               ...current,
-              workerConcurrency: Number(event.target.value),
+              maxConcurrentJobs: Number(event.target.value),
             }))
           }
           inputSize="sm"
           type="number"
-          value={local.workerConcurrency}
+          value={local.maxConcurrentJobs}
         />
       </SettingsField>
 

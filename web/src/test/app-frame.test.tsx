@@ -45,7 +45,7 @@ function renderFrame(healthPayload: HealthResponse, configPayload?: BibilabConfi
       ai: { protocol: "", model: "", api_key: "", base_url: "" },
       transcription: { model: "large-v3", device: "cuda", language: "" },
       vision: { enabled: false, frame_sample_rate: 0, model: null },
-      backend: { port: 8765, worker_concurrency: 1 },
+      backend: { port: 8765, max_concurrent_jobs: 1 },
     }),
   );
 
@@ -101,7 +101,7 @@ describe("app frame", () => {
         ai: { protocol: "", model: "", api_key: "", base_url: "" },
         transcription: { model: "large-v3", device: "cpu", language: "" },
         vision: { enabled: false, frame_sample_rate: 0, model: null },
-        backend: { port: 8765, worker_concurrency: 1 },
+        backend: { port: 8765, max_concurrent_jobs: 1 },
       },
     );
 
@@ -213,7 +213,7 @@ describe("app frame", () => {
         ai: { protocol: "openai", model: "gpt-4o", api_key: "", base_url: "" },
         transcription: { model: "large-v3", device: "cpu", language: "auto" },
         vision: { enabled: false, frame_sample_rate: 30, model: null },
-        backend: { port: 8765, worker_concurrency: 1 },
+        backend: { port: 8765, max_concurrent_jobs: 1 },
       },
     );
 

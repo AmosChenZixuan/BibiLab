@@ -159,7 +159,7 @@ export type BibilabConfig = {
   };
   backend: {
     port: number;
-    worker_concurrency: number;
+    max_concurrent_jobs: number;
   };
 };
 

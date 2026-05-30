@@ -20,7 +20,7 @@ vi.mock("../lib/api", () => {
         language: "auto",
       },
       vision: { enabled: false, model: "", frame_sample_rate: 60 },
-      backend: { port: 8765, worker_concurrency: 2 },
+      backend: { port: 8765, max_concurrent_jobs: 2 },
     }),
     putConfig: vi.fn().mockResolvedValue({}),
     getHealth: vi.fn().mockResolvedValue({
@@ -167,7 +167,7 @@ describe("settings page", () => {
         language: "auto",
       },
       vision: { enabled: false, model: "", frame_sample_rate: 60 },
-      backend: { port: 8765, worker_concurrency: 2 },
+      backend: { port: 8765, max_concurrent_jobs: 2 },
     });
 
     renderPage();
@@ -200,12 +200,12 @@ describe("settings page", () => {
         language: "auto",
       },
       vision: { enabled: false, model: "", frame_sample_rate: 60 },
-      backend: { port: 8765, worker_concurrency: 3 },
+      backend: { port: 8765, max_concurrent_jobs: 3 },
     });
 
     renderPageAt("/settings?tab=other");
 
-    const workerInput = await screen.findByLabelText(/worker concurrency/i);
+    const workerInput = await screen.findByLabelText(/max concurrent jobs/i);
     fireEvent.change(workerInput, { target: { value: "3" } });
     fireEvent.blur(workerInput);
 
