@@ -266,7 +266,6 @@ async def test_stage_transcribe_punctuates_and_returns_sentences(tmp_bibilab_hom
         return sentences
 
     monkeypatch.setattr("bibilab.worker.punctuate", _fake_punctuate)
-    monkeypatch.setattr("bibilab.worker.write_transcript", lambda *a, **k: Path("/tmp/x.txt"))
 
     loop = WorkerLoop(config=BibilabConfig(), home=tmp_bibilab_home)
     wav = tmp_bibilab_home / "a.wav"

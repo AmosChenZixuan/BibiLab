@@ -110,13 +110,10 @@ async def test_delete_job_cleans_up_ingest_artifacts(client: httpx.AsyncClient, 
 
     await bootstrap_db()
     video_id = "BV1cleanup"
-    transcript_path = tmp_bibilab_home / "transcripts" / f"{video_id}.txt"
     download_path = tmp_bibilab_home / "downloads" / f"{video_id}.mp4"
 
-    transcript_path.parent.mkdir(parents=True, exist_ok=True)
     download_path.parent.mkdir(parents=True, exist_ok=True)
 
-    transcript_path.write_text("transcript", encoding="utf-8")
     download_path.write_text("video", encoding="utf-8")
 
     job_id = await create_job(
@@ -140,7 +137,6 @@ async def test_delete_job_cleans_up_ingest_artifacts(client: httpx.AsyncClient, 
 
     assert resp.status_code == 204
     assert await get_job(job_id) is None
-    assert not transcript_path.exists()
     assert not download_path.exists()
     mock_clear.assert_called_once()
     assert mock_clear.call_args[0][0] == video_id

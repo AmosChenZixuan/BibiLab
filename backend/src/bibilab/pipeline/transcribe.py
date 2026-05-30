@@ -21,14 +21,13 @@ models.
 from __future__ import annotations
 
 import logging
-import os
 import re
 import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from bibilab.config import TranscriptionConfig, bibilab_home
+from bibilab.config import TranscriptionConfig
 from bibilab.model_registry import DIARIZATION_SPEC_ID, VAD_SPEC_ID, ensure, get_spec
 from bibilab.pipeline.audio import PipelineError
 
@@ -195,21 +194,9 @@ async def load_transcript_text(source_id: str) -> str:
     return format_transcript_text(segs)
 
 
-def write_transcript(segments: list[WhisperSegment], video_id: str) -> Path:
-    """Write segments to ~/.bibilab/transcripts/{video_id}.txt, one line per segment."""
-    transcripts_dir = bibilab_home() / "transcripts"
-    out_path = transcripts_dir / f"{video_id}.txt"
-    tmp = out_path.with_suffix(".tmp")
-    tmp.write_text(format_transcript_text(segments), encoding="utf-8")
-    os.replace(tmp, out_path)
-    logger.info("Wrote %d segments to %s", len(segments), out_path)
-    return out_path
-
-
 __all__ = [
     "WhisperSegment",
     "format_transcript_text",
     "load_transcript_text",
     "transcribe",
-    "write_transcript",
 ]

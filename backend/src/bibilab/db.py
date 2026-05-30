@@ -56,7 +56,6 @@ CREATE TABLE IF NOT EXISTS sources (
     summary           TEXT NOT NULL DEFAULT '',
     keywords          TEXT NOT NULL DEFAULT '[]',
     cover_url         TEXT,
-    transcript_path   TEXT,
     source_url        TEXT NOT NULL DEFAULT '',
     duration_seconds  INTEGER NOT NULL DEFAULT 0,
     uploader          TEXT NOT NULL DEFAULT '',
@@ -252,7 +251,6 @@ async def write_source(
     summary: str,
     keywords: list[str],
     cover_url: str | None,
-    transcript_path: str | None,
     source_url: str,
     duration_seconds: int,
     uploader: str,
@@ -273,18 +271,17 @@ async def write_source(
             """
             INSERT INTO sources
                 (id, video_id, platform, list_id, title, summary, keywords,
-                 cover_url, transcript_path, source_url, duration_seconds, uploader,
+                 cover_url, source_url, duration_seconds, uploader,
                  language, whisper_model, ai_model, vision_enabled,
                  processed_at, settings_snapshot,
                  series_name, sequence_number, season_number)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(video_id, list_id) DO UPDATE SET
                 platform=excluded.platform,
                 title=excluded.title,
                 summary=excluded.summary,
                 keywords=excluded.keywords,
                 cover_url=excluded.cover_url,
-                transcript_path=excluded.transcript_path,
                 source_url=excluded.source_url,
                 duration_seconds=excluded.duration_seconds,
                 uploader=excluded.uploader,
@@ -307,7 +304,6 @@ async def write_source(
                 summary,
                 json.dumps(keywords),
                 cover_url,
-                transcript_path,
                 source_url,
                 duration_seconds,
                 uploader,

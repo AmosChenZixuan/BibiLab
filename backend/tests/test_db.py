@@ -85,7 +85,6 @@ async def test_write_and_get_source(tmp_bibilab_home: Path):
         summary="A great intro.",
         keywords=["ml", "intro"],
         cover_url=None,
-        transcript_path=str(transcript_file),
         source_url="https://bilibili.com/video/BV1abc",
         duration_seconds=600,
         uploader="Uploader",
@@ -122,7 +121,6 @@ async def test_delete_source(tmp_bibilab_home: Path):
         summary="S",
         keywords=[],
         cover_url=None,
-        transcript_path=None,
         source_url="https://bilibili.com/video/BV1abc",
         duration_seconds=600,
         uploader="Uploader",
@@ -163,7 +161,6 @@ async def test_sources_unique_constraint(tmp_bibilab_home: Path):
         summary="Summary",
         keywords=[],
         cover_url=None,
-        transcript_path=None,
         source_url="https://bilibili.com/video/BV1abc",
         duration_seconds=600,
         uploader="Uploader",
@@ -184,7 +181,6 @@ async def test_sources_unique_constraint(tmp_bibilab_home: Path):
         summary="Summary",
         keywords=[],
         cover_url=None,
-        transcript_path=None,
         source_url="https://bilibili.com/video/BV1abc",
         duration_seconds=600,
         uploader="Uploader",
@@ -215,7 +211,6 @@ async def test_sources_unique_constraint(tmp_bibilab_home: Path):
         summary="Updated Summary",
         keywords=["new", "keywords"],
         cover_url=None,
-        transcript_path=None,
         source_url="https://bilibili.com/video/BV1abc",
         duration_seconds=600,
         uploader="Uploader",
@@ -252,7 +247,6 @@ async def test_get_sources_for_list(tmp_bibilab_home: Path):
             summary="",
             keywords=[],
             cover_url=None,
-            transcript_path=None,
             source_url=f"https://bilibili.com/video/{vid}",
             duration_seconds=600,
             uploader="Uploader",
@@ -304,7 +298,6 @@ async def test_get_video_statuses_all_processed(tmp_bibilab_home: Path) -> None:
             summary="",
             keywords=[],
             cover_url=None,
-            transcript_path=None,
             source_url=f"https://bilibili.com/video/{vid}",
             duration_seconds=600,
             uploader="Uploader",
@@ -363,7 +356,6 @@ async def test_get_video_statuses_mixed(tmp_bibilab_home: Path) -> None:
         summary="",
         keywords=[],
         cover_url=None,
-        transcript_path=None,
         source_url="url",
         duration_seconds=600,
         uploader="U",
@@ -450,7 +442,6 @@ async def test_get_video_statuses_precedence_needs_auth_over_processed(tmp_bibil
         summary="",
         keywords=[],
         cover_url=None,
-        transcript_path=None,
         source_url="url",
         duration_seconds=600,
         uploader="U",
@@ -706,7 +697,6 @@ async def test_get_source_facets(tmp_bibilab_home: Path):
             summary="s",
             keywords=[],
             cover_url=None,
-            transcript_path=None,
             source_url="u",
             duration_seconds=1,
             uploader="u",
@@ -800,3 +790,14 @@ async def test_transcript_segments_rejects_orphan(tmp_bibilab_home: Path):
         await write_transcript_segments(
             "no-such-source", [WhisperSegment(start=0.0, end=1.0, text="x。", speaker=None)]
         )
+
+
+@pytest.mark.asyncio
+async def test_sources_has_no_transcript_path_column(tmp_bibilab_home: Path):
+    from bibilab.db import bootstrap_db, get_db
+
+    await bootstrap_db()
+    async with get_db() as db:
+        cursor = await db.execute("PRAGMA table_info(sources)")
+        cols = [r["name"] for r in await cursor.fetchall()]
+    assert "transcript_path" not in cols

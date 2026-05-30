@@ -23,10 +23,6 @@ def cover_path(source_id: str) -> Path:
     return bibilab_home() / "covers" / f"{source_id}.jpg"
 
 
-def transcript_path(video_id: str) -> Path:
-    return bibilab_home() / "transcripts" / f"{video_id}.txt"
-
-
 def _config_path() -> Path:
     return bibilab_home() / "config.json"
 

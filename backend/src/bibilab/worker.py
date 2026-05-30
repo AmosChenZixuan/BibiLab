@@ -39,7 +39,6 @@ from bibilab.pipeline.transcribe import (
     format_transcript_text,
     load_transcript_text,
     transcribe,
-    write_transcript,
 )
 
 logger = logging.getLogger(__name__)
@@ -524,7 +523,6 @@ All output fields MUST be written in {_LANG_NAME.get(lang, "English")}."""
             cfg.transcription.language if cfg.transcription.language != "auto" else (detected_language or "en")
         )
         sentence_segments = await asyncio.to_thread(punctuate, vad_segments, effective_language)
-        write_transcript(sentence_segments, source_id)  # .txt — removed in P2 Task 5
         wav_path.unlink(missing_ok=True)
 
         if job_id in self._cancelled:
@@ -604,7 +602,6 @@ All output fields MUST be written in {_LANG_NAME.get(lang, "English")}."""
             summary=extraction.summary,
             keywords=extraction.keywords,
             cover_url=video_meta.cover_url,
-            transcript_path=None,  # .txt store removed in P2; column dropped in Task 5
             source_url=video_meta.source_url,
             duration_seconds=video_meta.duration_seconds,
             uploader=video_meta.uploader,

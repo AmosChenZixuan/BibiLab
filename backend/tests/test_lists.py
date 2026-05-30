@@ -63,7 +63,6 @@ async def test_get_lists_returns_thumbnail_fields_and_prefers_cached_cover(
         summary="A summary.",
         keywords=[],
         cover_url="https://example.com/remote-cover.jpg",
-        transcript_path=None,
         source_url="https://www.bilibili.com/video/BV1cover",
         duration_seconds=0,
         uploader="TestUploader",
@@ -157,7 +156,6 @@ async def test_get_list_sources(client: httpx.AsyncClient, tmp_bibilab_home: Pat
         summary="A summary.",
         keywords=["ai"],
         cover_url=None,
-        transcript_path=None,
         source_url="https://www.bilibili.com/video/BV1abc",
         duration_seconds=0,
         uploader="TestUploader",
@@ -182,9 +180,6 @@ async def test_delete_source_from_list(client: httpx.AsyncClient, tmp_bibilab_ho
 
     list_id = (await client.post("/lists", json={"name": "ML"})).json()["id"]
     source_id = "src-delete-src"
-    transcript_file = tmp_bibilab_home / "transcripts" / f"{source_id}.txt"
-    transcript_file.parent.mkdir(parents=True, exist_ok=True)
-    transcript_file.write_text("# Note", encoding="utf-8")
     await write_source(
         source_id=source_id,
         video_id="BV1abc",
@@ -194,7 +189,6 @@ async def test_delete_source_from_list(client: httpx.AsyncClient, tmp_bibilab_ho
         summary="S",
         keywords=[],
         cover_url=None,
-        transcript_path=f"transcripts/{source_id}.txt",
         source_url="https://www.bilibili.com/video/BV1abc",
         duration_seconds=0,
         uploader="TestUploader",
@@ -207,7 +201,6 @@ async def test_delete_source_from_list(client: httpx.AsyncClient, tmp_bibilab_ho
     with patch("bibilab.routers.lists.clear_embeddings_for_video") as mock_clear:
         resp = await client.delete(f"/lists/{list_id}/sources/{source_id}")
     assert resp.status_code == 204
-    assert not transcript_file.exists()
     assert await get_source(source_id) is None
     mock_clear.assert_called_once()
     assert mock_clear.call_args[0][0] == "BV1abc"
@@ -235,7 +228,6 @@ async def test_delete_source_clears_thumbnail_and_cover(
         summary="S",
         keywords=[],
         cover_url=None,
-        transcript_path=None,
         source_url="https://www.bilibili.com/video/BV1abc",
         duration_seconds=0,
         uploader="TestUploader",
@@ -285,7 +277,6 @@ async def test_first_source_auto_assigned_as_thumbnail(client: httpx.AsyncClient
         summary="S",
         keywords=[],
         cover_url=None,
-        transcript_path=None,
         source_url="https://www.bilibili.com/video/BVfirstVid",
         duration_seconds=0,
         uploader="TestUploader",
@@ -319,7 +310,6 @@ async def test_generate_overview_respects_ui_lang_header(
         summary="A test summary.",
         keywords=[],
         cover_url=None,
-        transcript_path=None,
         source_url="https://www.bilibili.com/video/BVover001",
         duration_seconds=60,
         uploader="TestUser",
@@ -345,3 +335,23 @@ async def test_generate_overview_respects_ui_lang_header(
     assert resp.status_code == 200
     assert captured_prompt is not None
     assert "请用中文回答" in captured_prompt
+
+
+@pytest.mark.asyncio
+async def test_delete_source_cascades_segments_no_txt(client: httpx.AsyncClient, tmp_bibilab_home: Path):
+    from bibilab.db import _now, bootstrap_db, create_list, get_db, get_transcript_segments, write_transcript_segments
+    from bibilab.pipeline.transcribe import WhisperSegment
+
+    await bootstrap_db()
+    await create_list("list-1", "L", _now())
+    async with get_db() as db:
+        await db.execute(
+            "INSERT INTO sources (id, video_id, platform, list_id) VALUES (?, ?, ?, ?)",
+            ("src-1", "BV1", "bilibili", "list-1"),
+        )
+        await db.commit()
+    await write_transcript_segments("src-1", [WhisperSegment(start=0.0, end=1.0, text="x。", speaker=None)])
+
+    resp = await client.delete("/lists/list-1/sources/src-1")
+    assert resp.status_code == 204
+    assert await get_transcript_segments("src-1") == []
