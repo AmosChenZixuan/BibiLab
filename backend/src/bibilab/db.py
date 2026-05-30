@@ -468,6 +468,25 @@ async def get_transcript_segments(source_id: str) -> list[aiosqlite.Row]:
         return await cursor.fetchall()
 
 
+async def get_segments_for_ranges(ranges: list[tuple[str, int, int]]) -> list[aiosqlite.Row]:
+    """Fetch transcript segments for many (source_id, seq_start, seq_end) ranges in one query.
+
+    Used by chat top-k reconstruction: each retained chunk contributes one
+    range; the union is fetched once and sliced per chunk by the caller.
+    """
+    if not ranges:
+        return []
+    clauses = " OR ".join("(source_id = ? AND seq BETWEEN ? AND ?)" for _ in ranges)
+    params: list = [val for r in ranges for val in r]
+    async with get_db() as db:
+        cursor = await db.execute(
+            f"SELECT source_id, seq, start_s, end_s, speaker, text "
+            f"FROM transcript_segments WHERE {clauses} ORDER BY source_id, seq",
+            params,
+        )
+        return await cursor.fetchall()
+
+
 async def get_sources_for_list(list_id: str) -> list[aiosqlite.Row]:
     async with get_db() as db:
         cursor = await db.execute(
