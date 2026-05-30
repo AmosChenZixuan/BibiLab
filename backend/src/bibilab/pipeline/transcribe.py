@@ -191,9 +191,11 @@ def format_turns(
     """Group consecutive same-speaker segments into speaker-turn lines.
 
     Shared by chat top-k reconstruction (``include_time`` + ``citation_index`` +
-    ``speaker_namespace`` → ``[S{N}·SPK{k} @MM:SS] text``), the UI viewer
-    (``include_time``, raw label → ``[SPK_0 @MM:SS] text``) and digest (neither →
+    ``speaker_namespace`` → ``[S{N}·SPK{k} @M:SS] text``), the UI viewer
+    (``include_time``, raw label → ``[SPK_0 @M:SS] text``) and digest (neither →
     ``[SPK_0] text``). One helper, three variants (spec "Turn-text formatter").
+
+    Time is ``@M:SS`` under an hour, ``@H:MM:SS`` at or past it (hours hidden when zero).
     """
     lines: list[str] = []
     i, n = 0, len(segments)
@@ -209,7 +211,12 @@ def format_turns(
             label = f"S{citation_index}·SPK{speaker_namespace.get(spk, 0)}"
         else:
             label = spk or "SPK?"
-        time = f" @{int(start) // 60}:{int(start) % 60:02d}" if include_time else ""
+        if include_time:
+            h, rem = divmod(int(start), 3600)
+            m, s = divmod(rem, 60)
+            time = f" @{h}:{m:02d}:{s:02d}" if h else f" @{m}:{s:02d}"
+        else:
+            time = ""
         lines.append(f"[{label}{time}] {' '.join(texts)}")
     return "\n".join(lines)
 

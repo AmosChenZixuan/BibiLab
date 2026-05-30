@@ -45,6 +45,12 @@ def test_format_turns_none_speaker_renders_placeholder():
     assert out == "[SPK?] text"
 
 
+def test_format_turns_time_shows_hours_only_past_an_hour():
+    # < 1h: no hour field. >= 1h: H:MM:SS (3725s = 1:02:05).
+    assert format_turns([_seg("a", 59.0, 60.0)], include_time=True) == "[SPK_0 @0:59] a"
+    assert format_turns([_seg("b", 3725.0, 3726.0)], include_time=True) == "[SPK_0 @1:02:05] b"
+
+
 @pytest.mark.asyncio
 async def test_load_transcript_text_default_includes_time_grouped():
     from bibilab.pipeline.transcribe import load_transcript_text
