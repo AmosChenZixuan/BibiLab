@@ -214,26 +214,12 @@ def format_turns(
     return "\n".join(lines)
 
 
-def format_transcript_text(segments: list[WhisperSegment]) -> str:
-    """Render segments as one line per segment: `[HH:MM:SS] text [SPK]`.
+async def load_transcript_text(source_id: str, *, include_time: bool = True) -> str:
+    """Load a source's transcript from the segments table as speaker turns.
 
-    Interim presentation shared by digest + web source-content + artifact reads.
-    The rich grouped speaker-turn formatter (time + S{N}·SPK{k} namespace) is P4.
+    Default (``include_time=True``) is the UI viewer view (turns + time, raw
+    label). Digest/overview callers pass ``include_time=False`` (turns only).
     """
-    lines = []
-    for seg in segments:
-        h = int(seg.start) // 3600
-        m = (int(seg.start) % 3600) // 60
-        s = int(seg.start) % 60
-        line = f"[{h:02d}:{m:02d}:{s:02d}] {seg.text}"
-        if seg.speaker:
-            line += f" [{seg.speaker}]"
-        lines.append(line)
-    return "\n".join(lines)
-
-
-async def load_transcript_text(source_id: str) -> str:
-    """Load a source's transcript from the segments table, formatted for LLM/UI."""
     from bibilab.db import get_transcript_segments  # local import avoids db<->pipeline cycle
 
     try:
@@ -242,12 +228,11 @@ async def load_transcript_text(source_id: str) -> str:
         logger.exception("Failed to load transcript segments for source %s", source_id)
         raise
     segs = [WhisperSegment(start=r["start_s"], end=r["end_s"], text=r["text"], speaker=r["speaker"]) for r in rows]
-    return format_transcript_text(segs)
+    return format_turns(segs, include_time=include_time)
 
 
 __all__ = [
     "WhisperSegment",
-    "format_transcript_text",
     "format_turns",
     "load_transcript_text",
     "transcribe",
