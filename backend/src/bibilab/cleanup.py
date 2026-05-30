@@ -37,8 +37,3 @@ def cleanup_job_artifacts(job: dict[str, Any]) -> None:
         clear_embeddings_for_source(source_id, load_config())
         clear_fts_for_source_sync(source_id)
         logger.info("Cleaned up artifacts for job %s (source %s)", job.get("id", ""), source_id)
-    else:
-        logger.warning(
-            "cleanup_job_artifacts: skipping embed/FTS cleanup for job %s — source_id missing from meta (legacy job?)",
-            job.get("id", ""),
-        )

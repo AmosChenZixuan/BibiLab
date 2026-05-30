@@ -103,16 +103,12 @@ def _row_from_chroma(
     Shared by query_chunks (vector), query_fts, and neighbor fetch so row
     parsing lives in one place (CLAUDE.md code health rule #3).
     """
-    sid = metadata.get("source_id", "")
-    if not sid:
-        logger.warning("ChromaDB entry %s has empty source_id metadata — legacy data?", chroma_id)
-
     return RetrievedChunk(
         content=content,
         video_title=metadata.get("video_title", ""),
         timestamp_start=metadata.get("timestamp_start", 0.0),
         timestamp_end=metadata.get("timestamp_end", 0.0),
-        source_id=sid,
+        source_id=metadata.get("source_id", ""),
         distance=distance,
         score=score,
         sequence_index=_parse_seq_index(chroma_id),
@@ -405,9 +401,6 @@ def populate_fts(chunks: list[RagChunk], source_id: str, meta: VideoMeta) -> Non
             ],
         )
         conn.commit()
-    except Exception:
-        logger.exception("FTS population failed for source %s", source_id)
-        raise
     finally:
         conn.close()
     logger.info("FTS indexed %d chunks for source %s", len(chunks), source_id)
