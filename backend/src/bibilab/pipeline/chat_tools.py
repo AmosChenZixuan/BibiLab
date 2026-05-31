@@ -196,7 +196,7 @@ RETRIEVE_SCOPED_TOOL = ToolDefinition(
         "Pass sequence_number for episode references and season_number for season "
         "references. Pass both when the user references both (第二季第八集).\n\n"
         "Examples:\n"
-        '  retrieve_scoped(query="女巫的死期是什么时候?", sequence_number=5)\n'
+        '  retrieve_scoped(query="第五集讲了什么?", sequence_number=5)\n'
         '  retrieve_scoped(query="这一季的总览是什么?", season_number=2)\n'
         '  retrieve_scoped(query="主要事件有哪些?", sequence_number=3, season_number=2)'
     ),

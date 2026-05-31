@@ -16,7 +16,7 @@ from pathlib import Path
 
 from bibilab.adapters.base import VideoMeta
 from bibilab.config import BibilabConfig, bibilab_home, models_dir
-from bibilab.db import _tokenize_cjk, get_db_path, query_fts_rows
+from bibilab.db import _pinyin_index_tokens, _tokenize_cjk, get_db_path, query_fts_rows
 from bibilab.model_registry import EMBEDDING_SPEC_ID, _integrity_ok, ensure, get_spec
 from bibilab.models._enums import _RELEVANCE_MARGIN_BY_MODE, RetrievalParams
 from bibilab.pipeline.chat_inference_pool import get_chat_pool
@@ -390,11 +390,12 @@ def populate_fts(chunks: list[RagChunk], source_id: str, meta: VideoMeta) -> Non
     try:
         conn.executemany(
             "INSERT INTO chunks_fts "
-            "(content, source_id, video_title, timestamp_start, timestamp_end, chunk_id, seg_start, seg_end) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "(content, pinyin, source_id, video_title, timestamp_start, timestamp_end, chunk_id, seg_start, seg_end) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             [
                 (
                     _tokenize_cjk(chunk.text),
+                    _pinyin_index_tokens(chunk.text),
                     source_id,
                     meta.title,
                     chunk.timestamp_start,
