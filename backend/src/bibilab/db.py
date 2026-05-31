@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 import aiosqlite
+from pypinyin import Style, lazy_pinyin
 
 import bibilab.config
 from bibilab.models.jobs import JobStatus
@@ -90,6 +91,7 @@ CREATE TABLE IF NOT EXISTS artifacts (
 _CREATE_CHUNKS_FTS = """
 CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(
     content,
+    pinyin,
     source_id UNINDEXED,
     video_title UNINDEXED,
     timestamp_start UNINDEXED,
@@ -1104,27 +1106,31 @@ def _cjk_bigram_tokens(text: str) -> list[str]:
     return out
 
 
-def _tokenize_cjk(text: str) -> str:
-    """Unigram + bigram tokenize text for FTS5 indexing.
+def _collapse_cjk_whitespace(text: str) -> str:
+    """Remove whitespace between adjacent CJK characters.
 
-    Removes whitespace between adjacent CJK characters (introduced by
-    chunk.py segment-boundary joining) so bigrams can span segment gaps,
-    then emits each CJK character as a unigram plus overlapping bigrams.
-    Non-CJK tokens pass through unchanged.
+    chunk.py joins transcript segments with spaces; collapsing CJK-CJK gaps
+    lets bigrams span them. Shared by the char and pinyin index tokenizers so
+    both span segment joins identically.
     """
-    normalized = re.sub(r"(?<=[一-鿿㐀-䶿])\s+(?=[一-鿿㐀-䶿])", "", text)
-    return " ".join(_cjk_bigram_tokens(normalized))
+    return re.sub(r"(?<=[一-鿿㐀-䶿])\s+(?=[一-鿿㐀-䶿])", "", text)
+
+
+def _tokenize_cjk(text: str) -> str:
+    """Tokenize text for FTS5: unigrams + overlapping bigrams per CJK run.
+
+    Whitespace between adjacent CJK characters is collapsed so character
+    bigrams aren't split across it. Non-CJK text is split on whitespace.
+    """
+    return " ".join(_cjk_bigram_tokens(_collapse_cjk_whitespace(text)))
 
 
 def _cjk_query_tokens(text: str) -> list[str]:
     """Produce FTS5 query tokens for a single whitespace-delimited word.
 
-    Differs from _cjk_bigram_tokens: multi-char CJK runs emit bigrams only
-    (no unigrams). Adding unigrams for every character in multi-char words
-    explodes AND-term count and kills recall — e.g. "女巫 死 多少岁" would
-    produce 9 AND terms. Single-char CJK runs still emit their unigram so
-    high-IDF single-character words (死, 岁, 杀) survive.
-    Non-CJK runs are split on whitespace.
+    Multi-char CJK runs emit overlapping bigrams only — no unigrams, to
+    avoid AND-term explosion. Single-char CJK runs emit their unigram so
+    high-IDF single-character words survive. Non-CJK split on whitespace.
     """
     out: list[str] = []
     for is_cjk, seg in _cjk_runs(text):
@@ -1138,21 +1144,72 @@ def _cjk_query_tokens(text: str) -> list[str]:
     return out
 
 
+def _pinyin_tokens(text: str) -> list[str]:
+    """Toneless-pinyin syllable bigrams for each CJK run.
+
+    Per CJK run: toneless syllables → overlapping bigrams (no unigrams).
+    Single-char CJK runs produce nothing — pinyin unigrams are catastrophically
+    noisy (~400 toneless syllables). Non-CJK runs are skipped entirely.
+    """
+    out: list[str] = []
+    for is_cjk, seg in _cjk_runs(text):
+        if not is_cjk:
+            continue
+        syllables = lazy_pinyin(seg, style=Style.NORMAL)
+        if len(syllables) >= 2:
+            out += [syllables[i] + syllables[i + 1] for i in range(len(syllables) - 1)]
+    return out
+
+
+def _pinyin_index_tokens(text: str) -> str:
+    """Toneless-pinyin syllable bigrams, space-joined for FTS5 index column.
+
+    Collapses CJK-CJK whitespace first (same as _tokenize_cjk) so pinyin
+    bigrams span segment-join gaps — without it the pinyin arm would miss
+    homophones straddling a segment boundary that the char arm catches.
+    """
+    return " ".join(_pinyin_tokens(_collapse_cjk_whitespace(text)))
+
+
+def _fts_quote_token(t: str) -> str:
+    """Double-quote and escape a single FTS5 token (disables operator parsing)."""
+    return '"' + t.replace('"', '""') + '"'
+
+
 def _escape_fts_query(query_text: str) -> str:
     """Escape user input for safe FTS5 MATCH evaluation.
 
-    Splits on whitespace first to respect LLM-supplied word boundaries, then
-    query-tokenizes each word independently so cross-boundary pseudo-bigrams
-    (e.g. "巫生" from "女巫 生日") are never generated.
-    Uses _cjk_query_tokens (bigrams-only for multi-char CJK) to avoid
-    AND-term explosion while preserving single-char CJK word recall.
-    Each token is double-quoted to disable FTS5 operator parsing
-    (`AND`, `OR`, `:`, `*`, `^`).
+    Returns a column-scoped expression targeting the content and/or pinyin
+    FTS5 columns so the BM25 arm survives homophone ASR errors (e.g. query
+    '苹果' matches indexed '平果' via shared toneless-pinyin bigrams):
+
+        content : ("a" "b") OR pinyin : ("x" "y")
+
+    Each arm parenthesizes its token list so the column filter binds to the
+    whole group — FTS5's `col :` prefix otherwise scopes only the first phrase,
+    leaving later tokens to probe every column. With the parens, char tokens
+    never probe pinyin and pinyin tokens never probe content. When the pinyin
+    arm produces no tokens (English, single-char CJK, no CJK at all) the OR is
+    omitted and only the content arm is returned.
     """
-    tokens = [tok for word in query_text.split() for tok in _cjk_query_tokens(word)]
-    if not tokens:
+    words = query_text.split()
+    char_tokens = [tok for word in words for tok in _cjk_query_tokens(word)]
+    py_tokens = [tok for word in words for tok in _pinyin_tokens(word)]
+
+    if not char_tokens and not py_tokens:
         return ""
-    return " ".join('"' + t.replace('"', '""') + '"' for t in tokens)
+
+    char_arm = ""
+    if char_tokens:
+        char_arm = "content : (" + " ".join(_fts_quote_token(t) for t in char_tokens) + ")"
+
+    py_arm = ""
+    if py_tokens:
+        py_arm = "pinyin : (" + " ".join(_fts_quote_token(t) for t in py_tokens) + ")"
+
+    if char_arm and py_arm:
+        return f"{char_arm} OR {py_arm}"
+    return char_arm or py_arm
 
 
 async def query_fts_rows(
