@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { useLanguage } from "@/app/LanguageContext";
 import { ListGrid } from "@/components/lists/ListGrid";
 import { api, toErrorMessageWithT } from "@/lib/api";
+import { usePendingDeletions } from "@/lib/hooks/usePendingDeletions";
 import type { BibilabList, Source } from "@/lib/types";
 import { Button, Input, Modal, Panel } from "@/components/ui";
 
@@ -13,6 +14,7 @@ export function HomePage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<BibilabList | null>(null);
+  const { isPending, run } = usePendingDeletions();
   const [renameTarget, setRenameTarget] = useState<BibilabList | null>(null);
   const [renameDraft, setRenameDraft] = useState("");
   const [thumbnailTarget, setThumbnailTarget] = useState<BibilabList | null>(null);
@@ -58,8 +60,10 @@ export function HomePage() {
   async function handleDelete(list: BibilabList) {
     setError(null);
     try {
-      await api.deleteList(list.id);
-      setLists((current) => current.filter((entry) => entry.id !== list.id));
+      await run(list.id, async () => {
+        await api.deleteList(list.id);
+        setLists((current) => current.filter((entry) => entry.id !== list.id));
+      });
       setDeleteTarget(null);
     } catch (nextError) {
       setError(toErrorMessageWithT(nextError, t));
@@ -174,8 +178,9 @@ export function HomePage() {
               }}
               size="sm"
               variant="danger"
+              disabled={isPending(deleteTarget?.id ?? "")}
             >
-              {t("common.delete")}
+              {isPending(deleteTarget?.id ?? "") ? t("common.deleting") : t("common.delete")}
             </Button>
           </>
         }

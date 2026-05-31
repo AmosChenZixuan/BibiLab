@@ -24,6 +24,7 @@ import { ToolLedger } from "@/components/lists/ToolLedger";
 import { PulseRing } from "@/components/ui/PulseRing";
 import type { Source } from "@/lib/types";
 import { api } from "@/lib/api";
+import { usePendingDeletions } from "@/lib/hooks/usePendingDeletions";
 import {
   autoResize,
   formatSubtitle,
@@ -227,6 +228,7 @@ export function ChatPanel({
   const [inputValue, setInputValue] = useState("");
   const [messages, setMessages] = useState<MessageUI[]>([]);
   const [showClearPopover, setShowClearPopover] = useState(false);
+  const { isPending, run } = usePendingDeletions();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const hasSources = selectedSourceIds.length > 0;
@@ -306,9 +308,10 @@ export function ChatPanel({
   async function handleClearConfirm() {
     setShowClearPopover(false);
     try {
-      await api.deleteConversation(listId);
+      await run(listId, () => api.deleteConversation(listId));
     } catch {
-      // non-fatal
+      // non-fatal — keep messages, surface nothing
+      return;
     }
     setMessages([]);
   }
@@ -323,7 +326,7 @@ export function ChatPanel({
             <button
               type="button"
               onClick={() => setShowClearPopover((v) => !v)}
-              disabled={!hasConversation}
+              disabled={!hasConversation || isPending(listId)}
               aria-label={t("chat.clearConfirm.title")}
               className="flex h-7 w-7 items-center justify-center rounded-lg text-muted transition hover:bg-border disabled:cursor-not-allowed disabled:opacity-30 hover:disabled:bg-transparent"
             >
@@ -345,9 +348,10 @@ export function ChatPanel({
                   <button
                     type="button"
                     onClick={handleClearConfirm}
-                    className="rounded-full bg-ink px-3 py-1.5 text-xs font-medium text-white transition hover:brightness-110"
+                    disabled={isPending(listId)}
+                    className="rounded-full bg-ink px-3 py-1.5 text-xs font-medium text-white transition hover:brightness-110 disabled:opacity-60"
                   >
-                    {t("chat.clearConfirm.clear")}
+                    {isPending(listId) ? t("common.deleting") : t("chat.clearConfirm.clear")}
                   </button>
                 </div>
               </div>

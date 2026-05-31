@@ -26,7 +26,7 @@ export function JobSpirit() {
   const { t } = useLanguage();
   const {
     activeJobs,
-    cancellingJobId,
+    isJobPending,
     clearTerminalJobs,
     dismissJob,
     cancelJob,
@@ -99,7 +99,7 @@ export function JobSpirit() {
                           type="button"
                           className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-muted transition-colors hover:bg-border hover:text-ink disabled:opacity-30"
                           aria-label={item.isTerminal ? `Dismiss ${title}` : `Cancel ${title}`}
-                          disabled={cancellingJobId === item.job.id}
+                          disabled={isJobPending(item.job.id)}
                           onClick={() =>
                             item.isTerminal
                               ? void dismissJob(item.job.id)

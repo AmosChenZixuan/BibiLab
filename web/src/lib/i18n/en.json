@@ -322,6 +322,7 @@
   "common": {
     "cancel": "Cancel",
     "delete": "Delete",
+    "deleting": "Deleting...",
     "save": "Save",
     "creating": "Creating...",
     "createList": "Create list",

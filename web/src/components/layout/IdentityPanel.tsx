@@ -11,6 +11,7 @@ type IdentityPanelProps = {
   onClose: () => void;
   onLogin: () => void;
   onLogout: () => void;
+  isRevoking?: boolean;
 };
 
 const PLATFORMS = [{ key: "bilibili", label: "Bilibili", avatarFallback: "B" }];
@@ -22,6 +23,7 @@ export default function IdentityPanel({
   onClose,
   onLogin,
   onLogout,
+  isRevoking,
 }: IdentityPanelProps) {
   const { t } = useLanguage();
   const isSignedIn = bilibiliCookie.length > 0;
@@ -92,11 +94,14 @@ export default function IdentityPanel({
 
                 <button
                   type="button"
-                  className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-muted transition hover:bg-sky/10 hover:text-ink"
+                  disabled={isRevoking}
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-muted transition hover:bg-sky/10 hover:text-ink disabled:opacity-40 disabled:cursor-not-allowed"
                   aria-label={isSignedIn ? t("auth.bilibili.signOut") : t("navbar.signIn")}
                   onClick={() => (isSignedIn ? onLogout() : onLogin())}
                 >
-                  {isSignedIn ? (
+                  {isRevoking ? (
+                    <div className="size-4 rounded-full border-2 border-muted border-t-ink animate-spin" />
+                  ) : isSignedIn ? (
                     <LogOut className="size-4" />
                   ) : (
                     <QrCode className="size-4" />

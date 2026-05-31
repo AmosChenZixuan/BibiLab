@@ -24,6 +24,7 @@ interface ArtifactCardProps {
   onViewPrompt?: (artifactId: string) => void;
   onView?: (artifactId: string) => void;
   onDelete?: (artifactId: string) => void;
+  isDeleting?: boolean;
 }
 
 export function ArtifactCard({
@@ -34,6 +35,7 @@ export function ArtifactCard({
   onViewPrompt,
   onView,
   onDelete,
+  isDeleting,
 }: ArtifactCardProps) {
   const { t } = useLanguage();
   const [isRenaming, setIsRenaming] = useState(false);
@@ -90,6 +92,7 @@ export function ArtifactCard({
     icon: React.ReactNode;
     onClick: () => void;
     variant?: "danger";
+    disabled?: boolean;
   }[] = [];
   if (onView) {
     doneItems.push({ label: t("lab.artifactCard.open"), icon: <Eye size={14} />, onClick: () => onView(artifact.id) });
@@ -112,7 +115,7 @@ export function ArtifactCard({
     doneItems.push({ label: t("lab.artifactCard.viewPrompt"), icon: <FileText size={14} />, onClick: () => onViewPrompt(artifact.id) });
   }
   if (onDelete) {
-    doneItems.push({ label: t("lab.artifactCard.delete"), icon: <Trash2 size={14} />, onClick: () => onDelete(artifact.id), variant: "danger" });
+    doneItems.push({ label: t("lab.artifactCard.delete"), icon: <Trash2 size={14} />, onClick: () => onDelete(artifact.id), variant: "danger", disabled: isDeleting });
   }
 
   function handleRenameSubmit() {
@@ -148,7 +151,7 @@ export function ArtifactCard({
   });
 
   return (
-    <div className="group flex items-center gap-2 rounded-2xl border border-border bg-white/64 px-4 py-3 transition hover:bg-white hover:shadow-sm">
+    <div className={`group relative flex items-center gap-2 rounded-2xl border border-border bg-white/64 px-4 py-3 transition ${isDeleting ? "opacity-50" : "hover:bg-white hover:shadow-sm"}`}>
       {/* Clickable card content */}
       <div
         className="min-w-0 flex-1 cursor-pointer"
@@ -183,12 +186,23 @@ export function ArtifactCard({
             type="button"
             aria-label="Artifact options"
             onClick={toggle}
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-muted opacity-0 transition group-hover:opacity-100 hover:bg-border hover:text-ink"
+            disabled={isDeleting}
+            className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-muted transition ${isDeleting ? "opacity-40" : "opacity-0 group-hover:opacity-100 hover:bg-border hover:text-ink"}`}
           >
             <MoreVertical size={16} />
           </button>
         )}
       />
+
+      {/* Deleting spinner overlay */}
+      {isDeleting && (
+        <div className="absolute inset-0 flex items-center justify-center rounded-2xl bg-white/60 backdrop-blur-[1px]">
+          <div className="flex flex-col items-center gap-1">
+            <div className="h-6 w-6 rounded-full border-2 border-rose-200 border-t-rose-500 animate-spin" />
+            <span className="text-xs font-medium text-rose-600">Deleting…</span>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

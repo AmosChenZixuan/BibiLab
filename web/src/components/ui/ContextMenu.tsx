@@ -6,6 +6,7 @@ type ContextMenuItem = {
   icon?: ReactNode;
   onClick: () => void;
   variant?: "danger";
+  disabled?: boolean;
 };
 
 type TriggerArgs = {
@@ -121,7 +122,7 @@ export function ContextMenu({ items, trigger }: ContextMenuProps) {
                 <button
                   className={`flex w-full items-center gap-2 rounded-md border-0 px-2.5 py-2 text-left text-sm font-medium transition hover:bg-black/5 ${
                     item.variant === "danger" ? "text-pink" : "text-ink"
-                  }`}
+                  } ${item.disabled ? "opacity-40 cursor-not-allowed pointer-events-none" : ""}`}
                   key={item.label}
                   onClick={(event) => {
                     event.preventDefault();

@@ -19,6 +19,7 @@ export function AppFrame() {
   const [bilibiliUsername, setBilibiliUsername] = useState("");
   const [bilibiliAvatarUrl, setBilibiliAvatarUrl] = useState("");
   const [qrModalOpen, setQrModalOpen] = useState(false);
+  const [revokingAuth, setRevokingAuth] = useState(false);
   const [navElement, setNavElement] = useState<HTMLElement | null>(null);
 
   const deviceRef = useRef<string | undefined>();
@@ -86,10 +87,13 @@ export function AppFrame() {
   }, []);
 
   const handleLogout = useCallback(async () => {
+    setRevokingAuth(true);
     try {
       await api.auth.deleteBilibiliAuth();
     } catch {
       // non-critical
+    } finally {
+      setRevokingAuth(false);
     }
     notifyBilibiliAuthChanged();
   }, []);
@@ -147,6 +151,7 @@ export function AppFrame() {
               onClose={() => setIdentityOpen(false)}
               onLogin={() => setQrModalOpen(true)}
               onLogout={handleLogout}
+              isRevoking={revokingAuth}
             />
           ) : null}
         </nav>
