@@ -83,7 +83,17 @@ def _load_funasr(cfg: TranscriptionConfig) -> Any:
         _funasr_pipeline = AutoModel(
             device=device,
             vad_model=str(vad_path),
-            vad_kwargs={"max_single_segment_time": 15000, "max_end_silence_time": 500},
+            # speech_2_noise_ratio < default 1.0 down-weights speech vs noise so
+            # BGM-filled pauses (audio-drama background music) score as silence and
+            # VAD cuts there. Without it, a speaker change mid-segment over continuous
+            # BGM stays one VAD segment → one CAM++ label (intra-segment conflation).
+            # 0.7 splits the change, keeps speaker count stable, ~99% transcription
+            # parity. Pairs with merge_vad=False above. See issue #384.
+            vad_kwargs={
+                "max_single_segment_time": 15000,
+                "max_end_silence_time": 500,
+                "speech_2_noise_ratio": 0.7,
+            },
             spk_model=str(spk_path),
             disable_update=True,
             disable_pbar=True,
@@ -110,8 +120,12 @@ def _transcribe_funasr(audio_path: Path, cfg: TranscriptionConfig) -> tuple[list
     gen_kwargs: dict[str, Any] = {
         "input": str(audio_path),
         "use_itn": True,
-        "merge_vad": True,
-        "merge_length_s": 15,
+        # merge_vad glues adjacent VAD segments into ~merge_length_s windows
+        # REGARDLESS of speaker, before CAM++ embeds. A multi-speaker window then
+        # collapses to one speaker label (under-clustering). Disabling it keeps
+        # VAD's silence-bounded segments — finer, speaker-aligned — with no ASR
+        # quality loss (measured ~98% transcription parity). See issue #384.
+        "merge_vad": False,
     }
     if cfg.language and cfg.language != "auto":
         gen_kwargs["language"] = cfg.language
