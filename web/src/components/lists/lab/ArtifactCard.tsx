@@ -196,10 +196,10 @@ export function ArtifactCard({
 
       {/* Deleting spinner overlay */}
       {isDeleting && (
-        <div className="absolute inset-0 flex items-center justify-center rounded-2xl bg-white/60 backdrop-blur-[1px]">
+        <div className="absolute inset-0 flex items-center justify-center rounded-2xl bg-white/60 backdrop-blur-sm">
           <div className="flex flex-col items-center gap-1">
-            <div className="h-6 w-6 rounded-full border-2 border-rose-200 border-t-rose-500 animate-spin" />
-            <span className="text-xs font-medium text-rose-600">Deleting…</span>
+            <div className="h-6 w-6 rounded-full border-2 border-border border-t-pink animate-spin" />
+            <span className="text-xs font-medium text-pink">{t("common.deleting")}</span>
           </div>
         </div>
       )}

@@ -60,10 +60,8 @@ export function HomePage() {
   async function handleDelete(list: BibilabList) {
     setError(null);
     try {
-      await run(list.id, async () => {
-        await api.deleteList(list.id);
-        setLists((current) => current.filter((entry) => entry.id !== list.id));
-      });
+      await run(list.id, () => api.deleteList(list.id));
+      setLists((current) => current.filter((entry) => entry.id !== list.id));
       setDeleteTarget(null);
     } catch (nextError) {
       setError(toErrorMessageWithT(nextError, t));
@@ -130,6 +128,8 @@ export function HomePage() {
     }
   }
 
+  const deletePending = deleteTarget !== null && isPending(deleteTarget.id);
+
   return (
     <div className="grid gap-4">
       <div
@@ -178,9 +178,9 @@ export function HomePage() {
               }}
               size="sm"
               variant="danger"
-              disabled={isPending(deleteTarget?.id ?? "")}
+              disabled={deletePending}
             >
-              {isPending(deleteTarget?.id ?? "") ? t("common.deleting") : t("common.delete")}
+              {deletePending ? t("common.deleting") : t("common.delete")}
             </Button>
           </>
         }

@@ -1,31 +1,26 @@
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { ApiError } from "@/lib/api";
 
 export function usePendingDeletions() {
+  // Ref is the authoritative in-flight set (synchronous read for dedupe);
+  // state mirrors it only to drive isPending re-renders.
+  const pendingRef = useRef<Set<string>>(new Set());
   const [pending, setPending] = useState<Set<string>>(new Set());
+
   const isPending = useCallback((id: string) => pending.has(id), [pending]);
 
-  const run = useCallback(async (id: string, mutate: () => Promise<void>): Promise<boolean> => {
-    let started = false;
-    setPending((prev) => {
-      if (prev.has(id)) return prev;
-      started = true;
-      return new Set(prev).add(id);
-    });
-    if (!started) return false;
+  const run = useCallback(async (id: string, mutate: () => Promise<void>): Promise<void> => {
+    if (pendingRef.current.has(id)) return; // already in flight -- dedupe
+    pendingRef.current.add(id);
+    setPending(new Set(pendingRef.current));
 
     try {
       await mutate();
-      return true;
     } catch (e) {
-      if (e instanceof ApiError && e.status === 404) return false;
-      throw e;
+      if (!(e instanceof ApiError && e.status === 404)) throw e; // 404 = already gone, ok
     } finally {
-      setPending((prev) => {
-        const next = new Set(prev);
-        next.delete(id);
-        return next;
-      });
+      pendingRef.current.delete(id);
+      setPending(new Set(pendingRef.current));
     }
   }, []);
 

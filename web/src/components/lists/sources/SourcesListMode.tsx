@@ -457,10 +457,8 @@ export function SourcesListMode({
   );
 
   const handleDelete = useCallback(async (source: Source) => {
-    await run(source.id, async () => {
-      await api.deleteSource(listId, source.id);
-      setCurrentSources((prev) => prev.filter((s) => s.id !== source.id));
-    });
+    await run(source.id, () => api.deleteSource(listId, source.id));
+    setCurrentSources((prev) => prev.filter((s) => s.id !== source.id));
   }, [listId, run]);
 
   const handleQrModalSuccess = useCallback(() => {

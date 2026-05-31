@@ -45,7 +45,6 @@ type JobActivityContextValue = {
   visibleJobs: JobActivityItem[];
   isPanelOpen: boolean;
   isPolling: boolean;
-  cancellingJobId: string | null;
   isJobPending: (jobId: string) => boolean;
   errorMessage: string | null;
   clearTerminalJobs: () => void;
@@ -216,7 +215,6 @@ export function JobActivityProvider({ children }: { children: React.ReactNode })
   const [dismissedJobIds, setDismissedJobIds] = useState<string[]>([]);
   const [isPanelOpen, setIsPanelOpen] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [cancellingJobId, setCancellingJobId] = useState<string | null>(null);
   const { isPending, run } = usePendingDeletions();
   const trackedJobsRef = useRef<Record<string, TrackedJobMeta>>({});
 
@@ -328,10 +326,8 @@ export function JobActivityProvider({ children }: { children: React.ReactNode })
 
   const dismissJob = useCallback(async (jobId: string) => {
     try {
-      await run(jobId, async () => {
-        await api.deleteJob(jobId);
-        removeJobLocally(jobId);
-      });
+      await run(jobId, () => api.deleteJob(jobId));
+      removeJobLocally(jobId);
       setErrorMessage(null);
     } catch (error) {
       setErrorMessage(toErrorMessageWithT(error, t));
@@ -349,10 +345,8 @@ export function JobActivityProvider({ children }: { children: React.ReactNode })
 
   const cancelJob = useCallback(async (jobId: string) => {
     try {
-      await run(jobId, async () => {
-        await api.deleteJob(jobId);
-        removeJobLocally(jobId);
-      });
+      await run(jobId, () => api.deleteJob(jobId));
+      removeJobLocally(jobId);
     } catch (error) {
       setErrorMessage(toErrorMessageWithT(error, t));
     }
@@ -374,7 +368,6 @@ export function JobActivityProvider({ children }: { children: React.ReactNode })
     visibleJobs,
     isPanelOpen,
     isPolling: activeJobs.length > 0,
-    cancellingJobId,
     isJobPending: isPending,
     errorMessage,
     clearTerminalJobs,
@@ -386,7 +379,6 @@ export function JobActivityProvider({ children }: { children: React.ReactNode })
     getJobs,
   }), [
     activeJobs,
-    cancellingJobId,
     cancelJob,
     clearTerminalJobs,
     dismissJob,

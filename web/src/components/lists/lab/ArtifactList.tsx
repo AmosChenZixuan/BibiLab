@@ -5,11 +5,11 @@ import { useJobActivity } from "@/components/jobs/JobActivityProvider";
 import { api } from "@/lib/api";
 import { downloadTextFile } from "@/lib/download";
 import { usePendingDeletions } from "@/lib/hooks/usePendingDeletions";
-import { ARTIFACT_TYPE_KEYS } from "@/lib/artifactTypes";
 import type { Artifact, ArtifactJob, ArtifactStatus } from "@/lib/types";
 
 import { Sparkles } from "lucide-react";
 
+import { ARTIFACT_TYPE_KEYS } from "@/lib/artifactTypes";
 import { ArtifactCard } from "./ArtifactCard";
 import { ViewPromptModal } from "./ViewPromptModal";
 
@@ -121,10 +121,8 @@ export function ArtifactList({ listId, artifacts, onArtifactsChange, onViewArtif
   }, [onArtifactsChange]);
 
   const handleDelete = useCallback(async (artifactId: string) => {
-    await run(artifactId, async () => {
-      await api.deleteArtifact(artifactId);
-      onArtifactsChange((prev) => prev.filter((a) => a.id !== artifactId));
-    });
+    await run(artifactId, () => api.deleteArtifact(artifactId));
+    onArtifactsChange((prev) => prev.filter((a) => a.id !== artifactId));
   }, [run, onArtifactsChange]);
 
   const allArtifacts = useMemo(
