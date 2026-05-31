@@ -5,19 +5,23 @@ type SourceWithCover = { id: string; cover_url: string | null };
 
 interface Props extends ComponentPropsWithoutRef<"img"> {
   source?: SourceWithCover;
+  /** Pre-computed thumbnail URL (proxy or local). Takes precedence over source. */
+  thumbnailUrl?: string | null;
   remoteUrl?: string | null;
 }
 
-export function Thumbnail({ source, remoteUrl, className = "", alt = "", ...rest }: Props) {
+export function Thumbnail({ source, thumbnailUrl, remoteUrl, className = "", alt = "", ...rest }: Props) {
   const [loaded, setLoaded] = useState(false);
   const [fallbackUrl, setFallbackUrl] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
 
-  const primaryUrl = source?.cover_url
-    ? `/api/sources/${source.id}/cover`
-    : remoteUrl && remoteUrl.trim()
-      ? `/api/proxy/cover?url=${encodeURIComponent(remoteUrl)}`
-      : "";
+  const primaryUrl =
+    thumbnailUrl ||
+    (source?.cover_url
+      ? `/api/sources/${source.id}/cover`
+      : remoteUrl && remoteUrl.trim()
+        ? `/api/proxy/cover?url=${encodeURIComponent(remoteUrl)}`
+        : "");
 
   const imgSrc = fallbackUrl || primaryUrl;
   const hasUrl = !!imgSrc && !failed;

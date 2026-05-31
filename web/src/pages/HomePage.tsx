@@ -5,7 +5,7 @@ import { ListGrid } from "@/components/lists/ListGrid";
 import { api, toErrorMessageWithT } from "@/lib/api";
 import { usePendingDeletions } from "@/lib/hooks/usePendingDeletions";
 import type { BibilabList, Source } from "@/lib/types";
-import { Button, Input, Modal, Panel } from "@/components/ui";
+import { Button, Input, Modal, Panel, Thumbnail } from "@/components/ui";
 
 export function HomePage() {
   const { t } = useLanguage();
@@ -278,15 +278,17 @@ export function HomePage() {
             </button>
             {thumbnailSources.map((source) => (
               <button
-                className="aspect-video overflow-hidden rounded-2xl border border-border bg-black/30 p-0 text-left shadow-lg transition hover:-translate-y-0.5 hover:shadow-lg"
+                className="relative aspect-video overflow-hidden rounded-2xl border border-border bg-black/30 p-0 text-left shadow-lg transition hover:-translate-y-0.5 hover:shadow-lg"
                 key={source.id}
                 onClick={() => void handleThumbnailSelect(source.id)}
                 type="button"
               >
-                <div
-                  className="flex h-full items-end bg-cover bg-center p-2"
-                  style={{ backgroundImage: `linear-gradient(to top, rgba(0,0,0,0.5), transparent), url("/api/sources/${source.id}/cover")` }}
-                >
+                <Thumbnail
+                  className="h-full w-full"
+                  source={source}
+                  alt=""
+                />
+                <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/60 to-transparent p-2">
                   <span className="block truncate text-xs font-semibold text-white">{source.title}</span>
                 </div>
               </button>

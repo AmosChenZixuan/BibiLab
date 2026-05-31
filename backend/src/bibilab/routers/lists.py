@@ -2,6 +2,7 @@ import asyncio
 import json
 import uuid
 from datetime import datetime, timezone
+from urllib.parse import quote
 
 import aiosqlite
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -54,7 +55,7 @@ async def _build_list_response(row: aiosqlite.Row, request: Request) -> ListResp
         else:
             source = await get_source(row["thumbnail_source_id"])
             if source is not None and source["cover_url"]:
-                thumbnail_url = source["cover_url"]
+                thumbnail_url = f"/api/proxy/cover?url={quote(source['cover_url'], safe='')}"
 
     return ListResponse(
         id=row["id"],
