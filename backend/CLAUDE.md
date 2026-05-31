@@ -29,7 +29,7 @@ models/           — Pydantic request/response models + domain errors
 pipeline/         — one file per stage
   _shared.py        sync _call_llm + async stream_llm (OpenAI/Anthropic), StreamEvent/ToolCall/ToolDefinition dataclasses
   audio.py          FFmpeg audio extraction (video → .wav)
-  transcribe.py     Faster Whisper transcription → raw segments
+  transcribe.py     FunASR AutoModel (SenseVoice/Whisper) + CAM++ diarization → VAD segments w/ speaker labels
   chunk.py          greedy segment merger → ~300-token RAG chunks
   digest.py         LLM summary + keywords + facets (series_name, sequence_number, season_number) → denormalized into sources
   embed.py          ChromaDB embed + retrieve() (hybrid search → rerank → aggregation), FTS5 populate
