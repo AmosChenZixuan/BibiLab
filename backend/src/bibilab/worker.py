@@ -22,7 +22,6 @@ from bibilab.db import (
     reset_stuck_jobs,
     update_job_meta,
     update_job_status,
-    update_source_digest,
     write_source_with_segments,
 )
 from bibilab.model_registry import ensure
@@ -150,11 +149,6 @@ class WorkerLoop:
 
             if job["type"] == "model_download":
                 await self._download_model_job(job)
-                return
-
-            meta_raw = _parse_job_meta(job)
-            if meta_raw.get("stages") == ["digest"]:
-                await self._pipeline_digest_only(job)
                 return
 
             await self._pipeline(job)
@@ -333,49 +327,6 @@ All output fields MUST be written in {_LANG_NAME.get(lang, "English")}."""
         logger.error(error_msg)
         # On failure, create artifact with error status
         raise PipelineError(error_msg)
-
-    # -------------------------------------------------------------------------
-    # Pipeline stages (digest-only)
-    # -------------------------------------------------------------------------
-
-    async def _pipeline_digest_only(self, job: dict) -> None:
-        job_id = job["id"]
-        meta_raw = _parse_job_meta(job)
-        source_id = meta_raw["source_id"]
-        cfg = self._get_config()
-
-        await update_job_status(job_id, JobStatus.PROCESSING.value, progress=40)
-        source = await get_source(source_id)
-        if source is None:
-            raise PipelineError(f"Source {source_id!r} not found")
-        transcript_text = await load_transcript_text(source_id, include_time=False)
-        if not transcript_text:
-            raise PipelineError(f"Source {source_id!r} has no transcript")
-
-        video_meta = VideoMeta.from_source(source)
-
-        if job_id in self._cancelled:
-            self._cancelled.discard(job_id)
-            await delete_job(job_id)
-            return
-
-        extraction = await asyncio.to_thread(
-            digest,
-            transcript_text,
-            video_meta,
-            cfg.ai,
-            cfg.ai.output_language,
-            meta_raw.get("ui_lang"),
-        )
-        await update_source_digest(
-            source_id,
-            extraction.summary,
-            extraction.keywords,
-            series_name=extraction.series_name,
-            sequence_number=extraction.sequence_number,
-            season_number=extraction.season_number,
-        )
-        await update_job_status(job_id, JobStatus.DONE.value, progress=100)
 
     # -------------------------------------------------------------------------
     # Pipeline stages (full ingest)

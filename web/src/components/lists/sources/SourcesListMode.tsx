@@ -7,6 +7,7 @@ import { BilibiliQrModal } from "@/components/auth/BilibiliQrModal";
 import { PlaylistPreviewModal } from "@/components/lists/sources/PlaylistPreviewModal";
 import { useJobActivity } from "@/components/jobs/JobActivityProvider";
 import { api, ApiError, toErrorMessageWithT, notifyBilibiliAuthChanged } from "@/lib/api";
+import { usePendingDeletions } from "@/lib/hooks/usePendingDeletions";
 import type { IngestJob, IngestVideoIn, PreviewVideo, Source } from "@/lib/types";
 
 export const PIPELINE_STAGES = [
@@ -24,6 +25,7 @@ function SourceRow({
   onToggle,
   onOpen,
   onDelete,
+  isDeleting,
   t,
 }: {
   source: Source;
@@ -31,29 +33,32 @@ function SourceRow({
   onToggle: (id: string) => void;
   onOpen: () => void;
   onDelete: () => Promise<void>;
+  isDeleting?: boolean;
   t: (key: string, params?: Record<string, string | number>) => string;
 }) {
   return (
-    <div className="group flex items-center gap-3 rounded-2xl border border-border bg-white/64 px-4 py-3 transition hover:bg-white hover:shadow-sm">
+    <div className={`group flex items-center gap-3 rounded-2xl border border-border bg-white/64 px-4 py-3 transition ${isDeleting ? "opacity-50 pointer-events-none" : "hover:bg-white hover:shadow-sm"}`}>
       <input
         type="checkbox"
         checked={selected}
         onChange={() => onToggle(source.id)}
         aria-label={`Select ${source.title}`}
-        className="h-4 w-4 rounded border-border text-blue focus:ring-blue"
+        disabled={isDeleting}
+        className="h-4 w-4 rounded border-border text-blue focus:ring-blue disabled:opacity-40"
       />
       <button
         type="button"
         aria-label={`Open ${source.title}`}
         className="min-w-0 flex-1 border-0 bg-transparent text-left"
         onClick={onOpen}
+        disabled={isDeleting}
       >
         <p className="m-0 truncate text-sm font-medium text-ink">{source.title}</p>
         <p className="m-0 mt-0.5 text-xs text-muted">{source.platform}</p>
       </button>
       <ContextMenu
         items={[
-          { label: t("lists.delete"), icon: <Trash2 />, onClick: onDelete, variant: "danger" },
+          { label: t("lists.delete"), icon: <Trash2 />, onClick: onDelete, variant: "danger", disabled: isDeleting },
         ]}
         trigger={({ toggle, triggerRef }) => (
           <button
@@ -195,6 +200,7 @@ export function SourcesListMode({
   const ingestJobs = useMemo(() => getJobs("ingest", listId), [getJobs, listId]);
   const [refreshedJobs, setRefreshedJobs] = useState<string[]>([]);
   const [showQrModal, setShowQrModal] = useState(false);
+  const { isPending, run } = usePendingDeletions();
 
   const [currentSources, setCurrentSources] = useState<Source[]>(sources);
   const selectAllRef = useRef<HTMLInputElement>(null);
@@ -451,9 +457,9 @@ export function SourcesListMode({
   );
 
   const handleDelete = useCallback(async (source: Source) => {
-    await api.deleteSource(listId, source.id);
+    await run(source.id, () => api.deleteSource(listId, source.id));
     setCurrentSources((prev) => prev.filter((s) => s.id !== source.id));
-  }, [listId]);
+  }, [listId, run]);
 
   const handleQrModalSuccess = useCallback(() => {
     setShowQrModal(false);
@@ -532,6 +538,7 @@ export function SourcesListMode({
               onToggle={handleToggleSource}
               onOpen={() => onOpenSource(source)}
               onDelete={() => handleDelete(source)}
+              isDeleting={isPending(source.id)}
               t={t}
             />
           ))}

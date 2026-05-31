@@ -3,8 +3,10 @@ import { useEffect, useState } from "react";
 import { useLanguage } from "@/app/LanguageContext";
 import { ListGrid } from "@/components/lists/ListGrid";
 import { api, toErrorMessageWithT } from "@/lib/api";
+import { usePendingDeletions } from "@/lib/hooks/usePendingDeletions";
 import type { BibilabList, Source } from "@/lib/types";
-import { Button, Input, Modal, Panel } from "@/components/ui";
+import { localCoverUrl, proxyCoverUrl } from "@/lib/utils";
+import { Button, Input, Modal, Panel, Thumbnail } from "@/components/ui";
 
 export function HomePage() {
   const { t } = useLanguage();
@@ -13,6 +15,7 @@ export function HomePage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<BibilabList | null>(null);
+  const { isPending, run } = usePendingDeletions();
   const [renameTarget, setRenameTarget] = useState<BibilabList | null>(null);
   const [renameDraft, setRenameDraft] = useState("");
   const [thumbnailTarget, setThumbnailTarget] = useState<BibilabList | null>(null);
@@ -58,7 +61,7 @@ export function HomePage() {
   async function handleDelete(list: BibilabList) {
     setError(null);
     try {
-      await api.deleteList(list.id);
+      await run(list.id, () => api.deleteList(list.id));
       setLists((current) => current.filter((entry) => entry.id !== list.id));
       setDeleteTarget(null);
     } catch (nextError) {
@@ -126,6 +129,8 @@ export function HomePage() {
     }
   }
 
+  const deletePending = deleteTarget !== null && isPending(deleteTarget.id);
+
   return (
     <div className="grid gap-4">
       <div
@@ -174,8 +179,9 @@ export function HomePage() {
               }}
               size="sm"
               variant="danger"
+              disabled={deletePending}
             >
-              {t("common.delete")}
+              {deletePending ? t("common.deleting") : t("common.delete")}
             </Button>
           </>
         }
@@ -273,15 +279,18 @@ export function HomePage() {
             </button>
             {thumbnailSources.map((source) => (
               <button
-                className="aspect-video overflow-hidden rounded-2xl border border-border bg-black/30 p-0 text-left shadow-lg transition hover:-translate-y-0.5 hover:shadow-lg"
+                className="relative aspect-video overflow-hidden rounded-2xl border border-border bg-black/30 p-0 text-left shadow-lg transition hover:-translate-y-0.5 hover:shadow-lg"
                 key={source.id}
                 onClick={() => void handleThumbnailSelect(source.id)}
                 type="button"
               >
-                <div
-                  className="flex h-full items-end bg-cover bg-center p-2"
-                  style={{ backgroundImage: `linear-gradient(to top, rgba(0,0,0,0.5), transparent), url("/api/sources/${source.id}/cover")` }}
-                >
+                <Thumbnail
+                  className="h-full w-full"
+                  src={source.cover_url ? localCoverUrl(source.id) : null}
+                  fallbackSrc={source.cover_url ? proxyCoverUrl(source.cover_url) : null}
+                  alt=""
+                />
+                <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/60 to-transparent p-2">
                   <span className="block truncate text-xs font-semibold text-white">{source.title}</span>
                 </div>
               </button>

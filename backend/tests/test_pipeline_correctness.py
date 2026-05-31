@@ -176,3 +176,95 @@ async def test_pipeline_stage_process_cleanup_called_on_cancellation(setup_pipel
 
     # Cleanup should have been called when job was cancelled
     assert len(cleanup_calls) > 0, "cleanup_job_artifacts should have been called when job was cancelled"
+
+
+async def _seed_source(source_id: str) -> None:
+    from bibilab.db import write_source
+
+    await create_list("list-cleanup", "Cleanup", "2026-01-01T00:00:00")
+    await write_source(
+        source_id=source_id,
+        video_id="BVlive",
+        platform="bilibili",
+        list_id="list-cleanup",
+        title="Live Source",
+        summary="",
+        keywords=[],
+        cover_url="https://example.com/cover.jpg",
+        source_url="https://bilibili.com/video/BVlive",
+        duration_seconds=10,
+        uploader="u",
+        language="en",
+        whisper_model="m",
+        ai_model="m",
+        vision_enabled=False,
+        settings_snapshot={},
+    )
+
+
+@pytest.mark.asyncio
+async def test_cleanup_preserves_live_source_artifacts(setup_pipeline_test: Path):
+    """A failed/non-done job must NOT purge artifacts of a source that already persisted.
+
+    Reproduces the persist-then-fail window: write_source committed but the job
+    raised before reaching DONE. cleanup_job_artifacts must leave the live
+    source's cover, embeddings and FTS intact.
+    """
+    from bibilab.cleanup import cleanup_job_artifacts
+
+    await bootstrap_db()
+    source_id = str(uuid.uuid4())
+    await _seed_source(source_id)
+
+    covers = setup_pipeline_test / "covers"
+    covers.mkdir(parents=True, exist_ok=True)
+    cover = covers / f"{source_id}.jpg"
+    cover.write_bytes(b"fake cover")
+
+    job = {
+        "id": "job-failed-after-persist",
+        "type": "ingest",
+        "status": "failed",
+        "meta": {"source_id": source_id, "video_id": "BVlive", "list_id": "list-cleanup"},
+    }
+
+    embed_calls: list = []
+    fts_calls: list = []
+    with (
+        patch("bibilab.cleanup.clear_embeddings_for_source", lambda *a, **k: embed_calls.append(a)),
+        patch("bibilab.cleanup.clear_fts_for_source_sync", lambda *a, **k: fts_calls.append(a)),
+    ):
+        cleanup_job_artifacts(job)
+
+    assert cover.exists(), "live source's cover must survive cleanup of a failed job"
+    assert embed_calls == [], "must not clear embeddings for a persisted source"
+    assert fts_calls == [], "must not clear FTS for a persisted source"
+
+
+@pytest.mark.asyncio
+async def test_cleanup_removes_orphan_cover_when_no_source(setup_pipeline_test: Path):
+    """Pre-persist failure (no source row): the orphan cover is still purged."""
+    from bibilab.cleanup import cleanup_job_artifacts
+
+    await bootstrap_db()
+    source_id = str(uuid.uuid4())
+
+    covers = setup_pipeline_test / "covers"
+    covers.mkdir(parents=True, exist_ok=True)
+    cover = covers / f"{source_id}.jpg"
+    cover.write_bytes(b"fake cover")
+
+    job = {
+        "id": "job-failed-before-persist",
+        "type": "ingest",
+        "status": "failed",
+        "meta": {"source_id": source_id, "video_id": "BVorphan", "list_id": "list-x"},
+    }
+
+    with (
+        patch("bibilab.cleanup.clear_embeddings_for_source", lambda *a, **k: None),
+        patch("bibilab.cleanup.clear_fts_for_source_sync", lambda *a, **k: None),
+    ):
+        cleanup_job_artifacts(job)
+
+    assert not cover.exists(), "orphan cover (no source row) must be purged"

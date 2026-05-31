@@ -4,6 +4,7 @@ import { useLanguage } from "@/app/LanguageContext";
 import { useJobActivity } from "@/components/jobs/JobActivityProvider";
 import { api } from "@/lib/api";
 import { downloadTextFile } from "@/lib/download";
+import { usePendingDeletions } from "@/lib/hooks/usePendingDeletions";
 import type { Artifact, ArtifactJob, ArtifactStatus } from "@/lib/types";
 
 import { Sparkles } from "lucide-react";
@@ -31,6 +32,7 @@ export function ArtifactList({ listId, artifacts, onArtifactsChange, onViewArtif
   const artifactJobs = useMemo(() => getJobs("artifact", listId), [getJobs, listId]);
   const [refreshedJobs, setRefreshedJobs] = useState<string[]>([]);
   const [viewPromptArtifactId, setViewPromptArtifactId] = useState<string | null>(null);
+  const { isPending, run } = usePendingDeletions();
 
   const artifactIds = useMemo(() => new Set(artifacts.map((a) => a.id)), [artifacts]);
 
@@ -119,13 +121,9 @@ export function ArtifactList({ listId, artifacts, onArtifactsChange, onViewArtif
   }, [onArtifactsChange]);
 
   const handleDelete = useCallback(async (artifactId: string) => {
-    try {
-      await api.deleteArtifact(artifactId);
-      onArtifactsChange((prev) => prev.filter((a) => a.id !== artifactId));
-    } catch {
-      // Silent failure - card stays
-    }
-  }, [onArtifactsChange]);
+    await run(artifactId, () => api.deleteArtifact(artifactId));
+    onArtifactsChange((prev) => prev.filter((a) => a.id !== artifactId));
+  }, [run, onArtifactsChange]);
 
   const allArtifacts = useMemo(
     () => jobDerivedArtifacts.concat(artifacts),
@@ -155,6 +153,7 @@ export function ArtifactList({ listId, artifacts, onArtifactsChange, onViewArtif
               : undefined
           }
           onDelete={artifact.status === "completed" ? handleDelete : undefined}
+          isDeleting={isPending(artifact.id)}
         />
       ))}
       {allArtifacts.length === 0 && (

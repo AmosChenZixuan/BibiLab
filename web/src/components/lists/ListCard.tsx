@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 
 import { useLanguage } from "@/app/LanguageContext";
 import type { BibilabList } from "@/lib/types";
-import { ContextMenu } from "@/components/ui";
+import { ContextMenu, Thumbnail } from "@/components/ui";
 
 type Props = {
   list: BibilabList;
@@ -53,18 +53,9 @@ export function ListCard({ list, onRename, onChangeThumbnail, onDelete }: Props)
 
   return (
     <article className="group relative h-52 w-64 overflow-hidden rounded-2xl shadow-lg transition hover:-translate-y-0.5 hover:shadow-lg">
-      <div
-        aria-hidden="true"
-        className={`absolute inset-0 ${!list.thumbnail_url ? PASTEL_COLORS[nameToPastelIndex(list.name)] : ""}`}
-        style={
-          list.thumbnail_url
-            ? {
-                backgroundImage: `linear-gradient(to bottom, rgba(17,17,17,0.02), rgba(17,17,17,0.02)), url("${list.thumbnail_url}")`,
-                backgroundPosition: "center",
-                backgroundSize: "cover",
-              }
-            : undefined
-        }
+      <Thumbnail
+        src={list.thumbnail_url}
+        className={`h-full w-full ${!list.thumbnail_url ? PASTEL_COLORS[nameToPastelIndex(list.name)] : ""}`}
       />
       <div
         aria-hidden="true"

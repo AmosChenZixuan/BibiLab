@@ -9,6 +9,7 @@ import {
 } from "react";
 
 import { api, toErrorMessageWithT } from "@/lib/api";
+import { usePendingDeletions } from "@/lib/hooks/usePendingDeletions";
 import type { ArtifactJob, IngestJob, Job, ModelDownloadJob } from "@/lib/types";
 import { useLanguage } from "@/app/LanguageContext";
 
@@ -44,7 +45,7 @@ type JobActivityContextValue = {
   visibleJobs: JobActivityItem[];
   isPanelOpen: boolean;
   isPolling: boolean;
-  cancellingJobId: string | null;
+  isJobPending: (jobId: string) => boolean;
   errorMessage: string | null;
   clearTerminalJobs: () => void;
   dismissJob: (jobId: string) => Promise<void>;
@@ -214,7 +215,7 @@ export function JobActivityProvider({ children }: { children: React.ReactNode })
   const [dismissedJobIds, setDismissedJobIds] = useState<string[]>([]);
   const [isPanelOpen, setIsPanelOpen] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [cancellingJobId, setCancellingJobId] = useState<string | null>(null);
+  const { isPending, run } = usePendingDeletions();
   const trackedJobsRef = useRef<Record<string, TrackedJobMeta>>({});
 
   useEffect(() => {
@@ -325,13 +326,13 @@ export function JobActivityProvider({ children }: { children: React.ReactNode })
 
   const dismissJob = useCallback(async (jobId: string) => {
     try {
-      await api.deleteJob(jobId);
+      await run(jobId, () => api.deleteJob(jobId));
       removeJobLocally(jobId);
       setErrorMessage(null);
     } catch (error) {
       setErrorMessage(toErrorMessageWithT(error, t));
     }
-  }, [removeJobLocally, t]);
+  }, [run, removeJobLocally, t]);
 
   const clearTerminalJobs = useCallback(() => {
     const terminalIds = visibleJobs.filter((job) => job.isTerminal).map((job) => job.job.id);
@@ -343,16 +344,13 @@ export function JobActivityProvider({ children }: { children: React.ReactNode })
   }, [dismissJob, visibleJobs]);
 
   const cancelJob = useCallback(async (jobId: string) => {
-    setCancellingJobId(jobId);
     try {
-      await api.deleteJob(jobId);
+      await run(jobId, () => api.deleteJob(jobId));
       removeJobLocally(jobId);
     } catch (error) {
       setErrorMessage(toErrorMessageWithT(error, t));
-    } finally {
-      setCancellingJobId(null);
     }
-  }, [removeJobLocally, t]);
+  }, [run, removeJobLocally, t]);
 
   const getJobs = useCallback(
     (producer: JobProducer, contextKey?: string) => {
@@ -370,7 +368,7 @@ export function JobActivityProvider({ children }: { children: React.ReactNode })
     visibleJobs,
     isPanelOpen,
     isPolling: activeJobs.length > 0,
-    cancellingJobId,
+    isJobPending: isPending,
     errorMessage,
     clearTerminalJobs,
     dismissJob,
@@ -381,13 +379,13 @@ export function JobActivityProvider({ children }: { children: React.ReactNode })
     getJobs,
   }), [
     activeJobs,
-    cancellingJobId,
     cancelJob,
     clearTerminalJobs,
     dismissJob,
     errorMessage,
     getJobs,
     isPanelOpen,
+    isPending,
     refreshNow,
     trackJobs,
     visibleJobs,

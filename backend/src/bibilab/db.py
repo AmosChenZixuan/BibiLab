@@ -1,6 +1,7 @@
 import json
 import logging
 import re
+import sqlite3
 import uuid
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
@@ -19,6 +20,19 @@ logger = logging.getLogger(__name__)
 
 def get_db_path() -> Path:
     return bibilab.config.bibilab_home() / "bibilab.db"
+
+
+def source_exists_sync(source_id: str) -> bool:
+    """Sync check for a source row's existence (for worker-thread cleanup)."""
+    db_path = get_db_path()
+    if not db_path.exists():
+        return False
+    conn = sqlite3.connect(str(db_path))
+    try:
+        cur = conn.execute("SELECT 1 FROM sources WHERE id = ? LIMIT 1", (source_id,))
+        return cur.fetchone() is not None
+    finally:
+        conn.close()
 
 
 def _in_placeholders(ids: list[str]) -> str:
@@ -576,6 +590,11 @@ async def delete_source(source_id: str) -> None:
 
 async def delete_sources_for_list(list_id: str) -> None:
     async with get_db() as db:
+        await db.execute(
+            "UPDATE lists SET thumbnail_source_id = NULL WHERE id = ? AND thumbnail_source_id IN "
+            "(SELECT id FROM sources WHERE list_id = ?)",
+            (list_id, list_id),
+        )
         await db.execute("DELETE FROM sources WHERE list_id=?", (list_id,))
         await db.commit()
 
