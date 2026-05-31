@@ -1,5 +1,5 @@
 import { Thumbnail } from "@/components/ui/Thumbnail";
-import { formatDuration } from "@/lib/utils";
+import { formatDuration, localCoverUrl, proxyCoverUrl } from "@/lib/utils";
 
 export function Banner({
   source,
@@ -17,7 +17,8 @@ export function Banner({
   const thumbnail = (
     <div className="relative h-64 w-full overflow-hidden rounded-xl bg-border">
       <Thumbnail
-        source={source}
+        src={source.cover_url ? localCoverUrl(source.id) : null}
+        fallbackSrc={source.cover_url ? proxyCoverUrl(source.cover_url) : null}
         alt={uploader}
         className="h-64 w-full"
       />

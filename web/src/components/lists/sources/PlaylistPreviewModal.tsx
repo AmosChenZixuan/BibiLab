@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { IngestVideoIn, PreviewVideo, VideoStatus } from "@/lib/types";
-import { formatDuration } from "@/lib/utils";
+import { formatDuration, proxyCoverUrl } from "@/lib/utils";
 import { Modal } from "@/components/ui/Modal";
 import { Spinner } from "@/components/ui/Spinner";
 import { StatusChip } from "@/components/ui/StatusChip";
@@ -53,7 +53,7 @@ function VideoRow({
         />
       )}
       <Thumbnail
-        remoteUrl={video.cover_url}
+        src={video.cover_url ? proxyCoverUrl(video.cover_url) : null}
         className="h-12 w-20 flex-shrink-0 rounded"
       />
       <div className="min-w-0 flex-1">

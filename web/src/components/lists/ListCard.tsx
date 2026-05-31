@@ -54,7 +54,7 @@ export function ListCard({ list, onRename, onChangeThumbnail, onDelete }: Props)
   return (
     <article className="group relative h-52 w-64 overflow-hidden rounded-2xl shadow-lg transition hover:-translate-y-0.5 hover:shadow-lg">
       <Thumbnail
-        thumbnailUrl={list.thumbnail_url}
+        src={list.thumbnail_url}
         className={`h-full w-full ${!list.thumbnail_url ? PASTEL_COLORS[nameToPastelIndex(list.name)] : ""}`}
       />
       <div

@@ -5,6 +5,11 @@ export function translateOrFallback(t: (key: string) => string, key: string, fal
   return translated !== key ? translated : fallback;
 }
 
+export const localCoverUrl = (sourceId: string): string => `/api/sources/${sourceId}/cover`;
+
+export const proxyCoverUrl = (url: string): string =>
+  `/api/proxy/cover?url=${encodeURIComponent(url)}`;
+
 export function formatDuration(seconds: number): string {
   const m = Math.floor(seconds / 60);
   const s = seconds % 60;

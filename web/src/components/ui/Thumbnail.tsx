@@ -1,29 +1,18 @@
 import { ComponentPropsWithoutRef, useState } from "react";
 import { Tv } from "lucide-react";
 
-type SourceWithCover = { id: string; cover_url: string | null };
-
-interface Props extends ComponentPropsWithoutRef<"img"> {
-  source?: SourceWithCover;
-  /** Pre-computed thumbnail URL (proxy or local). Takes precedence over source. */
-  thumbnailUrl?: string | null;
-  remoteUrl?: string | null;
+interface Props extends Omit<ComponentPropsWithoutRef<"img">, "src"> {
+  src?: string | null;
+  /** Tried once if `src` fails to load, before falling back to the placeholder. */
+  fallbackSrc?: string | null;
 }
 
-export function Thumbnail({ source, thumbnailUrl, remoteUrl, className = "", alt = "", ...rest }: Props) {
+export function Thumbnail({ src, fallbackSrc, className = "", alt = "", ...rest }: Props) {
   const [loaded, setLoaded] = useState(false);
-  const [fallbackUrl, setFallbackUrl] = useState<string | null>(null);
+  const [usingFallback, setUsingFallback] = useState(false);
   const [failed, setFailed] = useState(false);
 
-  const primaryUrl =
-    thumbnailUrl ||
-    (source?.cover_url
-      ? `/api/sources/${source.id}/cover`
-      : remoteUrl && remoteUrl.trim()
-        ? `/api/proxy/cover?url=${encodeURIComponent(remoteUrl)}`
-        : "");
-
-  const imgSrc = fallbackUrl || primaryUrl;
+  const imgSrc = usingFallback ? fallbackSrc : src;
   const hasUrl = !!imgSrc && !failed;
   const showPlaceholder = !hasUrl || !loaded;
 
@@ -34,8 +23,8 @@ export function Thumbnail({ source, thumbnailUrl, remoteUrl, className = "", alt
 
   function handleError(e: React.SyntheticEvent<HTMLImageElement>) {
     rest.onError?.(e);
-    if (source?.cover_url && !fallbackUrl) {
-      setFallbackUrl(`/api/proxy/cover?url=${encodeURIComponent(source.cover_url)}`);
+    if (!usingFallback && fallbackSrc) {
+      setUsingFallback(true);
     } else {
       setFailed(true);
     }
@@ -46,7 +35,7 @@ export function Thumbnail({ source, thumbnailUrl, remoteUrl, className = "", alt
       {hasUrl && (
         <img
           {...rest}
-          src={imgSrc}
+          src={imgSrc ?? undefined}
           alt={alt}
           loading="lazy"
           onLoad={handleLoad}

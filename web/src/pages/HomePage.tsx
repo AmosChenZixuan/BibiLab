@@ -5,6 +5,7 @@ import { ListGrid } from "@/components/lists/ListGrid";
 import { api, toErrorMessageWithT } from "@/lib/api";
 import { usePendingDeletions } from "@/lib/hooks/usePendingDeletions";
 import type { BibilabList, Source } from "@/lib/types";
+import { localCoverUrl, proxyCoverUrl } from "@/lib/utils";
 import { Button, Input, Modal, Panel, Thumbnail } from "@/components/ui";
 
 export function HomePage() {
@@ -285,7 +286,8 @@ export function HomePage() {
               >
                 <Thumbnail
                   className="h-full w-full"
-                  source={source}
+                  src={source.cover_url ? localCoverUrl(source.id) : null}
+                  fallbackSrc={source.cover_url ? proxyCoverUrl(source.cover_url) : null}
                   alt=""
                 />
                 <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/60 to-transparent p-2">
