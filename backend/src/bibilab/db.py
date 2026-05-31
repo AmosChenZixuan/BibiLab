@@ -576,6 +576,11 @@ async def delete_source(source_id: str) -> None:
 
 async def delete_sources_for_list(list_id: str) -> None:
     async with get_db() as db:
+        await db.execute(
+            "UPDATE lists SET thumbnail_source_id = NULL WHERE id = ? AND thumbnail_source_id IN "
+            "(SELECT id FROM sources WHERE list_id = ?)",
+            (list_id, list_id),
+        )
         await db.execute("DELETE FROM sources WHERE list_id=?", (list_id,))
         await db.commit()
 
