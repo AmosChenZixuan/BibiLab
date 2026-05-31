@@ -14,7 +14,7 @@ from bibilab.db import (
     _cjk_runs,
     _escape_fts_query,
     _pinyin_index_tokens,
-    _pinyin_query_tokens,
+    _pinyin_tokens,
     _tokenize_cjk,
     bootstrap_db,
     clear_fts_for_list,
@@ -178,17 +178,17 @@ def test_escape_fts_query_only_whitespace():
 
 def test_escape_fts_query_fts_operators():
     escaped = _escape_fts_query("AND OR NOT * ^")
-    assert escaped == 'content : "AND" "OR" "NOT" "*" "^"'
+    assert escaped == 'content : ("AND" "OR" "NOT" "*" "^")'
 
 
 def test_escape_fts_query_preserves_normal_tokens():
     escaped = _escape_fts_query("machine learning")
-    assert escaped == 'content : "machine" "learning"'
+    assert escaped == 'content : ("machine" "learning")'
 
 
 def test_escape_fts_query_embedded_quotes():
     escaped = _escape_fts_query('say "hello world"')
-    assert escaped == 'content : "say" """hello" "world"""'
+    assert escaped == 'content : ("say" """hello" "world""")'
 
 
 # --- _cjk_runs ---
@@ -299,34 +299,34 @@ def test_pinyin_index_tokens_neutral_tone_collapse():
     assert _pinyin_index_tokens("敌方") == "difang"
 
 
-# --- _pinyin_query_tokens (toneless syllable bigrams for FTS5 query) ---
+# --- _pinyin_tokens (toneless syllable bigrams, shared by index + query) ---
 
 
-def test_pinyin_query_tokens_multi_char_cjk():
+def test_pinyin_tokens_multi_char_cjk():
     """Query '苹果' → ['pingguo']."""
-    assert _pinyin_query_tokens("苹果") == ["pingguo"]
+    assert _pinyin_tokens("苹果") == ["pingguo"]
 
 
-def test_pinyin_query_tokens_two_chars():
-    assert _pinyin_query_tokens("敌方") == ["difang"]
+def test_pinyin_tokens_two_chars():
+    assert _pinyin_tokens("敌方") == ["difang"]
 
 
-def test_pinyin_query_tokens_three_chars():
-    assert _pinyin_query_tokens("中国上海") == ["zhongguo", "guoshang", "shanghai"]
+def test_pinyin_tokens_three_chars():
+    assert _pinyin_tokens("中国上海") == ["zhongguo", "guoshang", "shanghai"]
 
 
-def test_pinyin_query_tokens_single_char_returns_empty():
+def test_pinyin_tokens_single_char_returns_empty():
     """Single-char CJK: no pinyin bigram → [] (falls back to char unigram)."""
-    assert _pinyin_query_tokens("死") == []
+    assert _pinyin_tokens("死") == []
 
 
-def test_pinyin_query_tokens_non_cjk_returns_empty():
-    assert _pinyin_query_tokens("hello world") == []
+def test_pinyin_tokens_non_cjk_returns_empty():
+    assert _pinyin_tokens("hello world") == []
 
 
-def test_pinyin_query_tokens_mixed():
+def test_pinyin_tokens_mixed():
     """Mixed CJK/English: only CJK runs produce pinyin."""
-    assert _pinyin_query_tokens("测试abc数据") == ["ceshi", "shuju"]
+    assert _pinyin_tokens("测试abc数据") == ["ceshi", "shuju"]
 
 
 @pytest.mark.asyncio
@@ -358,6 +358,28 @@ async def test_pinyin_neutral_tone_recall_via_fts5(tmp_bibilab_home: Path):
 
     rows = await query_fts_rows("敌方", ["SRC1"], top_k=10)
     assert len(rows) >= 1, f"Neutral-tone pinyin arm failed for '敌方' → '地方': {len(rows)} rows"
+
+
+@pytest.mark.asyncio
+async def test_escape_fts_query_content_arm_no_column_leak(tmp_bibilab_home: Path):
+    """Char arm must scope ALL its tokens to `content`, not just the first.
+
+    Regression for FTS5's `col :` prefix binding only the next phrase: with an
+    unparenthesized arm, the second token searches every column. A token living
+    only in the `pinyin` column must not satisfy a content-scoped query.
+    """
+    await bootstrap_db()
+    async with get_db() as db:
+        await db.execute(
+            "INSERT INTO chunks_fts (content, pinyin, source_id, video_title, "
+            "timestamp_start, timestamp_end, chunk_id, seg_start, seg_end) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            ("foo", "bar", "SRC1", "t", 0.0, 0.0, "c1", 0, 0),
+        )
+        await db.commit()
+    # 'foo bar' → content : ("foo" "bar"); 'bar' exists only in the pinyin column.
+    rows = await query_fts_rows("foo bar", ["SRC1"], top_k=10)
+    assert rows == [], "content arm leaked into the pinyin column (unparenthesized scope)"
 
 
 # --- _tokenize_cjk (unigram + bigram) ---
@@ -395,41 +417,47 @@ def test_tokenize_cjk_empty_string():
 def test_escape_fts_query_chinese_phrase():
     # Multi-char CJK → bigrams only (no unigrams) to avoid AND-term explosion
     escaped = _escape_fts_query("面食做法")
-    assert escaped == '(content : "面食" "食做" "做法") OR (pinyin : "mianshi" "shizuo" "zuofa")'
+    assert escaped == 'content : ("面食" "食做" "做法") OR pinyin : ("mianshi" "shizuo" "zuofa")'
 
 
 def test_escape_fts_query_chinese_two_words():
     # Per-word bigram: "中文" + "生日" → no cross-boundary "文生"
     escaped = _escape_fts_query("中文 生日")
-    assert escaped == '(content : "中文" "生日") OR (pinyin : "zhongwen" "shengri")'
+    assert escaped == 'content : ("中文" "生日") OR pinyin : ("zhongwen" "shengri")'
 
 
 def test_escape_fts_query_chinese_no_whitespace_single_word():
     # No space → one word → bigrams across the whole string
     escaped = _escape_fts_query("中文生日")
-    assert escaped == '(content : "中文" "文生" "生日") OR (pinyin : "zhongwen" "wensheng" "shengri")'
+    assert escaped == 'content : ("中文" "文生" "生日") OR pinyin : ("zhongwen" "wensheng" "shengri")'
 
 
 def test_escape_fts_query_single_cjk_word_three_chars():
     escaped = _escape_fts_query("多少岁")
-    assert escaped == '(content : "多少" "少岁") OR (pinyin : "duoshao" "shaosui")'
+    assert escaped == 'content : ("多少" "少岁") OR pinyin : ("duoshao" "shaosui")'
 
 
 def test_escape_fts_query_single_cjk_char_preserved():
     # "茶" is a single-char word → unigram preserved
     escaped = _escape_fts_query("中文 茶")
-    assert escaped == '(content : "中文" "茶") OR (pinyin : "zhongwen")'
+    assert escaped == 'content : ("中文" "茶") OR pinyin : ("zhongwen")'
+
+
+def test_escape_fts_query_mixed_language():
+    # Half English, half CJK: char arm carries both, pinyin arm only the CJK part
+    escaped = _escape_fts_query("machine 学习")
+    assert escaped == 'content : ("machine" "学习") OR pinyin : ("xuexi")'
 
 
 def test_escape_fts_query_single_cjk_char_alone():
     escaped = _escape_fts_query("茶")
-    assert escaped == 'content : "茶"'
+    assert escaped == 'content : ("茶")'
 
 
 def test_escape_fts_query_high_idf_single_char():
     # 死 (death) — single-char word with critical semantic weight
     escaped = _escape_fts_query("死")
-    assert escaped == 'content : "死"'
+    assert escaped == 'content : ("死")'
 
 
 # --- P3: source_id keying behavioral tests ---

@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 import aiosqlite
+from pypinyin import Style, lazy_pinyin
 
 import bibilab.config
 from bibilab.models.jobs import JobStatus
@@ -1141,8 +1142,6 @@ def _pinyin_tokens(text: str) -> list[str]:
     Single-char CJK runs produce nothing — pinyin unigrams are catastrophically
     noisy (~400 toneless syllables). Non-CJK runs are skipped entirely.
     """
-    from pypinyin import Style, lazy_pinyin
-
     out: list[str] = []
     for is_cjk, seg in _cjk_runs(text):
         if not is_cjk:
@@ -1158,11 +1157,6 @@ def _pinyin_index_tokens(text: str) -> str:
     return " ".join(_pinyin_tokens(text))
 
 
-def _pinyin_query_tokens(text: str) -> list[str]:
-    """Toneless-pinyin syllable bigrams for FTS5 query arm (delegates to shared helper)."""
-    return _pinyin_tokens(text)
-
-
 def _fts_quote_token(t: str) -> str:
     """Double-quote and escape a single FTS5 token (disables operator parsing)."""
     return '"' + t.replace('"', '""') + '"'
@@ -1175,30 +1169,32 @@ def _escape_fts_query(query_text: str) -> str:
     FTS5 columns so the BM25 arm survives homophone ASR errors (e.g. query
     '苹果' matches indexed '平果' via shared toneless-pinyin bigrams):
 
-        (content : <char tokens AND'd>) OR (pinyin : <pinyin bigrams AND'd>)
+        content : ("a" "b") OR pinyin : ("x" "y")
 
-    Both arms scope their tokens to the right column — char tokens never
-    probe pinyin, pinyin tokens never probe content. When the pinyin arm
-    produces no tokens (English, single-char CJK, no CJK at all) the OR
-    is omitted and only the content arm is returned.
+    Each arm parenthesizes its token list so the column filter binds to the
+    whole group — FTS5's `col :` prefix otherwise scopes only the first phrase,
+    leaving later tokens to probe every column. With the parens, char tokens
+    never probe pinyin and pinyin tokens never probe content. When the pinyin
+    arm produces no tokens (English, single-char CJK, no CJK at all) the OR is
+    omitted and only the content arm is returned.
     """
     words = query_text.split()
     char_tokens = [tok for word in words for tok in _cjk_query_tokens(word)]
-    py_tokens = [tok for word in words for tok in _pinyin_query_tokens(word)]
+    py_tokens = [tok for word in words for tok in _pinyin_tokens(word)]
 
     if not char_tokens and not py_tokens:
         return ""
 
     char_arm = ""
     if char_tokens:
-        char_arm = "content : " + " ".join(_fts_quote_token(t) for t in char_tokens)
+        char_arm = "content : (" + " ".join(_fts_quote_token(t) for t in char_tokens) + ")"
 
     py_arm = ""
     if py_tokens:
-        py_arm = "pinyin : " + " ".join(_fts_quote_token(t) for t in py_tokens)
+        py_arm = "pinyin : (" + " ".join(_fts_quote_token(t) for t in py_tokens) + ")"
 
     if char_arm and py_arm:
-        return f"({char_arm}) OR ({py_arm})"
+        return f"{char_arm} OR {py_arm}"
     return char_arm or py_arm
 
 
