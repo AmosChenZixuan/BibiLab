@@ -1106,14 +1106,23 @@ def _cjk_bigram_tokens(text: str) -> list[str]:
     return out
 
 
+def _collapse_cjk_whitespace(text: str) -> str:
+    """Remove whitespace between adjacent CJK characters.
+
+    chunk.py joins transcript segments with spaces; collapsing CJK-CJK gaps
+    lets bigrams span them. Shared by the char and pinyin index tokenizers so
+    both span segment joins identically.
+    """
+    return re.sub(r"(?<=[一-鿿㐀-䶿])\s+(?=[一-鿿㐀-䶿])", "", text)
+
+
 def _tokenize_cjk(text: str) -> str:
     """Tokenize text for FTS5: unigrams + overlapping bigrams per CJK run.
 
     Whitespace between adjacent CJK characters is collapsed so character
     bigrams aren't split across it. Non-CJK text is split on whitespace.
     """
-    normalized = re.sub(r"(?<=[一-鿿㐀-䶿])\s+(?=[一-鿿㐀-䶿])", "", text)
-    return " ".join(_cjk_bigram_tokens(normalized))
+    return " ".join(_cjk_bigram_tokens(_collapse_cjk_whitespace(text)))
 
 
 def _cjk_query_tokens(text: str) -> list[str]:
@@ -1153,8 +1162,13 @@ def _pinyin_tokens(text: str) -> list[str]:
 
 
 def _pinyin_index_tokens(text: str) -> str:
-    """Toneless-pinyin syllable bigrams, space-joined for FTS5 index column."""
-    return " ".join(_pinyin_tokens(text))
+    """Toneless-pinyin syllable bigrams, space-joined for FTS5 index column.
+
+    Collapses CJK-CJK whitespace first (same as _tokenize_cjk) so pinyin
+    bigrams span segment-join gaps — without it the pinyin arm would miss
+    homophones straddling a segment boundary that the char arm catches.
+    """
+    return " ".join(_pinyin_tokens(_collapse_cjk_whitespace(text)))
 
 
 def _fts_quote_token(t: str) -> str:

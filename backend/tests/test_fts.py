@@ -299,6 +299,12 @@ def test_pinyin_index_tokens_neutral_tone_collapse():
     assert _pinyin_index_tokens("敌方") == "difang"
 
 
+def test_pinyin_index_tokens_spans_segment_join_whitespace():
+    """CJK-CJK whitespace (segment-join artifact) is collapsed so pinyin bigrams
+    span the gap — parity with _tokenize_cjk. '中文 学习' must yield 'wenxue'."""
+    assert "wenxue" in _pinyin_index_tokens("中文 学习").split()
+
+
 # --- _pinyin_tokens (toneless syllable bigrams, shared by index + query) ---
 
 
