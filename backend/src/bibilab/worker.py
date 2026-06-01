@@ -113,8 +113,7 @@ class WorkerLoop:
     def _get_config(self) -> BibilabConfig:
         if self._config is not None:
             return self._config
-        self._config = load_config()
-        return self._config
+        return load_config()
 
     async def _loop(self) -> None:
         while self._running:
