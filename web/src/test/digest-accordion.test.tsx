@@ -2,6 +2,7 @@ import { render, screen, fireEvent, cleanup } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
 import { DigestAccordion } from "@/components/lists/DigestAccordion";
+import { JobActivityProvider } from "@/components/jobs/JobActivityProvider";
 import { LanguageProvider } from "@/app/LanguageContext";
 
 afterEach(() => {
@@ -15,13 +16,16 @@ const baseProps = {
   onRerun: vi.fn(),
   facets: { seriesName: "罗翔说刑法", sequenceNumber: 8, seasonNumber: null },
   onSaveFacets: vi.fn().mockResolvedValue(undefined),
+  listId: "list-1",
 };
 
 describe("DigestAccordion", () => {
   test("renders keywords as chips", () => {
     render(
       <LanguageProvider>
-        <DigestAccordion {...baseProps} />
+        <JobActivityProvider>
+          <DigestAccordion {...baseProps} />
+        </JobActivityProvider>
       </LanguageProvider>,
     );
     expect(screen.getAllByText(/^(alpha|beta)$/)).toHaveLength(2);
@@ -30,7 +34,9 @@ describe("DigestAccordion", () => {
   test("shows facet strip and an Edit metadata menu item", () => {
     render(
       <LanguageProvider>
-        <DigestAccordion {...baseProps} />
+        <JobActivityProvider>
+          <DigestAccordion {...baseProps} />
+        </JobActivityProvider>
       </LanguageProvider>,
     );
     expect(screen.getByText(/罗翔说刑法/)).toBeInTheDocument();

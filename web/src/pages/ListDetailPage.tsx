@@ -152,6 +152,7 @@ export function ListDetailPage() {
                 <SourcesViewerMode
                   source={detailSource}
                   sourceContent={sourceContent}
+                  listId={listId}
                   onRefresh={() => {
                     if (detailSource) {
                       void api.getSource(detailSource.id).then((content) => {

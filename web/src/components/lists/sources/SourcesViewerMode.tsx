@@ -9,10 +9,12 @@ export function SourcesViewerMode({
   source,
   sourceContent,
   onRefresh,
+  listId,
 }: {
   source: Source;
   sourceContent: SourceContent | null;
   onRefresh: () => void;
+  listId: string;
 }) {
   const { t } = useLanguage();
 
@@ -53,6 +55,7 @@ export function SourcesViewerMode({
               await api.updateSourceFacets(source.id, patch);
               onRefresh();
             }}
+            listId={listId}
           />
         )}
         {sourceContent?.transcript && (
