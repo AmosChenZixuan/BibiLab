@@ -246,11 +246,11 @@ export function ChatPanel({
 
   const reattachedRef = useRef<string | null>(null);
 
-  const { showScrollButton, messageListRef, scrollToBottom } = useAutoScroll({
+  const { isAtBottom, messageListRef, scrollToBottom } = useAutoScroll({
     isLoadingHistory,
-    isStreaming,
     messages,
   });
+  const showScrollButton = !isAtBottom;
 
   const hasConversation = messages.length > 0;
   const selectedSourceIdsSet = useMemo(() => new Set(selectedSourceIds), [selectedSourceIds]);
@@ -366,14 +366,15 @@ export function ChatPanel({
         )}
       </div>
 
-      {/* Message list */}
-      <div
-        ref={messageListRef}
-        role="region"
-        aria-label={t("chat.header.title")}
-        className={`flex flex-1 flex-col gap-3.5 overflow-y-auto px-4.5 py-4 ${showClearPopover ? "opacity-50" : ""}`}
-        style={{ scrollbarWidth: "thin", scrollbarColor: "var(--color-border) transparent" }}
-      >
+      {/* Message list + scroll-to-bottom wrapper */}
+      <div className="relative min-h-0 flex-1">
+        <div
+          ref={messageListRef}
+          role="region"
+          aria-label={t("chat.header.title")}
+          className={`absolute inset-0 flex flex-col gap-3.5 overflow-y-auto px-4.5 py-4 ${showClearPopover ? "opacity-50" : ""}`}
+          style={{ scrollbarWidth: "thin", scrollbarColor: "var(--color-border) transparent" }}
+        >
         {!hasSources ? (
           <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
             <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-surface text-muted">
@@ -466,6 +467,7 @@ export function ChatPanel({
             ); })}
           </div>
         )}
+        </div>
 
         {/* Scroll-to-bottom button */}
         {showScrollButton && (
@@ -473,9 +475,9 @@ export function ChatPanel({
             type="button"
             onClick={scrollToBottom}
             aria-label={t("chat.scrollToBottom")}
-            className="stb absolute bottom-14 left-1/2 flex h-8 w-8 -translate-x-1/2 items-center justify-center rounded-full border border-border bg-white shadow-lg transition hover:-translate-x-1/2 hover:-translate-y-px"
+            className="absolute inset-x-0 mx-auto bottom-4 z-20 inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-full border border-border bg-white text-ink shadow-md transition duration-150 hover:-translate-y-px focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue focus-visible:outline-offset-2"
           >
-            <ChevronDown size={16} className="text-ink" />
+            <ChevronDown size={16} />
           </button>
         )}
       </div>

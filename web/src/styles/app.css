@@ -372,34 +372,6 @@
     padding: 0 4px;
   }
 
-  /* Scroll-to-bottom button */
-  .stb {
-    position: absolute;
-    left: 50%;
-    bottom: 14px;
-    transform: translateX(-50%);
-    background: #fff;
-    border: 1px solid var(--color-border);
-    border-radius: 9999px;
-    height: 34px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    color: var(--color-ink);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-    cursor: pointer;
-    transition: all 0.15s;
-  }
-
-  .stb:hover {
-    transform: translateX(-50%) translateY(-1px);
-  }
-
-  .stb:focus-visible {
-    outline: 2px solid var(--color-blue);
-    outline-offset: 2px;
-  }
-
   /* Clear confirm popover */
   .popover {
     position: absolute;
