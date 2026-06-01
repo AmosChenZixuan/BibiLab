@@ -119,7 +119,7 @@ export function JobSpirit() {
                       </div>
                     ) : null}
                     {item.job.error ? (
-                      <p className="text-xs text-pink break-words">{item.job.error}</p>
+                      <p className="text-xs text-pink break-words min-w-0">{item.job.error}</p>
                     ) : null}
                   </li>
                 );
