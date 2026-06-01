@@ -83,6 +83,25 @@ async def test_populate_fts_inserts_rows(tmp_bibilab_home: Path):
 
 
 @pytest.mark.asyncio
+async def test_populate_fts_replaces_not_appends(tmp_bibilab_home: Path):
+    """Re-embedding a source replaces its FTS rows, never appends.
+
+    embed_chunks clears chroma before re-adding; populate_fts must mirror that or
+    a rerun/retry/re-ingest double-indexes the source (every chunk twice).
+    """
+    await bootstrap_db()
+    meta = _make_meta()
+    chunks = _make_chunks(["hello world", "foo bar baz"])
+    populate_fts(chunks, "SRC1", meta)
+    populate_fts(chunks, "SRC1", meta)  # second embed of the same source
+
+    async with get_db() as db:
+        cursor = await db.execute("SELECT COUNT(*) FROM chunks_fts WHERE source_id = 'SRC1'")
+        row = await cursor.fetchone()
+    assert row[0] == len(chunks), f"re-embed appended instead of replacing: {row[0]} rows"
+
+
+@pytest.mark.asyncio
 async def test_query_fts_returns_matching_chunks(tmp_bibilab_home: Path):
     await bootstrap_db()
     meta = _make_meta()

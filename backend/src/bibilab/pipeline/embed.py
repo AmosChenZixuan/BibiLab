@@ -382,9 +382,16 @@ def embed_chunks(
 
 
 def populate_fts(chunks: list[RagChunk], source_id: str, meta: VideoMeta) -> None:
-    """Insert transcript chunks into the FTS5 index (sync, called from embed thread)."""
+    """Replace the FTS5 index rows for a source (sync, called from embed thread).
+
+    Clears the source's existing rows first so a re-embed replaces rather than
+    appends — mirrors the chroma clear in embed_chunks. Without it a rerun, retry,
+    or re-ingest double-indexes the source (every chunk twice), inflating BM25
+    document frequency and the rerank-gate candidate pool.
+    """
     if not chunks:
         return
+    clear_fts_for_source_sync(source_id)
     db_path = get_db_path()
     conn = sqlite3.connect(str(db_path))
     try:
