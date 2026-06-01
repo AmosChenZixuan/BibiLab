@@ -34,6 +34,10 @@ _METADATA_CONCURRENCY = 8
 # Parallel DASH-fragment downloads per video (audio is served fragmented).
 # Modest so N jobs × this stays friendly to Bilibili rate limits.
 _FRAGMENT_CONCURRENCY = 4
+# Per-fragment HTTP retries. yt-dlp's bare opts default to 0 (None → RetryManager
+# short-circuits), so transient CDN timeouts propagate as fatal DownloadError.
+_FRAGMENT_RETRIES = 5
+_HTTP_RETRIES = 3
 _BILIBILI_NAV_URL = "https://api.bilibili.com/x/web-interface/nav"
 _cookie_file_cache: tuple[str, Path] | None = None
 
@@ -219,6 +223,8 @@ class BilibiliAdapter(PlatformAdapter):
             "outtmpl": output_template,
             "format": "bestaudio/best",
             "concurrent_fragment_downloads": _FRAGMENT_CONCURRENCY,
+            "retries": _HTTP_RETRIES,
+            "fragment_retries": _FRAGMENT_RETRIES,
         }
 
         _, part_num = _split_video_id(video_id)
@@ -228,14 +234,13 @@ class BilibiliAdapter(PlatformAdapter):
         try:
             with yt_dlp.YoutubeDL(opts) as ydl:
                 info = ydl.extract_info(source_url, download=True)
-                ext = info.get("ext", "mp4")
         except yt_dlp.utils.DownloadError as exc:
             msg = str(exc).lower()
             if _AUTH_RE.search(msg) or "412" in msg:
                 raise AuthRequiredError("video") from exc
-            raise
+            raise DownloadError(_ANSI_RE.sub("", str(exc))) from exc
 
-        return downloads_dir / f"{video_id}.{ext}"
+        return downloads_dir / f"{video_id}.{info.get('ext', 'mp4')}"
 
     async def get_videos_metadata(self, video_ids: list[str]) -> tuple[dict[str, VideoMeta], dict[str, list[str]]]:
         if not video_ids:

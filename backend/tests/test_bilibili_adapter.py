@@ -85,6 +85,21 @@ class TestDownloadMultiPart:
 
         assert "playlist_items" not in captured_opts[0]
 
+    def test_download_sets_native_retry_opts(self, tmp_path):
+        # Without these, yt-dlp's bare opts default to 0 internal retries
+        # (RetryManager does _retries or 0), and transient CDN timeouts become fatal.
+        from bibilab.adapters.bilibili import _FRAGMENT_RETRIES, _HTTP_RETRIES
+
+        adapter = BilibiliAdapter(cookie="test_cookie")
+        captured_opts: list = []
+
+        with patch("bibilab.adapters.bilibili.yt_dlp.YoutubeDL", _make_mock_ydl(captured_opts)):
+            with patch("bibilab.adapters.bilibili.bibilab_home", return_value=tmp_path):
+                adapter.download("BV1test", "https://www.bilibili.com/video/BV1test")
+
+        assert captured_opts[0]["retries"] == _HTTP_RETRIES
+        assert captured_opts[0]["fragment_retries"] == _FRAGMENT_RETRIES
+
 
 class TestSplitVideoId:
     """Test _split_video_id helper."""
