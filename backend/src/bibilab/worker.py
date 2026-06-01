@@ -22,6 +22,7 @@ from bibilab.db import (
     reset_stuck_jobs,
     update_job_meta,
     update_job_status,
+    update_source_digest,
     write_source_with_segments,
 )
 from bibilab.model_registry import ensure
@@ -66,9 +67,10 @@ def _download_cover(cover_url: str, dest: Path) -> bool:
 
 
 def _parse_job_meta(job: dict) -> dict[str, Any]:
-    meta = job.get("meta", {})
+    row = job if isinstance(job, dict) else dict(job)
+    meta = row.get("meta", {}) or {}
     if isinstance(meta, str):
-        return json.loads(meta or "{}")
+        return json.loads(meta)
     return meta
 
 
@@ -149,6 +151,10 @@ class WorkerLoop:
 
             if job["type"] == "model_download":
                 await self._download_model_job(job)
+                return
+
+            if job["type"] == "digest":
+                await self._run_digest_job(job)
                 return
 
             await self._pipeline(job)
@@ -266,6 +272,61 @@ class WorkerLoop:
             error_message = str(exc)
             logger.error("Artifact job %s failed: %s", job_id, error_message)
             await update_job_status(job_id, JobStatus.FAILED.value, error=error_message)
+
+    # -------------------------------------------------------------------------
+    # Digest-only job (rerun)
+    # -------------------------------------------------------------------------
+
+    async def _run_digest_job(self, job: dict) -> None:
+        job_id = job["id"]
+        meta_raw = _parse_job_meta(job)
+        source_id: str = meta_raw.get("source_id", "")
+        cfg = self._get_config()
+
+        source = await get_source(source_id)
+        if source is None:
+            logger.warning("Digest job %s: source %s not found", job_id, source_id)
+            await update_job_status(job_id, JobStatus.FAILED.value, error=f"Source {source_id!r} not found")
+            return
+
+        transcript_text = await load_transcript_text(source_id)
+        if not transcript_text:
+            logger.warning("Digest job %s: source %s has no transcript", job_id, source_id)
+            await update_job_status(job_id, JobStatus.FAILED.value, error="Source has no transcript")
+            return
+
+        video_meta = VideoMeta.from_source(source)
+
+        await update_job_status(job_id, JobStatus.PROCESSING.value, progress=10)
+
+        try:
+            extraction = await asyncio.to_thread(
+                digest,
+                transcript_text,
+                video_meta,
+                cfg.ai,
+                cfg.ai.output_language,
+                meta_raw.get("ui_lang"),
+                llm_timeout=cfg.transcription.llm_timeout,
+            )
+        except Exception as exc:
+            logger.exception("Digest job %s failed", job_id)
+            await update_job_status(job_id, JobStatus.FAILED.value, error=str(exc))
+            return
+
+        await update_job_status(job_id, JobStatus.PROCESSING.value, progress=80)
+
+        await update_source_digest(
+            source_id,
+            extraction.summary,
+            extraction.keywords,
+            series_name=extraction.series_name,
+            sequence_number=extraction.sequence_number,
+            season_number=extraction.season_number,
+        )
+
+        await update_job_status(job_id, JobStatus.DONE.value, progress=100)
+        logger.info("Digest job %s completed for source %s", job_id, source_id)
 
     async def _generate_artifact(
         self,
