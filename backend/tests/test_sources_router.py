@@ -173,6 +173,7 @@ async def test_rerun_source_success(client: httpx.AsyncClient, tmp_bibilab_home:
     meta = json.loads(dict(job)["meta"])
     assert meta["source_id"] == source_id
     assert meta["list_id"] == "list-rerun-test"
+    assert meta["source_title"] == "Rerun Test Video"
 
 
 @pytest.mark.asyncio

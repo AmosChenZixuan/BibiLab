@@ -152,9 +152,12 @@ function inferTrackedMeta(job: Job): TrackedJobMeta {
   }
 
   if (isDigestJob(job)) {
+    const sourceTitle = typeof job.meta.source_title === "string" && job.meta.source_title.trim()
+      ? job.meta.source_title
+      : "Digest";
     return {
       producer: "digest",
-      label: "Digest",
+      label: sourceTitle,
       contextKey: typeof job.meta.list_id === "string" ? job.meta.list_id : null,
     };
   }

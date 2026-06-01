@@ -52,7 +52,12 @@ async def rerun_source(source_id: str, request: Request, cfg: BibilabConfig = De
     ui_lang = request.headers.get("X-UI-Lang")
     job_id = await create_job(
         type="digest",
-        meta={"source_id": source_id, "list_id": source["list_id"], "ui_lang": ui_lang},
+        meta={
+            "source_id": source_id,
+            "list_id": source["list_id"],
+            "source_title": source["title"],
+            "ui_lang": ui_lang,
+        },
     )
     return {"job_id": job_id}
 

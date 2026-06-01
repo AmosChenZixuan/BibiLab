@@ -23,7 +23,7 @@ export function SourcesViewerMode({
   const handleRerunDigest = async (sourceId: string) => {
     const result = await api.rerunDigest(sourceId);
     if (result?.job_id) {
-      trackJobs([{ id: result.job_id, producer: "digest", label: "Digest", contextKey: listId }]);
+      trackJobs([{ id: result.job_id, producer: "digest", label: source.title, contextKey: listId }]);
       onRefresh();
     }
   };

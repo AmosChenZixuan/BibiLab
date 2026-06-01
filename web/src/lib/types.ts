@@ -117,6 +117,7 @@ export type ArtifactJob = {
 export type DigestMeta = {
   source_id: string;
   list_id?: string;
+  source_title?: string;
   ui_lang?: string;
 };
 
