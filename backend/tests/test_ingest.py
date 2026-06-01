@@ -717,6 +717,117 @@ async def test_update_source_digest_persists_facets(tmp_bibilab_home: Path):
     assert source["season_number"] == 2
 
 
+async def test_update_source_digest_rerun_preserves_processed_at(tmp_bibilab_home: Path):
+    """bump_processed_at=False (rerun) leaves processed_at untouched so list ordering is stable."""
+    import uuid
+
+    from bibilab.db import (
+        bootstrap_db,
+        create_list,
+        get_source,
+        update_source_digest,
+        write_source,
+    )
+
+    await bootstrap_db()
+    list_id = "list-rerun-pa"
+    await create_list(list_id, "Rerun Preserve", "2026-01-01T00:00:00")
+    source_id = str(uuid.uuid4())
+    original_pa = "2025-06-01T12:00:00+00:00"
+
+    await write_source(
+        source_id=source_id,
+        video_id="BVrerunPA01",
+        platform="bilibili",
+        list_id=list_id,
+        title="Test",
+        summary="Old summary",
+        keywords=["old"],
+        cover_url=None,
+        source_url="https://example.com/BVrerunPA01",
+        duration_seconds=300,
+        uploader="U",
+        language=None,
+        whisper_model="large-v3",
+        ai_model="gpt-4o",
+        vision_enabled=False,
+        settings_snapshot={},
+    )
+    # Pin processed_at to a known past timestamp.
+    from bibilab.db import get_db
+
+    async with get_db() as db:
+        await db.execute(
+            "UPDATE sources SET processed_at=? WHERE id=?",
+            (original_pa, source_id),
+        )
+        await db.commit()
+
+    await update_source_digest(
+        source_id,
+        "Rerun summary",
+        ["new"],
+        bump_processed_at=False,
+    )
+
+    source = await get_source(source_id)
+    assert source is not None
+    assert source["processed_at"] == original_pa
+    assert source["summary"] == "Rerun summary"
+
+
+async def test_update_source_digest_default_bumps_processed_at(tmp_bibilab_home: Path):
+    """Default bump_processed_at=True preserves the old invariant: every digest write moves processed_at to now."""
+    import uuid
+
+    from bibilab.db import (
+        bootstrap_db,
+        create_list,
+        get_source,
+        update_source_digest,
+        write_source,
+    )
+
+    await bootstrap_db()
+    list_id = "list-bump-pa"
+    await create_list(list_id, "Bump", "2026-01-01T00:00:00")
+    source_id = str(uuid.uuid4())
+    original_pa = "2025-06-01T12:00:00+00:00"
+
+    await write_source(
+        source_id=source_id,
+        video_id="BVbumpPA01",
+        platform="bilibili",
+        list_id=list_id,
+        title="Test",
+        summary="Old",
+        keywords=["old"],
+        cover_url=None,
+        source_url="https://example.com/BVbumpPA01",
+        duration_seconds=300,
+        uploader="U",
+        language=None,
+        whisper_model="large-v3",
+        ai_model="gpt-4o",
+        vision_enabled=False,
+        settings_snapshot={},
+    )
+    from bibilab.db import get_db
+
+    async with get_db() as db:
+        await db.execute(
+            "UPDATE sources SET processed_at=? WHERE id=?",
+            (original_pa, source_id),
+        )
+        await db.commit()
+
+    await update_source_digest(source_id, "New", ["new"])
+
+    source = await get_source(source_id)
+    assert source is not None
+    assert source["processed_at"] != original_pa
+
+
 async def test_write_source_reingest_coalesces_facets(tmp_bibilab_home: Path):
     """Re-ingest with null facets preserves prior values; non-null overwrites."""
     import uuid

@@ -417,23 +417,27 @@ async def update_source_digest(
     series_name: str | None = None,
     sequence_number: int | None = None,
     season_number: int | None = None,
+    bump_processed_at: bool = True,
 ) -> None:
+    # Reruns pass bump_processed_at=False: processed_at anchors list ordering
+    # (ORDER BY processed_at ASC in list_sources), and a digest rerun shouldn't
+    # move the source within the list.
+    sets = [
+        "summary=?",
+        "keywords=?",
+        "series_name=COALESCE(?, series_name)",
+        "sequence_number=COALESCE(?, sequence_number)",
+        "season_number=COALESCE(?, season_number)",
+    ]
+    params: list[object] = [summary, json.dumps(keywords), series_name, sequence_number, season_number]
+    if bump_processed_at:
+        sets.append("processed_at=?")
+        params.append(_now())
+    params.append(source_id)
     async with get_db() as db:
         await db.execute(
-            "UPDATE sources SET summary=?, keywords=?,"
-            " series_name=COALESCE(?, series_name),"
-            " sequence_number=COALESCE(?, sequence_number),"
-            " season_number=COALESCE(?, season_number),"
-            " processed_at=? WHERE id=?",
-            (
-                summary,
-                json.dumps(keywords),
-                series_name,
-                sequence_number,
-                season_number,
-                _now(),
-                source_id,
-            ),
+            f"UPDATE sources SET {', '.join(sets)} WHERE id=?",
+            params,
         )
         await db.commit()
 

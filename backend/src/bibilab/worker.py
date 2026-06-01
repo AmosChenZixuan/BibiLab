@@ -323,6 +323,7 @@ class WorkerLoop:
             series_name=extraction.series_name,
             sequence_number=extraction.sequence_number,
             season_number=extraction.season_number,
+            bump_processed_at=False,
         )
 
         await update_job_status(job_id, JobStatus.DONE.value, progress=100)
