@@ -1217,14 +1217,20 @@ def _escape_fts_query(query_text: str) -> str:
     FTS5 columns so the BM25 arm survives homophone ASR errors (e.g. query
     '苹果' matches indexed '平果' via shared toneless-pinyin bigrams):
 
-        content : ("a" "b") OR pinyin : ("x" "y")
+        content : ("a" OR "b") OR pinyin : ("x" OR "y")
 
-    Each arm parenthesizes its token list so the column filter binds to the
-    whole group — FTS5's `col :` prefix otherwise scopes only the first phrase,
-    leaving later tokens to probe every column. With the parens, char tokens
-    never probe pinyin and pinyin tokens never probe content. When the pinyin
-    arm produces no tokens (English, single-char CJK, no CJK at all) the OR is
-    omitted and only the content arm is returned.
+    Tokens within an arm are OR-joined, not AND-joined: a multi-syllable term or
+    a natural-language question ('苹果是什么') is one CJK run whose overlapping
+    bigrams must not all be required to co-occur — under AND a single divergent
+    syllable (or an interrogative like '是谁') zeroes the arm, so recall collapsed
+    for anything past a two-character word (#391). OR lets BM25 rank by matched
+    bigrams; high-IDF entity bigrams dominate and stop-word bigrams sit in the
+    truncated tail. Each arm parenthesizes its token list so the column filter
+    binds to the whole group — FTS5's `col :` prefix otherwise scopes only the
+    first phrase, leaving later tokens to probe every column. With the parens,
+    char tokens never probe pinyin and pinyin tokens never probe content. When
+    the pinyin arm produces no tokens (English, single-char CJK, no CJK at all)
+    the OR is omitted and only the content arm is returned.
     """
     words = query_text.split()
     char_tokens = [tok for word in words for tok in _cjk_query_tokens(word)]
@@ -1235,11 +1241,11 @@ def _escape_fts_query(query_text: str) -> str:
 
     char_arm = ""
     if char_tokens:
-        char_arm = "content : (" + " ".join(_fts_quote_token(t) for t in char_tokens) + ")"
+        char_arm = "content : (" + " OR ".join(_fts_quote_token(t) for t in char_tokens) + ")"
 
     py_arm = ""
     if py_tokens:
-        py_arm = "pinyin : (" + " ".join(_fts_quote_token(t) for t in py_tokens) + ")"
+        py_arm = "pinyin : (" + " OR ".join(_fts_quote_token(t) for t in py_tokens) + ")"
 
     if char_arm and py_arm:
         return f"{char_arm} OR {py_arm}"

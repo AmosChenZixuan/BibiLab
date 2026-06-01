@@ -178,17 +178,17 @@ def test_escape_fts_query_only_whitespace():
 
 def test_escape_fts_query_fts_operators():
     escaped = _escape_fts_query("AND OR NOT * ^")
-    assert escaped == 'content : ("AND" "OR" "NOT" "*" "^")'
+    assert escaped == 'content : ("AND" OR "OR" OR "NOT" OR "*" OR "^")'
 
 
 def test_escape_fts_query_preserves_normal_tokens():
     escaped = _escape_fts_query("machine learning")
-    assert escaped == 'content : ("machine" "learning")'
+    assert escaped == 'content : ("machine" OR "learning")'
 
 
 def test_escape_fts_query_embedded_quotes():
     escaped = _escape_fts_query('say "hello world"')
-    assert escaped == 'content : ("say" """hello" "world""")'
+    assert escaped == 'content : ("say" OR """hello" OR "world""")'
 
 
 # --- _cjk_runs ---
@@ -367,6 +367,25 @@ async def test_pinyin_neutral_tone_recall_via_fts5(tmp_bibilab_home: Path):
 
 
 @pytest.mark.asyncio
+async def test_question_query_recalls_entity_past_two_chars(tmp_bibilab_home: Path):
+    """A natural-language question must not require every bigram to co-occur (#391).
+
+    Query '苹果是什么' is one CJK run → bigrams [苹果, 果是, 是什, 什么] +
+    pinyin [pingguo, guoshi, shishen, shenme]. Under the old AND join the
+    interrogative '是什么' bigrams zeroed both arms (nothing contains them next to
+    the entity), so anything past a two-char word recalled nothing. OR-joining lets
+    the entity bigram (here homophone pingguo → indexed '平果') still match.
+    """
+    await bootstrap_db()
+    meta = _make_meta()
+    chunks = _make_chunks(["平果是一种红色的水果"])
+    populate_fts(chunks, "SRC1", meta)
+
+    rows = await query_fts_rows("苹果是什么", ["SRC1"], top_k=10)
+    assert len(rows) >= 1, f"Question query failed to recall the entity chunk: {len(rows)} rows"
+
+
+@pytest.mark.asyncio
 async def test_escape_fts_query_content_arm_no_column_leak(tmp_bibilab_home: Path):
     """Char arm must scope ALL its tokens to `content`, not just the first.
 
@@ -380,10 +399,12 @@ async def test_escape_fts_query_content_arm_no_column_leak(tmp_bibilab_home: Pat
             "INSERT INTO chunks_fts (content, pinyin, source_id, video_title, "
             "timestamp_start, timestamp_end, chunk_id, seg_start, seg_end) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            ("foo", "bar", "SRC1", "t", 0.0, 0.0, "c1", 0, 0),
+            ("zzz", "bar", "SRC1", "t", 0.0, 0.0, "c1", 0, 0),
         )
         await db.commit()
-    # 'foo bar' → content : ("foo" "bar"); 'bar' exists only in the pinyin column.
+    # 'foo bar' → content : ("foo" OR "bar"); neither token is in the content column
+    # ('bar' lives only in pinyin). A correct content-scoped arm matches nothing; a
+    # leaked second token would match 'bar' via the pinyin column.
     rows = await query_fts_rows("foo bar", ["SRC1"], top_k=10)
     assert rows == [], "content arm leaked into the pinyin column (unparenthesized scope)"
 
@@ -421,38 +442,38 @@ def test_tokenize_cjk_empty_string():
 
 
 def test_escape_fts_query_chinese_phrase():
-    # Multi-char CJK → bigrams only (no unigrams) to avoid AND-term explosion
+    # Multi-char CJK → bigrams only (no unigrams); OR-joined within each arm (#391)
     escaped = _escape_fts_query("面食做法")
-    assert escaped == 'content : ("面食" "食做" "做法") OR pinyin : ("mianshi" "shizuo" "zuofa")'
+    assert escaped == 'content : ("面食" OR "食做" OR "做法") OR pinyin : ("mianshi" OR "shizuo" OR "zuofa")'
 
 
 def test_escape_fts_query_chinese_two_words():
     # Per-word bigram: "中文" + "生日" → no cross-boundary "文生"
     escaped = _escape_fts_query("中文 生日")
-    assert escaped == 'content : ("中文" "生日") OR pinyin : ("zhongwen" "shengri")'
+    assert escaped == 'content : ("中文" OR "生日") OR pinyin : ("zhongwen" OR "shengri")'
 
 
 def test_escape_fts_query_chinese_no_whitespace_single_word():
     # No space → one word → bigrams across the whole string
     escaped = _escape_fts_query("中文生日")
-    assert escaped == 'content : ("中文" "文生" "生日") OR pinyin : ("zhongwen" "wensheng" "shengri")'
+    assert escaped == 'content : ("中文" OR "文生" OR "生日") OR pinyin : ("zhongwen" OR "wensheng" OR "shengri")'
 
 
 def test_escape_fts_query_single_cjk_word_three_chars():
     escaped = _escape_fts_query("多少岁")
-    assert escaped == 'content : ("多少" "少岁") OR pinyin : ("duoshao" "shaosui")'
+    assert escaped == 'content : ("多少" OR "少岁") OR pinyin : ("duoshao" OR "shaosui")'
 
 
 def test_escape_fts_query_single_cjk_char_preserved():
     # "茶" is a single-char word → unigram preserved
     escaped = _escape_fts_query("中文 茶")
-    assert escaped == 'content : ("中文" "茶") OR pinyin : ("zhongwen")'
+    assert escaped == 'content : ("中文" OR "茶") OR pinyin : ("zhongwen")'
 
 
 def test_escape_fts_query_mixed_language():
     # Half English, half CJK: char arm carries both, pinyin arm only the CJK part
     escaped = _escape_fts_query("machine 学习")
-    assert escaped == 'content : ("machine" "学习") OR pinyin : ("xuexi")'
+    assert escaped == 'content : ("machine" OR "学习") OR pinyin : ("xuexi")'
 
 
 def test_escape_fts_query_single_cjk_char_alone():
