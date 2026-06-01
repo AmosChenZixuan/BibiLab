@@ -39,6 +39,15 @@ def _in_placeholders(ids: list[str]) -> str:
     return ",".join("?" * len(ids)) if ids else ""
 
 
+def parse_job_meta(job: dict) -> dict[str, Any]:
+    """Parse and normalize the meta field from a job row (dict, Row, or JSON string)."""
+    row = job if isinstance(job, dict) else dict(job)
+    meta = row.get("meta", {}) or {}
+    if isinstance(meta, str):
+        return json.loads(meta)
+    return meta
+
+
 _CREATE_LISTS = """
 CREATE TABLE IF NOT EXISTS lists (
     id                   TEXT PRIMARY KEY,
@@ -435,10 +444,12 @@ async def update_source_digest(
         params.append(_now())
     params.append(source_id)
     async with get_db() as db:
-        await db.execute(
+        cursor = await db.execute(
             f"UPDATE sources SET {', '.join(sets)} WHERE id=?",
             params,
         )
+        if cursor.rowcount == 0:
+            raise LookupError(source_id)
         await db.commit()
 
 

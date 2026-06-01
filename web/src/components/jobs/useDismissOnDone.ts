@@ -48,8 +48,8 @@ export function useDismissOnDone({
       for (const item of completed) {
         try {
           await onDoneRef.current(item.job);
-        } catch {
-          // Non-critical: leave job in terminal state for manual dismiss
+        } catch (err) {
+          console.error("useDismissOnDone: onDone callback failed", err);
         }
         await dismissJob(item.job.id);
       }

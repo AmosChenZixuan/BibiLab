@@ -21,10 +21,14 @@ export function SourcesViewerMode({
   const { trackJobs } = useJobActivity();
 
   const handleRerunDigest = async (sourceId: string) => {
-    const result = await api.rerunDigest(sourceId);
-    if (result?.job_id) {
-      trackJobs([{ id: result.job_id, producer: "digest", label: source.title, contextKey: listId }]);
-      onRefresh();
+    try {
+      const result = await api.rerunDigest(sourceId);
+      if (result?.job_id) {
+        trackJobs([{ id: result.job_id, producer: "digest", label: source.title, contextKey: listId }]);
+        onRefresh();
+      }
+    } catch (err) {
+      console.error("rerunDigest failed:", err);
     }
   };
   return (

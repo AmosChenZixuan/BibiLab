@@ -1,11 +1,10 @@
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.responses import FileResponse
 
-from bibilab.config import BibilabConfig, cover_path, get_config
-from bibilab.db import create_job, get_pending_jobs, get_source, update_source_facets
+from bibilab.config import cover_path
+from bibilab.db import create_job, get_pending_jobs, get_source, parse_job_meta, update_source_facets
 from bibilab.models.sources import SourceContentResponse, SourceFacetsUpdate
 from bibilab.pipeline.transcribe import load_transcript_text
-from bibilab.worker import _parse_job_meta
 
 router = APIRouter()
 
@@ -28,7 +27,7 @@ async def get_source_cover(source_id: str) -> FileResponse:
 
 
 @router.post("/sources/{source_id}/rerun", status_code=202)
-async def rerun_source(source_id: str, request: Request, cfg: BibilabConfig = Depends(get_config)) -> dict:
+async def rerun_source(source_id: str, request: Request) -> dict:
     """Re-run digest on an existing source using its stored transcript.
 
     Creates a background digest job and returns immediately with the job_id.
@@ -45,7 +44,7 @@ async def rerun_source(source_id: str, request: Request, cfg: BibilabConfig = De
     pending = await get_pending_jobs()
     for job in pending:
         if job["type"] == "digest":
-            meta = _parse_job_meta(job)
+            meta = parse_job_meta(job)
             if meta.get("source_id") == source_id:
                 raise HTTPException(status_code=409, detail="Digest already in progress")
 

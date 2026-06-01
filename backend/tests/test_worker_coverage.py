@@ -8,8 +8,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from bibilab.db import bootstrap_db, create_list
-from bibilab.worker import WorkerLoop, _download_cover, _parse_job_meta
+from bibilab.db import bootstrap_db, create_list, parse_job_meta
+from bibilab.worker import WorkerLoop, _download_cover
 
 # ---------------------------------------------------------------------------
 # _download_cover
@@ -46,22 +46,22 @@ class TestDownloadCover:
 
 
 # ---------------------------------------------------------------------------
-# _parse_job_meta
+# parse_job_meta
 # ---------------------------------------------------------------------------
 
 
 class TestParseJobMeta:
     def test_dict_meta(self):
-        assert _parse_job_meta({"meta": {"key": "val"}}) == {"key": "val"}
+        assert parse_job_meta({"meta": {"key": "val"}}) == {"key": "val"}
 
     def test_string_meta(self):
-        assert _parse_job_meta({"meta": '{"key": "val"}'}) == {"key": "val"}
+        assert parse_job_meta({"meta": '{"key": "val"}'}) == {"key": "val"}
 
     def test_empty_string_meta(self):
-        assert _parse_job_meta({"meta": ""}) == {}
+        assert parse_job_meta({"meta": ""}) == {}
 
     def test_missing_meta(self):
-        assert _parse_job_meta({}) == {}
+        assert parse_job_meta({}) == {}
 
 
 # ---------------------------------------------------------------------------
