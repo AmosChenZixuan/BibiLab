@@ -6,6 +6,7 @@ import { ContextMenu } from "@/components/ui/ContextMenu";
 import { BilibiliQrModal } from "@/components/auth/BilibiliQrModal";
 import { PlaylistPreviewModal } from "@/components/lists/sources/PlaylistPreviewModal";
 import { useJobActivity } from "@/components/jobs/JobActivityProvider";
+import { useDismissOnDone } from "@/components/jobs/useDismissOnDone";
 import { api, ApiError, toErrorMessageWithT, notifyBilibiliAuthChanged } from "@/lib/api";
 import { usePendingDeletions } from "@/lib/hooks/usePendingDeletions";
 import type { IngestJob, IngestVideoIn, PreviewVideo, Source } from "@/lib/types";
@@ -198,7 +199,6 @@ export function SourcesListMode({
   const [submitting, setSubmitting] = useState(false);
   const { dismissJob, getJobs, trackJobs } = useJobActivity();
   const ingestJobs = useMemo(() => getJobs("ingest", listId), [getJobs, listId]);
-  const [refreshedJobs, setRefreshedJobs] = useState<string[]>([]);
   const [showQrModal, setShowQrModal] = useState(false);
   const { isPending, run } = usePendingDeletions();
 
@@ -244,32 +244,14 @@ export function SourcesListMode({
     setPreviewLoading(false);
   }, []);
 
-  // When a job flips to done, refresh sources and dismiss
-  useEffect(() => {
-    const completed = ingestJobs.filter(
-      (j) => j.isTerminal && j.job.status === "done" && !refreshedJobs.includes(j.job.id),
-    );
-    if (completed.length === 0) return;
-
-    let cancelled = false;
-    async function refresh() {
-      try {
-        const next = await api.listSources(listId);
-        if (cancelled) return;
-        setCurrentSources(next ?? []);
-        for (const { job } of completed) {
-          setRefreshedJobs((prev) => [...prev, job.id]);
-          await dismissJob(job.id);
-        }
-      } catch {
-        // Non-critical: leave jobs in terminal state
-      }
-    }
-    void refresh();
-    return () => {
-      cancelled = true;
-    };
-  }, [ingestJobs, listId, refreshedJobs]);
+  // When an ingest job flips to done, refetch the source list and dismiss.
+  useDismissOnDone({
+    jobs: ingestJobs,
+    onDone: async () => {
+      const next = await api.listSources(listId);
+      if (next) setCurrentSources(next);
+    },
+  });
 
   const handleRetry = useCallback(
     async (job: IngestJob) => {

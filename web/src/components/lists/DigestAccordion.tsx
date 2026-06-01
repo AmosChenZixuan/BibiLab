@@ -5,6 +5,7 @@ import { useLanguage } from "@/app/LanguageContext";
 import { ContextMenu } from "@/components/ui/ContextMenu";
 import { DigestFacets, type Facets } from "@/components/lists/DigestFacets";
 import { useJobActivity } from "@/components/jobs/JobActivityProvider";
+import { useDismissOnDone } from "@/components/jobs/useDismissOnDone";
 import type { DigestJob, SourceFacetsPatch } from "@/lib/types";
 
 function LoadingDots() {
@@ -28,6 +29,7 @@ export function DigestAccordion({
   summary,
   keywords,
   onRerun,
+  onRefresh,
   facets,
   onSaveFacets,
   listId,
@@ -36,6 +38,7 @@ export function DigestAccordion({
   summary: string;
   keywords: string[];
   onRerun: (sourceId: string) => void;
+  onRefresh: (sourceId: string) => void;
   facets: Facets;
   onSaveFacets: (patch: SourceFacetsPatch) => Promise<void>;
   listId: string;
@@ -48,6 +51,13 @@ export function DigestAccordion({
   const digestJobs = getJobs("digest" as const, listId).filter(
     (item) => (item.job as DigestJob).meta?.source_id === source.id,
   );
+
+  // When a digest job reaches done, refetch the source and dismiss.
+  useDismissOnDone({
+    jobs: digestJobs,
+    onDone: () => onRefresh(source.id),
+  });
+
   let activeJob: typeof digestJobs[0] | undefined;
   let terminalFailedJob: typeof digestJobs[0] | undefined;
   for (const item of digestJobs) {

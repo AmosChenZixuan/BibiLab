@@ -2,6 +2,7 @@
 import { useLanguage } from "@/app/LanguageContext";
 import { api } from "@/lib/api";
 import type { Source, SourceContent } from "@/lib/types";
+import { useJobActivity } from "@/components/jobs/JobActivityProvider";
 import { Banner } from "@/components/lists/Banner";
 import { DigestAccordion } from "@/components/lists/DigestAccordion";
 
@@ -17,10 +18,14 @@ export function SourcesViewerMode({
   listId: string;
 }) {
   const { t } = useLanguage();
+  const { trackJobs } = useJobActivity();
 
   const handleRerunDigest = async (sourceId: string) => {
-    await api.rerunDigest(sourceId);
-    onRefresh();
+    const result = await api.rerunDigest(sourceId);
+    if (result?.job_id) {
+      trackJobs([{ id: result.job_id, producer: "digest", label: "Digest", contextKey: listId }]);
+      onRefresh();
+    }
   };
   return (
     <div className="flex h-full flex-col">
@@ -46,6 +51,7 @@ export function SourcesViewerMode({
             summary={sourceContent.summary}
             keywords={sourceContent.keywords}
             onRerun={handleRerunDigest}
+            onRefresh={() => onRefresh()}
             facets={{
               seriesName: sourceContent.series_name,
               sequenceNumber: sourceContent.sequence_number,
