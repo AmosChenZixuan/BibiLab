@@ -1,7 +1,6 @@
 """Background worker loop."""
 
 import asyncio
-import json
 import logging
 import uuid
 from pathlib import Path
@@ -19,9 +18,11 @@ from bibilab.db import (
     get_list,
     get_pending_jobs,
     get_source,
+    parse_job_meta,
     reset_stuck_jobs,
     update_job_meta,
     update_job_status,
+    update_source_digest,
     write_source_with_segments,
 )
 from bibilab.model_registry import ensure
@@ -63,13 +64,6 @@ def _download_cover(cover_url: str, dest: Path) -> bool:
     except (httpx.HTTPError, OSError) as exc:
         logger.warning("Job: failed to download cover from %s: %s", cover_url, exc)
         return False
-
-
-def _parse_job_meta(job: dict) -> dict[str, Any]:
-    meta = job.get("meta", {})
-    if isinstance(meta, str):
-        return json.loads(meta or "{}")
-    return meta
 
 
 class WorkerLoop:
@@ -151,6 +145,10 @@ class WorkerLoop:
                 await self._download_model_job(job)
                 return
 
+            if job["type"] == "digest":
+                await self._run_digest_job(job)
+                return
+
             await self._pipeline(job)
 
         except AuthRequiredError as exc:
@@ -174,7 +172,7 @@ class WorkerLoop:
 
     async def _download_model_job(self, job: dict) -> None:
         job_id = job["id"]
-        meta_raw = _parse_job_meta(job)
+        meta_raw = parse_job_meta(job)
         spec_id = meta_raw.get("model_name", "")
 
         if not spec_id:
@@ -193,7 +191,7 @@ class WorkerLoop:
 
     async def _run_artifact_job(self, job: dict) -> None:
         job_id = job["id"]
-        meta_raw = _parse_job_meta(job)
+        meta_raw = parse_job_meta(job)
         artifact_id = meta_raw["artifact_id"]
         list_id = meta_raw["list_id"]
         artifact_type = meta_raw["type"]
@@ -267,6 +265,76 @@ class WorkerLoop:
             logger.error("Artifact job %s failed: %s", job_id, error_message)
             await update_job_status(job_id, JobStatus.FAILED.value, error=error_message)
 
+    # -------------------------------------------------------------------------
+    # Shared helpers
+    # -------------------------------------------------------------------------
+
+    async def _call_digest(
+        self,
+        transcript_text: str,
+        video_meta: VideoMeta,
+        cfg: BibilabConfig,
+        ui_lang: str | None = None,
+    ) -> DigestResult:
+        """Run the digest LLM call. Does not catch exceptions — callers handle errors."""
+        return await asyncio.to_thread(
+            digest,
+            transcript_text,
+            video_meta,
+            cfg.ai,
+            cfg.ai.output_language,
+            ui_lang,
+            llm_timeout=cfg.transcription.llm_timeout,
+        )
+
+    # -------------------------------------------------------------------------
+    # Digest-only job (rerun)
+    # -------------------------------------------------------------------------
+
+    async def _run_digest_job(self, job: dict) -> None:
+        job_id = job["id"]
+        meta_raw = parse_job_meta(job)
+        source_id: str = meta_raw.get("source_id", "")
+        cfg = self._get_config()
+
+        source = await get_source(source_id)
+        if source is None:
+            logger.warning("Digest job %s: source %s not found", job_id, source_id)
+            await update_job_status(job_id, JobStatus.FAILED.value, error=f"Source {source_id!r} not found")
+            return
+
+        transcript_text = await load_transcript_text(source_id)
+        if not transcript_text:
+            logger.warning("Digest job %s: source %s has no transcript", job_id, source_id)
+            await update_job_status(job_id, JobStatus.FAILED.value, error="Source has no transcript")
+            return
+
+        video_meta = VideoMeta.from_source(source)
+
+        await update_job_status(job_id, JobStatus.PROCESSING.value, progress=10)
+
+        try:
+            extraction = await self._call_digest(transcript_text, video_meta, cfg, meta_raw.get("ui_lang"))
+        except Exception as exc:
+            logger.exception("Digest job %s failed", job_id)
+            await update_job_status(job_id, JobStatus.FAILED.value, error=str(exc))
+            return
+
+        await update_job_status(job_id, JobStatus.PROCESSING.value, progress=80)
+
+        await update_source_digest(
+            source_id,
+            extraction.summary,
+            extraction.keywords,
+            series_name=extraction.series_name,
+            sequence_number=extraction.sequence_number,
+            season_number=extraction.season_number,
+            bump_processed_at=False,
+        )
+
+        await update_job_status(job_id, JobStatus.DONE.value, progress=100)
+        logger.info("Digest job %s completed for source %s", job_id, source_id)
+
     async def _generate_artifact(
         self,
         prompt: str,
@@ -334,7 +402,7 @@ All output fields MUST be written in {_LANG_NAME.get(lang, "English")}."""
 
     async def _pipeline(self, job: dict) -> None:
         job_id = job["id"]
-        meta_raw = _parse_job_meta(job)
+        meta_raw = parse_job_meta(job)
         cfg = self._get_config()
 
         source_id: str = meta_raw.get("source_id") or str(uuid.uuid4())
@@ -504,19 +572,11 @@ All output fields MUST be written in {_LANG_NAME.get(lang, "English")}."""
             pause_threshold_seconds=cfg.rag.chunk_pause_threshold,
         )
 
-        meta_raw = _parse_job_meta(job)
+        meta_raw = parse_job_meta(job)
         transcript_text = format_turns(sentence_segments, include_time=False)
 
         async def _digest() -> DigestResult:
-            return await asyncio.to_thread(
-                digest,
-                transcript_text,
-                video_meta,
-                cfg.ai,
-                cfg.ai.output_language,
-                meta_raw.get("ui_lang"),
-                llm_timeout=cfg.transcription.llm_timeout,
-            )
+            return await self._call_digest(transcript_text, video_meta, cfg, meta_raw.get("ui_lang"))
 
         async def _embed() -> None:
             await asyncio.to_thread(embed_chunks, chunks, source_id, video_meta, list_id, cfg)

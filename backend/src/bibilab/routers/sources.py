@@ -1,13 +1,9 @@
-import asyncio
-
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.responses import FileResponse
 
-from bibilab.adapters.base import VideoMeta
-from bibilab.config import BibilabConfig, cover_path, get_config
-from bibilab.db import get_source, update_source_digest, update_source_facets
+from bibilab.config import cover_path
+from bibilab.db import create_job, get_pending_jobs, get_source, parse_job_meta, update_source_facets
 from bibilab.models.sources import SourceContentResponse, SourceFacetsUpdate
-from bibilab.pipeline.digest import digest
 from bibilab.pipeline.transcribe import load_transcript_text
 
 router = APIRouter()
@@ -30,11 +26,12 @@ async def get_source_cover(source_id: str) -> FileResponse:
     return FileResponse(_cover)
 
 
-@router.post("/sources/{source_id}/rerun", status_code=200)
-async def rerun_source(
-    source_id: str, request: Request, cfg: BibilabConfig = Depends(get_config)
-) -> SourceContentResponse:
-    """Re-run digest on an existing source using its stored transcript."""
+@router.post("/sources/{source_id}/rerun", status_code=202)
+async def rerun_source(source_id: str, request: Request) -> dict:
+    """Re-run digest on an existing source using its stored transcript.
+
+    Creates a background digest job and returns immediately with the job_id.
+    """
     source = await get_source(source_id)
     if source is None:
         raise HTTPException(status_code=404, detail="Source not found")
@@ -43,27 +40,25 @@ async def rerun_source(
     if not transcript_text:
         raise HTTPException(status_code=404, detail="Source has no transcript")
 
-    video_meta = VideoMeta.from_source(source)
+    # Dedup: reject if a non-terminal digest job already exists for this source
+    pending = await get_pending_jobs()
+    for job in pending:
+        if job["type"] == "digest":
+            meta = parse_job_meta(job)
+            if meta.get("source_id") == source_id:
+                raise HTTPException(status_code=409, detail="Digest already in progress")
 
-    extraction = await asyncio.to_thread(
-        digest,
-        transcript_text,
-        video_meta,
-        cfg.ai,
-        cfg.ai.output_language,
-        request.headers.get("X-UI-Lang"),
-        llm_timeout=cfg.transcription.llm_timeout,
+    ui_lang = request.headers.get("X-UI-Lang")
+    job_id = await create_job(
+        type="digest",
+        meta={
+            "source_id": source_id,
+            "list_id": source["list_id"],
+            "source_title": source["title"],
+            "ui_lang": ui_lang,
+        },
     )
-    await update_source_digest(
-        source_id,
-        extraction.summary,
-        extraction.keywords,
-        series_name=extraction.series_name,
-        sequence_number=extraction.sequence_number,
-        season_number=extraction.season_number,
-    )
-
-    return SourceContentResponse.from_source(source, transcript_text)
+    return {"job_id": job_id}
 
 
 @router.patch("/sources/{source_id}/facets", status_code=204)

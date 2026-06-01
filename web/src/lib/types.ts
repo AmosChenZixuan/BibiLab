@@ -114,7 +114,19 @@ export type ArtifactJob = {
   };
 };
 
-export type Job = IngestJob | ModelDownloadJob | ArtifactJob;
+export type DigestMeta = {
+  source_id: string;
+  list_id?: string;
+  source_title?: string;
+  ui_lang?: string;
+};
+
+export type DigestJob = BaseJob & {
+  type: "digest";
+  meta: DigestMeta;
+};
+
+export type Job = IngestJob | ModelDownloadJob | ArtifactJob | DigestJob;
 
 export type ArtifactType = "brief" | "study_guide" | "blog_post" | "custom_report" | (string & {});
 

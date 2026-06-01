@@ -39,6 +39,15 @@ def _in_placeholders(ids: list[str]) -> str:
     return ",".join("?" * len(ids)) if ids else ""
 
 
+def parse_job_meta(job: dict) -> dict[str, Any]:
+    """Parse and normalize the meta field from a job row (dict, Row, or JSON string)."""
+    row = job if isinstance(job, dict) else dict(job)
+    meta = row.get("meta", {}) or {}
+    if isinstance(meta, str):
+        return json.loads(meta)
+    return meta
+
+
 _CREATE_LISTS = """
 CREATE TABLE IF NOT EXISTS lists (
     id                   TEXT PRIMARY KEY,
@@ -417,24 +426,30 @@ async def update_source_digest(
     series_name: str | None = None,
     sequence_number: int | None = None,
     season_number: int | None = None,
+    bump_processed_at: bool = True,
 ) -> None:
+    # Reruns pass bump_processed_at=False: processed_at anchors list ordering
+    # (ORDER BY processed_at ASC in list_sources), and a digest rerun shouldn't
+    # move the source within the list.
+    sets = [
+        "summary=?",
+        "keywords=?",
+        "series_name=COALESCE(?, series_name)",
+        "sequence_number=COALESCE(?, sequence_number)",
+        "season_number=COALESCE(?, season_number)",
+    ]
+    params: list[object] = [summary, json.dumps(keywords), series_name, sequence_number, season_number]
+    if bump_processed_at:
+        sets.append("processed_at=?")
+        params.append(_now())
+    params.append(source_id)
     async with get_db() as db:
-        await db.execute(
-            "UPDATE sources SET summary=?, keywords=?,"
-            " series_name=COALESCE(?, series_name),"
-            " sequence_number=COALESCE(?, sequence_number),"
-            " season_number=COALESCE(?, season_number),"
-            " processed_at=? WHERE id=?",
-            (
-                summary,
-                json.dumps(keywords),
-                series_name,
-                sequence_number,
-                season_number,
-                _now(),
-                source_id,
-            ),
+        cursor = await db.execute(
+            f"UPDATE sources SET {', '.join(sets)} WHERE id=?",
+            params,
         )
+        if cursor.rowcount == 0:
+            raise LookupError(source_id)
         await db.commit()
 
 

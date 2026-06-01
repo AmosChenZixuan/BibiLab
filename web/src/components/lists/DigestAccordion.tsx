@@ -4,7 +4,9 @@ import { ChevronUp, ChevronDown, MoreVertical, RotateCcw, Pencil } from "lucide-
 import { useLanguage } from "@/app/LanguageContext";
 import { ContextMenu } from "@/components/ui/ContextMenu";
 import { DigestFacets, type Facets } from "@/components/lists/DigestFacets";
-import type { SourceFacetsPatch } from "@/lib/types";
+import { useJobActivity } from "@/components/jobs/JobActivityProvider";
+import { useDismissOnDone } from "@/components/jobs/useDismissOnDone";
+import type { DigestJob, SourceFacetsPatch } from "@/lib/types";
 
 function LoadingDots() {
   return (
@@ -27,28 +29,44 @@ export function DigestAccordion({
   summary,
   keywords,
   onRerun,
+  onRefresh,
   facets,
   onSaveFacets,
+  listId,
 }: {
   source: { id: string };
   summary: string;
   keywords: string[];
   onRerun: (sourceId: string) => void;
+  onRefresh: (sourceId: string) => void;
   facets: Facets;
   onSaveFacets: (patch: SourceFacetsPatch) => Promise<void>;
+  listId: string;
 }) {
   const { t } = useLanguage();
   const [expanded, setExpanded] = useState(true);
-  const [loading, setLoading] = useState(false);
   const [editingFacets, setEditingFacets] = useState(false);
+  const { getJobs } = useJobActivity();
+
+  const digestJobs = getJobs("digest" as const, listId).filter(
+    (item) => (item.job as DigestJob).meta?.source_id === source.id,
+  );
+
+  // When a digest job reaches done, refetch the source and dismiss.
+  useDismissOnDone({
+    jobs: digestJobs,
+    onDone: () => onRefresh(source.id),
+  });
+
+  let activeJob: typeof digestJobs[0] | undefined;
+  for (const item of digestJobs) {
+    if (!item.isTerminal) {
+      if (!activeJob) activeJob = item;
+    }
+  }
 
   const handleRerun = async () => {
-    setLoading(true);
-    try {
-      await onRerun(source.id);
-    } finally {
-      setLoading(false);
-    }
+    await onRerun(source.id);
   };
 
   return (
@@ -59,7 +77,7 @@ export function DigestAccordion({
 
         {/* Right side: context menu / loading, then expand arrow */}
         <div className="flex items-center gap-1">
-          {loading ? (
+          {activeJob ? (
             <LoadingDots />
           ) : (
             <ContextMenu
@@ -112,7 +130,7 @@ export function DigestAccordion({
             onSave={onSaveFacets}
             onExitEdit={() => setEditingFacets(false)}
           />
-          <div className={`transition-opacity duration-300 ${loading ? "opacity-30" : "opacity-100"}`}>
+          <div className={`transition-opacity duration-300 ${activeJob ? "opacity-30" : "opacity-100"}`}>
             {summary ? (
               <p className="m-0 text-sm leading-relaxed text-muted">{summary}</p>
             ) : (
@@ -123,7 +141,7 @@ export function DigestAccordion({
             )}
           </div>
 
-          <div className={`transition-opacity duration-300 ${loading ? "opacity-30" : "opacity-100"}`}>
+          <div className={`transition-opacity duration-300 ${activeJob ? "opacity-30" : "opacity-100"}`}>
             {keywords.length > 0 && (
               <div className="flex flex-wrap gap-1.5">
                 {keywords.map((kw) => (

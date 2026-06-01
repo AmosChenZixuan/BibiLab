@@ -193,7 +193,8 @@
     "dismissTitle": "Dismiss %{title}",
     "cancelTitle": "Cancel %{title}",
     "failedToSubmitUrl": "Failed to submit URL",
-    "queuedSource": "Queued source"
+    "queuedSource": "Queued source",
+    "failed": "Failed"
   },
   "errors": {
     "requestFailed": "Request failed",

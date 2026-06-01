@@ -187,7 +187,7 @@ export class SourcesClient {
   }
 
   rerunDigest(sourceId: string) {
-    return this.request<SourceContent>(this.baseUrl, `/sources/${sourceId}/rerun`, { method: "POST" });
+    return this.request<{ job_id: string }>(this.baseUrl, `/sources/${sourceId}/rerun`, { method: "POST" });
   }
 
   updateSourceFacets(sourceId: string, patch: SourceFacetsPatch) {
@@ -359,7 +359,7 @@ export interface ApiClient {
   listSources(listId: string, opts?: { signal?: AbortSignal }): Promise<Source[] | undefined>;
   getSource(sourceId: string, opts?: { signal?: AbortSignal }): Promise<SourceContent | undefined>;
   deleteSource(listId: string, sourceId: string): Promise<void | undefined>;
-  rerunDigest(sourceId: string): Promise<SourceContent | undefined>;
+  rerunDigest(sourceId: string): Promise<{ job_id: string } | undefined>;
   updateSourceFacets(sourceId: string, patch: SourceFacetsPatch): Promise<void | undefined>;
   previewPlaylist(listId: string, url: string): Promise<PreviewResponse | undefined>;
   previewPlaylistMetadata(videoIds: string[]): Promise<VideoMetadataMap | undefined>;

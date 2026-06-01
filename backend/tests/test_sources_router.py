@@ -116,7 +116,7 @@ async def test_rerun_source_not_found(client: httpx.AsyncClient):
 @pytest.mark.asyncio
 async def test_rerun_source_success(client: httpx.AsyncClient, tmp_bibilab_home: Path, monkeypatch):
     """POST /sources/{source_id}/rerun re-runs digest and updates summary/keywords."""
-    from bibilab.db import create_list, get_source, write_source, write_transcript_segments
+    from bibilab.db import create_list, write_source, write_transcript_segments
     from bibilab.pipeline.transcribe import WhisperSegment
 
     await create_list("list-rerun-test", "Rerun Test", "2025-01-01T00:00:00Z")
@@ -160,21 +160,67 @@ async def test_rerun_source_success(client: httpx.AsyncClient, tmp_bibilab_home:
     monkeypatch.setattr(digest_module, "_call_llm", mock_call_llm)
 
     resp = await client.post(f"/sources/{source_id}/rerun")
-    assert resp.status_code == 200
+    assert resp.status_code == 202
+    data = resp.json()
+    assert "job_id" in data
 
-    # Verify summary, keywords, and facets were updated
-    source = await get_source(source_id)
-    assert source is not None
-    assert source["summary"] == "new summary from rerun"
-    assert json.loads(source["keywords"]) == ["new", "rerun", "test"]
-    assert source["series_name"] == "Rerun Series"
-    assert source["sequence_number"] == 5
-    assert source["season_number"] == 1
+    # Verify job was created in DB
+    from bibilab.db import get_job
+
+    job = await get_job(data["job_id"])
+    assert job is not None
+    assert dict(job)["type"] == "digest"
+    meta = json.loads(dict(job)["meta"])
+    assert meta["source_id"] == source_id
+    assert meta["list_id"] == "list-rerun-test"
+    assert meta["source_title"] == "Rerun Test Video"
+
+
+@pytest.mark.asyncio
+async def test_rerun_source_dedup_conflict(client: httpx.AsyncClient, tmp_bibilab_home: Path):
+    """POST /sources/{source_id}/rerun returns 409 when a digest job for that source is already pending."""
+    from bibilab.db import create_job, create_list, write_source, write_transcript_segments
+    from bibilab.pipeline.transcribe import WhisperSegment
+
+    await create_list("list-dedup", "Dedup Test", "2025-01-01T00:00:00Z")
+
+    source_id = "src-dedup-001"
+
+    await write_source(
+        source_id=source_id,
+        video_id="BVdedup001",
+        platform="bilibili",
+        list_id="list-dedup",
+        title="Dedup Test Video",
+        summary="old summary",
+        keywords=[],
+        cover_url=None,
+        source_url="https://www.bilibili.com/video/BVdedup001",
+        duration_seconds=60,
+        uploader="TestUser",
+        language="en",
+        whisper_model="base",
+        ai_model="gpt-4o",
+        vision_enabled=False,
+        settings_snapshot={},
+    )
+
+    await write_transcript_segments(
+        source_id, [WhisperSegment(start=0.0, end=2.0, text="test transcript", speaker=None)]
+    )
+
+    # Create a pending digest job for this source
+    await create_job(type="digest", meta={"source_id": source_id, "list_id": "list-dedup"})
+
+    # Second rerun should get 409 Conflict
+    resp = await client.post(f"/sources/{source_id}/rerun")
+    assert resp.status_code == 409
+    assert resp.json()["detail"] == "Digest already in progress"
 
 
 @pytest.mark.asyncio
 async def test_rerun_source_respects_ui_lang_header(client: httpx.AsyncClient, tmp_bibilab_home: Path, monkeypatch):
-    """POST /sources/{source_id}/rerun with X-UI-Lang:zh passes Chinese lang instruction to LLM."""
+    """POST /sources/{source_id}/rerun with X-UI-Lang:zh stores ui_lang in job meta."""
     from bibilab.db import create_list, write_source, write_transcript_segments
     from bibilab.pipeline.transcribe import WhisperSegment
 
@@ -205,21 +251,15 @@ async def test_rerun_source_respects_ui_lang_header(client: httpx.AsyncClient, t
         source_id, [WhisperSegment(start=0.0, end=2.0, text="test transcript", speaker=None)]
     )
 
-    captured_prompt = None
-
-    def mock_call_llm(prompt, cfg, llm_timeout=120, llm_max_tokens=2048):
-        nonlocal captured_prompt
-        captured_prompt = prompt
-        return '{"summary": "new summary", "keywords": []}'
-
-    import bibilab.pipeline.digest as digest_module
-
-    monkeypatch.setattr(digest_module, "_call_llm", mock_call_llm)
-
     resp = await client.post(f"/sources/{source_id}/rerun", headers={"X-UI-Lang": "zh"})
-    assert resp.status_code == 200
-    assert captured_prompt is not None
-    assert "请用中文回答" in captured_prompt
+    assert resp.status_code == 202
+    data = resp.json()
+
+    from bibilab.db import get_job
+
+    job = await get_job(data["job_id"])
+    meta = json.loads(dict(job)["meta"])
+    assert meta.get("ui_lang") == "zh"
 
 
 async def test_patch_facets_replace(client: httpx.AsyncClient, tmp_bibilab_home: Path):

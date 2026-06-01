@@ -8,8 +8,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from bibilab.db import bootstrap_db, create_list
-from bibilab.worker import WorkerLoop, _download_cover, _parse_job_meta
+from bibilab.db import bootstrap_db, create_list, parse_job_meta
+from bibilab.worker import WorkerLoop, _download_cover
 
 # ---------------------------------------------------------------------------
 # _download_cover
@@ -46,22 +46,22 @@ class TestDownloadCover:
 
 
 # ---------------------------------------------------------------------------
-# _parse_job_meta
+# parse_job_meta
 # ---------------------------------------------------------------------------
 
 
 class TestParseJobMeta:
     def test_dict_meta(self):
-        assert _parse_job_meta({"meta": {"key": "val"}}) == {"key": "val"}
+        assert parse_job_meta({"meta": {"key": "val"}}) == {"key": "val"}
 
     def test_string_meta(self):
-        assert _parse_job_meta({"meta": '{"key": "val"}'}) == {"key": "val"}
+        assert parse_job_meta({"meta": '{"key": "val"}'}) == {"key": "val"}
 
     def test_empty_string_meta(self):
-        assert _parse_job_meta({"meta": ""}) == {}
+        assert parse_job_meta({"meta": ""}) == {}
 
     def test_missing_meta(self):
-        assert _parse_job_meta({}) == {}
+        assert parse_job_meta({}) == {}
 
 
 # ---------------------------------------------------------------------------
@@ -357,3 +357,179 @@ async def test_worker_start_stop(tmp_bibilab_home: Path):
     assert worker._task is not None
     await worker.stop()
     assert worker._running is False
+
+
+# ---------------------------------------------------------------------------
+# _run_digest_job
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_run_digest_job_success(tmp_bibilab_home: Path, monkeypatch):
+    from bibilab.db import bootstrap_db, create_job, create_list, get_source, write_source, write_transcript_segments
+    from bibilab.pipeline.transcribe import WhisperSegment
+
+    await bootstrap_db()
+    await create_list("list-digest", "Digest Test", "2025-01-01T00:00:00Z")
+    source_id = "src-digest-001"
+    await write_source(
+        source_id=source_id,
+        video_id="BVdigest001",
+        platform="bilibili",
+        list_id="list-digest",
+        title="Digest Test",
+        summary="old summary",
+        keywords=["old"],
+        cover_url=None,
+        source_url="https://bilibili.com/video/BVdigest001",
+        duration_seconds=60,
+        uploader="TestUser",
+        language="en",
+        whisper_model="base",
+        ai_model="gpt-4o",
+        vision_enabled=False,
+        settings_snapshot={},
+    )
+    await write_transcript_segments(
+        source_id, [WhisperSegment(start=0.0, end=5.0, text="test transcript text", speaker=None)]
+    )
+
+    job_id = await create_job("digest", {"source_id": source_id, "list_id": "list-digest", "ui_lang": None})
+
+    new_digest = (
+        '{"summary": "new summary", "keywords": ["new"], '
+        '"series_name": null, "sequence_number": null, "season_number": null}'
+    )
+    import bibilab.pipeline.digest as digest_module
+
+    monkeypatch.setattr(digest_module, "_call_llm", lambda *a, **k: new_digest)
+
+    worker = WorkerLoop(home=tmp_bibilab_home)
+    job = {
+        "id": job_id,
+        "type": "digest",
+        "meta": json.dumps({"source_id": source_id, "list_id": "list-digest"}),
+    }
+    await worker._run_digest_job(job)
+
+    source = await get_source(source_id)
+    assert source["summary"] == "new summary"
+
+    from bibilab.db import get_job
+
+    row = await get_job(job_id)
+    assert dict(row)["status"] == "done"
+
+
+@pytest.mark.asyncio
+async def test_run_digest_job_source_not_found(tmp_bibilab_home: Path):
+    from bibilab.db import bootstrap_db, create_job
+
+    await bootstrap_db()
+    job_id = await create_job("digest", {"source_id": "nonexistent", "list_id": "list-digest"})
+
+    worker = WorkerLoop(home=tmp_bibilab_home)
+    job = {"id": job_id, "type": "digest", "meta": json.dumps({"source_id": "nonexistent", "list_id": "list-digest"})}
+    await worker._run_digest_job(job)
+
+    from bibilab.db import get_job
+
+    row = await get_job(job_id)
+    assert dict(row)["status"] == "failed"
+    assert "not found" in dict(row)["error"]
+
+
+@pytest.mark.asyncio
+async def test_run_digest_job_no_transcript(tmp_bibilab_home: Path):
+    from bibilab.db import bootstrap_db, create_job, create_list, write_source
+
+    await bootstrap_db()
+    await create_list("list-no-transcript", "No Transcript", "2025-01-01T00:00:00Z")
+    source_id = "src-no-transcript"
+    await write_source(
+        source_id=source_id,
+        video_id="BVnoTrans",
+        platform="bilibili",
+        list_id="list-no-transcript",
+        title="No Transcript",
+        summary="old",
+        keywords=[],
+        cover_url=None,
+        source_url="https://bilibili.com/video/BVnoTrans",
+        duration_seconds=60,
+        uploader="TestUser",
+        language="en",
+        whisper_model="base",
+        ai_model="gpt-4o",
+        vision_enabled=False,
+        settings_snapshot={},
+    )
+    # Note: no write_transcript_segments call — source has no transcript
+
+    job_id = await create_job("digest", {"source_id": source_id, "list_id": "list-no-transcript"})
+
+    worker = WorkerLoop(home=tmp_bibilab_home)
+    job = {
+        "id": job_id,
+        "type": "digest",
+        "meta": json.dumps({"source_id": source_id, "list_id": "list-no-transcript"}),
+    }
+    await worker._run_digest_job(job)
+
+    from bibilab.db import get_job
+
+    row = await get_job(job_id)
+    assert dict(row)["status"] == "failed"
+    assert "no transcript" in dict(row)["error"]
+
+
+@pytest.mark.asyncio
+async def test_run_digest_job_llm_failure(tmp_bibilab_home: Path, monkeypatch):
+    from bibilab.db import bootstrap_db, create_job, create_list, write_source, write_transcript_segments
+    from bibilab.pipeline.transcribe import WhisperSegment
+
+    await bootstrap_db()
+    await create_list("list-llm-fail", "LLM Fail", "2025-01-01T00:00:00Z")
+    source_id = "src-llm-fail"
+    await write_source(
+        source_id=source_id,
+        video_id="BVllmFail",
+        platform="bilibili",
+        list_id="list-llm-fail",
+        title="LLM Fail",
+        summary="old",
+        keywords=[],
+        cover_url=None,
+        source_url="https://bilibili.com/video/BVllmFail",
+        duration_seconds=60,
+        uploader="TestUser",
+        language="en",
+        whisper_model="base",
+        ai_model="gpt-4o",
+        vision_enabled=False,
+        settings_snapshot={},
+    )
+    await write_transcript_segments(
+        source_id, [WhisperSegment(start=0.0, end=5.0, text="test transcript", speaker=None)]
+    )
+
+    job_id = await create_job("digest", {"source_id": source_id, "list_id": "list-llm-fail"})
+
+    import bibilab.pipeline.digest as digest_module
+
+    monkeypatch.setattr(digest_module, "_call_llm", lambda *a, **k: (_ for _ in ()).throw(ValueError("LLM error")))
+
+    worker = WorkerLoop(home=tmp_bibilab_home)
+    job = {"id": job_id, "type": "digest", "meta": json.dumps({"source_id": source_id, "list_id": "list-llm-fail"})}
+    await worker._run_digest_job(job)
+
+    from bibilab.db import get_job
+
+    row = await get_job(job_id)
+    assert dict(row)["status"] == "failed"
+
+    # Source digest unchanged
+    from bibilab.db import get_source
+
+    source = await get_source(source_id)
+    assert source["summary"] == "old"

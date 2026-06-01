@@ -10,14 +10,14 @@ import {
 
 import { api, toErrorMessageWithT } from "@/lib/api";
 import { usePendingDeletions } from "@/lib/hooks/usePendingDeletions";
-import type { ArtifactJob, IngestJob, Job, ModelDownloadJob } from "@/lib/types";
+import type { ArtifactJob, DigestJob, IngestJob, Job, ModelDownloadJob } from "@/lib/types";
 import { useLanguage } from "@/app/LanguageContext";
 
 export const TERMINAL_JOB_STATUSES = new Set(["done", "failed", "needs_auth"]);
 
 const POLL_INTERVAL_MS = 5_000;
 
-type JobProducer = "ingest" | "model_download" | "artifact";
+type JobProducer = "ingest" | "model_download" | "artifact" | "digest";
 
 export type JobRegistration = {
   id: string;
@@ -118,6 +118,10 @@ function isArtifactJob(job: Job): job is ArtifactJob {
   return job.type === "artifact";
 }
 
+function isDigestJob(job: Job): job is DigestJob {
+  return job.type === "digest";
+}
+
 function extractIngestTitle(meta: Job["meta"]): string {
   if ("title" in meta && typeof meta.title === "string" && meta.title.trim()) {
     return meta.title;
@@ -143,6 +147,17 @@ function inferTrackedMeta(job: Job): TrackedJobMeta {
     return {
       producer: "artifact",
       label: artifactType,
+      contextKey: typeof job.meta.list_id === "string" ? job.meta.list_id : null,
+    };
+  }
+
+  if (isDigestJob(job)) {
+    const sourceTitle = typeof job.meta.source_title === "string" && job.meta.source_title.trim()
+      ? job.meta.source_title
+      : "Digest";
+    return {
+      producer: "digest",
+      label: sourceTitle,
       contextKey: typeof job.meta.list_id === "string" ? job.meta.list_id : null,
     };
   }

@@ -2,6 +2,7 @@
 import { useLanguage } from "@/app/LanguageContext";
 import { api } from "@/lib/api";
 import type { Source, SourceContent } from "@/lib/types";
+import { useJobActivity } from "@/components/jobs/JobActivityProvider";
 import { Banner } from "@/components/lists/Banner";
 import { DigestAccordion } from "@/components/lists/DigestAccordion";
 
@@ -9,16 +10,26 @@ export function SourcesViewerMode({
   source,
   sourceContent,
   onRefresh,
+  listId,
 }: {
   source: Source;
   sourceContent: SourceContent | null;
   onRefresh: () => void;
+  listId: string;
 }) {
   const { t } = useLanguage();
+  const { trackJobs } = useJobActivity();
 
   const handleRerunDigest = async (sourceId: string) => {
-    await api.rerunDigest(sourceId);
-    onRefresh();
+    try {
+      const result = await api.rerunDigest(sourceId);
+      if (result?.job_id) {
+        trackJobs([{ id: result.job_id, producer: "digest", label: source.title, contextKey: listId }]);
+        onRefresh();
+      }
+    } catch (err) {
+      console.error("rerunDigest failed:", err);
+    }
   };
   return (
     <div className="flex h-full flex-col">
@@ -44,6 +55,7 @@ export function SourcesViewerMode({
             summary={sourceContent.summary}
             keywords={sourceContent.keywords}
             onRerun={handleRerunDigest}
+            onRefresh={() => onRefresh()}
             facets={{
               seriesName: sourceContent.series_name,
               sequenceNumber: sourceContent.sequence_number,
@@ -53,6 +65,7 @@ export function SourcesViewerMode({
               await api.updateSourceFacets(source.id, patch);
               onRefresh();
             }}
+            listId={listId}
           />
         )}
         {sourceContent?.transcript && (

@@ -193,7 +193,8 @@
     "dismissTitle": "忽略 %{title}",
     "cancelTitle": "取消 %{title}",
     "failedToSubmitUrl": "提交链接失败",
-    "queuedSource": "排队中的来源"
+    "queuedSource": "排队中的来源",
+    "failed": "失败"
   },
   "errors": {
     "requestFailed": "请求失败",

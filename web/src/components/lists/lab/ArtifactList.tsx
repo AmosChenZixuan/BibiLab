@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 
 import { useLanguage } from "@/app/LanguageContext";
 import { useJobActivity } from "@/components/jobs/JobActivityProvider";
+import { useDismissOnDone } from "@/components/jobs/useDismissOnDone";
 import { api } from "@/lib/api";
 import { downloadTextFile } from "@/lib/download";
 import { usePendingDeletions } from "@/lib/hooks/usePendingDeletions";
@@ -30,7 +31,6 @@ export function ArtifactList({ listId, artifacts, onArtifactsChange, onViewArtif
   const { t } = useLanguage();
   const { getJobs, dismissJob } = useJobActivity();
   const artifactJobs = useMemo(() => getJobs("artifact", listId), [getJobs, listId]);
-  const [refreshedJobs, setRefreshedJobs] = useState<string[]>([]);
   const [viewPromptArtifactId, setViewPromptArtifactId] = useState<string | null>(null);
   const { isPending, run } = usePendingDeletions();
 
@@ -57,31 +57,14 @@ export function ArtifactList({ listId, artifacts, onArtifactsChange, onViewArtif
     return result;
   }, [artifactJobs, artifactIds, t]);
 
-  // When a job flips to done, refresh artifacts and dismiss
-  useEffect(() => {
-    const refreshedSet = new Set(refreshedJobs);
-    const completed = artifactJobs.filter(
-      (item) => item.isTerminal && item.job.status === "done" && !refreshedSet.has(item.job.id),
-    );
-    if (completed.length === 0) return;
-
-    let cancelled = false;
-    async function refresh() {
-      try {
-        const next = await api.listArtifacts(listId);
-        if (cancelled) return;
-        onArtifactsChange(() => next ?? []);
-        await Promise.all(completed.map(({ job }) => dismissJob(job.id)));
-        setRefreshedJobs((prev) => [...prev, ...completed.map(({ job }) => job.id)]);
-      } catch {
-        // Non-critical: leave jobs in terminal state
-      }
-    }
-    void refresh();
-    return () => {
-      cancelled = true;
-    };
-  }, [artifactJobs, listId, refreshedJobs, dismissJob, onArtifactsChange]);
+  // When an artifact job flips to done, refetch the artifact list and dismiss.
+  useDismissOnDone({
+    jobs: artifactJobs,
+    onDone: async () => {
+      const next = await api.listArtifacts(listId);
+      onArtifactsChange(() => next ?? []);
+    },
+  });
 
   const handleDismiss = useCallback(
     async (artifactId: string) => {
