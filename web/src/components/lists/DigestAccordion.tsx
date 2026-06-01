@@ -59,11 +59,8 @@ export function DigestAccordion({
   });
 
   let activeJob: typeof digestJobs[0] | undefined;
-  let terminalFailedJob: typeof digestJobs[0] | undefined;
   for (const item of digestJobs) {
-    if (item.isTerminal) {
-      if (!terminalFailedJob && item.job.status === "failed") terminalFailedJob = item;
-    } else {
+    if (!item.isTerminal) {
       if (!activeJob) activeJob = item;
     }
   }
@@ -71,10 +68,6 @@ export function DigestAccordion({
   const handleRerun = async () => {
     await onRerun(source.id);
   };
-
-  const showError = terminalFailedJob && !activeJob && !digestJobs.some(
-    (item) => item.isTerminal && item.job.status === "done",
-  );
 
   return (
     <div className="overflow-hidden rounded-2xl border border-border bg-blue/25">
@@ -137,11 +130,6 @@ export function DigestAccordion({
             onSave={onSaveFacets}
             onExitEdit={() => setEditingFacets(false)}
           />
-          {showError && (
-            <p className="m-0 text-sm text-red" role="alert">
-              {terminalFailedJob!.job.error ?? t("jobs.failed")}
-            </p>
-          )}
           <div className={`transition-opacity duration-300 ${activeJob ? "opacity-30" : "opacity-100"}`}>
             {summary ? (
               <p className="m-0 text-sm leading-relaxed text-muted">{summary}</p>

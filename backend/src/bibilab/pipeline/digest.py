@@ -1,11 +1,9 @@
 """Digest generation - creates summary + keywords from transcript."""
 
-import json
 import logging
 import math
 
-import httpx
-from pydantic import BaseModel, ValidationError, ValidationInfo, field_validator
+from pydantic import BaseModel, ValidationInfo, field_validator
 
 from bibilab.adapters.base import VideoMeta
 from bibilab.config import AIConfig
@@ -195,7 +193,7 @@ def digest(
         try:
             raw = _call_llm(p, cfg, llm_timeout=llm_timeout, llm_max_tokens=llm_max_tokens)
             return _parse_response(raw)
-        except (httpx.HTTPError, json.JSONDecodeError, ValidationError) as exc:
+        except Exception as exc:
             last_exc = exc
             logger.warning(
                 "LLM digest failed for %s (attempt %d/%d): %s",
