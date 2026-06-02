@@ -2,20 +2,15 @@
 
 import json
 import logging
-import uuid
-from collections.abc import Callable
 from dataclasses import dataclass, field
 
 from bibilab.config import BibilabConfig
 from bibilab.db import (
-    count_sources,
-    create_job,
     get_segments_for_ranges,
+    get_source,
     get_source_facets,
-    language_breakdown,
-    longest_source,
+    get_transcript_segments,
 )
-from bibilab.models._enums import RetrievalParams
 from bibilab.pipeline._shared import ToolDefinition
 from bibilab.pipeline.digest import parse_facet_int
 from bibilab.pipeline.embed import retrieve
@@ -23,25 +18,12 @@ from bibilab.pipeline.transcribe import WhisperSegment, build_speaker_namespace,
 
 logger = logging.getLogger(__name__)
 
-# Prepended to the LLM-visible retrieve result when facet scoping found no
-# matching source and failed open to the full pool. The deleted source list
-# (#310) was the LLM's only "episode not in library" signal; this restores it
-# LLM-side. English by design: _chunks is LLM-facing and already English;
-# build_grounding_prompt drives the user-visible response language separately.
-_NO_MATCH_NOTE = (
-    "No source matched the requested episode/season; searched all sources instead — say so before answering."
-)
-
-# Prepended to the LLM-visible retrieve result when retrieve returned zero
-# chunks above the relevance gate. Anchors refusal to evidence: the LLM only
-# learns the library lacks coverage from a completed retrieve, never from
-# pre-retrieve judgment. English by design — see _NO_MATCH_NOTE.
-_NO_COVERAGE_NOTE = (
-    "Retrieve returned zero excerpts relevant to this query. The library does "
-    "not cover this topic. Tell the user in their response language that the "
-    "library has no content on this topic, and stop. Do not provide outside "
-    "knowledge, real-world analogies, or encyclopedic definitions."
-)
+# Prepended to the LLM-visible find_passages result when facet scoping found
+# no matching source and failed open to the full pool. Fact-only (#16.7 lock):
+# the directive (say-so-before-answering) is owned by the prompt, not the
+# tool. The fact is the LLM's sole degraded-scope signal; the directive moves
+# to #372 grounding prompt. English by design: _chunks is LLM-facing.
+_NO_MATCH_NOTE = "No source matched the requested episode/season; searched all sources instead."
 
 
 @dataclass
@@ -50,7 +32,7 @@ class CitationRegistryEntry:
     source_id: str
     title: str = ""
     chunk_ids: set[str] = field(default_factory=set)
-    # Populated at SSE-build time from execute_retrieve chunk data.
+    # Populated at SSE-build time from execute_find_passages chunk data.
     # Used to reconstruct context[] for persisted metadata.
     first_chunk_id: str | None = None
     timestamp_start: float | None = None
@@ -87,204 +69,182 @@ def _build_fenced_chunks(
     return "\n\n".join(blocks)
 
 
-_VALID_ARTIFACT_TYPES = frozenset({"brief", "study_guide", "blog_post", "custom_report"})
+# Tool defs + registry for the RAG v2 two-tool surface (#370/#371).
+# RETRIEVE_TOOL_NAMES survives as the set of tools that feed the citation
+# registry / replay (only find_passages — read_source reads from the same
+# registry but does not register a NEW source; it just looks it up).
+FIND_PASSAGES_TOP_K = 8
 
-
-_TOOL_NAME_TO_PARAMS: dict[str, RetrievalParams] = {
-    "retrieve": RetrievalParams(depth_per_source=2, top_k=8, mode="narrow"),
-    "survey": RetrievalParams(depth_per_source=5, top_k=24, mode="survey"),
-    "retrieve_scoped": RetrievalParams(depth_per_source=2, top_k=8, mode="narrow"),
-}
-
-RETRIEVE_TOOL_NAMES: frozenset[str] = frozenset(_TOOL_NAME_TO_PARAMS.keys())
-
-
-GENERATE_REPORT_TOOL = ToolDefinition(
-    name="generate_report",
+FIND_PASSAGES_TOOL = ToolDefinition(
+    name="find_passages",
     description=(
-        "Generate a report/artifact from the user's selected sources. "
-        "Use when the user asks to create a summary, study guide, blog post, or custom report."
-    ),
-    parameters={
-        "type": "object",
-        "properties": {
-            "type": {
-                "type": "string",
-                "enum": ["brief", "study_guide", "blog_post", "custom_report"],
-                "description": "The type of report to generate",
-            },
-            "prompt": {
-                "type": "string",
-                "description": "A description of what the report should cover",
-            },
-        },
-        "required": ["type", "prompt"],
-    },
-)
-
-RETRIEVE_TOOL = ToolDefinition(
-    name="retrieve",
-    description=(
-        "Retrieve from video transcripts for a single-fact / narrow content question.\n\n"
-        "Pass the user's question in natural form, copying proper nouns and "
-        "technical terms exactly.\n\n"
-        "Use this tool when the user asks a specific question with a clear answer — "
-        "definitions, dates, names, single events, 'what is X', 'when did X happen', "
-        "'who is X'.\n\n"
-        "If the user explicitly references an episode or season (第八集, episode 3, "
-        "第二季), use retrieve_scoped instead.\n\n"
-        "If the user asks a survey / list / comparison question, use survey instead.\n\n"
+        "Search the video transcripts for excerpts relevant to a question. "
+        "Returns the most relevant passages across all sources (or a single "
+        "episode/season if you pass a facet), each fenced under its source with "
+        "a [N] citation index.\n\n"
+        "This is a LOCATOR: it surfaces *which sources* are relevant and gives "
+        "you fragments to read. The fragments may not fully answer the question. "
+        "If they answer it, synthesize. If a source is clearly on-topic but the "
+        "fragments miss the specific thing asked, call read_source on that source "
+        "to read it in full.\n\n"
+        "Pass the user's question in natural form, copying proper nouns verbatim. "
+        "Pass sequence_number / season_number ONLY when the current message "
+        "explicitly names an episode (第八集) or season (第二季).\n\n"
         "Examples:\n"
-        '  retrieve(query="如何证明拉格朗日点的稳定性?")\n'
-        '  retrieve(query="什么是长期情景记忆?")'
+        '  find_passages(query="念刃第一次出现在哪")\n'
+        '  find_passages(query="第五集讲了什么", sequence_number=5)'
     ),
     parameters={
         "type": "object",
         "properties": {
-            "query": {
-                "type": "string",
-                "description": "The user's question in natural form.",
-            },
-        },
-        "required": ["query"],
-    },
-)
-
-SURVEY_TOOL = ToolDefinition(
-    name="survey",
-    description=(
-        "Retrieve from video transcripts for a broad / list-summary question "
-        "about a SINGLE subject. Uses a wider retrieval pool (top_k=24, "
-        "depth_per_source=5) than retrieve.\n\n"
-        "Pass the user's question in natural form.\n\n"
-        "Use this tool when the user asks for an overview, a list of items, a "
-        "summary, or anything that expects multiple sources for one umbrella topic — "
-        "'what are the ways to X', 'list all the X', 'summarize X'.\n\n"
-        "For comparison questions ('compare A and B', 'A 和 B 的区别'), do NOT "
-        "use a single survey — those are multi-subject; issue parallel calls, "
-        "one per subject, picking the appropriate tool per subject (retrieve "
-        "for concrete entities, survey if a subject is itself an umbrella term, "
-        "retrieve_scoped if a subject is an episode/season).\n\n"
-        "If the user explicitly references an episode or season, use retrieve_scoped "
-        "instead.\n\n"
-        "Examples:\n"
-        '  survey(query="有哪些面食的做法?")\n'
-        '  survey(query="政治哲学有哪些思想流派?")'
-    ),
-    parameters={
-        "type": "object",
-        "properties": {
-            "query": {
-                "type": "string",
-                "description": "The user's question in natural form.",
-            },
-        },
-        "required": ["query"],
-    },
-)
-
-RETRIEVE_SCOPED_TOOL = ToolDefinition(
-    name="retrieve_scoped",
-    description=(
-        "Retrieve from video transcripts, scoped to a specific episode or season.\n\n"
-        "Pass the user's question in natural form. The episode / season reference "
-        "goes in sequence_number / season_number, not in query.\n\n"
-        "Use this tool ONLY when the current user message explicitly references an "
-        "episode (第八集, episode 3, part 5) or a season (第二季, season 2). "
-        "Do not infer the scope from prior conversation turns — if the current "
-        "message has no explicit reference, use retrieve instead.\n\n"
-        "Pass sequence_number for episode references and season_number for season "
-        "references. Pass both when the user references both (第二季第八集).\n\n"
-        "Examples:\n"
-        '  retrieve_scoped(query="第五集讲了什么?", sequence_number=5)\n'
-        '  retrieve_scoped(query="这一季的总览是什么?", season_number=2)\n'
-        '  retrieve_scoped(query="主要事件有哪些?", sequence_number=3, season_number=2)'
-    ),
-    parameters={
-        "type": "object",
-        "properties": {
-            "query": {
-                "type": "string",
-                "description": (
-                    "The user's question in natural form. The episode / season "
-                    "reference goes in sequence_number / season_number."
-                ),
-            },
+            "query": {"type": "string", "description": "The user's question in natural form."},
             "sequence_number": {
                 "type": "integer",
-                "description": "Episode / part number — only if explicitly named in the CURRENT user message",
+                "description": "Episode / part number — only if explicitly named in the CURRENT message",
             },
             "season_number": {
                 "type": "integer",
-                "description": "Season number — only if explicitly named in the CURRENT user message",
+                "description": "Season number — only if explicitly named in the CURRENT message",
             },
         },
         "required": ["query"],
     },
 )
 
-QUERY_LIST_METADATA_TOOL = ToolDefinition(
-    name="query_list_metadata",
+READ_SOURCE_TOOL = ToolDefinition(
+    name="read_source",
     description=(
-        "Look up structured metadata about the sources. "
-        "Use when the user asks about counts, durations, or languages. "
-        "Do NOT use for content questions — use retrieve for those."
+        "Read ONE source's full continuous transcript (summary + timestamped "
+        "narrative). Expensive — use only when find_passages shows a source is "
+        "on-topic but its fragments miss the specific thing asked, or for "
+        "narrative-coverage questions about a named episode/season.\n\n"
+        "Resolves to EXACTLY ONE source. Pass source_id (from a find_passages "
+        "result) OR a facet (sequence_number / season_number). If a facet matches "
+        "multiple sources it errors with the candidates — narrow it or pass "
+        "source_id. For 'what does season N cover', issue parallel read_source "
+        "calls (one per episode), not one fan-out call.\n\n"
+        "Examples:\n"
+        "  read_source(sequence_number=5)\n"
+        '  read_source(source_id="…from a find_passages result…")'
     ),
     parameters={
         "type": "object",
         "properties": {
-            "query_type": {
-                "type": "string",
-                "enum": ["count", "longest", "languages"],
-                "description": (
-                    "count = number of sources; "
-                    "longest = source with the longest duration; "
-                    "languages = count per language"
-                ),
-            },
+            "source_id": {"type": "string", "description": "Exact source id, e.g. from a find_passages result."},
+            "sequence_number": {"type": "integer", "description": "Episode / part number."},
+            "season_number": {"type": "integer", "description": "Season number."},
         },
-        "required": ["query_type"],
+        "required": [],
     },
 )
 
-
-async def execute_query_list_metadata(source_ids: list[str], query_type: str) -> dict:
-    if query_type == "count":
-        return {"count": await count_sources(source_ids)}
-    if query_type == "longest":
-        row = await longest_source(source_ids)
-        return row if row is not None else {"title": None, "duration_seconds": None}
-    if query_type == "languages":
-        return {"languages": await language_breakdown(source_ids)}
-    logger.warning("Unknown query_type %r — falling back to count", query_type)
-    return {"count": await count_sources(source_ids)}
+RETRIEVE_TOOL_NAMES: frozenset[str] = frozenset({FIND_PASSAGES_TOOL.name})
 
 
-async def execute_generate_report(
-    list_id: str,
-    artifact_type: str,
-    prompt: str,
+async def _resolve_single_source(
     source_ids: list[str],
-    ui_lang: str,
-) -> dict:
-    artifact_id = str(uuid.uuid4())
-    job_id = await create_job(
-        type="artifact",
-        meta={
-            "artifact_id": artifact_id,
-            "list_id": list_id,
-            "type": artifact_type,
-            "prompt": prompt,
-            "source_ids": source_ids,
-            "ui_lang": ui_lang,
-        },
-    )
-    return {
-        "artifact_id": artifact_id,
-        "job_id": job_id,
-        "name": artifact_type,
-        "type": artifact_type,
+    source_id: str | None,
+    sequence_number: int | None,
+    season_number: int | None,
+) -> tuple[str | None, str | None]:
+    """Resolve exactly one source from the pool. Returns (source_id, error_msg).
+
+    Strict cardinality contract (spec §5.2): 0 matches → error, >1 → ambiguous
+    error with candidates. Errors are LLM-facing strings (English, like the
+    fence body), returned in the tool result — never raised (a raise aborts the
+    SSE stream).
+    """
+    if source_id is not None:
+        if source_id in source_ids:
+            return source_id, None
+        return None, f"source_id {source_id!r} is not in this list."
+
+    predicates = {
+        k: v for k, v in (("sequence_number", sequence_number), ("season_number", season_number)) if v is not None
     }
+    if not predicates:
+        return None, "read_source needs a source_id, sequence_number, or season_number."
+
+    try:
+        facets = await get_source_facets(source_ids)
+    except Exception:  # noqa: BLE001 - fail closed: an unresolved read is an error, not a guess
+        logger.warning("read_source: get_source_facets failed", exc_info=True)
+        return None, "Could not resolve the source (facet lookup failed); try a source_id."
+
+    matched = [
+        sid for sid in source_ids if sid in facets and all(facets[sid].get(k) == v for k, v in predicates.items())
+    ]
+    if not matched:
+        return None, f"No source matches {predicates}."
+    if len(matched) > 1:
+        cands = ", ".join(
+            f"seq={facets[m].get('sequence_number')} season={facets[m].get('season_number')}" for m in matched
+        )
+        return None, (
+            f"Ambiguous — {len(matched)} sources match {predicates}; "
+            f"specify season_number or source_id. Candidates: [{cands}]"
+        )
+    return matched[0], None
+
+
+def _build_source_narrative(source: dict, segments: list) -> str:
+    """Single source header + continuous timestamped transcript (spec §5.6).
+
+    Reuses format_turns (include_time) for the speaker-turn body — NOT per-chunk
+    fenced. Narrative continuity is the point.
+    """
+    # Empty-transcript edge (spec §5.6 / §16.3): SUPPRESS the header — it only
+    # frames a body, and with no body it just hands the LLM fabrication fuel (a
+    # title it already has from the fence). Return the explicit fact ONLY.
+    if not segments:
+        return (
+            "source [{idx}] has no transcript available (it may still be processing, or transcription may have failed)."
+        )
+    dur = source.get("duration_seconds")
+    dur_line = f"Duration: {int(dur) // 60}:{int(dur) % 60:02d}, " if dur else ""
+    header = (
+        f'===== Source [{{idx}}]: "{source.get("title", "")}"\n'
+        f"Summary: {source.get('summary') or '(none)'}\n"
+        f"{dur_line}Language: {source.get('language') or 'unknown'}\n"
+        f"====="
+    )
+    whisper_segs = [
+        WhisperSegment(start=s["start_s"], end=s["end_s"], text=s["text"], speaker=s["speaker"]) for s in segments
+    ]
+    body = format_turns(whisper_segs, include_time=True)
+    return header + "\n\n" + body
+
+
+async def execute_read_source(
+    source_ids: list[str],
+    source_id: str | None,
+    sequence_number: int | None,
+    season_number: int | None,
+    registry: dict[str, CitationRegistryEntry] | None = None,
+) -> dict:
+    if registry is None:
+        registry = {}
+
+    resolved, error = await _resolve_single_source(source_ids, source_id, sequence_number, season_number)
+    if error is not None:
+        return {"_chunks": error, "source_id": None}
+
+    source = await get_source(resolved)
+    if source is None:
+        return {"_chunks": f"source {resolved!r} not found.", "source_id": None}
+
+    segments = await get_transcript_segments(resolved)
+
+    # Shared registry, dedup by source_id (spec §5.7): reuse the existing [N] if
+    # find_passages already registered this source this turn; else allocate next.
+    entry = registry.get(resolved)
+    if entry is None:
+        next_index = max((e.index for e in registry.values()), default=0) + 1
+        entry = CitationRegistryEntry(index=next_index, source_id=resolved, title=source.get("title", ""))
+        registry[resolved] = entry
+
+    narrative = _build_source_narrative(source, segments).replace("{idx}", str(entry.index))
+    return {"_chunks": narrative, "source_id": resolved}
 
 
 def _facet_int(v: object, key: str) -> int | None:
@@ -302,11 +262,10 @@ def _facet_int(v: object, key: str) -> int | None:
         return None
 
 
-async def execute_retrieve(
+async def execute_find_passages(
     query: str,
     source_ids: list[str],
     cfg: BibilabConfig,
-    tool_name: str,
     registry: dict[str, CitationRegistryEntry] | None = None,
     sequence_number: int | None = None,
     season_number: int | None = None,
@@ -314,13 +273,11 @@ async def execute_retrieve(
     if registry is None:
         registry = {}
 
-    params = _TOOL_NAME_TO_PARAMS[tool_name]
     pool_size = len(source_ids)
 
     # Deterministic facet scoping (#309). Facet matching is the sole
-    # pre-retrieval narrowing (#310 removed exclude/whitelist). Fail-open:
-    # zero match (or facet-subquery DB error) → full pool, never empty.
-    # scoped_pool_size is the full pool by design — see facet_scope.matched_count.
+    # pre-retrieval narrowing. Fail-open: zero match (or facet-subquery DB
+    # error) → full pool, never empty.
     facet_predicates = {
         k: v for k, v in (("sequence_number", sequence_number), ("season_number", season_number)) if v is not None
     }
@@ -330,10 +287,8 @@ async def execute_retrieve(
     if facet_predicates:
         try:
             facets = await get_source_facets(source_ids)
-        except Exception:  # noqa: BLE001 - facet scoping is best-effort; a DB
-            # error here must fail open to the full pool, not nuke an
-            # otherwise-fine retrieve (consistent with the zero-match contract).
-            logger.warning("retrieve: get_source_facets failed, fail-open to full pool", exc_info=True)
+        except Exception:  # noqa: BLE001
+            logger.warning("find_passages: get_source_facets failed, fail-open to full pool", exc_info=True)
             facets = {}
         matched = [
             sid
@@ -346,22 +301,20 @@ async def execute_retrieve(
         else:
             facet_no_match = True
             logger.warning(
-                "retrieve: facet %s matched 0 sources, fail-open to full pool",
+                "find_passages: facet %s matched 0 sources, fail-open to full pool",
                 facet_predicates,
             )
 
     logger.info(
-        "retrieve dispatch: query=%r params(top_k=%d depth=%d) pool_size=%d",
+        "find_passages dispatch: query=%r pool_size=%d",
         query,
-        params.top_k,
-        params.depth_per_source,
         pool_size,
     )
     result = await retrieve(
         query_text=query,
         source_ids=source_ids,
         cfg=cfg,
-        params=params,
+        top_k=FIND_PASSAGES_TOP_K,
         scoped_source_ids=scoped_source_ids,
     )
 
@@ -384,12 +337,7 @@ async def execute_retrieve(
         if sid in registry:
             source_id_to_index[sid] = registry[sid].index
 
-    # Reconstruct the speaker-turn body for each displayed chunk from its
-    # segment seq-range (spec Layer 5). One batched query over all displayed
-    # chunks; namespace speakers per source so S{N}·SPK{k} stays consistent
-    # across a source's chunks this turn and cross-source labels never collide.
-    # SPK{k} is a per-turn render label (ordinal over the retrieved ranges),
-    # not a durable per-source speaker id — see build_speaker_namespace.
+    # Reconstruct the speaker-turn body for each displayed chunk (kept from v1).
     displayed = [c for c in result.chunks if c.source_id in source_id_to_index]
     ranges = [
         (c.source_id, c.seg_start, c.seg_end) for c in displayed if c.seg_start is not None and c.seg_end is not None
@@ -403,7 +351,6 @@ async def execute_retrieve(
     ns_by_source = {sid: build_speaker_namespace(segs) for sid, segs in segs_by_source.items()}
 
     def _turn_body(c):
-        """Grouped + time + namespaced turns for one chunk; raw content fallback."""
         if c.seg_start is None or c.seg_end is None or c.source_id not in segs_by_source:
             return c.content
         idx = source_id_to_index[c.source_id]
@@ -417,34 +364,22 @@ async def execute_retrieve(
             chunk_segs, include_time=True, citation_index=idx, speaker_namespace=ns_by_source[c.source_id]
         )
 
-    # Compute each displayed chunk's body once; preview + fence both read this.
     body_by_chunk = {id(c): _turn_body(c) for c in displayed}
 
-    logger.info(
-        "reconstruct top-k: %d displayed chunks, %d segments fetched, speakers/source=%s",
-        len(displayed),
-        len(seg_rows),
-        {source_id_to_index[sid]: len(ns) for sid, ns in ns_by_source.items()},
-    )
-
-    # Accumulate chunk_ids per source (synthetic key: source_id_start_end).
-    # Entry-level fields (preview / timestamps / rerank_score) are seeded from
-    # the first HIT per source — never from a neighbor — so the persisted
-    # context[] describes the gated chunk, not its surrounding context.
+    # Entry-level fields seeded from the first chunk per source.
     for c in result.chunks:
         sid = c.source_id
         if sid in registry:
             cid = f"{sid}_{int(c.timestamp_start)}_{int(c.timestamp_end)}"
             registry[sid].chunk_ids.add(cid)
             entry = registry[sid]
-            if not getattr(c, "is_neighbor", False) and entry.timestamp_start is None:
+            if entry.timestamp_start is None:
                 entry.first_chunk_id = cid
                 entry.timestamp_start = c.timestamp_start
                 entry.timestamp_end = c.timestamp_end
                 entry.rerank_score = c.score
                 entry.preview = body_by_chunk.get(id(c), c.content)
 
-    # Collect indices actually retrieved this turn (for the enumeration line)
     turn_indices = sorted(set(source_id_to_index.values()))
 
     chunks_by_index: dict[int, list[str]] = {}
@@ -466,17 +401,18 @@ async def execute_retrieve(
             }
         )
 
+    # The all-directive "no-coverage" note is DELETED — that behavior lives in
+    # the grounding prompt (#372). The tool emits only the FACT: empty pool.
+    no_coverage_fact = "" if result.chunks else "find_passages found no relevant excerpts for this query.\n\n"
+    no_match_fact = f"{_NO_MATCH_NOTE}\n\n" if facet_no_match else ""
+
     return {
         "query": query,
-        "tool_name": tool_name,
-        "mode": params.mode,
+        "tool_name": FIND_PASSAGES_TOOL.name,
         "candidates_evaluated": result.candidates_evaluated,
         "sources_with_hits": result.sources_with_hits,
         "sources_total": result.sources_total,
-        "dropped_by_gate": result.dropped_by_gate,
         "reranked": result.reranked,
-        "gate_margin": result.gate_margin,
-        "neighbors_pulled": result.neighbors_pulled,
         "scoped_pool_size": pool_size,
         "facet_scope": {
             "sequence_number": sequence_number,
@@ -492,8 +428,8 @@ async def execute_retrieve(
             for s in result.source_coverage
         ],
         "_chunks": (
-            (f"{_NO_COVERAGE_NOTE}\n\n" if not result.chunks else "")
-            + (f"{_NO_MATCH_NOTE}\n\n" if facet_no_match else "")
+            no_coverage_fact
+            + no_match_fact
             + f"Sources retrieved this turn: {', '.join(f'[{i}]' for i in turn_indices)}. "
             "Cite only these indices.\n\n"
             f"{_build_source_headers(registry)}\n\n" + _build_fenced_chunks(chunks_by_index, registry)
@@ -512,13 +448,14 @@ def build_tool_block_entry(
 ) -> dict:
     """Normalize an in-flight tool call+result into the persisted shape.
 
-    For retrieve, internal underscore-prefixed fields are stripped (they're
-    LLM-formatting metadata, not replay state); raw chunk snapshots are
-    attached so replay survives re-embedding. For other tools, the result
-    is stored as-is.
+    For retrieve-family, internal underscore-prefixed fields are stripped and
+    raw chunk snapshots are attached so replay survives re-embedding. For
+    other tools (read_source), underscore-prefixed fields are also stripped —
+    read_source's narrative is 30-150K tokens and is never replayed or reseeded,
+    so persisting it is pure DB bloat (spec §16.7).
     """
+    summary = {k: v for k, v in result.items() if not k.startswith("_")}
     if name in RETRIEVE_TOOL_NAMES:
-        summary = {k: v for k, v in result.items() if not k.startswith("_")}
         return {
             "tool_use_id": tool_use_id,
             "name": name,
@@ -529,7 +466,7 @@ def build_tool_block_entry(
         "tool_use_id": tool_use_id,
         "name": name,
         "arguments": arguments,
-        "result": result,
+        "result": summary,
     }
 
 
@@ -542,134 +479,29 @@ async def execute_tool(
     cfg: BibilabConfig,
     registry: dict[str, CitationRegistryEntry] | None = None,
 ) -> dict:
-    if tool_name in RETRIEVE_TOOL_NAMES:
+    if tool_name == FIND_PASSAGES_TOOL.name:
         query = arguments.get("query")
         if not query or not isinstance(query, str):
-            raise ValueError(f"{tool_name} requires a non-empty 'query' string, got {query!r}")
-
+            raise ValueError(f"find_passages requires a non-empty 'query' string, got {query!r}")
         sequence_number = _facet_int(arguments.get("sequence_number"), "sequence_number")
         season_number = _facet_int(arguments.get("season_number"), "season_number")
-
-        # Non-scoped tools ignore facet args even if present (defensive — LLM may misroute).
-        if tool_name != RETRIEVE_SCOPED_TOOL.name and (sequence_number is not None or season_number is not None):
-            logger.warning(
-                "%s called with facet args (seq=%s season=%s); ignoring — only retrieve_scoped honors facets",
-                tool_name,
-                sequence_number,
-                season_number,
-            )
-            sequence_number = None
-            season_number = None
-
-        logger.info(
-            "retrieve tool call: tool=%s query=%r seq=%s season=%s",
-            tool_name,
-            query,
-            sequence_number,
-            season_number,
-        )
-        return await execute_retrieve(
+        return await execute_find_passages(
             query=query,
             source_ids=source_ids,
             cfg=cfg,
-            tool_name=tool_name,
             registry=registry,
             sequence_number=sequence_number,
             season_number=season_number,
         )
-    if tool_name == GENERATE_REPORT_TOOL.name:
-        artifact_type = arguments.get("type")
-        prompt = arguments.get("prompt")
-        if not artifact_type or not prompt:
-            raise ValueError("Missing required arguments: type and prompt")
-        if artifact_type not in _VALID_ARTIFACT_TYPES:
-            artifact_type = "custom_report"
-        return await execute_generate_report(
-            list_id=list_id,
-            artifact_type=artifact_type,
-            prompt=prompt,
+    if tool_name == READ_SOURCE_TOOL.name:
+        return await execute_read_source(
             source_ids=source_ids,
-            ui_lang=ui_lang,
-        )
-    if tool_name == QUERY_LIST_METADATA_TOOL.name:
-        return await execute_query_list_metadata(
-            source_ids=source_ids,
-            query_type=arguments["query_type"],
+            source_id=arguments.get("source_id"),
+            sequence_number=_facet_int(arguments.get("sequence_number"), "sequence_number"),
+            season_number=_facet_int(arguments.get("season_number"), "season_number"),
+            registry=registry,
         )
     raise ValueError(f"Unknown tool: {tool_name}")
-
-
-def _summarize_stale_retrieve_block(block: dict) -> str:
-    """Compact replacement for a prior-turn retrieve tool_result.
-
-    Prior-turn raw excerpts pollute the current turn: the LLM treats stale
-    chunks the same as fresh results and regenerates them, and survey query
-    expansion borrows stale entities. Replay only a salient tag (query +
-    which sources) so the LLM knows what was retrieved before without the
-    raw text. To reuse the content, it must retrieve again this turn.
-    """
-    summary = block.get("result", {}).get("summary", {})
-    query = summary.get("query") or block.get("arguments", {}).get("query", "")
-    coverage = summary.get("source_coverage", []) or []
-    chunks = block.get("result", {}).get("chunks", []) or []
-    titles = ", ".join(f'"{c.get("title", "")}"' for c in coverage) or "(none)"
-    return (
-        f'[Prior-turn retrieval — query: "{query}"] '
-        f"Retrieved {len(chunks)} excerpts from: {titles}. "
-        "Excerpt text omitted to avoid stale-context contamination; "
-        "call retrieve / survey / retrieve_scoped again if this turn needs the content."
-    )
-
-
-def _summarize_stale_report_block(block: dict) -> str:
-    """Compact replacement for a prior-turn generate_report tool_result.
-
-    Symmetric with retrieve: replaying the full result (artifact_id/job_id)
-    plus the empty assistant text that terminal tools leave behind anchors
-    the LLM into re-calling generate_report on later, unrelated questions.
-    Tag the prior dispatch and drop the payload.
-    """
-    artifact_type = block.get("arguments", {}).get("type", "")
-    return (
-        f'[Prior-turn generate_report(type="{artifact_type}") dispatched.] '
-        "Result omitted; call again only if this turn explicitly asks for a report."
-    )
-
-
-def _summarize_stale_metadata_block(block: dict) -> str:
-    """Compact replacement for a prior-turn query_list_metadata tool_result.
-
-    Same staleness principle as retrieve: the source list may have changed
-    since the prior call (add/remove/rerun), so the stored counts/longest/
-    languages can mislead the current turn. Tag and drop.
-    """
-    query_type = block.get("arguments", {}).get("query_type", "")
-    return (
-        f'[Prior-turn query_list_metadata(query_type="{query_type}") dispatched.] '
-        "Result omitted (may be stale); call again if this turn needs it."
-    )
-
-
-_STALE_SUMMARIZERS: dict[str, Callable[[dict], str]] = {
-    GENERATE_REPORT_TOOL.name: _summarize_stale_report_block,
-    QUERY_LIST_METADATA_TOOL.name: _summarize_stale_metadata_block,
-}
-
-
-def _stale_payload(block: dict, name: str) -> str:
-    """Return the LLM-visible payload for a prior-turn tool_block.
-
-    Retrieve-family tools and non-content tools (generate_report,
-    query_list_metadata) all replay as compact tags. Unknown tools fall
-    through to a JSON dump of the original result — same as before — so
-    new tools default to full replay until their own summarizer is added.
-    """
-    if name in RETRIEVE_TOOL_NAMES:
-        return _summarize_stale_retrieve_block(block)
-    summarizer = _STALE_SUMMARIZERS.get(name)
-    if summarizer is not None:
-        return summarizer(block)
-    return json.dumps(block.get("result"))
 
 
 def expand_message_for_provider(
@@ -682,10 +514,20 @@ def expand_message_for_provider(
     the tool_blocks key. For assistant messages with tool_blocks, returns the
     synthetic shape the LLM expects so it sees prior tool_use/tool_result
     blocks on subsequent turns.
+
+    v2 rule (spec §5.5): drop retrieve-family and read_source tool exchanges
+    entirely from cross-turn replay — the LLM may rely on the assistant prose
+    but not the prior tool result (stale-context contamination).
     """
     blocks = msg.get("tool_blocks")
     if not blocks:
         # Strip tool_blocks if present-but-empty; producer expects clean shape.
+        clean = {k: v for k, v in msg.items() if k != "tool_blocks"}
+        return [clean]
+
+    # v2: drop retrieve + read_source tool exchanges from cross-turn replay.
+    blocks = [b for b in blocks if b.get("name") not in (RETRIEVE_TOOL_NAMES | {READ_SOURCE_TOOL.name})]
+    if not blocks:
         clean = {k: v for k, v in msg.items() if k != "tool_blocks"}
         return [clean]
 
@@ -703,7 +545,7 @@ def expand_message_for_provider(
                 logger.warning("expand_message_for_provider skipping malformed block: missing keys")
                 continue
             assistant_content.append({"type": "tool_use", "id": tool_use_id, "name": name, "input": arguments})
-            result_payload = _stale_payload(b, name)
+            result_payload = json.dumps(b.get("result"))
             tool_result_content.append({"type": "tool_result", "tool_use_id": tool_use_id, "content": result_payload})
         if text:
             assistant_content.append({"type": "text", "text": text})
@@ -733,7 +575,7 @@ def expand_message_for_provider(
                     "function": {"name": name, "arguments": json.dumps(arguments)},
                 }
             )
-            result_payload = _stale_payload(b, name)
+            result_payload = json.dumps(b.get("result"))
             out.append(
                 {
                     "role": "tool",
