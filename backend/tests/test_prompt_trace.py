@@ -82,6 +82,26 @@ def test_dump_prompt_trace_swallows_write_errors(tmp_path: Path, caplog):
     assert any("dump_prompt_trace_failed" in r.message for r in caplog.records)
 
 
+def test_dump_prompt_trace_swallows_serialization_errors(tmp_path: Path, caplog):
+    """A non-JSON-serializable iteration entry (e.g. set in tool.parameters) must log, not raise."""
+    from bibilab.routers import chat as chat_module
+
+    debug_dir = tmp_path / "debug"
+    # sets are not JSON-serializable — this is the realistic future-regression shape
+    iterations = [
+        {
+            "messages": [],
+            "tools": [{"name": "x", "description": "y", "parameters": {"oops"}}],
+        }
+    ]
+
+    with caplog.at_level(logging.WARNING, logger="bibilab.routers.chat"):
+        chat_module._dump_prompt_trace("m1", "sys", iterations, debug_dir)
+
+    assert any("dump_prompt_trace_failed" in r.message for r in caplog.records)
+    assert not (debug_dir / "m1.json").exists()
+
+
 @pytest.mark.asyncio
 async def test_stream_with_tools_records_per_iteration_snapshot():
     """Each stream_llm call (iter-1, iter-2, forced synth) records a snapshot

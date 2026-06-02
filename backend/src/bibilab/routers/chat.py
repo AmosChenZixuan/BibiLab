@@ -280,14 +280,18 @@ async def stream_with_tools(
         is_synthesis_turn = iteration > MAX_TOOL_ITERATIONS
         active_tools = [] if is_synthesis_turn else list(tools)
         if debug_trace_sink is not None:
-            debug_trace_sink.append(
-                {
-                    "messages": [dict(m) for m in messages],
-                    "tools": [
-                        {"name": t.name, "description": t.description, "parameters": t.parameters} for t in active_tools
-                    ],
-                }
-            )
+            try:
+                debug_trace_sink.append(
+                    {
+                        "messages": [dict(m) for m in messages],
+                        "tools": [
+                            {"name": t.name, "description": t.description, "parameters": t.parameters}
+                            for t in active_tools
+                        ],
+                    }
+                )
+            except Exception:
+                logger.exception("debug_trace_sink_append_failed iteration=%d", iteration)
         async for event in stream_llm(messages, cfg, active_tools, system=system, llm_max_tokens=llm_max_tokens):
             if event.type == "tool_call":
                 tool_calls.append(event.tool_call)
@@ -324,12 +328,15 @@ async def stream_with_tools(
                     }
                 )
                 if debug_trace_sink is not None:
-                    debug_trace_sink.append(
-                        {
-                            "messages": [dict(m) for m in messages],
-                            "tools": [],
-                        }
-                    )
+                    try:
+                        debug_trace_sink.append(
+                            {
+                                "messages": [dict(m) for m in messages],
+                                "tools": [],
+                            }
+                        )
+                    except Exception:
+                        logger.exception("debug_trace_sink_append_failed forced_synth")
                 async for event in stream_llm(messages, cfg, [], system=system, llm_max_tokens=llm_max_tokens):
                     if event.type == "delta" and event.content:
                         parsed_events, parse_buffer = parse_delta(event.content, parse_buffer, lookup)
@@ -469,8 +476,9 @@ def _dump_prompt_trace(
     """Best-effort write of the LLM prompt trace for a chat turn (#393).
 
     Writes {system, iterations[]} to debug_dir/{message_id}.json. Skipped
-    when iterations is empty (nothing to debug). All errors are caught and
-    logged; a dump failure must never break a turn.
+    when iterations is empty (nothing to debug). JSON uses ensure_ascii=False
+    so CJK prompts and tool results remain readable in the dump. All errors
+    are caught and logged; a dump failure must never break a turn.
     """
     if not iterations:
         return
