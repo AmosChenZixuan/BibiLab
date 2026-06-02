@@ -231,6 +231,17 @@ stream_with_tools(stream_llm loop):
 - Compression: triggered when message count > 30; keeps sliding window of 10; summarizes older messages via `_call_llm` in `asyncio.create_task`. The summary is prose only — the compression prompt does **not** preserve `[N]` markers (deliberate; see `docs/citation_system.md`). Only post-window messages retain live citations.
 - Summary injected into system prompt on subsequent requests
 
+### Prompt-trace observability (opt-in)
+
+Set `rag.debug_prompts: true` in `~/.bibilab/config.json` to capture the
+exact LLM input for every chat turn. For each `message_id`, a JSON dump
+is written to `~/.bibilab/debug/{message_id}.json` with the shape
+`{ "system": "...", "iterations": [ { "messages": [...], "tools": [...] } ] }`.
+Use this to retrospect wrong-answer cases — see the grounding prompt
+the model actually saw, the conversation stack, and the tool defs active
+on each iteration. **Off by default** (no I/O, no behavior change).
+The write is best-effort: failures are logged and never break the turn.
+
 ## Platform Adapters
 
 ```python
@@ -256,7 +267,7 @@ v0: `BilibiliAdapter` — single video. Cookie-based auth in config.
   "transcription": { "model": "sensevoice-small|large-v3", "device": "cuda|cpu", "language": "auto" },
   "vision": { "enabled": false, "frame_sample_rate": 30, "model": null },
   "backend": { "port": 8765, "worker_concurrency": 1 },
-  "rag": { "max_distance": 0.8, "hybrid_enabled": true, "reranking_enabled": true }
+  "rag": { "max_distance": 0.8, "hybrid_enabled": true, "reranking_enabled": true, "debug_prompts": false }
 }
 ```
 Reranker model is fixed to `Xenova/bge-reranker-base` (XLM-RoBERTa, Chinese + English). Relevance gating uses `_quantile_gate`; margin (bge logit units) is selected per retrieval from `_RELEVANCE_MARGIN_BY_MODE[mode]` (narrow=2.0, survey=2.5). `RetrievalResult.gate_margin` telemetry records the margin used. See `docs/internal/rag_tuning.md`.

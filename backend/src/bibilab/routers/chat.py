@@ -3,6 +3,7 @@ import json
 import logging
 import re
 from collections.abc import AsyncGenerator
+from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
@@ -254,6 +255,7 @@ async def stream_with_tools(
     llm_max_tokens: int = CHAT_MAX_TOKENS,
     registry: dict[str, CitationRegistryEntry] | None = None,
     tool_block_sink: list[dict] | None = None,
+    debug_trace_sink: list[dict] | None = None,
 ) -> AsyncGenerator[StreamEvent, None]:
     if registry is None:
         registry = {}
@@ -271,12 +273,29 @@ async def stream_with_tools(
     async def _execute_with_registry(name: str, args: dict) -> dict:
         return await execute_tool_fn(name, args, registry=registry)
 
+    def _record_snapshot(tools_for_llm: list[ToolDefinition]) -> None:
+        if debug_trace_sink is None:
+            return
+        try:
+            debug_trace_sink.append(
+                {
+                    "messages": [dict(m) for m in messages],
+                    "tools": [
+                        {"name": t.name, "description": t.description, "parameters": t.parameters}
+                        for t in tools_for_llm
+                    ],
+                }
+            )
+        except Exception:
+            logger.exception("debug_trace_sink_append_failed iteration=%d", iteration)
+
     while True:
         iteration += 1
         tool_calls: list[ToolCall] = []
         lookup = _build_lookup()
         is_synthesis_turn = iteration > MAX_TOOL_ITERATIONS
         active_tools = [] if is_synthesis_turn else list(tools)
+        _record_snapshot(active_tools)
         async for event in stream_llm(messages, cfg, active_tools, system=system, llm_max_tokens=llm_max_tokens):
             if event.type == "tool_call":
                 tool_calls.append(event.tool_call)
@@ -312,6 +331,7 @@ async def stream_with_tools(
                         ),
                     }
                 )
+                _record_snapshot([])
                 async for event in stream_llm(messages, cfg, [], system=system, llm_max_tokens=llm_max_tokens):
                     if event.type == "delta" and event.content:
                         parsed_events, parse_buffer = parse_delta(event.content, parse_buffer, lookup)
@@ -442,6 +462,29 @@ def _serialize_event_for_buffer(event: StreamEvent) -> dict | None:
     return None
 
 
+def _dump_prompt_trace(
+    message_id: str,
+    system: str | None,
+    iterations: list[dict],
+    debug_dir: Path,
+) -> None:
+    """Best-effort write of the LLM prompt trace for a chat turn (#393).
+
+    Writes {system, iterations[]} to debug_dir/{message_id}.json. Skipped
+    when iterations is empty (nothing to debug). JSON uses ensure_ascii=False
+    so CJK prompts and tool results remain readable in the dump. All errors
+    are caught and logged; a dump failure must never break a turn.
+    """
+    if not iterations:
+        return
+    try:
+        debug_dir.mkdir(parents=True, exist_ok=True)
+        payload = {"system": system, "iterations": iterations}
+        (debug_dir / f"{message_id}.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2))
+    except Exception:
+        logger.warning("dump_prompt_trace_failed message_id=%s", message_id, exc_info=True)
+
+
 async def _sse_consumer(buf: StreamBuffer) -> AsyncGenerator[str, None]:
     try:
         async for event in stream_from_buffer(buf):
@@ -522,6 +565,7 @@ async def run_chat_turn(
         tools = [FIND_PASSAGES_TOOL, READ_SOURCE_TOOL]
 
         tool_blocks: list[dict] = []
+        debug_trace: list[dict] = []
 
         async for event in stream_with_tools(
             messages=messages_for_llm,
@@ -532,6 +576,7 @@ async def run_chat_turn(
             llm_max_tokens=CHAT_MAX_TOKENS,
             registry=citation_registry,
             tool_block_sink=tool_blocks,
+            debug_trace_sink=debug_trace if cfg.rag.debug_prompts else None,
         ):
             payload = _serialize_event_for_buffer(event)
             if payload is not None:
@@ -665,6 +710,15 @@ async def run_chat_turn(
             final_status = "failed"
             if error_reason is None:
                 error_reason = "persistence_error"
+
+        from bibilab.config import bibilab_home
+
+        _dump_prompt_trace(
+            message_id=message_id,
+            system=system_message,
+            iterations=debug_trace,
+            debug_dir=bibilab_home() / "debug",
+        )
 
         try:
             await set_active_stream(conversation_id, None)
