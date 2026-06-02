@@ -91,8 +91,8 @@ FIND_PASSAGES_TOOL = ToolDefinition(
         "Pass sequence_number / season_number ONLY when the current message "
         "explicitly names an episode (第八集) or season (第二季).\n\n"
         "Examples:\n"
-        '  find_passages(query="念刃第一次出现在哪")\n'
-        '  find_passages(query="第五集讲了什么", sequence_number=5)'
+        '  find_passages(query="演讲中提到的主要观点")\n'
+        '  find_passages(query="第三个论据的具体内容", sequence_number=2)'
     ),
     parameters={
         "type": "object",

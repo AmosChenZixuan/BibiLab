@@ -91,3 +91,19 @@ class TestBuildGroundingPrompt:
         assert "without calling" in p.lower() or "no tool" in p.lower()
         # answerable-from-history → no tool (spec §16.6)
         assert "conversation history" in p.lower() or "already answered" in p.lower()
+
+    def test_find_passages_description_has_no_coverage_example(self):
+        """The find_passages tool must NOT demonstrate a coverage question
+        ('第N集讲了什么') — that class routes to read_source (live-usage bug fix)."""
+        from bibilab.pipeline.chat_tools import FIND_PASSAGES_TOOL
+
+        assert "讲了什么" not in FIND_PASSAGES_TOOL.description
+
+    def test_grounding_prompt_routes_coverage_to_read_source(self):
+        """A named-episode coverage question must route to read_source, not
+        find_passages-with-facet."""
+        p = build_grounding_prompt("English")
+        # the coverage→read_source directive is present and names the pattern
+        assert "讲了什么" in p
+        # the weak "only when needed" escalation wording is gone
+        assert "only when needed" not in p
