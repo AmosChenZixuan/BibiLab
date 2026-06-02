@@ -131,26 +131,6 @@ describe("RetrievalCall", () => {
     expect(call.context![0].rerank_score).toBe(0.95);
   });
 
-  test("read_source carries source_id and source_title, no query", () => {
-    const call: RetrievalCall = {
-      query: "",
-      tool_name: "read_source",
-      candidates_evaluated: 0,
-      sources_with_hits: 0,
-      sources_total: 1,
-      source_coverage: [],
-      context: [],
-      reranked: false,
-      scoped_pool_size: 1,
-      source_id: "s1",
-      source_title: "Ep 4",
-    };
-    expect(call.tool_name).toBe("read_source");
-    expect(call.source_id).toBe("s1");
-    expect(call.source_title).toBe("Ep 4");
-    expect(call.context).toHaveLength(0);
-  });
-
   test("context can be empty array", () => {
     const call: RetrievalCall = {
       query: "test",

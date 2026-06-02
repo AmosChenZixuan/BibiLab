@@ -273,8 +273,8 @@
       "saving": "保存中…"
     },
     "ledger": {
-      "summaryEmpty": "0 个片段",
       "summaryPending": "查找片段中…",
+      "readSourcePending": "读取全文中…",
       "sourceSummary": "%{sources} 个来源",
       "citedChunks": "引用 %{n} 个片段",
       "readSourceFallbackTitle": "未命名来源",

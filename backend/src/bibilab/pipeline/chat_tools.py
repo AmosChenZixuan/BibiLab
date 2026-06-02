@@ -294,7 +294,7 @@ async def execute_read_source(
     return {
         "_chunks": narrative,
         "source_id": resolved,
-        "source_title": source.get("title", ""),
+        "source_title": source["title"],
         "tool_name": "read_source",
     }
 

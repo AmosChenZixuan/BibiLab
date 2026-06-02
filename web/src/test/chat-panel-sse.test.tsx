@@ -330,7 +330,7 @@ describe("chat panel — SSE streaming (phase 6.2)", () => {
     await userEvent.keyboard("{Enter}");
 
     const enc = new TextEncoder();
-    // Provisional read_source chip first (no source_title yet, no label text)
+    // Provisional read_source chip first (BookOpen + spinner + "reading source…")
     ctrl.enqueue(
       enc.encode(
         'data: {"type":"tool_call_start","id":"rs1","name":"read_source","arguments":{}}\n\n',
@@ -338,7 +338,7 @@ describe("chat panel — SSE streaming (phase 6.2)", () => {
     );
 
     await waitFor(() => {
-      expect(screen.queryByText(/read in full/i)).toBeNull();
+      expect(screen.getByText(/reading source/i)).toBeInTheDocument();
     });
 
     // tool_result resolves it to source_id/source_title

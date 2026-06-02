@@ -15,19 +15,12 @@ export function ToolLedgerRow({ call, pending, streaming = false }: ToolLedgerRo
   const [expanded, setExpanded] = useState(false);
 
   if (pending) {
-    if (pending.tool_name === READ_SOURCE_TOOL_NAME) {
-      return (
-        <div className="flex items-center gap-1.5 py-0.5 text-xs text-muted opacity-70">
-          <BookOpen size={12} className="shrink-0 opacity-70" aria-hidden />
-          <Loader2 size={12} className="animate-spin shrink-0" />
-          <span>{t("chat.ledger.summaryPending")}</span>
-        </div>
-      );
-    }
+    const isReadSource = pending.tool_name === READ_SOURCE_TOOL_NAME;
     return (
       <div className="flex items-center gap-1.5 py-0.5 text-xs text-muted opacity-70">
+        {isReadSource && <BookOpen size={12} className="shrink-0 opacity-70" aria-hidden />}
         <Loader2 size={12} className="animate-spin shrink-0" />
-        <span>{t("chat.ledger.summaryPending")}</span>
+        <span>{isReadSource ? t("chat.ledger.readSourcePending") : t("chat.ledger.summaryPending")}</span>
       </div>
     );
   }

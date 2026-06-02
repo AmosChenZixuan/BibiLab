@@ -273,8 +273,8 @@
       "saving": "Saving..."
     },
     "ledger": {
-      "summaryEmpty": "0 chunks",
       "summaryPending": "finding passages…",
+      "readSourcePending": "reading source…",
       "sourceSummary": "%{sources} sources",
       "citedChunks": "%{n} chunks cited",
       "readSourceFallbackTitle": "Untitled source",

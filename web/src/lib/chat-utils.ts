@@ -5,11 +5,6 @@ export type ContentBlock =
   | { type: "citation"; index: number; source_id: string; chunk_ids: string[] }
   | { type: "paragraph_break" };
 
-export type ToolResult = { artifact_id: string; job_id?: string; name: string; type: string };
-export interface ToolCallData {
-  name: string;
-  result: ToolResult;
-}
 export type ToolName = "find_passages" | "read_source";
 export type RagSource = { source_id: string; title: string };
 /** Single chunk in the persisted context[] array. */

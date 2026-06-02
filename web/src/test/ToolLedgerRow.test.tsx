@@ -129,8 +129,6 @@ describe("read_source completed row", () => {
     const { container } = renderRow({ call: READ_CALL });
     // Source title is visible
     expect(screen.getByText("Ep 4")).toBeInTheDocument();
-    // No "Read in full" label text
-    expect(screen.queryByText(/read in full/i)).toBeNull();
     // No expand button (read_source has no toggle)
     expect(container.querySelector('button[aria-label="Toggle retrieval details"]')).toBeNull();
     // No chunk list rendered: no timestamp ranges, no rerank scores
@@ -144,8 +142,6 @@ describe("read_source pending row", () => {
   test("renders a read_source pending chip with icon + spinner, no label, no query text", () => {
     const pending: PendingRagCall = { id: "p1", tool_name: READ_SOURCE_TOOL_NAME, query: "" };
     const { container } = renderRow({ pending });
-    // No "Read in full" label
-    expect(screen.queryByText(/read in full/i)).toBeNull();
     // Spinner present
     expect(container.querySelector(".animate-spin")).not.toBeNull();
     // No expand button
