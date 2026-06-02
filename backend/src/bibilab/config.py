@@ -86,8 +86,6 @@ class RagConfig(BaseModel):
     max_distance: float = 0.8
     reranking_enabled: bool = True
     hybrid_enabled: bool = True
-    # Pull ±1 neighbors when post-rerank hits <= threshold. 0 disables.
-    neighbor_scarcity_threshold: int = 2
     # Minimum gap (seconds) between Whisper segments to trigger a chunk flush.
     # Pauses longer than this are treated as topic boundaries. Default 1.5s.
     # Keep in sync with pause_threshold_seconds default in pipeline/chunk.py.

@@ -128,7 +128,9 @@ async def test_chat_endpoint_uses_conversation_history(client):
 
 @pytest.mark.asyncio
 async def test_chat_endpoint_includes_tools(client):
-    """Both retrieve and generate_report tools are passed to stream_with_tools."""
+    """find_passages and read_source tools are passed to stream_with_tools."""
+    from bibilab.pipeline.chat_tools import FIND_PASSAGES_TOOL, READ_SOURCE_TOOL
+
     list_id = (await client.post("/lists", json={"name": "Test"})).json()["id"]
 
     captured_tools = []
@@ -142,41 +144,22 @@ async def test_chat_endpoint_includes_tools(client):
 
     assert resp.status_code == 200
     tool_names = [t.name for t in captured_tools[0]]
-    assert "retrieve" in tool_names
-    assert "generate_report" in tool_names
-
-
-@pytest.mark.asyncio
-async def test_chat_endpoint_handles_generate_report_tool(client):
-    """generate_report tool execution yields proper SSE events."""
-    list_id = (await client.post("/lists", json={"name": "Test"})).json()["id"]
-
-    async def fake_stream(messages, cfg, tools=None, execute_tool_fn=None, system=None, llm_max_tokens=2048, **kwargs):
-        yield StreamEvent(type="delta", content="Generating...")
-        yield StreamEvent(
-            type="tool_result",
-            content='{"name":"generate_report","result":{"artifact_id":"abc","name":"brief","type":"brief"}}',
-        )
-        yield StreamEvent(type="done")
-
-    with patch("bibilab.routers.chat.stream_with_tools", fake_stream):
-        resp = await client.post(f"/lists/{list_id}/chat", json={"message": "make a brief"})
-
-    assert resp.status_code == 200
-    assert "abc" in resp.text
-    assert "tool_result" in resp.text
+    assert FIND_PASSAGES_TOOL.name in tool_names
+    assert READ_SOURCE_TOOL.name in tool_names
 
 
 @pytest.mark.asyncio
 async def test_retrieve_tool_result_has_coverage(client):
-    """retrieve tool_result includes coverage metadata."""
+    """find_passages tool_result includes coverage metadata."""
+    from bibilab.pipeline.chat_tools import FIND_PASSAGES_TOOL
+
     list_id = (await client.post("/lists", json={"name": "Test"})).json()["id"]
 
     async def fake_stream(messages, cfg, tools=None, execute_tool_fn=None, system=None, llm_max_tokens=2048, **kwargs):
-        result = await execute_tool_fn("retrieve", {"query": "test"})
+        result = await execute_tool_fn(FIND_PASSAGES_TOOL.name, {"query": "test"})
         yield StreamEvent(
             type="tool_result",
-            content=json.dumps({"name": "retrieve", "result": _client_tool_result(result)}),
+            content=json.dumps({"name": FIND_PASSAGES_TOOL.name, "result": _client_tool_result(result)}),
         )
         yield StreamEvent(type="delta", content="Answer")
         yield StreamEvent(type="done")
@@ -241,11 +224,10 @@ async def test_smoke_scenario_1_chitchat_no_tool_calls(client):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "tool_name,mode,query,user_message,delta_text,result_overrides",
+    "tool_name,query,user_message,delta_text,result_overrides",
     [
         (
-            "retrieve",
-            "narrow",
+            "find_passages",
             "test query",
             "What does the video say about transformers?",
             "Based on the transcript, the answer is...",
@@ -257,31 +239,13 @@ async def test_smoke_scenario_1_chitchat_no_tool_calls(client):
                 "_chunks": [{"title": "Test Video", "start": 10.0, "end": 25.0, "content": "relevant chunk"}],
             },
         ),
-        (
-            "survey",
-            "survey",
-            "核心观点",
-            "汇总所有视频的核心观点",
-            "汇总如下...",
-            {
-                "candidates_evaluated": 60,
-                "sources_with_hits": 3,
-                "sources_total": 5,
-                "source_coverage": [
-                    {"source_id": "src-1", "title": "Video A"},
-                    {"source_id": "src-2", "title": "Video B"},
-                    {"source_id": "src-3", "title": "Video C"},
-                ],
-                "_chunks": [],
-            },
-        ),
     ],
 )
-async def test_smoke_scenario_2_retrieve(client, tool_name, mode, query, user_message, delta_text, result_overrides):
-    """LLM calls retrieve tool with correct tool_name/mode before answering."""
+async def test_smoke_scenario_2_retrieve(client, tool_name, query, user_message, delta_text, result_overrides):
+    """LLM calls find_passages tool with correct tool_name before answering."""
     list_id = await _create_list(client, f"Smoke retrieve {tool_name}")
 
-    retrieve_result = {"tool_name": tool_name, "mode": mode, **result_overrides}
+    retrieve_result = {"tool_name": tool_name, **result_overrides}
 
     async def fake_stream(messages, cfg, tools=None, execute_tool_fn=None, system=None, llm_max_tokens=2048, **kwargs):
         yield StreamEvent(
@@ -309,7 +273,6 @@ async def test_smoke_scenario_2_retrieve(client, tool_name, mode, query, user_me
 
     stream_result = tool_results[0]
     assert stream_result["name"] == tool_name
-    assert stream_result["result"]["mode"] == mode
     assert stream_result["result"]["candidates_evaluated"] == result_overrides["candidates_evaluated"]
     assert "_chunks" not in stream_result["result"], "_chunks must be stripped before sending to client"
 
@@ -320,97 +283,6 @@ async def test_smoke_scenario_2_retrieve(client, tool_name, mode, query, user_me
     assert len(assistant_msgs) == 1
     assert assistant_msgs[0]["metadata"] is not None
     assert assistant_msgs[0]["metadata"]["rag"]["calls"][0]["tool_name"] == tool_name
-    assert assistant_msgs[0]["metadata"]["rag"]["calls"][0]["mode"] == mode
-
-
-@pytest.mark.asyncio
-async def test_smoke_scenario_3_generate_report_no_retrieve(client):
-    """Report request: LLM calls generate_report directly, no retrieve tool involved."""
-    list_id = await _create_list(client, "Smoke 3")
-
-    report_result = {"artifact_id": "art-123", "job_id": "job-456", "name": "brief", "type": "brief"}
-
-    async def fake_stream(messages, cfg, tools=None, execute_tool_fn=None, system=None, llm_max_tokens=2048, **kwargs):
-        yield StreamEvent(type=SSE_EVENT_DELTA, content="Let me generate a brief for you.")
-        result = await execute_tool_fn("generate_report", {"type": "brief", "prompt": "summarize the videos"})
-        yield StreamEvent(type="tool_result", content=json.dumps({"name": "generate_report", "result": result}))
-        yield StreamEvent(type=SSE_EVENT_DONE)
-
-    with patch("bibilab.routers.chat.stream_with_tools", fake_stream):
-        with patch("bibilab.routers.chat.execute_tool", new_callable=AsyncMock) as mock_exec:
-            mock_exec.return_value = report_result
-            resp = await client.post(f"/lists/{list_id}/chat", json={"message": "make a brief summarizing all videos"})
-
-    assert resp.status_code == 200
-    events = _parse_sse(resp.text)
-    types = [e["type"] for e in events]
-
-    assert SSE_EVENT_TOOL_RESULT in types
-    tool_results = [e for e in events if e["type"] == SSE_EVENT_TOOL_RESULT]
-    report_events = [tr for tr in tool_results if tr.get("name") == "generate_report"]
-    retrieve_events = [tr for tr in tool_results if tr.get("name") == "retrieve"]
-    assert len(report_events) >= 1, "generate_report tool_result must be present"
-    assert len(retrieve_events) == 0, "generate_report should NOT trigger retrieve"
-
-    assert report_events[0]["result"]["artifact_id"] == "art-123"
-    assert report_events[0]["result"]["type"] == "brief"
-    assert SSE_EVENT_DELTA in types
-    assert SSE_EVENT_DONE in types
-
-
-@pytest.mark.asyncio
-async def test_query_list_metadata_in_loopback_tools():
-    from bibilab.routers.chat import LOOPBACK_TOOLS
-
-    assert "query_list_metadata" in LOOPBACK_TOOLS
-
-
-@pytest.mark.asyncio
-async def test_query_list_metadata_tool_registered_for_chat(client):
-    """Behavioral: the chat endpoint must pass QUERY_LIST_METADATA_TOOL to stream_llm."""
-    from bibilab.pipeline.chat_tools import (
-        GENERATE_REPORT_TOOL,
-        QUERY_LIST_METADATA_TOOL,
-        RETRIEVE_SCOPED_TOOL,
-        RETRIEVE_TOOL,
-        SURVEY_TOOL,
-    )
-    from bibilab.routers.chat import SSE_EVENT_DELTA, SSE_EVENT_DONE
-
-    captured_tools = None
-
-    async def fake_stream_llm(messages, cfg, tools=None, system=None, llm_max_tokens=None, **kwargs):
-        nonlocal captured_tools
-        captured_tools = tools
-        # Yield one delta so the loop doesn't hang waiting for done
-        yield type("StreamEvent", (), {"type": SSE_EVENT_DELTA, "content": "hi"})()
-        yield type("StreamEvent", (), {"type": SSE_EVENT_DONE})()
-
-    list_id = (await client.post("/lists", json={"name": "Test"})).json()["id"]
-
-    with patch("bibilab.routers.chat.stream_llm", fake_stream_llm):
-        resp = await client.post(f"/lists/{list_id}/chat", json={"message": "hi"})
-
-    assert resp.status_code == 200
-    assert captured_tools is not None, "stream_llm was never called"
-    tool_names = {t.name for t in captured_tools}
-    assert tool_names == {
-        RETRIEVE_TOOL.name,
-        SURVEY_TOOL.name,
-        RETRIEVE_SCOPED_TOOL.name,
-        QUERY_LIST_METADATA_TOOL.name,
-        GENERATE_REPORT_TOOL.name,
-    }
-
-
-def test_grounding_prompt_routes_counts_to_metadata_tool():
-    from bibilab.routers.chat import build_grounding_prompt
-
-    prompt = build_grounding_prompt(response_language="en")
-    # The old phrasing ("counts across sources" → retrieve) must be gone.
-    assert "counts across sources" not in prompt
-    # New routing must mention the metadata tool by name for the LLM.
-    assert "query_list_metadata" in prompt
 
 
 @pytest.mark.asyncio
@@ -565,122 +437,6 @@ async def test_chat_sse_multi_retrieve_no_crash(client):
 
 
 @pytest.mark.asyncio
-async def test_retrieve_filtered_after_first_use(client):
-    """After retrieve runs in iteration 1, iteration 2's tools list excludes retrieve."""
-    from bibilab.pipeline.chat_tools import (
-        GENERATE_REPORT_TOOL,
-        QUERY_LIST_METADATA_TOOL,
-        RETRIEVE_TOOL,
-    )
-
-    list_id = (await client.post("/lists", json={"name": "T"})).json()["id"]
-
-    captured_tools_per_iteration: list[list[str]] = []
-    iteration_count = 0
-
-    async def fake_stream_llm(messages, cfg, tools=None, system=None, llm_max_tokens=None, **kwargs):
-        nonlocal iteration_count
-        iteration_count += 1
-        captured_tools_per_iteration.append([t.name for t in (tools or [])])
-        if iteration_count == 1:
-            yield StreamEvent(
-                type="tool_call",
-                tool_call=ToolCall(id="tc1", name="retrieve", arguments={"query": "x"}),
-            )
-            yield StreamEvent(type="done")
-        else:
-            yield StreamEvent(type="delta", content="answer")
-            yield StreamEvent(type="done")
-
-    async def fake_execute_tool(**kwargs):
-        return {
-            "query": kwargs.get("arguments", {}).get("query", ""),
-            "tool_name": "retrieve",
-            "mode": "narrow",
-            "candidates_evaluated": 0,
-            "sources_with_hits": 0,
-            "sources_total": 1,
-            "source_coverage": [],
-            "_chunks": "",
-            "_turn_indices": [],
-        }
-
-    with (
-        patch("bibilab.routers.chat.stream_llm", fake_stream_llm),
-        patch("bibilab.routers.chat.execute_tool", fake_execute_tool),
-    ):
-        resp = await client.post(f"/lists/{list_id}/chat", json={"message": "q"})
-
-    assert resp.status_code == 200
-    assert iteration_count == 2
-    assert RETRIEVE_TOOL.name in captured_tools_per_iteration[0]
-    assert RETRIEVE_TOOL.name not in captured_tools_per_iteration[1]
-    # Other tools remain available
-    assert QUERY_LIST_METADATA_TOOL.name in captured_tools_per_iteration[1]
-    assert GENERATE_REPORT_TOOL.name in captured_tools_per_iteration[1]
-
-
-@pytest.mark.asyncio
-async def test_three_tool_sequential_guard_survey_blocks_all(client):
-    """After survey runs in iter 1, iter 2 excludes retrieve / survey / retrieve_scoped."""
-    from bibilab.pipeline.chat_tools import (
-        GENERATE_REPORT_TOOL,
-        QUERY_LIST_METADATA_TOOL,
-        RETRIEVE_SCOPED_TOOL,
-        RETRIEVE_TOOL,
-        SURVEY_TOOL,
-    )
-
-    list_id = (await client.post("/lists", json={"name": "T"})).json()["id"]
-
-    captured_tools_per_iteration: list[list[str]] = []
-    iteration_count = 0
-
-    async def fake_stream_llm(messages, cfg, tools=None, system=None, llm_max_tokens=None, **kwargs):
-        nonlocal iteration_count
-        iteration_count += 1
-        captured_tools_per_iteration.append([t.name for t in (tools or [])])
-        if iteration_count == 1:
-            yield StreamEvent(
-                type="tool_call",
-                tool_call=ToolCall(id="tc1", name="survey", arguments={"query": "x"}),
-            )
-            yield StreamEvent(type="done")
-        else:
-            yield StreamEvent(type="delta", content="answer")
-            yield StreamEvent(type="done")
-
-    async def fake_execute_tool(**kwargs):
-        return {
-            "query": kwargs.get("arguments", {}).get("query", ""),
-            "tool_name": "survey",
-            "mode": "survey",
-            "candidates_evaluated": 0,
-            "sources_with_hits": 0,
-            "sources_total": 1,
-            "source_coverage": [],
-            "_chunks": "",
-            "_turn_indices": [],
-        }
-
-    with (
-        patch("bibilab.routers.chat.stream_llm", fake_stream_llm),
-        patch("bibilab.routers.chat.execute_tool", fake_execute_tool),
-    ):
-        resp = await client.post(f"/lists/{list_id}/chat", json={"message": "q"})
-
-    assert resp.status_code == 200
-    assert iteration_count == 2
-    assert SURVEY_TOOL.name in captured_tools_per_iteration[0]
-    assert RETRIEVE_TOOL.name not in captured_tools_per_iteration[1]
-    assert SURVEY_TOOL.name not in captured_tools_per_iteration[1]
-    assert RETRIEVE_SCOPED_TOOL.name not in captured_tools_per_iteration[1]
-    # Non-retrieve tools remain available
-    assert QUERY_LIST_METADATA_TOOL.name in captured_tools_per_iteration[1]
-    assert GENERATE_REPORT_TOOL.name in captured_tools_per_iteration[1]
-
-
-@pytest.mark.asyncio
 async def test_pure_ack_no_retrieve_called(client):
     """
     User sends '嗯' — LLM yields text directly, no tool_call. trivial_ack_note
@@ -711,74 +467,10 @@ async def test_pure_ack_no_retrieve_called(client):
 
 
 @pytest.mark.asyncio
-async def test_metadata_then_retrieve_allowed(client):
-    """query_list_metadata in iteration 1 must NOT block retrieve in iteration 2."""
-    from bibilab.pipeline.chat_tools import (
-        QUERY_LIST_METADATA_TOOL,
-        RETRIEVE_TOOL,
-    )
-
-    list_id = (await client.post("/lists", json={"name": "T"})).json()["id"]
-
-    captured_tools_per_iteration: list[list[str]] = []
-    iteration_count = 0
-
-    async def fake_stream_llm(messages, cfg, tools=None, system=None, llm_max_tokens=None, **kwargs):
-        nonlocal iteration_count
-        iteration_count += 1
-        captured_tools_per_iteration.append([t.name for t in (tools or [])])
-        if iteration_count == 1:
-            yield StreamEvent(
-                type="tool_call",
-                tool_call=ToolCall(id="tc1", name="query_list_metadata", arguments={"query_type": "count"}),
-            )
-            yield StreamEvent(type="done")
-        elif iteration_count == 2:
-            yield StreamEvent(
-                type="tool_call",
-                tool_call=ToolCall(id="tc2", name="retrieve", arguments={"query": "x"}),
-            )
-            yield StreamEvent(type="done")
-        else:
-            yield StreamEvent(type="delta", content="answer")
-            yield StreamEvent(type="done")
-
-    async def fake_execute_tool(**kwargs):
-        name = kwargs.get("name", "")
-        args = kwargs.get("arguments", {})
-        if name == "query_list_metadata":
-            return {"count": 8}
-        return {
-            "query": args.get("query", ""),
-            "tool_name": "retrieve",
-            "mode": "narrow",
-            "candidates_evaluated": 0,
-            "sources_with_hits": 0,
-            "sources_total": 1,
-            "source_coverage": [],
-            "_chunks": "",
-            "_turn_indices": [],
-        }
-
-    with (
-        patch("bibilab.routers.chat.stream_llm", fake_stream_llm),
-        patch("bibilab.routers.chat.execute_tool", fake_execute_tool),
-    ):
-        resp = await client.post(f"/lists/{list_id}/chat", json={"message": "q"})
-
-    assert resp.status_code == 200
-    assert iteration_count == 3
-    # Iteration 1: all tools available including retrieve
-    assert RETRIEVE_TOOL.name in captured_tools_per_iteration[0]
-    assert QUERY_LIST_METADATA_TOOL.name in captured_tools_per_iteration[0]
-    # Iteration 2: retrieve is still available — metadata didn't consume the allowance
-    assert RETRIEVE_TOOL.name in captured_tools_per_iteration[1]
-    assert "answer" in resp.text
-
-
-@pytest.mark.asyncio
 async def test_deltas_streamed_immediately_during_tool_iteration(client):
     """Deltas from a tool iteration reach the client immediately (not buffered until stream end)."""
+    from bibilab.pipeline.chat_tools import FIND_PASSAGES_TOOL
+
     list_id = (await client.post("/lists", json={"name": "T"})).json()["id"]
     iteration_count = 0
 
@@ -789,7 +481,7 @@ async def test_deltas_streamed_immediately_during_tool_iteration(client):
             yield StreamEvent(type="delta", content="Let me look that up again.")
             yield StreamEvent(
                 type="tool_call",
-                tool_call=ToolCall(id="tc1", name="retrieve", arguments={"query": "x"}),
+                tool_call=ToolCall(id="tc1", name=FIND_PASSAGES_TOOL.name, arguments={"query": "x"}),
             )
             yield StreamEvent(type="done")
         else:
@@ -800,8 +492,7 @@ async def test_deltas_streamed_immediately_during_tool_iteration(client):
         args = kwargs.get("arguments", {})
         return {
             "query": args.get("query", ""),
-            "tool_name": "retrieve",
-            "mode": "narrow",
+            "tool_name": FIND_PASSAGES_TOOL.name,
             "candidates_evaluated": 0,
             "sources_with_hits": 0,
             "sources_total": 1,
@@ -877,13 +568,14 @@ async def test_chat_sse_hallucinated_index_emitted_as_text(client, caplog):
 
 @pytest.mark.asyncio
 async def test_run_chat_turn_persists_tool_blocks(monkeypatch, tmp_path):
-    """When the producer runs a retrieve tool, tool_blocks must be persisted via update_message_content."""
+    """When the producer runs a find_passages tool, tool_blocks must be persisted via update_message_content."""
     from bibilab.config import AIConfig, BackendConfig, BibilabConfig
     from bibilab.pipeline._shared import StreamEvent, ToolCall
+    from bibilab.pipeline.chat_tools import FIND_PASSAGES_TOOL
     from bibilab.routers import chat as chat_module
 
     call_count = 0
-    retrieve_tc = ToolCall(id="c1", name="retrieve", arguments={"query": "x"})
+    retrieve_tc = ToolCall(id="c1", name=FIND_PASSAGES_TOOL.name, arguments={"query": "x"})
 
     async def fake_stream_llm(messages, cfg, tools=None, system=None, llm_max_tokens=2048):
         nonlocal call_count
@@ -897,8 +589,7 @@ async def test_run_chat_turn_persists_tool_blocks(monkeypatch, tmp_path):
     async def fake_execute(tool_name, arguments, **kwargs):
         return {
             "query": "x",
-            "tool_name": "retrieve",
-            "mode": "narrow",
+            "tool_name": FIND_PASSAGES_TOOL.name,
             "candidates_evaluated": 1,
             "sources_with_hits": 1,
             "sources_total": 1,
@@ -958,7 +649,7 @@ async def test_run_chat_turn_persists_tool_blocks(monkeypatch, tmp_path):
 
     assert captured.get("tool_blocks") is not None
     assert len(captured["tool_blocks"]) == 1
-    assert captured["tool_blocks"][0]["name"] == "retrieve"
+    assert captured["tool_blocks"][0]["name"] == FIND_PASSAGES_TOOL.name
     assert captured["tool_blocks"][0]["result"]["chunks"][0]["content"] == "verbatim"
 
 
@@ -1015,7 +706,9 @@ async def test_system_message_is_stable_across_turns(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_tool_call_start_emitted_before_tool_result(client):
-    """Each retrieve tool_call must emit a tool_call_start SSE event before its tool_result."""
+    """Each find_passages tool_call must emit a tool_call_start SSE event before its tool_result."""
+    from bibilab.pipeline.chat_tools import FIND_PASSAGES_TOOL
+
     list_id = (await client.post("/lists", json={"name": "T"})).json()["id"]
     iteration_count = 0
 
@@ -1025,7 +718,7 @@ async def test_tool_call_start_emitted_before_tool_result(client):
         if iteration_count == 1:
             yield StreamEvent(
                 type="tool_call",
-                tool_call=ToolCall(id="tc1", name="retrieve", arguments={"query": "noodles"}),
+                tool_call=ToolCall(id="tc1", name=FIND_PASSAGES_TOOL.name, arguments={"query": "noodles"}),
             )
             yield StreamEvent(type="done")
         else:
@@ -1036,8 +729,7 @@ async def test_tool_call_start_emitted_before_tool_result(client):
         args = kwargs.get("arguments", {})
         return {
             "query": args.get("query", ""),
-            "tool_name": "retrieve",
-            "mode": "narrow",
+            "tool_name": FIND_PASSAGES_TOOL.name,
             "candidates_evaluated": 5,
             "sources_with_hits": 2,
             "sources_total": 3,
@@ -1059,14 +751,16 @@ async def test_tool_call_start_emitted_before_tool_result(client):
     assert start_idx >= 0, "tool_call_start event missing"
     assert result_idx >= 0, "tool_result event missing"
     assert start_idx < result_idx, "tool_call_start must precede tool_result"
-    assert '"name": "retrieve"' in body
+    assert f'"name": "{FIND_PASSAGES_TOOL.name}"' in body
     assert '"query": "noodles"' in body
-    assert '"tool_name": "retrieve", "mode": "narrow"' in body
+    assert f'"tool_name": "{FIND_PASSAGES_TOOL.name}"' in body
 
 
 @pytest.mark.asyncio
 async def test_rag_metadata_persists_calls_list(client):
-    """metadata.rag.calls must contain one entry per retrieve call in the turn."""
+    """metadata.rag.calls must contain one entry per find_passages call in the turn."""
+    from bibilab.pipeline.chat_tools import FIND_PASSAGES_TOOL
+
     list_id = (await client.post("/lists", json={"name": "T"})).json()["id"]
     iteration_count = 0
 
@@ -1076,11 +770,11 @@ async def test_rag_metadata_persists_calls_list(client):
         if iteration_count == 1:
             yield StreamEvent(
                 type="tool_call",
-                tool_call=ToolCall(id="tc1", name="retrieve", arguments={"query": "A"}),
+                tool_call=ToolCall(id="tc1", name=FIND_PASSAGES_TOOL.name, arguments={"query": "A"}),
             )
             yield StreamEvent(
                 type="tool_call",
-                tool_call=ToolCall(id="tc2", name="survey", arguments={"query": "B"}),
+                tool_call=ToolCall(id="tc2", name=FIND_PASSAGES_TOOL.name, arguments={"query": "B"}),
             )
             yield StreamEvent(type="done")
         else:
@@ -1089,11 +783,9 @@ async def test_rag_metadata_persists_calls_list(client):
 
     async def fake_execute_tool(**kwargs):
         args = kwargs.get("arguments", {})
-        tool_name_val = kwargs.get("tool_name", "retrieve")
         return {
             "query": args.get("query", ""),
-            "tool_name": tool_name_val,
-            "mode": "survey" if tool_name_val == "survey" else "narrow",
+            "tool_name": FIND_PASSAGES_TOOL.name,
             "candidates_evaluated": 1,
             "sources_with_hits": 1,
             "sources_total": 5,
@@ -1117,92 +809,7 @@ async def test_rag_metadata_persists_calls_list(client):
     assert len(rag["calls"]) == 2
     queries = sorted(c["query"] for c in rag["calls"])
     assert queries == ["A", "B"]
-    modes_sorted = sorted(c["mode"] for c in rag["calls"])
-    assert modes_sorted == ["narrow", "survey"]
-
-
-# AC1+AC2: tool_name/mode and context[] in persisted metadata
-@pytest.mark.asyncio
-async def test_rag_metadata_persists_mode_and_context(client, monkeypatch):
-    """metadata.rag.calls[i] must have tool_name, mode, and non-empty context[]."""
-    from bibilab.pipeline import chat_tools
-
-    iteration_count = 0
-
-    async def fake_stream_llm(messages, cfg, tools=None, system=None, llm_max_tokens=None, **kwargs):
-        nonlocal iteration_count
-        iteration_count += 1
-        if iteration_count == 1:
-            yield StreamEvent(
-                type="tool_call",
-                tool_call=ToolCall(id="tc1", name="retrieve", arguments={"query": "test"}),
-            )
-            yield StreamEvent(type="done")
-        else:
-            yield StreamEvent(type="delta", content="Answer [1]")
-            yield StreamEvent(type="done")
-
-    async def fake_execute_tool(tool_name, arguments, **kwargs):
-        # Simulate execute_retrieve populating the citation registry via execute_tool.
-        # The registry is passed via kwargs["registry"] from stream_with_tools.
-        reg = kwargs.get("registry")
-        if reg is not None:
-            # Simulate chunk registration with the required fields.
-            entry = chat_tools.CitationRegistryEntry(
-                index=1,
-                source_id="s1",
-                title="Video s1",
-            )
-            entry.timestamp_start = 120.0
-            entry.timestamp_end = 145.0
-            entry.rerank_score = 0.95
-            entry.preview = "test chunk content"
-            entry.chunk_ids.add("v1_120_145")
-            reg["s1"] = entry
-        return {
-            "query": arguments.get("query", ""),
-            "tool_name": tool_name,
-            "mode": "narrow",
-            "candidates_evaluated": 2,
-            "sources_with_hits": 1,
-            "sources_total": 1,
-            "source_coverage": [
-                {"source_id": "s1", "title": "Video s1"},
-            ],
-        }
-
-    with (
-        patch("bibilab.routers.chat.stream_llm", fake_stream_llm),
-        patch("bibilab.routers.chat.execute_tool", fake_execute_tool),
-    ):
-        list_id = (await client.post("/lists", json={"name": "CtxTest"})).json()["id"]
-        resp = await client.post(f"/lists/{list_id}/chat", json={"message": "q"})
-
-    assert resp.status_code == 200
-    conv = (await client.get(f"/lists/{list_id}/conversation")).json()
-    assistant_msgs = [m for m in conv["messages"] if m["role"] == "assistant"]
-    assert assistant_msgs, "no assistant message"
-    rag = assistant_msgs[-1]["metadata"]["rag"]
-    assert len(rag["calls"]) == 1
-    call = rag["calls"][0]
-
-    # AC1
-    assert call["tool_name"] == "retrieve", f"expected retrieve, got {call.get('tool_name')}"
-    assert call["mode"] == "narrow", f"expected narrow, got {call.get('mode')}"
-
-    # AC2: context is non-empty array with required fields
-    assert "context" in call, "context field must be present"
-    assert len(call["context"]) > 0, "context must be non-empty"
-    ctx = call["context"][0]
-    assert "chunk_id" in ctx, "chunk_id required"
-    assert "timestamp_start" in ctx, "timestamp_start required"
-    assert "timestamp_end" in ctx, "timestamp_end required"
-    assert "rerank_score" in ctx, "rerank_score required"
-    assert "preview" in ctx, "preview required"
-    assert isinstance(ctx["timestamp_start"], (int, float))
-    assert isinstance(ctx["timestamp_end"], (int, float))
-    assert isinstance(ctx["rerank_score"], (int, float))
-    assert isinstance(ctx["preview"], str)
+    assert all(c["tool_name"] == FIND_PASSAGES_TOOL.name for c in rag["calls"])
 
 
 @pytest.mark.asyncio
@@ -1449,7 +1056,7 @@ async def test_run_chat_turn_reseeds_citation_registry_from_history_tool_blocks(
             "tool_blocks": [
                 {
                     "tool_use_id": "toolu_a",
-                    "name": "retrieve",
+                    "name": "find_passages",
                     "arguments": {"query": "x"},
                     "result": {
                         "chunks": [
@@ -1506,7 +1113,9 @@ async def test_run_chat_turn_reseeds_citation_registry_from_history_tool_blocks(
 
 @pytest.mark.asyncio
 async def test_rag_call_carries_facet_scope(client):
-    """#309: facet_scope from execute_retrieve must survive the router copy into metadata.rag."""
+    """#309: facet_scope from execute_find_passages must survive the router copy into metadata.rag."""
+    from bibilab.pipeline.chat_tools import FIND_PASSAGES_TOOL
+
     list_id = (await client.post("/lists", json={"name": "FacetTel"})).json()["id"]
     iteration_count = 0
 
@@ -1518,8 +1127,8 @@ async def test_rag_call_carries_facet_scope(client):
                 type="tool_call",
                 tool_call=ToolCall(
                     id="tc1",
-                    name="retrieve",
-                    arguments={"query": "第八集", "tool_name": "retrieve", "mode": "narrow", "sequence_number": 8},
+                    name=FIND_PASSAGES_TOOL.name,
+                    arguments={"query": "第八集", "sequence_number": 8},
                 ),
             )
             yield StreamEvent(type="done")
@@ -1531,8 +1140,7 @@ async def test_rag_call_carries_facet_scope(client):
         args = kwargs.get("arguments", {})
         return {
             "query": args.get("query", ""),
-            "tool_name": "retrieve",
-            "mode": "narrow",
+            "tool_name": FIND_PASSAGES_TOOL.name,
             "candidates_evaluated": 1,
             "sources_with_hits": 1,
             "sources_total": 5,
@@ -1567,3 +1175,45 @@ async def test_rag_call_carries_facet_scope(client):
         "matched_count": 2,
         "no_match": False,
     }
+
+
+@pytest.mark.asyncio
+async def test_rag_metadata_includes_read_source_call(client):
+    """#371: read_source calls must appear in metadata.rag.calls alongside find_passages calls."""
+    from bibilab.pipeline.chat_tools import READ_SOURCE_TOOL
+
+    list_id = await _create_list(client, "ReadSourceLedger")
+
+    async def fake_stream(messages, cfg, tools=None, execute_tool_fn=None, system=None, llm_max_tokens=2048, **kwargs):
+        yield StreamEvent(
+            type="tool_call",
+            tool_call=ToolCall(id="c1", name=READ_SOURCE_TOOL.name, arguments={"source_id": "s1"}),
+        )
+        result = await execute_tool_fn(READ_SOURCE_TOOL.name, {"source_id": "s1"})
+        tool_result_data = {"name": READ_SOURCE_TOOL.name, "result": _client_tool_result(result)}
+        yield StreamEvent(type="tool_result", content=json.dumps(tool_result_data))
+        yield StreamEvent(type=SSE_EVENT_DELTA, content="ok")
+        yield StreamEvent(type=SSE_EVENT_DONE)
+
+    async def fake_execute_tool(**kwargs):
+        return {
+            "_chunks": "transcript narrative text",
+            "source_id": "s1",
+        }
+
+    with (
+        patch("bibilab.routers.chat.stream_with_tools", fake_stream),
+        patch("bibilab.routers.chat.execute_tool", fake_execute_tool),
+    ):
+        resp = await client.post(f"/lists/{list_id}/chat", json={"message": "what is in source s1?"})
+
+    assert resp.status_code == 200
+
+    conv = (await client.get(f"/lists/{list_id}/conversation")).json()
+    assistant_msgs = [m for m in conv["messages"] if m["role"] == "assistant"]
+    assert assistant_msgs, "no assistant message persisted"
+    rag = assistant_msgs[-1]["metadata"]["rag"]
+    assert len(rag["calls"]) == 1
+    call = rag["calls"][0]
+    assert call["tool_name"] == READ_SOURCE_TOOL.name
+    assert call["source_id"] == "s1"
