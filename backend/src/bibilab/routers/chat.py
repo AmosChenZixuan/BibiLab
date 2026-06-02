@@ -273,25 +273,29 @@ async def stream_with_tools(
     async def _execute_with_registry(name: str, args: dict) -> dict:
         return await execute_tool_fn(name, args, registry=registry)
 
+    def _record_snapshot(tools_for_llm: list[ToolDefinition]) -> None:
+        if debug_trace_sink is None:
+            return
+        try:
+            debug_trace_sink.append(
+                {
+                    "messages": [dict(m) for m in messages],
+                    "tools": [
+                        {"name": t.name, "description": t.description, "parameters": t.parameters}
+                        for t in tools_for_llm
+                    ],
+                }
+            )
+        except Exception:
+            logger.exception("debug_trace_sink_append_failed iteration=%d", iteration)
+
     while True:
         iteration += 1
         tool_calls: list[ToolCall] = []
         lookup = _build_lookup()
         is_synthesis_turn = iteration > MAX_TOOL_ITERATIONS
         active_tools = [] if is_synthesis_turn else list(tools)
-        if debug_trace_sink is not None:
-            try:
-                debug_trace_sink.append(
-                    {
-                        "messages": [dict(m) for m in messages],
-                        "tools": [
-                            {"name": t.name, "description": t.description, "parameters": t.parameters}
-                            for t in active_tools
-                        ],
-                    }
-                )
-            except Exception:
-                logger.exception("debug_trace_sink_append_failed iteration=%d", iteration)
+        _record_snapshot(active_tools)
         async for event in stream_llm(messages, cfg, active_tools, system=system, llm_max_tokens=llm_max_tokens):
             if event.type == "tool_call":
                 tool_calls.append(event.tool_call)
@@ -327,16 +331,7 @@ async def stream_with_tools(
                         ),
                     }
                 )
-                if debug_trace_sink is not None:
-                    try:
-                        debug_trace_sink.append(
-                            {
-                                "messages": [dict(m) for m in messages],
-                                "tools": [],
-                            }
-                        )
-                    except Exception:
-                        logger.exception("debug_trace_sink_append_failed forced_synth")
+                _record_snapshot([])
                 async for event in stream_llm(messages, cfg, [], system=system, llm_max_tokens=llm_max_tokens):
                     if event.type == "delta" and event.content:
                         parsed_events, parse_buffer = parse_delta(event.content, parse_buffer, lookup)
