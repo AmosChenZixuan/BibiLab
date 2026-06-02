@@ -185,3 +185,167 @@ async def test_stream_with_tools_synthesis_turn_records_empty_tools():
     # Synthesis (iter MAX+1) and forced synth both have no tools
     assert sink[MAX_TOOL_ITERATIONS]["tools"] == []
     assert sink[MAX_TOOL_ITERATIONS + 1]["tools"] == []
+
+
+@pytest.mark.asyncio
+async def test_run_chat_turn_dumps_trace_when_flag_enabled(monkeypatch, tmp_path: Path):
+    """With rag.debug_prompts=True, a JSON file appears at ~/.bibilab/debug/{message_id}.json."""
+    from bibilab.config import AIConfig, BackendConfig, BibilabConfig, RagConfig
+    from bibilab.pipeline._shared import StreamEvent
+    from bibilab.pipeline.chat_runs import ChatRunRegistry
+    from bibilab.routers import chat as chat_module
+
+    captured_systems: list = []
+
+    async def fake_stream_llm(messages, cfg, tools=None, system=None, llm_max_tokens=2048):
+        captured_systems.append(system)
+        yield StreamEvent(type="delta", content="Answer")
+        yield StreamEvent(type="done")
+
+    async def noop(*a, **kw):
+        return None
+
+    monkeypatch.setattr(chat_module, "stream_llm", fake_stream_llm)
+    monkeypatch.setattr(chat_module, "update_message_content", noop)
+    monkeypatch.setattr(chat_module, "set_active_stream", noop)
+    monkeypatch.setattr("bibilab.config.bibilab_home", lambda: tmp_path)
+
+    cfg = BibilabConfig(
+        ai=AIConfig(protocol="openai", model="x", api_key="k", base_url=""),
+        backend=BackendConfig(),
+        rag=RagConfig(debug_prompts=True),
+    )
+
+    registry = ChatRunRegistry()
+    msg_id = "msg-debug-on"
+    registry.register(msg_id, task=None)
+
+    await chat_module.run_chat_turn(
+        message_id=msg_id,
+        conversation_id="c1",
+        list_id="l1",
+        user_message_text="q",
+        history=[],
+        summary=None,
+        source_ids=[],
+        ui_lang="en",
+        cfg=cfg,
+        registry=registry,
+    )
+
+    dump_path = tmp_path / "debug" / f"{msg_id}.json"
+    assert dump_path.exists()
+    data = json.loads(dump_path.read_text())
+    # system captured from the actual grounding prompt (non-empty)
+    assert data["system"] and "Respond in" in data["system"]
+    # one iteration (no tool calls, direct answer)
+    assert len(data["iterations"]) == 1
+    # iteration captures the user message
+    assert data["iterations"][0]["messages"][-1] == {"role": "user", "content": "q"}
+
+
+@pytest.mark.asyncio
+async def test_run_chat_turn_no_dump_when_flag_disabled(monkeypatch, tmp_path: Path):
+    """With rag.debug_prompts=False (default), NO file is written."""
+    from bibilab.config import AIConfig, BackendConfig, BibilabConfig
+    from bibilab.pipeline._shared import StreamEvent
+    from bibilab.pipeline.chat_runs import ChatRunRegistry
+    from bibilab.routers import chat as chat_module
+
+    async def fake_stream_llm(messages, cfg, tools=None, system=None, llm_max_tokens=2048):
+        yield StreamEvent(type="delta", content="A")
+        yield StreamEvent(type="done")
+
+    async def noop(*a, **kw):
+        return None
+
+    monkeypatch.setattr(chat_module, "stream_llm", fake_stream_llm)
+    monkeypatch.setattr(chat_module, "update_message_content", noop)
+    monkeypatch.setattr(chat_module, "set_active_stream", noop)
+    monkeypatch.setattr("bibilab.config.bibilab_home", lambda: tmp_path)
+
+    cfg = BibilabConfig(
+        ai=AIConfig(protocol="openai", model="x", api_key="k", base_url=""),
+        backend=BackendConfig(),
+        # rag defaults: debug_prompts=False
+    )
+
+    registry = ChatRunRegistry()
+    msg_id = "msg-debug-off"
+    registry.register(msg_id, task=None)
+
+    await chat_module.run_chat_turn(
+        message_id=msg_id,
+        conversation_id="c1",
+        list_id="l1",
+        user_message_text="q",
+        history=[],
+        summary=None,
+        source_ids=[],
+        ui_lang="en",
+        cfg=cfg,
+        registry=registry,
+    )
+
+    debug_dir = tmp_path / "debug"
+    assert not (debug_dir / f"{msg_id}.json").exists()
+
+
+@pytest.mark.asyncio
+async def test_run_chat_turn_dump_failure_does_not_break_turn(monkeypatch, tmp_path: Path, caplog):
+    """A dump write failure (e.g. permission denied) must not propagate."""
+    from bibilab.config import AIConfig, BackendConfig, BibilabConfig, RagConfig
+    from bibilab.pipeline._shared import StreamEvent
+    from bibilab.pipeline.chat_runs import ChatRunRegistry
+    from bibilab.routers import chat as chat_module
+
+    async def fake_stream_llm(messages, cfg, tools=None, system=None, llm_max_tokens=2048):
+        yield StreamEvent(type="delta", content="A")
+        yield StreamEvent(type="done")
+
+    update_calls: list = []
+
+    async def capture_update(message_id, content, metadata, status, error=None, tool_blocks=None):
+        update_calls.append((message_id, content, status))
+
+    async def noop_set(*a, **kw):
+        return None
+
+    monkeypatch.setattr(chat_module, "stream_llm", fake_stream_llm)
+    monkeypatch.setattr(chat_module, "update_message_content", capture_update)
+    monkeypatch.setattr(chat_module, "set_active_stream", noop_set)
+
+    # bibilab_home points to a path with a blocking file at the debug/ location
+    home = tmp_path
+    (home / "debug").write_text("blocking file")
+
+    monkeypatch.setattr("bibilab.config.bibilab_home", lambda: home)
+
+    cfg = BibilabConfig(
+        ai=AIConfig(protocol="openai", model="x", api_key="k", base_url=""),
+        backend=BackendConfig(),
+        rag=RagConfig(debug_prompts=True),
+    )
+
+    registry = ChatRunRegistry()
+    msg_id = "msg-debug-fail"
+    registry.register(msg_id, task=None)
+
+    with caplog.at_level(logging.WARNING, logger="bibilab.routers.chat"):
+        await chat_module.run_chat_turn(
+            message_id=msg_id,
+            conversation_id="c1",
+            list_id="l1",
+            user_message_text="q",
+            history=[],
+            summary=None,
+            source_ids=[],
+            ui_lang="en",
+            cfg=cfg,
+            registry=registry,
+        )
+
+    # Turn succeeded: assistant message persisted with status='done'
+    assert any(call[0] == msg_id and call[2] == "done" for call in update_calls)
+    # Dump failure was logged
+    assert any("dump_prompt_trace_failed" in r.message for r in caplog.records)

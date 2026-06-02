@@ -562,6 +562,7 @@ async def run_chat_turn(
         tools = [FIND_PASSAGES_TOOL, READ_SOURCE_TOOL]
 
         tool_blocks: list[dict] = []
+        debug_trace: list[dict] = []
 
         async for event in stream_with_tools(
             messages=messages_for_llm,
@@ -572,6 +573,7 @@ async def run_chat_turn(
             llm_max_tokens=CHAT_MAX_TOKENS,
             registry=citation_registry,
             tool_block_sink=tool_blocks,
+            debug_trace_sink=debug_trace if cfg.rag.debug_prompts else None,
         ):
             payload = _serialize_event_for_buffer(event)
             if payload is not None:
@@ -705,6 +707,15 @@ async def run_chat_turn(
             final_status = "failed"
             if error_reason is None:
                 error_reason = "persistence_error"
+
+        from bibilab.config import bibilab_home
+
+        _dump_prompt_trace(
+            message_id=message_id,
+            system=system_message,
+            iterations=debug_trace,
+            debug_dir=bibilab_home() / "debug",
+        )
 
         try:
             await set_active_stream(conversation_id, None)
