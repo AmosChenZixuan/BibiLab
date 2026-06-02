@@ -41,6 +41,16 @@ class CitationRegistryEntry:
     preview: str | None = None
 
 
+def strip_internal(result: dict) -> dict:
+    """Drop `_`-prefixed internal keys (e.g. `_chunks`) from a tool result.
+
+    Internal keys are LLM-facing formatting / private metadata; they must not
+    reach the client SSE payload or the persisted tool_block. Public keys are
+    those NOT prefixed with `_`.
+    """
+    return {k: v for k, v in result.items() if not k.startswith("_")}
+
+
 def _build_source_headers(registry: dict[str, CitationRegistryEntry]) -> str:
     lines = []
     for entry in sorted(registry.values(), key=lambda e: e.index):
@@ -464,7 +474,7 @@ def build_tool_block_entry(
     read_source's narrative is 30-150K tokens and is never replayed or reseeded,
     so persisting it is pure DB bloat (spec §16.7).
     """
-    summary = {k: v for k, v in result.items() if not k.startswith("_")}
+    summary = strip_internal(result)
     if name in RETRIEVE_TOOL_NAMES:
         return {
             "tool_use_id": tool_use_id,
@@ -483,9 +493,7 @@ def build_tool_block_entry(
 async def execute_tool(
     tool_name: str,
     arguments: dict,
-    list_id: str,
     source_ids: list[str],
-    ui_lang: str,
     cfg: BibilabConfig,
     registry: dict[str, CitationRegistryEntry] | None = None,
 ) -> dict:

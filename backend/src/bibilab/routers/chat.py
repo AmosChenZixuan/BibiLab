@@ -53,6 +53,7 @@ from bibilab.pipeline.chat_tools import (
     execute_tool,
     expand_message_for_provider,
     reseed_citation_registry,
+    strip_internal,
 )
 from bibilab.pipeline.citation_parser import flush_buffer, parse_delta
 from bibilab.routers._model_gate import require_models_present
@@ -174,7 +175,7 @@ def _client_tool_result(result: dict) -> dict:
     These are never exposed over SSE. If you add a new tool whose result includes fields
     the client needs, do NOT prefix them with ``_``.
     """
-    return {k: v for k, v in result.items() if not k.startswith("_")}
+    return strip_internal(result)
 
 
 def build_grounding_prompt(response_language: str) -> str:
@@ -513,9 +514,7 @@ async def run_chat_turn(
             return await execute_tool(
                 tool_name=name,
                 arguments=args,
-                list_id=list_id,
                 source_ids=source_ids,
-                ui_lang=ui_lang,
                 cfg=cfg,
                 **kwargs,
             )

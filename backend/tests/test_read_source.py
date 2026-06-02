@@ -19,6 +19,11 @@ def _facets(mapping):  # helper to stub get_source_facets
     return _f
 
 
+class Row(dict):
+    def __getitem__(self, k):  # row["x"] and row.get("x")
+        return super().__getitem__(k)
+
+
 @pytest.mark.asyncio
 async def test_resolve_by_source_id_in_pool():
     rid, err = await _resolve_single_source(["a", "b"], source_id="a", sequence_number=None, season_number=None)
@@ -68,10 +73,6 @@ async def test_resolve_no_args_errors():
 
 @pytest.mark.asyncio
 async def test_execute_read_source_builds_narrative_and_registers_citation(monkeypatch):
-    class Row(dict):
-        def __getitem__(self, k):  # row["x"] and row.get("x")
-            return super().__getitem__(k)
-
     src = {"id": "a", "title": "Ep 5", "summary": "the duel", "duration_seconds": 80 * 60, "language": "zh"}
     segs = [
         Row({"seq": 0, "start_s": 0.0, "end_s": 2.0, "speaker": "SPK_0", "text": "hello"}),
@@ -146,3 +147,94 @@ async def test_read_source_empty_transcript_suppresses_header(monkeypatch):
     assert "Secret Heist" not in out["_chunks"]
     assert "the big robbery" not in out["_chunks"]
     assert "=====" not in out["_chunks"]
+
+
+@pytest.mark.asyncio
+async def test_execute_read_source_resolves_by_facet_then_builds_narrative(monkeypatch):
+    """Facet (sequence_number) must resolve to exactly one source, then the
+    narrative is built for that source — same body as source_id path."""
+    monkeypatch.setattr(
+        chat_tools,
+        "get_source_facets",
+        _facets({"a": {"sequence_number": 4, "season_number": 1}, "b": {"sequence_number": 5, "season_number": 1}}),
+    )
+
+    src = {"id": "a", "title": "Ep 4", "summary": "the duel", "duration_seconds": 60 * 60, "language": "zh"}
+    segs = [
+        Row({"seq": 0, "start_s": 0.0, "end_s": 2.0, "speaker": "SPK_0", "text": "hello"}),
+    ]
+
+    async def fake_get_source(sid):
+        return src
+
+    async def fake_segments(sid):
+        return segs
+
+    monkeypatch.setattr(chat_tools, "get_source", fake_get_source)
+    monkeypatch.setattr(chat_tools, "get_transcript_segments", fake_segments)
+
+    registry: dict[str, CitationRegistryEntry] = {}
+    out = await execute_read_source(
+        ["a", "b"], source_id=None, sequence_number=4, season_number=None, registry=registry
+    )
+
+    assert out["source_id"] == "a"  # resolved by facet to 'a'
+    assert "Ep 4" in out["_chunks"]  # title in body
+    assert "hello" in out["_chunks"]  # segment in body
+    assert registry["a"].index == 1  # registered with next index
+
+
+@pytest.mark.asyncio
+async def test_execute_read_source_get_source_none_branch(monkeypatch):
+    """Race or stale-resolution: get_source returns None after the resolve
+    succeeded. Must return source_id=None + LLM-facing 'not found' — never
+    raise (a raise aborts the SSE stream)."""
+    monkeypatch.setattr(
+        chat_tools,
+        "get_source_facets",
+        _facets({"a": {"sequence_number": 4, "season_number": 1}}),
+    )
+
+    async def fake_get_source(sid):
+        return None  # source was deleted between resolve and read
+
+    monkeypatch.setattr(chat_tools, "get_source", fake_get_source)
+
+    out = await execute_read_source(["a"], source_id=None, sequence_number=4, season_number=None, registry={})
+
+    assert out["source_id"] is None
+    assert "not found" in out["_chunks"].lower()
+
+
+@pytest.mark.asyncio
+async def test_read_source_narrative_has_no_per_chunk_fence(monkeypatch):
+    """read_source is a continuous transcript, NOT a fenced multi-source
+    response. The non-empty body must NOT contain:
+      - any `===== Source [` line (the find_passages per-source fence)
+      - any `[N]:` per-chunk citation anchor (find_passages per-chunk anchor)
+    Both belong to find_passages; read_source is a single-source read."""
+    src = {"id": "a", "title": "Ep 4", "summary": "the duel", "duration_seconds": 60 * 60, "language": "zh"}
+    segs = [
+        Row({"seq": 0, "start_s": 0.0, "end_s": 2.0, "speaker": "SPK_0", "text": "first line"}),
+        Row({"seq": 1, "start_s": 10.0, "end_s": 12.0, "speaker": "SPK_1", "text": "second line"}),
+    ]
+
+    async def fake_get_source(sid):
+        return src
+
+    async def fake_segments(sid):
+        return segs
+
+    monkeypatch.setattr(chat_tools, "get_source", fake_get_source)
+    monkeypatch.setattr(chat_tools, "get_transcript_segments", fake_segments)
+
+    out = await execute_read_source(["a"], source_id="a", sequence_number=None, season_number=None, registry={})
+    body = out["_chunks"]
+
+    # Continuous transcript fragments ARE present.
+    assert "first line" in body and "second line" in body
+
+    # Single ===== Source [N] fence (read_source is single-source). find_passages
+    # would emit one ===== Source [N] header per hit source — multiple sources
+    # → multiple fences. This pins the continuous-transcript contract.
+    assert body.count("===== Source [") == 1, body

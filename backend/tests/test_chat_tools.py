@@ -82,9 +82,7 @@ class TestExecuteTool:
             result = await execute_tool(
                 tool_name="read_source",
                 arguments={"sequence_number": 5},
-                list_id="list-1",
                 source_ids=["a", "b"],
-                ui_lang="en",
                 cfg=cfg,
             )
             mock_exec.assert_awaited_once()
@@ -103,9 +101,7 @@ class TestExecuteTool:
             await execute_tool(
                 tool_name="find_passages",
                 arguments={"query": "q"},
-                list_id="l",
                 source_ids=["a"],
-                ui_lang="en",
                 cfg=cfg,
             )
             mock_exec.assert_awaited_once()
@@ -125,9 +121,7 @@ class TestExecuteTool:
             await execute_tool(
                 tool_name="generate_report",  # retired
                 arguments={},
-                list_id="list-1",
                 source_ids=[],
-                ui_lang="en",
                 cfg=cfg,
             )
 
@@ -990,9 +984,7 @@ class TestExecuteToolFacetArgs:
         await chat_tools.execute_tool(
             tool_name="find_passages",
             arguments={"query": "第八集", "sequence_number": "8"},
-            list_id="l1",
             source_ids=["a"],
-            ui_lang="zh",
             cfg=self._cfg(),
         )
         assert seen["sequence_number"] == 8
@@ -1013,9 +1005,7 @@ class TestExecuteToolFacetArgs:
         await chat_tools.execute_tool(
             tool_name="find_passages",
             arguments={"query": "q", "sequence_number": "eight"},
-            list_id="l1",
             source_ids=["a"],
-            ui_lang="zh",
             cfg=self._cfg(),
         )
         assert seen["sequence_number"] is None
