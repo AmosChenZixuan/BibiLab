@@ -244,6 +244,9 @@ async def execute_read_source(
     source = await get_source(resolved)
     if source is None:
         return {"_chunks": f"source {resolved!r} not found.", "source_id": None}
+    # aiosqlite.Row supports [] but not .get; the narrative builder wants the
+    # latter. Convert once at the boundary rather than wrapping every lookup.
+    source = {k: source[k] for k in source.keys()}
 
     segments = await get_transcript_segments(resolved)
 
