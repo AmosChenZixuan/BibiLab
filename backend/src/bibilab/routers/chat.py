@@ -634,14 +634,15 @@ async def run_chat_turn(
 
             for rs in read_source_calls:
                 entry = citation_registry.get(rs["source_id"])
-                rs["source_title"] = entry.title if entry else ""
+                title = entry.title if entry else ""
+                rs["source_title"] = title
                 rs["context"] = (
                     [
                         {
                             "chunk_id": "",
                             "citation_index": entry.index,
                             "source_id": rs["source_id"],
-                            "source_title": entry.title or "",
+                            "source_title": title or "",
                             "timestamp_start": 0.0,
                             "timestamp_end": 0.0,
                             "rerank_score": 0.0,

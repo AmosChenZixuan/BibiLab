@@ -1182,7 +1182,7 @@ async def test_rag_metadata_includes_read_source_call(client):
     """#371: read_source calls must appear in metadata.rag.calls alongside find_passages calls."""
     from bibilab.pipeline.chat_tools import READ_SOURCE_TOOL
 
-    list_id = (await client.post("/lists", json={"name": "ReadSourceLedger"})).json()["id"]
+    list_id = await _create_list(client, "ReadSourceLedger")
 
     async def fake_stream(messages, cfg, tools=None, execute_tool_fn=None, system=None, llm_max_tokens=2048, **kwargs):
         yield StreamEvent(

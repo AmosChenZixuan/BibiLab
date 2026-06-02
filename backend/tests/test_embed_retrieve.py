@@ -127,7 +127,7 @@ async def test_retrieve_falls_back_to_hybrid_order_when_rerank_raises(monkeypatc
             score=10.0 - i,
             sequence_index=i,
         )
-        for i in range(12)
+        for i in range(8)
     ]
 
     async def fake_hybrid(*a, **k):  # noqa: ANN001
