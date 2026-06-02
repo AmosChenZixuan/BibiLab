@@ -255,6 +255,7 @@ async def stream_with_tools(
     llm_max_tokens: int = CHAT_MAX_TOKENS,
     registry: dict[str, CitationRegistryEntry] | None = None,
     tool_block_sink: list[dict] | None = None,
+    debug_trace_sink: list[dict] | None = None,
 ) -> AsyncGenerator[StreamEvent, None]:
     if registry is None:
         registry = {}
@@ -278,6 +279,15 @@ async def stream_with_tools(
         lookup = _build_lookup()
         is_synthesis_turn = iteration > MAX_TOOL_ITERATIONS
         active_tools = [] if is_synthesis_turn else list(tools)
+        if debug_trace_sink is not None:
+            debug_trace_sink.append(
+                {
+                    "messages": [dict(m) for m in messages],
+                    "tools": [
+                        {"name": t.name, "description": t.description, "parameters": t.parameters} for t in active_tools
+                    ],
+                }
+            )
         async for event in stream_llm(messages, cfg, active_tools, system=system, llm_max_tokens=llm_max_tokens):
             if event.type == "tool_call":
                 tool_calls.append(event.tool_call)
@@ -313,6 +323,13 @@ async def stream_with_tools(
                         ),
                     }
                 )
+                if debug_trace_sink is not None:
+                    debug_trace_sink.append(
+                        {
+                            "messages": [dict(m) for m in messages],
+                            "tools": [],
+                        }
+                    )
                 async for event in stream_llm(messages, cfg, [], system=system, llm_max_tokens=llm_max_tokens):
                     if event.type == "delta" and event.content:
                         parsed_events, parse_buffer = parse_delta(event.content, parse_buffer, lookup)

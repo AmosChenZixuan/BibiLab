@@ -3,6 +3,9 @@
 import json
 import logging
 from pathlib import Path
+from unittest.mock import patch
+
+import pytest
 
 from bibilab.config import RagConfig
 
@@ -77,3 +80,108 @@ def test_dump_prompt_trace_swallows_write_errors(tmp_path: Path, caplog):
     # No exception propagated. The blocking file is untouched.
     assert bad.read_text() == "not a dir"
     assert any("dump_prompt_trace_failed" in r.message for r in caplog.records)
+
+
+@pytest.mark.asyncio
+async def test_stream_with_tools_records_per_iteration_snapshot():
+    """Each stream_llm call (iter-1, iter-2, forced synth) records a snapshot
+    in the debug_trace_sink with the messages+tools that will be sent."""
+    from bibilab.config import AIConfig
+    from bibilab.pipeline._shared import StreamEvent, ToolCall
+    from bibilab.pipeline.chat_tools import FIND_PASSAGES_TOOL, READ_SOURCE_TOOL
+    from bibilab.routers.chat import stream_with_tools
+
+    cfg = AIConfig(protocol="openai", model="x", api_key="k", base_url="")
+    find_tc = ToolCall(id="c1", name=FIND_PASSAGES_TOOL.name, arguments={"query": "q"})
+
+    call_count = 0
+
+    async def fake_stream(messages, cfg, tools=None, system=None, llm_max_tokens=2048):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            yield StreamEvent(type="tool_call", tool_call=find_tc)
+        else:
+            yield StreamEvent(type="delta", content="ok")
+            yield StreamEvent(type="done")
+
+    async def fake_execute(name, args, **kwargs):
+        return {
+            "ok": True,
+            "query": "q",
+            "source_coverage": [],
+            "candidates_evaluated": 1,
+            "sources_with_hits": 0,
+            "sources_total": 1,
+            "source_id": "s1",
+        }
+
+    sink: list = []
+    with patch("bibilab.routers.chat.stream_llm", side_effect=fake_stream):
+        async for _ in stream_with_tools(
+            messages=[{"role": "user", "content": "q"}],
+            cfg=cfg,
+            tools=[FIND_PASSAGES_TOOL, READ_SOURCE_TOOL],
+            execute_tool_fn=fake_execute,
+            debug_trace_sink=sink,
+        ):
+            pass
+
+    # iter-1 (find_passages) + iter-2 (synthesis with both tools) = 2 snapshots
+    assert len(sink) == 2
+    # iter-1: both tools available
+    assert [t["name"] for t in sink[0]["tools"]] == [FIND_PASSAGES_TOOL.name, READ_SOURCE_TOOL.name]
+    assert sink[0]["messages"] == [{"role": "user", "content": "q"}]
+    # iter-2: still both tools (synthesis not yet triggered; iter <= MAX)
+    assert [t["name"] for t in sink[1]["tools"]] == [FIND_PASSAGES_TOOL.name, READ_SOURCE_TOOL.name]
+    # iter-2 messages include the tool_exchange appended after iter-1
+    assert any(m["role"] == "tool" for m in sink[1]["messages"])
+
+
+@pytest.mark.asyncio
+async def test_stream_with_tools_synthesis_turn_records_empty_tools():
+    """The synthesis turn (iter > MAX_TOOL_ITERATIONS) is recorded with tools=[]."""
+    from bibilab.config import AIConfig
+    from bibilab.pipeline._shared import StreamEvent, ToolCall
+    from bibilab.pipeline.chat_tools import FIND_PASSAGES_TOOL
+    from bibilab.routers.chat import MAX_TOOL_ITERATIONS, stream_with_tools
+
+    cfg = AIConfig(protocol="openai", model="x", api_key="k", base_url="")
+    find_tc = ToolCall(id="c1", name=FIND_PASSAGES_TOOL.name, arguments={"query": "q"})
+
+    call_count = 0
+
+    async def fake_stream(messages, cfg, tools=None, system=None, llm_max_tokens=2048):
+        nonlocal call_count
+        call_count += 1
+        if call_count <= MAX_TOOL_ITERATIONS:
+            yield StreamEvent(type="tool_call", tool_call=find_tc)
+        else:
+            yield StreamEvent(type="done")  # empty synthesis → triggers forced synth
+
+    async def fake_execute(name, args, **kwargs):
+        return {
+            "ok": True,
+            "query": "q",
+            "source_coverage": [],
+            "candidates_evaluated": 1,
+            "sources_with_hits": 0,
+            "sources_total": 1,
+        }
+
+    sink: list = []
+    with patch("bibilab.routers.chat.stream_llm", side_effect=fake_stream):
+        async for _ in stream_with_tools(
+            messages=[{"role": "user", "content": "q"}],
+            cfg=cfg,
+            tools=[FIND_PASSAGES_TOOL],
+            execute_tool_fn=fake_execute,
+            debug_trace_sink=sink,
+        ):
+            pass
+
+    # MAX_TOOL_ITERATIONS tool turns + 1 empty synthesis + 1 forced synth = 5 snapshots
+    assert len(sink) == MAX_TOOL_ITERATIONS + 2
+    # Synthesis (iter MAX+1) and forced synth both have no tools
+    assert sink[MAX_TOOL_ITERATIONS]["tools"] == []
+    assert sink[MAX_TOOL_ITERATIONS + 1]["tools"] == []
