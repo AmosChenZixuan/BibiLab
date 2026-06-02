@@ -7,7 +7,6 @@ import {
   formatSubtitle,
   formatTimestamp,
   stripLegacyTokens,
-  Mode,
   RetrievalCall,
 } from "@/lib/chat-utils";
 
@@ -101,19 +100,11 @@ describe("autoResize", () => {
   });
 });
 
-describe("Mode type", () => {
-  test("is one of the expected literal values or null", () => {
-    const values: Mode[] = ["narrow", "survey", null];
-    expect(values).toHaveLength(3);
-  });
-});
-
 describe("RetrievalCall", () => {
-  test("has all required fields", () => {
+  test("has all required fields (v2 find_passages)", () => {
     const call: RetrievalCall = {
       query: "test query",
-      mode: "narrow",
-      tool_name: "retrieve",
+      tool_name: "find_passages",
       candidates_evaluated: 5,
       sources_with_hits: 2,
       sources_total: 3,
@@ -130,32 +121,47 @@ describe("RetrievalCall", () => {
           preview: "test content here",
         },
       ],
-      dropped_by_gate: 0,
       reranked: true,
       scoped_pool_size: 3,
-      gate_margin: null,
     };
-    expect(call.mode).toBe("narrow");
+    expect(call.tool_name).toBe("find_passages");
     expect(call.context![0].chunk_id).toBe("v1_120_145");
     expect(call.context![0].citation_index).toBe(1);
     expect(call.context![0].timestamp_start).toBe(120.4);
     expect(call.context![0].rerank_score).toBe(0.95);
   });
 
-  test("context can be empty array", () => {
+  test("read_source carries source_id and source_title, no query", () => {
     const call: RetrievalCall = {
-      query: "test",
-      mode: "narrow",
-      tool_name: "retrieve",
+      query: "",
+      tool_name: "read_source",
       candidates_evaluated: 0,
       sources_with_hits: 0,
       sources_total: 1,
       source_coverage: [],
       context: [],
-      dropped_by_gate: 0,
       reranked: false,
       scoped_pool_size: 1,
-      gate_margin: null,
+      source_id: "s1",
+      source_title: "Ep 4",
+    };
+    expect(call.tool_name).toBe("read_source");
+    expect(call.source_id).toBe("s1");
+    expect(call.source_title).toBe("Ep 4");
+    expect(call.context).toHaveLength(0);
+  });
+
+  test("context can be empty array", () => {
+    const call: RetrievalCall = {
+      query: "test",
+      tool_name: "find_passages",
+      candidates_evaluated: 0,
+      sources_with_hits: 0,
+      sources_total: 1,
+      source_coverage: [],
+      context: [],
+      reranked: false,
+      scoped_pool_size: 1,
     };
     expect(call.context).toHaveLength(0);
   });

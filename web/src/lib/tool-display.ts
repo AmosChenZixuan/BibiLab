@@ -1,6 +1,7 @@
-import { Search, BarChart3 } from "lucide-react";
+import { Search, BookOpen } from "lucide-react";
 
-export const METADATA_TOOL_NAME = "query_list_metadata";
+export const FIND_PASSAGES_TOOL_NAME = "find_passages";
+export const READ_SOURCE_TOOL_NAME = "read_source";
 
 export interface ToolDisplayConfig {
   icon: typeof Search;
@@ -8,8 +9,6 @@ export interface ToolDisplayConfig {
 }
 
 export const TOOL_DISPLAY: Record<string, ToolDisplayConfig> = {
-  retrieve: { icon: Search },
-  survey: { icon: Search },
-  retrieve_scoped: { icon: Search },
-  [METADATA_TOOL_NAME]: { icon: BarChart3, labelKey: "chat.ledger.metadataLabel" },
+  [FIND_PASSAGES_TOOL_NAME]: { icon: Search },
+  [READ_SOURCE_TOOL_NAME]: { icon: BookOpen, labelKey: "chat.ledger.readSourceLabel" },
 };

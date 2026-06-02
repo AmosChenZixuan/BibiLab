@@ -5,8 +5,6 @@ import {
   formatTimestamp,
   stripLegacyTokens,
   type ContentBlock,
-  type MetadataCall,
-  type PendingMetadataCall,
   type PendingRagCall,
   type RagMetadata,
   type ToolCallData,
@@ -24,8 +22,6 @@ export interface MessageUI {
   timestamp: string;
   rag: RagMetadata | null;
   pendingRagCalls: PendingRagCall[];
-  pendingMetadataCalls: PendingMetadataCall[];
-  metadataCalls: MetadataCall[] | null;
 }
 
 export function useConversationHistory(
@@ -90,8 +86,6 @@ export function useConversationHistory(
             timestamp: formatTimestamp(m.created_at),
             rag,
             pendingRagCalls: [],
-            pendingMetadataCalls: [],
-            metadataCalls: null,
           };
         });
         setMessages(loaded);

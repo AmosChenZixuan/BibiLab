@@ -2,9 +2,8 @@ import { useEffect, useRef, useState } from "react";
 
 import type { JobRegistration } from "@/components/jobs/JobActivityProvider";
 import type { MessageUI } from "@/components/lists/hooks/useConversationHistory";
-import { formatTimestamp, type ContentBlock, type PendingMetadataCall, type PendingRagCall, type RetrievalCall, type Mode } from "@/lib/chat-utils";
-import { METADATA_TOOL_NAME } from "@/lib/tool-display";
-import type { ToolResult } from "@/lib/chat-utils";
+import { formatTimestamp, type ContentBlock, type PendingRagCall, type RetrievalCall } from "@/lib/chat-utils";
+import { FIND_PASSAGES_TOOL_NAME, READ_SOURCE_TOOL_NAME } from "@/lib/tool-display";
 import {
   SSE_EVENT_CANCELLED,
   SSE_EVENT_CITATION,
@@ -128,28 +127,28 @@ export function useSSEStream({
           console.warn("tool_call_start missing required fields", event);
           return;
         }
-        if (toolName === "retrieve" || toolName === "survey" || toolName === "retrieve_scoped") {
+        if (toolName === FIND_PASSAGES_TOOL_NAME) {
           const args = event.arguments as { query: string };
-          const mode: Mode = toolName === "survey" ? "survey" : "narrow";
           updateAssistantMsg(assistantMsgId, (m) => ({
             pendingRagCalls: [
               ...m.pendingRagCalls,
-              { id, query: args.query, mode, tool_name: toolName },
+              { id, tool_name: FIND_PASSAGES_TOOL_NAME, query: args.query },
             ],
           }));
-        } else if (toolName === METADATA_TOOL_NAME) {
-          const args = event.arguments as { query_type: string };
+        } else if (toolName === READ_SOURCE_TOOL_NAME) {
+          // read_source has no `query` field; the chip shows the tool label only
+          // (read in full). It will resolve to source_id/source_title on tool_result.
           updateAssistantMsg(assistantMsgId, (m) => ({
-            pendingMetadataCalls: [
-              ...m.pendingMetadataCalls,
-              { id, query_type: args.query_type },
+            pendingRagCalls: [
+              ...m.pendingRagCalls,
+              { id, tool_name: READ_SOURCE_TOOL_NAME, query: "" },
             ],
           }));
         }
       } else if (event.type === SSE_EVENT_TOOL_RESULT) {
         const toolName = event.name as string;
         if (!toolName) return;
-        if (toolName === "retrieve") {
+        if (toolName === FIND_PASSAGES_TOOL_NAME) {
           const call = event.result as unknown as RetrievalCall;
           const callId = event.id as string;
           updateAssistantMsg(assistantMsgId, (m) => ({
@@ -159,40 +158,20 @@ export function useSSEStream({
               : m.pendingRagCalls,
           }));
           if (!callId) {
-            console.warn("retrieve tool_result missing id, pending chip not cleared");
+            console.warn("find_passages tool_result missing id, pending chip not cleared");
           }
-        } else if (toolName === METADATA_TOOL_NAME) {
+        } else if (toolName === READ_SOURCE_TOOL_NAME) {
+          const call = event.result as unknown as RetrievalCall;
           const callId = event.id as string;
-          updateAssistantMsg(assistantMsgId, (m) => {
-            const pendingEntry = m.pendingMetadataCalls.find((p) => p.id === callId);
-            if (callId && !pendingEntry) {
-              console.warn(`${METADATA_TOOL_NAME} tool_result id=${callId} has no matching pending entry`);
-            }
-            return {
-              pendingMetadataCalls: callId
-                ? m.pendingMetadataCalls.filter((p) => p.id !== callId)
-                : m.pendingMetadataCalls,
-              metadataCalls: [
-                ...(m.metadataCalls ?? []),
-                {
-                  name: METADATA_TOOL_NAME,
-                  query_type: pendingEntry?.query_type ?? "unknown",
-                  result: event.result ?? {},
-                },
-              ],
-            };
-          });
+          updateAssistantMsg(assistantMsgId, (m) => ({
+            rag: { calls: [...(m.rag?.calls ?? []), call] },
+            pendingRagCalls: callId
+              ? m.pendingRagCalls.filter((p) => p.id !== callId)
+              : m.pendingRagCalls,
+          }));
           if (!callId) {
-            console.warn(`${METADATA_TOOL_NAME} tool_result missing id, pending chip not cleared`);
+            console.warn("read_source tool_result missing id, pending chip not cleared");
           }
-        } else if (toolName === "generate_report") {
-          const result = event.result as ToolResult;
-          if (!result) return;
-          const toolCallData = { name: "generate_report", result };
-          if (result.job_id && trackJobs) {
-            trackJobs([{ id: result.job_id, producer: "artifact", label: result.name, contextKey: listId }]);
-          }
-          updateAssistantMsg(assistantMsgId, { toolCall: toolCallData });
         }
       } else if (event.type === SSE_EVENT_RAG) {
         // Final authoritative ledger (persisted shape, with context[]).
@@ -214,7 +193,6 @@ export function useSSEStream({
           isStreaming: false,
           contentBlocks: [...accBlocks],
           pendingRagCalls: [],
-          pendingMetadataCalls: [],
         });
         safeSetIsStreaming(false);
         isStreamingRef.current = false;
@@ -225,13 +203,12 @@ export function useSSEStream({
           error: stoppedLabel,
           contentBlocks: [...accBlocks],
           pendingRagCalls: [],
-          pendingMetadataCalls: [],
         });
         safeSetIsStreaming(false);
         isStreamingRef.current = false;
       } else if (event.type === SSE_EVENT_ERROR) {
         const errorMsg = event.message as string;
-        updateAssistantMsg(assistantMsgId, { isStreaming: false, error: errorMsg, pendingRagCalls: [], pendingMetadataCalls: [] });
+        updateAssistantMsg(assistantMsgId, { isStreaming: false, error: errorMsg, pendingRagCalls: [] });
         safeSetIsStreaming(false);
         isStreamingRef.current = false;
       }
@@ -286,7 +263,7 @@ export function useSSEStream({
         // AbortError from cancel — producer's 'cancelled' event handles UI state
         return;
       }
-      updateAssistantMsg(assistantMsgId, { isStreaming: false, error: String(err), pendingRagCalls: [], pendingMetadataCalls: [] });
+      updateAssistantMsg(assistantMsgId, { isStreaming: false, error: String(err), pendingRagCalls: [] });
       safeSetIsStreaming(false);
       isStreamingRef.current = false;
     }
@@ -311,8 +288,6 @@ export function useSSEStream({
       error: null,
       timestamp: formatTimestamp(new Date().toISOString()),
       pendingRagCalls: [],
-      pendingMetadataCalls: [],
-      metadataCalls: null,
     };
 
     const assistantMsg: MessageUI = {
@@ -326,8 +301,6 @@ export function useSSEStream({
       timestamp: formatTimestamp(new Date().toISOString()),
       rag: null,
       pendingRagCalls: [],
-      pendingMetadataCalls: [],
-      metadataCalls: null,
     };
 
     setMessages((prev) => [...prev, userMsg, assistantMsg]);
@@ -366,7 +339,7 @@ export function useSSEStream({
         // Server-side cancel handles UI state
         return;
       }
-      updateAssistantMsg(assistantMsgId, { isStreaming: false, error: String(err), pendingRagCalls: [], pendingMetadataCalls: [] });
+      updateAssistantMsg(assistantMsgId, { isStreaming: false, error: String(err), pendingRagCalls: [] });
       safeSetIsStreaming(false);
       isStreamingRef.current = false;
     } finally {
@@ -402,8 +375,6 @@ export function useSSEStream({
         timestamp: "",
         rag: null,
         pendingRagCalls: [],
-        pendingMetadataCalls: [],
-        metadataCalls: null,
       };
       return [...prev, newMsg];
     });
@@ -440,7 +411,7 @@ export function useSSEStream({
       if (err instanceof Error && err.name === "AbortError") {
         return;
       }
-      updateAssistantMsg(messageId, { isStreaming: false, error: String(err), pendingRagCalls: [], pendingMetadataCalls: [] });
+      updateAssistantMsg(messageId, { isStreaming: false, error: String(err), pendingRagCalls: [] });
       safeSetIsStreaming(false);
       isStreamingRef.current = false;
     } finally {

@@ -110,8 +110,8 @@ describe("chat panel — SSE streaming (phase 6.2)", () => {
     );
   });
 
-  test("pending retrieve ledger shows while streaming before any content", async () => {
-    // retrieve dispatches mid-stream before any preamble text. The pending
+  test("pending find_passages ledger shows while streaming before any content", async () => {
+    // find_passages dispatches mid-stream before any preamble text. The pending
     // ledger row must be visible even though the assistant bubble is empty
     // and the message is still streaming.
     let ctrl!: ReadableStreamDefaultController<Uint8Array>;
@@ -143,12 +143,12 @@ describe("chat panel — SSE streaming (phase 6.2)", () => {
 
     ctrl.enqueue(
       new TextEncoder().encode(
-        'data: {"type":"tool_call_start","id":"t1","name":"retrieve","arguments":{"query":"X"}}\n\n',
+        'data: {"type":"tool_call_start","id":"t1","name":"find_passages","arguments":{"query":"X"}}\n\n',
       ),
     );
 
     await waitFor(() => {
-      expect(screen.getByText(/retrieving…/i)).toBeInTheDocument();
+      expect(screen.getByText(/finding passages…/i)).toBeInTheDocument();
     });
   });
 
@@ -178,7 +178,7 @@ describe("chat panel — SSE streaming (phase 6.2)", () => {
     ctrl.enqueue(enc.encode('data: {"type":"meta","message_id":"srv-1"}\n\n'));
     ctrl.enqueue(
       enc.encode(
-        'data: {"type":"tool_result","id":"r1","name":"retrieve","result":{"query":"X","mode":"narrow","sources_total":1,"source_coverage":[{"source_id":"s1","video_id":"v1","title":"Vid"}],"dropped_by_gate":0,"reranked":true,"scoped_pool_size":1,"gate_margin":1}}\n\n',
+        'data: {"type":"tool_result","id":"r1","name":"find_passages","result":{"query":"X","tool_name":"find_passages","candidates_evaluated":5,"sources_with_hits":1,"sources_total":1,"source_coverage":[{"source_id":"s1","title":"Vid"}],"reranked":true,"scoped_pool_size":1}}\n\n',
       ),
     );
 
@@ -193,7 +193,7 @@ describe("chat panel — SSE streaming (phase 6.2)", () => {
     // Final authoritative rag (with context[]) then done.
     ctrl.enqueue(
       enc.encode(
-        'data: {"type":"rag","calls":[{"query":"X","mode":"narrow","candidates_evaluated":5,"sources_with_hits":1,"sources_total":1,"source_coverage":[{"source_id":"s1","video_id":"v1","title":"Vid"}],"context":[{"chunk_id":"c1","citation_index":1,"source_id":"s1","source_title":"Vid","timestamp_start":0,"timestamp_end":10,"rerank_score":2.5,"preview":"unique-preview-text"}],"dropped_by_gate":0,"reranked":true,"scoped_pool_size":1,"gate_margin":1}]}\n\n',
+        'data: {"type":"rag","calls":[{"query":"X","tool_name":"find_passages","candidates_evaluated":5,"sources_with_hits":1,"sources_total":1,"source_coverage":[{"source_id":"s1","title":"Vid"}],"context":[{"chunk_id":"c1","citation_index":1,"source_id":"s1","source_title":"Vid","timestamp_start":0,"timestamp_end":10,"rerank_score":2.5,"preview":"unique-preview-text"}],"reranked":true,"scoped_pool_size":1}]}\n\n',
       ),
     );
     ctrl.enqueue(enc.encode('data: {"type":"delta","content":"answer"}\n\n'));
@@ -231,33 +231,6 @@ describe("chat panel — SSE streaming (phase 6.2)", () => {
 
     await waitFor(() => {
       expect(screen.getByText("Slow answer")).toBeInTheDocument();
-    });
-  });
-
-  test("tool_call event renders centered tool card", async () => {
-    vi.spyOn(window, "fetch").mockImplementation(() =>
-      Promise.resolve(
-        makeSseStream([
-          'data: {"type":"delta","content":"Generating study guide..."}\n\n',
-          'data: {"type":"done"}\n\n',
-          'data: {"type":"tool_result","name":"generate_report","result":{"artifact_id":"art-1","name":"Backprop essentials","type":"study_guide"}}\n\n',
-        ]),
-      ),
-    );
-
-    renderChatPanel({
-      selectedSourceIds: ["src-1"],
-      sources: [SOURCE_1],
-      listId: "list-1",
-    });
-
-    const textarea = screen.getByRole("textbox");
-    await userEvent.type(textarea, "Make me a study guide");
-    await userEvent.keyboard("{Enter}");
-
-    await waitFor(() => {
-      expect(screen.getByText("Created report:")).toBeInTheDocument();
-      expect(screen.getByText("Backprop essentials")).toBeInTheDocument();
     });
   });
 
@@ -331,6 +304,63 @@ describe("chat panel — SSE streaming (phase 6.2)", () => {
         const text = (p.textContent ?? "").replace(/\[\d+\]/g, "").trim();
         expect(hasChip && text === "").toBe(false);
       }
+    });
+  });
+
+  test("renders a read_source ledger chip when the tool fires mid-stream", async () => {
+    let ctrl!: ReadableStreamDefaultController<Uint8Array>;
+    const openBody = new ReadableStream<Uint8Array>({
+      start(c) {
+        ctrl = c;
+      },
+    });
+    vi.spyOn(window, "fetch").mockImplementation((input) => {
+      const url = String(input);
+      if (url.includes("/chat")) {
+        return Promise.resolve(
+          new Response(openBody, { headers: { "Content-Type": "text/event-stream" } }),
+        );
+      }
+      return Promise.resolve(makeSseStream([]));
+    });
+
+    renderChatPanel({ selectedSourceIds: ["src-1"], sources: [SOURCE_1], listId: "list-1" });
+
+    await userEvent.type(screen.getByRole("textbox"), "read the transcript");
+    await userEvent.keyboard("{Enter}");
+
+    const enc = new TextEncoder();
+    // Provisional read_source chip first (no source_title yet, just the label)
+    ctrl.enqueue(
+      enc.encode(
+        'data: {"type":"tool_call_start","id":"rs1","name":"read_source","arguments":{}}\n\n',
+      ),
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText(/read in full/i)).toBeInTheDocument();
+    });
+
+    // tool_result resolves it to source_id/source_title
+    ctrl.enqueue(
+      enc.encode(
+        'data: {"type":"tool_result","id":"rs1","name":"read_source","result":{"tool_name":"read_source","source_id":"s1","source_title":"Ep 4","query":"","candidates_evaluated":0,"sources_with_hits":0,"sources_total":1,"source_coverage":[],"context":[],"reranked":false,"scoped_pool_size":1}}\n\n',
+      ),
+    );
+
+    // Final rag event then done
+    ctrl.enqueue(
+      enc.encode(
+        'data: {"type":"rag","calls":[{"tool_name":"read_source","source_id":"s1","source_title":"Ep 4","query":"","candidates_evaluated":0,"sources_with_hits":0,"sources_total":1,"source_coverage":[],"context":[],"reranked":false,"scoped_pool_size":1}]}\n\n',
+      ),
+    );
+    ctrl.enqueue(enc.encode('data: {"type":"delta","content":"answer"}\n\n'));
+    ctrl.enqueue(enc.encode('data: {"type":"done"}\n\n'));
+    ctrl.close();
+
+    // After tool_result the chip should resolve to the read_source row with the source title
+    await waitFor(() => {
+      expect(screen.getByText("Ep 4")).toBeInTheDocument();
     });
   });
 });
