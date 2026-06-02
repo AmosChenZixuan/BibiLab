@@ -5,13 +5,8 @@ export type ContentBlock =
   | { type: "citation"; index: number; source_id: string; chunk_ids: string[] }
   | { type: "paragraph_break" };
 
-export type ToolResult = { artifact_id: string; job_id?: string; name: string; type: string };
-export interface ToolCallData {
-  name: string;
-  result: ToolResult;
-}
-export type Mode = "narrow" | "survey" | null;
-export type RagSource = { source_id: string; video_id: string; title: string };
+export type ToolName = "find_passages" | "read_source";
+export type RagSource = { source_id: string; title: string };
 /** Single chunk in the persisted context[] array. */
 export type RetrievalChunk = {
   chunk_id: string;
@@ -35,36 +30,27 @@ export type FacetScope = {
 /** source_coverage lists only sources whose [N] actually appeared in the assistant text. */
 export type RetrievalCall = {
   query: string;
-  mode: Mode;
-  tool_name?: string;
+  tool_name: ToolName;
   candidates_evaluated: number;
   sources_with_hits: number;
   sources_total: number;
   source_coverage: RagSource[];
   // context[] is absent on the streaming tool_result payload;
-  // reconstructed only in persisted metadata.rag.
+  // reconstructed only in persisted metadata.rag. For read_source,
+  // context is always [] (continuous transcript, not a locator result).
   context?: RetrievalChunk[];
-  dropped_by_gate: number;
   reranked: boolean;
   scoped_pool_size: number;
   facet_scope?: FacetScope;
-  gate_margin: number | null;
+  // read_source rows only — find_passages uses source_coverage
+  source_id?: string;
+  source_title?: string;
 };
 export type RagMetadata = { calls: RetrievalCall[] };
 export type PendingRagCall = {
   id: string;
   query: string;
-  mode: Mode;
-  tool_name?: string;
-};
-export type PendingMetadataCall = {
-  id: string;
-  query_type: string;
-};
-export type MetadataCall = {
-  name: string;
-  query_type: string;
-  result: unknown;
+  tool_name: ToolName;
 };
 
 export function formatDurationHuman(seconds: number): string {

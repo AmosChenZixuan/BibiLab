@@ -252,7 +252,6 @@
     "stop": "Stop",
     "send": "Send",
     "scrollToBottom": "Scroll to bottom",
-    "createdReport": "Created report:",
     "subtitle": {
       "templateSingular": "%{count} source · %{duration} total",
       "templatePlural": "%{count} sources · %{duration} total"
@@ -274,12 +273,11 @@
       "saving": "Saving..."
     },
     "ledger": {
-      "summaryEmpty": "0 chunks (%{dropped} dropped)",
-      "summaryPending": "retrieving…",
+      "summaryPending": "finding passages…",
+      "readSourcePending": "reading source…",
       "sourceSummary": "%{sources} sources",
       "citedChunks": "%{n} chunks cited",
-      "metadataLabel": "Querying list info",
-      "metadataPending": "querying list…",
+      "readSourceFallbackTitle": "Untitled source",
       "facetNoMatch": "No source matched %{facets} — searched all sources instead.",
       "facetNoMatchGeneric": "No source matched the requested filter — searched all sources instead.",
       "facetNoMatchLabel": "Facet",
@@ -289,19 +287,12 @@
       },
       "field": {
         "query": "Query",
-        "mode": "Mode",
-        "scope": "Scope",
-        "result": "Result"
+        "scope": "Scope"
       },
       "scope": {
         "none": "all %{total} sources",
         "scoped": "%{matched} / %{total} sources"
       },
-      "mode": {
-        "narrow": "Narrow",
-        "survey": "Survey"
-      },
-      "modeUnknown": "—",
       "ariaToggle": "Toggle retrieval details"
     },
     "mode": {

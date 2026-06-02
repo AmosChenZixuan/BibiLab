@@ -8,7 +8,6 @@ import type { Root, Element, Text, RootContent } from "hast";
 import {
   AlertCircle,
   ChevronDown,
-  FileText,
   MessageSquare,
   MessageSquareOff,
   RotateCcw,
@@ -442,9 +441,7 @@ export function ChatPanel({
                 msg.contentBlocks.length > 0 ||
                 msg.content ||
                 msg.pendingRagCalls.length > 0 ||
-                msg.pendingMetadataCalls.length > 0 ||
-                (msg.rag?.calls?.length ?? 0) > 0 ||
-                (msg.metadataCalls?.length ?? 0) > 0;
+                (msg.rag?.calls?.length ?? 0) > 0;
               return (
               <div
                 key={msg.id}
@@ -467,9 +464,7 @@ export function ChatPanel({
                     {showLedger ? (
                       <ToolLedger
                         ragCalls={msg.rag?.calls ?? []}
-                        metadataCalls={msg.metadataCalls ?? []}
                         pendingRagCalls={msg.pendingRagCalls}
-                        pendingMetadataCalls={msg.pendingMetadataCalls}
                         streaming={msg.isStreaming}
                       />
                     ) : null}
@@ -484,13 +479,6 @@ export function ChatPanel({
                         <ReactMarkdown>{msg.content}</ReactMarkdown>
                       </AssistantBubble>
                     ) : null}
-                    {msg.toolCall && (
-                      <div className="toolcall">
-                        <span className="ic"><FileText size={14} /></span>
-                        <span>{t("chat.createdReport")} <strong>{msg.toolCall.result.name}</strong></span>
-                        <span className="badge">{msg.toolCall.result.type.toUpperCase().replace(/_/g, " ")}</span>
-                      </div>
-                    )}
                     {msg.error && (
                       <div className="interrupted">
                         <span className="ic"><AlertCircle size={14} /></span>

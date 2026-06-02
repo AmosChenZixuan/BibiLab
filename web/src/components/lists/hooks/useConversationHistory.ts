@@ -5,12 +5,8 @@ import {
   formatTimestamp,
   stripLegacyTokens,
   type ContentBlock,
-  type MetadataCall,
-  type PendingMetadataCall,
   type PendingRagCall,
   type RagMetadata,
-  type ToolCallData,
-  type ToolResult,
 } from "@/lib/chat-utils";
 
 export interface MessageUI {
@@ -19,13 +15,10 @@ export interface MessageUI {
   content: string;
   isStreaming: boolean;
   contentBlocks: ContentBlock[];
-  toolCall: ToolCallData | null;
   error: string | null;
   timestamp: string;
   rag: RagMetadata | null;
   pendingRagCalls: PendingRagCall[];
-  pendingMetadataCalls: PendingMetadataCall[];
-  metadataCalls: MetadataCall[] | null;
 }
 
 export function useConversationHistory(
@@ -66,12 +59,6 @@ export function useConversationHistory(
             contentBlocks = [];
           }
 
-          let toolCall: ToolCallData | null = null;
-          const tcList = m.metadata?.tool_calls as Array<{ name: string; result?: ToolResult }> | undefined;
-          const tc = tcList?.[0];
-          if (tc?.result) {
-            toolCall = { name: tc.name, result: tc.result };
-          }
           let rag: RagMetadata | null = null;
           const rawRag = m.metadata?.rag as Record<string, unknown> | undefined;
           if (rawRag?.calls) {
@@ -83,15 +70,12 @@ export function useConversationHistory(
             content: displayContent,
             isStreaming: false,
             contentBlocks,
-            toolCall,
             error:
               m.error ??
               (m.status === "failed" ? interruptedLabel : m.status === "cancelled" ? stoppedLabel : null),
             timestamp: formatTimestamp(m.created_at),
             rag,
             pendingRagCalls: [],
-            pendingMetadataCalls: [],
-            metadataCalls: null,
           };
         });
         setMessages(loaded);

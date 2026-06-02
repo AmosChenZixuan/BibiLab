@@ -92,6 +92,8 @@ async def test_execute_read_source_builds_narrative_and_registers_citation(monke
     out = await execute_read_source(["a"], source_id="a", sequence_number=None, season_number=None, registry=registry)
 
     assert out["source_id"] == "a"
+    assert out["tool_name"] == "read_source"
+    assert out["source_title"] == "Ep 5"
     assert "Ep 5" in out["_chunks"] and "the duel" in out["_chunks"]
     assert "hello" in out["_chunks"] and "@1:52" in out["_chunks"]  # 112s inline ts
     assert registry["a"].index == 1  # registered with next index
@@ -142,6 +144,8 @@ async def test_read_source_empty_transcript_suppresses_header(monkeypatch):
 
     out = await execute_read_source(["a"], source_id="a", sequence_number=None, season_number=None, registry={})
     assert out["source_id"] == "a"
+    assert out["tool_name"] == "read_source"
+    assert out["source_title"] == "Secret Heist Episode"
     assert "no transcript available" in out["_chunks"]
     # header content must NOT leak (no title / summary / duration / fence)
     assert "Secret Heist" not in out["_chunks"]
@@ -203,6 +207,8 @@ async def test_execute_read_source_get_source_none_branch(monkeypatch):
     out = await execute_read_source(["a"], source_id=None, sequence_number=4, season_number=None, registry={})
 
     assert out["source_id"] is None
+    assert out["tool_name"] == "read_source"
+    assert out["source_title"] == ""
     assert "not found" in out["_chunks"].lower()
 
 

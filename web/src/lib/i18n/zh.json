@@ -252,7 +252,6 @@
     "stop": "停止",
     "send": "发送",
     "scrollToBottom": "滚动到底部",
-    "createdReport": "已生成报告：",
     "subtitle": {
       "templateSingular": "%{count} 个来源 · %{duration}",
       "templatePlural": "%{count} 个来源 · %{duration}"
@@ -274,12 +273,11 @@
       "saving": "保存中…"
     },
     "ledger": {
-      "summaryEmpty": "0 个片段（%{dropped} 被筛掉）",
-      "summaryPending": "检索中…",
+      "summaryPending": "查找片段中…",
+      "readSourcePending": "读取全文中…",
       "sourceSummary": "%{sources} 个来源",
       "citedChunks": "引用 %{n} 个片段",
-      "metadataLabel": "查询全列表",
-      "metadataPending": "查询列表中…",
+      "readSourceFallbackTitle": "未命名来源",
       "facetNoMatch": "没有来源匹配%{facets}，已改为搜索全部来源。",
       "facetNoMatchGeneric": "没有来源匹配请求的范围，已改为搜索全部来源。",
       "facetNoMatchLabel": "范围",
@@ -289,19 +287,12 @@
       },
       "field": {
         "query": "查询",
-        "mode": "模式",
-        "scope": "范围",
-        "result": "结果"
+        "scope": "范围"
       },
       "scope": {
         "none": "全部 %{total} 个来源",
         "scoped": "%{matched}/%{total} 个来源"
       },
-      "mode": {
-        "narrow": "精确",
-        "survey": "概览"
-      },
-      "modeUnknown": "—",
       "ariaToggle": "切换检索详情"
     },
     "mode": {
