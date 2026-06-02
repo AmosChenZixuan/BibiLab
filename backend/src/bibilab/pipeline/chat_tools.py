@@ -171,9 +171,7 @@ async def _resolve_single_source(
         logger.warning("read_source: get_source_facets failed", exc_info=True)
         return None, "Could not resolve the source (facet lookup failed); try a source_id."
 
-    matched = [
-        sid for sid in source_ids if sid in facets and all(facets[sid].get(k) == v for k, v in predicates.items())
-    ]
+    matched = _filter_sources_by_facets(source_ids, facets, predicates)
     if not matched:
         return None, f"No source matches {predicates}."
     if len(matched) > 1:
@@ -187,7 +185,20 @@ async def _resolve_single_source(
     return matched[0], None
 
 
-def _build_source_narrative(source: dict, segments: list) -> str:
+def _filter_sources_by_facets(
+    source_ids: list[str],
+    facets: dict[str, dict[str, int | None]],
+    predicates: dict[str, int],
+) -> list[str]:
+    """Return source_ids whose stored facets match all (k, v) in predicates.
+
+    Shared by _resolve_single_source (fail-closed) and execute_find_passages
+    (fail-open); the cardinality policy lives at the call site.
+    """
+    return [sid for sid in source_ids if sid in facets and all(facets[sid].get(k) == v for k, v in predicates.items())]
+
+
+def _build_source_narrative(source: dict, segments: list, idx: int) -> str:
     """Single source header + continuous timestamped transcript (spec §5.6).
 
     Reuses format_turns (include_time) for the speaker-turn body — NOT per-chunk
@@ -198,12 +209,13 @@ def _build_source_narrative(source: dict, segments: list) -> str:
     # title it already has from the fence). Return the explicit fact ONLY.
     if not segments:
         return (
-            "source [{idx}] has no transcript available (it may still be processing, or transcription may have failed)."
+            f"source [{idx}] has no transcript available "
+            "(it may still be processing, or transcription may have failed)."
         )
     dur = source.get("duration_seconds")
     dur_line = f"Duration: {int(dur) // 60}:{int(dur) % 60:02d}, " if dur else ""
     header = (
-        f'===== Source [{{idx}}]: "{source.get("title", "")}"\n'
+        f'===== Source [{idx}]: "{source.get("title", "")}"\n'
         f"Summary: {source.get('summary') or '(none)'}\n"
         f"{dur_line}Language: {source.get('language') or 'unknown'}\n"
         f"====="
@@ -243,7 +255,7 @@ async def execute_read_source(
         entry = CitationRegistryEntry(index=next_index, source_id=resolved, title=source.get("title", ""))
         registry[resolved] = entry
 
-    narrative = _build_source_narrative(source, segments).replace("{idx}", str(entry.index))
+    narrative = _build_source_narrative(source, segments, idx=entry.index)
     return {"_chunks": narrative, "source_id": resolved}
 
 
@@ -290,11 +302,7 @@ async def execute_find_passages(
         except Exception:  # noqa: BLE001
             logger.warning("find_passages: get_source_facets failed, fail-open to full pool", exc_info=True)
             facets = {}
-        matched = [
-            sid
-            for sid in source_ids
-            if sid in facets and all(facets[sid].get(k) == v for k, v in facet_predicates.items())
-        ]
+        matched = _filter_sources_by_facets(source_ids, facets, facet_predicates)
         facet_matched_count = len(matched)
         if matched:
             scoped_source_ids = matched
@@ -330,12 +338,10 @@ async def execute_find_passages(
             )
             next_index += 1
 
-    # Build source_id → registry index lookup for chunk formatting
-    source_id_to_index: dict[str, int] = {}
-    for s in result.source_coverage:
-        sid = s.source_id
-        if sid in registry:
-            source_id_to_index[sid] = registry[sid].index
+    # Build source_id → registry index lookup for chunk formatting. Every sid
+    # in source_coverage was just added to the registry above, so the membership
+    # check is a no-op — read directly.
+    source_id_to_index = {s.source_id: registry[s.source_id].index for s in result.source_coverage}
 
     # Reconstruct the speaker-turn body for each displayed chunk (kept from v1).
     displayed = [c for c in result.chunks if c.source_id in source_id_to_index]

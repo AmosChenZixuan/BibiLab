@@ -88,7 +88,9 @@ SSE_EVENT_RAG = "rag"
 # Sized for thinking-capable models with potentially long chat responses + tool turns.
 CHAT_MAX_TOKENS = 16384
 
-LOOPBACK_TOOLS = RETRIEVE_TOOL_NAMES | {READ_SOURCE_TOOL.name}
+# All tools in v2 loop back (no terminal tool — the v1 `generate_report` was
+# retired). Tool-call-start events + the LLM feed-back path therefore fire for
+# every tool call when reached.
 MAX_TOOL_ITERATIONS = 3
 
 
@@ -340,11 +342,10 @@ async def stream_with_tools(
 
         results: dict[str, dict] = {}
         for tc in tool_calls:
-            if tc.name in LOOPBACK_TOOLS:
-                yield StreamEvent(
-                    type=SSE_EVENT_TOOL_CALL_START,
-                    content=json.dumps({"id": tc.id, "name": tc.name, "arguments": tc.arguments}),
-                )
+            yield StreamEvent(
+                type=SSE_EVENT_TOOL_CALL_START,
+                content=json.dumps({"id": tc.id, "name": tc.name, "arguments": tc.arguments}),
+            )
         for tc in tool_calls:
             try:
                 result = await _execute_with_registry(tc.name, tc.arguments)
@@ -372,48 +373,45 @@ async def stream_with_tools(
                 content=json.dumps({"id": tc.id, "name": tc.name, "result": _client_tool_result(result)}),
             )
 
-        if any(tc.name in LOOPBACK_TOOLS for tc in tool_calls):
-            tool_used = True
-            if cfg.protocol == "anthropic":
+        # All tools in v2 loop back; feed results to the LLM for the next iteration.
+        tool_used = True
+        if cfg.protocol == "anthropic":
+            messages.append(
+                {
+                    "role": "assistant",
+                    "content": [
+                        {"type": "tool_use", "id": tc.id, "name": tc.name, "input": tc.arguments} for tc in tool_calls
+                    ],
+                }
+            )
+            messages.append(
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "tool_result", "tool_use_id": tc.id, "content": json.dumps(results[tc.id])}
+                        for tc in tool_calls
+                    ],
+                }
+            )
+        else:
+            openai_tool_calls = [
+                {
+                    "id": tc.id,
+                    "type": "function",
+                    "function": {"name": tc.name, "arguments": json.dumps(tc.arguments)},
+                }
+                for tc in tool_calls
+            ]
+            messages.append({"role": "assistant", "content": None, "tool_calls": openai_tool_calls})
+            for tc in tool_calls:
                 messages.append(
                     {
-                        "role": "assistant",
-                        "content": [
-                            {"type": "tool_use", "id": tc.id, "name": tc.name, "input": tc.arguments}
-                            for tc in tool_calls
-                        ],
+                        "role": "tool",
+                        "tool_call_id": tc.id,
+                        "content": json.dumps(results[tc.id]),
                     }
                 )
-                messages.append(
-                    {
-                        "role": "user",
-                        "content": [
-                            {"type": "tool_result", "tool_use_id": tc.id, "content": json.dumps(results[tc.id])}
-                            for tc in tool_calls
-                        ],
-                    }
-                )
-            else:
-                openai_tool_calls = [
-                    {
-                        "id": tc.id,
-                        "type": "function",
-                        "function": {"name": tc.name, "arguments": json.dumps(tc.arguments)},
-                    }
-                    for tc in tool_calls
-                ]
-                messages.append({"role": "assistant", "content": None, "tool_calls": openai_tool_calls})
-                for tc in tool_calls:
-                    messages.append(
-                        {
-                            "role": "tool",
-                            "tool_call_id": tc.id,
-                            "content": json.dumps(results[tc.id]),
-                        }
-                    )
-            continue
-
-        return
+        continue
 
 
 def _serialize_event_for_buffer(event: StreamEvent) -> dict | None:
@@ -624,8 +622,6 @@ async def run_chat_turn(
                                 }
                             )
                     call["context"] = context_entries
-                    call["scoped_pool_size"] = call.get("scoped_pool_size")
-                    call["facet_scope"] = call.get("facet_scope")
 
             meta: dict[str, Any] = {}
 

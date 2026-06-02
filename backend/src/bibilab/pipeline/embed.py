@@ -533,14 +533,18 @@ async def retrieve(
         top_k,
     )
 
-    source_ids_in_result = list(dict.fromkeys(c.source_id for c in result_chunks))
+    # First-occurrence-per-source (preserves rerank order, single pass).
+    first_per_source: dict[str, RetrievedChunk] = {}
+    for c in result_chunks:
+        first_per_source.setdefault(c.source_id, c)
+    source_ids_in_result = list(first_per_source)
     source_coverage = [
         SourceHit(
             source_id=sid,
-            video_title=next(c.video_title for c in result_chunks if c.source_id == sid),
-            best_score=_chunk_score(next(c for c in result_chunks if c.source_id == sid)),
+            video_title=first.video_title,
+            best_score=_chunk_score(first),
         )
-        for sid in source_ids_in_result
+        for sid, first in first_per_source.items()
     ]
 
     return RetrievalResult(
