@@ -105,3 +105,42 @@ async def test_retrieve_empty_pool_returns_empty(monkeypatch):
     result = await retrieve("q", ["s1"], _cfg(), top_k=8)
     assert result.chunks == []
     assert result.sources_with_hits == 0
+
+
+@pytest.mark.asyncio
+async def test_retrieve_falls_back_to_hybrid_order_when_rerank_raises(monkeypatch):
+    """Rerank failure must NOT drop chunks or raise — it degrades to hybrid
+    order with reranked=False (telemetry signals the degradation).
+
+    Pins the production try/except at embed.py:516-520. The model loads lazily
+    and can fail many ways (onnx init, shape mismatch, OOM) — silent fall-through
+    is by design but must be covered.
+    """
+    pool = [
+        RetrievedChunk(
+            content=f"c{i}",
+            video_title="t",
+            timestamp_start=float(i),
+            timestamp_end=float(i) + 1,
+            source_id="s1",
+            distance=0.0,
+            score=10.0 - i,
+            sequence_index=i,
+        )
+        for i in range(12)
+    ]
+
+    async def fake_hybrid(*a, **k):  # noqa: ANN001
+        return list(pool)
+
+    async def boom_rerank(*a, **k):  # noqa: ANN001
+        raise RuntimeError("onnx load failed")
+
+    monkeypatch.setattr(embed, "hybrid_search", fake_hybrid)
+    monkeypatch.setattr("bibilab.pipeline.rerank.rerank", boom_rerank)
+
+    result = await retrieve("q", ["s1"], _cfg(), top_k=8)
+
+    assert len(result.chunks) == 8  # not dropped
+    assert [c.content for c in result.chunks] == [f"c{i}" for i in range(8)]  # hybrid order
+    assert result.reranked is False  # degradation flagged
