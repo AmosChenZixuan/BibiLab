@@ -70,9 +70,10 @@ def _build_fenced_chunks(
 
 
 # Tool defs + registry for the RAG v2 two-tool surface (#370/#371).
-# RETRIEVE_TOOL_NAMES survives as the set of tools that feed the citation
-# registry / replay (only find_passages — read_source reads from the same
-# registry but does not register a NEW source; it just looks it up).
+# RETRIEVE_TOOL_NAMES is the set whose tool results carry a replayable chunk
+# array (only find_passages). read_source shares the SAME citation registry and
+# allocates a new [N] when find_passages has not already registered the source
+# this turn (dedup by source_id — spec §5.7).
 FIND_PASSAGES_TOP_K = 8
 
 FIND_PASSAGES_TOOL = ToolDefinition(
