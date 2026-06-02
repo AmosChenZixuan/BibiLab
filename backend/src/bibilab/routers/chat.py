@@ -634,24 +634,13 @@ async def run_chat_turn(
 
             for rs in read_source_calls:
                 entry = citation_registry.get(rs["source_id"])
-                title = entry.title if entry else ""
-                rs["source_title"] = title
-                rs["context"] = (
-                    [
-                        {
-                            "chunk_id": "",
-                            "citation_index": entry.index,
-                            "source_id": rs["source_id"],
-                            "source_title": title or "",
-                            "timestamp_start": 0.0,
-                            "timestamp_end": 0.0,
-                            "rerank_score": 0.0,
-                            "preview": "",
-                        }
-                    ]
-                    if entry
-                    else []
-                )
+                rs["source_title"] = entry.title if entry else ""
+                # read_source rows carry no chunk context — the read is continuous
+                # transcript, not a fenced locator result. A synthetic entry with
+                # zeroed fields would render as "0:00 / 0.00" in the frontend ledger
+                # (#371 follow-up); an empty array lets the renderer branch on
+                # tool_name and show a "read in full" affordance instead.
+                rs["context"] = []
             all_calls = retrieve_calls + read_source_calls
 
             meta: dict[str, Any] = {}
