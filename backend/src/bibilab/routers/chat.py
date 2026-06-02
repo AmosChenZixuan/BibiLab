@@ -3,6 +3,7 @@ import json
 import logging
 import re
 from collections.abc import AsyncGenerator
+from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
@@ -440,6 +441,28 @@ def _serialize_event_for_buffer(event: StreamEvent) -> dict | None:
     elif event.type == SSE_EVENT_ERROR:
         return {"type": SSE_EVENT_ERROR, "message": event.content}
     return None
+
+
+def _dump_prompt_trace(
+    message_id: str,
+    system: str | None,
+    iterations: list[dict],
+    debug_dir: Path,
+) -> None:
+    """Best-effort write of the LLM prompt trace for a chat turn (#393).
+
+    Writes {system, iterations[]} to debug_dir/{message_id}.json. Skipped
+    when iterations is empty (nothing to debug). All errors are caught and
+    logged; a dump failure must never break a turn.
+    """
+    if not iterations:
+        return
+    try:
+        debug_dir.mkdir(parents=True, exist_ok=True)
+        payload = {"system": system, "iterations": iterations}
+        (debug_dir / f"{message_id}.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2))
+    except Exception:
+        logger.warning("dump_prompt_trace_failed message_id=%s", message_id, exc_info=True)
 
 
 async def _sse_consumer(buf: StreamBuffer) -> AsyncGenerator[str, None]:
