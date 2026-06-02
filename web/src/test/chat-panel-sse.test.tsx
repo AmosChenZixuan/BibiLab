@@ -5,6 +5,7 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import { LanguageProvider } from "@/app/LanguageContext";
 import { JobActivityProvider } from "@/components/jobs/JobActivityProvider";
 import { ChatPanel } from "@/components/lists/ChatPanel";
+import { TEST_IDS } from "@/lib/test-ids";
 import type { Source } from "@/lib/types";
 
 const SOURCE_1: Source = {
@@ -323,10 +324,10 @@ describe("chat panel — SSE streaming (phase 6.2)", () => {
     await waitFor(() => {
       const paras = document.querySelectorAll(".citation-paragraph");
       expect(paras.length).toBe(1);
-      expect(paras[0].querySelector(".cite-chip")).not.toBeNull();
+      expect(paras[0].querySelector(`[data-testid='${TEST_IDS.citeChip}']`)).not.toBeNull();
       expect(paras[0].textContent).toContain("出香味");
       for (const p of paras) {
-        const hasChip = p.querySelector(".cite-chip") !== null;
+        const hasChip = p.querySelector(`[data-testid='${TEST_IDS.citeChip}']`) !== null;
         const text = (p.textContent ?? "").replace(/\[\d+\]/g, "").trim();
         expect(hasChip && text === "").toBe(false);
       }
@@ -501,13 +502,13 @@ describe("chat panel — conversation history (phase 6.3)", () => {
     await userEvent.keyboard("{Enter}");
 
     await waitFor(() => {
-      const userBubble = document.querySelector(".bubble-user");
+      const userBubble = document.querySelector(`[data-testid='${TEST_IDS.bubbleUser}']`);
       expect(userBubble).not.toBeNull();
       expect(userBubble).toHaveTextContent("Hello");
     });
 
     await waitFor(() => {
-      const assistantBubble = document.querySelector(".bubble-assistant");
+      const assistantBubble = document.querySelector(`[data-testid='${TEST_IDS.bubbleAssistant}']`);
       expect(assistantBubble).not.toBeNull();
       expect(assistantBubble).toHaveTextContent("Answer.");
     });

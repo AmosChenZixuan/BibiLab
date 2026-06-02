@@ -1,6 +1,6 @@
+@import url("https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap");
 @import "tailwindcss";
 @plugin "@tailwindcss/typography";
-@import url("https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap");
 
 /* DigestAccordion loading animation */
 @keyframes digest-loading-bounce {
@@ -25,6 +25,17 @@
     repeating-linear-gradient(90deg, rgba(255,255,255,0.06) 0px, rgba(255,255,255,0.06) 1px, transparent 1px, transparent 32px);
 }
 
+/* Custom utilities — single-use, exposed so the JSX can reference them by name
+   instead of inlining bracket-syntax values that don't have a Tailwind built-in. */
+@utility chat-cursor-blink {
+  animation: chat-cursor-blink 1s step-end infinite;
+}
+
+/* ToolLedger rail — 3px offset so the 1px rail center aligns with the 6px dot center. */
+@utility rail-left {
+  left: 3px;
+}
+
 @theme {
   /* ── Colors ──────────────────────────────────────────────────────────────── */
   --color-ink:     #334155;       /* primary text — slate-700 */
@@ -32,7 +43,7 @@
   --color-pink:    #f08bb9;       /* accent — gradient start, eyebrow */
   --color-blue:    #5b7faa;       /* accent — links, active states, gradient end */
   --color-sky:     #7dd9ff;       /* highlight tints via opacity modifier */
-  --color-sky-35:  rgba(125, 217, 255, 0.35);  /* user bubble border */
+  --color-sky-35:  rgba(125, 217, 255, 0.35);  /* user bubble border, focus ring */
   --color-border:  rgba(100, 116, 139, 0.18);  /* universal panel/input border — slate-500/18 */
   --color-scrim: rgba(17, 35, 63, 0.3);
   --color-surface: #e2e8f0;       /* placeholder backgrounds — slate-200 */
@@ -41,6 +52,7 @@
   /* ── Typography ──────────────────────────────────────────────────────────── */
   --font-sans: "Plus Jakarta Sans", "Segoe UI", sans-serif;
   --font-mono:  SFMono-Regular, Consolas, monospace;
+  --text-2xs: 10px;               /* ts / toolcall badge */
 
   /* ── Z-index ─────────────────────────────────────────────────────────────── */
   --z-nav:      100;  /* fixed navbar */
@@ -81,94 +93,21 @@
     animation: digest-loading-bounce 1.2s ease-in-out infinite;
   }
 
-  /* Chat bubble tail overrides — 6px on the bubble's "tail" corner */
-  .bubble-user {
-    background: rgba(125, 217, 255, 0.1);
-    border: 1px solid rgba(125, 217, 255, 0.35);
-    border-bottom-right-radius: 6px;
-  }
-
-  .bubble-assistant {
-    background: rgba(255, 255, 255, 0.7);
-    border: 1px solid var(--color-border);
-    border-bottom-left-radius: 6px;
-  }
-
-  .citation-paragraph + .citation-paragraph {
-    margin-top: 0.75em;
-  }
-
-  /* Chat streaming cursor */
-  .chat-cursor {
-    display: inline-block;
-    width: 2px;
-    height: 14px;
-    background: var(--color-blue);
-    vertical-align: text-bottom;
-    margin-left: 2px;
-    animation: chat-cursor-blink 1s step-end infinite;
-  }
-
-  /* Message row layout */
-  .msg {
-    display: flex;
-    flex-direction: column;
-    max-width: 88%;
-    gap: 6px;
-  }
-
-  .msg.user {
-    align-self: flex-end;
-    align-items: flex-end;
-  }
-
-  .msg.assistant {
-    align-self: flex-start;
-    align-items: flex-start;
-    max-width: 88%;
-  }
-
-  /* Retrieval ledger — faded tool-call trace, locked to the message column */
-  .ledger-rail {
-    position: relative;
-  }
-
-  .ledger-rail::before {
-    content: "";
-    position: absolute;
-    left: 3px;
-    top: 10px;
-    bottom: 10px;
-    width: 1px;
-    background: var(--color-border);
-  }
-
-  .ledger-step {
-    position: relative;
-    padding-left: 18px;
-  }
-
-  .ledger-dot {
-    position: absolute;
-    left: 0;
-    top: 6px;
-    width: 7px;
-    height: 7px;
-    border-radius: 9999px;
-    background: var(--color-muted);
-  }
-
-  .ledger-dot--pending {
-    background: var(--color-blue);
-  }
-
-  /* Bubble base */
+  /* Chat bubble base — wraps ReactMarkdown output, so child selectors
+     target <p>/<code>/<table>/etc. emitted by the markdown renderer. */
   .bubble {
     border-radius: 16px;
     padding: 10px 14px;
     font-size: 14px;
     line-height: 1.55;
     color: var(--color-ink);
+  }
+
+  /* Inter-paragraph gap inside a streamed answer. Each .citation-paragraph is
+     emitted by renderParagraphs() (ChatPanel.tsx); the + adjacent-sibling
+     combinator matches all but the first, restoring the 0.75em rhythm. */
+  .citation-paragraph + .citation-paragraph {
+    margin-top: 0.75em;
   }
 
   .bubble p {
@@ -223,71 +162,6 @@
     border-bottom: 1px solid var(--color-border);
   }
 
-  /* Citation chips */
-  .cite-chip-wrap {
-    position: relative;
-    display: inline;
-  }
-
-  .cite-chip {
-    display: inline;
-    background: none;
-    border: none;
-    padding: 0;
-    margin: 0 1px;
-    font-size: 0.8em;
-    font-weight: 600;
-    color: var(--color-blue);
-    cursor: pointer;
-    vertical-align: baseline;
-    line-height: inherit;
-    font-family: var(--font-sans);
-  }
-
-  .cite-chip:hover {
-    text-decoration: underline;
-  }
-
-  .cite-chip:focus-visible {
-    outline: 2px solid var(--color-blue);
-    outline-offset: 1px;
-    border-radius: 2px;
-  }
-
-  .cite-chip-tooltip {
-    display: none;
-    position: absolute;
-    bottom: calc(100% + 6px);
-    left: 50%;
-    transform: translateX(-50%);
-    max-width: 260px;
-    padding: 4px 8px;
-    background: var(--color-ink);
-    color: #fff;
-    font-size: 12px;
-    font-weight: 400;
-    line-height: 1.4;
-    border-radius: 6px;
-    pointer-events: none;
-    z-index: var(--z-tooltip, 50);
-    word-break: break-word;
-    width: max-content;
-  }
-
-  .cite-chip-wrap:hover .cite-chip-tooltip,
-  .cite-chip-wrap:focus-within .cite-chip-tooltip {
-    display: block;
-  }
-
-  .cite-missing {
-    display: inline;
-    font-size: 0.8em;
-    color: var(--color-muted);
-    cursor: not-allowed;
-    opacity: 0.6;
-    vertical-align: baseline;
-  }
-
   /* Tool-call card */
   .toolcall {
     display: flex;
@@ -322,7 +196,7 @@
     letter-spacing: 0.02em;
   }
 
-  /* Interruption / retry */
+  /* Interruption / retry row */
   .interrupted {
     display: flex;
     align-items: center;
@@ -339,105 +213,6 @@
   .interrupted span {
     font-size: 12px;
     color: var(--color-pink);
-  }
-
-  .retry {
-    font-size: 12px;
-    color: var(--color-blue);
-    font-weight: 500;
-    cursor: pointer;
-    background: none;
-    border: 0;
-    padding: 0;
-    margin-left: auto;
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-  }
-
-  .retry:hover {
-    text-decoration: underline;
-  }
-
-  .retry:focus-visible {
-    outline: 2px solid var(--color-blue);
-    outline-offset: 2px;
-  }
-
-  /* Timestamp */
-  .ts {
-    font-size: 10px;
-    color: var(--color-muted);
-    font-family: var(--font-mono);
-    padding: 0 4px;
-  }
-
-  /* Clear confirm popover */
-  .popover {
-    position: absolute;
-    top: 46px;
-    right: 12px;
-    width: 240px;
-    background: #fff;
-    border: 1px solid var(--color-border);
-    border-radius: 12px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-    padding: 14px;
-    z-index: 3;
-  }
-
-  .popover::before {
-    content: "";
-    position: absolute;
-    top: -6px;
-    right: 18px;
-    width: 10px;
-    height: 10px;
-    background: #fff;
-    border-top: 1px solid var(--color-border);
-    border-left: 1px solid var(--color-border);
-    transform: rotate(45deg);
-  }
-
-  .popover h4 {
-    margin: 0 0 4px;
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--color-ink);
-  }
-
-  .popover p {
-    margin: 0 0 12px;
-    font-size: 12px;
-    color: var(--color-muted);
-    line-height: 1.5;
-  }
-
-  .popover .actions {
-    display: flex;
-    gap: 6px;
-    justify-content: flex-end;
-  }
-
-  /* Input bar */
-  .input-wrap {
-    position: relative;
-    border: 1px solid var(--color-border);
-    background: rgba(255, 255, 255, 0.9);
-    border-radius: 16px;
-    padding: 10px 44px 10px 14px;
-    transition: all 0.15s;
-  }
-
-  .input-wrap:focus-within {
-    border-color: rgba(91, 127, 170, 0.25);
-    box-shadow: 0 0 0 2px var(--color-sky-35);
-  }
-
-  .input-wrap.disabled {
-    background: rgba(241, 245, 249, 0.7);
-    border-color: rgba(226, 232, 240, 0.5);
-    cursor: not-allowed;
   }
 
   a {

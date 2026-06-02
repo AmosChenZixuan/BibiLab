@@ -5,6 +5,7 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import { LanguageProvider } from "@/app/LanguageContext";
 import { JobActivityProvider } from "@/components/jobs/JobActivityProvider";
 import { ChatPanel } from "@/components/lists/ChatPanel";
+import { TEST_IDS } from "@/lib/test-ids";
 import type { Source } from "@/lib/types";
 
 const SOURCE_1: Source = {
@@ -141,7 +142,7 @@ describe("chat panel", () => {
     });
     // cite-missing span renders [1] with the i18n tooltip
     const chip = screen.getByText("[1]");
-    expect(chip.className).toContain("cite-missing");
+    expect(chip.getAttribute("data-testid")).toBe(TEST_IDS.citeMissing);
   });
 
   test("multi-paragraph response renders separate <p> elements", async () => {
@@ -252,7 +253,7 @@ describe("chat panel", () => {
     await waitFor(() => {
       const paras = document.querySelectorAll(".citation-paragraph");
       expect(paras.length).toBe(1);
-      expect(paras[0].querySelector(".cite-chip")).not.toBeNull();
+      expect(paras[0].querySelector(`[data-testid='${TEST_IDS.citeChip}']`)).not.toBeNull();
     });
   });
 
@@ -309,10 +310,10 @@ describe("chat panel", () => {
       const paras = document.querySelectorAll(".citation-paragraph");
       // Exactly one paragraph: "a" with the chip inline. No citation-only para.
       expect(paras.length).toBe(1);
-      expect(paras[0].querySelector(".cite-chip")).not.toBeNull();
+      expect(paras[0].querySelector(`[data-testid='${TEST_IDS.citeChip}']`)).not.toBeNull();
       expect(paras[0].textContent).toContain("a");
       for (const p of paras) {
-        const hasChip = p.querySelector(".cite-chip") !== null;
+        const hasChip = p.querySelector(`[data-testid='${TEST_IDS.citeChip}']`) !== null;
         const text = (p.textContent ?? "").replace(/\[\d+\]/g, "").trim();
         expect(hasChip && text === "").toBe(false);
       }
@@ -374,7 +375,7 @@ describe("chat panel", () => {
       const uls = document.querySelectorAll("ul");
       expect(uls.length).toBe(1);
       // Both chips are inside <li> elements
-      const chipsInLi = document.querySelectorAll("li .cite-chip");
+      const chipsInLi = document.querySelectorAll(`li [data-testid='${TEST_IDS.citeChip}']`);
       expect(chipsInLi.length).toBe(2);
     });
   });
@@ -432,7 +433,7 @@ describe("chat panel", () => {
       // Chip is inside the same paragraph as the heading
       const headingPara = document.querySelector(".citation-paragraph:has(h2)");
       expect(headingPara).not.toBeNull();
-      expect(headingPara!.querySelector(".cite-chip")).not.toBeNull();
+      expect(headingPara!.querySelector(`[data-testid='${TEST_IDS.citeChip}']`)).not.toBeNull();
       const h2 = headingPara!.querySelector("h2");
       expect(h2).not.toBeNull();
       expect(h2!.textContent).toContain("The Title");
@@ -490,12 +491,12 @@ describe("chat panel", () => {
     );
 
     await waitFor(() => {
-      const chips = document.querySelectorAll(".cite-chip");
+      const chips = document.querySelectorAll(`[data-testid='${TEST_IDS.citeChip}']`);
       expect(chips.length).toBe(2);
       // Both chips in same paragraph
       const para = document.querySelector(".citation-paragraph");
       expect(para).not.toBeNull();
-      expect(para!.querySelectorAll(".cite-chip").length).toBe(2);
+      expect(para!.querySelectorAll(`[data-testid='${TEST_IDS.citeChip}']`).length).toBe(2);
     });
   });
 

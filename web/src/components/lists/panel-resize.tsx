@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
 
 export const MIN_PANEL = 280;
+export const MIN_CHAT_PANEL = 720;  // max-w-2xl (672) + px-4.5×2 padding + breathing room
 export const COLLAPSED_PANEL = 48;
 export const RESIZER_SIZE = 16;
 
@@ -20,13 +21,30 @@ export function usePanelResize(
   labCollapsed: boolean,
 ) {
   // ── Ratio refs (not pixel state) ─────────────────────────────────────────
-  const sourcesRatio = useRef<number>(1 / 3);
-  const labRatio = useRef<number>(1 / 3);
+  const sourcesRatio = useRef<number>(0);
+  const labRatio = useRef<number>(0);
+  // One-shot gate: rebalanceRatioRefs runs exactly once per hook instance, on the first
+  // ResizeObserver measurement. Without this gate, every window resize would snap sources/
+  // lab back to 50/50 and clobber the user's drag. Subsequent drags and resizes preserve
+  // whatever the last set value was; the drag handler's clamp keeps it inside constraints.
+  const ratiosRebalanced = useRef<boolean>(false);
+
+  // Split the post-MIN_CHAT_PANEL remainder 50/50 — gives chat its min width while letting
+  // the user redistribute mass via the drag clamp. Runs from the first measurement only;
+  // the render's pixel-width clamp below handles the infeasible narrow-viewport case.
+  const rebalanceRatioRefs = useCallback((workspaceWidth: number) => {
+    if (ratiosRebalanced.current) return;
+    if (workspaceWidth <= 0 || sourcesCollapsed || labCollapsed) return;
+    const availableRatio = 1 - MIN_CHAT_PANEL / workspaceWidth;
+    sourcesRatio.current = availableRatio / 2;
+    labRatio.current = availableRatio / 2;
+    ratiosRebalanced.current = true;
+  }, [sourcesCollapsed, labCollapsed]);
 
   const active = useRef<ActiveResizer>(null);
   const startX = useRef<number>(0);
-  const startSourcesRatio = useRef<number>(1 / 3);
-  const startLabRatio = useRef<number>(1 / 3);
+  const startSourcesRatio = useRef<number>(0);
+  const startLabRatio = useRef<number>(0);
 
   // Container width — state so derived widths recompute reactively
   const [containerContentWidth, setContainerContentWidth] = useState<number>(0);
@@ -56,7 +74,10 @@ export function usePanelResize(
   }, []);
 
   // ── Measure container size via ResizeObserver ─────────────────────────────
-  useEffect(() => {
+  // useLayoutEffect (not useEffect) so the first paint already has the real container
+  // width and the ratio refs. Otherwise the initial render produces sourcesWidth=0,
+  // labWidth=0, chatWidth=0 — a one-frame flash of empty panel content.
+  useLayoutEffect(() => {
     const container = containerRef.current;
     if (!container) return;
 
@@ -67,9 +88,10 @@ export function usePanelResize(
 
     function measure() {
       if (!container) return;
-      setContainerContentWidth(
-        Math.max(0, container.clientWidth - paddingLeft - paddingRight),
-      );
+      const contentWidth = Math.max(0, container.clientWidth - paddingLeft - paddingRight);
+      const workspaceWidth = getResizableWorkspaceWidth(contentWidth);
+      rebalanceRatioRefs(workspaceWidth);
+      setContainerContentWidth(contentWidth);
     }
 
     measure();
@@ -80,7 +102,7 @@ export function usePanelResize(
     return () => {
       observer.disconnect();
     };
-  }, [containerRef]);
+  }, [containerRef, rebalanceRatioRefs]);
 
   // ── Drag handlers — update ratio refs ────────────────────────────────────
   useEffect(() => {
@@ -96,7 +118,7 @@ export function usePanelResize(
 
       if (active.current === "left") {
         const minRatio = sourcesCollapsed ? COLLAPSED_PANEL / workspaceWidth : MIN_PANEL / workspaceWidth;
-        const maxRatio = 1 - labRatio.current - MIN_PANEL / workspaceWidth;
+        const maxRatio = 1 - labRatio.current - MIN_CHAT_PANEL / workspaceWidth;
         sourcesRatio.current = clamp(
           startSourcesRatio.current + deltaRatio,
           minRatio,
@@ -104,7 +126,7 @@ export function usePanelResize(
         );
       } else {
         const minRatio = labCollapsed ? COLLAPSED_PANEL / workspaceWidth : MIN_PANEL / workspaceWidth;
-        const maxRatio = 1 - sourcesRatio.current - MIN_PANEL / workspaceWidth;
+        const maxRatio = 1 - sourcesRatio.current - MIN_CHAT_PANEL / workspaceWidth;
         labRatio.current = clamp(
           startLabRatio.current - deltaRatio,
           minRatio,
@@ -139,12 +161,19 @@ export function usePanelResize(
 
   // ── Derived pixel widths (computed every render, not stored) ──────────────
   const workspaceWidth = getResizableWorkspaceWidth(containerContentWidth);
+  // Clamp sources/lab to MIN_PANEL when expanded. The rebalance formula can yield
+  // ratios that produce sub-MIN_PANEL widths (small viewports where availableRatio
+  // is small or negative), and a user's drag can leave ratios in a state that
+  // doesn't fit the current workspace on resize. Clamping here keeps the layout
+  // valid; chat takes the residual (and may be < MIN_CHAT_PANEL when infeasible).
+  const sourcesMin = sourcesCollapsed ? COLLAPSED_PANEL : MIN_PANEL;
+  const labMin = labCollapsed ? COLLAPSED_PANEL : MIN_PANEL;
   const sourcesWidth = sourcesCollapsed
     ? COLLAPSED_PANEL
-    : Math.round(sourcesRatio.current * workspaceWidth);
+    : Math.max(sourcesMin, Math.round(sourcesRatio.current * workspaceWidth));
   const labWidth = labCollapsed
     ? COLLAPSED_PANEL
-    : Math.round(labRatio.current * workspaceWidth);
+    : Math.max(labMin, Math.round(labRatio.current * workspaceWidth));
   const chatWidth = workspaceWidth - sourcesWidth - labWidth;
 
   // Guard against unmount mid-drag

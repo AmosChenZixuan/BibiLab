@@ -1,7 +1,7 @@
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
-import { usePanelResize, COLLAPSED_PANEL } from "@/components/lists/panel-resize";
+import { usePanelResize, COLLAPSED_PANEL, MIN_CHAT_PANEL, MIN_PANEL } from "@/components/lists/panel-resize";
 
 // ─── ResizeObserver mock ───────────────────────────────────────────────────
 
@@ -63,11 +63,14 @@ describe("usePanelResize", () => {
 
     triggerResize(div, 1440);
 
-    // workspaceWidth = 1440 - 32 = 1408; ratio = 1/3 → sourcesW ≈ 469
-    expect(result.current.sourcesW).toBeGreaterThan(400);
-    expect(result.current.sourcesW).toBeLessThan(520);
-    expect(result.current.labW).toBeGreaterThan(400);
-    expect(result.current.labW).toBeLessThan(520);
+    // workspaceWidth = 1440 - 32 = 1408. rebalanceRatioRefs sets
+    // sourcesRatio = labRatio = (1 - 720/1408) / 2 ≈ 0.244, giving
+    // sourcesWidth = labWidth = round(0.244 * 1408) = 344, chatW = 720.
+    expect(result.current.sourcesW).toBeGreaterThan(MIN_PANEL);
+    expect(result.current.sourcesW).toBeLessThan(380);
+    expect(result.current.labW).toBeGreaterThan(MIN_PANEL);
+    expect(result.current.labW).toBeLessThan(380);
+    expect(result.current.chatW).toBe(MIN_CHAT_PANEL);
   });
 
   // ── AC3 & AC4: Ratio preserved on container resize — proportional scaling ───
@@ -80,20 +83,20 @@ describe("usePanelResize", () => {
 
     triggerResize(div, 1440);
 
-    // At 1440: workspaceWidth=1408, sourcesW≈469, ratio=1/3
+    // At 1440: workspaceWidth=1408; rebalance sets sourcesRatio ≈ 0.244 → sourcesW ≈ 344
     const sourcesW_1440 = result.current.sourcesW;
-    expect(sourcesW_1440).toBeGreaterThan(400);
-    expect(sourcesW_1440).toBeLessThan(520);
+    expect(sourcesW_1440).toBeLessThan(380);
 
     // Shrink to 800: workspaceWidth=768
     triggerResize(div, 800);
 
-    // Ratio preserved (1/3) → sourcesW ≈ 768/3 = 256 (clamped to MIN by hook math)
-    // If ratio were reset, sourcesW would be the same absolute pixel value (no change)
-    // The key test: at 800px, sourcesW is smaller than at 1440px (proportional)
+    // At 800px the rebalance from the 1440 measurement is preserved (one-shot gate).
+    // sourcesRatio=0.244, so sourcesW = round(0.244 * 768) = 187, then clamped to MIN_PANEL=280.
+    // chat = 768 - 280 - 280 = 208, below MIN_CHAT_PANEL=720 (layout infeasible, accepted).
+    // Key test: sourcesW is smaller than at 1440px (proportional to workspace, not absolute)
     expect(result.current.sourcesW).toBeLessThan(sourcesW_1440);
 
-    // chatW + sourcesW + labW === 768
+    // Sum invariant always holds
     const total = result.current.sourcesW + result.current.chatW + result.current.labW;
     expect(total).toBe(768);
   });

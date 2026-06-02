@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { useAutoScroll } from "@/components/lists/hooks/useAutoScroll";
 import { useSSEStream } from "@/components/lists/hooks/useSSEStream";
@@ -25,6 +25,7 @@ import { PulseRing } from "@/components/ui/PulseRing";
 import type { Source } from "@/lib/types";
 import { api } from "@/lib/api";
 import { usePendingDeletions } from "@/lib/hooks/usePendingDeletions";
+import { TEST_IDS } from "@/lib/test-ids";
 import {
   autoResize,
   formatSubtitle,
@@ -49,17 +50,31 @@ function CitationChip({
   const source = sources.find((s) => s.id === sourceId);
   if (!source) {
     return (
-      <span className="cite-missing" title={t("chat.citationMissing")}>
+      <span
+        className="text-2xs text-muted cursor-not-allowed opacity-60"
+        data-testid={TEST_IDS.citeMissing}
+        title={t("chat.citationMissing")}
+      >
         [{index}]
       </span>
     );
   }
   return (
-    <span className="cite-chip-wrap">
-      <button type="button" className="cite-chip" onClick={() => onOpenSource?.(source, { highlightChunks: chunkIds })}>
+    <span className="group/cite relative inline">
+      <button
+        type="button"
+        onClick={() => onOpenSource?.(source, { highlightChunks: chunkIds })}
+        data-testid={TEST_IDS.citeChip}
+        className="mx-px border-0 bg-transparent p-0 text-2xs font-semibold text-blue cursor-pointer hover:underline focus-visible:rounded-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue focus-visible:outline-offset-1"
+      >
         [{index}]
       </button>
-      <span className="cite-chip-tooltip">{source.title}</span>
+      <span
+        data-testid={TEST_IDS.citeChipTooltip}
+        className="pointer-events-none absolute bottom-full left-1/2 z-50 hidden w-max max-w-64 -translate-x-1/2 -translate-y-1.5 rounded-md bg-ink px-2 py-1 text-xs leading-snug text-white break-words group-hover/cite:block group-focus-within/cite:block"
+      >
+        {source.title}
+      </span>
     </span>
   );
 }
@@ -205,8 +220,21 @@ function renderParagraphs(
           </div>
         );
       })}
-      {isStreaming && <span className="chat-cursor" />}
+      {isStreaming && (
+        <span className="inline-block w-0.5 h-3.5 bg-blue align-text-bottom ml-0.5 chat-cursor-blink" />
+      )}
     </>
+  );
+}
+
+function AssistantBubble({ children }: { children: ReactNode }) {
+  return (
+    <div
+      data-testid={TEST_IDS.bubbleAssistant}
+      className="bubble rounded-2xl rounded-bl-md border border-border bg-white/70"
+    >
+      {children}
+    </div>
   );
 }
 
@@ -334,7 +362,11 @@ export function ChatPanel({
             </button>
 
             {showClearPopover && (
-              <div className="popover absolute right-0 top-9 z-30 w-60 rounded-xl border border-border bg-white p-3.5 shadow-lg">
+              <div className="absolute right-0 top-9 z-30 w-60 rounded-xl border border-border bg-white p-3.5 shadow-lg">
+                <span
+                  aria-hidden="true"
+                  className="absolute -top-1.5 right-4.5 size-2.5 rotate-45 border-l border-t border-border bg-white"
+                />
                 <p className="mb-1 text-sm font-semibold text-ink">{t("chat.clearConfirm.title")}</p>
                 <p className="mb-3 text-xs text-muted">{t("chat.clearConfirm.body")}</p>
                 <div className="flex justify-end gap-1.5">
@@ -414,11 +446,21 @@ export function ChatPanel({
                 (msg.rag?.calls?.length ?? 0) > 0 ||
                 (msg.metadataCalls?.length ?? 0) > 0;
               return (
-              <div key={msg.id} className={`msg ${msg.role}`}>
+              <div
+                key={msg.id}
+                className={`flex max-w-2xl flex-col gap-1.5 ${
+                  msg.role === "user" ? "self-end items-end" : "self-start items-start"
+                }`}
+              >
                 {msg.role === "user" ? (
                   <>
-                    <div className="bubble bubble-user">{msg.content}</div>
-                    <span className="ts">{msg.timestamp}</span>
+                    <div
+                      data-testid={TEST_IDS.bubbleUser}
+                      className="bubble rounded-2xl rounded-br-md border border-sky-35 bg-sky/10"
+                    >
+                      {msg.content}
+                    </div>
+                    <span className="text-2xs text-muted font-mono px-1">{msg.timestamp}</span>
                   </>
                 ) : (
                   <>
@@ -434,13 +476,13 @@ export function ChatPanel({
                     {msg.isStreaming && !msg.content && !msg.contentBlocks.length ? (
                       <PulseRing />
                     ) : msg.contentBlocks.length > 0 ? (
-                      <div className="bubble bubble-assistant">
+                      <AssistantBubble>
                         {renderParagraphs(msg.contentBlocks, sources, onOpenSource, msg.isStreaming)}
-                      </div>
+                      </AssistantBubble>
                     ) : msg.content ? (
-                      <div className="bubble bubble-assistant">
+                      <AssistantBubble>
                         <ReactMarkdown>{msg.content}</ReactMarkdown>
-                      </div>
+                      </AssistantBubble>
                     ) : null}
                     {msg.toolCall && (
                       <div className="toolcall">
@@ -453,13 +495,17 @@ export function ChatPanel({
                       <div className="interrupted">
                         <span className="ic"><AlertCircle size={14} /></span>
                         <span>{getErrorLabel(msg.error, t)}</span>
-                        <button type="button" onClick={() => retryMessage(msg.id)} className="retry">
+                        <button
+                          type="button"
+                          onClick={() => retryMessage(msg.id)}
+                          className="ml-auto inline-flex cursor-pointer items-center gap-1 border-0 bg-transparent p-0 text-xs font-medium text-blue hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue focus-visible:outline-offset-2"
+                        >
                           <RotateCcw size={12} />{t("chat.retry")}
                         </button>
                       </div>
                     )}
                     {!msg.isStreaming && !msg.error && (
-                      <span className="ts">{msg.timestamp}</span>
+                      <span className="text-2xs text-muted font-mono px-1">{msg.timestamp}</span>
                     )}
                   </>
                 )}
@@ -485,7 +531,13 @@ export function ChatPanel({
       {/* Input bar */}
       <div className="shrink-0 border-t border-border bg-white/55 px-3.5 py-5">
         <div className="relative">
-          <div className={`input-wrap${!hasSources || isStreaming ? " disabled" : ""}`}>
+          <div
+            className={`relative rounded-2xl border py-2.5 pl-3.5 pr-11 transition-all duration-150 ${
+              !hasSources || isStreaming
+                ? "cursor-not-allowed border-slate-200/50 bg-slate-100/70"
+                : "border-border bg-white/90 focus-within:border-blue/25 focus-within:ring-2 focus-within:ring-sky-35"
+            }`}
+          >
             <textarea
               ref={textareaRef}
               value={inputValue}
