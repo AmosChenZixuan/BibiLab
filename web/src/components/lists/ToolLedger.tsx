@@ -1,4 +1,3 @@
-import { FIND_PASSAGES_TOOL_NAME, TOOL_DISPLAY } from "@/lib/tool-display";
 import type { RetrievalCall, PendingRagCall } from "@/lib/chat-utils";
 import { ToolLedgerRow } from "./ToolLedgerRow";
 
@@ -24,17 +23,10 @@ export function ToolLedger({
 
   if (steps.length === 0) return null;
 
-  const getConfig = (s: Step) => {
-    if ("call" in s) {
-      return TOOL_DISPLAY[s.call.tool_name] ?? TOOL_DISPLAY[FIND_PASSAGES_TOOL_NAME];
-    }
-    return TOOL_DISPLAY[s.pending.tool_name] ?? TOOL_DISPLAY[FIND_PASSAGES_TOOL_NAME];
-  };
-
   const renderRow = (s: Step) =>
     "call" in s
-      ? <ToolLedgerRow config={getConfig(s)} call={s.call} streaming={streaming} />
-      : <ToolLedgerRow config={getConfig(s)} pending={s.pending} />;
+      ? <ToolLedgerRow call={s.call} streaming={streaming} />
+      : <ToolLedgerRow pending={s.pending} />;
 
   if (steps.length === 1) {
     return <div className="w-full flex flex-col">{renderRow(steps[0])}</div>;

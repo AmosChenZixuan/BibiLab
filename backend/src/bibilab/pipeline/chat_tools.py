@@ -257,12 +257,17 @@ async def execute_read_source(
             sequence_number,
             season_number,
         )
-        return {"_chunks": error, "source_id": None}
+        return {"_chunks": error, "source_id": None, "source_title": "", "tool_name": "read_source"}
 
     source = await get_source(resolved)
     if source is None:
         logger.info("read_source: resolved=%s but source row missing", resolved)
-        return {"_chunks": f"source {resolved!r} not found.", "source_id": None}
+        return {
+            "_chunks": f"source {resolved!r} not found.",
+            "source_id": None,
+            "source_title": "",
+            "tool_name": "read_source",
+        }
     # aiosqlite.Row supports [] but not .get; the narrative builder wants the
     # latter. Convert once at the boundary rather than wrapping every lookup.
     source = {k: source[k] for k in source.keys()}
@@ -286,7 +291,12 @@ async def execute_read_source(
         entry.index,
     )
     narrative = _build_source_narrative(source, segments, idx=entry.index)
-    return {"_chunks": narrative, "source_id": resolved}
+    return {
+        "_chunks": narrative,
+        "source_id": resolved,
+        "source_title": source.get("title", ""),
+        "tool_name": "read_source",
+    }
 
 
 def _facet_int(v: object, key: str) -> int | None:

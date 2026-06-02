@@ -2,16 +2,15 @@ import { useState } from "react";
 import { Search, BookOpen, Loader2, AlertTriangle, ChevronRight } from "lucide-react";
 import { useLanguage } from "@/app/LanguageContext";
 import { formatMediaTimestamp, facetNoMatchHint, type RetrievalCall, type PendingRagCall } from "@/lib/chat-utils";
-import { READ_SOURCE_TOOL_NAME, type ToolDisplayConfig } from "@/lib/tool-display";
+import { READ_SOURCE_TOOL_NAME } from "@/lib/tool-display";
 
 interface ToolLedgerRowProps {
-  config: ToolDisplayConfig;
   call?: RetrievalCall;
   pending?: PendingRagCall;
   streaming?: boolean;
 }
 
-export function ToolLedgerRow({ config, call, pending, streaming = false }: ToolLedgerRowProps) {
+export function ToolLedgerRow({ call, pending, streaming = false }: ToolLedgerRowProps) {
   const { t } = useLanguage();
   const [expanded, setExpanded] = useState(false);
 
@@ -19,8 +18,9 @@ export function ToolLedgerRow({ config, call, pending, streaming = false }: Tool
     if (pending.tool_name === READ_SOURCE_TOOL_NAME) {
       return (
         <div className="flex items-center gap-1.5 py-0.5 text-xs text-muted opacity-70">
+          <BookOpen size={12} className="shrink-0 opacity-70" aria-hidden />
           <Loader2 size={12} className="animate-spin shrink-0" />
-          <span>{t("chat.ledger.readSourceLabel")}</span>
+          <span>{t("chat.ledger.summaryPending")}</span>
         </div>
       );
     }
@@ -34,13 +34,14 @@ export function ToolLedgerRow({ config, call, pending, streaming = false }: Tool
 
   if (!call) return null;
 
-  // read_source: compact "read in full" chip — no per-chunk expand (context is always [])
+  // read_source: icon + source title, no per-chunk expand (context is always [])
   if (call.tool_name === READ_SOURCE_TOOL_NAME) {
     return (
       <div className="flex w-full items-center gap-1.5 text-xs text-muted">
         <BookOpen size={12} className="shrink-0 self-center opacity-70" aria-hidden />
-        <span>{t("chat.ledger.readSourceLabel")}</span>
-        {call.source_title && <span className="min-w-0 truncate font-medium text-ink">{call.source_title}</span>}
+        <span className="min-w-0 truncate font-medium text-ink">
+          {call.source_title || t("chat.ledger.readSourceFallbackTitle")}
+        </span>
       </div>
     );
   }
