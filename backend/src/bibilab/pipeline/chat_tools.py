@@ -250,10 +250,18 @@ async def execute_read_source(
 
     resolved, error = await _resolve_single_source(source_ids, source_id, sequence_number, season_number)
     if error is not None:
+        logger.info(
+            "read_source: unresolved (%s) source_id=%r seq=%s season=%s",
+            error,
+            source_id,
+            sequence_number,
+            season_number,
+        )
         return {"_chunks": error, "source_id": None}
 
     source = await get_source(resolved)
     if source is None:
+        logger.info("read_source: resolved=%s but source row missing", resolved)
         return {"_chunks": f"source {resolved!r} not found.", "source_id": None}
     # aiosqlite.Row supports [] but not .get; the narrative builder wants the
     # latter. Convert once at the boundary rather than wrapping every lookup.
@@ -269,6 +277,14 @@ async def execute_read_source(
         entry = CitationRegistryEntry(index=next_index, source_id=resolved, title=source.get("title", ""))
         registry[resolved] = entry
 
+    logger.info(
+        "read_source: resolved=%s seq=%s season=%s segments=%d idx=%d",
+        resolved,
+        sequence_number,
+        season_number,
+        len(segments),
+        entry.index,
+    )
     narrative = _build_source_narrative(source, segments, idx=entry.index)
     return {"_chunks": narrative, "source_id": resolved}
 
