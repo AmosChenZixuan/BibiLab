@@ -23,13 +23,13 @@ LLM delta stream
 
 | File | Role |
 |---|---|
-| `backend/src/bibilab/pipeline/chat_tools.py` | `CitationRegistryEntry`, `_format_chunk_for_llm`, `_build_source_headers`, `_build_fenced_chunks`, `execute_retrieve` |
+| `backend/src/bibilab/pipeline/chat_tools.py` | `CitationRegistryEntry`, `_format_chunk_for_llm`, `_build_source_headers`, `_build_fenced_chunks`, `execute_find_passages`, `execute_read_source` |
 | `backend/src/bibilab/pipeline/citation_parser.py` | `parse_delta`, `flush_buffer` — incremental regex parser |
 | `backend/src/bibilab/routers/chat.py` | `SSE_EVENT_CITATION`, `stream_with_tools` registry+parser integration, `chat_endpoint` content_blocks persistence |
 | `backend/src/bibilab/pipeline/chat_summary.py` | Compression prompt (citation preservation removed) |
-| `web/src/lib/chat-utils.ts` | `ContentBlock` type, `RagSource` (with `source_id`), `stripLegacyTokens` |
-| `web/src/components/lists/hooks/useSSEStream.ts` | SSE consumer — accumulates `ContentBlock[]` |
-| `web/src/components/lists/hooks/useConversationHistory.ts` | `MessageUI` with `contentBlocks`, legacy fallback |
+| `web/src/lib/chat-utils.ts` | `ContentBlock` type, `RagSource` (with `source_id` + `title` only), `stripLegacyTokens` |
+| `web/src/components/lists/hooks/useSSEStream.ts` | SSE consumer — accumulates `ContentBlock[]`, dispatches `find_passages` + `read_source` `tool_result` events |
+| `web/src/components/lists/hooks/useConversationHistory.ts` | `MessageUI` with `contentBlocks` + `rag`, legacy fallback |
 | `web/src/components/lists/ChatPanel.tsx` | `CitationChip` component, block-based renderer |
 | `web/src/pages/ListDetailPage.tsx` | `handleOpenSource` with `highlightChunks` opts (V1: accepted, unused) |
 
@@ -37,12 +37,12 @@ LLM delta stream
 
 1. User sends message → `chat_endpoint` builds `source_map` (video_id → source_id)
 2. `stream_with_tools` starts with empty `registry: dict[str, CitationRegistryEntry]`
-3. LLM calls `retrieve` → `execute_retrieve` assigns indices, formats chunks with `[N @ Ts-Ts]`
+3. LLM calls `find_passages` (locator) or `read_source` (whole-source) → `execute_find_passages` / `execute_read_source` assign indices, format body
 4. Tool result includes `Source [N]: "Title"` headers + enumeration line; chunks grouped under per-source `===== Source [N]: "title" =====` fences (#297)
 5. LLM responds with deltas containing `[N]` tokens
 6. `CitationParser` strips `[N]`, emits `citation` SSE events with `{index, source_id}`
 7. Frontend assembles `ContentBlock[]` from interleaved delta + citation events
-8. On stream end: `content_blocks` persisted in `metadata`, `source_coverage` ordered by registry index
+8. On stream end: `content_blocks` persisted in `metadata`, `rag.calls` ordered by registry index
 
 ## Chunk ID format
 
