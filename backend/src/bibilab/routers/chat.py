@@ -45,12 +45,9 @@ from bibilab.pipeline.chat_runs import (
 )
 from bibilab.pipeline.chat_summary import maybe_compress_conversation
 from bibilab.pipeline.chat_tools import (
-    GENERATE_REPORT_TOOL,
-    QUERY_LIST_METADATA_TOOL,
-    RETRIEVE_SCOPED_TOOL,
-    RETRIEVE_TOOL,
+    FIND_PASSAGES_TOOL,
+    READ_SOURCE_TOOL,
     RETRIEVE_TOOL_NAMES,
-    SURVEY_TOOL,
     CitationRegistryEntry,
     build_tool_block_entry,
     execute_tool,
@@ -91,7 +88,7 @@ SSE_EVENT_RAG = "rag"
 # Sized for thinking-capable models with potentially long chat responses + tool turns.
 CHAT_MAX_TOKENS = 16384
 
-LOOPBACK_TOOLS = RETRIEVE_TOOL_NAMES | {QUERY_LIST_METADATA_TOOL.name}
+LOOPBACK_TOOLS = RETRIEVE_TOOL_NAMES | {READ_SOURCE_TOOL.name}
 MAX_TOOL_ITERATIONS = 3
 
 
@@ -268,7 +265,7 @@ async def stream_with_tools(
     iteration = 0
     parse_buffer = ""
     citation_emitted = False
-    retrieve_used = False
+    tool_used = False
     text_generated = False
 
     def _build_lookup() -> dict[int, CitationRegistryEntry]:
@@ -282,9 +279,7 @@ async def stream_with_tools(
         tool_calls: list[ToolCall] = []
         lookup = _build_lookup()
         is_synthesis_turn = iteration > MAX_TOOL_ITERATIONS
-        active_tools = (
-            [] if is_synthesis_turn else [t for t in tools if not (retrieve_used and t.name in RETRIEVE_TOOL_NAMES)]
-        )
+        active_tools = [] if is_synthesis_turn else list(tools)
         async for event in stream_llm(messages, cfg, active_tools, system=system, llm_max_tokens=llm_max_tokens):
             if event.type == "tool_call":
                 tool_calls.append(event.tool_call)
@@ -309,7 +304,7 @@ async def stream_with_tools(
                 yield pe
             # If tools were used but no answer text was ever generated, force one
             # more LLM call with no tools so the user always gets a text response.
-            if not text_generated and retrieve_used:
+            if not text_generated and tool_used:
                 messages.append(
                     {
                         "role": "user",
@@ -388,8 +383,7 @@ async def stream_with_tools(
             )
 
         if any(tc.name in LOOPBACK_TOOLS for tc in tool_calls):
-            if any(tc.name in RETRIEVE_TOOL_NAMES for tc in tool_calls):
-                retrieve_used = True
+            tool_used = True
             if cfg.protocol == "anthropic":
                 messages.append(
                     {
@@ -494,7 +488,6 @@ async def run_chat_turn(
     citation_registry: dict[str, CitationRegistryEntry] = {}
     assistant_text_deltas: list[str] = []
     retrieve_calls: list[dict] = []
-    generate_report_result: dict | None = None
     content_blocks: list[dict] = []
     pending_text = ""
     error_reason: str | None = None
@@ -533,13 +526,7 @@ async def run_chat_turn(
                 **kwargs,
             )
 
-        tools = [
-            RETRIEVE_TOOL,
-            SURVEY_TOOL,
-            RETRIEVE_SCOPED_TOOL,
-            QUERY_LIST_METADATA_TOOL,
-            GENERATE_REPORT_TOOL,
-        ]
+        tools = [FIND_PASSAGES_TOOL, READ_SOURCE_TOOL]
 
         tool_blocks: list[dict] = []
 
@@ -583,21 +570,15 @@ async def run_chat_turn(
                         {
                             "query": result.get("query", ""),
                             "tool_name": result.get("tool_name", parsed["name"]),
-                            "mode": result.get("mode"),
                             "candidates_evaluated": result.get("candidates_evaluated"),
                             "sources_with_hits": result.get("sources_with_hits"),
                             "sources_total": result.get("sources_total"),
                             "source_coverage": result.get("source_coverage", []),
-                            "dropped_by_gate": result.get("dropped_by_gate", 0),
                             "reranked": result.get("reranked", False),
                             "scoped_pool_size": result.get("scoped_pool_size"),
                             "facet_scope": result.get("facet_scope"),
-                            "gate_margin": result.get("gate_margin"),
-                            "neighbors_pulled": result.get("neighbors_pulled", 0),
                         }
                     )
-                elif parsed["name"] == "generate_report":
-                    generate_report_result = parsed["result"]
             elif event.type == "error":
                 logger.error("stream_with_tools error: %s", event.content)
                 error_reason = "tool_error"
@@ -615,10 +596,6 @@ async def run_chat_turn(
             if pending_text:
                 _flush_pending_text(content_blocks, pending_text)
                 pending_text = ""
-
-            tool_call_meta: list[dict] = []
-            if generate_report_result is not None:
-                tool_call_meta = [{"name": "generate_report", "result": generate_report_result}]
 
             # Narrow source_coverage to only sources whose [N] actually appeared in assistant text.
             # content_blocks (type: "citation") is fully populated at this point.
@@ -659,11 +636,8 @@ async def run_chat_turn(
                     call["context"] = context_entries
                     call["scoped_pool_size"] = call.get("scoped_pool_size")
                     call["facet_scope"] = call.get("facet_scope")
-                    call["gate_margin"] = call.get("gate_margin")
 
             meta: dict[str, Any] = {}
-            if tool_call_meta:
-                meta["tool_calls"] = tool_call_meta
 
             if retrieve_calls:
                 meta["rag"] = {"calls": retrieve_calls}
