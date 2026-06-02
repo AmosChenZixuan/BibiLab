@@ -1175,3 +1175,45 @@ async def test_rag_call_carries_facet_scope(client):
         "matched_count": 2,
         "no_match": False,
     }
+
+
+@pytest.mark.asyncio
+async def test_rag_metadata_includes_read_source_call(client):
+    """#371: read_source calls must appear in metadata.rag.calls alongside find_passages calls."""
+    from bibilab.pipeline.chat_tools import READ_SOURCE_TOOL
+
+    list_id = (await client.post("/lists", json={"name": "ReadSourceLedger"})).json()["id"]
+
+    async def fake_stream(messages, cfg, tools=None, execute_tool_fn=None, system=None, llm_max_tokens=2048, **kwargs):
+        yield StreamEvent(
+            type="tool_call",
+            tool_call=ToolCall(id="c1", name=READ_SOURCE_TOOL.name, arguments={"source_id": "s1"}),
+        )
+        result = await execute_tool_fn(READ_SOURCE_TOOL.name, {"source_id": "s1"})
+        tool_result_data = {"name": READ_SOURCE_TOOL.name, "result": _client_tool_result(result)}
+        yield StreamEvent(type="tool_result", content=json.dumps(tool_result_data))
+        yield StreamEvent(type=SSE_EVENT_DELTA, content="ok")
+        yield StreamEvent(type=SSE_EVENT_DONE)
+
+    async def fake_execute_tool(**kwargs):
+        return {
+            "_chunks": "transcript narrative text",
+            "source_id": "s1",
+        }
+
+    with (
+        patch("bibilab.routers.chat.stream_with_tools", fake_stream),
+        patch("bibilab.routers.chat.execute_tool", fake_execute_tool),
+    ):
+        resp = await client.post(f"/lists/{list_id}/chat", json={"message": "what is in source s1?"})
+
+    assert resp.status_code == 200
+
+    conv = (await client.get(f"/lists/{list_id}/conversation")).json()
+    assistant_msgs = [m for m in conv["messages"] if m["role"] == "assistant"]
+    assert assistant_msgs, "no assistant message persisted"
+    rag = assistant_msgs[-1]["metadata"]["rag"]
+    assert len(rag["calls"]) == 1
+    call = rag["calls"][0]
+    assert call["tool_name"] == READ_SOURCE_TOOL.name
+    assert call["source_id"] == "s1"

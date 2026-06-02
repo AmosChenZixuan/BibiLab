@@ -480,6 +480,8 @@ async def run_chat_turn(
     citation_registry: dict[str, CitationRegistryEntry] = {}
     assistant_text_deltas: list[str] = []
     retrieve_calls: list[dict] = []
+    read_source_calls: list[dict] = []
+    all_calls: list[dict] = []
     content_blocks: list[dict] = []
     pending_text = ""
     error_reason: str | None = None
@@ -571,6 +573,10 @@ async def run_chat_turn(
                             "facet_scope": result.get("facet_scope"),
                         }
                     )
+                elif parsed["name"] == READ_SOURCE_TOOL.name:
+                    sid = parsed["result"].get("source_id")
+                    if sid:  # None on a resolution error → nothing was read, no ledger row
+                        read_source_calls.append({"tool_name": "read_source", "source_id": sid})
             elif event.type == "error":
                 logger.error("stream_with_tools error: %s", event.content)
                 error_reason = "tool_error"
@@ -627,10 +633,31 @@ async def run_chat_turn(
                             )
                     call["context"] = context_entries
 
+            for rs in read_source_calls:
+                entry = citation_registry.get(rs["source_id"])
+                rs["source_title"] = entry.title if entry else ""
+                rs["context"] = (
+                    [
+                        {
+                            "chunk_id": "",
+                            "citation_index": entry.index,
+                            "source_id": rs["source_id"],
+                            "source_title": entry.title or "",
+                            "timestamp_start": 0.0,
+                            "timestamp_end": 0.0,
+                            "rerank_score": 0.0,
+                            "preview": "",
+                        }
+                    ]
+                    if entry
+                    else []
+                )
+            all_calls = retrieve_calls + read_source_calls
+
             meta: dict[str, Any] = {}
 
-            if retrieve_calls:
-                meta["rag"] = {"calls": retrieve_calls}
+            if all_calls:
+                meta["rag"] = {"calls": all_calls}
             if content_blocks:
                 meta["content_blocks"] = content_blocks
 
@@ -661,8 +688,8 @@ async def run_chat_turn(
 
         # Final authoritative ledger: persisted-shape calls (context[]
         # reconstructed) so the client matches post-refresh without reloading.
-        if retrieve_calls:
-            buf.append({"type": SSE_EVENT_RAG, "calls": retrieve_calls})
+        if all_calls:
+            buf.append({"type": SSE_EVENT_RAG, "calls": all_calls})
 
         terminal_map = {"done": SSE_EVENT_DONE, "cancelled": SSE_EVENT_CANCELLED, "failed": SSE_EVENT_ERROR}
         sse_terminal = terminal_map[final_status]
