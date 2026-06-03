@@ -2,8 +2,13 @@
 
 All ASR models flow through FunASR's AutoModel — SenseVoice natively, Whisper
 via FunASR's WhisperWarp wrapper. Speaker diarization (CAM++) is mandatory for
-both paths. Punctuation is native to the ASR: SenseVoice emits `，。？！` from
-its training transcripts; Whisper-large-v3 emits English punctuation.
+both paths.
+
+ASR output is raw VAD-segment text: SenseVoice emits `，。？！` from its
+training transcripts and Whisper-large-v3 emits English punctuation, but
+the punctuation is sentence-level only and the worker re-runs ct-punc on
+zh segments downstream (see `pipeline/punctuate.py`) before persisting to
+`transcript_segments`.
 
 When punc_model is absent, FunASR auto-falls-back to vad_segment for speaker
 segmentation (auto_model.py:810-812), so each `sentence_info` entry carries

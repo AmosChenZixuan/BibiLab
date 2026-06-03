@@ -20,8 +20,9 @@ logger = logging.getLogger(__name__)
 
 # bge-reranker-base (XLM-RoBERTa) handles Chinese + English, matching
 # the project's primary content languages. Model is intentionally fixed
-# rather than configurable — swapping models would require re-tuning
-# the relevance gate margin since score distributions differ.
+# rather than configurable — it's the only viable cross-encoder that
+# covers both languages, and score-distribution differences across
+# reranker models would invalidate the gateless top-k ordering invariant.
 _MODEL_REPO = "Xenova/bge-reranker-base"
 _MODEL_FILENAME = "model.onnx"
 _TOKENIZER_FILENAME = "tokenizer.json"

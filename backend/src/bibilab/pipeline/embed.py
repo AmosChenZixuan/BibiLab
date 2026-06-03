@@ -277,7 +277,7 @@ def populate_fts(chunks: list[RagChunk], source_id: str, meta: VideoMeta) -> Non
     Clears the source's existing rows first so a re-embed replaces rather than
     appends — mirrors the chroma clear in embed_chunks. Without it a rerun, retry,
     or re-ingest double-indexes the source (every chunk twice), inflating BM25
-    document frequency and the rerank-gate candidate pool.
+    document frequency and contaminating retrieval.
     """
     if not chunks:
         return

@@ -1,7 +1,9 @@
 """In-memory registry for active chat producer tasks and their SSE buffers.
 
-Decouples LLM runs from HTTP request lifetime — see
-docs/specs/2026-05-07-resumable-chat-streams-design.md (local-only).
+Decouples LLM runs from HTTP request lifetime — the producer task writes
+events into a StreamBuffer that any consumer (POST handler, GET reattach)
+can drain, so a disconnected or reattached HTTP request no longer cancels
+the LLM turn in flight.
 """
 
 from __future__ import annotations

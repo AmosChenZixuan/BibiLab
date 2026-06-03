@@ -25,9 +25,10 @@ logger = logging.getLogger(__name__)
 # schema and can't go haywire.
 DIGEST_MAX_TOKENS = 32768
 
-# Keyword count: feeds the digest chip UI and the chat source-scoping prompt
-# (routers/chat.py builds "[N] Title (keywords)"). Kept short and topical so
-# both consumers stay cheap; raised from 5 to widen query-topic coverage.
+# Keyword count: feeds the digest chip UI. The v2 chat prompt is static
+# per language and no longer inlines a per-turn source list, so keywords
+# are presentation-only. Kept short and topical; raised from 5 to widen
+# query-topic coverage for the chip.
 _MAX_KEYWORDS = 8
 
 
