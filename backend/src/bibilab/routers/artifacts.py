@@ -87,7 +87,7 @@ async def create_artifact_endpoint(
 @router.get("/artifacts/{artifact_id}")
 async def get_artifact_metadata(artifact_id: str) -> ArtifactResponse:
     """Single-artifact metadata. Unused by the web SPA (the list response carries
-    all fields); kept as REST surface for ad-hoc inspection / debugging."""
+    all fields); kept for REST consistency with the by-id PATCH/DELETE/content routes."""
     row = await get_artifact(artifact_id)
     if row is None:
         raise HTTPException(status_code=404, detail="Artifact not found")
