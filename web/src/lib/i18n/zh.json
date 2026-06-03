@@ -143,7 +143,6 @@
     "sourcePlural": "%{count} 来源",
     "listWorkspace": "列表工作区",
     "pasteUrl": "粘贴 Bilibili 链接...",
-    "reRun": "重新运行",
     "delete": "删除",
     "rename": "重命名",
     "changeThumbnail": "更改封面",
@@ -152,7 +151,6 @@
     "transcript": "转录稿",
     "digest": "摘要",
     "rerunDigest": "重新生成摘要",
-    "rerunning": "生成中...",
     "facets": {
       "edit": "编辑元数据",
       "series": "系列",
@@ -256,22 +254,6 @@
       "templateSingular": "%{count} 个来源 · %{duration}",
       "templatePlural": "%{count} 个来源 · %{duration}"
     },
-    "configure": {
-      "title": "配置聊天"
-    },
-    "configModal": {
-      "title": "检索模式",
-      "label": "选择检索模式",
-      "auto": "自动",
-      "autoHint": "根据查询智能路由",
-      "focused": "精准",
-      "focusedHint": "定向检索，精准引用",
-      "broad": "宽泛",
-      "broadHint": "广泛检索，更多上下文",
-      "cancel": "取消",
-      "save": "保存",
-      "saving": "保存中…"
-    },
     "ledger": {
       "summaryPending": "查找片段中…",
       "readSourcePending": "读取全文中…",
@@ -294,11 +276,6 @@
         "scoped": "%{matched}/%{total} 个来源"
       },
       "ariaToggle": "切换检索详情"
-    },
-    "mode": {
-      "broad": {
-        "description": "宽泛模式从每个来源中检索一个相关片段，最大化跨视频的覆盖范围。"
-      }
     },
     "citationMissing": "来源已不在列表中",
     "errors": {

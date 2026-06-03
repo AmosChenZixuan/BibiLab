@@ -111,7 +111,7 @@ describe("RetrievalCall", () => {
       source_coverage: [],
       context: [
         {
-          chunk_id: "v1_120_145",
+          chunk_id: "c1",
           citation_index: 1,
           source_id: "s1",
           source_title: "Test Video",
@@ -125,7 +125,7 @@ describe("RetrievalCall", () => {
       scoped_pool_size: 3,
     };
     expect(call.tool_name).toBe("find_passages");
-    expect(call.context![0].chunk_id).toBe("v1_120_145");
+    expect(call.context![0].chunk_id).toBe("c1");
     expect(call.context![0].citation_index).toBe(1);
     expect(call.context![0].timestamp_start).toBe(120.4);
     expect(call.context![0].rerank_score).toBe(0.95);

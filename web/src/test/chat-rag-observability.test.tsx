@@ -57,7 +57,7 @@ afterEach(() => {
 });
 
 describe("RAG observability via SSE tool_result", () => {
-  test("tool_result event attaches rag to in-progress message", async () => {
+  test("tool_result followed by delta renders delta text in document", async () => {
     vi.spyOn(window, "fetch").mockImplementation(() =>
       Promise.resolve(
         makeSseStream([

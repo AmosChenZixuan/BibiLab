@@ -666,7 +666,7 @@ describe("chat panel", () => {
     });
   });
 
-  test("legacy error string displays as-is without i18n key match", async () => {
+  test("unknown error string displays as-is without i18n key match", async () => {
     vi.spyOn(window, "fetch").mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
       const url = typeof input === "string" ? input : input instanceof URL ? input.href : (input as Request).url;
       const method = init?.method ?? "GET";

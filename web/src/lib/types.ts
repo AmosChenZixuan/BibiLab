@@ -56,7 +56,7 @@ export type SourceFacetsPatch = {
   season_number?: number | null;
 };
 
-export type JobStatus =
+type JobStatus =
   | "queued"
   | "downloading"
   | "transcribing"
@@ -74,7 +74,7 @@ type BaseJob = {
   updated_at: string;
 };
 
-export type IngestMeta = {
+type IngestMeta = {
   list_id?: string;
   source_url?: string;
   platform?: string;
@@ -85,7 +85,7 @@ export type IngestMeta = {
   uploader?: string;
 };
 
-export type ModelDownloadMeta = {
+type ModelDownloadMeta = {
   model_name?: string;
 };
 
@@ -114,7 +114,7 @@ export type ArtifactJob = {
   };
 };
 
-export type DigestMeta = {
+type DigestMeta = {
   source_id: string;
   list_id?: string;
   source_title?: string;
@@ -175,7 +175,7 @@ export type BibilabConfig = {
   };
 };
 
-export type HealthStatus = "ok" | "error" | "unavailable";
+type HealthStatus = "ok" | "error" | "unavailable";
 
 export type HealthDependency = {
   status: HealthStatus;
@@ -189,7 +189,7 @@ export type HealthResponse = {
 
 export type ModelKind = "transcription" | "diarization" | "vad" | "punctuation" | "embedding" | "reranker";
 
-export type ModelStatus = "present" | "missing";
+type ModelStatus = "present" | "missing";
 
 export type ModelInfo = {
   id: string;
