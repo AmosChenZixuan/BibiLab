@@ -177,7 +177,9 @@ Shutdown: cancel all active tasks, drain with 5s timeout
 
 ### SSE event types
 
-`delta`, `citation`, `tool_call_start`, `tool_result`, `rag`, `done`, `error`, `cancelled`
+`meta`, `delta`, `citation`, `tool_call_start`, `tool_result`, `rag`, `done`, `error`, `cancelled`
+
+`meta` is the first event of every stream, carrying `{message_id}` so the client can wire cancel-by-id before the first delta (constant `SSE_EVENT_META`). The other eight are also `stream_llm` discriminators; `meta` is emitted only by the HTTP handler.
 
 ### System prompt context
 
