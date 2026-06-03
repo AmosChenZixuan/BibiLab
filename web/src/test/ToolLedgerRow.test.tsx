@@ -180,7 +180,7 @@ describe("facet no-match hint (#319)", () => {
     expect(screen.queryByLabelText(/No source matched/)).toBeNull();
   });
 
-  test("no hint when facet_scope absent (legacy message)", () => {
+  test("no hint when facet_scope absent", () => {
     renderRow({ call: BASE_CALL });
     expect(screen.queryByLabelText(/No source matched/)).toBeNull();
   });

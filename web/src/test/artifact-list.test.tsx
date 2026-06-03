@@ -37,7 +37,7 @@ vi.mock("@/lib/api", () => {
           type: "brief",
           prompt: "Generate a brief",
           source_ids: ["source-1"],
-          status: "done",
+          status: "completed",
           created_at: "2026-04-08T12:00:00Z",
         },
         {
@@ -61,7 +61,7 @@ vi.mock("@/lib/api", () => {
           type: "brief",
           prompt: "Generate a brief",
           source_ids: ["source-1"],
-          status: "done",
+          status: "completed",
           created_at: "2026-04-08T12:00:00Z",
         },
         {
