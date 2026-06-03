@@ -5,10 +5,10 @@ export type ContentBlock =
   | { type: "citation"; index: number; source_id: string; chunk_ids: string[] }
   | { type: "paragraph_break" };
 
-export type ToolName = "find_passages" | "read_source";
-export type RagSource = { source_id: string; title: string };
+type ToolName = "find_passages" | "read_source";
+type RagSource = { source_id: string; title: string };
 /** Single chunk in the persisted context[] array. */
-export type RetrievalChunk = {
+type RetrievalChunk = {
   chunk_id: string;
   citation_index: number;
   source_id: string;
@@ -21,7 +21,7 @@ export type RetrievalChunk = {
 /** Echo of the LLM-extracted facet predicate + deterministic match outcome (#309).
  * `no_match` is true iff a predicate was given AND zero sources matched (the
  * backend then fails open to the full pre-facet pool — surfaced by #319). */
-export type FacetScope = {
+type FacetScope = {
   sequence_number: number | null;
   season_number: number | null;
   matched_count: number | null;

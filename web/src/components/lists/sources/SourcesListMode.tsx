@@ -11,14 +11,14 @@ import { api, ApiError, toErrorMessageWithT, notifyBilibiliAuthChanged } from "@
 import { usePendingDeletions } from "@/lib/hooks/usePendingDeletions";
 import type { IngestJob, IngestVideoIn, PreviewVideo, Source } from "@/lib/types";
 
-export const PIPELINE_STAGES = [
+const PIPELINE_STAGES = [
   "queued",
   "downloading",
   "transcribing",
   "processing",
   "done",
 ] as const;
-export type PipelineStage = (typeof PIPELINE_STAGES)[number];
+type PipelineStage = (typeof PIPELINE_STAGES)[number];
 
 function SourceRow({
   source,

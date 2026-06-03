@@ -282,7 +282,7 @@ export class JobsClient {
   }
 }
 
-export type GetConversationResponse = {
+type GetConversationResponse = {
   conversation: Conversation | null;
   messages: Message[];
 };

@@ -13,7 +13,7 @@ import { usePendingDeletions } from "@/lib/hooks/usePendingDeletions";
 import type { ArtifactJob, DigestJob, IngestJob, Job, ModelDownloadJob } from "@/lib/types";
 import { useLanguage } from "@/app/LanguageContext";
 
-export const TERMINAL_JOB_STATUSES = new Set(["done", "failed", "needs_auth"]);
+const TERMINAL_JOB_STATUSES = new Set(["done", "failed", "needs_auth"]);
 
 const POLL_INTERVAL_MS = 5_000;
 

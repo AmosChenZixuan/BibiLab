@@ -3,7 +3,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObje
 export const MIN_PANEL = 280;
 export const MIN_CHAT_PANEL = 720;  // max-w-2xl (672) + px-4.5×2 padding + breathing room
 export const COLLAPSED_PANEL = 48;
-export const RESIZER_SIZE = 16;
+const RESIZER_SIZE = 16;
 
 type ActiveResizer = "left" | "right" | null;
 
