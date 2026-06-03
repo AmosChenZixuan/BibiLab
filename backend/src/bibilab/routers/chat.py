@@ -307,8 +307,6 @@ async def stream_with_tools(
                     if pe.type == "citation":
                         citation_emitted = True
                     yield pe
-            elif event.type == "done" and tool_calls:
-                pass
             elif event.type in ("delta", "done"):
                 pass
             else:
