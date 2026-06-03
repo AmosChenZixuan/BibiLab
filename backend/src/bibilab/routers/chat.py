@@ -86,6 +86,9 @@ SSE_EVENT_CANCELLED = "cancelled"
 # before the terminal event so the client ledger matches post-refresh state
 # without a manual reload.
 SSE_EVENT_RAG = "rag"
+# First event of every stream; carries {message_id} so the client can wire
+# cancel-by-id before the first delta arrives (see web useSSEStream reattach path).
+SSE_EVENT_META = "meta"
 
 # Sized for thinking-capable models with potentially long chat responses + tool turns.
 CHAT_MAX_TOKENS = 16384
@@ -849,7 +852,7 @@ async def chat_endpoint(
     # Let client know the server-assigned id so Stop can target it before the
     # first delta arrives.  Appended to the buffer before the consumer starts
     # reading, so it is always the first event delivered.
-    buf.append({"type": "meta", "message_id": assistant_msg_id})
+    buf.append({"type": SSE_EVENT_META, "message_id": assistant_msg_id})
 
     return StreamingResponse(
         _sse_consumer(buf),

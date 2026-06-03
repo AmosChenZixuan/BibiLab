@@ -34,6 +34,8 @@ async def get_jobs() -> list[JobResponse]:
 
 @router.get("/jobs/{job_id}")
 async def get_job_by_id(job_id: str) -> JobResponse:
+    """Single-job metadata. Unused by the web SPA (JobActivityProvider polls the
+    list endpoint); kept for REST consistency with the by-id DELETE route."""
     row = await get_job(job_id)
     if row is None:
         raise HTTPException(status_code=404, detail="Job not found")
