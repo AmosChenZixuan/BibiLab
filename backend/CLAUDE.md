@@ -233,14 +233,15 @@ stream_with_tools(stream_llm loop):
 
 ### Prompt-trace observability (opt-in)
 
-Set `rag.debug_prompts: true` in `~/.bibilab/config.json` to capture the
-exact LLM input for every chat turn. For each `message_id`, a JSON dump
-is written to `~/.bibilab/debug/{message_id}.json` with the shape
-`{ "system": "...", "iterations": [ { "messages": [...], "tools": [...] } ] }`.
-Use this to retrospect wrong-answer cases — see the grounding prompt
-the model actually saw, the conversation stack, and the tool defs active
-on each iteration. **Off by default** (no I/O, no behavior change).
-The write is best-effort: failures are logged and never break the turn.
+Set `rag.debug_prompts: true` in `~/.bibilab/config.json` to dump each
+LLM call. For each chat message, a directory is created at
+`~/.bibilab/debug/{message_id}/` and one `call{N}.json` is written per
+`stream_llm` call (one per tool-using iteration + the forced-synthesis
+follow-up + any later iterations). Each file is a JSON object with
+`{system, tools, messages, response: {text, tool_calls}}` — the full
+LLM call (input AND response), with no reformatting. **Off by default**
+(no I/O, no behavior change). Writes are best-effort: failures are
+logged and never break the turn.
 
 ## Platform Adapters
 

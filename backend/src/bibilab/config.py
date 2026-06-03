@@ -90,7 +90,7 @@ class RagConfig(BaseModel):
     # Pauses longer than this are treated as topic boundaries. Default 1.5s.
     # Keep in sync with pause_threshold_seconds default in pipeline/chunk.py.
     chunk_pause_threshold: float = Field(default=1.5, gt=0)
-    # Opt-in: dump per-turn LLM input to ~/.bibilab/debug/{message_id}.json (#393).
+    # Opt-in: dump each LLM call (input + response) to ~/.bibilab/debug/{message_id}/call{N}.json (#399).
     debug_prompts: bool = False
 
 

@@ -12,7 +12,7 @@ import openai
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import Response, StreamingResponse
 
-from bibilab.config import AIConfig, BibilabConfig, get_config
+from bibilab.config import AIConfig, BibilabConfig, bibilab_home, get_config
 from bibilab.db import (
     ActiveStreamConflict,
     assert_message_in_list,
@@ -255,13 +255,14 @@ async def stream_with_tools(
     llm_max_tokens: int = CHAT_MAX_TOKENS,
     registry: dict[str, CitationRegistryEntry] | None = None,
     tool_block_sink: list[dict] | None = None,
-    debug_trace_sink: list[dict] | None = None,
+    debug_dump_dir: Path | None = None,
 ) -> AsyncGenerator[StreamEvent, None]:
     if registry is None:
         registry = {}
 
     messages = list(messages)
     iteration = 0
+    llm_call = 0
     parse_buffer = ""
     citation_emitted = False
     tool_used = False
@@ -273,34 +274,19 @@ async def stream_with_tools(
     async def _execute_with_registry(name: str, args: dict) -> dict:
         return await execute_tool_fn(name, args, registry=registry)
 
-    def _record_snapshot(tools_for_llm: list[ToolDefinition]) -> None:
-        if debug_trace_sink is None:
-            return
-        try:
-            debug_trace_sink.append(
-                {
-                    "messages": [dict(m) for m in messages],
-                    "tools": [
-                        {"name": t.name, "description": t.description, "parameters": t.parameters}
-                        for t in tools_for_llm
-                    ],
-                }
-            )
-        except Exception:
-            logger.exception("debug_trace_sink_append_failed iteration=%d", iteration)
-
     while True:
         iteration += 1
         tool_calls: list[ToolCall] = []
+        text_parts: list[str] = []
         lookup = _build_lookup()
         is_synthesis_turn = iteration > MAX_TOOL_ITERATIONS
         active_tools = [] if is_synthesis_turn else list(tools)
-        _record_snapshot(active_tools)
         async for event in stream_llm(messages, cfg, active_tools, system=system, llm_max_tokens=llm_max_tokens):
             if event.type == "tool_call":
                 tool_calls.append(event.tool_call)
             elif event.type == "delta" and event.content:
                 text_generated = True
+                text_parts.append(event.content)
                 # Parse incrementally so citations and text reach the client as
                 # they arrive rather than waiting for the full LLM response.
                 parsed_events, parse_buffer = parse_delta(event.content, parse_buffer, lookup)
@@ -314,6 +300,19 @@ async def stream_with_tools(
                 pass
             else:
                 yield event
+
+        # Dump the LLM call (input + response) AFTER the call completes.
+        if debug_dump_dir is not None:
+            llm_call += 1
+            _dump_turn(
+                debug_dump_dir,
+                llm_call,
+                system=system,
+                messages=messages,
+                tools=active_tools,
+                response_text="".join(text_parts),
+                response_tool_calls=[{"id": tc.id, "name": tc.name, "arguments": tc.arguments} for tc in tool_calls],
+            )
 
         if not tool_calls or is_synthesis_turn:
             for pe in flush_buffer(parse_buffer):
@@ -331,9 +330,10 @@ async def stream_with_tools(
                         ),
                     }
                 )
-                _record_snapshot([])
+                synth_text_parts: list[str] = []
                 async for event in stream_llm(messages, cfg, [], system=system, llm_max_tokens=llm_max_tokens):
                     if event.type == "delta" and event.content:
+                        synth_text_parts.append(event.content)
                         parsed_events, parse_buffer = parse_delta(event.content, parse_buffer, lookup)
                         for pe in parsed_events:
                             yield pe
@@ -345,6 +345,17 @@ async def stream_with_tools(
                         yield event
                 for pe in flush_buffer(parse_buffer):
                     yield pe
+                if debug_dump_dir is not None:
+                    llm_call += 1
+                    _dump_turn(
+                        debug_dump_dir,
+                        llm_call,
+                        system=system,
+                        messages=messages,
+                        tools=[],
+                        response_text="".join(synth_text_parts),
+                        response_tool_calls=[],
+                    )
             if not citation_emitted and registry:
                 logger.info(
                     "citations_missing_after_retrieve registry_size=%d",
@@ -413,7 +424,11 @@ async def stream_with_tools(
                 {
                     "role": "user",
                     "content": [
-                        {"type": "tool_result", "tool_use_id": tc.id, "content": json.dumps(results[tc.id])}
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": tc.id,
+                            "content": json.dumps(results[tc.id], ensure_ascii=False),
+                        }
                         for tc in tool_calls
                     ],
                 }
@@ -423,7 +438,7 @@ async def stream_with_tools(
                 {
                     "id": tc.id,
                     "type": "function",
-                    "function": {"name": tc.name, "arguments": json.dumps(tc.arguments)},
+                    "function": {"name": tc.name, "arguments": json.dumps(tc.arguments, ensure_ascii=False)},
                 }
                 for tc in tool_calls
             ]
@@ -433,7 +448,7 @@ async def stream_with_tools(
                     {
                         "role": "tool",
                         "tool_call_id": tc.id,
-                        "content": json.dumps(results[tc.id]),
+                        "content": json.dumps(results[tc.id], ensure_ascii=False),
                     }
                 )
         continue
@@ -462,27 +477,36 @@ def _serialize_event_for_buffer(event: StreamEvent) -> dict | None:
     return None
 
 
-def _dump_prompt_trace(
-    message_id: str,
-    system: str | None,
-    iterations: list[dict],
+def _dump_turn(
     debug_dir: Path,
+    llm_call: int,
+    *,
+    system: str | None,
+    messages: list[dict],
+    tools: list[ToolDefinition],
+    response_text: str = "",
+    response_tool_calls: list[dict] | None = None,
 ) -> None:
-    """Best-effort write of the LLM prompt trace for a chat turn (#393).
+    """Best-effort write of one LLM call's input + response (#399).
 
-    Writes {system, iterations[]} to debug_dir/{message_id}.json. Skipped
-    when iterations is empty (nothing to debug). JSON uses ensure_ascii=False
-    so CJK prompts and tool results remain readable in the dump. All errors
-    are caught and logged; a dump failure must never break a turn.
+    Writes {system, tools, messages, response: {text, tool_calls}} verbatim
+    as JSON to debug_dir/call{N}.json. Full LLM call — what was sent AND
+    what came back — with no reformatting. All errors are caught and
+    logged; a dump failure must never break a turn.
     """
-    if not iterations:
-        return
     try:
-        debug_dir.mkdir(parents=True, exist_ok=True)
-        payload = {"system": system, "iterations": iterations}
-        (debug_dir / f"{message_id}.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2))
+        payload = {
+            "system": system,
+            "tools": [{"name": t.name, "description": t.description, "parameters": t.parameters} for t in tools],
+            "messages": messages,
+            "response": {
+                "text": response_text,
+                "tool_calls": response_tool_calls or [],
+            },
+        }
+        (debug_dir / f"call{llm_call}.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2))
     except Exception:
-        logger.warning("dump_prompt_trace_failed message_id=%s", message_id, exc_info=True)
+        logger.warning("dump_turn_failed dir=%s llm_call=%d", debug_dir, llm_call, exc_info=True)
 
 
 async def _sse_consumer(buf: StreamBuffer) -> AsyncGenerator[str, None]:
@@ -565,7 +589,10 @@ async def run_chat_turn(
         tools = [FIND_PASSAGES_TOOL, READ_SOURCE_TOOL]
 
         tool_blocks: list[dict] = []
-        debug_trace: list[dict] = []
+        debug_dump_dir: Path | None = None
+        if cfg.rag.debug_prompts:
+            debug_dump_dir = bibilab_home() / "debug" / message_id
+            debug_dump_dir.mkdir(parents=True, exist_ok=True)
 
         async for event in stream_with_tools(
             messages=messages_for_llm,
@@ -576,7 +603,7 @@ async def run_chat_turn(
             llm_max_tokens=CHAT_MAX_TOKENS,
             registry=citation_registry,
             tool_block_sink=tool_blocks,
-            debug_trace_sink=debug_trace if cfg.rag.debug_prompts else None,
+            debug_dump_dir=debug_dump_dir,
         ):
             payload = _serialize_event_for_buffer(event)
             if payload is not None:
@@ -710,15 +737,6 @@ async def run_chat_turn(
             final_status = "failed"
             if error_reason is None:
                 error_reason = "persistence_error"
-
-        from bibilab.config import bibilab_home
-
-        _dump_prompt_trace(
-            message_id=message_id,
-            system=system_message,
-            iterations=debug_trace,
-            debug_dir=bibilab_home() / "debug",
-        )
 
         try:
             await set_active_stream(conversation_id, None)
