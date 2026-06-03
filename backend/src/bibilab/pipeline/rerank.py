@@ -12,7 +12,7 @@ if TYPE_CHECKING:
     pass
 
 from bibilab.config import models_dir
-from bibilab.model_registry import RERANKER_SPEC_ID, _integrity_ok, ensure, get_spec
+from bibilab.model_registry import RERANKER_SPEC_ID, ensure
 from bibilab.pipeline.chat_inference_pool import get_chat_pool
 from bibilab.pipeline.embed import RetrievedChunk
 
@@ -32,10 +32,6 @@ _reranker_lock = threading.Lock()
 
 def _model_dir() -> Path:
     return models_dir("reranker", _MODEL_REPO.replace("/", "_"))
-
-
-def is_reranker_model_downloaded() -> bool:
-    return _integrity_ok(get_spec(RERANKER_SPEC_ID))
 
 
 class ONNXCrossEncoder:
