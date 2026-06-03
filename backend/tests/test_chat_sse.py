@@ -408,18 +408,18 @@ async def test_chat_citation_after_lone_break_not_isolated(client):
 
 
 @pytest.mark.asyncio
-async def test_chat_sse_multi_retrieve_no_crash(client):
-    """Smoke test: two retrieve calls in one turn do not crash the SSE stream.
+async def test_chat_sse_multi_find_passages_no_crash(client):
+    """Smoke test: two find_passages calls in one turn do not crash the SSE stream.
 
     The registry ordering and dedup logic is exercised in
-    test_citation_registry.py; this test verifies the SSE layer
-    handles the multi-call flow without internal errors.
+    test_chat_tools.py; this test verifies the SSE layer handles the
+    multi-call flow without internal errors.
     """
     list_id = (await client.post("/lists", json={"name": "T"})).json()["id"]
 
     async def fake_stream_with_tools(*args, **kwargs):
-        tc1 = ToolCall(id="tc1", name="retrieve", arguments={"query": "q1"})
-        tc2 = ToolCall(id="tc2", name="retrieve", arguments={"query": "q2"})
+        tc1 = ToolCall(id="tc1", name="find_passages", arguments={"query": "q1"})
+        tc2 = ToolCall(id="tc2", name="find_passages", arguments={"query": "q2"})
         yield StreamEvent(type="tool_call", tool_call=tc1)
         yield StreamEvent(type="done")
         yield StreamEvent(type="tool_call", tool_call=tc2)
@@ -882,8 +882,12 @@ async def test_chat_endpoint_classify_error_reaches_sse_terminal_payload(client)
 
 
 @pytest.mark.asyncio
-async def test_run_chat_turn_replays_tool_blocks_on_turn_2(monkeypatch):
-    """Turn 2 must include the turn-1 retrieve's tool_use + tool_result blocks in the LLM messages."""
+async def test_run_chat_turn_drops_tool_blocks_on_turn_2(monkeypatch):
+    """v2 spec §5.5: prior-turn find_passages / read_source tool exchanges are
+    dropped from cross-turn replay to avoid stale-context contamination. The
+    LLM sees only the synthesized prose from prior turns; to re-ground on
+    prior evidence it must re-call the tool in the current turn.
+    """
     from bibilab.config import AIConfig, BackendConfig, BibilabConfig
     from bibilab.pipeline._shared import StreamEvent
     from bibilab.routers import chat as chat_module
@@ -917,7 +921,7 @@ async def test_run_chat_turn_replays_tool_blocks_on_turn_2(monkeypatch):
             "tool_blocks": [
                 {
                     "tool_use_id": "toolu_a",
-                    "name": "retrieve",
+                    "name": "find_passages",
                     "arguments": {"query": "x"},
                     "result": {"chunks": [{"content": "verbatim"}], "summary": {"sources_total": 1}},
                 }
@@ -945,15 +949,19 @@ async def test_run_chat_turn_replays_tool_blocks_on_turn_2(monkeypatch):
 
     assert captured_messages, "stream_llm not called"
     sent = captured_messages[0]
-    # Expect: original user → assistant{tool_use+text} → user{tool_result} → new user
+    # v2 drops find_passages blocks; expect user → assistant (text only) → new user
     roles = [m["role"] for m in sent]
-    assert roles == ["user", "assistant", "user", "user"]
-    # Verify the assistant message has the tool_use block (anthropic shape)
-    assert sent[1]["content"][0]["type"] == "tool_use"
-    assert sent[1]["content"][0]["id"] == "toolu_a"
-    # Verify the synthetic user message carries the tool_result
-    assert sent[2]["content"][0]["type"] == "tool_result"
-    assert sent[2]["content"][0]["tool_use_id"] == "toolu_a"
+    assert roles == ["user", "assistant", "user"]
+    # The assistant message carries only the synthesized text — no tool_use expansion
+    assert sent[1] == {"role": "assistant", "content": "first answer [1]"}
+    # No tool_use / tool_result blocks leaked into any message
+    for m in sent:
+        content = m.get("content")
+        if isinstance(content, list):
+            for block in content:
+                assert block.get("type") not in ("tool_use", "tool_result"), (
+                    f"v2 dropped prior tool exchanges but {block.get('type')} leaked into {m['role']}"
+                )
 
 
 @pytest.mark.asyncio

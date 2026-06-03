@@ -138,7 +138,6 @@ async def test_pipeline_creates_covers_and_segments(tmp_bibilab_home: Path):
     # Create required subdirectories
     (tmp_bibilab_home / "downloads").mkdir(parents=True, exist_ok=True)
     (tmp_bibilab_home / "covers").mkdir(parents=True, exist_ok=True)
-    (tmp_bibilab_home / "transcripts").mkdir(parents=True, exist_ok=True)
 
     # Create a temp video file for adapter.download to return
     tmp_video = tmp_bibilab_home / "downloads" / "BVtest123.mp4"
