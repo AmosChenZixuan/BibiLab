@@ -143,7 +143,6 @@
     "sourcePlural": "%{count} sources",
     "listWorkspace": "List workspace",
     "pasteUrl": "Paste a Bilibili URL...",
-    "reRun": "Re-run",
     "delete": "Delete",
     "rename": "Rename",
     "changeThumbnail": "Change thumbnail",
@@ -152,7 +151,6 @@
     "transcript": "Transcript",
     "digest": "Digest",
     "rerunDigest": "Re-run digest",
-    "rerunning": "Re-running...",
     "facets": {
       "edit": "Edit metadata",
       "series": "Series",
@@ -255,22 +253,6 @@
     "subtitle": {
       "templateSingular": "%{count} source · %{duration} total",
       "templatePlural": "%{count} sources · %{duration} total"
-    },
-    "configure": {
-      "title": "Configure chat"
-    },
-    "configModal": {
-      "title": "Retrieval Mode",
-      "label": "Choose retrieval mode",
-      "auto": "Auto",
-      "autoHint": "Smart routing based on query",
-      "focused": "Focused",
-      "focusedHint": "Targeted retrieval, precise citations",
-      "broad": "Broad",
-      "broadHint": "Wider retrieval, more context",
-      "cancel": "Cancel",
-      "save": "Save",
-      "saving": "Saving..."
     },
     "ledger": {
       "summaryPending": "finding passages…",
