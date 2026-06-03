@@ -427,7 +427,7 @@ async def stream_with_tools(
                         {
                             "type": "tool_result",
                             "tool_use_id": tc.id,
-                            "content": json.dumps(results[tc.id]),
+                            "content": json.dumps(results[tc.id], ensure_ascii=False),
                         }
                         for tc in tool_calls
                     ],
@@ -438,7 +438,7 @@ async def stream_with_tools(
                 {
                     "id": tc.id,
                     "type": "function",
-                    "function": {"name": tc.name, "arguments": json.dumps(tc.arguments)},
+                    "function": {"name": tc.name, "arguments": json.dumps(tc.arguments, ensure_ascii=False)},
                 }
                 for tc in tool_calls
             ]
@@ -448,7 +448,7 @@ async def stream_with_tools(
                     {
                         "role": "tool",
                         "tool_call_id": tc.id,
-                        "content": json.dumps(results[tc.id]),
+                        "content": json.dumps(results[tc.id], ensure_ascii=False),
                     }
                 )
         continue
