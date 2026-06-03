@@ -12,7 +12,6 @@ Platform-specific context lives in `backend/CLAUDE.md` and `web/CLAUDE.md`.
 - Transform individual videos and playlists into structured AI digests
 - Support local transcription (Faster Whisper) and local or cloud LLMs
 - Per-list RAG chat with transcript citations, streaming responses, and tool calling
-- Provide on-demand list-level overview export
 - Run entirely on a single user's machine
 
 ### Non-Goals
@@ -49,7 +48,6 @@ Single-port deployment: FastAPI serves the React build as static files in produc
 | Path storage | Relative paths in DB, resolved at read time | Enables home directory migration without DB updates |
 | Digest storage | Summary and keywords in `sources` table | No intermediate .md file needed |
 | Facet edit vs extract | `parse_facet_int`/`clean_str_facet` shared; digest path degrades bad values to `null`, manual `PATCH /sources/:id/facets` raises → 422; manual write is REPLACE (`update_source_facets`, explicit null clears) vs digest COALESCE-preserve; PATCH returns 204 | A typed edit is deliberate (reject), an LLM guess is best-effort (degrade) |
-| Overview generation | On-demand `POST /lists/:id/overview` | User controls when to generate; no silent LLM calls in pipeline |
 | Job vs source dedup | `sources` is the dedup source; `jobs` is ephemeral | A video is "processed" if it has a `sources` row |
 | Transcript storage | Punctuated sentence segments in `transcript_segments` table, keyed by `source_id` with FK cascade | Re-chunking never requires re-transcription (segments persist, ASR not re-run) |
 | Artifact storage | Content on disk (`artifacts/{id}.md`), metadata in SQLite | Same pattern as transcripts |

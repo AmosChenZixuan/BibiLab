@@ -21,7 +21,7 @@ uv run python -m bibilab.main       # Start server (localhost:8765)
 routers/          — one APIRouter per module; aggregated in main.py
   auth.py           /auth/bilibili/* (QR login, cookie management)
   chat.py           /lists/:id/chat (SSE streaming + cancel), /lists/:id/chat/:msg_id/stream (reattach), /lists/:id/conversation (CRUD); stream_with_tools loop; classify_error (SDK exception → i18n error code)
-  lists.py          /lists/* (CRUD), /lists/:id/overview (POST)
+  lists.py          /lists/* (CRUD)
   ingest.py         /ingest/url (POST)
   sources.py        /sources/* (source content, covers, rerun, PATCH facets manual edit)
 models/           — Pydantic request/response models + domain errors
@@ -33,7 +33,6 @@ pipeline/         — one file per stage
   chunk.py          greedy segment merger → ~300-token RAG chunks
   digest.py         LLM summary + keywords + facets (series_name, sequence_number, season_number) → denormalized into sources
   embed.py          ChromaDB embed + retrieve() (hybrid search → rerank → aggregation), FTS5 populate
-  extract.py        LLM knowledge synthesis (overview generation)
   rerank.py         lazy ONNX cross-encoder reranker (Xenova/bge-reranker-base, XLM-RoBERTa zh+en; batched inference)
   chat_tools.py     two tool definitions (find_passages, read_source) + execution dispatcher + chunk formatting + CitationRegistry + facet narrative builder; `_NO_MATCH_NOTE` is a fact-only string prepended when facet matching fails
   chat_summary.py   conversation compression (sliding window + LLM summary; summary is prose only — [N] markers not preserved)
