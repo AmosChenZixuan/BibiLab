@@ -1,4 +1,4 @@
-# Citation System (V2)
+# Citation System
 
 ## Overview
 
@@ -31,7 +31,7 @@ LLM delta stream
 | `web/src/components/lists/hooks/useSSEStream.ts` | SSE consumer — accumulates `ContentBlock[]`, dispatches `find_passages` + `read_source` `tool_result` events |
 | `web/src/components/lists/hooks/useConversationHistory.ts` | `MessageUI` with `contentBlocks` + `rag`, legacy fallback |
 | `web/src/components/lists/ChatPanel.tsx` | `CitationChip` component, block-based renderer |
-| `web/src/pages/ListDetailPage.tsx` | `handleOpenSource` with `highlightChunks` opts (V1: accepted, unused) |
+| `web/src/pages/ListDetailPage.tsx` | `handleOpenSource` with `highlightChunks` opts (accepted but unused) |
 
 ## Data flow
 
@@ -82,7 +82,7 @@ source.
   gets a fresh number, otherwise the legacy marker in old prose is inert text —
   acceptable, since live citations only need to survive on post-window messages.
 
-## V2 follow-up
+## Deferred
 
 - LLM prompt extension for chunk-specific citations (`[N#M]`)
 - Hover snippet preview: lazy-load chunk text
