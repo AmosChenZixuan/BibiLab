@@ -30,7 +30,6 @@ vi.mock("@/lib/api", () => ({
     rerunDigest: vi.fn(),
     deleteJob: vi.fn(),
     createList: vi.fn(),
-    generateOverview: vi.fn(),
     putConfig: vi.fn(),
     listModels: vi.fn(),
     listArtifacts: vi.fn().mockResolvedValue([]),

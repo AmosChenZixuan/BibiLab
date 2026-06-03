@@ -33,7 +33,6 @@ from bibilab.models.lists import (
     ListCreateRequest,
     ListResponse,
     ListUpdateRequest,
-    OverviewResponse,
     SourceResponse,
 )
 from bibilab.pipeline.embed import clear_embeddings_for_list, clear_embeddings_for_source, clear_fts_for_source_sync
@@ -209,35 +208,3 @@ async def delete_list_source(list_id: str, source_id: str, cfg: BibilabConfig = 
     await asyncio.to_thread(clear_embeddings_for_source, source_id, cfg)
     await asyncio.to_thread(clear_fts_for_source_sync, source_id)
     await delete_source(source_id)
-
-
-@router.post("/lists/{list_id}/overview")
-async def generate_list_overview(
-    list_id: str, request: Request, cfg: BibilabConfig = Depends(get_config)
-) -> OverviewResponse:
-    row = await get_list(list_id)
-    if row is None:
-        raise HTTPException(status_code=404, detail="List not found")
-
-    sources = await get_sources_for_list(list_id)
-    if not sources:
-        raise HTTPException(status_code=422, detail="List has no sources to summarise")
-
-    from bibilab.pipeline.extract import generate_overview
-
-    list_videos = [{"title": s["title"], "summary": s["summary"]} for s in sources]
-    outline = await asyncio.to_thread(
-        generate_overview,
-        list_videos,
-        cfg.ai,
-        cfg.ai.output_language,
-        request.headers.get("X-UI-Lang"),
-        llm_timeout=cfg.transcription.llm_timeout,
-    )
-
-    list_name = row["name"]
-    source_lines = "\n".join(f"- {s['title']}" for s in sources)
-    content = f"# {list_name} - Overview\n\n## Outline\n{outline}\n\n## Sources\n{source_lines}\n"
-    filename = f"overview-{list_name.lower().replace(' ', '-')}.md"
-
-    return OverviewResponse(content=content, filename=filename)

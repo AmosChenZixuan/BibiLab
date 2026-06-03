@@ -248,7 +248,7 @@ async def load_transcript_text(source_id: str, *, include_time: bool = True) -> 
     """Load a source's transcript from the segments table as speaker turns.
 
     Default (``include_time=True``) is the UI viewer view (turns + time, raw
-    label). Digest/overview callers pass ``include_time=False`` (turns only).
+    label). Digest callers pass ``include_time=False`` (turns only).
     """
     from bibilab.db import get_transcript_segments  # local import avoids db<->pipeline cycle
 

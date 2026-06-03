@@ -40,8 +40,3 @@ class SourceResponse(PlatformResource):
     duration_seconds: int
     uploader: str
     language: str | None
-
-
-class OverviewResponse(BaseModel):
-    content: str
-    filename: str

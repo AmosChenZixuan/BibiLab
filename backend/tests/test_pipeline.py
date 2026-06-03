@@ -8,7 +8,6 @@ import pytest
 from bibilab.pipeline._shared import _resolved_lang
 from bibilab.pipeline.audio import PipelineError, extract_audio
 from bibilab.pipeline.chunk import _SENT_END, RagChunk, chunk_segments
-from bibilab.pipeline.extract import generate_overview
 from bibilab.pipeline.transcribe import WhisperSegment
 
 # ---------------------------------------------------------------------------
@@ -476,58 +475,6 @@ def test_resolved_lang_with_ui_falls_back_to_en():
 def test_resolved_lang_with_explicit_language():
     assert _resolved_lang("zh", None) == "zh"
     assert _resolved_lang("en", "zh") == "en"
-
-
-# ---------------------------------------------------------------------------
-# extract.py
-# ---------------------------------------------------------------------------
-
-
-def test_generate_overview_returns_overview_text(tmp_path: Path):
-    from bibilab.config import AIConfig
-
-    ai_cfg = AIConfig(
-        protocol="openai",
-        model="gpt-4o-mini",
-        api_key="sk-test",
-        base_url="https://api.openai.com/v1",
-        output_language="en",
-    )
-    list_videos = [
-        {"title": "Video A", "summary": "Introduction to ML concepts"},
-        {"title": "Video B", "summary": "Deep learning architectures"},
-    ]
-    mock_overview = "This series introduces ML from basics to deep learning."
-    with patch("bibilab.pipeline.extract._call_llm", return_value=mock_overview) as mock_call:
-        result = generate_overview(list_videos, ai_cfg)
-
-    assert result == mock_overview
-    # Verify prompt includes both videos
-    call_args = mock_call.call_args
-    prompt = call_args[0][0]
-    assert "Video A" in prompt
-    assert "Video B" in prompt
-    assert "Introduction to ML concepts" in prompt
-
-
-def test_generate_overview_respects_output_language(tmp_path: Path):
-    from bibilab.config import AIConfig
-
-    ai_cfg = AIConfig(
-        protocol="openai",
-        model="gpt-4o-mini",
-        api_key="sk-test",
-        base_url="https://api.openai.com/v1",
-        output_language="zh",
-    )
-    mock_overview = "本系列介绍机器学习基础"
-    with patch("bibilab.pipeline.extract._call_llm", return_value=mock_overview) as mock_call:
-        result = generate_overview([{"title": "Test", "summary": "Summary"}], ai_cfg, output_language="zh")
-
-    assert result == mock_overview
-    call_args = mock_call.call_args
-    prompt = call_args[0][0]
-    assert "请用中文回答" in prompt
 
 
 # ---------------------------------------------------------------------------
