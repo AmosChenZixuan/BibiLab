@@ -125,20 +125,6 @@ def test_asr_health_reports_unconfigured_model_as_error():
     assert result == {"status": "error", "message": "Transcription model not configured"}
 
 
-def test_is_embedding_model_downloaded_false_when_absent(tmp_path: Path):
-    from bibilab.pipeline.embed import is_embedding_model_downloaded
-
-    with patch("bibilab.pipeline.embed._integrity_ok", return_value=False):
-        assert is_embedding_model_downloaded() is False
-
-
-def test_is_embedding_model_downloaded_true_when_present(tmp_path: Path):
-    from bibilab.pipeline.embed import is_embedding_model_downloaded
-
-    with patch("bibilab.pipeline.embed._integrity_ok", return_value=True):
-        assert is_embedding_model_downloaded() is True
-
-
 @pytest.mark.asyncio
 async def test_config_defaults(client: httpx.AsyncClient):
     resp = await client.get("/config")

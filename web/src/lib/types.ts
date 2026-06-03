@@ -213,11 +213,6 @@ export type SyncResponse = {
   skipped: string[];
 };
 
-export type OverviewDownload = {
-  filename: string;
-  content: string;
-};
-
 export type VideoStatus = "new" | "processed" | "in_progress" | "needs_auth";
 
 export interface PreviewVideo {

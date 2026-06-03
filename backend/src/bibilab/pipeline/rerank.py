@@ -12,7 +12,7 @@ if TYPE_CHECKING:
     pass
 
 from bibilab.config import models_dir
-from bibilab.model_registry import RERANKER_SPEC_ID, _integrity_ok, ensure, get_spec
+from bibilab.model_registry import RERANKER_SPEC_ID, ensure
 from bibilab.pipeline.chat_inference_pool import get_chat_pool
 from bibilab.pipeline.embed import RetrievedChunk
 
@@ -20,8 +20,9 @@ logger = logging.getLogger(__name__)
 
 # bge-reranker-base (XLM-RoBERTa) handles Chinese + English, matching
 # the project's primary content languages. Model is intentionally fixed
-# rather than configurable — swapping models would require re-tuning
-# the relevance gate margin since score distributions differ.
+# rather than configurable — it's the only viable cross-encoder that
+# covers both languages, and score-distribution differences across
+# reranker models would invalidate the gateless top-k ordering invariant.
 _MODEL_REPO = "Xenova/bge-reranker-base"
 _MODEL_FILENAME = "model.onnx"
 _TOKENIZER_FILENAME = "tokenizer.json"
@@ -32,10 +33,6 @@ _reranker_lock = threading.Lock()
 
 def _model_dir() -> Path:
     return models_dir("reranker", _MODEL_REPO.replace("/", "_"))
-
-
-def is_reranker_model_downloaded() -> bool:
-    return _integrity_ok(get_spec(RERANKER_SPEC_ID))
 
 
 class ONNXCrossEncoder:

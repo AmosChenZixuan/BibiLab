@@ -16,7 +16,7 @@ from pathlib import Path
 from bibilab.adapters.base import VideoMeta
 from bibilab.config import BibilabConfig, bibilab_home, models_dir
 from bibilab.db import _pinyin_index_tokens, _tokenize_cjk, get_db_path, query_fts_rows
-from bibilab.model_registry import EMBEDDING_SPEC_ID, _integrity_ok, ensure, get_spec
+from bibilab.model_registry import EMBEDDING_SPEC_ID, ensure
 from bibilab.pipeline.chat_inference_pool import get_chat_pool
 from bibilab.pipeline.chunk import RagChunk
 
@@ -217,10 +217,6 @@ def _embedding_model_dir() -> Path:
     return models_dir("embedding")
 
 
-def is_embedding_model_downloaded() -> bool:
-    return _integrity_ok(get_spec(EMBEDDING_SPEC_ID))
-
-
 def _default_embedding_function() -> ONNXMultilingualEmbedding:
     return ONNXMultilingualEmbedding()
 
@@ -281,7 +277,7 @@ def populate_fts(chunks: list[RagChunk], source_id: str, meta: VideoMeta) -> Non
     Clears the source's existing rows first so a re-embed replaces rather than
     appends — mirrors the chroma clear in embed_chunks. Without it a rerun, retry,
     or re-ingest double-indexes the source (every chunk twice), inflating BM25
-    document frequency and the rerank-gate candidate pool.
+    document frequency and contaminating retrieval.
     """
     if not chunks:
         return

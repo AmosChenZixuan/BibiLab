@@ -4,7 +4,6 @@ import type {
   BibilabConfig,
   BibilabList,
   BibilabListPatch,
-  OverviewDownload,
   Source,
   SourceContent,
   SourceFacetsPatch,
@@ -157,10 +156,6 @@ export class ListsClient {
 
   deleteList(listId: string) {
     return this.request<void>(this.baseUrl, `/lists/${listId}`, { method: "DELETE" });
-  }
-
-  generateOverview(listId: string) {
-    return this.request<OverviewDownload>(this.baseUrl, `/lists/${listId}/overview`, { method: "POST" });
   }
 
   createArtifact(listId: string, body: { type: ArtifactType; prompt: string; source_ids: string[] }): Promise<Job> {
@@ -354,7 +349,6 @@ export interface ApiClient {
   createList(name: string): Promise<BibilabList | undefined>;
   updateList(listId: string, patch: BibilabListPatch): Promise<BibilabList | undefined>;
   deleteList(listId: string): Promise<void | undefined>;
-  generateOverview(listId: string): Promise<OverviewDownload | undefined>;
   createArtifact(listId: string, body: { type: ArtifactType; prompt: string; source_ids: string[] }): Promise<Job>;
   listSources(listId: string, opts?: { signal?: AbortSignal }): Promise<Source[] | undefined>;
   getSource(sourceId: string, opts?: { signal?: AbortSignal }): Promise<SourceContent | undefined>;
@@ -413,7 +407,6 @@ export function createApiClient(baseUrl?: string): ApiClient {
     createList: (name) => lists.createList(name),
     updateList: (id, patch) => lists.updateList(id, patch),
     deleteList: (id) => lists.deleteList(id),
-    generateOverview: (id) => lists.generateOverview(id),
     createArtifact: (id, body) => lists.createArtifact(id, body),
     listSources: (id, opts) => sources.listSources(id, opts),
     getSource: (id, opts) => sources.getSource(id, opts),

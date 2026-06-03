@@ -378,30 +378,33 @@ async def write_source(
     sequence_number: int | None = None,
     season_number: int | None = None,
 ) -> None:
-    async with get_db() as db:
-        await _exec_write_source(
-            db,
-            source_id=source_id,
-            video_id=video_id,
-            platform=platform,
-            list_id=list_id,
-            title=title,
-            summary=summary,
-            keywords=keywords,
-            cover_url=cover_url,
-            source_url=source_url,
-            duration_seconds=duration_seconds,
-            uploader=uploader,
-            language=language,
-            whisper_model=whisper_model,
-            ai_model=ai_model,
-            vision_enabled=vision_enabled,
-            settings_snapshot=settings_snapshot,
-            series_name=series_name,
-            sequence_number=sequence_number,
-            season_number=season_number,
-        )
-        await db.commit()
+    """Test helper: insert a source row without segments.
+
+    Production code uses `write_source_with_segments` for atomic source+segments
+    insert. This wrapper is kept for ~40 test sites that don't need segments.
+    """
+    await write_source_with_segments(
+        segments=[],
+        source_id=source_id,
+        video_id=video_id,
+        platform=platform,
+        list_id=list_id,
+        title=title,
+        summary=summary,
+        keywords=keywords,
+        cover_url=cover_url,
+        source_url=source_url,
+        duration_seconds=duration_seconds,
+        uploader=uploader,
+        language=language,
+        whisper_model=whisper_model,
+        ai_model=ai_model,
+        vision_enabled=vision_enabled,
+        settings_snapshot=settings_snapshot,
+        series_name=series_name,
+        sequence_number=sequence_number,
+        season_number=season_number,
+    )
 
 
 async def write_source_with_segments(*, segments: list, **source_fields: Any) -> None:

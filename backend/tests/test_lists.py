@@ -293,51 +293,6 @@ async def test_first_source_auto_assigned_as_thumbnail(client: httpx.AsyncClient
 
 
 @pytest.mark.asyncio
-async def test_generate_overview_respects_ui_lang_header(
-    client: httpx.AsyncClient, tmp_bibilab_home: Path, monkeypatch
-):
-    """POST /lists/{list_id}/overview passes X-UI-Lang header to generate_overview."""
-    from bibilab.db import write_source
-
-    list_id = (await client.post("/lists", json={"name": "Overview Test"})).json()["id"]
-    source_id = "src-overview-001"
-    await write_source(
-        source_id=source_id,
-        video_id="BVover001",
-        platform="bilibili",
-        list_id=list_id,
-        title="Overview Test Video",
-        summary="A test summary.",
-        keywords=[],
-        cover_url=None,
-        source_url="https://www.bilibili.com/video/BVover001",
-        duration_seconds=60,
-        uploader="TestUser",
-        language="en",
-        whisper_model="base",
-        ai_model="gpt-4o",
-        vision_enabled=False,
-        settings_snapshot={},
-    )
-
-    captured_prompt = None
-
-    def mock_call_llm(prompt, cfg, llm_timeout=120, llm_max_tokens=2048):
-        nonlocal captured_prompt
-        captured_prompt = prompt
-        return "Overview outline text."
-
-    import bibilab.pipeline.extract as extract_module
-
-    monkeypatch.setattr(extract_module, "_call_llm", mock_call_llm)
-
-    resp = await client.post(f"/lists/{list_id}/overview", headers={"X-UI-Lang": "zh"})
-    assert resp.status_code == 200
-    assert captured_prompt is not None
-    assert "请用中文回答" in captured_prompt
-
-
-@pytest.mark.asyncio
 async def test_delete_source_cascades_segments_no_txt(client: httpx.AsyncClient, tmp_bibilab_home: Path):
     from bibilab.db import _now, bootstrap_db, create_list, get_db, get_transcript_segments, write_transcript_segments
     from bibilab.pipeline.transcribe import WhisperSegment

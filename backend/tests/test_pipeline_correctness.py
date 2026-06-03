@@ -56,7 +56,6 @@ async def test_extract_audio_cancellation_stops_pipeline(setup_pipeline_test: Pa
     # Create required dirs
     (setup_pipeline_test / "downloads").mkdir(parents=True, exist_ok=True)
     (setup_pipeline_test / "covers").mkdir(parents=True, exist_ok=True)
-    (setup_pipeline_test / "transcripts").mkdir(parents=True, exist_ok=True)
 
     # Create fake video and wav files
     tmp_video = setup_pipeline_test / "downloads" / "BVcancel123.mp4"
@@ -138,7 +137,6 @@ async def test_pipeline_stage_process_cleanup_called_on_cancellation(setup_pipel
 
     (setup_pipeline_test / "downloads").mkdir(parents=True, exist_ok=True)
     (setup_pipeline_test / "covers").mkdir(parents=True, exist_ok=True)
-    (setup_pipeline_test / "transcripts").mkdir(parents=True, exist_ok=True)
 
     tmp_video = setup_pipeline_test / "downloads" / "BVcleanup123.mp4"
     tmp_video.write_bytes(b"fake video")
