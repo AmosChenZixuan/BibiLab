@@ -277,11 +277,6 @@
       },
       "ariaToggle": "Toggle retrieval details"
     },
-    "mode": {
-      "broad": {
-        "description": "Broad mode retrieves one relevant chunk per source, maximizing coverage across videos."
-      }
-    },
     "citationMissing": "Source no longer in list",
     "errors": {
       "tool_error": "Tool execution failed",

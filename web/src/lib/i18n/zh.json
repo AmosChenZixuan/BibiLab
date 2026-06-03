@@ -277,11 +277,6 @@
       },
       "ariaToggle": "切换检索详情"
     },
-    "mode": {
-      "broad": {
-        "description": "宽泛模式从每个来源中检索一个相关片段，最大化跨视频的覆盖范围。"
-      }
-    },
     "citationMissing": "来源已不在列表中",
     "errors": {
       "tool_error": "工具执行失败",
