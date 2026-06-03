@@ -208,7 +208,7 @@ async def test_stream_with_tools_max_iterations_graceful():
         # after MAX_TOOL_ITERATIONS
 
     async def fake_execute(name, args, **kwargs):
-        return {"ok": True}
+        return {"ok": True, "_chunks": "stub"}
 
     with patch("bibilab.routers.chat.stream_llm", side_effect=fake_stream):
         events = []
@@ -266,6 +266,7 @@ async def test_stream_with_tools_forces_synthesis_when_exhausted_turn_returns_em
             "candidates_evaluated": 1,
             "sources_with_hits": 0,
             "sources_total": 1,
+            "_chunks": "stub",
         }
 
     with patch("bibilab.routers.chat.stream_llm", side_effect=fake_stream):
@@ -319,6 +320,7 @@ async def test_forced_synthesis_forwards_error_events():
             "candidates_evaluated": 1,
             "sources_with_hits": 0,
             "sources_total": 1,
+            "_chunks": "stub",
         }
 
     with patch("bibilab.routers.chat.stream_llm", side_effect=fake_stream):

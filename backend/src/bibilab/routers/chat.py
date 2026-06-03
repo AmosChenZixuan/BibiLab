@@ -179,6 +179,16 @@ def _client_tool_result(result: dict) -> dict:
     return strip_internal(result)
 
 
+def _llm_tool_message_content(result: dict) -> str:
+    """LLM-bound content of a tool result: the formatted excerpts only (#401).
+
+    `_chunks` is set on every tool path (find_passages, read_source narrative,
+    resolution-error). Other fields (FTS bigram text, telemetry, bookkeeping)
+    are client-only or persistence-only.
+    """
+    return result["_chunks"]
+
+
 def build_grounding_prompt(response_language: str) -> str:
     """Build the system prompt for chat grounding.
 
@@ -427,7 +437,7 @@ async def stream_with_tools(
                         {
                             "type": "tool_result",
                             "tool_use_id": tc.id,
-                            "content": json.dumps(results[tc.id], ensure_ascii=False),
+                            "content": _llm_tool_message_content(results[tc.id]),
                         }
                         for tc in tool_calls
                     ],
@@ -448,7 +458,7 @@ async def stream_with_tools(
                     {
                         "role": "tool",
                         "tool_call_id": tc.id,
-                        "content": json.dumps(results[tc.id], ensure_ascii=False),
+                        "content": _llm_tool_message_content(results[tc.id]),
                     }
                 )
         continue
