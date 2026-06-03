@@ -133,7 +133,7 @@ async function request<T>(
 
 // ─── Focused client classes ───────────────────────────────────────────────────
 
-export class ListsClient {
+class ListsClient {
   constructor(private readonly baseUrl: string, private readonly request: RequestFn) {}
 
   listLists(opts?: { signal?: AbortSignal }) {
@@ -166,7 +166,7 @@ export class ListsClient {
   }
 }
 
-export class SourcesClient {
+class SourcesClient {
   constructor(private readonly baseUrl: string, private readonly request: RequestFn) {}
 
   listSources(listId: string, opts?: { signal?: AbortSignal }) {
@@ -193,7 +193,7 @@ export class SourcesClient {
   }
 }
 
-export class IngestClient {
+class IngestClient {
   constructor(private readonly baseUrl: string, private readonly request: RequestFn) {}
 
   previewPlaylist(listId: string, url: string): Promise<PreviewResponse | undefined> {
@@ -218,7 +218,7 @@ export class IngestClient {
   }
 }
 
-export class ArtifactsClient {
+class ArtifactsClient {
   constructor(private readonly baseUrl: string, private readonly request: RequestFn) {}
 
   listArtifacts(listId: string, opts?: { signal?: AbortSignal }) {
@@ -247,7 +247,7 @@ export class ArtifactsClient {
   }
 }
 
-export class ConfigClient {
+class ConfigClient {
   constructor(private readonly baseUrl: string, private readonly request: RequestFn) {}
 
   getConfig(opts?: { signal?: AbortSignal }) {
@@ -262,7 +262,7 @@ export class ConfigClient {
   }
 }
 
-export class HealthClient {
+class HealthClient {
   constructor(private readonly baseUrl: string, private readonly request: RequestFn) {}
 
   getHealth(opts?: { signal?: AbortSignal }) {
@@ -270,7 +270,7 @@ export class HealthClient {
   }
 }
 
-export class JobsClient {
+class JobsClient {
   constructor(private readonly baseUrl: string, private readonly request: RequestFn) {}
 
   listJobs(opts?: { signal?: AbortSignal }) {
@@ -287,7 +287,7 @@ type GetConversationResponse = {
   messages: Message[];
 };
 
-export class ConversationsClient {
+class ConversationsClient {
   constructor(private readonly baseUrl: string, private readonly request: RequestFn) {}
 
   getConversation(listId: string, opts?: { signal?: AbortSignal; before?: string; limit?: number }) {
@@ -306,7 +306,7 @@ export class ConversationsClient {
 
 export type BilibiliQrStatus = "waiting" | "scanned" | "expired" | "success";
 
-export class AuthClient {
+class AuthClient {
   constructor(private readonly baseUrl: string, private readonly request: RequestFn) {}
 
   generateBilibiliQr() {
@@ -324,7 +324,7 @@ export class AuthClient {
   }
 }
 
-export class ModelsClient {
+class ModelsClient {
   constructor(private readonly baseUrl: string, private readonly request: RequestFn) {}
 
   listModels(opts?: { signal?: AbortSignal }) {
