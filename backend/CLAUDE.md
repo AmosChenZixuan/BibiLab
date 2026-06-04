@@ -10,6 +10,7 @@ uv run python -c "import torch; print(torch.cuda.is_available())"  # Verify CUDA
 uv run ruff check .                  # Lint
 uv run ruff format .                 # Format
 uv run pytest                        # All tests
+uv run pytest -m "not integration"   # Fast unit subset (skips client/real-SQLite tests)
 uv run pytest tests/test_ingest.py -v  # Single test file
 uv run pytest --cov=bibilab --cov-report=term-missing  # Coverage (requires pytest-cov)
 uv run python -m bibilab.main       # Start server (localhost:8765)
@@ -39,7 +40,7 @@ pipeline/         — one file per stage
   citation_parser.py incremental citation parser — strips [N] tokens from LLM deltas, emits citation SSE events with {index, source_id, chunk_ids}
   chat_runs.py       StreamBuffer + ChatRunRegistry; in-memory buffer decouples LLM producer from HTTP request lifetime
 adapters/         — platform-specific download + resolution (base + bilibili)
-db.py             — SQLite schema + query helpers (1094 lines)
+db.py             — SQLite schema + query helpers
 video_status.py   — derive_video_statuses (status mapping extracted from db.py per Code Health Rule #4)
 config.py         — settings persisted to ~/.bibilab/config.json; includes models_dir() helper
 worker.py         — SQLite-polling job dispatcher; accepts config/adapter/home via constructor for testability
@@ -52,11 +53,19 @@ asr_models.py     — Unified ASR model registry (Whisper + SenseVoice + diariza
 - **Naming**: `snake_case` for files/functions/variables, `PascalCase` for classes and Pydantic models
 - **Pydantic models**: `{Operation}Request` / `{Operation}Response` suffix; enums use `PascalCase` name, `UPPERCASE` values
 - **Router pattern**: one `APIRouter` per file, no prefix/tags; routes carry full paths
-- **DB**: `asynccontextmanager` `get_db` wrapper; all queries use `?` placeholders, never f-string interpolation. `db.py` is strictly for SQL queries — no status mapping, no side effects (e.g., auto-setting thumbnails), no domain logic. If you need to derive a user-facing value from raw data, do it in the router or a service function.
+- **DB**: `asynccontextmanager` `get_db` wrapper; all queries use `?` placeholders, never f-string interpolation. `db.py` is strictly for SQL queries — no status mapping (extracted to `video_status.py`), no domain logic. The one deliberate write-time side effect is first-source thumbnail assignment in `_exec_write_source`, atomic with the source insert. Derive user-facing values in the router or a service function.
 - **Imports**: stdlib → third-party → local, with blank lines between groups
 - **Errors**: `HTTPException(status_code=N, detail=...)` for HTTP errors; `AuthRequiredError`, `DownloadError`, `PipelineError` for domain errors
 - **LLM content blocks**: Never assume `msg.content[0]` is a TextBlock. Filter by `block.type == "text"` — some providers return ThinkingBlock or other types first. Use `next((b for b in msg.content if b.type == "text"), None)` with a None default to avoid StopIteration in async contexts.
 - **FTS5 input**: Always pass user query strings through `_escape_fts_query()` (db.py) before MATCH evaluation. FTS5 treats bare `OR`, `*`, `:`, `^` as operators — unescaped user input raises `OperationalError`.
+
+## Testing
+
+- **Seed via factories, not `db.py`**: use `tests/factories.py` — `SourceFactory.build(list_id, **overrides)`, `ConversationFactory.build`, `MessageFactory.build`. Never insert through production helpers in test setup. `SourceFactory` delegates to `write_source_with_segments`, so a `sources` column change only touches `_DEFAULTS`.
+- **LLM mocking via conftest fixtures**: `mock_stream_llm` (chat `stream_llm` seam) and `mock_call_llm` (digest/chat_summary/worker `_call_llm` seams). Configure with `.return_value` / `.side_effect`; don't hand-roll `patch("...stream_llm")` per test.
+- **Integration marker**: any test that drives the `client` fixture or hits real SQLite/Chroma carries module-level `pytestmark = pytest.mark.integration` (place after imports). `pytest -m "not integration"` is the fast unit lane.
+- **Home isolation**: the `tmp_bibilab_home` fixture sets `BIBILAB_HOME` — one env seam that `bibilab_home()` honors. Don't re-add per-module `patch("...bibilab_home")`.
+- **Mock only external boundaries** (LLM, models, network). Use real SQLite/Chroma — they're embedded and spun up per-test in a temp dir; no DB fakes.
 
 ## Database Schema
 
