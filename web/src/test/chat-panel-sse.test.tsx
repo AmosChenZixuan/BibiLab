@@ -6,6 +6,7 @@ import { LanguageProvider } from "@/app/LanguageContext";
 import { JobActivityProvider } from "@/components/jobs/JobActivityProvider";
 import { ChatPanel } from "@/components/lists/ChatPanel";
 import { TEST_IDS } from "@/lib/test-ids";
+import { makeOpenSseStream, makeSseStream } from "@/test/utils";
 import type { Source } from "@/lib/types";
 
 const SOURCE_1: Source = {
@@ -40,20 +41,6 @@ const SOURCE_2: Source = {
 
 const ASSISTANT_MSG_ID = "msg-assistant-1";
 const USER_MSG_ID = "msg-user-1";
-
-function makeSseStream(events: string[]) {
-  const body = new ReadableStream({
-    start(controller) {
-      for (const event of events) {
-        controller.enqueue(new TextEncoder().encode(event));
-      }
-      controller.close();
-    },
-  });
-  return new Response(body, {
-    headers: { "Content-Type": "text/event-stream" },
-  });
-}
 
 function renderChatPanel(props?: Partial<React.ComponentProps<typeof ChatPanel>>) {
   return render(
@@ -114,18 +101,11 @@ describe("chat panel — SSE streaming (phase 6.2)", () => {
     // find_passages dispatches mid-stream before any preamble text. The pending
     // ledger row must be visible even though the assistant bubble is empty
     // and the message is still streaming.
-    let ctrl!: ReadableStreamDefaultController<Uint8Array>;
-    const openBody = new ReadableStream<Uint8Array>({
-      start(c) {
-        ctrl = c;
-      },
-    });
+    const { response, enqueue } = makeOpenSseStream();
     vi.spyOn(window, "fetch").mockImplementation((input) => {
       const url = String(input);
       if (url.includes("/chat")) {
-        return Promise.resolve(
-          new Response(openBody, { headers: { "Content-Type": "text/event-stream" } }),
-        );
+        return Promise.resolve(response);
       }
       // conversation GET: empty history
       return Promise.resolve(makeSseStream([]));
@@ -141,10 +121,8 @@ describe("chat panel — SSE streaming (phase 6.2)", () => {
     await userEvent.type(textarea, "What is X?");
     await userEvent.keyboard("{Enter}");
 
-    ctrl.enqueue(
-      new TextEncoder().encode(
-        'data: {"type":"tool_call_start","id":"t1","name":"find_passages","arguments":{"query":"X"}}\n\n',
-      ),
+    enqueue(
+      'data: {"type":"tool_call_start","id":"t1","name":"find_passages","arguments":{"query":"X"}}\n\n',
     );
 
     await waitFor(() => {
@@ -153,18 +131,11 @@ describe("chat panel — SSE streaming (phase 6.2)", () => {
   });
 
   test("ledger collapses mid-stream, becomes expandable with context after rag+done", async () => {
-    let ctrl!: ReadableStreamDefaultController<Uint8Array>;
-    const openBody = new ReadableStream<Uint8Array>({
-      start(c) {
-        ctrl = c;
-      },
-    });
+    const { response, enqueue, close } = makeOpenSseStream();
     vi.spyOn(window, "fetch").mockImplementation((input) => {
       const url = String(input);
       if (url.includes("/chat")) {
-        return Promise.resolve(
-          new Response(openBody, { headers: { "Content-Type": "text/event-stream" } }),
-        );
+        return Promise.resolve(response);
       }
       return Promise.resolve(makeSseStream([]));
     });
@@ -174,12 +145,9 @@ describe("chat panel — SSE streaming (phase 6.2)", () => {
     await userEvent.type(screen.getByRole("textbox"), "what is X?");
     await userEvent.keyboard("{Enter}");
 
-    const enc = new TextEncoder();
-    ctrl.enqueue(enc.encode('data: {"type":"meta","message_id":"srv-1"}\n\n'));
-    ctrl.enqueue(
-      enc.encode(
-        'data: {"type":"tool_result","id":"r1","name":"find_passages","result":{"query":"X","tool_name":"find_passages","candidates_evaluated":5,"sources_with_hits":1,"sources_total":1,"source_coverage":[{"source_id":"s1","title":"Vid"}],"reranked":true,"scoped_pool_size":1}}\n\n',
-      ),
+    enqueue('data: {"type":"meta","message_id":"srv-1"}\n\n');
+    enqueue(
+      'data: {"type":"tool_result","id":"r1","name":"find_passages","result":{"query":"X","tool_name":"find_passages","candidates_evaluated":5,"sources_with_hits":1,"sources_total":1,"source_coverage":[{"source_id":"s1","title":"Vid"}],"reranked":true,"scoped_pool_size":1}}\n\n',
     );
 
     // Mid-stream: ledger present but NOT expandable.
@@ -191,14 +159,12 @@ describe("chat panel — SSE streaming (phase 6.2)", () => {
     ).toBeNull();
 
     // Final authoritative rag (with context[]) then done.
-    ctrl.enqueue(
-      enc.encode(
-        'data: {"type":"rag","calls":[{"query":"X","tool_name":"find_passages","candidates_evaluated":5,"sources_with_hits":1,"sources_total":1,"source_coverage":[{"source_id":"s1","title":"Vid"}],"context":[{"chunk_id":"c1","citation_index":1,"source_id":"s1","source_title":"Vid","timestamp_start":0,"timestamp_end":10,"rerank_score":2.5,"preview":"unique-preview-text"}],"reranked":true,"scoped_pool_size":1}]}\n\n',
-      ),
+    enqueue(
+      'data: {"type":"rag","calls":[{"query":"X","tool_name":"find_passages","candidates_evaluated":5,"sources_with_hits":1,"sources_total":1,"source_coverage":[{"source_id":"s1","title":"Vid"}],"context":[{"chunk_id":"c1","citation_index":1,"source_id":"s1","source_title":"Vid","timestamp_start":0,"timestamp_end":10,"rerank_score":2.5,"preview":"unique-preview-text"}],"reranked":true,"scoped_pool_size":1}]}\n\n',
     );
-    ctrl.enqueue(enc.encode('data: {"type":"delta","content":"answer"}\n\n'));
-    ctrl.enqueue(enc.encode('data: {"type":"done"}\n\n'));
-    ctrl.close();
+    enqueue('data: {"type":"delta","content":"answer"}\n\n');
+    enqueue('data: {"type":"done"}\n\n');
+    close();
 
     const toggle = await waitFor(() => {
       const b = document.querySelector('button[aria-label="Toggle retrieval details"]');
@@ -308,18 +274,11 @@ describe("chat panel — SSE streaming (phase 6.2)", () => {
   });
 
   test("renders a read_source ledger chip when the tool fires mid-stream", async () => {
-    let ctrl!: ReadableStreamDefaultController<Uint8Array>;
-    const openBody = new ReadableStream<Uint8Array>({
-      start(c) {
-        ctrl = c;
-      },
-    });
+    const { response, enqueue, close } = makeOpenSseStream();
     vi.spyOn(window, "fetch").mockImplementation((input) => {
       const url = String(input);
       if (url.includes("/chat")) {
-        return Promise.resolve(
-          new Response(openBody, { headers: { "Content-Type": "text/event-stream" } }),
-        );
+        return Promise.resolve(response);
       }
       return Promise.resolve(makeSseStream([]));
     });
@@ -329,12 +288,9 @@ describe("chat panel — SSE streaming (phase 6.2)", () => {
     await userEvent.type(screen.getByRole("textbox"), "read the transcript");
     await userEvent.keyboard("{Enter}");
 
-    const enc = new TextEncoder();
     // Provisional read_source chip first (BookOpen + spinner + "reading source…")
-    ctrl.enqueue(
-      enc.encode(
-        'data: {"type":"tool_call_start","id":"rs1","name":"read_source","arguments":{}}\n\n',
-      ),
+    enqueue(
+      'data: {"type":"tool_call_start","id":"rs1","name":"read_source","arguments":{}}\n\n',
     );
 
     await waitFor(() => {
@@ -342,21 +298,17 @@ describe("chat panel — SSE streaming (phase 6.2)", () => {
     });
 
     // tool_result resolves it to source_id/source_title
-    ctrl.enqueue(
-      enc.encode(
-        'data: {"type":"tool_result","id":"rs1","name":"read_source","result":{"tool_name":"read_source","source_id":"s1","source_title":"Ep 4","query":"","candidates_evaluated":0,"sources_with_hits":0,"sources_total":1,"source_coverage":[],"context":[],"reranked":false,"scoped_pool_size":1}}\n\n',
-      ),
+    enqueue(
+      'data: {"type":"tool_result","id":"rs1","name":"read_source","result":{"tool_name":"read_source","source_id":"s1","source_title":"Ep 4","query":"","candidates_evaluated":0,"sources_with_hits":0,"sources_total":1,"source_coverage":[],"context":[],"reranked":false,"scoped_pool_size":1}}\n\n',
     );
 
     // Final rag event then done
-    ctrl.enqueue(
-      enc.encode(
-        'data: {"type":"rag","calls":[{"tool_name":"read_source","source_id":"s1","source_title":"Ep 4","query":"","candidates_evaluated":0,"sources_with_hits":0,"sources_total":1,"source_coverage":[],"context":[],"reranked":false,"scoped_pool_size":1}]}\n\n',
-      ),
+    enqueue(
+      'data: {"type":"rag","calls":[{"tool_name":"read_source","source_id":"s1","source_title":"Ep 4","query":"","candidates_evaluated":0,"sources_with_hits":0,"sources_total":1,"source_coverage":[],"context":[],"reranked":false,"scoped_pool_size":1}]}\n\n',
     );
-    ctrl.enqueue(enc.encode('data: {"type":"delta","content":"answer"}\n\n'));
-    ctrl.enqueue(enc.encode('data: {"type":"done"}\n\n'));
-    ctrl.close();
+    enqueue('data: {"type":"delta","content":"answer"}\n\n');
+    enqueue('data: {"type":"done"}\n\n');
+    close();
 
     // After tool_result the chip should resolve to the read_source row with the source title
     await waitFor(() => {

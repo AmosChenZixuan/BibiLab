@@ -5,6 +5,7 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import { LanguageProvider } from "@/app/LanguageContext";
 import { JobActivityProvider } from "@/components/jobs/JobActivityProvider";
 import { ChatPanel } from "@/components/lists/ChatPanel";
+import { makeSseStream } from "@/test/utils";
 import type { Source } from "@/lib/types";
 
 const SOURCE_1: Source = {
@@ -21,20 +22,6 @@ const SOURCE_1: Source = {
   language: "en",
   processed_at: "2026-04-08T12:00:00Z",
 };
-
-function makeSseStream(events: string[]) {
-  const body = new ReadableStream({
-    start(controller) {
-      for (const event of events) {
-        controller.enqueue(new TextEncoder().encode(event));
-      }
-      controller.close();
-    },
-  });
-  return new Response(body, {
-    headers: { "Content-Type": "text/event-stream" },
-  });
-}
 
 function renderChatPanel(props?: Partial<React.ComponentProps<typeof ChatPanel>>) {
   return render(
