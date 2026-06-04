@@ -4,6 +4,8 @@ from unittest.mock import MagicMock, patch
 import httpx
 import pytest
 
+from tests.factories import SourceFactory
+
 pytestmark = pytest.mark.integration
 
 
@@ -37,30 +39,18 @@ async def test_ingest_dedup(client: httpx.AsyncClient, tmp_bibilab_home: Path):
     """Submitting the same video twice should skip on second attempt."""
     import uuid
 
-    from bibilab.db import bootstrap_db, create_list, write_source
+    from bibilab.db import bootstrap_db, create_list
 
     await bootstrap_db()
     await create_list("list-1", "Test", "2026-01-01T00:00:00")
-    await write_source(
+    await SourceFactory.build(
+        "list-1",
         source_id=str(uuid.uuid4()),
         video_id="BV1abc123",
-        platform="bilibili",
-        list_id="list-1",
         title="T",
         summary="S",
-        keywords=[],
-        cover_url=None,
         source_url="https://www.bilibili.com/video/BV1abc123",
-        duration_seconds=0,
         uploader="",
-        language=None,
-        whisper_model="large-v3",
-        ai_model="gpt-4o",
-        vision_enabled=False,
-        settings_snapshot={},
-        series_name=None,
-        sequence_number=None,
-        season_number=None,
     )
     resp = await client.post(
         "/ingest/url",
@@ -91,17 +81,16 @@ async def test_ingest_rerun_endpoint_removed(client: httpx.AsyncClient):
 @pytest.mark.asyncio
 async def test_write_source_stores_relative_paths(tmp_bibilab_home: Path):
     """After write_source, the source row is persisted correctly."""
-    from bibilab.db import bootstrap_db, create_list, get_source, write_source
+    from bibilab.db import bootstrap_db, create_list, get_source
 
     await bootstrap_db()
     await create_list("list-1", "Test", "2026-01-01T00:00:00")
 
     # Call write_source (the DB write happens here)
-    await write_source(
+    await SourceFactory.build(
+        "list-1",
         source_id="test-uuid-1234",
         video_id="BV1relative",
-        platform="bilibili",
-        list_id="list-1",
         title="Test",
         summary="Test summary.",
         keywords=["test"],
@@ -109,14 +98,6 @@ async def test_write_source_stores_relative_paths(tmp_bibilab_home: Path):
         source_url="https://bilibili.com/video/BV1relative",
         duration_seconds=3600,
         uploader="TestUser",
-        language=None,
-        whisper_model="large-v3",
-        ai_model="gpt-4o",
-        vision_enabled=False,
-        settings_snapshot={},
-        series_name=None,
-        sequence_number=None,
-        season_number=None,
     )
 
     # Read back and verify source was written
@@ -378,30 +359,18 @@ async def test_preview_medialist(client: httpx.AsyncClient, mock_resolve_mediali
 async def test_preview_processed_status(client: httpx.AsyncClient, mock_resolve_single, tmp_bibilab_home: Path):
     import uuid
 
-    from bibilab.db import bootstrap_db, create_list, write_source
+    from bibilab.db import bootstrap_db, create_list
 
     await bootstrap_db()
     await create_list("list-1", "Test", "2026-01-01T00:00:00")
-    await write_source(
+    await SourceFactory.build(
+        "list-1",
         source_id=str(uuid.uuid4()),
         video_id="BV1abc123",
-        platform="bilibili",
-        list_id="list-1",
         title="T",
         summary="S",
-        keywords=[],
-        cover_url=None,
         source_url="https://www.bilibili.com/video/BV1abc123",
-        duration_seconds=0,
         uploader="",
-        language=None,
-        whisper_model="large-v3",
-        ai_model="gpt-4o",
-        vision_enabled=False,
-        settings_snapshot={},
-        series_name=None,
-        sequence_number=None,
-        season_number=None,
     )
     resp = await client.post(
         "/ingest/preview",
@@ -629,33 +598,26 @@ async def test_write_source_persists_facet_columns(tmp_bibilab_home: Path):
     """write_source persists series_name, sequence_number, season_number."""
     import uuid
 
-    from bibilab.db import bootstrap_db, create_list, get_source, write_source
+    from bibilab.db import bootstrap_db, create_list, get_source
 
     await bootstrap_db()
     list_id = "list-facet-ws"
     await create_list(list_id, "Facet WS", "2026-01-01T00:00:00")
     source_id = str(uuid.uuid4())
 
-    await write_source(
+    await SourceFactory.build(
+        list_id,
         source_id=source_id,
         video_id="BVfacet001",
-        platform="bilibili",
-        list_id=list_id,
         title="罗翔说刑法 EP08",
         summary="A lecture on criminal law.",
         keywords=["law"],
-        cover_url=None,
         source_url="https://example.com/BVfacet001",
         duration_seconds=600,
         uploader="UploaderX",
         language="zh",
-        whisper_model="large-v3",
-        ai_model="gpt-4o",
-        vision_enabled=False,
-        settings_snapshot={},
         series_name="罗翔说刑法",
         sequence_number=8,
-        season_number=None,
     )
 
     source = await get_source(source_id)
@@ -674,7 +636,6 @@ async def test_update_source_digest_persists_facets(tmp_bibilab_home: Path):
         create_list,
         get_source,
         update_source_digest,
-        write_source,
     )
 
     await bootstrap_db()
@@ -682,23 +643,16 @@ async def test_update_source_digest_persists_facets(tmp_bibilab_home: Path):
     await create_list(list_id, "Facet Update", "2026-01-01T00:00:00")
     source_id = str(uuid.uuid4())
 
-    await write_source(
+    await SourceFactory.build(
+        list_id,
         source_id=source_id,
         video_id="BVfacet002",
-        platform="bilibili",
-        list_id=list_id,
         title="Test",
         summary="Old summary",
         keywords=["old"],
-        cover_url=None,
         source_url="https://example.com/BVfacet002",
         duration_seconds=300,
         uploader="U",
-        language=None,
-        whisper_model="large-v3",
-        ai_model="gpt-4o",
-        vision_enabled=False,
-        settings_snapshot={},
     )
 
     await update_source_digest(
@@ -727,7 +681,6 @@ async def test_update_source_digest_rerun_preserves_processed_at(tmp_bibilab_hom
         create_list,
         get_source,
         update_source_digest,
-        write_source,
     )
 
     await bootstrap_db()
@@ -736,23 +689,16 @@ async def test_update_source_digest_rerun_preserves_processed_at(tmp_bibilab_hom
     source_id = str(uuid.uuid4())
     original_pa = "2025-06-01T12:00:00+00:00"
 
-    await write_source(
+    await SourceFactory.build(
+        list_id,
         source_id=source_id,
         video_id="BVrerunPA01",
-        platform="bilibili",
-        list_id=list_id,
         title="Test",
         summary="Old summary",
         keywords=["old"],
-        cover_url=None,
         source_url="https://example.com/BVrerunPA01",
         duration_seconds=300,
         uploader="U",
-        language=None,
-        whisper_model="large-v3",
-        ai_model="gpt-4o",
-        vision_enabled=False,
-        settings_snapshot={},
     )
     # Pin processed_at to a known past timestamp.
     from bibilab.db import get_db
@@ -786,7 +732,6 @@ async def test_update_source_digest_default_bumps_processed_at(tmp_bibilab_home:
         create_list,
         get_source,
         update_source_digest,
-        write_source,
     )
 
     await bootstrap_db()
@@ -795,23 +740,16 @@ async def test_update_source_digest_default_bumps_processed_at(tmp_bibilab_home:
     source_id = str(uuid.uuid4())
     original_pa = "2025-06-01T12:00:00+00:00"
 
-    await write_source(
+    await SourceFactory.build(
+        list_id,
         source_id=source_id,
         video_id="BVbumpPA01",
-        platform="bilibili",
-        list_id=list_id,
         title="Test",
         summary="Old",
         keywords=["old"],
-        cover_url=None,
         source_url="https://example.com/BVbumpPA01",
         duration_seconds=300,
         uploader="U",
-        language=None,
-        whisper_model="large-v3",
-        ai_model="gpt-4o",
-        vision_enabled=False,
-        settings_snapshot={},
     )
     from bibilab.db import get_db
 
@@ -833,7 +771,7 @@ async def test_write_source_reingest_coalesces_facets(tmp_bibilab_home: Path):
     """Re-ingest with null facets preserves prior values; non-null overwrites."""
     import uuid
 
-    from bibilab.db import bootstrap_db, create_list, get_source, write_source
+    from bibilab.db import bootstrap_db, create_list, get_source
 
     await bootstrap_db()
     list_id = "list-facet-coalesce"
@@ -859,10 +797,15 @@ async def test_write_source_reingest_coalesces_facets(tmp_bibilab_home: Path):
         settings_snapshot={},
     )
 
-    await write_source(**base, series_name="罗翔说刑法", sequence_number=8, season_number=1)
+    await SourceFactory.build(
+        **base,
+        series_name="罗翔说刑法",
+        sequence_number=8,
+        season_number=1,
+    )
 
     # Re-ingest where the digest found no facets — prior values must survive.
-    await write_source(**base, series_name=None, sequence_number=None, season_number=None)
+    await SourceFactory.build(**base)
     source = await get_source(source_id)
     assert source is not None
     assert source["series_name"] == "罗翔说刑法"
@@ -870,7 +813,10 @@ async def test_write_source_reingest_coalesces_facets(tmp_bibilab_home: Path):
     assert source["season_number"] == 1
 
     # Re-ingest with a fresh non-null value — that field is overwritten.
-    await write_source(**base, series_name=None, sequence_number=9, season_number=None)
+    await SourceFactory.build(
+        **base,
+        sequence_number=9,
+    )
     source = await get_source(source_id)
     assert source is not None
     assert source["series_name"] == "罗翔说刑法"  # still preserved (null this run)
@@ -887,7 +833,6 @@ async def test_update_source_digest_coalesces_facets(tmp_bibilab_home: Path):
         create_list,
         get_source,
         update_source_digest,
-        write_source,
     )
 
     await bootstrap_db()
@@ -895,23 +840,16 @@ async def test_update_source_digest_coalesces_facets(tmp_bibilab_home: Path):
     await create_list(list_id, "Facet Update Coalesce", "2026-01-01T00:00:00")
     source_id = str(uuid.uuid4())
 
-    await write_source(
+    await SourceFactory.build(
+        list_id,
         source_id=source_id,
         video_id="BVcoalesce02",
-        platform="bilibili",
-        list_id=list_id,
         title="T",
         summary="old",
         keywords=["old"],
-        cover_url=None,
         source_url="https://example.com/BVcoalesce02",
         duration_seconds=10,
         uploader="U",
-        language=None,
-        whisper_model="large-v3",
-        ai_model="gpt-4o",
-        vision_enabled=False,
-        settings_snapshot={},
         series_name="Keep Me",
         sequence_number=3,
         season_number=2,
@@ -931,29 +869,22 @@ async def test_update_source_facets_replace_semantics(tmp_bibilab_home: Path):
     """update_source_facets REPLACES (explicit None clears), unlike the digest COALESCE path."""
     import uuid
 
-    from bibilab.db import bootstrap_db, create_list, get_source, update_source_facets, write_source
+    from bibilab.db import bootstrap_db, create_list, get_source, update_source_facets
 
     await bootstrap_db()
     list_id = "list-usf"
     await create_list(list_id, "USF", "2026-01-01T00:00:00")
     source_id = str(uuid.uuid4())
-    await write_source(
+    await SourceFactory.build(
+        list_id,
         source_id=source_id,
         video_id="BVusf01",
-        platform="bilibili",
-        list_id=list_id,
         title="T",
         summary="s",
         keywords=["k"],
-        cover_url=None,
         source_url="https://example.com/BVusf01",
         duration_seconds=10,
         uploader="U",
-        language=None,
-        whisper_model="large-v3",
-        ai_model="gpt-4o",
-        vision_enabled=False,
-        settings_snapshot={},
         series_name="罗翔说刑法",
         sequence_number=8,
         season_number=1,
@@ -971,29 +902,22 @@ async def test_update_source_facets_replace_semantics(tmp_bibilab_home: Path):
 async def test_update_source_facets_partial_and_noop(tmp_bibilab_home: Path):
     import uuid
 
-    from bibilab.db import bootstrap_db, create_list, get_source, update_source_facets, write_source
+    from bibilab.db import bootstrap_db, create_list, get_source, update_source_facets
 
     await bootstrap_db()
     list_id = "list-usf2"
     await create_list(list_id, "USF2", "2026-01-01T00:00:00")
     source_id = str(uuid.uuid4())
-    await write_source(
+    await SourceFactory.build(
+        list_id,
         source_id=source_id,
         video_id="BVusf02",
-        platform="bilibili",
-        list_id=list_id,
         title="T",
         summary="s",
         keywords=["k"],
-        cover_url=None,
         source_url="https://example.com/BVusf02",
         duration_seconds=10,
         uploader="U",
-        language=None,
-        whisper_model="large-v3",
-        ai_model="gpt-4o",
-        vision_enabled=False,
-        settings_snapshot={},
         series_name="S",
         sequence_number=1,
         season_number=2,

@@ -15,6 +15,7 @@ from bibilab.routers.chat import (
     _client_tool_result,
 )
 from tests import an_async_generator
+from tests.factories import MessageFactory
 
 pytestmark = pytest.mark.integration
 
@@ -107,11 +108,18 @@ async def test_chat_endpoint_uses_conversation_history(client):
     """Prior conversation messages are included in LLM context."""
     list_id = (await client.post("/lists", json={"name": "Test"})).json()["id"]
 
-    from bibilab.db import create_message, get_or_create_conversation
+    from bibilab.db import get_or_create_conversation
 
     conv_id = await get_or_create_conversation(list_id)
-    await create_message(conv_id, "user", "Previous question", None)
-    await create_message(conv_id, "assistant", "Previous answer", None)
+    await MessageFactory.build(
+        conv_id,
+        content="Previous question",
+    )
+    await MessageFactory.build(
+        conv_id,
+        role="assistant",
+        content="Previous answer",
+    )
 
     captured_messages = []
 

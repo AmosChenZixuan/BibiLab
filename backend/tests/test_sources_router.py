@@ -4,7 +4,7 @@ from pathlib import Path
 import httpx
 import pytest
 
-from bibilab.db import write_source
+from tests.factories import SourceFactory
 
 pytestmark = pytest.mark.integration
 
@@ -25,22 +25,17 @@ async def test_get_source_returns_digest_and_transcript(client: httpx.AsyncClien
     cover_file.parent.mkdir(parents=True, exist_ok=True)
     cover_file.write_bytes(b"fake-cover-image")
 
-    await write_source(
+    await SourceFactory.build(
+        list_id,
         source_id=source_id,
         video_id=video_id,
-        platform="bilibili",
-        list_id=list_id,
-        title="Test Video",
         summary="A test summary.",
         keywords=["ai", "video"],
         cover_url="https://example.com/cover.jpg",
         source_url="https://www.bilibili.com/video/BVtest456",
         duration_seconds=120,
-        uploader="TestUploader",
         language="en",
         whisper_model="base",
-        ai_model="gpt-4o",
-        vision_enabled=False,
         settings_snapshot={"language": "en"},
     )
 
@@ -72,23 +67,16 @@ async def test_get_source_cover(client: httpx.AsyncClient, tmp_bibilab_home: Pat
     cover_file.parent.mkdir(parents=True, exist_ok=True)
     cover_file.write_bytes(b"cover-image-bytes")
 
-    await write_source(
+    await SourceFactory.build(
+        list_id,
         source_id=source_id,
         video_id="BVcoverVid",
-        platform="bilibili",
-        list_id=list_id,
         title="Cover Test Video",
         summary="S",
-        keywords=[],
-        cover_url=None,
         source_url="https://www.bilibili.com/video/BVcoverVid",
         duration_seconds=60,
         uploader="Uploader",
-        language=None,
         whisper_model="base",
-        ai_model="gpt-4o",
-        vision_enabled=False,
-        settings_snapshot={},
     )
 
     resp = await client.get(f"/sources/{source_id}/cover")
@@ -118,30 +106,25 @@ async def test_rerun_source_not_found(client: httpx.AsyncClient):
 @pytest.mark.asyncio
 async def test_rerun_source_success(client: httpx.AsyncClient, tmp_bibilab_home: Path, monkeypatch):
     """POST /sources/{source_id}/rerun re-runs digest and updates summary/keywords."""
-    from bibilab.db import create_list, write_source, write_transcript_segments
+    from bibilab.db import create_list, write_transcript_segments
     from bibilab.pipeline.transcribe import WhisperSegment
 
     await create_list("list-rerun-test", "Rerun Test", "2025-01-01T00:00:00Z")
 
     source_id = "src-rerun-001"
 
-    await write_source(
+    await SourceFactory.build(
+        "list-rerun-test",
         source_id=source_id,
         video_id="BVrerun001",
-        platform="bilibili",
-        list_id="list-rerun-test",
         title="Rerun Test Video",
         summary="old summary",
         keywords=["old", "keyword"],
-        cover_url=None,
         source_url="https://www.bilibili.com/video/BVrerun001",
         duration_seconds=120,
         uploader="TestUser",
         language="en",
         whisper_model="base",
-        ai_model="gpt-4o",
-        vision_enabled=False,
-        settings_snapshot={},
     )
 
     await write_transcript_segments(
@@ -181,30 +164,24 @@ async def test_rerun_source_success(client: httpx.AsyncClient, tmp_bibilab_home:
 @pytest.mark.asyncio
 async def test_rerun_source_dedup_conflict(client: httpx.AsyncClient, tmp_bibilab_home: Path):
     """POST /sources/{source_id}/rerun returns 409 when a digest job for that source is already pending."""
-    from bibilab.db import create_job, create_list, write_source, write_transcript_segments
+    from bibilab.db import create_job, create_list, write_transcript_segments
     from bibilab.pipeline.transcribe import WhisperSegment
 
     await create_list("list-dedup", "Dedup Test", "2025-01-01T00:00:00Z")
 
     source_id = "src-dedup-001"
 
-    await write_source(
+    await SourceFactory.build(
+        "list-dedup",
         source_id=source_id,
         video_id="BVdedup001",
-        platform="bilibili",
-        list_id="list-dedup",
         title="Dedup Test Video",
         summary="old summary",
-        keywords=[],
-        cover_url=None,
         source_url="https://www.bilibili.com/video/BVdedup001",
         duration_seconds=60,
         uploader="TestUser",
         language="en",
         whisper_model="base",
-        ai_model="gpt-4o",
-        vision_enabled=False,
-        settings_snapshot={},
     )
 
     await write_transcript_segments(
@@ -223,30 +200,24 @@ async def test_rerun_source_dedup_conflict(client: httpx.AsyncClient, tmp_bibila
 @pytest.mark.asyncio
 async def test_rerun_source_respects_ui_lang_header(client: httpx.AsyncClient, tmp_bibilab_home: Path, monkeypatch):
     """POST /sources/{source_id}/rerun with X-UI-Lang:zh stores ui_lang in job meta."""
-    from bibilab.db import create_list, write_source, write_transcript_segments
+    from bibilab.db import create_list, write_transcript_segments
     from bibilab.pipeline.transcribe import WhisperSegment
 
     await create_list("list-lang-test", "Lang Test", "2025-01-01T00:00:00Z")
 
     source_id = "src-lang-001"
 
-    await write_source(
+    await SourceFactory.build(
+        "list-lang-test",
         source_id=source_id,
         video_id="BVlang001",
-        platform="bilibili",
-        list_id="list-lang-test",
         title="Lang Test Video",
         summary="old",
-        keywords=[],
-        cover_url=None,
         source_url="https://www.bilibili.com/video/BVlang001",
         duration_seconds=60,
         uploader="TestUser",
         language="en",
         whisper_model="base",
-        ai_model="gpt-4o",
-        vision_enabled=False,
-        settings_snapshot={},
     )
 
     await write_transcript_segments(
@@ -267,28 +238,21 @@ async def test_rerun_source_respects_ui_lang_header(client: httpx.AsyncClient, t
 async def test_patch_facets_replace(client: httpx.AsyncClient, tmp_bibilab_home: Path):
     import uuid
 
-    from bibilab.db import bootstrap_db, create_list, get_source, write_source
+    from bibilab.db import bootstrap_db, create_list, get_source
 
     await bootstrap_db()
     await create_list("L", "L", "2026-01-01T00:00:00")
     sid = str(uuid.uuid4())
-    await write_source(
+    await SourceFactory.build(
+        "L",
         source_id=sid,
         video_id="BVpf01",
-        platform="bilibili",
-        list_id="L",
         title="T",
         summary="s",
         keywords=["k"],
-        cover_url=None,
         source_url="https://example.com/BVpf01",
         duration_seconds=10,
         uploader="U",
-        language=None,
-        whisper_model="large-v3",
-        ai_model="gpt-4o",
-        vision_enabled=False,
-        settings_snapshot={},
         series_name="老系列",
         sequence_number=3,
         season_number=5,
@@ -307,28 +271,21 @@ async def test_patch_facets_replace(client: httpx.AsyncClient, tmp_bibilab_home:
 async def test_patch_facets_kindless_number_persists(client: httpx.AsyncClient, tmp_bibilab_home: Path):
     import uuid
 
-    from bibilab.db import bootstrap_db, create_list, get_source, write_source
+    from bibilab.db import bootstrap_db, create_list, get_source
 
     await bootstrap_db()
     await create_list("L2", "L2", "2026-01-01T00:00:00")
     sid = str(uuid.uuid4())
-    await write_source(
+    await SourceFactory.build(
+        "L2",
         source_id=sid,
         video_id="BVpf02",
-        platform="bilibili",
-        list_id="L2",
         title="T",
         summary="s",
         keywords=["k"],
-        cover_url=None,
         source_url="https://example.com/BVpf02",
         duration_seconds=10,
         uploader="U",
-        language=None,
-        whisper_model="large-v3",
-        ai_model="gpt-4o",
-        vision_enabled=False,
-        settings_snapshot={},
     )
     r = await client.patch(f"/sources/{sid}/facets", json={"sequence_number": 8})
     assert r.status_code == 204
@@ -339,28 +296,21 @@ async def test_patch_facets_kindless_number_persists(client: httpx.AsyncClient, 
 async def test_patch_facets_invalid_int_422(client: httpx.AsyncClient, tmp_bibilab_home: Path):
     import uuid
 
-    from bibilab.db import bootstrap_db, create_list, write_source
+    from bibilab.db import bootstrap_db, create_list
 
     await bootstrap_db()
     await create_list("L3", "L3", "2026-01-01T00:00:00")
     sid = str(uuid.uuid4())
-    await write_source(
+    await SourceFactory.build(
+        "L3",
         source_id=sid,
         video_id="BVpf03",
-        platform="bilibili",
-        list_id="L3",
         title="T",
         summary="s",
         keywords=["k"],
-        cover_url=None,
         source_url="https://example.com/BVpf03",
         duration_seconds=10,
         uploader="U",
-        language=None,
-        whisper_model="large-v3",
-        ai_model="gpt-4o",
-        vision_enabled=False,
-        settings_snapshot={},
     )
     for bad in [{"sequence_number": 0}, {"sequence_number": "abc"}, {"season_number": -1}]:
         r = await client.patch(f"/sources/{sid}/facets", json=bad)
@@ -379,28 +329,21 @@ async def test_patch_facets_empty_body_noop(client: httpx.AsyncClient, tmp_bibil
     """Empty {} patch on a live source is an idempotent 204 no-op; row unchanged."""
     import uuid
 
-    from bibilab.db import bootstrap_db, create_list, get_source, write_source
+    from bibilab.db import bootstrap_db, create_list, get_source
 
     await bootstrap_db()
     await create_list("Le", "Le", "2026-01-01T00:00:00")
     sid = str(uuid.uuid4())
-    await write_source(
+    await SourceFactory.build(
+        "Le",
         source_id=sid,
         video_id="BVpf04",
-        platform="bilibili",
-        list_id="Le",
         title="T",
         summary="s",
         keywords=["k"],
-        cover_url=None,
         source_url="https://example.com/BVpf04",
         duration_seconds=10,
         uploader="U",
-        language=None,
-        whisper_model="large-v3",
-        ai_model="gpt-4o",
-        vision_enabled=False,
-        settings_snapshot={},
         series_name="keep",
         sequence_number=3,
         season_number=1,
@@ -419,28 +362,21 @@ async def test_patch_facets_toctou_lookuperror_maps_to_404(client: httpx.AsyncCl
     (not a silent 204)."""
     import uuid
 
-    from bibilab.db import bootstrap_db, create_list, write_source
+    from bibilab.db import bootstrap_db, create_list
 
     await bootstrap_db()
     await create_list("Lt", "Lt", "2026-01-01T00:00:00")
     sid = str(uuid.uuid4())
-    await write_source(
+    await SourceFactory.build(
+        "Lt",
         source_id=sid,
         video_id="BVpf05",
-        platform="bilibili",
-        list_id="Lt",
         title="T",
         summary="s",
         keywords=["k"],
-        cover_url=None,
         source_url="https://example.com/BVpf05",
         duration_seconds=10,
         uploader="U",
-        language=None,
-        whisper_model="large-v3",
-        ai_model="gpt-4o",
-        vision_enabled=False,
-        settings_snapshot={},
     )
 
     import bibilab.routers.sources as sources_router
