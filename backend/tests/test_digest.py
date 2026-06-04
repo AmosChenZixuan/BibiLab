@@ -57,7 +57,7 @@ def test_digest_reinforcement_appears_in_prompt_en(mock_call_llm):
 
 
 def test_digest_reinforcement_appears_in_prompt_zh(mock_call_llm):
-    """digest with zh prepends and appends Chinese language instruction."""
+    """digest with zh prepends and appends 简体中文 language instruction. #402."""
     captured = None
 
     def capture_llm(prompt, cfg, llm_timeout=120, llm_max_tokens=2048):
@@ -70,7 +70,7 @@ def test_digest_reinforcement_appears_in_prompt_zh(mock_call_llm):
 
     assert captured is not None
     assert captured.startswith("请用中文回答")
-    assert "All output fields MUST be written in Chinese" in captured
+    assert "All output fields MUST be written in 简体中文" in captured
 
 
 def test_digest_unknown_lang_falls_back_to_english(mock_call_llm):

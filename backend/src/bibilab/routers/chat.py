@@ -35,7 +35,7 @@ from bibilab.models.chat import (
     GetConversationResponse,
     MessageResponse,
 )
-from bibilab.pipeline._shared import StreamEvent, ToolCall, ToolDefinition, stream_llm
+from bibilab.pipeline._shared import _LANG_NATIVE_NAME, StreamEvent, ToolCall, ToolDefinition, stream_llm
 from bibilab.pipeline.chat_runs import (
     STREAM_BUFFER_GRACE_SECONDS,
     ChatRunRegistry,
@@ -195,11 +195,13 @@ def _llm_tool_message_content(result: dict) -> str:
 def build_grounding_prompt(response_language: str) -> str:
     """Build the system prompt for chat grounding.
 
-    response_language is interpolated into the language directive and the
-    fallback sentence so refusals match the user's UI/config language.
+    response_language is a language code (e.g. "en", "zh"), mapped to a
+    human-readable display name for a single response-language directive
+    placed at the tail — strongest recency, no repetition. The tail
+    directive governs all output, including no-content refusals.
     """
+    lang = _LANG_NATIVE_NAME.get(response_language, "English")
     return (
-        f"Respond in {response_language}.\n\n"
         "## Workflow\n"
         "You answer questions about a collection of video transcripts using two tools.\n\n"
         "- `find_passages(query, sequence_number?, season_number?)`: search for "
@@ -241,7 +243,7 @@ def build_grounding_prompt(response_language: str) -> str:
         "verbatim from the source they appear in. Each find_passages excerpt is "
         "fenced under its source by a `===== Source [N] =====` line; never carry a "
         "proper noun across a fence. If find_passages returns no excerpts, tell the "
-        f"user (in {response_language}) that the library has no content on this "
+        "user that the library has no content on this "
         "topic, and stop — do not use outside knowledge, real-world analogies, or "
         "encyclopedic definitions. If a scoped search (sequence_number / "
         "season_number) matched no source, say so before answering from the wider "
@@ -254,8 +256,8 @@ def build_grounding_prompt(response_language: str) -> str:
         "immediately after the sentence it supports, on the same line. For "
         'read_source answers, reference moments inline, e.g. "around 1:52 [1]".\n\n'
         "## Style\n"
-        f"Answer in {response_language}. Be direct and concise. Do not ask "
-        "follow-up questions or offer unsolicited next steps."
+        "Be direct and concise. Do not ask follow-up questions or offer "
+        f"unsolicited next steps. Respond in {lang}."
     )
 
 

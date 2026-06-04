@@ -484,7 +484,7 @@ def test_resolved_lang_with_explicit_language():
 
 @pytest.mark.asyncio
 async def test_generate_artifact_includes_zh_lang_instruction(tmp_path: Path, monkeypatch, mock_call_llm):
-    """_generate_artifact prepends Chinese language instruction when ui_lang=zh."""
+    """_generate_artifact prepends 简体中文 language instruction when ui_lang=zh. #402."""
     from unittest.mock import MagicMock
 
     from bibilab.config import AIConfig
@@ -523,7 +523,7 @@ async def test_generate_artifact_includes_zh_lang_instruction(tmp_path: Path, mo
 
     assert captured_prompt is not None
     assert captured_prompt.startswith("请用中文回答")
-    assert "All output fields MUST be written in Chinese" in captured_prompt
+    assert "All output fields MUST be written in 简体中文" in captured_prompt
     assert result.name == "Test"
 
 

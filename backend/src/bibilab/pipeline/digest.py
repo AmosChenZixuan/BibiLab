@@ -9,9 +9,9 @@ from bibilab.adapters.base import VideoMeta
 from bibilab.config import AIConfig
 from bibilab.pipeline._shared import (
     _LANG_INSTRUCTION,
-    _LANG_NAME,
     _STRICT_SUFFIX,
     _call_llm,
+    _lang_output_directive,
     _parse_llm_json_response,
     _resolved_lang,
 )
@@ -182,7 +182,7 @@ def digest(
         lang_instruction
         + "\n\n"
         + _DIGEST_PROMPT.format(title=meta.title, transcript=transcript_text, max_keywords=_MAX_KEYWORDS)
-        + f"\n\n{lang_instruction}\nAll output fields MUST be written in {_LANG_NAME.get(lang, 'English')}."
+        + f"\n\n{lang_instruction}\n{_lang_output_directive(lang)}"
     )
 
     # One plain attempt, then strict-suffix retries. Linear so the attempt

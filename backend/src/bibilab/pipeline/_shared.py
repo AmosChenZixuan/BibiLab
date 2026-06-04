@@ -26,10 +26,23 @@ _LANG_INSTRUCTION = {
     "zh": "请用中文回答。不要使用其他语言。",
 }
 
-_LANG_NAME = {
+# Native-language short name (e.g. "简体中文") for LLM-prompt interpolation.
+# Used as a stronger, language-specific instruction than the bare ISO code
+# ("zh") or the English name ("Chinese") — smaller / less capable models may
+# not reliably map either to the intended language. #402.
+_LANG_NATIVE_NAME: dict[str, str] = {
     "en": "English",
-    "zh": "Chinese",
+    "zh": "简体中文",
 }
+
+
+def _lang_output_directive(lang: str) -> str:
+    """Return the "All output fields MUST be written in X." suffix for the user's
+    language. Used by digest and artifact prompts to reinforce the longer
+    _LANG_INSTRUCTION. Falls back to English for unknown codes — matches the
+    _LANG_INSTRUCTION.get(lang, _LANG_INSTRUCTION["en"]) convention so the LLM
+    always gets a coherent English directive, never a raw ISO code."""
+    return f"All output fields MUST be written in {_LANG_NATIVE_NAME.get(lang, 'English')}."
 
 
 def _resolved_lang(output_language: str, ui_lang: str | None) -> str:
