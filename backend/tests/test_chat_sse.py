@@ -1267,13 +1267,22 @@ async def test_rag_metadata_includes_read_source_call(client):
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.parametrize(
+    "user_status,asst_status,label",
+    [("cancelled", "cancelled", "u-cancelled"), ("pending", "streaming", "u-inflight")],
+    ids=["cancelled-pair", "inflight-pair"],
+)
 @pytest.mark.asyncio
-async def test_chat_endpoint_skips_aborted_assistant_from_history(client):
-    """A cancelled assistant turn is not replayed to the LLM on the next turn.
+async def test_chat_endpoint_excludes_aborted_turn_from_llm_history(client, user_status, asst_status, label):
+    """An aborted turn (both rows non-done) is invisible to the next LLM turn.
 
-    Seeds a prior turn [user(done), assistant(cancelled)] and sends a new
-    message. The mock captures the messages_for_llm; the aborted turn must
-    be absent.
+    Seeds the aborted turn BETWEEN two done turns — the position that would
+    expose an alternation break if the filter were wrong. Asserts both that the
+    aborted content never reaches the context AND that dropping both rows
+    together keeps roles strictly alternating (no orphan user → no consecutive
+    same-role, which both Anthropic and OpenAI reject). Alternation is
+    protocol-independent: the status filter runs in chat_endpoint before any
+    protocol branching, and text-only history expands identically for both.
     """
     from tests.factories import ConversationFactory, MessageFactory
 
@@ -1281,94 +1290,11 @@ async def test_chat_endpoint_skips_aborted_assistant_from_history(client):
     conv_id = await ConversationFactory.build(list_id)
     await MessageFactory.build(conv_id, role="user", content="u1", status="done")
     await MessageFactory.build(conv_id, role="assistant", content="a1", status="done")
-    # Post-fix: both rows of the aborted turn share the terminal status.
-    await MessageFactory.build(conv_id, role="user", content="u2-aborted", status="cancelled")
-    await MessageFactory.build(conv_id, role="assistant", content="", status="cancelled")
-
-    captured: dict = {}
-
-    async def fake_stream(messages, cfg, tools=None, execute_tool_fn=None, system=None, llm_max_tokens=2048, **_):
-        captured["messages"] = messages
-        yield StreamEvent(type=SSE_EVENT_DELTA, content="ok")
-        yield StreamEvent(type=SSE_EVENT_DONE)
-
-    with patch("bibilab.routers.chat.stream_with_tools", fake_stream):
-        resp = await client.post(f"/lists/{list_id}/chat", json={"message": "next"})
-
-    assert resp.status_code == 200
-    msgs = captured["messages"]
-    contents = [m.get("content", "") for m in msgs]
-    # Only the done pair + the new live user should be in the LLM context.
-    assert "u1" in contents
-    assert "a1" in contents
-    assert "u2-aborted" not in contents, "aborted user must not leak into LLM context"
-    assert "next" in contents
-
-
-@pytest.mark.asyncio
-async def test_chat_endpoint_drops_pending_user_after_streaming_assistant(client):
-    """An in-flight turn (user='pending', assistant='streaming') is invisible
-    to the next turn — both rows drop together, no orphan user.
-    """
-    from tests.factories import ConversationFactory, MessageFactory
-
-    list_id = await _create_list(client, "T")
-    conv_id = await ConversationFactory.build(list_id)
-    await MessageFactory.build(conv_id, role="user", content="u1", status="done")
-    await MessageFactory.build(conv_id, role="assistant", content="a1", status="done")
-    await MessageFactory.build(conv_id, role="user", content="u2-inflight", status="pending")
-    await MessageFactory.build(conv_id, role="assistant", content="", status="streaming")
-
-    captured: dict = {}
-
-    async def fake_stream(messages, cfg, tools=None, execute_tool_fn=None, system=None, llm_max_tokens=2048, **_):
-        captured["messages"] = messages
-        yield StreamEvent(type=SSE_EVENT_DELTA, content="ok")
-        yield StreamEvent(type=SSE_EVENT_DONE)
-
-    with patch("bibilab.routers.chat.stream_with_tools", fake_stream):
-        resp = await client.post(f"/lists/{list_id}/chat", json={"message": "next"})
-
-    assert resp.status_code == 200
-    msgs = captured["messages"]
-    contents = [m.get("content", "") for m in msgs]
-    assert "u1" in contents
-    assert "a1" in contents
-    assert "u2-inflight" not in contents
-    assert "next" in contents
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("protocol", ["anthropic", "openai"])
-async def test_chat_endpoint_no_consecutive_same_role_for_either_protocol(client, monkeypatch, protocol):
-    """The alternation invariant must hold for both LLM protocols. Anthropic
-    and OpenAI both reject consecutive same-role messages."""
-    from bibilab.config import AIConfig, BackendConfig, BibilabConfig
-    from tests.factories import ConversationFactory, MessageFactory
-
-    list_id = await _create_list(client, "T")
-    conv_id = await ConversationFactory.build(list_id)
-    # Seed an aborted turn between two done turns to maximize the chance of
-    # producing consecutive same-role messages if the filter is wrong.
-    # Post-fix: aborted user has terminal status matching the assistant.
-    await MessageFactory.build(conv_id, role="user", content="u1", status="done")
-    await MessageFactory.build(conv_id, role="assistant", content="a1", status="done")
-    await MessageFactory.build(conv_id, role="user", content="u-aborted", status="cancelled")
-    await MessageFactory.build(conv_id, role="assistant", content="", status="cancelled")
+    await MessageFactory.build(conv_id, role="user", content=label, status=user_status)
+    await MessageFactory.build(conv_id, role="assistant", content="", status=asst_status)
     await MessageFactory.build(conv_id, role="user", content="u2", status="done")
     await MessageFactory.build(conv_id, role="assistant", content="a2", status="done")
 
-    # Force the test config to the parametrised protocol.
-    cfg_override = BibilabConfig(
-        ai=AIConfig(protocol=protocol, model="x", api_key="k", base_url=""),
-        backend=BackendConfig(),
-    )
-
-    async def fake_get_config():
-        return cfg_override
-
-    monkeypatch.setattr("bibilab.routers.chat.get_config", fake_get_config)
-
     captured: dict = {}
 
     async def fake_stream(messages, cfg, tools=None, execute_tool_fn=None, system=None, llm_max_tokens=2048, **_):
@@ -1381,9 +1307,12 @@ async def test_chat_endpoint_no_consecutive_same_role_for_either_protocol(client
 
     assert resp.status_code == 200
     msgs = captured["messages"]
+    contents = [m.get("content", "") for m in msgs]
+    assert "u1" in contents and "a1" in contents and "u2" in contents and "next" in contents
+    assert label not in contents, "aborted user must not leak into LLM context"
     roles = [m.get("role") for m in msgs]
     for prev, cur in zip(roles, roles[1:]):
-        assert prev != cur, f"consecutive same-role messages for {protocol}: {roles}"
+        assert prev != cur, f"consecutive same-role messages: {roles}"
 
 
 @pytest.mark.asyncio

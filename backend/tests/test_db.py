@@ -894,25 +894,8 @@ async def test_write_source_with_segments_rolls_back_on_segment_failure(tmp_bibi
 
 
 # --- #403: aborted turns invisible to LLM replay + compaction ---
-
-
-@pytest.mark.asyncio
-async def test_get_message_count_counts_only_done(tmp_bibilab_home: Path):
-    """get_message_count must count only done messages — aborted rows do not
-    contribute to the >30 compression trigger."""
-    from bibilab.db import bootstrap_db, create_list, get_message_count
-
-    await bootstrap_db()
-    await create_list("list-1", "L", "2026-01-01T00:00:00")
-    conv_id = await ConversationFactory.build("list-1")
-    for i in range(5):
-        await MessageFactory.build(conv_id, role="user", content=f"u{i}", status="done")
-        await MessageFactory.build(conv_id, role="assistant", content=f"a{i}", status="done")
-    # Post-fix: aborted turn has matching terminal status on both rows.
-    await MessageFactory.build(conv_id, role="user", content="u-aborted", status="cancelled")
-    await MessageFactory.build(conv_id, role="assistant", content="", status="cancelled")
-
-    assert await get_message_count(conv_id) == 10
+# (get_message_count's done-only filter is covered by
+# test_aborted_messages_do_not_trigger_compression in test_chat_summary.py)
 
 
 @pytest.mark.asyncio
