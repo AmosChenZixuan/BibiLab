@@ -11,7 +11,22 @@ logger = logging.getLogger(__name__)
 
 
 def bibilab_home() -> Path:
+    override = os.environ.get("BIBILAB_HOME")
+    if override:
+        return Path(override)
     return Path.home() / ".bibilab"
+
+
+def bibilab_whisper_cache_dir() -> Path:
+    """Path for openai-whisper's model cache.
+
+    Defaults to `~/.cache/whisper` to match openai-whisper's hardcoded location
+    (so existing installs work without migration). Under `BIBILAB_HOME` (tests),
+    redirects under bibilab_home so model downloads don't pollute the real cache.
+    """
+    if os.environ.get("BIBILAB_HOME"):
+        return bibilab_home() / ".cache" / "whisper"
+    return Path.home() / ".cache" / "whisper"
 
 
 def models_dir(*parts: str) -> Path:
