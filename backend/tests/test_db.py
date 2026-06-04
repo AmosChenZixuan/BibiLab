@@ -856,3 +856,62 @@ async def test_write_source_with_segments_rolls_back_on_segment_failure(tmp_bibi
             **_SOURCE_FIELDS,
         )
     assert await get_source("src-1") is None
+
+
+# --- #403: aborted turns invisible to LLM replay + compaction ---
+
+
+@pytest.mark.asyncio
+async def test_get_message_count_counts_only_done(tmp_bibilab_home: Path):
+    """get_message_count must count only done messages — aborted rows do not
+    contribute to the >30 compression trigger."""
+    from bibilab.db import bootstrap_db, create_list, get_message_count
+
+    await bootstrap_db()
+    await create_list("list-1", "L", "2026-01-01T00:00:00")
+    conv_id = await ConversationFactory.build("list-1")
+    for i in range(5):
+        await MessageFactory.build(conv_id, role="user", content=f"u{i}", status="done")
+        await MessageFactory.build(conv_id, role="assistant", content=f"a{i}", status="done")
+    # Post-fix: aborted turn has matching terminal status on both rows.
+    await MessageFactory.build(conv_id, role="user", content="u-aborted", status="cancelled")
+    await MessageFactory.build(conv_id, role="assistant", content="", status="cancelled")
+
+    assert await get_message_count(conv_id) == 10
+
+
+@pytest.mark.asyncio
+async def test_get_messages_beyond_window_excludes_non_done(tmp_bibilab_home: Path):
+    """get_messages_beyond_window must not surface cancelled/failed rows to
+    the summarizer — they would render as blank 'assistant:' lines."""
+    from bibilab.db import bootstrap_db, create_list, get_messages_beyond_window
+
+    await bootstrap_db()
+    await create_list("list-1", "L", "2026-01-01T00:00:00")
+    conv_id = await ConversationFactory.build("list-1")
+    # Seed 12 rows with a cancelled pair in the middle (so it falls into the
+    # old half beyond the 3-message window). Post-fix: both rows of the aborted
+    # turn share the terminal status.
+    await MessageFactory.build(conv_id, role="user", content="u0", status="done")
+    await MessageFactory.build(conv_id, role="assistant", content="a0", status="done")
+    await MessageFactory.build(conv_id, role="user", content="u1", status="done")
+    await MessageFactory.build(conv_id, role="assistant", content="a1", status="done")
+    await MessageFactory.build(conv_id, role="user", content="u-aborted", status="cancelled")
+    await MessageFactory.build(conv_id, role="assistant", content="", status="cancelled")
+    await MessageFactory.build(conv_id, role="user", content="u2", status="done")
+    await MessageFactory.build(conv_id, role="assistant", content="a2", status="done")
+    await MessageFactory.build(conv_id, role="user", content="u3", status="done")
+    await MessageFactory.build(conv_id, role="assistant", content="a3", status="done")
+    await MessageFactory.build(conv_id, role="user", content="u4", status="done")
+    await MessageFactory.build(conv_id, role="assistant", content="a4", status="done")
+
+    to_compress = await get_messages_beyond_window(conv_id, window_size=3)
+    contents = [r["content"] for r in to_compress]
+    statuses = [r["status"] for r in to_compress]
+    # The cancelled assistant must not appear in the summary input.
+    assert "" not in contents
+    # The user row of the aborted turn must be excluded too (it has no
+    # assistant partner after filtering, so it would orphan into the summary).
+    assert "u-aborted" not in contents
+    # All rows that DO appear must have status='done'.
+    assert all(s == "done" for s in statuses)

@@ -35,6 +35,29 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+async def _insert_message(
+    message_id: str,
+    conversation_id: str,
+    role: str,
+    content: str,
+    metadata_json: str | None,
+    now: str,
+    status: str,
+) -> aiosqlite.Row:
+    async with get_db() as db:
+        await db.execute(
+            """
+            INSERT INTO messages
+                (id, conversation_id, role, content, metadata, created_at, status)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (message_id, conversation_id, role, content, metadata_json, now, status),
+        )
+        await db.commit()
+        cursor = await db.execute("SELECT * FROM messages WHERE id=?", (message_id,))
+        return await cursor.fetchone()
+
+
 class SourceFactory:
     """Build a `sources` row. Default to all required fields with sensible
     placeholders; override per-call as needed. Returns the new source_id."""
@@ -77,52 +100,46 @@ class ConversationFactory:
     """Build a `conversations` row. Returns the new conversation_id."""
 
     @classmethod
-    async def build(cls, list_id: str) -> str:
+    async def build(cls, list_id: str, *, active_stream_message_id: str | None = None) -> str:
         conversation_id = str(uuid.uuid4())
         now = _now()
         async with get_db() as db:
             await db.execute(
                 """
-                INSERT INTO conversations (id, list_id, summary, created_at, updated_at)
-                VALUES (?, ?, NULL, ?, ?)
+                INSERT INTO conversations (id, list_id, summary, created_at, updated_at, active_stream_message_id)
+                VALUES (?, ?, NULL, ?, ?, ?)
                 """,
-                (conversation_id, list_id, now, now),
+                (conversation_id, list_id, now, now, active_stream_message_id),
             )
             await db.commit()
         return conversation_id
 
 
 class MessageFactory:
-    """Build a `messages` row. Returns the row (caller can read msg['id'] etc.)."""
+    """Build a `messages` row. Returns the row (caller can read msg['id'] etc.).
+
+    `message_id` defaults to a fresh uuid; pass an explicit id to assert on
+    a specific value (e.g. to pair a user/asst row in #403 transition tests).
+    """
 
     _DEFAULTS: dict[str, Any] = {
         "role": "user",
         "content": "",
         "metadata": None,
+        "status": "done",  # matches schema DEFAULT
     }
 
     @classmethod
     async def build(cls, conversation_id: str, **overrides: Any) -> aiosqlite.Row:
         fields = {**cls._DEFAULTS, **overrides}
-        message_id = str(uuid.uuid4())
-        now = _now()
+        message_id = fields.pop("message_id", None) or str(uuid.uuid4())
         metadata_json = json.dumps(fields["metadata"]) if fields["metadata"] is not None else None
-        async with get_db() as db:
-            await db.execute(
-                """
-                INSERT INTO messages
-                    (id, conversation_id, role, content, metadata, created_at)
-                VALUES (?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    message_id,
-                    conversation_id,
-                    fields["role"],
-                    fields["content"],
-                    metadata_json,
-                    now,
-                ),
-            )
-            await db.commit()
-            cursor = await db.execute("SELECT * FROM messages WHERE id=?", (message_id,))
-            return await cursor.fetchone()
+        return await _insert_message(
+            message_id,
+            conversation_id,
+            fields["role"],
+            fields["content"],
+            metadata_json,
+            _now(),
+            fields["status"],
+        )

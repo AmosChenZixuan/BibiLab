@@ -758,6 +758,9 @@ async def get_recent_messages(
     limit: int,
     before_id: str | None = None,
 ) -> list[aiosqlite.Row]:
+    # Unfiltered by status — both the UI history endpoint and the LLM
+    # history snapshot read from this. The UI must show cancelled/failed
+    # rows (已停止/重试); the LLM snapshot site filters to VISIBLE inline.
     async with get_db() as db:
         if before_id is not None:
             cursor = await db.execute(
@@ -792,8 +795,8 @@ async def get_recent_messages(
 async def get_message_count(conversation_id: str) -> int:
     async with get_db() as db:
         cursor = await db.execute(
-            "SELECT COUNT(*) FROM messages WHERE conversation_id=?",
-            (conversation_id,),
+            "SELECT COUNT(*) FROM messages WHERE conversation_id=? AND status=?",
+            (conversation_id, VISIBLE_MESSAGE_STATUS),
         )
         row = await cursor.fetchone()
         return row[0]
@@ -810,12 +813,12 @@ async def get_messages_beyond_window(
             FROM (
                 SELECT *, ROW_NUMBER() OVER (ORDER BY created_at DESC, rowid DESC) AS _rn
                 FROM messages
-                WHERE conversation_id=?
+                WHERE conversation_id=? AND status=?
             )
             WHERE _rn > ?
             ORDER BY created_at ASC, rowid ASC
             """,
-            (conversation_id, window_size),
+            (conversation_id, VISIBLE_MESSAGE_STATUS, window_size),
         )
         return list(await cursor.fetchall())
 
@@ -888,13 +891,13 @@ async def create_user_and_assistant_atomic(
 
             await db.execute(
                 "INSERT INTO messages (id, conversation_id, role, content, metadata, created_at, status) "
-                "VALUES (?, ?, 'user', ?, NULL, ?, 'done')",
-                (user_msg_id, conversation_id, user_text, now),
+                "VALUES (?, ?, 'user', ?, NULL, ?, ?)",
+                (user_msg_id, conversation_id, user_text, now, IN_FLIGHT_USER_STATUS),
             )
             await db.execute(
                 "INSERT INTO messages (id, conversation_id, role, content, metadata, created_at, status) "
-                "VALUES (?, ?, 'assistant', '', NULL, ?, 'streaming')",
-                (assistant_msg_id, conversation_id, now),
+                "VALUES (?, ?, 'assistant', '', NULL, ?, ?)",
+                (assistant_msg_id, conversation_id, now, IN_FLIGHT_ASST_STATUS),
             )
             await db.execute(
                 "UPDATE conversations SET active_stream_message_id=? WHERE id=?",
@@ -928,6 +931,76 @@ async def update_message_content(
                 json.dumps(tool_blocks) if tool_blocks is not None else None,
                 message_id,
             ),
+        )
+        await db.commit()
+
+
+# #403: a turn is visible to LLM replay and compaction iff both rows have
+# status='done'. The two transient row states used during a turn are
+# IN_FLIGHT_USER_STATUS (user awaiting its assistant) and
+# IN_FLIGHT_ASST_STATUS (assistant actively generating). The startup sweep
+# considers both in-flight states and flips them to 'failed' on startup.
+# Replay/compaction queries filter on VISIBLE only. Terminal 'failed' /
+# 'cancelled' are NOT in-flight — they are terminal-but-invisible to the
+# LLM (replay filter) and to the user (separate UI path) but not subject
+# to the startup sweep.
+VISIBLE_MESSAGE_STATUS: str = "done"
+IN_FLIGHT_USER_STATUS: str = "pending"
+IN_FLIGHT_ASST_STATUS: str = "streaming"
+IN_FLIGHT_MESSAGE_STATUSES: tuple[str, ...] = (
+    IN_FLIGHT_ASST_STATUS,
+    IN_FLIGHT_USER_STATUS,
+)
+
+
+async def update_turn_terminal(
+    *,
+    conversation_id: str,
+    user_msg_id: str,
+    asst_msg_id: str,
+    asst_content: str,
+    asst_metadata: dict | None,
+    asst_tool_blocks: list[dict] | None,
+    status: str,
+    error: str | None,
+) -> None:
+    """Atomically flip a turn to its terminal status and clear the
+    conversation's active-stream pointer (#403).
+
+    All three writes — user row, assistant row, conversations.active_stream_message_id
+    — commit in one transaction so a process kill between them cannot
+    strand an orphan or leave a wedged active-stream pointer that 409s
+    future POSTs. The user row's content/metadata/tool_blocks are unchanged
+    from insert time, so the user UPDATE is narrowed to status + error
+    only. The conversation's user row also gets a NULL error (the
+    assistant failed, not the user). Both message UPDATEs assert rowcount
+    to catch stale ids (programmer error).
+    """
+    async with get_db() as db:
+        cur = await db.execute(
+            "UPDATE messages SET status=?, error=? WHERE id=?",
+            (status, error, user_msg_id),
+        )
+        if cur.rowcount == 0:
+            raise RuntimeError(f"update_turn_terminal: user_msg_id={user_msg_id!r} not found")
+        cur = await db.execute(
+            "UPDATE messages SET content=?, metadata=?, status=?, error=?, tool_blocks=? WHERE id=?",
+            (
+                asst_content,
+                json.dumps(asst_metadata) if asst_metadata is not None else None,
+                status,
+                error,
+                json.dumps(asst_tool_blocks) if asst_tool_blocks is not None else None,
+                asst_msg_id,
+            ),
+        )
+        if cur.rowcount == 0:
+            raise RuntimeError(f"update_turn_terminal: asst_msg_id={asst_msg_id!r} not found")
+        # Clear the active-stream pointer in the same transaction so a
+        # crash here cannot wedge a future POST with HTTP 409.
+        await db.execute(
+            "UPDATE conversations SET active_stream_message_id=NULL WHERE id=?",
+            (conversation_id,),
         )
         await db.commit()
 

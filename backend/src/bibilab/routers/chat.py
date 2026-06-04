@@ -14,6 +14,7 @@ from fastapi.responses import Response, StreamingResponse
 
 from bibilab.config import AIConfig, BibilabConfig, bibilab_home, get_config
 from bibilab.db import (
+    VISIBLE_MESSAGE_STATUS,
     ActiveStreamConflict,
     assert_message_in_list,
     create_user_and_assistant_atomic,
@@ -23,8 +24,7 @@ from bibilab.db import (
     get_or_create_conversation,
     get_recent_messages,
     get_sources_for_list,
-    set_active_stream,
-    update_message_content,
+    update_turn_terminal,
 )
 from bibilab.db import (
     get_conversation as get_conv_row,
@@ -550,6 +550,7 @@ async def run_chat_turn(
     ui_lang: str,
     cfg: BibilabConfig,
     registry: ChatRunRegistry,
+    user_msg_id: str,
 ) -> None:
     buf = registry.get(message_id)
     if buf is None:
@@ -737,28 +738,30 @@ async def run_chat_turn(
 
             assistant_content = "".join(assistant_text_deltas)
             error_text = error_reason if error_reason else ("internal_error" if final_status == "failed" else None)
-            await update_message_content(
-                message_id,
-                content=assistant_content,
-                metadata=meta if meta else None,
+            # #403: atomically flip both rows of the turn to the same terminal
+            # status AND clear active_stream_message_id. The user row only
+            # changes status+error (content/metadata/tool_blocks are unchanged
+            # from insert time); all three writes commit together so a process
+            # kill cannot strand an orphan or leave a wedged 409 pointer.
+            await update_turn_terminal(
+                conversation_id=conversation_id,
+                user_msg_id=user_msg_id,
+                asst_msg_id=message_id,
+                asst_content=assistant_content,
+                asst_metadata=meta if meta else None,
+                asst_tool_blocks=tool_blocks if tool_blocks else None,
                 status=final_status,
                 error=error_text,
-                tool_blocks=tool_blocks if tool_blocks else None,
             )
         except Exception:
             logger.exception("producer finalize failed message_id=%s", message_id)
-            final_status = "failed"
+            # Don't clobber a "cancelled" status set by the asyncio.CancelledError
+            # branch — the SSE event must reflect the user's action, not a
+            # downstream persistence hiccup.
+            if final_status != "cancelled":
+                final_status = "failed"
             if error_reason is None:
                 error_reason = "persistence_error"
-
-        try:
-            await set_active_stream(conversation_id, None)
-        except Exception:
-            logger.exception(
-                "producer clear active_stream failed message_id=%s — stale pointer may cause "
-                "reattach to dead stream on next page load",
-                message_id,
-            )
 
         # Final authoritative ledger: persisted-shape calls (context[]
         # reconstructed) so the client matches post-refresh without reloading.
@@ -800,7 +803,10 @@ async def chat_endpoint(
 
     # Snapshot history before inserting new messages — the producer adds the
     # current user message explicitly via user_message_text.
+    # #403: filter to status='done' here, not in get_recent_messages, so the UI
+    # conversation endpoint still sees cancelled/failed rows for 已停止/重试.
     history_rows = await get_recent_messages(conversation_id, limit=100)
+    history_rows = [r for r in history_rows if r["status"] == VISIBLE_MESSAGE_STATUS]
     history = []
     for r in history_rows:
         entry = {"role": r["role"], "content": r["content"]}
@@ -846,6 +852,7 @@ async def chat_endpoint(
             ui_lang=ui_lang,
             cfg=cfg,
             registry=run_registry,
+            user_msg_id=user_msg_id,
         )
     )
     buf = run_registry.register(assistant_msg_id, task)

@@ -301,3 +301,38 @@ async def test_get_messages_beyond_window_returns_older_messages(tmp_bibilab_hom
     assert "msg-06" in beyond_ids
     assert "msg-07" not in beyond_ids
     assert "msg-11" not in beyond_ids
+
+
+# --- #403: aborted turns do not count toward the compression trigger ---
+
+
+@pytest.mark.asyncio
+async def test_aborted_messages_do_not_trigger_compression(tmp_bibilab_home, mock_call_llm):
+    """Cancelled/failed rows must not push the count past the >30 threshold —
+    otherwise we'd summarize blank assistant turns."""
+    from bibilab.db import bootstrap_db, create_list, get_message_count
+    from bibilab.pipeline.chat_summary import COMPRESSION_THRESHOLD, maybe_compress_conversation
+
+    await bootstrap_db()
+    await create_list("list-1", "Test List", "2026-01-01T00:00:00")
+    conv_id = await ConversationFactory.build("list-1")
+
+    # Seed THRESHOLD done messages plus a generous number of aborted rows.
+    # Both rows of each aborted turn share the same terminal status (the #403
+    # invariant — the user message flips to 'cancelled'/'failed' alongside the
+    # assistant in run_chat_turn's finally block).
+    for i in range(COMPRESSION_THRESHOLD):
+        await MessageFactory.build(conv_id, content=f"msg-{i}", status="done")
+    for _ in range(20):
+        await MessageFactory.build(conv_id, role="user", content="u-aborted", status="cancelled")
+        await MessageFactory.build(conv_id, role="assistant", content="", status="cancelled")
+
+    # get_message_count should now report only the done rows.
+    assert await get_message_count(conv_id) == COMPRESSION_THRESHOLD
+
+    from bibilab.config import BibilabConfig
+
+    cfg = BibilabConfig()
+    await maybe_compress_conversation(conv_id, cfg)
+
+    assert mock_call_llm.call_count == 0, "Compression must not fire when done-count is at the threshold"

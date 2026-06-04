@@ -1,5 +1,6 @@
 """Tests for the SSE chat streaming endpoint (post-tool-calling refactor)."""
 
+import asyncio
 import json
 from unittest.mock import AsyncMock, patch
 
@@ -35,6 +36,10 @@ async def _get_assistant_msgs(client, list_id: str) -> list[dict]:
 
 async def _create_list(client, name: str) -> str:
     return (await client.post("/lists", json={"name": name})).json()["id"]
+
+
+async def _async_noop(*_args, **_kwargs):
+    return None
 
 
 @pytest.mark.asyncio
@@ -577,7 +582,7 @@ async def test_chat_sse_hallucinated_index_emitted_as_text(client, caplog, mock_
 
 @pytest.mark.asyncio
 async def test_run_chat_turn_persists_tool_blocks(monkeypatch, tmp_path, mock_stream_llm):
-    """When the producer runs a find_passages tool, tool_blocks must be persisted via update_message_content."""
+    """When the producer runs a find_passages tool, tool_blocks must be persisted via update_turn_terminal."""
     from bibilab.config import AIConfig, BackendConfig, BibilabConfig
     from bibilab.pipeline._shared import StreamEvent, ToolCall
     from bibilab.pipeline.chat_tools import FIND_PASSAGES_TOOL
@@ -622,16 +627,31 @@ async def test_run_chat_turn_persists_tool_blocks(monkeypatch, tmp_path, mock_st
 
     monkeypatch.setattr(chat_module, "execute_tool", fake_execute)
 
-    captured: dict = {}
+    captured: list[dict] = []
 
-    async def capture_update(message_id, content, metadata, status, error=None, tool_blocks=None):
-        captured["tool_blocks"] = tool_blocks
+    async def capture_update(
+        *,
+        conversation_id,
+        user_msg_id,
+        asst_msg_id,
+        asst_content,
+        asst_metadata,
+        asst_tool_blocks,
+        status,
+        error,
+    ):
+        captured.append(
+            {
+                "asst_msg_id": asst_msg_id,
+                "asst_tool_blocks": asst_tool_blocks,
+                "status": status,
+            }
+        )
 
     async def noop(*a, **kw):
         return None
 
-    monkeypatch.setattr(chat_module, "update_message_content", capture_update)
-    monkeypatch.setattr(chat_module, "set_active_stream", noop)
+    monkeypatch.setattr(chat_module, "update_turn_terminal", capture_update)
 
     from bibilab.pipeline.chat_runs import ChatRunRegistry
 
@@ -655,12 +675,15 @@ async def test_run_chat_turn_persists_tool_blocks(monkeypatch, tmp_path, mock_st
         ui_lang="en",
         cfg=cfg,
         registry=registry,
+        user_msg_id="um-1",
     )
 
-    assert captured.get("tool_blocks") is not None
-    assert len(captured["tool_blocks"]) == 1
-    assert captured["tool_blocks"][0]["name"] == FIND_PASSAGES_TOOL.name
-    assert captured["tool_blocks"][0]["result"]["chunks"][0]["content"] == "verbatim"
+    assert len(captured) == 1, f"expected 1 batched call, got {len(captured)}"
+    asst_call = captured[0]
+    assert asst_call["asst_tool_blocks"] is not None
+    assert len(asst_call["asst_tool_blocks"]) == 1
+    assert asst_call["asst_tool_blocks"][0]["name"] == FIND_PASSAGES_TOOL.name
+    assert asst_call["asst_tool_blocks"][0]["result"]["chunks"][0]["content"] == "verbatim"
 
 
 @pytest.mark.asyncio
@@ -684,8 +707,7 @@ async def test_system_message_is_stable_across_turns(monkeypatch, mock_stream_ll
     async def noop(*a, **kw):
         return None
 
-    monkeypatch.setattr(chat_module, "update_message_content", noop)
-    monkeypatch.setattr(chat_module, "set_active_stream", noop)
+    monkeypatch.setattr(chat_module, "update_turn_terminal", noop)
 
     cfg = BibilabConfig(
         ai=AIConfig(protocol="openai", model="x", api_key="k", base_url=""),
@@ -707,6 +729,7 @@ async def test_system_message_is_stable_across_turns(monkeypatch, mock_stream_ll
             ui_lang="en",
             cfg=cfg,
             registry=registry,
+            user_msg_id="um-stable",
         )
 
     assert len(captured_systems) == 2
@@ -913,8 +936,7 @@ async def test_run_chat_turn_drops_tool_blocks_on_turn_2(monkeypatch, mock_strea
     async def noop(*a, **kw):
         return None
 
-    monkeypatch.setattr(chat_module, "update_message_content", noop)
-    monkeypatch.setattr(chat_module, "set_active_stream", noop)
+    monkeypatch.setattr(chat_module, "update_turn_terminal", noop)
 
     from bibilab.pipeline.chat_runs import ChatRunRegistry
 
@@ -954,6 +976,7 @@ async def test_run_chat_turn_drops_tool_blocks_on_turn_2(monkeypatch, mock_strea
         ui_lang="en",
         cfg=cfg,
         registry=registry,
+        user_msg_id="um-msg-stable",
     )
 
     assert captured_messages, "stream_llm not called"
@@ -995,8 +1018,7 @@ async def test_chat_uses_resolved_response_language_in_system_prompt(monkeypatch
     async def noop(*args, **kwargs):
         return None
 
-    monkeypatch.setattr(chat_module, "update_message_content", noop)
-    monkeypatch.setattr(chat_module, "set_active_stream", noop)
+    monkeypatch.setattr(chat_module, "update_turn_terminal", noop)
 
     # Build a minimal cfg with output_language="ui" so ui_lang wins
     cfg = BibilabConfig(
@@ -1022,6 +1044,7 @@ async def test_chat_uses_resolved_response_language_in_system_prompt(monkeypatch
         ui_lang="zh",
         cfg=cfg,
         registry=registry,
+        user_msg_id="um-test-msg-lang-1",
     )
 
     assert captured_system, "stream_llm was never called"
@@ -1060,8 +1083,7 @@ async def test_run_chat_turn_reseeds_citation_registry_from_history_tool_blocks(
     async def noop(*a, **kw):
         return None
 
-    monkeypatch.setattr(chat_module, "update_message_content", noop)
-    monkeypatch.setattr(chat_module, "set_active_stream", noop)
+    monkeypatch.setattr(chat_module, "update_turn_terminal", noop)
 
     from bibilab.pipeline.chat_runs import ChatRunRegistry
 
@@ -1119,6 +1141,7 @@ async def test_run_chat_turn_reseeds_citation_registry_from_history_tool_blocks(
         ui_lang="en",
         cfg=cfg,
         registry=registry,
+        user_msg_id="um-msg-id",
     )
 
     assert captured_registry, "stream_with_tools was not called"
@@ -1237,3 +1260,253 @@ async def test_rag_metadata_includes_read_source_call(client):
     call = rag["calls"][0]
     assert call["tool_name"] == READ_SOURCE_TOOL.name
     assert call["source_id"] == "s1"
+
+
+# ---------------------------------------------------------------------------
+# #403: aborted (cancelled / failed / pending) turns invisible to LLM + compaction
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_chat_endpoint_skips_aborted_assistant_from_history(client):
+    """A cancelled assistant turn is not replayed to the LLM on the next turn.
+
+    Seeds a prior turn [user(done), assistant(cancelled)] and sends a new
+    message. The mock captures the messages_for_llm; the aborted turn must
+    be absent.
+    """
+    from tests.factories import ConversationFactory, MessageFactory
+
+    list_id = await _create_list(client, "T")
+    conv_id = await ConversationFactory.build(list_id)
+    await MessageFactory.build(conv_id, role="user", content="u1", status="done")
+    await MessageFactory.build(conv_id, role="assistant", content="a1", status="done")
+    # Post-fix: both rows of the aborted turn share the terminal status.
+    await MessageFactory.build(conv_id, role="user", content="u2-aborted", status="cancelled")
+    await MessageFactory.build(conv_id, role="assistant", content="", status="cancelled")
+
+    captured: dict = {}
+
+    async def fake_stream(messages, cfg, tools=None, execute_tool_fn=None, system=None, llm_max_tokens=2048, **_):
+        captured["messages"] = messages
+        yield StreamEvent(type=SSE_EVENT_DELTA, content="ok")
+        yield StreamEvent(type=SSE_EVENT_DONE)
+
+    with patch("bibilab.routers.chat.stream_with_tools", fake_stream):
+        resp = await client.post(f"/lists/{list_id}/chat", json={"message": "next"})
+
+    assert resp.status_code == 200
+    msgs = captured["messages"]
+    contents = [m.get("content", "") for m in msgs]
+    # Only the done pair + the new live user should be in the LLM context.
+    assert "u1" in contents
+    assert "a1" in contents
+    assert "u2-aborted" not in contents, "aborted user must not leak into LLM context"
+    assert "next" in contents
+
+
+@pytest.mark.asyncio
+async def test_chat_endpoint_drops_pending_user_after_streaming_assistant(client):
+    """An in-flight turn (user='pending', assistant='streaming') is invisible
+    to the next turn — both rows drop together, no orphan user.
+    """
+    from tests.factories import ConversationFactory, MessageFactory
+
+    list_id = await _create_list(client, "T")
+    conv_id = await ConversationFactory.build(list_id)
+    await MessageFactory.build(conv_id, role="user", content="u1", status="done")
+    await MessageFactory.build(conv_id, role="assistant", content="a1", status="done")
+    await MessageFactory.build(conv_id, role="user", content="u2-inflight", status="pending")
+    await MessageFactory.build(conv_id, role="assistant", content="", status="streaming")
+
+    captured: dict = {}
+
+    async def fake_stream(messages, cfg, tools=None, execute_tool_fn=None, system=None, llm_max_tokens=2048, **_):
+        captured["messages"] = messages
+        yield StreamEvent(type=SSE_EVENT_DELTA, content="ok")
+        yield StreamEvent(type=SSE_EVENT_DONE)
+
+    with patch("bibilab.routers.chat.stream_with_tools", fake_stream):
+        resp = await client.post(f"/lists/{list_id}/chat", json={"message": "next"})
+
+    assert resp.status_code == 200
+    msgs = captured["messages"]
+    contents = [m.get("content", "") for m in msgs]
+    assert "u1" in contents
+    assert "a1" in contents
+    assert "u2-inflight" not in contents
+    assert "next" in contents
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("protocol", ["anthropic", "openai"])
+async def test_chat_endpoint_no_consecutive_same_role_for_either_protocol(client, monkeypatch, protocol):
+    """The alternation invariant must hold for both LLM protocols. Anthropic
+    and OpenAI both reject consecutive same-role messages."""
+    from bibilab.config import AIConfig, BackendConfig, BibilabConfig
+    from tests.factories import ConversationFactory, MessageFactory
+
+    list_id = await _create_list(client, "T")
+    conv_id = await ConversationFactory.build(list_id)
+    # Seed an aborted turn between two done turns to maximize the chance of
+    # producing consecutive same-role messages if the filter is wrong.
+    # Post-fix: aborted user has terminal status matching the assistant.
+    await MessageFactory.build(conv_id, role="user", content="u1", status="done")
+    await MessageFactory.build(conv_id, role="assistant", content="a1", status="done")
+    await MessageFactory.build(conv_id, role="user", content="u-aborted", status="cancelled")
+    await MessageFactory.build(conv_id, role="assistant", content="", status="cancelled")
+    await MessageFactory.build(conv_id, role="user", content="u2", status="done")
+    await MessageFactory.build(conv_id, role="assistant", content="a2", status="done")
+
+    # Force the test config to the parametrised protocol.
+    cfg_override = BibilabConfig(
+        ai=AIConfig(protocol=protocol, model="x", api_key="k", base_url=""),
+        backend=BackendConfig(),
+    )
+
+    async def fake_get_config():
+        return cfg_override
+
+    monkeypatch.setattr("bibilab.routers.chat.get_config", fake_get_config)
+
+    captured: dict = {}
+
+    async def fake_stream(messages, cfg, tools=None, execute_tool_fn=None, system=None, llm_max_tokens=2048, **_):
+        captured["messages"] = messages
+        yield StreamEvent(type=SSE_EVENT_DELTA, content="ok")
+        yield StreamEvent(type=SSE_EVENT_DONE)
+
+    with patch("bibilab.routers.chat.stream_with_tools", fake_stream):
+        resp = await client.post(f"/lists/{list_id}/chat", json={"message": "next"})
+
+    assert resp.status_code == 200
+    msgs = captured["messages"]
+    roles = [m.get("role") for m in msgs]
+    for prev, cur in zip(roles, roles[1:]):
+        assert prev != cur, f"consecutive same-role messages for {protocol}: {roles}"
+
+
+@pytest.mark.asyncio
+async def _seed_in_flight_turn(conv_id: str) -> tuple[str, str]:
+    """Seed an in-flight turn (user=pending, assistant=streaming) with
+    deterministic IDs and return (user_msg_id, asst_msg_id)."""
+    from tests.factories import MessageFactory
+
+    user_row = await MessageFactory.build(conv_id, message_id="um1", role="user", content="hi", status="pending")
+    asst_row = await MessageFactory.build(conv_id, message_id="am1", role="assistant", content="", status="streaming")
+    return user_row["id"], asst_row["id"]
+
+
+@pytest.mark.parametrize(
+    "scenario,expected_status,expect_raises",
+    [
+        ("ok", "done", False),
+        ("cancel", "cancelled", True),
+        ("error", "failed", False),
+    ],
+    ids=["done", "cancelled", "failed"],
+)
+@pytest.mark.asyncio
+async def test_run_chat_turn_transitions_user_to_terminal_status(
+    monkeypatch,
+    tmp_bibilab_home,
+    scenario,
+    expected_status,
+    expect_raises,  # noqa: ARG001
+):
+    """The user message is flipped to the same terminal status as the
+    assistant — done on success, cancelled on asyncio.CancelledError,
+    failed on any other producer exception — in one batched transaction."""
+    from bibilab.config import AIConfig, BackendConfig, BibilabConfig
+    from bibilab.db import bootstrap_db, create_list
+    from bibilab.pipeline.chat_runs import ChatRunRegistry
+    from bibilab.routers import chat as chat_module
+    from bibilab.routers.chat import run_chat_turn
+    from tests.factories import ConversationFactory
+
+    await bootstrap_db()
+    await create_list("list-1", "T", "2026-01-01T00:00:00")
+    conv_id = await ConversationFactory.build("list-1")
+    user_msg_id, asst_msg_id = await _seed_in_flight_turn(conv_id)
+
+    async def fake_stream(messages, cfg, tools=None, execute_tool_fn=None, system=None, llm_max_tokens=2048, **_):
+        if scenario == "ok":
+            yield StreamEvent(type=SSE_EVENT_DELTA, content="ok")
+            yield StreamEvent(type=SSE_EVENT_DONE)
+        elif scenario == "cancel":
+            raise asyncio.CancelledError
+            yield  # pragma: no cover
+        else:
+            raise RuntimeError("LLM blew up")
+            yield  # pragma: no cover
+
+    monkeypatch.setattr(chat_module, "stream_with_tools", fake_stream)
+
+    captured: list[dict] = []
+
+    async def capture_update(
+        *, conversation_id, user_msg_id, asst_msg_id, asst_content, asst_metadata, asst_tool_blocks, status, error
+    ):
+        captured.append({"user": user_msg_id, "asst": asst_msg_id, "status": status, "error": error})
+
+    monkeypatch.setattr(chat_module, "update_turn_terminal", capture_update)
+
+    cfg = BibilabConfig(
+        ai=AIConfig(protocol="openai", model="x", api_key="k", base_url=""),
+        backend=BackendConfig(),
+    )
+    registry = ChatRunRegistry()
+    registry.register(asst_msg_id, task=None)
+
+    kwargs = dict(
+        message_id=asst_msg_id,
+        conversation_id=conv_id,
+        list_id="list-1",
+        user_message_text="hi",
+        history=[],
+        summary=None,
+        source_ids=["s1"],
+        ui_lang="en",
+        cfg=cfg,
+        registry=registry,
+        user_msg_id=user_msg_id,
+    )
+    if expect_raises:
+        with pytest.raises(asyncio.CancelledError):
+            await run_chat_turn(**kwargs)
+    else:
+        await run_chat_turn(**kwargs)
+
+    assert len(captured) == 1
+    assert captured[0]["status"] == expected_status
+    assert captured[0]["user"] == user_msg_id
+    assert captured[0]["asst"] == asst_msg_id
+
+
+@pytest.mark.asyncio
+async def test_done_turns_replay_unchanged(client):
+    """Regression guard: a clean [user(done), assistant(done)] turn must be
+    present in the LLM context verbatim. This is the path that must NOT
+    regress when we add the status filter."""
+    from tests.factories import ConversationFactory, MessageFactory
+
+    list_id = await _create_list(client, "T")
+    conv_id = await ConversationFactory.build(list_id)
+    await MessageFactory.build(conv_id, role="user", content="u1", status="done")
+    await MessageFactory.build(conv_id, role="assistant", content="a1", status="done")
+
+    captured: dict = {}
+
+    async def fake_stream(messages, cfg, tools=None, execute_tool_fn=None, system=None, llm_max_tokens=2048, **_):
+        captured["messages"] = messages
+        yield StreamEvent(type=SSE_EVENT_DELTA, content="ok")
+        yield StreamEvent(type=SSE_EVENT_DONE)
+
+    with patch("bibilab.routers.chat.stream_with_tools", fake_stream):
+        resp = await client.post(f"/lists/{list_id}/chat", json={"message": "next"})
+
+    assert resp.status_code == 200
+    contents = [m.get("content", "") for m in captured["messages"]]
+    assert "u1" in contents
+    assert "a1" in contents
+    assert "next" in contents
