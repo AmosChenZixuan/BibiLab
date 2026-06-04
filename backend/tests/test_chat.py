@@ -1,5 +1,7 @@
 import pytest
 
+from tests.factories import ConversationFactory, MessageFactory
+
 pytestmark = pytest.mark.integration
 
 
@@ -50,7 +52,6 @@ async def test_messages_table_exists(tmp_bibilab_home):
 async def test_delete_list_cascades_to_conversation(tmp_bibilab_home):
     from bibilab.db import (
         bootstrap_db,
-        create_conversation,
         create_list,
         delete_list,
         get_db,
@@ -58,7 +59,7 @@ async def test_delete_list_cascades_to_conversation(tmp_bibilab_home):
 
     await bootstrap_db()
     await create_list("list-1", "Test List", "2026-01-01T00:00:00")
-    conv_id = await create_conversation("list-1")
+    conv_id = await ConversationFactory.build("list-1")
 
     await delete_list("list-1")
 
@@ -71,17 +72,18 @@ async def test_delete_list_cascades_to_conversation(tmp_bibilab_home):
 async def test_delete_conversation_cascades_messages(tmp_bibilab_home):
     from bibilab.db import (
         bootstrap_db,
-        create_conversation,
         create_list,
-        create_message,
         delete_conversation,
         get_db,
     )
 
     await bootstrap_db()
     await create_list("list-1", "Test List", "2026-01-01T00:00:00")
-    conv_id = await create_conversation("list-1")
-    msg = await create_message(conv_id, "user", "Hello", None)
+    conv_id = await ConversationFactory.build("list-1")
+    msg = await MessageFactory.build(
+        conv_id,
+        content="Hello",
+    )
 
     await delete_conversation(conv_id)
 
@@ -103,12 +105,22 @@ async def test_get_conversation_empty(client):
 @pytest.mark.asyncio
 async def test_get_conversation_with_messages(client):
     list_id = (await client.post("/lists", json={"name": "Test List"})).json()["id"]
-    from bibilab.db import create_conversation, create_message
 
-    conv_id = await create_conversation(list_id)
-    await create_message(conv_id, "user", "Hello", None)
-    await create_message(conv_id, "assistant", "Hi there", {"citations": []})
-    await create_message(conv_id, "user", "Tell me more", None)
+    conv_id = await ConversationFactory.build(list_id)
+    await MessageFactory.build(
+        conv_id,
+        content="Hello",
+    )
+    await MessageFactory.build(
+        conv_id,
+        role="assistant",
+        content="Hi there",
+        metadata={"citations": []},
+    )
+    await MessageFactory.build(
+        conv_id,
+        content="Tell me more",
+    )
 
     resp = await client.get(f"/lists/{list_id}/conversation")
     assert resp.status_code == 200
@@ -128,12 +140,14 @@ async def test_get_conversation_with_messages(client):
 @pytest.mark.asyncio
 async def test_get_conversation_pagination(client):
     list_id = (await client.post("/lists", json={"name": "Test List"})).json()["id"]
-    from bibilab.db import create_conversation, create_message
 
-    conv_id = await create_conversation(list_id)
+    conv_id = await ConversationFactory.build(list_id)
     msgs = []
     for i in range(5):
-        msg = await create_message(conv_id, "user", f"Message {i}", None)
+        msg = await MessageFactory.build(
+            conv_id,
+            content=f"Message {i}",
+        )
         msgs.append(msg)
 
     resp = await client.get(f"/lists/{list_id}/conversation?limit=2")
@@ -153,10 +167,12 @@ async def test_get_conversation_pagination(client):
 @pytest.mark.asyncio
 async def test_delete_conversation(client):
     list_id = (await client.post("/lists", json={"name": "Test List"})).json()["id"]
-    from bibilab.db import create_conversation, create_message
 
-    conv_id = await create_conversation(list_id)
-    await create_message(conv_id, "user", "Hello", None)
+    conv_id = await ConversationFactory.build(list_id)
+    await MessageFactory.build(
+        conv_id,
+        content="Hello",
+    )
 
     resp = await client.delete(f"/lists/{list_id}/conversation")
     assert resp.status_code == 204
@@ -199,10 +215,10 @@ async def test_get_or_create_conversation_creates_new(tmp_bibilab_home):
 
 @pytest.mark.asyncio
 async def test_get_or_create_conversation_returns_existing(tmp_bibilab_home):
-    from bibilab.db import bootstrap_db, create_conversation, create_list, get_or_create_conversation
+    from bibilab.db import bootstrap_db, create_list, get_or_create_conversation
 
     await bootstrap_db()
     await create_list("list-1", "Test", "2026-01-01T00:00:00")
-    existing_id = await create_conversation("list-1")
+    existing_id = await ConversationFactory.build("list-1")
     result_id = await get_or_create_conversation("list-1")
     assert result_id == existing_id

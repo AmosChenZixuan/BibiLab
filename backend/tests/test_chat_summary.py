@@ -2,14 +2,14 @@
 
 import pytest
 
+from tests.factories import ConversationFactory, MessageFactory
+
 
 @pytest.mark.asyncio
 async def test_no_compression_below_threshold(tmp_bibilab_home):
     from bibilab.db import (
         bootstrap_db,
-        create_conversation,
         create_list,
-        create_message,
         get_conversation,
         get_message_count,
     )
@@ -17,10 +17,13 @@ async def test_no_compression_below_threshold(tmp_bibilab_home):
 
     await bootstrap_db()
     await create_list("list-1", "Test List", "2026-01-01T00:00:00")
-    conv_id = await create_conversation("list-1")
+    conv_id = await ConversationFactory.build("list-1")
 
     for i in range(COMPRESSION_THRESHOLD - 1):
-        await create_message(conv_id, "user", f"Message {i}", None)
+        await MessageFactory.build(
+            conv_id,
+            content=f"Message {i}",
+        )
 
     assert await get_message_count(conv_id) == COMPRESSION_THRESHOLD - 1
 
@@ -50,9 +53,7 @@ async def test_no_compression_below_threshold(tmp_bibilab_home):
 async def test_compression_triggers_above_threshold(tmp_bibilab_home):
     from bibilab.db import (
         bootstrap_db,
-        create_conversation,
         create_list,
-        create_message,
         get_conversation,
         get_message_count,
     )
@@ -60,10 +61,13 @@ async def test_compression_triggers_above_threshold(tmp_bibilab_home):
 
     await bootstrap_db()
     await create_list("list-1", "Test List", "2026-01-01T00:00:00")
-    conv_id = await create_conversation("list-1")
+    conv_id = await ConversationFactory.build("list-1")
 
     for i in range(COMPRESSION_THRESHOLD + 5):
-        await create_message(conv_id, "user", f"Message {i}", None)
+        await MessageFactory.build(
+            conv_id,
+            content=f"Message {i}",
+        )
 
     assert await get_message_count(conv_id) == COMPRESSION_THRESHOLD + 5
 
@@ -94,21 +98,22 @@ async def test_compression_triggers_above_threshold(tmp_bibilab_home):
 async def test_existing_summary_included_in_prompt(tmp_bibilab_home):
     from bibilab.db import (
         bootstrap_db,
-        create_conversation,
         create_list,
-        create_message,
         update_conversation_summary,
     )
     from bibilab.pipeline.chat_summary import COMPRESSION_THRESHOLD, maybe_compress_conversation
 
     await bootstrap_db()
     await create_list("list-1", "Test List", "2026-01-01T00:00:00")
-    conv_id = await create_conversation("list-1")
+    conv_id = await ConversationFactory.build("list-1")
 
     await update_conversation_summary(conv_id, "User loves Python tutorials.")
 
     for i in range(COMPRESSION_THRESHOLD + 3):
-        await create_message(conv_id, "user", f"Message {i}", None)
+        await MessageFactory.build(
+            conv_id,
+            content=f"Message {i}",
+        )
 
     from bibilab.config import BibilabConfig
 
@@ -138,19 +143,20 @@ async def test_existing_summary_included_in_prompt(tmp_bibilab_home):
 async def test_compression_deletes_old_messages(tmp_bibilab_home):
     from bibilab.db import (
         bootstrap_db,
-        create_conversation,
         create_list,
-        create_message,
         get_message_count,
     )
     from bibilab.pipeline.chat_summary import COMPRESSION_THRESHOLD, SLIDING_WINDOW_SIZE, maybe_compress_conversation
 
     await bootstrap_db()
     await create_list("list-1", "Test List", "2026-01-01T00:00:00")
-    conv_id = await create_conversation("list-1")
+    conv_id = await ConversationFactory.build("list-1")
 
     for i in range(COMPRESSION_THRESHOLD + 5):
-        await create_message(conv_id, "user", f"Message {i}", None)
+        await MessageFactory.build(
+            conv_id,
+            content=f"Message {i}",
+        )
 
     from bibilab.config import BibilabConfig
 
@@ -172,18 +178,19 @@ async def test_compression_deletes_old_messages(tmp_bibilab_home):
 async def test_no_compression_when_no_messages_to_compress(tmp_bibilab_home):
     from bibilab.db import (
         bootstrap_db,
-        create_conversation,
         create_list,
-        create_message,
     )
     from bibilab.pipeline.chat_summary import SLIDING_WINDOW_SIZE, maybe_compress_conversation
 
     await bootstrap_db()
     await create_list("list-1", "Test List", "2026-01-01T00:00:00")
-    conv_id = await create_conversation("list-1")
+    conv_id = await ConversationFactory.build("list-1")
 
     for i in range(SLIDING_WINDOW_SIZE + 5):
-        await create_message(conv_id, "user", f"Message {i}", None)
+        await MessageFactory.build(
+            conv_id,
+            content=f"Message {i}",
+        )
 
     from bibilab.config import BibilabConfig
 
@@ -239,18 +246,19 @@ async def test_compression_prompt_no_legacy_citation_preservation(tmp_bibilab_ho
     """Compression prompt does not preserve legacy [title @ Ts-Ts] citations per #241 spec."""
     from bibilab.db import (
         bootstrap_db,
-        create_conversation,
         create_list,
-        create_message,
     )
     from bibilab.pipeline.chat_summary import COMPRESSION_THRESHOLD, maybe_compress_conversation
 
     await bootstrap_db()
     await create_list("list-1", "Test List", "2026-01-01T00:00:00")
-    conv_id = await create_conversation("list-1")
+    conv_id = await ConversationFactory.build("list-1")
 
     for i in range(COMPRESSION_THRESHOLD + 3):
-        await create_message(conv_id, "user", f"Message {i}", None)
+        await MessageFactory.build(
+            conv_id,
+            content=f"Message {i}",
+        )
 
     from bibilab.config import BibilabConfig
 
@@ -278,14 +286,13 @@ async def test_compression_prompt_no_legacy_citation_preservation(tmp_bibilab_ho
 async def test_get_message_count_empty(tmp_bibilab_home):
     from bibilab.db import (
         bootstrap_db,
-        create_conversation,
         create_list,
         get_message_count,
     )
 
     await bootstrap_db()
     await create_list("list-1", "Test List", "2026-01-01T00:00:00")
-    conv_id = await create_conversation("list-1")
+    conv_id = await ConversationFactory.build("list-1")
 
     assert await get_message_count(conv_id) == 0
 
@@ -294,18 +301,23 @@ async def test_get_message_count_empty(tmp_bibilab_home):
 async def test_get_message_count_after_creates(tmp_bibilab_home):
     from bibilab.db import (
         bootstrap_db,
-        create_conversation,
         create_list,
-        create_message,
         get_message_count,
     )
 
     await bootstrap_db()
     await create_list("list-1", "Test List", "2026-01-01T00:00:00")
-    conv_id = await create_conversation("list-1")
+    conv_id = await ConversationFactory.build("list-1")
 
-    await create_message(conv_id, "user", "Hello", None)
-    await create_message(conv_id, "assistant", "Hi", None)
+    await MessageFactory.build(
+        conv_id,
+        content="Hello",
+    )
+    await MessageFactory.build(
+        conv_id,
+        role="assistant",
+        content="Hi",
+    )
 
     assert await get_message_count(conv_id) == 2
 

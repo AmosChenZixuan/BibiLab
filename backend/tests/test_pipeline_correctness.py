@@ -8,6 +8,7 @@ import pytest
 
 from bibilab.db import bootstrap_db, create_list
 from bibilab.worker import WorkerLoop
+from tests.factories import SourceFactory
 
 
 @pytest.fixture()
@@ -177,17 +178,13 @@ async def test_pipeline_stage_process_cleanup_called_on_cancellation(setup_pipel
 
 
 async def _seed_source(source_id: str) -> None:
-    from bibilab.db import write_source
 
     await create_list("list-cleanup", "Cleanup", "2026-01-01T00:00:00")
-    await write_source(
+    await SourceFactory.build(
+        "list-cleanup",
         source_id=source_id,
         video_id="BVlive",
-        platform="bilibili",
-        list_id="list-cleanup",
         title="Live Source",
-        summary="",
-        keywords=[],
         cover_url="https://example.com/cover.jpg",
         source_url="https://bilibili.com/video/BVlive",
         duration_seconds=10,
@@ -195,8 +192,6 @@ async def _seed_source(source_id: str) -> None:
         language="en",
         whisper_model="m",
         ai_model="m",
-        vision_enabled=False,
-        settings_snapshot={},
     )
 
 

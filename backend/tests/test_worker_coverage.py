@@ -10,6 +10,7 @@ import pytest
 
 from bibilab.db import bootstrap_db, create_list, parse_job_meta
 from bibilab.worker import WorkerLoop, _download_cover
+from tests.factories import SourceFactory
 
 # ---------------------------------------------------------------------------
 # _download_cover
@@ -366,29 +367,24 @@ async def test_worker_start_stop(tmp_bibilab_home: Path):
 
 @pytest.mark.asyncio
 async def test_run_digest_job_success(tmp_bibilab_home: Path, monkeypatch):
-    from bibilab.db import bootstrap_db, create_job, create_list, get_source, write_source, write_transcript_segments
+    from bibilab.db import bootstrap_db, create_job, create_list, get_source, write_transcript_segments
     from bibilab.pipeline.transcribe import WhisperSegment
 
     await bootstrap_db()
     await create_list("list-digest", "Digest Test", "2025-01-01T00:00:00Z")
     source_id = "src-digest-001"
-    await write_source(
+    await SourceFactory.build(
+        "list-digest",
         source_id=source_id,
         video_id="BVdigest001",
-        platform="bilibili",
-        list_id="list-digest",
         title="Digest Test",
         summary="old summary",
         keywords=["old"],
-        cover_url=None,
         source_url="https://bilibili.com/video/BVdigest001",
         duration_seconds=60,
         uploader="TestUser",
         language="en",
         whisper_model="base",
-        ai_model="gpt-4o",
-        vision_enabled=False,
-        settings_snapshot={},
     )
     await write_transcript_segments(
         source_id, [WhisperSegment(start=0.0, end=5.0, text="test transcript text", speaker=None)]
@@ -441,28 +437,22 @@ async def test_run_digest_job_source_not_found(tmp_bibilab_home: Path):
 
 @pytest.mark.asyncio
 async def test_run_digest_job_no_transcript(tmp_bibilab_home: Path):
-    from bibilab.db import bootstrap_db, create_job, create_list, write_source
+    from bibilab.db import bootstrap_db, create_job, create_list
 
     await bootstrap_db()
     await create_list("list-no-transcript", "No Transcript", "2025-01-01T00:00:00Z")
     source_id = "src-no-transcript"
-    await write_source(
+    await SourceFactory.build(
+        "list-no-transcript",
         source_id=source_id,
         video_id="BVnoTrans",
-        platform="bilibili",
-        list_id="list-no-transcript",
         title="No Transcript",
         summary="old",
-        keywords=[],
-        cover_url=None,
         source_url="https://bilibili.com/video/BVnoTrans",
         duration_seconds=60,
         uploader="TestUser",
         language="en",
         whisper_model="base",
-        ai_model="gpt-4o",
-        vision_enabled=False,
-        settings_snapshot={},
     )
     # Note: no write_transcript_segments call — source has no transcript
 
@@ -485,29 +475,23 @@ async def test_run_digest_job_no_transcript(tmp_bibilab_home: Path):
 
 @pytest.mark.asyncio
 async def test_run_digest_job_llm_failure(tmp_bibilab_home: Path, monkeypatch):
-    from bibilab.db import bootstrap_db, create_job, create_list, write_source, write_transcript_segments
+    from bibilab.db import bootstrap_db, create_job, create_list, write_transcript_segments
     from bibilab.pipeline.transcribe import WhisperSegment
 
     await bootstrap_db()
     await create_list("list-llm-fail", "LLM Fail", "2025-01-01T00:00:00Z")
     source_id = "src-llm-fail"
-    await write_source(
+    await SourceFactory.build(
+        "list-llm-fail",
         source_id=source_id,
         video_id="BVllmFail",
-        platform="bilibili",
-        list_id="list-llm-fail",
         title="LLM Fail",
         summary="old",
-        keywords=[],
-        cover_url=None,
         source_url="https://bilibili.com/video/BVllmFail",
         duration_seconds=60,
         uploader="TestUser",
         language="en",
         whisper_model="base",
-        ai_model="gpt-4o",
-        vision_enabled=False,
-        settings_snapshot={},
     )
     await write_transcript_segments(
         source_id, [WhisperSegment(start=0.0, end=5.0, text="test transcript", speaker=None)]
