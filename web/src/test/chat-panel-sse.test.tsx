@@ -6,7 +6,7 @@ import { LanguageProvider } from "@/app/LanguageContext";
 import { JobActivityProvider } from "@/components/jobs/JobActivityProvider";
 import { ChatPanel } from "@/components/lists/ChatPanel";
 import { TEST_IDS } from "@/lib/test-ids";
-import { makeOpenSseStream, makeSseStream, renderWithProviders } from "@/test/utils";
+import { makeOpenSseStream, makeSseStream, mockFetch, renderWithProviders } from "@/test/utils";
 import type { Source } from "@/lib/types";
 
 const SOURCE_1: Source = {
@@ -61,7 +61,7 @@ afterEach(() => {
 
 describe("chat panel — SSE streaming (phase 6.2)", () => {
   test("user message appears immediately, assistant streams in via SSE", async () => {
-    const fetchSpy = vi.spyOn(window, "fetch").mockImplementation(() =>
+    const fetchSpy = mockFetch(() =>
       Promise.resolve(
         makeSseStream([
           'data: {"type":"delta","content":"Hello"}\n\n',
@@ -99,7 +99,7 @@ describe("chat panel — SSE streaming (phase 6.2)", () => {
     // ledger row must be visible even though the assistant bubble is empty
     // and the message is still streaming.
     const { response, enqueue } = makeOpenSseStream();
-    vi.spyOn(window, "fetch").mockImplementation((input) => {
+    mockFetch((input) => {
       const url = String(input);
       if (url.includes("/chat")) {
         return Promise.resolve(response);
@@ -129,7 +129,7 @@ describe("chat panel — SSE streaming (phase 6.2)", () => {
 
   test("ledger collapses mid-stream, becomes expandable with context after rag+done", async () => {
     const { response, enqueue, close } = makeOpenSseStream();
-    vi.spyOn(window, "fetch").mockImplementation((input) => {
+    mockFetch((input) => {
       const url = String(input);
       if (url.includes("/chat")) {
         return Promise.resolve(response);
@@ -173,7 +173,7 @@ describe("chat panel — SSE streaming (phase 6.2)", () => {
   });
 
   test("streaming delivers content to assistant bubble", async () => {
-    vi.spyOn(window, "fetch").mockImplementation(() =>
+    mockFetch(() =>
       Promise.resolve(
         makeSseStream([
           'data: {"type":"delta","content":"Slow answer"}\n\n',
@@ -198,7 +198,7 @@ describe("chat panel — SSE streaming (phase 6.2)", () => {
   });
 
   test("error event shows error message + Retry button", async () => {
-    vi.spyOn(window, "fetch").mockImplementation(() =>
+    mockFetch(() =>
       Promise.resolve(
         makeSseStream([
           'data: {"type":"delta","content":"Partial "}\n\n',
@@ -230,7 +230,7 @@ describe("chat panel — SSE streaming (phase 6.2)", () => {
   });
 
   test("streamed citation after a \\n\\n renders inline, not on its own line", async () => {
-    vi.spyOn(window, "fetch").mockImplementation((input: RequestInfo | URL) => {
+    mockFetch((input: RequestInfo | URL) => {
       const url = typeof input === "string" ? input : input instanceof URL ? input.href : (input as Request).url;
       if (url.includes("/conversation")) {
         return Promise.resolve(new Response(JSON.stringify({ conversation: null, messages: [] })));
@@ -272,7 +272,7 @@ describe("chat panel — SSE streaming (phase 6.2)", () => {
 
   test("renders a read_source ledger chip when the tool fires mid-stream", async () => {
     const { response, enqueue, close } = makeOpenSseStream();
-    vi.spyOn(window, "fetch").mockImplementation((input) => {
+    mockFetch((input) => {
       const url = String(input);
       if (url.includes("/chat")) {
         return Promise.resolve(response);
@@ -316,7 +316,7 @@ describe("chat panel — SSE streaming (phase 6.2)", () => {
 
 describe("chat panel — conversation history (phase 6.3)", () => {
   test("on mount loads conversation via GET /lists/:id/conversation", async () => {
-    const fetchSpy = vi.spyOn(window, "fetch").mockImplementation((input: RequestInfo | URL) => {
+    const fetchSpy = mockFetch((input: RequestInfo | URL) => {
       const url = typeof input === "string" ? input : input instanceof URL ? input.href : (input as Request).url;
       if (url.includes("/conversation")) {
         return Promise.resolve(
@@ -353,7 +353,7 @@ describe("chat panel — conversation history (phase 6.3)", () => {
 
   test("clear button triggers DELETE /lists/:id/conversation and resets to empty state", async () => {
     let deleteCalled = false;
-    vi.spyOn(window, "fetch").mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+    mockFetch((input: RequestInfo | URL, init?: RequestInit) => {
       const url = typeof input === "string" ? input : input instanceof URL ? input.href : (input as Request).url;
       const method = init?.method ?? "GET";
       if (url.includes("/conversation") && method === "DELETE") {
@@ -396,7 +396,7 @@ describe("chat panel — conversation history (phase 6.3)", () => {
   });
 
   test("message list dims to 50% opacity while clear popover is open", async () => {
-    vi.spyOn(window, "fetch").mockImplementation((input: RequestInfo | URL) => {
+    mockFetch((input: RequestInfo | URL) => {
       const url = typeof input === "string" ? input : input instanceof URL ? input.href : (input as Request).url;
       if (url.includes("/conversation")) {
         return Promise.resolve(
@@ -428,7 +428,7 @@ describe("chat panel — conversation history (phase 6.3)", () => {
   });
 
   test("assistant message renders markdown as HTML (bold, code, lists)", async () => {
-    vi.spyOn(window, "fetch").mockImplementation(() =>
+    mockFetch(() =>
       Promise.resolve(
         makeSseStream([
           'data: {"type":"delta","content":"The chain rule is **fundamental**.\\n\\nTwo components:\\n- Local gradient\\n- Upstream gradient\\n\\nCode: `x = 1`"}',
@@ -460,7 +460,7 @@ describe("chat panel — conversation history (phase 6.3)", () => {
   });
 
   test("bubble uses bubble-user for user and bubble-assistant for assistant", async () => {
-    vi.spyOn(window, "fetch").mockImplementation(() =>
+    mockFetch(() =>
       Promise.resolve(
         makeSseStream([
           'data: {"type":"delta","content":"Answer."}',
@@ -495,7 +495,7 @@ describe("chat panel — conversation history (phase 6.3)", () => {
 
   test("retry on a mid-history failed assistant retries that specific turn's user message", async () => {
     let requestBody: string | null = null;
-    vi.spyOn(window, "fetch").mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+    mockFetch((input: RequestInfo | URL, init?: RequestInit) => {
       const url = typeof input === "string" ? input : input instanceof URL ? input.href : (input as Request).url;
       const method = init?.method ?? "GET";
       if (url.includes("/conversation") && method === "GET") {
@@ -575,7 +575,7 @@ describe("chat panel — conversation history (phase 6.3)", () => {
   });
 
   test("live SSE error with classified code displays localized message", async () => {
-    vi.spyOn(window, "fetch").mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+    mockFetch((input: RequestInfo | URL, init?: RequestInit) => {
       const url = typeof input === "string" ? input : input instanceof URL ? input.href : (input as Request).url;
       const method = init?.method ?? "GET";
       if (url.includes("/conversation") && method === "GET") {

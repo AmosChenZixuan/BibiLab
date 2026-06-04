@@ -70,6 +70,35 @@ const AUTH_METHODS = [
   "deleteBilibiliAuth",
 ] as const;
 
+// Compile-time drift guard: if a method is added to or removed from
+// `ApiClient` / `ApiClient.auth` without updating the lists above, the
+// `_TopLevelDriftCheck` / `_AuthDriftCheck` types evaluate to `never` and
+// the `const _drift: ... = true` line fails to typecheck.
+type _Exclude<T, U> = T extends U ? never : T;
+type _TopLevelDriftCheck = _Exclude<
+  Exclude<keyof ApiClient, "auth">,
+  (typeof TOP_LEVEL_METHODS)[number]
+> extends never
+  ? _Exclude<
+      (typeof TOP_LEVEL_METHODS)[number],
+      Exclude<keyof ApiClient, "auth">
+    > extends never
+    ? true
+    : `TOP_LEVEL_METHODS has a name not in ApiClient`
+  : `ApiClient has a top-level method not in TOP_LEVEL_METHODS`;
+type _AuthDriftCheck = _Exclude<
+  keyof ApiClient["auth"],
+  (typeof AUTH_METHODS)[number]
+> extends never
+  ? _Exclude<(typeof AUTH_METHODS)[number], keyof ApiClient["auth"]> extends never
+    ? true
+    : `AUTH_METHODS has a name not in ApiClient.auth`
+  : `ApiClient.auth has a method not in AUTH_METHODS`;
+const _topLevelDrift: _TopLevelDriftCheck = true;
+const _authDrift: _AuthDriftCheck = true;
+void _topLevelDrift;
+void _authDrift;
+
 /**
  * Build a fully-mocked `ApiClient`. Every method defaults to
  * `vi.fn().mockResolvedValue(undefined)`, matching the real

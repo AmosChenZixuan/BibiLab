@@ -7,6 +7,7 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import { LanguageProvider, useLanguage } from "@/app/LanguageContext";
 import { JobActivityProvider } from "@/components/jobs/JobActivityProvider";
 import { routes } from "@/app/routes";
+import { mockFetch } from "@/test/utils";
 
 /** Wrap RouterProvider in Suspense so lazy routes load properly in tests */
 function withRouter(router: ReturnType<typeof createMemoryRouter>) {
@@ -54,7 +55,7 @@ const state = {
 // ─── Mock fetch helper ─────────────────────────────────────────────────────────
 
 function makeMockFetch() {
-  return vi.spyOn(window, "fetch").mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+  return mockFetch((input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === "string" ? input : input instanceof URL ? input.href : (input as Request).url;
     const method = init?.method ?? "GET";
 

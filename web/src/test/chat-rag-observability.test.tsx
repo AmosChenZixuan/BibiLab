@@ -5,7 +5,7 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import { LanguageProvider } from "@/app/LanguageContext";
 import { JobActivityProvider } from "@/components/jobs/JobActivityProvider";
 import { ChatPanel } from "@/components/lists/ChatPanel";
-import { renderWithProviders, makeSseStream } from "@/test/utils";
+import { makeSseStream, mockFetch, renderWithProviders } from "@/test/utils";
 import type { Source } from "@/lib/types";
 
 const SOURCE_1: Source = {
@@ -42,7 +42,7 @@ afterEach(() => {
 
 describe("RAG observability via SSE tool_result", () => {
   test("tool_result followed by delta renders delta text in document", async () => {
-    vi.spyOn(window, "fetch").mockImplementation(() =>
+    mockFetch(() =>
       Promise.resolve(
         makeSseStream([
           'data: {"type":"tool_result","name":"find_passages","result":{"query":"A","tool_name":"find_passages","candidates_evaluated":30,"sources_with_hits":1,"sources_total":1,"source_coverage":[{"source_id":"s1","title":"Test Video A"}],"context":[{"chunk_id":"c1","citation_index":1,"source_id":"s1","source_title":"Test Video A","timestamp_start":0,"timestamp_end":132,"rerank_score":4.53,"preview":"test preview"}],"reranked":true,"scoped_pool_size":1}}\n\n',
@@ -68,7 +68,7 @@ describe("RAG observability via SSE tool_result", () => {
   });
 
   test("ToolLedger renders above bubble with one row per call", async () => {
-    vi.spyOn(window, "fetch").mockImplementation(() =>
+    mockFetch(() =>
       Promise.resolve(
         makeSseStream([
           'data: {"type":"tool_result","name":"find_passages","result":{"query":"长期情景记忆","tool_name":"find_passages","candidates_evaluated":10,"sources_with_hits":1,"sources_total":16,"source_coverage":[{"source_id":"s1","title":"Test Video A"}],"context":[{"chunk_id":"c1","citation_index":1,"source_id":"s1","source_title":"Test Video A","timestamp_start":0,"timestamp_end":132,"rerank_score":4.53,"preview":"test preview"}],"reranked":true,"scoped_pool_size":10}}\n\n',
@@ -95,7 +95,7 @@ describe("RAG observability via SSE tool_result", () => {
   });
 
   test("two parallel find_passages calls produce two pending rows replaced independently", async () => {
-    vi.spyOn(window, "fetch").mockImplementation(() =>
+    mockFetch(() =>
       Promise.resolve(
         makeSseStream([
           'data: {"type":"tool_call_start","id":"tc1","name":"find_passages","arguments":{"query":"A"}}\n\n',
