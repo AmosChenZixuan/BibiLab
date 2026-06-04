@@ -4,6 +4,8 @@ from unittest.mock import MagicMock, patch
 import httpx
 import pytest
 
+pytestmark = pytest.mark.integration
+
 
 def _video_payload(bvid="BV1abc123", title="Test Video", duration=3600):
     return {

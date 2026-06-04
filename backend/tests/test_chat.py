@@ -1,5 +1,7 @@
 import pytest
 
+pytestmark = pytest.mark.integration
+
 
 @pytest.mark.asyncio
 async def test_conversations_table_exists(tmp_bibilab_home):

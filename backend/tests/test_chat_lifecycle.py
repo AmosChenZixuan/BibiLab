@@ -2,6 +2,8 @@ import asyncio
 
 import pytest
 
+pytestmark = pytest.mark.integration
+
 
 @pytest.mark.asyncio
 async def test_startup_sweep_marks_orphans_failed(tmp_bibilab_home):  # noqa: ARG001

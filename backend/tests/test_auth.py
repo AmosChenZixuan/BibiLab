@@ -4,6 +4,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
+pytestmark = pytest.mark.integration
+
 
 def _make_mock_response(json_data, status_code=200):
     mock_resp = MagicMock()

@@ -4,6 +4,8 @@ from unittest.mock import patch
 import httpx
 import pytest
 
+pytestmark = pytest.mark.integration
+
 
 @pytest.mark.asyncio
 async def test_create_list(client: httpx.AsyncClient):

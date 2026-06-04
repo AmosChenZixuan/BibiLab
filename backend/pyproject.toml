@@ -49,3 +49,6 @@ select = ["E", "F", "I"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+markers = [
+    "integration: tests that drive the ASGI app via the `client` fixture or hit real SQLite/Chroma",
+]
