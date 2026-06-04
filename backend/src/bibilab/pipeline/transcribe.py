@@ -78,7 +78,12 @@ def _load_funasr(cfg: TranscriptionConfig) -> Any:
     vad_path = ensure(VAD_SPEC_ID)
 
     if cfg.model == "large-v3":
-        automodel_kwargs = {"model": "Whisper-large-v3", "hub": "openai"}
+        # Whisper checkpoint is pre-downloaded to ~/.bibilab/models/asr/whisper/
+        # by model_registry.ensure("large-v3"). funasr's openai branch accepts a
+        # local model_path and reads it directly via whisper.load_model(<path>).
+        # See issue #426.
+        model_dir = ensure("large-v3")
+        automodel_kwargs = {"model_path": str(model_dir / "large-v3.pt"), "hub": "openai"}
     else:
         model_path = ensure(cfg.model)
         automodel_kwargs = {"model": str(model_path)}

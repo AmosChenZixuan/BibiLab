@@ -1,7 +1,11 @@
-from unittest.mock import patch
+from __future__ import annotations
+
+from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import pytest
 
+from bibilab.config import TranscriptionConfig
 from bibilab.pipeline.transcribe import WhisperSegment, build_speaker_namespace, format_turns
 
 
@@ -72,3 +76,45 @@ async def test_load_transcript_text_digest_variant_drops_time():
     with patch("bibilab.db.get_transcript_segments", return_value=rows):
         out = await load_transcript_text("sid", include_time=False)
     assert out == "[SPK_0] 重点。"
+
+
+def _stub_ensure(models_root: Path, spec_id: str) -> Path:
+    """Stub for model_registry.ensure(): return the dir matching spec.local_subdir."""
+    subdir = {"large-v3": "asr/whisper"}.get(spec_id, spec_id)
+    return models_root / subdir
+
+
+def test_load_funasr_whisper_passes_local_model_path(tmp_bibilab_home: Path):
+    """When cfg.model == 'large-v3', _load_funasr must pass model_path=... to AutoModel
+    so funasr's openai branch loads the pre-staged checkpoint (no download)."""
+    from bibilab.pipeline import transcribe as transcribe_mod
+
+    # Pre-stage the whisper checkpoint so integrity_ok would pass if asked
+    target = tmp_bibilab_home / "models" / "asr" / "whisper"
+    target.mkdir(parents=True, exist_ok=True)
+    (target / "large-v3.pt").write_bytes(b"stub")
+
+    # Reset module-level pipeline cache so _load_funasr actually builds
+    transcribe_mod._funasr_pipeline = None
+    transcribe_mod._funasr_key = None
+
+    cfg = TranscriptionConfig(model="large-v3", device="cpu")
+    mock_pipeline = MagicMock()
+
+    models_root = tmp_bibilab_home / "models"
+    with (
+        patch("funasr.AutoModel", return_value=mock_pipeline) as mock_auto,
+        patch(
+            "bibilab.pipeline.transcribe.ensure",
+            side_effect=lambda sid: _stub_ensure(models_root, sid),
+        ),
+    ):
+        result = transcribe_mod._load_funasr(cfg)
+
+    assert result is mock_pipeline
+    assert mock_auto.called
+    call_kwargs = mock_auto.call_args.kwargs
+    assert call_kwargs["hub"] == "openai"
+    assert call_kwargs["model_path"] == str(target / "large-v3.pt")
+    # Must NOT pass model=... for whisper (that triggers the funasr download path)
+    assert "model" not in call_kwargs
