@@ -64,18 +64,12 @@ def mock_call_llm():
         mock_call_llm.side_effect = [err, valid, valid]    # sequence (e.g. retries)
     """
     mock = MagicMock(return_value=_DEFAULT_LLM_RESPONSE)
-    patches = [
+    with (
         patch("bibilab.pipeline.digest._call_llm", mock),
         patch("bibilab.pipeline.chat_summary._call_llm", mock),
         patch("bibilab.worker._call_llm", mock),
-    ]
-    for p in patches:
-        p.start()
-    try:
+    ):
         yield mock
-    finally:
-        for p in patches:
-            p.stop()
 
 
 @pytest.fixture(autouse=True)

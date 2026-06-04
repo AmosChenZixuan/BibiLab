@@ -80,13 +80,13 @@ async def test_ingest_rerun_endpoint_removed(client: httpx.AsyncClient):
 
 @pytest.mark.asyncio
 async def test_write_source_stores_relative_paths(tmp_bibilab_home: Path):
-    """After write_source, the source row is persisted correctly."""
+    """After a source write, the source row is persisted correctly."""
     from bibilab.db import bootstrap_db, create_list, get_source
 
     await bootstrap_db()
     await create_list("list-1", "Test", "2026-01-01T00:00:00")
 
-    # Call write_source (the DB write happens here)
+    # Write the source (the DB write happens here)
     await SourceFactory.build(
         "list-1",
         source_id="test-uuid-1234",
@@ -594,7 +594,7 @@ async def test_preview_flat_unknown_list(client: httpx.AsyncClient, mock_resolve
 
 
 async def test_write_source_persists_facet_columns(tmp_bibilab_home: Path):
-    """write_source persists series_name, sequence_number, season_number."""
+    """A source write persists series_name, sequence_number, season_number."""
     import uuid
 
     from bibilab.db import bootstrap_db, create_list, get_source

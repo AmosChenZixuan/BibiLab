@@ -25,7 +25,7 @@ def setup_pipeline_test(tmp_path: Path):
 
 
 @pytest.mark.asyncio
-async def test_extract_audio_cancellation_stops_pipeline(setup_pipeline_test: Path, mock_call_llm):
+async def test_extract_audio_cancellation_stops_pipeline(setup_pipeline_test: Path):
     """
     Verify that when a job is cancelled before the pipeline starts,
     no pipeline stages are executed.
@@ -106,7 +106,7 @@ async def test_extract_audio_cancellation_stops_pipeline(setup_pipeline_test: Pa
 
 
 @pytest.mark.asyncio
-async def test_pipeline_stage_process_cleanup_called_on_cancellation(setup_pipeline_test: Path, mock_call_llm):
+async def test_pipeline_stage_process_cleanup_called_on_cancellation(setup_pipeline_test: Path):
     """
     Verify that cleanup_job_artifacts is called when a job is cancelled.
     """
@@ -195,7 +195,7 @@ async def _seed_source(source_id: str) -> None:
 async def test_cleanup_preserves_live_source_artifacts(setup_pipeline_test: Path):
     """A failed/non-done job must NOT purge artifacts of a source that already persisted.
 
-    Reproduces the persist-then-fail window: write_source committed but the job
+    Reproduces the persist-then-fail window: the source write committed but the job
     raised before reaching DONE. cleanup_job_artifacts must leave the live
     source's cover, embeddings and FTS intact.
     """
