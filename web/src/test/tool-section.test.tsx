@@ -1,14 +1,16 @@
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
 import { LanguageProvider } from "@/app/LanguageContext";
 import { JobActivityProvider } from "@/components/jobs/JobActivityProvider";
 import { ToolSection } from "@/components/lists/lab/ToolSection";
+import { renderWithProviders } from "@/test/utils";
 
 // Mock the api
-vi.mock("@/lib/api", () => ({
-  api: {
+vi.mock("@/lib/api", async () => {
+  const { createMockApi } = await import("@/test/utils");
+  const mockApi = createMockApi({
     createArtifact: vi.fn().mockResolvedValue({
       id: "job-1",
       type: "ingest",
@@ -21,35 +23,22 @@ vi.mock("@/lib/api", () => ({
     }),
     listJobs: vi.fn().mockResolvedValue([]),
     deleteJob: vi.fn().mockResolvedValue(undefined),
-  },
-  setCurrentLang: vi.fn(),
-  createApiClient: () => ({
-    listJobs: vi.fn().mockResolvedValue([]),
-    deleteJob: vi.fn().mockResolvedValue(undefined),
-    createArtifact: vi.fn().mockResolvedValue({
-      id: "job-1",
-      type: "ingest",
-      status: "queued",
-      progress: 0,
-      error: null,
-      created_at: "2026-04-08T00:00:00Z",
-      updated_at: "2026-04-08T00:00:00Z",
-      meta: {},
-    }),
-  }),
-}));
+  });
+  return {
+    api: mockApi,
+    setCurrentLang: vi.fn(),
+    createApiClient: () => mockApi,
+  };
+});
 
 function renderToolSection(props?: Partial<React.ComponentProps<typeof ToolSection>>) {
-  return render(
-    <LanguageProvider>
-      <JobActivityProvider>
-        <ToolSection
-          listId="list-1"
-          selectedSourceIds={["src-1", "src-2"]}
-          {...props}
-        />
-      </JobActivityProvider>
-    </LanguageProvider>,
+  return renderWithProviders(
+    <ToolSection
+      listId="list-1"
+      selectedSourceIds={["src-1", "src-2"]}
+      {...props}
+    />,
+    { providers: [LanguageProvider, JobActivityProvider] },
   );
 }
 

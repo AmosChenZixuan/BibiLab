@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { RouterProvider, createMemoryRouter } from "react-router-dom";
 import { describe, expect, test, vi } from "vitest";
@@ -7,6 +7,7 @@ import { LanguageProvider } from "@/app/LanguageContext";
 import { JobActivityProvider } from "@/components/jobs/JobActivityProvider";
 import { ListGrid } from "@/components/lists/ListGrid";
 import type { BibilabList } from "@/lib/types";
+import { renderWithProviders } from "@/test/utils";
 
 const list: BibilabList = {
   id: "list-1",
@@ -47,12 +48,9 @@ describe("ListGrid", () => {
       { initialEntries: ["/"] },
     );
 
-    render(
-      <JobActivityProvider>
-        <LanguageProvider>
-          <RouterProvider router={router} />
-        </LanguageProvider>
-      </JobActivityProvider>,
+    renderWithProviders(
+      <RouterProvider router={router} />,
+      { providers: [JobActivityProvider, LanguageProvider] },
     );
 
     await userEvent.click(screen.getByRole("button", { name: /new list/i }));

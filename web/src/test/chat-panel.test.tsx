@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
@@ -7,6 +7,7 @@ import { JobActivityProvider } from "@/components/jobs/JobActivityProvider";
 import { ChatPanel } from "@/components/lists/ChatPanel";
 import { TEST_IDS } from "@/lib/test-ids";
 import type { Source } from "@/lib/types";
+import { makeSseStream, mockFetch, renderWithProviders } from "@/test/utils";
 
 const SOURCE_1: Source = {
   id: "src-1",
@@ -39,7 +40,7 @@ const SOURCE_2: Source = {
 };
 
 function makeConversationMock() {
-  return vi.spyOn(window, "fetch").mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+  return mockFetch((input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === "string" ? input : input instanceof URL ? input.href : (input as Request).url;
     const method = init?.method ?? "GET";
     if (url.includes("/conversation") && method === "GET") {
@@ -49,15 +50,7 @@ function makeConversationMock() {
     }
     if (url.includes("/chat") && method === "POST") {
       return Promise.resolve(
-        new Response(
-          new ReadableStream({
-            start(c) {
-              c.enqueue(new TextEncoder().encode('data: {"type":"done"}\n\n'));
-              c.close();
-            },
-          }),
-          { headers: { "Content-Type": "text/event-stream" } },
-        ),
+        makeSseStream(['data: {"type":"done"}\n\n'])
       );
     }
     return Promise.resolve(new Response(JSON.stringify([])));
@@ -69,17 +62,14 @@ function renderChatPanel(
   { skipMock = false }: { skipMock?: boolean } = {},
 ) {
   if (!skipMock) makeConversationMock();
-  return render(
-    <LanguageProvider>
-      <JobActivityProvider>
-        <ChatPanel
-          selectedSourceIds={[]}
-          sources={[]}
-          listId="list-1"
-          {...props}
-        />
-      </JobActivityProvider>
-    </LanguageProvider>,
+  return renderWithProviders(
+    <ChatPanel
+      selectedSourceIds={[]}
+      sources={[]}
+      listId="list-1"
+      {...props}
+    />,
+    { providers: [LanguageProvider, JobActivityProvider] },
   );
 }
 
@@ -91,7 +81,7 @@ afterEach(() => {
 describe("chat panel", () => {
   test("citation chip renders cite-missing for unknown source", async () => {
     // Mock conversation with a citation block for a source not in the list
-    vi.spyOn(window, "fetch").mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+    mockFetch((input: RequestInfo | URL, init?: RequestInit) => {
       const url = typeof input === "string" ? input : input instanceof URL ? input.href : (input as Request).url;
       const method = init?.method ?? "GET";
       if (url.includes("/conversation") && method === "GET") {
@@ -118,15 +108,7 @@ describe("chat panel", () => {
       }
       if (url.includes("/chat") && method === "POST") {
         return Promise.resolve(
-          new Response(
-            new ReadableStream({
-              start(c) {
-                c.enqueue(new TextEncoder().encode('data: {"type":"done"}\n\n'));
-                c.close();
-              },
-            }),
-            { headers: { "Content-Type": "text/event-stream" } },
-          ),
+          makeSseStream(['data: {"type":"done"}\n\n'])
         );
       }
       return Promise.resolve(new Response(JSON.stringify([])));
@@ -146,7 +128,7 @@ describe("chat panel", () => {
   });
 
   test("multi-paragraph response renders separate <p> elements", async () => {
-    vi.spyOn(window, "fetch").mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+    mockFetch((input: RequestInfo | URL, init?: RequestInit) => {
       const url = typeof input === "string" ? input : input instanceof URL ? input.href : (input as Request).url;
       const method = init?.method ?? "GET";
       if (url.includes("/conversation") && method === "GET") {
@@ -176,15 +158,7 @@ describe("chat panel", () => {
       }
       if (url.includes("/chat") && method === "POST") {
         return Promise.resolve(
-          new Response(
-            new ReadableStream({
-              start(c) {
-                c.enqueue(new TextEncoder().encode('data: {"type":"done"}\n\n'));
-                c.close();
-              },
-            }),
-            { headers: { "Content-Type": "text/event-stream" } },
-          ),
+          makeSseStream(['data: {"type":"done"}\n\n'])
         );
       }
       return Promise.resolve(new Response(JSON.stringify([])));
@@ -202,7 +176,7 @@ describe("chat panel", () => {
   });
 
   test("citation between two text fragments renders inline within one <p>", async () => {
-    vi.spyOn(window, "fetch").mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+    mockFetch((input: RequestInfo | URL, init?: RequestInit) => {
       const url = typeof input === "string" ? input : input instanceof URL ? input.href : (input as Request).url;
       const method = init?.method ?? "GET";
       if (url.includes("/conversation") && method === "GET") {
@@ -231,15 +205,7 @@ describe("chat panel", () => {
       }
       if (url.includes("/chat") && method === "POST") {
         return Promise.resolve(
-          new Response(
-            new ReadableStream({
-              start(c) {
-                c.enqueue(new TextEncoder().encode('data: {"type":"done"}\n\n'));
-                c.close();
-              },
-            }),
-            { headers: { "Content-Type": "text/event-stream" } },
-          ),
+          makeSseStream(['data: {"type":"done"}\n\n'])
         );
       }
       return Promise.resolve(new Response(JSON.stringify([])));
@@ -258,7 +224,7 @@ describe("chat panel", () => {
   });
 
   test("citation after a lone paragraph_break attaches to the previous paragraph", async () => {
-    vi.spyOn(window, "fetch").mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+    mockFetch((input: RequestInfo | URL, init?: RequestInit) => {
       const url = typeof input === "string" ? input : input instanceof URL ? input.href : (input as Request).url;
       const method = init?.method ?? "GET";
       if (url.includes("/conversation") && method === "GET") {
@@ -287,15 +253,7 @@ describe("chat panel", () => {
       }
       if (url.includes("/chat") && method === "POST") {
         return Promise.resolve(
-          new Response(
-            new ReadableStream({
-              start(c) {
-                c.enqueue(new TextEncoder().encode('data: {"type":"done"}\n\n'));
-                c.close();
-              },
-            }),
-            { headers: { "Content-Type": "text/event-stream" } },
-          ),
+          makeSseStream(['data: {"type":"done"}\n\n'])
         );
       }
       return Promise.resolve(new Response(JSON.stringify([])));
@@ -321,7 +279,7 @@ describe("chat panel", () => {
   });
 
   test("citation inside bullet list renders chip inline within <li>", async () => {
-    vi.spyOn(window, "fetch").mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+    mockFetch((input: RequestInfo | URL, init?: RequestInit) => {
       const url = typeof input === "string" ? input : input instanceof URL ? input.href : (input as Request).url;
       const method = init?.method ?? "GET";
       if (url.includes("/conversation") && method === "GET") {
@@ -351,15 +309,7 @@ describe("chat panel", () => {
       }
       if (url.includes("/chat") && method === "POST") {
         return Promise.resolve(
-          new Response(
-            new ReadableStream({
-              start(c) {
-                c.enqueue(new TextEncoder().encode('data: {"type":"done"}\n\n'));
-                c.close();
-              },
-            }),
-            { headers: { "Content-Type": "text/event-stream" } },
-          ),
+          makeSseStream(['data: {"type":"done"}\n\n'])
         );
       }
       return Promise.resolve(new Response(JSON.stringify([])));
@@ -381,7 +331,7 @@ describe("chat panel", () => {
   });
 
   test("citation after heading keeps chip inline within the heading block", async () => {
-    vi.spyOn(window, "fetch").mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+    mockFetch((input: RequestInfo | URL, init?: RequestInit) => {
       const url = typeof input === "string" ? input : input instanceof URL ? input.href : (input as Request).url;
       const method = init?.method ?? "GET";
       if (url.includes("/conversation") && method === "GET") {
@@ -410,15 +360,7 @@ describe("chat panel", () => {
       }
       if (url.includes("/chat") && method === "POST") {
         return Promise.resolve(
-          new Response(
-            new ReadableStream({
-              start(c) {
-                c.enqueue(new TextEncoder().encode('data: {"type":"done"}\n\n'));
-                c.close();
-              },
-            }),
-            { headers: { "Content-Type": "text/event-stream" } },
-          ),
+          makeSseStream(['data: {"type":"done"}\n\n'])
         );
       }
       return Promise.resolve(new Response(JSON.stringify([])));
@@ -441,7 +383,7 @@ describe("chat panel", () => {
   });
 
   test("consecutive citations in same paragraph both render as chips", async () => {
-    vi.spyOn(window, "fetch").mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+    mockFetch((input: RequestInfo | URL, init?: RequestInit) => {
       const url = typeof input === "string" ? input : input instanceof URL ? input.href : (input as Request).url;
       const method = init?.method ?? "GET";
       if (url.includes("/conversation") && method === "GET") {
@@ -471,15 +413,7 @@ describe("chat panel", () => {
       }
       if (url.includes("/chat") && method === "POST") {
         return Promise.resolve(
-          new Response(
-            new ReadableStream({
-              start(c) {
-                c.enqueue(new TextEncoder().encode('data: {"type":"done"}\n\n'));
-                c.close();
-              },
-            }),
-            { headers: { "Content-Type": "text/event-stream" } },
-          ),
+          makeSseStream(['data: {"type":"done"}\n\n'])
         );
       }
       return Promise.resolve(new Response(JSON.stringify([])));
@@ -611,7 +545,7 @@ describe("chat panel", () => {
   });
 
   test("known error code displays localized message", async () => {
-    vi.spyOn(window, "fetch").mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+    mockFetch((input: RequestInfo | URL, init?: RequestInit) => {
       const url = typeof input === "string" ? input : input instanceof URL ? input.href : (input as Request).url;
       const method = init?.method ?? "GET";
       if (url.includes("/conversation") && method === "GET") {
@@ -642,15 +576,7 @@ describe("chat panel", () => {
       }
       if (url.includes("/chat") && method === "POST") {
         return Promise.resolve(
-          new Response(
-            new ReadableStream({
-              start(c) {
-                c.enqueue(new TextEncoder().encode('data: {"type":"done"}\n\n'));
-                c.close();
-              },
-            }),
-            { headers: { "Content-Type": "text/event-stream" } },
-          ),
+          makeSseStream(['data: {"type":"done"}\n\n'])
         );
       }
       return Promise.resolve(new Response(JSON.stringify([])));
@@ -667,7 +593,7 @@ describe("chat panel", () => {
   });
 
   test("unknown error string displays as-is without i18n key match", async () => {
-    vi.spyOn(window, "fetch").mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+    mockFetch((input: RequestInfo | URL, init?: RequestInit) => {
       const url = typeof input === "string" ? input : input instanceof URL ? input.href : (input as Request).url;
       const method = init?.method ?? "GET";
       if (url.includes("/conversation") && method === "GET") {
@@ -698,15 +624,7 @@ describe("chat panel", () => {
       }
       if (url.includes("/chat") && method === "POST") {
         return Promise.resolve(
-          new Response(
-            new ReadableStream({
-              start(c) {
-                c.enqueue(new TextEncoder().encode('data: {"type":"done"}\n\n'));
-                c.close();
-              },
-            }),
-            { headers: { "Content-Type": "text/event-stream" } },
-          ),
+          makeSseStream(['data: {"type":"done"}\n\n'])
         );
       }
       return Promise.resolve(new Response(JSON.stringify([])));

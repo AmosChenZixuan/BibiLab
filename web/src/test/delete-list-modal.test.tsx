@@ -1,12 +1,19 @@
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
 import { LanguageProvider } from "@/app/LanguageContext";
 import { DeleteListModal } from "@/components/lists/DeleteListModal";
 import type { BibilabList } from "@/lib/types";
+import { renderWithProviders } from "@/test/utils";
 
-vi.mock("@/lib/api", () => ({ api: {}, setCurrentLang: vi.fn() }));
+vi.mock("@/lib/api", async () => {
+  const { createMockApi } = await import("@/test/utils");
+  return {
+    api: createMockApi(),
+    setCurrentLang: vi.fn(),
+  };
+});
 
 const list: BibilabList = {
   id: "list-1",
@@ -19,16 +26,15 @@ const list: BibilabList = {
 };
 
 function renderModal(props?: Partial<React.ComponentProps<typeof DeleteListModal>>) {
-  return render(
-    <LanguageProvider>
-      <DeleteListModal
-        list={list}
-        open={true}
-        onClose={vi.fn()}
-        onConfirm={vi.fn().mockResolvedValue(undefined)}
-        {...props}
-      />
-    </LanguageProvider>,
+  return renderWithProviders(
+    <DeleteListModal
+      list={list}
+      open={true}
+      onClose={vi.fn()}
+      onConfirm={vi.fn().mockResolvedValue(undefined)}
+      {...props}
+    />,
+    { providers: [LanguageProvider] },
   );
 }
 

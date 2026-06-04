@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { RouterProvider, createMemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, test, vi } from "vitest";
@@ -6,26 +6,19 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import { LanguageProvider } from "@/app/LanguageContext";
 import { JobActivityProvider } from "@/components/jobs/JobActivityProvider";
 import { routes } from "@/app/routes";
+import { mockFetch, renderWithProviders } from "@/test/utils";
 
 /** Wrap RouterProvider */
 function withRouter(router: ReturnType<typeof createMemoryRouter>) {
-  return (
-    <JobActivityProvider>
-      <LanguageProvider>
-        <RouterProvider router={router} />
-      </LanguageProvider>
-    </JobActivityProvider>
+  return renderWithProviders(
+    <RouterProvider router={router} />,
+    { providers: [JobActivityProvider, LanguageProvider] },
   );
-}
-
-function installFetchMock(handler: (input: RequestInfo | URL, init?: RequestInit) => Response | Promise<Response>) {
-  vi.stubGlobal("fetch", vi.fn(handler));
 }
 
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
-  vi.unstubAllGlobals();
 });
 
 describe("home page", () => {
@@ -42,7 +35,7 @@ describe("home page", () => {
       },
     ];
 
-    installFetchMock(async (input, init) => {
+    mockFetch(async (input, init) => {
       const url = String(input);
       const method = init?.method ?? "GET";
 
@@ -82,7 +75,7 @@ describe("home page", () => {
 
     const router = createMemoryRouter(routes, { initialEntries: ["/"] });
 
-    render(withRouter(router));
+    withRouter(router);
 
     expect(screen.getByText(/loading lists/i)).toBeInTheDocument();
     const settingsLink = await screen.findByTitle("Healthy");
@@ -109,7 +102,7 @@ describe("home page", () => {
     let currentThumbnailSourceId: string | null = null;
     let currentThumbnailUrl: string | null = null;
 
-    installFetchMock(async (input, init) => {
+    mockFetch(async (input, init) => {
       const url = String(input);
       const method = init?.method ?? "GET";
 
@@ -193,7 +186,7 @@ describe("home page", () => {
     });
 
     const router = createMemoryRouter(routes, { initialEntries: ["/"] });
-    render(withRouter(router));
+    withRouter(router);
 
     await screen.findByRole("heading", { name: "Systems" });
 
@@ -225,7 +218,7 @@ describe("home page", () => {
   });
 
   test("supports navigation across home, list workspace, and settings routes", async () => {
-    installFetchMock(async (input, init) => {
+    mockFetch(async (input, init) => {
       const url = String(input);
       const method = init?.method ?? "GET";
 
@@ -290,7 +283,7 @@ describe("home page", () => {
     });
 
     const router = createMemoryRouter(routes, { initialEntries: ["/"] });
-    render(withRouter(router));
+    withRouter(router);
 
     expect(await screen.findByRole("heading", { name: "Systems" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /job spirit/i })).not.toBeInTheDocument();
@@ -305,7 +298,7 @@ describe("home page", () => {
   });
 
   test("shows list loading errors inline", async () => {
-    installFetchMock(async (input, init) => {
+    mockFetch(async (input, init) => {
       const url = String(input);
       const method = init?.method ?? "GET";
 
@@ -330,7 +323,7 @@ describe("home page", () => {
     });
 
     const router = createMemoryRouter(routes, { initialEntries: ["/"] });
-    render(withRouter(router));
+    withRouter(router);
 
     expect(await screen.findByText("Lists unavailable")).toBeInTheDocument();
   });

@@ -1,17 +1,22 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
 import { JobActivityProvider, useJobActivity } from "@/components/jobs/JobActivityProvider";
 import type { ArtifactJob, Job } from "@/lib/types";
+import { renderWithProviders } from "@/test/utils";
 
-vi.mock("@/lib/api", () => {
-  const mockApi = {
-    deleteJob: vi.fn(),
-    listJobs: vi.fn(),
-  };
+vi.mock("@/lib/api", async () => {
+  const { createMockApi } = await import("@/test/utils");
   return {
-    createApiClient: () => mockApi,
-    api: mockApi,
+    createApiClient: () =>
+      createMockApi({
+        deleteJob: vi.fn(),
+        listJobs: vi.fn(),
+      }),
+    api: createMockApi({
+      deleteJob: vi.fn(),
+      listJobs: vi.fn(),
+    }),
     setCurrentLang: vi.fn(),
   };
 });
@@ -19,11 +24,9 @@ vi.mock("@/lib/api", () => {
 import { api } from "@/lib/api";
 
 function renderProvider() {
-  return render(
-    <JobActivityProvider>
-      <Probe />
-    </JobActivityProvider>,
-  );
+  return renderWithProviders(<Probe />, {
+    providers: [JobActivityProvider],
+  });
 }
 
 function Probe() {

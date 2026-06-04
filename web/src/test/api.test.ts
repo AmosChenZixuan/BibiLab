@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 
 import { api, ApiError, toErrorMessageWithT } from "@/lib/api";
+import { mockFetch } from "@/test/utils";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -8,12 +9,11 @@ afterEach(() => {
 
 describe("api.getArtifactContent", () => {
   test("fetches artifact content from GET /artifacts/{id}/content", async () => {
-    const fetchMock = vi.fn(async () =>
+    const fetchMock = mockFetch(async () =>
       new Response("# Artifact Content\n\nHere is the content.", {
         headers: { "Content-Type": "text/markdown" },
       }),
     );
-    vi.stubGlobal("fetch", fetchMock);
 
     await api.getArtifactContent("artifact-1");
 
@@ -26,7 +26,7 @@ describe("api.getArtifactContent", () => {
 
 describe("api.updateArtifact", () => {
   test("sends PATCH to /artifacts/{id} with name patch", async () => {
-    const fetchMock = vi.fn(async () =>
+    const fetchMock = mockFetch(async () =>
       Response.json({
         id: "artifact-1",
         name: "New Name",
@@ -37,7 +37,6 @@ describe("api.updateArtifact", () => {
         created_at: "2026-04-08T12:00:00Z",
       }),
     );
-    vi.stubGlobal("fetch", fetchMock);
 
     await api.updateArtifact("artifact-1", { name: "New Name" });
 
@@ -53,8 +52,7 @@ describe("api.updateArtifact", () => {
 
 describe("api.deleteArtifact", () => {
   test("sends DELETE to /artifacts/{id}", async () => {
-    const fetchMock = vi.fn(async () => new Response(null, { status: 204 }));
-    vi.stubGlobal("fetch", fetchMock);
+    const fetchMock = mockFetch(async () => new Response(null, { status: 204 }));
 
     await api.deleteArtifact("artifact-1");
 
@@ -67,7 +65,7 @@ describe("api.deleteArtifact", () => {
 
 describe("api.updateList", () => {
   test("sends partial list updates including thumbnail_source_id", async () => {
-    const fetchMock = vi.fn(async () =>
+    const fetchMock = mockFetch(async () =>
       Response.json({
         id: "list-1",
         name: "Systems",
@@ -78,7 +76,6 @@ describe("api.updateList", () => {
         updated_at: "2026-03-31T20:00:00Z",
       }),
     );
-    vi.stubGlobal("fetch", fetchMock);
 
     await api.updateList("list-1", { thumbnail_source_id: "source-1" });
 
@@ -129,7 +126,7 @@ describe("toErrorMessageWithT", () => {
 
 describe("api.getConfig", () => {
   test("getConfig returns username and avatar_url for bilibili account", async () => {
-    const fetchMock = vi.fn(async () =>
+    const fetchMock = mockFetch(async () =>
       Response.json({
         accounts: {
           bilibili: {
@@ -145,7 +142,6 @@ describe("api.getConfig", () => {
         backend: { port: 8765, max_concurrent_jobs: 1 },
       }),
     );
-    vi.stubGlobal("fetch", fetchMock);
 
     const config = await api.getConfig();
     expect(config?.accounts.bilibili.username).toBe("test_user");

@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
@@ -6,6 +6,7 @@ import { LanguageProvider } from "@/app/LanguageContext";
 import { JobActivityProvider } from "@/components/jobs/JobActivityProvider";
 import { LabPanel } from "@/components/lists/LabPanel";
 import { api } from "@/lib/api";
+import { renderWithProviders } from "@/test/utils";
 
 const ARTIFACT_1 = {
   id: "artifact-1",
@@ -17,43 +18,43 @@ const ARTIFACT_1 = {
   created_at: "2026-04-08T12:00:00Z",
 };
 
-vi.mock("@/lib/api", () => ({
-  api: {
-    getHealth: vi.fn().mockResolvedValue({}),
-    listJobs: vi.fn().mockResolvedValue([]),
-    listLists: vi.fn().mockResolvedValue([]),
-    listSources: vi.fn().mockResolvedValue([]),
-    ingestUrl: vi.fn().mockResolvedValue({ queued: [], skipped: [] }),
-    deleteSource: vi.fn().mockResolvedValue(undefined),
-    updateList: vi.fn().mockResolvedValue(undefined),
-    getSource: vi.fn().mockResolvedValue(undefined),
-    rerunDigest: vi.fn(),
-    deleteJob: vi.fn(),
-    createList: vi.fn(),
-    putConfig: vi.fn(),
-    listModels: vi.fn(),
-    listArtifacts: vi.fn().mockResolvedValue([]),
-    getArtifactContent: vi.fn().mockResolvedValue({ content: "# Study Guide\n\nContent here" }),
-  },
-  setCurrentLang: vi.fn(),
-}));
+vi.mock("@/lib/api", async () => {
+  const { createMockApi } = await import("@/test/utils");
+  return {
+    api: createMockApi({
+      getHealth: vi.fn().mockResolvedValue({}),
+      listJobs: vi.fn().mockResolvedValue([]),
+      listLists: vi.fn().mockResolvedValue([]),
+      listSources: vi.fn().mockResolvedValue([]),
+      ingestUrl: vi.fn().mockResolvedValue({ queued: [], skipped: [] }),
+      deleteSource: vi.fn().mockResolvedValue(undefined),
+      updateList: vi.fn().mockResolvedValue(undefined),
+      getSource: vi.fn().mockResolvedValue(undefined),
+      rerunDigest: vi.fn(),
+      deleteJob: vi.fn(),
+      createList: vi.fn(),
+      putConfig: vi.fn(),
+      listModels: vi.fn(),
+      listArtifacts: vi.fn().mockResolvedValue([]),
+      getArtifactContent: vi.fn().mockResolvedValue({ content: "# Study Guide\n\nContent here" }),
+    }),
+    setCurrentLang: vi.fn(),
+  };
+});
 
 function renderLabPanel(props?: Partial<React.ComponentProps<typeof LabPanel>>) {
-  return render(
-    <JobActivityProvider>
-      <LanguageProvider>
-        <LabPanel
-          listId="list-1"
-          labCollapsed={false}
-          labW={300}
-          selectedSourceIds={[]}
-          artifacts={[]}
-          onArtifactsChange={vi.fn()}
-          onToggleCollapse={vi.fn()}
-          {...props}
-        />
-      </LanguageProvider>
-    </JobActivityProvider>,
+  return renderWithProviders(
+    <LabPanel
+      listId="list-1"
+      labCollapsed={false}
+      labW={300}
+      selectedSourceIds={[]}
+      artifacts={[]}
+      onArtifactsChange={vi.fn()}
+      onToggleCollapse={vi.fn()}
+      {...props}
+    />,
+    { providers: [JobActivityProvider, LanguageProvider] },
   );
 }
 

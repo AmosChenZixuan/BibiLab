@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 
 import { api } from "@/lib/api";
+import { mockFetch } from "@/test/utils";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -8,7 +9,7 @@ afterEach(() => {
 
 describe("api.listArtifacts", () => {
   test("calls GET /api/lists/{listId}/artifacts", async () => {
-    const fetchMock = vi.fn(async () =>
+    const fetchMock = mockFetch(async () =>
       Response.json([
         {
           id: "artifact-1",
@@ -21,7 +22,6 @@ describe("api.listArtifacts", () => {
         },
       ]),
     );
-    vi.stubGlobal("fetch", fetchMock);
 
     await api.listArtifacts("list-1");
 
@@ -32,7 +32,7 @@ describe("api.listArtifacts", () => {
   });
 
   test("returns array of artifacts", async () => {
-    const fetchMock = vi.fn(async () =>
+    const fetchMock = mockFetch(async () =>
       Response.json([
         {
           id: "artifact-1",
@@ -54,7 +54,6 @@ describe("api.listArtifacts", () => {
         },
       ]),
     );
-    vi.stubGlobal("fetch", fetchMock);
 
     const result = await api.listArtifacts("list-1");
 

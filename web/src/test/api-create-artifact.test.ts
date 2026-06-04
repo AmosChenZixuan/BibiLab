@@ -1,13 +1,10 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { createApiClient, api, setCurrentLang } from "@/lib/api";
-
-// Mock fetch globally
-const mockFetch = vi.fn();
-global.fetch = mockFetch;
+import { createApiClient, setCurrentLang } from "@/lib/api";
+import { mockFetch } from "@/test/utils";
 
 describe("ListsClient.createArtifact", () => {
   afterEach(() => {
-    vi.clearAllMocks();
+    vi.restoreAllMocks();
   });
 
   test("createArtifact is a function on ListsClient", () => {
@@ -16,20 +13,21 @@ describe("ListsClient.createArtifact", () => {
   });
 
   test("createArtifact calls POST /api/lists/{listId}/artifacts with correct body", async () => {
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      status: 201,
-      json: async () => ({
-        id: "job-123",
-        type: "ingest",
-        status: "queued",
-        progress: 0,
-        error: null,
-        created_at: "2026-04-08T00:00:00Z",
-        updated_at: "2026-04-08T00:00:00Z",
-        meta: { list_id: "list-1" },
-      }),
-    });
+    const fetchMock = mockFetch(async () =>
+      Response.json(
+        {
+          id: "job-123",
+          type: "ingest",
+          status: "queued",
+          progress: 0,
+          error: null,
+          created_at: "2026-04-08T00:00:00Z",
+          updated_at: "2026-04-08T00:00:00Z",
+          meta: { list_id: "list-1" },
+        },
+        { status: 201 },
+      ),
+    );
 
     const client = createApiClient("http://localhost:8765/api");
     const result = await client.createArtifact("list-1", {
@@ -38,7 +36,7 @@ describe("ListsClient.createArtifact", () => {
       source_ids: ["src-1", "src-2"],
     });
 
-    expect(mockFetch).toHaveBeenCalledWith(
+    expect(fetchMock).toHaveBeenCalledWith(
       "http://localhost:8765/api/lists/list-1/artifacts",
       expect.objectContaining({
         method: "POST",
@@ -54,20 +52,21 @@ describe("ListsClient.createArtifact", () => {
   });
 
   test("createArtifact returns Promise<Job>", async () => {
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      status: 201,
-      json: async () => ({
-        id: "job-456",
-        type: "ingest",
-        status: "queued",
-        progress: 0,
-        error: null,
-        created_at: "2026-04-08T00:00:00Z",
-        updated_at: "2026-04-08T00:00:00Z",
-        meta: { list_id: "list-1" },
-      }),
-    });
+    const fetchMock = mockFetch(async () =>
+      Response.json(
+        {
+          id: "job-456",
+          type: "ingest",
+          status: "queued",
+          progress: 0,
+          error: null,
+          created_at: "2026-04-08T00:00:00Z",
+          updated_at: "2026-04-08T00:00:00Z",
+          meta: { list_id: "list-1" },
+        },
+        { status: 201 },
+      ),
+    );
 
     const client = createApiClient("http://localhost:8765/api");
     const result = await client.createArtifact("list-1", {
@@ -81,20 +80,21 @@ describe("ListsClient.createArtifact", () => {
   });
 
   test("setCurrentLang('zh') updates X-UI-Lang header to zh", async () => {
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
-      status: 201,
-      json: async () => ({
-        id: "job-789",
-        type: "artifact",
-        status: "queued",
-        progress: 0,
-        error: null,
-        created_at: "2026-04-08T00:00:00Z",
-        updated_at: "2026-04-08T00:00:00Z",
-        meta: {},
-      }),
-    });
+    const fetchMock = mockFetch(async () =>
+      Response.json(
+        {
+          id: "job-789",
+          type: "artifact",
+          status: "queued",
+          progress: 0,
+          error: null,
+          created_at: "2026-04-08T00:00:00Z",
+          updated_at: "2026-04-08T00:00:00Z",
+          meta: {},
+        },
+        { status: 201 },
+      ),
+    );
 
     setCurrentLang("zh");
     const client = createApiClient("http://localhost:8765/api");
@@ -104,7 +104,7 @@ describe("ListsClient.createArtifact", () => {
       source_ids: ["src-1"],
     });
 
-    expect(mockFetch).toHaveBeenCalledWith(
+    expect(fetchMock).toHaveBeenCalledWith(
       "http://localhost:8765/api/lists/list-1/artifacts",
       expect.objectContaining({
         headers: expect.objectContaining({ "X-UI-Lang": "zh" }),

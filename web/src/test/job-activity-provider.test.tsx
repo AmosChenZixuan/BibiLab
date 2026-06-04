@@ -1,10 +1,11 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
 import { JobActivityProvider, useJobActivity } from "@/components/jobs/JobActivityProvider";
 import { LanguageProvider } from "@/app/LanguageContext";
 import type { IngestJob, Job } from "@/lib/types";
+import { renderWithProviders } from "@/test/utils";
 
 vi.mock("../lib/api", () => {
   const mockApi = {
@@ -30,13 +31,9 @@ vi.mock("../lib/api", () => {
 import { api } from "@/lib/api";
 
 function renderProvider() {
-  return render(
-    <LanguageProvider>
-      <JobActivityProvider>
-        <Probe />
-      </JobActivityProvider>
-    </LanguageProvider>,
-  );
+  return renderWithProviders(<Probe />, {
+    providers: [LanguageProvider, JobActivityProvider],
+  });
 }
 
 function Probe() {

@@ -1,9 +1,10 @@
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
 import IdentityPanel from "@/components/layout/IdentityPanel";
 import { LanguageProvider } from "@/app/LanguageContext";
+import { renderWithProviders } from "@/test/utils";
 
 afterEach(() => {
   cleanup();
@@ -20,15 +21,14 @@ describe("identity panel", () => {
   };
 
   test("renders list-row layout with bilibili row showing username and avatar when signed in", () => {
-    render(
-      <LanguageProvider>
-        <IdentityPanel
-          {...defaultProps}
-          bilibiliCookie="SESSDATA=abc"
-          bilibiliUsername="test_user"
-          bilibiliAvatarUrl="https://i0.hdslb.com/bfs/face/abc.jpg"
-        />
-      </LanguageProvider>,
+    renderWithProviders(
+      <IdentityPanel
+        {...defaultProps}
+        bilibiliCookie="SESSDATA=abc"
+        bilibiliUsername="test_user"
+        bilibiliAvatarUrl="https://i0.hdslb.com/bfs/face/abc.jpg"
+      />,
+      { providers: [LanguageProvider] },
     );
 
     expect(screen.getByText("Bilibili")).toBeInTheDocument();
@@ -42,15 +42,14 @@ describe("identity panel", () => {
   });
 
   test("shows signed-out state when cookie is absent", () => {
-    render(
-      <LanguageProvider>
-        <IdentityPanel
-          {...defaultProps}
-          bilibiliCookie=""
-          bilibiliUsername=""
-          bilibiliAvatarUrl=""
-        />
-      </LanguageProvider>,
+    renderWithProviders(
+      <IdentityPanel
+        {...defaultProps}
+        bilibiliCookie=""
+        bilibiliUsername=""
+        bilibiliAvatarUrl=""
+      />,
+      { providers: [LanguageProvider] },
     );
 
     expect(screen.getByText("Not signed in")).toBeInTheDocument();
@@ -59,10 +58,9 @@ describe("identity panel", () => {
   });
 
   test("list-row layout row exists for platform", () => {
-    render(
-      <LanguageProvider>
-        <IdentityPanel {...defaultProps} bilibiliCookie="cookie" bilibiliUsername="u" bilibiliAvatarUrl="" />
-      </LanguageProvider>,
+    renderWithProviders(
+      <IdentityPanel {...defaultProps} bilibiliCookie="cookie" bilibiliUsername="u" bilibiliAvatarUrl="" />,
+      { providers: [LanguageProvider] },
     );
 
     const row = screen.getByTestId("bilibili-row");
@@ -70,10 +68,9 @@ describe("identity panel", () => {
   });
 
   test("calls onLogin when sign in button is clicked", async () => {
-    render(
-      <LanguageProvider>
-        <IdentityPanel {...defaultProps} bilibiliCookie="" />
-      </LanguageProvider>,
+    renderWithProviders(
+      <IdentityPanel {...defaultProps} bilibiliCookie="" />,
+      { providers: [LanguageProvider] },
     );
 
     await userEvent.click(screen.getByLabelText("Sign in"));
@@ -81,10 +78,9 @@ describe("identity panel", () => {
   });
 
   test("calls onLogout when sign out button is clicked", async () => {
-    render(
-      <LanguageProvider>
-        <IdentityPanel {...defaultProps} bilibiliCookie="some-cookie-value" />
-      </LanguageProvider>,
+    renderWithProviders(
+      <IdentityPanel {...defaultProps} bilibiliCookie="some-cookie-value" />,
+      { providers: [LanguageProvider] },
     );
 
     await userEvent.click(screen.getByLabelText("Sign out"));
@@ -92,25 +88,23 @@ describe("identity panel", () => {
   });
 
   test("shows navbar.signedIn text when cookie is present but username is empty", () => {
-    render(
-      <LanguageProvider>
-        <IdentityPanel
-          {...defaultProps}
-          bilibiliCookie="SESSDATA=abc"
-          bilibiliUsername=""
-          bilibiliAvatarUrl=""
-        />
-      </LanguageProvider>,
+    renderWithProviders(
+      <IdentityPanel
+        {...defaultProps}
+        bilibiliCookie="SESSDATA=abc"
+        bilibiliUsername=""
+        bilibiliAvatarUrl=""
+      />,
+      { providers: [LanguageProvider] },
     );
 
     expect(screen.getByText("Signed in")).toBeInTheDocument();
   });
 
   test("renders as menu with proper semantics", () => {
-    render(
-      <LanguageProvider>
-        <IdentityPanel {...defaultProps} />
-      </LanguageProvider>,
+    renderWithProviders(
+      <IdentityPanel {...defaultProps} />,
+      { providers: [LanguageProvider] },
     );
 
     expect(screen.getAllByRole("menu")).toHaveLength(1);

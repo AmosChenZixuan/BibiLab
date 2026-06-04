@@ -1,9 +1,10 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { LanguageProvider } from "@/app/LanguageContext";
 import { BilibiliQrModal } from "@/components/auth/BilibiliQrModal";
+import { renderWithProviders } from "@/test/utils";
 
 const { mockGenerateBilibiliQr, mockPollBilibiliQr, mockDeleteBilibiliAuth } = vi.hoisted(() => ({
   mockGenerateBilibiliQr: vi.fn(),
@@ -13,29 +14,28 @@ const { mockGenerateBilibiliQr, mockPollBilibiliQr, mockDeleteBilibiliAuth } = v
 
 vi.mock("@/lib/api", async () => {
   const actual = await vi.importActual<typeof import("@/lib/api")>("@/lib/api");
+  const { createMockApi } = await import("@/test/utils");
   return {
     ...actual,
-    api: {
-      ...actual.api,
+    api: createMockApi({
       auth: {
         generateBilibiliQr: mockGenerateBilibiliQr,
         pollBilibiliQr: mockPollBilibiliQr,
         deleteBilibiliAuth: mockDeleteBilibiliAuth,
       },
-    },
+    }),
   };
 });
 
 function renderModal(props?: Partial<React.ComponentProps<typeof BilibiliQrModal>>) {
-  return render(
-    <LanguageProvider>
-      <BilibiliQrModal
-        open={true}
-        onClose={vi.fn()}
-        onSuccess={vi.fn()}
-        {...props}
-      />
-    </LanguageProvider>,
+  return renderWithProviders(
+    <BilibiliQrModal
+      open={true}
+      onClose={vi.fn()}
+      onSuccess={vi.fn()}
+      {...props}
+    />,
+    { providers: [LanguageProvider] },
   );
 }
 

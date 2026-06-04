@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, screen } from "@testing-library/react";
 import { MemoryRouter, useLocation } from "react-router-dom";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
@@ -6,6 +6,7 @@ import { LanguageProvider } from "@/app/LanguageContext";
 import { JobActivityProvider } from "@/components/jobs/JobActivityProvider";
 import { api } from "@/lib/api";
 import { SettingsPage } from "@/pages/SettingsPage";
+import { renderWithProviders } from "@/test/utils";
 
 const MOCK_ERROR_MESSAGE = "Request failed";
 
@@ -51,14 +52,11 @@ afterEach(() => {
 });
 
 function renderPage() {
-  return render(
-    <JobActivityProvider>
-      <LanguageProvider>
-        <MemoryRouter>
-          <SettingsPage />
-        </MemoryRouter>
-      </LanguageProvider>
-    </JobActivityProvider>,
+  return renderWithProviders(
+    <MemoryRouter>
+      <SettingsPage />
+    </MemoryRouter>,
+    { providers: [JobActivityProvider, LanguageProvider] },
   );
 }
 
@@ -68,15 +66,12 @@ function renderPageAt(entry: string) {
     return <div data-testid="location">{`${location.pathname}${location.search}`}</div>;
   }
 
-  return render(
-    <JobActivityProvider>
-      <LanguageProvider>
-        <MemoryRouter initialEntries={[entry]}>
-          <SettingsPage />
-          <LocationProbe />
-        </MemoryRouter>
-      </LanguageProvider>
-    </JobActivityProvider>,
+  return renderWithProviders(
+    <MemoryRouter initialEntries={[entry]}>
+      <SettingsPage />
+      <LocationProbe />
+    </MemoryRouter>,
+    { providers: [JobActivityProvider, LanguageProvider] },
   );
 }
 
