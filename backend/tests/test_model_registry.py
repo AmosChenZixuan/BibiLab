@@ -109,3 +109,14 @@ def test_whisper_spec_uses_models_dir_subpath():
     assert spec.local_subdir == "asr/whisper"
     assert spec.backend == "whisper_warp"
     assert spec.integrity_files == ["large-v3.pt"]
+
+
+def test_target_dir_routes_whisper_through_models_dir(tmp_bibilab_home: Path):
+    """_target_dir must use the spec's local_subdir for whisper too (no special-case)."""
+    from bibilab.config import bibilab_home
+
+    spec = get_spec("large-v3")
+    expected = bibilab_home() / "models" / "asr" / "whisper"
+    from bibilab.model_registry import _target_dir
+
+    assert _target_dir(spec) == expected

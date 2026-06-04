@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
-from bibilab.config import BibilabConfig, bibilab_whisper_cache_dir, models_dir
+from bibilab.config import BibilabConfig, bibilab_whisper_cache_dir, models_dir  # noqa: F401
 
 logger = logging.getLogger(__name__)
 
@@ -151,11 +151,6 @@ def get_spec(spec_id: str) -> ModelSpec:
 
 
 def _target_dir(spec: ModelSpec) -> Path:
-    if spec.backend == "whisper_warp":
-        # Production: ~/.cache/whisper (openai-whisper hardcoded path).
-        # Under BIBILAB_HOME (tests): bibilab_home()/.cache/whisper — doesn't
-        # pollute the real cache when test code reads/writes this path.
-        return bibilab_whisper_cache_dir()
     return models_dir(spec.local_subdir)
 
 
