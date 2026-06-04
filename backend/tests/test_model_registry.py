@@ -101,3 +101,11 @@ def test_ctpunc_is_required_unconditionally():
     ids = [s.id for s in required_models(cfg)]
     assert "ct-punc" in ids
     assert PUNC_SPEC_ID == "ct-punc"
+
+
+def test_whisper_spec_uses_models_dir_subpath():
+    """After #426: whisper spec must declare its target under models_dir/..."""
+    spec = get_spec("large-v3")
+    assert spec.local_subdir == "asr/whisper"
+    assert spec.backend == "whisper_warp"
+    assert spec.integrity_files == ["large-v3.pt"]

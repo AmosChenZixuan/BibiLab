@@ -29,7 +29,7 @@ class ModelSpec:
     backend: Backend
     size_mb: int
     integrity_files: list[str]  # rel paths within target dir that must exist post-download
-    local_subdir: str  # relative to models_dir(), except whisper_warp uses ~/.cache/whisper
+    local_subdir: str  # relative to models_dir()
     modelscope_id: str | None = None
     http_files: list[tuple[str, str]] | None = None  # [(url, rel_path), ...]
 
@@ -48,7 +48,7 @@ _SPECS: dict[str, ModelSpec] = {
         backend="whisper_warp",
         size_mb=3000,
         integrity_files=["large-v3.pt"],
-        local_subdir="",  # special-cased in _target_dir
+        local_subdir="asr/whisper",
     ),
     "sensevoice-small": ModelSpec(
         id="sensevoice-small",
