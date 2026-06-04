@@ -1,18 +1,17 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { RouterProvider, createMemoryRouter } from "react-router-dom";
-import { describe, expect, test, vi } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 
 import { LanguageProvider } from "@/app/LanguageContext";
 import { JobActivityProvider } from "@/components/jobs/JobActivityProvider";
 import { routes } from "@/app/routes";
+import { mockFetch } from "@/test/utils";
 import type { Job } from "@/lib/types";
 
-function installFetchMock(
-  handler: (input: RequestInfo | URL, init?: RequestInit) => Response | Promise<Response>,
-) {
-  vi.stubGlobal("fetch", vi.fn(handler));
-}
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 describe("job spirit", () => {
   test("shows rehydrated ingest work and can be dismissed after completion", async () => {
@@ -51,7 +50,7 @@ describe("job spirit", () => {
       },
     ];
 
-    installFetchMock(async (input, init) => {
+    mockFetch(async (input, init) => {
       const url = String(input);
       const method = init?.method ?? "GET";
 

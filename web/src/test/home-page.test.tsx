@@ -6,6 +6,7 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import { LanguageProvider } from "@/app/LanguageContext";
 import { JobActivityProvider } from "@/components/jobs/JobActivityProvider";
 import { routes } from "@/app/routes";
+import { mockFetch } from "@/test/utils";
 
 /** Wrap RouterProvider */
 function withRouter(router: ReturnType<typeof createMemoryRouter>) {
@@ -18,14 +19,9 @@ function withRouter(router: ReturnType<typeof createMemoryRouter>) {
   );
 }
 
-function installFetchMock(handler: (input: RequestInfo | URL, init?: RequestInit) => Response | Promise<Response>) {
-  vi.stubGlobal("fetch", vi.fn(handler));
-}
-
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
-  vi.unstubAllGlobals();
 });
 
 describe("home page", () => {
@@ -42,7 +38,7 @@ describe("home page", () => {
       },
     ];
 
-    installFetchMock(async (input, init) => {
+    mockFetch(async (input, init) => {
       const url = String(input);
       const method = init?.method ?? "GET";
 
@@ -109,7 +105,7 @@ describe("home page", () => {
     let currentThumbnailSourceId: string | null = null;
     let currentThumbnailUrl: string | null = null;
 
-    installFetchMock(async (input, init) => {
+    mockFetch(async (input, init) => {
       const url = String(input);
       const method = init?.method ?? "GET";
 
@@ -225,7 +221,7 @@ describe("home page", () => {
   });
 
   test("supports navigation across home, list workspace, and settings routes", async () => {
-    installFetchMock(async (input, init) => {
+    mockFetch(async (input, init) => {
       const url = String(input);
       const method = init?.method ?? "GET";
 
@@ -305,7 +301,7 @@ describe("home page", () => {
   });
 
   test("shows list loading errors inline", async () => {
-    installFetchMock(async (input, init) => {
+    mockFetch(async (input, init) => {
       const url = String(input);
       const method = init?.method ?? "GET";
 
