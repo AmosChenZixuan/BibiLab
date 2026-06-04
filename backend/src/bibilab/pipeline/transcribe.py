@@ -79,12 +79,14 @@ def _load_funasr(cfg: TranscriptionConfig) -> Any:
 
     if cfg.model == "large-v3":
         # Whisper checkpoint is pre-downloaded to ~/.bibilab/models/asr/whisper/
-        # by model_registry.ensure(WHISPER_SPEC_ID). funasr's openai branch accepts a
-        # local model_path and reads it directly via whisper.load_model(<path>).
+        # by model_registry.ensure(WHISPER_SPEC_ID). funasr's openai branch takes the
+        # checkpoint as `model`: when that's an existing path it local-loads (deriving
+        # model_path + WhisperWarp internally) instead of fetching to ~/.cache/whisper.
+        # A bare name would download; passing model_path with no model trips its assert.
         # See issue #426.
         model_dir = ensure(WHISPER_SPEC_ID)
         spec = get_spec(WHISPER_SPEC_ID)
-        automodel_kwargs = {"model_path": str(model_dir / spec.integrity_files[0]), "hub": "openai"}
+        automodel_kwargs = {"model": str(model_dir / spec.integrity_files[0]), "hub": "openai"}
     else:
         model_path = ensure(cfg.model)
         automodel_kwargs = {"model": str(model_path)}

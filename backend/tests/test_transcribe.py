@@ -85,9 +85,11 @@ def _stub_ensure(models_root: Path, spec_id: str) -> Path:
     return models_root / get_spec(spec_id).local_subdir
 
 
-def test_load_funasr_whisper_passes_local_model_path(tmp_bibilab_home: Path):
-    """When cfg.model == 'large-v3', _load_funasr must pass model_path=... to AutoModel
-    so funasr's openai branch loads the pre-staged checkpoint (no download)."""
+def test_load_funasr_whisper_passes_local_checkpoint_as_model(tmp_bibilab_home: Path):
+    """When cfg.model == 'large-v3', _load_funasr passes the pre-staged checkpoint
+    path as `model` — funasr's openai branch local-loads an existing path (no
+    download). Pins the wiring; the funasr contract itself is covered by the
+    integration test below."""
     from bibilab.pipeline import transcribe as transcribe_mod
 
     # Reset module-level pipeline cache so _load_funasr actually builds
@@ -114,6 +116,24 @@ def test_load_funasr_whisper_passes_local_model_path(tmp_bibilab_home: Path):
     assert mock_auto.called
     call_kwargs = mock_auto.call_args.kwargs
     assert call_kwargs["hub"] == "openai"
-    assert call_kwargs["model_path"] == str(models_root / "asr" / "whisper" / "large-v3.pt")
-    # Must NOT pass model=... for whisper (that triggers the funasr download path)
-    assert "model" not in call_kwargs
+    assert call_kwargs["model"] == str(models_root / "asr" / "whisper" / "large-v3.pt")
+    # Must NOT pass model_path: funasr's openai branch reads `model` and derives
+    # model_path from it; a stray model_path with no `model` trips its assert.
+    assert "model_path" not in call_kwargs
+
+
+@pytest.mark.integration
+def test_funasr_openai_local_checkpoint_resolves_without_download(tmp_path: Path):
+    """Contract guard for the funasr boundary the unit test mocks away: passing an
+    existing checkpoint as `model` with hub='openai' resolves to a local load
+    (model='WhisperWarp', model_path=<path>) — no ~/.cache/whisper fetch. If this
+    breaks, the production kwarg shape in _load_funasr is wrong. See #426."""
+    from funasr.download.download_model_from_hub import download_model
+
+    ckpt = tmp_path / "large-v3.pt"
+    ckpt.write_bytes(b"")  # only the path is resolved here; contents irrelevant
+
+    resolved = download_model(model=str(ckpt), hub="openai")
+
+    assert resolved["model"] == "WhisperWarp"
+    assert resolved["model_path"] == str(ckpt)
