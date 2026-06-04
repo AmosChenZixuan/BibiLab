@@ -145,3 +145,11 @@ def test_ensure_whisper_calls_load_model_with_download_root(tmp_bibilab_home: Pa
     call = mock.call_args
     assert call.args[0] == "large-v3"
     assert call.kwargs.get("download_root") == str(expected_target)
+
+
+def test_bibilab_whisper_cache_dir_removed():
+    """The seam function is gone — models_dir() routes through BIBILAB_HOME
+    already, so the dedicated whisper cache helper is dead code."""
+    import bibilab.config as cfg_mod
+
+    assert not hasattr(cfg_mod, "bibilab_whisper_cache_dir")
