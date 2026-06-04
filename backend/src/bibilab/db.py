@@ -437,7 +437,13 @@ async def get_source(source_id: str) -> aiosqlite.Row | None:
 
 async def write_transcript_segments(source_id: str, segments: list) -> None:
     """Replace all transcript segments for a source. `segments` is a list of
-    WhisperSegment (start, end, text, speaker). Idempotent (DELETE then INSERT)."""
+    WhisperSegment (start, end, text, speaker). Idempotent (DELETE then INSERT).
+
+    Standalone segment-write primitive. Production writes segments atomically
+    with the source via `write_source_with_segments`; this is the unit-level
+    seam the segments-table tests exercise as their subject (round-trip,
+    cascade-on-delete, FK orphan rejection) — keep it even with zero prod
+    callers, those tests can't express the orphan case via the atomic path."""
     async with get_db() as db:
         await _exec_write_transcript_segments(db, source_id, segments)
         await db.commit()
@@ -781,16 +787,6 @@ async def get_recent_messages(
             )
         rows = await cursor.fetchall()
         return list(reversed(rows))
-
-
-async def update_conversation_summary(conversation_id: str, summary: str) -> None:
-    now = _now()
-    async with get_db() as db:
-        await db.execute(
-            "UPDATE conversations SET summary=?, updated_at=? WHERE id=?",
-            (summary, now, conversation_id),
-        )
-        await db.commit()
 
 
 async def get_message_count(conversation_id: str) -> int:

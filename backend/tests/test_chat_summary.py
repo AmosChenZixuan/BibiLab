@@ -77,8 +77,8 @@ async def test_compression_triggers_above_threshold(tmp_bibilab_home, mock_call_
 async def test_existing_summary_included_in_prompt(tmp_bibilab_home, mock_call_llm):
     from bibilab.db import (
         bootstrap_db,
+        compress_conversation,
         create_list,
-        update_conversation_summary,
     )
     from bibilab.pipeline.chat_summary import COMPRESSION_THRESHOLD, maybe_compress_conversation
 
@@ -86,7 +86,8 @@ async def test_existing_summary_included_in_prompt(tmp_bibilab_home, mock_call_l
     await create_list("list-1", "Test List", "2026-01-01T00:00:00")
     conv_id = await ConversationFactory.build("list-1")
 
-    await update_conversation_summary(conv_id, "User loves Python tutorials.")
+    # Seed an existing summary via the production write path (no messages to delete).
+    await compress_conversation(conv_id, "User loves Python tutorials.", [])
 
     for i in range(COMPRESSION_THRESHOLD + 3):
         await MessageFactory.build(
