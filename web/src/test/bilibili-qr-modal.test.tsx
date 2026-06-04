@@ -14,16 +14,16 @@ const { mockGenerateBilibiliQr, mockPollBilibiliQr, mockDeleteBilibiliAuth } = v
 
 vi.mock("@/lib/api", async () => {
   const actual = await vi.importActual<typeof import("@/lib/api")>("@/lib/api");
+  const { createMockApi } = await import("@/test/utils");
   return {
     ...actual,
-    api: {
-      ...actual.api,
+    api: createMockApi({
       auth: {
         generateBilibiliQr: mockGenerateBilibiliQr,
         pollBilibiliQr: mockPollBilibiliQr,
         deleteBilibiliAuth: mockDeleteBilibiliAuth,
       },
-    },
+    }),
   };
 });
 

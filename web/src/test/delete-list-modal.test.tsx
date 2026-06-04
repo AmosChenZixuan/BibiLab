@@ -7,7 +7,13 @@ import { DeleteListModal } from "@/components/lists/DeleteListModal";
 import type { BibilabList } from "@/lib/types";
 import { renderWithProviders } from "@/test/utils";
 
-vi.mock("@/lib/api", () => ({ api: {}, setCurrentLang: vi.fn() }));
+vi.mock("@/lib/api", async () => {
+  const { createMockApi } = await import("@/test/utils");
+  return {
+    api: createMockApi(),
+    setCurrentLang: vi.fn(),
+  };
+});
 
 const list: BibilabList = {
   id: "list-1",

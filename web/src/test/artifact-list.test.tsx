@@ -7,7 +7,7 @@ import { JobActivityProvider } from "@/components/jobs/JobActivityProvider";
 import { ArtifactList } from "@/components/lists/lab/ArtifactList";
 import { renderWithProviders } from "@/test/utils";
 
-const mockArtifacts = [
+const mockArtifacts = vi.hoisted(() => [
   {
     id: "artifact-1",
     name: "Brief One",
@@ -26,58 +26,18 @@ const mockArtifacts = [
     status: "generating" as const,
     created_at: "2026-04-08T12:01:00Z",
   },
-];
+]);
 
-vi.mock("@/lib/api", () => {
+vi.mock("@/lib/api", async () => {
+  const { createMockApi } = await import("@/test/utils");
+  const mockApi = createMockApi({
+    listArtifacts: vi.fn().mockResolvedValue(mockArtifacts),
+    listJobs: vi.fn().mockResolvedValue([]),
+    deleteJob: vi.fn(),
+  });
   return {
-    api: {
-      listArtifacts: vi.fn().mockResolvedValue([
-        {
-          id: "artifact-1",
-          name: "Brief One",
-          type: "brief",
-          prompt: "Generate a brief",
-          source_ids: ["source-1"],
-          status: "completed",
-          created_at: "2026-04-08T12:00:00Z",
-        },
-        {
-          id: "artifact-2",
-          name: "",
-          type: "study_guide",
-          prompt: "Generate a study guide",
-          source_ids: ["source-1", "source-2"],
-          status: "generating",
-          created_at: "2026-04-08T12:01:00Z",
-        },
-      ]),
-      listJobs: vi.fn().mockResolvedValue([]),
-      deleteJob: vi.fn(),
-    },
-    createApiClient: () => ({
-      listArtifacts: vi.fn().mockResolvedValue([
-        {
-          id: "artifact-1",
-          name: "Brief One",
-          type: "brief",
-          prompt: "Generate a brief",
-          source_ids: ["source-1"],
-          status: "completed",
-          created_at: "2026-04-08T12:00:00Z",
-        },
-        {
-          id: "artifact-2",
-          name: "",
-          type: "study_guide",
-          prompt: "Generate a study guide",
-          source_ids: ["source-1", "source-2"],
-          status: "generating",
-          created_at: "2026-04-08T12:01:00Z",
-        },
-      ]),
-      listJobs: vi.fn().mockResolvedValue([]),
-      deleteJob: vi.fn(),
-    }),
+    api: mockApi,
+    createApiClient: () => mockApi,
     setCurrentLang: vi.fn(),
   };
 });

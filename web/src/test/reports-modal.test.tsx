@@ -8,23 +8,26 @@ import { ReportsModal } from "@/components/lists/lab/ReportsModal";
 import { api } from "@/lib/api";
 import { renderWithProviders } from "@/test/utils";
 
-vi.mock("@/lib/api", () => ({
-  api: {
-    createArtifact: vi.fn().mockResolvedValue({
-      id: "job-artifact-1",
-      type: "ingest",
-      status: "queued",
-      progress: 0,
-      error: null,
-      created_at: "2026-04-08T00:00:00Z",
-      updated_at: "2026-04-08T00:00:00Z",
-      meta: {},
+vi.mock("@/lib/api", async () => {
+  const { createMockApi } = await import("@/test/utils");
+  return {
+    api: createMockApi({
+      createArtifact: vi.fn().mockResolvedValue({
+        id: "job-artifact-1",
+        type: "ingest",
+        status: "queued",
+        progress: 0,
+        error: null,
+        created_at: "2026-04-08T00:00:00Z",
+        updated_at: "2026-04-08T00:00:00Z",
+        meta: {},
+      }),
+      listJobs: vi.fn().mockResolvedValue([]),
+      deleteJob: vi.fn().mockResolvedValue(undefined),
     }),
-    listJobs: vi.fn().mockResolvedValue([]),
-    deleteJob: vi.fn().mockResolvedValue(undefined),
-  },
-  setCurrentLang: vi.fn(),
-}));
+    setCurrentLang: vi.fn(),
+  };
+});
 
 function renderReportsModal(props?: Partial<React.ComponentProps<typeof ReportsModal>>) {
   return renderWithProviders(

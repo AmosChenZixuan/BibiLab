@@ -20,13 +20,14 @@ import type { BibilabConfig, HealthDependency } from "@/lib/types";
 
 // ─── Mock API ────────────────────────────────────────────────────────────────
 
-vi.mock("@/lib/api", () => {
-  const mockApi = {
+vi.mock("@/lib/api", async () => {
+  const { createMockApi } = await import("@/test/utils");
+  const mockApi = createMockApi({
     listModels: vi.fn().mockResolvedValue([
       { id: "base", display_name: "Base", kind: "transcription", status: "present", required_by_config: true, path: "/models/base", size_mb: 1 },
     ]),
     listJobs: vi.fn().mockResolvedValue([]),
-  };
+  });
   return {
     createApiClient: () => mockApi,
     api: mockApi,

@@ -5,14 +5,18 @@ import { JobActivityProvider, useJobActivity } from "@/components/jobs/JobActivi
 import type { ArtifactJob, Job } from "@/lib/types";
 import { renderWithProviders } from "@/test/utils";
 
-vi.mock("@/lib/api", () => {
-  const mockApi = {
-    deleteJob: vi.fn(),
-    listJobs: vi.fn(),
-  };
+vi.mock("@/lib/api", async () => {
+  const { createMockApi } = await import("@/test/utils");
   return {
-    createApiClient: () => mockApi,
-    api: mockApi,
+    createApiClient: () =>
+      createMockApi({
+        deleteJob: vi.fn(),
+        listJobs: vi.fn(),
+      }),
+    api: createMockApi({
+      deleteJob: vi.fn(),
+      listJobs: vi.fn(),
+    }),
     setCurrentLang: vi.fn(),
   };
 });

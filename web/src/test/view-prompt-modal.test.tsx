@@ -6,7 +6,13 @@ import { LanguageProvider } from "@/app/LanguageContext";
 import { ViewPromptModal } from "@/components/lists/lab/ViewPromptModal";
 import { renderWithProviders } from "@/test/utils";
 
-vi.mock("@/lib/api", () => ({ api: {}, setCurrentLang: vi.fn() }));
+vi.mock("@/lib/api", async () => {
+  const { createMockApi } = await import("@/test/utils");
+  return {
+    api: createMockApi(),
+    setCurrentLang: vi.fn(),
+  };
+});
 
 function renderModal(props?: Partial<React.ComponentProps<typeof ViewPromptModal>>) {
   return renderWithProviders(

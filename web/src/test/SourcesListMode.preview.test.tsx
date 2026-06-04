@@ -1,7 +1,13 @@
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { PreviewResponse, PreviewVideo, Source } from "@/lib/types";
+import type {
+  IngestVideoIn,
+  PreviewResponse,
+  PreviewVideo,
+  Source,
+  VideoMetadataMap,
+} from "@/lib/types";
 import { LanguageProvider } from "@/app/LanguageContext";
 import { JobActivityProvider } from "@/components/jobs/JobActivityProvider";
 import { SourcesListMode } from "@/components/lists/sources/SourcesListMode";
@@ -42,26 +48,38 @@ function makeSource(overrides: Partial<Source> = {}): Source {
 
 const state = {
   previewResponse: null as PreviewResponse | null,
-  metadataResponse: null as { videos: Record<string, { title: string; cover_url: string; duration_seconds: number; uploader: string; source_url: string }> } | null,
+  metadataResponse: null as VideoMetadataMap | null,
   ingestResult: { queued: [] as string[], skipped: [] as string[] },
-  ingestCalls: [] as Array<{ listId: string; videos: unknown[] }>,
+  ingestCalls: [] as Array<{ listId: string; videos: IngestVideoIn[] }>,
 };
 
-vi.mock("@/lib/api", () => {
+vi.mock("@/lib/api", async () => {
+  const { createMockApi } = await import("@/test/utils");
   const mockPreviewPlaylist = vi.fn((listId: string, url: string) => {
     return Promise.resolve(state.previewResponse ?? { videos: [] });
   });
   const mockPreviewPlaylistMetadata = vi.fn((videoIds: string[]) => {
-    return Promise.resolve(state.metadataResponse ?? { videos: {} });
+    return Promise.resolve(
+      state.metadataResponse ?? { videos: {}, expanded: {} },
+    );
   });
-  const mockIngestUrl = vi.fn((listId: string, videos: unknown[]) => {
+  const mockIngestUrl = vi.fn((listId: string, videos: IngestVideoIn[]) => {
     state.ingestCalls.push({ listId, videos });
     return Promise.resolve(state.ingestResult);
   });
-  const mockTrackJobs = vi.fn();
   const mockListSources = vi.fn().mockResolvedValue([]);
-  const mockDismissJob = vi.fn().mockResolvedValue(undefined);
-  const mockGetJobs = vi.fn().mockReturnValue([]);
+  const mockApi = createMockApi({
+    previewPlaylist: mockPreviewPlaylist,
+    previewPlaylistMetadata: mockPreviewPlaylistMetadata,
+    ingestUrl: mockIngestUrl,
+    listSources: mockListSources,
+    deleteSource: vi.fn().mockResolvedValue(undefined),
+    auth: {
+      generateBilibiliQr: vi.fn().mockResolvedValue(null),
+      pollBilibiliQr: vi.fn().mockResolvedValue(null),
+      deleteBilibiliAuth: vi.fn().mockResolvedValue(undefined),
+    },
+  });
   class MockApiError extends Error {
     status: number;
     detail: unknown;
@@ -73,35 +91,12 @@ vi.mock("@/lib/api", () => {
     }
   }
   return {
-    api: {
-      previewPlaylist: mockPreviewPlaylist,
-      previewPlaylistMetadata: mockPreviewPlaylistMetadata,
-      ingestUrl: mockIngestUrl,
-      listSources: mockListSources,
-      deleteSource: vi.fn().mockResolvedValue(undefined),
-      auth: {
-        generateBilibiliQr: vi.fn().mockResolvedValue(null),
-        pollBilibiliQr: vi.fn().mockResolvedValue(null),
-        deleteBilibiliAuth: vi.fn().mockResolvedValue(undefined),
-      },
-    },
+    api: mockApi,
     ApiError: MockApiError,
     setCurrentLang: vi.fn(),
-    createApiClient: () => ({
-      previewPlaylist: mockPreviewPlaylist,
-      previewPlaylistMetadata: mockPreviewPlaylistMetadata,
-      ingestUrl: mockIngestUrl,
-      listSources: mockListSources,
-      deleteSource: vi.fn().mockResolvedValue(undefined),
-    }),
+    createApiClient: () => mockApi,
     toErrorMessageWithT: vi.fn((e: unknown) => (e instanceof Error ? e.message : String(e))),
-    default: {
-      previewPlaylist: mockPreviewPlaylist,
-      previewPlaylistMetadata: mockPreviewPlaylistMetadata,
-      ingestUrl: mockIngestUrl,
-      listSources: mockListSources,
-      deleteSource: vi.fn().mockResolvedValue(undefined),
-    },
+    default: mockApi,
   };
 });
 
@@ -333,9 +328,10 @@ describe("SourcesListMode preview flow", () => {
     };
     state.metadataResponse = {
       videos: {
-        BV1: { title: "Video 1", cover_url: "https://example.com/c1.jpg", duration_seconds: 120, uploader: "Author1", source_url: "https://bilibili.com/video/BV1" },
-        BV2: { title: "Video 2", cover_url: "https://example.com/c2.jpg", duration_seconds: 240, uploader: "Author2", source_url: "https://bilibili.com/video/BV2" },
+        BV1: { title: "Video 1", cover_url: "https://example.com/c1.jpg", duration_seconds: 120, uploader: "Author1", source_url: "https://bilibili.com/video/BV1", part_label: null },
+        BV2: { title: "Video 2", cover_url: "https://example.com/c2.jpg", duration_seconds: 240, uploader: "Author2", source_url: "https://bilibili.com/video/BV2", part_label: null },
       },
+      expanded: {},
     };
     renderMode();
 
@@ -365,9 +361,10 @@ describe("SourcesListMode preview flow", () => {
     };
     state.metadataResponse = {
       videos: {
-        BV1: { title: "V1", cover_url: "c.jpg", duration_seconds: 100, uploader: "U", source_url: "" },
-        BV2: { title: "V2", cover_url: "c.jpg", duration_seconds: 200, uploader: "U", source_url: "" },
+        BV1: { title: "V1", cover_url: "c.jpg", duration_seconds: 100, uploader: "U", source_url: "", part_label: null },
+        BV2: { title: "V2", cover_url: "c.jpg", duration_seconds: 200, uploader: "U", source_url: "", part_label: null },
       },
+      expanded: {},
     };
     renderMode();
 

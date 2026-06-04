@@ -18,26 +18,29 @@ const ARTIFACT_1 = {
   created_at: "2026-04-08T12:00:00Z",
 };
 
-vi.mock("@/lib/api", () => ({
-  api: {
-    getHealth: vi.fn().mockResolvedValue({}),
-    listJobs: vi.fn().mockResolvedValue([]),
-    listLists: vi.fn().mockResolvedValue([]),
-    listSources: vi.fn().mockResolvedValue([]),
-    ingestUrl: vi.fn().mockResolvedValue({ queued: [], skipped: [] }),
-    deleteSource: vi.fn().mockResolvedValue(undefined),
-    updateList: vi.fn().mockResolvedValue(undefined),
-    getSource: vi.fn().mockResolvedValue(undefined),
-    rerunDigest: vi.fn(),
-    deleteJob: vi.fn(),
-    createList: vi.fn(),
-    putConfig: vi.fn(),
-    listModels: vi.fn(),
-    listArtifacts: vi.fn().mockResolvedValue([]),
-    getArtifactContent: vi.fn().mockResolvedValue({ content: "# Study Guide\n\nContent here" }),
-  },
-  setCurrentLang: vi.fn(),
-}));
+vi.mock("@/lib/api", async () => {
+  const { createMockApi } = await import("@/test/utils");
+  return {
+    api: createMockApi({
+      getHealth: vi.fn().mockResolvedValue({}),
+      listJobs: vi.fn().mockResolvedValue([]),
+      listLists: vi.fn().mockResolvedValue([]),
+      listSources: vi.fn().mockResolvedValue([]),
+      ingestUrl: vi.fn().mockResolvedValue({ queued: [], skipped: [] }),
+      deleteSource: vi.fn().mockResolvedValue(undefined),
+      updateList: vi.fn().mockResolvedValue(undefined),
+      getSource: vi.fn().mockResolvedValue(undefined),
+      rerunDigest: vi.fn(),
+      deleteJob: vi.fn(),
+      createList: vi.fn(),
+      putConfig: vi.fn(),
+      listModels: vi.fn(),
+      listArtifacts: vi.fn().mockResolvedValue([]),
+      getArtifactContent: vi.fn().mockResolvedValue({ content: "# Study Guide\n\nContent here" }),
+    }),
+    setCurrentLang: vi.fn(),
+  };
+});
 
 function renderLabPanel(props?: Partial<React.ComponentProps<typeof LabPanel>>) {
   return renderWithProviders(

@@ -5,7 +5,7 @@ import { render, type RenderResult } from "@testing-library/react";
 import type { ComponentType, ReactElement, ReactNode } from "react";
 import { type MockedFunction, type MockInstance, vi } from "vitest";
 
-import { type ApiClient, api } from "@/lib/api";
+import type { ApiClient } from "@/lib/api";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -26,23 +26,56 @@ export type MockedApiClient = {
 
 // ─── createMockApi ───────────────────────────────────────────────────────────
 
-/** Method names on a class-instance client (e.g. `AuthClient` methods live on
- *  the prototype, not own properties — `Object.keys` returns `[]`). */
-function instanceMethodNames(obj: object): string[] {
-  const proto = Object.getPrototypeOf(obj);
-  return Object.getOwnPropertyNames(proto).filter(
-    (n) =>
-      n !== "constructor" &&
-      typeof (obj as Record<string, unknown>)[n] === "function",
-  );
-}
+/**
+ * Top-level ApiClient method names — keep in sync with the `ApiClient`
+ * interface in `@/lib/api`. Hard-coded so the factory can be used inside
+ * `vi.mock` factories without triggering a circular import through
+ * `@/test/utils` → `@/lib/api`. Add a method here when adding one to
+ * `ApiClient`.
+ */
+const TOP_LEVEL_METHODS = [
+  "listLists",
+  "createList",
+  "updateList",
+  "deleteList",
+  "createArtifact",
+  "listSources",
+  "getSource",
+  "deleteSource",
+  "rerunDigest",
+  "updateSourceFacets",
+  "previewPlaylist",
+  "previewPlaylistMetadata",
+  "ingestUrl",
+  "listArtifacts",
+  "getArtifactContent",
+  "updateArtifact",
+  "deleteArtifact",
+  "getConfig",
+  "putConfig",
+  "getHealth",
+  "listJobs",
+  "deleteJob",
+  "listModels",
+  "downloadModel",
+  "syncModels",
+  "getConversation",
+  "deleteConversation",
+] as const;
+
+/** `auth` group method names — keep in sync with `ApiClient.auth`. */
+const AUTH_METHODS = [
+  "generateBilibiliQr",
+  "pollBilibiliQr",
+  "deleteBilibiliAuth",
+] as const;
 
 /**
- * Build a fully-mocked `ApiClient` derived from the live `api` singleton. Every
- * method defaults to `vi.fn().mockResolvedValue(undefined)`, matching the real
+ * Build a fully-mocked `ApiClient`. Every method defaults to
+ * `vi.fn().mockResolvedValue(undefined)`, matching the real
  * `Promise<X | undefined>` signature so forgotten methods don't crash with
- * `TypeError: cannot read X of undefined`. Nested groups (currently `auth`)
- * are auto-mocked via a prototype walk.
+ * `TypeError: cannot read X of undefined`. The `auth` nested group is also
+ * auto-mocked.
  *
  * Pass `overrides` to replace specific methods. Top-level method overrides
  * replace wholesale; nested-group overrides shallow-merge so you can override
@@ -56,18 +89,14 @@ export function createMockApi(
   overrides: Partial<MockedApiClient> = {},
 ): MockedApiClient {
   const mock: Record<string, unknown> = {};
-  for (const key of Object.keys(api)) {
-    const value = (api as unknown as Record<string, unknown>)[key];
-    if (typeof value === "function") {
-      mock[key] = vi.fn().mockResolvedValue(undefined);
-    } else if (value !== null && typeof value === "object") {
-      mock[key] = Object.fromEntries(
-        instanceMethodNames(value).map((m) => [
-          m,
-          vi.fn().mockResolvedValue(undefined),
-        ]),
-      );
-    }
+  for (const key of TOP_LEVEL_METHODS) {
+    mock[key] = vi.fn().mockResolvedValue(undefined);
+  }
+  mock.auth = {};
+  for (const key of AUTH_METHODS) {
+    (mock.auth as Record<string, unknown>)[key] = vi
+      .fn()
+      .mockResolvedValue(undefined);
   }
   for (const [k, v] of Object.entries(overrides)) {
     if (
