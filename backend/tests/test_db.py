@@ -584,22 +584,20 @@ async def test_update_job_meta_noops_on_missing_job(tmp_bibilab_home: Path):
 
 @pytest.mark.asyncio
 async def test_message_tool_blocks_round_trip(tmp_bibilab_home: Path):
-    """update_message_content + get_recent_messages round-trip the tool_blocks JSON."""
+    """update_turn_terminal + get_recent_messages round-trip the tool_blocks JSON."""
     from bibilab.db import (
         bootstrap_db,
         create_list,
         get_recent_messages,
-        update_message_content,
+        update_turn_terminal,
     )
 
     await bootstrap_db()
     await create_list("list-1", "Test List", "2026-01-01T00:00:00")
     conv_id = await ConversationFactory.build("list-1")
-    row = await MessageFactory.build(
-        conv_id,
-        role="assistant",
-    )
-    msg_id = row["id"]
+    user_row = await MessageFactory.build(conv_id, role="user", status="pending")
+    asst_row = await MessageFactory.build(conv_id, role="assistant", status="streaming")
+    msg_id = asst_row["id"]
 
     blocks = [
         {
@@ -623,21 +621,58 @@ async def test_message_tool_blocks_round_trip(tmp_bibilab_home: Path):
         }
     ]
 
-    await update_message_content(
-        msg_id,
-        content="answer",
-        metadata=None,
+    await update_turn_terminal(
+        conversation_id=conv_id,
+        user_msg_id=user_row["id"],
+        asst_msg_id=msg_id,
+        asst_content="answer",
+        asst_metadata=None,
+        asst_tool_blocks=blocks,
         status="done",
         error=None,
-        tool_blocks=blocks,
     )
 
     rows = await get_recent_messages(conv_id, limit=10)
-    assert len(rows) == 1
-    row = rows[0]
-    assert row["tool_blocks"] is not None
-    stored = json.loads(row["tool_blocks"])
+    asst = next(r for r in rows if r["id"] == msg_id)
+    assert asst["tool_blocks"] is not None
+    stored = json.loads(asst["tool_blocks"])
     assert stored == blocks
+
+
+@pytest.mark.asyncio
+async def test_update_turn_terminal_failed_leaves_user_error_null(tmp_bibilab_home: Path):
+    """On a failed turn both rows flip to 'failed', but the error code lands only
+    on the assistant row — the user message did not fail and must keep error=NULL."""
+    from bibilab.db import (
+        bootstrap_db,
+        create_list,
+        get_recent_messages,
+        update_turn_terminal,
+    )
+
+    await bootstrap_db()
+    await create_list("list-1", "Test List", "2026-01-01T00:00:00")
+    conv_id = await ConversationFactory.build("list-1")
+    user_row = await MessageFactory.build(conv_id, role="user", status="pending")
+    asst_row = await MessageFactory.build(conv_id, role="assistant", status="streaming")
+
+    await update_turn_terminal(
+        conversation_id=conv_id,
+        user_msg_id=user_row["id"],
+        asst_msg_id=asst_row["id"],
+        asst_content="",
+        asst_metadata=None,
+        asst_tool_blocks=None,
+        status="failed",
+        error="llm_rate_limit_error",
+    )
+
+    rows = {r["id"]: r for r in await get_recent_messages(conv_id, limit=10)}
+    user_final, asst_final = rows[user_row["id"]], rows[asst_row["id"]]
+    assert user_final["status"] == "failed"
+    assert user_final["error"] is None
+    assert asst_final["status"] == "failed"
+    assert asst_final["error"] == "llm_rate_limit_error"
 
 
 @pytest.mark.asyncio
@@ -856,3 +891,45 @@ async def test_write_source_with_segments_rolls_back_on_segment_failure(tmp_bibi
             **_SOURCE_FIELDS,
         )
     assert await get_source("src-1") is None
+
+
+# --- #403: aborted turns invisible to LLM replay + compaction ---
+# (get_message_count's done-only filter is covered by
+# test_aborted_messages_do_not_trigger_compression in test_chat_summary.py)
+
+
+@pytest.mark.asyncio
+async def test_get_messages_beyond_window_excludes_non_done(tmp_bibilab_home: Path):
+    """get_messages_beyond_window must not surface cancelled/failed rows to
+    the summarizer — they would render as blank 'assistant:' lines."""
+    from bibilab.db import bootstrap_db, create_list, get_messages_beyond_window
+
+    await bootstrap_db()
+    await create_list("list-1", "L", "2026-01-01T00:00:00")
+    conv_id = await ConversationFactory.build("list-1")
+    # Seed 12 rows with a cancelled pair in the middle (so it falls into the
+    # old half beyond the 3-message window). Post-fix: both rows of the aborted
+    # turn share the terminal status.
+    await MessageFactory.build(conv_id, role="user", content="u0", status="done")
+    await MessageFactory.build(conv_id, role="assistant", content="a0", status="done")
+    await MessageFactory.build(conv_id, role="user", content="u1", status="done")
+    await MessageFactory.build(conv_id, role="assistant", content="a1", status="done")
+    await MessageFactory.build(conv_id, role="user", content="u-aborted", status="cancelled")
+    await MessageFactory.build(conv_id, role="assistant", content="", status="cancelled")
+    await MessageFactory.build(conv_id, role="user", content="u2", status="done")
+    await MessageFactory.build(conv_id, role="assistant", content="a2", status="done")
+    await MessageFactory.build(conv_id, role="user", content="u3", status="done")
+    await MessageFactory.build(conv_id, role="assistant", content="a3", status="done")
+    await MessageFactory.build(conv_id, role="user", content="u4", status="done")
+    await MessageFactory.build(conv_id, role="assistant", content="a4", status="done")
+
+    to_compress = await get_messages_beyond_window(conv_id, window_size=3)
+    contents = [r["content"] for r in to_compress]
+    statuses = [r["status"] for r in to_compress]
+    # The cancelled assistant must not appear in the summary input.
+    assert "" not in contents
+    # The user row of the aborted turn must be excluded too (it has no
+    # assistant partner after filtering, so it would orphan into the summary).
+    assert "u-aborted" not in contents
+    # All rows that DO appear must have status='done'.
+    assert all(s == "done" for s in statuses)

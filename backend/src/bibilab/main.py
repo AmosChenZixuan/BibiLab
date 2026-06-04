@@ -35,14 +35,22 @@ SHUTDOWN_DRAIN_TIMEOUT = 5.0
 
 
 async def sweep_orphaned_streams() -> None:
-    """Mark messages stuck at status='streaming' as failed.
+    """Mark messages stuck mid-turn as failed.
 
     Called at app startup before accepting requests. Registry is empty at
-    startup, so any 'streaming' row was abandoned by the previous process.
+    startup, so any row whose status is in IN_FLIGHT_MESSAGE_STATUSES
+    ('streaming' for the assistant, 'pending' for the user awaiting it)
+    was abandoned by the previous process — both rows of the orphaned
+    turn are flipped in one UPDATE (#403).
     """
+    from bibilab.db import IN_FLIGHT_MESSAGE_STATUSES, _in_placeholders
+
+    in_flight_placeholders = _in_placeholders(IN_FLIGHT_MESSAGE_STATUSES)
     async with get_db() as db:
         await db.execute(
-            "UPDATE messages SET status='failed', error='Server restarted during generation' WHERE status='streaming'"
+            f"UPDATE messages SET status='failed', error='Server restarted during generation' "
+            f"WHERE status IN ({in_flight_placeholders})",
+            IN_FLIGHT_MESSAGE_STATUSES,
         )
         await db.execute(
             "UPDATE conversations SET active_stream_message_id=NULL WHERE active_stream_message_id IS NOT NULL"

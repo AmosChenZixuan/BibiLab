@@ -124,7 +124,7 @@ asr_models.py     — Unified ASR model registry (Whisper + SenseVoice + diariza
 | `conversation_id` | FK to `conversations.id`, ON DELETE CASCADE, indexed |
 | `role` | `"user"` \| `"assistant"` \| `"tool"` |
 | `content` | Message text |
-| `status` | `"streaming"` → `"done"` \| `"failed"` \| `"cancelled"` |
+| `status` | In-flight: user `"pending"`, assistant `"streaming"`. Terminal: `"done"` \| `"failed"` \| `"cancelled"`. #403 invariant: both rows of a turn flip to the **same** terminal status atomically (`update_turn_terminal`); a turn is visible to LLM replay + compaction iff both are `"done"`. UI history is unfiltered (renders 已停止/重试); the LLM snapshot filters to `"done"` inline (not in `get_recent_messages`). |
 | `error` | Error code (e.g. `llm_rate_limit_error`, `internal_error`), nullable; set on producer failure or server restart sweep; mapped by `classify_error()` from SDK exceptions; frontend resolves via `chat.errors.*` i18n keys |
 | `metadata` | JSON blob, nullable. Shape: `{"tool_calls": [...], "rag": {"calls": [{"tool_name", "query" \| null, "source_id"?, "source_title"?, "source_coverage" (find_passages only), "context" (find_passages only, reconstructed at terminal `rag` event from citation registry), "candidates_evaluated", "sources_with_hits", "sources_total", "reranked", "scoped_pool_size", "facet_scope"}]}}`. `tool_name` is `"find_passages"` or `"read_source"`; `read_source` rows have `query: null`, empty `context[]`, and `source_id`/`source_title` set. `scoped_pool_size` is the **full source pool**; `facet_scope.matched_count` carries the facet-narrowed count. Set by `run_chat_turn` post-stream from tool `tool_result` events. No migration for legacy persisted messages — the ledger renders best-effort from whatever fields exist. |
 
@@ -171,16 +171,18 @@ POST /ingest/url → resolve → dedup check → create job(s)
 ## Chat Pipeline
 
 ```
-POST /lists/:id/chat (SSE) — creates user + assistant rows atomically, spawns async producer
+POST /lists/:id/chat (SSE) — creates user(pending) + assistant(streaming) rows atomically, spawns async producer
   → asyncio.Task: run_chat_turn writes events into StreamBuffer
   → POST handler returns SSE stream consuming from buffer (late-subscriber-safe replay)
-  → producer persists final content + status + metadata in finally block
+  → producer's finally: update_turn_terminal flips BOTH rows to the same terminal status
+    AND clears active_stream_message_id in one transaction (fallback set_active_stream
+    clear if that transaction fails, else the conversation wedges at 409)
   → producer fires fire-and-forget: evict buffer after grace, compress if done
 
 GET  /lists/:id/chat/{msg_id}/stream — reattach to an active stream (204 if evicted)
-POST /lists/:id/chat/{msg_id}/cancel — cancel producer task, persists status='cancelled'
+POST /lists/:id/chat/{msg_id}/cancel — cancel producer task, flips turn to status='cancelled'
 
-Startup: sweep_orphaned_streams marks leftover streaming rows as failed
+Startup: sweep_orphaned_streams flips leftover in-flight rows (pending + streaming) to failed
 Shutdown: cancel all active tasks, drain with 5s timeout
 ```
 
@@ -218,7 +220,7 @@ stream_with_tools(stream_llm loop):
 - Retrieve result `_chunks` are grouped by source under `===== Source [N]: "title" =====` fences then formatted as citation-ready `[N]: "content"` strings for the LLM; stripped from the client-bound `tool_result` SSE payload by `strip_internal()`.
 - `stream_llm` supports both OpenAI and Anthropic protocols via `AsyncOpenAI`/`AsyncAnthropic`
 - **Final `rag` event**: In the `finally` block, after `context[]` is reconstructed from the citation registry, `run_chat_turn` emits one `rag` SSE event carrying the authoritative persisted-shape `rag.calls` just before the terminal event. The client replaces its incrementally-built ledger so expand works post-stream without a manual reload (the streaming `tool_result` payload omits `context[]`).
-- **Lifecycle**: Startup sweep marks leftover `status='streaming'` rows as `failed`. Shutdown cancels all tasks, drains with 5s timeout. Buffer eviction fires 60s after terminal status.
+- **Lifecycle**: Startup sweep flips leftover in-flight rows (`'streaming'` + `'pending'`, via `IN_FLIGHT_MESSAGE_STATUSES`) to `failed`. Shutdown cancels all tasks, drains with 5s timeout. Buffer eviction fires 60s after terminal status.
 - Compression: triggered when message count > 30; keeps sliding window of 10; summarizes older messages via `_call_llm` in `asyncio.create_task`. The summary is prose only — the compression prompt does **not** preserve `[N]` markers (deliberate; see `docs/citation_system.md`). Only post-window messages retain live citations; the summary is injected into the system prompt on subsequent requests.
 
 ### Prompt-trace observability (opt-in)

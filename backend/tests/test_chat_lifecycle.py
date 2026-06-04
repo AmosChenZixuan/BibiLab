@@ -125,3 +125,35 @@ async def test_cancel_404_for_nonexistent_message(client, tmp_bibilab_home):  # 
     async with get_db() as db:
         await db.execute("DELETE FROM lists WHERE id=?", (list_id,))
         await db.commit()
+
+
+@pytest.mark.asyncio
+async def test_sweep_marks_both_pending_and_streaming_failed(tmp_bibilab_home):  # noqa: ARG001
+    """#403: a server-restart sweep must flip BOTH rows of an in-flight turn —
+    the user row (status='pending') and the assistant row (status='streaming')
+    — to 'failed' so neither leaks into the next conversation replay."""
+    from bibilab.db import bootstrap_db, create_list, get_db
+    from bibilab.main import sweep_orphaned_streams
+    from tests.factories import ConversationFactory, MessageFactory
+
+    await bootstrap_db()
+    await create_list("list-sweep-403", "T", "2026-01-01T00:00:00")
+    asst_id = "asst-orphan-403"
+    conv_id = await ConversationFactory.build("list-sweep-403", active_stream_message_id=asst_id)
+    user_row = await MessageFactory.build(
+        conv_id, message_id="user-orphan-403", role="user", content="hi", status="pending"
+    )
+    asst_row = await MessageFactory.build(conv_id, message_id=asst_id, role="assistant", content="", status="streaming")
+    user_id, asst_id = user_row["id"], asst_row["id"]
+
+    await sweep_orphaned_streams()
+
+    async with get_db() as db:
+        user_status_row = await (await db.execute("SELECT status FROM messages WHERE id=?", (user_id,))).fetchone()
+        asst_status_row = await (await db.execute("SELECT status FROM messages WHERE id=?", (asst_id,))).fetchone()
+        conv_active_row = await (
+            await db.execute("SELECT active_stream_message_id FROM conversations WHERE id=?", (conv_id,))
+        ).fetchone()
+        assert user_status_row["status"] == "failed", "user(pending) must be swept to failed"
+        assert asst_status_row["status"] == "failed", "assistant(streaming) must be swept to failed"
+        assert conv_active_row["active_stream_message_id"] is None
