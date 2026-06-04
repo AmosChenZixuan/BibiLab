@@ -912,29 +912,6 @@ async def create_user_and_assistant_atomic(
             raise
 
 
-async def update_message_content(
-    message_id: str,
-    content: str,
-    metadata: dict | None,
-    status: str,
-    error: str | None = None,
-    tool_blocks: list[dict] | None = None,
-) -> None:
-    async with get_db() as db:
-        await db.execute(
-            "UPDATE messages SET content=?, metadata=?, status=?, error=?, tool_blocks=? WHERE id=?",
-            (
-                content,
-                json.dumps(metadata) if metadata is not None else None,
-                status,
-                error,
-                json.dumps(tool_blocks) if tool_blocks is not None else None,
-                message_id,
-            ),
-        )
-        await db.commit()
-
-
 # #403: a turn is visible to LLM replay and compaction iff both rows have
 # status='done'. The two transient row states used during a turn are
 # IN_FLIGHT_USER_STATUS (user awaiting its assistant) and
@@ -978,8 +955,8 @@ async def update_turn_terminal(
     """
     async with get_db() as db:
         cur = await db.execute(
-            "UPDATE messages SET status=?, error=? WHERE id=?",
-            (status, error, user_msg_id),
+            "UPDATE messages SET status=?, error=NULL WHERE id=?",
+            (status, user_msg_id),
         )
         if cur.rowcount == 0:
             raise RuntimeError(f"update_turn_terminal: user_msg_id={user_msg_id!r} not found")

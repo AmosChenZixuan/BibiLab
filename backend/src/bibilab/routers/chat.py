@@ -24,6 +24,7 @@ from bibilab.db import (
     get_or_create_conversation,
     get_recent_messages,
     get_sources_for_list,
+    set_active_stream,
     update_turn_terminal,
 )
 from bibilab.db import (
@@ -762,6 +763,17 @@ async def run_chat_turn(
                 final_status = "failed"
             if error_reason is None:
                 error_reason = "persistence_error"
+            # update_turn_terminal's transaction rolled back, so active_stream_message_id
+            # was never cleared. Clear it independently or the conversation wedges at
+            # HTTP 409 (the guard checks only pointer-not-null) until the next restart.
+            try:
+                await set_active_stream(conversation_id, None)
+            except Exception:
+                logger.exception(
+                    "producer fallback clear active_stream failed message_id=%s — "
+                    "stale pointer may 409 future POSTs until restart",
+                    message_id,
+                )
 
         # Final authoritative ledger: persisted-shape calls (context[]
         # reconstructed) so the client matches post-refresh without reloading.
