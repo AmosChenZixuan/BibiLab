@@ -25,7 +25,7 @@ def setup_pipeline_test(tmp_path: Path):
 
 
 @pytest.mark.asyncio
-async def test_extract_audio_cancellation_stops_pipeline(setup_pipeline_test: Path):
+async def test_extract_audio_cancellation_stops_pipeline(setup_pipeline_test: Path, mock_call_llm):
     """
     Verify that when a job is cancelled before the pipeline starts,
     no pipeline stages are executed.
@@ -81,7 +81,6 @@ async def test_extract_audio_cancellation_stops_pipeline(setup_pipeline_test: Pa
         stages_called.append("transcribe")
         return ([], None)
 
-    mock_digest = MagicMock(return_value='{"summary": "test", "keywords": []}')
     mock_embed = MagicMock()
     mock_dl_cover = MagicMock(side_effect=lambda url, dest: dest.write_bytes(b"fake cover") or True)
 
@@ -92,7 +91,6 @@ async def test_extract_audio_cancellation_stops_pipeline(setup_pipeline_test: Pa
         patch("bibilab.worker.extract_audio", mock_extract_audio),
         patch("bibilab.worker.transcribe", mock_transcribe),
         patch("bibilab.worker._download_cover", mock_dl_cover),
-        patch("bibilab.pipeline.digest._call_llm", mock_digest),
         patch("bibilab.worker.embed_chunks", mock_embed),
     ):
         await worker._pipeline(job)
@@ -108,7 +106,7 @@ async def test_extract_audio_cancellation_stops_pipeline(setup_pipeline_test: Pa
 
 
 @pytest.mark.asyncio
-async def test_pipeline_stage_process_cleanup_called_on_cancellation(setup_pipeline_test: Path):
+async def test_pipeline_stage_process_cleanup_called_on_cancellation(setup_pipeline_test: Path, mock_call_llm):
     """
     Verify that cleanup_job_artifacts is called when a job is cancelled.
     """
@@ -151,7 +149,6 @@ async def test_pipeline_stage_process_cleanup_called_on_cancellation(setup_pipel
 
     mock_extract_audio = MagicMock(return_value=tmp_wav)
     mock_transcribe = MagicMock(return_value=([], None))
-    mock_digest = MagicMock(return_value='{"summary": "test", "keywords": []}')
     mock_embed = MagicMock()
     mock_dl_cover = MagicMock(side_effect=lambda url, dest: dest.write_bytes(b"fake cover") or True)
 
@@ -167,7 +164,6 @@ async def test_pipeline_stage_process_cleanup_called_on_cancellation(setup_pipel
         patch("bibilab.worker.extract_audio", mock_extract_audio),
         patch("bibilab.worker.transcribe", mock_transcribe),
         patch("bibilab.worker._download_cover", mock_dl_cover),
-        patch("bibilab.pipeline.digest._call_llm", mock_digest),
         patch("bibilab.worker.embed_chunks", mock_embed),
         patch("bibilab.worker.cleanup_job_artifacts", mock_cleanup),
     ):

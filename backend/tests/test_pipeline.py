@@ -483,7 +483,7 @@ def test_resolved_lang_with_explicit_language():
 
 
 @pytest.mark.asyncio
-async def test_generate_artifact_includes_zh_lang_instruction(tmp_path: Path, monkeypatch):
+async def test_generate_artifact_includes_zh_lang_instruction(tmp_path: Path, monkeypatch, mock_call_llm):
     """_generate_artifact prepends Chinese language instruction when ui_lang=zh."""
     from unittest.mock import MagicMock
 
@@ -494,12 +494,12 @@ async def test_generate_artifact_includes_zh_lang_instruction(tmp_path: Path, mo
 
     captured_prompt = None
 
-    def mock_call_llm(prompt, cfg, llm_timeout=120, llm_max_tokens=2048):
+    def fake_call_llm(prompt, cfg, llm_timeout=120, llm_max_tokens=2048):
         nonlocal captured_prompt
         captured_prompt = prompt
         return '{"name": "Test", "content": "# Test"}'
 
-    monkeypatch.setattr("bibilab.worker._call_llm", mock_call_llm)
+    mock_call_llm.side_effect = fake_call_llm
 
     cfg = MagicMock()
     cfg.ai = AIConfig(
@@ -528,7 +528,7 @@ async def test_generate_artifact_includes_zh_lang_instruction(tmp_path: Path, mo
 
 
 @pytest.mark.asyncio
-async def test_generate_artifact_includes_en_lang_instruction(tmp_path: Path, monkeypatch):
+async def test_generate_artifact_includes_en_lang_instruction(tmp_path: Path, monkeypatch, mock_call_llm):
     """_generate_artifact prepends English language instruction when output_language=en."""
     from unittest.mock import MagicMock
 
@@ -539,12 +539,12 @@ async def test_generate_artifact_includes_en_lang_instruction(tmp_path: Path, mo
 
     captured_prompt = None
 
-    def mock_call_llm(prompt, cfg, llm_timeout=120, llm_max_tokens=2048):
+    def fake_call_llm(prompt, cfg, llm_timeout=120, llm_max_tokens=2048):
         nonlocal captured_prompt
         captured_prompt = prompt
         return '{"name": "Test", "content": "# Test"}'
 
-    monkeypatch.setattr("bibilab.worker._call_llm", mock_call_llm)
+    mock_call_llm.side_effect = fake_call_llm
 
     cfg = MagicMock()
     cfg.ai = AIConfig(
@@ -572,7 +572,7 @@ async def test_generate_artifact_includes_en_lang_instruction(tmp_path: Path, mo
 
 
 @pytest.mark.asyncio
-async def test_generate_artifact_unknown_lang_falls_back_to_english(tmp_path: Path, monkeypatch):
+async def test_generate_artifact_unknown_lang_falls_back_to_english(tmp_path: Path, monkeypatch, mock_call_llm):
     """_generate_artifact with unrecognized output_language falls back to English."""
     from unittest.mock import MagicMock
 
@@ -583,12 +583,12 @@ async def test_generate_artifact_unknown_lang_falls_back_to_english(tmp_path: Pa
 
     captured_prompt = None
 
-    def mock_call_llm(prompt, cfg, llm_timeout=120, llm_max_tokens=2048):
+    def fake_call_llm(prompt, cfg, llm_timeout=120, llm_max_tokens=2048):
         nonlocal captured_prompt
         captured_prompt = prompt
         return '{"name": "Test", "content": "# Test"}'
 
-    monkeypatch.setattr("bibilab.worker._call_llm", mock_call_llm)
+    mock_call_llm.side_effect = fake_call_llm
 
     cfg = MagicMock()
     cfg.ai = AIConfig(

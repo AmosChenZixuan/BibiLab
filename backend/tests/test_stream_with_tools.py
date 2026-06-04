@@ -98,7 +98,7 @@ async def test_stream_llm_passes_openai_tool_messages():
 
 
 @pytest.mark.asyncio
-async def test_stream_with_tools_passthrough_no_tool_calls():
+async def test_stream_with_tools_passthrough_no_tool_calls(mock_stream_llm):
     """When LLM returns no tool_calls, events pass through and function returns."""
     from bibilab.config import AIConfig
     from bibilab.routers.chat import stream_with_tools
@@ -112,15 +112,15 @@ async def test_stream_with_tools_passthrough_no_tool_calls():
     async def noop(*args, **kwargs):
         return {}
 
-    with patch("bibilab.routers.chat.stream_llm", side_effect=fake_stream):
-        events = []
-        async for event in stream_with_tools(
-            messages=[{"role": "user", "content": "hi"}],
-            cfg=cfg,
-            tools=[],
-            execute_tool_fn=noop,
-        ):
-            events.append(event)
+    mock_stream_llm.side_effect = fake_stream
+    events = []
+    async for event in stream_with_tools(
+        messages=[{"role": "user", "content": "hi"}],
+        cfg=cfg,
+        tools=[],
+        execute_tool_fn=noop,
+    ):
+        events.append(event)
 
     # done is no longer yielded by stream_with_tools — caller emits it post-loop.
     assert len(events) == 1
@@ -129,7 +129,7 @@ async def test_stream_with_tools_passthrough_no_tool_calls():
 
 
 @pytest.mark.asyncio
-async def test_stream_with_tools_loopback_find_passages():
+async def test_stream_with_tools_loopback_find_passages(mock_stream_llm):
     """LLM calls find_passages -> execute -> feed result -> second LLM turn."""
     from bibilab.config import AIConfig
     from bibilab.pipeline.chat_tools import FIND_PASSAGES_TOOL
@@ -166,15 +166,15 @@ async def test_stream_with_tools_loopback_find_passages():
             return find_result
         raise ValueError(f"Unknown tool: {tool_name}")
 
-    with patch("bibilab.routers.chat.stream_llm", side_effect=fake_stream):
-        events = []
-        async for event in stream_with_tools(
-            messages=[{"role": "user", "content": "what is this about?"}],
-            cfg=cfg,
-            tools=[FIND_PASSAGES_TOOL],
-            execute_tool_fn=fake_execute,
-        ):
-            events.append(event)
+    mock_stream_llm.side_effect = fake_stream
+    events = []
+    async for event in stream_with_tools(
+        messages=[{"role": "user", "content": "what is this about?"}],
+        cfg=cfg,
+        tools=[FIND_PASSAGES_TOOL],
+        execute_tool_fn=fake_execute,
+    ):
+        events.append(event)
 
     assert call_count == 2
     tool_result_events = [e for e in events if e.type == "tool_result"]
@@ -185,7 +185,7 @@ async def test_stream_with_tools_loopback_find_passages():
 
 
 @pytest.mark.asyncio
-async def test_stream_with_tools_max_iterations_graceful():
+async def test_stream_with_tools_max_iterations_graceful(mock_stream_llm):
     """After MAX_TOOL_ITERATIONS, active_tools is forced to [] so the LLM synthesizes from accumulated results."""
     from bibilab.config import AIConfig
     from bibilab.pipeline.chat_tools import FIND_PASSAGES_TOOL
@@ -210,15 +210,15 @@ async def test_stream_with_tools_max_iterations_graceful():
     async def fake_execute(name, args, **kwargs):
         return {"ok": True, "_chunks": "stub"}
 
-    with patch("bibilab.routers.chat.stream_llm", side_effect=fake_stream):
-        events = []
-        async for event in stream_with_tools(
-            messages=[{"role": "user", "content": "hi"}],
-            cfg=cfg,
-            tools=[FIND_PASSAGES_TOOL],
-            execute_tool_fn=fake_execute,
-        ):
-            events.append(event)
+    mock_stream_llm.side_effect = fake_stream
+    events = []
+    async for event in stream_with_tools(
+        messages=[{"role": "user", "content": "hi"}],
+        cfg=cfg,
+        tools=[FIND_PASSAGES_TOOL],
+        execute_tool_fn=fake_execute,
+    ):
+        events.append(event)
 
     error_events = [e for e in events if e.type == "error"]
     assert len(error_events) == 0, f"No hard error — forced synthesis instead. Got error events: {error_events}"
@@ -232,7 +232,7 @@ async def test_stream_with_tools_max_iterations_graceful():
 
 
 @pytest.mark.asyncio
-async def test_stream_with_tools_forces_synthesis_when_exhausted_turn_returns_empty():
+async def test_stream_with_tools_forces_synthesis_when_exhausted_turn_returns_empty(mock_stream_llm):
     """When the synthesis turn produces no text, force one more LLM call so the user always gets an answer."""
     from bibilab.config import AIConfig
     from bibilab.pipeline.chat_tools import FIND_PASSAGES_TOOL
@@ -269,15 +269,15 @@ async def test_stream_with_tools_forces_synthesis_when_exhausted_turn_returns_em
             "_chunks": "stub",
         }
 
-    with patch("bibilab.routers.chat.stream_llm", side_effect=fake_stream):
-        events = []
-        async for event in stream_with_tools(
-            messages=[{"role": "user", "content": "what is the answer?"}],
-            cfg=cfg,
-            tools=[FIND_PASSAGES_TOOL],
-            execute_tool_fn=fake_execute,
-        ):
-            events.append(event)
+    mock_stream_llm.side_effect = fake_stream
+    events = []
+    async for event in stream_with_tools(
+        messages=[{"role": "user", "content": "what is the answer?"}],
+        cfg=cfg,
+        tools=[FIND_PASSAGES_TOOL],
+        execute_tool_fn=fake_execute,
+    ):
+        events.append(event)
 
     # MAX_TOOL_ITERATIONS tool turns + 1 empty synthesis + 1 forced synthesis
     assert call_count == MAX_TOOL_ITERATIONS + 2
@@ -290,7 +290,7 @@ async def test_stream_with_tools_forces_synthesis_when_exhausted_turn_returns_em
 
 
 @pytest.mark.asyncio
-async def test_forced_synthesis_forwards_error_events():
+async def test_forced_synthesis_forwards_error_events(mock_stream_llm):
     """If the forced-synthesis LLM call yields an error event, it must be forwarded
     so run_chat_turn can mark the message failed instead of silently dropping it."""
     from bibilab.config import AIConfig
@@ -323,15 +323,15 @@ async def test_forced_synthesis_forwards_error_events():
             "_chunks": "stub",
         }
 
-    with patch("bibilab.routers.chat.stream_llm", side_effect=fake_stream):
-        events = []
-        async for event in stream_with_tools(
-            messages=[{"role": "user", "content": "q"}],
-            cfg=cfg,
-            tools=[FIND_PASSAGES_TOOL],
-            execute_tool_fn=fake_execute,
-        ):
-            events.append(event)
+    mock_stream_llm.side_effect = fake_stream
+    events = []
+    async for event in stream_with_tools(
+        messages=[{"role": "user", "content": "q"}],
+        cfg=cfg,
+        tools=[FIND_PASSAGES_TOOL],
+        execute_tool_fn=fake_execute,
+    ):
+        events.append(event)
 
     error_events = [e for e in events if e.type == "error"]
     assert len(error_events) == 1
@@ -339,7 +339,7 @@ async def test_forced_synthesis_forwards_error_events():
 
 
 @pytest.mark.asyncio
-async def test_stream_with_tools_populates_tool_block_sink():
+async def test_stream_with_tools_populates_tool_block_sink(mock_stream_llm):
     """tool_block_sink collects normalized entries for each tool call executed."""
     from bibilab.config import AIConfig
     from bibilab.pipeline.chat_tools import FIND_PASSAGES_TOOL
@@ -385,15 +385,15 @@ async def test_stream_with_tools_populates_tool_block_sink():
         return find_result
 
     sink: list = []
-    with patch("bibilab.routers.chat.stream_llm", side_effect=fake_stream):
-        async for _ in stream_with_tools(
-            messages=[{"role": "user", "content": "q"}],
-            cfg=cfg,
-            tools=[FIND_PASSAGES_TOOL],
-            execute_tool_fn=fake_execute,
-            tool_block_sink=sink,
-        ):
-            pass
+    mock_stream_llm.side_effect = fake_stream
+    async for _ in stream_with_tools(
+        messages=[{"role": "user", "content": "q"}],
+        cfg=cfg,
+        tools=[FIND_PASSAGES_TOOL],
+        execute_tool_fn=fake_execute,
+        tool_block_sink=sink,
+    ):
+        pass
 
     assert len(sink) == 1
     entry = sink[0]
@@ -505,7 +505,7 @@ class TestClassifyError:
 
 
 @pytest.mark.asyncio
-async def test_stream_with_tools_default_sink_none_does_not_crash():
+async def test_stream_with_tools_default_sink_none_does_not_crash(mock_stream_llm):
     """Calling stream_with_tools without tool_block_sink must not crash (defaults to None)."""
     from bibilab.config import AIConfig
     from bibilab.routers.chat import stream_with_tools
@@ -519,15 +519,15 @@ async def test_stream_with_tools_default_sink_none_does_not_crash():
     async def noop(*args, **kwargs):
         return {}
 
-    with patch("bibilab.routers.chat.stream_llm", side_effect=fake_stream):
-        events = []
-        async for event in stream_with_tools(
-            messages=[{"role": "user", "content": "hi"}],
-            cfg=cfg,
-            tools=[],
-            execute_tool_fn=noop,
-        ):
-            events.append(event)
+    mock_stream_llm.side_effect = fake_stream
+    events = []
+    async for event in stream_with_tools(
+        messages=[{"role": "user", "content": "hi"}],
+        cfg=cfg,
+        tools=[],
+        execute_tool_fn=noop,
+    ):
+        events.append(event)
 
     assert len(events) == 1
     assert events[0].type == "delta"
@@ -535,7 +535,7 @@ async def test_stream_with_tools_default_sink_none_does_not_crash():
 
 
 @pytest.mark.asyncio
-async def test_second_retrieval_allowed_no_sequential_guard():
+async def test_second_retrieval_allowed_no_sequential_guard(mock_stream_llm):
     """v2: find_passages then read_source in successive iterations is allowed.
     The sequential guard is deleted; multi-hop is bounded only by the iter cap."""
     from bibilab.config import AIConfig
@@ -566,16 +566,16 @@ async def test_second_retrieval_allowed_no_sequential_guard():
         calls.append(name)
         return {"_chunks": "x", "source_id": "s1"}
 
-    with patch("bibilab.routers.chat.stream_llm", side_effect=fake_stream_llm):
-        evs = [
-            ev
-            async for ev in stream_with_tools(
-                messages=[{"role": "user", "content": "q"}],
-                cfg=cfg,
-                tools=[FIND_PASSAGES_TOOL, READ_SOURCE_TOOL],
-                execute_tool_fn=fake_execute,
-            )
-        ]
+    mock_stream_llm.side_effect = fake_stream_llm
+    evs = [
+        ev
+        async for ev in stream_with_tools(
+            messages=[{"role": "user", "content": "q"}],
+            cfg=cfg,
+            tools=[FIND_PASSAGES_TOOL, READ_SOURCE_TOOL],
+            execute_tool_fn=fake_execute,
+        )
+    ]
     assert evs, "stream must produce events"
 
     # The guard is DELETED: both find_passages AND read_source execute in successive iterations.
