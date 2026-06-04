@@ -32,25 +32,14 @@ class _MockEmbeddingFunction:
 
 
 @pytest.fixture()
-def tmp_bibilab_home(tmp_path: Path):
+def tmp_bibilab_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     from bibilab.config import _reset_cache
 
     _reset_cache()
     mock_ef = _MockEmbeddingFunction()
-    with patch("bibilab.config.bibilab_home", return_value=tmp_path):
-        with patch("bibilab.main.bibilab_home", return_value=tmp_path):
-            with patch("bibilab.cleanup.bibilab_home", return_value=tmp_path):
-                with patch("bibilab.routers.lists.bibilab_home", return_value=tmp_path):
-                    with patch("bibilab.routers.artifacts.bibilab_home", return_value=tmp_path):
-                        with patch("bibilab.worker.bibilab_home", return_value=tmp_path):
-                            with patch("bibilab.pipeline.embed.bibilab_home", return_value=tmp_path):
-                                with patch("bibilab.adapters.bilibili.bibilab_home", return_value=tmp_path):
-                                    with patch("pathlib.Path.home", return_value=tmp_path):
-                                        with patch(
-                                            "bibilab.pipeline.embed._default_embedding_function",
-                                            return_value=mock_ef,
-                                        ):
-                                            yield tmp_path
+    monkeypatch.setenv("BIBILAB_HOME", str(tmp_path))
+    with patch("bibilab.pipeline.embed._default_embedding_function", return_value=mock_ef):
+        yield tmp_path
 
 
 @pytest_asyncio.fixture()
