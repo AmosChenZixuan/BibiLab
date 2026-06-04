@@ -1,10 +1,11 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { PreviewResponse, PreviewVideo, Source } from "@/lib/types";
 import { LanguageProvider } from "@/app/LanguageContext";
 import { JobActivityProvider } from "@/components/jobs/JobActivityProvider";
 import { SourcesListMode } from "@/components/lists/sources/SourcesListMode";
+import { renderWithProviders } from "@/test/utils";
 
 function makeVideo(overrides: Partial<PreviewVideo> = {}): PreviewVideo {
   return {
@@ -111,24 +112,16 @@ function renderMode(
   selectedSourceIds: string[] = [],
   onSelectedSourcesChange: (ids: string[]) => void = vi.fn(),
 ) {
-  const trackJobs = vi.fn();
-  const getJobs = vi.fn().mockReturnValue([]);
-  const dismissJob = vi.fn().mockResolvedValue(undefined);
-
-  const result = render(
-    <LanguageProvider>
-      <JobActivityProvider>
-        <SourcesListMode
-          listId="list-1"
-          sources={sources}
-          selectedSourceIds={selectedSourceIds}
-          onSelectedSourcesChange={onSelectedSourcesChange}
-          onOpenSource={vi.fn()}
-        />
-      </JobActivityProvider>
-    </LanguageProvider>,
+  return renderWithProviders(
+    <SourcesListMode
+      listId="list-1"
+      sources={sources}
+      selectedSourceIds={selectedSourceIds}
+      onSelectedSourcesChange={onSelectedSourcesChange}
+      onOpenSource={vi.fn()}
+    />,
+    { providers: [LanguageProvider, JobActivityProvider] },
   );
-  return { ...result, trackJobs, getJobs, dismissJob };
 }
 
 afterEach(() => {

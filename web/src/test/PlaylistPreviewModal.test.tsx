@@ -1,8 +1,9 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { PreviewVideo } from "@/lib/types";
 import { LanguageProvider } from "@/app/LanguageContext";
 import { PlaylistPreviewModal } from "@/components/lists/sources/PlaylistPreviewModal";
+import { renderWithProviders } from "@/test/utils";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 afterEach(() => {
@@ -31,15 +32,14 @@ function makeVideo(overrides: Partial<PreviewVideo> = {}): PreviewVideo {
 function renderModal(videos: PreviewVideo[], submitting = false) {
   const onSubmit = vi.fn();
   const onCancel = vi.fn();
-  render(
-    <LanguageProvider>
-      <PlaylistPreviewModal
-        videos={videos}
-        onSubmit={onSubmit}
-        onCancel={onCancel}
-        submitting={submitting}
-      />
-    </LanguageProvider>,
+  renderWithProviders(
+    <PlaylistPreviewModal
+      videos={videos}
+      onSubmit={onSubmit}
+      onCancel={onCancel}
+      submitting={submitting}
+    />,
+    { providers: [LanguageProvider] },
   );
   return { onSubmit, onCancel };
 }

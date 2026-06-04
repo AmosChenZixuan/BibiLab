@@ -1,8 +1,9 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
 import { JobActivityProvider, useJobActivity } from "@/components/jobs/JobActivityProvider";
 import type { ArtifactJob, Job } from "@/lib/types";
+import { renderWithProviders } from "@/test/utils";
 
 vi.mock("@/lib/api", () => {
   const mockApi = {
@@ -19,11 +20,9 @@ vi.mock("@/lib/api", () => {
 import { api } from "@/lib/api";
 
 function renderProvider() {
-  return render(
-    <JobActivityProvider>
-      <Probe />
-    </JobActivityProvider>,
-  );
+  return renderWithProviders(<Probe />, {
+    providers: [JobActivityProvider],
+  });
 }
 
 function Probe() {

@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
@@ -7,6 +7,7 @@ import { JobActivityProvider } from "@/components/jobs/JobActivityProvider";
 import { ChatPanel } from "@/components/lists/ChatPanel";
 import { TEST_IDS } from "@/lib/test-ids";
 import type { Source } from "@/lib/types";
+import { renderWithProviders } from "@/test/utils";
 
 const SOURCE_1: Source = {
   id: "src-1",
@@ -69,17 +70,14 @@ function renderChatPanel(
   { skipMock = false }: { skipMock?: boolean } = {},
 ) {
   if (!skipMock) makeConversationMock();
-  return render(
-    <LanguageProvider>
-      <JobActivityProvider>
-        <ChatPanel
-          selectedSourceIds={[]}
-          sources={[]}
-          listId="list-1"
-          {...props}
-        />
-      </JobActivityProvider>
-    </LanguageProvider>,
+  return renderWithProviders(
+    <ChatPanel
+      selectedSourceIds={[]}
+      sources={[]}
+      listId="list-1"
+      {...props}
+    />,
+    { providers: [LanguageProvider, JobActivityProvider] },
   );
 }
 

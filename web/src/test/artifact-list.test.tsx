@@ -1,10 +1,11 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
 import { LanguageProvider } from "@/app/LanguageContext";
 import { JobActivityProvider } from "@/components/jobs/JobActivityProvider";
 import { ArtifactList } from "@/components/lists/lab/ArtifactList";
+import { renderWithProviders } from "@/test/utils";
 
 const mockArtifacts = [
   {
@@ -84,17 +85,14 @@ vi.mock("@/lib/api", () => {
 import { api } from "@/lib/api";
 
 function renderArtifactList(props?: Partial<React.ComponentProps<typeof ArtifactList>>) {
-  return render(
-    <LanguageProvider>
-      <JobActivityProvider>
-        <ArtifactList
-          listId="list-1"
-          artifacts={mockArtifacts}
-          onArtifactsChange={vi.fn()}
-          {...props}
-        />
-      </JobActivityProvider>
-    </LanguageProvider>,
+  return renderWithProviders(
+    <ArtifactList
+      listId="list-1"
+      artifacts={mockArtifacts}
+      onArtifactsChange={vi.fn()}
+      {...props}
+    />,
+    { providers: [LanguageProvider, JobActivityProvider] },
   );
 }
 

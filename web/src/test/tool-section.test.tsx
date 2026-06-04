@@ -1,10 +1,11 @@
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
 import { LanguageProvider } from "@/app/LanguageContext";
 import { JobActivityProvider } from "@/components/jobs/JobActivityProvider";
 import { ToolSection } from "@/components/lists/lab/ToolSection";
+import { renderWithProviders } from "@/test/utils";
 
 // Mock the api
 vi.mock("@/lib/api", () => ({
@@ -40,16 +41,13 @@ vi.mock("@/lib/api", () => ({
 }));
 
 function renderToolSection(props?: Partial<React.ComponentProps<typeof ToolSection>>) {
-  return render(
-    <LanguageProvider>
-      <JobActivityProvider>
-        <ToolSection
-          listId="list-1"
-          selectedSourceIds={["src-1", "src-2"]}
-          {...props}
-        />
-      </JobActivityProvider>
-    </LanguageProvider>,
+  return renderWithProviders(
+    <ToolSection
+      listId="list-1"
+      selectedSourceIds={["src-1", "src-2"]}
+      {...props}
+    />,
+    { providers: [LanguageProvider, JobActivityProvider] },
   );
 }
 

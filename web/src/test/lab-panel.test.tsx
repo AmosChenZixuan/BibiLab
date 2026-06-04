@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
@@ -6,6 +6,7 @@ import { LanguageProvider } from "@/app/LanguageContext";
 import { JobActivityProvider } from "@/components/jobs/JobActivityProvider";
 import { LabPanel } from "@/components/lists/LabPanel";
 import { api } from "@/lib/api";
+import { renderWithProviders } from "@/test/utils";
 
 const ARTIFACT_1 = {
   id: "artifact-1",
@@ -39,21 +40,18 @@ vi.mock("@/lib/api", () => ({
 }));
 
 function renderLabPanel(props?: Partial<React.ComponentProps<typeof LabPanel>>) {
-  return render(
-    <JobActivityProvider>
-      <LanguageProvider>
-        <LabPanel
-          listId="list-1"
-          labCollapsed={false}
-          labW={300}
-          selectedSourceIds={[]}
-          artifacts={[]}
-          onArtifactsChange={vi.fn()}
-          onToggleCollapse={vi.fn()}
-          {...props}
-        />
-      </LanguageProvider>
-    </JobActivityProvider>,
+  return renderWithProviders(
+    <LabPanel
+      listId="list-1"
+      labCollapsed={false}
+      labW={300}
+      selectedSourceIds={[]}
+      artifacts={[]}
+      onArtifactsChange={vi.fn()}
+      onToggleCollapse={vi.fn()}
+      {...props}
+    />,
+    { providers: [JobActivityProvider, LanguageProvider] },
   );
 }
 

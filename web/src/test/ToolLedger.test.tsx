@@ -1,22 +1,21 @@
 import { afterEach, describe, expect, test } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import { LanguageProvider } from "@/app/LanguageContext";
 import { ToolLedger } from "@/components/lists/ToolLedger";
 import type { RetrievalCall, PendingRagCall } from "@/lib/chat-utils";
 import { FIND_PASSAGES_TOOL_NAME } from "@/lib/tool-display";
+import { renderWithProviders } from "@/test/utils";
 
 afterEach(() => {
   cleanup();
 });
 
 function renderLedger(props: React.ComponentProps<typeof ToolLedger>) {
-  return render(
-    <LanguageProvider>
-      <ToolLedger {...props} />
-    </LanguageProvider>,
-  );
+  return renderWithProviders(<ToolLedger {...props} />, {
+    providers: [LanguageProvider],
+  });
 }
 
 const DEFAULT_CALL: RetrievalCall = {

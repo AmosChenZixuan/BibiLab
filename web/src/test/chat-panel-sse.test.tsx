@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
@@ -6,7 +6,7 @@ import { LanguageProvider } from "@/app/LanguageContext";
 import { JobActivityProvider } from "@/components/jobs/JobActivityProvider";
 import { ChatPanel } from "@/components/lists/ChatPanel";
 import { TEST_IDS } from "@/lib/test-ids";
-import { makeOpenSseStream, makeSseStream } from "@/test/utils";
+import { makeOpenSseStream, makeSseStream, renderWithProviders } from "@/test/utils";
 import type { Source } from "@/lib/types";
 
 const SOURCE_1: Source = {
@@ -43,17 +43,14 @@ const ASSISTANT_MSG_ID = "msg-assistant-1";
 const USER_MSG_ID = "msg-user-1";
 
 function renderChatPanel(props?: Partial<React.ComponentProps<typeof ChatPanel>>) {
-  return render(
-    <LanguageProvider>
-      <JobActivityProvider>
-        <ChatPanel
-          selectedSourceIds={[]}
-          sources={[]}
-          listId="list-1"
-          {...props}
-        />
-      </JobActivityProvider>
-    </LanguageProvider>,
+  return renderWithProviders(
+    <ChatPanel
+      selectedSourceIds={[]}
+      sources={[]}
+      listId="list-1"
+      {...props}
+    />,
+    { providers: [LanguageProvider, JobActivityProvider] },
   );
 }
 

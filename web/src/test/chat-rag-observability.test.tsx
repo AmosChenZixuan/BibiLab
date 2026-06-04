@@ -1,11 +1,11 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
 import { LanguageProvider } from "@/app/LanguageContext";
 import { JobActivityProvider } from "@/components/jobs/JobActivityProvider";
 import { ChatPanel } from "@/components/lists/ChatPanel";
-import { makeSseStream } from "@/test/utils";
+import { renderWithProviders, makeSseStream } from "@/test/utils";
 import type { Source } from "@/lib/types";
 
 const SOURCE_1: Source = {
@@ -24,17 +24,14 @@ const SOURCE_1: Source = {
 };
 
 function renderChatPanel(props?: Partial<React.ComponentProps<typeof ChatPanel>>) {
-  return render(
-    <LanguageProvider>
-      <JobActivityProvider>
-        <ChatPanel
-          selectedSourceIds={[]}
-          sources={[]}
-          listId="list-1"
-          {...props}
-        />
-      </JobActivityProvider>
-    </LanguageProvider>,
+  return renderWithProviders(
+    <ChatPanel
+      selectedSourceIds={[]}
+      sources={[]}
+      listId="list-1"
+      {...props}
+    />,
+    { providers: [LanguageProvider, JobActivityProvider] },
   );
 }
 

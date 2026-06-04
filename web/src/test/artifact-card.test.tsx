@@ -1,10 +1,11 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
 import { LanguageProvider } from "@/app/LanguageContext";
 import { ArtifactCard } from "@/components/lists/lab/ArtifactCard";
 import type { Artifact } from "@/lib/types";
+import { renderWithProviders } from "@/test/utils";
 
 function renderCard(
   artifact: Artifact,
@@ -14,17 +15,16 @@ function renderCard(
   onViewPrompt?: (id: string) => void,
   onDelete?: (id: string) => void,
 ) {
-  return render(
-    <LanguageProvider>
-      <ArtifactCard
-        artifact={artifact}
-        onDismiss={onDismiss}
-        onDownload={onDownload}
-        onRename={onRename}
-        onViewPrompt={onViewPrompt}
-        onDelete={onDelete}
-      />
-    </LanguageProvider>,
+  return renderWithProviders(
+    <ArtifactCard
+      artifact={artifact}
+      onDismiss={onDismiss}
+      onDownload={onDownload}
+      onRename={onRename}
+      onViewPrompt={onViewPrompt}
+      onDelete={onDelete}
+    />,
+    { providers: [LanguageProvider] },
   );
 }
 

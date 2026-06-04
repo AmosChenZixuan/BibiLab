@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, describe, expect, test, vi } from "vitest";
@@ -6,6 +6,7 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import { LanguageProvider } from "@/app/LanguageContext";
 import { AppFrame } from "@/components/layout/AppFrame";
 import type { BibilabConfig, HealthResponse } from "@/lib/types";
+import { renderWithProviders } from "@/test/utils";
 
 vi.mock("../lib/api", () => {
   const mockApi = {
@@ -49,16 +50,15 @@ function renderFrame(healthPayload: HealthResponse, configPayload?: BibilabConfi
     }),
   );
 
-  return render(
-    <LanguageProvider>
-      <MemoryRouter initialEntries={["/"]}>
-        <Routes>
-          <Route element={<AppFrame />}>
-            <Route index element={<div>Home</div>} />
-          </Route>
-        </Routes>
-      </MemoryRouter>
-    </LanguageProvider>,
+  return renderWithProviders(
+    <MemoryRouter initialEntries={["/"]}>
+      <Routes>
+        <Route element={<AppFrame />}>
+          <Route index element={<div>Home</div>} />
+        </Route>
+      </Routes>
+    </MemoryRouter>,
+    { providers: [LanguageProvider] },
   );
 }
 

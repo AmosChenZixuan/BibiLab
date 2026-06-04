@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { RouterProvider, createMemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, test, vi } from "vitest";
@@ -6,16 +6,13 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import { LanguageProvider } from "@/app/LanguageContext";
 import { JobActivityProvider } from "@/components/jobs/JobActivityProvider";
 import { routes } from "@/app/routes";
-import { mockFetch } from "@/test/utils";
+import { mockFetch, renderWithProviders } from "@/test/utils";
 
 /** Wrap RouterProvider */
 function withRouter(router: ReturnType<typeof createMemoryRouter>) {
-  return (
-    <JobActivityProvider>
-      <LanguageProvider>
-        <RouterProvider router={router} />
-      </LanguageProvider>
-    </JobActivityProvider>
+  return renderWithProviders(
+    <RouterProvider router={router} />,
+    { providers: [JobActivityProvider, LanguageProvider] },
   );
 }
 
@@ -78,7 +75,7 @@ describe("home page", () => {
 
     const router = createMemoryRouter(routes, { initialEntries: ["/"] });
 
-    render(withRouter(router));
+    withRouter(router);
 
     expect(screen.getByText(/loading lists/i)).toBeInTheDocument();
     const settingsLink = await screen.findByTitle("Healthy");
@@ -189,7 +186,7 @@ describe("home page", () => {
     });
 
     const router = createMemoryRouter(routes, { initialEntries: ["/"] });
-    render(withRouter(router));
+    withRouter(router);
 
     await screen.findByRole("heading", { name: "Systems" });
 
@@ -286,7 +283,7 @@ describe("home page", () => {
     });
 
     const router = createMemoryRouter(routes, { initialEntries: ["/"] });
-    render(withRouter(router));
+    withRouter(router);
 
     expect(await screen.findByRole("heading", { name: "Systems" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /job spirit/i })).not.toBeInTheDocument();
@@ -326,7 +323,7 @@ describe("home page", () => {
     });
 
     const router = createMemoryRouter(routes, { initialEntries: ["/"] });
-    render(withRouter(router));
+    withRouter(router);
 
     expect(await screen.findByText("Lists unavailable")).toBeInTheDocument();
   });

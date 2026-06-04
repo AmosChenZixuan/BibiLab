@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import { LanguageProvider } from "@/app/LanguageContext";
@@ -7,19 +7,16 @@ import { JobActivityProvider } from "@/components/jobs/JobActivityProvider";
 import { ToolLedgerRow } from "@/components/lists/ToolLedgerRow";
 import { FIND_PASSAGES_TOOL_NAME, READ_SOURCE_TOOL_NAME } from "@/lib/tool-display";
 import type { RetrievalCall, PendingRagCall } from "@/lib/chat-utils";
+import { renderWithProviders } from "@/test/utils";
 
 afterEach(() => {
   cleanup();
 });
 
 function renderRow(props: React.ComponentProps<typeof ToolLedgerRow>) {
-  return render(
-    <LanguageProvider>
-      <JobActivityProvider>
-        <ToolLedgerRow {...props} />
-      </JobActivityProvider>
-    </LanguageProvider>,
-  );
+  return renderWithProviders(<ToolLedgerRow {...props} />, {
+    providers: [LanguageProvider, JobActivityProvider],
+  });
 }
 
 const BASE_CALL: RetrievalCall = {

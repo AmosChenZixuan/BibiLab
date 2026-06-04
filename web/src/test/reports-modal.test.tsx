@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
@@ -6,6 +6,7 @@ import { LanguageProvider } from "@/app/LanguageContext";
 import { JobActivityProvider } from "@/components/jobs/JobActivityProvider";
 import { ReportsModal } from "@/components/lists/lab/ReportsModal";
 import { api } from "@/lib/api";
+import { renderWithProviders } from "@/test/utils";
 
 vi.mock("@/lib/api", () => ({
   api: {
@@ -26,18 +27,15 @@ vi.mock("@/lib/api", () => ({
 }));
 
 function renderReportsModal(props?: Partial<React.ComponentProps<typeof ReportsModal>>) {
-  return render(
-    <LanguageProvider>
-      <JobActivityProvider>
-        <ReportsModal
-          listId="list-1"
-          sourceIds={["src-1", "src-2"]}
-          onClose={vi.fn()}
-          open={true}
-          {...props}
-        />
-      </JobActivityProvider>
-    </LanguageProvider>,
+  return renderWithProviders(
+    <ReportsModal
+      listId="list-1"
+      sourceIds={["src-1", "src-2"]}
+      onClose={vi.fn()}
+      open={true}
+      {...props}
+    />,
+    { providers: [LanguageProvider, JobActivityProvider] },
   );
 }
 
