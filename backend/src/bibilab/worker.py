@@ -27,7 +27,13 @@ from bibilab.db import (
 )
 from bibilab.model_registry import ensure
 from bibilab.models.jobs import JobStatus
-from bibilab.pipeline._shared import _LANG_INSTRUCTION, _LANG_NAME, _call_llm, _parse_llm_json_response, _resolved_lang
+from bibilab.pipeline._shared import (
+    _LANG_INSTRUCTION,
+    _call_llm,
+    _lang_output_directive,
+    _parse_llm_json_response,
+    _resolved_lang,
+)
 from bibilab.pipeline.audio import PipelineError, extract_audio
 from bibilab.pipeline.chunk import chunk_segments
 from bibilab.pipeline.digest import DigestResult, digest
@@ -367,7 +373,7 @@ Respond ONLY with valid JSON matching this schema:
   "name": "string (a short title for this artifact)",
   "content": "string (the main artifact content in markdown format)"
 }}
-All output fields MUST be written in {_LANG_NAME.get(lang, "English")}."""
+{_lang_output_directive(lang)}"""
 
         last_exc: Exception | None = None
         for attempt in range(3):

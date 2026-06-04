@@ -975,7 +975,9 @@ async def test_run_chat_turn_drops_tool_blocks_on_turn_2(monkeypatch, mock_strea
 
 @pytest.mark.asyncio
 async def test_chat_uses_resolved_response_language_in_system_prompt(monkeypatch, tmp_path, mock_stream_llm):
-    """When UI lang is zh and output_language is 'ui', the system prompt must say 'Respond in zh.'."""
+    """When UI lang is zh and output_language is 'ui', the system prompt must end
+    with 'Respond in 简体中文.' (readable native name, not the bare ISO code; single
+    tail directive). #402."""
     from bibilab.config import AIConfig, BackendConfig, BibilabConfig
     from bibilab.routers import chat as chat_module
 
@@ -1023,8 +1025,8 @@ async def test_chat_uses_resolved_response_language_in_system_prompt(monkeypatch
     )
 
     assert captured_system, "stream_llm was never called"
-    assert captured_system[0].startswith("Respond in zh."), (
-        f"Expected system prompt to start with 'Respond in zh.', got: {captured_system[0][:100]}"
+    assert captured_system[0].rstrip().endswith("Respond in 简体中文."), (
+        f"Expected system prompt to end with 'Respond in 简体中文.', got: {captured_system[0][-100:]}"
     )
 
 
