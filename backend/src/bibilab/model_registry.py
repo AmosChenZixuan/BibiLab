@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
-from bibilab.config import BibilabConfig, bibilab_whisper_cache_dir, models_dir  # noqa: F401
+from bibilab.config import BibilabConfig, models_dir
 
 logger = logging.getLogger(__name__)
 
@@ -220,17 +220,14 @@ def _download_http_files(spec: ModelSpec, target: Path) -> None:
 
 
 def _download_whisper_warp(spec: ModelSpec, target: Path) -> None:
-    from funasr import AutoModel  # noqa: PLC0415
+    # funasr 1.3.7's openai branch hardcodes whisper.load_model(name) with no
+    # download_root, so it always writes to ~/.cache/whisper. Bypass it and call
+    # openai-whisper's documented public API directly. See issue #426.
+    import whisper  # noqa: PLC0415  # openai-whisper (lazy: pulls in torch)
 
     logger.info("Downloading Whisper large-v3 (~3 GB) via WhisperWarp — this may take several minutes")
     try:
-        AutoModel(
-            model="Whisper-large-v3",
-            hub="openai",
-            device="cpu",
-            disable_update=True,
-            disable_pbar=True,
-        )
+        whisper.load_model("large-v3", download_root=str(target))
     except Exception:
         logger.exception("Whisper large-v3 download failed")
         raise

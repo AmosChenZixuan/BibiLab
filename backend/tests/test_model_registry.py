@@ -1,7 +1,7 @@
 """Tests for bibilab.model_registry."""
 
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -120,3 +120,28 @@ def test_target_dir_routes_whisper_through_models_dir(tmp_bibilab_home: Path):
     from bibilab.model_registry import _target_dir
 
     assert _target_dir(spec) == expected
+
+
+def test_ensure_whisper_calls_load_model_with_download_root(tmp_bibilab_home: Path):
+    """Bypass funasr's openai path: whisper.load_model(name, download_root=target) is
+    the documented public API that writes the .pt to the caller's directory."""
+    spec = get_spec("large-v3")
+    expected_target = tmp_bibilab_home / "models" / "asr" / "whisper"
+
+    def fake_load_model(name, download_root=None, **kwargs):
+        assert name == "large-v3"
+        # Mirror what openai-whisper does: write the .pt to <download_root>/<name>.pt
+        Path(download_root).mkdir(parents=True, exist_ok=True)
+        (Path(download_root) / f"{name}.pt").write_bytes(b"fake-checkpoint")
+        # Return value is discarded by _download_whisper_warp
+        return MagicMock()
+
+    with patch("whisper.load_model", side_effect=fake_load_model) as mock:
+        result = ensure(spec.id)
+
+    assert result == expected_target
+    assert (expected_target / "large-v3.pt").read_bytes() == b"fake-checkpoint"
+    mock.assert_called_once()
+    call = mock.call_args
+    assert call.args[0] == "large-v3"
+    assert call.kwargs.get("download_root") == str(expected_target)
