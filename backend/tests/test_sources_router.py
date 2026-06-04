@@ -104,7 +104,7 @@ async def test_rerun_source_not_found(client: httpx.AsyncClient):
 
 
 @pytest.mark.asyncio
-async def test_rerun_source_success(client: httpx.AsyncClient, tmp_bibilab_home: Path, monkeypatch):
+async def test_rerun_source_success(client: httpx.AsyncClient, tmp_bibilab_home: Path, mock_call_llm):
     """POST /sources/{source_id}/rerun re-runs digest and updates summary/keywords."""
     from bibilab.db import create_list, write_transcript_segments
     from bibilab.pipeline.transcribe import WhisperSegment
@@ -132,17 +132,10 @@ async def test_rerun_source_success(client: httpx.AsyncClient, tmp_bibilab_home:
     )
 
     # Mock the LLM call to return new digest with facets
-    new_digest = (
+    mock_call_llm.return_value = (
         '{"summary": "new summary from rerun", "keywords": ["new", "rerun", "test"], '
         '"series_name": "Rerun Series", "sequence_number": 5, "season_number": 1}'
     )
-
-    def mock_call_llm(prompt, cfg, llm_timeout=120, llm_max_tokens=2048):
-        return new_digest
-
-    import bibilab.pipeline.digest as digest_module
-
-    monkeypatch.setattr(digest_module, "_call_llm", mock_call_llm)
 
     resp = await client.post(f"/sources/{source_id}/rerun")
     assert resp.status_code == 202

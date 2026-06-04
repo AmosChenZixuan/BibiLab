@@ -106,7 +106,7 @@ async def test_write_source_stores_relative_paths(tmp_bibilab_home: Path):
 
 
 @pytest.mark.asyncio
-async def test_pipeline_creates_covers_and_segments(tmp_bibilab_home: Path):
+async def test_pipeline_creates_covers_and_segments(tmp_bibilab_home: Path, mock_call_llm):
     """Full pipeline with mocks: covers + transcript segments persisted."""
     import uuid
 
@@ -164,7 +164,7 @@ async def test_pipeline_creates_covers_and_segments(tmp_bibilab_home: Path):
 
     mock_transcribe_fn = MagicMock(return_value=(mock_segments, "en"))
 
-    mock_call_llm = MagicMock(return_value=mock_digest_json)
+    mock_call_llm.return_value = mock_digest_json
 
     mock_embed = MagicMock()
 
@@ -174,7 +174,6 @@ async def test_pipeline_creates_covers_and_segments(tmp_bibilab_home: Path):
         patch("bibilab.worker.extract_audio", mock_extract_audio),
         patch("bibilab.worker.transcribe", mock_transcribe_fn),
         patch("bibilab.worker._download_cover", mock_dl_cover),
-        patch("bibilab.pipeline.digest._call_llm", mock_call_llm),
         patch("bibilab.worker.embed_chunks", mock_embed),
     ):
         await worker._pipeline(job)

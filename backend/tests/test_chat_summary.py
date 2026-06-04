@@ -6,7 +6,7 @@ from tests.factories import ConversationFactory, MessageFactory
 
 
 @pytest.mark.asyncio
-async def test_no_compression_below_threshold(tmp_bibilab_home):
+async def test_no_compression_below_threshold(tmp_bibilab_home, mock_call_llm):
     from bibilab.db import (
         bootstrap_db,
         create_list,
@@ -30,27 +30,15 @@ async def test_no_compression_below_threshold(tmp_bibilab_home):
     from bibilab.config import BibilabConfig
 
     cfg = BibilabConfig()
-    from unittest.mock import patch
+    await maybe_compress_conversation(conv_id, cfg)
 
-    from bibilab.pipeline.chat_summary import _call_llm as real_call_llm
-
-    called = False
-
-    def fake_call_llm(*args, **kwargs):
-        nonlocal called
-        called = True
-        return real_call_llm(*args, **kwargs)
-
-    with patch("bibilab.pipeline.chat_summary._call_llm", fake_call_llm):
-        await maybe_compress_conversation(conv_id, cfg)
-
-    assert not called, "Compression should not have been triggered"
+    assert mock_call_llm.call_count == 0, "Compression should not have been triggered"
     conv = await get_conversation(conv_id)
     assert conv["summary"] is None
 
 
 @pytest.mark.asyncio
-async def test_compression_triggers_above_threshold(tmp_bibilab_home):
+async def test_compression_triggers_above_threshold(tmp_bibilab_home, mock_call_llm):
     from bibilab.db import (
         bootstrap_db,
         create_list,
@@ -75,19 +63,10 @@ async def test_compression_triggers_above_threshold(tmp_bibilab_home):
 
     cfg = BibilabConfig()
 
-    from unittest.mock import patch
+    mock_call_llm.return_value = "Test summary."
+    await maybe_compress_conversation(conv_id, cfg)
 
-    called_with = None
-
-    def fake_call_llm(*args, **kwargs):
-        nonlocal called_with
-        called_with = (args, kwargs)
-        return "Test summary."
-
-    with patch("bibilab.pipeline.chat_summary._call_llm", fake_call_llm):
-        await maybe_compress_conversation(conv_id, cfg)
-
-    assert called_with is not None, "Compression should have been triggered"
+    assert mock_call_llm.call_count == 1, "Compression should have been triggered"
     conv = await get_conversation(conv_id)
     assert conv["summary"] == "Test summary."
     remaining = await get_message_count(conv_id)
@@ -95,7 +74,7 @@ async def test_compression_triggers_above_threshold(tmp_bibilab_home):
 
 
 @pytest.mark.asyncio
-async def test_existing_summary_included_in_prompt(tmp_bibilab_home):
+async def test_existing_summary_included_in_prompt(tmp_bibilab_home, mock_call_llm):
     from bibilab.db import (
         bootstrap_db,
         create_list,
@@ -119,19 +98,14 @@ async def test_existing_summary_included_in_prompt(tmp_bibilab_home):
 
     cfg = BibilabConfig()
 
-    from unittest.mock import patch
-
-    captured_prompt = None
-
     def fake_call_llm(prompt, *args, **kwargs):
-        nonlocal captured_prompt
-        captured_prompt = prompt
         return "Updated summary."
 
-    with patch("bibilab.pipeline.chat_summary._call_llm", fake_call_llm):
-        await maybe_compress_conversation(conv_id, cfg)
+    mock_call_llm.side_effect = fake_call_llm
+    await maybe_compress_conversation(conv_id, cfg)
 
-    assert captured_prompt is not None
+    assert mock_call_llm.call_count == 1
+    captured_prompt = mock_call_llm.call_args.kwargs["prompt"]
     assert "User loves Python tutorials." in captured_prompt
     assert "Message 0" in captured_prompt
     # Legacy [title @ Ts-Ts] citation preservation was removed per #241 spec:
@@ -140,7 +114,7 @@ async def test_existing_summary_included_in_prompt(tmp_bibilab_home):
 
 
 @pytest.mark.asyncio
-async def test_compression_deletes_old_messages(tmp_bibilab_home):
+async def test_compression_deletes_old_messages(tmp_bibilab_home, mock_call_llm):
     from bibilab.db import (
         bootstrap_db,
         create_list,
@@ -162,20 +136,15 @@ async def test_compression_deletes_old_messages(tmp_bibilab_home):
 
     cfg = BibilabConfig()
 
-    from unittest.mock import patch
-
-    def fake_call_llm(*args, **kwargs):
-        return "Summary."
-
-    with patch("bibilab.pipeline.chat_summary._call_llm", fake_call_llm):
-        await maybe_compress_conversation(conv_id, cfg)
+    mock_call_llm.return_value = "Summary."
+    await maybe_compress_conversation(conv_id, cfg)
 
     remaining = await get_message_count(conv_id)
     assert remaining == SLIDING_WINDOW_SIZE
 
 
 @pytest.mark.asyncio
-async def test_no_compression_when_no_messages_to_compress(tmp_bibilab_home):
+async def test_no_compression_when_no_messages_to_compress(tmp_bibilab_home, mock_call_llm):
     from bibilab.db import (
         bootstrap_db,
         create_list,
@@ -195,26 +164,13 @@ async def test_no_compression_when_no_messages_to_compress(tmp_bibilab_home):
     from bibilab.config import BibilabConfig
 
     cfg = BibilabConfig()
+    await maybe_compress_conversation(conv_id, cfg)
 
-    from unittest.mock import patch
-
-    from bibilab.pipeline.chat_summary import _call_llm as real_call_llm
-
-    called = False
-
-    def fake_call_llm(*args, **kwargs):
-        nonlocal called
-        called = True
-        return real_call_llm(*args, **kwargs)
-
-    with patch("bibilab.pipeline.chat_summary._call_llm", fake_call_llm):
-        await maybe_compress_conversation(conv_id, cfg)
-
-    assert not called, "Should not compress when all messages are within window"
+    assert mock_call_llm.call_count == 0, "Should not compress when all messages are within window"
 
 
 @pytest.mark.asyncio
-async def test_nonexistent_conversation_noops(tmp_bibilab_home):
+async def test_nonexistent_conversation_noops(tmp_bibilab_home, mock_call_llm):
     from bibilab.db import bootstrap_db
     from bibilab.pipeline.chat_summary import maybe_compress_conversation
 
@@ -223,26 +179,13 @@ async def test_nonexistent_conversation_noops(tmp_bibilab_home):
     from bibilab.config import BibilabConfig
 
     cfg = BibilabConfig()
+    await maybe_compress_conversation("nonexistent-conv-id", cfg)
 
-    from unittest.mock import patch
-
-    from bibilab.pipeline.chat_summary import _call_llm as real_call_llm
-
-    called = False
-
-    def fake_call_llm(*args, **kwargs):
-        nonlocal called
-        called = True
-        return real_call_llm(*args, **kwargs)
-
-    with patch("bibilab.pipeline.chat_summary._call_llm", fake_call_llm):
-        await maybe_compress_conversation("nonexistent-conv-id", cfg)
-
-    assert not called
+    assert mock_call_llm.call_count == 0
 
 
 @pytest.mark.asyncio
-async def test_compression_prompt_no_legacy_citation_preservation(tmp_bibilab_home):
+async def test_compression_prompt_no_legacy_citation_preservation(tmp_bibilab_home, mock_call_llm):
     """Compression prompt does not preserve legacy [title @ Ts-Ts] citations per #241 spec."""
     from bibilab.db import (
         bootstrap_db,
@@ -264,19 +207,14 @@ async def test_compression_prompt_no_legacy_citation_preservation(tmp_bibilab_ho
 
     cfg = BibilabConfig()
 
-    from unittest.mock import patch
-
-    captured_prompt = None
-
     def fake_call_llm(prompt, *args, **kwargs):
-        nonlocal captured_prompt
-        captured_prompt = prompt
         return "Summary with citation preserved."
 
-    with patch("bibilab.pipeline.chat_summary._call_llm", fake_call_llm):
-        await maybe_compress_conversation(conv_id, cfg)
+    mock_call_llm.side_effect = fake_call_llm
+    await maybe_compress_conversation(conv_id, cfg)
 
-    assert captured_prompt is not None
+    assert mock_call_llm.call_count == 1
+    captured_prompt = mock_call_llm.call_args.kwargs["prompt"]
     # Legacy [title @ Ts-Ts] citation preservation was removed per #241 spec:
     # summaries are plain prose without legacy token preservation.
     assert "PRESERVE ALL [title @ Ts-Ts]" not in captured_prompt

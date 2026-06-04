@@ -366,7 +366,7 @@ async def test_worker_start_stop(tmp_bibilab_home: Path):
 
 
 @pytest.mark.asyncio
-async def test_run_digest_job_success(tmp_bibilab_home: Path, monkeypatch):
+async def test_run_digest_job_success(tmp_bibilab_home: Path, mock_call_llm):
     from bibilab.db import bootstrap_db, create_job, create_list, get_source, write_transcript_segments
     from bibilab.pipeline.transcribe import WhisperSegment
 
@@ -392,13 +392,10 @@ async def test_run_digest_job_success(tmp_bibilab_home: Path, monkeypatch):
 
     job_id = await create_job("digest", {"source_id": source_id, "list_id": "list-digest", "ui_lang": None})
 
-    new_digest = (
+    mock_call_llm.return_value = (
         '{"summary": "new summary", "keywords": ["new"], '
         '"series_name": null, "sequence_number": null, "season_number": null}'
     )
-    import bibilab.pipeline.digest as digest_module
-
-    monkeypatch.setattr(digest_module, "_call_llm", lambda *a, **k: new_digest)
 
     worker = WorkerLoop(home=tmp_bibilab_home)
     job = {
@@ -474,7 +471,7 @@ async def test_run_digest_job_no_transcript(tmp_bibilab_home: Path):
 
 
 @pytest.mark.asyncio
-async def test_run_digest_job_llm_failure(tmp_bibilab_home: Path, monkeypatch):
+async def test_run_digest_job_llm_failure(tmp_bibilab_home: Path, mock_call_llm):
     from bibilab.db import bootstrap_db, create_job, create_list, write_transcript_segments
     from bibilab.pipeline.transcribe import WhisperSegment
 
@@ -499,9 +496,7 @@ async def test_run_digest_job_llm_failure(tmp_bibilab_home: Path, monkeypatch):
 
     job_id = await create_job("digest", {"source_id": source_id, "list_id": "list-llm-fail"})
 
-    import bibilab.pipeline.digest as digest_module
-
-    monkeypatch.setattr(digest_module, "_call_llm", lambda *a, **k: (_ for _ in ()).throw(ValueError("LLM error")))
+    mock_call_llm.side_effect = ValueError("LLM error")
 
     worker = WorkerLoop(home=tmp_bibilab_home)
     job = {"id": job_id, "type": "digest", "meta": json.dumps({"source_id": source_id, "list_id": "list-llm-fail"})}

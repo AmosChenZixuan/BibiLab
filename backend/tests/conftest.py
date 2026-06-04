@@ -1,9 +1,12 @@
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import httpx
 import pytest
 import pytest_asyncio
+
+from bibilab.pipeline._shared import StreamEvent
+from tests import an_async_generator
 
 
 @pytest.fixture(autouse=True)
@@ -14,6 +17,65 @@ def _clear_llm_client_caches():
 
     _async_client_cache.clear()
     _client_cache.clear()
+
+
+async def _default_stream_llm(*args, **kwargs):
+    """Default no-op stream: yield a single `done` event so the LLM-shaped code path
+    accepts the empty stream and the consumer sees a clean terminal event."""
+    async for ev in an_async_generator([StreamEvent(type="done")]):
+        yield ev
+
+
+_DEFAULT_LLM_RESPONSE = "{}"
+
+
+@pytest.fixture()
+def mock_stream_llm():
+    """Patch the canonical `bibilab.routers.chat.stream_llm` seam with a configurable fake.
+
+    Default behavior: yields a single `StreamEvent(type="done")` (no-op stream).
+
+    Override per test by reassigning attributes on the yielded mock:
+        mock_stream_llm.side_effect = my_async_gen_fn      # custom async generator
+        mock_stream_llm.side_effect = MyException()       # raise on call
+        mock_stream_llm.side_effect = [ev1, ev2, ev3]      # sequence of return values
+    """
+    mock = MagicMock(side_effect=_default_stream_llm)
+    with patch("bibilab.routers.chat.stream_llm", mock):
+        yield mock
+
+
+@pytest.fixture()
+def mock_call_llm():
+    """Patch the three `_call_llm` seams with a single configurable fake.
+
+    Patches:
+        bibilab.pipeline.digest._call_llm
+        bibilab.pipeline.chat_summary._call_llm
+        bibilab.worker._call_llm
+
+    Default return: "{}" (empty JSON object — the lowest common denominator across
+    digest/chat_summary/artifact LLM consumers, all of which parse JSON).
+
+    Override per test by reassigning attributes on the yielded mock:
+        mock_call_llm.return_value = "..."                 # canned string
+        mock_call_llm.side_effect = my_fn                  # custom callable
+        mock_call_llm.side_effect = MyException()          # raise on call
+        mock_call_llm.side_effect = [err, valid, valid]    # sequence (e.g. retries)
+    """
+    mock = MagicMock(return_value=_DEFAULT_LLM_RESPONSE)
+    patches = [
+        patch("bibilab.pipeline.digest._call_llm", mock),
+        patch("bibilab.pipeline.chat_summary._call_llm", mock),
+        patch("bibilab.worker._call_llm", mock),
+    ]
+    for p in patches:
+        p.start()
+    try:
+        yield mock
+    finally:
+        for p in patches:
+            p.stop()
 
 
 @pytest.fixture(autouse=True)
