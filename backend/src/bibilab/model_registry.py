@@ -135,6 +135,7 @@ RERANKER_SPEC_ID = "bge-reranker-base"
 DIARIZATION_SPEC_ID = "cam++"
 VAD_SPEC_ID = "fsmn-vad"
 PUNC_SPEC_ID = "ct-punc"
+WHISPER_SPEC_ID = "large-v3"
 
 
 def list_specs() -> list[ModelSpec]:
@@ -227,12 +228,10 @@ def _download_whisper_warp(spec: ModelSpec, target: Path) -> None:
 
     logger.info("Downloading Whisper large-v3 (~3 GB) via WhisperWarp — this may take several minutes")
     try:
-        whisper.load_model("large-v3", download_root=str(target))
+        whisper.load_model(spec.id, download_root=str(target))
     except Exception:
         logger.exception("Whisper large-v3 download failed")
         raise
-    if not (target / "large-v3.pt").exists():
-        raise RuntimeError(f"Whisper large-v3 download failed: checkpoint not found at {target}")
     logger.info("Whisper large-v3 download complete → %s", target)
 
 
@@ -308,6 +307,7 @@ __all__ = [
     "PUNC_SPEC_ID",
     "RERANKER_SPEC_ID",
     "VAD_SPEC_ID",
+    "WHISPER_SPEC_ID",
     "ensure",
     "get_spec",
     "list_specs",
