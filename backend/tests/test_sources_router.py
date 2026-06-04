@@ -6,6 +6,8 @@ import pytest
 
 from bibilab.db import write_source
 
+pytestmark = pytest.mark.integration
+
 
 @pytest.mark.asyncio
 async def test_get_source_returns_digest_and_transcript(client: httpx.AsyncClient, tmp_bibilab_home: Path):

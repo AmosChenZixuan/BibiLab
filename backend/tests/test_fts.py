@@ -24,6 +24,8 @@ from bibilab.db import (
 from bibilab.pipeline.chunk import RagChunk
 from bibilab.pipeline.embed import clear_fts_for_source_sync, populate_fts, query_fts
 
+pytestmark = pytest.mark.integration
+
 
 @pytest.fixture()
 def tmp_bibilab_home(tmp_path: Path):

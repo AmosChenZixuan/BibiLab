@@ -4,6 +4,8 @@ from unittest.mock import patch
 
 import pytest
 
+pytestmark = pytest.mark.integration
+
 
 @pytest.fixture()
 def tmp_bibilab_home(tmp_path: Path):

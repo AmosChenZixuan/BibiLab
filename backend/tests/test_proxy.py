@@ -3,6 +3,8 @@ from unittest.mock import AsyncMock, patch
 import httpx
 import pytest
 
+pytestmark = pytest.mark.integration
+
 
 @pytest.mark.asyncio
 async def test_proxy_cover_rejects_invalid_domain(client: httpx.AsyncClient):

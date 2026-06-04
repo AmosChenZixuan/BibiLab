@@ -16,6 +16,8 @@ from bibilab.routers.chat import (
 )
 from tests import an_async_generator
 
+pytestmark = pytest.mark.integration
+
 
 def _parse_sse(text: str) -> list[dict]:
     events = []
