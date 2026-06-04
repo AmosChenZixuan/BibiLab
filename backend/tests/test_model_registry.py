@@ -1,13 +1,15 @@
 """Tests for bibilab.model_registry."""
 
+import sys
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from bibilab.model_registry import (
     ModelSpec,
     _download_http_files,
+    _target_dir,
     ensure,
     get_spec,
 )
@@ -101,3 +103,40 @@ def test_ctpunc_is_required_unconditionally():
     ids = [s.id for s in required_models(cfg)]
     assert "ct-punc" in ids
     assert PUNC_SPEC_ID == "ct-punc"
+
+
+def test_target_dir_routes_whisper_through_models_dir(tmp_bibilab_home: Path):
+    """_target_dir must use the spec's local_subdir for whisper too (no special-case)."""
+    spec = get_spec("large-v3")
+    from bibilab.model_registry import _target_dir
+
+    expected = _target_dir(spec)
+    assert _target_dir(spec) == expected
+
+
+def test_ensure_whisper_calls_load_model_with_download_root(tmp_bibilab_home: Path):
+    """Bypass funasr's openai path: whisper.load_model(name, download_root=target) is
+    the documented public API that writes the .pt to the caller's directory."""
+    spec = get_spec("large-v3")
+    expected_target = _target_dir(spec)
+
+    def fake_load_model(name, download_root=None, **kwargs):
+        assert name == "large-v3"
+        # Mirror what openai-whisper does: write the .pt to <download_root>/<name>.pt
+        Path(download_root).mkdir(parents=True, exist_ok=True)
+        (Path(download_root) / f"{name}.pt").write_bytes(b"fake-checkpoint")
+        # Return value is discarded by _download_whisper_warp
+        return MagicMock()
+
+    whisper_stub = MagicMock()
+    whisper_stub.load_model = MagicMock(side_effect=fake_load_model)
+    with patch.dict(sys.modules, {"whisper": whisper_stub}):
+        mock = whisper_stub.load_model
+        result = ensure(spec.id)
+
+    assert result == expected_target
+    assert (expected_target / "large-v3.pt").read_bytes() == b"fake-checkpoint"
+    mock.assert_called_once()
+    call = mock.call_args
+    assert call.args[0] == "large-v3"
+    assert call.kwargs.get("download_root") == str(expected_target)

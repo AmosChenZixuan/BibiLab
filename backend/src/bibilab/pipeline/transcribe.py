@@ -33,7 +33,7 @@ from pathlib import Path
 from typing import Any
 
 from bibilab.config import TranscriptionConfig
-from bibilab.model_registry import DIARIZATION_SPEC_ID, VAD_SPEC_ID, ensure, get_spec
+from bibilab.model_registry import DIARIZATION_SPEC_ID, VAD_SPEC_ID, WHISPER_SPEC_ID, ensure, get_spec
 from bibilab.pipeline.audio import PipelineError
 
 logger = logging.getLogger(__name__)
@@ -78,7 +78,15 @@ def _load_funasr(cfg: TranscriptionConfig) -> Any:
     vad_path = ensure(VAD_SPEC_ID)
 
     if cfg.model == "large-v3":
-        automodel_kwargs = {"model": "Whisper-large-v3", "hub": "openai"}
+        # Whisper checkpoint is pre-downloaded to ~/.bibilab/models/asr/whisper/
+        # by model_registry.ensure(WHISPER_SPEC_ID). funasr's openai branch takes the
+        # checkpoint as `model`: when that's an existing path it local-loads (deriving
+        # model_path + WhisperWarp internally) instead of fetching to ~/.cache/whisper.
+        # A bare name would download; passing model_path with no model trips its assert.
+        # See issue #426.
+        model_dir = ensure(WHISPER_SPEC_ID)
+        spec = get_spec(WHISPER_SPEC_ID)
+        automodel_kwargs = {"model": str(model_dir / spec.integrity_files[0]), "hub": "openai"}
     else:
         model_path = ensure(cfg.model)
         automodel_kwargs = {"model": str(model_path)}

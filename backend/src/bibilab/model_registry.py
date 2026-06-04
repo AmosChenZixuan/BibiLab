@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
-from bibilab.config import BibilabConfig, bibilab_whisper_cache_dir, models_dir
+from bibilab.config import BibilabConfig, models_dir
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +29,7 @@ class ModelSpec:
     backend: Backend
     size_mb: int
     integrity_files: list[str]  # rel paths within target dir that must exist post-download
-    local_subdir: str  # relative to models_dir(), except whisper_warp uses ~/.cache/whisper
+    local_subdir: str  # relative to models_dir()
     modelscope_id: str | None = None
     http_files: list[tuple[str, str]] | None = None  # [(url, rel_path), ...]
 
@@ -48,7 +48,7 @@ _SPECS: dict[str, ModelSpec] = {
         backend="whisper_warp",
         size_mb=3000,
         integrity_files=["large-v3.pt"],
-        local_subdir="",  # special-cased in _target_dir
+        local_subdir="asr/whisper",
     ),
     "sensevoice-small": ModelSpec(
         id="sensevoice-small",
@@ -135,6 +135,7 @@ RERANKER_SPEC_ID = "bge-reranker-base"
 DIARIZATION_SPEC_ID = "cam++"
 VAD_SPEC_ID = "fsmn-vad"
 PUNC_SPEC_ID = "ct-punc"
+WHISPER_SPEC_ID = "large-v3"
 
 
 def list_specs() -> list[ModelSpec]:
@@ -151,11 +152,6 @@ def get_spec(spec_id: str) -> ModelSpec:
 
 
 def _target_dir(spec: ModelSpec) -> Path:
-    if spec.backend == "whisper_warp":
-        # Production: ~/.cache/whisper (openai-whisper hardcoded path).
-        # Under BIBILAB_HOME (tests): bibilab_home()/.cache/whisper — doesn't
-        # pollute the real cache when test code reads/writes this path.
-        return bibilab_whisper_cache_dir()
     return models_dir(spec.local_subdir)
 
 
@@ -225,22 +221,17 @@ def _download_http_files(spec: ModelSpec, target: Path) -> None:
 
 
 def _download_whisper_warp(spec: ModelSpec, target: Path) -> None:
-    from funasr import AutoModel  # noqa: PLC0415
+    # funasr 1.3.7's openai branch hardcodes whisper.load_model(name) with no
+    # download_root, so it always writes to ~/.cache/whisper. Bypass it and call
+    # openai-whisper's documented public API directly. See issue #426.
+    import whisper  # noqa: PLC0415  # openai-whisper (lazy: pulls in torch)
 
     logger.info("Downloading Whisper large-v3 (~3 GB) via WhisperWarp — this may take several minutes")
     try:
-        AutoModel(
-            model="Whisper-large-v3",
-            hub="openai",
-            device="cpu",
-            disable_update=True,
-            disable_pbar=True,
-        )
+        whisper.load_model(spec.id, download_root=str(target))
     except Exception:
         logger.exception("Whisper large-v3 download failed")
         raise
-    if not (target / "large-v3.pt").exists():
-        raise RuntimeError(f"Whisper large-v3 download failed: checkpoint not found at {target}")
     logger.info("Whisper large-v3 download complete → %s", target)
 
 
@@ -316,6 +307,7 @@ __all__ = [
     "PUNC_SPEC_ID",
     "RERANKER_SPEC_ID",
     "VAD_SPEC_ID",
+    "WHISPER_SPEC_ID",
     "ensure",
     "get_spec",
     "list_specs",

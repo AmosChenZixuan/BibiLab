@@ -37,11 +37,11 @@ Single-port deployment: FastAPI serves the React build as static files in produc
 ├── covers/            cached cover images
 ├── artifacts/         generated artifact content
 ├── chroma/            ChromaDB vector data
-├── models/            cached embedding + reranker models (downloaded on first use)
+├── models/            cached local models (embedding, reranker, ASR) — downloaded on first use
 └── downloads/         temp video files, cleaned after pipeline
 ```
 
-The root defaults to `~/.bibilab/`; override it with the `BIBILAB_HOME` env var (tests set this for per-run isolation). The Whisper checkpoint is the exception — it lives at `~/.cache/whisper/` (openai-whisper's hardcoded path; see issue #426).
+The root defaults to `~/.bibilab/`; override it with the `BIBILAB_HOME` env var (tests set this for per-run isolation).
 
 ## Core Design Decisions
 
