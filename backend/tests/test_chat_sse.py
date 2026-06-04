@@ -15,6 +15,9 @@ from bibilab.routers.chat import (
     _client_tool_result,
 )
 from tests import an_async_generator
+from tests.factories import MessageFactory
+
+pytestmark = pytest.mark.integration
 
 
 def _parse_sse(text: str) -> list[dict]:
@@ -105,11 +108,18 @@ async def test_chat_endpoint_uses_conversation_history(client):
     """Prior conversation messages are included in LLM context."""
     list_id = (await client.post("/lists", json={"name": "Test"})).json()["id"]
 
-    from bibilab.db import create_message, get_or_create_conversation
+    from bibilab.db import get_or_create_conversation
 
     conv_id = await get_or_create_conversation(list_id)
-    await create_message(conv_id, "user", "Previous question", None)
-    await create_message(conv_id, "assistant", "Previous answer", None)
+    await MessageFactory.build(
+        conv_id,
+        content="Previous question",
+    )
+    await MessageFactory.build(
+        conv_id,
+        role="assistant",
+        content="Previous answer",
+    )
 
     captured_messages = []
 
@@ -437,7 +447,7 @@ async def test_chat_sse_multi_find_passages_no_crash(client):
 
 
 @pytest.mark.asyncio
-async def test_pure_ack_no_retrieve_called(client):
+async def test_pure_ack_no_retrieve_called(client, mock_stream_llm):
     """
     User sends '嗯' — LLM yields text directly, no tool_call. trivial_ack_note
     is deleted; this verifies behavior relies on LLM tool_choice.
@@ -451,14 +461,13 @@ async def test_pure_ack_no_retrieve_called(client):
         yield StreamEvent(type="delta", content="好的，您还有别的问题吗？")
         yield StreamEvent(type="done")
 
+    mock_stream_llm.side_effect = fake_stream_llm
+
     async def fake_execute_tool(**kwargs):
         tool_calls_seen.append(kwargs.get("tool_name", "?"))
         return {}
 
-    with (
-        patch("bibilab.routers.chat.stream_llm", fake_stream_llm),
-        patch("bibilab.routers.chat.execute_tool", fake_execute_tool),
-    ):
+    with patch("bibilab.routers.chat.execute_tool", fake_execute_tool):
         resp = await client.post(f"/lists/{list_id}/chat", json={"message": "嗯"})
 
     assert resp.status_code == 200
@@ -467,7 +476,7 @@ async def test_pure_ack_no_retrieve_called(client):
 
 
 @pytest.mark.asyncio
-async def test_deltas_streamed_immediately_during_tool_iteration(client):
+async def test_deltas_streamed_immediately_during_tool_iteration(client, mock_stream_llm):
     """Deltas from a tool iteration reach the client immediately (not buffered until stream end)."""
     from bibilab.pipeline.chat_tools import FIND_PASSAGES_TOOL
 
@@ -488,6 +497,8 @@ async def test_deltas_streamed_immediately_during_tool_iteration(client):
             yield StreamEvent(type="delta", content="final answer")
             yield StreamEvent(type="done")
 
+    mock_stream_llm.side_effect = fake_stream_llm
+
     async def fake_execute_tool(**kwargs):
         args = kwargs.get("arguments", {})
         return {
@@ -501,10 +512,7 @@ async def test_deltas_streamed_immediately_during_tool_iteration(client):
             "_turn_indices": [],
         }
 
-    with (
-        patch("bibilab.routers.chat.stream_llm", fake_stream_llm),
-        patch("bibilab.routers.chat.execute_tool", fake_execute_tool),
-    ):
+    with patch("bibilab.routers.chat.execute_tool", fake_execute_tool):
         resp = await client.post(f"/lists/{list_id}/chat", json={"message": "q"})
 
     assert resp.status_code == 200
@@ -515,7 +523,7 @@ async def test_deltas_streamed_immediately_during_tool_iteration(client):
 
 
 @pytest.mark.asyncio
-async def test_terminal_iteration_deltas_streamed(client):
+async def test_terminal_iteration_deltas_streamed(client, mock_stream_llm):
     """A no-tool iteration's deltas must reach the client verbatim."""
     list_id = (await client.post("/lists", json={"name": "T"})).json()["id"]
 
@@ -523,15 +531,15 @@ async def test_terminal_iteration_deltas_streamed(client):
         yield StreamEvent(type="delta", content="hello world")
         yield StreamEvent(type="done")
 
-    with patch("bibilab.routers.chat.stream_llm", fake_stream_llm):
-        resp = await client.post(f"/lists/{list_id}/chat", json={"message": "hi"})
+    mock_stream_llm.side_effect = fake_stream_llm
+    resp = await client.post(f"/lists/{list_id}/chat", json={"message": "hi"})
 
     assert resp.status_code == 200
     assert "hello world" in resp.text
 
 
 @pytest.mark.asyncio
-async def test_chat_sse_hallucinated_index_emitted_as_text(client, caplog):
+async def test_chat_sse_hallucinated_index_emitted_as_text(client, caplog, mock_stream_llm):
     """[7] when registry only has 1-2 → emitted as text delta, warning logged.
 
     Mocks stream_llm (not stream_with_tools) so the real parser runs.
@@ -544,11 +552,12 @@ async def test_chat_sse_hallucinated_index_emitted_as_text(client, caplog):
         yield StreamEvent(type="delta", content="see [7]")
         yield StreamEvent(type="done")
 
+    mock_stream_llm.side_effect = fake_stream_llm
+
     import logging
 
-    with patch("bibilab.routers.chat.stream_llm", side_effect=fake_stream_llm):
-        with caplog.at_level(logging.WARNING, logger="bibilab.pipeline.citation_parser"):
-            resp = await client.post(f"/lists/{list_id}/chat", json={"message": "hi"})
+    with caplog.at_level(logging.WARNING, logger="bibilab.pipeline.citation_parser"):
+        resp = await client.post(f"/lists/{list_id}/chat", json={"message": "hi"})
 
     assert resp.status_code == 200
     events = _parse_sse(resp.text)
@@ -567,7 +576,7 @@ async def test_chat_sse_hallucinated_index_emitted_as_text(client, caplog):
 
 
 @pytest.mark.asyncio
-async def test_run_chat_turn_persists_tool_blocks(monkeypatch, tmp_path):
+async def test_run_chat_turn_persists_tool_blocks(monkeypatch, tmp_path, mock_stream_llm):
     """When the producer runs a find_passages tool, tool_blocks must be persisted via update_message_content."""
     from bibilab.config import AIConfig, BackendConfig, BibilabConfig
     from bibilab.pipeline._shared import StreamEvent, ToolCall
@@ -585,6 +594,8 @@ async def test_run_chat_turn_persists_tool_blocks(monkeypatch, tmp_path):
         else:
             yield StreamEvent(type="delta", content="Answer [1]")
             yield StreamEvent(type="done")
+
+    mock_stream_llm.side_effect = fake_stream_llm
 
     async def fake_execute(tool_name, arguments, **kwargs):
         return {
@@ -609,7 +620,6 @@ async def test_run_chat_turn_persists_tool_blocks(monkeypatch, tmp_path):
             ],
         }
 
-    monkeypatch.setattr(chat_module, "stream_llm", fake_stream_llm)
     monkeypatch.setattr(chat_module, "execute_tool", fake_execute)
 
     captured: dict = {}
@@ -654,7 +664,7 @@ async def test_run_chat_turn_persists_tool_blocks(monkeypatch, tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_system_message_is_stable_across_turns(monkeypatch):
+async def test_system_message_is_stable_across_turns(monkeypatch, mock_stream_llm):
     """#310: for a fixed response_language the assembled system prompt is
     byte-identical turn to turn (no per-turn source list) — prompt-cache stable."""
     from bibilab.config import AIConfig, BackendConfig, BibilabConfig
@@ -669,10 +679,11 @@ async def test_system_message_is_stable_across_turns(monkeypatch):
         yield StreamEvent(type="delta", content="ok")
         yield StreamEvent(type="done")
 
+    mock_stream_llm.side_effect = fake_stream_llm
+
     async def noop(*a, **kw):
         return None
 
-    monkeypatch.setattr(chat_module, "stream_llm", fake_stream_llm)
     monkeypatch.setattr(chat_module, "update_message_content", noop)
     monkeypatch.setattr(chat_module, "set_active_stream", noop)
 
@@ -705,7 +716,7 @@ async def test_system_message_is_stable_across_turns(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_tool_call_start_emitted_before_tool_result(client):
+async def test_tool_call_start_emitted_before_tool_result(client, mock_stream_llm):
     """Each find_passages tool_call must emit a tool_call_start SSE event before its tool_result."""
     from bibilab.pipeline.chat_tools import FIND_PASSAGES_TOOL
 
@@ -725,6 +736,8 @@ async def test_tool_call_start_emitted_before_tool_result(client):
             yield StreamEvent(type="delta", content="answer")
             yield StreamEvent(type="done")
 
+    mock_stream_llm.side_effect = fake_stream_llm
+
     async def fake_execute_tool(**kwargs):
         args = kwargs.get("arguments", {})
         return {
@@ -738,10 +751,7 @@ async def test_tool_call_start_emitted_before_tool_result(client):
             "_turn_indices": [],
         }
 
-    with (
-        patch("bibilab.routers.chat.stream_llm", fake_stream_llm),
-        patch("bibilab.routers.chat.execute_tool", fake_execute_tool),
-    ):
+    with patch("bibilab.routers.chat.execute_tool", fake_execute_tool):
         resp = await client.post(f"/lists/{list_id}/chat", json={"message": "q"})
 
     assert resp.status_code == 200
@@ -757,7 +767,7 @@ async def test_tool_call_start_emitted_before_tool_result(client):
 
 
 @pytest.mark.asyncio
-async def test_rag_metadata_persists_calls_list(client):
+async def test_rag_metadata_persists_calls_list(client, mock_stream_llm):
     """metadata.rag.calls must contain one entry per find_passages call in the turn."""
     from bibilab.pipeline.chat_tools import FIND_PASSAGES_TOOL
 
@@ -781,6 +791,8 @@ async def test_rag_metadata_persists_calls_list(client):
             yield StreamEvent(type="delta", content="ok")
             yield StreamEvent(type="done")
 
+    mock_stream_llm.side_effect = fake_stream_llm
+
     async def fake_execute_tool(**kwargs):
         args = kwargs.get("arguments", {})
         return {
@@ -794,10 +806,7 @@ async def test_rag_metadata_persists_calls_list(client):
             "_turn_indices": [],
         }
 
-    with (
-        patch("bibilab.routers.chat.stream_llm", fake_stream_llm),
-        patch("bibilab.routers.chat.execute_tool", fake_execute_tool),
-    ):
+    with patch("bibilab.routers.chat.execute_tool", fake_execute_tool):
         resp = await client.post(f"/lists/{list_id}/chat", json={"message": "q"})
     assert resp.status_code == 200
 
@@ -847,7 +856,7 @@ async def test_chat_endpoint_error_reason_in_sse_terminal_payload(client):
 
 
 @pytest.mark.asyncio
-async def test_chat_endpoint_classify_error_reaches_sse_terminal_payload(client):
+async def test_chat_endpoint_classify_error_reaches_sse_terminal_payload(client, mock_stream_llm):
     """When an SDK exception propagates from stream_llm, classify_error() maps
     it to the correct i18n code in the SSE terminal payload (spec #266 requirement)."""
     list_id = (await client.post("/lists", json={"name": "ClassifyErr"})).json()["id"]
@@ -860,8 +869,8 @@ async def test_chat_endpoint_classify_error_reaches_sse_terminal_payload(client)
         )
         yield  # unreachable, makes this an async generator
 
-    with patch("bibilab.routers.chat.stream_llm", fake_stream_llm_raises):
-        resp = await client.post(f"/lists/{list_id}/chat", json={"message": "trigger rate limit"})
+    mock_stream_llm.side_effect = fake_stream_llm_raises
+    resp = await client.post(f"/lists/{list_id}/chat", json={"message": "trigger rate limit"})
 
     assert resp.status_code == 200
     events = _parse_sse(resp.text)
@@ -882,7 +891,7 @@ async def test_chat_endpoint_classify_error_reaches_sse_terminal_payload(client)
 
 
 @pytest.mark.asyncio
-async def test_run_chat_turn_drops_tool_blocks_on_turn_2(monkeypatch):
+async def test_run_chat_turn_drops_tool_blocks_on_turn_2(monkeypatch, mock_stream_llm):
     """v2 spec §5.5: prior-turn find_passages / read_source tool exchanges are
     dropped from cross-turn replay to avoid stale-context contamination. The
     LLM sees only the synthesized prose from prior turns; to re-ground on
@@ -899,7 +908,7 @@ async def test_run_chat_turn_drops_tool_blocks_on_turn_2(monkeypatch):
         yield StreamEvent(type="delta", content="ok")
         yield StreamEvent(type="done")
 
-    monkeypatch.setattr(chat_module, "stream_llm", fake_stream_llm)
+    mock_stream_llm.side_effect = fake_stream_llm
 
     async def noop(*a, **kw):
         return None
@@ -965,7 +974,7 @@ async def test_run_chat_turn_drops_tool_blocks_on_turn_2(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_chat_uses_resolved_response_language_in_system_prompt(monkeypatch, tmp_path):
+async def test_chat_uses_resolved_response_language_in_system_prompt(monkeypatch, tmp_path, mock_stream_llm):
     """When UI lang is zh and output_language is 'ui', the system prompt must say 'Respond in zh.'."""
     from bibilab.config import AIConfig, BackendConfig, BibilabConfig
     from bibilab.routers import chat as chat_module
@@ -979,10 +988,11 @@ async def test_chat_uses_resolved_response_language_in_system_prompt(monkeypatch
         yield StreamEvent(type="delta", content="ok")
         yield StreamEvent(type="done")
 
+    mock_stream_llm.side_effect = fake_stream_llm
+
     async def noop(*args, **kwargs):
         return None
 
-    monkeypatch.setattr(chat_module, "stream_llm", fake_stream_llm)
     monkeypatch.setattr(chat_module, "update_message_content", noop)
     monkeypatch.setattr(chat_module, "set_active_stream", noop)
 
@@ -1121,7 +1131,7 @@ async def test_run_chat_turn_reseeds_citation_registry_from_history_tool_blocks(
 
 
 @pytest.mark.asyncio
-async def test_rag_call_carries_facet_scope(client):
+async def test_rag_call_carries_facet_scope(client, mock_stream_llm):
     """#309: facet_scope from execute_find_passages must survive the router copy into metadata.rag."""
     from bibilab.pipeline.chat_tools import FIND_PASSAGES_TOOL
 
@@ -1145,6 +1155,8 @@ async def test_rag_call_carries_facet_scope(client):
             yield StreamEvent(type="delta", content="ok")
             yield StreamEvent(type="done")
 
+    mock_stream_llm.side_effect = fake_stream_llm
+
     async def fake_execute_tool(**kwargs):
         args = kwargs.get("arguments", {})
         return {
@@ -1165,10 +1177,7 @@ async def test_rag_call_carries_facet_scope(client):
             "_turn_indices": [],
         }
 
-    with (
-        patch("bibilab.routers.chat.stream_llm", fake_stream_llm),
-        patch("bibilab.routers.chat.execute_tool", fake_execute_tool),
-    ):
+    with patch("bibilab.routers.chat.execute_tool", fake_execute_tool):
         resp = await client.post(f"/lists/{list_id}/chat", json={"message": "q"})
     assert resp.status_code == 200
 

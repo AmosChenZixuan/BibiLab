@@ -8,6 +8,8 @@ from bibilab.config import AIConfig, BackendConfig, BibilabConfig, RagConfig
 from bibilab.pipeline import embed
 from bibilab.pipeline.embed import RetrievedChunk, retrieve
 
+pytestmark = pytest.mark.integration
+
 
 def _cfg(*, reranking: bool = True) -> BibilabConfig:
     return BibilabConfig(

@@ -357,56 +357,6 @@ async def _exec_write_transcript_segments(db: aiosqlite.Connection, source_id: s
     )
 
 
-async def write_source(
-    source_id: str,
-    video_id: str,
-    platform: str,
-    list_id: str,
-    title: str,
-    summary: str,
-    keywords: list[str],
-    cover_url: str | None,
-    source_url: str,
-    duration_seconds: int,
-    uploader: str,
-    language: str | None,
-    whisper_model: str,
-    ai_model: str,
-    vision_enabled: bool,
-    settings_snapshot: dict[str, Any],
-    series_name: str | None = None,
-    sequence_number: int | None = None,
-    season_number: int | None = None,
-) -> None:
-    """Test helper: insert a source row without segments.
-
-    Production code uses `write_source_with_segments` for atomic source+segments
-    insert. This wrapper is kept for ~40 test sites that don't need segments.
-    """
-    await write_source_with_segments(
-        segments=[],
-        source_id=source_id,
-        video_id=video_id,
-        platform=platform,
-        list_id=list_id,
-        title=title,
-        summary=summary,
-        keywords=keywords,
-        cover_url=cover_url,
-        source_url=source_url,
-        duration_seconds=duration_seconds,
-        uploader=uploader,
-        language=language,
-        whisper_model=whisper_model,
-        ai_model=ai_model,
-        vision_enabled=vision_enabled,
-        settings_snapshot=settings_snapshot,
-        series_name=series_name,
-        sequence_number=sequence_number,
-        season_number=season_number,
-    )
-
-
 async def write_source_with_segments(*, segments: list, **source_fields: Any) -> None:
     """Atomically upsert a source row and its transcript segments in one
     transaction. Either both land or neither — no orphaned source row, no
@@ -487,7 +437,13 @@ async def get_source(source_id: str) -> aiosqlite.Row | None:
 
 async def write_transcript_segments(source_id: str, segments: list) -> None:
     """Replace all transcript segments for a source. `segments` is a list of
-    WhisperSegment (start, end, text, speaker). Idempotent (DELETE then INSERT)."""
+    WhisperSegment (start, end, text, speaker). Idempotent (DELETE then INSERT).
+
+    Standalone segment-write primitive. Production writes segments atomically
+    with the source via `write_source_with_segments`; this is the unit-level
+    seam the segments-table tests exercise as their subject (round-trip,
+    cascade-on-delete, FK orphan rejection) — keep it even with zero prod
+    callers, those tests can't express the orphan case via the atomic path."""
     async with get_db() as db:
         await _exec_write_transcript_segments(db, source_id, segments)
         await db.commit()
@@ -762,21 +718,6 @@ async def reset_stuck_jobs() -> None:
         await db.commit()
 
 
-async def create_conversation(list_id: str) -> str:
-    conversation_id = str(uuid.uuid4())
-    now = _now()
-    async with get_db() as db:
-        await db.execute(
-            """
-            INSERT INTO conversations (id, list_id, summary, created_at, updated_at)
-            VALUES (?, ?, NULL, ?, ?)
-            """,
-            (conversation_id, list_id, now, now),
-        )
-        await db.commit()
-    return conversation_id
-
-
 async def get_conversation_by_list(list_id: str) -> aiosqlite.Row | None:
     async with get_db() as db:
         cursor = await db.execute(
@@ -810,31 +751,6 @@ async def get_or_create_conversation(list_id: str) -> str:
         )
         row = await cursor.fetchone()
         return row["id"]
-
-
-async def create_message(
-    conversation_id: str,
-    role: str,
-    content: str,
-    metadata: dict[str, Any] | None,
-) -> aiosqlite.Row:
-    message_id = str(uuid.uuid4())
-    now = _now()
-    metadata_json = json.dumps(metadata) if metadata is not None else None
-    async with get_db() as db:
-        await db.execute(
-            """
-            INSERT INTO messages (id, conversation_id, role, content, metadata, created_at)
-            VALUES (?, ?, ?, ?, ?, ?)
-            """,
-            (message_id, conversation_id, role, content, metadata_json, now),
-        )
-        await db.commit()
-        cursor = await db.execute(
-            "SELECT * FROM messages WHERE id=?",
-            (message_id,),
-        )
-        return await cursor.fetchone()
 
 
 async def get_recent_messages(
@@ -871,16 +787,6 @@ async def get_recent_messages(
             )
         rows = await cursor.fetchall()
         return list(reversed(rows))
-
-
-async def update_conversation_summary(conversation_id: str, summary: str) -> None:
-    now = _now()
-    async with get_db() as db:
-        await db.execute(
-            "UPDATE conversations SET summary=?, updated_at=? WHERE id=?",
-            (summary, now, conversation_id),
-        )
-        await db.commit()
 
 
 async def get_message_count(conversation_id: str) -> int:

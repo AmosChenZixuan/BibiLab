@@ -1,7 +1,6 @@
 """Tests for the digest pipeline stage."""
 
 import json
-from unittest.mock import patch
 
 import pytest
 
@@ -40,7 +39,7 @@ def _make_ai_cfg(output_language="en") -> AIConfig:
     )
 
 
-def test_digest_reinforcement_appears_in_prompt_en():
+def test_digest_reinforcement_appears_in_prompt_en(mock_call_llm):
     """digest prepends and appends English language instruction so LLM cannot be biased by Chinese transcript."""
     captured = None
 
@@ -49,15 +48,15 @@ def test_digest_reinforcement_appears_in_prompt_en():
         captured = prompt
         return '{"summary": "A video.", "keywords": []}'
 
-    with patch("bibilab.pipeline.digest._call_llm", side_effect=capture_llm):
-        digest("中文transcript", _make_video_meta(), _make_ai_cfg("en"), output_language="en", ui_lang=None)
+    mock_call_llm.side_effect = capture_llm
+    digest("中文transcript", _make_video_meta(), _make_ai_cfg("en"), output_language="en", ui_lang=None)
 
     assert captured is not None
     assert captured.startswith("Respond in English only")
     assert "All output fields MUST be written in English" in captured
 
 
-def test_digest_reinforcement_appears_in_prompt_zh():
+def test_digest_reinforcement_appears_in_prompt_zh(mock_call_llm):
     """digest with zh prepends and appends Chinese language instruction."""
     captured = None
 
@@ -66,15 +65,15 @@ def test_digest_reinforcement_appears_in_prompt_zh():
         captured = prompt
         return '{"summary": "一个视频。", "keywords": []}'
 
-    with patch("bibilab.pipeline.digest._call_llm", side_effect=capture_llm):
-        digest("English transcript", _make_video_meta(), _make_ai_cfg("zh"), output_language="zh", ui_lang="zh")
+    mock_call_llm.side_effect = capture_llm
+    digest("English transcript", _make_video_meta(), _make_ai_cfg("zh"), output_language="zh", ui_lang="zh")
 
     assert captured is not None
     assert captured.startswith("请用中文回答")
     assert "All output fields MUST be written in Chinese" in captured
 
 
-def test_digest_unknown_lang_falls_back_to_english():
+def test_digest_unknown_lang_falls_back_to_english(mock_call_llm):
     """digest with an unrecognized output_language falls back to English instruction and name."""
     captured = None
 
@@ -83,15 +82,15 @@ def test_digest_unknown_lang_falls_back_to_english():
         captured = prompt
         return '{"summary": "A video.", "keywords": []}'
 
-    with patch("bibilab.pipeline.digest._call_llm", side_effect=capture_llm):
-        digest("transcript", _make_video_meta(), _make_ai_cfg("fr"), output_language="fr", ui_lang=None)
+    mock_call_llm.side_effect = capture_llm
+    digest("transcript", _make_video_meta(), _make_ai_cfg("fr"), output_language="fr", ui_lang=None)
 
     assert captured is not None
     assert captured.startswith("Respond in English only")
     assert "All output fields MUST be written in English" in captured
 
 
-def test_digest_prompt_instructs_query_topic_keywords():
+def test_digest_prompt_instructs_query_topic_keywords(mock_call_llm):
     """Keyword directive asks for title+content topical features and carries the cap."""
     captured = None
 
@@ -100,8 +99,8 @@ def test_digest_prompt_instructs_query_topic_keywords():
         captured = prompt
         return '{"summary": "A video.", "keywords": []}'
 
-    with patch("bibilab.pipeline.digest._call_llm", side_effect=capture_llm):
-        digest("transcript", _make_video_meta(), _make_ai_cfg())
+    mock_call_llm.side_effect = capture_llm
+    digest("transcript", _make_video_meta(), _make_ai_cfg())
 
     assert captured is not None
     assert f"up to {_MAX_KEYWORDS}, each 1-4 words" in captured
@@ -111,7 +110,7 @@ def test_digest_prompt_instructs_query_topic_keywords():
 
 
 class TestDigestResultShape:
-    def test_digest_result_shape(self):
+    def test_digest_result_shape(self, mock_call_llm):
         """DigestResult has summary + keywords, no title/key_points, keywords capped at 5."""
         video_meta = VideoMeta(
             video_id="test123",
@@ -133,8 +132,8 @@ class TestDigestResultShape:
 
         mock_response = '{"summary": "A great video about ML.", "keywords": ["machine learning", "neural nets"]}'
 
-        with patch("bibilab.pipeline.digest._call_llm", return_value=mock_response):
-            result = digest(transcript, video_meta, ai_cfg)
+        mock_call_llm.return_value = mock_response
+        result = digest(transcript, video_meta, ai_cfg)
 
         assert isinstance(result.summary, str)
         assert result.summary == "A great video about ML."
@@ -147,18 +146,18 @@ class TestDigestResultShape:
         assert not hasattr(result, "title")
         assert not hasattr(result, "key_points")
 
-    def test_digest_keywords_capped_at_max(self):
+    def test_digest_keywords_capped_at_max(self, mock_call_llm):
         """Keywords returned by LLM are capped at _MAX_KEYWORDS."""
         overflow = [f"k{i}" for i in range(_MAX_KEYWORDS + 4)]
         mock_response = json.dumps({"summary": "A video.", "keywords": overflow})
 
-        with patch("bibilab.pipeline.digest._call_llm", return_value=mock_response):
-            result = digest("transcript", _make_video_meta(), _make_ai_cfg())
+        mock_call_llm.return_value = mock_response
+        result = digest("transcript", _make_video_meta(), _make_ai_cfg())
 
         assert len(result.keywords) == _MAX_KEYWORDS
         assert result.keywords == overflow[:_MAX_KEYWORDS]
 
-    def test_digest_llm_failure_raises_pipeline_error(self):
+    def test_digest_llm_failure_raises_pipeline_error(self, mock_call_llm):
         """On LLM failure (all retries exhausted), raises PipelineError instead of silent data loss."""
         video_meta = VideoMeta(
             video_id="test789",
@@ -179,9 +178,9 @@ class TestDigestResultShape:
         # Use httpx.HTTPError which is a retriable exception
         import httpx
 
-        with patch("bibilab.pipeline.digest._call_llm", side_effect=httpx.HTTPError("LLM down")):
-            with pytest.raises(PipelineError, match="LLM down"):
-                digest("transcript", video_meta, ai_cfg)
+        mock_call_llm.side_effect = httpx.HTTPError("LLM down")
+        with pytest.raises(PipelineError, match="LLM down"):
+            digest("transcript", video_meta, ai_cfg)
 
 
 class TestDigestResultFacets:
@@ -263,7 +262,7 @@ class TestDigestResultFacets:
         result = DigestResult(summary="S", keywords=["k"])
         assert not hasattr(result, "sequence_kind")
 
-    def test_full_digest_pipeline_includes_facets(self):
+    def test_full_digest_pipeline_includes_facets(self, mock_call_llm):
         video_meta = VideoMeta(
             video_id="test123",
             title="罗翔说刑法 EP08 正当防卫",
@@ -287,8 +286,8 @@ class TestDigestResultFacets:
             '"season_number": null}'
         )
 
-        with patch("bibilab.pipeline.digest._call_llm", return_value=mock_response):
-            result = digest("transcript about law", video_meta, ai_cfg)
+        mock_call_llm.return_value = mock_response
+        result = digest("transcript about law", video_meta, ai_cfg)
 
         assert result.series_name == "罗翔说刑法"
         assert result.sequence_number == 8
@@ -325,36 +324,33 @@ class TestDigestResultFacets:
 
 
 class TestDigestRetry:
-    def test_bad_facet_does_not_trigger_retry(self):
+    def test_bad_facet_does_not_trigger_retry(self, mock_call_llm):
         # A malformed facet degrades to None in-place; the digest is good and
         # must be returned on the first call — no retry, no PipelineError.
         bad_facet = '{"summary": "S", "keywords": ["k"], "sequence_number": "第八集"}'
-        with patch("bibilab.pipeline.digest._call_llm", return_value=bad_facet) as m:
-            result = digest("transcript", _make_video_meta(), _make_ai_cfg())
-        assert m.call_count == 1
+        mock_call_llm.return_value = bad_facet
+        result = digest("transcript", _make_video_meta(), _make_ai_cfg())
+        assert mock_call_llm.call_count == 1
         assert result.summary == "S"
         assert result.sequence_number is None
 
-    def test_transient_http_error_recovers_on_retry(self):
+    def test_transient_http_error_recovers_on_retry(self, mock_call_llm):
         import httpx
 
         valid = '{"summary": "recovered", "keywords": ["k"]}'
-        with patch(
-            "bibilab.pipeline.digest._call_llm",
-            side_effect=[httpx.HTTPError("transient"), valid],
-        ) as m:
-            result = digest("transcript", _make_video_meta(), _make_ai_cfg())
-        assert m.call_count == 2
+        mock_call_llm.side_effect = [httpx.HTTPError("transient"), valid]
+        result = digest("transcript", _make_video_meta(), _make_ai_cfg())
+        assert mock_call_llm.call_count == 2
         assert result.summary == "recovered"
 
-    def test_missing_summary_exhausts_retries_raises_pipeline_error(self):
+    def test_missing_summary_exhausts_retries_raises_pipeline_error(self, mock_call_llm):
         # A genuine schema failure (required summary absent) must retry the
         # bounded number of times and then raise — never silently succeed.
         no_summary = '{"keywords": ["k"]}'
-        with patch("bibilab.pipeline.digest._call_llm", return_value=no_summary) as m:
-            with pytest.raises(PipelineError, match="exhausted all retries"):
-                digest("transcript", _make_video_meta(), _make_ai_cfg())
-        assert m.call_count == 3
+        mock_call_llm.return_value = no_summary
+        with pytest.raises(PipelineError, match="exhausted all retries"):
+            digest("transcript", _make_video_meta(), _make_ai_cfg())
+        assert mock_call_llm.call_count == 3
 
 
 class TestParseFacetInt:

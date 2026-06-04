@@ -92,7 +92,7 @@ def test_dump_turn_swallows_errors(tmp_path: Path, caplog):
 
 
 @pytest.mark.asyncio
-async def test_stream_with_tools_dumps_one_file_per_llm_call(monkeypatch, tmp_path: Path):
+async def test_stream_with_tools_dumps_one_file_per_llm_call(monkeypatch, tmp_path: Path, mock_stream_llm):
     """Integration: each LLM call gets its own file; call1 captures the tool_call response."""
     from bibilab.config import AIConfig
     from bibilab.routers import chat as chat_module
@@ -112,7 +112,7 @@ async def test_stream_with_tools_dumps_one_file_per_llm_call(monkeypatch, tmp_pa
     async def fake_execute(name, args, **kwargs):
         return {"_chunks": "excerpt"}
 
-    monkeypatch.setattr(chat_module, "stream_llm", fake_stream_llm)
+    mock_stream_llm.side_effect = fake_stream_llm
 
     cfg = AIConfig(protocol="openai", model="x", api_key="k", base_url="")
     gen = chat_module.stream_with_tools(
@@ -156,7 +156,7 @@ _NOISY_FIND_PASSAGES_RESULT = {
 
 
 async def _drive_stream_with_tools(
-    monkeypatch, *, protocol: str, tool_result: dict, tool_block_sink: list[dict] | None = None
+    mock_stream_llm, *, protocol: str, tool_result: dict, tool_block_sink: list[dict] | None = None
 ):
     """Run stream_with_tools for one find_passages iteration; return the second
     LLM call's messages list, the SSE tool_result event content, and the
@@ -179,7 +179,7 @@ async def _drive_stream_with_tools(
     async def fake_execute(name, args, **kwargs):
         return tool_result
 
-    monkeypatch.setattr(chat_module, "stream_llm", fake_stream_llm)
+    mock_stream_llm.side_effect = fake_stream_llm
 
     cfg = AIConfig(protocol=protocol, model="x", api_key="k", base_url="")
     gen = chat_module.stream_with_tools(
@@ -198,11 +198,13 @@ async def _drive_stream_with_tools(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("protocol", ["anthropic", "openai"])
-async def test_llm_tool_message_feeds_only_chunks_excerpts_no_noise(monkeypatch, protocol):
+async def test_llm_tool_message_feeds_only_chunks_excerpts_no_noise(mock_stream_llm, protocol):
     """#401: LLM tool message content is `_chunks` only — not the full result dict.
     Asserts the symmetric Anthropic + OpenAI branches; client SSE payload is unchanged.
     """
-    captured = await _drive_stream_with_tools(monkeypatch, protocol=protocol, tool_result=_NOISY_FIND_PASSAGES_RESULT)
+    captured = await _drive_stream_with_tools(
+        mock_stream_llm, protocol=protocol, tool_result=_NOISY_FIND_PASSAGES_RESULT
+    )
 
     second = captured["second_call_messages"]
     # The tool message is appended after the original user message; take the last one
@@ -238,7 +240,7 @@ async def test_llm_tool_message_feeds_only_chunks_excerpts_no_noise(monkeypatch,
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("protocol", ["anthropic", "openai"])
-async def test_llm_tool_message_error_path_also_feeds_chunks_only(monkeypatch, protocol):
+async def test_llm_tool_message_error_path_also_feeds_chunks_only(mock_stream_llm, protocol):
     """Resolution-error path: result dict is `{"_chunks": error, ...}` — same rule applies."""
     error_result = {
         "_chunks": "source 's999' not found.",
@@ -246,7 +248,7 @@ async def test_llm_tool_message_error_path_also_feeds_chunks_only(monkeypatch, p
         "source_title": "",
         "tool_name": "read_source",
     }
-    captured = await _drive_stream_with_tools(monkeypatch, protocol=protocol, tool_result=error_result)
+    captured = await _drive_stream_with_tools(mock_stream_llm, protocol=protocol, tool_result=error_result)
 
     second = captured["second_call_messages"]
     tool_messages = [m for m in second if m.get("role") in ("user", "tool")]
@@ -259,11 +261,11 @@ async def test_llm_tool_message_error_path_also_feeds_chunks_only(monkeypatch, p
 
 
 @pytest.mark.asyncio
-async def test_tool_block_sink_still_receives_raw_chunks(monkeypatch):
+async def test_tool_block_sink_still_receives_raw_chunks(mock_stream_llm):
     """#401 constraint: `_raw_chunks` must stay in the result dict (tool_block_sink read at chat.py:402)."""
     sink: list[dict] = []
     await _drive_stream_with_tools(
-        monkeypatch, protocol="openai", tool_result=_NOISY_FIND_PASSAGES_RESULT, tool_block_sink=sink
+        mock_stream_llm, protocol="openai", tool_result=_NOISY_FIND_PASSAGES_RESULT, tool_block_sink=sink
     )
 
     assert len(sink) == 1

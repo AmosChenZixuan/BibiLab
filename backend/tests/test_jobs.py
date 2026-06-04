@@ -8,6 +8,8 @@ import httpx
 import pytest
 import pytest_asyncio
 
+pytestmark = pytest.mark.integration
+
 
 @pytest_asyncio.fixture()
 async def seeded_job(tmp_bibilab_home: Path):  # noqa: ARG001

@@ -3,6 +3,8 @@ from pathlib import Path
 import httpx
 import pytest
 
+pytestmark = pytest.mark.integration
+
 
 @pytest.mark.asyncio
 async def test_get_artifacts_empty(client: httpx.AsyncClient):

@@ -7,6 +7,8 @@ import pytest
 from bibilab.config import AIConfig, TranscriptionConfig
 from bibilab.routers.health import _check_asr, _check_llm
 
+pytestmark = pytest.mark.integration
+
 
 @pytest.mark.asyncio
 async def test_health_returns_200(client: httpx.AsyncClient):

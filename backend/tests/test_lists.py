@@ -4,6 +4,10 @@ from unittest.mock import patch
 import httpx
 import pytest
 
+from tests.factories import SourceFactory
+
+pytestmark = pytest.mark.integration
+
 
 @pytest.mark.asyncio
 async def test_create_list(client: httpx.AsyncClient):
@@ -46,7 +50,6 @@ async def test_get_lists(client: httpx.AsyncClient):
 async def test_get_lists_returns_thumbnail_fields_and_prefers_cached_cover(
     client: httpx.AsyncClient, tmp_bibilab_home: Path
 ):
-    from bibilab.db import write_source
 
     list_id = (await client.post("/lists", json={"name": "Annotated"})).json()["id"]
     source_id = "BV1cover"
@@ -54,23 +57,14 @@ async def test_get_lists_returns_thumbnail_fields_and_prefers_cached_cover(
     cover_path.parent.mkdir(parents=True, exist_ok=True)
     cover_path.write_bytes(b"fake-image")
 
-    await write_source(
+    await SourceFactory.build(
+        list_id,
         source_id=source_id,
         video_id="BV1cover",
-        platform="bilibili",
-        list_id=list_id,
         title="Episode 1",
         summary="A summary.",
-        keywords=[],
         cover_url="https://example.com/remote-cover.jpg",
         source_url="https://www.bilibili.com/video/BV1cover",
-        duration_seconds=0,
-        uploader="TestUploader",
-        language=None,
-        whisper_model="large-v3",
-        ai_model="gpt-4o",
-        vision_enabled=False,
-        settings_snapshot={},
     )
 
     patch_resp = await client.patch(
@@ -143,27 +137,17 @@ async def test_delete_list_rejects_active_jobs(client: httpx.AsyncClient, tmp_bi
 
 @pytest.mark.asyncio
 async def test_get_list_sources(client: httpx.AsyncClient, tmp_bibilab_home: Path):
-    from bibilab.db import write_source
 
     list_id = (await client.post("/lists", json={"name": "ML"})).json()["id"]
     source_id = "src-list-src"
-    await write_source(
+    await SourceFactory.build(
+        list_id,
         source_id=source_id,
         video_id="BV1abc",
-        platform="bilibili",
-        list_id=list_id,
         title="Intro",
         summary="A summary.",
         keywords=["ai"],
-        cover_url=None,
         source_url="https://www.bilibili.com/video/BV1abc",
-        duration_seconds=0,
-        uploader="TestUploader",
-        language=None,
-        whisper_model="large-v3",
-        ai_model="gpt-4o",
-        vision_enabled=False,
-        settings_snapshot={},
     )
     resp = await client.get(f"/lists/{list_id}/sources")
     assert resp.status_code == 200
@@ -176,27 +160,17 @@ async def test_get_list_sources(client: httpx.AsyncClient, tmp_bibilab_home: Pat
 
 @pytest.mark.asyncio
 async def test_delete_source_from_list(client: httpx.AsyncClient, tmp_bibilab_home: Path, tmp_path: Path):
-    from bibilab.db import get_source, write_source
+    from bibilab.db import get_source
 
     list_id = (await client.post("/lists", json={"name": "ML"})).json()["id"]
     source_id = "src-delete-src"
-    await write_source(
+    await SourceFactory.build(
+        list_id,
         source_id=source_id,
         video_id="BV1abc",
-        platform="bilibili",
-        list_id=list_id,
         title="Intro",
         summary="S",
-        keywords=[],
-        cover_url=None,
         source_url="https://www.bilibili.com/video/BV1abc",
-        duration_seconds=0,
-        uploader="TestUploader",
-        language=None,
-        whisper_model="large-v3",
-        ai_model="gpt-4o",
-        vision_enabled=False,
-        settings_snapshot={},
     )
     with patch("bibilab.routers.lists.clear_embeddings_for_source") as mock_clear:
         resp = await client.delete(f"/lists/{list_id}/sources/{source_id}")
@@ -210,7 +184,7 @@ async def test_delete_source_from_list(client: httpx.AsyncClient, tmp_bibilab_ho
 async def test_delete_source_clears_thumbnail_and_cover(
     client: httpx.AsyncClient, tmp_bibilab_home: Path, tmp_path: Path
 ):
-    from bibilab.db import get_list, write_source
+    from bibilab.db import get_list
 
     list_id = (await client.post("/lists", json={"name": "ML"})).json()["id"]
     source_id = "src-thumb-src"
@@ -219,23 +193,13 @@ async def test_delete_source_clears_thumbnail_and_cover(
     cover_file.write_bytes(b"fake-image")
     assert cover_file.exists()
 
-    await write_source(
+    await SourceFactory.build(
+        list_id,
         source_id=source_id,
         video_id="BV1abc",
-        platform="bilibili",
-        list_id=list_id,
         title="Intro",
         summary="S",
-        keywords=[],
-        cover_url=None,
         source_url="https://www.bilibili.com/video/BV1abc",
-        duration_seconds=0,
-        uploader="TestUploader",
-        language=None,
-        whisper_model="large-v3",
-        ai_model="gpt-4o",
-        vision_enabled=False,
-        settings_snapshot={},
     )
 
     # Assign the source as the list's thumbnail
@@ -261,30 +225,20 @@ async def test_delete_source_not_found(client: httpx.AsyncClient):
 
 @pytest.mark.asyncio
 async def test_first_source_auto_assigned_as_thumbnail(client: httpx.AsyncClient, tmp_bibilab_home: Path):
-    from bibilab.db import get_list_with_display, write_source
+    from bibilab.db import get_list_with_display
 
     # Create an empty list
     list_id = (await client.post("/lists", json={"name": "Empty"})).json()["id"]
 
     # Write the first source (simulating first ingest completing)
     source_id = "BVfirst"
-    await write_source(
+    await SourceFactory.build(
+        list_id,
         source_id=source_id,
         video_id="BVfirstVid",
-        platform="bilibili",
-        list_id=list_id,
         title="First Video",
         summary="S",
-        keywords=[],
-        cover_url=None,
         source_url="https://www.bilibili.com/video/BVfirstVid",
-        duration_seconds=0,
-        uploader="TestUploader",
-        language=None,
-        whisper_model="large-v3",
-        ai_model="gpt-4o",
-        vision_enabled=False,
-        settings_snapshot={},
     )
 
     # List's thumbnail_source_id should be auto-assigned to the first source

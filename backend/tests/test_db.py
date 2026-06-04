@@ -4,6 +4,10 @@ from unittest.mock import patch
 
 import pytest
 
+from tests.factories import ConversationFactory, MessageFactory, SourceFactory
+
+pytestmark = pytest.mark.integration
+
 
 @pytest.fixture()
 def tmp_bibilab_home(tmp_path: Path):
@@ -67,29 +71,22 @@ async def test_write_and_get_source(tmp_bibilab_home: Path):
         bootstrap_db,
         create_list,
         get_source,
-        write_source,
     )
 
     await bootstrap_db()
     await create_list("list-1", "ML Course", "2026-01-01T00:00:00")
     source_id = "source-uuid-abc"
-    await write_source(
+    await SourceFactory.build(
+        "list-1",
         source_id=source_id,
         video_id="BV1abc",
-        platform="bilibili",
-        list_id="list-1",
         title="Intro to ML",
         summary="A great intro.",
         keywords=["ml", "intro"],
-        cover_url=None,
         source_url="https://bilibili.com/video/BV1abc",
         duration_seconds=600,
         uploader="Uploader",
         language="en",
-        whisper_model="large-v3",
-        ai_model="gpt-4o",
-        vision_enabled=False,
-        settings_snapshot={},
     )
     source = await get_source(source_id)
     assert source is not None
@@ -103,29 +100,21 @@ async def test_delete_source(tmp_bibilab_home: Path):
         create_list,
         delete_source,
         get_source,
-        write_source,
     )
 
     await bootstrap_db()
     await create_list("list-1", "ML Course", "2026-01-01T00:00:00")
     source_id = "source-uuid-abc"
-    await write_source(
+    await SourceFactory.build(
+        "list-1",
         source_id=source_id,
         video_id="BV1abc",
-        platform="bilibili",
-        list_id="list-1",
         title="T",
         summary="S",
-        keywords=[],
-        cover_url=None,
         source_url="https://bilibili.com/video/BV1abc",
         duration_seconds=600,
         uploader="Uploader",
         language="en",
-        whisper_model="large-v3",
-        ai_model="gpt-4o",
-        vision_enabled=False,
-        settings_snapshot={},
     )
     await delete_source(source_id)
     assert await get_source(source_id) is None
@@ -138,7 +127,6 @@ async def test_sources_unique_constraint(tmp_bibilab_home: Path):
         bootstrap_db,
         create_list,
         get_db,
-        write_source,
     )
 
     await bootstrap_db()
@@ -149,43 +137,31 @@ async def test_sources_unique_constraint(tmp_bibilab_home: Path):
     source_id_2 = "uuid-for-list-2"
 
     # Write same video to list-1
-    await write_source(
+    await SourceFactory.build(
+        "list-1",
         source_id=source_id_1,
         video_id="BV1abc",
-        platform="bilibili",
-        list_id="list-1",
         title="Video Title",
         summary="Summary",
-        keywords=[],
-        cover_url=None,
         source_url="https://bilibili.com/video/BV1abc",
         duration_seconds=600,
         uploader="Uploader",
         language="en",
         whisper_model="base",
-        ai_model="gpt-4o",
-        vision_enabled=False,
-        settings_snapshot={},
     )
 
     # Write same video to list-2 (should succeed, different source_id)
-    await write_source(
+    await SourceFactory.build(
+        "list-2",
         source_id=source_id_2,
         video_id="BV1abc",
-        platform="bilibili",
-        list_id="list-2",
         title="Video Title",
         summary="Summary",
-        keywords=[],
-        cover_url=None,
         source_url="https://bilibili.com/video/BV1abc",
         duration_seconds=600,
         uploader="Uploader",
         language="en",
         whisper_model="base",
-        ai_model="gpt-4o",
-        vision_enabled=False,
-        settings_snapshot={},
     )
 
     # Verify two rows exist (one per list)
@@ -199,23 +175,18 @@ async def test_sources_unique_constraint(tmp_bibilab_home: Path):
 
     # Verify UNIQUE constraint via INSERT OR IGNORE - writing same video+list again
     # should not create a third row
-    await write_source(
+    await SourceFactory.build(
+        "list-1",
         source_id="uuid-should-be-ignored",
         video_id="BV1abc",
-        platform="bilibili",
-        list_id="list-1",
         title="Updated Title",
         summary="Updated Summary",
         keywords=["new", "keywords"],
-        cover_url=None,
         source_url="https://bilibili.com/video/BV1abc",
         duration_seconds=600,
         uploader="Uploader",
         language="en",
         whisper_model="base",
-        ai_model="gpt-4o",
-        vision_enabled=False,
-        settings_snapshot={},
     )
 
     async with get_db() as db:
@@ -230,28 +201,20 @@ async def test_sources_unique_constraint(tmp_bibilab_home: Path):
 
 @pytest.mark.asyncio
 async def test_get_sources_for_list(tmp_bibilab_home: Path):
-    from bibilab.db import bootstrap_db, create_list, get_sources_for_list, write_source
+    from bibilab.db import bootstrap_db, create_list, get_sources_for_list
 
     await bootstrap_db()
     await create_list("list-1", "ML Course", "2026-01-01T00:00:00")
     for i, vid in enumerate(("BV1a", "BV1b")):
-        await write_source(
+        await SourceFactory.build(
+            "list-1",
             source_id=f"source-uuid-{vid}",
             video_id=vid,
-            platform="bilibili",
-            list_id="list-1",
             title=vid,
-            summary="",
-            keywords=[],
-            cover_url=None,
             source_url=f"https://bilibili.com/video/{vid}",
             duration_seconds=600,
             uploader="Uploader",
             language="en",
-            whisper_model="large-v3",
-            ai_model="gpt-4o",
-            vision_enabled=False,
-            settings_snapshot={},
         )
     rows = await get_sources_for_list("list-1")
     assert len(rows) == 2
@@ -280,29 +243,22 @@ async def test_get_video_statuses_all_new(tmp_bibilab_home: Path) -> None:
 
 @pytest.mark.asyncio
 async def test_get_video_statuses_all_processed(tmp_bibilab_home: Path) -> None:
-    from bibilab.db import bootstrap_db, create_list, write_source
+    from bibilab.db import bootstrap_db, create_list
     from bibilab.video_status import get_video_statuses
 
     await bootstrap_db()
     await create_list("list-1", "Test", "2026-01-01T00:00:00")
     for i, vid in enumerate(("BV1", "BV2")):
-        await write_source(
+        await SourceFactory.build(
+            "list-1",
             source_id=f"src-{vid}",
             video_id=vid,
-            platform="bilibili",
-            list_id="list-1",
             title=f"Title {vid}",
-            summary="",
-            keywords=[],
-            cover_url=None,
             source_url=f"https://bilibili.com/video/{vid}",
             duration_seconds=600,
             uploader="Uploader",
             language="en",
             whisper_model="base",
-            ai_model="gpt-4o",
-            vision_enabled=False,
-            settings_snapshot={},
         )
     result = await get_video_statuses(["BV1", "BV2"], "list-1")
     assert result == {"BV1": "processed", "BV2": "processed"}
@@ -339,28 +295,21 @@ async def test_get_video_statuses_all_needs_auth(tmp_bibilab_home: Path) -> None
 
 @pytest.mark.asyncio
 async def test_get_video_statuses_mixed(tmp_bibilab_home: Path) -> None:
-    from bibilab.db import bootstrap_db, create_job, create_list, get_db, write_source
+    from bibilab.db import bootstrap_db, create_job, create_list, get_db
     from bibilab.video_status import get_video_statuses
 
     await bootstrap_db()
     await create_list("list-1", "Test", "2026-01-01T00:00:00")
-    await write_source(
+    await SourceFactory.build(
+        "list-1",
         source_id="src-BV1",
         video_id="BV1",
-        platform="bilibili",
-        list_id="list-1",
         title="T1",
-        summary="",
-        keywords=[],
-        cover_url=None,
         source_url="url",
         duration_seconds=600,
         uploader="U",
         language="en",
         whisper_model="base",
-        ai_model="gpt-4o",
-        vision_enabled=False,
-        settings_snapshot={},
     )
     await create_job("ingest", {"video_id": "BV2", "list_id": "list-1"})
     await create_job("ingest", {"video_id": "BV3", "list_id": "list-1"})
@@ -425,28 +374,21 @@ async def test_get_video_statuses_job_video_id_isolation(tmp_bibilab_home: Path)
 
 @pytest.mark.asyncio
 async def test_get_video_statuses_precedence_needs_auth_over_processed(tmp_bibilab_home: Path) -> None:
-    from bibilab.db import bootstrap_db, create_job, create_list, get_db, write_source
+    from bibilab.db import bootstrap_db, create_job, create_list, get_db
     from bibilab.video_status import get_video_statuses
 
     await bootstrap_db()
     await create_list("list-1", "Test", "2026-01-01T00:00:00")
-    await write_source(
+    await SourceFactory.build(
+        "list-1",
         source_id="src-BV1",
         video_id="BV1",
-        platform="bilibili",
-        list_id="list-1",
         title="T1",
-        summary="",
-        keywords=[],
-        cover_url=None,
         source_url="url",
         duration_seconds=600,
         uploader="U",
         language="en",
         whisper_model="base",
-        ai_model="gpt-4o",
-        vision_enabled=False,
-        settings_snapshot={},
     )
     await create_job("ingest", {"video_id": "BV1", "list_id": "list-1"})
     async with get_db() as db:
@@ -645,17 +587,18 @@ async def test_message_tool_blocks_round_trip(tmp_bibilab_home: Path):
     """update_message_content + get_recent_messages round-trip the tool_blocks JSON."""
     from bibilab.db import (
         bootstrap_db,
-        create_conversation,
         create_list,
-        create_message,
         get_recent_messages,
         update_message_content,
     )
 
     await bootstrap_db()
     await create_list("list-1", "Test List", "2026-01-01T00:00:00")
-    conv_id = await create_conversation("list-1")
-    row = await create_message(conv_id, role="assistant", content="", metadata=None)
+    conv_id = await ConversationFactory.build("list-1")
+    row = await MessageFactory.build(
+        conv_id,
+        role="assistant",
+    )
     msg_id = row["id"]
 
     blocks = [
@@ -699,29 +642,24 @@ async def test_message_tool_blocks_round_trip(tmp_bibilab_home: Path):
 
 @pytest.mark.asyncio
 async def test_get_source_facets(tmp_bibilab_home: Path):
-    from bibilab.db import bootstrap_db, create_list, get_source_facets, write_source
+    from bibilab.db import bootstrap_db, create_list, get_source_facets
 
     await bootstrap_db()
     await create_list("list-1", "Course", "2026-01-01T00:00:00")
 
     async def _write(sid: str, vid: str, seq, season):
-        await write_source(
+        await SourceFactory.build(
+            "list-1",
             source_id=sid,
             video_id=vid,
-            platform="bilibili",
-            list_id="list-1",
             title=vid,
             summary="s",
-            keywords=[],
-            cover_url=None,
             source_url="u",
             duration_seconds=1,
             uploader="u",
             language="en",
             whisper_model="w",
             ai_model="a",
-            vision_enabled=False,
-            settings_snapshot={},
             sequence_number=seq,
             season_number=season,
         )

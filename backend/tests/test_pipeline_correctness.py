@@ -8,6 +8,7 @@ import pytest
 
 from bibilab.db import bootstrap_db, create_list
 from bibilab.worker import WorkerLoop
+from tests.factories import SourceFactory
 
 
 @pytest.fixture()
@@ -80,7 +81,6 @@ async def test_extract_audio_cancellation_stops_pipeline(setup_pipeline_test: Pa
         stages_called.append("transcribe")
         return ([], None)
 
-    mock_digest = MagicMock(return_value='{"summary": "test", "keywords": []}')
     mock_embed = MagicMock()
     mock_dl_cover = MagicMock(side_effect=lambda url, dest: dest.write_bytes(b"fake cover") or True)
 
@@ -91,7 +91,6 @@ async def test_extract_audio_cancellation_stops_pipeline(setup_pipeline_test: Pa
         patch("bibilab.worker.extract_audio", mock_extract_audio),
         patch("bibilab.worker.transcribe", mock_transcribe),
         patch("bibilab.worker._download_cover", mock_dl_cover),
-        patch("bibilab.pipeline.digest._call_llm", mock_digest),
         patch("bibilab.worker.embed_chunks", mock_embed),
     ):
         await worker._pipeline(job)
@@ -150,7 +149,6 @@ async def test_pipeline_stage_process_cleanup_called_on_cancellation(setup_pipel
 
     mock_extract_audio = MagicMock(return_value=tmp_wav)
     mock_transcribe = MagicMock(return_value=([], None))
-    mock_digest = MagicMock(return_value='{"summary": "test", "keywords": []}')
     mock_embed = MagicMock()
     mock_dl_cover = MagicMock(side_effect=lambda url, dest: dest.write_bytes(b"fake cover") or True)
 
@@ -166,7 +164,6 @@ async def test_pipeline_stage_process_cleanup_called_on_cancellation(setup_pipel
         patch("bibilab.worker.extract_audio", mock_extract_audio),
         patch("bibilab.worker.transcribe", mock_transcribe),
         patch("bibilab.worker._download_cover", mock_dl_cover),
-        patch("bibilab.pipeline.digest._call_llm", mock_digest),
         patch("bibilab.worker.embed_chunks", mock_embed),
         patch("bibilab.worker.cleanup_job_artifacts", mock_cleanup),
     ):
@@ -177,17 +174,13 @@ async def test_pipeline_stage_process_cleanup_called_on_cancellation(setup_pipel
 
 
 async def _seed_source(source_id: str) -> None:
-    from bibilab.db import write_source
 
     await create_list("list-cleanup", "Cleanup", "2026-01-01T00:00:00")
-    await write_source(
+    await SourceFactory.build(
+        "list-cleanup",
         source_id=source_id,
         video_id="BVlive",
-        platform="bilibili",
-        list_id="list-cleanup",
         title="Live Source",
-        summary="",
-        keywords=[],
         cover_url="https://example.com/cover.jpg",
         source_url="https://bilibili.com/video/BVlive",
         duration_seconds=10,
@@ -195,8 +188,6 @@ async def _seed_source(source_id: str) -> None:
         language="en",
         whisper_model="m",
         ai_model="m",
-        vision_enabled=False,
-        settings_snapshot={},
     )
 
 
@@ -204,7 +195,7 @@ async def _seed_source(source_id: str) -> None:
 async def test_cleanup_preserves_live_source_artifacts(setup_pipeline_test: Path):
     """A failed/non-done job must NOT purge artifacts of a source that already persisted.
 
-    Reproduces the persist-then-fail window: write_source committed but the job
+    Reproduces the persist-then-fail window: the source write committed but the job
     raised before reaching DONE. cleanup_job_artifacts must leave the live
     source's cover, embeddings and FTS intact.
     """
