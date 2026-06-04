@@ -53,7 +53,7 @@ asr_models.py     — Unified ASR model registry (Whisper + SenseVoice + diariza
 - **Naming**: `snake_case` for files/functions/variables, `PascalCase` for classes and Pydantic models
 - **Pydantic models**: `{Operation}Request` / `{Operation}Response` suffix; enums use `PascalCase` name, `UPPERCASE` values
 - **Router pattern**: one `APIRouter` per file, no prefix/tags; routes carry full paths
-- **DB**: `asynccontextmanager` `get_db` wrapper; all queries use `?` placeholders, never f-string interpolation. `db.py` is strictly for SQL queries — no status mapping (extracted to `video_status.py`), no domain logic. The one deliberate write-time side effect is first-source thumbnail assignment in `_exec_write_source`, atomic with the source insert. Derive user-facing values in the router or a service function.
+- **DB**: `asynccontextmanager` `get_db` wrapper; all queries use `?` placeholders, never f-string interpolation. `db.py` is strictly for SQL queries — no status mapping (extracted to `video_status.py`), no domain logic. Exception: `_exec_write_source` maintains the "a non-empty list has a thumbnail" invariant by assigning the first source as cover, atomic with the insert. Derive user-facing values in the router or a service function.
 - **Imports**: stdlib → third-party → local, with blank lines between groups
 - **Errors**: `HTTPException(status_code=N, detail=...)` for HTTP errors; `AuthRequiredError`, `DownloadError`, `PipelineError` for domain errors
 - **LLM content blocks**: Never assume `msg.content[0]` is a TextBlock. Filter by `block.type == "text"` — some providers return ThinkingBlock or other types first. Use `next((b for b in msg.content if b.type == "text"), None)` with a None default to avoid StopIteration in async contexts.
