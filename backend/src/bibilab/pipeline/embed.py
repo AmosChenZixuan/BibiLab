@@ -221,9 +221,12 @@ def _default_embedding_function() -> ONNXMultilingualEmbedding:
     return ONNXMultilingualEmbedding()
 
 
+_TRANSCRIPT_COLLECTION = "bibilab_transcripts"
+
+
 def _get_collection(cfg: BibilabConfig) -> "chromadb.Collection":
     global _chroma_collections
-    name = cfg.transcript_collection_name
+    name = _TRANSCRIPT_COLLECTION
     if name not in _chroma_collections:
         import chromadb  # noqa: PLC0415
 

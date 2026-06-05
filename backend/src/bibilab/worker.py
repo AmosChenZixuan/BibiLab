@@ -568,7 +568,6 @@ Respond ONLY with valid JSON matching this schema:
         chunks = chunk_segments(
             sentence_segments,
             language=effective_language,
-            pause_threshold_seconds=cfg.rag.chunk_pause_threshold,
         )
 
         meta_raw = parse_job_meta(job)

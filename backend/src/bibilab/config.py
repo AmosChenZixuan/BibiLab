@@ -5,7 +5,7 @@ import threading
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, field_validator
 
 logger = logging.getLogger(__name__)
 
@@ -80,10 +80,6 @@ class RagConfig(BaseModel):
     max_distance: float = 0.8
     reranking_enabled: bool = True
     hybrid_enabled: bool = True
-    # Minimum gap (seconds) between Whisper segments to trigger a chunk flush.
-    # Pauses longer than this are treated as topic boundaries. Default 1.5s.
-    # Keep in sync with pause_threshold_seconds default in pipeline/chunk.py.
-    chunk_pause_threshold: float = Field(default=1.5, gt=0)
     # Opt-in: dump each LLM call (input + response) to ~/.bibilab/debug/{message_id}/call{N}.json (#399).
     debug_prompts: bool = False
 
@@ -94,8 +90,6 @@ class BibilabConfig(BaseModel):
     transcription: TranscriptionConfig = TranscriptionConfig()
     backend: BackendConfig = BackendConfig()
     rag: RagConfig = RagConfig()
-    # ChromaDB
-    transcript_collection_name: str = "bibilab_transcripts"
 
 
 _config_cache: BibilabConfig | None = None

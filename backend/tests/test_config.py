@@ -29,3 +29,19 @@ def test_ai_no_transcript_char_limit():
     cfg = BibilabConfig()
     assert not hasattr(cfg.ai, "transcript_char_limit")
     assert "transcript_char_limit" not in cfg.ai.model_dump()
+
+
+def test_rag_no_chunk_pause_threshold():
+    from bibilab.config import BibilabConfig
+
+    cfg = BibilabConfig()
+    assert not hasattr(cfg.rag, "chunk_pause_threshold")
+    assert "chunk_pause_threshold" not in cfg.rag.model_dump()
+
+
+def test_no_transcript_collection_name():
+    from bibilab.config import BibilabConfig
+
+    cfg = BibilabConfig()
+    assert not hasattr(cfg, "transcript_collection_name")
+    assert "transcript_collection_name" not in cfg.model_dump()

@@ -67,7 +67,6 @@ def chunk_segments(
     target_tokens: int | None = None,
     chunk_max_tokens: int | None = None,
     language: str = "en",
-    # Default must match RagConfig.chunk_pause_threshold in config.py.
     pause_threshold_seconds: float = 1.5,
 ) -> list[RagChunk]:
     resolved_target = (
