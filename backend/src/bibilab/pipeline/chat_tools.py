@@ -79,18 +79,24 @@ def _build_fenced_chunks(
     return "\n\n".join(blocks)
 
 
+def _chunk_id(chunk) -> str:
+    """Canonical chunk_id used by citation tracking, raw_chunks, and intra-turn
+    dedup. Centralizing the formula here guarantees the dedup key can never
+    drift from the citation key."""
+    return f"{chunk.source_id}_{int(chunk.timestamp_start)}_{int(chunk.timestamp_end)}"
+
+
 def _partition_unseen_chunks(chunks: list, seen_chunk_ids: set[str]) -> list:
     """Return the chunks not already shown this turn, recording their ids.
 
-    chunk_id = ``{source_id}_{int(timestamp_start)}_{int(timestamp_end)}`` —
-    the same key used for citation tracking (chat_tools.py:456/478). Dedup is
-    turn-scoped: parallel and multi-hop find_passages calls share one set so a
-    given chunk is rendered to the LLM at most once per turn. Mutates
-    seen_chunk_ids in place.
+    Dedup key is the canonical chunk_id (see ``_chunk_id``) — the same key
+    used by citation tracking. Dedup is turn-scoped: parallel and multi-hop
+    find_passages calls share one set so a given chunk is rendered to the LLM
+    at most once per turn. Mutates seen_chunk_ids in place.
     """
     new = []
     for c in chunks:
-        cid = f"{c.source_id}_{int(c.timestamp_start)}_{int(c.timestamp_end)}"
+        cid = _chunk_id(c)
         if cid in seen_chunk_ids:
             continue
         seen_chunk_ids.add(cid)
@@ -342,8 +348,6 @@ async def execute_find_passages(
     season_number: int | None = None,
     seen_chunk_ids: set[str] | None = None,
 ) -> dict:
-    if seen_chunk_ids is not None and not isinstance(seen_chunk_ids, set):
-        raise TypeError(f"seen_chunk_ids must be a set or None, got {type(seen_chunk_ids).__name__}")
     if registry is None:
         registry = {}
 
@@ -455,7 +459,7 @@ async def execute_find_passages(
     for c in new_chunks:
         sid = c.source_id
         if sid in registry:
-            cid = f"{sid}_{int(c.timestamp_start)}_{int(c.timestamp_end)}"
+            cid = _chunk_id(c)
             registry[sid].chunk_ids.add(cid)
             entry = registry[sid]
             if entry.timestamp_start is None:
@@ -477,7 +481,7 @@ async def execute_find_passages(
         raw_chunks.append(
             {
                 "source_id": c.source_id,
-                "chunk_id": f"{c.source_id}_{int(c.timestamp_start)}_{int(c.timestamp_end)}",
+                "chunk_id": _chunk_id(c),
                 "content": c.content,
                 "video_title": c.video_title,
                 "timestamp_start": c.timestamp_start,

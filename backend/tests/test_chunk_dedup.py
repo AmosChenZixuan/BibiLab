@@ -45,7 +45,7 @@ def test_partition_dedups_within_a_single_call():
 
 def test_partition_truncates_subsecond_timestamps_to_int():
     # chunk_id uses int(ts) so 20.4 and 20.9 collide with 20 — matches the
-    # existing chunk_id format at chat_tools.py:456/478.
+    # canonical chunk_id format (see _chunk_id helper).
     seen: set[str] = set()
     _partition_unseen_chunks([_chunk("s1", 10.4, 20.9)], seen)
     assert seen == {"s1_10_20"}
