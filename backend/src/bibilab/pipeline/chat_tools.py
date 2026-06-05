@@ -340,6 +340,7 @@ async def execute_find_passages(
     registry: dict[str, CitationRegistryEntry] | None = None,
     sequence_number: int | None = None,
     season_number: int | None = None,
+    seen_chunk_ids: set[str] | None = None,
 ) -> dict:
     if registry is None:
         registry = {}
@@ -385,6 +386,23 @@ async def execute_find_passages(
         scoped_source_ids=scoped_source_ids,
     )
 
+    # Intra-turn dedup: drop chunks already rendered to the LLM this turn
+    # (parallel / multi-hop find_passages can overlap). source_coverage and the
+    # citation registry stay on the full result — a re-hit source keeps its [N].
+    if seen_chunk_ids is None:
+        new_chunks = result.chunks
+    else:
+        new_chunks = _partition_unseen_chunks(result.chunks, seen_chunk_ids)
+        deduped = len(result.chunks) - len(new_chunks)
+        if deduped:
+            logger.info(
+                "find_passages_intraturn_dedup query=%r deduped=%d kept=%d",
+                query,
+                deduped,
+                len(new_chunks),
+            )
+    dedup_all_shown = bool(result.chunks) and not new_chunks
+
     # Assign indices: new sources get next available index
     next_index = max((e.index for e in registry.values()), default=0) + 1
     for s in result.source_coverage:
@@ -403,7 +421,7 @@ async def execute_find_passages(
     source_id_to_index = {s.source_id: registry[s.source_id].index for s in result.source_coverage}
 
     # Reconstruct the speaker-turn body for each displayed chunk (kept from v1).
-    displayed = [c for c in result.chunks if c.source_id in source_id_to_index]
+    displayed = [c for c in new_chunks if c.source_id in source_id_to_index]
     ranges = [
         (c.source_id, c.seg_start, c.seg_end) for c in displayed if c.seg_start is not None and c.seg_end is not None
     ]
@@ -432,7 +450,7 @@ async def execute_find_passages(
     body_by_chunk = {id(c): _turn_body(c) for c in displayed}
 
     # Entry-level fields seeded from the first chunk per source.
-    for c in result.chunks:
+    for c in new_chunks:
         sid = c.source_id
         if sid in registry:
             cid = f"{sid}_{int(c.timestamp_start)}_{int(c.timestamp_end)}"
@@ -449,7 +467,7 @@ async def execute_find_passages(
 
     chunks_by_index: dict[int, list[str]] = {}
     raw_chunks = []
-    for c in result.chunks:
+    for c in new_chunks:
         if c.source_id not in source_id_to_index:
             continue
         idx = source_id_to_index[c.source_id]
@@ -495,9 +513,15 @@ async def execute_find_passages(
         "_chunks": (
             no_coverage_fact
             + no_match_fact
-            + f"Sources retrieved this turn: {', '.join(f'[{i}]' for i in turn_indices)}. "
-            "Cite only these indices.\n\n"
-            f"{_build_source_headers(registry)}\n\n" + _build_fenced_chunks(chunks_by_index, registry)
+            + (
+                "All matching passages for this query were already retrieved earlier this turn.\n\n"
+                if dedup_all_shown
+                else (
+                    f"Sources retrieved this turn: {', '.join(f'[{i}]' for i in turn_indices)}. "
+                    "Cite only these indices.\n\n"
+                    f"{_build_source_headers(registry)}\n\n" + _build_fenced_chunks(chunks_by_index, registry)
+                )
+            )
         ),
         "_turn_indices": turn_indices,
         "_raw_chunks": raw_chunks,
@@ -541,6 +565,7 @@ async def execute_tool(
     source_ids: list[str],
     cfg: BibilabConfig,
     registry: dict[str, CitationRegistryEntry] | None = None,
+    seen_chunk_ids: set[str] | None = None,
 ) -> dict:
     if tool_name == FIND_PASSAGES_TOOL.name:
         query = arguments.get("query")
@@ -555,6 +580,7 @@ async def execute_tool(
             registry=registry,
             sequence_number=sequence_number,
             season_number=season_number,
+            seen_chunk_ids=seen_chunk_ids,
         )
     if tool_name == READ_SOURCE_TOOL.name:
         return await execute_read_source(
