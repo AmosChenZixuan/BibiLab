@@ -147,7 +147,6 @@ export type BibilabConfig = {
   accounts: {
     bilibili: {
       cookie: string;
-      last_verified: string;
       username: string;
       avatar_url: string;
     };
@@ -164,14 +163,16 @@ export type BibilabConfig = {
     device: string;
     language: string;
   };
-  vision: {
-    enabled: boolean;
-    frame_sample_rate: number;
-    model: string | null;
-  };
   backend: {
     port: number;
     max_concurrent_jobs: number;
+    cors_origins: string[];
+  };
+  rag: {
+    max_distance: number;
+    reranking_enabled: boolean;
+    hybrid_enabled: boolean;
+    debug_prompts: boolean;
   };
 };
 

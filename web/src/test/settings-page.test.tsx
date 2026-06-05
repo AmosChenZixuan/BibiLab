@@ -13,15 +13,15 @@ const MOCK_ERROR_MESSAGE = "Request failed";
 vi.mock("../lib/api", () => {
   const mockApi = {
     getConfig: vi.fn().mockResolvedValue({
-      accounts: { bilibili: { cookie: "", last_verified: "", username: "", avatar_url: "" } },
+      accounts: { bilibili: { cookie: "", username: "", avatar_url: "" } },
       ai: { protocol: "openai", model: "gpt-4o", api_key: "", base_url: "" },
       transcription: {
         model: "large-v3",
         device: "cpu",
         language: "auto",
       },
-      vision: { enabled: false, model: "", frame_sample_rate: 60 },
-      backend: { port: 8765, max_concurrent_jobs: 2 },
+      backend: { port: 8765, max_concurrent_jobs: 2, cors_origins: ["http://localhost", "http://localhost:5173", "http://127.0.0.1", "http://127.0.0.1:5173"] },
+      rag: { max_distance: 0.8, reranking_enabled: true, hybrid_enabled: true, debug_prompts: false },
     }),
     putConfig: vi.fn().mockResolvedValue({}),
     getHealth: vi.fn().mockResolvedValue({
@@ -154,15 +154,15 @@ describe("settings page", () => {
         },
       });
     vi.mocked(api.putConfig).mockResolvedValueOnce({
-      accounts: { bilibili: { cookie: "", last_verified: "", username: "", avatar_url: "" } },
+      accounts: { bilibili: { cookie: "", username: "", avatar_url: "" } },
       ai: { protocol: "openai", model: "gpt-4o", api_key: "", base_url: "" },
       transcription: {
         model: "large-v3",
         device: "cpu",
         language: "auto",
       },
-      vision: { enabled: false, model: "", frame_sample_rate: 60 },
-      backend: { port: 8765, max_concurrent_jobs: 2 },
+      backend: { port: 8765, max_concurrent_jobs: 2, cors_origins: ["http://localhost", "http://localhost:5173", "http://127.0.0.1", "http://127.0.0.1:5173"] },
+      rag: { max_distance: 0.8, reranking_enabled: true, hybrid_enabled: true, debug_prompts: false },
     });
 
     renderPage();
@@ -187,15 +187,15 @@ describe("settings page", () => {
 
   test("does not refresh health for non-health-affecting config changes", async () => {
     vi.mocked(api.putConfig).mockResolvedValueOnce({
-      accounts: { bilibili: { cookie: "", last_verified: "", username: "", avatar_url: "" } },
+      accounts: { bilibili: { cookie: "", username: "", avatar_url: "" } },
       ai: { protocol: "openai", model: "gpt-4o", api_key: "", base_url: "" },
       transcription: {
         model: "large-v3",
         device: "cpu",
         language: "auto",
       },
-      vision: { enabled: false, model: "", frame_sample_rate: 60 },
-      backend: { port: 8765, max_concurrent_jobs: 3 },
+      backend: { port: 8765, max_concurrent_jobs: 3, cors_origins: ["http://localhost", "http://localhost:5173", "http://127.0.0.1", "http://127.0.0.1:5173"] },
+      rag: { max_distance: 0.8, reranking_enabled: true, hybrid_enabled: true, debug_prompts: false },
     });
 
     renderPageAt("/settings?tab=other");

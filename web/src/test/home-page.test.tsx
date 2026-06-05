@@ -257,15 +257,14 @@ describe("home page", () => {
 
       if (url.endsWith("/api/config") && method === "GET") {
         return Response.json({
-          accounts: { bilibili: { cookie: "***", last_verified: "" } },
           ai: { protocol: "openai", model: "gpt-4o", api_key: "***", base_url: "" },
           transcription: {
             model: "large-v3",
             device: "cuda",
             language: "auto",
           },
-          vision: { enabled: false, frame_sample_rate: 30, model: null },
-          backend: { port: 8765, max_concurrent_jobs: 1 },
+          backend: { port: 8765, max_concurrent_jobs: 1, cors_origins: ["http://localhost", "http://localhost:5173", "http://127.0.0.1", "http://127.0.0.1:5173"] },
+          rag: { max_distance: 0.8, reranking_enabled: true, hybrid_enabled: true, debug_prompts: false },
         });
       }
 
