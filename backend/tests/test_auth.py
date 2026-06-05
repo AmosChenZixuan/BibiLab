@@ -104,7 +104,6 @@ async def test_qr_status_success_saves_cookie(client: httpx.AsyncClient, tmp_bib
     assert "SESSDATA=abc%2C1234567890%2Cxyz" in cfg.accounts.bilibili.cookie
     assert "bili_jct=def456" in cfg.accounts.bilibili.cookie
     assert "gourl" not in cfg.accounts.bilibili.cookie
-    assert cfg.accounts.bilibili.last_verified != ""
 
 
 @contextmanager
@@ -206,7 +205,6 @@ async def test_delete_bilibili_auth_clears_all_fields(client: httpx.AsyncClient,
 
     cfg = load_config()
     cfg.accounts.bilibili.cookie = "SESSDATA=old"
-    cfg.accounts.bilibili.last_verified = "2025-01-01T00:00:00Z"
     cfg.accounts.bilibili.username = "old_user"
     cfg.accounts.bilibili.avatar_url = "https://i0.hdslb.com/bfs/face/old.jpg"
     save_config(cfg)
@@ -216,6 +214,5 @@ async def test_delete_bilibili_auth_clears_all_fields(client: httpx.AsyncClient,
 
     cfg = load_config()
     assert cfg.accounts.bilibili.cookie == ""
-    assert cfg.accounts.bilibili.last_verified == ""
     assert cfg.accounts.bilibili.username == ""
     assert cfg.accounts.bilibili.avatar_url == ""

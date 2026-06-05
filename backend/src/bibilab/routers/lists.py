@@ -150,7 +150,7 @@ async def delete_list(list_id: str, cfg: BibilabConfig = Depends(get_config)) ->
         _purge_source_resources(source["id"])
 
     await delete_sources_for_list(list_id)
-    await asyncio.to_thread(clear_embeddings_for_list, list_id, cfg)
+    await asyncio.to_thread(clear_embeddings_for_list, list_id)
     await clear_fts_for_list(list_id)
     await db_delete_list(list_id)
 
@@ -205,6 +205,6 @@ async def delete_list_source(list_id: str, source_id: str, cfg: BibilabConfig = 
         await update_list_thumbnail(list_id, None)
 
     _purge_source_resources(source_id)
-    await asyncio.to_thread(clear_embeddings_for_source, source_id, cfg)
+    await asyncio.to_thread(clear_embeddings_for_source, source_id)
     await asyncio.to_thread(clear_fts_for_source_sync, source_id)
     await delete_source(source_id)

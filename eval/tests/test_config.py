@@ -80,7 +80,6 @@ def test_resolve_profile_null_uses_backend(tmp_path, monkeypatch):
             "api_key": "sk-test",
             "base_url": "https://api.openai.com/v1",
             "output_language": "ui",
-            "transcript_char_limit": 400000,
         }
     }
     tmp_path.joinpath("config.json").write_text(json.dumps(backend))

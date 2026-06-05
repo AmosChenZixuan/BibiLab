@@ -173,10 +173,6 @@ def digest(
 ) -> DigestResult:
     lang = _resolved_lang(output_language, ui_lang)
     lang_instruction = _LANG_INSTRUCTION.get(lang, _LANG_INSTRUCTION["en"])
-    char_limit = cfg.transcript_char_limit
-    if len(transcript_text) > char_limit:
-        logger.warning("Transcript for %s exceeds %d chars; truncating", meta.video_id, char_limit)
-        transcript_text = transcript_text[:char_limit]
 
     prompt = (
         lang_instruction

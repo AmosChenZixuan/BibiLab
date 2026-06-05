@@ -221,18 +221,23 @@ def _default_embedding_function() -> ONNXMultilingualEmbedding:
     return ONNXMultilingualEmbedding()
 
 
-def _get_collection(cfg: BibilabConfig) -> "chromadb.Collection":
+# Chroma collection name. Previously `BibilabConfig.transcript_collection_name`
+# (removed in #405); the string is the on-disk collection name, so changing it
+# orphans existing vectors and is a data-migration event, not a refactor.
+_TRANSCRIPT_COLLECTION = "bibilab_transcripts"
+
+
+def _get_collection() -> "chromadb.Collection":
     global _chroma_collections
-    name = cfg.transcript_collection_name
-    if name not in _chroma_collections:
+    if _TRANSCRIPT_COLLECTION not in _chroma_collections:
         import chromadb  # noqa: PLC0415
 
         client = chromadb.PersistentClient(path=str(bibilab_home() / "chroma"))
-        _chroma_collections[name] = client.get_or_create_collection(
-            name,
+        _chroma_collections[_TRANSCRIPT_COLLECTION] = client.get_or_create_collection(
+            _TRANSCRIPT_COLLECTION,
             embedding_function=_default_embedding_function(),
         )
-    return _chroma_collections[name]
+    return _chroma_collections[_TRANSCRIPT_COLLECTION]
 
 
 def embed_chunks(
@@ -240,14 +245,13 @@ def embed_chunks(
     source_id: str,
     meta: VideoMeta,
     list_id: str,
-    cfg: BibilabConfig,
 ) -> None:
     if not chunks:
         return
 
-    collection = _get_collection(cfg)
+    collection = _get_collection()
 
-    clear_embeddings_for_source(source_id, cfg)
+    clear_embeddings_for_source(source_id)
 
     ids = [f"{source_id}_{chunk.sequence_index}" for chunk in chunks]
     documents = [chunk.text for chunk in chunks]
@@ -323,21 +327,21 @@ def clear_fts_for_source_sync(source_id: str) -> None:
         conn.close()
 
 
-def clear_embeddings_for_list(list_id: str, cfg: BibilabConfig) -> None:
+def clear_embeddings_for_list(list_id: str) -> None:
     """Delete all ChromaDB chunks belonging to the given list."""
-    collection = _get_collection(cfg)
+    collection = _get_collection()
     try:
         collection.delete(where={"list_id": list_id})
     except Exception as exc:
         logger.warning("Failed to delete embeddings for list %s: %s", list_id, exc)
 
 
-def clear_embeddings_for_source(source_id: str, cfg: BibilabConfig) -> None:
+def clear_embeddings_for_source(source_id: str) -> None:
     """Delete all ChromaDB chunks belonging to the given source."""
     chroma_path = bibilab_home() / "chroma"
     if not chroma_path.exists():
         return
-    collection = _get_collection(cfg)
+    collection = _get_collection()
     try:
         collection.delete(where={"source_id": source_id})
     except Exception as exc:
@@ -367,7 +371,7 @@ async def query_chunks(
         return []
 
     def _sync_query() -> dict:
-        collection = _get_collection(cfg)
+        collection = _get_collection()
         return collection.query(
             query_texts=[query_text],
             n_results=top_k,

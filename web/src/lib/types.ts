@@ -143,11 +143,14 @@ export type Artifact = {
   error?: string;
 };
 
+// Hand-maintained mirror of `BibilabConfig` in `backend/src/bibilab/config.py`.
+// When adding/removing fields, update both sides. The typed test fixtures
+// across `src/test/*` and the assertions in `src/test/api.test.ts` exercise
+// the wire shape; drift is a real defect — see #405.
 export type BibilabConfig = {
   accounts: {
     bilibili: {
       cookie: string;
-      last_verified: string;
       username: string;
       avatar_url: string;
     };
@@ -164,14 +167,16 @@ export type BibilabConfig = {
     device: string;
     language: string;
   };
-  vision: {
-    enabled: boolean;
-    frame_sample_rate: number;
-    model: string | null;
-  };
   backend: {
     port: number;
     max_concurrent_jobs: number;
+    cors_origins: string[];
+  };
+  rag: {
+    max_distance: number;
+    reranking_enabled: boolean;
+    hybrid_enabled: boolean;
+    debug_prompts: boolean;
   };
 };
 

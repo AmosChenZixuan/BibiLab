@@ -509,9 +509,7 @@ async def test_generate_artifact_includes_zh_lang_instruction(tmp_path: Path, mo
         base_url="https://api.openai.com/v1",
         output_language="ui",
     )
-    cfg.transcription.llm_timeout = 120
     cfg.transcription.llm_max_tokens = 2048
-    cfg.ai.transcript_char_limit = 100000
 
     result = await worker._generate_artifact(
         prompt="Generate a summary",
@@ -554,9 +552,7 @@ async def test_generate_artifact_includes_en_lang_instruction(tmp_path: Path, mo
         base_url="https://api.openai.com/v1",
         output_language="en",
     )
-    cfg.transcription.llm_timeout = 120
     cfg.transcription.llm_max_tokens = 2048
-    cfg.ai.transcript_char_limit = 100000
 
     await worker._generate_artifact(
         prompt="Generate a summary",
@@ -598,9 +594,7 @@ async def test_generate_artifact_unknown_lang_falls_back_to_english(tmp_path: Pa
         base_url="https://api.openai.com/v1",
         output_language="fr",
     )
-    cfg.transcription.llm_timeout = 120
     cfg.transcription.llm_max_tokens = 2048
-    cfg.ai.transcript_char_limit = 100000
 
     await worker._generate_artifact(
         prompt="Generate a summary",

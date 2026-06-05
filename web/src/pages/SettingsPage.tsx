@@ -4,17 +4,17 @@ import { useSearchParams } from "react-router-dom";
 import { useLanguage } from "@/app/LanguageContext";
 import { LlmTab } from "@/components/settings/LlmTab";
 import { ModelsTab } from "@/components/settings/ModelsTab";
-import { OtherTab } from "@/components/settings/OtherTab";
+import { SystemTab } from "@/components/settings/SystemTab";
 import { TranscriptTab } from "@/components/settings/TranscriptTab";
 import { api, notifyHealthChanged, toErrorMessageWithT } from "@/lib/api";
 import { deriveDependencyHealthTier, HEALTH_META } from "@/lib/health";
 import type { HealthDependency, BibilabConfig } from "@/lib/types";
 import { Panel } from "@/components/ui";
 
-type TabKey = "llm" | "transcript" | "models" | "other";
+type TabKey = "llm" | "transcript" | "models" | "system";
 
 function isTabKey(value: string | null): value is TabKey {
-  return value === "llm" || value === "transcript" || value === "models" || value === "other";
+  return value === "llm" || value === "transcript" || value === "models" || value === "system";
 }
 
 function hasConfigChanged(current: BibilabConfig, next: BibilabConfig) {
@@ -36,7 +36,7 @@ const TABS: ReadonlyArray<{ key: TabKey; labelKey: string; dependencyKeys: reado
   { key: "llm", labelKey: "settings.llm", dependencyKeys: ["llm"] as const },
   { key: "transcript", labelKey: "settings.transcript", dependencyKeys: ["asr_model"] as const },
   { key: "models", labelKey: "settings.models", dependencyKeys: ["asr_model", "embedding_model", "reranker_model"] as const },
-  { key: "other", labelKey: "settings.other", dependencyKeys: ["backend", "ffmpeg"] as const },
+  { key: "system", labelKey: "settings.system", dependencyKeys: ["backend", "ffmpeg"] as const },
 ];
 
 export function SettingsPage() {
@@ -167,8 +167,8 @@ export function SettingsPage() {
             <TranscriptTab config={config} dependencies={dependencies} onBlur={handleSave} />
           ) : null}
           {activeTab === "models" ? <ModelsTab /> : null}
-          {activeTab === "other" ? (
-            <OtherTab config={config} dependencies={dependencies} onBlur={handleSave} />
+          {activeTab === "system" ? (
+            <SystemTab config={config} dependencies={dependencies} onBlur={handleSave} />
           ) : null}
         </div>
       </section>

@@ -2,19 +2,19 @@ import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, test } from "vitest";
 
 import { LanguageProvider } from "@/app/LanguageContext";
-import { OtherTab } from "@/components/settings/OtherTab";
+import { SystemTab } from "@/components/settings/SystemTab";
 import type { HealthDependency, BibilabConfig } from "@/lib/types";
 
 const baseConfig: BibilabConfig = {
-  accounts: { bilibili: { cookie: "", last_verified: "", username: "", avatar_url: "" } },
+  accounts: { bilibili: { cookie: "", username: "", avatar_url: "" } },
   ai: { protocol: "openai", model: "", api_key: "", base_url: "" },
   transcription: {
     model: "large-v3",
     device: "cpu",
     language: "auto",
   },
-  vision: { enabled: false, model: "", frame_sample_rate: 60 },
-  backend: { port: 8765, max_concurrent_jobs: 2 },
+  backend: { port: 8765, max_concurrent_jobs: 2, cors_origins: ["http://localhost", "http://localhost:5173", "http://127.0.0.1", "http://127.0.0.1:5173"] },
+  rag: { max_distance: 0.8, reranking_enabled: true, hybrid_enabled: true, debug_prompts: false },
 };
 
 const healthDeps: Record<string, HealthDependency> = {
@@ -30,11 +30,11 @@ afterEach(() => {
   cleanup();
 });
 
-describe("other tab", () => {
+describe("system tab", () => {
   const renderTab = (props = {}) =>
     render(
       <LanguageProvider>
-        <OtherTab config={baseConfig} dependencies={healthDeps} onBlur={() => {}} {...props} />
+        <SystemTab config={baseConfig} dependencies={healthDeps} onBlur={() => {}} {...props} />
       </LanguageProvider>,
     );
 

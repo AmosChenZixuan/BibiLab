@@ -289,7 +289,6 @@ class WorkerLoop:
             cfg.ai,
             cfg.ai.output_language,
             ui_lang,
-            llm_timeout=cfg.transcription.llm_timeout,
         )
 
     # -------------------------------------------------------------------------
@@ -352,12 +351,6 @@ class WorkerLoop:
         lang = _resolved_lang(cfg.ai.output_language, ui_lang)
         lang_instruction = _LANG_INSTRUCTION.get(lang, _LANG_INSTRUCTION["en"])
 
-        # Truncate transcript if too long
-        char_limit = cfg.ai.transcript_char_limit
-        if len(transcript_text) > char_limit:
-            logger.warning("Transcript exceeds %d chars; truncating", char_limit)
-            transcript_text = transcript_text[:char_limit]
-
         llm_prompt = f"""{lang_instruction}
 
 {prompt}
@@ -382,7 +375,6 @@ Respond ONLY with valid JSON matching this schema:
                     _call_llm,
                     llm_prompt,
                     cfg.ai,
-                    llm_timeout=cfg.transcription.llm_timeout,
                     llm_max_tokens=ARTIFACT_MAX_TOKENS,
                 )
                 return _parse_llm_json_response(raw, ArtifactResult)
@@ -574,7 +566,6 @@ Respond ONLY with valid JSON matching this schema:
         chunks = chunk_segments(
             sentence_segments,
             language=effective_language,
-            pause_threshold_seconds=cfg.rag.chunk_pause_threshold,
         )
 
         meta_raw = parse_job_meta(job)
@@ -584,7 +575,7 @@ Respond ONLY with valid JSON matching this schema:
             return await self._call_digest(transcript_text, video_meta, cfg, meta_raw.get("ui_lang"))
 
         async def _embed() -> None:
-            await asyncio.to_thread(embed_chunks, chunks, source_id, video_meta, list_id, cfg)
+            await asyncio.to_thread(embed_chunks, chunks, source_id, video_meta, list_id)
 
         extraction: DigestResult
         extraction, _ = await asyncio.gather(_digest(), _embed())
@@ -628,7 +619,6 @@ Respond ONLY with valid JSON matching this schema:
             language=detected_language,
             whisper_model=cfg.transcription.model,
             ai_model=cfg.ai.model,
-            vision_enabled=cfg.vision.enabled,
             settings_snapshot=cfg.model_dump(),
             series_name=extraction.series_name,
             sequence_number=extraction.sequence_number,

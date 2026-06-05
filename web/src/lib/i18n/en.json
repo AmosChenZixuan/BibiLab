@@ -31,7 +31,7 @@
     "transcript": "Transcript",
     "transcriptionModel": "Model",
     "transcriptionModelRequired": "Required. Without a downloaded model, transcription cannot start.",
-    "other": "Other",
+    "system": "System",
     "provider": "Provider",
     "providerRequired": "Required. Without a provider, AI requests cannot start.",
     "model": "Model",

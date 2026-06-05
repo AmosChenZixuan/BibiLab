@@ -13,7 +13,7 @@ import { MemoryRouter } from "react-router-dom";
 import { LanguageProvider } from "@/app/LanguageContext";
 import { TranscriptTab } from "@/components/settings/TranscriptTab";
 import { LlmTab } from "@/components/settings/LlmTab";
-import { OtherTab } from "@/components/settings/OtherTab";
+import { SystemTab } from "@/components/settings/SystemTab";
 import { Modal } from "@/components/ui/Modal";
 import { JobActivityProvider } from "@/components/jobs/JobActivityProvider";
 import type { BibilabConfig, HealthDependency } from "@/lib/types";
@@ -38,15 +38,15 @@ vi.mock("@/lib/api", async () => {
 // ─── Shared fixtures ──────────────────────────────────────────────────────────
 
 const baseConfig: BibilabConfig = {
-  accounts: { bilibili: { cookie: "", last_verified: "", username: "", avatar_url: "" } },
+  accounts: { bilibili: { cookie: "", username: "", avatar_url: "" } },
   ai: { protocol: "openai", model: "gpt-4o", api_key: "", base_url: "" },
   transcription: {
     model: "large-v3",
     device: "cpu",
     language: "auto",
   },
-  vision: { enabled: false, model: "", frame_sample_rate: 60 },
-  backend: { port: 8765, max_concurrent_jobs: 2 },
+  backend: { port: 8765, max_concurrent_jobs: 2, cors_origins: ["http://localhost", "http://localhost:5173", "http://127.0.0.1", "http://127.0.0.1:5173"] },
+  rag: { max_distance: 0.8, reranking_enabled: true, hybrid_enabled: true, debug_prompts: false },
 };
 
 const healthDeps: Record<string, HealthDependency> = {
@@ -153,7 +153,7 @@ test("transcript tab refreshModels effect fires only on mount", async () => {
 // ─── Settings tab sync-from-props stability ──────────────────────────────────
 
 /**
- * Verifies that LlmTab, TranscriptTab, and OtherTab don't unnecessarily
+ * Verifies that LlmTab, TranscriptTab, and SystemTab don't unnecessarily
  * re-sync their local state when the parent re-renders but the relevant
  * config slice hasn't changed.
  *
@@ -187,12 +187,12 @@ test("llm tab does not re-sync local state on re-render with same ai config", ()
   expect(onBlur).not.toHaveBeenCalled();
 });
 
-test("other tab does not re-sync local state on re-render with same backend config", () => {
+test("system tab does not re-sync local state on re-render with same backend config", () => {
   const onBlur = vi.fn();
 
   const { rerender } = render(
     <LanguageProvider>
-      <OtherTab config={baseConfig} dependencies={{}} onBlur={onBlur} />
+      <SystemTab config={baseConfig} dependencies={{}} onBlur={onBlur} />
     </LanguageProvider>,
   );
 
@@ -201,7 +201,7 @@ test("other tab does not re-sync local state on re-render with same backend conf
   // Re-render with same config reference
   rerender(
     <LanguageProvider>
-      <OtherTab config={baseConfig} dependencies={{}} onBlur={onBlur} />
+      <SystemTab config={baseConfig} dependencies={{}} onBlur={onBlur} />
     </LanguageProvider>,
   );
 

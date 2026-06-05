@@ -792,7 +792,6 @@ async def test_write_source_reingest_coalesces_facets(tmp_bibilab_home: Path):
         language=None,
         whisper_model="large-v3",
         ai_model="gpt-4o",
-        vision_enabled=False,
         settings_snapshot={},
     )
 
