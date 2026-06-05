@@ -12,3 +12,12 @@ def test_vision_config_removed():
     cfg = BibilabConfig()
     assert not hasattr(cfg, "vision")
     assert "vision" not in cfg.model_dump()
+
+
+def test_accounts_bilibili_no_last_verified():
+    from bibilab.config import BibilabConfig
+
+    cfg = BibilabConfig()
+    bilibili = cfg.accounts.bilibili
+    assert not hasattr(bilibili, "last_verified")
+    assert "last_verified" not in bilibili.model_dump()

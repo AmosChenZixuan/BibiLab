@@ -32,7 +32,6 @@ def _config_path() -> Path:
 
 class BilibiliAccountConfig(BaseModel):
     cookie: str = ""
-    last_verified: str = ""
     username: str = ""
     avatar_url: str = ""
 

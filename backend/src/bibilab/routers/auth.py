@@ -56,7 +56,6 @@ async def qr_status(key: str, cfg: BibilabConfig = Depends(get_config)) -> dict:
         pairs = urlparse(data["data"]["url"]).query.split("&")
         cookie_str = "; ".join(p for p in pairs if p.split("=", 1)[0] in _BILIBILI_COOKIE_KEYS)
         cfg.accounts.bilibili.cookie = cookie_str
-        cfg.accounts.bilibili.last_verified = _iso_now()
         try:
             async with httpx.AsyncClient(timeout=10, headers=BILIBILI_HEADERS) as nav_client:
                 nav_resp = await nav_client.get(
@@ -78,7 +77,6 @@ async def qr_status(key: str, cfg: BibilabConfig = Depends(get_config)) -> dict:
 @router.delete("/auth/bilibili")
 async def delete_bilibili_auth(cfg: BibilabConfig = Depends(get_config)) -> Response:
     cfg.accounts.bilibili.cookie = ""
-    cfg.accounts.bilibili.last_verified = ""
     cfg.accounts.bilibili.username = ""
     cfg.accounts.bilibili.avatar_url = ""
     save_config(cfg)
