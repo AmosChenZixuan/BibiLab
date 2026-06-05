@@ -580,3 +580,45 @@ async def test_second_retrieval_allowed_no_sequential_guard(mock_stream_llm):
 
     # The guard is DELETED: both find_passages AND read_source execute in successive iterations.
     assert calls == [FIND_PASSAGES_TOOL.name, READ_SOURCE_TOOL.name]
+
+
+@pytest.mark.asyncio
+async def test_stream_with_tools_shares_one_seen_set_across_calls():
+    """The turn-scoped seen_chunk_ids set is created once and passed to every
+    execute_tool call so parallel/multi-hop find_passages share dedup state."""
+    from bibilab.config import AIConfig
+    from bibilab.routers.chat import stream_with_tools
+
+    seen_sets = []
+
+    async def fake_execute(name, args, **kwargs):
+        seen_sets.append(kwargs.get("seen_chunk_ids"))
+        return {"_chunks": "ok", "tool_name": name}
+
+    # First stream yields two parallel tool calls; second yields a plain answer.
+    streams = [
+        [
+            StreamEvent(type="tool_call", tool_call=ToolCall(id="a", name="find_passages", arguments={"query": "x"})),
+            StreamEvent(type="tool_call", tool_call=ToolCall(id="b", name="find_passages", arguments={"query": "y"})),
+            StreamEvent(type="done"),
+        ],
+        [StreamEvent(type="delta", content="answer"), StreamEvent(type="done")],
+    ]
+
+    async def fake_stream_llm(*args, **kwargs):
+        for ev in streams.pop(0):
+            yield ev
+
+    cfg = AIConfig(protocol="openai", model="m", api_key="k", base_url="")
+    with patch("bibilab.routers.chat.stream_llm", fake_stream_llm):
+        async for _ in stream_with_tools(
+            messages=[{"role": "user", "content": "hi"}],
+            cfg=cfg,
+            tools=[],
+            execute_tool_fn=fake_execute,
+        ):
+            pass
+
+    assert len(seen_sets) == 2  # two parallel find_passages calls
+    assert seen_sets[0] is seen_sets[1]  # same set object → shared turn state
+    assert seen_sets[0] is not None
