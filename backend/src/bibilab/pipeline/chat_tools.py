@@ -83,7 +83,7 @@ def _partition_unseen_chunks(chunks: list, seen_chunk_ids: set[str]) -> list:
     """Return the chunks not already shown this turn, recording their ids.
 
     chunk_id = ``{source_id}_{int(timestamp_start)}_{int(timestamp_end)}`` —
-    the same key used for citation tracking (chat_tools.py:419/441). Dedup is
+    the same key used for citation tracking (chat_tools.py:456/478). Dedup is
     turn-scoped: parallel and multi-hop find_passages calls share one set so a
     given chunk is rendered to the LLM at most once per turn. Mutates
     seen_chunk_ids in place.
@@ -342,6 +342,8 @@ async def execute_find_passages(
     season_number: int | None = None,
     seen_chunk_ids: set[str] | None = None,
 ) -> dict:
+    if seen_chunk_ids is not None and not isinstance(seen_chunk_ids, set):
+        raise TypeError(f"seen_chunk_ids must be a set or None, got {type(seen_chunk_ids).__name__}")
     if registry is None:
         registry = {}
 
