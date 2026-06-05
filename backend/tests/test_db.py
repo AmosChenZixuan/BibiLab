@@ -843,7 +843,6 @@ _SOURCE_FIELDS = dict(
     language="zh",
     whisper_model="m",
     ai_model="a",
-    vision_enabled=False,
     settings_snapshot={},
 )
 

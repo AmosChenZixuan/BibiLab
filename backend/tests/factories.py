@@ -75,7 +75,6 @@ class SourceFactory:
         "language": None,
         "whisper_model": "large-v3",
         "ai_model": "gpt-4o",
-        "vision_enabled": False,
         "settings_snapshot": {},
         "series_name": None,
         "sequence_number": None,

@@ -86,7 +86,6 @@ CREATE TABLE IF NOT EXISTS sources (
     language          TEXT,
     whisper_model     TEXT,
     ai_model          TEXT,
-    vision_enabled    INTEGER DEFAULT 0,
     processed_at      DATETIME,
     settings_snapshot TEXT,
     series_name       TEXT,
@@ -274,7 +273,6 @@ async def _exec_write_source(
     language: str | None,
     whisper_model: str,
     ai_model: str,
-    vision_enabled: bool,
     settings_snapshot: dict[str, Any],
     series_name: str | None = None,
     sequence_number: int | None = None,
@@ -290,10 +288,10 @@ async def _exec_write_source(
         INSERT INTO sources
             (id, video_id, platform, list_id, title, summary, keywords,
              cover_url, source_url, duration_seconds, uploader,
-             language, whisper_model, ai_model, vision_enabled,
+             language, whisper_model, ai_model,
              processed_at, settings_snapshot,
              series_name, sequence_number, season_number)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(video_id, list_id) DO UPDATE SET
             platform=excluded.platform,
             title=excluded.title,
@@ -306,7 +304,6 @@ async def _exec_write_source(
             language=excluded.language,
             whisper_model=excluded.whisper_model,
             ai_model=excluded.ai_model,
-            vision_enabled=excluded.vision_enabled,
             processed_at=excluded.processed_at,
             settings_snapshot=excluded.settings_snapshot,
             series_name=COALESCE(excluded.series_name, series_name),
@@ -328,7 +325,6 @@ async def _exec_write_source(
             language,
             whisper_model,
             ai_model,
-            int(vision_enabled),
             _now(),
             json.dumps(settings_snapshot),
             series_name,

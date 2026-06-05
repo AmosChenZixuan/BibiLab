@@ -65,12 +65,6 @@ class TranscriptionConfig(BaseModel):
         return v
 
 
-class VisionConfig(BaseModel):
-    enabled: bool = False
-    frame_sample_rate: int = 30
-    model: str | None = None
-
-
 class BackendConfig(BaseModel):
     port: int = 8765
     # Max ingest jobs in flight. Governs IO-stage (download + digest LLM call)
@@ -101,7 +95,6 @@ class BibilabConfig(BaseModel):
     accounts: AccountsConfig = AccountsConfig()
     ai: AIConfig = AIConfig()
     transcription: TranscriptionConfig = TranscriptionConfig()
-    vision: VisionConfig = VisionConfig()
     backend: BackendConfig = BackendConfig()
     rag: RagConfig = RagConfig()
     # ChromaDB

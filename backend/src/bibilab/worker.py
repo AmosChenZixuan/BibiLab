@@ -628,7 +628,6 @@ Respond ONLY with valid JSON matching this schema:
             language=detected_language,
             whisper_model=cfg.transcription.model,
             ai_model=cfg.ai.model,
-            vision_enabled=cfg.vision.enabled,
             settings_snapshot=cfg.model_dump(),
             series_name=extraction.series_name,
             sequence_number=extraction.sequence_number,
