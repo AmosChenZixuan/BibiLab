@@ -31,14 +31,10 @@ def count_tokens(text: str) -> int:
 # Output budget bounds. The ceiling is a generous fixed cap that comfortably
 # fits extended thinking + a full answer for every role (chat, digest, artifact,
 # summary) — large models routinely spend 10K+ tokens thinking. The margin
-# absorbs tokenizer drift and unmodeled request overhead (tool schemas, role
-# framing). _MIN_VIABLE_OUTPUT is the smallest output worth proceeding with:
-# below it the input has effectively filled the window (e.g. a read_source turn
-# carrying a full transcript), so we fail fast with an actionable error instead
-# of emitting a max_tokens that overflows the provider's context limit.
+# absorbs tokenizer drift (we estimate with cl100k; providers use their own)
+# and per-message framing overhead.
 _OUTPUT_CEILING = 32768
 _INPUT_MARGIN = 2048
-_MIN_VIABLE_OUTPUT = 512
 
 
 def resolve_max_tokens(cfg: AIConfig, input_text: str) -> int:
@@ -46,33 +42,40 @@ def resolve_max_tokens(cfg: AIConfig, input_text: str) -> int:
 
     max_tokens = min(context_window - estimated_input - margin, ceiling)
 
-    Output always fits inside the window — it never overrides the window with a
-    floor — so thinking-capable models get as much room as the window allows up
-    to the ceiling (#432). When the input itself nearly fills the window, raise
-    rather than emit a budget that would overflow the provider's limit.
+    The precise token count only changes the result when input nears the window
+    (otherwise the ceiling binds), so we skip it in the common case: cl100k
+    tokens never exceed UTF-8 byte length, so if the bytes already fit under the
+    ceiling threshold the ceiling wins without encoding (#432).
+
+    When input alone overflows the window no max_tokens is valid — raise, since
+    the only fix is bounding how much read_source injects, which is backend-side.
     """
+    if len(input_text.encode("utf-8")) <= cfg.context_window - _INPUT_MARGIN - _OUTPUT_CEILING:
+        return _OUTPUT_CEILING
     estimated_input = count_tokens(input_text)
     available = cfg.context_window - estimated_input - _INPUT_MARGIN
-    if available < _MIN_VIABLE_OUTPUT:
+    if available <= 0:
         raise ValueError(
-            f"Input (~{estimated_input} tokens) leaves only {max(available, 0)} of the "
-            f"{cfg.context_window}-token context window for output. Raise the context "
-            f"window or read fewer sources into this turn."
+            f"Input (~{estimated_input} tokens) exceeds the {cfg.context_window}-token "
+            "context window — read_source pulled more than fits this turn."
         )
     return min(available, _OUTPUT_CEILING)
 
 
-def _serialize_messages(messages: list[dict], system: str | None) -> str:
-    """Flatten chat messages + system prompt into one string for token estimation.
+def _serialize_messages(messages: list[dict], system: str | None, tools: "list[ToolDefinition] | None" = None) -> str:
+    """Flatten system prompt + chat messages + tool schemas into one string for
+    token estimation. Tool definitions are the largest fixed input block in a
+    tool-calling turn, so they're counted, not approximated by the margin.
 
     Content is usually a plain string; non-string content (tool blocks) is
-    JSON-dumped. Tool schemas are omitted — they are small relative to history
-    and covered by _INPUT_MARGIN.
+    JSON-dumped.
     """
     parts = [system] if system else []
     for m in messages:
         content = m.get("content")
         parts.append(content if isinstance(content, str) else json.dumps(content, ensure_ascii=False))
+    for t in tools or []:
+        parts.append(f"{t.name}\n{t.description}\n{json.dumps(t.parameters, ensure_ascii=False)}")
     return "\n".join(parts)
 
 
@@ -223,7 +226,7 @@ async def stream_llm(
     system: str | None = None,
 ) -> AsyncGenerator[StreamEvent, None]:
     cache_key = (cfg.protocol, cfg.api_key, cfg.model, cfg.base_url)
-    llm_max_tokens = resolve_max_tokens(cfg, _serialize_messages(messages, system))
+    llm_max_tokens = resolve_max_tokens(cfg, _serialize_messages(messages, system, tools))
 
     if cfg.protocol == "anthropic":
         if cache_key not in _async_client_cache:

@@ -4,7 +4,6 @@ import pytest
 
 from bibilab.config import AIConfig
 from bibilab.pipeline._shared import (
-    _MIN_VIABLE_OUTPUT,
     _OUTPUT_CEILING,
     resolve_max_tokens,
 )
@@ -31,12 +30,12 @@ def test_large_input_shrinks_to_fit_below_ceiling():
     (no floor override) — the read_source-carries-a-transcript case."""
     big = "word " * 120000  # ~120K tokens against a 128K window
     out = resolve_max_tokens(_cfg(context_window=128000), big)
-    assert _MIN_VIABLE_OUTPUT <= out < _OUTPUT_CEILING
+    assert 0 < out < _OUTPUT_CEILING
 
 
 def test_input_filling_window_raises_instead_of_overflowing():
-    """Input that nearly fills the window fails fast with an actionable error rather
-    than emitting a max_tokens that would overflow the provider's context limit."""
+    """Input that overflows the window raises a factual error (no valid max_tokens
+    exists) rather than emitting one that would overflow the provider's limit."""
     huge = "word " * 200000  # exceeds a 128K window outright
     with pytest.raises(ValueError, match="context window"):
         resolve_max_tokens(_cfg(context_window=128000), huge)
@@ -45,4 +44,4 @@ def test_input_filling_window_raises_instead_of_overflowing():
 def test_small_window_is_respected():
     """A smaller window scales the budget down accordingly (still no ceiling)."""
     out = resolve_max_tokens(_cfg(context_window=8192), "hello")
-    assert _MIN_VIABLE_OUTPUT <= out < _OUTPUT_CEILING
+    assert 0 < out < _OUTPUT_CEILING
