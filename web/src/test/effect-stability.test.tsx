@@ -13,7 +13,7 @@ import { MemoryRouter } from "react-router-dom";
 import { LanguageProvider } from "@/app/LanguageContext";
 import { TranscriptTab } from "@/components/settings/TranscriptTab";
 import { LlmTab } from "@/components/settings/LlmTab";
-import { OtherTab } from "@/components/settings/OtherTab";
+import { SystemTab } from "@/components/settings/SystemTab";
 import { Modal } from "@/components/ui/Modal";
 import { JobActivityProvider } from "@/components/jobs/JobActivityProvider";
 import type { BibilabConfig, HealthDependency } from "@/lib/types";
@@ -153,7 +153,7 @@ test("transcript tab refreshModels effect fires only on mount", async () => {
 // ─── Settings tab sync-from-props stability ──────────────────────────────────
 
 /**
- * Verifies that LlmTab, TranscriptTab, and OtherTab don't unnecessarily
+ * Verifies that LlmTab, TranscriptTab, and SystemTab don't unnecessarily
  * re-sync their local state when the parent re-renders but the relevant
  * config slice hasn't changed.
  *
@@ -192,7 +192,7 @@ test("other tab does not re-sync local state on re-render with same backend conf
 
   const { rerender } = render(
     <LanguageProvider>
-      <OtherTab config={baseConfig} dependencies={{}} onBlur={onBlur} />
+      <SystemTab config={baseConfig} dependencies={{}} onBlur={onBlur} />
     </LanguageProvider>,
   );
 
@@ -201,7 +201,7 @@ test("other tab does not re-sync local state on re-render with same backend conf
   // Re-render with same config reference
   rerender(
     <LanguageProvider>
-      <OtherTab config={baseConfig} dependencies={{}} onBlur={onBlur} />
+      <SystemTab config={baseConfig} dependencies={{}} onBlur={onBlur} />
     </LanguageProvider>,
   );
 

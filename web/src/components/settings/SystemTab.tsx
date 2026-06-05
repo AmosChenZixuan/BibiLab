@@ -4,13 +4,13 @@ import { useLanguage, type Lang } from "@/app/LanguageContext";
 import type { HealthDependency, BibilabConfig } from "@/lib/types";
 import { Input, Select, SettingsField } from "@/components/ui";
 
-type OtherTabProps = {
+type SystemTabProps = {
   config: BibilabConfig;
   dependencies: Record<string, HealthDependency>;
   onBlur: (updated: BibilabConfig) => void;
 };
 
-export function OtherTab({ config, dependencies, onBlur }: OtherTabProps) {
+export function SystemTab({ config, dependencies, onBlur }: SystemTabProps) {
   const { lang, setLang, t } = useLanguage();
   const [local, setLocal] = useState({
     maxConcurrentJobs: config.backend.max_concurrent_jobs,

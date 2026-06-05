@@ -31,7 +31,7 @@
     "transcript": "转录",
     "transcriptionModel": "模型",
     "transcriptionModelRequired": "必填。未下载模型则无法开始转录。",
-    "other": "其他",
+    "system": "系统",
     "provider": "提供商",
     "providerRequired": "必填。没有提供商，AI 请求无法启动。",
     "model": "模型",

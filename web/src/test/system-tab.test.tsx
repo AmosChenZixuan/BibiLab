@@ -2,7 +2,7 @@ import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, test } from "vitest";
 
 import { LanguageProvider } from "@/app/LanguageContext";
-import { OtherTab } from "@/components/settings/OtherTab";
+import { SystemTab } from "@/components/settings/SystemTab";
 import type { HealthDependency, BibilabConfig } from "@/lib/types";
 
 const baseConfig: BibilabConfig = {
@@ -30,11 +30,11 @@ afterEach(() => {
   cleanup();
 });
 
-describe("other tab", () => {
+describe("system tab", () => {
   const renderTab = (props = {}) =>
     render(
       <LanguageProvider>
-        <OtherTab config={baseConfig} dependencies={healthDeps} onBlur={() => {}} {...props} />
+        <SystemTab config={baseConfig} dependencies={healthDeps} onBlur={() => {}} {...props} />
       </LanguageProvider>,
     );
 

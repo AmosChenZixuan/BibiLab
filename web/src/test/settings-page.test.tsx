@@ -82,7 +82,7 @@ describe("settings page", () => {
     expect(await screen.findByRole("tab", { name: /ai service/i })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: /transcript/i })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: /local models/i })).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: /other/i })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /system/i })).toBeInTheDocument();
   });
 
   test("LLM tab is active by default and shows provider dropdown", async () => {
@@ -98,19 +98,19 @@ describe("settings page", () => {
     expect(await screen.findByLabelText(/device/i)).toBeInTheDocument();
   });
 
-  test("clicking Other tab shows backend api section", async () => {
+  test("clicking System tab shows backend api section", async () => {
     renderPage();
 
-    fireEvent.click(await screen.findByRole("tab", { name: /other/i }));
+    fireEvent.click(await screen.findByRole("tab", { name: /system/i }));
     expect(await screen.findByText(/backend api/i)).toBeInTheDocument();
   });
 
   test("clicking a tab updates the url query", async () => {
     renderPageAt("/settings");
 
-    fireEvent.click(await screen.findByRole("tab", { name: /other/i }));
+    fireEvent.click(await screen.findByRole("tab", { name: /system/i }));
 
-    expect(screen.getByTestId("location")).toHaveTextContent("/settings?tab=other");
+    expect(screen.getByTestId("location")).toHaveTextContent("/settings?tab=system");
   });
 
   test("reads active tab from the url query", async () => {
@@ -126,7 +126,7 @@ describe("settings page", () => {
     expect(await screen.findByRole("tab", { name: /ai service/i })).toHaveAttribute("title", "Healthy");
     expect(screen.getByRole("tab", { name: /transcript/i })).toHaveAttribute("title", "Healthy");
     expect(screen.getByRole("tab", { name: /local models/i })).toHaveAttribute("title", "Healthy");
-    expect(screen.getByRole("tab", { name: /other/i })).toHaveAttribute("title", "Healthy");
+    expect(screen.getByRole("tab", { name: /system/i })).toHaveAttribute("title", "Healthy");
   });
 
   test("refreshes health after saving config", async () => {
@@ -198,7 +198,7 @@ describe("settings page", () => {
       rag: { max_distance: 0.8, reranking_enabled: true, hybrid_enabled: true, debug_prompts: false },
     });
 
-    renderPageAt("/settings?tab=other");
+    renderPageAt("/settings?tab=system");
 
     const workerInput = await screen.findByLabelText(/max concurrent jobs/i);
     fireEvent.change(workerInput, { target: { value: "3" } });
