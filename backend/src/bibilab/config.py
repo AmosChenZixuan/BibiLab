@@ -52,7 +52,6 @@ class TranscriptionConfig(BaseModel):
     model: str = "sensevoice-small"
     device: str = "cuda"  # cuda | cpu
     language: str = "auto"  # auto | zh | en
-    llm_timeout: int = 120
 
     @field_validator("device")
     @classmethod

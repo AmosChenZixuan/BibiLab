@@ -45,3 +45,11 @@ def test_no_transcript_collection_name():
     cfg = BibilabConfig()
     assert not hasattr(cfg, "transcript_collection_name")
     assert "transcript_collection_name" not in cfg.model_dump()
+
+
+def test_transcription_no_llm_timeout():
+    from bibilab.config import BibilabConfig
+
+    cfg = BibilabConfig()
+    assert not hasattr(cfg.transcription, "llm_timeout")
+    assert "llm_timeout" not in cfg.transcription.model_dump()

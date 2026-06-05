@@ -289,7 +289,6 @@ class WorkerLoop:
             cfg.ai,
             cfg.ai.output_language,
             ui_lang,
-            llm_timeout=cfg.transcription.llm_timeout,
         )
 
     # -------------------------------------------------------------------------
@@ -376,7 +375,6 @@ Respond ONLY with valid JSON matching this schema:
                     _call_llm,
                     llm_prompt,
                     cfg.ai,
-                    llm_timeout=cfg.transcription.llm_timeout,
                     llm_max_tokens=ARTIFACT_MAX_TOKENS,
                 )
                 return _parse_llm_json_response(raw, ArtifactResult)
