@@ -92,7 +92,7 @@ asr_models.py     — Unified ASR model registry (Whisper + SenseVoice + diariza
 | `video_id` | Platform-native ID (e.g. `bvid`) |
 | `title`, `summary`, `keywords` | Denormalized from platform metadata + LLM output |
 | `language`, `uploader`, `duration_seconds` | Video metadata |
-| `whisper_model`, `ai_model`, `vision_enabled` | Processing config at ingest time |
+| `whisper_model`, `ai_model` | Processing config at ingest time |
 | `cover_url`, `processed_at`, `settings_snapshot` | Ingest-time state |
 | `series_name`, `sequence_number`, `season_number` | Facet metadata extracted by LLM digest (nullable) |
 
@@ -255,11 +255,10 @@ v0: `BilibiliAdapter` — single video. Cookie-based auth in config.
 
 ```json
 {
-  "accounts": { "bilibili": { "cookie": "", "last_verified": "" } },
+  "accounts": { "bilibili": { "cookie": "", "username": "", "avatar_url": "" } },
   "ai": { "protocol": "openai|anthropic", "model": "", "api_key": "", "base_url": null, "output_language": "ui" },
   "transcription": { "model": "sensevoice-small|large-v3", "device": "cuda|cpu", "language": "auto" },
-  "vision": { "enabled": false, "frame_sample_rate": 30, "model": null },
-  "backend": { "port": 8765, "worker_concurrency": 1 },
+  "backend": { "port": 8765, "max_concurrent_jobs": 1, "cors_origins": [...] },
   "rag": { "max_distance": 0.8, "hybrid_enabled": true, "reranking_enabled": true, "debug_prompts": false }
 }
 ```
