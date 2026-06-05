@@ -259,7 +259,7 @@ v0: `BilibiliAdapter` — single video. Cookie-based auth in config.
   "ai": { "protocol": "openai|anthropic", "model": "", "api_key": "", "base_url": null, "output_language": "ui" },
   "transcription": { "model": "sensevoice-small|large-v3", "device": "cuda|cpu", "language": "auto" },
   "backend": { "port": 8765, "max_concurrent_jobs": 1, "cors_origins": [...] },
-  "rag": { "max_distance": 0.8, "hybrid_enabled": true, "reranking_enabled": true, "debug_prompts": false }
+  "rag": { "max_distance": 0.8, "reranking_enabled": true, "hybrid_enabled": true, "debug_prompts": false }
 }
 ```
 Reranker model is fixed to `Xenova/bge-reranker-base` (XLM-RoBERTa, Chinese + English). `FIND_PASSAGES_TOP_K = 8`. Opt-in prompt-trace dump writes one `call{N}.json` per `stream_llm` call under `~/.bibilab/debug/{message_id}/` when `rag.debug_prompts` is true; off by default.

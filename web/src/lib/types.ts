@@ -144,9 +144,9 @@ export type Artifact = {
 };
 
 // Hand-maintained mirror of `BibilabConfig` in `backend/src/bibilab/config.py`.
-// When adding/removing fields, update both sides and verify `src/test/api.test.ts`
-// (`getConfig returns username and avatar_url for bilibili account`) still asserts
-// the wire shape. Drift is a real defect — see #405.
+// When adding/removing fields, update both sides. The typed test fixtures
+// across `src/test/*` and the assertions in `src/test/api.test.ts` exercise
+// the wire shape; drift is a real defect — see #405.
 export type BibilabConfig = {
   accounts: {
     bilibili: {

@@ -575,7 +575,7 @@ Respond ONLY with valid JSON matching this schema:
             return await self._call_digest(transcript_text, video_meta, cfg, meta_raw.get("ui_lang"))
 
         async def _embed() -> None:
-            await asyncio.to_thread(embed_chunks, chunks, source_id, video_meta, list_id, cfg)
+            await asyncio.to_thread(embed_chunks, chunks, source_id, video_meta, list_id)
 
         extraction: DigestResult
         extraction, _ = await asyncio.gather(_digest(), _embed())

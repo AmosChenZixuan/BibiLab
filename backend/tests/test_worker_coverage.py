@@ -339,7 +339,6 @@ async def test_stage_persist_atomic_no_orphan_on_segment_write_failure(tmp_bibil
                 cfg=MagicMock(
                     transcription=MagicMock(model="base"),
                     ai=MagicMock(model="gpt"),
-                    vision=MagicMock(enabled=False),
                     model_dump=lambda: {},
                 ),
                 sentence_segments=sentences,

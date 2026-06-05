@@ -257,6 +257,7 @@ describe("home page", () => {
 
       if (url.endsWith("/api/config") && method === "GET") {
         return Response.json({
+          accounts: { bilibili: { cookie: "***", username: "", avatar_url: "" } },
           ai: { protocol: "openai", model: "gpt-4o", api_key: "***", base_url: "" },
           transcription: {
             model: "large-v3",
