@@ -79,6 +79,25 @@ def _build_fenced_chunks(
     return "\n\n".join(blocks)
 
 
+def _partition_unseen_chunks(chunks: list, seen_chunk_ids: set[str]) -> list:
+    """Return the chunks not already shown this turn, recording their ids.
+
+    chunk_id = ``{source_id}_{int(timestamp_start)}_{int(timestamp_end)}`` —
+    the same key used for citation tracking (chat_tools.py:419/441). Dedup is
+    turn-scoped: parallel and multi-hop find_passages calls share one set so a
+    given chunk is rendered to the LLM at most once per turn. Mutates
+    seen_chunk_ids in place.
+    """
+    new = []
+    for c in chunks:
+        cid = f"{c.source_id}_{int(c.timestamp_start)}_{int(c.timestamp_end)}"
+        if cid in seen_chunk_ids:
+            continue
+        seen_chunk_ids.add(cid)
+        new.append(c)
+    return new
+
+
 # Tool defs + registry for the RAG v2 two-tool surface (#370/#371).
 # RETRIEVE_TOOL_NAMES is the set whose tool results carry a replayable chunk
 # array (only find_passages). read_source shares the SAME citation registry and
