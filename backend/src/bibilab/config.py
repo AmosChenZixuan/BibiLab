@@ -46,8 +46,6 @@ class AIConfig(BaseModel):
     api_key: str = ""
     base_url: str = "https://api.openai.com/v1"
     output_language: str = "ui"  # ui | zh | en | ...; "ui" means follow UI language
-    # Maximum transcript character limit before truncation (~100K tokens at ~4 chars/token)
-    transcript_char_limit: int = 400_000
 
 
 class TranscriptionConfig(BaseModel):

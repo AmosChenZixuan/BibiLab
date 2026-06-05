@@ -21,3 +21,11 @@ def test_accounts_bilibili_no_last_verified():
     bilibili = cfg.accounts.bilibili
     assert not hasattr(bilibili, "last_verified")
     assert "last_verified" not in bilibili.model_dump()
+
+
+def test_ai_no_transcript_char_limit():
+    from bibilab.config import BibilabConfig
+
+    cfg = BibilabConfig()
+    assert not hasattr(cfg.ai, "transcript_char_limit")
+    assert "transcript_char_limit" not in cfg.ai.model_dump()

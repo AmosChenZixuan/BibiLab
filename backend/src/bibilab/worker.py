@@ -352,12 +352,6 @@ class WorkerLoop:
         lang = _resolved_lang(cfg.ai.output_language, ui_lang)
         lang_instruction = _LANG_INSTRUCTION.get(lang, _LANG_INSTRUCTION["en"])
 
-        # Truncate transcript if too long
-        char_limit = cfg.ai.transcript_char_limit
-        if len(transcript_text) > char_limit:
-            logger.warning("Transcript exceeds %d chars; truncating", char_limit)
-            transcript_text = transcript_text[:char_limit]
-
         llm_prompt = f"""{lang_instruction}
 
 {prompt}
