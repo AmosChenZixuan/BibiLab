@@ -36,7 +36,14 @@ from bibilab.models.chat import (
     GetConversationResponse,
     MessageResponse,
 )
-from bibilab.pipeline._shared import _LANG_NATIVE_NAME, StreamEvent, ToolCall, ToolDefinition, stream_llm
+from bibilab.pipeline._shared import (
+    _LANG_NATIVE_NAME,
+    ContextWindowExceededError,
+    StreamEvent,
+    ToolCall,
+    ToolDefinition,
+    stream_llm,
+)
 from bibilab.pipeline.chat_runs import (
     STREAM_BUFFER_GRACE_SECONDS,
     ChatRunRegistry,
@@ -98,6 +105,7 @@ MAX_TOOL_ITERATIONS = 3
 
 
 _ERROR_CODE_MAP: tuple[tuple[type[Exception], str], ...] = (
+    (ContextWindowExceededError, "llm_context_window_exceeded"),
     (openai.APIConnectionError, "llm_connection_error"),
     (anthropic.APIConnectionError, "llm_connection_error"),
     (openai.AuthenticationError, "llm_auth_error"),

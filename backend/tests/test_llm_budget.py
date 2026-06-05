@@ -5,6 +5,7 @@ import pytest
 from bibilab.config import AIConfig
 from bibilab.pipeline._shared import (
     _OUTPUT_CEILING,
+    ContextWindowExceededError,
     resolve_max_tokens,
 )
 
@@ -37,7 +38,7 @@ def test_input_filling_window_raises_instead_of_overflowing():
     """Input that overflows the window raises a factual error (no valid max_tokens
     exists) rather than emitting one that would overflow the provider's limit."""
     huge = "word " * 200000  # exceeds a 128K window outright
-    with pytest.raises(ValueError, match="context window"):
+    with pytest.raises(ContextWindowExceededError, match="context window"):
         resolve_max_tokens(_cfg(context_window=128000), huge)
 
 

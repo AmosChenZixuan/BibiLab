@@ -287,6 +287,7 @@
       "llm_auth_error": "AI provider authentication failed",
       "llm_rate_limit_error": "AI provider rate limit exceeded",
       "llm_api_error": "AI provider error",
+      "llm_context_window_exceeded": "Input exceeds the model's context window",
       "internal_error": "An internal error occurred"
     }
   },

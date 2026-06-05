@@ -287,6 +287,7 @@
       "llm_auth_error": "AI 提供商认证失败",
       "llm_rate_limit_error": "AI 提供商速率限制",
       "llm_api_error": "AI 提供商错误",
+      "llm_context_window_exceeded": "输入超出模型上下文窗口",
       "internal_error": "发生内部错误"
     }
   },

@@ -419,6 +419,14 @@ class TestClassifyError:
 
         assert classify_error(Exception("something broke")) == "internal_error"
 
+    def test_context_window_exceeded(self):
+        """resolve_max_tokens' overflow error gets its own code, not internal_error,
+        so the chat toast is meaningful rather than a generic server error."""
+        from bibilab.pipeline._shared import ContextWindowExceededError
+        from bibilab.routers.chat import classify_error
+
+        assert classify_error(ContextWindowExceededError("too big")) == "llm_context_window_exceeded"
+
     def test_openai_connection_error(self):
         from bibilab.routers.chat import classify_error
 

@@ -37,6 +37,12 @@ _OUTPUT_CEILING = 32768
 _INPUT_MARGIN = 2048
 
 
+class ContextWindowExceededError(ValueError):
+    """Input alone exceeds the configured context window, so no valid max_tokens
+    exists. Raised by resolve_max_tokens for every LLM call site; chat maps it to
+    an i18n error code, pipeline stages surface its message as the job error."""
+
+
 def resolve_max_tokens(cfg: AIConfig, input_text: str) -> int:
     """Auto-scale the per-call output budget from the configured context window.
 
@@ -47,17 +53,16 @@ def resolve_max_tokens(cfg: AIConfig, input_text: str) -> int:
     tokens never exceed UTF-8 byte length, so if the bytes already fit under the
     ceiling threshold the ceiling wins without encoding (#432).
 
-    When input alone overflows the window no max_tokens is valid — raise, since
-    the only fix is bounding how much read_source injects, which is backend-side.
+    When input alone overflows the window no max_tokens is valid — raise
+    ContextWindowExceededError (callers map it to a stage-appropriate error).
     """
     if len(input_text.encode("utf-8")) <= cfg.context_window - _INPUT_MARGIN - _OUTPUT_CEILING:
         return _OUTPUT_CEILING
     estimated_input = count_tokens(input_text)
     available = cfg.context_window - estimated_input - _INPUT_MARGIN
     if available <= 0:
-        raise ValueError(
-            f"Input (~{estimated_input} tokens) exceeds the {cfg.context_window}-token "
-            "context window — read_source pulled more than fits this turn."
+        raise ContextWindowExceededError(
+            f"Input (~{estimated_input} tokens) exceeds the {cfg.context_window}-token context window."
         )
     return min(available, _OUTPUT_CEILING)
 
