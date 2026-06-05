@@ -277,6 +277,7 @@ async def stream_with_tools(
         registry = {}
 
     messages = list(messages)
+    seen_chunk_ids: set[str] = set()
     iteration = 0
     llm_call = 0
     parse_buffer = ""
@@ -288,7 +289,7 @@ async def stream_with_tools(
         return {e.index: e for e in registry.values()}
 
     async def _execute_with_registry(name: str, args: dict) -> dict:
-        return await execute_tool_fn(name, args, registry=registry)
+        return await execute_tool_fn(name, args, registry=registry, seen_chunk_ids=seen_chunk_ids)
 
     while True:
         iteration += 1
