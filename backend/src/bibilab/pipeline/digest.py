@@ -19,12 +19,6 @@ from bibilab.pipeline.audio import PipelineError
 
 logger = logging.getLogger(__name__)
 
-# Sized for thinking-capable models: budget covers reasoning tokens + a ~150-word
-# JSON output. Reasoning models can consume 12K+ tokens thinking about a long
-# transcript, so we need ample headroom. The JSON output itself is bounded by the
-# schema and can't go haywire.
-DIGEST_MAX_TOKENS = 32768
-
 # Keyword count: feeds the digest chip UI. The v2 chat prompt is static
 # per language and no longer inlines a per-turn source list, so keywords
 # are presentation-only. Kept short and topical; raised from 5 to widen
@@ -169,7 +163,6 @@ def digest(
     output_language: str = "ui",
     ui_lang: str | None = None,
     llm_timeout: int = 120,
-    llm_max_tokens: int = DIGEST_MAX_TOKENS,
 ) -> DigestResult:
     lang = _resolved_lang(output_language, ui_lang)
     lang_instruction = _LANG_INSTRUCTION.get(lang, _LANG_INSTRUCTION["en"])
@@ -188,7 +181,7 @@ def digest(
     last_exc: Exception | None = None
     for attempt, p in enumerate(prompts, start=1):
         try:
-            raw = _call_llm(p, cfg, llm_timeout=llm_timeout, llm_max_tokens=llm_max_tokens)
+            raw = _call_llm(p, cfg, llm_timeout=llm_timeout)
             return _parse_response(raw)
         except Exception as exc:
             last_exc = exc

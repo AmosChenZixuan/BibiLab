@@ -46,6 +46,11 @@ class AIConfig(BaseModel):
     api_key: str = ""
     base_url: str = "https://api.openai.com/v1"
     output_language: str = "ui"  # ui | zh | en | ...; "ui" means follow UI language
+    # Total token window of the configured model (input + output). The per-call
+    # output budget is auto-scaled from this — see resolve_max_tokens. Default
+    # 128K covers most modern cloud and local models; lower it for small local
+    # models to keep input + reserved output inside their real window.
+    context_window: int = 128000
 
 
 class TranscriptionConfig(BaseModel):

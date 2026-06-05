@@ -50,6 +50,8 @@
     "outputLanguageFollowUi": "Follow UI",
     "outputLanguageEnglish": "English",
     "outputLanguageChinese": "Chinese",
+    "contextWindow": "Context Window (tokens)",
+    "contextWindowDesc": "Total token window your model supports. The per-call output budget auto-scales from this.",
     "backendApi": "Backend API",
     "backendRequired": "Required. If the backend is offline, the web app cannot load or save configuration.",
     "maxConcurrentJobs": "Max Concurrent Jobs",

@@ -43,7 +43,7 @@ def test_digest_reinforcement_appears_in_prompt_en(mock_call_llm):
     """digest prepends and appends English language instruction so LLM cannot be biased by Chinese transcript."""
     captured = None
 
-    def capture_llm(prompt, cfg, llm_timeout=120, llm_max_tokens=2048):
+    def capture_llm(prompt, cfg, llm_timeout=120):
         nonlocal captured
         captured = prompt
         return '{"summary": "A video.", "keywords": []}'
@@ -60,7 +60,7 @@ def test_digest_reinforcement_appears_in_prompt_zh(mock_call_llm):
     """digest with zh prepends and appends 简体中文 language instruction. #402."""
     captured = None
 
-    def capture_llm(prompt, cfg, llm_timeout=120, llm_max_tokens=2048):
+    def capture_llm(prompt, cfg, llm_timeout=120):
         nonlocal captured
         captured = prompt
         return '{"summary": "一个视频。", "keywords": []}'
@@ -77,7 +77,7 @@ def test_digest_unknown_lang_falls_back_to_english(mock_call_llm):
     """digest with an unrecognized output_language falls back to English instruction and name."""
     captured = None
 
-    def capture_llm(prompt, cfg, llm_timeout=120, llm_max_tokens=2048):
+    def capture_llm(prompt, cfg, llm_timeout=120):
         nonlocal captured
         captured = prompt
         return '{"summary": "A video.", "keywords": []}'
@@ -94,7 +94,7 @@ def test_digest_prompt_instructs_query_topic_keywords(mock_call_llm):
     """Keyword directive asks for title+content topical features and carries the cap."""
     captured = None
 
-    def capture_llm(prompt, cfg, llm_timeout=120, llm_max_tokens=2048):
+    def capture_llm(prompt, cfg, llm_timeout=120):
         nonlocal captured
         captured = prompt
         return '{"summary": "A video.", "keywords": []}'

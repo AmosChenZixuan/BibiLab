@@ -7,7 +7,7 @@ import type { BibilabConfig } from "@/lib/types";
 
 const baseConfig: BibilabConfig = {
   accounts: { bilibili: { cookie: "", username: "", avatar_url: "" } },
-  ai: { protocol: "openai", model: "gpt-4o", api_key: "", base_url: "" },
+  ai: { protocol: "openai", model: "gpt-4o", api_key: "", base_url: "", context_window: 128000 },
   transcription: {
     model: "large-v3",
     device: "cpu",
@@ -90,6 +90,26 @@ describe("llm tab", () => {
 
     expect(screen.getByText(/Anthropic API base URL/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/base url/i)).toHaveAttribute("placeholder", "https://api.anthropic.com/v1");
+  });
+
+  test("calls onBlur with the selected context window preset as a number", () => {
+    const onBlur = vi.fn();
+
+    render(
+      <LanguageProvider>
+        <LlmTab config={baseConfig} onBlur={onBlur} />
+      </LanguageProvider>,
+    );
+
+    const field = screen.getByLabelText(/context window/i);
+    fireEvent.change(field, { target: { value: "200000" } });
+    fireEvent.blur(field);
+
+    expect(onBlur).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ai: expect.objectContaining({ context_window: 200000 }),
+      }),
+    );
   });
 
   test("api_key input type toggles between password and text", () => {

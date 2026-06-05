@@ -18,9 +18,6 @@ COMPRESSION_THRESHOLD = 30
 SLIDING_WINDOW_SIZE = 10
 # Target length the model should aim for in the summary text itself.
 SUMMARY_TARGET_TOKENS = 500
-# API budget — must accommodate thinking tokens + the ~500-token output for reasoning
-# models. Extended thinking can consume 10K+ tokens on longer conversation histories.
-SUMMARY_MAX_TOKENS = 16384
 
 
 async def maybe_compress_conversation(
@@ -68,7 +65,6 @@ async def maybe_compress_conversation(
             _call_llm,
             prompt=compression_prompt,
             cfg=cfg.ai,
-            llm_max_tokens=SUMMARY_MAX_TOKENS,
         )
     except Exception:
         logger.exception("Failed to compress conversation %s", conversation_id)

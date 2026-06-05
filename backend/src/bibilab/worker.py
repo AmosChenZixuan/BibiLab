@@ -48,10 +48,6 @@ from bibilab.pipeline.transcribe import (
 
 logger = logging.getLogger(__name__)
 
-# Sized for thinking-capable models with multi-source artifact output (multi-page markdown
-# report). Thinking + long-form output can easily exceed 16K for complex artifacts.
-ARTIFACT_MAX_TOKENS = 32768
-
 
 class ArtifactResult(BaseModel):
     """Result from LLM artifact generation."""
@@ -375,7 +371,6 @@ Respond ONLY with valid JSON matching this schema:
                     _call_llm,
                     llm_prompt,
                     cfg.ai,
-                    llm_max_tokens=ARTIFACT_MAX_TOKENS,
                 )
                 return _parse_llm_json_response(raw, ArtifactResult)
             except Exception as exc:  # noqa: BLE001

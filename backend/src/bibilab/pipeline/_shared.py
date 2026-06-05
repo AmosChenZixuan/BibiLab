@@ -7,6 +7,7 @@ from typing import AsyncGenerator, TypeVar
 
 import anthropic
 import openai
+import tiktoken
 from anthropic import AsyncAnthropic
 from openai import AsyncOpenAI
 from pydantic import BaseModel
@@ -14,6 +15,66 @@ from pydantic import BaseModel
 from bibilab.config import AIConfig
 
 logger = logging.getLogger(__name__)
+
+# Shared cl100k_base token estimator. It's OpenAI's tokenizer — an approximation
+# for other providers, but its drift only matters when input nears the window,
+# which _INPUT_MARGIN absorbs. Used here for the input budget and by the chunker
+# (pipeline/chunk.py) for chunk sizing.
+_enc = tiktoken.get_encoding("cl100k_base")
+
+
+def count_tokens(text: str) -> int:
+    """Estimate token count with the shared cl100k_base encoder."""
+    return len(_enc.encode(text))
+
+
+# Output budget bounds. The ceiling is a generous fixed cap that comfortably
+# fits extended thinking + a full answer for every role (chat, digest, artifact,
+# summary) — large models routinely spend 10K+ tokens thinking. The margin
+# absorbs tokenizer drift and unmodeled request overhead (tool schemas, role
+# framing). _MIN_VIABLE_OUTPUT is the smallest output worth proceeding with:
+# below it the input has effectively filled the window (e.g. a read_source turn
+# carrying a full transcript), so we fail fast with an actionable error instead
+# of emitting a max_tokens that overflows the provider's context limit.
+_OUTPUT_CEILING = 32768
+_INPUT_MARGIN = 2048
+_MIN_VIABLE_OUTPUT = 512
+
+
+def resolve_max_tokens(cfg: AIConfig, input_text: str) -> int:
+    """Auto-scale the per-call output budget from the configured context window.
+
+    max_tokens = min(context_window - estimated_input - margin, ceiling)
+
+    Output always fits inside the window — it never overrides the window with a
+    floor — so thinking-capable models get as much room as the window allows up
+    to the ceiling (#432). When the input itself nearly fills the window, raise
+    rather than emit a budget that would overflow the provider's limit.
+    """
+    estimated_input = count_tokens(input_text)
+    available = cfg.context_window - estimated_input - _INPUT_MARGIN
+    if available < _MIN_VIABLE_OUTPUT:
+        raise ValueError(
+            f"Input (~{estimated_input} tokens) leaves only {max(available, 0)} of the "
+            f"{cfg.context_window}-token context window for output. Raise the context "
+            f"window or read fewer sources into this turn."
+        )
+    return min(available, _OUTPUT_CEILING)
+
+
+def _serialize_messages(messages: list[dict], system: str | None) -> str:
+    """Flatten chat messages + system prompt into one string for token estimation.
+
+    Content is usually a plain string; non-string content (tool blocks) is
+    JSON-dumped. Tool schemas are omitted — they are small relative to history
+    and covered by _INPUT_MARGIN.
+    """
+    parts = [system] if system else []
+    for m in messages:
+        content = m.get("content")
+        parts.append(content if isinstance(content, str) else json.dumps(content, ensure_ascii=False))
+    return "\n".join(parts)
+
 
 # Module-level client cache: key -> client instance
 _client_cache: dict[tuple[str, str, str, str | None], object] = {}
@@ -58,10 +119,10 @@ def _call_llm(
     prompt: str,
     cfg: AIConfig,
     llm_timeout: int = 120,
-    llm_max_tokens: int = 2048,
 ) -> str:
     """Dispatch to the appropriate LLM protocol. Returns raw text response."""
     cache_key = (cfg.protocol, cfg.api_key, cfg.model, cfg.base_url)
+    llm_max_tokens = resolve_max_tokens(cfg, prompt)
 
     if cfg.protocol == "anthropic":
         if cache_key not in _client_cache:
@@ -159,10 +220,10 @@ async def stream_llm(
     cfg: AIConfig,
     tools: list[ToolDefinition] | None = None,
     llm_timeout: int = 120,
-    llm_max_tokens: int = 2048,
     system: str | None = None,
 ) -> AsyncGenerator[StreamEvent, None]:
     cache_key = (cfg.protocol, cfg.api_key, cfg.model, cfg.base_url)
+    llm_max_tokens = resolve_max_tokens(cfg, _serialize_messages(messages, system))
 
     if cfg.protocol == "anthropic":
         if cache_key not in _async_client_cache:

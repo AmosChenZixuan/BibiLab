@@ -25,7 +25,7 @@ vi.mock("../lib/api", () => {
 
 const baseConfig: BibilabConfig = {
   accounts: { bilibili: { cookie: "", username: "", avatar_url: "" } },
-  ai: { protocol: "openai", model: "", api_key: "", base_url: "" },
+  ai: { protocol: "openai", model: "", api_key: "", base_url: "", context_window: 128000 },
   transcription: {
     model: "large-v3",
     device: "cpu",

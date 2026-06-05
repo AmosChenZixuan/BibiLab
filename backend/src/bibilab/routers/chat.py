@@ -91,9 +91,6 @@ SSE_EVENT_RAG = "rag"
 # cancel-by-id before the first delta arrives (see web useSSEStream reattach path).
 SSE_EVENT_META = "meta"
 
-# Sized for thinking-capable models with potentially long chat responses + tool turns.
-CHAT_MAX_TOKENS = 16384
-
 # All tools in v2 loop back (no terminal tool — the v1 `generate_report` was
 # retired). Tool-call-start events + the LLM feed-back path therefore fire for
 # every tool call when reached.
@@ -268,7 +265,6 @@ async def stream_with_tools(
     tools: list[ToolDefinition],
     execute_tool_fn,
     system: str | None = None,
-    llm_max_tokens: int = CHAT_MAX_TOKENS,
     registry: dict[str, CitationRegistryEntry] | None = None,
     tool_block_sink: list[dict] | None = None,
     debug_dump_dir: Path | None = None,
@@ -298,7 +294,7 @@ async def stream_with_tools(
         lookup = _build_lookup()
         is_synthesis_turn = iteration > MAX_TOOL_ITERATIONS
         active_tools = [] if is_synthesis_turn else list(tools)
-        async for event in stream_llm(messages, cfg, active_tools, system=system, llm_max_tokens=llm_max_tokens):
+        async for event in stream_llm(messages, cfg, active_tools, system=system):
             if event.type == "tool_call":
                 tool_calls.append(event.tool_call)
             elif event.type == "delta" and event.content:
@@ -346,7 +342,7 @@ async def stream_with_tools(
                     }
                 )
                 synth_text_parts: list[str] = []
-                async for event in stream_llm(messages, cfg, [], system=system, llm_max_tokens=llm_max_tokens):
+                async for event in stream_llm(messages, cfg, [], system=system):
                     if event.type == "delta" and event.content:
                         synth_text_parts.append(event.content)
                         parsed_events, parse_buffer = parse_delta(event.content, parse_buffer, lookup)
@@ -616,7 +612,6 @@ async def run_chat_turn(
             tools=tools,
             execute_tool_fn=execute_tool_bound,
             system=system_message if system_message.strip() else None,
-            llm_max_tokens=CHAT_MAX_TOKENS,
             registry=citation_registry,
             tool_block_sink=tool_blocks,
             debug_dump_dir=debug_dump_dir,

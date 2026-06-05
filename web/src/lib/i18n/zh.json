@@ -50,6 +50,8 @@
     "outputLanguageFollowUi": "跟随界面",
     "outputLanguageEnglish": "英文",
     "outputLanguageChinese": "中文",
+    "contextWindow": "上下文窗口（令牌）",
+    "contextWindowDesc": "模型支持的总令牌窗口。每次调用的输出预算会据此自动伸缩。",
     "backendApi": "后端 API",
     "backendRequired": "必填。如果后端离线，网页应用无法加载或保存配置。",
     "maxConcurrentJobs": "最大并发任务数",
