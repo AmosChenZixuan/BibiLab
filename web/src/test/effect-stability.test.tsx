@@ -187,7 +187,7 @@ test("llm tab does not re-sync local state on re-render with same ai config", ()
   expect(onBlur).not.toHaveBeenCalled();
 });
 
-test("other tab does not re-sync local state on re-render with same backend config", () => {
+test("system tab does not re-sync local state on re-render with same backend config", () => {
   const onBlur = vi.fn();
 
   const { rerender } = render(

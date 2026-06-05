@@ -1,5 +1,4 @@
 import logging
-from datetime import datetime, timezone
 from urllib.parse import urlparse
 
 import httpx
@@ -81,7 +80,3 @@ async def delete_bilibili_auth(cfg: BibilabConfig = Depends(get_config)) -> Resp
     cfg.accounts.bilibili.avatar_url = ""
     save_config(cfg)
     return Response(status_code=204)
-
-
-def _iso_now() -> str:
-    return datetime.now(timezone.utc).isoformat()
