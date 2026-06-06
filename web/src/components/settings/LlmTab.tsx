@@ -26,6 +26,7 @@ export function LlmTab({ config, onBlur }: LlmTabProps) {
   const apiKeyId = useId();
   const baseUrlId = useId();
   const outputLanguageId = useId();
+  const contextWindowId = useId();
 
   useEffect(() => {
     setLocalAi(config.ai);
@@ -138,6 +139,27 @@ export function LlmTab({ config, onBlur }: LlmTabProps) {
           <option value="ui">{t("settings.outputLanguageFollowUi")}</option>
           <option value="en">{t("settings.outputLanguageEnglish")}</option>
           <option value="zh">{t("settings.outputLanguageChinese")}</option>
+        </Select>
+      </SettingsField>
+
+      <SettingsField
+        label={t("settings.contextWindow")}
+        hint={t("settings.contextWindowDesc")}
+        htmlFor={contextWindowId}
+      >
+        <Select
+          aria-label={t("settings.contextWindow")}
+          id={contextWindowId}
+          onBlur={handleBlur}
+          onChange={(event) =>
+            setLocalAi((current) => ({ ...current, context_window: Number(event.target.value) }))
+          }
+          value={localAi.context_window}
+        >
+          <option value={64000}>64K</option>
+          <option value={128000}>128K</option>
+          <option value={200000}>200K</option>
+          <option value={1000000}>1M</option>
         </Select>
       </SettingsField>
     </div>

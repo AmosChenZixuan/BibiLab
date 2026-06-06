@@ -128,7 +128,7 @@ async def test_chat_endpoint_uses_conversation_history(client):
 
     captured_messages = []
 
-    async def capture(messages, cfg, tools=None, execute_tool_fn=None, system=None, llm_max_tokens=2048, **kwargs):
+    async def capture(messages, cfg, tools=None, execute_tool_fn=None, system=None, **kwargs):
         captured_messages.append(messages)
         yield StreamEvent(type="done")
 
@@ -150,7 +150,7 @@ async def test_chat_endpoint_includes_tools(client):
 
     captured_tools = []
 
-    async def capture(messages, cfg, tools=None, execute_tool_fn=None, system=None, llm_max_tokens=2048, **kwargs):
+    async def capture(messages, cfg, tools=None, execute_tool_fn=None, system=None, **kwargs):
         captured_tools.append(tools)
         yield StreamEvent(type="done")
 
@@ -170,7 +170,7 @@ async def test_retrieve_tool_result_has_coverage(client):
 
     list_id = (await client.post("/lists", json={"name": "Test"})).json()["id"]
 
-    async def fake_stream(messages, cfg, tools=None, execute_tool_fn=None, system=None, llm_max_tokens=2048, **kwargs):
+    async def fake_stream(messages, cfg, tools=None, execute_tool_fn=None, system=None, **kwargs):
         result = await execute_tool_fn(FIND_PASSAGES_TOOL.name, {"query": "test"})
         yield StreamEvent(
             type="tool_result",
@@ -218,7 +218,7 @@ async def test_smoke_scenario_1_chitchat_no_tool_calls(client):
     """Chitchat: LLM responds directly, no retrieve tool, no tool_result in SSE."""
     list_id = await _create_list(client, "Smoke 1")
 
-    async def fake_stream(messages, cfg, tools=None, execute_tool_fn=None, system=None, llm_max_tokens=2048, **kwargs):
+    async def fake_stream(messages, cfg, tools=None, execute_tool_fn=None, system=None, **kwargs):
         yield StreamEvent(type=SSE_EVENT_DELTA, content="You're welcome!")
         yield StreamEvent(type=SSE_EVENT_DONE)
 
@@ -262,7 +262,7 @@ async def test_smoke_scenario_2_retrieve(client, tool_name, query, user_message,
 
     retrieve_result = {"tool_name": tool_name, **result_overrides}
 
-    async def fake_stream(messages, cfg, tools=None, execute_tool_fn=None, system=None, llm_max_tokens=2048, **kwargs):
+    async def fake_stream(messages, cfg, tools=None, execute_tool_fn=None, system=None, **kwargs):
         yield StreamEvent(
             type="tool_call",
             tool_call=ToolCall(id="c1", name=tool_name, arguments={"query": query}),
@@ -461,7 +461,7 @@ async def test_pure_ack_no_retrieve_called(client, mock_stream_llm):
 
     tool_calls_seen: list[str] = []
 
-    async def fake_stream_llm(messages, cfg, tools=None, system=None, llm_max_tokens=None, **kwargs):
+    async def fake_stream_llm(messages, cfg, tools=None, system=None, **kwargs):
         # LLM looks at "嗯", chooses to reply with text only.
         yield StreamEvent(type="delta", content="好的，您还有别的问题吗？")
         yield StreamEvent(type="done")
@@ -488,7 +488,7 @@ async def test_deltas_streamed_immediately_during_tool_iteration(client, mock_st
     list_id = (await client.post("/lists", json={"name": "T"})).json()["id"]
     iteration_count = 0
 
-    async def fake_stream_llm(messages, cfg, tools=None, system=None, llm_max_tokens=None, **kwargs):
+    async def fake_stream_llm(messages, cfg, tools=None, system=None, **kwargs):
         nonlocal iteration_count
         iteration_count += 1
         if iteration_count == 1:
@@ -532,7 +532,7 @@ async def test_terminal_iteration_deltas_streamed(client, mock_stream_llm):
     """A no-tool iteration's deltas must reach the client verbatim."""
     list_id = (await client.post("/lists", json={"name": "T"})).json()["id"]
 
-    async def fake_stream_llm(messages, cfg, tools=None, system=None, llm_max_tokens=None, **kwargs):
+    async def fake_stream_llm(messages, cfg, tools=None, system=None, **kwargs):
         yield StreamEvent(type="delta", content="hello world")
         yield StreamEvent(type="done")
 
@@ -591,7 +591,7 @@ async def test_run_chat_turn_persists_tool_blocks(monkeypatch, tmp_path, mock_st
     call_count = 0
     retrieve_tc = ToolCall(id="c1", name=FIND_PASSAGES_TOOL.name, arguments={"query": "x"})
 
-    async def fake_stream_llm(messages, cfg, tools=None, system=None, llm_max_tokens=2048):
+    async def fake_stream_llm(messages, cfg, tools=None, system=None):
         nonlocal call_count
         call_count += 1
         if call_count == 1:
@@ -697,7 +697,7 @@ async def test_system_message_is_stable_across_turns(monkeypatch, mock_stream_ll
 
     captured_systems: list[str] = []
 
-    async def fake_stream_llm(messages, cfg, tools=None, system=None, llm_max_tokens=2048):
+    async def fake_stream_llm(messages, cfg, tools=None, system=None):
         captured_systems.append(system)
         yield StreamEvent(type="delta", content="ok")
         yield StreamEvent(type="done")
@@ -746,7 +746,7 @@ async def test_tool_call_start_emitted_before_tool_result(client, mock_stream_ll
     list_id = (await client.post("/lists", json={"name": "T"})).json()["id"]
     iteration_count = 0
 
-    async def fake_stream_llm(messages, cfg, tools=None, system=None, llm_max_tokens=None, **kwargs):
+    async def fake_stream_llm(messages, cfg, tools=None, system=None, **kwargs):
         nonlocal iteration_count
         iteration_count += 1
         if iteration_count == 1:
@@ -797,7 +797,7 @@ async def test_rag_metadata_persists_calls_list(client, mock_stream_llm):
     list_id = (await client.post("/lists", json={"name": "T"})).json()["id"]
     iteration_count = 0
 
-    async def fake_stream_llm(messages, cfg, tools=None, system=None, llm_max_tokens=None, **kwargs):
+    async def fake_stream_llm(messages, cfg, tools=None, system=None, **kwargs):
         nonlocal iteration_count
         iteration_count += 1
         if iteration_count == 1:
@@ -858,7 +858,7 @@ async def test_chat_endpoint_error_reason_in_sse_terminal_payload(client):
             self.content = content
             self.tool_call = tool_call
 
-    async def fake_stream(messages, cfg, tools=None, execute_tool_fn=None, system=None, llm_max_tokens=2048, **kwargs):
+    async def fake_stream(messages, cfg, tools=None, execute_tool_fn=None, system=None, **kwargs):
         yield RecordingStreamEvent(type="error", content="original error text from tool failure")
 
     with patch("bibilab.routers.chat.stream_with_tools", fake_stream):
@@ -926,7 +926,7 @@ async def test_run_chat_turn_drops_tool_blocks_on_turn_2(monkeypatch, mock_strea
 
     captured_messages: list[list[dict]] = []
 
-    async def fake_stream_llm(messages, cfg, tools=None, system=None, llm_max_tokens=2048):
+    async def fake_stream_llm(messages, cfg, tools=None, system=None):
         captured_messages.append(list(messages))
         yield StreamEvent(type="delta", content="ok")
         yield StreamEvent(type="done")
@@ -1006,7 +1006,7 @@ async def test_chat_uses_resolved_response_language_in_system_prompt(monkeypatch
 
     captured_system: list[str] = []
 
-    async def fake_stream_llm(messages, cfg, tools=None, system=None, llm_max_tokens=2048):
+    async def fake_stream_llm(messages, cfg, tools=None, system=None):
         captured_system.append(system or "")
         from bibilab.pipeline._shared import StreamEvent
 
@@ -1068,7 +1068,6 @@ async def test_run_chat_turn_reseeds_citation_registry_from_history_tool_blocks(
         tools,
         execute_tool_fn,
         system=None,
-        llm_max_tokens=2048,
         registry=None,
         tool_block_sink=None,
         debug_dump_dir=None,
@@ -1163,7 +1162,7 @@ async def test_rag_call_carries_facet_scope(client, mock_stream_llm):
     list_id = (await client.post("/lists", json={"name": "FacetTel"})).json()["id"]
     iteration_count = 0
 
-    async def fake_stream_llm(messages, cfg, tools=None, system=None, llm_max_tokens=None, **kwargs):
+    async def fake_stream_llm(messages, cfg, tools=None, system=None, **kwargs):
         nonlocal iteration_count
         iteration_count += 1
         if iteration_count == 1:
@@ -1227,7 +1226,7 @@ async def test_rag_metadata_includes_read_source_call(client):
 
     list_id = await _create_list(client, "ReadSourceLedger")
 
-    async def fake_stream(messages, cfg, tools=None, execute_tool_fn=None, system=None, llm_max_tokens=2048, **kwargs):
+    async def fake_stream(messages, cfg, tools=None, execute_tool_fn=None, system=None, **kwargs):
         yield StreamEvent(
             type="tool_call",
             tool_call=ToolCall(id="c1", name=READ_SOURCE_TOOL.name, arguments={"source_id": "s1"}),
@@ -1297,7 +1296,7 @@ async def test_chat_endpoint_excludes_aborted_turn_from_llm_history(client, user
 
     captured: dict = {}
 
-    async def fake_stream(messages, cfg, tools=None, execute_tool_fn=None, system=None, llm_max_tokens=2048, **_):
+    async def fake_stream(messages, cfg, tools=None, execute_tool_fn=None, system=None, **_):
         captured["messages"] = messages
         yield StreamEvent(type=SSE_EVENT_DELTA, content="ok")
         yield StreamEvent(type=SSE_EVENT_DONE)
@@ -1358,7 +1357,7 @@ async def test_run_chat_turn_transitions_user_to_terminal_status(
     conv_id = await ConversationFactory.build("list-1")
     user_msg_id, asst_msg_id = await _seed_in_flight_turn(conv_id)
 
-    async def fake_stream(messages, cfg, tools=None, execute_tool_fn=None, system=None, llm_max_tokens=2048, **_):
+    async def fake_stream(messages, cfg, tools=None, execute_tool_fn=None, system=None, **_):
         if scenario == "ok":
             yield StreamEvent(type=SSE_EVENT_DELTA, content="ok")
             yield StreamEvent(type=SSE_EVENT_DONE)
@@ -1426,7 +1425,7 @@ async def test_done_turns_replay_unchanged(client):
 
     captured: dict = {}
 
-    async def fake_stream(messages, cfg, tools=None, execute_tool_fn=None, system=None, llm_max_tokens=2048, **_):
+    async def fake_stream(messages, cfg, tools=None, execute_tool_fn=None, system=None, **_):
         captured["messages"] = messages
         yield StreamEvent(type=SSE_EVENT_DELTA, content="ok")
         yield StreamEvent(type=SSE_EVENT_DONE)

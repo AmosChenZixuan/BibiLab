@@ -161,6 +161,7 @@ export type BibilabConfig = {
     api_key: string;
     base_url: string;
     output_language?: OutputLanguage;
+    context_window: number;
   };
   transcription: {
     model: string;

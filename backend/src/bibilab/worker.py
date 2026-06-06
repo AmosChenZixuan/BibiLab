@@ -29,6 +29,7 @@ from bibilab.model_registry import ensure
 from bibilab.models.jobs import JobStatus
 from bibilab.pipeline._shared import (
     _LANG_INSTRUCTION,
+    ContextWindowExceededError,
     _call_llm,
     _lang_output_directive,
     _parse_llm_json_response,
@@ -47,10 +48,6 @@ from bibilab.pipeline.transcribe import (
 )
 
 logger = logging.getLogger(__name__)
-
-# Sized for thinking-capable models with multi-source artifact output (multi-page markdown
-# report). Thinking + long-form output can easily exceed 16K for complex artifacts.
-ARTIFACT_MAX_TOKENS = 32768
 
 
 class ArtifactResult(BaseModel):
@@ -375,9 +372,12 @@ Respond ONLY with valid JSON matching this schema:
                     _call_llm,
                     llm_prompt,
                     cfg.ai,
-                    llm_max_tokens=ARTIFACT_MAX_TOKENS,
                 )
                 return _parse_llm_json_response(raw, ArtifactResult)
+            except ContextWindowExceededError:
+                # Deterministic — the same prompt would re-overflow every retry.
+                # Surface immediately rather than burning two more calls.
+                raise
             except Exception as exc:  # noqa: BLE001
                 last_exc = exc
                 logger.warning(

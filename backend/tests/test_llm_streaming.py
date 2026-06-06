@@ -127,7 +127,7 @@ class TestOpenAIStreaming:
     @pytest.mark.asyncio
     async def test_stream_llm_openai_buffers_tool_call_arguments(self, tmp_bibilab_home):
         from bibilab.config import AIConfig
-        from bibilab.pipeline._shared import stream_llm
+        from bibilab.pipeline._shared import ToolDefinition, stream_llm
 
         cfg = AIConfig(
             protocol="openai",
@@ -185,8 +185,7 @@ class TestOpenAIStreaming:
 
         mock_client.chat.completions.create = mock_create
 
-        tool_def = MagicMock()
-        tool_def.name = "generate_report"
+        tool_def = ToolDefinition(name="generate_report", description="", parameters={})
 
         with patch("bibilab.pipeline._shared.AsyncOpenAI", return_value=mock_client):
             events = [e async for e in stream_llm([{"role": "user", "content": "hi"}], cfg, tools=[tool_def])]
@@ -257,7 +256,7 @@ class TestAnthropicStreaming:
     @pytest.mark.asyncio
     async def test_stream_llm_anthropic_yields_tool_call_on_content_block_stop(self, tmp_bibilab_home):
         from bibilab.config import AIConfig
-        from bibilab.pipeline._shared import stream_llm
+        from bibilab.pipeline._shared import ToolDefinition, stream_llm
 
         cfg = AIConfig(
             protocol="anthropic",
@@ -302,8 +301,7 @@ class TestAnthropicStreaming:
         mock_cm.__aexit__ = mock_aexit
         mock_client.messages.stream.return_value = mock_cm
 
-        tool_def = MagicMock()
-        tool_def.name = "generate_report"
+        tool_def = ToolDefinition(name="generate_report", description="", parameters={})
 
         with patch("bibilab.pipeline._shared.AsyncAnthropic", return_value=mock_client):
             events = [e async for e in stream_llm([{"role": "user", "content": "hi"}], cfg, tools=[tool_def])]

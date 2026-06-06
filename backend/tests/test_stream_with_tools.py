@@ -52,7 +52,7 @@ async def test_stream_llm_passes_list_content_to_anthropic():
             },
             {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "t1", "content": '{"result":"ok"}'}]},
         ]
-        async for _ in stream_llm(messages=messages, cfg=cfg, llm_max_tokens=512):
+        async for _ in stream_llm(messages=messages, cfg=cfg):
             pass
 
     assert len(captured) == 1
@@ -88,7 +88,7 @@ async def test_stream_llm_passes_openai_tool_messages():
             },
             {"role": "tool", "tool_call_id": "t1", "content": '{"result":"ok"}'},
         ]
-        async for _ in stream_llm(messages=messages, cfg=cfg, llm_max_tokens=512):
+        async for _ in stream_llm(messages=messages, cfg=cfg):
             pass
 
     assert len(captured) == 1
@@ -105,7 +105,7 @@ async def test_stream_with_tools_passthrough_no_tool_calls(mock_stream_llm):
 
     cfg = AIConfig(protocol="openai", model="gpt-4o", api_key="test", base_url="")
 
-    async def fake_stream(messages, cfg, tools=None, system=None, llm_max_tokens=2048):
+    async def fake_stream(messages, cfg, tools=None, system=None):
         yield StreamEvent(type="delta", content="Hello")
         yield StreamEvent(type="done")
 
@@ -152,7 +152,7 @@ async def test_stream_with_tools_loopback_find_passages(mock_stream_llm):
 
     call_count = 0
 
-    async def fake_stream(messages, cfg, tools=None, system=None, llm_max_tokens=2048):
+    async def fake_stream(messages, cfg, tools=None, system=None):
         nonlocal call_count
         call_count += 1
         if call_count == 1:
@@ -197,7 +197,7 @@ async def test_stream_with_tools_max_iterations_graceful(mock_stream_llm):
 
     iterations_seen = []
 
-    async def fake_stream(messages, cfg, tools=None, system=None, llm_max_tokens=2048):
+    async def fake_stream(messages, cfg, tools=None, system=None):
         # Record how many tools were available in this call
         iterations_seen.append(len(tools) if tools else 0)
 
@@ -244,7 +244,7 @@ async def test_stream_with_tools_forces_synthesis_when_exhausted_turn_returns_em
 
     call_count = 0
 
-    async def fake_stream(messages, cfg, tools=None, system=None, llm_max_tokens=2048):
+    async def fake_stream(messages, cfg, tools=None, system=None):
         nonlocal call_count
         call_count += 1
         if call_count <= MAX_TOOL_ITERATIONS:
@@ -302,7 +302,7 @@ async def test_forced_synthesis_forwards_error_events(mock_stream_llm):
 
     call_count = 0
 
-    async def fake_stream(messages, cfg, tools=None, system=None, llm_max_tokens=2048):
+    async def fake_stream(messages, cfg, tools=None, system=None):
         nonlocal call_count
         call_count += 1
         if call_count <= MAX_TOOL_ITERATIONS:
@@ -372,7 +372,7 @@ async def test_stream_with_tools_populates_tool_block_sink(mock_stream_llm):
 
     call_count = 0
 
-    async def fake_stream(messages, cfg, tools=None, system=None, llm_max_tokens=2048):
+    async def fake_stream(messages, cfg, tools=None, system=None):
         nonlocal call_count
         call_count += 1
         if call_count == 1:
@@ -418,6 +418,14 @@ class TestClassifyError:
         from bibilab.routers.chat import classify_error
 
         assert classify_error(Exception("something broke")) == "internal_error"
+
+    def test_context_window_exceeded(self):
+        """resolve_max_tokens' overflow error gets its own code, not internal_error,
+        so the chat toast is meaningful rather than a generic server error."""
+        from bibilab.pipeline._shared import ContextWindowExceededError
+        from bibilab.routers.chat import classify_error
+
+        assert classify_error(ContextWindowExceededError("too big")) == "llm_context_window_exceeded"
 
     def test_openai_connection_error(self):
         from bibilab.routers.chat import classify_error
@@ -512,7 +520,7 @@ async def test_stream_with_tools_default_sink_none_does_not_crash(mock_stream_ll
 
     cfg = AIConfig(protocol="openai", model="gpt-4o", api_key="test", base_url="")
 
-    async def fake_stream(messages, cfg, tools=None, system=None, llm_max_tokens=2048):
+    async def fake_stream(messages, cfg, tools=None, system=None):
         yield StreamEvent(type="delta", content="Hello")
         yield StreamEvent(type="done")
 

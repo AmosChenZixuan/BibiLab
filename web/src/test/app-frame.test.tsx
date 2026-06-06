@@ -43,7 +43,7 @@ function renderFrame(healthPayload: HealthResponse, configPayload?: BibilabConfi
   vi.mocked(api.getConfig).mockResolvedValue(
     configPayload ?? ({
       accounts: { bilibili: { cookie: "", username: "", avatar_url: "" } },
-      ai: { protocol: "", model: "", api_key: "", base_url: "" },
+      ai: { protocol: "", model: "", api_key: "", base_url: "", context_window: 128000 },
       transcription: { model: "large-v3", device: "cuda", language: "" },
       backend: { port: 8765, max_concurrent_jobs: 1, cors_origins: ["http://localhost", "http://localhost:5173", "http://127.0.0.1", "http://127.0.0.1:5173"] },
       rag: { max_distance: 0.8, reranking_enabled: true, hybrid_enabled: true, debug_prompts: false },
@@ -98,7 +98,7 @@ describe("app frame", () => {
       },
       {
         accounts: { bilibili: { cookie: "", username: "", avatar_url: "" } },
-        ai: { protocol: "", model: "", api_key: "", base_url: "" },
+        ai: { protocol: "", model: "", api_key: "", base_url: "", context_window: 128000 },
         transcription: { model: "large-v3", device: "cpu", language: "" },
         backend: { port: 8765, max_concurrent_jobs: 1, cors_origins: ["http://localhost", "http://localhost:5173", "http://127.0.0.1", "http://127.0.0.1:5173"] },
         rag: { max_distance: 0.8, reranking_enabled: true, hybrid_enabled: true, debug_prompts: false },
@@ -209,7 +209,7 @@ describe("app frame", () => {
             avatar_url: "https://i0.hdslb.com/bfs/face/abc.jpg",
           },
         },
-        ai: { protocol: "openai", model: "gpt-4o", api_key: "", base_url: "" },
+        ai: { protocol: "openai", model: "gpt-4o", api_key: "", base_url: "", context_window: 128000 },
         transcription: { model: "large-v3", device: "cpu", language: "auto" },
         backend: { port: 8765, max_concurrent_jobs: 1, cors_origins: ["http://localhost", "http://localhost:5173", "http://127.0.0.1", "http://127.0.0.1:5173"] },
         rag: { max_distance: 0.8, reranking_enabled: true, hybrid_enabled: true, debug_prompts: false },

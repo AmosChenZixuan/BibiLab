@@ -3,13 +3,10 @@
 import logging
 from dataclasses import dataclass
 
-import tiktoken
-
+from bibilab.pipeline._shared import count_tokens
 from bibilab.pipeline.transcribe import WhisperSegment
 
 logger = logging.getLogger(__name__)
-
-_enc = tiktoken.get_encoding("cl100k_base")
 
 # Token targets by language.  Chinese encodes at roughly 1 token per character
 # in cl100k_base, while English encodes at roughly 1 token per 4 characters.
@@ -101,7 +98,7 @@ def chunk_segments(
 
     chunk_idx = 0
     for seg_i, seg in enumerate(segments):
-        seg_tokens = len(_enc.encode(seg.text))
+        seg_tokens = count_tokens(seg.text)
 
         if seg_tokens >= resolved_max:
             # Oversized segment — flush current buffer first, then emit as its own chunk

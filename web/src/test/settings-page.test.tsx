@@ -14,7 +14,7 @@ vi.mock("../lib/api", () => {
   const mockApi = {
     getConfig: vi.fn().mockResolvedValue({
       accounts: { bilibili: { cookie: "", username: "", avatar_url: "" } },
-      ai: { protocol: "openai", model: "gpt-4o", api_key: "", base_url: "" },
+      ai: { protocol: "openai", model: "gpt-4o", api_key: "", base_url: "", context_window: 128000 },
       transcription: {
         model: "large-v3",
         device: "cpu",
@@ -155,7 +155,7 @@ describe("settings page", () => {
       });
     vi.mocked(api.putConfig).mockResolvedValueOnce({
       accounts: { bilibili: { cookie: "", username: "", avatar_url: "" } },
-      ai: { protocol: "openai", model: "gpt-4o", api_key: "", base_url: "" },
+      ai: { protocol: "openai", model: "gpt-4o", api_key: "", base_url: "", context_window: 128000 },
       transcription: {
         model: "large-v3",
         device: "cpu",
@@ -188,7 +188,7 @@ describe("settings page", () => {
   test("does not refresh health for non-health-affecting config changes", async () => {
     vi.mocked(api.putConfig).mockResolvedValueOnce({
       accounts: { bilibili: { cookie: "", username: "", avatar_url: "" } },
-      ai: { protocol: "openai", model: "gpt-4o", api_key: "", base_url: "" },
+      ai: { protocol: "openai", model: "gpt-4o", api_key: "", base_url: "", context_window: 128000 },
       transcription: {
         model: "large-v3",
         device: "cpu",

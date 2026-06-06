@@ -7,6 +7,7 @@ from typing import AsyncGenerator, TypeVar
 
 import anthropic
 import openai
+import tiktoken
 from anthropic import AsyncAnthropic
 from openai import AsyncOpenAI
 from pydantic import BaseModel
@@ -14,6 +15,81 @@ from pydantic import BaseModel
 from bibilab.config import AIConfig
 
 logger = logging.getLogger(__name__)
+
+# Shared cl100k_base token estimator. It's OpenAI's tokenizer — an approximation
+# for other providers, but its drift only matters when input nears the window,
+# which _INPUT_MARGIN absorbs. Used here for the input budget and by the chunker
+# (pipeline/chunk.py) for chunk sizing.
+_enc = tiktoken.get_encoding("cl100k_base")
+
+
+def count_tokens(text: str) -> int:
+    """Estimate token count with the shared cl100k_base encoder."""
+    return len(_enc.encode(text))
+
+
+# Output budget bounds. The ceiling is a generous fixed cap that comfortably
+# fits extended thinking + a full answer for every role (chat, digest, artifact,
+# summary) — large models routinely spend 10K+ tokens thinking. The margin
+# absorbs tokenizer drift (we estimate with cl100k; providers use their own)
+# and per-message framing overhead.
+_OUTPUT_CEILING = 32768
+_INPUT_MARGIN = 2048
+
+
+class ContextWindowExceededError(ValueError):
+    """Input alone exceeds the configured context window, so no valid max_tokens
+    exists. Raised by resolve_max_tokens for every LLM call site; chat maps it to
+    an i18n error code, pipeline stages surface its message as the job error."""
+
+
+def resolve_max_tokens(cfg: AIConfig, input_text: str) -> int:
+    """Auto-scale the per-call output budget from the configured context window.
+
+    max_tokens = min(context_window - estimated_input - margin, ceiling)
+
+    The precise token count only changes the result when input nears the window
+    (otherwise the ceiling binds), so we skip it in the common case: cl100k
+    tokens never exceed UTF-8 byte length, so if the bytes already fit under the
+    ceiling threshold the ceiling wins without encoding (#432).
+
+    When input alone overflows the window no max_tokens is valid — raise
+    ContextWindowExceededError (callers map it to a stage-appropriate error).
+    """
+    if len(input_text.encode("utf-8")) <= cfg.context_window - _INPUT_MARGIN - _OUTPUT_CEILING:
+        return _OUTPUT_CEILING
+    estimated_input = count_tokens(input_text)
+    available = cfg.context_window - estimated_input - _INPUT_MARGIN
+    if available <= 0:
+        raise ContextWindowExceededError(
+            f"Input (~{estimated_input} tokens) exceeds the {cfg.context_window}-token context window."
+        )
+    return min(available, _OUTPUT_CEILING)
+
+
+def _serialize_messages(messages: list[dict], system: str | None, tools: "list[ToolDefinition] | None" = None) -> str:
+    """Flatten system prompt + chat messages + tool schemas into one string for
+    token estimation. Tool definitions are the largest fixed input block in a
+    tool-calling turn, so they're counted, not approximated by the margin.
+
+    Content is usually a plain string; non-string content (tool blocks) is
+    JSON-dumped. OpenAI tool-calling turns also carry `tool_calls` (assistant),
+    `tool_call_id` + `name` (tool) on the message envelope — without these the
+    function-name and arguments JSON, often hundreds of bytes, are invisible
+    to the estimate and the resolved max_tokens is over-allocated (#432).
+    """
+    parts = [system] if system else []
+    for m in messages:
+        content = m.get("content")
+        parts.append(content if isinstance(content, str) else json.dumps(content, ensure_ascii=False))
+        for key in ("tool_calls", "tool_call_id", "name"):
+            if m.get(key) is not None:
+                v = m[key]
+                parts.append(v if isinstance(v, str) else json.dumps(v, ensure_ascii=False))
+    for t in tools or []:
+        parts.append(f"{t.name}\n{t.description}\n{json.dumps(t.parameters, ensure_ascii=False)}")
+    return "\n".join(parts)
+
 
 # Module-level client cache: key -> client instance
 _client_cache: dict[tuple[str, str, str, str | None], object] = {}
@@ -58,10 +134,10 @@ def _call_llm(
     prompt: str,
     cfg: AIConfig,
     llm_timeout: int = 120,
-    llm_max_tokens: int = 2048,
 ) -> str:
     """Dispatch to the appropriate LLM protocol. Returns raw text response."""
     cache_key = (cfg.protocol, cfg.api_key, cfg.model, cfg.base_url)
+    llm_max_tokens = resolve_max_tokens(cfg, prompt)
 
     if cfg.protocol == "anthropic":
         if cache_key not in _client_cache:
@@ -159,10 +235,10 @@ async def stream_llm(
     cfg: AIConfig,
     tools: list[ToolDefinition] | None = None,
     llm_timeout: int = 120,
-    llm_max_tokens: int = 2048,
     system: str | None = None,
 ) -> AsyncGenerator[StreamEvent, None]:
     cache_key = (cfg.protocol, cfg.api_key, cfg.model, cfg.base_url)
+    llm_max_tokens = resolve_max_tokens(cfg, _serialize_messages(messages, system, tools))
 
     if cfg.protocol == "anthropic":
         if cache_key not in _async_client_cache:
