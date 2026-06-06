@@ -73,12 +73,19 @@ def _serialize_messages(messages: list[dict], system: str | None, tools: "list[T
     tool-calling turn, so they're counted, not approximated by the margin.
 
     Content is usually a plain string; non-string content (tool blocks) is
-    JSON-dumped.
+    JSON-dumped. OpenAI tool-calling turns also carry `tool_calls` (assistant),
+    `tool_call_id` + `name` (tool) on the message envelope — without these the
+    function-name and arguments JSON, often hundreds of bytes, are invisible
+    to the estimate and the resolved max_tokens is over-allocated (#432).
     """
     parts = [system] if system else []
     for m in messages:
         content = m.get("content")
         parts.append(content if isinstance(content, str) else json.dumps(content, ensure_ascii=False))
+        for key in ("tool_calls", "tool_call_id", "name"):
+            if m.get(key) is not None:
+                v = m[key]
+                parts.append(v if isinstance(v, str) else json.dumps(v, ensure_ascii=False))
     for t in tools or []:
         parts.append(f"{t.name}\n{t.description}\n{json.dumps(t.parameters, ensure_ascii=False)}")
     return "\n".join(parts)

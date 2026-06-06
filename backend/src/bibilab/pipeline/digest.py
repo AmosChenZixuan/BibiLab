@@ -10,6 +10,7 @@ from bibilab.config import AIConfig
 from bibilab.pipeline._shared import (
     _LANG_INSTRUCTION,
     _STRICT_SUFFIX,
+    ContextWindowExceededError,
     _call_llm,
     _lang_output_directive,
     _parse_llm_json_response,
@@ -183,6 +184,10 @@ def digest(
         try:
             raw = _call_llm(p, cfg, llm_timeout=llm_timeout)
             return _parse_response(raw)
+        except ContextWindowExceededError:
+            # Deterministic — retrying with a *larger* prompt (_STRICT_SUFFIX) only
+            # re-overflows. Surface immediately rather than burning two more calls.
+            raise
         except Exception as exc:
             last_exc = exc
             logger.warning(
