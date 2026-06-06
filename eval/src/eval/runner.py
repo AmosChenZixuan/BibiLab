@@ -5,15 +5,12 @@ import json
 import time
 import uuid
 
-from bibilab.routers.chat import stream_with_tools, build_grounding_prompt, CHAT_MAX_TOKENS
+from bibilab.routers.chat import stream_with_tools, build_grounding_prompt
 from bibilab.pipeline._shared import ToolDefinition
 from bibilab.pipeline.chat_tools import (
-    RETRIEVE_TOOL,
-    SURVEY_TOOL,
-    RETRIEVE_SCOPED_TOOL,
+    FIND_PASSAGES_TOOL,
+    READ_SOURCE_TOOL,
     RETRIEVE_TOOL_NAMES,
-    QUERY_LIST_METADATA_TOOL,
-    GENERATE_REPORT_TOOL,
     execute_tool,
     CitationRegistryEntry,
 )
@@ -25,11 +22,8 @@ from eval.models import EvalCase, EvalRun, ProfileSnapshot, RunCaseResult
 from eval.storage import load_eval_set, save_eval_run
 
 CHAT_TOOLS: list[ToolDefinition] = [
-    RETRIEVE_TOOL,
-    SURVEY_TOOL,
-    RETRIEVE_SCOPED_TOOL,
-    QUERY_LIST_METADATA_TOOL,
-    GENERATE_REPORT_TOOL,
+    FIND_PASSAGES_TOOL,
+    READ_SOURCE_TOOL,
 ]
 
 
@@ -37,7 +31,6 @@ async def run_single_case(
     case: EvalCase,
     list_id: str,
     source_ids: list[str],
-    source_map: dict[str, str],
     ai_cfg: AIConfig,
     backend_cfg: BibilabConfig,
     system_prompt: str,
@@ -47,11 +40,12 @@ async def run_single_case(
         registry: dict[str, CitationRegistryEntry] = {}
         tool_block_sink: list[dict] = []
 
-        async def execute_tool_fn(name, args, registry=registry, source_map=source_map):
+        async def execute_tool_fn(name, args, **kwargs):
             return await execute_tool(
-                name, args, list_id=list_id, source_ids=source_ids,
-                ui_lang="ui", cfg=backend_cfg,
-                registry=registry, source_map=source_map,
+                name, args,
+                source_ids=source_ids,
+                cfg=backend_cfg,
+                **kwargs,
             )
 
         messages = [{"role": "user", "content": case.question}]
@@ -78,9 +72,7 @@ async def run_single_case(
             tools=CHAT_TOOLS,
             execute_tool_fn=execute_tool_fn,
             system=system_prompt,
-            llm_max_tokens=CHAT_MAX_TOKENS,
             registry=registry,
-            source_map=source_map,
             tool_block_sink=tool_block_sink,
         ):
             now = time.monotonic()
@@ -183,7 +175,6 @@ async def run_eval(
     rows = await get_sources_for_list(eval_set.list_id)
     rows_dict = [dict(r) for r in rows]
     source_ids = [r["id"] for r in rows_dict]
-    source_map = {r["video_id"]: r["id"] for r in rows_dict}
 
     run_id = str(uuid.uuid4())
 
@@ -198,7 +189,6 @@ async def run_eval(
                     case=case,
                     list_id=eval_set.list_id,
                     source_ids=source_ids,
-                    source_map=source_map,
                     ai_cfg=ai_cfg,
                     backend_cfg=backend_cfg,
                     system_prompt=system_prompt,

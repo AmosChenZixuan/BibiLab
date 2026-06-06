@@ -8,8 +8,6 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
-LLM_MAX_TOKENS = 65536
-
 from bibilab.config import AIConfig, bibilab_home
 
 from eval.models import ProfileSnapshot
@@ -115,5 +113,11 @@ def get_language() -> Language:
 
 
 def get_response_language() -> str:
-    """Display name used in LLM prompts (e.g. 'Chinese', 'English')."""
-    return get_language().display_name
+    """Language code for the configured response language (e.g. 'zh', 'en').
+
+    Returns the language code, not the display name. bibilab's
+    build_grounding_prompt looks this up in _LANG_NATIVE_NAME (which is keyed
+    on codes); a display-name string would silently fall through to the
+    English default and the chat would answer in the wrong language.
+    """
+    return get_language().value

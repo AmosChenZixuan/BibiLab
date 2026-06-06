@@ -127,3 +127,21 @@ def test_profile_names_constant():
 def test_language_display_name():
     assert Language.ZH.display_name == "Chinese"
     assert Language.EN.display_name == "English"
+
+
+def test_get_response_language_returns_code(tmp_path, monkeypatch):
+    """Returns the language code, not the display name — build_grounding_prompt
+    looks the result up in _LANG_NATIVE_NAME which is keyed on codes. A
+    display-name string would fall through to the English default."""
+    from eval.config import get_response_language
+
+    # eval.config imports bibilab_home at module level, so the local binding
+    # is what _eval_config_path() resolves; patch it there.
+    monkeypatch.setattr("eval.config.bibilab_home", lambda: tmp_path)
+    cfg_path = tmp_path / "eval_config.json"
+
+    cfg_path.write_text('{"language": "zh", "profiles": {}}')
+    assert get_response_language() == "zh"
+
+    cfg_path.write_text('{"language": "en", "profiles": {}}')
+    assert get_response_language() == "en"

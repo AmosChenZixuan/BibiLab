@@ -9,7 +9,6 @@ from typing import Any
 from bibilab.pipeline._shared import _call_llm
 
 from eval._utils import now_iso, strip_json_fences
-from eval.config import LLM_MAX_TOKENS
 from eval.dashboard import TaskDashboard
 from eval.models import EvalCase, EvalSet
 
@@ -242,12 +241,25 @@ CATEGORY_PROMPTS: dict[str, str] = {
 }
 
 
-def _read_transcript(transcript_relpath: str) -> str:
-    from bibilab.config import bibilab_home
-    p = bibilab_home() / transcript_relpath
-    if not p.exists():
+def _read_transcript(source_id: str) -> str:
+    """Load a source's transcript text from bibilab's segments store.
+
+    Transcripts moved from per-source files to the `transcript_segments` table
+    in the v2 backend; this is the canonical loader. Returns "" on no
+    segments or a DB-level error (the caller treats both as "missing").
+    """
+    import asyncio
+    import sqlite3
+    import sys
+    from bibilab.pipeline.transcribe import load_transcript_text
+
+    try:
+        return asyncio.run(load_transcript_text(source_id, include_time=False))
+    except sqlite3.OperationalError:
+        # DB-level failure (table missing, DB locked). Programming errors
+        # (TypeError, AttributeError) propagate so they're visible.
+        print(f"[generate] failed to load transcript for {source_id}", file=sys.stderr)
         return ""
-    return p.read_text()
 
 
 def _load_per_source(sources: list[dict]) -> list[dict]:
@@ -261,13 +273,13 @@ def _load_per_source(sources: list[dict]) -> list[dict]:
     loaded: list[dict] = []
     missing: list[str] = []
     for s in sources:
-        path = s.get("transcript_path", "")
-        raw = _read_transcript(path)
+        sid = s.get("id", "")
+        raw = _read_transcript(sid)
         if not raw:
-            missing.append(path or f"<no path for {s.get('id', '?')}>")
+            missing.append(sid or "<no id>")
             continue
         loaded.append({
-            "id": s["id"],
+            "id": sid,
             "title": s.get("title", ""),
             "transcript": _truncate_to_words(raw, MAX_WORDS_PER_SOURCE),
         })
@@ -318,10 +330,10 @@ def _extract_one_source(source: dict, ai_cfg: Any, language: str = "zh") -> tupl
     prompt = SOURCE_FACTS_PROMPT.format(max_facts=MAX_FACTS_PER_SOURCE)
     body = f"{prompt}\n\n文字稿内容：\n{source.get('transcript', '')}"
     base_prompt = _with_language(body, language)
-    raw = _call_llm(base_prompt, ai_cfg, llm_timeout=120, llm_max_tokens=LLM_MAX_TOKENS)
+    raw = _call_llm(base_prompt, ai_cfg, llm_timeout=120)
     data, err = _try_parse_object(raw)
     if data is None:
-        raw2 = _call_llm(base_prompt + _RETRY_HINT, ai_cfg, llm_timeout=120, llm_max_tokens=LLM_MAX_TOKENS)
+        raw2 = _call_llm(base_prompt + _RETRY_HINT, ai_cfg, llm_timeout=120)
         data, err2 = _try_parse_object(raw2)
         if data is None:
             artifact = _persist_failed_raw(
@@ -443,7 +455,7 @@ def generate_eval_set(
                 return (category, [])
             prompt = CATEGORY_PROMPTS[category].format(count=count)
             full_prompt = _with_language(f"{prompt}\n\n视频内容要点：\n{facts_block}", language)
-            raw = _call_llm(full_prompt, ai_cfg, llm_timeout=180, llm_max_tokens=LLM_MAX_TOKENS)
+            raw = _call_llm(full_prompt, ai_cfg, llm_timeout=180)
             stripped = strip_json_fences(raw)
             try:
                 data = json.loads(stripped)

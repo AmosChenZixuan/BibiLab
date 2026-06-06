@@ -19,30 +19,32 @@ def test_max_constants():
     assert MAX_WORDS_PER_SOURCE > 0
 
 
-def test_read_transcript(monkeypatch, tmp_path):
-    monkeypatch.setattr("bibilab.config.bibilab_home", lambda: tmp_path)
-    d = tmp_path / "transcripts"
-    d.mkdir()
-    (d / "t1.txt").write_text("hello world")
-    assert _read_transcript("transcripts/t1.txt") == "hello world"
+def test_read_transcript(monkeypatch):
+    async def fake(sid, include_time=False):
+        return "hello world"
+
+    monkeypatch.setattr("bibilab.pipeline.transcribe.load_transcript_text", fake)
+    assert _read_transcript("any-id") == "hello world"
 
 
-def test_read_transcript_missing(monkeypatch, tmp_path):
-    monkeypatch.setattr("bibilab.config.bibilab_home", lambda: tmp_path)
-    assert _read_transcript("transcripts/nope.txt") == ""
+def test_read_transcript_missing(monkeypatch):
+    async def fake(sid, include_time=False):
+        return ""
+
+    monkeypatch.setattr("bibilab.pipeline.transcribe.load_transcript_text", fake)
+    assert _read_transcript("missing-id") == ""
 
 
-def test_load_per_source_truncation(monkeypatch, tmp_path):
-    monkeypatch.setattr("bibilab.config.bibilab_home", lambda: tmp_path)
+def test_load_per_source_truncation(monkeypatch):
     monkeypatch.setattr("eval.generate.MAX_WORDS_PER_SOURCE", 500)
-    d = tmp_path / "transcripts"
-    d.mkdir()
-    (d / "t1.txt").write_text("word " * 600)
-    (d / "t2.txt").write_text("hello world")
-
+    transcripts = {"s1": "word " * 600, "s2": "hello world"}
+    monkeypatch.setattr(
+        "eval.generate._read_transcript",
+        lambda sid: transcripts.get(sid, ""),
+    )
     sources = [
-        {"id": "s1", "transcript_path": "transcripts/t1.txt", "title": "Long"},
-        {"id": "s2", "transcript_path": "transcripts/t2.txt", "title": "Short"},
+        {"id": "s1", "title": "Long"},
+        {"id": "s2", "title": "Short"},
     ]
     loaded = _load_per_source(sources)
     assert len(loaded) == 2
@@ -51,15 +53,15 @@ def test_load_per_source_truncation(monkeypatch, tmp_path):
     assert loaded[1]["transcript"] == "hello world"
 
 
-def test_load_per_source_skips_missing(monkeypatch, tmp_path):
-    monkeypatch.setattr("bibilab.config.bibilab_home", lambda: tmp_path)
-    d = tmp_path / "transcripts"
-    d.mkdir()
-    (d / "t1.txt").write_text("only one")
-
+def test_load_per_source_skips_missing(monkeypatch):
+    transcripts = {"s1": "only one"}
+    monkeypatch.setattr(
+        "eval.generate._read_transcript",
+        lambda sid: transcripts.get(sid, ""),
+    )
     sources = [
-        {"id": "s1", "transcript_path": "transcripts/t1.txt", "title": "T"},
-        {"id": "s2", "transcript_path": "transcripts/missing.txt", "title": "Gone"},
+        {"id": "s1", "title": "T"},
+        {"id": "s2", "title": "Gone"},
     ]
     loaded = _load_per_source(sources)
     assert len(loaded) == 1

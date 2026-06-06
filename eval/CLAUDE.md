@@ -36,7 +36,7 @@ src/eval/
 
 - Imports `bibilab.*` via editable install (configured in pyproject.toml `[tool.uv.sources]`)
 - `resolve_profile(name)` returns an `AIConfig` — null profile entry falls back to backend `~/.bibilab/config.json`
-- `get_response_language()` maps language code → display name ("Chinese"/"English"); single source of truth for output language
+- `get_response_language()` returns the language code ("zh"/"en") — feeds `build_grounding_prompt`, which keys on the code (not the display name)
 - Storage is JSON files under `~/.bibilab/evals/{list_id}/` — portable, git-diffable
 - Async functions use `asyncio.run()` at CLI boundaries
 - `_call_llm` for sync LLM calls (generation, grading); `stream_with_tools` for chat (runner)
