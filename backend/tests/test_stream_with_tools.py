@@ -249,7 +249,10 @@ async def test_stream_with_tools_loopback_find_passages(mock_stream_llm):
 
 @pytest.mark.asyncio
 async def test_stream_with_tools_max_iterations_graceful(mock_stream_llm):
-    """After MAX_TOOL_ITERATIONS, active_tools is forced to [] so the LLM synthesizes from accumulated results."""
+    """After MAX_TOOL_ITERATIONS the loop stops *executing* tools but keeps them
+    advertised, so the serving layer's tool-call grammar stays on and a stubborn
+    tool attempt parses as an ignored structured tool_call instead of leaking
+    native tool-call tokens as the answer."""
     from bibilab.config import AIConfig
     from bibilab.pipeline.chat_tools import FIND_PASSAGES_TOOL
     from bibilab.routers.chat import MAX_TOOL_ITERATIONS, stream_with_tools
@@ -295,9 +298,10 @@ async def test_stream_with_tools_max_iterations_graceful(mock_stream_llm):
     # MAX_TOOL_ITERATIONS tool-using turns + 1 synthesis turn + 1 forced synthesis
     # (forced synthesis kicks in because the mock never produces text).
     assert len(iterations_seen) == MAX_TOOL_ITERATIONS + 2
-    # Both the synthesis turn and forced synthesis have no tools available.
-    assert iterations_seen[-2] == 0
-    assert iterations_seen[-1] == 0
+    # Tools stay advertised on the synthesis turn and forced synthesis (grammar on,
+    # anti-leak); they are simply never executed past MAX_TOOL_ITERATIONS.
+    assert iterations_seen[-2] == 1
+    assert iterations_seen[-1] == 1
 
 
 @pytest.mark.asyncio

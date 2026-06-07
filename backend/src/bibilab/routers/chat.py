@@ -108,6 +108,17 @@ SSE_EVENT_META = "meta"
 # every tool call when reached.
 MAX_TOOL_ITERATIONS = 3
 
+# Synthesis-turn directive: the tool budget is exhausted, so the model must
+# answer in prose now. Tools stay *advertised* on this turn (see stream_with_tools)
+# so the serving layer's tool-call grammar stays active — a stubborn tool attempt
+# then parses as a structured (ignored) tool_call instead of leaking its native
+# tool-call tokens as plain text into the answer.
+_SYNTHESIS_DIRECTIVE = (
+    "You have used all available tool calls. Do not call any more tools. "
+    "Answer the user's question now in prose, using only the information already "
+    "retrieved. If the retrieved content is insufficient, say so plainly."
+)
+
 
 _ERROR_CODE_MAP: tuple[tuple[type[Exception], str], ...] = (
     (ContextWindowExceededError, "llm_context_window_exceeded"),
@@ -305,6 +316,7 @@ async def stream_with_tools(
     citation_emitted = False
     tool_used = False
     text_generated = False
+    synthesis_directive_sent = False
     error_yielded = False
     last_stop_reason: str | None = None
 
@@ -320,8 +332,17 @@ async def stream_with_tools(
             tool_calls: list[ToolCall] = []
             lookup = _build_lookup()
             is_synthesis_turn = iteration > MAX_TOOL_ITERATIONS
-            active_tools = [] if is_synthesis_turn else list(tools)
-            async for event in stream_llm(messages, cfg, active_tools, system=system):
+            if is_synthesis_turn and not synthesis_directive_sent:
+                # Tell the model the budget is spent so it answers in prose. Tools
+                # stay advertised below (grammar on) — see _SYNTHESIS_DIRECTIVE.
+                messages.append({"role": "user", "content": _SYNTHESIS_DIRECTIVE})
+                synthesis_directive_sent = True
+            # Keep tools advertised even on the synthesis turn: with tools in the
+            # request the serving layer keeps its tool-call grammar active, so a
+            # stubborn tool attempt parses as a structured tool_call (ignored below
+            # via the is_synthesis_turn branch) instead of leaking native tool-call
+            # tokens as the answer. Execution is gated, not advertisement.
+            async for event in stream_llm(messages, cfg, list(tools), system=system):
                 if event.type == "tool_call":
                     tool_calls.append(event.tool_call)
                 elif event.type == "delta" and event.content:
@@ -344,19 +365,23 @@ async def stream_with_tools(
                 for pe in flush_buffer(parse_buffer):
                     yield pe
                 # If tools were used but no answer text was ever generated, force one
-                # more LLM call with no tools so the user always gets a text response.
+                # more LLM call so the user always gets a text response. Tools stay
+                # advertised here too (grammar on) for the same anti-leak reason as
+                # the synthesis turn — a tool attempt parses as a structured (ignored)
+                # tool_call, never leaking native tokens as the answer.
                 if not text_generated and tool_used:
                     messages.append(
                         {
                             "role": "user",
                             "content": (
                                 "You have retrieved information from the sources. "
-                                "Now answer the user's original question. "
-                                "Provide a complete answer based solely on the retrieved content."
+                                "Now answer the user's original question. Do not call "
+                                "any tools. Provide a complete answer based solely on "
+                                "the retrieved content."
                             ),
                         }
                     )
-                    async for event in stream_llm(messages, cfg, [], system=system):
+                    async for event in stream_llm(messages, cfg, list(tools), system=system):
                         if event.type == "delta" and event.content:
                             text_generated = True
                             parsed_events, parse_buffer = parse_delta(event.content, parse_buffer, lookup)
@@ -364,7 +389,9 @@ async def stream_with_tools(
                                 yield pe
                         elif event.type == "done":
                             last_stop_reason = event.stop_reason
-                        elif event.type == "delta":
+                        elif event.type in ("delta", "tool_call"):
+                            # Drop a stubborn tool attempt: no answer this turn → the
+                            # no-text error below fires. Never executed, never yielded.
                             pass
                         else:
                             # Forward error/other events so producer-side error handling
