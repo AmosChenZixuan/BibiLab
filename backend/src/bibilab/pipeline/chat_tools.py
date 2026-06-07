@@ -59,10 +59,9 @@ def _build_source_headers(registry: dict[str, CitationRegistryEntry], source_ids
     # or the LLM will see "[5] = …" and try read_source("[5]") only to learn
     # via the new fail-loud error. The registry itself stays unfiltered — it
     # is the resolver's lookup table for [N] → source_id.
-    pool = set(source_ids)
     lines = []
     for entry in sorted(registry.values(), key=lambda e: e.index):
-        if entry.source_id not in pool:
+        if entry.source_id not in source_ids:
             continue
         title = entry.title
         lines.append(f'Source [{entry.index}]: "{title}"')
@@ -190,9 +189,8 @@ READ_SOURCE_TOOL = ToolDefinition(
 
 RETRIEVE_TOOL_NAMES: frozenset[str] = frozenset({FIND_PASSAGES_TOOL.name})
 
-# Anchored parse of the [N] citation index the LLM sees. Accepts "[5]", "5",
-# "Source [5]", "source 5"; rejects a stray title like "Episode 5 discussion"
-# so a model typo never silently mis-resolves to a wrong source.
+# Anchored: a stray title like "Episode 5 discussion" must NOT silently parse
+# to index 5 — only the LLM's own [N] citation form is accepted.
 _CITATION_INDEX_RE = re.compile(r"^\s*(?:source\s*)?\[?\s*(\d+)\s*\]?\s*$", re.IGNORECASE)
 
 
@@ -215,10 +213,9 @@ async def _resolve_single_source(
         if not match:
             return None, 'source_id must be a citation index like "[5]".'
         idx = int(match.group(1))
-        if registry is not None:
-            for entry in registry.values():
-                if entry.index == idx and entry.source_id in source_ids:
-                    return entry.source_id, None
+        for entry in (registry or {}).values():
+            if entry.index == idx and entry.source_id in source_ids:
+                return entry.source_id, None
         return None, (
             f"No source [{idx}] in this conversation. Call find_passages first, "
             "or pass sequence_number / season_number."

@@ -19,11 +19,6 @@ def _facets(mapping):  # helper to stub get_source_facets
     return _f
 
 
-def _registry(entries: dict[str, tuple[int, str]]) -> dict[str, CitationRegistryEntry]:
-    """Build a registry mapping source_id -> CitationRegistryEntry(index, source_id, title)."""
-    return {sid: CitationRegistryEntry(index=idx, source_id=sid, title=title) for sid, (idx, title) in entries.items()}
-
-
 class Row(dict):
     def __getitem__(self, k):  # row["x"] and row.get("x")
         return super().__getitem__(k)
@@ -36,7 +31,7 @@ async def test_resolve_by_citation_index_in_pool():
         source_id="[1]",
         sequence_number=None,
         season_number=None,
-        registry=_registry({"a": (1, "Ep A")}),
+        registry={"a": CitationRegistryEntry(index=1, source_id="a", title="Ep A")},
     )
     assert rid == "a" and err is None
 
@@ -50,7 +45,7 @@ async def test_resolve_by_citation_index_bare_int_and_source_prefix():
             source_id=variant,
             sequence_number=None,
             season_number=None,
-            registry=_registry({"a": (5, "Ep 5")}),
+            registry={"a": CitationRegistryEntry(index=5, source_id="a", title="Ep 5")},
         )
         assert rid == "a" and err is None, (variant, rid, err)
 
@@ -58,13 +53,15 @@ async def test_resolve_by_citation_index_bare_int_and_source_prefix():
 @pytest.mark.asyncio
 async def test_resolve_by_citation_index_unmapped_errors():
     """An [N] that exists syntactically but the registry has no entry for →
-    'call find_passages first' error. Fail loud, no silent mis-resolution."""
+    'call find_passages first' error. Fail loud, no silent mis-resolution.
+    The same path also covers the empty-registry case (read_source called
+    before any find_passages)."""
     rid, err = await _resolve_single_source(
         ["a"],
         source_id="[9]",
         sequence_number=None,
         season_number=None,
-        registry=_registry({"a": (1, "Ep A")}),
+        registry={"a": CitationRegistryEntry(index=1, source_id="a", title="Ep A")},
     )
     assert rid is None
     assert "[9]" in err and "find_passages" in err
@@ -79,7 +76,10 @@ async def test_resolve_by_citation_index_deselected_fails_loud():
         source_id="[1]",
         sequence_number=None,
         season_number=None,
-        registry=_registry({"a": (1, "Ep A"), "b": (2, "Ep B")}),
+        registry={
+            "a": CitationRegistryEntry(index=1, source_id="a", title="Ep A"),
+            "b": CitationRegistryEntry(index=2, source_id="b", title="Ep B"),
+        },
     )
     assert rid is None
     assert "[1]" in err and "find_passages" in err
@@ -94,24 +94,10 @@ async def test_resolve_by_non_index_string_errors():
         source_id="Episode 5 discussion",
         sequence_number=None,
         season_number=None,
-        registry=_registry({"a": (1, "Ep A")}),
+        registry={"a": CitationRegistryEntry(index=1, source_id="a", title="Ep A")},
     )
     assert rid is None
     assert "citation index" in err
-
-
-@pytest.mark.asyncio
-async def test_resolve_empty_registry_with_index_errors():
-    """Registry empty (read_source called before any find_passages) + source_id
-    given → 'call find_passages first' error. Facet-first read still works."""
-    rid, err = await _resolve_single_source(
-        ["a"],
-        source_id="[1]",
-        sequence_number=None,
-        season_number=None,
-        registry={},
-    )
-    assert rid is None and "find_passages" in err
 
 
 @pytest.mark.asyncio
@@ -167,7 +153,7 @@ async def test_execute_read_source_builds_narrative_and_registers_citation(monke
     monkeypatch.setattr(chat_tools, "get_transcript_segments", fake_segments)
 
     # Pre-seed registry with [1] → "a" (as if find_passages had run earlier).
-    registry = _registry({"a": (1, "Ep 5")})
+    registry = {"a": CitationRegistryEntry(index=1, source_id="a", title="Ep 5")}
     out = await execute_read_source(["a"], source_id="[1]", sequence_number=None, season_number=None, registry=registry)
 
     assert out["source_id"] == "a"
@@ -193,7 +179,7 @@ async def test_read_source_reuses_find_passages_index(monkeypatch):
     monkeypatch.setattr(chat_tools, "get_source", fake_get_source)
     monkeypatch.setattr(chat_tools, "get_transcript_segments", fake_segments)
 
-    registry = _registry({"a": (2, "Ep 5")})
+    registry = {"a": CitationRegistryEntry(index=2, source_id="a", title="Ep 5")}
     out = await execute_read_source(["a"], source_id="[2]", sequence_number=None, season_number=None, registry=registry)
     assert registry["a"].index == 2  # unchanged
     assert out["source_id"] == "a"
@@ -221,7 +207,7 @@ async def test_read_source_empty_transcript_suppresses_header(monkeypatch):
     monkeypatch.setattr(chat_tools, "get_source", fake_get_source)
     monkeypatch.setattr(chat_tools, "get_transcript_segments", fake_segments)
 
-    registry = _registry({"a": (1, "Secret Heist Episode")})
+    registry = {"a": CitationRegistryEntry(index=1, source_id="a", title="Secret Heist Episode")}
     out = await execute_read_source(["a"], source_id="[1]", sequence_number=None, season_number=None, registry=registry)
     assert out["source_id"] == "a"
     assert out["tool_name"] == "read_source"
@@ -314,7 +300,7 @@ async def test_read_source_narrative_has_no_per_chunk_fence(monkeypatch):
     monkeypatch.setattr(chat_tools, "get_source", fake_get_source)
     monkeypatch.setattr(chat_tools, "get_transcript_segments", fake_segments)
 
-    registry = _registry({"a": (1, "Ep 4")})
+    registry = {"a": CitationRegistryEntry(index=1, source_id="a", title="Ep 4")}
     out = await execute_read_source(["a"], source_id="[1]", sequence_number=None, season_number=None, registry=registry)
     body = out["_chunks"]
 
