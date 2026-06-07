@@ -1071,7 +1071,6 @@ async def test_run_chat_turn_reseeds_citation_registry_from_history_tool_blocks(
         registry=None,
         tool_block_sink=None,
         messages_sink=None,
-        debug_dump_dir=None,
     ):
         # Capture a copy of registry after reseed has populated it.
         captured_registry.append(dict(registry) if registry else {})

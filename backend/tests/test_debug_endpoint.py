@@ -18,4 +18,4 @@ async def test_dump_endpoint_returns_200_with_content(client, tmp_bibilab_home):
 async def test_dump_endpoint_returns_404_when_missing(client, tmp_bibilab_home):
     resp = await client.get("/debug/messages/msg_does_not_exist")
     assert resp.status_code == 404
-    assert resp.json() == {"error": "dump_not_found", "message_id": "msg_does_not_exist"}
+    assert resp.json() == {"detail": "Debug dump not found"}

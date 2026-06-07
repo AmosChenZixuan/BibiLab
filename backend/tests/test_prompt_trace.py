@@ -402,3 +402,44 @@ async def test_messages_sink_export_via_stream_with_tools_directly(mock_stream_l
     assert "tool" in roles
     # Pre-existing user message + assistant(tool_calls) + tool result.
     assert roles[-1] == "tool"
+
+
+@pytest.mark.asyncio
+async def test_messages_sink_populated_on_tool_execution_error(mock_stream_llm):
+    """Regression guard: when execute_tool_fn raises, stream_with_tools
+    yields SSE_EVENT_ERROR and returns early (chat.py:395). The try/finally
+    must still fire and populate the sink with whatever the LLM had seen
+    at the point of failure — just the user message, since the failed
+    tool call was never appended (the code bails before messages.append)."""
+    from bibilab.config import AIConfig
+    from bibilab.pipeline._shared import StreamEvent, ToolCall
+    from bibilab.routers import chat as chat_module
+
+    async def fake_stream_llm(messages, cfg, tools=None, system=None):
+        yield StreamEvent(type="tool_call", tool_call=ToolCall(id="u1", name="find_passages", arguments={}))
+
+    mock_stream_llm.side_effect = fake_stream_llm
+
+    async def fake_execute(*args, **kwargs):
+        raise RuntimeError("boom")
+
+    sink: list[dict] = []
+    gen = chat_module.stream_with_tools(
+        messages=[{"role": "user", "content": "q"}],
+        cfg=AIConfig(protocol="openai", model="x", api_key="k", base_url=""),
+        tools=[],
+        execute_tool_fn=fake_execute,
+        messages_sink=sink,
+    )
+    events = [e async for e in gen]
+    # The error event was yielded.
+    assert any(getattr(e, "type", None) == "error" for e in events)
+
+    # The try/finally must fire on this exit path too — sink is populated
+    # with the cumulative LLM state at the point of early return. The
+    # exact content is implementation-defined (the failed tool call is
+    # NOT appended because the code bails before messages.append), so we
+    # only assert that the user message the LLM actually saw is present.
+    assert len(sink) >= 1
+    assert sink[0]["role"] == "user"
+    assert sink[0]["content"] == "q"
