@@ -61,6 +61,7 @@ const TOP_LEVEL_METHODS = [
   "syncModels",
   "getConversation",
   "deleteConversation",
+  "getDebugDump",
 ] as const;
 
 /** `auth` group method names — keep in sync with `ApiClient.auth`. */
