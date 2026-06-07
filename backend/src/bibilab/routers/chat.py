@@ -148,6 +148,7 @@ async def get_conversation(
     list_id: str,
     before: str | None = None,
     limit: int = 50,
+    cfg: BibilabConfig = Depends(get_config),
 ) -> GetConversationResponse:
     list_row = await get_list(list_id)
     if list_row is None:
@@ -165,10 +166,13 @@ async def get_conversation(
 
     messages = [MessageResponse.from_row(dict(r)) for r in messages_rows]
 
-    debug_dir = bibilab_home() / "debug"
-    existing = {p.stem for p in debug_dir.glob("*.json")} if debug_dir.exists() else set()
-    for m in messages:
-        m.has_dump = m.id in existing
+    # Only scan the debug dir when prompt-trace dumps are enabled. Off (the
+    # default) means no dumps are ever written, so has_dump must be False.
+    if cfg.rag.debug_prompts:
+        debug_dir = bibilab_home() / "debug"
+        existing = {p.stem for p in debug_dir.glob("*.json")} if debug_dir.exists() else set()
+        for m in messages:
+            m.has_dump = m.id in existing
 
     return GetConversationResponse(
         conversation=ConversationResponse.from_row(dict(conversation_row)),
