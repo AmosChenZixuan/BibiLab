@@ -83,8 +83,13 @@ export function useSSEStream({
 
   async function consumeSSE(
     response: Response,
-    assistantMsgId: string,
+    initialAssistantMsgId: string,
   ): Promise<void> {
+    // Mutable: on the `meta` event, the server returns its own messageId
+    // (a uuid), and we swap the local message's `id` to that uuid so the
+    // /debug/messages/{id} fetch matches the dump file on disk. Subsequent
+    // updateAssistantMsg calls follow the new id via this reassignment.
+    let assistantMsgId = initialAssistantMsgId;
     if (!response.body) throw new Error("Response body is null");
 
     const reader = response.body.getReader();
@@ -110,7 +115,14 @@ export function useSSEStream({
 
     function processSSEEvent(event: { type: string; [key: string]: unknown }): void {
       if (event.type === SSE_EVENT_META) {
-        currentAssistantMsgIdRef.current = event.message_id as string;
+        const serverId = event.message_id as string;
+        currentAssistantMsgIdRef.current = serverId;
+        // Swap the client-generated id for the server-uuid. The dump file
+        // is keyed by the server-uuid, so this makes the `</>` button work
+        // without a conversation reload. Subsequent updateAssistantMsg
+        // calls follow the new id via the closure variable.
+        updateAssistantMsg(assistantMsgId, { id: serverId });
+        assistantMsgId = serverId;
         return;
       }
       if (event.type === SSE_EVENT_DELTA) {
@@ -193,6 +205,14 @@ export function useSSEStream({
           isStreaming: false,
           contentBlocks: [...accBlocks],
           pendingRagCalls: [],
+          // Backend writes the dump at end of `run_chat_turn`, which fires
+          // before `done` is yielded to the client. Optimistically set
+          // hasDump: true so the </> icon shows immediately. If
+          // debug_prompts is off, ChatPanel gates the button off via the
+          // `showDebugButton` prop, so the optimistic value is harmless.
+          // If the dump write fails (best-effort), the click 404s — an
+          // acceptable failure mode for a debug-only feature.
+          hasDump: true,
         });
         safeSetIsStreaming(false);
         isStreamingRef.current = false;
