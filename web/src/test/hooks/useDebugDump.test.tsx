@@ -50,15 +50,14 @@ describe("useDebugDump", () => {
     expect(api.getDebugDump).toHaveBeenCalledWith("msg_1");
   });
 
-  it("reports notFound on 404 (ApiError status 404) after retries", async () => {
-    // The hook retries on 404 to absorb the race where the user opens the
-    // drawer before the backend has finished writing the dump file. After
-    // the retries are exhausted, notFound becomes true.
+  it("reports notFound on 404 (ApiError status 404)", async () => {
+    // The dump is written before the turn's `done` event, so a 404 means the
+    // best-effort write failed — surfaced directly as notFound, no retry.
     (api.getDebugDump as ReturnType<typeof vi.fn>).mockRejectedValue(
       new ApiError(404, "not found"),
     );
     const { result } = renderHook(() => useDebugDump("msg_missing"));
-    await waitFor(() => expect(result.current.notFound).toBe(true), { timeout: 2000 });
+    await waitFor(() => expect(result.current.notFound).toBe(true));
     expect(result.current.dump).toBeNull();
   });
 });

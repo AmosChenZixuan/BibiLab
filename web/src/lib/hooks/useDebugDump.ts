@@ -14,31 +14,23 @@ export function useDebugDump(messageId: string | null) {
     setLoading(true);
     setNotFound(false);
 
-    // Backend writes the dump at end of `run_chat_turn` which runs AFTER
-    // the `done` SSE event is yielded. If the user clicks `</>` immediately
-    // after stream end, the file may not be on disk yet — race a 404.
-    // Retry once after a short delay to absorb the race.
-    const fetchWithRetry = async (attempt: number): Promise<void> => {
-      try {
-        const d = await api.getDebugDump(messageId);
+    // `run_chat_turn` writes the dump to disk before it emits the turn's
+    // `done` SSE event, so by the time the user can click `</>` the file is
+    // already present. A 404 therefore means the best-effort write failed,
+    // not a race — surface it as notFound rather than retrying.
+    api
+      .getDebugDump(messageId)
+      .then((d) => {
+        if (!cancelled) setDump(d);
+      })
+      .catch((err) => {
         if (cancelled) return;
-        setDump(d);
-      } catch (err) {
-        if (cancelled) return;
-        const status = (err as ApiError).status;
-        if (status === 404 && attempt < 3) {
-          // Backoff: 200ms, 600ms
-          await new Promise((r) => setTimeout(r, 200 * attempt ** 2));
-          if (cancelled) return;
-          return fetchWithRetry(attempt + 1);
-        }
-        if (status === 404) setNotFound(true);
+        if ((err as ApiError).status === 404) setNotFound(true);
         else console.error("debug dump fetch failed", err);
-      } finally {
+      })
+      .finally(() => {
         if (!cancelled) setLoading(false);
-      }
-    };
-    void fetchWithRetry(1);
+      });
 
     return () => {
       cancelled = true;
