@@ -89,16 +89,13 @@ def parse_grade_response(response: str) -> tuple[int | None, str]:
 
 
 def _chunks_text_from_case(case_result: RunCaseResult) -> str:
-    lines: list[str] = []
-    for tb in case_result.tool_blocks:
-        chunks = tb.get("result", {}).get("chunks", [])
-        for c in chunks:
-            idx = c.get("citation_index", 0)
-            content = c.get("content", "")
-            lines.append(f"[{idx}]: {content}")
-    if not lines:
+    # The exact tool messages the LLM read (find_passages bodies AND read_source
+    # narratives), already carrying citation headers/fences. Grading must judge
+    # against this — not a reconstruction from tool_blocks — or groundedness and
+    # context-relevance measure a context the model never saw.
+    if not case_result.llm_context:
         return "(no chunks retrieved)"
-    return "\n".join(lines)
+    return "\n\n".join(case_result.llm_context)
 
 
 async def _grade_one(prompt: str, ai_cfg: AIConfig) -> tuple[int | None, str, int]:

@@ -42,6 +42,9 @@ class RunCaseResult(BaseModel):
     citations: list[dict[str, Any]] = Field(default_factory=list)
     rag_calls: list[dict[str, Any]] = Field(default_factory=list)
     tool_blocks: list[dict[str, Any]] = Field(default_factory=list)
+    # Exact LLM-visible tool context per call, in message order — what the
+    # model actually read. Grading judges against this for parity.
+    llm_context: list[str] = Field(default_factory=list)
     llm_duration_ms: int = 0
     error: str | None = None
 

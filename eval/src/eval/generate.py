@@ -14,7 +14,6 @@ from eval.models import EvalCase, EvalSet
 
 MAX_SOURCES = 10
 MAX_WORDS_PER_SOURCE = 3000
-MAX_FACTS_PER_SOURCE = 30
 # Rough CJK char → word budget multiplier. Chinese has no whitespace, so str.split()
 # treats a transcript as one giant token. Count chars and divide by ~1.5 to approximate
 # token budget against the word-budget ceiling used for whitespace-segmented text.
@@ -49,19 +48,18 @@ _LANG_INSTRUCTION = {
 def _with_language(prompt: str, language: str) -> str:
     return prompt + _LANG_INSTRUCTION.get(language, "")
 
-SOURCE_FACTS_PROMPT = """你是一个研究助理。下面是一段视频的文字稿。请从中提取关键事实。
+SOURCE_FACTS_PROMPT = """你是一个研究助理。下面是一段视频的文字稿。请用要点概括其内容。
 
 强约束：
-- 只提取原文**逐字出现**或**近义表达**的内容；不要推断、不要补充、不要联想。
+- 用 12-20 个要点概括，每个要点一句话，尽量具体（含人物、数值、设定、动作）。
+- 只用文字稿中出现的信息，不要补充、推断或联想。
+- 时间/版本/新旧信息直接写在要点内部（例：「2023 年推荐 BM25」「v4 新增 tool use」「之前用 A，现在用 B」）。
 - 如果文字稿明显空白、纯非语言标记（如 [Music]、[Applause]）或重复无意义，返回空数组。
-- 每条事实 ≤1 句话，保持原意。不要把多条事实合并成一句长论述。
-- 时间/版本/新旧信息直接写在事实内部（例：「2023 年推荐 BM25」「v4 新增 tool use」「之前用 A，现在用 B」），不要单独抽字段。
-- 最多 {max_facts} 条。超过就只保留最重要的。重要性：具体断言 > 泛泛描述，带数值 > 不带数值。
 
 格式要求：
 - 只返回**单个 JSON 对象**，不要数组包裹，不要 markdown fences，不要额外文字
-- Schema：{{"facts": ["事实1", "事实2", ...]}}
-- 如果原文没有合格内容，返回 {{"facts": []}}"""
+- Schema：{"facts": ["要点1", "要点2", ...]}
+- 如果原文没有合格内容，返回 {"facts": []}"""
 
 CATEGORY_PROMPTS: dict[str, str] = {
     "narrow": """你是一个知识库的普通用户。下面是一些视频内容的要点摘要。你还没有看过原视频。
@@ -327,8 +325,7 @@ def _extract_one_source(source: dict, ai_cfg: Any, language: str = "zh") -> tupl
     failure, raw responses persisted to ~/.bibilab/evals/_failed/.
     """
     sid = source["id"]
-    prompt = SOURCE_FACTS_PROMPT.format(max_facts=MAX_FACTS_PER_SOURCE)
-    body = f"{prompt}\n\n文字稿内容：\n{source.get('transcript', '')}"
+    body = f"{SOURCE_FACTS_PROMPT}\n\n文字稿内容：\n{source.get('transcript', '')}"
     base_prompt = _with_language(body, language)
     raw = _call_llm(base_prompt, ai_cfg, llm_timeout=120)
     data, err = _try_parse_object(raw)
