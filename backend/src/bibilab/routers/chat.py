@@ -161,9 +161,16 @@ async def get_conversation(
         before_id=before,
     )
 
+    messages = [MessageResponse.from_row(dict(r)) for r in messages_rows]
+
+    debug_dir = bibilab_home() / "debug"
+    existing = {p.name for p in debug_dir.iterdir() if p.is_dir()} if debug_dir.exists() else set()
+    for m in messages:
+        m.has_dump = m.id in existing
+
     return GetConversationResponse(
         conversation=ConversationResponse.from_row(dict(conversation_row)),
-        messages=[MessageResponse.from_row(dict(r)) for r in messages_rows],
+        messages=messages,
     )
 
 
