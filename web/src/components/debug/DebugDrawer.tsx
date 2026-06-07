@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { TEST_IDS } from "@/lib/test-ids";
 import { DebugHeader } from "./DebugHeader";
 import { isMessageEnvelope, isToolCall, isToolDefinition } from "./envelopeHints";
 import { JsonTree } from "./JsonTree";
@@ -24,7 +25,7 @@ export function DebugDrawer({
   return (
     <div
       className="fixed inset-y-0 right-0 w-1/2 bg-white border-l border-(--color-border) shadow-lg flex flex-col"
-      data-testid="debug-drawer"
+      data-testid={TEST_IDS.debugDrawer}
     >
       <DebugHeader
         messageId={messageId}

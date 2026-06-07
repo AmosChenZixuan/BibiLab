@@ -867,11 +867,11 @@ describe("chat panel", () => {
     const btn = await waitFor(() => screen.getByTitle(/view llm context/i));
     await user.click(btn);
     await waitFor(() => {
-      expect(screen.getByTestId("debug-drawer")).toBeInTheDocument();
+      expect(screen.getByTestId(TEST_IDS.debugDrawer)).toBeInTheDocument();
     });
     fireEvent.keyDown(document, { key: "Escape" });
     await waitFor(() => {
-      expect(screen.queryByTestId("debug-drawer")).toBeNull();
+      expect(screen.queryByTestId(TEST_IDS.debugDrawer)).toBeNull();
     });
   });
 });
