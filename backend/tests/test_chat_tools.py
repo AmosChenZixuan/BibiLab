@@ -456,7 +456,7 @@ def test_expand_message_for_provider_empty_tool_blocks_passthrough():
 
 
 def test_expand_message_for_provider_drops_retrieve_and_read_source_anthropic():
-    """v2 (#370/#371): find_passages + read_source tool exchanges are DROPPED
+    """v2: find_passages + read_source tool exchanges are DROPPED
     from cross-turn replay (stale-context contamination). Only the assistant
     text survives."""
     from bibilab.pipeline.chat_tools import expand_message_for_provider
@@ -714,7 +714,7 @@ class TestReseedCitationRegistry:
 
 
 class TestFacetInt:
-    """#309: _facet_int wraps the shared parse_facet_int, degrading unusable LLM
+    """_facet_int wraps the shared parse_facet_int, degrading unusable LLM
     args to None (never raises)."""
 
     @pytest.mark.parametrize(
@@ -752,7 +752,7 @@ class TestFacetInt:
 
 
 class TestFindPassagesFacetSchema:
-    """#309: find_passages schema exposes optional sequence_number/season_number."""
+    """find_passages schema exposes optional sequence_number/season_number."""
 
     def test_facet_params_present_and_typed(self):
         from bibilab.pipeline.chat_tools import FIND_PASSAGES_TOOL
@@ -766,7 +766,7 @@ class TestFindPassagesFacetSchema:
 
 
 class TestExecuteFindPassagesFacetScoping:
-    """#309: deterministic facet scoping with fail-open."""
+    """deterministic facet scoping with fail-open."""
 
     @staticmethod
     def _cfg():
@@ -871,8 +871,8 @@ class TestExecuteFindPassagesFacetScoping:
 
     @pytest.mark.asyncio
     async def test_no_match_prepends_note_to_llm_chunks(self, monkeypatch):
-        """#310 + #16.7: facet_scope.no_match true ⇒ _chunks carries the LLM-
-        visible fact-only note (directive moved to #372 prompt)."""
+        """facet_scope.no_match true ⇒ _chunks carries the LLM-
+        visible fact-only note (directive moved to the prompt)."""
         from bibilab.pipeline import chat_tools
         from bibilab.pipeline.chat_tools import _NO_MATCH_NOTE
 
@@ -975,7 +975,7 @@ class TestExecuteFindPassagesFacetScoping:
 
 
 class TestExecuteToolFacetArgs:
-    """#309: execute_tool parses + coerces facet args from raw LLM arguments."""
+    """execute_tool parses + coerces facet args from raw LLM arguments."""
 
     @staticmethod
     def _cfg():
@@ -1061,7 +1061,7 @@ def test_build_fenced_chunks_empty_returns_empty_string():
 
 @pytest.mark.asyncio
 async def test_execute_find_passages_chunks_grouped_and_fenced(monkeypatch):
-    """#297: _chunks groups by source + fences each group; _raw_chunks
+    """_chunks groups by source + fences each group; _raw_chunks
     preserves the original interleaved rerank order (invariant)."""
     from bibilab.config import AIConfig, BackendConfig, BibilabConfig
     from bibilab.pipeline import chat_tools

@@ -21,10 +21,10 @@ from bibilab.pipeline.transcribe import WhisperSegment, build_speaker_namespace,
 logger = logging.getLogger(__name__)
 
 # Prepended to the LLM-visible find_passages result when facet scoping found
-# no matching source and failed open to the full pool. Fact-only (#16.7 lock):
+# no matching source and failed open to the full pool. Fact-only:
 # the directive (say-so-before-answering) is owned by the prompt, not the
 # tool. The fact is the LLM's sole degraded-scope signal; the directive moves
-# to #372 grounding prompt. English by design: _chunks is LLM-facing.
+# to the grounding prompt. English by design: _chunks is LLM-facing.
 _NO_MATCH_NOTE = "No source matched the requested episode/season; searched all sources instead."
 
 
@@ -77,7 +77,7 @@ def _build_fenced_chunks(
     Buckets are emitted in ascending index order; the caller-supplied order
     within each bucket (rerank order) is preserved. The fence makes the
     source boundary structural so the LLM does not graft a proper noun from
-    one source onto another (#297).
+    one source onto another.
     """
     title_by_index = {e.index: e.title for e in registry.values()}
     blocks = []
@@ -113,11 +113,11 @@ def _partition_unseen_chunks(chunks: list, seen_chunk_ids: set[str]) -> list:
     return new
 
 
-# Tool defs + registry for the RAG v2 two-tool surface (#370/#371).
+# Tool defs + registry for the RAG v2 two-tool surface.
 # RETRIEVE_TOOL_NAMES is the set whose tool results carry a replayable chunk
 # array (only find_passages). read_source shares the SAME citation registry and
 # allocates a new [N] when find_passages has not already registered the source
-# this turn (dedup by source_id — spec §5.7).
+# this turn (dedup by source_id).
 FIND_PASSAGES_TOP_K = 8
 
 FIND_PASSAGES_TOOL = ToolDefinition(
@@ -203,7 +203,7 @@ async def _resolve_single_source(
 ) -> tuple[str | None, str | None]:
     """Resolve exactly one source from the pool. Returns (source_id, error_msg).
 
-    Strict cardinality contract (spec §5.2): 0 matches → error, >1 → ambiguous
+    Strict cardinality contract: 0 matches → error, >1 → ambiguous
     error with candidates. Errors are LLM-facing strings (English, like the
     fence body), returned in the tool result — never raised (a raise aborts the
     SSE stream).
@@ -267,12 +267,12 @@ def _filter_sources_by_facets(
 
 
 def _build_source_narrative(source: dict, segments: list, idx: int) -> str:
-    """Single source header + continuous timestamped transcript (spec §5.6).
+    """Single source header + continuous timestamped transcript.
 
     Reuses format_turns (include_time) for the speaker-turn body — NOT per-chunk
     fenced. Narrative continuity is the point.
     """
-    # Empty-transcript edge (spec §5.6 / §16.3): SUPPRESS the header — it only
+    # Empty-transcript edge: SUPPRESS the header — it only
     # frames a body, and with no body it just hands the LLM fabrication fuel (a
     # title it already has from the fence). Return the explicit fact ONLY.
     if not segments:
@@ -331,7 +331,7 @@ async def execute_read_source(
 
     segments = await get_transcript_segments(resolved)
 
-    # Shared registry, dedup by source_id (spec §5.7): reuse the existing [N] if
+    # Shared registry, dedup by source_id: reuse the existing [N] if
     # find_passages already registered this source this turn; else allocate next.
     entry = registry.get(resolved)
     if entry is None:
@@ -385,7 +385,7 @@ async def execute_find_passages(
 
     pool_size = len(source_ids)
 
-    # Deterministic facet scoping (#309). Facet matching is the sole
+    # Deterministic facet scoping. Facet matching is the sole
     # pre-retrieval narrowing. Fail-open: zero match (or facet-subquery DB
     # error) → full pool, never empty.
     facet_predicates = {
@@ -523,7 +523,7 @@ async def execute_find_passages(
         )
 
     # The all-directive "no-coverage" note is DELETED — that behavior lives in
-    # the grounding prompt (#372). The tool emits only the FACT: empty pool.
+    # the grounding prompt. The tool emits only the FACT: empty pool.
     no_coverage_fact = "" if result.chunks else "find_passages found no relevant excerpts for this query.\n\n"
     no_match_fact = f"{_NO_MATCH_NOTE}\n\n" if facet_no_match else ""
 
@@ -580,7 +580,7 @@ def build_tool_block_entry(
     raw chunk snapshots are attached so replay survives re-embedding. For
     other tools (read_source), underscore-prefixed fields are also stripped —
     read_source's narrative is 30-150K tokens and is never replayed or reseeded,
-    so persisting it is pure DB bloat (spec §16.7).
+    so persisting it is pure DB bloat.
     """
     summary = strip_internal(result)
     if name in RETRIEVE_TOOL_NAMES:
@@ -643,7 +643,7 @@ def expand_message_for_provider(
     synthetic shape the LLM expects so it sees prior tool_use/tool_result
     blocks on subsequent turns.
 
-    v2 rule (spec §5.5): drop retrieve-family and read_source tool exchanges
+    v2 rule: drop retrieve-family and read_source tool exchanges
     entirely from cross-turn replay — the LLM may rely on the assistant prose
     but not the prior tool result (stale-context contamination).
     """

@@ -1,4 +1,4 @@
-"""read_source tool: single-match resolution + narrative + citation binding (#371)."""
+"""read_source tool: single-match resolution + narrative + citation binding."""
 
 from __future__ import annotations
 
@@ -197,7 +197,7 @@ async def test_execute_read_source_builds_narrative_and_registers_citation(monke
 @pytest.mark.asyncio
 async def test_read_source_reuses_find_passages_index(monkeypatch):
     """Shared registry, dedup by source_id: read_source on an already-registered
-    source keeps the same [N] (spec §5.7)."""
+    source keeps the same [N]."""
     src = {"id": "a", "title": "Ep 5", "summary": "s", "duration_seconds": 60, "language": "zh"}
 
     async def fake_get_source(sid):  # noqa: ANN001
@@ -217,7 +217,7 @@ async def test_read_source_reuses_find_passages_index(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_read_source_empty_transcript_suppresses_header(monkeypatch):
-    """No transcript segments → fact-only, header SUPPRESSED (spec §5.6/§16.3).
+    """No transcript segments → fact-only, header SUPPRESSED.
     The content header (title/summary/duration) must NOT leak — it is fabrication
     fuel with no body to frame."""
     src = {
