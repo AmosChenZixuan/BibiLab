@@ -287,6 +287,7 @@ export function useSSEStream({
       error: null,
       timestamp: formatTimestamp(new Date().toISOString()),
       pendingRagCalls: [],
+      hasDump: false,
     };
 
     const assistantMsg: MessageUI = {
@@ -299,6 +300,7 @@ export function useSSEStream({
       timestamp: formatTimestamp(new Date().toISOString()),
       rag: null,
       pendingRagCalls: [],
+      hasDump: false,
     };
 
     setMessages((prev) => [...prev, userMsg, assistantMsg]);
@@ -372,6 +374,7 @@ export function useSSEStream({
         timestamp: "",
         rag: null,
         pendingRagCalls: [],
+        hasDump: false,
       };
       return [...prev, newMsg];
     });

@@ -19,6 +19,7 @@ export interface MessageUI {
   timestamp: string;
   rag: RagMetadata | null;
   pendingRagCalls: PendingRagCall[];
+  hasDump: boolean;
 }
 
 export function useConversationHistory(
@@ -76,6 +77,7 @@ export function useConversationHistory(
             timestamp: formatTimestamp(m.created_at),
             rag,
             pendingRagCalls: [],
+            hasDump: m.has_dump ?? false,
           };
         });
         setMessages(loaded);

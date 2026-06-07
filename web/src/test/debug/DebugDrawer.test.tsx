@@ -42,7 +42,14 @@ describe("DebugDrawer", () => {
 
   it("renders tool name in the assistant message", () => {
     render(<DebugDrawer messageId="m1" dump={dump} onClose={vi.fn()} />);
-    expect(screen.getByText(/find_passages/)).toBeInTheDocument();
+    // The function name now appears in both the catalog and the tool_call chip
+    expect(screen.getAllByText(/find_passages/).length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("renders function catalog with description and parameters for tool definitions", () => {
+    render(<DebugDrawer messageId="m1" dump={dump} onClose={vi.fn()} />);
+    expect(screen.getByText("Search")).toBeInTheDocument();
+    expect(screen.getByText("parameters")).toBeInTheDocument();
   });
 
   it("falls back to JsonTree for unknown envelope shapes", () => {

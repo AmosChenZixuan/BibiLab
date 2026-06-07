@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { DebugHeader } from "./DebugHeader";
-import { isMessageEnvelope, isToolCall } from "./envelopeHints";
+import { isMessageEnvelope, isToolCall, isToolDefinition } from "./envelopeHints";
 import { JsonTree } from "./JsonTree";
 
 export function DebugDrawer({
@@ -48,7 +48,28 @@ export function DebugDrawer({
               <JsonTree value={d.system} />
             </Section>
             <Section title="Function catalog" meta={`${d.tools?.length ?? 0} functions`}>
-              <JsonTree value={d.tools} />
+              {(d.tools ?? []).every(isToolDefinition) ? (
+                <div className="flex flex-col gap-2">
+                  {((d.tools ?? []) as { name: string; description: string; parameters: unknown }[]).map((tool, i) => (
+                    <div key={i} className="rounded-lg border border-(--color-border) p-3">
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium text-sm text-(--color-ink)">{tool.name}</span>
+                      </div>
+                      {tool.description && (
+                        <p className="mt-1 text-xs text-(--color-muted)">{tool.description}</p>
+                      )}
+                      <details className="mt-2">
+                        <summary className="text-2xs text-(--color-muted) cursor-pointer">parameters</summary>
+                        <div className="mt-1">
+                          <JsonTree value={tool.parameters} />
+                        </div>
+                      </details>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <JsonTree value={d.tools} />
+              )}
             </Section>
             <div className="text-xs uppercase tracking-wider text-(--color-muted) mt-4 mb-2">
               Conversation
