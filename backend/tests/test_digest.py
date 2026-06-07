@@ -6,6 +6,10 @@ import pytest
 
 from bibilab.adapters.base import VideoMeta
 from bibilab.config import AIConfig
+from bibilab.pipeline._shared import (
+    ContextWindowExceededError,
+    LLMOutputBudgetExceededError,
+)
 from bibilab.pipeline.audio import PipelineError
 from bibilab.pipeline.digest import (
     _MAX_KEYWORDS,
@@ -181,6 +185,60 @@ class TestDigestResultShape:
         mock_call_llm.side_effect = httpx.HTTPError("LLM down")
         with pytest.raises(PipelineError, match="LLM down"):
             digest("transcript", video_meta, ai_cfg)
+
+    def test_digest_retry_on_budget_error_then_succeed(self, mock_call_llm):
+        """Output budget exhaustion is a structural failure (identical across
+        attempts with the same prompt + budget), so the digest loop should
+        re-raise immediately rather than waste 2 more calls. Verifies the new
+        LLMOutputBudgetExceededError is in the re-raise list."""
+
+        video_meta = VideoMeta(
+            video_id="budget",
+            title="T",
+            platform="bilibili",
+            source_url="https://bilibili.example.com/video/budget",
+            cover_url="",
+            duration_seconds=10,
+            uploader="U",
+        )
+        ai_cfg = AIConfig(
+            protocol="openai",
+            model="gpt-4o-mini",
+            api_key="sk-test",
+            base_url="https://api.openai.com/v1",
+            output_language="en",
+        )
+        mock_call_llm.side_effect = LLMOutputBudgetExceededError("exhausted")
+        with pytest.raises(LLMOutputBudgetExceededError, match="exhausted"):
+            digest("transcript", video_meta, ai_cfg)
+        # Only 1 call — the loop bails out on the first budget error.
+        assert mock_call_llm.call_count == 1
+
+    def test_digest_retry_on_context_overflow(self, mock_call_llm):
+        """Input overflow is non-retryable (input won't shrink between calls).
+        The digest loop should re-raise immediately on the first
+        ContextWindowExceededError."""
+        video_meta = VideoMeta(
+            video_id="overflow",
+            title="T",
+            platform="bilibili",
+            source_url="https://bilibili.example.com/video/overflow",
+            cover_url="",
+            duration_seconds=10,
+            uploader="U",
+        )
+        ai_cfg = AIConfig(
+            protocol="openai",
+            model="gpt-4o-mini",
+            api_key="sk-test",
+            base_url="https://api.openai.com/v1",
+            output_language="en",
+        )
+        mock_call_llm.side_effect = ContextWindowExceededError("overflow")
+        with pytest.raises(ContextWindowExceededError, match="overflow"):
+            digest("transcript", video_meta, ai_cfg)
+        # Only 1 call — no retry.
+        assert mock_call_llm.call_count == 1
 
 
 class TestDigestResultFacets:

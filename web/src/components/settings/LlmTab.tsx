@@ -4,7 +4,8 @@ import { Eye, EyeOff } from "lucide-react";
 
 import { useLanguage } from "@/app/LanguageContext";
 import type { BibilabConfig, OutputLanguage } from "@/lib/types";
-import { Input, Select, SettingsField } from "@/components/ui";
+import { Input, Select, SettingsField, SlotSlider } from "@/components/ui";
+import type { SlotOption } from "@/components/ui/SlotSlider";
 
 type LlmTabProps = {
   config: BibilabConfig;
@@ -15,6 +16,27 @@ const BASE_URL_META: Record<string, { hintKey: string; placeholderKey: string }>
   openai: { hintKey: "settings.openaiBaseUrlHint", placeholderKey: "settings.openaiBaseUrlPlaceholder" },
   anthropic: { hintKey: "settings.anthropicBaseUrlHint", placeholderKey: "settings.anthropicBaseUrlPlaceholder" },
 };
+
+// 4 user-selectable model context windows. These bound the input-side
+// fail-loud threshold in resolve_max_tokens; the LLM call will fail-loud
+// (with the localized "Input exceeds model context window" message) when
+// input + max_output + margin > one of these values.
+const CONTEXT_WINDOW_OPTIONS: SlotOption<number>[] = [
+  { value: 64000, label: "64K" },
+  { value: 128000, label: "128K" },
+  { value: 200000, label: "200K" },
+  { value: 1000000, label: "1M" },
+];
+
+// Per-call output budget. User-chosen from a slot slider so each user can
+// pick what fits their model. Default 16K matches the observed upper bound
+// on thinking + answer for all real tasks.
+const MAX_OUTPUT_TOKENS_OPTIONS: SlotOption<number>[] = [
+  { value: 16384, label: "16K" },
+  { value: 32768, label: "32K" },
+  { value: 65536, label: "64K" },
+  { value: 102400, label: "100K" },
+];
 
 export function LlmTab({ config, onBlur }: LlmTabProps) {
   const { t } = useLanguage();
@@ -27,14 +49,35 @@ export function LlmTab({ config, onBlur }: LlmTabProps) {
   const baseUrlId = useId();
   const outputLanguageId = useId();
   const contextWindowId = useId();
+  const maxOutputTokensId = useId();
 
   useEffect(() => {
     setLocalAi(config.ai);
   }, [config.ai]);
 
-  function handleBlur() {
-    onBlur({ ...config, ai: localAi });
+  function commitChange(ai: typeof localAi) {
+    onBlur({ ...config, ai });
   }
+
+  function handleBlur() {
+    commitChange(localAi);
+  }
+
+  // Update local state for every selection (so the inline alert reflects the
+  // chosen value), but only persist a pair the backend validator accepts:
+  // max_output_tokens must be strictly less than context_window. Committing an
+  // invalid pair would just bounce off the pydantic model_validator with a 422.
+  function applyAi(next: typeof localAi) {
+    setLocalAi(next);
+    if (next.max_output_tokens < next.context_window) {
+      commitChange(next);
+    }
+  }
+
+  // Cross-field guard: max_output_tokens must be strictly less than
+  // context_window. Surfaced inline so the user sees the issue immediately
+  // and can fix it before save.
+  const budgetInvalid = localAi.max_output_tokens >= localAi.context_window;
 
   return (
     <div className="grid gap-3">
@@ -147,20 +190,36 @@ export function LlmTab({ config, onBlur }: LlmTabProps) {
         hint={t("settings.contextWindowDesc")}
         htmlFor={contextWindowId}
       >
-        <Select
-          aria-label={t("settings.contextWindow")}
+        <SlotSlider
+          ariaLabel={t("settings.contextWindow")}
           id={contextWindowId}
-          onBlur={handleBlur}
-          onChange={(event) =>
-            setLocalAi((current) => ({ ...current, context_window: Number(event.target.value) }))
-          }
+          onChange={(value) => applyAi({ ...localAi, context_window: value })}
+          options={CONTEXT_WINDOW_OPTIONS}
           value={localAi.context_window}
-        >
-          <option value={64000}>64K</option>
-          <option value={128000}>128K</option>
-          <option value={200000}>200K</option>
-          <option value={1000000}>1M</option>
-        </Select>
+        />
+      </SettingsField>
+
+      <SettingsField
+        label={t("settings.maxOutputTokens")}
+        hint={t("settings.maxOutputTokensDesc")}
+        htmlFor={maxOutputTokensId}
+      >
+        <SlotSlider
+          ariaLabel={t("settings.maxOutputTokens")}
+          id={maxOutputTokensId}
+          onChange={(value) => applyAi({ ...localAi, max_output_tokens: value })}
+          options={MAX_OUTPUT_TOKENS_OPTIONS}
+          value={localAi.max_output_tokens}
+        />
+        {budgetInvalid ? (
+          <p
+            role="alert"
+            className="mt-2 text-sm text-red"
+            data-testid="max-output-error"
+          >
+            {t("settings.maxOutputTokensTooLarge")}
+          </p>
+        ) : null}
       </SettingsField>
     </div>
   );

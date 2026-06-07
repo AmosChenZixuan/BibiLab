@@ -21,7 +21,7 @@ uv run python -m bibilab.main       # Start server (localhost:8765)
 ```
 routers/          — one APIRouter per module; aggregated in main.py
   auth.py           /auth/bilibili/* (QR login, cookie management)
-  chat.py           /lists/:id/chat (SSE streaming + cancel), /lists/:id/chat/:msg_id/stream (reattach), /lists/:id/conversation (CRUD); stream_with_tools loop; classify_error (SDK exception → i18n error code)
+  chat.py           /lists/:id/chat (SSE streaming + cancel), /lists/:id/chat/:msg_id/stream (reattach), /lists/:id/conversation (CRUD), /debug/messages/:msg_id (prompt-trace dump read, debug_router); stream_with_tools loop; classify_error (SDK exception → i18n error code)
   lists.py          /lists/* (CRUD)
   ingest.py         /ingest/url (POST)
   sources.py        /sources/* (source content, covers, rerun, PATCH facets manual edit)
@@ -248,7 +248,7 @@ v0: `BilibiliAdapter` — single video. Cookie-based auth in config.
 ```json
 {
   "accounts": { "bilibili": { "cookie": "", "username": "", "avatar_url": "" } },
-  "ai": { "protocol": "openai|anthropic", "model": "", "api_key": "", "base_url": null, "output_language": "ui", "context_window": 128000 },
+  "ai": { "protocol": "openai|anthropic", "model": "", "api_key": "", "base_url": null, "output_language": "ui", "context_window": 128000, "max_output_tokens": 16384 },
   "transcription": { "model": "sensevoice-small|large-v3", "device": "cuda|cpu", "language": "auto" },
   "backend": { "port": 8765, "max_concurrent_jobs": 1, "cors_origins": [...] },
   "rag": { "max_distance": 0.8, "reranking_enabled": true, "hybrid_enabled": true, "debug_prompts": false }

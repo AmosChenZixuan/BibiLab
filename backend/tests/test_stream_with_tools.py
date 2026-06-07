@@ -7,7 +7,13 @@ import httpx
 import openai
 import pytest
 
-from bibilab.pipeline._shared import StreamEvent, ToolCall, stream_llm
+from bibilab.pipeline._shared import (
+    LLMEmptyResponseError,
+    LLMOutputBudgetExceededError,
+    StreamEvent,
+    ToolCall,
+    stream_llm,
+)
 from tests import an_async_generator
 
 
@@ -129,6 +135,63 @@ async def test_stream_with_tools_passthrough_no_tool_calls(mock_stream_llm):
 
 
 @pytest.mark.asyncio
+async def test_stream_with_tools_no_text_length_cutoff_raises_budget_error(mock_stream_llm):
+    """No text + a length cutoff (done.stop_reason in the length set) → budget
+    error, so the frontend tells the user to raise max output tokens. Pins the
+    stop_reason-based branch added to de-coarsen the no-text error."""
+    from bibilab.config import AIConfig
+    from bibilab.routers.chat import stream_with_tools
+
+    cfg = AIConfig(protocol="openai", model="gpt-4o", api_key="test", base_url="")
+
+    async def fake_stream_length(messages, cfg, tools=None, system=None):
+        # Thinking ate the whole budget — cut off at the token limit, no text.
+        yield StreamEvent(type="done", stop_reason="length")
+
+    async def noop(*args, **kwargs):
+        return {}
+
+    mock_stream_llm.side_effect = fake_stream_length
+    with pytest.raises(LLMOutputBudgetExceededError, match="output token limit"):
+        async for _ in stream_with_tools(
+            messages=[{"role": "user", "content": "hi"}],
+            cfg=cfg,
+            tools=[],
+            execute_tool_fn=noop,
+        ):
+            pass
+
+
+@pytest.mark.asyncio
+async def test_stream_with_tools_no_text_normal_stop_raises_empty_error(mock_stream_llm):
+    """No text but NOT a length cutoff (normal stop / unknown reason) →
+    LLMEmptyResponseError, not a budget error: we must not give false
+    'raise max output tokens' advice for a refusal or transient blank."""
+    from bibilab.config import AIConfig
+    from bibilab.pipeline._shared import LLMEmptyResponseError
+    from bibilab.routers.chat import stream_with_tools
+
+    cfg = AIConfig(protocol="openai", model="gpt-4o", api_key="test", base_url="")
+
+    async def fake_stream_empty(messages, cfg, tools=None, system=None):
+        # Stream ended normally with no text (e.g. a refusal that emitted nothing).
+        yield StreamEvent(type="done", stop_reason="stop")
+
+    async def noop(*args, **kwargs):
+        return {}
+
+    mock_stream_llm.side_effect = fake_stream_empty
+    with pytest.raises(LLMEmptyResponseError, match="no text content"):
+        async for _ in stream_with_tools(
+            messages=[{"role": "user", "content": "hi"}],
+            cfg=cfg,
+            tools=[],
+            execute_tool_fn=noop,
+        ):
+            pass
+
+
+@pytest.mark.asyncio
 async def test_stream_with_tools_loopback_find_passages(mock_stream_llm):
     """LLM calls find_passages -> execute -> feed result -> second LLM turn."""
     from bibilab.config import AIConfig
@@ -212,16 +275,22 @@ async def test_stream_with_tools_max_iterations_graceful(mock_stream_llm):
 
     mock_stream_llm.side_effect = fake_stream
     events = []
-    async for event in stream_with_tools(
-        messages=[{"role": "user", "content": "hi"}],
-        cfg=cfg,
-        tools=[FIND_PASSAGES_TOOL],
-        execute_tool_fn=fake_execute,
-    ):
-        events.append(event)
+    # The mock never yields a done event, so last_stop_reason stays None (not a
+    # length cutoff) → empty-response error, not a budget error.
+    with pytest.raises(LLMEmptyResponseError, match="no text content"):
+        async for event in stream_with_tools(
+            messages=[{"role": "user", "content": "hi"}],
+            cfg=cfg,
+            tools=[FIND_PASSAGES_TOOL],
+            execute_tool_fn=fake_execute,
+        ):
+            events.append(event)
 
     error_events = [e for e in events if e.type == "error"]
-    assert len(error_events) == 0, f"No hard error — forced synthesis instead. Got error events: {error_events}"
+    assert len(error_events) == 0, (
+        f"No hard error event — the typed no-text exception surfaces the "
+        f"no-text condition. Got error events: {error_events}"
+    )
 
     # MAX_TOOL_ITERATIONS tool-using turns + 1 synthesis turn + 1 forced synthesis
     # (forced synthesis kicks in because the mock never produces text).

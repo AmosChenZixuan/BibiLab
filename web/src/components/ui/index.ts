@@ -5,6 +5,7 @@ export { Input } from "./Input";
 export { Select } from "./Select";
 export { Panel } from "./Panel";
 export { SettingsField } from "./SettingsField";
+export { SlotSlider } from "./SlotSlider";
 export { StatusChip } from "./StatusChip";
 export { Spinner } from "./Spinner";
 export { Thumbnail } from "./Thumbnail";

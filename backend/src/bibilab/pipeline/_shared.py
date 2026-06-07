@@ -28,13 +28,14 @@ def count_tokens(text: str) -> int:
     return len(_enc.encode(text))
 
 
-# Output budget bounds. The ceiling is a generous fixed cap that comfortably
-# fits extended thinking + a full answer for every role (chat, digest, artifact,
-# summary) — large models routinely spend 10K+ tokens thinking. The margin
-# absorbs tokenizer drift (we estimate with cl100k; providers use their own)
-# and per-message framing overhead.
-_OUTPUT_CEILING = 32768
+# Input-side margin. Absorbs tokenizer drift (cl100k vs. provider-native) and
+# per-message framing overhead. Single-knob; no per-tier ceiling.
 _INPUT_MARGIN = 2048
+
+# stop_reason (Anthropic) / finish_reason (OpenAI) values that mean the model
+# was cut off by the output token limit. Only these justify a "raise max output
+# tokens" hint — any other no-text ending is an empty response, not a budget cap.
+_LENGTH_STOP_REASONS = frozenset({"max_tokens", "length"})
 
 
 class ContextWindowExceededError(ValueError):
@@ -43,28 +44,54 @@ class ContextWindowExceededError(ValueError):
     an i18n error code, pipeline stages surface its message as the job error."""
 
 
-def resolve_max_tokens(cfg: AIConfig, input_text: str) -> int:
-    """Auto-scale the per-call output budget from the configured context window.
+class LLMOutputBudgetExceededError(ValueError):
+    """LLM returned no text AND was cut off by the output token limit
+    (stop_reason/finish_reason in _LENGTH_STOP_REASONS) — thinking or generation
+    exhausted the budget. Subclasses ValueError so any legacy `except ValueError`
+    continues to catch it. Mapped to llm_output_budget_exceeded in chat router
+    so the frontend can surface a 'raise max output tokens' hint."""
 
-    max_tokens = min(context_window - estimated_input - margin, ceiling)
 
-    The precise token count only changes the result when input nears the window
-    (otherwise the ceiling binds), so we skip it in the common case: cl100k
-    tokens never exceed UTF-8 byte length, so if the bytes already fit under the
-    ceiling threshold the ceiling wins without encoding (#432).
+class LLMEmptyResponseError(ValueError):
+    """LLM returned no text for a reason *other* than the token limit (normal
+    stop with empty body, a content refusal that yielded nothing, an unknown
+    terminal state). Distinct from LLMOutputBudgetExceededError so the frontend
+    does NOT tell the user to raise max output tokens — that advice is false
+    here. Mapped to llm_empty_response. Often transient, so pipeline retry
+    loops (digest) deliberately do NOT re-raise it immediately."""
 
-    When input alone overflows the window no max_tokens is valid — raise
-    ContextWindowExceededError (callers map it to a stage-appropriate error).
-    """
-    if len(input_text.encode("utf-8")) <= cfg.context_window - _INPUT_MARGIN - _OUTPUT_CEILING:
-        return _OUTPUT_CEILING
-    estimated_input = count_tokens(input_text)
-    available = cfg.context_window - estimated_input - _INPUT_MARGIN
-    if available <= 0:
-        raise ContextWindowExceededError(
-            f"Input (~{estimated_input} tokens) exceeds the {cfg.context_window}-token context window."
+
+def _no_text_error(reason: str | None, max_tokens: int) -> ValueError:
+    """Pick the right no-text error from the terminal stop/finish reason.
+
+    Length cutoff → budget error (raise max output tokens). Anything else
+    (including an unknown/missing reason) → empty-response error, so we never
+    give false budget advice for a refusal or transient blank."""
+    if reason in _LENGTH_STOP_REASONS:
+        return LLMOutputBudgetExceededError(
+            f"LLM hit the output token limit with no text (reason={reason}, max_tokens={max_tokens}). "
+            "Thinking or generation may have consumed the whole budget."
         )
-    return min(available, _OUTPUT_CEILING)
+    return LLMEmptyResponseError(f"LLM returned no text content (reason={reason}, max_tokens={max_tokens}).")
+
+
+def resolve_max_tokens(cfg: AIConfig, input_text: str) -> int:
+    """Return user-chosen max output tokens. Raise if input + output + margin > context_window.
+
+    The output budget is an explicit user setting (cfg.max_output_tokens),
+    not derived from context_window. Single overflow check; no slow path,
+    no dynamic ceiling, no anti-correlation. Chat and pipeline callers
+    re-raise ContextWindowExceededError; structured callers (digest, artifact)
+    treat it as non-retryable.
+    """
+    estimated_input = count_tokens(input_text)
+    if estimated_input + cfg.max_output_tokens + _INPUT_MARGIN > cfg.context_window:
+        raise ContextWindowExceededError(
+            f"Input (~{estimated_input} tokens) + max output "
+            f"({cfg.max_output_tokens} tokens) exceeds the "
+            f"{cfg.context_window}-token context window."
+        )
+    return cfg.max_output_tokens
 
 
 def _serialize_messages(messages: list[dict], system: str | None, tools: "list[ToolDefinition] | None" = None) -> str:
@@ -151,11 +178,7 @@ def _call_llm(
         )
         text_block = next((block for block in msg.content if block.type == "text"), None)
         if text_block is None:
-            stop_reason = getattr(msg, "stop_reason", "unknown")
-            raise ValueError(
-                f"LLM returned no text content (stop_reason={stop_reason}, max_tokens={llm_max_tokens}). "
-                "This may happen when thinking consumes all output tokens."
-            )
+            raise _no_text_error(getattr(msg, "stop_reason", None), llm_max_tokens)
         return text_block.text
 
     # openai (includes OpenAI-compatible providers via base_url)
@@ -170,11 +193,7 @@ def _call_llm(
     )
     content = resp.choices[0].message.content
     if not content:
-        finish_reason = getattr(resp.choices[0], "finish_reason", "unknown")
-        raise ValueError(
-            f"LLM returned no text content (finish_reason={finish_reason}, max_tokens={llm_max_tokens}). "
-            "This may happen when reasoning consumes all output tokens."
-        )
+        raise _no_text_error(getattr(resp.choices[0], "finish_reason", None), llm_max_tokens)
     return content
 
 
@@ -209,6 +228,9 @@ class StreamEvent:
     type: str
     content: str | None = None
     tool_call: ToolCall | None = None
+    # Terminal stop_reason (Anthropic) / finish_reason (OpenAI). Set only on the
+    # "done" event so callers can tell a length cutoff from a normal empty end.
+    stop_reason: str | None = None
 
 
 def _to_openai_tool(tool: ToolDefinition) -> dict:
@@ -256,6 +278,7 @@ async def stream_llm(
         if tools:
             kwargs["tools"] = [_to_anthropic_tool(t) for t in tools]
 
+        stop_reason: str | None = None
         async with client.messages.stream(**kwargs) as stream:
             async for event in stream:
                 if event.type == "content_block_delta":
@@ -272,7 +295,9 @@ async def stream_llm(
                                 arguments=block.input,
                             ),
                         )
-        yield StreamEvent(type="done")
+                elif event.type == "message_delta":
+                    stop_reason = getattr(event.delta, "stop_reason", None) or stop_reason
+        yield StreamEvent(type="done", stop_reason=stop_reason)
     else:
         if cache_key not in _async_client_cache:
             _async_client_cache[cache_key] = AsyncOpenAI(api_key=cfg.api_key, base_url=cfg.base_url or None)
@@ -298,10 +323,13 @@ async def stream_llm(
 
         pending: dict[int, dict] = {}
 
+        finish_reason: str | None = None
         async for chunk in response:
             if not chunk.choices:
                 continue
             choice = chunk.choices[0]
+            if choice.finish_reason:
+                finish_reason = choice.finish_reason
 
             if choice.delta.content:
                 yield StreamEvent(type="delta", content=choice.delta.content)
@@ -336,4 +364,4 @@ async def stream_llm(
                     ),
                 )
 
-        yield StreamEvent(type="done")
+        yield StreamEvent(type="done", stop_reason=finish_reason)

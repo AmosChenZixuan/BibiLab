@@ -162,6 +162,7 @@ export type BibilabConfig = {
     base_url: string;
     output_language?: OutputLanguage;
     context_window: number;
+    max_output_tokens: number;
   };
   transcription: {
     model: string;

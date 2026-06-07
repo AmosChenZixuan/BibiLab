@@ -11,6 +11,7 @@ from bibilab.pipeline._shared import (
     _LANG_INSTRUCTION,
     _STRICT_SUFFIX,
     ContextWindowExceededError,
+    LLMOutputBudgetExceededError,
     _call_llm,
     _lang_output_directive,
     _parse_llm_json_response,
@@ -184,9 +185,12 @@ def digest(
         try:
             raw = _call_llm(p, cfg, llm_timeout=llm_timeout)
             return _parse_response(raw)
-        except ContextWindowExceededError:
-            # Deterministic — retrying with a *larger* prompt (_STRICT_SUFFIX) only
-            # re-overflows. Surface immediately rather than burning two more calls.
+        except (ContextWindowExceededError, LLMOutputBudgetExceededError):
+            # Structural failure — input overflow won't shrink on retry, and
+            # output budget exhaustion is identical across attempts (same
+            # prompt + same budget). Surface immediately rather than burning
+            # two more calls. Transient errors fall through to the generic
+            # except below and get retried.
             raise
         except Exception as exc:
             last_exc = exc
