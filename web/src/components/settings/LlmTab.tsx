@@ -77,10 +77,7 @@ export function LlmTab({ config, onBlur }: LlmTabProps) {
   // Cross-field guard: max_output_tokens must be strictly less than
   // context_window. Surfaced inline so the user sees the issue immediately
   // and can fix it before save.
-  const budgetInvalid =
-    typeof localAi.max_output_tokens === "number" &&
-    typeof localAi.context_window === "number" &&
-    localAi.max_output_tokens >= localAi.context_window;
+  const budgetInvalid = localAi.max_output_tokens >= localAi.context_window;
 
   return (
     <div className="grid gap-3">

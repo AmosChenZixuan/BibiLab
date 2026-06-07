@@ -22,7 +22,6 @@ interface Props<T extends string | number> {
   ariaLabel: string;
   id?: string;
   className?: string;
-  disabled?: boolean;
 }
 
 function clsx(...parts: Array<string | false | null | undefined>): string {
@@ -36,7 +35,6 @@ export function SlotSlider<T extends string | number>({
   ariaLabel,
   id,
   className,
-  disabled = false,
 }: Props<T>) {
   const generatedId = useId();
   const groupId = id ?? generatedId;
@@ -72,12 +70,10 @@ export function SlotSlider<T extends string | number>({
             aria-checked={checked}
             aria-label={option.label}
             tabIndex={checked ? 0 : -1}
-            disabled={disabled}
             onClick={() => {
               if (!checked) onChange(option.value);
             }}
             onKeyDown={(event) => {
-              if (disabled) return;
               if (event.key === "ArrowRight" || event.key === "ArrowDown") {
                 event.preventDefault();
                 const idx = options.findIndex((o) => o.value === value);
@@ -101,7 +97,6 @@ export function SlotSlider<T extends string | number>({
               "flex-1 rounded-lg px-3 py-1.5 text-sm font-medium transition",
               "outline-none focus-visible:ring-2 focus-visible:ring-sky/45",
               checked ? "bg-blue/15 text-blue" : "text-muted hover:text-ink hover:bg-white/60",
-              disabled && "cursor-not-allowed opacity-60",
             )}
           >
             {option.label}
