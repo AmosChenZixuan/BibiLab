@@ -11,7 +11,7 @@ from uuid import uuid4
 import anthropic
 import openai
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import Response, StreamingResponse
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 
 from bibilab.config import AIConfig, BibilabConfig, bibilab_home, get_config
 from bibilab.db import (
@@ -71,6 +71,7 @@ from bibilab.routers._model_gate import require_models_present
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+debug_router = APIRouter()
 
 
 def resolve_response_language(cfg: AIConfig, ui_lang: str) -> str:
@@ -931,3 +932,11 @@ async def cancel_stream(
     if not await assert_message_in_list(message_id, list_id):
         raise HTTPException(404, "Message not in list")
     run_registry.cancel(message_id)
+
+
+@debug_router.get("/debug/messages/{message_id}")
+async def get_debug_dump(message_id: str):
+    path = bibilab_home() / "debug" / f"{message_id}.json"
+    if not path.exists():
+        return JSONResponse(status_code=404, content={"error": "dump_not_found", "message_id": message_id})
+    return Response(content=path.read_bytes(), media_type="application/json")
