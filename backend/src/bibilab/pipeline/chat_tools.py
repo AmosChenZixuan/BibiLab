@@ -196,7 +196,7 @@ _CITATION_INDEX_RE = re.compile(r"^\s*(?:source\s*)?\[?\s*(\d+)\s*\]?\s*$", re.I
 
 async def _resolve_single_source(
     source_ids: list[str],
-    source_id: str | None,
+    source_id: str | int | None,
     sequence_number: int | None,
     season_number: int | None,
     registry: dict[str, CitationRegistryEntry] | None = None,
@@ -209,10 +209,16 @@ async def _resolve_single_source(
     SSE stream).
     """
     if source_id is not None:
-        match = _CITATION_INDEX_RE.match(source_id)
-        if not match:
+        # A bare int is the cleanest form of the index — use it directly. Only a
+        # string needs the anchored regex, whose job is to peel "[5]"/"5"/"Source
+        # [5]" while rejecting stray titles like "Episode 5 discussion". Anything
+        # else fails loud (returned, never raised — a raise aborts the SSE stream).
+        if isinstance(source_id, int):
+            idx = source_id
+        elif isinstance(source_id, str) and (match := _CITATION_INDEX_RE.match(source_id)):
+            idx = int(match.group(1))
+        else:
             return None, 'source_id must be a citation index like "[5]".'
-        idx = int(match.group(1))
         for entry in (registry or {}).values():
             if entry.index == idx and entry.source_id in source_ids:
                 return entry.source_id, None
@@ -291,7 +297,7 @@ def _build_source_narrative(source: dict, segments: list, idx: int) -> str:
 
 async def execute_read_source(
     source_ids: list[str],
-    source_id: str | None,
+    source_id: str | int | None,
     sequence_number: int | None,
     season_number: int | None,
     registry: dict[str, CitationRegistryEntry] | None = None,

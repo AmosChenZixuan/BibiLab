@@ -51,6 +51,36 @@ async def test_resolve_by_citation_index_bare_int_and_source_prefix():
 
 
 @pytest.mark.asyncio
+async def test_resolve_by_citation_index_bare_int_arg():
+    """A non-string int arg (an LLM may emit source_id: 5 as a JSON number
+    despite the string schema) is the cleanest index form — used directly,
+    never round-tripped through the regex, never raised on."""
+    rid, err = await _resolve_single_source(
+        ["a"],
+        source_id=5,
+        sequence_number=None,
+        season_number=None,
+        registry={"a": CitationRegistryEntry(index=5, source_id="a", title="Ep 5")},
+    )
+    assert rid == "a" and err is None
+
+
+@pytest.mark.asyncio
+async def test_resolve_by_non_str_non_int_fails_loud():
+    """A wholly wrong type (e.g. a list) must fail loud with the LLM-facing
+    string, never raise — a raise aborts the SSE stream."""
+    rid, err = await _resolve_single_source(
+        ["a"],
+        source_id=["5"],
+        sequence_number=None,
+        season_number=None,
+        registry={"a": CitationRegistryEntry(index=5, source_id="a", title="Ep 5")},
+    )
+    assert rid is None
+    assert "citation index" in err
+
+
+@pytest.mark.asyncio
 async def test_resolve_by_citation_index_unmapped_errors():
     """An [N] that exists syntactically but the registry has no entry for →
     'call find_passages first' error. Fail loud, no silent mis-resolution.
