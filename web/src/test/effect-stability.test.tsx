@@ -39,7 +39,7 @@ vi.mock("@/lib/api", async () => {
 
 const baseConfig: BibilabConfig = {
   accounts: { bilibili: { cookie: "", username: "", avatar_url: "" } },
-  ai: { protocol: "openai", model: "gpt-4o", api_key: "", base_url: "", context_window: 128000 },
+  ai: { protocol: "openai", model: "gpt-4o", api_key: "", base_url: "", context_window: 128000, max_output_tokens: 16384 },
   transcription: {
     model: "large-v3",
     device: "cpu",

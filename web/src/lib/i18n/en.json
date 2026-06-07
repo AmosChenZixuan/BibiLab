@@ -50,8 +50,11 @@
     "outputLanguageFollowUi": "Follow UI",
     "outputLanguageEnglish": "English",
     "outputLanguageChinese": "Chinese",
-    "contextWindow": "Context Window (tokens)",
-    "contextWindowDesc": "Total token window your model supports. The per-call output budget auto-scales from this.",
+    "contextWindow": "Model context window",
+    "contextWindowDesc": "Total token window your model supports. The per-call output budget is set separately below.",
+    "maxOutputTokens": "Maximum output tokens",
+    "maxOutputTokensDesc": "Output budget per LLM call. Default 16K. Raise this if the model returns incomplete answers or runs out of thinking space. Must be smaller than the context window above.",
+    "maxOutputTokensTooLarge": "Maximum output tokens must be smaller than the context window.",
     "backendApi": "Backend API",
     "backendRequired": "Required. If the backend is offline, the web app cannot load or save configuration.",
     "maxConcurrentJobs": "Max Concurrent Jobs",
@@ -288,6 +291,7 @@
       "llm_rate_limit_error": "AI provider rate limit exceeded",
       "llm_api_error": "AI provider error",
       "llm_context_window_exceeded": "Input exceeds the model's context window",
+      "llm_output_budget_exceeded": "The model used all available output space. Try raising max output tokens in Settings → LLM.",
       "internal_error": "An internal error occurred"
     }
   },

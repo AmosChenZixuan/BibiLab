@@ -5,7 +5,7 @@ import threading
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, field_validator, model_validator
 
 logger = logging.getLogger(__name__)
 
@@ -46,11 +46,25 @@ class AIConfig(BaseModel):
     api_key: str = ""
     base_url: str = "https://api.openai.com/v1"
     output_language: str = "ui"  # ui | zh | en | ...; "ui" means follow UI language
-    # Total token window of the configured model (input + output). The per-call
-    # output budget is auto-scaled from this — see resolve_max_tokens. Default
-    # 128K covers most modern cloud and local models; lower it for small local
+    # Total token window of the configured model (input + output). Used by
+    # resolve_max_tokens as the input-side fail-loud threshold. Default 128K
+    # covers most modern cloud and local models; lower it for small local
     # models to keep input + reserved output inside their real window.
     context_window: int = 128000
+    # Per-call output budget. User-chosen from the LLM tab's 4-position
+    # slot slider (16K / 32K / 64K / 100K). Default 16K matches the
+    # observed upper bound on thinking + answer for all real tasks (digest,
+    # chat, eval generate). See resolve_max_tokens for the overflow check.
+    max_output_tokens: int = 16384
+
+    @model_validator(mode="after")
+    def _output_fits_in_window(self) -> "AIConfig":
+        if self.max_output_tokens >= self.context_window:
+            raise ValueError(
+                f"max_output_tokens ({self.max_output_tokens}) must be less than "
+                f"context_window ({self.context_window})."
+            )
+        return self
 
 
 class TranscriptionConfig(BaseModel):

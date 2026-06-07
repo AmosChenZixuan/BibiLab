@@ -14,7 +14,7 @@ vi.mock("../lib/api", () => {
   const mockApi = {
     getConfig: vi.fn().mockResolvedValue({
       accounts: { bilibili: { cookie: "", username: "", avatar_url: "" } },
-      ai: { protocol: "openai", model: "gpt-4o", api_key: "", base_url: "", context_window: 128000 },
+      ai: { protocol: "openai", model: "gpt-4o", api_key: "", base_url: "", context_window: 128000, max_output_tokens: 16384 },
       transcription: {
         model: "large-v3",
         device: "cpu",
@@ -155,7 +155,7 @@ describe("settings page", () => {
       });
     vi.mocked(api.putConfig).mockResolvedValueOnce({
       accounts: { bilibili: { cookie: "", username: "", avatar_url: "" } },
-      ai: { protocol: "openai", model: "gpt-4o", api_key: "", base_url: "", context_window: 128000 },
+      ai: { protocol: "openai", model: "gpt-4o", api_key: "", base_url: "", context_window: 128000, max_output_tokens: 16384 },
       transcription: {
         model: "large-v3",
         device: "cpu",
@@ -167,7 +167,7 @@ describe("settings page", () => {
 
     renderPage();
 
-    const modelInput = await screen.findByLabelText(/model/i);
+    const modelInput = await screen.findByLabelText("Model");
     fireEvent.change(modelInput, { target: { value: "gpt-4.1" } });
     fireEvent.blur(modelInput);
 
@@ -178,7 +178,7 @@ describe("settings page", () => {
   test("does not save when the config value did not change", async () => {
     renderPage();
 
-    const modelInput = await screen.findByLabelText(/model/i);
+    const modelInput = await screen.findByLabelText("Model");
     fireEvent.blur(modelInput);
 
     expect(api.putConfig).not.toHaveBeenCalled();
@@ -188,7 +188,7 @@ describe("settings page", () => {
   test("does not refresh health for non-health-affecting config changes", async () => {
     vi.mocked(api.putConfig).mockResolvedValueOnce({
       accounts: { bilibili: { cookie: "", username: "", avatar_url: "" } },
-      ai: { protocol: "openai", model: "gpt-4o", api_key: "", base_url: "", context_window: 128000 },
+      ai: { protocol: "openai", model: "gpt-4o", api_key: "", base_url: "", context_window: 128000, max_output_tokens: 16384 },
       transcription: {
         model: "large-v3",
         device: "cpu",

@@ -39,6 +39,7 @@ from bibilab.models.chat import (
 from bibilab.pipeline._shared import (
     _LANG_NATIVE_NAME,
     ContextWindowExceededError,
+    LLMOutputBudgetExceededError,
     StreamEvent,
     ToolCall,
     ToolDefinition,
@@ -106,6 +107,7 @@ MAX_TOOL_ITERATIONS = 3
 
 _ERROR_CODE_MAP: tuple[tuple[type[Exception], str], ...] = (
     (ContextWindowExceededError, "llm_context_window_exceeded"),
+    (LLMOutputBudgetExceededError, "llm_output_budget_exceeded"),
     (openai.APIConnectionError, "llm_connection_error"),
     (anthropic.APIConnectionError, "llm_connection_error"),
     (openai.AuthenticationError, "llm_auth_error"),
@@ -288,6 +290,7 @@ async def stream_with_tools(
     citation_emitted = False
     tool_used = False
     text_generated = False
+    error_yielded = False
 
     def _build_lookup() -> dict[int, CitationRegistryEntry]:
         return {e.index: e for e in registry.values()}
@@ -352,6 +355,7 @@ async def stream_with_tools(
                 synth_text_parts: list[str] = []
                 async for event in stream_llm(messages, cfg, [], system=system):
                     if event.type == "delta" and event.content:
+                        text_generated = True
                         synth_text_parts.append(event.content)
                         parsed_events, parse_buffer = parse_delta(event.content, parse_buffer, lookup)
                         for pe in parsed_events:
@@ -361,6 +365,8 @@ async def stream_with_tools(
                     else:
                         # Forward error/other events so producer-side error handling
                         # can capture failures during forced synthesis.
+                        if event.type == "error":
+                            error_yielded = True
                         yield event
                 for pe in flush_buffer(parse_buffer):
                     yield pe
@@ -375,6 +381,18 @@ async def stream_with_tools(
                         response_text="".join(synth_text_parts),
                         response_tool_calls=[],
                     )
+            # If the LLM produced no visible text across the whole turn
+            # (first turn with no tools, tool-using turn where the model
+            # never produced text, or forced synthesis also empty), surface
+            # it as a typed error so classify_error maps to
+            # llm_output_budget_exceeded. Without this, an empty assistant
+            # message would be persisted silently. Skip the raise if an
+            # error event was already yielded — that path is the real cause
+            # and the caller will surface it through classify_error.
+            if not text_generated and not error_yielded:
+                raise LLMOutputBudgetExceededError(
+                    "LLM produced no visible text. Output budget may be exhausted by thinking."
+                )
             if not citation_emitted and registry:
                 logger.info(
                     "citations_missing_after_retrieve registry_size=%d",

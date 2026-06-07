@@ -28,12 +28,8 @@ def count_tokens(text: str) -> int:
     return len(_enc.encode(text))
 
 
-# Output budget bounds. The ceiling is a generous fixed cap that comfortably
-# fits extended thinking + a full answer for every role (chat, digest, artifact,
-# summary) — large models routinely spend 10K+ tokens thinking. The margin
-# absorbs tokenizer drift (we estimate with cl100k; providers use their own)
-# and per-message framing overhead.
-_OUTPUT_CEILING = 32768
+# Input-side margin. Absorbs tokenizer drift (cl100k vs. provider-native) and
+# per-message framing overhead. Single-knob; no per-tier ceiling.
 _INPUT_MARGIN = 2048
 
 
@@ -43,28 +39,30 @@ class ContextWindowExceededError(ValueError):
     an i18n error code, pipeline stages surface its message as the job error."""
 
 
+class LLMOutputBudgetExceededError(ValueError):
+    """LLM returned no text content — output budget was exhausted by thinking
+    or generation. Subclasses ValueError so any legacy `except ValueError`
+    continues to catch it. Mapped to llm_output_budget_exceeded in chat router
+    so the frontend can surface a 'raise max output tokens' hint."""
+
+
 def resolve_max_tokens(cfg: AIConfig, input_text: str) -> int:
-    """Auto-scale the per-call output budget from the configured context window.
+    """Return user-chosen max output tokens. Raise if input + output + margin > context_window.
 
-    max_tokens = min(context_window - estimated_input - margin, ceiling)
-
-    The precise token count only changes the result when input nears the window
-    (otherwise the ceiling binds), so we skip it in the common case: cl100k
-    tokens never exceed UTF-8 byte length, so if the bytes already fit under the
-    ceiling threshold the ceiling wins without encoding (#432).
-
-    When input alone overflows the window no max_tokens is valid — raise
-    ContextWindowExceededError (callers map it to a stage-appropriate error).
+    The output budget is an explicit user setting (cfg.max_output_tokens),
+    not derived from context_window. Single overflow check; no slow path,
+    no dynamic ceiling, no anti-correlation. Chat and pipeline callers
+    re-raise ContextWindowExceededError; structured callers (digest, artifact)
+    treat it as non-retryable.
     """
-    if len(input_text.encode("utf-8")) <= cfg.context_window - _INPUT_MARGIN - _OUTPUT_CEILING:
-        return _OUTPUT_CEILING
     estimated_input = count_tokens(input_text)
-    available = cfg.context_window - estimated_input - _INPUT_MARGIN
-    if available <= 0:
+    if estimated_input + cfg.max_output_tokens + _INPUT_MARGIN > cfg.context_window:
         raise ContextWindowExceededError(
-            f"Input (~{estimated_input} tokens) exceeds the {cfg.context_window}-token context window."
+            f"Input (~{estimated_input} tokens) + max output "
+            f"({cfg.max_output_tokens} tokens) exceeds the "
+            f"{cfg.context_window}-token context window."
         )
-    return min(available, _OUTPUT_CEILING)
+    return cfg.max_output_tokens
 
 
 def _serialize_messages(messages: list[dict], system: str | None, tools: "list[ToolDefinition] | None" = None) -> str:
@@ -152,7 +150,7 @@ def _call_llm(
         text_block = next((block for block in msg.content if block.type == "text"), None)
         if text_block is None:
             stop_reason = getattr(msg, "stop_reason", "unknown")
-            raise ValueError(
+            raise LLMOutputBudgetExceededError(
                 f"LLM returned no text content (stop_reason={stop_reason}, max_tokens={llm_max_tokens}). "
                 "This may happen when thinking consumes all output tokens."
             )
@@ -171,7 +169,7 @@ def _call_llm(
     content = resp.choices[0].message.content
     if not content:
         finish_reason = getattr(resp.choices[0], "finish_reason", "unknown")
-        raise ValueError(
+        raise LLMOutputBudgetExceededError(
             f"LLM returned no text content (finish_reason={finish_reason}, max_tokens={llm_max_tokens}). "
             "This may happen when reasoning consumes all output tokens."
         )

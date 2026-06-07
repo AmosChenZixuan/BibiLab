@@ -7,7 +7,14 @@ import type { BibilabConfig } from "@/lib/types";
 
 const baseConfig: BibilabConfig = {
   accounts: { bilibili: { cookie: "", username: "", avatar_url: "" } },
-  ai: { protocol: "openai", model: "gpt-4o", api_key: "", base_url: "", context_window: 128000 },
+  ai: {
+    protocol: "openai",
+    model: "gpt-4o",
+    api_key: "",
+    base_url: "",
+    context_window: 128000,
+    max_output_tokens: 16384,
+  },
   transcription: {
     model: "large-v3",
     device: "cpu",
@@ -41,10 +48,12 @@ describe("llm tab", () => {
       </LanguageProvider>,
     );
 
-    fireEvent.change(screen.getByLabelText(/model/i), {
-      target: { value: "gpt-4-turbo" },
-    });
-    fireEvent.blur(screen.getByLabelText(/model/i));
+    // Use exact label "Model" (not the regex /model/i) — the new
+    // "Model context window" SlotSlider label also contains the substring
+    // "model" and would match a loose query.
+    const modelInput = screen.getByLabelText("Model");
+    fireEvent.change(modelInput, { target: { value: "gpt-4-turbo" } });
+    fireEvent.blur(modelInput);
 
     expect(onBlur).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -62,10 +71,9 @@ describe("llm tab", () => {
       </LanguageProvider>,
     );
 
-    fireEvent.change(screen.getByLabelText(/base url/i), {
-      target: { value: "https://api.openai.com/v1" },
-    });
-    fireEvent.blur(screen.getByLabelText(/base url/i));
+    const baseUrlInput = screen.getByLabelText("Base URL");
+    fireEvent.change(baseUrlInput, { target: { value: "https://api.openai.com/v1" } });
+    fireEvent.blur(baseUrlInput);
 
     expect(onBlur).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -82,14 +90,14 @@ describe("llm tab", () => {
     );
 
     expect(screen.getByText(/Required\. OpenAI, DeepSeek, GLM, Ollama, and other OpenAI-compatible providers/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/base url/i)).toHaveAttribute("placeholder", "https://api.openai.com/v1");
+    expect(screen.getByLabelText("Base URL")).toHaveAttribute("placeholder", "https://api.openai.com/v1");
 
-    fireEvent.change(screen.getByLabelText(/provider/i), {
+    fireEvent.change(screen.getByLabelText("Provider"), {
       target: { value: "anthropic" },
     });
 
     expect(screen.getByText(/Anthropic API base URL/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/base url/i)).toHaveAttribute("placeholder", "https://api.anthropic.com/v1");
+    expect(screen.getByLabelText("Base URL")).toHaveAttribute("placeholder", "https://api.anthropic.com/v1");
   });
 
   test("calls onBlur with the selected context window preset as a number", () => {
@@ -101,15 +109,63 @@ describe("llm tab", () => {
       </LanguageProvider>,
     );
 
-    const field = screen.getByLabelText(/context window/i);
-    fireEvent.change(field, { target: { value: "200000" } });
-    fireEvent.blur(field);
+    // SlotSlider renders a radiogroup; scope to the context_window group first
+    // because both sliders share a 64K slot.
+    const ctxGroup = screen.getByRole("radiogroup", { name: /context window/i });
+    const slot = ctxGroup.querySelector('[role="radio"][aria-label="200K"]') as HTMLElement;
+    fireEvent.click(slot);
 
     expect(onBlur).toHaveBeenCalledWith(
       expect.objectContaining({
         ai: expect.objectContaining({ context_window: 200000 }),
       }),
     );
+  });
+
+  test("calls onBlur with the selected max output tokens preset as a number", () => {
+    const onBlur = vi.fn();
+
+    render(
+      <LanguageProvider>
+        <LlmTab config={baseConfig} onBlur={onBlur} />
+      </LanguageProvider>,
+    );
+
+    const maxGroup = screen.getByRole("radiogroup", { name: /maximum output/i });
+    const slot = maxGroup.querySelector('[role="radio"][aria-label="64K"]') as HTMLElement;
+    fireEvent.click(slot);
+
+    expect(onBlur).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ai: expect.objectContaining({ max_output_tokens: 65536 }),
+      }),
+    );
+  });
+
+  test("shows inline error when max output tokens >= context window", () => {
+    const config = {
+      ...baseConfig,
+      ai: { ...baseConfig.ai, context_window: 64000, max_output_tokens: 64000 },
+    };
+    render(
+      <LanguageProvider>
+        <LlmTab config={config} onBlur={() => {}} />
+      </LanguageProvider>,
+    );
+
+    // The cross-field validator surfaces the issue as a paragraph with role=alert.
+    const alert = screen.getByRole("alert");
+    expect(alert).toHaveTextContent(/smaller than the context window/i);
+  });
+
+  test("no inline error when max output tokens < context window", () => {
+    render(
+      <LanguageProvider>
+        <LlmTab config={baseConfig} onBlur={() => {}} />
+      </LanguageProvider>,
+    );
+
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
   test("api_key input type toggles between password and text", () => {

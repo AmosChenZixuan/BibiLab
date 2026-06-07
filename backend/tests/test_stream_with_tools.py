@@ -7,7 +7,7 @@ import httpx
 import openai
 import pytest
 
-from bibilab.pipeline._shared import StreamEvent, ToolCall, stream_llm
+from bibilab.pipeline._shared import LLMOutputBudgetExceededError, StreamEvent, ToolCall, stream_llm
 from tests import an_async_generator
 
 
@@ -129,6 +129,38 @@ async def test_stream_with_tools_passthrough_no_tool_calls(mock_stream_llm):
 
 
 @pytest.mark.asyncio
+async def test_stream_with_tools_raises_on_no_text_first_turn(mock_stream_llm):
+    """When the LLM yields no delta events on a first turn (no tools, no text),
+    stream_with_tools raises LLMOutputBudgetExceededError so the empty-response
+    case is not persisted silently. This is the no-content detection added to
+    fix the silent-empty-assistant-message bug."""
+    from bibilab.config import AIConfig
+    from bibilab.pipeline._shared import LLMOutputBudgetExceededError
+    from bibilab.routers.chat import stream_with_tools
+
+    cfg = AIConfig(protocol="openai", model="gpt-4o", api_key="test", base_url="")
+
+    async def fake_stream_only_done(messages, cfg, tools=None, system=None):
+        # LLM produced no text — only a done event. This simulates thinking
+        # consuming all output budget, or a refusal that yielded nothing visible.
+        yield StreamEvent(type="done")
+
+    async def noop(*args, **kwargs):
+        return {}
+
+    mock_stream_llm.side_effect = fake_stream_only_done
+    with pytest.raises(LLMOutputBudgetExceededError, match="no visible text"):
+        events: list = []
+        async for event in stream_with_tools(
+            messages=[{"role": "user", "content": "hi"}],
+            cfg=cfg,
+            tools=[],
+            execute_tool_fn=noop,
+        ):
+            events.append(event)
+
+
+@pytest.mark.asyncio
 async def test_stream_with_tools_loopback_find_passages(mock_stream_llm):
     """LLM calls find_passages -> execute -> feed result -> second LLM turn."""
     from bibilab.config import AIConfig
@@ -212,16 +244,20 @@ async def test_stream_with_tools_max_iterations_graceful(mock_stream_llm):
 
     mock_stream_llm.side_effect = fake_stream
     events = []
-    async for event in stream_with_tools(
-        messages=[{"role": "user", "content": "hi"}],
-        cfg=cfg,
-        tools=[FIND_PASSAGES_TOOL],
-        execute_tool_fn=fake_execute,
-    ):
-        events.append(event)
+    with pytest.raises(LLMOutputBudgetExceededError, match="no visible text"):
+        async for event in stream_with_tools(
+            messages=[{"role": "user", "content": "hi"}],
+            cfg=cfg,
+            tools=[FIND_PASSAGES_TOOL],
+            execute_tool_fn=fake_execute,
+        ):
+            events.append(event)
 
     error_events = [e for e in events if e.type == "error"]
-    assert len(error_events) == 0, f"No hard error — forced synthesis instead. Got error events: {error_events}"
+    assert len(error_events) == 0, (
+        f"No hard error event — the LLMOutputBudgetExceededError surfaces the "
+        f"no-text condition. Got error events: {error_events}"
+    )
 
     # MAX_TOOL_ITERATIONS tool-using turns + 1 synthesis turn + 1 forced synthesis
     # (forced synthesis kicks in because the mock never produces text).
