@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useLanguage } from "@/app/LanguageContext";
 import { TEST_IDS } from "@/lib/test-ids";
 import { DebugHeader } from "./DebugHeader";
 import { isMessageEnvelope, isToolCall, isToolDefinition } from "./envelopeHints";
@@ -18,7 +19,7 @@ export function DebugDrawer({
     system?: string;
     tools?: unknown[];
     messages?: unknown[];
-    response?: { text: string; tool_calls?: unknown[] };
+    response?: { text: string };
     model?: string;
     timestamp?: string;
   };
@@ -154,11 +155,8 @@ function MessageCard({ value }: { value: unknown }) {
   );
 }
 
-function FinalCard({
-  response,
-}: {
-  response: { text: string; tool_calls?: unknown[] };
-}) {
+function FinalCard({ response }: { response: { text: string } }) {
+  const { t } = useLanguage();
   return (
     <div className="mt-3">
       <div className="flex items-center gap-2 mb-2">
@@ -166,7 +164,7 @@ function FinalCard({
           assistant
         </span>
         <span className="text-xs text-(--color-pink) font-medium">
-          FINAL · 用户看到的回答
+          FINAL · {t("debug.final")}
         </span>
       </div>
       <div className="rounded-xl bg-white p-3 border border-(--color-border) border-l-4 border-l-(--color-pink)">

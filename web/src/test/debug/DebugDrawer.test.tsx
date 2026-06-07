@@ -23,7 +23,7 @@ const dump = {
     },
     { role: "tool", tool_call_id: "c1", content: "[1] Result text" },
   ],
-  response: { text: "Final answer.", tool_calls: [] },
+  response: { text: "Final answer." },
   model: "gpt-4o",
   timestamp: "2026-06-06T14:23:11+08:00",
 };

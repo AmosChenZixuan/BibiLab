@@ -496,14 +496,13 @@ def _dump_turn(
     messages: list[dict],
     tools: list[ToolDefinition],
     response_text: str = "",
-    response_tool_calls: list[dict] | None = None,
     model: str = "",
     timestamp: str = "",
 ) -> None:
     """Best-effort write of one chat turn's final LLM state.
 
     `debug_path` is the full file path (e.g. `~/.bibilab/debug/{message_id}.json`),
-    not a directory. Writes {system, tools, messages, response: {text, tool_calls},
+    not a directory. Writes {system, tools, messages, response: {text},
     model, timestamp} verbatim as JSON. The final LLM call's `messages` is the
     cumulative state — it already contains all prior tool results — so one file
     per message captures the final state the LLM actually saw. All errors are
@@ -516,7 +515,6 @@ def _dump_turn(
             "messages": messages,
             "response": {
                 "text": response_text,
-                "tool_calls": response_tool_calls or [],
             },
             "model": model,
             "timestamp": timestamp,
@@ -687,7 +685,6 @@ async def run_chat_turn(
                 messages=final_messages,
                 tools=tools,
                 response_text="".join(assistant_text_deltas),
-                response_tool_calls=[],
                 model=cfg.ai.model,
                 timestamp=datetime.now().astimezone().isoformat(timespec="seconds"),
             )

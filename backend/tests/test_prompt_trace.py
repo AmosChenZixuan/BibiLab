@@ -30,13 +30,11 @@ def test_dump_turn_writes_one_file_per_message(tmp_bibilab_home):
         messages=[{"role": "user", "content": "q"}],
         tools=[],
         response_text="answer",
-        response_tool_calls=[],
     )
     payload = json.loads(debug_path.read_text())
     assert payload["system"] == "sys"
     assert payload["messages"] == [{"role": "user", "content": "q"}]
     assert payload["response"]["text"] == "answer"
-    assert payload["response"]["tool_calls"] == []
 
 
 def test_dump_turn_preserves_cjk(tmp_bibilab_home):
@@ -107,7 +105,6 @@ def test_dump_turn_includes_model_and_timestamp(tmp_bibilab_home):
         messages=[],
         tools=[],
         response_text="r",
-        response_tool_calls=[],
         model="gpt-4o",
         timestamp="2026-06-06T14:23:11+08:00",
     )
