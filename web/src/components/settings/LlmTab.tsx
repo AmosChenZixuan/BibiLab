@@ -63,6 +63,17 @@ export function LlmTab({ config, onBlur }: LlmTabProps) {
     commitChange(localAi);
   }
 
+  // Update local state for every selection (so the inline alert reflects the
+  // chosen value), but only persist a pair the backend validator accepts:
+  // max_output_tokens must be strictly less than context_window. Committing an
+  // invalid pair would just bounce off the pydantic model_validator with a 422.
+  function applyAi(next: typeof localAi) {
+    setLocalAi(next);
+    if (next.max_output_tokens < next.context_window) {
+      commitChange(next);
+    }
+  }
+
   // Cross-field guard: max_output_tokens must be strictly less than
   // context_window. Surfaced inline so the user sees the issue immediately
   // and can fix it before save.
@@ -185,11 +196,7 @@ export function LlmTab({ config, onBlur }: LlmTabProps) {
         <SlotSlider
           ariaLabel={t("settings.contextWindow")}
           id={contextWindowId}
-          onChange={(value) => {
-            const next = { ...localAi, context_window: value };
-            setLocalAi(next);
-            commitChange(next);
-          }}
+          onChange={(value) => applyAi({ ...localAi, context_window: value })}
           options={CONTEXT_WINDOW_OPTIONS}
           value={localAi.context_window}
         />
@@ -203,11 +210,7 @@ export function LlmTab({ config, onBlur }: LlmTabProps) {
         <SlotSlider
           ariaLabel={t("settings.maxOutputTokens")}
           id={maxOutputTokensId}
-          onChange={(value) => {
-            const next = { ...localAi, max_output_tokens: value };
-            setLocalAi(next);
-            commitChange(next);
-          }}
+          onChange={(value) => applyAi({ ...localAi, max_output_tokens: value })}
           options={MAX_OUTPUT_TOKENS_OPTIONS}
           value={localAi.max_output_tokens}
         />

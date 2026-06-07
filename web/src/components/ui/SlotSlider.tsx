@@ -1,4 +1,4 @@
-import { useId } from "react";
+import { useId, useRef } from "react";
 
 /**
  * 4-position segmented control. Renders a radiogroup with one radio per slot;
@@ -41,6 +41,16 @@ export function SlotSlider<T extends string | number>({
   const generatedId = useId();
   const groupId = id ?? generatedId;
 
+  // Roving tabindex: keyboard selection must also move DOM focus to the newly
+  // selected radio, otherwise the focus ring is stranded on the old (now
+  // tabIndex=-1) button while a different one is aria-checked.
+  const buttonRefs = useRef(new Map<string, HTMLButtonElement>());
+
+  function selectAndFocus(next: T) {
+    onChange(next);
+    buttonRefs.current.get(String(next))?.focus();
+  }
+
   return (
     <div
       role="radiogroup"
@@ -53,6 +63,10 @@ export function SlotSlider<T extends string | number>({
         return (
           <button
             key={String(option.value)}
+            ref={(el) => {
+              if (el) buttonRefs.current.set(String(option.value), el);
+              else buttonRefs.current.delete(String(option.value));
+            }}
             type="button"
             role="radio"
             aria-checked={checked}
@@ -67,19 +81,17 @@ export function SlotSlider<T extends string | number>({
               if (event.key === "ArrowRight" || event.key === "ArrowDown") {
                 event.preventDefault();
                 const idx = options.findIndex((o) => o.value === value);
-                const next = options[(idx + 1) % options.length];
-                onChange(next.value);
+                selectAndFocus(options[(idx + 1) % options.length].value);
               } else if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
                 event.preventDefault();
                 const idx = options.findIndex((o) => o.value === value);
-                const prev = options[(idx - 1 + options.length) % options.length];
-                onChange(prev.value);
+                selectAndFocus(options[(idx - 1 + options.length) % options.length].value);
               } else if (event.key === "Home") {
                 event.preventDefault();
-                onChange(options[0].value);
+                selectAndFocus(options[0].value);
               } else if (event.key === "End") {
                 event.preventDefault();
-                onChange(options[options.length - 1].value);
+                selectAndFocus(options[options.length - 1].value);
               } else if (event.key === " " || event.key === "Enter") {
                 event.preventDefault();
                 if (!checked) onChange(option.value);

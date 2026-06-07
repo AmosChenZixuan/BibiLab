@@ -142,6 +142,29 @@ describe("llm tab", () => {
     );
   });
 
+  test("does not commit a selection that makes the budget invalid", () => {
+    const onBlur = vi.fn();
+    // 64K window — selecting a 100K output budget would exceed it, which the
+    // backend validator rejects. The slider must surface the inline error and
+    // hold off the commit rather than fire a doomed PUT.
+    const config = {
+      ...baseConfig,
+      ai: { ...baseConfig.ai, context_window: 64000, max_output_tokens: 16384 },
+    };
+    render(
+      <LanguageProvider>
+        <LlmTab config={config} onBlur={onBlur} />
+      </LanguageProvider>,
+    );
+
+    const maxGroup = screen.getByRole("radiogroup", { name: /maximum output/i });
+    const slot = maxGroup.querySelector('[role="radio"][aria-label="100K"]') as HTMLElement;
+    fireEvent.click(slot);
+
+    expect(onBlur).not.toHaveBeenCalled();
+    expect(screen.getByRole("alert")).toHaveTextContent(/smaller than the context window/i);
+  });
+
   test("shows inline error when max output tokens >= context window", () => {
     const config = {
       ...baseConfig,
