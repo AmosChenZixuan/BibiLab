@@ -262,6 +262,7 @@ export type Message = {
   created_at: string;
   status?: string;
   error?: string | null;
+  has_dump?: boolean;
 };
 
 export interface VideoMetadataMap {

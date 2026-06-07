@@ -98,7 +98,8 @@ class RagConfig(BaseModel):
     max_distance: float = 0.8
     reranking_enabled: bool = True
     hybrid_enabled: bool = True
-    # Opt-in: dump each LLM call (input + response) to ~/.bibilab/debug/{message_id}/call{N}.json (#399).
+    # Opt-in: dump one JSON per chat turn to ~/.bibilab/debug/{message_id}.json,
+    # capturing the final cumulative LLM state (system, tools, messages, response, model, timestamp).
     debug_prompts: bool = False
 
 

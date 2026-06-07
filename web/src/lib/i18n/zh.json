@@ -217,6 +217,9 @@
     "done": "完成",
     "failed": "失败"
   },
+  "debug": {
+    "final": "用户看到的回答"
+  },
   "chat": {
     "header": {
       "title": "聊天"

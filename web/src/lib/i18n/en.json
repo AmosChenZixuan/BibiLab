@@ -217,6 +217,9 @@
     "done": "Done",
     "failed": "Failed"
   },
+  "debug": {
+    "final": "Response shown to user"
+  },
   "chat": {
     "header": {
       "title": "Chat"
