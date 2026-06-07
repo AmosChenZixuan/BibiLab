@@ -17,13 +17,16 @@ npx vitest run --coverage          # Coverage (requires @vitest/coverage-v8)
 ## Code Layout — `src/`
 
 ```
-components/ui/    — primitive components (Button, Modal, Panel, Input, Select, Spinner, StatusChip, SettingsField, Thumbnail, ContextMenu)
+components/ui/    — primitive components (Button, Modal, Panel, Input, Select, SlotSlider, Spinner, StatusChip, SettingsField, Thumbnail, ContextMenu)
+                    SlotSlider — 4-position segmented control (radiogroup, roving tabindex; keyboard nav moves focus + selection); used by LlmTab for context_window / max_output_tokens
 components/auth/  — platform auth modals (BilibiliQrModal)
+components/debug/ — prompt-trace reader: DebugDrawer + DebugHeader (opened from the assistant-bubble </> icon when debug_prompts + has_dump; Styled/Raw toggle over the per-turn dump)
 components/*/     — feature components (lists/, lists/sources/, lists/lab/, lists/hooks/, jobs/, layout/, settings/)
                     lists/hooks/ holds chat hooks: useConversationHistory (history load + reattach eligibility via active_stream_message_id), useSSEStream (send/stop/retryMessage(assistantId)/reattach), useAutoScroll
                     lists/RetrievalLedger — structured ledger rendered above the assistant bubble; three variants (default/empty/pending)
 pages/            — route-level page components
 lib/              — typed api client, types, constants (SSE event types), artifact types, templates, download helpers, health check, i18n, utils
+lib/hooks/        — useDebugDump (fetches GET /debug/messages/:msg_id for the prompt-trace drawer)
 app/              — router, language context
 test/             — Vitest test files + setup
 ```

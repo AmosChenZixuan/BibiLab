@@ -21,7 +21,7 @@ uv run python -m bibilab.main       # Start server (localhost:8765)
 ```
 routers/          — one APIRouter per module; aggregated in main.py
   auth.py           /auth/bilibili/* (QR login, cookie management)
-  chat.py           /lists/:id/chat (SSE streaming + cancel), /lists/:id/chat/:msg_id/stream (reattach), /lists/:id/conversation (CRUD); stream_with_tools loop; classify_error (SDK exception → i18n error code)
+  chat.py           /lists/:id/chat (SSE streaming + cancel), /lists/:id/chat/:msg_id/stream (reattach), /lists/:id/conversation (CRUD), /debug/messages/:msg_id (prompt-trace dump read, debug_router); stream_with_tools loop; classify_error (SDK exception → i18n error code)
   lists.py          /lists/* (CRUD)
   ingest.py         /ingest/url (POST)
   sources.py        /sources/* (source content, covers, rerun, PATCH facets manual edit)
