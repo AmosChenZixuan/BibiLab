@@ -2,6 +2,8 @@
 
 import json
 import logging
+import re
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 
 from bibilab.config import BibilabConfig
@@ -19,10 +21,10 @@ from bibilab.pipeline.transcribe import WhisperSegment, build_speaker_namespace,
 logger = logging.getLogger(__name__)
 
 # Prepended to the LLM-visible find_passages result when facet scoping found
-# no matching source and failed open to the full pool. Fact-only (#16.7 lock):
+# no matching source and failed open to the full pool. Fact-only:
 # the directive (say-so-before-answering) is owned by the prompt, not the
 # tool. The fact is the LLM's sole degraded-scope signal; the directive moves
-# to #372 grounding prompt. English by design: _chunks is LLM-facing.
+# to the grounding prompt. English by design: _chunks is LLM-facing.
 _NO_MATCH_NOTE = "No source matched the requested episode/season; searched all sources instead."
 
 
@@ -51,9 +53,16 @@ def strip_internal(result: dict) -> dict:
     return {k: v for k, v in result.items() if not k.startswith("_")}
 
 
-def _build_source_headers(registry: dict[str, CitationRegistryEntry]) -> str:
+def _build_source_headers(registry: dict[str, CitationRegistryEntry], source_ids: Iterable[str]) -> str:
+    # Bound the LLM-facing source list to the current turn's pool: a source
+    # reseeded from history but de-selected in this turn must not appear here,
+    # or the LLM will see "[5] = …" and try read_source("[5]") only to learn
+    # via the new fail-loud error. The registry itself stays unfiltered — it
+    # is the resolver's lookup table for [N] → source_id.
     lines = []
     for entry in sorted(registry.values(), key=lambda e: e.index):
+        if entry.source_id not in source_ids:
+            continue
         title = entry.title
         lines.append(f'Source [{entry.index}]: "{title}"')
     return "\n".join(lines)
@@ -68,7 +77,7 @@ def _build_fenced_chunks(
     Buckets are emitted in ascending index order; the caller-supplied order
     within each bucket (rerank order) is preserved. The fence makes the
     source boundary structural so the LLM does not graft a proper noun from
-    one source onto another (#297).
+    one source onto another.
     """
     title_by_index = {e.index: e.title for e in registry.values()}
     blocks = []
@@ -104,11 +113,11 @@ def _partition_unseen_chunks(chunks: list, seen_chunk_ids: set[str]) -> list:
     return new
 
 
-# Tool defs + registry for the RAG v2 two-tool surface (#370/#371).
+# Tool defs + registry for the RAG v2 two-tool surface.
 # RETRIEVE_TOOL_NAMES is the set whose tool results carry a replayable chunk
 # array (only find_passages). read_source shares the SAME citation registry and
 # allocates a new [N] when find_passages has not already registered the source
-# this turn (dedup by source_id — spec §5.7).
+# this turn (dedup by source_id).
 FIND_PASSAGES_TOP_K = 8
 
 FIND_PASSAGES_TOOL = ToolDefinition(
@@ -154,19 +163,23 @@ READ_SOURCE_TOOL = ToolDefinition(
         "narrative). Expensive — use only when find_passages shows a source is "
         "on-topic but its fragments miss the specific thing asked, or for "
         "narrative-coverage questions about a named episode/season.\n\n"
-        "Resolves to EXACTLY ONE source. Pass source_id (from a find_passages "
-        "result) OR a facet (sequence_number / season_number). If a facet matches "
-        "multiple sources it errors with the candidates — narrow it or pass "
-        "source_id. For 'what does season N cover', issue parallel read_source "
-        "calls (one per episode), not one fan-out call.\n\n"
+        "Resolves to EXACTLY ONE source. Pass source_id (the [N] citation index "
+        "from a find_passages result) OR a facet (sequence_number / "
+        "season_number). If a facet matches multiple sources it errors with the "
+        "candidates — narrow it or pass source_id. For 'what does season N "
+        "cover', issue parallel read_source calls (one per episode), not one "
+        "fan-out call.\n\n"
         "Examples:\n"
         "  read_source(sequence_number=5)\n"
-        '  read_source(source_id="…from a find_passages result…")'
+        '  read_source(source_id="[5]")'
     ),
     parameters={
         "type": "object",
         "properties": {
-            "source_id": {"type": "string", "description": "Exact source id, e.g. from a find_passages result."},
+            "source_id": {
+                "type": "string",
+                "description": ("Citation index from a find_passages result, e.g. '[5]'. Not a source UUID."),
+            },
             "sequence_number": {"type": "integer", "description": "Episode / part number."},
             "season_number": {"type": "integer", "description": "Season number."},
         },
@@ -176,24 +189,43 @@ READ_SOURCE_TOOL = ToolDefinition(
 
 RETRIEVE_TOOL_NAMES: frozenset[str] = frozenset({FIND_PASSAGES_TOOL.name})
 
+# Anchored: a stray title like "Episode 5 discussion" must NOT silently parse
+# to index 5 — only the LLM's own [N] citation form is accepted.
+_CITATION_INDEX_RE = re.compile(r"^\s*(?:source\s*)?\[?\s*(\d+)\s*\]?\s*$", re.IGNORECASE)
+
 
 async def _resolve_single_source(
     source_ids: list[str],
-    source_id: str | None,
+    source_id: str | int | None,
     sequence_number: int | None,
     season_number: int | None,
+    registry: dict[str, CitationRegistryEntry] | None = None,
 ) -> tuple[str | None, str | None]:
     """Resolve exactly one source from the pool. Returns (source_id, error_msg).
 
-    Strict cardinality contract (spec §5.2): 0 matches → error, >1 → ambiguous
+    Strict cardinality contract: 0 matches → error, >1 → ambiguous
     error with candidates. Errors are LLM-facing strings (English, like the
     fence body), returned in the tool result — never raised (a raise aborts the
     SSE stream).
     """
     if source_id is not None:
-        if source_id in source_ids:
-            return source_id, None
-        return None, f"source_id {source_id!r} is not in this list."
+        # A bare int is the cleanest form of the index — use it directly. Only a
+        # string needs the anchored regex, whose job is to peel "[5]"/"5"/"Source
+        # [5]" while rejecting stray titles like "Episode 5 discussion". Anything
+        # else fails loud (returned, never raised — a raise aborts the SSE stream).
+        if isinstance(source_id, int):
+            idx = source_id
+        elif isinstance(source_id, str) and (match := _CITATION_INDEX_RE.match(source_id)):
+            idx = int(match.group(1))
+        else:
+            return None, 'source_id must be a citation index like "[5]".'
+        for entry in (registry or {}).values():
+            if entry.index == idx and entry.source_id in source_ids:
+                return entry.source_id, None
+        return None, (
+            f"No source [{idx}] in this conversation. Call find_passages first, "
+            "or pass sequence_number / season_number."
+        )
 
     predicates = {
         k: v for k, v in (("sequence_number", sequence_number), ("season_number", season_number)) if v is not None
@@ -235,12 +267,12 @@ def _filter_sources_by_facets(
 
 
 def _build_source_narrative(source: dict, segments: list, idx: int) -> str:
-    """Single source header + continuous timestamped transcript (spec §5.6).
+    """Single source header + continuous timestamped transcript.
 
     Reuses format_turns (include_time) for the speaker-turn body — NOT per-chunk
     fenced. Narrative continuity is the point.
     """
-    # Empty-transcript edge (spec §5.6 / §16.3): SUPPRESS the header — it only
+    # Empty-transcript edge: SUPPRESS the header — it only
     # frames a body, and with no body it just hands the LLM fabrication fuel (a
     # title it already has from the fence). Return the explicit fact ONLY.
     if not segments:
@@ -265,7 +297,7 @@ def _build_source_narrative(source: dict, segments: list, idx: int) -> str:
 
 async def execute_read_source(
     source_ids: list[str],
-    source_id: str | None,
+    source_id: str | int | None,
     sequence_number: int | None,
     season_number: int | None,
     registry: dict[str, CitationRegistryEntry] | None = None,
@@ -273,7 +305,7 @@ async def execute_read_source(
     if registry is None:
         registry = {}
 
-    resolved, error = await _resolve_single_source(source_ids, source_id, sequence_number, season_number)
+    resolved, error = await _resolve_single_source(source_ids, source_id, sequence_number, season_number, registry)
     if error is not None:
         logger.info(
             "read_source: unresolved (%s) source_id=%r seq=%s season=%s",
@@ -299,7 +331,7 @@ async def execute_read_source(
 
     segments = await get_transcript_segments(resolved)
 
-    # Shared registry, dedup by source_id (spec §5.7): reuse the existing [N] if
+    # Shared registry, dedup by source_id: reuse the existing [N] if
     # find_passages already registered this source this turn; else allocate next.
     entry = registry.get(resolved)
     if entry is None:
@@ -353,7 +385,7 @@ async def execute_find_passages(
 
     pool_size = len(source_ids)
 
-    # Deterministic facet scoping (#309). Facet matching is the sole
+    # Deterministic facet scoping. Facet matching is the sole
     # pre-retrieval narrowing. Fail-open: zero match (or facet-subquery DB
     # error) → full pool, never empty.
     facet_predicates = {
@@ -491,7 +523,7 @@ async def execute_find_passages(
         )
 
     # The all-directive "no-coverage" note is DELETED — that behavior lives in
-    # the grounding prompt (#372). The tool emits only the FACT: empty pool.
+    # the grounding prompt. The tool emits only the FACT: empty pool.
     no_coverage_fact = "" if result.chunks else "find_passages found no relevant excerpts for this query.\n\n"
     no_match_fact = f"{_NO_MATCH_NOTE}\n\n" if facet_no_match else ""
 
@@ -525,7 +557,8 @@ async def execute_find_passages(
                 else (
                     f"Sources retrieved this turn: {', '.join(f'[{i}]' for i in turn_indices)}. "
                     "Cite only these indices.\n\n"
-                    f"{_build_source_headers(registry)}\n\n" + _build_fenced_chunks(chunks_by_index, registry)
+                    f"{_build_source_headers(registry, source_ids)}\n\n"
+                    + _build_fenced_chunks(chunks_by_index, registry)
                 )
             )
         ),
@@ -547,7 +580,7 @@ def build_tool_block_entry(
     raw chunk snapshots are attached so replay survives re-embedding. For
     other tools (read_source), underscore-prefixed fields are also stripped —
     read_source's narrative is 30-150K tokens and is never replayed or reseeded,
-    so persisting it is pure DB bloat (spec §16.7).
+    so persisting it is pure DB bloat.
     """
     summary = strip_internal(result)
     if name in RETRIEVE_TOOL_NAMES:
@@ -610,7 +643,7 @@ def expand_message_for_provider(
     synthetic shape the LLM expects so it sees prior tool_use/tool_result
     blocks on subsequent turns.
 
-    v2 rule (spec §5.5): drop retrieve-family and read_source tool exchanges
+    v2 rule: drop retrieve-family and read_source tool exchanges
     entirely from cross-turn replay — the LLM may rely on the assistant prose
     but not the prior tool result (stale-context contamination).
     """

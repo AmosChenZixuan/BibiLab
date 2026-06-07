@@ -335,7 +335,7 @@ class TestBuildSourceHeaders:
         from bibilab.pipeline.chat_tools import CitationRegistryEntry, _build_source_headers
 
         r = {"s1": CitationRegistryEntry(index=1, source_id="s1", title="My Video")}
-        assert _build_source_headers(r) == 'Source [1]: "My Video"'
+        assert _build_source_headers(r, ["s1"]) == 'Source [1]: "My Video"'
 
     def test_sorted_by_index(self):
         from bibilab.pipeline.chat_tools import CitationRegistryEntry, _build_source_headers
@@ -344,10 +344,24 @@ class TestBuildSourceHeaders:
             "sb": CitationRegistryEntry(index=2, source_id="sb", title="B"),
             "sa": CitationRegistryEntry(index=1, source_id="sa", title="A"),
         }
-        result = _build_source_headers(r)
+        result = _build_source_headers(r, ["sa", "sb"])
         lines = result.split("\n")
         assert lines[0] == 'Source [1]: "A"'
         assert lines[1] == 'Source [2]: "B"'
+
+    def test_filters_by_current_pool(self):
+        """A source reseeded into the registry from a prior turn but
+        de-selected in the current turn must not appear in the LLM-facing
+        header list — the model would otherwise try read_source("[N]") and
+        fail loud on a stale [N] it should never have seen."""
+        from bibilab.pipeline.chat_tools import CitationRegistryEntry, _build_source_headers
+
+        r = {
+            "selected": CitationRegistryEntry(index=1, source_id="selected", title="Kept"),
+            "deselected": CitationRegistryEntry(index=2, source_id="deselected", title="Dropped"),
+        }
+        result = _build_source_headers(r, ["selected"])
+        assert result == 'Source [1]: "Kept"'
 
 
 class TestBuildToolBlockEntry:
@@ -442,7 +456,7 @@ def test_expand_message_for_provider_empty_tool_blocks_passthrough():
 
 
 def test_expand_message_for_provider_drops_retrieve_and_read_source_anthropic():
-    """v2 (#370/#371): find_passages + read_source tool exchanges are DROPPED
+    """v2: find_passages + read_source tool exchanges are DROPPED
     from cross-turn replay (stale-context contamination). Only the assistant
     text survives."""
     from bibilab.pipeline.chat_tools import expand_message_for_provider
@@ -700,7 +714,7 @@ class TestReseedCitationRegistry:
 
 
 class TestFacetInt:
-    """#309: _facet_int wraps the shared parse_facet_int, degrading unusable LLM
+    """_facet_int wraps the shared parse_facet_int, degrading unusable LLM
     args to None (never raises)."""
 
     @pytest.mark.parametrize(
@@ -738,7 +752,7 @@ class TestFacetInt:
 
 
 class TestFindPassagesFacetSchema:
-    """#309: find_passages schema exposes optional sequence_number/season_number."""
+    """find_passages schema exposes optional sequence_number/season_number."""
 
     def test_facet_params_present_and_typed(self):
         from bibilab.pipeline.chat_tools import FIND_PASSAGES_TOOL
@@ -752,7 +766,7 @@ class TestFindPassagesFacetSchema:
 
 
 class TestExecuteFindPassagesFacetScoping:
-    """#309: deterministic facet scoping with fail-open."""
+    """deterministic facet scoping with fail-open."""
 
     @staticmethod
     def _cfg():
@@ -857,8 +871,8 @@ class TestExecuteFindPassagesFacetScoping:
 
     @pytest.mark.asyncio
     async def test_no_match_prepends_note_to_llm_chunks(self, monkeypatch):
-        """#310 + #16.7: facet_scope.no_match true ⇒ _chunks carries the LLM-
-        visible fact-only note (directive moved to #372 prompt)."""
+        """facet_scope.no_match true ⇒ _chunks carries the LLM-
+        visible fact-only note (directive moved to the prompt)."""
         from bibilab.pipeline import chat_tools
         from bibilab.pipeline.chat_tools import _NO_MATCH_NOTE
 
@@ -961,7 +975,7 @@ class TestExecuteFindPassagesFacetScoping:
 
 
 class TestExecuteToolFacetArgs:
-    """#309: execute_tool parses + coerces facet args from raw LLM arguments."""
+    """execute_tool parses + coerces facet args from raw LLM arguments."""
 
     @staticmethod
     def _cfg():
@@ -1047,7 +1061,7 @@ def test_build_fenced_chunks_empty_returns_empty_string():
 
 @pytest.mark.asyncio
 async def test_execute_find_passages_chunks_grouped_and_fenced(monkeypatch):
-    """#297: _chunks groups by source + fences each group; _raw_chunks
+    """_chunks groups by source + fences each group; _raw_chunks
     preserves the original interleaved rerank order (invariant)."""
     from bibilab.config import AIConfig, BackendConfig, BibilabConfig
     from bibilab.pipeline import chat_tools

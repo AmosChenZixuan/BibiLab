@@ -1,4 +1,4 @@
-"""read_source tool: single-match resolution + narrative + citation binding (#371)."""
+"""read_source tool: single-match resolution + narrative + citation binding."""
 
 from __future__ import annotations
 
@@ -25,15 +25,109 @@ class Row(dict):
 
 
 @pytest.mark.asyncio
-async def test_resolve_by_source_id_in_pool():
-    rid, err = await _resolve_single_source(["a", "b"], source_id="a", sequence_number=None, season_number=None)
+async def test_resolve_by_citation_index_in_pool():
+    rid, err = await _resolve_single_source(
+        ["a", "b"],
+        source_id="[1]",
+        sequence_number=None,
+        season_number=None,
+        registry={"a": CitationRegistryEntry(index=1, source_id="a", title="Ep A")},
+    )
     assert rid == "a" and err is None
 
 
 @pytest.mark.asyncio
-async def test_resolve_by_source_id_outside_pool_errors():
-    rid, err = await _resolve_single_source(["a"], source_id="zzz", sequence_number=None, season_number=None)
-    assert rid is None and "not in this list" in err
+async def test_resolve_by_citation_index_bare_int_and_source_prefix():
+    """Anchored regex accepts '[5]', '5', 'Source [5]', 'source 5'."""
+    for variant in ("[5]", "5", "Source [5]", "source 5"):
+        rid, err = await _resolve_single_source(
+            ["a"],
+            source_id=variant,
+            sequence_number=None,
+            season_number=None,
+            registry={"a": CitationRegistryEntry(index=5, source_id="a", title="Ep 5")},
+        )
+        assert rid == "a" and err is None, (variant, rid, err)
+
+
+@pytest.mark.asyncio
+async def test_resolve_by_citation_index_bare_int_arg():
+    """A non-string int arg (an LLM may emit source_id: 5 as a JSON number
+    despite the string schema) is the cleanest index form — used directly,
+    never round-tripped through the regex, never raised on."""
+    rid, err = await _resolve_single_source(
+        ["a"],
+        source_id=5,
+        sequence_number=None,
+        season_number=None,
+        registry={"a": CitationRegistryEntry(index=5, source_id="a", title="Ep 5")},
+    )
+    assert rid == "a" and err is None
+
+
+@pytest.mark.asyncio
+async def test_resolve_by_non_str_non_int_fails_loud():
+    """A wholly wrong type (e.g. a list) must fail loud with the LLM-facing
+    string, never raise — a raise aborts the SSE stream."""
+    rid, err = await _resolve_single_source(
+        ["a"],
+        source_id=["5"],
+        sequence_number=None,
+        season_number=None,
+        registry={"a": CitationRegistryEntry(index=5, source_id="a", title="Ep 5")},
+    )
+    assert rid is None
+    assert "citation index" in err
+
+
+@pytest.mark.asyncio
+async def test_resolve_by_citation_index_unmapped_errors():
+    """An [N] that exists syntactically but the registry has no entry for →
+    'call find_passages first' error. Fail loud, no silent mis-resolution.
+    The same path also covers the empty-registry case (read_source called
+    before any find_passages)."""
+    rid, err = await _resolve_single_source(
+        ["a"],
+        source_id="[9]",
+        sequence_number=None,
+        season_number=None,
+        registry={"a": CitationRegistryEntry(index=1, source_id="a", title="Ep A")},
+    )
+    assert rid is None
+    assert "[9]" in err and "find_passages" in err
+
+
+@pytest.mark.asyncio
+async def test_resolve_by_citation_index_deselected_fails_loud():
+    """A [N] whose source_id is in the registry but NOT in the current pool
+    (de-selected) must fail loud. Pool membership is the contract."""
+    rid, err = await _resolve_single_source(
+        ["b"],
+        source_id="[1]",
+        sequence_number=None,
+        season_number=None,
+        registry={
+            "a": CitationRegistryEntry(index=1, source_id="a", title="Ep A"),
+            "b": CitationRegistryEntry(index=2, source_id="b", title="Ep B"),
+        },
+    )
+    assert rid is None
+    assert "[1]" in err and "find_passages" in err
+
+
+@pytest.mark.asyncio
+async def test_resolve_by_non_index_string_errors():
+    """A stray title like 'Episode 5 discussion' must not match the anchored
+    regex — the resolver must fail loud, not silently parse the first int."""
+    rid, err = await _resolve_single_source(
+        ["a"],
+        source_id="Episode 5 discussion",
+        sequence_number=None,
+        season_number=None,
+        registry={"a": CitationRegistryEntry(index=1, source_id="a", title="Ep A")},
+    )
+    assert rid is None
+    assert "citation index" in err
 
 
 @pytest.mark.asyncio
@@ -88,21 +182,22 @@ async def test_execute_read_source_builds_narrative_and_registers_citation(monke
     monkeypatch.setattr(chat_tools, "get_source", fake_get_source)
     monkeypatch.setattr(chat_tools, "get_transcript_segments", fake_segments)
 
-    registry: dict[str, CitationRegistryEntry] = {}
-    out = await execute_read_source(["a"], source_id="a", sequence_number=None, season_number=None, registry=registry)
+    # Pre-seed registry with [1] → "a" (as if find_passages had run earlier).
+    registry = {"a": CitationRegistryEntry(index=1, source_id="a", title="Ep 5")}
+    out = await execute_read_source(["a"], source_id="[1]", sequence_number=None, season_number=None, registry=registry)
 
     assert out["source_id"] == "a"
     assert out["tool_name"] == "read_source"
     assert out["source_title"] == "Ep 5"
     assert "Ep 5" in out["_chunks"] and "the duel" in out["_chunks"]
     assert "hello" in out["_chunks"] and "@1:52" in out["_chunks"]  # 112s inline ts
-    assert registry["a"].index == 1  # registered with next index
+    assert registry["a"].index == 1  # reused, not re-allocated
 
 
 @pytest.mark.asyncio
 async def test_read_source_reuses_find_passages_index(monkeypatch):
     """Shared registry, dedup by source_id: read_source on an already-registered
-    source keeps the same [N] (spec §5.7)."""
+    source keeps the same [N]."""
     src = {"id": "a", "title": "Ep 5", "summary": "s", "duration_seconds": 60, "language": "zh"}
 
     async def fake_get_source(sid):  # noqa: ANN001
@@ -115,14 +210,14 @@ async def test_read_source_reuses_find_passages_index(monkeypatch):
     monkeypatch.setattr(chat_tools, "get_transcript_segments", fake_segments)
 
     registry = {"a": CitationRegistryEntry(index=2, source_id="a", title="Ep 5")}
-    out = await execute_read_source(["a"], source_id="a", sequence_number=None, season_number=None, registry=registry)
+    out = await execute_read_source(["a"], source_id="[2]", sequence_number=None, season_number=None, registry=registry)
     assert registry["a"].index == 2  # unchanged
     assert out["source_id"] == "a"
 
 
 @pytest.mark.asyncio
 async def test_read_source_empty_transcript_suppresses_header(monkeypatch):
-    """No transcript segments → fact-only, header SUPPRESSED (spec §5.6/§16.3).
+    """No transcript segments → fact-only, header SUPPRESSED.
     The content header (title/summary/duration) must NOT leak — it is fabrication
     fuel with no body to frame."""
     src = {
@@ -142,7 +237,8 @@ async def test_read_source_empty_transcript_suppresses_header(monkeypatch):
     monkeypatch.setattr(chat_tools, "get_source", fake_get_source)
     monkeypatch.setattr(chat_tools, "get_transcript_segments", fake_segments)
 
-    out = await execute_read_source(["a"], source_id="a", sequence_number=None, season_number=None, registry={})
+    registry = {"a": CitationRegistryEntry(index=1, source_id="a", title="Secret Heist Episode")}
+    out = await execute_read_source(["a"], source_id="[1]", sequence_number=None, season_number=None, registry=registry)
     assert out["source_id"] == "a"
     assert out["tool_name"] == "read_source"
     assert out["source_title"] == "Secret Heist Episode"
@@ -234,7 +330,8 @@ async def test_read_source_narrative_has_no_per_chunk_fence(monkeypatch):
     monkeypatch.setattr(chat_tools, "get_source", fake_get_source)
     monkeypatch.setattr(chat_tools, "get_transcript_segments", fake_segments)
 
-    out = await execute_read_source(["a"], source_id="a", sequence_number=None, season_number=None, registry={})
+    registry = {"a": CitationRegistryEntry(index=1, source_id="a", title="Ep 4")}
+    out = await execute_read_source(["a"], source_id="[1]", sequence_number=None, season_number=None, registry=registry)
     body = out["_chunks"]
 
     # Continuous transcript fragments ARE present.
