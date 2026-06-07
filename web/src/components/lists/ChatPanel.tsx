@@ -279,7 +279,15 @@ export function ChatPanel({
   const [showClearPopover, setShowClearPopover] = useState(false);
   const [debugPrompts, setDebugPrompts] = useState(false);
   const [debugMsgId, setDebugMsgId] = useState<string | null>(null);
-  const { dump: debugDump, loading: debugLoading, notFound: debugNotFound } = useDebugDump(debugMsgId);
+  const { dump: debugDump, loading: debugLoading, notFound: debugNotFound, reset: resetDebugDump } = useDebugDump(debugMsgId);
+
+  // Wrap setDebugMsgId with a synchronous reset so the drawer doesn't
+  // flash stale data on a re-open (React batches both updates so the next
+  // render sees dump=null, msgId=new).
+  const openDebug = (id: string) => {
+    resetDebugDump();
+    setDebugMsgId(id);
+  };
   const { isPending, run } = usePendingDeletions();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -528,14 +536,14 @@ export function ChatPanel({
                     ) : msg.contentBlocks.length > 0 ? (
                       <AssistantBubble
                         showDebugButton={debugPrompts && msg.hasDump}
-                        onShowDebug={() => setDebugMsgId(msg.id)}
+                        onShowDebug={() => openDebug(msg.id)}
                       >
                         {renderParagraphs(msg.contentBlocks, sources, onOpenSource, msg.isStreaming)}
                       </AssistantBubble>
                     ) : msg.content ? (
                       <AssistantBubble
                         showDebugButton={debugPrompts && msg.hasDump}
-                        onShowDebug={() => setDebugMsgId(msg.id)}
+                        onShowDebug={() => openDebug(msg.id)}
                       >
                         <ReactMarkdown>{msg.content}</ReactMarkdown>
                       </AssistantBubble>

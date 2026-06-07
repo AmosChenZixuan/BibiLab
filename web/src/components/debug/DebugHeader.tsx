@@ -7,6 +7,7 @@ export function DebugHeader({
   view,
   setView,
   onClose,
+  dump,
 }: {
   messageId: string;
   model?: string;
@@ -14,6 +15,7 @@ export function DebugHeader({
   view: "styled" | "raw";
   setView: (v: "styled" | "raw") => void;
   onClose: () => void;
+  dump: unknown;
 }) {
   return (
     <div className="h-16 flex items-center justify-between px-6 border-b border-(--color-border) bg-white">
@@ -55,11 +57,9 @@ export function DebugHeader({
         <button
           className="w-10 h-10 rounded-full hover:bg-(--color-surface) flex items-center justify-center text-(--color-muted)"
           onClick={() =>
-            navigator.clipboard?.writeText(
-              JSON.stringify({ messageId, model, timestamp }, null, 2),
-            )
+            navigator.clipboard?.writeText(JSON.stringify(dump, null, 2))
           }
-          title="Copy raw JSON"
+          title="Copy dump JSON"
         >
           <Clipboard size={20} />
         </button>
