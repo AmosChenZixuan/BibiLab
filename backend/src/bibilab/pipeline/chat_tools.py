@@ -2,6 +2,8 @@
 
 import json
 import logging
+import re
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 
 from bibilab.config import BibilabConfig
@@ -51,9 +53,17 @@ def strip_internal(result: dict) -> dict:
     return {k: v for k, v in result.items() if not k.startswith("_")}
 
 
-def _build_source_headers(registry: dict[str, CitationRegistryEntry]) -> str:
+def _build_source_headers(registry: dict[str, CitationRegistryEntry], source_ids: Iterable[str]) -> str:
+    # Bound the LLM-facing source list to the current turn's pool: a source
+    # reseeded from history but de-selected in this turn must not appear here,
+    # or the LLM will see "[5] = …" and try read_source("[5]") only to learn
+    # via the new fail-loud error. The registry itself stays unfiltered — it
+    # is the resolver's lookup table for [N] → source_id.
+    pool = set(source_ids)
     lines = []
     for entry in sorted(registry.values(), key=lambda e: e.index):
+        if entry.source_id not in pool:
+            continue
         title = entry.title
         lines.append(f'Source [{entry.index}]: "{title}"')
     return "\n".join(lines)
@@ -154,19 +164,23 @@ READ_SOURCE_TOOL = ToolDefinition(
         "narrative). Expensive — use only when find_passages shows a source is "
         "on-topic but its fragments miss the specific thing asked, or for "
         "narrative-coverage questions about a named episode/season.\n\n"
-        "Resolves to EXACTLY ONE source. Pass source_id (from a find_passages "
-        "result) OR a facet (sequence_number / season_number). If a facet matches "
-        "multiple sources it errors with the candidates — narrow it or pass "
-        "source_id. For 'what does season N cover', issue parallel read_source "
-        "calls (one per episode), not one fan-out call.\n\n"
+        "Resolves to EXACTLY ONE source. Pass source_id (the [N] citation index "
+        "from a find_passages result) OR a facet (sequence_number / "
+        "season_number). If a facet matches multiple sources it errors with the "
+        "candidates — narrow it or pass source_id. For 'what does season N "
+        "cover', issue parallel read_source calls (one per episode), not one "
+        "fan-out call.\n\n"
         "Examples:\n"
         "  read_source(sequence_number=5)\n"
-        '  read_source(source_id="…from a find_passages result…")'
+        '  read_source(source_id="[5]")'
     ),
     parameters={
         "type": "object",
         "properties": {
-            "source_id": {"type": "string", "description": "Exact source id, e.g. from a find_passages result."},
+            "source_id": {
+                "type": "string",
+                "description": ("Citation index from a find_passages result, e.g. '[5]'. Not a source UUID."),
+            },
             "sequence_number": {"type": "integer", "description": "Episode / part number."},
             "season_number": {"type": "integer", "description": "Season number."},
         },
@@ -176,12 +190,18 @@ READ_SOURCE_TOOL = ToolDefinition(
 
 RETRIEVE_TOOL_NAMES: frozenset[str] = frozenset({FIND_PASSAGES_TOOL.name})
 
+# Anchored parse of the [N] citation index the LLM sees. Accepts "[5]", "5",
+# "Source [5]", "source 5"; rejects a stray title like "Episode 5 discussion"
+# so a model typo never silently mis-resolves to a wrong source.
+_CITATION_INDEX_RE = re.compile(r"^\s*(?:source\s*)?\[?\s*(\d+)\s*\]?\s*$", re.IGNORECASE)
+
 
 async def _resolve_single_source(
     source_ids: list[str],
     source_id: str | None,
     sequence_number: int | None,
     season_number: int | None,
+    registry: dict[str, CitationRegistryEntry] | None = None,
 ) -> tuple[str | None, str | None]:
     """Resolve exactly one source from the pool. Returns (source_id, error_msg).
 
@@ -191,9 +211,18 @@ async def _resolve_single_source(
     SSE stream).
     """
     if source_id is not None:
-        if source_id in source_ids:
-            return source_id, None
-        return None, f"source_id {source_id!r} is not in this list."
+        match = _CITATION_INDEX_RE.match(source_id)
+        if not match:
+            return None, 'source_id must be a citation index like "[5]".'
+        idx = int(match.group(1))
+        if registry is not None:
+            for entry in registry.values():
+                if entry.index == idx and entry.source_id in source_ids:
+                    return entry.source_id, None
+        return None, (
+            f"No source [{idx}] in this conversation. Call find_passages first, "
+            "or pass sequence_number / season_number."
+        )
 
     predicates = {
         k: v for k, v in (("sequence_number", sequence_number), ("season_number", season_number)) if v is not None
@@ -273,7 +302,7 @@ async def execute_read_source(
     if registry is None:
         registry = {}
 
-    resolved, error = await _resolve_single_source(source_ids, source_id, sequence_number, season_number)
+    resolved, error = await _resolve_single_source(source_ids, source_id, sequence_number, season_number, registry)
     if error is not None:
         logger.info(
             "read_source: unresolved (%s) source_id=%r seq=%s season=%s",
@@ -525,7 +554,8 @@ async def execute_find_passages(
                 else (
                     f"Sources retrieved this turn: {', '.join(f'[{i}]' for i in turn_indices)}. "
                     "Cite only these indices.\n\n"
-                    f"{_build_source_headers(registry)}\n\n" + _build_fenced_chunks(chunks_by_index, registry)
+                    f"{_build_source_headers(registry, source_ids)}\n\n"
+                    + _build_fenced_chunks(chunks_by_index, registry)
                 )
             )
         ),

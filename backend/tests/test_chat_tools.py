@@ -335,7 +335,7 @@ class TestBuildSourceHeaders:
         from bibilab.pipeline.chat_tools import CitationRegistryEntry, _build_source_headers
 
         r = {"s1": CitationRegistryEntry(index=1, source_id="s1", title="My Video")}
-        assert _build_source_headers(r) == 'Source [1]: "My Video"'
+        assert _build_source_headers(r, ["s1"]) == 'Source [1]: "My Video"'
 
     def test_sorted_by_index(self):
         from bibilab.pipeline.chat_tools import CitationRegistryEntry, _build_source_headers
@@ -344,10 +344,24 @@ class TestBuildSourceHeaders:
             "sb": CitationRegistryEntry(index=2, source_id="sb", title="B"),
             "sa": CitationRegistryEntry(index=1, source_id="sa", title="A"),
         }
-        result = _build_source_headers(r)
+        result = _build_source_headers(r, ["sa", "sb"])
         lines = result.split("\n")
         assert lines[0] == 'Source [1]: "A"'
         assert lines[1] == 'Source [2]: "B"'
+
+    def test_filters_by_current_pool(self):
+        """A source reseeded into the registry from a prior turn but
+        de-selected in the current turn must not appear in the LLM-facing
+        header list — the model would otherwise try read_source("[N]") and
+        fail loud on a stale [N] it should never have seen."""
+        from bibilab.pipeline.chat_tools import CitationRegistryEntry, _build_source_headers
+
+        r = {
+            "selected": CitationRegistryEntry(index=1, source_id="selected", title="Kept"),
+            "deselected": CitationRegistryEntry(index=2, source_id="deselected", title="Dropped"),
+        }
+        result = _build_source_headers(r, ["selected"])
+        assert result == 'Source [1]: "Kept"'
 
 
 class TestBuildToolBlockEntry:
