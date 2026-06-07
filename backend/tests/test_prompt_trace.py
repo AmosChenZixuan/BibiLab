@@ -1,19 +1,72 @@
-"""Tests for opt-in per-LLM-call dump (input + response) (#399) and the
-LLM-bound tool message content (#401 — feed `_chunks` only, no FTS noise)."""
+"""Tests for opt-in end-of-turn dump (input + response) — single file per chat message.
+
+Per-turn writes (one per LLM call) were replaced by a single end-of-turn write
+because the final LLM call's `messages` list is the cumulative state — it
+contains all prior tool results. One file per message captures the final state
+that the LLM actually saw, with N× less storage and N× less I/O.
+
+Also covers the LLM-bound tool message content (#401 — feed `_chunks` only,
+no FTS noise) and the tool_block_sink contract for raw_chunks."""
 
 import json
 import logging
-from pathlib import Path
 
 import pytest
 
-from bibilab.config import AIConfig
+from bibilab.config import AIConfig, bibilab_home
 from bibilab.pipeline._shared import StreamEvent, ToolCall, ToolDefinition
-from bibilab.routers.chat import _dump_turn
 
 
-def test_dump_turn_writes_input_and_response(tmp_path: Path):
+def test_dump_turn_writes_one_file_per_message(tmp_bibilab_home):
     """Core: one file captures system, tools, messages, and the LLM response."""
+    from bibilab.routers.chat import _dump_turn
+
+    debug_dir = bibilab_home() / "debug"
+    debug_dir.mkdir()
+    debug_path = debug_dir / "msg_x.json"
+    _dump_turn(
+        debug_path,
+        system="sys",
+        messages=[{"role": "user", "content": "q"}],
+        tools=[],
+        response_text="answer",
+        response_tool_calls=[],
+    )
+    payload = json.loads(debug_path.read_text())
+    assert payload["system"] == "sys"
+    assert payload["messages"] == [{"role": "user", "content": "q"}]
+    assert payload["response"]["text"] == "answer"
+    assert payload["response"]["tool_calls"] == []
+
+
+def test_dump_turn_preserves_cjk(tmp_bibilab_home):
+    """CJK must never be escaped to \\uXXXX in the dump."""
+    from bibilab.routers.chat import _dump_turn
+
+    debug_dir = bibilab_home() / "debug"
+    debug_dir.mkdir()
+    debug_path = debug_dir / "msg_x.json"
+    _dump_turn(
+        debug_path,
+        system="你是助手",
+        messages=[{"role": "user", "content": "用户提问"}],
+        tools=[],
+        response_text="回答如下",
+    )
+    raw = debug_path.read_text()
+    assert "你是助手" in raw
+    assert "用户提问" in raw
+    assert "回答如下" in raw
+    assert "\\u" not in raw
+
+
+def test_dump_turn_serializes_tool_definitions(tmp_bibilab_home):
+    """Tool definitions are reduced to {name, description, parameters}."""
+    from bibilab.routers.chat import _dump_turn
+
+    debug_dir = bibilab_home() / "debug"
+    debug_dir.mkdir()
+    debug_path = debug_dir / "msg_x.json"
     tools = [
         ToolDefinition(
             name="find_passages",
@@ -21,113 +74,46 @@ def test_dump_turn_writes_input_and_response(tmp_path: Path):
             parameters={"type": "object", "properties": {"query": {"type": "string"}}},
         )
     ]
-    _dump_turn(
-        debug_dir=tmp_path,
-        llm_call=1,
-        system="sys",
-        messages=[{"role": "user", "content": "q"}],
-        tools=tools,
-        response_text="answer",
-        response_tool_calls=[{"id": "c1", "name": "find_passages", "arguments": {"query": "q"}}],
-    )
-    payload = json.loads((tmp_path / "call1.json").read_text())
-    assert payload == {
-        "system": "sys",
-        "tools": [{"name": "find_passages", "description": "locator", "parameters": tools[0].parameters}],
-        "messages": [{"role": "user", "content": "q"}],
-        "response": {
-            "text": "answer",
-            "tool_calls": [{"id": "c1", "name": "find_passages", "arguments": {"query": "q"}}],
-        },
-    }
+    _dump_turn(debug_path, system="s", messages=[], tools=tools, response_text="r")
+    payload = json.loads(debug_path.read_text())
+    assert payload["tools"] == [{"name": "find_passages", "description": "locator", "parameters": tools[0].parameters}]
 
 
-def test_dump_turn_preserves_cjk(tmp_path: Path):
-    """CJK must never be escaped to \\uXXXX anywhere in the dump — including
-    pre-serialized tool-call args and tool_result content."""
-    args_str = json.dumps({"query": "演讲中提到的主要观点"}, ensure_ascii=False)
-    _dump_turn(
-        debug_dir=tmp_path,
-        llm_call=1,
-        system="Respond in 简体中文. Use 第八集 for episodes.",
-        messages=[
-            {"role": "user", "content": "第三集讲了什么？"},
-            {
-                "role": "assistant",
-                "content": None,
-                "tool_calls": [
-                    {"id": "c1", "type": "function", "function": {"name": "find_passages", "arguments": args_str}}
-                ],
-            },
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "tool_result",
-                        "tool_use_id": "c1",
-                        "content": json.dumps({"title": "第三集 — 高潮"}, ensure_ascii=False),
-                    }
-                ],
-            },
-        ],
-        tools=[],
-        response_text="我来回答…",
-    )
-    text = (tmp_path / "call1.json").read_text()
-    assert "\\u" not in text
-    for s in ("第八集", "第三集讲了什么？", "演讲中提到的主要观点", "第三集 — 高潮", "我来回答"):
-        assert s in text
-
-
-def test_dump_turn_swallows_errors(tmp_path: Path, caplog):
+def test_dump_turn_swallows_errors(tmp_bibilab_home, caplog):
     """A write failure must be logged, not propagated."""
     from bibilab.routers import chat as chat_module
 
-    blocking = tmp_path / "blocker"
-    blocking.write_text("not a dir")  # debug_dir points at a file -> write fails
+    # Point at a path that is a regular file — write_text on the full file path
+    # will fail because the parent is not a directory.
+    blocker = tmp_bibilab_home / "blocker"
+    blocker.write_text("not a dir")
+    debug_path = blocker / "msg_x.json"  # cannot be written — parent is a file
     with caplog.at_level(logging.WARNING, logger="bibilab.routers.chat"):
-        chat_module._dump_turn(debug_dir=blocking, llm_call=1, system="sys", messages=[], tools=[])
-    assert blocking.read_text() == "not a dir"
+        chat_module._dump_turn(debug_path, system="sys", messages=[], tools=[])
+    assert blocker.read_text() == "not a dir"
     assert any("dump_turn_failed" in r.message for r in caplog.records)
 
 
-@pytest.mark.asyncio
-async def test_stream_with_tools_dumps_one_file_per_llm_call(monkeypatch, tmp_path: Path, mock_stream_llm):
-    """Integration: each LLM call gets its own file; call1 captures the tool_call response."""
-    from bibilab.config import AIConfig
-    from bibilab.routers import chat as chat_module
+def test_dump_turn_includes_model_and_timestamp(tmp_bibilab_home):
+    """Payload records the model name and ISO timestamp for the turn."""
+    from bibilab.routers.chat import _dump_turn
 
-    calls = {"n": 0}
-
-    async def fake_stream_llm(messages, cfg, tools, **kwargs):
-        calls["n"] += 1
-        if calls["n"] == 1:
-            tc = type("T", (), {"id": "toolu_a", "name": "find_passages", "arguments": {"query": "q"}})()
-            yield StreamEvent(type="tool_call", tool_call=tc)
-            yield StreamEvent(type="done")
-        else:
-            yield StreamEvent(type="delta", content="answer")
-            yield StreamEvent(type="done")
-
-    async def fake_execute(name, args, **kwargs):
-        return {"_chunks": "excerpt"}
-
-    mock_stream_llm.side_effect = fake_stream_llm
-
-    cfg = AIConfig(protocol="openai", model="x", api_key="k", base_url="")
-    gen = chat_module.stream_with_tools(
-        messages=[{"role": "user", "content": "q"}],
-        cfg=cfg,
+    debug_dir = bibilab_home() / "debug"
+    debug_dir.mkdir()
+    debug_path = debug_dir / "msg_x.json"
+    _dump_turn(
+        debug_path,
+        system="s",
+        messages=[],
         tools=[],
-        execute_tool_fn=fake_execute,
-        debug_dump_dir=tmp_path,
+        response_text="r",
+        response_tool_calls=[],
+        model="gpt-4o",
+        timestamp="2026-06-06T14:23:11+08:00",
     )
-    async for _ in gen:
-        pass
-
-    assert (tmp_path / "call2.json").exists()
-    call1 = json.loads((tmp_path / "call1.json").read_text())
-    assert call1["response"]["tool_calls"] == [{"id": "toolu_a", "name": "find_passages", "arguments": {"query": "q"}}]
+    payload = json.loads(debug_path.read_text())
+    assert payload["model"] == "gpt-4o"
+    assert payload["timestamp"] == "2026-06-06T14:23:11+08:00"
 
 
 # Representative find_passages result mirroring chat_tools.py shape:
@@ -273,3 +259,149 @@ async def test_tool_block_sink_still_receives_raw_chunks(mock_stream_llm):
     # raw_chunks is read by chat.py:402 for tool_block_sink persistence; the dict must keep it.
     # For retrieve-family (find_passages), build_tool_block_entry nests it as result["chunks"].
     assert block["result"]["chunks"] == _NOISY_FIND_PASSAGES_RESULT["_raw_chunks"]
+
+
+@pytest.mark.asyncio
+async def test_end_of_turn_dump_captures_cumulative_state_after_tool_use(
+    monkeypatch, tmp_bibilab_home, mock_stream_llm
+):
+    """T3 bug fix: the end-of-turn dump must contain the cumulative LLM state
+    (user + assistant tool_call + tool result), not just the pre-tool state.
+
+    Previously stream_with_tools rebound messages to a defensive local copy, so
+    in-loop appends never propagated back to the caller's list — and the dump
+    captured only the pre-tool state.
+    """
+    from bibilab.config import AIConfig, BackendConfig, BibilabConfig, RagConfig
+    from bibilab.pipeline._shared import StreamEvent, ToolCall
+    from bibilab.pipeline.chat_runs import ChatRunRegistry
+    from bibilab.pipeline.chat_tools import FIND_PASSAGES_TOOL
+    from bibilab.routers import chat as chat_module
+
+    retrieve_tc = ToolCall(id="toolu_t3", name=FIND_PASSAGES_TOOL.name, arguments={"query": "x"})
+    call_count = 0
+
+    async def fake_stream_llm(messages, cfg, tools=None, system=None):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            yield StreamEvent(type="tool_call", tool_call=retrieve_tc)
+        else:
+            yield StreamEvent(type="delta", content="Answer [1]")
+            yield StreamEvent(type="done")
+
+    mock_stream_llm.side_effect = fake_stream_llm
+
+    async def fake_execute(tool_name, arguments, **kwargs):
+        return {
+            "query": "x",
+            "tool_name": FIND_PASSAGES_TOOL.name,
+            "candidates_evaluated": 1,
+            "sources_with_hits": 1,
+            "sources_total": 1,
+            "source_coverage": [{"source_id": "s1", "title": "V1"}],
+            "_chunks": '[1] "verbatim"',
+            "_raw_chunks": [
+                {
+                    "source_id": "s1",
+                    "chunk_id": "v1_0_10",
+                    "content": "verbatim",
+                    "video_title": "V1",
+                    "timestamp_start": 0.0,
+                    "timestamp_end": 10.0,
+                    "citation_index": 1,
+                },
+            ],
+        }
+
+    async def noop(*a, **kw):
+        return None
+
+    monkeypatch.setattr(chat_module, "execute_tool", fake_execute)
+    monkeypatch.setattr(chat_module, "update_turn_terminal", noop)
+    monkeypatch.setattr(chat_module, "maybe_compress_conversation", noop)
+
+    registry = ChatRunRegistry()
+    msg_id = "msg-t3-bug"
+    registry.register(msg_id, task=None)
+
+    cfg = BibilabConfig(
+        ai=AIConfig(protocol="openai", model="x", api_key="k", base_url=""),
+        backend=BackendConfig(),
+        rag=RagConfig(debug_prompts=True),
+    )
+
+    await chat_module.run_chat_turn(
+        message_id=msg_id,
+        conversation_id="c1",
+        list_id="l1",
+        user_message_text="q",
+        history=[],
+        summary=None,
+        source_ids=["s1"],
+        ui_lang="en",
+        cfg=cfg,
+        registry=registry,
+        user_msg_id="um-1",
+    )
+
+    debug_path = tmp_bibilab_home / "debug" / f"{msg_id}.json"
+    assert debug_path.exists(), f"expected dump file at {debug_path}"
+    payload = json.loads(debug_path.read_text())
+
+    roles = [m.get("role") for m in payload["messages"]]
+    # The bug: the dump had only [user]. The fix: cumulative state includes the
+    # tool exchange — assistant(tool_calls) + tool result.
+    assert "user" in roles
+    assert "tool" in roles, f"dump missing tool role — cumulative state did not propagate. Got: {roles}"
+    # Sanity: the user message is first, tool result is last.
+    assert roles[0] == "user"
+    assert roles[-1] == "tool"
+    # The assistant message has tool_calls (openai protocol).
+    assistant_msgs = [m for m in payload["messages"] if m.get("role") == "assistant"]
+    assert len(assistant_msgs) == 1
+    assert "tool_calls" in assistant_msgs[0]
+    # The tool message is keyed by the tool call id we sent.
+    tool_msgs = [m for m in payload["messages"] if m.get("role") == "tool"]
+    assert tool_msgs[0]["tool_call_id"] == "toolu_t3"
+
+
+@pytest.mark.asyncio
+async def test_messages_sink_export_via_stream_with_tools_directly(mock_stream_llm):
+    """Unit-level guard for the messages_sink contract: stream_with_tools
+    populates the sink with the cumulative state on every exit path."""
+    from bibilab.config import AIConfig
+    from bibilab.pipeline._shared import StreamEvent, ToolCall
+    from bibilab.routers import chat as chat_module
+
+    call_count = 0
+
+    async def fake_stream_llm(messages, cfg, tools=None, system=None):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            yield StreamEvent(type="tool_call", tool_call=ToolCall(id="u1", name="find_passages", arguments={}))
+        else:
+            yield StreamEvent(type="delta", content="x")
+            yield StreamEvent(type="done")
+
+    mock_stream_llm.side_effect = fake_stream_llm
+
+    async def fake_execute(*args, **kwargs):
+        return {"_chunks": "y"}
+
+    sink: list[dict] = []
+    gen = chat_module.stream_with_tools(
+        messages=[{"role": "user", "content": "q"}],
+        cfg=AIConfig(protocol="openai", model="x", api_key="k", base_url=""),
+        tools=[],
+        execute_tool_fn=fake_execute,
+        messages_sink=sink,
+    )
+    async for _ in gen:
+        pass
+
+    roles = [m.get("role") for m in sink]
+    assert "tool" in roles
+    # Pre-existing user message + assistant(tool_calls) + tool result.
+    assert roles[-1] == "tool"

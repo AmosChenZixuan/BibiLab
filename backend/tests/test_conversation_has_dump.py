@@ -13,13 +13,13 @@ async def _create_list(client, name: str) -> str:
 
 
 async def test_has_dump_true_when_dir_exists(client, tmp_bibilab_home):
-    """has_dump is True for a message whose id is a subdirectory of debug/."""
+    """has_dump is True for a message whose id matches a flat .json file in debug/."""
     list_id = await _create_list(client, "dump-exists")
     conv_id = await get_or_create_conversation(list_id)
     await MessageFactory.build(conv_id, message_id="msg_abc", role="user", content="hi")
 
-    (tmp_bibilab_home / "debug" / "msg_abc").mkdir(parents=True)
-    (tmp_bibilab_home / "debug" / "msg_abc" / "call1.json").write_text("{}")
+    (tmp_bibilab_home / "debug").mkdir(parents=True)
+    (tmp_bibilab_home / "debug" / "msg_abc.json").write_text("{}")
 
     resp = await client.get(f"/lists/{list_id}/conversation")
     msgs = resp.json()["messages"]
