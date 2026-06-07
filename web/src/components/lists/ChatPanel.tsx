@@ -250,7 +250,7 @@ function AssistantBubble({
           onClick={onShowDebug}
           title="View LLM context (debug)"
           aria-label="View LLM context (debug)"
-          className="absolute -top-2 -right-2 flex h-6 w-6 items-center justify-center rounded-md border border-border bg-white text-muted shadow-sm hover:text-blue"
+          className="absolute bottom-2 right-2 flex h-6 w-6 items-center justify-center rounded-md border border-border bg-white text-muted shadow-sm hover:text-blue"
         >
           <Code size={12} />
         </button>
