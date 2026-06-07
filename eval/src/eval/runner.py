@@ -5,7 +5,7 @@ import json
 import time
 import uuid
 
-from bibilab.routers.chat import stream_with_tools, build_grounding_prompt
+from bibilab.routers.chat import stream_with_tools, build_grounding_prompt, _llm_tool_message_content
 from bibilab.pipeline._shared import ToolDefinition
 from bibilab.pipeline.chat_tools import (
     FIND_PASSAGES_TOOL,
@@ -39,14 +39,21 @@ async def run_single_case(
     try:
         registry: dict[str, CitationRegistryEntry] = {}
         tool_block_sink: list[dict] = []
+        # Exact LLM-visible tool context, in message order. Captured via the
+        # same function that feeds the model so grading parity is structural,
+        # not a re-derived copy (groundedness/context-relevance are only valid
+        # when the grader judges against what the LLM actually read).
+        llm_context: list[str] = []
 
         async def execute_tool_fn(name, args, **kwargs):
-            return await execute_tool(
+            result = await execute_tool(
                 name, args,
                 source_ids=source_ids,
                 cfg=backend_cfg,
                 **kwargs,
             )
+            llm_context.append(_llm_tool_message_content(result))
+            return result
 
         messages = [{"role": "user", "content": case.question}]
 
@@ -128,6 +135,7 @@ async def run_single_case(
                 and isinstance(b["result"].get("summary"), dict)
             ],
             tool_blocks=tool_block_sink,
+            llm_context=llm_context,
             llm_duration_ms=llm_duration_ms,
             error=None,
         )
@@ -140,6 +148,7 @@ async def run_single_case(
             citations=[],
             rag_calls=[],
             tool_blocks=[],
+            llm_context=[],
             llm_duration_ms=0,
             error=str(exc),
         )
