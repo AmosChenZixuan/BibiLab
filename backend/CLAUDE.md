@@ -225,15 +225,7 @@ stream_with_tools(stream_llm loop):
 
 ### Prompt-trace observability (opt-in)
 
-Set `rag.debug_prompts: true` in `~/.bibilab/config.json` to dump each
-LLM call. For each chat message, a directory is created at
-`~/.bibilab/debug/{message_id}/` and one `call{N}.json` is written per
-`stream_llm` call (one per tool-using iteration + the forced-synthesis
-follow-up + any later iterations). Each file is a JSON object with
-`{system, tools, messages, response: {text, tool_calls}}` — the full
-LLM call (input AND response), with no reformatting. **Off by default**
-(no I/O, no behavior change). Writes are best-effort: failures are
-logged and never break the turn.
+`rag.debug_prompts: true` writes one JSON per chat turn at `~/.bibilab/debug/{message_id}.json` capturing the final cumulative LLM state (system, tools, messages, response, model, timestamp). The chat frontend shows a `</>` icon on assistant bubbles when both `debug_prompts` and the per-message `has_dump` flag are true; clicking opens a right-side drawer with envelope-aware rendering (Styled/Raw toggle). Storage write site: end of `run_chat_turn`. Best-effort: write errors logged as `dump_turn_failed`, never propagated.
 
 ## Platform Adapters
 
@@ -262,4 +254,4 @@ v0: `BilibiliAdapter` — single video. Cookie-based auth in config.
   "rag": { "max_distance": 0.8, "reranking_enabled": true, "hybrid_enabled": true, "debug_prompts": false }
 }
 ```
-Reranker model is fixed to `Xenova/bge-reranker-base` (XLM-RoBERTa, Chinese + English). `FIND_PASSAGES_TOP_K = 8`. Opt-in prompt-trace dump writes one `call{N}.json` per `stream_llm` call under `~/.bibilab/debug/{message_id}/` when `rag.debug_prompts` is true; off by default.
+Reranker model is fixed to `Xenova/bge-reranker-base` (XLM-RoBERTa, Chinese + English). `FIND_PASSAGES_TOP_K = 8`. Opt-in prompt-trace dump writes one JSON per chat turn at `~/.bibilab/debug/{message_id}.json` capturing the final cumulative LLM state when `rag.debug_prompts` is true; off by default.

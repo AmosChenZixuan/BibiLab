@@ -304,6 +304,14 @@ class ConversationsClient {
 
 }
 
+class DebugClient {
+  constructor(private readonly baseUrl: string, private readonly request: RequestFn) {}
+
+  getDebugDump(messageId: string, opts?: { signal?: AbortSignal }) {
+    return this.request<unknown>(this.baseUrl, `/debug/messages/${messageId}`, opts);
+  }
+}
+
 export type BilibiliQrStatus = "waiting" | "scanned" | "expired" | "success";
 
 class AuthClient {
@@ -372,6 +380,7 @@ export interface ApiClient {
   syncModels(): Promise<SyncResponse | undefined>;
   getConversation(listId: string, opts?: { signal?: AbortSignal; before?: string; limit?: number }): Promise<GetConversationResponse | undefined>;
   deleteConversation(listId: string): Promise<void | undefined>;
+  getDebugDump(messageId: string, opts?: { signal?: AbortSignal }): Promise<unknown | undefined>;
   auth: {
     generateBilibiliQr(): Promise<{ url: string; key: string } | undefined>;
     pollBilibiliQr(key: string): Promise<{ status: BilibiliQrStatus } | undefined>;
@@ -400,6 +409,7 @@ export function createApiClient(baseUrl?: string): ApiClient {
   const ingest = new IngestClient(base, request);
   const auth = new AuthClient(base, request);
   const conversations = new ConversationsClient(base, request);
+  const debug = new DebugClient(base, request);
 
   // Flat ApiClient surface — delegates to focused clients
   return {
@@ -430,6 +440,7 @@ export function createApiClient(baseUrl?: string): ApiClient {
     syncModels: () => models.syncModels(),
     getConversation: (listId, opts) => conversations.getConversation(listId, opts),
     deleteConversation: (listId) => conversations.deleteConversation(listId),
+    getDebugDump: (messageId, opts) => debug.getDebugDump(messageId, opts),
     auth,
   };
 }

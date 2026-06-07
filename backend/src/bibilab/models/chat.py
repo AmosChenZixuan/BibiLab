@@ -24,6 +24,7 @@ class MessageResponse(BaseModel):
     created_at: datetime
     status: str = "done"
     error: str | None = None
+    has_dump: bool = False
 
     @classmethod
     def from_row(cls, row: dict) -> "MessageResponse":

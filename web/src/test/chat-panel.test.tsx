@@ -1,4 +1,4 @@
-import { cleanup, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
@@ -637,6 +637,241 @@ describe("chat panel", () => {
 
     await waitFor(() => {
       expect(screen.getByText("An internal error occurred")).toBeInTheDocument();
+    });
+  });
+
+  test("shows </> debug button only when debug_prompts is on AND has_dump is true", async () => {
+    mockFetch((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : (input as Request).url;
+      const method = init?.method ?? "GET";
+      if (url.includes("/conversation") && method === "GET") {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              conversation: { id: "conv-1", list_id: "list-1" },
+              messages: [
+                {
+                  id: "msg-1",
+                  role: "assistant",
+                  content: "Hello",
+                  has_dump: true,
+                  metadata: null,
+                  created_at: "2026-04-01T10:01:00Z",
+                },
+              ],
+            }),
+          ),
+        );
+      }
+      if (url.endsWith("/api/config") && method === "GET") {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              rag: {
+                max_distance: 0.7,
+                reranking_enabled: true,
+                hybrid_enabled: true,
+                debug_prompts: true,
+              },
+            }),
+          ),
+        );
+      }
+      if (url.includes("/chat") && method === "POST") {
+        return Promise.resolve(makeSseStream(['data: {"type":"done"}\n\n']));
+      }
+      return Promise.resolve(new Response(JSON.stringify([])));
+    });
+
+    renderChatPanel(
+      { selectedSourceIds: ["src-1"], sources: [SOURCE_1] },
+      { skipMock: true },
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTitle(/view llm context/i)).toBeInTheDocument();
+    });
+  });
+
+  test("hides </> debug button when has_dump is false", async () => {
+    mockFetch((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : (input as Request).url;
+      const method = init?.method ?? "GET";
+      if (url.includes("/conversation") && method === "GET") {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              conversation: { id: "conv-1", list_id: "list-1" },
+              messages: [
+                {
+                  id: "msg-1",
+                  role: "assistant",
+                  content: "Hello",
+                  has_dump: false,
+                  metadata: null,
+                  created_at: "2026-04-01T10:01:00Z",
+                },
+              ],
+            }),
+          ),
+        );
+      }
+      if (url.endsWith("/api/config") && method === "GET") {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              rag: {
+                max_distance: 0.7,
+                reranking_enabled: true,
+                hybrid_enabled: true,
+                debug_prompts: true,
+              },
+            }),
+          ),
+        );
+      }
+      if (url.includes("/chat") && method === "POST") {
+        return Promise.resolve(makeSseStream(['data: {"type":"done"}\n\n']));
+      }
+      return Promise.resolve(new Response(JSON.stringify([])));
+    });
+
+    renderChatPanel(
+      { selectedSourceIds: ["src-1"], sources: [SOURCE_1] },
+      { skipMock: true },
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("Hello")).toBeInTheDocument();
+    });
+    expect(screen.queryByTitle(/view llm context/i)).toBeNull();
+  });
+
+  test("hides </> debug button when debug_prompts is off", async () => {
+    mockFetch((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : (input as Request).url;
+      const method = init?.method ?? "GET";
+      if (url.includes("/conversation") && method === "GET") {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              conversation: { id: "conv-1", list_id: "list-1" },
+              messages: [
+                {
+                  id: "msg-1",
+                  role: "assistant",
+                  content: "Hello",
+                  has_dump: true,
+                  metadata: null,
+                  created_at: "2026-04-01T10:01:00Z",
+                },
+              ],
+            }),
+          ),
+        );
+      }
+      if (url.endsWith("/api/config") && method === "GET") {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              rag: {
+                max_distance: 0.7,
+                reranking_enabled: true,
+                hybrid_enabled: true,
+                debug_prompts: false,
+              },
+            }),
+          ),
+        );
+      }
+      if (url.includes("/chat") && method === "POST") {
+        return Promise.resolve(makeSseStream(['data: {"type":"done"}\n\n']));
+      }
+      return Promise.resolve(new Response(JSON.stringify([])));
+    });
+
+    renderChatPanel(
+      { selectedSourceIds: ["src-1"], sources: [SOURCE_1] },
+      { skipMock: true },
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("Hello")).toBeInTheDocument();
+    });
+    expect(screen.queryByTitle(/view llm context/i)).toBeNull();
+  });
+
+  test("opens drawer on icon click and closes on Esc", async () => {
+    mockFetch((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : (input as Request).url;
+      const method = init?.method ?? "GET";
+      if (url.includes("/conversation") && method === "GET") {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              conversation: { id: "conv-1", list_id: "list-1" },
+              messages: [
+                {
+                  id: "msg-1",
+                  role: "assistant",
+                  content: "Hello",
+                  has_dump: true,
+                  metadata: null,
+                  created_at: "2026-04-01T10:01:00Z",
+                },
+              ],
+            }),
+          ),
+        );
+      }
+      if (url.endsWith("/api/config") && method === "GET") {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              rag: {
+                max_distance: 0.7,
+                reranking_enabled: true,
+                hybrid_enabled: true,
+                debug_prompts: true,
+              },
+            }),
+          ),
+        );
+      }
+      if (url.includes("/debug/messages/") && method === "GET") {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              system: "sys",
+              tools: [],
+              messages: [],
+              response: { text: "final" },
+              model: "test-model",
+              timestamp: "2026-06-06T00:00:00Z",
+            }),
+          ),
+        );
+      }
+      if (url.includes("/chat") && method === "POST") {
+        return Promise.resolve(makeSseStream(['data: {"type":"done"}\n\n']));
+      }
+      return Promise.resolve(new Response(JSON.stringify([])));
+    });
+
+    const user = userEvent.setup();
+    renderChatPanel(
+      { selectedSourceIds: ["src-1"], sources: [SOURCE_1] },
+      { skipMock: true },
+    );
+
+    const btn = await waitFor(() => screen.getByTitle(/view llm context/i));
+    await user.click(btn);
+    await waitFor(() => {
+      expect(screen.getByTestId(TEST_IDS.debugDrawer)).toBeInTheDocument();
+    });
+    fireEvent.keyDown(document, { key: "Escape" });
+    await waitFor(() => {
+      expect(screen.queryByTestId(TEST_IDS.debugDrawer)).toBeNull();
     });
   });
 });

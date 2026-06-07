@@ -3,6 +3,7 @@ import json
 import logging
 import re
 from collections.abc import AsyncGenerator
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -70,6 +71,7 @@ from bibilab.routers._model_gate import require_models_present
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+debug_router = APIRouter()
 
 
 def resolve_response_language(cfg: AIConfig, ui_lang: str) -> str:
@@ -146,6 +148,7 @@ async def get_conversation(
     list_id: str,
     before: str | None = None,
     limit: int = 50,
+    cfg: BibilabConfig = Depends(get_config),
 ) -> GetConversationResponse:
     list_row = await get_list(list_id)
     if list_row is None:
@@ -161,9 +164,19 @@ async def get_conversation(
         before_id=before,
     )
 
+    messages = [MessageResponse.from_row(dict(r)) for r in messages_rows]
+
+    # Only scan the debug dir when prompt-trace dumps are enabled. Off (the
+    # default) means no dumps are ever written, so has_dump must be False.
+    if cfg.rag.debug_prompts:
+        debug_dir = bibilab_home() / "debug"
+        existing = {p.stem for p in debug_dir.glob("*.json")} if debug_dir.exists() else set()
+        for m in messages:
+            m.has_dump = m.id in existing
+
     return GetConversationResponse(
         conversation=ConversationResponse.from_row(dict(conversation_row)),
-        messages=[MessageResponse.from_row(dict(r)) for r in messages_rows],
+        messages=messages,
     )
 
 
@@ -275,7 +288,7 @@ async def stream_with_tools(
     system: str | None = None,
     registry: dict[str, CitationRegistryEntry] | None = None,
     tool_block_sink: list[dict] | None = None,
-    debug_dump_dir: Path | None = None,
+    messages_sink: list[dict] | None = None,
 ) -> AsyncGenerator[StreamEvent, None]:
     if registry is None:
         registry = {}
@@ -283,7 +296,6 @@ async def stream_with_tools(
     messages = list(messages)
     seen_chunk_ids: set[str] = set()
     iteration = 0
-    llm_call = 0
     parse_buffer = ""
     citation_emitted = False
     tool_used = False
@@ -295,182 +307,163 @@ async def stream_with_tools(
     async def _execute_with_registry(name: str, args: dict) -> dict:
         return await execute_tool_fn(name, args, registry=registry, seen_chunk_ids=seen_chunk_ids)
 
-    while True:
-        iteration += 1
-        tool_calls: list[ToolCall] = []
-        text_parts: list[str] = []
-        lookup = _build_lookup()
-        is_synthesis_turn = iteration > MAX_TOOL_ITERATIONS
-        active_tools = [] if is_synthesis_turn else list(tools)
-        async for event in stream_llm(messages, cfg, active_tools, system=system):
-            if event.type == "tool_call":
-                tool_calls.append(event.tool_call)
-            elif event.type == "delta" and event.content:
-                text_generated = True
-                text_parts.append(event.content)
-                # Parse incrementally so citations and text reach the client as
-                # they arrive rather than waiting for the full LLM response.
-                parsed_events, parse_buffer = parse_delta(event.content, parse_buffer, lookup)
-                for pe in parsed_events:
-                    if pe.type == "citation":
-                        citation_emitted = True
+    try:
+        while True:
+            iteration += 1
+            tool_calls: list[ToolCall] = []
+            lookup = _build_lookup()
+            is_synthesis_turn = iteration > MAX_TOOL_ITERATIONS
+            active_tools = [] if is_synthesis_turn else list(tools)
+            async for event in stream_llm(messages, cfg, active_tools, system=system):
+                if event.type == "tool_call":
+                    tool_calls.append(event.tool_call)
+                elif event.type == "delta" and event.content:
+                    text_generated = True
+                    # Parse incrementally so citations and text reach the client as
+                    # they arrive rather than waiting for the full LLM response.
+                    parsed_events, parse_buffer = parse_delta(event.content, parse_buffer, lookup)
+                    for pe in parsed_events:
+                        if pe.type == "citation":
+                            citation_emitted = True
+                        yield pe
+                elif event.type in ("delta", "done"):
+                    pass
+                else:
+                    yield event
+
+            if not tool_calls or is_synthesis_turn:
+                for pe in flush_buffer(parse_buffer):
                     yield pe
-            elif event.type in ("delta", "done"):
-                pass
-            else:
-                yield event
+                # If tools were used but no answer text was ever generated, force one
+                # more LLM call with no tools so the user always gets a text response.
+                if not text_generated and tool_used:
+                    messages.append(
+                        {
+                            "role": "user",
+                            "content": (
+                                "You have retrieved information from the sources. "
+                                "Now answer the user's original question. "
+                                "Provide a complete answer based solely on the retrieved content."
+                            ),
+                        }
+                    )
+                    async for event in stream_llm(messages, cfg, [], system=system):
+                        if event.type == "delta" and event.content:
+                            parsed_events, parse_buffer = parse_delta(event.content, parse_buffer, lookup)
+                            for pe in parsed_events:
+                                yield pe
+                        elif event.type in ("delta", "done"):
+                            pass
+                        else:
+                            # Forward error/other events so producer-side error handling
+                            # can capture failures during forced synthesis.
+                            yield event
+                    for pe in flush_buffer(parse_buffer):
+                        yield pe
+                if not citation_emitted and registry:
+                    logger.info(
+                        "citations_missing_after_retrieve registry_size=%d",
+                        len(registry),
+                    )
+                return
 
-        # Dump the LLM call (input + response) AFTER the call completes.
-        if debug_dump_dir is not None:
-            llm_call += 1
-            _dump_turn(
-                debug_dump_dir,
-                llm_call,
-                system=system,
-                messages=messages,
-                tools=active_tools,
-                response_text="".join(text_parts),
-                response_tool_calls=[{"id": tc.id, "name": tc.name, "arguments": tc.arguments} for tc in tool_calls],
-            )
+            # Reset: a partial [ left over from preamble text should not bleed into
+            # iteration 2's citation parsing.
+            parse_buffer = ""
 
-        if not tool_calls or is_synthesis_turn:
-            for pe in flush_buffer(parse_buffer):
-                yield pe
-            # If tools were used but no answer text was ever generated, force one
-            # more LLM call with no tools so the user always gets a text response.
-            if not text_generated and tool_used:
+            retrieve_calls = [tc for tc in tool_calls if tc.name in RETRIEVE_TOOL_NAMES]
+            if len(retrieve_calls) > 1:
+                logger.info(
+                    "parallel_retrieve count=%d names=%r queries=%r",
+                    len(retrieve_calls),
+                    [tc.name for tc in retrieve_calls],
+                    [str(tc.arguments.get("query", ""))[:80] for tc in retrieve_calls],
+                )
+
+            results: dict[str, dict] = {}
+            for tc in tool_calls:
+                yield StreamEvent(
+                    type=SSE_EVENT_TOOL_CALL_START,
+                    content=json.dumps({"id": tc.id, "name": tc.name, "arguments": tc.arguments}),
+                )
+            for tc in tool_calls:
+                try:
+                    result = await _execute_with_registry(tc.name, tc.arguments)
+                except Exception:
+                    logger.exception("tool_execution_failed tool=%s", tc.name)
+                    yield StreamEvent(type=SSE_EVENT_ERROR, content=f"Tool {tc.name} failed")
+                    return
+
+                results[tc.id] = result
+                if tool_block_sink is not None:
+                    try:
+                        tool_block_sink.append(
+                            build_tool_block_entry(
+                                tool_use_id=tc.id,
+                                name=tc.name,
+                                arguments=tc.arguments,
+                                result=result,
+                                raw_chunks=result.get("_raw_chunks"),
+                            )
+                        )
+                    except Exception:
+                        logger.exception("tool_block_sink_append_failed tool=%s", tc.name)
+                yield StreamEvent(
+                    type=SSE_EVENT_TOOL_RESULT,
+                    content=json.dumps({"id": tc.id, "name": tc.name, "result": _client_tool_result(result)}),
+                )
+
+            # All tools in v2 loop back; feed results to the LLM for the next iteration.
+            tool_used = True
+            if cfg.protocol == "anthropic":
+                messages.append(
+                    {
+                        "role": "assistant",
+                        "content": [
+                            {"type": "tool_use", "id": tc.id, "name": tc.name, "input": tc.arguments}
+                            for tc in tool_calls
+                        ],
+                    }
+                )
                 messages.append(
                     {
                         "role": "user",
-                        "content": (
-                            "You have retrieved information from the sources. "
-                            "Now answer the user's original question. "
-                            "Provide a complete answer based solely on the retrieved content."
-                        ),
+                        "content": [
+                            {
+                                "type": "tool_result",
+                                "tool_use_id": tc.id,
+                                "content": _llm_tool_message_content(results[tc.id]),
+                            }
+                            for tc in tool_calls
+                        ],
                     }
                 )
-                synth_text_parts: list[str] = []
-                async for event in stream_llm(messages, cfg, [], system=system):
-                    if event.type == "delta" and event.content:
-                        synth_text_parts.append(event.content)
-                        parsed_events, parse_buffer = parse_delta(event.content, parse_buffer, lookup)
-                        for pe in parsed_events:
-                            yield pe
-                    elif event.type in ("delta", "done"):
-                        pass
-                    else:
-                        # Forward error/other events so producer-side error handling
-                        # can capture failures during forced synthesis.
-                        yield event
-                for pe in flush_buffer(parse_buffer):
-                    yield pe
-                if debug_dump_dir is not None:
-                    llm_call += 1
-                    _dump_turn(
-                        debug_dump_dir,
-                        llm_call,
-                        system=system,
-                        messages=messages,
-                        tools=[],
-                        response_text="".join(synth_text_parts),
-                        response_tool_calls=[],
-                    )
-            if not citation_emitted and registry:
-                logger.info(
-                    "citations_missing_after_retrieve registry_size=%d",
-                    len(registry),
-                )
-            return
-
-        # Reset: a partial [ left over from preamble text should not bleed into
-        # iteration 2's citation parsing.
-        parse_buffer = ""
-
-        retrieve_calls = [tc for tc in tool_calls if tc.name in RETRIEVE_TOOL_NAMES]
-        if len(retrieve_calls) > 1:
-            logger.info(
-                "parallel_retrieve count=%d names=%r queries=%r",
-                len(retrieve_calls),
-                [tc.name for tc in retrieve_calls],
-                [str(tc.arguments.get("query", ""))[:80] for tc in retrieve_calls],
-            )
-
-        results: dict[str, dict] = {}
-        for tc in tool_calls:
-            yield StreamEvent(
-                type=SSE_EVENT_TOOL_CALL_START,
-                content=json.dumps({"id": tc.id, "name": tc.name, "arguments": tc.arguments}),
-            )
-        for tc in tool_calls:
-            try:
-                result = await _execute_with_registry(tc.name, tc.arguments)
-            except Exception:
-                logger.exception("tool_execution_failed tool=%s", tc.name)
-                yield StreamEvent(type=SSE_EVENT_ERROR, content=f"Tool {tc.name} failed")
-                return
-
-            results[tc.id] = result
-            if tool_block_sink is not None:
-                try:
-                    tool_block_sink.append(
-                        build_tool_block_entry(
-                            tool_use_id=tc.id,
-                            name=tc.name,
-                            arguments=tc.arguments,
-                            result=result,
-                            raw_chunks=result.get("_raw_chunks"),
-                        )
-                    )
-                except Exception:
-                    logger.exception("tool_block_sink_append_failed tool=%s", tc.name)
-            yield StreamEvent(
-                type=SSE_EVENT_TOOL_RESULT,
-                content=json.dumps({"id": tc.id, "name": tc.name, "result": _client_tool_result(result)}),
-            )
-
-        # All tools in v2 loop back; feed results to the LLM for the next iteration.
-        tool_used = True
-        if cfg.protocol == "anthropic":
-            messages.append(
-                {
-                    "role": "assistant",
-                    "content": [
-                        {"type": "tool_use", "id": tc.id, "name": tc.name, "input": tc.arguments} for tc in tool_calls
-                    ],
-                }
-            )
-            messages.append(
-                {
-                    "role": "user",
-                    "content": [
+            else:
+                openai_tool_calls = [
+                    {
+                        "id": tc.id,
+                        "type": "function",
+                        "function": {"name": tc.name, "arguments": json.dumps(tc.arguments, ensure_ascii=False)},
+                    }
+                    for tc in tool_calls
+                ]
+                messages.append({"role": "assistant", "content": None, "tool_calls": openai_tool_calls})
+                for tc in tool_calls:
+                    messages.append(
                         {
-                            "type": "tool_result",
-                            "tool_use_id": tc.id,
+                            "role": "tool",
+                            "tool_call_id": tc.id,
                             "content": _llm_tool_message_content(results[tc.id]),
                         }
-                        for tc in tool_calls
-                    ],
-                }
-            )
-        else:
-            openai_tool_calls = [
-                {
-                    "id": tc.id,
-                    "type": "function",
-                    "function": {"name": tc.name, "arguments": json.dumps(tc.arguments, ensure_ascii=False)},
-                }
-                for tc in tool_calls
-            ]
-            messages.append({"role": "assistant", "content": None, "tool_calls": openai_tool_calls})
-            for tc in tool_calls:
-                messages.append(
-                    {
-                        "role": "tool",
-                        "tool_call_id": tc.id,
-                        "content": _llm_tool_message_content(results[tc.id]),
-                    }
-                )
-        continue
+                    )
+            continue
+    finally:
+        # Export the cumulative LLM message list to the caller's sink (if provided).
+        # try/finally guarantees the sink reflects the final state on every exit
+        # path — normal return, early return from tool error, or exception.
+        if messages_sink is not None:
+            messages_sink.clear()
+            messages_sink.extend(messages)
 
 
 def _serialize_event_for_buffer(event: StreamEvent) -> dict | None:
@@ -497,21 +490,23 @@ def _serialize_event_for_buffer(event: StreamEvent) -> dict | None:
 
 
 def _dump_turn(
-    debug_dir: Path,
-    llm_call: int,
+    debug_path: Path,
     *,
     system: str | None,
     messages: list[dict],
     tools: list[ToolDefinition],
     response_text: str = "",
-    response_tool_calls: list[dict] | None = None,
+    model: str = "",
+    timestamp: str = "",
 ) -> None:
-    """Best-effort write of one LLM call's input + response (#399).
+    """Best-effort write of one chat turn's final LLM state.
 
-    Writes {system, tools, messages, response: {text, tool_calls}} verbatim
-    as JSON to debug_dir/call{N}.json. Full LLM call — what was sent AND
-    what came back — with no reformatting. All errors are caught and
-    logged; a dump failure must never break a turn.
+    `debug_path` is the full file path (e.g. `~/.bibilab/debug/{message_id}.json`),
+    not a directory. Writes {system, tools, messages, response: {text},
+    model, timestamp} verbatim as JSON. The final LLM call's `messages` is the
+    cumulative state — it already contains all prior tool results — so one file
+    per message captures the final state the LLM actually saw. All errors are
+    caught and logged; a dump failure must never break a turn.
     """
     try:
         payload = {
@@ -520,12 +515,14 @@ def _dump_turn(
             "messages": messages,
             "response": {
                 "text": response_text,
-                "tool_calls": response_tool_calls or [],
             },
+            "model": model,
+            "timestamp": timestamp,
         }
-        (debug_dir / f"call{llm_call}.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2))
+        debug_path.parent.mkdir(parents=True, exist_ok=True)
+        debug_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2))
     except Exception:
-        logger.warning("dump_turn_failed dir=%s llm_call=%d", debug_dir, llm_call, exc_info=True)
+        logger.warning("dump_turn_failed path=%s", debug_path, exc_info=True)
 
 
 async def _sse_consumer(buf: StreamBuffer) -> AsyncGenerator[str, None]:
@@ -609,10 +606,10 @@ async def run_chat_turn(
         tools = [FIND_PASSAGES_TOOL, READ_SOURCE_TOOL]
 
         tool_blocks: list[dict] = []
-        debug_dump_dir: Path | None = None
-        if cfg.rag.debug_prompts:
-            debug_dump_dir = bibilab_home() / "debug" / message_id
-            debug_dump_dir.mkdir(parents=True, exist_ok=True)
+        # Cumulative LLM message list at end-of-turn. stream_with_tools rebinds
+        # messages to a defensive local copy, so in-loop appends never reach
+        # messages_for_llm — the sink captures the final state instead.
+        final_messages: list[dict] = []
 
         async for event in stream_with_tools(
             messages=messages_for_llm,
@@ -622,7 +619,7 @@ async def run_chat_turn(
             system=system_message if system_message.strip() else None,
             registry=citation_registry,
             tool_block_sink=tool_blocks,
-            debug_dump_dir=debug_dump_dir,
+            messages_sink=final_messages,
         ):
             payload = _serialize_event_for_buffer(event)
             if payload is not None:
@@ -672,6 +669,25 @@ async def run_chat_turn(
                 error_reason = "tool_error"
                 final_status = "failed"
                 return
+
+        # End-of-turn dump: write one file capturing the final LLM state.
+        # final_messages is the cumulative list exported by stream_with_tools
+        # via messages_sink — it already includes all prior tool exchanges, so
+        # a single file per turn replaces the older one-file-per-llm-call
+        # scheme. We can't use messages_for_llm directly: stream_with_tools
+        # rebinds messages to a defensive local copy, so in-loop appends
+        # never propagate back here.
+        if cfg.rag.debug_prompts:
+            debug_path = bibilab_home() / "debug" / f"{message_id}.json"
+            _dump_turn(
+                debug_path,
+                system=system_message if system_message.strip() else None,
+                messages=final_messages,
+                tools=tools,
+                response_text="".join(assistant_text_deltas),
+                model=cfg.ai.model,
+                timestamp=datetime.now().astimezone().isoformat(timespec="seconds"),
+            )
     except asyncio.CancelledError:
         final_status = "cancelled"
         raise
@@ -917,3 +933,11 @@ async def cancel_stream(
     if not await assert_message_in_list(message_id, list_id):
         raise HTTPException(404, "Message not in list")
     run_registry.cancel(message_id)
+
+
+@debug_router.get("/debug/messages/{message_id}")
+async def get_debug_dump(message_id: str):
+    path = bibilab_home() / "debug" / f"{message_id}.json"
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="Debug dump not found")
+    return Response(content=path.read_bytes(), media_type="application/json")

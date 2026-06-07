@@ -35,6 +35,7 @@ Thumbs.db
 
 # Internal Docs
 docs/internal/
+docs/handoff/
 docs/plans/
 docs/specs/
 docs/mocks/

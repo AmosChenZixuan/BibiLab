@@ -8,6 +8,7 @@ import type { Root, Element, Text, RootContent } from "hast";
 import {
   AlertCircle,
   ChevronDown,
+  Code,
   MessageSquare,
   MessageSquareOff,
   RotateCcw,
@@ -21,8 +22,10 @@ import { useJobActivity } from "@/components/jobs/JobActivityProvider";
 import { useConversationHistory, type MessageUI } from "@/components/lists/hooks/useConversationHistory";
 import { ToolLedger } from "@/components/lists/ToolLedger";
 import { PulseRing } from "@/components/ui/PulseRing";
+import { DebugDrawer } from "@/components/debug/DebugDrawer";
 import type { Source } from "@/lib/types";
 import { api } from "@/lib/api";
+import { useDebugDump } from "@/lib/hooks/useDebugDump";
 import { usePendingDeletions } from "@/lib/hooks/usePendingDeletions";
 import { TEST_IDS } from "@/lib/test-ids";
 import {
@@ -226,13 +229,32 @@ function renderParagraphs(
   );
 }
 
-function AssistantBubble({ children }: { children: ReactNode }) {
+function AssistantBubble({
+  children,
+  showDebugButton,
+  onShowDebug,
+}: {
+  children: ReactNode;
+  showDebugButton?: boolean;
+  onShowDebug?: () => void;
+}) {
   return (
     <div
       data-testid={TEST_IDS.bubbleAssistant}
-      className="bubble rounded-2xl rounded-bl-md border border-border bg-white/70"
+      className="bubble relative rounded-2xl rounded-bl-md border border-border bg-white/70"
     >
       {children}
+      {showDebugButton && onShowDebug && (
+        <button
+          type="button"
+          onClick={onShowDebug}
+          title="View LLM context (debug)"
+          aria-label="View LLM context (debug)"
+          className="absolute bottom-2 right-2 flex h-6 w-6 items-center justify-center rounded-md border border-border bg-white text-muted shadow-sm hover:text-blue"
+        >
+          <Code size={12} />
+        </button>
+      )}
     </div>
   );
 }
@@ -255,8 +277,49 @@ export function ChatPanel({
   const [inputValue, setInputValue] = useState("");
   const [messages, setMessages] = useState<MessageUI[]>([]);
   const [showClearPopover, setShowClearPopover] = useState(false);
+  const [debugPrompts, setDebugPrompts] = useState(false);
+  const [debugMsgId, setDebugMsgId] = useState<string | null>(null);
+  const { dump: debugDump, loading: debugLoading, notFound: debugNotFound, reset: resetDebugDump } = useDebugDump(debugMsgId);
+
+  // Wrap setDebugMsgId with a synchronous reset so the drawer doesn't
+  // flash stale data on a re-open (React batches both updates so the next
+  // render sees dump=null, msgId=new).
+  const openDebug = (id: string) => {
+    resetDebugDump();
+    setDebugMsgId(id);
+  };
   const { isPending, run } = usePendingDeletions();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .getConfig()
+      .then((c) => {
+        if (!cancelled) setDebugPrompts(c?.rag?.debug_prompts ?? false);
+      })
+      .catch(() => {
+        // debug prompts is opt-in debug-only; missing config just leaves it off
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!debugMsgId) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setDebugMsgId(null);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [debugMsgId]);
+
+  useEffect(() => {
+    if (debugNotFound && debugMsgId) {
+      console.warn("debug dump not found", debugMsgId);
+    }
+  }, [debugNotFound, debugMsgId]);
 
   const hasSources = selectedSourceIds.length > 0;
   const { messages: historyMessages, isLoadingHistory, loadError, activeStreamMessageId } = useConversationHistory(listId, hasSources, t("chat.interrupted"), t("chat.stopped"));
@@ -471,11 +534,17 @@ export function ChatPanel({
                     {msg.isStreaming && !msg.content && !msg.contentBlocks.length ? (
                       <PulseRing />
                     ) : msg.contentBlocks.length > 0 ? (
-                      <AssistantBubble>
+                      <AssistantBubble
+                        showDebugButton={debugPrompts && msg.hasDump}
+                        onShowDebug={() => openDebug(msg.id)}
+                      >
                         {renderParagraphs(msg.contentBlocks, sources, onOpenSource, msg.isStreaming)}
                       </AssistantBubble>
                     ) : msg.content ? (
-                      <AssistantBubble>
+                      <AssistantBubble
+                        showDebugButton={debugPrompts && msg.hasDump}
+                        onShowDebug={() => openDebug(msg.id)}
+                      >
                         <ReactMarkdown>{msg.content}</ReactMarkdown>
                       </AssistantBubble>
                     ) : null}
@@ -558,6 +627,13 @@ export function ChatPanel({
         </div>
       </div>
 
+      {debugMsgId && !debugLoading && debugDump ? (
+        <DebugDrawer
+          messageId={debugMsgId}
+          dump={debugDump}
+          onClose={() => setDebugMsgId(null)}
+        />
+      ) : null}
     </div>
   );
 }
