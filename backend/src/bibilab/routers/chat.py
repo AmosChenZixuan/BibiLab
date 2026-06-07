@@ -40,10 +40,12 @@ from bibilab.models.chat import (
 from bibilab.pipeline._shared import (
     _LANG_NATIVE_NAME,
     ContextWindowExceededError,
+    LLMEmptyResponseError,
     LLMOutputBudgetExceededError,
     StreamEvent,
     ToolCall,
     ToolDefinition,
+    _no_text_error,
     stream_llm,
 )
 from bibilab.pipeline.chat_runs import (
@@ -110,6 +112,7 @@ MAX_TOOL_ITERATIONS = 3
 _ERROR_CODE_MAP: tuple[tuple[type[Exception], str], ...] = (
     (ContextWindowExceededError, "llm_context_window_exceeded"),
     (LLMOutputBudgetExceededError, "llm_output_budget_exceeded"),
+    (LLMEmptyResponseError, "llm_empty_response"),
     (openai.APIConnectionError, "llm_connection_error"),
     (anthropic.APIConnectionError, "llm_connection_error"),
     (openai.AuthenticationError, "llm_auth_error"),
@@ -303,6 +306,7 @@ async def stream_with_tools(
     tool_used = False
     text_generated = False
     error_yielded = False
+    last_stop_reason: str | None = None
 
     def _build_lookup() -> dict[int, CitationRegistryEntry]:
         return {e.index: e for e in registry.values()}
@@ -329,7 +333,9 @@ async def stream_with_tools(
                         if pe.type == "citation":
                             citation_emitted = True
                         yield pe
-                elif event.type in ("delta", "done"):
+                elif event.type == "done":
+                    last_stop_reason = event.stop_reason
+                elif event.type == "delta":
                     pass
                 else:
                     yield event
@@ -356,7 +362,9 @@ async def stream_with_tools(
                             parsed_events, parse_buffer = parse_delta(event.content, parse_buffer, lookup)
                             for pe in parsed_events:
                                 yield pe
-                        elif event.type in ("delta", "done"):
+                        elif event.type == "done":
+                            last_stop_reason = event.stop_reason
+                        elif event.type == "delta":
                             pass
                         else:
                             # Forward error/other events so producer-side error handling
@@ -369,15 +377,14 @@ async def stream_with_tools(
                 # If the LLM produced no visible text across the whole turn
                 # (first turn with no tools, tool-using turn where the model
                 # never produced text, or forced synthesis also empty), surface
-                # it as a typed error so classify_error maps to
-                # llm_output_budget_exceeded. Without this, an empty assistant
-                # message would be persisted silently. Skip the raise if an
-                # error event was already yielded — that path is the real cause
-                # and the caller will surface it through classify_error.
+                # it as a typed error so classify_error maps to a code. Branch on
+                # the terminal stop_reason: a length cutoff → llm_output_budget_exceeded
+                # ("raise max output tokens"); anything else → llm_empty_response, so
+                # we never give false budget advice for a refusal or transient blank.
+                # Without this raise an empty assistant message would persist silently.
+                # Skip if an error event was already yielded — that's the real cause.
                 if not text_generated and not error_yielded:
-                    raise LLMOutputBudgetExceededError(
-                        "LLM produced no visible text. Output budget may be exhausted by thinking."
-                    )
+                    raise _no_text_error(last_stop_reason, cfg.max_output_tokens)
                 if not citation_emitted and registry:
                     logger.info(
                         "citations_missing_after_retrieve registry_size=%d",

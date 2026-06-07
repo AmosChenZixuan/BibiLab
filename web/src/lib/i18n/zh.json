@@ -295,6 +295,7 @@
       "llm_api_error": "AI 提供商错误",
       "llm_context_window_exceeded": "输入超出模型上下文窗口",
       "llm_output_budget_exceeded": "模型用尽了输出空间。请在设置 → LLM 中提高最大输出 token。",
+      "llm_empty_response": "模型没有返回任何内容。请重试。",
       "internal_error": "发生内部错误"
     }
   },

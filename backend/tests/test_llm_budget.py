@@ -6,7 +6,9 @@ from pydantic import ValidationError
 from bibilab.config import AIConfig
 from bibilab.pipeline._shared import (
     ContextWindowExceededError,
+    LLMEmptyResponseError,
     LLMOutputBudgetExceededError,
+    _no_text_error,
     _serialize_messages,
     resolve_max_tokens,
 )
@@ -121,6 +123,35 @@ def test_llm_output_budget_exceeded_subclasses_value_error() -> None:
     err = LLMOutputBudgetExceededError("test")
     assert isinstance(err, ValueError)
     assert str(err) == "test"
+
+
+def test_llm_empty_response_subclasses_value_error() -> None:
+    """LLMEmptyResponseError must also subclass ValueError (same legacy-catch
+    reason). It is the non-budget no-text case so digest's retry loop catches
+    it via the generic `except Exception` and retries — it is NOT in the
+    immediate re-raise tuple."""
+    assert issubclass(LLMEmptyResponseError, ValueError)
+    assert isinstance(LLMEmptyResponseError("x"), ValueError)
+
+
+@pytest.mark.parametrize("reason", ["max_tokens", "length"])
+def test_no_text_error_length_cutoff_is_budget_error(reason: str) -> None:
+    """A length/max_tokens cutoff is the ONLY no-text case that justifies the
+    'raise max output tokens' hint → LLMOutputBudgetExceededError."""
+    err = _no_text_error(reason, 16384)
+    assert isinstance(err, LLMOutputBudgetExceededError)
+    assert "output token limit" in str(err)
+
+
+@pytest.mark.parametrize("reason", ["stop", "end_turn", "content_filter", "unknown", None])
+def test_no_text_error_other_reasons_are_empty_response(reason) -> None:
+    """Any non-length terminal reason (normal stop, refusal, unknown, missing)
+    → LLMEmptyResponseError, so we never give false budget advice. Defaulting
+    the unknown/None case here is deliberate: better a neutral 'try again' than
+    a wrong 'raise max output tokens'."""
+    err = _no_text_error(reason, 16384)
+    assert isinstance(err, LLMEmptyResponseError)
+    assert not isinstance(err, LLMOutputBudgetExceededError)
 
 
 def test_serialize_messages_includes_tool_calls() -> None:

@@ -295,6 +295,7 @@
       "llm_api_error": "AI provider error",
       "llm_context_window_exceeded": "Input exceeds the model's context window",
       "llm_output_budget_exceeded": "The model used all available output space. Try raising max output tokens in Settings → LLM.",
+      "llm_empty_response": "The model returned no response. Please try again.",
       "internal_error": "An internal error occurred"
     }
   },
