@@ -474,7 +474,7 @@ Respond ONLY with valid JSON matching this schema:
                 sentence_segments,
             )
         except Exception as exc:
-            raise PipelineError(f"[processing] {exc}") from exc
+            raise PipelineError(f"[persisting] {exc}") from exc
         await update_job_status(job_id, JobStatus.DONE.value, progress=100)
         logger.info("Job %s completed for video %s", job_id, video_id)
 
@@ -570,10 +570,12 @@ Respond ONLY with valid JSON matching this schema:
         section boundary — the `chunk → section → source` nesting is physical, not
         by convention. Re-stamping in `chunk_by_sections` keeps the chunks' seg
         indices and sequence_index source-global so the rest of the system is
-        unaware sections exist (deferring the per-chunk section FK to chat #455).
+        unaware sections exist (the per-chunk section FK is a future
+        optimization; today the chunk→section containment is a structural
+        property of chunk_by_sections, not a stored relationship).
         """
         await update_job_status(job_id, JobStatus.PROCESSING.value, progress=40)
-        sections = derive_sections(sentence_segments, effective_language)
+        sections = derive_sections(sentence_segments)
         chunks = chunk_by_sections(sentence_segments, sections, language=effective_language)
 
         meta_raw = parse_job_meta(job)
@@ -586,7 +588,15 @@ Respond ONLY with valid JSON matching this schema:
             await asyncio.to_thread(embed_chunks, chunks, source_id, video_meta, list_id)
 
         extraction: DigestResult
-        extraction, _ = await asyncio.gather(_digest(), _embed())
+        gather_results = await asyncio.gather(_digest(), _embed(), return_exceptions=True)
+        extraction_raw, embed_raw = gather_results
+        if isinstance(embed_raw, BaseException):
+            logger.exception("embed_chunks raised but was not the primary error: %s", embed_raw)
+        if isinstance(extraction_raw, BaseException):
+            raise extraction_raw
+        if isinstance(embed_raw, BaseException):
+            raise embed_raw
+        extraction = extraction_raw
 
         if job_id in self._cancelled:
             self._cancelled.discard(job_id)

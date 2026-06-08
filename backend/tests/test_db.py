@@ -983,10 +983,9 @@ async def test_write_and_get_sections(tmp_bibilab_home: Path):
     from bibilab.db import (
         bootstrap_db,
         create_list,
-        get_sections,
-        write_sections,
     )
     from bibilab.pipeline.section import Section
+    from tests._section_db_seams import get_sections, write_sections
 
     await bootstrap_db()
     await create_list("list-1", "L", "2026-01-01T00:00:00")
@@ -1015,10 +1014,9 @@ async def test_write_sections_is_idempotent(tmp_bibilab_home: Path):
     from bibilab.db import (
         bootstrap_db,
         create_list,
-        get_sections,
-        write_sections,
     )
     from bibilab.pipeline.section import Section
+    from tests._section_db_seams import get_sections, write_sections
 
     await bootstrap_db()
     await create_list("list-1", "L", "2026-01-01T00:00:00")
@@ -1039,10 +1037,9 @@ async def test_sections_cascade_on_source_delete(tmp_bibilab_home: Path):
         bootstrap_db,
         create_list,
         delete_source,
-        get_sections,
-        write_sections,
     )
     from bibilab.pipeline.section import Section
+    from tests._section_db_seams import get_sections, write_sections
 
     await bootstrap_db()
     await create_list("list-1", "L", "2026-01-01T00:00:00")
@@ -1065,11 +1062,11 @@ async def test_write_source_with_segments_writes_sections_atomically(tmp_bibilab
     from bibilab.db import (
         bootstrap_db,
         create_list,
-        get_sections,
         get_source,
         write_source_with_segments,
     )
     from bibilab.pipeline.section import Section
+    from tests._section_db_seams import get_sections
 
     await bootstrap_db()
     await create_list("list-1", "L", "2026-01-01T00:00:00")
@@ -1113,10 +1110,10 @@ async def test_write_source_with_segments_rollback_leaves_no_orphan_sections(
     from bibilab.db import (
         bootstrap_db,
         create_list,
-        get_sections,
         get_source,
     )
     from bibilab.pipeline.section import Section
+    from tests._section_db_seams import get_sections
 
     await bootstrap_db()
     await create_list("list-1", "L", "2026-01-01T00:00:00")

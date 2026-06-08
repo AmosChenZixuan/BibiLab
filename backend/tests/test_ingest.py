@@ -946,10 +946,11 @@ async def test_update_source_facets_missing_row_raises_lookuperror(tmp_bibilab_h
 async def test_long_source_chunks_nest_in_sections(tmp_bibilab_home: Path):
     """Acceptance: after ingest of a long source, every chunk's seg range
     is fully contained in exactly one section's seg range."""
-    from bibilab.db import bootstrap_db, create_list, get_sections, write_transcript_segments
+    from bibilab.db import bootstrap_db, create_list, write_transcript_segments
     from bibilab.pipeline.section import chunk_by_sections, derive_sections
     from bibilab.pipeline.transcribe import WhisperSegment
     from bibilab.worker import WorkerLoop
+    from tests._section_db_seams import get_sections
 
     await bootstrap_db()
     await create_list("list-1", "L", "2026-01-01T00:00:00")
@@ -965,7 +966,7 @@ async def test_long_source_chunks_nest_in_sections(tmp_bibilab_home: Path):
     await write_transcript_segments(source_id, segs)
 
     # Manually run the per-stage pipeline: derive + chunk + persist
-    sections = derive_sections(segs, "en")
+    sections = derive_sections(segs)
     chunks = chunk_by_sections(segs, sections, language="en")
 
     # Write sections + segments atomically (extraction mocked)
@@ -1034,7 +1035,7 @@ async def test_short_source_one_section_byte_identical_chunks(tmp_bibilab_home: 
     ]
 
     pre = chunk_segments(segs, language="en")
-    sections = derive_sections(segs, "en")
+    sections = derive_sections(segs)
     assert len(sections) == 1  # pre-condition for byte-identical
     post = chunk_by_sections(segs, sections, language="en")
 
@@ -1052,8 +1053,9 @@ async def test_short_source_one_section_byte_identical_chunks(tmp_bibilab_home: 
 @pytest.mark.asyncio
 async def test_re_ingest_replaces_section_rows(tmp_bibilab_home: Path):
     """Re-ingest of a source replaces (does not duplicate) its section rows."""
-    from bibilab.db import bootstrap_db, create_list, get_sections, write_sections
+    from bibilab.db import bootstrap_db, create_list
     from bibilab.pipeline.section import Section
+    from tests._section_db_seams import get_sections, write_sections
 
     await bootstrap_db()
     await create_list("list-1", "L", "2026-01-01T00:00:00")
