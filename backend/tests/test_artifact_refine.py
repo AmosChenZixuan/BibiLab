@@ -8,19 +8,28 @@ batch sections, feeding the running draft back to the LLM. Short inputs
 
 from __future__ import annotations
 
+from pathlib import Path
+from unittest.mock import patch
+
 import pytest
 
 from bibilab.config import BibilabConfig
+from bibilab.db import bootstrap_db, create_list, write_source_with_segments
+from bibilab.pipeline.audio import PipelineError
+from bibilab.pipeline.section import Section
+from bibilab.pipeline.transcribe import WhisperSegment
 from bibilab.worker import (
     ArtifactResult,
     _build_initial_prompt,
     _build_refine_prompt,
+    _build_section_views,
     _format_duration,
     _pack_sections,
     _render_multi_batch_section,
     _render_single_batch_text,
     _SectionView,
 )
+from tests.factories import SourceFactory
 
 pytestmark = pytest.mark.integration
 
@@ -191,3 +200,84 @@ def test_build_refine_prompt_uses_lang_directive():
     p_zh = _build_refine_prompt("p", "study_guide", draft, "x", cfg, ui_lang="zh")
     # Different ui_lang → different lang directive in the prompt.
     assert p_en != p_zh
+
+
+# --- _build_section_views ---------------------------------------------------
+
+
+@pytest.fixture()
+def tmp_bibilab_home(tmp_path: Path):
+    with patch("bibilab.config.bibilab_home", return_value=tmp_path):
+        yield tmp_path
+
+
+@pytest.mark.asyncio
+async def test_build_section_views_no_sections_raises_pipeline_error(tmp_bibilab_home):
+    """A source with no section rows: _build_section_views raises
+    PipelineError with the documented message (fail-loud contract)."""
+    await bootstrap_db()
+    await create_list("list-1", "L", "2026-01-01T00:00:00")
+    # SourceFactory.build without sections=... → no section rows.
+    source_id = await SourceFactory.build("list-1", video_id="BVx")
+
+    with pytest.raises(PipelineError, match="no sections; re-ingest required"):
+        await _build_section_views([source_id])
+
+
+@pytest.mark.asyncio
+async def test_build_section_views_happy_path_returns_verbatim_text(tmp_bibilab_home):
+    """1 source with 2 sections, 1 segment each: returns 2 _SectionView
+    objects in seq order with verbatim text reconstructed from the segment
+    slice. Source order across sources is also preserved."""
+    await bootstrap_db()
+    await create_list("list-1", "L", "2026-01-01T00:00:00")
+
+    # SourceFactory.build does not accept segments/sections kwargs; seed
+    # the source row first, then write segments + sections via the
+    # production atomic path. `seq` is auto-assigned by _exec_write_sections
+    # (enumerate over the list).
+    source_id = await SourceFactory.build("list-1", video_id="BV1")
+    await write_source_with_segments(
+        segments=[
+            WhisperSegment(start=0.0, end=1.0, text="alpha", speaker="SPK_0"),
+            WhisperSegment(start=1.0, end=2.0, text="beta", speaker="SPK_0"),
+        ],
+        sections=[
+            Section(seg_start=0, seg_end=0, token_count=1, timestamp_start=0.0, timestamp_end=1.0),
+            Section(seg_start=1, seg_end=1, token_count=1, timestamp_start=1.0, timestamp_end=2.0),
+        ],
+        source_id=source_id,
+        video_id="BV1",
+        platform="bilibili",
+        list_id="list-1",
+        title="T",
+        summary="",
+        keywords=[],
+        cover_url=None,
+        source_url="https://x",
+        duration_seconds=0,
+        uploader="u",
+        language="en",
+        whisper_model="large-v3",
+        ai_model="gpt-4o",
+        settings_snapshot={},
+    )
+
+    views = await _build_section_views([source_id])
+
+    assert len(views) == 2
+    # Ordered by source then seq (single source here, so seq order is the test).
+    assert views[0].seq == 0
+    assert views[1].seq == 1
+    # Verbatim text reconstructed from the segment slice (format_turns
+    # with include_time=False, same speaker → one line "[SPK_0] text").
+    assert views[0].text == "[SPK_0] alpha"
+    assert views[1].text == "[SPK_0] beta"
+    # Token count is the precomputed value from the sections table.
+    assert views[0].token_count == 1
+    assert views[1].token_count == 1
+    # Source title propagated from the source row.
+    assert views[0].source_title == views[1].source_title
+    # Timestamps propagated from the sections table.
+    assert views[0].timestamp_start == 0.0
+    assert views[1].timestamp_end == 2.0

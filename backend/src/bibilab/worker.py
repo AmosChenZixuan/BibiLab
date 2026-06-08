@@ -19,7 +19,9 @@ from bibilab.db import (
     delete_job,
     get_list,
     get_pending_jobs,
+    get_section_ranges,
     get_source,
+    get_transcript_segments,
     parse_job_meta,
     reset_stuck_jobs,
     update_job_meta,
@@ -235,6 +237,59 @@ Respond ONLY with valid JSON matching this schema:
   "content": "string (the main artifact content in markdown format)"
 }}
 {lang_output_directive}"""
+
+
+async def _build_section_views(source_ids: list[str]) -> list[_SectionView]:
+    """Load each source's sections, reconstruct their verbatim text from
+    the segment slice, and return a flat ordered list of _SectionView
+    (selected-source order, then seq within source).
+
+    A source with no section rows raises ``PipelineError("...no sections;
+    re-ingest required")`` (fail-loud — pairs with the one-shot backfill
+    that populates pre-existing sources, so this should never fire in
+    production post-backfill). Segments are loaded once per source; the
+    text is ``format_turns`` with ``include_time=False`` (matches today's
+    artifact input).
+    """
+    views: list[_SectionView] = []
+    for source_id in source_ids:
+        source = await get_source(source_id)
+        if source is None:
+            raise PipelineError(f"Source {source_id!r} not found")
+        rows = await get_section_ranges(source_id)
+        if not rows:
+            raise PipelineError(f"Source {source_id!r} has no sections; re-ingest required")
+        # Load the source's segments once.
+        seg_rows = await get_transcript_segments(source_id)
+        if not seg_rows:
+            raise PipelineError(f"Source {source_id!r} has no transcript")
+        # Index by seq for slicing.
+        by_seq = {r["seq"]: r for r in seg_rows}
+        title = source["title"]
+        for row in rows:
+            slice_rows = [by_seq[s] for s in range(row["seg_start"], row["seg_end"] + 1) if s in by_seq]
+            slice_segs = [
+                WhisperSegment(
+                    start=r["start_s"],
+                    end=r["end_s"],
+                    text=r["text"],
+                    speaker=r["speaker"],
+                )
+                for r in slice_rows
+            ]
+            text = format_turns(slice_segs, include_time=False)
+            views.append(
+                _SectionView(
+                    source_id=source_id,
+                    source_title=title,
+                    seq=row["seq"],
+                    timestamp_start=row["timestamp_start"],
+                    timestamp_end=row["timestamp_end"],
+                    text=text,
+                    token_count=row["token_count"],
+                )
+            )
+    return views
 
 
 def _download_cover(cover_url: str, dest: Path) -> bool:
