@@ -221,9 +221,9 @@ def _default_embedding_function() -> ONNXMultilingualEmbedding:
     return ONNXMultilingualEmbedding()
 
 
-# Chroma collection name. Previously `BibilabConfig.transcript_collection_name`
-# (removed in #405); the string is the on-disk collection name, so changing it
-# orphans existing vectors and is a data-migration event, not a refactor.
+# Chroma collection name. The string is the on-disk collection name, so
+# changing it orphans existing vectors and is a data-migration event, not
+# a refactor.
 _TRANSCRIPT_COLLECTION = "bibilab_transcripts"
 
 
@@ -494,9 +494,9 @@ async def retrieve(
 ) -> RetrievalResult:
     """Recall-biased locator: hybrid search → rerank → top_k by rerank order.
 
-    No relevance gate (rerank is ordering, not authority — spec §15) and no
-    per-source diversity cap. The LLM filters relevance and decides whether to
-    escalate to read_source.
+    No relevance gate (rerank is ordering, not authority) and no per-source
+    diversity cap. The LLM filters relevance and decides whether to escalate
+    to read_source.
     """
     sources_total = len(source_ids)
     search_pool = scoped_source_ids if scoped_source_ids is not None else source_ids

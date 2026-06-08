@@ -223,7 +223,8 @@ def _download_http_files(spec: ModelSpec, target: Path) -> None:
 def _download_whisper_warp(spec: ModelSpec, target: Path) -> None:
     # funasr 1.3.7's openai branch hardcodes whisper.load_model(name) with no
     # download_root, so it always writes to ~/.cache/whisper. Bypass it and call
-    # openai-whisper's documented public API directly. See issue #426.
+    # openai-whisper's documented public API directly so the checkpoint lands in
+    # our models dir alongside the rest of the ASR cache.
     import whisper  # noqa: PLC0415  # openai-whisper (lazy: pulls in torch)
 
     logger.info("Downloading Whisper large-v3 (~3 GB) via WhisperWarp — this may take several minutes")

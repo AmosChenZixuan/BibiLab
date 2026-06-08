@@ -146,7 +146,9 @@ export type Artifact = {
 // Hand-maintained mirror of `BibilabConfig` in `backend/src/bibilab/config.py`.
 // When adding/removing fields, update both sides. The typed test fixtures
 // across `src/test/*` and the assertions in `src/test/api.test.ts` exercise
-// the wire shape; drift is a real defect — see #405.
+// the wire shape; drift between this type and the backend schema is a real
+// defect — `npm run lint` and the type checks in the api.test.ts fixtures are
+// the guardrail that catches it.
 export type BibilabConfig = {
   accounts: {
     bilibili: {

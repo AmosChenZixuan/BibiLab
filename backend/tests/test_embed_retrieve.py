@@ -1,4 +1,4 @@
-"""Retrieve() behaviour after the v2 gate/diversity/neighbor deletion (#370)."""
+"""Retrieve() behaviour after the v2 gate/diversity/neighbor deletion."""
 
 from __future__ import annotations
 

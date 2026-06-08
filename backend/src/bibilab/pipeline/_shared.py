@@ -103,7 +103,7 @@ def _serialize_messages(messages: list[dict], system: str | None, tools: "list[T
     JSON-dumped. OpenAI tool-calling turns also carry `tool_calls` (assistant),
     `tool_call_id` + `name` (tool) on the message envelope — without these the
     function-name and arguments JSON, often hundreds of bytes, are invisible
-    to the estimate and the resolved max_tokens is over-allocated (#432).
+    to the estimate and the resolved max_tokens is over-allocated.
     """
     parts = [system] if system else []
     for m in messages:
@@ -132,7 +132,7 @@ _LANG_INSTRUCTION = {
 # Native-language short name (e.g. "简体中文") for LLM-prompt interpolation.
 # Used as a stronger, language-specific instruction than the bare ISO code
 # ("zh") or the English name ("Chinese") — smaller / less capable models may
-# not reliably map either to the intended language. #402.
+# not reliably map either to the intended language.
 _LANG_NATIVE_NAME: dict[str, str] = {
     "en": "English",
     "zh": "简体中文",

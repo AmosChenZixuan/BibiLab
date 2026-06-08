@@ -484,7 +484,7 @@ def test_resolved_lang_with_explicit_language():
 
 @pytest.mark.asyncio
 async def test_generate_artifact_includes_zh_lang_instruction(tmp_path: Path, monkeypatch, mock_call_llm):
-    """_generate_artifact prepends 简体中文 language instruction when ui_lang=zh. #402."""
+    """_generate_artifact prepends 简体中文 language instruction when ui_lang=zh."""
     from unittest.mock import MagicMock
 
     from bibilab.config import AIConfig

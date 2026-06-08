@@ -61,7 +61,7 @@ def test_digest_reinforcement_appears_in_prompt_en(mock_call_llm):
 
 
 def test_digest_reinforcement_appears_in_prompt_zh(mock_call_llm):
-    """digest with zh prepends and appends 简体中文 language instruction. #402."""
+    """digest with zh prepends and appends 简体中文 language instruction."""
     captured = None
 
     def capture_llm(prompt, cfg, llm_timeout=120):
@@ -316,7 +316,7 @@ class TestDigestResultFacets:
         assert result.sequence_number == 8
 
     def test_sequence_kind_not_in_model(self):
-        # DigestResult no longer has sequence_kind after #320 removal.
+        # DigestResult no longer has sequence_kind after its removal.
         result = DigestResult(summary="S", keywords=["k"])
         assert not hasattr(result, "sequence_kind")
 
