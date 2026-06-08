@@ -10,7 +10,11 @@ from __future__ import annotations
 
 import pytest
 
+from bibilab.config import BibilabConfig
 from bibilab.worker import (
+    ArtifactResult,
+    _build_initial_prompt,
+    _build_refine_prompt,
     _format_duration,
     _pack_sections,
     _render_multi_batch_section,
@@ -116,3 +120,74 @@ def test_render_multi_batch_section_uses_per_section_header():
     out = _render_multi_batch_section(a0)
     expected = "=== Source: Title-src-A · Section 0 (00:00-01:00) ===\nA0 text."
     assert out == expected
+
+
+# --- prompt builders --------------------------------------------------------
+
+
+def test_build_initial_prompt_matches_today_template_for_single_batch():
+    """The single-batch path's prompt must be byte-identical to today's
+    _generate_artifact template (regression guard)."""
+    sections = [_sv("src-A", 0, "A text."), _sv("src-B", 0, "B text.")]
+    transcript = _render_single_batch_text(sections)
+    prompt = _build_initial_prompt(
+        prompt="summarize the videos",
+        artifact_type="study_guide",
+        transcript_text=transcript,
+        cfg=BibilabConfig(),
+        ui_lang="en",
+    )
+    # The structure is: lang_instruction + blank + user_prompt + blank +
+    # "Based on the following transcripts..." + "Transcript:" + transcript
+    # + blank + lang_instruction + "Respond ONLY with valid JSON..." +
+    # JSON schema + lang_output_directive.
+    assert "summarize the videos" in prompt
+    assert "=== Source: Title-src-A ===" in prompt
+    assert "=== Source: Title-src-B ===" in prompt
+    # Single-batch means NO per-section header, even if a source has multiple
+    # sections (it would render as one concatenated block).
+    assert "Section 0" not in prompt
+    # The JSON schema contract is preserved (today's LLM is told to return
+    # {name, content}).
+    assert '"name"' in prompt
+    assert '"content"' in prompt
+    # The schema direction is present.
+    assert "Respond ONLY with valid JSON" in prompt
+
+
+def test_build_refine_prompt_includes_running_draft_and_integrate_directive():
+    """Batch k>1 prompt: the running draft is in the prompt, the new
+    sections are next, and an integrate directive tells the LLM what to do."""
+    draft = ArtifactResult(name="Initial title", content="Initial body.")
+    new_sections_text = "=== Source: Title-src-A · Section 1 (01:00-02:00) ===\nA1 text."
+    prompt = _build_refine_prompt(
+        prompt="summarize the videos",
+        artifact_type="study_guide",
+        draft=draft,
+        new_sections_text=new_sections_text,
+        cfg=BibilabConfig(),
+        ui_lang="en",
+    )
+    # The running draft is shown (name + content).
+    assert "Initial title" in prompt
+    assert "Initial body." in prompt
+    # The new material is shown.
+    assert "Section 1 (01:00-02:00)" in prompt
+    assert "A1 text." in prompt
+    # An "integrate" directive is present.
+    assert "integrate" in prompt.lower()
+    # The {name, content} JSON contract is preserved so the LLM keeps
+    # returning a parseable ArtifactResult.
+    assert '"name"' in prompt
+    assert '"content"' in prompt
+
+
+def test_build_refine_prompt_uses_lang_directive():
+    """The refine prompt honors cfg.output_language + ui_lang (same path
+    as the initial prompt)."""
+    cfg = BibilabConfig()
+    draft = ArtifactResult(name="t", content="c")
+    p_en = _build_refine_prompt("p", "study_guide", draft, "x", cfg, ui_lang="en")
+    p_zh = _build_refine_prompt("p", "study_guide", draft, "x", cfg, ui_lang="zh")
+    # Different ui_lang → different lang directive in the prompt.
+    assert p_en != p_zh

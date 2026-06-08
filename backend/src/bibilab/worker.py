@@ -1,6 +1,7 @@
 """Background worker loop."""
 
 import asyncio
+import json
 import logging
 import uuid
 from dataclasses import dataclass
@@ -148,6 +149,92 @@ def _render_multi_batch_section(sec: _SectionView) -> str:
         f"{_format_duration(sec.timestamp_end)}) ==="
     )
     return f"{header}\n{sec.text}"
+
+
+def _resolved_prompt_block(
+    cfg: BibilabConfig,
+    ui_lang: str | None,
+) -> tuple[str, str]:
+    """Return (lang_instruction, lang_output_directive) for the artifact
+    prompt builders. Centralized so single-batch and multi-batch prompts
+    use the same lang resolution path."""
+    lang = _resolved_lang(cfg.ai.output_language, ui_lang)
+    lang_instruction = _LANG_INSTRUCTION.get(lang, _LANG_INSTRUCTION["en"])
+    return lang_instruction, _lang_output_directive(lang)
+
+
+def _build_initial_prompt(
+    prompt: str,
+    artifact_type: str,
+    transcript_text: str,
+    cfg: BibilabConfig,
+    ui_lang: str | None,
+) -> str:
+    """Build the prompt for the first batch of a section-batched refine,
+    or for the single-call path when everything fits in one batch.
+
+    The single-call case is byte-identical to today's _generate_artifact
+    template (regression guard)."""
+    lang_instruction, lang_output_directive = _resolved_prompt_block(cfg, ui_lang)
+    return f"""{lang_instruction}
+
+{prompt}
+
+Based on the following transcripts, generate the requested artifact content.
+
+Transcript:
+{transcript_text}
+
+{lang_instruction}
+Respond ONLY with valid JSON matching this schema:
+{{
+  "name": "string (a short title for this artifact)",
+  "content": "string (the main artifact content in markdown format)"
+}}
+{lang_output_directive}"""
+
+
+def _build_refine_prompt(
+    prompt: str,
+    artifact_type: str,
+    draft: "ArtifactResult",
+    new_sections_text: str,
+    cfg: BibilabConfig,
+    ui_lang: str | None,
+) -> str:
+    """Build the prompt for batch k>1: show the running draft, show the
+    new material, and instruct the LLM to integrate them. The LLM returns
+    a fresh {name, content} JSON — name is re-derived from accumulated
+    context (single prompt template family, no special-case)."""
+    lang_instruction, lang_output_directive = _resolved_prompt_block(cfg, ui_lang)
+    # Use json.dumps (not repr interpolation) so the fenced JSON block is
+    # actually valid JSON for the LLM to read. ensure_ascii=False keeps
+    # non-ASCII characters readable for non-English outputs.
+    draft_block = json.dumps({"name": draft.name, "content": draft.content}, ensure_ascii=False)
+    draft_text = f"Current draft (name + content):\n```json\n{draft_block}\n```\n"
+    integrate_directive = (
+        "Integrate this new material into the draft. Keep the same JSON "
+        "schema; refine the draft's name and content to reflect the "
+        "accumulated material."
+    )
+    return f"""{lang_instruction}
+
+{prompt}
+
+{draft_text}
+
+New material to integrate:
+{new_sections_text}
+
+{integrate_directive}
+
+{lang_instruction}
+Respond ONLY with valid JSON matching this schema:
+{{
+  "name": "string (a short title for this artifact)",
+  "content": "string (the main artifact content in markdown format)"
+}}
+{lang_output_directive}"""
 
 
 def _download_cover(cover_url: str, dest: Path) -> bool:
