@@ -3,6 +3,7 @@
 import asyncio
 import logging
 import uuid
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -55,6 +56,57 @@ class ArtifactResult(BaseModel):
 
     name: str
     content: str
+
+
+# Token-budget knobs for the artifact section-batched refine.
+# budget = context_window − max_output_tokens − _DRAFT_RESERVE_TOKENS − _PROMPT_OVERHEAD_TOKENS
+_DRAFT_RESERVE_TOKENS = 4096
+_PROMPT_OVERHEAD_TOKENS = 500
+
+# Soft cost note: log a warning when refine batches exceed this threshold.
+_SOFT_COST_BATCH_THRESHOLD = 3
+
+
+@dataclass
+class _SectionView:
+    """A section's verbatim text + the metadata needed to render its
+    multi-batch header. Built once per source, then greedy-packed into
+    batches by the artifact refine flow."""
+
+    source_id: str
+    source_title: str
+    seq: int
+    timestamp_start: float
+    timestamp_end: float
+    text: str
+    token_count: int
+
+
+def _pack_sections(
+    sections: list[_SectionView],
+    budget_tokens: int,
+) -> list[list[_SectionView]]:
+    """Greedy pack sections into batches respecting the per-batch token budget.
+
+    A section that alone exceeds the budget goes into a batch by itself
+    (the caller checks this and raises PipelineError — sections are atomic
+    and never split). Order is preserved: section order within each batch
+    is the original ``sections`` list order.
+    """
+    batches: list[list[_SectionView]] = []
+    current: list[_SectionView] = []
+    current_tokens = 0
+    for sec in sections:
+        if current and current_tokens + sec.token_count > budget_tokens:
+            batches.append(current)
+            current = [sec]
+            current_tokens = sec.token_count
+        else:
+            current.append(sec)
+            current_tokens += sec.token_count
+    if current:
+        batches.append(current)
+    return batches
 
 
 def _download_cover(cover_url: str, dest: Path) -> bool:
