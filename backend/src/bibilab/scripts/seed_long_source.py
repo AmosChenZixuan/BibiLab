@@ -1,4 +1,4 @@
-"""Dev one-shot: seed a synthetic multi-section source for #454 / #455.
+"""Dev one-shot: seed a synthetic multi-section source for end-to-end verification of multi-section rendering.
 
 Concatenates the K=6 longest existing sources' transcript segments with
 continuous timestamps + a 5s seam pause, then runs the full ingest
@@ -9,7 +9,7 @@ Run once against a dev DB:
 
     uv run python -m bibilab.scripts.seed_long_source
 
-DELETE THIS SCRIPT after #454 + #455 verify the synthetic source (per the
+DELETE THIS SCRIPT after the chat goes section-grained follow-up verifies the synthetic source (per the
 project's one-shot rule).
 """
 

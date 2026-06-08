@@ -1,6 +1,6 @@
-"""One-shot backfill: populate `sections` rows for pre-#452 sources.
+"""One-shot backfill: populate `sections` rows for sources that have none.
 
-Run once against the live DB after this issue lands:
+Run once against the live DB after the bounded-sections foundation lands:
 
     uv run python -m bibilab.scripts.backfill_sections
 
@@ -24,7 +24,7 @@ async def run_backfill(*, fail_on_mismatch: bool = False) -> None:
     """Populate `sections` rows for sources that have none.
 
     For each source: derive sections from its segments, assert exactly 1
-    section (the corpus invariant for pre-#452 sources), insert that section
+    section (the corpus invariant for sources ingested before the bounded-sections tier shipped), insert that section
     row with summary/keywords copied from the source row (the 1-section
     mirror invariant). No LLM call.
     """
