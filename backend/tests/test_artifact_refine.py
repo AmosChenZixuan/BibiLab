@@ -25,6 +25,7 @@ from bibilab.worker import (
     _build_section_views,
     _format_duration,
     _pack_sections,
+    _refine_artifact,
     _render_multi_batch_section,
     _render_single_batch_text,
     _SectionView,
@@ -281,3 +282,65 @@ async def test_build_section_views_happy_path_returns_verbatim_text(tmp_bibilab_
     # Timestamps propagated from the sections table.
     assert views[0].timestamp_start == 0.0
     assert views[1].timestamp_end == 2.0
+
+
+# --- _refine_artifact (single-batch regression guard) ----------------------
+
+
+@pytest.mark.asyncio
+async def test_refine_artifact_single_batch_byte_identical_prompt():
+    """Regression guard: when all sections fit in one batch, _refine_artifact
+    calls _call_llm exactly once with the same prompt template today's
+    _generate_artifact would build, and returns the parsed ArtifactResult.
+
+    The "byte-identical" claim is structural (same template + same JSON
+    schema + same lang directive + same transcript text shape), not a
+    test-time string equality — LLM output is stochastic."""
+    cfg = BibilabConfig()
+    # Tiny context window that still fits 2 small sections easily.
+    cfg.ai.context_window = 32_000
+    cfg.ai.max_output_tokens = 4_000
+    sections = [
+        _SectionView(
+            source_id="src-A",
+            source_title="A",
+            seq=0,
+            timestamp_start=0.0,
+            timestamp_end=1.0,
+            text="A text.",
+            token_count=2,
+        ),
+        _SectionView(
+            source_id="src-B",
+            source_title="B",
+            seq=0,
+            timestamp_start=0.0,
+            timestamp_end=1.0,
+            text="B text.",
+            token_count=2,
+        ),
+    ]
+    expected_response = '{"name": "My Title", "content": "My body."}'
+
+    with patch("bibilab.worker._call_llm", return_value=expected_response) as mock_llm:
+        result = await _refine_artifact(
+            prompt="summarize",
+            artifact_type="study_guide",
+            sections=sections,
+            cfg=cfg,
+            ui_lang="en",
+        )
+
+    assert mock_llm.call_count == 1
+    # The single call's prompt must contain both source headers, no
+    # per-section header, and the JSON schema.
+    prompt_arg = mock_llm.call_args[0][0]
+    assert "=== Source: A ===" in prompt_arg
+    assert "=== Source: B ===" in prompt_arg
+    assert "Section 0" not in prompt_arg  # no per-section header on single-batch
+    assert '"name"' in prompt_arg
+    assert '"content"' in prompt_arg
+    # The parsed result is returned.
+    assert isinstance(result, ArtifactResult)
+    assert result.name == "My Title"
+    assert result.content == "My body."

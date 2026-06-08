@@ -292,6 +292,128 @@ async def _build_section_views(source_ids: list[str]) -> list[_SectionView]:
     return views
 
 
+async def _call_llm_with_retry(
+    llm_prompt: str,
+    cfg: BibilabConfig,
+    *,
+    label: str,
+) -> ArtifactResult:
+    """Run ``_call_llm`` with the standard 3-attempt retry ladder. On
+    ``ContextWindowExceededError``, raise immediately (deterministic — the
+    same prompt would re-overflow). On other failures, retry 3 times then
+    raise ``PipelineError``."""
+    last_exc: Exception | None = None
+    for attempt in range(3):
+        try:
+            raw = await asyncio.to_thread(_call_llm, llm_prompt, cfg.ai)
+            return _parse_llm_json_response(raw, ArtifactResult)
+        except ContextWindowExceededError:
+            # Deterministic — no point retrying.
+            raise
+        except Exception as exc:  # noqa: BLE001
+            last_exc = exc
+            logger.warning("LLM %s failed (attempt %d/3): %s", label, attempt + 1, exc)
+            if attempt < 2:
+                continue
+    error_msg = f"LLM {label} exhausted all retries: {last_exc}"
+    logger.error(error_msg)
+    raise PipelineError(error_msg)
+
+
+async def _refine_artifact(
+    *,
+    prompt: str,
+    artifact_type: str,
+    sections: list[_SectionView],
+    cfg: BibilabConfig,
+    ui_lang: str | None = None,
+) -> ArtifactResult:
+    """Section-batched, running-draft refine for the artifact pipeline.
+
+    When all sections fit in one batch (the common case — a few short
+    sources, each with 1 section), this collapses to the legacy
+    single-``_call_llm`` behavior, with the byte-identical prompt template
+    produced by ``_build_initial_prompt``.
+
+    When sections don't fit, the multi-batch path (filled in by a follow-up
+    task) calls ``_call_llm`` once per batch: batch 1 produces an initial
+    draft; batch k>1 refines the running draft with new sections.
+
+    A single section that alone exceeds the per-batch budget raises
+    ``PipelineError`` (sections are atomic — never split). A batch whose
+    ``_call_llm`` exhausts the 3-attempt retry ladder raises
+    ``PipelineError`` (no partial artifact).
+
+    When the batch count exceeds ``_SOFT_COST_BATCH_THRESHOLD``, a soft
+    cost note is logged via ``logger.warning`` (no schema/UI change).
+    """
+    budget = cfg.ai.context_window - cfg.ai.max_output_tokens - _DRAFT_RESERVE_TOKENS - _PROMPT_OVERHEAD_TOKENS
+    if budget <= 0:
+        raise PipelineError(
+            f"Artifact batch budget non-positive (context_window={cfg.ai.context_window}, "
+            f"max_output_tokens={cfg.ai.max_output_tokens}, "
+            f"draft_reserve={_DRAFT_RESERVE_TOKENS}, prompt_overhead={_PROMPT_OVERHEAD_TOKENS}); "
+            f"raise max_output_tokens or context_window"
+        )
+
+    # Atomicity guard: a section alone > budget cannot be split. The
+    # packing is greedy, so an oversized section is the only thing that
+    # can produce a batch whose total exceeds the budget. Detect and fail
+    # loud here, before the LLM call.
+    for sec in sections:
+        if sec.token_count > budget:
+            raise PipelineError(
+                f"Source {sec.source_id!r} section {sec.seq} alone "
+                f"({sec.token_count} tokens) exceeds the artifact batch "
+                f"budget ({budget} tokens); reduce section size or raise "
+                f"context_window"
+            )
+
+    batches = _pack_sections(sections, budget)
+    if len(batches) > _SOFT_COST_BATCH_THRESHOLD:
+        logger.warning(
+            "Artifact refine using %d batches (threshold=%d); consider "
+            "raising context_window or selecting fewer sources",
+            len(batches),
+            _SOFT_COST_BATCH_THRESHOLD,
+        )
+
+    # ---- Single-batch path (byte-identical regression guard) ----
+    if len(batches) == 1:
+        transcript_text = _render_single_batch_text(sections)
+        llm_prompt = _build_initial_prompt(
+            prompt=prompt,
+            artifact_type=artifact_type,
+            transcript_text=transcript_text,
+            cfg=cfg,
+            ui_lang=ui_lang,
+        )
+        return await _call_llm_with_retry(llm_prompt, cfg, label="artifact batch 1/1")
+
+    # ---- Multi-batch path (filled in by the next task) ----
+    return await _refine_artifact_multi_batch(
+        prompt=prompt,
+        artifact_type=artifact_type,
+        batches=batches,
+        cfg=cfg,
+        ui_lang=ui_lang,
+    )
+
+
+async def _refine_artifact_multi_batch(
+    *,
+    prompt: str,
+    artifact_type: str,
+    batches: list[list[_SectionView]],
+    cfg: BibilabConfig,
+    ui_lang: str | None,
+) -> ArtifactResult:
+    """Multi-batch refine. Filled in by the next task — currently a
+    placeholder that raises so the single-batch path is the only one
+    exercised until then."""
+    raise NotImplementedError("multi-batch path: see follow-up task")
+
+
 def _download_cover(cover_url: str, dest: Path) -> bool:
     """Download cover image from URL to dest path. Returns True on success."""
     try:
