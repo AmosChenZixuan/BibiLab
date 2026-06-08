@@ -24,9 +24,10 @@ for chunk size; it does not apply here.
 """
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from bibilab.pipeline._shared import count_tokens
+from bibilab.pipeline.chunk import RagChunk
 from bibilab.pipeline.transcribe import WhisperSegment
 
 logger = logging.getLogger(__name__)
@@ -139,3 +140,50 @@ def derive_sections(
         int(ZONE_HIGH * target_tokens),
     )
     return sections
+
+
+def chunk_by_sections(
+    segments: list[WhisperSegment],
+    sections: list[Section],
+    language: str = "en",
+) -> list[RagChunk]:
+    """Run `chunk_segments` independently inside each section's segment slice,
+    re-stamping `sequence_index` and `seg_start`/`seg_end` to source-global
+    values so chunks compose cleanly with the rest of the system (citation
+    chain, `get_segments_for_ranges`).
+
+    Short video (1 section spanning all) → byte-identical output to calling
+    `chunk_segments(segments, language=...)` directly (modulo the dataclass
+    `replace`, which is value-preserving).
+
+    Parameters
+    ----------
+    segments
+        The full source-global segments list (same one `derive_sections` saw).
+    sections
+        The output of `derive_sections(segments, language)`.
+    language
+        Forwarded to `chunk_segments` for per-section token-target selection
+        (zh → 800 tok target, en → 300 tok target, etc.).
+    """
+    if not sections:
+        return []
+
+    from bibilab.pipeline.chunk import chunk_segments  # local import to avoid a cycle
+
+    out: list[RagChunk] = []
+    chunk_offset = 0
+    for sec in sections:
+        slice_ = segments[sec.seg_start : sec.seg_end + 1]
+        per_section = chunk_segments(slice_, language=language)
+        for c in per_section:
+            out.append(
+                replace(
+                    c,
+                    sequence_index=chunk_offset + c.sequence_index,
+                    seg_start=sec.seg_start + c.seg_start,
+                    seg_end=sec.seg_start + c.seg_end,
+                )
+            )
+        chunk_offset += len(per_section)
+    return out

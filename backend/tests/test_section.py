@@ -11,6 +11,7 @@ from bibilab.pipeline.section import (
     ZONE_HIGH,
     ZONE_LOW,
     Section,
+    chunk_by_sections,
     derive_sections,
 )
 from bibilab.pipeline.transcribe import WhisperSegment
@@ -161,3 +162,59 @@ def test_derive_sections_trailing_remainder_is_emitted():
     assert len(secs) == 1
     assert secs[0].seg_start == 0
     assert secs[0].seg_end == 4
+
+
+def test_chunk_by_sections_short_video_one_section_byte_identical_to_prechange():
+    # Regression guard: short video (1 section) → chunks match today's pipeline.
+    segs = [_seg(float(i), float(i + 1), f"short sentence {i}.") for i in range(30)]
+    sections = derive_sections(segs, "en")
+    assert len(sections) == 1  # pre-condition
+
+    out = chunk_by_sections(segs, sections, language="en")
+    assert len(out) >= 1
+    # Every chunk's seg indices must be source-global (matching the input list).
+    for c in out:
+        assert 0 <= c.seg_start <= c.seg_end < len(segs)
+    # No two chunks share a seq index, and they are dense starting at 0.
+    seqs = [c.sequence_index for c in out]
+    assert seqs == list(range(len(out)))
+
+
+def test_chunk_by_sections_long_video_chunks_never_cross_section_boundary():
+    # Nesting invariant: for every chunk, its [seg_start, seg_end] is fully
+    # contained in exactly one section's [seg_start, seg_end].
+    segs = [_seg(float(i), float(i + 1), ("word " * 100).strip() + ".") for i in range(180)]
+    sections = derive_sections(segs, "en")
+    assert len(sections) >= 2  # pre-condition
+
+    chunks = chunk_by_sections(segs, sections, language="en")
+    for c in chunks:
+        containing = [s for s in sections if s.seg_start <= c.seg_start and c.seg_end <= s.seg_end]
+        assert len(containing) == 1, (
+            f"chunk [{c.seg_start}..{c.seg_end}] contained in {len(containing)} sections, expected 1"
+        )
+
+
+def test_chunk_by_sections_timestamps_remain_absolute():
+    # The slice view preserves absolute WhisperSegment.start/end, so chunk
+    # timestamps must equal the first/last segment's absolute times.
+    segs = [_seg(float(i * 10), float(i * 10 + 5), "x.") for i in range(100)]
+    sections = derive_sections(segs, "en", target_tokens=80)
+    chunks = chunk_by_sections(segs, sections, language="en")
+    for c in chunks:
+        assert c.timestamp_start == segs[c.seg_start].start
+        assert c.timestamp_end == segs[c.seg_end].end
+
+
+def test_chunk_by_sections_empty_sections_returns_empty():
+    assert chunk_by_sections([], [], language="en") == []
+
+
+def test_chunk_by_sections_per_section_seq_index_is_source_global():
+    # Each per-section call starts sequence_index at 0; the helper must offset
+    # by the running chunk count so the final chunks have dense 0..N seqs.
+    segs = [_seg(float(i), float(i + 1), ("word " * 100).strip() + ".") for i in range(180)]
+    sections = derive_sections(segs, "en")
+    chunks = chunk_by_sections(segs, sections, language="en")
+    seqs = sorted(c.sequence_index for c in chunks)
+    assert seqs == list(range(len(chunks)))
