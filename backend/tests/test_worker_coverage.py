@@ -276,11 +276,11 @@ async def test_stage_process_chunks_sentence_segments(tmp_bibilab_home: Path, mo
     sentences = [WhisperSegment(start=0.0, end=2.0, text="第一句。", speaker="SPK_0")]
     captured: dict = {}
 
-    def _fake_chunk(segs, **kw):
+    def _fake_chunk(segs, *args, **kw):
         captured["segs"] = segs
         return []
 
-    monkeypatch.setattr("bibilab.worker.chunk_segments", _fake_chunk)
+    monkeypatch.setattr("bibilab.worker.chunk_by_sections", _fake_chunk)
     monkeypatch.setattr("bibilab.worker.embed_chunks", lambda *a, **k: None)
     monkeypatch.setattr(
         "bibilab.worker.digest",
@@ -289,7 +289,7 @@ async def test_stage_process_chunks_sentence_segments(tmp_bibilab_home: Path, mo
         ),
     )
     loop = WorkerLoop(config=BibilabConfig(), home=tmp_bibilab_home)
-    await loop._stage_process(
+    result = await loop._stage_process(
         job_id="j",
         job={"meta": {}},
         sentence_segments=sentences,
@@ -300,6 +300,7 @@ async def test_stage_process_chunks_sentence_segments(tmp_bibilab_home: Path, mo
         effective_language="zh",
     )
     assert captured["segs"] is sentences
+    assert result is not None and len(result) == 2  # (extraction, sections) tuple
 
 
 @pytest.mark.asyncio
@@ -335,6 +336,7 @@ async def test_stage_persist_atomic_no_orphan_on_segment_write_failure(tmp_bibil
                 extraction=MagicMock(
                     summary="s", keywords=[], series_name=None, sequence_number=None, season_number=None
                 ),
+                sections=[],
                 detected_language="en",
                 cfg=MagicMock(
                     transcription=MagicMock(model="base"),

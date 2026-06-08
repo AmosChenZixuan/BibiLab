@@ -32,6 +32,7 @@ pipeline/         — one file per stage
   audio.py          FFmpeg audio extraction (video → .wav)
   transcribe.py     FunASR AutoModel (SenseVoice/Whisper) + CAM++ diarization → VAD segments w/ speaker labels
   chunk.py          greedy segment merger → ~300-token RAG chunks
+  section.py        Section dataclass + derive_sections (token+pause boundary, target=12000) + chunk_by_sections (per-section chunking with source-global re-stamp)
   digest.py         LLM summary + keywords + facets (series_name, sequence_number, season_number) → denormalized into sources
   embed.py          ChromaDB embed + retrieve() (hybrid search → rerank → aggregation), FTS5 populate
   rerank.py         lazy ONNX cross-encoder reranker (Xenova/bge-reranker-base, XLM-RoBERTa zh+en; batched inference)
@@ -141,6 +142,22 @@ asr_models.py     — Unified ASR model registry (Whisper + SenseVoice + diariza
 
 Index: `idx_segments_source` on `(source_id, seq)`. Replaces the on-disk `transcripts/{source_id}.txt` (P2).
 
+### `sections` — bounded sub-source spans (PR #458 / #452)
+
+| Column | Notes |
+|---|---|
+| `source_id` | FK to `sources.id`, ON DELETE CASCADE |
+| `seq` | Section order within a source |
+| `seg_start` | First segment index in the source |
+| `seg_end` | Last segment index in the source (inclusive) |
+| `token_count` | Sum of `count_tokens(seg.text)` across the section's segments |
+| `timestamp_start` | Wall-clock seconds at `segments[seg_start].start` |
+| `timestamp_end` | Wall-clock seconds at `segments[seg_end].end` |
+| `summary` | LLM refine-summary, NULL until #453 lands |
+| `keywords` | LLM keywords, NULL until #453 lands |
+
+Index: `idx_sections_source` on `(source_id, seq)`. Chunks produced per-section nest physically (a chunk's `[seg_start, seg_end]` is fully contained in exactly one section's). Production write path is `_exec_write_sections` (called from `write_source_with_segments` in the same transaction as source + segments). Summary/keywords population is deferred to #453.
+
 ### `chunks_fts` — FTS5 virtual table
 
 BM25-ranked full-text index over transcript chunks. Populated by `populate_fts()` during the embed stage; cleared per-source on re-ingest. Columns: `content`, `source_id`, `video_title`, `timestamp_start`, `timestamp_end`, `chunk_id`, `seg_start`, `seg_end`. Query via `query_fts_rows()` in `db.py`.
@@ -149,7 +166,7 @@ BM25-ranked full-text index over transcript chunks. Populated by `populate_fts()
 
 ```
 POST /ingest/url → resolve → dedup check → create job(s)
-  → worker: download → audio → transcribe → punctuate → chunk → digest ∥ embed → write_source + write_transcript_segments
+  → worker: download → audio → transcribe → punctuate → derive_sections → chunk (per-section) → digest ∥ embed → write_source + write_transcript_segments + write_sections (atomic)
 ```
 
 - Dedup via `get_video_statuses` (sources + jobs); skip if processed or in-flight.
@@ -163,10 +180,11 @@ POST /ingest/url → resolve → dedup check → create job(s)
 2. **audio** → strip to .wav via FFmpeg
 3. **transcribe** → FunASR AutoModel (SenseVoice or Whisper via WhisperWarp) → raw VAD segments with timestamps + speaker labels
 4. **punctuate** → ct-punc (zh-gated) → punctuated sentence segments persisted to `transcript_segments`
-5. **chunk** → greedily merge consecutive **sentence** segments to token target, split at trustworthy sentence boundary. Records `seg_start`/`seg_end` per chunk (input-index range).
-6. **digest** → LLM: summary, keywords → denormalized into `sources` (parallel with embed)
-7. **embed** → store chunks in ChromaDB with per-source and per-list scope (parallel with digest). Chroma metadata keys on `source_id` (+ `seg_start`/`seg_end`), not `video_id`.
-8. **write_source** → upsert row into `sources`
+5. **derive_sections** → token+pause boundary, target=12000 (zone [7200, 16800]). Short videos = 1 section spanning all. Produces `sections` rows.
+6. **chunk** → greedily merge consecutive **sentence** segments within each section to token target, split at trustworthy sentence boundary. Records `seg_start`/`seg_end` per chunk (source-global indices). Chunks physically nest in sections.
+7. **digest** → LLM: summary, keywords → denormalized into `sources` (parallel with embed)
+8. **embed** → store chunks in ChromaDB with per-source and per-list scope (parallel with digest). Chroma metadata keys on `source_id` (+ `seg_start`/`seg_end`), not `video_id`.
+9. **write_source** → upsert source row + transcript_segments + sections atomically in one transaction (via `write_source_with_segments`)
 
 ## Chat Pipeline
 

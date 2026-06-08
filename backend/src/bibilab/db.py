@@ -14,6 +14,7 @@ from pypinyin import Style, lazy_pinyin
 
 import bibilab.config
 from bibilab.models.jobs import JobStatus
+from bibilab.pipeline.section import Section
 
 logger = logging.getLogger(__name__)
 
@@ -161,6 +162,23 @@ CREATE TABLE IF NOT EXISTS transcript_segments (
 )
 """
 
+_CREATE_SECTIONS = """
+CREATE TABLE IF NOT EXISTS sections (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    source_id        TEXT NOT NULL REFERENCES sources(id) ON DELETE CASCADE,
+    seq              INTEGER NOT NULL,
+    seg_start        INTEGER NOT NULL,
+    seg_end          INTEGER NOT NULL,
+    token_count      INTEGER NOT NULL,
+    timestamp_start  REAL,
+    timestamp_end    REAL,
+    summary          TEXT,
+    keywords         TEXT
+)
+"""
+
+_CREATE_SECTIONS_INDEX = "CREATE INDEX IF NOT EXISTS idx_sections_source ON sections(source_id, seq)"
+
 
 async def bootstrap_db() -> None:
     async with get_db() as db:
@@ -174,6 +192,8 @@ async def bootstrap_db() -> None:
         await db.execute("CREATE INDEX IF NOT EXISTS idx_messages_conversation_id ON messages(conversation_id)")
         await db.execute(_CREATE_TRANSCRIPT_SEGMENTS)
         await db.execute("CREATE INDEX IF NOT EXISTS idx_segments_source ON transcript_segments(source_id, seq)")
+        await db.execute(_CREATE_SECTIONS)
+        await db.execute(_CREATE_SECTIONS_INDEX)
         await db.execute("PRAGMA journal_mode=WAL")
         await db.commit()
 
@@ -353,18 +373,55 @@ async def _exec_write_transcript_segments(db: aiosqlite.Connection, source_id: s
     )
 
 
-async def write_source_with_segments(*, segments: list, **source_fields: Any) -> None:
-    """Atomically upsert a source row and its transcript segments in one
-    transaction. Either both land or neither — no orphaned source row, no
-    compensating delete. `source_fields` are the keyword args of `write_source`.
+async def _exec_write_sections(
+    db: aiosqlite.Connection,
+    source_id: str,
+    sections: list[Section],
+) -> None:
+    """Replace a source's section rows on the given connection. Does NOT
+    commit. `sections` is a list of `bibilab.pipeline.section.Section`.
 
-    On any failure the exception propagates and the connection closes without a
-    commit, so SQLite rolls the whole transaction back. FK holds within the
-    transaction: the uncommitted parent source row is visible to the child
-    segment INSERTs on the same connection."""
+    Mirrors `_exec_write_transcript_segments` (DELETE+INSERT) so re-ingest
+    replaces cleanly. Rows have a surrogate `id`; re-ingest changes it.
+    """
+    await db.execute("DELETE FROM sections WHERE source_id = ?", (source_id,))
+    await db.executemany(
+        "INSERT INTO sections (source_id, seq, seg_start, seg_end, "
+        "token_count, timestamp_start, timestamp_end) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        [
+            (source_id, i, s.seg_start, s.seg_end, s.token_count, s.timestamp_start, s.timestamp_end)
+            for i, s in enumerate(sections)
+        ],
+    )
+
+
+async def write_source_with_segments(
+    *,
+    segments: list,
+    sections: list | None = None,
+    **source_fields: Any,
+) -> None:
+    """Atomically upsert a source row, its transcript segments, and its
+    derived section rows in one transaction. Either all three land or
+    none — no orphaned source row, no compensating delete, no orphan
+    section rows.
+
+    `sections` is optional; when omitted (legacy call sites, factory) only
+    the source + segments are written. When provided, the section rows are
+    written in the same transaction so a partial failure rolls back the
+    whole write.
+
+    On any failure the exception propagates and the connection closes
+    without a commit, so SQLite rolls the whole transaction back. FK holds
+    within the transaction: the uncommitted parent source row is visible to
+    the child segment / section INSERTs on the same connection.
+    """
     async with get_db() as db:
         await _exec_write_source(db, **source_fields)
         await _exec_write_transcript_segments(db, source_fields["source_id"], segments)
+        if sections is not None:
+            await _exec_write_sections(db, source_fields["source_id"], sections)
         await db.commit()
 
 

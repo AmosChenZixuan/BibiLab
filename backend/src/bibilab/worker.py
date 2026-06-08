@@ -36,10 +36,10 @@ from bibilab.pipeline._shared import (
     _resolved_lang,
 )
 from bibilab.pipeline.audio import PipelineError, extract_audio
-from bibilab.pipeline.chunk import chunk_segments
 from bibilab.pipeline.digest import DigestResult, digest
 from bibilab.pipeline.embed import embed_chunks
 from bibilab.pipeline.punctuate import punctuate
+from bibilab.pipeline.section import Section, chunk_by_sections, derive_sections
 from bibilab.pipeline.transcribe import (
     WhisperSegment,
     format_turns,
@@ -448,17 +448,18 @@ Respond ONLY with valid JSON matching this schema:
             return  # cancelled
         detected_language, effective_language, sentence_segments = result
 
-        # Stage 4: Chunk, digest + embed in parallel
+        # Stage 4: Derive sections, chunk per-section, digest + embed in parallel
         try:
-            extraction = await self._stage_process(
+            result = await self._stage_process(
                 job_id, job, sentence_segments, source_id, video_meta, list_id, cfg, effective_language
             )
         except Exception as exc:
             raise PipelineError(f"[processing] {exc}") from exc
-        if extraction is None:
+        if result is None:
             return  # cancelled
+        extraction, sections = result
 
-        # Stage 5: Persist + cleanup
+        # Stage 5: Persist source + segments + sections atomically, then cleanup
         try:
             await self._stage_persist(
                 job_id,
@@ -467,12 +468,13 @@ Respond ONLY with valid JSON matching this schema:
                 video_meta,
                 list_id,
                 extraction,
+                sections,
                 detected_language,
                 cfg,
                 sentence_segments,
             )
         except Exception as exc:
-            raise PipelineError(f"[processing] {exc}") from exc
+            raise PipelineError(f"[persisting] {exc}") from exc
         await update_job_status(job_id, JobStatus.DONE.value, progress=100)
         logger.info("Job %s completed for video %s", job_id, video_id)
 
@@ -560,13 +562,21 @@ Respond ONLY with valid JSON matching this schema:
         list_id: str,
         cfg: BibilabConfig,
         effective_language: str,
-    ) -> DigestResult | None:
-        """Stage 4: Chunk sentence segments, run digest + embed in parallel."""
+    ) -> tuple[DigestResult, list[Section]] | None:
+        """Stage 4: Derive sections, chunk per-section, run digest + embed in parallel.
+
+        Pipeline order: `segments → sections → chunks` (section-first, chunk-within).
+        Chunks are produced from per-section slices, so a chunk can never cross a
+        section boundary — the `chunk → section → source` nesting is physical, not
+        by convention. Re-stamping in `chunk_by_sections` keeps the chunks' seg
+        indices and sequence_index source-global so the rest of the system is
+        unaware sections exist (the per-chunk section FK is a future
+        optimization; today the chunk→section containment is a structural
+        property of chunk_by_sections, not a stored relationship).
+        """
         await update_job_status(job_id, JobStatus.PROCESSING.value, progress=40)
-        chunks = chunk_segments(
-            sentence_segments,
-            language=effective_language,
-        )
+        sections = derive_sections(sentence_segments)
+        chunks = chunk_by_sections(sentence_segments, sections, language=effective_language)
 
         meta_raw = parse_job_meta(job)
         transcript_text = format_turns(sentence_segments, include_time=False)
@@ -578,7 +588,15 @@ Respond ONLY with valid JSON matching this schema:
             await asyncio.to_thread(embed_chunks, chunks, source_id, video_meta, list_id)
 
         extraction: DigestResult
-        extraction, _ = await asyncio.gather(_digest(), _embed())
+        gather_results = await asyncio.gather(_digest(), _embed(), return_exceptions=True)
+        extraction_raw, embed_raw = gather_results
+        if isinstance(embed_raw, BaseException):
+            logger.error("embed_chunks raised but was not the primary error", exc_info=embed_raw)
+        if isinstance(extraction_raw, BaseException):
+            raise extraction_raw
+        if isinstance(embed_raw, BaseException):
+            raise embed_raw
+        extraction = extraction_raw
 
         if job_id in self._cancelled:
             self._cancelled.discard(job_id)
@@ -586,7 +604,7 @@ Respond ONLY with valid JSON matching this schema:
             await delete_job(job_id)
             return None
 
-        return extraction
+        return extraction, sections
 
     async def _stage_persist(
         self,
@@ -596,15 +614,17 @@ Respond ONLY with valid JSON matching this schema:
         video_meta: VideoMeta,
         list_id: str,
         extraction: DigestResult,
+        sections: list[Section],
         detected_language: str,
         cfg: BibilabConfig,
         sentence_segments: list[WhisperSegment],
     ) -> None:
-        """Stage 5: Persist source row + transcript segments atomically, then cleanup."""
-        # One transaction: a source row never commits without its segments (no
-        # orphaned-source state, no compensating delete). See write_source_with_segments.
+        """Stage 5: Persist source row + transcript segments + section rows
+        atomically, then cleanup. All three land in one transaction (or none);
+        a partial write rolls back so re-ingest never leaves orphan rows."""
         await write_source_with_segments(
             segments=sentence_segments,
+            sections=sections,
             source_id=source_id,
             video_id=video_id,
             platform=video_meta.platform,

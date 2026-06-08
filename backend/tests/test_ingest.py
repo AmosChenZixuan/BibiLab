@@ -1,4 +1,5 @@
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import httpx
@@ -939,3 +940,144 @@ async def test_update_source_facets_missing_row_raises_lookuperror(tmp_bibilab_h
     await bootstrap_db()
     with pytest.raises(LookupError):
         await update_source_facets(str(uuid.uuid4()), series_name="X")
+
+
+@pytest.mark.asyncio
+async def test_long_source_chunks_nest_in_sections(tmp_bibilab_home: Path):
+    """Acceptance: after ingest of a long source, every chunk's seg range
+    is fully contained in exactly one section's seg range."""
+    from bibilab.db import bootstrap_db, create_list, write_transcript_segments
+    from bibilab.pipeline.section import chunk_by_sections, derive_sections
+    from bibilab.pipeline.transcribe import WhisperSegment
+    from bibilab.worker import WorkerLoop
+    from tests._section_db_seams import get_sections
+
+    await bootstrap_db()
+    await create_list("list-1", "L", "2026-01-01T00:00:00")
+    source_id = await SourceFactory.build("list-1", video_id="BV1long")
+
+    # 180 long segments → ≥2 sections
+    segs = [
+        WhisperSegment(start=float(i), end=float(i + 1), text=("word " * 100).strip() + ".", speaker="S")
+        for i in range(180)
+    ]
+
+    # Pre-stage segments via transcript_segments table so the worker sees them
+    await write_transcript_segments(source_id, segs)
+
+    # Manually run the per-stage pipeline: derive + chunk + persist
+    sections = derive_sections(segs)
+    chunks = chunk_by_sections(segs, sections, language="en")
+
+    # Write sections + segments atomically (extraction mocked)
+    extraction = SimpleNamespace(
+        summary="",
+        keywords=[],
+        series_name=None,
+        sequence_number=None,
+        season_number=None,
+    )
+    # SimpleNamespace lacks model_dump(); add a lambda so cfg.model_dump() works.
+    cfg = SimpleNamespace(
+        transcription=SimpleNamespace(model="large-v3", language="en"),
+        ai=SimpleNamespace(model="gpt-4o"),
+        model_dump=lambda: {},
+    )
+    video_meta = SimpleNamespace(
+        video_id="BV1long",
+        platform="bilibili",
+        title="T",
+        cover_url=None,
+        source_url="https://x",
+        duration_seconds=0,
+        uploader="u",
+    )
+    worker = WorkerLoop(home=tmp_bibilab_home, config=cfg, adapter=None)
+    await worker._stage_persist(
+        job_id="job-x",
+        source_id=source_id,
+        video_id="BV1long",
+        video_meta=video_meta,
+        list_id="list-1",
+        extraction=extraction,
+        sections=sections,
+        detected_language="en",
+        cfg=cfg,
+        sentence_segments=segs,
+    )
+
+    rows = await get_sections(source_id)
+    assert len(rows) >= 2
+
+    for c in chunks:
+        containing = [r for r in rows if r["seg_start"] <= c.seg_start and c.seg_end <= r["seg_end"]]
+        assert len(containing) == 1, (
+            f"chunk [{c.seg_start}..{c.seg_end}] contained in {len(containing)} sections, expected 1"
+        )
+
+
+@pytest.mark.asyncio
+async def test_short_source_one_section_byte_identical_chunks(tmp_bibilab_home: Path):
+    """Regression guard: a short video (1 section) produces the same chunk
+    set as the pre-change single `chunk_segments` call."""
+    from bibilab.db import bootstrap_db, create_list
+    from bibilab.pipeline.chunk import chunk_segments
+    from bibilab.pipeline.section import chunk_by_sections, derive_sections
+    from bibilab.pipeline.transcribe import WhisperSegment
+
+    await bootstrap_db()
+    await create_list("list-1", "L", "2026-01-01T00:00:00")
+    await SourceFactory.build("list-1", video_id="BV1short")
+
+    segs = [
+        WhisperSegment(start=float(i), end=float(i + 1), text=f"short sentence number {i}.", speaker="S")
+        for i in range(40)
+    ]
+
+    pre = chunk_segments(segs, language="en")
+    sections = derive_sections(segs)
+    assert len(sections) == 1  # pre-condition for byte-identical
+    post = chunk_by_sections(segs, sections, language="en")
+
+    # Compare the observable chunk fields
+    assert len(pre) == len(post)
+    for p, q in zip(pre, post):
+        assert p.sequence_index == q.sequence_index
+        assert p.seg_start == q.seg_start
+        assert p.seg_end == q.seg_end
+        assert p.text == q.text
+        assert p.timestamp_start == q.timestamp_start
+        assert p.timestamp_end == q.timestamp_end
+
+
+@pytest.mark.asyncio
+async def test_re_ingest_replaces_section_rows(tmp_bibilab_home: Path):
+    """Re-ingest of a source replaces (does not duplicate) its section rows."""
+    from bibilab.db import bootstrap_db, create_list
+    from bibilab.pipeline.section import Section
+    from tests._section_db_seams import get_sections, write_sections
+
+    await bootstrap_db()
+    await create_list("list-1", "L", "2026-01-01T00:00:00")
+    source_id = await SourceFactory.build("list-1", video_id="BV1re")
+
+    # First ingest: 2 sections
+    await write_sections(
+        source_id,
+        [
+            Section(seg_start=0, seg_end=5, token_count=100, timestamp_start=0.0, timestamp_end=10.0),
+            Section(seg_start=6, seg_end=12, token_count=200, timestamp_start=11.0, timestamp_end=22.0),
+        ],
+    )
+    assert len(await get_sections(source_id)) == 2
+
+    # Re-ingest: 1 section (different shape — re-ingest replaces, not merges)
+    await write_sections(
+        source_id,
+        [
+            Section(seg_start=0, seg_end=20, token_count=500, timestamp_start=0.0, timestamp_end=40.0),
+        ],
+    )
+    rows = await get_sections(source_id)
+    assert len(rows) == 1
+    assert rows[0]["seg_end"] == 20
