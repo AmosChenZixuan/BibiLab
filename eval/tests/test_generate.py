@@ -106,7 +106,7 @@ def test_extract_one_source_persists_on_final_failure(monkeypatch, tmp_path):
 
 
 def test_extract_one_source_rejects_non_object(monkeypatch, tmp_path):
-    # The #355 shape: returns an array instead of an object.
+    # Malformed shape: returns a JSON array instead of the expected object.
     monkeypatch.setattr("eval.generate._call_llm", lambda p, *a, **k: '[1, 2, 3]')
     monkeypatch.setattr("bibilab.config.bibilab_home", lambda: tmp_path)
     fact, err = _extract_one_source({"id": "s1", "transcript": "hello"}, ai_cfg=None)
