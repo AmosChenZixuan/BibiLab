@@ -26,6 +26,9 @@ for chunk size; it does not apply here.
 import logging
 from dataclasses import dataclass
 
+from bibilab.pipeline._shared import count_tokens
+from bibilab.pipeline.transcribe import WhisperSegment
+
 logger = logging.getLogger(__name__)
 
 # Tuned for the live ~20-min zh video corpus (2026-06-08). 12000 keeps the
@@ -49,3 +52,90 @@ class Section:
             raise ValueError(f"seg_start < 0 (got {self.seg_start})")
         if self.seg_end < self.seg_start:
             raise ValueError(f"Invalid seg range: [{self.seg_start}, {self.seg_end}] (seg_end < seg_start)")
+
+
+def derive_sections(
+    segments: list[WhisperSegment],
+    language: str,  # noqa: ARG001 — kept for future per-language tuning; flat cap today
+    target_tokens: int = SECTION_TARGET_TOKENS,
+) -> list[Section]:
+    """Walk segments accumulating tokens; in the cut-zone [ZONE_LOW*target,
+    ZONE_HIGH*target], cut at the segment boundary with the longest pause
+    (i.e., boundary AFTER seg `i` maximizing `segs[i+1].start - segs[i].end`).
+    `ZONE_HIGH*target` is a hard backstop if no in-zone pause beats it. The
+    trailing remainder is always emitted as the final section.
+
+    Cuts ALWAYS land on a segment boundary — never mid-sentence — so chunks
+    produced per-section (Task 4) are guaranteed to nest in exactly one
+    section by construction.
+
+    Parameters
+    ----------
+    segments
+        Punctuated sentence segments (output of pipeline/punctuate.py).
+    language
+        Kept for symmetry with chunk.py and a future per-language tuning; the
+        cap is flat today (the LLM token budget doesn't scale with language).
+    target_tokens
+        Override seam for tests; production always uses SECTION_TARGET_TOKENS.
+    """
+    n = len(segments)
+    if n == 0:
+        return []
+    seg_tokens = [count_tokens(s.text) for s in segments]
+
+    sections: list[Section] = []
+    start = 0
+    while start < n:
+        best_i: int | None = None
+        best_pause = -1.0
+        backstop_fired = False
+        forced_i = n - 1
+        cum = 0
+        for i in range(start, n):
+            cum += seg_tokens[i]
+            if cum < ZONE_LOW * target_tokens:
+                continue
+            if cum > ZONE_HIGH * target_tokens:
+                # Backstop: forced cut lands at the segment that first pushed
+                # cumulative tokens past the cap (i). The section ends at
+                # that segment; the next section starts at i+1.
+                forced_i = i
+                backstop_fired = True
+                break
+            # In zone: consider cutting AFTER seg i (boundary between i and i+1).
+            if i < n - 1:
+                pause = segments[i + 1].start - segments[i].end
+                if pause > best_pause:
+                    best_pause = pause
+                    best_i = i
+        # Priority: a strictly-positive in-zone pause wins (a real seam beats
+        # the backstop). Otherwise the backstop wins if it fired. Otherwise
+        # fall through to the trailing remainder at n-1.
+        if best_i is not None and best_pause > 0:
+            cut = best_i
+        elif backstop_fired:
+            cut = forced_i
+        else:
+            cut = n - 1
+        sec = Section(
+            seg_start=start,
+            seg_end=cut,
+            token_count=sum(seg_tokens[start : cut + 1]),
+            timestamp_start=segments[start].start,
+            timestamp_end=segments[cut].end,
+        )
+        sections.append(sec)
+        if cut >= n - 1:
+            break
+        start = cut + 1
+
+    logger.info(
+        "derive_sections: %d sections from %d segments (target=%d, zone=[%d, %d])",
+        len(sections),
+        n,
+        target_tokens,
+        int(ZONE_LOW * target_tokens),
+        int(ZONE_HIGH * target_tokens),
+    )
+    return sections
