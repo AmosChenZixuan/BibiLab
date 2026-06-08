@@ -591,7 +591,7 @@ Respond ONLY with valid JSON matching this schema:
         gather_results = await asyncio.gather(_digest(), _embed(), return_exceptions=True)
         extraction_raw, embed_raw = gather_results
         if isinstance(embed_raw, BaseException):
-            logger.exception("embed_chunks raised but was not the primary error: %s", embed_raw)
+            logger.error("embed_chunks raised but was not the primary error", exc_info=embed_raw)
         if isinstance(extraction_raw, BaseException):
             raise extraction_raw
         if isinstance(embed_raw, BaseException):
