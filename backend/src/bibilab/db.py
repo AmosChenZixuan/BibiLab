@@ -486,7 +486,8 @@ async def get_source_facets(source_ids: list[str]) -> dict[str, dict[str, int | 
     """Return {source_id: {"sequence_number": int|None, "season_number": int|None}}.
 
     Only sources found in the table are included. Empty input → {}.
-    series_name is intentionally not returned (#309: fuzzy string match deferred).
+    series_name is intentionally not returned — fuzzy string match is deferred
+    until we see real-world use.
     """
     if not source_ids:
         return {}
@@ -908,7 +909,7 @@ async def create_user_and_assistant_atomic(
             raise
 
 
-# #403: a turn is visible to LLM replay and compaction iff both rows have
+# A turn is visible to LLM replay and compaction iff both rows have
 # status='done'. The two transient row states used during a turn are
 # IN_FLIGHT_USER_STATUS (user awaiting its assistant) and
 # IN_FLIGHT_ASST_STATUS (assistant actively generating). The startup sweep
@@ -938,7 +939,7 @@ async def update_turn_terminal(
     error: str | None,
 ) -> None:
     """Atomically flip a turn to its terminal status and clear the
-    conversation's active-stream pointer (#403).
+    conversation's active-stream pointer.
 
     All three writes — user row, assistant row, conversations.active_stream_message_id
     — commit in one transaction so a process kill between them cannot
@@ -1132,8 +1133,8 @@ def _escape_fts_query(query_text: str) -> str:
     Tokens within an arm are OR-joined, not AND-joined: a multi-syllable term or
     a natural-language question ('苹果是什么') is one CJK run whose overlapping
     bigrams must not all be required to co-occur — under AND a single divergent
-    syllable (or an interrogative like '是谁') zeroes the arm, so recall collapsed
-    for anything past a two-character word (#391). OR lets BM25 rank by matched
+    syllable (or an interrogative like '是谁') zeroes the arm, so recall collapses
+    for anything past a two-character word. OR lets BM25 rank by matched
     bigrams; high-IDF entity bigrams dominate and stop-word bigrams sit in the
     truncated tail. Each arm parenthesizes its token list so the column filter
     binds to the whole group — FTS5's `col :` prefix otherwise scopes only the
