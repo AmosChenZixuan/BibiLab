@@ -408,10 +408,47 @@ async def _refine_artifact_multi_batch(
     cfg: BibilabConfig,
     ui_lang: str | None,
 ) -> ArtifactResult:
-    """Multi-batch refine. Filled in by the next task — currently a
-    placeholder that raises so the single-batch path is the only one
-    exercised until then."""
-    raise NotImplementedError("multi-batch path: see follow-up task")
+    """Multi-batch refine: batch 1 produces an initial draft; batch k>1
+    feeds the running draft + new sections to the LLM with an
+    'integrate' directive. The final ArtifactResult is the last call's
+    parsed output.
+
+    By construction, the per-batch prompt fits the budget: batch 1 is
+    the first batch's sections (greedy-packed to ≤ budget tokens),
+    batches k>1 add the running draft + an integrate directive but the
+    draft fits within the reserved budget. So ``ContextWindowExceededError``
+    should never fire on the multi-batch path.
+    """
+    draft: ArtifactResult | None = None
+    for i, batch in enumerate(batches, start=1):
+        label = f"artifact batch {i}/{len(batches)}"
+        new_sections_text = "\n".join(_render_multi_batch_section(s) for s in batch)
+        if i == 1:
+            # First batch: same template as the single-batch path (single
+            # source of truth via _build_initial_prompt), just with the
+            # multi-batch section text. Any schema change in
+            # _build_initial_prompt automatically flows here.
+            llm_prompt = _build_initial_prompt(
+                prompt=prompt,
+                artifact_type=artifact_type,
+                transcript_text=new_sections_text,
+                cfg=cfg,
+                ui_lang=ui_lang,
+            )
+        else:
+            # Subsequent batches: refine the running draft.
+            assert draft is not None  # invariant: set by i=1
+            llm_prompt = _build_refine_prompt(
+                prompt=prompt,
+                artifact_type=artifact_type,
+                draft=draft,
+                new_sections_text=new_sections_text,
+                cfg=cfg,
+                ui_lang=ui_lang,
+            )
+        draft = await _call_llm_with_retry(llm_prompt, cfg, label=label)
+    assert draft is not None  # invariant: at least one batch
+    return draft
 
 
 def _download_cover(cover_url: str, dest: Path) -> bool:

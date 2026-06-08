@@ -8,6 +8,7 @@ batch sections, feeding the running draft back to the LLM. Short inputs
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from unittest.mock import patch
 
@@ -344,3 +345,157 @@ async def test_refine_artifact_single_batch_byte_identical_prompt():
     assert isinstance(result, ArtifactResult)
     assert result.name == "My Title"
     assert result.content == "My body."
+
+
+# --- _refine_artifact (multi-batch path) -----------------------------------
+
+
+@pytest.mark.asyncio
+async def test_refine_artifact_multi_batch_calls_llm_per_batch():
+    """2 sections that don't fit in one batch → 2 _call_llm calls. Batch
+    1 uses the initial prompt template; batch 2 uses _build_refine_prompt
+    with the running draft. The final ArtifactResult is the second call's
+    parsed output."""
+    cfg = BibilabConfig()
+    # budget = 60: A=50, B=50 → 2 batches (each section alone).
+    # budget = context_window - max_output_tokens - 4096 - 500
+    cfg.ai.context_window = 60 + 4000 + 4096 + 500
+    cfg.ai.max_output_tokens = 4000
+
+    sections = [
+        _SectionView("src-1", "A", 0, 0.0, 1.0, "A text.", token_count=50),
+        _SectionView("src-1", "A", 1, 1.0, 2.0, "A1 text.", token_count=50),
+    ]
+    responses = [
+        '{"name": "Initial", "content": "First pass."}',
+        '{"name": "Refined", "content": "Second pass."}',
+    ]
+    with patch("bibilab.worker._call_llm", side_effect=responses) as mock_llm:
+        result = await _refine_artifact(
+            prompt="summarize",
+            artifact_type="study_guide",
+            sections=sections,
+            cfg=cfg,
+            ui_lang="en",
+        )
+
+    assert mock_llm.call_count == 2
+    # First prompt: no "Current draft" section (it's the initial draft).
+    p1 = mock_llm.call_args_list[0][0][0]
+    assert "Current draft" not in p1
+    # Second prompt: contains the first draft + integrate directive.
+    p2 = mock_llm.call_args_list[1][0][0]
+    assert "Current draft" in p2
+    assert "First pass." in p2
+    assert "integrate" in p2.lower()
+    # Per-section header is on the multi-batch path.
+    assert "Section 1" in p2
+    # The final result is the LAST call's output (refined draft).
+    assert result.name == "Refined"
+    assert result.content == "Second pass."
+
+
+@pytest.mark.asyncio
+async def test_refine_artifact_single_section_overflow_fails_loud():
+    """A single section whose token_count > budget → PipelineError
+    (sections are atomic, never split). No _call_llm call is made."""
+    cfg = BibilabConfig()
+    cfg.ai.context_window = 8_000
+    cfg.ai.max_output_tokens = 1_000
+    # budget = 8000 - 1000 - 4096 - 500 = 2404
+
+    sections = [
+        _SectionView("src-1", "A", 0, 0.0, 1.0, "A text.", token_count=5_000),  # > 2404
+    ]
+    with patch("bibilab.worker._call_llm") as mock_llm:
+        with pytest.raises(PipelineError, match="alone"):
+            await _refine_artifact(
+                prompt="p",
+                artifact_type="t",
+                sections=sections,
+                cfg=cfg,
+                ui_lang="en",
+            )
+    mock_llm.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_refine_artifact_batch_failure_raises_pipeline_error():
+    """A batch whose _call_llm raises (not ContextWindowExceededError) is
+    retried 3 times, then PipelineError. No partial artifact."""
+    cfg = BibilabConfig()
+    cfg.ai.context_window = 60 + 4000 + 4096 + 500
+    cfg.ai.max_output_tokens = 4000
+
+    sections = [
+        _SectionView("src-1", "A", 0, 0.0, 1.0, "A text.", token_count=50),
+        _SectionView("src-1", "A", 1, 1.0, 2.0, "A1 text.", token_count=50),
+    ]
+    with patch("bibilab.worker._call_llm", side_effect=RuntimeError("boom")) as mock_llm:
+        with pytest.raises(PipelineError, match="exhausted all retries"):
+            await _refine_artifact(
+                prompt="p",
+                artifact_type="t",
+                sections=sections,
+                cfg=cfg,
+                ui_lang="en",
+            )
+    # 3 attempts on the first (and only attempted) batch.
+    assert mock_llm.call_count == 3
+
+
+@pytest.mark.asyncio
+async def test_refine_artifact_soft_cost_note_logs_warning_for_many_batches(caplog):
+    """4+ batches → logger.warning fires (no schema/UI change)."""
+    cfg = BibilabConfig()
+    # budget = 75: 4 sections of 50 tokens each → 4 batches (50+50>75).
+    cfg.ai.context_window = 75 + 4000 + 4096 + 500
+    cfg.ai.max_output_tokens = 4000
+    sections = [_SectionView("src-1", "A", i, float(i), float(i + 1), f"text {i}", token_count=50) for i in range(4)]
+    responses = [f'{{"name": "t{i}", "content": "c{i}"}}' for i in range(4)]
+    with caplog.at_level(logging.WARNING, logger="bibilab.worker"):
+        with patch("bibilab.worker._call_llm", side_effect=responses):
+            await _refine_artifact(
+                prompt="p",
+                artifact_type="t",
+                sections=sections,
+                cfg=cfg,
+                ui_lang="en",
+            )
+    assert any("batches" in r.getMessage() and "threshold=3" in r.getMessage() for r in caplog.records)
+
+
+@pytest.mark.asyncio
+async def test_refine_artifact_preserves_source_order_across_batches():
+    """Source order in the input = source order across batches. Sections
+    for src-A appear before sections for src-B even if they pack into
+    different batches."""
+    cfg = BibilabConfig()
+    cfg.ai.context_window = 90 + 4000 + 4096 + 500
+    cfg.ai.max_output_tokens = 4000
+    # budget = 90: A=40, B=40 → 1 batch (40+40=80 ≤ 90)
+    # Add a 3rd section to force a 2nd batch.
+    sections = [
+        _SectionView("src-A", "TA", 0, 0.0, 1.0, "a", token_count=40),
+        _SectionView("src-B", "TB", 0, 0.0, 1.0, "b", token_count=40),
+        _SectionView("src-B", "TB", 1, 1.0, 2.0, "b1", token_count=40),
+    ]
+    responses = [
+        '{"name": "n1", "content": "c1"}',
+        '{"name": "n2", "content": "c2"}',
+    ]
+    with patch("bibilab.worker._call_llm", side_effect=responses) as mock_llm:
+        await _refine_artifact(
+            prompt="p",
+            artifact_type="t",
+            sections=sections,
+            cfg=cfg,
+            ui_lang="en",
+        )
+    p1 = mock_llm.call_args_list[0][0][0]
+    p2 = mock_llm.call_args_list[1][0][0]
+    # src-A header comes before src-B header in BOTH prompts.
+    assert p1.index("Source: TA") < p1.index("Source: TB")
+    # The second batch prompt (k=2) contains src-B (greedy pack: A+B in
+    # batch 1, B1 in batch 2).
+    assert "Source: TB" in p2
