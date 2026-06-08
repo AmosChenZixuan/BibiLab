@@ -282,10 +282,13 @@ async def test_stage_process_chunks_sentence_segments(tmp_bibilab_home: Path, mo
 
     monkeypatch.setattr("bibilab.worker.chunk_by_sections", _fake_chunk)
     monkeypatch.setattr("bibilab.worker.embed_chunks", lambda *a, **k: None)
+    from bibilab.pipeline.digest import DigestResult, SectionDigest
+
     monkeypatch.setattr(
-        "bibilab.worker.digest",
-        lambda *a, **k: __import__("bibilab.pipeline.digest", fromlist=["DigestResult"]).DigestResult(
-            summary="s", keywords=[], series_name=None, sequence_number=None, season_number=None
+        "bibilab.worker.digest_sections",
+        lambda *a, **k: (
+            DigestResult(summary="s", keywords=[], series_name=None, sequence_number=None, season_number=None),
+            [SectionDigest(summary="s", keywords=[])],
         ),
     )
     loop = WorkerLoop(config=BibilabConfig(), home=tmp_bibilab_home)
@@ -300,7 +303,7 @@ async def test_stage_process_chunks_sentence_segments(tmp_bibilab_home: Path, mo
         effective_language="zh",
     )
     assert captured["segs"] is sentences
-    assert result is not None and len(result) == 2  # (extraction, sections) tuple
+    assert result is not None and len(result) == 3  # (extraction, sections, section_digests) tuple
 
 
 @pytest.mark.asyncio
@@ -337,6 +340,7 @@ async def test_stage_persist_atomic_no_orphan_on_segment_write_failure(tmp_bibil
                     summary="s", keywords=[], series_name=None, sequence_number=None, season_number=None
                 ),
                 sections=[],
+                section_digests=[],
                 detected_language="en",
                 cfg=MagicMock(
                     transcription=MagicMock(model="base"),

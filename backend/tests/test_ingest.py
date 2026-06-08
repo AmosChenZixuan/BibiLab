@@ -977,6 +977,9 @@ async def test_long_source_chunks_nest_in_sections(tmp_bibilab_home: Path):
         sequence_number=None,
         season_number=None,
     )
+    from bibilab.pipeline.digest import SectionDigest
+
+    section_digests = [SectionDigest(summary="", keywords=[]) for _ in sections]
     # SimpleNamespace lacks model_dump(); add a lambda so cfg.model_dump() works.
     cfg = SimpleNamespace(
         transcription=SimpleNamespace(model="large-v3", language="en"),
@@ -1001,6 +1004,7 @@ async def test_long_source_chunks_nest_in_sections(tmp_bibilab_home: Path):
         list_id="list-1",
         extraction=extraction,
         sections=sections,
+        section_digests=section_digests,
         detected_language="en",
         cfg=cfg,
         sentence_segments=segs,
