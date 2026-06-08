@@ -42,7 +42,7 @@ async def sweep_orphaned_streams() -> None:
     startup, so any row whose status is in IN_FLIGHT_MESSAGE_STATUSES
     ('streaming' for the assistant, 'pending' for the user awaiting it)
     was abandoned by the previous process — both rows of the orphaned
-    turn are flipped in one UPDATE (#403).
+    turn are flipped in one UPDATE.
     """
     from bibilab.db import IN_FLIGHT_MESSAGE_STATUSES, _in_placeholders
 

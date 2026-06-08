@@ -83,7 +83,6 @@ def _load_funasr(cfg: TranscriptionConfig) -> Any:
         # checkpoint as `model`: when that's an existing path it local-loads (deriving
         # model_path + WhisperWarp internally) instead of fetching to ~/.cache/whisper.
         # A bare name would download; passing model_path with no model trips its assert.
-        # See issue #426.
         model_dir = ensure(WHISPER_SPEC_ID)
         spec = get_spec(WHISPER_SPEC_ID)
         automodel_kwargs = {"model": str(model_dir / spec.integrity_files[0]), "hub": "openai"}
@@ -101,7 +100,7 @@ def _load_funasr(cfg: TranscriptionConfig) -> Any:
             # VAD cuts there. Without it, a speaker change mid-segment over continuous
             # BGM stays one VAD segment → one CAM++ label (intra-segment conflation).
             # 0.7 splits the change, keeps speaker count stable, ~99% transcription
-            # parity. Pairs with merge_vad=False above. See issue #384.
+            # parity. Pairs with merge_vad=False above.
             vad_kwargs={
                 "max_single_segment_time": 15000,
                 "max_end_silence_time": 500,
@@ -137,7 +136,7 @@ def _transcribe_funasr(audio_path: Path, cfg: TranscriptionConfig) -> tuple[list
         # REGARDLESS of speaker, before CAM++ embeds. A multi-speaker window then
         # collapses to one speaker label (under-clustering). Disabling it keeps
         # VAD's silence-bounded segments — finer, speaker-aligned — with no ASR
-        # quality loss (measured ~98% transcription parity). See issue #384.
+        # quality loss (measured ~98% transcription parity).
         "merge_vad": False,
     }
     if cfg.language and cfg.language != "auto":

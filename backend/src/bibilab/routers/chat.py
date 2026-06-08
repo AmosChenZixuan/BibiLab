@@ -218,7 +218,7 @@ def _client_tool_result(result: dict) -> dict:
 
 
 def _llm_tool_message_content(result: dict) -> str:
-    """LLM-bound content of a tool result: the formatted excerpts only (#401).
+    """LLM-bound content of a tool result: the formatted excerpts only.
 
     `_chunks` is set on every tool path (find_passages, read_source narrative,
     resolution-error). Other fields (FTS bigram text, telemetry, bookkeeping)
@@ -796,9 +796,9 @@ async def run_chat_turn(
                 rs["source_title"] = entry.title if entry else ""
                 # read_source rows carry no chunk context — the read is continuous
                 # transcript, not a fenced locator result. A synthetic entry with
-                # zeroed fields would render as "0:00 / 0.00" in the frontend ledger
-                # (#371 follow-up); an empty array lets the renderer branch on
-                # tool_name and show a "read in full" affordance instead.
+                # zeroed fields would render as "0:00 / 0.00" in the frontend
+                # ledger; an empty array lets the renderer branch on tool_name
+                # and show a "read in full" affordance instead.
                 rs["context"] = []
             all_calls = retrieve_calls + read_source_calls
 
@@ -811,7 +811,7 @@ async def run_chat_turn(
 
             assistant_content = "".join(assistant_text_deltas)
             error_text = error_reason if error_reason else ("internal_error" if final_status == "failed" else None)
-            # #403: atomically flip both rows of the turn to the same terminal
+            # Atomically flip both rows of the turn to the same terminal
             # status AND clear active_stream_message_id. The user row only
             # changes status+error (content/metadata/tool_blocks are unchanged
             # from insert time); all three writes commit together so a process
@@ -887,7 +887,7 @@ async def chat_endpoint(
 
     # Snapshot history before inserting new messages — the producer adds the
     # current user message explicitly via user_message_text.
-    # #403: filter to status='done' here, not in get_recent_messages, so the UI
+    # Filter to status='done' here, not in get_recent_messages, so the UI
     # conversation endpoint still sees cancelled/failed rows for 已停止/重试.
     history_rows = await get_recent_messages(conversation_id, limit=100)
     history_rows = [r for r in history_rows if r["status"] == VISIBLE_MESSAGE_STATUS]
