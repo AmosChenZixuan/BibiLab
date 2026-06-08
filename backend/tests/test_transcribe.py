@@ -127,7 +127,7 @@ def test_funasr_openai_local_checkpoint_resolves_without_download(tmp_path: Path
     """Contract guard for the funasr boundary the unit test mocks away: passing an
     existing checkpoint as `model` with hub='openai' resolves to a local load
     (model='WhisperWarp', model_path=<path>) — no ~/.cache/whisper fetch. If this
-    breaks, the production kwarg shape in _load_funasr is wrong. See #426."""
+    breaks, the production kwarg shape in _load_funasr is wrong."""
     from funasr.download.download_model_from_hub import download_model
 
     ckpt = tmp_path / "large-v3.pt"

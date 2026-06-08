@@ -891,7 +891,7 @@ async def test_write_source_with_segments_rolls_back_on_segment_failure(tmp_bibi
     assert await get_source("src-1") is None
 
 
-# --- #403: aborted turns invisible to LLM replay + compaction ---
+# --- aborted turns invisible to LLM replay + compaction ---
 # (get_message_count's done-only filter is covered by
 # test_aborted_messages_do_not_trigger_compression in test_chat_summary.py)
 
