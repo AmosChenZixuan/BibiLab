@@ -12,8 +12,9 @@ from bibilab.pipeline.section import (
     Section,
     chunk_by_sections,
     derive_sections,
+    section_texts,
 )
-from bibilab.pipeline.transcribe import WhisperSegment
+from bibilab.pipeline.transcribe import WhisperSegment, format_turns
 
 
 def test_constants_match_poc_validated_values():
@@ -180,3 +181,35 @@ def test_chunk_by_sections_per_section_seq_index_is_source_global():
     chunks = chunk_by_sections(segs, sections, language="en")
     seqs = sorted(c.sequence_index for c in chunks)
     assert seqs == list(range(len(chunks)))
+
+
+def test_section_texts_one_section_equals_full_transcript():
+    # A single section spanning all segments must produce text identical to
+    # format_turns on the full list. This is the regression guard for the
+    # "1-section is byte-identical" contract.
+    segs = [_seg(float(i), float(i + 1), f"sentence {i}.") for i in range(10)]
+    sections = derive_sections(segs)  # one section spanning all
+    assert len(sections) == 1
+
+    full_text = format_turns(segs, include_time=False)
+    assert section_texts(segs, sections) == [full_text]
+
+
+def test_section_texts_format_each_section_independently():
+    # 30 segments, target_tokens=200 forces 2 sections. Each section's text
+    # must equal format_turns of its own segment slice (not the full list).
+    segs = [_seg(float(i), float(i + 1), ("word " * 100).strip() + ".") for i in range(30)]
+    sections = derive_sections(segs, target_tokens=200)
+    assert len(sections) >= 2
+
+    texts = section_texts(segs, sections)
+    assert len(texts) == len(sections)
+    for sec, text in zip(sections, texts):
+        expected = format_turns(segs[sec.seg_start : sec.seg_end + 1], include_time=False)
+        assert text == expected
+
+
+def test_section_texts_empty_sections_returns_empty_list():
+    # The function must not error on empty input — callers like the rerun path
+    # could pass [] if the source somehow has no section rows.
+    assert section_texts([], []) == []
