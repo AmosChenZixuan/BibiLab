@@ -14,6 +14,7 @@ from pypinyin import Style, lazy_pinyin
 
 import bibilab.config
 from bibilab.models.jobs import JobStatus
+from bibilab.pipeline.digest import SectionDigest
 from bibilab.pipeline.section import Section
 
 logger = logging.getLogger(__name__)
@@ -377,22 +378,47 @@ async def _exec_write_sections(
     db: aiosqlite.Connection,
     source_id: str,
     sections: list[Section],
+    section_digests: list[SectionDigest] | None = None,
 ) -> None:
     """Replace a source's section rows on the given connection. Does NOT
     commit. `sections` is a list of `bibilab.pipeline.section.Section`.
+
+    When `section_digests` is provided (one SectionDigest per section, in
+    seq order), summary/keywords are written in the same INSERT. Otherwise
+    the columns are left NULL (the legacy path, e.g. SourceFactory).
 
     Mirrors `_exec_write_transcript_segments` (DELETE+INSERT) so re-ingest
     replaces cleanly. Rows have a surrogate `id`; re-ingest changes it.
     """
     await db.execute("DELETE FROM sections WHERE source_id = ?", (source_id,))
+    if section_digests is None:
+        rows = [
+            (source_id, i, s.seg_start, s.seg_end, s.token_count, s.timestamp_start, s.timestamp_end, None, None)
+            for i, s in enumerate(sections)
+        ]
+    else:
+        assert len(section_digests) == len(sections), (
+            f"section_digests length {len(section_digests)} != sections length {len(sections)}"
+        )
+        rows = [
+            (
+                source_id,
+                i,
+                s.seg_start,
+                s.seg_end,
+                s.token_count,
+                s.timestamp_start,
+                s.timestamp_end,
+                sd.summary,
+                json.dumps(sd.keywords),
+            )
+            for i, (s, sd) in enumerate(zip(sections, section_digests))
+        ]
     await db.executemany(
         "INSERT INTO sections (source_id, seq, seg_start, seg_end, "
-        "token_count, timestamp_start, timestamp_end) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?)",
-        [
-            (source_id, i, s.seg_start, s.seg_end, s.token_count, s.timestamp_start, s.timestamp_end)
-            for i, s in enumerate(sections)
-        ],
+        "token_count, timestamp_start, timestamp_end, summary, keywords) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        rows,
     )
 
 
@@ -400,6 +426,7 @@ async def write_source_with_segments(
     *,
     segments: list,
     sections: list | None = None,
+    section_digests: list[SectionDigest] | None = None,
     **source_fields: Any,
 ) -> None:
     """Atomically upsert a source row, its transcript segments, and its
@@ -410,7 +437,10 @@ async def write_source_with_segments(
     `sections` is optional; when omitted (legacy call sites, factory) only
     the source + segments are written. When provided, the section rows are
     written in the same transaction so a partial failure rolls back the
-    whole write.
+    whole write. `section_digests` is optional; when provided, each
+    section row carries its summary/keywords (the ingest path). When
+    omitted, the section rows are written with NULL summary and NULL
+    keywords (the legacy / factory path).
 
     On any failure the exception propagates and the connection closes
     without a commit, so SQLite rolls the whole transaction back. FK holds
@@ -421,7 +451,7 @@ async def write_source_with_segments(
         await _exec_write_source(db, **source_fields)
         await _exec_write_transcript_segments(db, source_fields["source_id"], segments)
         if sections is not None:
-            await _exec_write_sections(db, source_fields["source_id"], sections)
+            await _exec_write_sections(db, source_fields["source_id"], sections, section_digests)
         await db.commit()
 
 

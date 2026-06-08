@@ -1337,3 +1337,121 @@ async def test_get_sections_returns_all_columns_ordered_by_seq(
         assert col in rows[0].keys(), f"missing column {col}"
     # Empty source returns empty list.
     assert await get_sections("nonexistent") == []
+
+
+# ── write_source_with_segments: section_digests ingest path ──────────
+
+
+@pytest.mark.asyncio
+async def test_write_source_with_segments_section_digests_persists_summaries(
+    tmp_bibilab_home: Path,
+):
+    """Atomic write with section_digests: section rows must have non-NULL
+    summary/keywords, and the writes must be in the same transaction as
+    source + segments (one call → all three land)."""
+    from bibilab.db import (
+        bootstrap_db,
+        create_list,
+        get_sections,
+        get_source,
+        write_source_with_segments,
+    )
+    from bibilab.pipeline.digest import SectionDigest
+    from bibilab.pipeline.section import Section
+    from bibilab.pipeline.transcribe import WhisperSegment
+
+    await bootstrap_db()
+    await create_list("list-1", "L", "2026-01-01T00:00:00")
+    # Factory path: build a source row to obtain a real source_id, then
+    # read the full row back for the source fields the test needs.
+    source_id = await SourceFactory.build("list-1", video_id="BV1digests")
+    source = await get_source(source_id)
+    assert source is not None
+
+    segments = [WhisperSegment(start=float(i), end=float(i + 1), text=f"s{i}.", speaker=None) for i in range(30)]
+    sections = [
+        Section(seg_start=0, seg_end=9, token_count=100, timestamp_start=0.0, timestamp_end=10.0),
+        Section(seg_start=10, seg_end=19, token_count=100, timestamp_start=10.0, timestamp_end=20.0),
+    ]
+    section_digests = [
+        SectionDigest(summary="Sum 0", keywords=["k0", "k1"]),
+        SectionDigest(summary="Sum 1", keywords=["k2"]),
+    ]
+    await write_source_with_segments(
+        segments=segments,
+        sections=sections,
+        section_digests=section_digests,
+        source_id=source_id,
+        video_id=source["video_id"],
+        platform=source["platform"],
+        list_id=source["list_id"],
+        title=source["title"],
+        summary="Sum 0",  # sources mirror = section[0]
+        keywords=["k0", "k1"],
+        cover_url=None,
+        source_url=source["source_url"],
+        duration_seconds=30,
+        uploader=source["uploader"],
+        language=source["language"],
+        whisper_model="x",
+        ai_model="y",
+        settings_snapshot={},
+    )
+
+    rows = await get_sections(source_id)
+    assert len(rows) == 2
+    assert rows[0]["summary"] == "Sum 0"
+    assert json.loads(rows[0]["keywords"]) == ["k0", "k1"]
+    assert rows[1]["summary"] == "Sum 1"
+    assert json.loads(rows[1]["keywords"]) == ["k2"]
+
+
+@pytest.mark.asyncio
+async def test_write_source_with_segments_without_section_digests_preserves_old_shape(
+    tmp_bibilab_home: Path,
+):
+    """Backward compat: section_digests=None → section rows have NULL
+    summary/keywords. (SourceFactory's path.)"""
+    from bibilab.db import (
+        bootstrap_db,
+        create_list,
+        get_sections,
+        get_source,
+        write_source_with_segments,
+    )
+    from bibilab.pipeline.section import Section
+    from bibilab.pipeline.transcribe import WhisperSegment
+
+    await bootstrap_db()
+    await create_list("list-1", "L", "2026-01-01T00:00:00")
+    source_id = await SourceFactory.build("list-1", video_id="BV1nodigests")
+    source = await get_source(source_id)
+    assert source is not None
+
+    segments = [WhisperSegment(start=float(i), end=float(i + 1), text=f"s{i}.", speaker=None) for i in range(15)]
+    sections = [Section(seg_start=0, seg_end=14, token_count=100, timestamp_start=0.0, timestamp_end=15.0)]
+    # NOTE: no section_digests kwarg — must still work (legacy shape).
+    await write_source_with_segments(
+        segments=segments,
+        sections=sections,
+        source_id=source_id,
+        video_id=source["video_id"],
+        platform=source["platform"],
+        list_id=source["list_id"],
+        title=source["title"],
+        summary="",
+        keywords=[],
+        cover_url=None,
+        source_url=source["source_url"],
+        duration_seconds=15,
+        uploader=source["uploader"],
+        language=source["language"],
+        whisper_model="x",
+        ai_model="y",
+        settings_snapshot={},
+    )
+
+    rows = await get_sections(source_id)
+    assert len(rows) == 1
+    assert rows[0]["summary"] is None
+    assert rows[0]["keywords"] is None
