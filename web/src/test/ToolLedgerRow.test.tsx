@@ -153,7 +153,7 @@ const NO_MATCH = {
   no_match: true,
 };
 
-describe("facet no-match hint (#319)", () => {
+describe("facet no-match hint", () => {
   test("default collapsed shows amber warning icon with hint aria-label", () => {
     renderRow({ call: { ...BASE_CALL, facet_scope: NO_MATCH } });
     const icon = screen.getByLabelText(

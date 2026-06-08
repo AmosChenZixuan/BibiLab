@@ -18,9 +18,10 @@ type RetrievalChunk = {
   rerank_score: number;
   preview: string;
 };
-/** Echo of the LLM-extracted facet predicate + deterministic match outcome (#309).
+/** Echo of the LLM-extracted facet predicate + deterministic match outcome.
  * `no_match` is true iff a predicate was given AND zero sources matched (the
- * backend then fails open to the full pre-facet pool — surfaced by #319). */
+ * backend then fails open to the full pre-facet pool, surfaced to the user as
+ * a non-blocking hint in the retrieval ledger). */
 type FacetScope = {
   sequence_number: number | null;
   season_number: number | null;
@@ -69,7 +70,7 @@ export function formatSubtitle(t: (key: string, params?: Record<string, string |
   });
 }
 
-/** Human sentence for a fail-open facet no-match (#319). Empty facet set →
+/** Human sentence for a fail-open facet no-match. Empty facet set →
  * generic copy (backend contract says no_match implies a predicate existed,
  * but stay defensive). */
 export function facetNoMatchHint(
