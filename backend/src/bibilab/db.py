@@ -14,6 +14,7 @@ from pypinyin import Style, lazy_pinyin
 
 import bibilab.config
 from bibilab.models.jobs import JobStatus
+from bibilab.pipeline.section import Section
 
 logger = logging.getLogger(__name__)
 
@@ -372,6 +373,30 @@ async def _exec_write_transcript_segments(db: aiosqlite.Connection, source_id: s
     )
 
 
+async def _exec_write_sections(
+    db: aiosqlite.Connection,
+    source_id: str,
+    sections: list["Section"],
+) -> None:
+    """Replace a source's section rows on the given connection. Does NOT
+    commit. `sections` is a list of `bibilab.pipeline.section.Section`.
+
+    Mirrors `_exec_write_transcript_segments` (DELETE+INSERT) so re-ingest
+    replaces cleanly. Section primary keys are re-assigned on every write;
+    callers must not depend on `Section.id` surviving across writes.
+    """
+    await db.execute("DELETE FROM sections WHERE source_id = ?", (source_id,))
+    await db.executemany(
+        "INSERT INTO sections (source_id, seq, seg_start, seg_end, "
+        "token_count, timestamp_start, timestamp_end) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        [
+            (source_id, i, s.seg_start, s.seg_end, s.token_count, s.timestamp_start, s.timestamp_end)
+            for i, s in enumerate(sections)
+        ],
+    )
+
+
 async def write_source_with_segments(*, segments: list, **source_fields: Any) -> None:
     """Atomically upsert a source row and its transcript segments in one
     transaction. Either both land or neither — no orphaned source row, no
@@ -468,6 +493,30 @@ async def get_transcript_segments(source_id: str) -> list[aiosqlite.Row]:
     async with get_db() as db:
         cursor = await db.execute(
             "SELECT seq, start_s, end_s, speaker, text FROM transcript_segments WHERE source_id = ? ORDER BY seq",
+            (source_id,),
+        )
+        return await cursor.fetchall()
+
+
+async def write_sections(source_id: str, sections: list["Section"]) -> None:
+    """Replace all section rows for a source. Idempotent (DELETE then INSERT).
+
+    Standalone primitive for unit tests and the backfill script. Production
+    writes sections atomically with the source via `write_source_with_segments`;
+    this seam is the unit-level subject tests exercise to assert round-trip,
+    idempotency, and cascade behavior in isolation from the parent write."""
+    async with get_db() as db:
+        await _exec_write_sections(db, source_id, sections)
+        await db.commit()
+
+
+async def get_sections(source_id: str) -> list[aiosqlite.Row]:
+    """Fetch a source's section rows in seq order."""
+    async with get_db() as db:
+        cursor = await db.execute(
+            "SELECT id, source_id, seq, seg_start, seg_end, "
+            "token_count, timestamp_start, timestamp_end, summary, keywords "
+            "FROM sections WHERE source_id = ? ORDER BY seq",
             (source_id,),
         )
         return await cursor.fetchall()

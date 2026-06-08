@@ -976,3 +976,82 @@ async def test_get_messages_beyond_window_excludes_non_done(tmp_bibilab_home: Pa
     assert "u-aborted" not in contents
     # All rows that DO appear must have status='done'.
     assert all(s == "done" for s in statuses)
+
+
+@pytest.mark.asyncio
+async def test_write_and_get_sections(tmp_bibilab_home: Path):
+    from bibilab.db import (
+        bootstrap_db,
+        create_list,
+        get_sections,
+        write_sections,
+    )
+    from bibilab.pipeline.section import Section
+
+    await bootstrap_db()
+    await create_list("list-1", "L", "2026-01-01T00:00:00")
+    source_id = await SourceFactory.build("list-1", video_id="BV1a")
+
+    sections = [
+        Section(seg_start=0, seg_end=10, token_count=5800, timestamp_start=0.0, timestamp_end=100.0),
+        Section(seg_start=11, seg_end=22, token_count=6100, timestamp_start=101.0, timestamp_end=210.0),
+    ]
+    await write_sections(source_id, sections)
+
+    rows = await get_sections(source_id)
+    assert len(rows) == 2
+    assert rows[0]["seq"] == 0
+    assert rows[0]["seg_start"] == 0
+    assert rows[0]["seg_end"] == 10
+    assert rows[0]["token_count"] == 5800
+    assert rows[0]["timestamp_start"] == 0.0
+    assert rows[0]["timestamp_end"] == 100.0
+    assert rows[1]["seq"] == 1
+    assert rows[1]["seg_start"] == 11
+
+
+@pytest.mark.asyncio
+async def test_write_sections_is_idempotent(tmp_bibilab_home: Path):
+    from bibilab.db import (
+        bootstrap_db,
+        create_list,
+        get_sections,
+        write_sections,
+    )
+    from bibilab.pipeline.section import Section
+
+    await bootstrap_db()
+    await create_list("list-1", "L", "2026-01-01T00:00:00")
+    source_id = await SourceFactory.build("list-1", video_id="BV1b")
+
+    sections = [
+        Section(seg_start=0, seg_end=5, token_count=100, timestamp_start=0.0, timestamp_end=10.0),
+    ]
+    await write_sections(source_id, sections)
+    await write_sections(source_id, sections)  # re-ingest
+    rows = await get_sections(source_id)
+    assert len(rows) == 1  # DELETE+INSERT, not duplicate
+
+
+@pytest.mark.asyncio
+async def test_sections_cascade_on_source_delete(tmp_bibilab_home: Path):
+    from bibilab.db import (
+        bootstrap_db,
+        create_list,
+        delete_source,
+        get_sections,
+        write_sections,
+    )
+    from bibilab.pipeline.section import Section
+
+    await bootstrap_db()
+    await create_list("list-1", "L", "2026-01-01T00:00:00")
+    source_id = await SourceFactory.build("list-1", video_id="BV1c")
+    await write_sections(
+        source_id,
+        [
+            Section(seg_start=0, seg_end=5, token_count=100, timestamp_start=0.0, timestamp_end=10.0),
+        ],
+    )
+    await delete_source(source_id)
+    assert await get_sections(source_id) == []
