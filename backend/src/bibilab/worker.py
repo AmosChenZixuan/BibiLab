@@ -448,17 +448,18 @@ Respond ONLY with valid JSON matching this schema:
             return  # cancelled
         detected_language, effective_language, sentence_segments = result
 
-        # Stage 4: Chunk, digest + embed in parallel
+        # Stage 4: Derive sections, chunk per-section, digest + embed in parallel
         try:
-            extraction = await self._stage_process(
+            result = await self._stage_process(
                 job_id, job, sentence_segments, source_id, video_meta, list_id, cfg, effective_language
             )
         except Exception as exc:
             raise PipelineError(f"[processing] {exc}") from exc
-        if extraction is None:
+        if result is None:
             return  # cancelled
+        extraction, sections = result
 
-        # Stage 5: Persist + cleanup
+        # Stage 5: Persist source + segments + sections atomically, then cleanup
         try:
             await self._stage_persist(
                 job_id,
@@ -467,6 +468,7 @@ Respond ONLY with valid JSON matching this schema:
                 video_meta,
                 list_id,
                 extraction,
+                sections,
                 detected_language,
                 cfg,
                 sentence_segments,
@@ -602,15 +604,17 @@ Respond ONLY with valid JSON matching this schema:
         video_meta: VideoMeta,
         list_id: str,
         extraction: DigestResult,
+        sections: list[Section],
         detected_language: str,
         cfg: BibilabConfig,
         sentence_segments: list[WhisperSegment],
     ) -> None:
-        """Stage 5: Persist source row + transcript segments atomically, then cleanup."""
-        # One transaction: a source row never commits without its segments (no
-        # orphaned-source state, no compensating delete). See write_source_with_segments.
+        """Stage 5: Persist source row + transcript segments + section rows
+        atomically, then cleanup. All three land in one transaction (or none);
+        a partial write rolls back so re-ingest never leaves orphan rows."""
         await write_source_with_segments(
             segments=sentence_segments,
+            sections=sections,
             source_id=source_id,
             video_id=video_id,
             platform=video_meta.platform,
