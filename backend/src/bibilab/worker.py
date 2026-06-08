@@ -17,11 +17,14 @@ from bibilab.db import (
     delete_job,
     get_list,
     get_pending_jobs,
+    get_sections,
     get_source,
+    get_transcript_segments,
     parse_job_meta,
     reset_stuck_jobs,
     update_job_meta,
     update_job_status,
+    update_section_summaries,
     update_source_digest,
     write_source_with_segments,
 )
@@ -303,22 +306,51 @@ class WorkerLoop:
             await update_job_status(job_id, JobStatus.FAILED.value, error=f"Source {source_id!r} not found")
             return
 
-        transcript_text = await load_transcript_text(source_id)
-        if not transcript_text:
+        segments = await get_transcript_segments(source_id)
+        if not segments:
             logger.warning("Digest job %s: source %s has no transcript", job_id, source_id)
             await update_job_status(job_id, JobStatus.FAILED.value, error="Source has no transcript")
             return
 
+        # Reconstruct WhisperSegment objects from the stored rows.
+        whisper_segments = [
+            WhisperSegment(
+                start=r["start_s"],
+                end=r["end_s"],
+                text=r["text"],
+                speaker=r["speaker"],
+            )
+            for r in segments
+        ]
+
+        section_rows = await get_sections(source_id)
+        if not section_rows:
+            # Defensive: post-backfill this can't happen. Surface a clear
+            # backfill-pointer error so the operator knows the fix.
+            msg = "Source has no sections; run backend/scripts/backfill_sections.py"
+            logger.warning("Digest job %s: %s", job_id, msg)
+            await update_job_status(job_id, JobStatus.FAILED.value, error=msg)
+            return
+
+        # Reconstruct Section objects from the stored rows.
+        sections = [
+            Section(
+                seg_start=r["seg_start"],
+                seg_end=r["seg_end"],
+                token_count=r["token_count"],
+                timestamp_start=r["timestamp_start"] or 0.0,
+                timestamp_end=r["timestamp_end"] or 0.0,
+            )
+            for r in section_rows
+        ]
+        section_texts_list = section_texts(whisper_segments, sections)
         video_meta = VideoMeta.from_source(source)
 
         await update_job_status(job_id, JobStatus.PROCESSING.value, progress=10)
 
-        # Rerun path: wrap the full transcript in a single section so the
-        # section-aware digest produces a 1-element section_digests list.
-        # Task 9 will replace this with a true section-level rerun.
         try:
-            extraction, _section_digests = await self._call_digest_sections(
-                [transcript_text], video_meta, cfg, meta_raw.get("ui_lang")
+            extraction, section_digests = await self._call_digest_sections(
+                section_texts_list, video_meta, cfg, meta_raw.get("ui_lang")
             )
         except Exception as exc:
             logger.exception("Digest job %s failed", job_id)
@@ -327,6 +359,10 @@ class WorkerLoop:
 
         await update_job_status(job_id, JobStatus.PROCESSING.value, progress=80)
 
+        await update_section_summaries(
+            source_id,
+            [(row["seq"], sd.summary, sd.keywords) for row, sd in zip(section_rows, section_digests)],
+        )
         await update_source_digest(
             source_id,
             extraction.summary,

@@ -5,6 +5,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
+import httpx
 import pytest
 
 from bibilab.config import BibilabConfig
@@ -316,3 +317,259 @@ async def test_ingest_n_sections_writes_summaries_atomically(tmp_bibilab_home: P
     for i, row in enumerate(rows):
         assert row["summary"] == f"Sum {i}"
         assert json.loads(row["keywords"]) == [f"k{i}"]
+
+
+# ---------------------------------------------------------------------------
+# Task 9: worker rerun is section-level
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_rerun_updates_section_rows_and_sources_mirror(tmp_bibilab_home: Path, mock_call_llm):
+    """Rerun on a sectioned source: 1 digest + (N-1) refines, then
+    update_section_summaries populates all section rows, sources row mirrors
+    section[0]. This is the true section-level rerun (replaces the temp
+    1-section workaround from Task 8).
+    """
+    from bibilab.db import (
+        bootstrap_db,
+        create_job,
+        create_list,
+        get_job,
+        get_sections,
+        get_source,
+        write_source_with_segments,
+    )
+    from bibilab.pipeline.section import Section
+    from bibilab.pipeline.transcribe import WhisperSegment
+    from bibilab.worker import WorkerLoop
+
+    await bootstrap_db()
+    await create_list("list-rerun", "Rerun Test", "2025-01-01T00:00:00Z")
+    source_id = "src-rerun-1"
+    await SourceFactory.build(
+        "list-rerun",
+        source_id=source_id,
+        video_id="BVrerun1",
+        title="Rerun Test",
+        source_url="https://bilibili.com/video/BVrerun1",
+        duration_seconds=30,
+        uploader="TestUser",
+        language="en",
+        whisper_model="base",
+    )
+    segments = [WhisperSegment(start=float(i), end=float(i + 1), text=f"s{i}.", speaker=None) for i in range(30)]
+    sections = [
+        Section(seg_start=0, seg_end=9, token_count=100, timestamp_start=0.0, timestamp_end=10.0),
+        Section(seg_start=10, seg_end=19, token_count=100, timestamp_start=10.0, timestamp_end=20.0),
+        Section(seg_start=20, seg_end=29, token_count=100, timestamp_start=20.0, timestamp_end=30.0),
+    ]
+    # Initial: 3 sections with prior valid summaries; sources mirrors section[0].
+    await write_source_with_segments(
+        segments=segments,
+        sections=sections,
+        section_digests=[
+            SectionDigest(summary="OLD 0", keywords=["old0"]),
+            SectionDigest(summary="OLD 1", keywords=["old1"]),
+            SectionDigest(summary="OLD 2", keywords=["old2"]),
+        ],
+        source_id=source_id,
+        video_id="BVrerun1",
+        platform="bilibili",
+        list_id="list-rerun",
+        title="Rerun Test",
+        summary="OLD 0",
+        keywords=["old0"],
+        cover_url=None,
+        source_url="https://bilibili.com/video/BVrerun1",
+        duration_seconds=30,
+        uploader="TestUser",
+        language="en",
+        whisper_model="base",
+        ai_model="gpt-4o",
+        settings_snapshot={},
+    )
+
+    # 1 digest + 2 refines.
+    mock_call_llm.side_effect = [
+        json.dumps({"summary": "NEW 0", "keywords": ["new0"]}),
+        json.dumps({"summary": "NEW 1", "keywords": ["new1"]}),
+        json.dumps({"summary": "NEW 2", "keywords": ["new2"]}),
+    ]
+
+    cfg = BibilabConfig()
+    worker = WorkerLoop(home=tmp_bibilab_home, config=cfg, adapter=None)
+    job_id = await create_job(
+        "digest",
+        {"source_id": source_id, "list_id": "list-rerun", "source_title": "Rerun Test"},
+    )
+    job = {
+        "id": job_id,
+        "type": "digest",
+        "meta": json.dumps(
+            {
+                "source_id": source_id,
+                "list_id": "list-rerun",
+                "source_title": "Rerun Test",
+            }
+        ),
+    }
+    await worker._run_digest_job(job)
+
+    # Job completed.
+    row = dict(await get_job(job_id))
+    assert row["status"] == "done"
+
+    # All 3 section rows updated, in seq order.
+    rows = await get_sections(source_id)
+    assert [r["summary"] for r in rows] == ["NEW 0", "NEW 1", "NEW 2"]
+    # Sources row mirrors section[0].
+    updated = await get_source(source_id)
+    assert updated["summary"] == "NEW 0"
+    assert json.loads(updated["keywords"]) == ["new0"]
+
+
+@pytest.mark.asyncio
+async def test_rerun_refine_failure_preserves_prior_valid_summaries(tmp_bibilab_home: Path, mock_call_llm):
+    """Section 2's refine exhausts retries → job fails; section rows retain
+    their prior valid summaries (no NULL window)."""
+    from bibilab.db import (
+        bootstrap_db,
+        create_job,
+        create_list,
+        get_job,
+        get_sections,
+        write_source_with_segments,
+    )
+    from bibilab.pipeline.section import Section
+    from bibilab.pipeline.transcribe import WhisperSegment
+    from bibilab.worker import WorkerLoop
+
+    await bootstrap_db()
+    await create_list("list-rerun-fail", "Rerun Fail", "2025-01-01T00:00:00Z")
+    source_id = "src-rerun-fail"
+    await SourceFactory.build(
+        "list-rerun-fail",
+        source_id=source_id,
+        video_id="BVrerunFail",
+        title="Rerun Fail",
+        source_url="https://bilibili.com/video/BVrerunFail",
+        duration_seconds=30,
+        uploader="TestUser",
+        language="en",
+        whisper_model="base",
+    )
+    segments = [WhisperSegment(start=float(i), end=float(i + 1), text=f"s{i}.", speaker=None) for i in range(30)]
+    sections = [
+        Section(seg_start=0, seg_end=9, token_count=100, timestamp_start=0.0, timestamp_end=10.0),
+        Section(seg_start=10, seg_end=19, token_count=100, timestamp_start=10.0, timestamp_end=20.0),
+        Section(seg_start=20, seg_end=29, token_count=100, timestamp_start=20.0, timestamp_end=30.0),
+    ]
+    await write_source_with_segments(
+        segments=segments,
+        sections=sections,
+        section_digests=[
+            SectionDigest(summary="PRIOR 0", keywords=["k0"]),
+            SectionDigest(summary="PRIOR 1", keywords=["k1"]),
+            SectionDigest(summary="PRIOR 2", keywords=["k2"]),
+        ],
+        source_id=source_id,
+        video_id="BVrerunFail",
+        platform="bilibili",
+        list_id="list-rerun-fail",
+        title="Rerun Fail",
+        summary="PRIOR 0",
+        keywords=["k0"],
+        cover_url=None,
+        source_url="https://bilibili.com/video/BVrerunFail",
+        duration_seconds=30,
+        uploader="TestUser",
+        language="en",
+        whisper_model="base",
+        ai_model="gpt-4o",
+        settings_snapshot={},
+    )
+
+    # Section 1 digest succeeds; section 2 refine exhausts retries.
+    mock_call_llm.side_effect = [
+        json.dumps({"summary": "NEW 0", "keywords": ["n0"]}),
+        httpx.HTTPError("transient"),
+        httpx.HTTPError("transient"),
+        httpx.HTTPError("transient"),
+    ]
+
+    cfg = BibilabConfig()
+    worker = WorkerLoop(home=tmp_bibilab_home, config=cfg, adapter=None)
+    job_id = await create_job(
+        "digest",
+        {"source_id": source_id, "list_id": "list-rerun-fail", "source_title": "Rerun Fail"},
+    )
+    job = {
+        "id": job_id,
+        "type": "digest",
+        "meta": json.dumps(
+            {
+                "source_id": source_id,
+                "list_id": "list-rerun-fail",
+                "source_title": "Rerun Fail",
+            }
+        ),
+    }
+    await worker._run_digest_job(job)
+
+    row = dict(await get_job(job_id))
+    assert row["status"] == "failed"
+
+    # Section rows still have prior valid summaries (no NULL window).
+    rows = await get_sections(source_id)
+    assert [r["summary"] for r in rows] == ["PRIOR 0", "PRIOR 1", "PRIOR 2"]
+
+
+@pytest.mark.asyncio
+async def test_rerun_legacy_source_without_sections_fails_loud(tmp_bibilab_home: Path, mock_call_llm):
+    """Source has transcript segments but 0 section rows (post-backfill this
+    shouldn't happen, but defensive). Rerun must fail loud with a
+    backfill-pointer message."""
+    from bibilab.db import bootstrap_db, create_job, create_list, get_job, write_transcript_segments
+    from bibilab.pipeline.transcribe import WhisperSegment
+    from bibilab.worker import WorkerLoop
+
+    await bootstrap_db()
+    await create_list("list-legacy", "Legacy", "2025-01-01T00:00:00Z")
+    source_id = await SourceFactory.build(
+        "list-legacy",
+        video_id="BVlegacy",
+        title="Legacy",
+        source_url="https://bilibili.com/video/BVlegacy",
+        duration_seconds=30,
+        uploader="TestUser",
+        language="en",
+        whisper_model="base",
+    )
+    # Has transcript segments but no section rows.
+    await write_transcript_segments(
+        source_id, [WhisperSegment(start=0.0, end=5.0, text="legacy transcript", speaker=None)]
+    )
+
+    cfg = BibilabConfig()
+    worker = WorkerLoop(home=tmp_bibilab_home, config=cfg, adapter=None)
+    job_id = await create_job(
+        "digest",
+        {"source_id": source_id, "list_id": "list-legacy", "source_title": "Legacy"},
+    )
+    job = {
+        "id": job_id,
+        "type": "digest",
+        "meta": json.dumps(
+            {
+                "source_id": source_id,
+                "list_id": "list-legacy",
+                "source_title": "Legacy",
+            }
+        ),
+    }
+    await worker._run_digest_job(job)
+
+    row = dict(await get_job(job_id))
+    assert row["status"] == "failed"
+    assert "backfill_sections" in row["error"]
