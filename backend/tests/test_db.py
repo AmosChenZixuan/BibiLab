@@ -53,6 +53,51 @@ async def test_jobs_table_uses_meta_for_source_fields(tmp_bibilab_home: Path):
 
 
 @pytest.mark.asyncio
+async def test_sections_table_exists(tmp_bibilab_home: Path):
+    from bibilab.db import bootstrap_db, get_db
+
+    await bootstrap_db()
+    async with get_db() as db:
+        cursor = await db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='sections'")
+        row = await cursor.fetchone()
+        assert row is not None
+
+
+@pytest.mark.asyncio
+async def test_sections_index_exists(tmp_bibilab_home: Path):
+    from bibilab.db import bootstrap_db, get_db
+
+    await bootstrap_db()
+    async with get_db() as db:
+        cursor = await db.execute("SELECT name FROM sqlite_master WHERE type='index' AND name='idx_sections_source'")
+        row = await cursor.fetchone()
+        assert row is not None
+
+
+@pytest.mark.asyncio
+async def test_sections_table_columns(tmp_bibilab_home: Path):
+    from bibilab.db import bootstrap_db, get_db
+
+    await bootstrap_db()
+    async with get_db() as db:
+        cursor = await db.execute("PRAGMA table_info(sections)")
+        rows = await cursor.fetchall()
+    columns = {row[1] for row in rows}
+    assert columns == {
+        "id",
+        "source_id",
+        "seq",
+        "seg_start",
+        "seg_end",
+        "token_count",
+        "timestamp_start",
+        "timestamp_end",
+        "summary",
+        "keywords",
+    }
+
+
+@pytest.mark.asyncio
 async def test_create_and_get_list(tmp_bibilab_home: Path):
     from bibilab.db import bootstrap_db, create_list, get_all_lists, get_list
 

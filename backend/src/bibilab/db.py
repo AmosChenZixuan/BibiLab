@@ -161,6 +161,23 @@ CREATE TABLE IF NOT EXISTS transcript_segments (
 )
 """
 
+_CREATE_SECTIONS = """
+CREATE TABLE IF NOT EXISTS sections (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    source_id        TEXT NOT NULL REFERENCES sources(id) ON DELETE CASCADE,
+    seq              INTEGER NOT NULL,
+    seg_start        INTEGER NOT NULL,
+    seg_end          INTEGER NOT NULL,
+    token_count      INTEGER NOT NULL,
+    timestamp_start  REAL,
+    timestamp_end    REAL,
+    summary          TEXT,
+    keywords         TEXT
+)
+"""
+
+_CREATE_SECTIONS_INDEX = "CREATE INDEX IF NOT EXISTS idx_sections_source ON sections(source_id, seq)"
+
 
 async def bootstrap_db() -> None:
     async with get_db() as db:
@@ -174,6 +191,8 @@ async def bootstrap_db() -> None:
         await db.execute("CREATE INDEX IF NOT EXISTS idx_messages_conversation_id ON messages(conversation_id)")
         await db.execute(_CREATE_TRANSCRIPT_SEGMENTS)
         await db.execute("CREATE INDEX IF NOT EXISTS idx_segments_source ON transcript_segments(source_id, seq)")
+        await db.execute(_CREATE_SECTIONS)
+        await db.execute(_CREATE_SECTIONS_INDEX)
         await db.execute("PRAGMA journal_mode=WAL")
         await db.commit()
 
