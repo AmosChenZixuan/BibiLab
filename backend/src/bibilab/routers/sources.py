@@ -1,9 +1,11 @@
+import json
+
 from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.responses import FileResponse
 
 from bibilab.config import cover_path
-from bibilab.db import create_job, get_pending_jobs, get_source, parse_job_meta, update_source_facets
-from bibilab.models.sources import SourceContentResponse, SourceFacetsUpdate
+from bibilab.db import create_job, get_pending_jobs, get_sections, get_source, parse_job_meta, update_source_facets
+from bibilab.models.sources import SectionListItem, SourceContentResponse, SourceFacetsUpdate
 from bibilab.pipeline.transcribe import load_transcript_text
 
 router = APIRouter()
@@ -24,6 +26,30 @@ async def get_source_cover(source_id: str) -> FileResponse:
     if not _cover.exists():
         raise HTTPException(status_code=404, detail="Cover not found")
     return FileResponse(_cover)
+
+
+@router.get("/sources/{source_id}/sections")
+async def get_source_sections(source_id: str) -> list[SectionListItem]:
+    """List a source's section rows in seq order.
+
+    Each item carries the section's summary, keywords, and timestamps.
+    Internal columns (id, source_id, seg_start, seg_end, token_count) are
+    not exposed — they're an implementation detail of the rerun path.
+    """
+    source = await get_source(source_id)
+    if source is None:
+        raise HTTPException(status_code=404, detail="Source not found")
+    rows = await get_sections(source_id)
+    return [
+        SectionListItem(
+            seq=r["seq"],
+            summary=r["summary"] or "",
+            keywords=json.loads(r["keywords"]) if r["keywords"] else [],
+            timestamp_start=r["timestamp_start"] or 0.0,
+            timestamp_end=r["timestamp_end"] or 0.0,
+        )
+        for r in rows
+    ]
 
 
 @router.post("/sources/{source_id}/rerun", status_code=202)

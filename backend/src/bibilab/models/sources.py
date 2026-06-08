@@ -54,6 +54,20 @@ class SourceContentResponse(BaseModel):
         )
 
 
+class SectionListItem(BaseModel):
+    """Projected section row for GET /sources/{id}/sections.
+
+    Internal columns (id, source_id, seg_start, seg_end, token_count) are
+    not exposed — they're an implementation detail of the rerun path.
+    """
+
+    seq: int
+    summary: str
+    keywords: list[str]
+    timestamp_start: float
+    timestamp_end: float
+
+
 class SourceFacetsUpdate(BaseModel):
     """Manual facet edit.
 
