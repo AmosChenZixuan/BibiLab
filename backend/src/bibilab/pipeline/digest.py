@@ -28,6 +28,20 @@ logger = logging.getLogger(__name__)
 _MAX_KEYWORDS = 8
 
 
+class SectionDigest(BaseModel):
+    """Per-section digest: summary + keywords (no facets)."""
+
+    summary: str
+    keywords: list[str]
+
+
+def _parse_section_digest_response(text: str) -> SectionDigest:
+    """Parse an LLM JSON response into a SectionDigest, capping keywords."""
+    sd: SectionDigest = _parse_llm_json_response(text, SectionDigest)
+    sd.keywords = sd.keywords[:_MAX_KEYWORDS]
+    return sd
+
+
 def parse_facet_int(v: object) -> int | None:
     """Coerce a facet ordinal to an int >= 1.
 

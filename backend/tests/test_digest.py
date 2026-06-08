@@ -14,7 +14,9 @@ from bibilab.pipeline.audio import PipelineError
 from bibilab.pipeline.digest import (
     _MAX_KEYWORDS,
     DigestResult,
+    SectionDigest,
     _parse_response,
+    _parse_section_digest_response,
     clean_str_facet,
     digest,
     parse_facet_int,
@@ -445,3 +447,27 @@ class TestCleanStrFacet:
         for bad in [5, True, 1.5, ["x"], {}]:
             with pytest.raises(ValueError):
                 clean_str_facet(bad)
+
+
+class TestSectionDigest:
+    def test_section_digest_parses_summary_and_keywords(self):
+        json_str = '{"summary": "A section.", "keywords": ["x", "y"]}'
+        sd = _parse_section_digest_response(json_str)
+        assert isinstance(sd, SectionDigest)
+        assert sd.summary == "A section."
+        assert sd.keywords == ["x", "y"]
+
+    def test_section_digest_has_no_facet_fields(self):
+        # SectionDigest is the per-section view; facets are source-level
+        # (extracted once at section 1 on DigestResult). They MUST NOT appear
+        # on SectionDigest.
+        assert not hasattr(SectionDigest, "series_name")
+        assert not hasattr(SectionDigest, "sequence_number")
+        assert not hasattr(SectionDigest, "season_number")
+
+    def test_section_digest_keywords_capped_at_max(self):
+        overflow = [f"k{i}" for i in range(_MAX_KEYWORDS + 4)]
+        json_str = json.dumps({"summary": "S", "keywords": overflow})
+        sd = _parse_section_digest_response(json_str)
+        assert len(sd.keywords) == _MAX_KEYWORDS
+        assert sd.keywords == overflow[:_MAX_KEYWORDS]
