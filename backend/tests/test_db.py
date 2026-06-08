@@ -983,9 +983,10 @@ async def test_write_and_get_sections(tmp_bibilab_home: Path):
     from bibilab.db import (
         bootstrap_db,
         create_list,
+        get_sections,
     )
     from bibilab.pipeline.section import Section
-    from tests._section_db_seams import get_sections, write_sections
+    from tests._section_db_seams import write_sections
 
     await bootstrap_db()
     await create_list("list-1", "L", "2026-01-01T00:00:00")
@@ -1014,9 +1015,10 @@ async def test_write_sections_is_idempotent(tmp_bibilab_home: Path):
     from bibilab.db import (
         bootstrap_db,
         create_list,
+        get_sections,
     )
     from bibilab.pipeline.section import Section
-    from tests._section_db_seams import get_sections, write_sections
+    from tests._section_db_seams import write_sections
 
     await bootstrap_db()
     await create_list("list-1", "L", "2026-01-01T00:00:00")
@@ -1037,9 +1039,10 @@ async def test_sections_cascade_on_source_delete(tmp_bibilab_home: Path):
         bootstrap_db,
         create_list,
         delete_source,
+        get_sections,
     )
     from bibilab.pipeline.section import Section
-    from tests._section_db_seams import get_sections, write_sections
+    from tests._section_db_seams import write_sections
 
     await bootstrap_db()
     await create_list("list-1", "L", "2026-01-01T00:00:00")
@@ -1062,11 +1065,11 @@ async def test_write_source_with_segments_writes_sections_atomically(tmp_bibilab
     from bibilab.db import (
         bootstrap_db,
         create_list,
+        get_sections,
         get_source,
         write_source_with_segments,
     )
     from bibilab.pipeline.section import Section
-    from tests._section_db_seams import get_sections
 
     await bootstrap_db()
     await create_list("list-1", "L", "2026-01-01T00:00:00")
@@ -1110,10 +1113,10 @@ async def test_write_source_with_segments_rollback_leaves_no_orphan_sections(
     from bibilab.db import (
         bootstrap_db,
         create_list,
+        get_sections,
         get_source,
     )
     from bibilab.pipeline.section import Section
-    from tests._section_db_seams import get_sections
 
     await bootstrap_db()
     await create_list("list-1", "L", "2026-01-01T00:00:00")
@@ -1181,10 +1184,9 @@ async def test_write_source_with_segments_sections_omitted_keeps_old_behavior(
 async def test_update_section_summaries_updates_existing_rows_by_seq(
     tmp_bibilab_home: Path,
 ):
-    from bibilab.db import bootstrap_db, create_list, update_section_summaries, write_source_with_segments
+    from bibilab.db import bootstrap_db, create_list, get_sections, update_section_summaries, write_source_with_segments
     from bibilab.pipeline.section import Section
     from bibilab.pipeline.transcribe import WhisperSegment
-    from tests._section_db_seams import get_sections
 
     await bootstrap_db()
     await create_list("list-1", "L", "2026-01-01T00:00:00")
@@ -1275,3 +1277,63 @@ async def test_update_section_summaries_rowcount_mismatch_raises(
                 (99, "S99", ["k"]),  # seq 99 doesn't exist
             ],
         )
+
+
+@pytest.mark.asyncio
+async def test_get_sections_returns_all_columns_ordered_by_seq(
+    tmp_bibilab_home: Path,
+):
+    from bibilab.db import bootstrap_db, create_list, get_sections, write_source_with_segments
+    from bibilab.pipeline.section import Section
+    from bibilab.pipeline.transcribe import WhisperSegment
+
+    await bootstrap_db()
+    await create_list("list-1", "L", "2026-01-01T00:00:00")
+    source_id = await SourceFactory.build("list-1", video_id="BV1sections")
+
+    segments = [WhisperSegment(start=float(i), end=float(i + 1), text=f"s{i}.", speaker=None) for i in range(30)]
+    sections = [
+        Section(seg_start=0, seg_end=9, token_count=100, timestamp_start=0.0, timestamp_end=10.0),
+        Section(seg_start=10, seg_end=19, token_count=100, timestamp_start=10.0, timestamp_end=20.0),
+        Section(seg_start=20, seg_end=29, token_count=100, timestamp_start=20.0, timestamp_end=30.0),
+    ]
+    await write_source_with_segments(
+        segments=segments,
+        sections=sections,
+        source_id=source_id,
+        video_id="BV1sections",
+        platform="bilibili",
+        list_id="list-1",
+        title="T",
+        summary="",
+        keywords=[],
+        cover_url=None,
+        source_url="https://x",
+        duration_seconds=30,
+        uploader="u",
+        language="en",
+        whisper_model="x",
+        ai_model="y",
+        settings_snapshot={},
+    )
+
+    rows = await get_sections(source_id)
+    assert len(rows) == 3
+    # Ordered by seq.
+    assert [r["seq"] for r in rows] == [0, 1, 2]
+    # All 10 columns present.
+    for col in (
+        "id",
+        "source_id",
+        "seq",
+        "seg_start",
+        "seg_end",
+        "token_count",
+        "timestamp_start",
+        "timestamp_end",
+        "summary",
+        "keywords",
+    ):
+        assert col in rows[0].keys(), f"missing column {col}"
+    # Empty source returns empty list.
+    assert await get_sections("nonexistent") == []

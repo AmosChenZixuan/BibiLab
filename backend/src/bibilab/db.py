@@ -506,6 +506,23 @@ async def update_section_summaries(
         await db.commit()
 
 
+async def get_sections(source_id: str) -> list[aiosqlite.Row]:
+    """Fetch all section rows for a source, ordered by seq.
+
+    Returns all 10 columns: id, source_id, seq, seg_start, seg_end,
+    token_count, timestamp_start, timestamp_end, summary, keywords.
+    Callers (the API, the rerun path) project what they need.
+    """
+    async with get_db() as db:
+        cursor = await db.execute(
+            "SELECT id, source_id, seq, seg_start, seg_end, "
+            "token_count, timestamp_start, timestamp_end, summary, keywords "
+            "FROM sections WHERE source_id = ? ORDER BY seq",
+            (source_id,),
+        )
+        return await cursor.fetchall()
+
+
 async def get_source(source_id: str) -> aiosqlite.Row | None:
     async with get_db() as db:
         cursor = await db.execute("SELECT * FROM sources WHERE id=?", (source_id,))
