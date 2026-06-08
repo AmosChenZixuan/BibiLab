@@ -981,12 +981,13 @@ async def test_get_messages_beyond_window_excludes_non_done(tmp_bibilab_home: Pa
 @pytest.mark.asyncio
 async def test_write_and_get_sections(tmp_bibilab_home: Path):
     from bibilab.db import (
+        _exec_write_sections,
         bootstrap_db,
         create_list,
+        get_db,
         get_sections,
     )
     from bibilab.pipeline.section import Section
-    from tests._section_db_seams import write_sections
 
     await bootstrap_db()
     await create_list("list-1", "L", "2026-01-01T00:00:00")
@@ -996,7 +997,9 @@ async def test_write_and_get_sections(tmp_bibilab_home: Path):
         Section(seg_start=0, seg_end=10, token_count=5800, timestamp_start=0.0, timestamp_end=100.0),
         Section(seg_start=11, seg_end=22, token_count=6100, timestamp_start=101.0, timestamp_end=210.0),
     ]
-    await write_sections(source_id, sections)
+    async with get_db() as db:
+        await _exec_write_sections(db, source_id, sections)
+        await db.commit()
 
     rows = await get_sections(source_id)
     assert len(rows) == 2
@@ -1013,12 +1016,13 @@ async def test_write_and_get_sections(tmp_bibilab_home: Path):
 @pytest.mark.asyncio
 async def test_write_sections_is_idempotent(tmp_bibilab_home: Path):
     from bibilab.db import (
+        _exec_write_sections,
         bootstrap_db,
         create_list,
+        get_db,
         get_sections,
     )
     from bibilab.pipeline.section import Section
-    from tests._section_db_seams import write_sections
 
     await bootstrap_db()
     await create_list("list-1", "L", "2026-01-01T00:00:00")
@@ -1027,8 +1031,12 @@ async def test_write_sections_is_idempotent(tmp_bibilab_home: Path):
     sections = [
         Section(seg_start=0, seg_end=5, token_count=100, timestamp_start=0.0, timestamp_end=10.0),
     ]
-    await write_sections(source_id, sections)
-    await write_sections(source_id, sections)  # re-ingest
+    async with get_db() as db:
+        await _exec_write_sections(db, source_id, sections)
+        await db.commit()
+    async with get_db() as db:
+        await _exec_write_sections(db, source_id, sections)  # re-ingest
+        await db.commit()
     rows = await get_sections(source_id)
     assert len(rows) == 1  # DELETE+INSERT, not duplicate
 
@@ -1036,23 +1044,27 @@ async def test_write_sections_is_idempotent(tmp_bibilab_home: Path):
 @pytest.mark.asyncio
 async def test_sections_cascade_on_source_delete(tmp_bibilab_home: Path):
     from bibilab.db import (
+        _exec_write_sections,
         bootstrap_db,
         create_list,
         delete_source,
+        get_db,
         get_sections,
     )
     from bibilab.pipeline.section import Section
-    from tests._section_db_seams import write_sections
 
     await bootstrap_db()
     await create_list("list-1", "L", "2026-01-01T00:00:00")
     source_id = await SourceFactory.build("list-1", video_id="BV1c")
-    await write_sections(
-        source_id,
-        [
-            Section(seg_start=0, seg_end=5, token_count=100, timestamp_start=0.0, timestamp_end=10.0),
-        ],
-    )
+    async with get_db() as db:
+        await _exec_write_sections(
+            db,
+            source_id,
+            [
+                Section(seg_start=0, seg_end=5, token_count=100, timestamp_start=0.0, timestamp_end=10.0),
+            ],
+        )
+        await db.commit()
     await delete_source(source_id)
     assert await get_sections(source_id) == []
 
