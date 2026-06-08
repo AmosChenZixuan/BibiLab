@@ -397,18 +397,32 @@ async def _exec_write_sections(
     )
 
 
-async def write_source_with_segments(*, segments: list, **source_fields: Any) -> None:
-    """Atomically upsert a source row and its transcript segments in one
-    transaction. Either both land or neither — no orphaned source row, no
-    compensating delete. `source_fields` are the keyword args of `write_source`.
+async def write_source_with_segments(
+    *,
+    segments: list,
+    sections: list | None = None,
+    **source_fields: Any,
+) -> None:
+    """Atomically upsert a source row, its transcript segments, and its
+    derived section rows in one transaction. Either all three land or
+    none — no orphaned source row, no compensating delete, no orphan
+    section rows.
 
-    On any failure the exception propagates and the connection closes without a
-    commit, so SQLite rolls the whole transaction back. FK holds within the
-    transaction: the uncommitted parent source row is visible to the child
-    segment INSERTs on the same connection."""
+    `sections` is optional; when omitted (legacy call sites, factory) only
+    the source + segments are written. When provided, the section rows are
+    written in the same transaction so a partial failure rolls back the
+    whole write.
+
+    On any failure the exception propagates and the connection closes
+    without a commit, so SQLite rolls the whole transaction back. FK holds
+    within the transaction: the uncommitted parent source row is visible to
+    the child segment / section INSERTs on the same connection.
+    """
     async with get_db() as db:
         await _exec_write_source(db, **source_fields)
         await _exec_write_transcript_segments(db, source_fields["source_id"], segments)
+        if sections is not None:
+            await _exec_write_sections(db, source_fields["source_id"], sections)
         await db.commit()
 
 

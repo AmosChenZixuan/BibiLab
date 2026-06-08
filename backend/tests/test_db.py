@@ -1055,3 +1055,123 @@ async def test_sections_cascade_on_source_delete(tmp_bibilab_home: Path):
     )
     await delete_source(source_id)
     assert await get_sections(source_id) == []
+
+
+@pytest.mark.asyncio
+async def test_write_source_with_segments_writes_sections_atomically(tmp_bibilab_home: Path):
+    """write_source_with_segments must persist sections in the SAME
+    transaction as the source row and segments — no orphan section rows on
+    partial failure."""
+    from bibilab.db import (
+        bootstrap_db,
+        create_list,
+        get_sections,
+        get_source,
+        write_source_with_segments,
+    )
+    from bibilab.pipeline.section import Section
+
+    await bootstrap_db()
+    await create_list("list-1", "L", "2026-01-01T00:00:00")
+
+    sections = [
+        Section(seg_start=0, seg_end=5, token_count=100, timestamp_start=0.0, timestamp_end=10.0),
+    ]
+    await write_source_with_segments(
+        segments=[],
+        sections=sections,
+        source_id="src-1",
+        video_id="BV1x",
+        platform="bilibili",
+        list_id="list-1",
+        title="T",
+        summary="",
+        keywords=[],
+        cover_url=None,
+        source_url="https://x",
+        duration_seconds=0,
+        uploader="u",
+        language="en",
+        whisper_model="large-v3",
+        ai_model="gpt-4o",
+        settings_snapshot={},
+    )
+
+    assert await get_source("src-1") is not None
+    rows = await get_sections("src-1")
+    assert len(rows) == 1
+    assert rows[0]["seg_start"] == 0
+
+
+@pytest.mark.asyncio
+async def test_write_source_with_segments_rollback_leaves_no_orphan_sections(
+    tmp_bibilab_home: Path,
+):
+    """If _exec_write_sections raises, the parent source + segments must
+    NOT commit. Verifies the FK cascade is not silently saving us — the
+    transaction is rolled back as a unit."""
+    from bibilab.db import (
+        bootstrap_db,
+        create_list,
+        get_sections,
+        get_source,
+    )
+    from bibilab.pipeline.section import Section
+
+    await bootstrap_db()
+    await create_list("list-1", "L", "2026-01-01T00:00:00")
+
+    sections = [
+        Section(seg_start=0, seg_end=5, token_count=100, timestamp_start=0.0, timestamp_end=10.0),
+    ]
+
+    # Patch _exec_write_sections to raise mid-transaction; parent source
+    # must NOT commit.
+    from bibilab import db as db_mod
+
+    original = db_mod._exec_write_sections
+
+    async def boom(*args, **kwargs):
+        raise RuntimeError("simulated section-write failure")
+
+    db_mod._exec_write_sections = boom
+    try:
+        with pytest.raises(RuntimeError, match="simulated"):
+            await db_mod.write_source_with_segments(
+                segments=[],
+                sections=sections,
+                source_id="src-fail",
+                video_id="BV1fail",
+                platform="bilibili",
+                list_id="list-1",
+                title="T",
+                summary="",
+                keywords=[],
+                cover_url=None,
+                source_url="https://x",
+                duration_seconds=0,
+                uploader="u",
+                language="en",
+                whisper_model="large-v3",
+                ai_model="gpt-4o",
+                settings_snapshot={},
+            )
+    finally:
+        db_mod._exec_write_sections = original
+
+    assert await get_source("src-fail") is None
+    assert await get_sections("src-fail") == []
+
+
+@pytest.mark.asyncio
+async def test_write_source_with_segments_sections_omitted_keeps_old_behavior(
+    tmp_bibilab_home: Path,
+):
+    """Backwards compat: omitting `sections=` must still work (other call
+    sites / tests don't pass it)."""
+    from bibilab.db import bootstrap_db, create_list, get_source
+
+    await bootstrap_db()
+    await create_list("list-1", "L", "2026-01-01T00:00:00")
+    await SourceFactory.build("list-1", source_id="src-legacy", video_id="BV1legacy")
+    assert await get_source("src-legacy") is not None
