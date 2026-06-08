@@ -5,7 +5,7 @@ because the final LLM call's `messages` list is the cumulative state — it
 contains all prior tool results. One file per message captures the final state
 that the LLM actually saw, with N× less storage and N× less I/O.
 
-Also covers the LLM-bound tool message content (#401 — feed `_chunks` only,
+Also covers the LLM-bound tool message content (feed `_chunks` only,
 no FTS noise) and the tool_block_sink contract for raw_chunks."""
 
 import json
@@ -182,7 +182,7 @@ async def _drive_stream_with_tools(
 @pytest.mark.asyncio
 @pytest.mark.parametrize("protocol", ["anthropic", "openai"])
 async def test_llm_tool_message_feeds_only_chunks_excerpts_no_noise(mock_stream_llm, protocol):
-    """#401: LLM tool message content is `_chunks` only — not the full result dict.
+    """LLM tool message content is `_chunks` only — not the full result dict.
     Asserts the symmetric Anthropic + OpenAI branches; client SSE payload is unchanged.
     """
     captured = await _drive_stream_with_tools(
@@ -245,7 +245,7 @@ async def test_llm_tool_message_error_path_also_feeds_chunks_only(mock_stream_ll
 
 @pytest.mark.asyncio
 async def test_tool_block_sink_still_receives_raw_chunks(mock_stream_llm):
-    """#401 constraint: `_raw_chunks` must stay in the result dict (tool_block_sink read at chat.py:402)."""
+    """`_raw_chunks` must stay in the result dict (tool_block_sink read at chat.py:402)."""
     sink: list[dict] = []
     await _drive_stream_with_tools(
         mock_stream_llm, protocol="openai", tool_result=_NOISY_FIND_PASSAGES_RESULT, tool_block_sink=sink

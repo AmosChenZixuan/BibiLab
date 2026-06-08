@@ -118,7 +118,7 @@ def test_ai_config_accepts_strictly_less() -> None:
 def test_llm_output_budget_exceeded_subclasses_value_error() -> None:
     """The new error must subclass ValueError so any legacy `except ValueError`
     in pipeline code (chat_summary, worker artifact, digest) continues to
-    catch it. Migrations like #432's error-class rollout rely on this."""
+    catch it. Error-class rollouts rely on this base-class contract."""
     assert issubclass(LLMOutputBudgetExceededError, ValueError)
     err = LLMOutputBudgetExceededError("test")
     assert isinstance(err, ValueError)

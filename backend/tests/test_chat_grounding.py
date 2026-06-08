@@ -38,7 +38,7 @@ class TestBuildGroundingPrompt:
         assert "fictional" in build_grounding_prompt("en")
 
     def test_response_language_single_directive_at_tail(self):
-        # #402 — code "en" maps to readable "English"; the directive appears
+        # code "en" maps to readable "English"; the directive appears
         # exactly once, as the literal last line (recency, no repetition).
         prompt = build_grounding_prompt("en")
         assert prompt.count("English") == 1, (
@@ -54,7 +54,7 @@ class TestBuildGroundingPrompt:
         assert "same line" in lowered, citation_section
 
     def test_grounding_section_has_fence_pointer(self):
-        """#297 — Grounding rule points at the per-source fence structure."""
+        """Grounding rule points at the per-source fence structure."""
         prompt = build_grounding_prompt("en")
         grounding = prompt.split("## Grounding\n", 1)[1].split("\n## ", 1)[0]
         assert "===== Source [N] =====" in grounding, grounding
@@ -78,7 +78,7 @@ class TestBuildGroundingPrompt:
         assert "outside knowledge" in p
 
     def test_grounding_prompt_degraded_scope_rules_in_prompt(self):
-        """The DIRECTIVE half of the fact/directive split (spec §16.7) lives here:
+        """The DIRECTIVE half of the fact/directive split lives here:
         the no-match and empty-transcript behaviours are prompt rules; the tool emits
         only the matching fact."""
         p = build_grounding_prompt("en").lower()
@@ -92,7 +92,7 @@ class TestBuildGroundingPrompt:
         p = build_grounding_prompt("en")
         # trivial-message no-tool anchor
         assert "without calling" in p.lower() or "no tool" in p.lower()
-        # answerable-from-history → no tool (spec §16.6)
+        # answerable-from-history → no tool
         assert "conversation history" in p.lower() or "already answered" in p.lower()
 
     def test_find_passages_description_has_no_coverage_example(self):

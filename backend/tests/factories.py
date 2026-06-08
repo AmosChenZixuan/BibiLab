@@ -118,7 +118,7 @@ class MessageFactory:
     """Build a `messages` row. Returns the row (caller can read msg['id'] etc.).
 
     `message_id` defaults to a fresh uuid; pass an explicit id to assert on
-    a specific value (e.g. to pair a user/asst row in #403 transition tests).
+    a specific value (e.g. to pair a user/asst row in turn-transition tests).
     """
 
     _DEFAULTS: dict[str, Any] = {

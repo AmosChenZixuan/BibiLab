@@ -129,7 +129,7 @@ async def test_cancel_404_for_nonexistent_message(client, tmp_bibilab_home):  # 
 
 @pytest.mark.asyncio
 async def test_sweep_marks_both_pending_and_streaming_failed(tmp_bibilab_home):  # noqa: ARG001
-    """#403: a server-restart sweep must flip BOTH rows of an in-flight turn —
+    """A server-restart sweep must flip BOTH rows of an in-flight turn —
     the user row (status='pending') and the assistant row (status='streaming')
     — to 'failed' so neither leaks into the next conversation replay."""
     from bibilab.db import bootstrap_db, create_list, get_db

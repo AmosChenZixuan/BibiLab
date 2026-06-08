@@ -389,7 +389,7 @@ async def test_pinyin_neutral_tone_recall_via_fts5(tmp_bibilab_home: Path):
 
 @pytest.mark.asyncio
 async def test_question_query_recalls_entity_past_two_chars(tmp_bibilab_home: Path):
-    """A natural-language question must not require every bigram to co-occur (#391).
+    """A natural-language question must not require every bigram to co-occur.
 
     Query '苹果是什么' is one CJK run → bigrams [苹果, 果是, 是什, 什么] +
     pinyin [pingguo, guoshi, shishen, shenme]. Under the old AND join the
@@ -463,7 +463,7 @@ def test_tokenize_cjk_empty_string():
 
 
 def test_escape_fts_query_chinese_phrase():
-    # Multi-char CJK → bigrams only (no unigrams); OR-joined within each arm (#391)
+    # Multi-char CJK → bigrams only (no unigrams); OR-joined within each arm
     escaped = _escape_fts_query("面食做法")
     assert escaped == 'content : ("面食" OR "食做" OR "做法") OR pinyin : ("mianshi" OR "shizuo" OR "zuofa")'
 
@@ -513,7 +513,7 @@ def test_escape_fts_query_high_idf_single_char():
 
 @pytest.mark.asyncio
 async def test_two_sources_same_video_id_independent_scoping(tmp_bibilab_home: Path):
-    """#379: Two sources sharing one video_id scope independently.
+    """Two sources sharing one video_id scope independently.
 
     Under the old video_id-based keying, re-embedding source B could overwrite
     source A's Chroma data, and retrieval for one list could return chunks from
@@ -549,7 +549,7 @@ async def test_two_sources_same_video_id_independent_scoping(tmp_bibilab_home: P
 
 @pytest.mark.asyncio
 async def test_clear_fts_for_list_independent_per_list(tmp_bibilab_home: Path):
-    """#379: Deleting one list only clears FTS for its own sources.
+    """Deleting one list only clears FTS for its own sources.
 
     Under the old video_id-keyed query (WHERE video_id IN (SELECT video_id FROM
     sources WHERE list_id = ?)), deleting list 1 would also purge FTS rows for

@@ -1,4 +1,4 @@
-"""Regression tests: #405 removed these fields from BibilabConfig.
+"""Regression tests for fields removed from BibilabConfig.
 
 Each parametrized case asserts a removed field is absent from a default
 BibilabConfig instance, so a future re-introduction is caught.

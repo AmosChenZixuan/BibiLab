@@ -572,7 +572,7 @@ async def test_chat_sse_hallucinated_index_emitted_as_text(client, caplog, mock_
     assert any("citation_hallucinated_index" in rec.message for rec in caplog.records)
 
 
-# (audit prior claims rule removed — Rule 3 deferred to #301 fact-check tool)
+# (audit prior claims rule removed — Rule 3 deferred to the fact-check tool)
 
 
 # ---------------------------------------------------------------------------
@@ -688,7 +688,7 @@ async def test_run_chat_turn_persists_tool_blocks(monkeypatch, tmp_path, mock_st
 
 @pytest.mark.asyncio
 async def test_system_message_is_stable_across_turns(monkeypatch, mock_stream_llm):
-    """#310: for a fixed response_language the assembled system prompt is
+    """For a fixed response_language the assembled system prompt is
     byte-identical turn to turn (no per-turn source list) — prompt-cache stable."""
     from bibilab.config import AIConfig, BackendConfig, BibilabConfig
     from bibilab.pipeline._shared import StreamEvent
@@ -881,7 +881,7 @@ async def test_chat_endpoint_error_reason_in_sse_terminal_payload(client):
 @pytest.mark.asyncio
 async def test_chat_endpoint_classify_error_reaches_sse_terminal_payload(client, mock_stream_llm):
     """When an SDK exception propagates from stream_llm, classify_error() maps
-    it to the correct i18n code in the SSE terminal payload (spec #266 requirement)."""
+    it to the correct i18n code in the SSE terminal payload."""
     list_id = (await client.post("/lists", json={"name": "ClassifyErr"})).json()["id"]
 
     async def fake_stream_llm_raises(*args, **kwargs):
@@ -915,7 +915,7 @@ async def test_chat_endpoint_classify_error_reaches_sse_terminal_payload(client,
 
 @pytest.mark.asyncio
 async def test_run_chat_turn_drops_tool_blocks_on_turn_2(monkeypatch, mock_stream_llm):
-    """v2 spec §5.5: prior-turn find_passages / read_source tool exchanges are
+    """Prior-turn find_passages / read_source tool exchanges are
     dropped from cross-turn replay to avoid stale-context contamination. The
     LLM sees only the synthesized prose from prior turns; to re-ground on
     prior evidence it must re-call the tool in the current turn.
@@ -1000,7 +1000,7 @@ async def test_run_chat_turn_drops_tool_blocks_on_turn_2(monkeypatch, mock_strea
 async def test_chat_uses_resolved_response_language_in_system_prompt(monkeypatch, tmp_path, mock_stream_llm):
     """When UI lang is zh and output_language is 'ui', the system prompt must end
     with 'Respond in 简体中文.' (readable native name, not the bare ISO code; single
-    tail directive). #402."""
+    tail directive)."""
     from bibilab.config import AIConfig, BackendConfig, BibilabConfig
     from bibilab.routers import chat as chat_module
 
@@ -1156,7 +1156,7 @@ async def test_run_chat_turn_reseeds_citation_registry_from_history_tool_blocks(
 
 @pytest.mark.asyncio
 async def test_rag_call_carries_facet_scope(client, mock_stream_llm):
-    """#309: facet_scope from execute_find_passages must survive the router copy into metadata.rag."""
+    """facet_scope from execute_find_passages must survive the router copy into metadata.rag."""
     from bibilab.pipeline.chat_tools import FIND_PASSAGES_TOOL
 
     list_id = (await client.post("/lists", json={"name": "FacetTel"})).json()["id"]
@@ -1221,7 +1221,7 @@ async def test_rag_call_carries_facet_scope(client, mock_stream_llm):
 
 @pytest.mark.asyncio
 async def test_rag_metadata_includes_read_source_call(client):
-    """#371: read_source calls must appear in metadata.rag.calls alongside find_passages calls."""
+    """read_source calls must appear in metadata.rag.calls alongside find_passages calls."""
     from bibilab.pipeline.chat_tools import READ_SOURCE_TOOL
 
     list_id = await _create_list(client, "ReadSourceLedger")
@@ -1262,7 +1262,7 @@ async def test_rag_metadata_includes_read_source_call(client):
 
 
 # ---------------------------------------------------------------------------
-# #403: aborted (cancelled / failed / pending) turns invisible to LLM + compaction
+# aborted (cancelled / failed / pending) turns invisible to LLM + compaction
 # ---------------------------------------------------------------------------
 
 
