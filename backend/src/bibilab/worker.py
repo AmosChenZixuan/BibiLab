@@ -109,6 +109,47 @@ def _pack_sections(
     return batches
 
 
+def _format_duration(seconds: float) -> str:
+    """mm:ss formatter for section headers. Past 1h, keeps counting minutes
+    (no H:MM:SS) — the header is for orientation, not parsing."""
+    s = int(seconds)
+    return f"{s // 60:02d}:{s % 60:02d}"
+
+
+def _render_single_batch_text(sections: list[_SectionView]) -> str:
+    """Render sections for the single-batch path: byte-identical to today's
+    combined-transcript shape.
+
+    Groups by ``source_id`` in input order (which already reflects the
+    selected source_ids order — the caller passes them in that order).
+    Renders one ``=== Source: {title} ===`` header per source with all its
+    sections concatenated, NO per-section header. Sources are joined with
+    the same ``"\\n\\n"`` separator today's artifact path uses.
+    """
+    by_source: dict[str, list[_SectionView]] = {}
+    for sec in sections:
+        by_source.setdefault(sec.source_id, []).append(sec)
+    parts: list[str] = []
+    for source_id, secs in by_source.items():
+        title = secs[0].source_title
+        text = "".join(sec.text for sec in secs)
+        parts.append(f"=== Source: {title} ===\n{text}")
+    return "\n\n".join(parts)
+
+
+def _render_multi_batch_section(sec: _SectionView) -> str:
+    """Render one section for the multi-batch path: per-section header
+    `=== Source: {title} · Section {seq} (mm:ss-mm:ss) ===` followed by the
+    section's verbatim text. No trailing newline (the prompt builder
+    joins sections)."""
+    header = (
+        f"=== Source: {sec.source_title} · "
+        f"Section {sec.seq} ({_format_duration(sec.timestamp_start)}-"
+        f"{_format_duration(sec.timestamp_end)}) ==="
+    )
+    return f"{header}\n{sec.text}"
+
+
 def _download_cover(cover_url: str, dest: Path) -> bool:
     """Download cover image from URL to dest path. Returns True on success."""
     try:

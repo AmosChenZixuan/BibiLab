@@ -10,7 +10,13 @@ from __future__ import annotations
 
 import pytest
 
-from bibilab.worker import _pack_sections, _SectionView
+from bibilab.worker import (
+    _format_duration,
+    _pack_sections,
+    _render_multi_batch_section,
+    _render_single_batch_text,
+    _SectionView,
+)
 
 pytestmark = pytest.mark.integration
 
@@ -75,3 +81,38 @@ def test_pack_sections_preserves_source_order():
     batches = _pack_sections([a, b, c, d], budget_tokens=10_000)
     flat = [s for batch in batches for s in batch]
     assert flat == [a, b, c, d]
+
+
+# --- section text renderers --------------------------------------------------
+
+
+def test_format_duration_minutes_seconds():
+    assert _format_duration(0) == "00:00"
+    assert _format_duration(5) == "00:05"
+    assert _format_duration(65) == "01:05"
+    assert _format_duration(3661) == "61:01"  # past 1h: keep counting minutes (no H:MM:SS)
+
+
+def test_render_single_batch_text_groups_by_source_with_no_section_header():
+    """Single-batch (byte-identical to today): `=== Source: {title} ===\n
+    {concatenated section text per source, no per-section header)`. Sections
+    for the same source are concatenated in seq order."""
+    a0 = _sv("src-A", 0, "A0 text.", tokens=2)
+    a1 = _sv("src-A", 1, "A1 text.", tokens=2)
+    b0 = _sv("src-B", 0, "B0 text.", tokens=2)
+    out = _render_single_batch_text([a0, a1, b0])
+    # Source A: header + a0 + a1 (no per-section header, concatenated)
+    # Source B: header + b0
+    # Joined with the same separator today's _run_artifact_job uses ("\n\n").
+    expected = "=== Source: Title-src-A ===\nA0 text.A1 text.\n\n=== Source: Title-src-B ===\nB0 text."
+    assert out == expected
+
+
+def test_render_multi_batch_section_uses_per_section_header():
+    """Multi-batch path: each section gets `=== Source: {title} · Section
+    {seq} (mm:ss-mm:ss) ===\n{text}` (no per-section blank lines; the
+    caller controls inter-section spacing in the prompt)."""
+    a0 = _sv("src-A", 0, "A0 text.", tokens=2)
+    out = _render_multi_batch_section(a0)
+    expected = "=== Source: Title-src-A · Section 0 (00:00-01:00) ===\nA0 text."
+    assert out == expected
