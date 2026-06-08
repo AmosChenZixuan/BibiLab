@@ -36,10 +36,10 @@ from bibilab.pipeline._shared import (
     _resolved_lang,
 )
 from bibilab.pipeline.audio import PipelineError, extract_audio
-from bibilab.pipeline.chunk import chunk_segments
 from bibilab.pipeline.digest import DigestResult, digest
 from bibilab.pipeline.embed import embed_chunks
 from bibilab.pipeline.punctuate import punctuate
+from bibilab.pipeline.section import Section, chunk_by_sections, derive_sections
 from bibilab.pipeline.transcribe import (
     WhisperSegment,
     format_turns,
@@ -560,13 +560,19 @@ Respond ONLY with valid JSON matching this schema:
         list_id: str,
         cfg: BibilabConfig,
         effective_language: str,
-    ) -> DigestResult | None:
-        """Stage 4: Chunk sentence segments, run digest + embed in parallel."""
+    ) -> tuple[DigestResult, list[Section]] | None:
+        """Stage 4: Derive sections, chunk per-section, run digest + embed in parallel.
+
+        Pipeline order: `segments → sections → chunks` (section-first, chunk-within).
+        Chunks are produced from per-section slices, so a chunk can never cross a
+        section boundary — the `chunk → section → source` nesting is physical, not
+        by convention. Re-stamping in `chunk_by_sections` keeps the chunks' seg
+        indices and sequence_index source-global so the rest of the system is
+        unaware sections exist (deferring the per-chunk section FK to chat #455).
+        """
         await update_job_status(job_id, JobStatus.PROCESSING.value, progress=40)
-        chunks = chunk_segments(
-            sentence_segments,
-            language=effective_language,
-        )
+        sections = derive_sections(sentence_segments, effective_language)
+        chunks = chunk_by_sections(sentence_segments, sections, language=effective_language)
 
         meta_raw = parse_job_meta(job)
         transcript_text = format_turns(sentence_segments, include_time=False)
@@ -586,7 +592,7 @@ Respond ONLY with valid JSON matching this schema:
             await delete_job(job_id)
             return None
 
-        return extraction
+        return extraction, sections
 
     async def _stage_persist(
         self,
