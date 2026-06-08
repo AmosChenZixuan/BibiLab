@@ -2,8 +2,8 @@
  * Tests verifying that useEffect dependencies are stable and don't cause
  * unnecessary re-fires.
  *
- * Issue #46: Unstable function refs in useEffect dependency arrays cause
- * effects to re-fire unnecessarily (including data fetches).
+ * Unstable function refs in useEffect dependency arrays cause effects to
+ * re-fire unnecessarily (including data fetches).
  */
 import { render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
