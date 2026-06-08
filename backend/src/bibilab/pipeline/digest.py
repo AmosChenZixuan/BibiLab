@@ -166,6 +166,30 @@ Transcript:
 """
 
 
+# Section index marker for the refine prompt's rolling context. Single
+# language-agnostic format, consistent with the chat system's [N] citation
+# convention. The marker is for the LLM's context disambiguation, not part
+# of the output schema.
+_REFINE_SECTION_MARKER = "[S{n}]"
+
+
+_REFINE_PROMPT = """\
+You are summarizing a long video's transcript section-by-section, in order.
+The reader has seen prior section summaries; do not repeat prior background.
+Summarize only the NEW content in the current section.
+
+Prior section summaries (context, do not restate):
+{running}
+
+Current section transcript:
+{section_text}
+
+Output ONE JSON object:
+{{"summary": "60-100 words covering this section's core content",
+  "keywords": ["up to 8, each 1-4 words"]}}
+"""
+
+
 def _parse_response(text: str) -> DigestResult:
     result: DigestResult = _parse_llm_json_response(text, DigestResult)
     result.keywords = result.keywords[:_MAX_KEYWORDS]
@@ -220,3 +244,90 @@ def digest(
     error_msg = f"LLM digest exhausted all retries for {meta.video_id}: {last_exc}"
     logger.error(error_msg)
     raise PipelineError(error_msg)
+
+
+def _build_refine_prompt(running: str, section_text: str, lang: str) -> str:
+    lang_instruction = _LANG_INSTRUCTION.get(lang, _LANG_INSTRUCTION["en"])
+    return (
+        lang_instruction
+        + "\n\n"
+        + _REFINE_PROMPT.format(running=running, section_text=section_text)
+        + f"\n\n{lang_instruction}\n{_lang_output_directive(lang)}"
+    )
+
+
+def _refine_one_section(
+    section_text: str,
+    running: str,
+    lang: str,
+    meta: VideoMeta,
+    cfg: AIConfig,
+    llm_timeout: int,
+) -> SectionDigest:
+    """Run the refine LLM call with the same retry ladder as digest()."""
+    base_prompt = _build_refine_prompt(running=running, section_text=section_text, lang=lang)
+    prompts = [base_prompt, base_prompt + _STRICT_SUFFIX, base_prompt + _STRICT_SUFFIX]
+    last_exc: Exception | None = None
+    for attempt, p in enumerate(prompts, start=1):
+        try:
+            raw = _call_llm(p, cfg, llm_timeout=llm_timeout)
+            return _parse_section_digest_response(raw)
+        except (ContextWindowExceededError, LLMOutputBudgetExceededError):
+            raise
+        except Exception as exc:
+            last_exc = exc
+            logger.warning(
+                "LLM section refine failed for %s (attempt %d/%d): %s",
+                meta.video_id,
+                attempt,
+                len(prompts),
+                exc,
+            )
+
+    error_msg = f"LLM section refine exhausted all retries for {meta.video_id}: {last_exc}"
+    logger.error(error_msg)
+    raise PipelineError(error_msg)
+
+
+def digest_sections(
+    section_texts: list[str],
+    meta: VideoMeta,
+    cfg: AIConfig,
+    output_language: str = "ui",
+    ui_lang: str | None = None,
+    llm_timeout: int = 120,
+) -> tuple[DigestResult, list[SectionDigest]]:
+    """Run digest on each section: section 1 via digest() (with facets),
+    sections 2..N via a lighter refine prompt with rolling context.
+
+    `len(section_texts) == 0` is undefined behavior — derive_sections only
+    returns [] for empty segments, which already failed upstream.
+
+    Returns (DigestResult, list[SectionDigest]). For 1-section sources,
+    the [SectionDigest] mirrors the DigestResult exactly (byte-identical
+    contract).
+    """
+    lang = _resolved_lang(output_language, ui_lang)
+
+    # Section 1: existing digest() — extracts facets once.
+    extraction = digest(section_texts[0], meta, cfg, output_language, ui_lang, llm_timeout)
+    section_digests: list[SectionDigest] = [SectionDigest(summary=extraction.summary, keywords=extraction.keywords)]
+
+    # Sections 2..N: refine chain with rolling context.
+    if len(section_texts) > 1:
+        running_parts: list[str] = [_REFINE_SECTION_MARKER.format(n=1) + " " + extraction.summary]
+        for i, text in enumerate(section_texts[1:], start=2):
+            current_marker = _REFINE_SECTION_MARKER.format(n=i)
+            running = "\n".join(running_parts + [current_marker])
+            sd = _refine_one_section(
+                section_text=text,
+                running=running,
+                lang=lang,
+                meta=meta,
+                cfg=cfg,
+                llm_timeout=llm_timeout,
+            )
+            section_digests.append(sd)
+            running_parts.append(_REFINE_SECTION_MARKER.format(n=i) + " " + sd.summary)
+
+    return extraction, section_digests
