@@ -482,6 +482,30 @@ async def update_source_facets(source_id: str, **fields: object) -> None:
         await db.commit()
 
 
+async def update_section_summaries(
+    source_id: str,
+    section_digests: list[tuple[int, str, list[str]]],
+) -> None:
+    """UPDATE existing section rows by seq. Rerun path only.
+
+    Each tuple is (seq, summary, keywords). Asserts that every digest
+    matched a row in the UPDATE (per-tuple rowcount == 1) so a missing or
+    out-of-range seq surfaces as an error rather than a silent no-op.
+    """
+    async with get_db() as db:
+        for seq, summary, keywords in section_digests:
+            cursor = await db.execute(
+                "UPDATE sections SET summary=?, keywords=? WHERE source_id=? AND seq=?",
+                (summary, json.dumps(keywords), source_id, seq),
+            )
+            if cursor.rowcount != 1:
+                raise LookupError(
+                    f"update_section_summaries: expected 1 row for "
+                    f"source_id={source_id!r} seq={seq}, got {cursor.rowcount}"
+                )
+        await db.commit()
+
+
 async def get_source(source_id: str) -> aiosqlite.Row | None:
     async with get_db() as db:
         cursor = await db.execute("SELECT * FROM sources WHERE id=?", (source_id,))

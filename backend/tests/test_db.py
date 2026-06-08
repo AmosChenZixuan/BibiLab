@@ -1172,3 +1172,106 @@ async def test_write_source_with_segments_sections_omitted_keeps_old_behavior(
     await create_list("list-1", "L", "2026-01-01T00:00:00")
     await SourceFactory.build("list-1", source_id="src-legacy", video_id="BV1legacy")
     assert await get_source("src-legacy") is not None
+
+
+# ── update_section_summaries ──────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_update_section_summaries_updates_existing_rows_by_seq(
+    tmp_bibilab_home: Path,
+):
+    from bibilab.db import bootstrap_db, create_list, update_section_summaries, write_source_with_segments
+    from bibilab.pipeline.section import Section
+    from bibilab.pipeline.transcribe import WhisperSegment
+    from tests._section_db_seams import get_sections
+
+    await bootstrap_db()
+    await create_list("list-1", "L", "2026-01-01T00:00:00")
+    source_id = await SourceFactory.build("list-1", video_id="BV1sections")
+    segments = [WhisperSegment(start=float(i), end=float(i + 1), text=f"s{i}.", speaker=None) for i in range(30)]
+    sections = [
+        Section(seg_start=0, seg_end=9, token_count=100, timestamp_start=0.0, timestamp_end=10.0),
+        Section(seg_start=10, seg_end=19, token_count=100, timestamp_start=10.0, timestamp_end=20.0),
+        Section(seg_start=20, seg_end=29, token_count=100, timestamp_start=20.0, timestamp_end=30.0),
+    ]
+    await write_source_with_segments(
+        segments=segments,
+        sections=sections,
+        source_id=source_id,
+        video_id="BV1sections",
+        platform="bilibili",
+        list_id="list-1",
+        title="T",
+        summary="",
+        keywords=[],
+        cover_url=None,
+        source_url="https://x",
+        duration_seconds=30,
+        uploader="u",
+        language="en",
+        whisper_model="x",
+        ai_model="y",
+        settings_snapshot={},
+    )
+
+    await update_section_summaries(
+        source_id,
+        [(0, "Summary 0", ["k0"]), (1, "Summary 1", ["k1"]), (2, "Summary 2", ["k2"])],
+    )
+
+    rows = await get_sections(source_id)
+    assert len(rows) == 3
+    assert rows[0]["summary"] == "Summary 0"
+    assert json.loads(rows[0]["keywords"]) == ["k0"]
+    assert rows[1]["summary"] == "Summary 1"
+    assert rows[2]["summary"] == "Summary 2"
+
+
+@pytest.mark.asyncio
+async def test_update_section_summaries_rowcount_mismatch_raises(
+    tmp_bibilab_home: Path,
+):
+    from bibilab.db import bootstrap_db, create_list, update_section_summaries, write_source_with_segments
+    from bibilab.pipeline.section import Section
+    from bibilab.pipeline.transcribe import WhisperSegment
+
+    await bootstrap_db()
+    await create_list("list-1", "L", "2026-01-01T00:00:00")
+    source_id = await SourceFactory.build("list-1", video_id="BV1sections2")
+    segments = [WhisperSegment(start=float(i), end=float(i + 1), text=f"s{i}.", speaker=None) for i in range(30)]
+    sections = [
+        Section(seg_start=0, seg_end=9, token_count=100, timestamp_start=0.0, timestamp_end=10.0),
+        Section(seg_start=10, seg_end=19, token_count=100, timestamp_start=10.0, timestamp_end=20.0),
+        Section(seg_start=20, seg_end=29, token_count=100, timestamp_start=20.0, timestamp_end=30.0),
+    ]
+    await write_source_with_segments(
+        segments=segments,
+        sections=sections,
+        source_id=source_id,
+        video_id="BV1sections2",
+        platform="bilibili",
+        list_id="list-1",
+        title="T",
+        summary="",
+        keywords=[],
+        cover_url=None,
+        source_url="https://x",
+        duration_seconds=30,
+        uploader="u",
+        language="en",
+        whisper_model="x",
+        ai_model="y",
+        settings_snapshot={},
+    )
+
+    with pytest.raises(LookupError):
+        await update_section_summaries(
+            source_id,
+            [
+                (0, "S0", ["k"]),
+                (1, "S1", ["k"]),
+                (2, "S2", ["k"]),
+                (99, "S99", ["k"]),  # seq 99 doesn't exist
+            ],
+        )
