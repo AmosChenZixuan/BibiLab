@@ -32,11 +32,13 @@ _NO_MATCH_NOTE = "No source matched the requested episode/season; searched all s
 @dataclass
 class CitationRegistryEntry:
     index: int
+    section_id: str
     source_id: str
     title: str = ""
+    seq: int | None = None  # 1-based section seq within the source
+    citable: bool = False  # True once this section's verbatim is shown
     chunk_ids: set[str] = field(default_factory=set)
     # Populated at SSE-build time from execute_find_passages chunk data.
-    # Used to reconstruct context[] for persisted metadata.
     first_chunk_id: str | None = None
     timestamp_start: float | None = None
     timestamp_end: float | None = None

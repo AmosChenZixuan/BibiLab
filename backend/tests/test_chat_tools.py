@@ -330,6 +330,17 @@ async def test_citation_registry_entry_uses_first_chunk_fields(monkeypatch):
     assert entry.rerank_score == 0.8
 
 
+def test_citation_entry_is_section_keyed_and_citable_defaults_false():
+    from bibilab.pipeline.chat_tools import CitationRegistryEntry
+
+    e = CitationRegistryEntry(index=1, section_id="sec-1", source_id="src-1", title="T")
+    assert e.section_id == "sec-1"
+    assert e.source_id == "src-1"
+    assert e.seq is None
+    assert e.citable is False  # outline-only until verbatim is shown
+    assert e.chunk_ids == set()
+
+
 class TestBuildSourceHeaders:
     def test_single(self):
         from bibilab.pipeline.chat_tools import CitationRegistryEntry, _build_source_headers
