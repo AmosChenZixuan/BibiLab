@@ -320,7 +320,7 @@ class WorkerLoop:
         if not section_rows:
             # Defensive: post-backfill this can't happen. Surface a clear
             # backfill-pointer error so the operator knows the fix.
-            msg = "Source has no sections; run backend/scripts/backfill_sections.py"
+            msg = "Source has no sections; re-ingest the source to derive them"
             logger.warning("Digest job %s: %s", job_id, msg)
             await update_job_status(job_id, JobStatus.FAILED.value, error=msg)
             return

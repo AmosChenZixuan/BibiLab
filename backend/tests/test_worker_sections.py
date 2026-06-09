@@ -572,4 +572,4 @@ async def test_rerun_legacy_source_without_sections_fails_loud(tmp_bibilab_home:
 
     row = dict(await get_job(job_id))
     assert row["status"] == "failed"
-    assert "backfill_sections" in row["error"]
+    assert "no sections" in row["error"]
