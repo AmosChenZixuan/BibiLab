@@ -3,7 +3,6 @@
 import json
 import logging
 import re
-from collections.abc import Iterable
 from dataclasses import dataclass, field
 
 from bibilab.config import BibilabConfig
@@ -56,38 +55,43 @@ def strip_internal(result: dict) -> dict:
     return {k: v for k, v in result.items() if not k.startswith("_")}
 
 
-def _build_source_headers(registry: dict[str, CitationRegistryEntry], source_ids: Iterable[str]) -> str:
-    # Bound the LLM-facing source list to the current turn's pool: a source
-    # reseeded from history but de-selected in this turn must not appear here,
-    # or the LLM will see "[5] = …" and try read_source("[5]") only to learn
-    # via the new fail-loud error. The registry itself stays unfiltered — it
-    # is the resolver's lookup table for [N] → source_id.
-    lines = []
-    for entry in sorted(registry.values(), key=lambda e: e.index):
-        if entry.source_id not in source_ids:
-            continue
-        title = entry.title
-        lines.append(f'Source [{entry.index}]: "{title}"')
-    return "\n".join(lines)
+def _mmss(seconds: float | None) -> str:
+    s = int(seconds or 0)
+    m, sec = divmod(s, 60)
+    h, m = divmod(m, 60)
+    return f"{h}:{m:02d}:{sec:02d}" if h else f"{m}:{sec:02d}"
 
 
-def _build_fenced_chunks(
+def _build_section_fence_header(entry: CitationRegistryEntry) -> str:
+    return (
+        f'===== [{entry.index}] "{entry.title}" · Section {entry.seq} '
+        f"({_mmss(entry.timestamp_start)}–{_mmss(entry.timestamp_end)}) ====="
+    )
+
+
+def _build_fenced_sections(
     chunks_by_index: dict[int, list[str]],
+    summaries_by_index: dict[int, str],
     registry: dict[str, CitationRegistryEntry],
 ) -> str:
-    """Render chunks grouped by citation index, each group fenced by its source.
-
-    Buckets are emitted in ascending index order; the caller-supplied order
-    within each bucket (rerank order) is preserved. The fence makes the
-    source boundary structural so the LLM does not graft a proper noun from
-    one source onto another.
+    """Render each surfaced section: fence header, then its summary, then its
+    chunk fragments (if any). Emitted in ascending [N] order. A section with a
+    summary but no chunks (outline-only) renders header + summary only.
     """
-    title_by_index = {e.index: e.title for e in registry.values()}
-    blocks = []
-    for idx in sorted(chunks_by_index):
-        title = title_by_index.get(idx, "")
-        header = f'===== Source [{idx}]: "{title}" ====='
-        blocks.append(header + "\n" + "\n".join(chunks_by_index[idx]))
+    by_index = {e.index: e for e in registry.values()}
+    blocks: list[str] = []
+    for idx in sorted(set(chunks_by_index) | set(summaries_by_index)):
+        entry = by_index.get(idx)
+        if entry is None:
+            continue
+        parts = [_build_section_fence_header(entry)]
+        summary = summaries_by_index.get(idx)
+        if summary:
+            parts.append(summary)
+        body = "\n".join(chunks_by_index.get(idx, []))
+        if body:
+            parts.append(body)
+        blocks.append("\n".join(parts))
     return "\n\n".join(blocks)
 
 

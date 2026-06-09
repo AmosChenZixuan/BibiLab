@@ -341,40 +341,6 @@ def test_citation_entry_is_section_keyed_and_citable_defaults_false():
     assert e.chunk_ids == set()
 
 
-class TestBuildSourceHeaders:
-    def test_single(self):
-        from bibilab.pipeline.chat_tools import CitationRegistryEntry, _build_source_headers
-
-        r = {"s1": CitationRegistryEntry(index=1, source_id="s1", title="My Video")}
-        assert _build_source_headers(r, ["s1"]) == 'Source [1]: "My Video"'
-
-    def test_sorted_by_index(self):
-        from bibilab.pipeline.chat_tools import CitationRegistryEntry, _build_source_headers
-
-        r = {
-            "sb": CitationRegistryEntry(index=2, source_id="sb", title="B"),
-            "sa": CitationRegistryEntry(index=1, source_id="sa", title="A"),
-        }
-        result = _build_source_headers(r, ["sa", "sb"])
-        lines = result.split("\n")
-        assert lines[0] == 'Source [1]: "A"'
-        assert lines[1] == 'Source [2]: "B"'
-
-    def test_filters_by_current_pool(self):
-        """A source reseeded into the registry from a prior turn but
-        de-selected in the current turn must not appear in the LLM-facing
-        header list — the model would otherwise try read_source("[N]") and
-        fail loud on a stale [N] it should never have seen."""
-        from bibilab.pipeline.chat_tools import CitationRegistryEntry, _build_source_headers
-
-        r = {
-            "selected": CitationRegistryEntry(index=1, source_id="selected", title="Kept"),
-            "deselected": CitationRegistryEntry(index=2, source_id="deselected", title="Dropped"),
-        }
-        result = _build_source_headers(r, ["selected"])
-        assert result == 'Source [1]: "Kept"'
-
-
 class TestBuildToolBlockEntry:
     def test_build_tool_block_entry_find_passages_strips_internal_underscore_fields(self):
         from bibilab.pipeline.chat_tools import build_tool_block_entry
@@ -1036,34 +1002,6 @@ class TestExecuteToolFacetArgs:
         assert seen["sequence_number"] is None
 
 
-def test_build_fenced_chunks_groups_and_fences():
-    from bibilab.pipeline.chat_tools import (
-        CitationRegistryEntry,
-        _build_fenced_chunks,
-    )
-
-    registry = {
-        "s1": CitationRegistryEntry(index=1, source_id="s1", title="Video One"),
-        "s2": CitationRegistryEntry(index=2, source_id="s2", title="Video Two"),
-    }
-    chunks_by_index = {
-        2: ['[2 @ 0s-9s]: "b1"', '[2 @ 9s-18s]: "b2"'],
-        1: ['[1 @ 0s-9s]: "a1"', '[1 @ 9s-18s]: "a2"'],
-    }
-
-    out = _build_fenced_chunks(chunks_by_index, registry)
-
-    assert out == (
-        '===== Source [1]: "Video One" =====\n'
-        '[1 @ 0s-9s]: "a1"\n'
-        '[1 @ 9s-18s]: "a2"\n'
-        "\n"
-        '===== Source [2]: "Video Two" =====\n'
-        '[2 @ 0s-9s]: "b1"\n'
-        '[2 @ 9s-18s]: "b2"'
-    )
-
-
 def test_section_for_seg_maps_by_containment():
     from bibilab.pipeline.chat_tools import _section_for_seg
 
@@ -1076,10 +1014,46 @@ def test_section_for_seg_maps_by_containment():
     assert _section_for_seg(sections, 99) is None  # out of range → None
 
 
-def test_build_fenced_chunks_empty_returns_empty_string():
-    from bibilab.pipeline.chat_tools import _build_fenced_chunks
+# ---------------------------------------------------------------------------
+# Task 3: section-keyed fence/header builders
+# ---------------------------------------------------------------------------
 
-    assert _build_fenced_chunks({}, {}) == ""
+
+def test_section_fence_header_shape():
+    from bibilab.pipeline.chat_tools import CitationRegistryEntry, _build_section_fence_header
+
+    e = CitationRegistryEntry(
+        index=3,
+        section_id="s3",
+        source_id="src",
+        title="My Show",
+        seq=2,
+        timestamp_start=600.0,
+        timestamp_end=1200.0,
+    )
+    h = _build_section_fence_header(e)
+    assert h == '===== [3] "My Show" · Section 2 (10:00–20:00) ====='
+
+
+def test_build_fenced_sections_orders_by_index_and_includes_summary_then_chunks():
+    from bibilab.pipeline.chat_tools import CitationRegistryEntry, _build_fenced_sections
+
+    reg = {
+        "s1": CitationRegistryEntry(
+            index=1, section_id="s1", source_id="src", title="T", seq=1, timestamp_start=0.0, timestamp_end=60.0
+        ),
+        "s2": CitationRegistryEntry(
+            index=2, section_id="s2", source_id="src", title="T", seq=2, timestamp_start=60.0, timestamp_end=120.0
+        ),
+    }
+    summaries = {1: "Section one summary", 2: "Section two summary"}
+    chunks_by_index = {1: ["[S1·SPK0 @0:01] hello"], 2: []}
+    out = _build_fenced_sections(chunks_by_index, summaries, reg)
+    # index order, header → summary → chunk body; section 2 has summary, no chunks
+    assert out.index('[1] "T" · Section 1') < out.index('[2] "T" · Section 2')
+    assert "Section one summary" in out
+    assert "[S1·SPK0 @0:01] hello" in out
+    assert "Section two summary" in out
 
 
 @pytest.mark.asyncio
@@ -1166,10 +1140,6 @@ async def test_execute_find_passages_chunks_grouped_and_fenced(monkeypatch):
     a2 = chunks.index("a2")
     b1 = chunks.index("b1")
     assert a2 < b1, "v1 chunks must cluster before v2 chunks (no interleave)"
-
-    # Cumulative _build_source_headers anchor still present (non-fenced line).
-    assert 'Source [1]: "Video One"' in chunks
-    assert "Sources retrieved this turn:" in chunks
 
     # INVARIANT: _raw_chunks keeps original interleaved order + indices.
     raw = result["_raw_chunks"]
