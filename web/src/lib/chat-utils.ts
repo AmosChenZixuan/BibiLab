@@ -19,6 +19,13 @@ export type OpenSourceOpts = {
   timestampStart?: number;
 };
 
+// NB: `section_id` on SectionCoverage / RetrievalChunk below is the integer
+// sections.id serialized by the backend — declared string here to mirror the
+// payload, but it arrives as a number at runtime. These fields are display-only
+// (the ledger reads section_seq / .length, never section_id), so they are NOT
+// coerced. Anyone adding a strict-equality match on them must coerce first —
+// see coerceContentBlock for the citation path that does.
+
 /** A surfaced section in a find_passages result. */
 type SectionCoverage = {
   section_id: string;
@@ -110,6 +117,18 @@ export function coerceCitationEvent(raw: unknown): ContentBlock {
     timestamp_start: Number(e.timestamp_start ?? 0),
     chunk_ids: Array.isArray(e.chunk_ids) ? e.chunk_ids.map(String) : [],
   };
+}
+
+/** Coerce a persisted/streamed `ContentBlock` so a citation's `section_id`
+ *  is a string. Citation blocks reach the FE from two paths — the live SSE
+ *  `citation` event (handled by `coerceCitationEvent`) and the persisted
+ *  `metadata.content_blocks` on history reload — and both carry the integer
+ *  `sections.id`. Text / paragraph_break blocks pass through unchanged. */
+export function coerceContentBlock(raw: unknown): ContentBlock {
+  const b = raw as { type?: string; text?: unknown };
+  if (b?.type === "citation") return coerceCitationEvent(raw);
+  if (b?.type === "text") return { type: "text", text: String(b.text ?? "") };
+  return { type: "paragraph_break" };
 }
 
 export function formatDurationHuman(seconds: number): string {

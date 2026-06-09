@@ -125,7 +125,15 @@ describe("RAG observability via SSE tool_result", () => {
     expect(screen.getByText("B")).toBeInTheDocument();
   });
 
-  test("citation chip click passes section target to onOpenSource", async () => {
+  // A persisted citation block carries the section target. section_id reaches
+  // the FE as a string ("sec-1") or — the way the backend actually persists it,
+  // the integer sections.id — as a number (7). useConversationHistory must
+  // coerce both to string so the jump matcher (strict equality against
+  // SourceSection.section_id) doesn't fall through to the timestamp branch.
+  test.each([
+    ["string", "sec-1", "sec-1"],
+    ["numeric (as the backend persists it)", 7, "7"],
+  ])("citation chip click passes %s section_id as a string target", async (_label, stored, expected) => {
     const onOpenSource = vi.fn();
     mockFetch((input: RequestInfo | URL) => {
       const url = typeof input === "string" ? input : input instanceof URL ? input.href : (input as Request).url;
@@ -143,14 +151,7 @@ describe("RAG observability via SSE tool_result", () => {
                   metadata: {
                     content_blocks: [
                       { type: "text", text: "Answer " },
-                      {
-                        type: "citation",
-                        index: 1,
-                        section_id: "sec-1",
-                        source_id: "src-1",
-                        timestamp_start: 42,
-                        chunk_ids: ["c1"],
-                      },
+                      { type: "citation", index: 1, section_id: stored, source_id: "src-1", timestamp_start: 42, chunk_ids: ["c1"] },
                     ],
                   },
                 },
@@ -162,25 +163,14 @@ describe("RAG observability via SSE tool_result", () => {
       return Promise.resolve(new Response(JSON.stringify([])));
     });
 
-    renderChatPanel({
-      selectedSourceIds: ["src-1"],
-      sources: [SOURCE_1],
-      listId: "list-1",
-      onOpenSource,
-    });
+    renderChatPanel({ selectedSourceIds: ["src-1"], sources: [SOURCE_1], listId: "list-1", onOpenSource });
 
-    const chip = await waitFor(() =>
-      screen.getByTestId(TEST_IDS.citeChip),
-    );
+    const chip = await waitFor(() => screen.getByTestId(TEST_IDS.citeChip));
     await userEvent.click(chip);
 
     expect(onOpenSource).toHaveBeenCalledWith(
       expect.objectContaining({ id: "src-1" }),
-      expect.objectContaining({
-        highlightChunks: ["c1"],
-        sectionId: "sec-1",
-        timestampStart: 42,
-      }),
+      expect.objectContaining({ highlightChunks: ["c1"], sectionId: expected, timestampStart: 42 }),
     );
   });
 

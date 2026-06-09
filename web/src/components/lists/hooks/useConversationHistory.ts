@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 
 import { api } from "@/lib/api";
 import {
+  coerceContentBlock,
   formatTimestamp,
   stripLegacyTokens,
   type ContentBlock,
@@ -51,7 +52,7 @@ export function useConversationHistory(
           let displayContent = "";
 
           if (m.metadata?.content_blocks) {
-            contentBlocks = m.metadata.content_blocks as ContentBlock[];
+            contentBlocks = (m.metadata.content_blocks as unknown[]).map(coerceContentBlock);
           } else if (m.content) {
             const stripped = stripLegacyTokens(m.content);
             contentBlocks = [{ type: "text", text: stripped }];

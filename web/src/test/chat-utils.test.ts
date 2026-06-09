@@ -3,6 +3,7 @@ import { describe, expect, test } from "vitest";
 import {
   autoResize,
   coerceCitationEvent,
+  coerceContentBlock,
   facetNoMatchHint,
   formatDurationHuman,
   formatSubtitle,
@@ -255,5 +256,30 @@ describe("coerceCitationEvent", () => {
   test("non-citation events fall back to paragraph_break (defensive)", () => {
     const result = coerceCitationEvent({ type: "delta", content: "x" });
     expect(result).toEqual({ type: "paragraph_break" });
+  });
+});
+
+describe("coerceContentBlock", () => {
+  // Persisted content_blocks (metadata.content_blocks on history reload)
+  // carry the integer sections.id on citation blocks, same as the live SSE
+  // citation event. coerceContentBlock normalizes them on reload so the
+  // citation jump works on reloaded conversations too.
+  test("coerces a citation block's numeric section_id to string", () => {
+    const result = coerceContentBlock({
+      type: "citation", index: 2, section_id: 9, source_id: "src-1",
+      timestamp_start: 12, chunk_ids: ["c1"],
+    });
+    if (result.type !== "citation") throw new Error("expected citation");
+    expect(result.section_id).toBe("9");
+  });
+
+  test("passes a text block through unchanged", () => {
+    expect(coerceContentBlock({ type: "text", text: "hello" })).toEqual({
+      type: "text", text: "hello",
+    });
+  });
+
+  test("passes a paragraph_break through", () => {
+    expect(coerceContentBlock({ type: "paragraph_break" })).toEqual({ type: "paragraph_break" });
   });
 });
