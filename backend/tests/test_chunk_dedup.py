@@ -118,8 +118,12 @@ async def test_find_passages_suppresses_already_seen_chunk(monkeypatch):
     async def fake_get_sections(sid):
         return _section_for(sid)
 
+    async def fake_get_segments_for_ranges(ranges):
+        return []
+
     monkeypatch.setattr(chat_tools, "retrieve", fake_retrieve)
     monkeypatch.setattr(chat_tools, "get_sections", fake_get_sections)
+    monkeypatch.setattr(chat_tools, "get_segments_for_ranges", fake_get_segments_for_ranges)
     seen: set[str] = set()
     registry: dict = {}
 
@@ -145,8 +149,12 @@ async def test_find_passages_no_seen_set_is_unchanged(monkeypatch):
     async def fake_get_sections(sid):
         return _section_for(sid)
 
+    async def fake_get_segments_for_ranges(ranges):
+        return []
+
     monkeypatch.setattr(chat_tools, "retrieve", fake_retrieve)
     monkeypatch.setattr(chat_tools, "get_sections", fake_get_sections)
+    monkeypatch.setattr(chat_tools, "get_segments_for_ranges", fake_get_segments_for_ranges)
     r = await chat_tools.execute_find_passages(query="q", source_ids=["s1"], cfg=_cfg(), registry={})
     assert "s1 body @10" in r["_chunks"]
 
@@ -169,8 +177,12 @@ async def test_find_passages_partial_overlap_preserves_section_index(monkeypatch
     async def fake_get_sections(sid):
         return _section_for(sid)
 
+    async def fake_get_segments_for_ranges(ranges):
+        return []
+
     monkeypatch.setattr(chat_tools, "retrieve", fake_retrieve)
     monkeypatch.setattr(chat_tools, "get_sections", fake_get_sections)
+    monkeypatch.setattr(chat_tools, "get_segments_for_ranges", fake_get_segments_for_ranges)
     seen: set[str] = set()
     registry: dict = {}
 
@@ -211,8 +223,12 @@ async def test_find_passages_different_sources_all_unseen(monkeypatch):
     async def fake_get_sections(sid):
         return _section_for(sid)
 
+    async def fake_get_segments_for_ranges(ranges):
+        return []
+
     monkeypatch.setattr(chat_tools, "retrieve", fake_retrieve)
     monkeypatch.setattr(chat_tools, "get_sections", fake_get_sections)
+    monkeypatch.setattr(chat_tools, "get_segments_for_ranges", fake_get_segments_for_ranges)
     seen: set[str] = set()
     registry: dict = {}
 
@@ -249,8 +265,12 @@ async def test_execute_tool_forwards_seen_chunk_ids_to_find_passages(monkeypatch
     async def fake_get_sections(sid):
         return _section_for(sid)
 
+    async def fake_get_segments_for_ranges(ranges):
+        return []
+
     monkeypatch.setattr(chat_tools, "retrieve", fake_retrieve)
     monkeypatch.setattr(chat_tools, "get_sections", fake_get_sections)
+    monkeypatch.setattr(chat_tools, "get_segments_for_ranges", fake_get_segments_for_ranges)
 
     seen: set[str] = set()
     await chat_tools.execute_tool(
@@ -281,8 +301,12 @@ async def test_find_passages_logs_dedup_count(monkeypatch, caplog):
     async def fake_get_sections(sid):
         return _section_for(sid)
 
+    async def fake_get_segments_for_ranges(ranges):
+        return []
+
     monkeypatch.setattr(chat_tools, "retrieve", fake_retrieve)
     monkeypatch.setattr(chat_tools, "get_sections", fake_get_sections)
+    monkeypatch.setattr(chat_tools, "get_segments_for_ranges", fake_get_segments_for_ranges)
     seen: set[str] = set()
     registry: dict = {}
 

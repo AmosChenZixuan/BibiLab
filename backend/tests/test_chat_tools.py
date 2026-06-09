@@ -223,6 +223,7 @@ async def test_execute_find_passages_returns_raw_chunks_for_replay(monkeypatch):
     ]
     monkeypatch.setattr(chat_tools, "retrieve", fake_retrieve)
     monkeypatch.setattr(chat_tools, "get_sections", AsyncMock(return_value=section_rows))
+    monkeypatch.setattr(chat_tools, "get_segments_for_ranges", AsyncMock(return_value=[]))
 
     cfg = BibilabConfig(
         ai=AIConfig(protocol="openai", model="x", api_key="k", base_url=""),
@@ -294,6 +295,7 @@ async def test_citation_registry_entry_gets_chunk_fields_on_execute_find_passage
     ]
     monkeypatch.setattr(chat_tools, "retrieve", fake_retrieve)
     monkeypatch.setattr(chat_tools, "get_sections", AsyncMock(return_value=section_rows))
+    monkeypatch.setattr(chat_tools, "get_segments_for_ranges", AsyncMock(return_value=[]))
 
     cfg = BibilabConfig(ai=AIConfig(protocol="openai", model="x", api_key="k"))
     registry: dict = {}
@@ -368,6 +370,7 @@ async def test_citation_registry_entry_uses_first_chunk_fields(monkeypatch):
     ]
     monkeypatch.setattr(chat_tools, "retrieve", fake_retrieve)
     monkeypatch.setattr(chat_tools, "get_sections", AsyncMock(return_value=section_rows))
+    monkeypatch.setattr(chat_tools, "get_segments_for_ranges", AsyncMock(return_value=[]))
 
     cfg = BibilabConfig(ai=AIConfig(protocol="openai", model="x", api_key="k"))
     registry: dict = {}
@@ -898,8 +901,20 @@ class TestExecuteFindPassagesFacetScoping:
         async def fake_get_source_facets(ids):
             return {k: v for k, v in facets.items() if k in ids}
 
+        async def fake_get_segments_for_ranges(ranges):
+            return []
+
+        async def fake_get_sections(sid):
+            return []
+
+        async def fake_get_source(sid):
+            return None
+
         monkeypatch.setattr(chat_tools, "retrieve", fake_retrieve)
         monkeypatch.setattr(chat_tools, "get_source_facets", fake_get_source_facets)
+        monkeypatch.setattr(chat_tools, "get_segments_for_ranges", fake_get_segments_for_ranges)
+        monkeypatch.setattr(chat_tools, "get_sections", fake_get_sections)
+        monkeypatch.setattr(chat_tools, "get_source", fake_get_source)
         return captured
 
     @pytest.mark.asyncio
@@ -1264,8 +1279,12 @@ async def test_execute_find_passages_chunks_grouped_and_fenced(monkeypatch):
     async def fake_get_sections(sid):
         return [r for r in section_rows if r["source_id"] == sid]
 
+    async def fake_get_segments_for_ranges(ranges):
+        return []
+
     monkeypatch.setattr(chat_tools, "retrieve", fake_retrieve)
     monkeypatch.setattr(chat_tools, "get_sections", fake_get_sections)
+    monkeypatch.setattr(chat_tools, "get_segments_for_ranges", fake_get_segments_for_ranges)
 
     cfg = BibilabConfig(
         ai=AIConfig(protocol="openai", model="x", api_key="k", base_url=""),
