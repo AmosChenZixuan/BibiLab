@@ -565,7 +565,25 @@ async def execute_find_passages(
             }
         )
 
-    turn_indices = sorted(chunks_by_index)
+    # Facet matched → emit the FULL section outline for each matched source:
+    # register every section (summary, its own [N]); outline-only sections stay
+    # citable=False until drilled. Serves coverage/compare.
+    if scoped_source_ids:
+        for sid in scoped_source_ids:
+            rows = await get_sections(sid)
+            title = title_by_source.get(sid)
+            if title is None:
+                src_row = await get_source(sid)
+                title = src_row["title"] if src_row else ""
+            for r in rows:
+                # ensure ts/summary maps are populated for sources with no chunk hit
+                summary_by_section_id.setdefault(r["id"], r["summary"])
+                ts_by_section_id.setdefault(r["id"], (r["timestamp_start"], r["timestamp_end"]))
+                entry = _alloc_section(r["id"], sid, title, r["seq"])
+                summaries_by_index[entry.index] = r["summary"]
+
+    # Recompute turn_indices AFTER outline expansion so outline indices flow into section_coverage.
+    turn_indices = sorted(set(chunks_by_index) | set(summaries_by_index))
 
     # The all-directive "no-coverage" note is DELETED — that behavior lives in
     # the grounding prompt. The tool emits only the FACT: empty pool.

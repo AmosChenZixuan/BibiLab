@@ -1460,3 +1460,108 @@ async def test_find_passages_registers_sections_not_sources(tmp_bibilab_home, mo
     # section_coverage replaces source_coverage in the public result
     assert "section_coverage" in result
     assert "source_coverage" not in result
+
+
+# ---------------------------------------------------------------------------
+# Task 5: facet → full section OUTLINE
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_find_passages_facet_emits_full_outline(tmp_bibilab_home, monkeypatch):
+    """T5: a facet match expands to the matched source's FULL section outline
+    — every section gets its own [N], even when the query hit only one
+    section's chunks. Outline-only sections stay citable=False until drilled."""
+    from bibilab.config import AIConfig, BackendConfig, BibilabConfig
+    from bibilab.db import bootstrap_db, create_list, get_sections
+    from bibilab.pipeline import chat_tools
+    from bibilab.pipeline.digest import SectionDigest
+    from bibilab.pipeline.embed import RetrievalResult, SourceHit
+    from bibilab.pipeline.section import Section
+    from bibilab.pipeline.transcribe import WhisperSegment
+    from tests.factories import SourceFactory
+
+    # Real DB with a 2-section source. 30 segments split 0-14 + 15-29.
+    await bootstrap_db()
+    await create_list("L1", "Test List", "2025-01-01T00:00:00Z")
+
+    segs = [
+        WhisperSegment(
+            start=float(i),
+            end=float(i + 1),
+            text=f"sentence {i} about the topic discussed",
+            speaker="SPK_0",
+        )
+        for i in range(30)
+    ]
+    sections = [
+        Section(seg_start=0, seg_end=14, token_count=100, timestamp_start=0.0, timestamp_end=15.0),
+        Section(seg_start=15, seg_end=29, token_count=100, timestamp_start=15.0, timestamp_end=30.0),
+    ]
+    digests = [
+        SectionDigest(summary="sec1 summary about the topic", keywords=["k1"]),
+        SectionDigest(summary="sec2 summary about the topic", keywords=["k2"]),
+    ]
+    source_id = await SourceFactory.build(
+        "L1",
+        video_id="BVfacetSource",
+        title="Facet Match Video",
+        sequence_number=1,
+        segments=segs,
+        sections=sections,
+        section_digests=digests,
+    )
+    section_rows = await get_sections(source_id)
+    section_ids = [r["id"] for r in section_rows]
+
+    # retrieve returns only ONE chunk, in section 1. The outline expansion
+    # must still register section 2 (the other section of the matched source)
+    # with citable=False.
+    async def fake_retrieve(query_text, source_ids, cfg, top_k, **kwargs):
+        return RetrievalResult(
+            chunks=[
+                # chunk in section 1 only (seg range 0..14)
+            ],
+            candidates_evaluated=0,
+            sources_with_hits=0,
+            sources_total=1,
+            source_coverage=[SourceHit(source_id=source_id, video_title="Facet Match Video", best_score=-0.9)],
+        )
+
+    # get_source_facets must report sequence_number=1 on the seeded source.
+    async def fake_get_source_facets(ids):
+        return {sid: {"sequence_number": 1, "season_number": None} for sid in ids}
+
+    monkeypatch.setattr(chat_tools, "retrieve", fake_retrieve)
+    monkeypatch.setattr(chat_tools, "get_source_facets", fake_get_source_facets)
+    # The T4 path also calls get_sections / get_segments_for_ranges; stub them
+    # so the test stays self-contained (real sections already loaded above).
+    monkeypatch.setattr(chat_tools, "get_sections", AsyncMock(return_value=section_rows))
+    monkeypatch.setattr(chat_tools, "get_segments_for_ranges", AsyncMock(return_value=[]))
+
+    cfg = BibilabConfig(
+        ai=AIConfig(protocol="openai", model="x", api_key="k", base_url=""),
+        backend=BackendConfig(),
+    )
+    registry: dict = {}
+    result = await chat_tools.execute_find_passages(
+        query="anything",
+        source_ids=[source_id],
+        cfg=cfg,
+        registry=registry,
+        sequence_number=1,
+    )
+
+    # Every section of the matched source is registered (outline expansion).
+    assert {e.section_id for e in registry.values()} == set(section_ids)
+    # facet_scope reports the matched count.
+    assert result["facet_scope"]["matched_count"] == 1
+    # Outline-only sections (no verbatim) stay citable=False.
+    outline_only = [e for e in registry.values() if not e.citable]
+    assert outline_only, "at least one section must be outline-only (no chunk hit)"
+    # All section summaries appear in the fenced body.
+    assert "sec1 summary about the topic" in result["_chunks"]
+    assert "sec2 summary about the topic" in result["_chunks"]
+    # section_coverage includes the outline entries (both sections, not just the hit one).
+    cov_ids = {row["section_id"] for row in result["section_coverage"]}
+    assert cov_ids == set(section_ids)
