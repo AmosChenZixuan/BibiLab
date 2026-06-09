@@ -451,6 +451,7 @@ async def test_get_source_sections_returns_projected_list(client: httpx.AsyncCli
     data = resp.json()
     assert len(data) == 2
     assert data[0] == {
+        "section_id": "1",
         "seq": 0,
         "summary": "Sum 0",
         "keywords": ["k0"],

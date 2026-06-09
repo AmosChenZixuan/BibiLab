@@ -50,6 +50,7 @@ function makeContent(id: string, title: string, summary: string): SourceContent 
 
 function makeSections(n: number, offset = 0): SourceSection[] {
   return Array.from({ length: n }, (_, i) => ({
+    section_id: `sec-${offset + i + 1}`,
     seq: i + 1,
     summary: `Section ${offset + i + 1} summary`,
     keywords: [`kw-${offset + i + 1}`],
@@ -59,6 +60,54 @@ function makeSections(n: number, offset = 0): SourceSection[] {
 }
 
 describe("SourcesViewerMode sections — source-switch desync", () => {
+  test("targetSection.sectionId jumps directly to the cited section", async () => {
+    // The sectionId match path is the precise match: the chat citation
+    // carries the section's id directly so it lands on the cited
+    // section even when the chunk-anchored timestamp would fall at a
+    // section boundary or outside any section's range (the bug #455
+    // post-#463 was about). 3 sections, targetSection={sectionId: "sec-2"}
+    // must land on section 2 regardless of the timestamp range.
+    const contentA = makeContent("src-A", "Source A", "Source A summary");
+    const sectionsA = makeSections(3, 0);
+
+    vi.spyOn(api, "getSource").mockResolvedValue(contentA);
+    vi.spyOn(api, "getSourceSections").mockResolvedValue(sectionsA);
+    vi.spyOn(api, "listJobs").mockResolvedValue([]);
+
+    const sourceA = makeSource("src-A", "Source A");
+    render(
+      <LanguageProvider>
+        <JobActivityProvider>
+          <SourcesViewerMode
+            source={sourceA}
+            sourceContent={contentA}
+            onRefresh={vi.fn()}
+            listId="list-1"
+            targetSection={{ sectionId: "sec-2" }}
+          />
+        </JobActivityProvider>
+      </LanguageProvider>,
+    );
+
+    // Let the sections fetch resolve.
+    await act(async () => {
+      await Promise.resolve();
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    // Section 2 is active: its summary is in the body, the 2nd tab is
+    // aria-selected, and the siblings are not.
+    expect(screen.getByText(/Section 2 summary/)).toBeInTheDocument();
+    expect(screen.queryByText(/^Section 1 summary$/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/^Section 3 summary$/)).not.toBeInTheDocument();
+    const tabs = screen.getAllByRole("tab");
+    expect(tabs[1]).toHaveAttribute("aria-selected", "true");
+    expect(tabs[0]).toHaveAttribute("aria-selected", "false");
+    expect(tabs[2]).toHaveAttribute("aria-selected", "false");
+  });
+
   test("targetSection selects the containing section tab on open", async () => {
     // 3 sections covering [0,600], [600,1200], [1200,1800]. targetSection
     // with timestampStart=700 should land in section 2 — the only section

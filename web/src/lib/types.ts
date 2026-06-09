@@ -57,9 +57,14 @@ export type SourceFacetsPatch = {
 };
 
 /** Projected section row for GET /sources/{id}/sections.
- *  Internal columns (id, source_id, seg_start, seg_end, token_count) are
- *  not exposed — they're an implementation detail of the rerun path. */
+ *  `section_id` is the row's primary key (stringified) — the chat
+ *  citation-jump matcher uses it to resolve a cited section directly;
+ *  the chunk-anchored `timestamp_start` is kept as a fallback for
+ *  legacy citations. Internal columns (source_id, seg_start, seg_end,
+ *  token_count) are not exposed — they're an implementation detail
+ *  of the rerun path. */
 export interface SourceSection {
+  section_id: string;
   seq: number;
   summary: string;
   keywords: string[];

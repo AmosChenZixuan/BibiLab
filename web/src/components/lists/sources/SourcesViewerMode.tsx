@@ -7,25 +7,20 @@ import { useJobActivity } from "@/components/jobs/JobActivityProvider";
 import { Banner } from "@/components/lists/Banner";
 import { DigestAccordion } from "@/components/lists/DigestAccordion";
 
-/** Resolve a citation-jump target to a section index. Forward-compat: if
- *  `SourceSection` eventually gains a `section_id` field, the sectionId
- *  branch becomes the precise match; until then only `timestampStart`
- *  can resolve, so that branch is the effective matcher. Returns 0 when
- *  no target is supplied or the target doesn't match any section. */
+/** Resolve a citation-jump target to a section index. The `sectionId`
+ *  branch is the precise match (the chat citation carries the section
+ *  id directly so it can land on the cited section even when the
+ *  chunk-anchored timestamp falls at a boundary or outside the range);
+ *  `timestampStart` stays as a fallback for legacy citations. Returns
+ *  0 when no target is supplied or the target doesn't match any
+ *  section. */
 function resolveTargetIdx(
   sections: SourceSection[] | undefined,
   target?: { sectionId?: string; timestampStart?: number } | null,
 ): number {
   if (!target || !sections || sections.length === 0) return 0;
   if (target.sectionId) {
-    // Forward-compat: SourceSection doesn't carry section_id yet, so
-    // bracket-access via the key. The match is best-effort — if the
-    // field is absent on every row (current state), this branch never
-    // matches and we fall through to the timestamp matcher.
-    const id = target.sectionId;
-    const i = sections.findIndex(
-      (s) => (s as unknown as { section_id?: string }).section_id === id,
-    );
+    const i = sections.findIndex((s) => s.section_id === target.sectionId);
     if (i >= 0) return i;
   }
   if (target.timestampStart != null) {

@@ -25,6 +25,7 @@ const baseProps = {
 
 function makeSections(n: number, startSec = 0): SourceSection[] {
   return Array.from({ length: n }, (_, i) => ({
+    section_id: `sec-${i + 1}`,
     seq: i + 1,
     summary: `Section ${i + 1} summary text`,
     keywords: [`kw-${i + 1}a`, `kw-${i + 1}b`],
