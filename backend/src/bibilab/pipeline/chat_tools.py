@@ -98,6 +98,20 @@ def _chunk_id(chunk) -> str:
     return f"{chunk.source_id}_{int(chunk.timestamp_start)}_{int(chunk.timestamp_end)}"
 
 
+def _section_for_seg(sections: list[tuple[str, int, int, int]], seg_start: int) -> tuple[str, int, int, int] | None:
+    """Return the (section_id, seq, seg_start, seg_end) tuple whose range
+    contains `seg_start`, or None if no section contains it.
+
+    Chunks nest in exactly one section (a chunk's [seg_start, seg_end] is fully
+    contained in one section's range — CLAUDE.md sections invariant), so mapping
+    by the chunk's seg_start is sufficient and unambiguous.
+    """
+    for sid, seq, s, e in sections:
+        if s <= seg_start <= e:
+            return (sid, seq, s, e)
+    return None
+
+
 def _partition_unseen_chunks(chunks: list, seen_chunk_ids: set[str]) -> list:
     """Return the chunks not already shown this turn, recording their ids.
 

@@ -1064,6 +1064,18 @@ def test_build_fenced_chunks_groups_and_fences():
     )
 
 
+def test_section_for_seg_maps_by_containment():
+    from bibilab.pipeline.chat_tools import _section_for_seg
+
+    # sections: list of (section_id, seq, seg_start, seg_end)
+    sections = [("a", 1, 0, 9), ("b", 2, 10, 19), ("c", 3, 20, 29)]
+    assert _section_for_seg(sections, 0) == ("a", 1, 0, 9)
+    assert _section_for_seg(sections, 9) == ("a", 1, 0, 9)
+    assert _section_for_seg(sections, 10) == ("b", 2, 10, 19)
+    assert _section_for_seg(sections, 25) == ("c", 3, 20, 29)
+    assert _section_for_seg(sections, 99) is None  # out of range → None
+
+
 def test_build_fenced_chunks_empty_returns_empty_string():
     from bibilab.pipeline.chat_tools import _build_fenced_chunks
 
