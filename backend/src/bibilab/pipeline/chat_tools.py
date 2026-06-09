@@ -494,6 +494,12 @@ async def execute_find_passages(
                 summary_by_section_id.setdefault(r["id"], r["summary"])
                 ts_by_section_id.setdefault(r["id"], (r["timestamp_start"], r["timestamp_end"]))
                 entry = _alloc_section(r["id"], sid, title, r["seq"])
+                # Outline-only sections have no chunk to derive timestamps from; seed them
+                # from the section row so the fence header (and persisted ledger) show the
+                # real span instead of 0:00–0:00.
+                if entry.timestamp_start is None:
+                    entry.timestamp_start = r["timestamp_start"]
+                    entry.timestamp_end = r["timestamp_end"]
                 summaries_by_index[entry.index] = r["summary"]
 
     # Recompute turn_indices AFTER outline expansion so outline indices flow into section_coverage.
@@ -528,7 +534,7 @@ async def execute_find_passages(
                 "timestamp_end": ts_by_section_id.get(e.section_id, (None, None))[1],
             }
             for e in sorted(registry.values(), key=lambda e: e.index)
-            if e.index in turn_indices or e.index in summaries_by_index
+            if e.index in turn_indices
         ],
         "_chunks": (
             no_coverage_fact

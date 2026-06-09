@@ -1652,6 +1652,13 @@ async def test_find_passages_facet_emits_full_outline(tmp_bibilab_home, monkeypa
     # section_coverage includes the outline entries (both sections, not just the hit one).
     cov_ids = {row["section_id"] for row in result["section_coverage"]}
     assert cov_ids == set(section_ids)
+    # Outline fence headers render the REAL section span, not 0:00–0:00.
+    # Regression for the outline-timestamp defect (entry.timestamp_start was
+    # left None for outline-only allocations, so the fence showed 0:00–0:00
+    # and the LLM/ledger were misled about the section's location).
+    assert "0:00–0:15" in result["_chunks"], "section 1 fence should show its real range, not 0:00–0:00"
+    assert "0:15–0:30" in result["_chunks"], "section 2 fence should show its real range, not 0:00–0:00"
+    assert "0:00–0:00" not in result["_chunks"], "no outline fence should render 0:00–0:00"
 
 
 # ---------------------------------------------------------------------------
