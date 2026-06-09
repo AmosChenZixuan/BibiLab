@@ -3,7 +3,7 @@ import logging
 import re
 import sqlite3
 import uuid
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Iterable
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -16,6 +16,7 @@ import bibilab.config
 from bibilab.models.jobs import JobStatus
 from bibilab.pipeline.digest import SectionDigest
 from bibilab.pipeline.section import Section
+from bibilab.pipeline.transcribe import WhisperSegment
 
 logger = logging.getLogger(__name__)
 
@@ -518,21 +519,28 @@ async def update_section_summaries(
 ) -> None:
     """UPDATE existing section rows by seq. Rerun path only.
 
-    Each tuple is (seq, summary, keywords). Asserts that every digest
-    matched a row in the UPDATE (per-tuple rowcount == 1) so a missing or
-    out-of-range seq surfaces as an error rather than a silent no-op.
+    Each tuple is (seq, summary, keywords). Pre-validates unique seqs and
+    verifies all seqs exist before any write; runs one executemany.
     """
+    seqs = [seq for seq, _, _ in section_digests]
+    if len(set(seqs)) != len(seqs):
+        raise ValueError(f"update_section_summaries: duplicate seqs in input: {seqs}")
     async with get_db() as db:
-        for seq, summary, keywords in section_digests:
-            cursor = await db.execute(
-                "UPDATE sections SET summary=?, keywords=? WHERE source_id=? AND seq=?",
-                (summary, json.dumps(keywords), source_id, seq),
-            )
-            if cursor.rowcount != 1:
-                raise LookupError(
-                    f"update_section_summaries: expected 1 row for "
-                    f"source_id={source_id!r} seq={seq}, got {cursor.rowcount}"
-                )
+        # Verify all seqs exist before any write.
+        placeholders = ",".join("?" * len(seqs))
+        check_cur = await db.execute(
+            f"SELECT seq FROM sections WHERE source_id=? AND seq IN ({placeholders})",
+            [source_id, *seqs],
+        )
+        found = {row["seq"] for row in await check_cur.fetchall()}
+        missing = set(seqs) - found
+        if missing:
+            raise LookupError(f"update_section_summaries: missing seqs for source_id={source_id!r}: {sorted(missing)}")
+        # All seqs exist; safe to batch-update.
+        await db.executemany(
+            "UPDATE sections SET summary=?, keywords=? WHERE source_id=? AND seq=?",
+            [(summary, json.dumps(keywords), source_id, seq) for seq, summary, keywords in section_digests],
+        )
         await db.commit()
 
 
@@ -551,6 +559,33 @@ async def get_sections(source_id: str) -> list[aiosqlite.Row]:
             (source_id,),
         )
         return await cursor.fetchall()
+
+
+def rows_to_segments(rows: Iterable[aiosqlite.Row]) -> list[WhisperSegment]:
+    """Reconstruct WhisperSegment objects from transcript_segments DB rows."""
+    return [
+        WhisperSegment(
+            start=r["start_s"],
+            end=r["end_s"],
+            text=r["text"],
+            speaker=r["speaker"],
+        )
+        for r in rows
+    ]
+
+
+def rows_to_sections(rows: Iterable[aiosqlite.Row]) -> list[Section]:
+    """Reconstruct Section objects from sections DB rows."""
+    return [
+        Section(
+            seg_start=r["seg_start"],
+            seg_end=r["seg_end"],
+            token_count=r["token_count"],
+            timestamp_start=r["timestamp_start"] or 0.0,
+            timestamp_end=r["timestamp_end"] or 0.0,
+        )
+        for r in rows
+    ]
 
 
 async def get_source(source_id: str) -> aiosqlite.Row | None:
