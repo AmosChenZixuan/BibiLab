@@ -33,7 +33,7 @@ Single-port deployment: FastAPI serves the React build as static files in produc
 ```
 ~/.bibilab/
 ├── config.json        Pydantic settings, credentials
-├── bibilab.db         SQLite (lists, jobs, sources, artifacts, conversations, messages, chunks_fts, transcript_segments)
+├── bibilab.db         SQLite (lists, jobs, sources, artifacts, conversations, messages, chunks_fts, transcript_segments, sections)
 ├── covers/            cached cover images
 ├── artifacts/         generated artifact content
 ├── chroma/            ChromaDB vector data

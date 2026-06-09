@@ -282,10 +282,13 @@ async def test_stage_process_chunks_sentence_segments(tmp_bibilab_home: Path, mo
 
     monkeypatch.setattr("bibilab.worker.chunk_by_sections", _fake_chunk)
     monkeypatch.setattr("bibilab.worker.embed_chunks", lambda *a, **k: None)
+    from bibilab.pipeline.digest import DigestResult, SectionDigest
+
     monkeypatch.setattr(
-        "bibilab.worker.digest",
-        lambda *a, **k: __import__("bibilab.pipeline.digest", fromlist=["DigestResult"]).DigestResult(
-            summary="s", keywords=[], series_name=None, sequence_number=None, season_number=None
+        "bibilab.worker.digest_sections",
+        lambda *a, **k: (
+            DigestResult(summary="s", keywords=[], series_name=None, sequence_number=None, season_number=None),
+            [SectionDigest(summary="s", keywords=[])],
         ),
     )
     loop = WorkerLoop(config=BibilabConfig(), home=tmp_bibilab_home)
@@ -300,7 +303,7 @@ async def test_stage_process_chunks_sentence_segments(tmp_bibilab_home: Path, mo
         effective_language="zh",
     )
     assert captured["segs"] is sentences
-    assert result is not None and len(result) == 2  # (extraction, sections) tuple
+    assert result is not None and len(result) == 3  # (extraction, sections, section_digests) tuple
 
 
 @pytest.mark.asyncio
@@ -337,6 +340,7 @@ async def test_stage_persist_atomic_no_orphan_on_segment_write_failure(tmp_bibil
                     summary="s", keywords=[], series_name=None, sequence_number=None, season_number=None
                 ),
                 sections=[],
+                section_digests=[],
                 detected_language="en",
                 cfg=MagicMock(
                     transcription=MagicMock(model="base"),
@@ -368,27 +372,35 @@ async def test_worker_start_stop(tmp_bibilab_home: Path):
 
 @pytest.mark.asyncio
 async def test_run_digest_job_success(tmp_bibilab_home: Path, mock_call_llm):
-    from bibilab.db import bootstrap_db, create_job, create_list, get_source, write_transcript_segments
+    from bibilab.db import bootstrap_db, create_job, create_list, get_source, write_source_with_segments
+    from bibilab.pipeline.digest import SectionDigest
+    from bibilab.pipeline.section import Section
     from bibilab.pipeline.transcribe import WhisperSegment
 
     await bootstrap_db()
     await create_list("list-digest", "Digest Test", "2025-01-01T00:00:00Z")
     source_id = "src-digest-001"
-    await SourceFactory.build(
-        "list-digest",
+    segs = [WhisperSegment(start=0.0, end=5.0, text="test transcript text", speaker=None)]
+    secs = [Section(seg_start=0, seg_end=0, token_count=5, timestamp_start=0.0, timestamp_end=5.0)]
+    await write_source_with_segments(
+        segments=segs,
+        sections=secs,
+        section_digests=[SectionDigest(summary="old section", keywords=["old"])],
         source_id=source_id,
         video_id="BVdigest001",
+        platform="bilibili",
+        list_id="list-digest",
         title="Digest Test",
         summary="old summary",
         keywords=["old"],
+        cover_url=None,
         source_url="https://bilibili.com/video/BVdigest001",
         duration_seconds=60,
         uploader="TestUser",
         language="en",
         whisper_model="base",
-    )
-    await write_transcript_segments(
-        source_id, [WhisperSegment(start=0.0, end=5.0, text="test transcript text", speaker=None)]
+        ai_model="gpt-4o",
+        settings_snapshot={},
     )
 
     job_id = await create_job("digest", {"source_id": source_id, "list_id": "list-digest", "ui_lang": None})

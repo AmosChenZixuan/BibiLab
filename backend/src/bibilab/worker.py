@@ -19,13 +19,16 @@ from bibilab.db import (
     delete_job,
     get_list,
     get_pending_jobs,
-    get_section_ranges,
+    get_sections,
     get_source,
     get_transcript_segments,
     parse_job_meta,
     reset_stuck_jobs,
+    rows_to_sections,
+    rows_to_segments,
     update_job_meta,
     update_job_status,
+    update_section_summaries,
     update_source_digest,
     write_source_with_segments,
 )
@@ -40,15 +43,13 @@ from bibilab.pipeline._shared import (
     _resolved_lang,
 )
 from bibilab.pipeline.audio import PipelineError, extract_audio
-from bibilab.pipeline.digest import DigestResult, digest
+from bibilab.pipeline.digest import DigestResult, SectionDigest, digest_sections
 from bibilab.pipeline.embed import embed_chunks
 from bibilab.pipeline.punctuate import punctuate
-from bibilab.pipeline.section import Section, chunk_by_sections, derive_sections
+from bibilab.pipeline.section import Section, chunk_by_sections, derive_sections, section_texts
 from bibilab.pipeline.transcribe import (
     WhisperSegment,
-    _row_to_whisper_segment,
     format_turns,
-    load_transcript_text,
     transcribe,
 )
 
@@ -265,7 +266,7 @@ async def _build_section_views(source_ids: list[str]) -> list[_SectionView]:
         source = await get_source(source_id)
         if source is None:
             raise PipelineError(f"Source {source_id!r} not found")
-        rows = await get_section_ranges(source_id)
+        rows = await get_sections(source_id)
         if not rows:
             raise PipelineError(f"Source {source_id!r} has no sections; re-ingest required")
         seg_rows = await get_transcript_segments(source_id)
@@ -284,7 +285,7 @@ async def _build_section_views(source_ids: list[str]) -> list[_SectionView]:
                     f"missing segments ({row['seg_start']}..{row['seg_end']}); "
                     f"re-ingest required"
                 )
-            slice_segs = [_row_to_whisper_segment(r) for r in slice_rows]
+            slice_segs = rows_to_segments(slice_rows)
             text = format_turns(slice_segs, include_time=False)
             views.append(
                 _SectionView(
@@ -659,17 +660,17 @@ class WorkerLoop:
     # Shared helpers
     # -------------------------------------------------------------------------
 
-    async def _call_digest(
+    async def _call_digest_sections(
         self,
-        transcript_text: str,
+        section_texts_list: list[str],
         video_meta: VideoMeta,
         cfg: BibilabConfig,
         ui_lang: str | None = None,
-    ) -> DigestResult:
-        """Run the digest LLM call. Does not catch exceptions — callers handle errors."""
+    ) -> tuple[DigestResult, list[SectionDigest]]:
+        """Run the section-level digest. Does not catch exceptions — callers handle errors."""
         return await asyncio.to_thread(
-            digest,
-            transcript_text,
+            digest_sections,
+            section_texts_list,
             video_meta,
             cfg.ai,
             cfg.ai.output_language,
@@ -692,18 +693,34 @@ class WorkerLoop:
             await update_job_status(job_id, JobStatus.FAILED.value, error=f"Source {source_id!r} not found")
             return
 
-        transcript_text = await load_transcript_text(source_id)
-        if not transcript_text:
+        segments = await get_transcript_segments(source_id)
+        if not segments:
             logger.warning("Digest job %s: source %s has no transcript", job_id, source_id)
             await update_job_status(job_id, JobStatus.FAILED.value, error="Source has no transcript")
             return
 
+        whisper_segments = rows_to_segments(segments)
+
+        section_rows = await get_sections(source_id)
+        if not section_rows:
+            # Defensive: unreachable through the normal ingest path (sections
+            # are written atomically with the source). Surface a re-ingest hint
+            # if it ever happens.
+            msg = "Source has no sections; re-ingest the source to derive them"
+            logger.error("Digest job %s: %s", job_id, msg)
+            await update_job_status(job_id, JobStatus.FAILED.value, error=msg)
+            return
+
+        sections = rows_to_sections(section_rows)
+        section_texts_list = section_texts(whisper_segments, sections)
         video_meta = VideoMeta.from_source(source)
 
         await update_job_status(job_id, JobStatus.PROCESSING.value, progress=10)
 
         try:
-            extraction = await self._call_digest(transcript_text, video_meta, cfg, meta_raw.get("ui_lang"))
+            extraction, section_digests = await self._call_digest_sections(
+                section_texts_list, video_meta, cfg, meta_raw.get("ui_lang")
+            )
         except Exception as exc:
             logger.exception("Digest job %s failed", job_id)
             await update_job_status(job_id, JobStatus.FAILED.value, error=str(exc))
@@ -711,6 +728,12 @@ class WorkerLoop:
 
         await update_job_status(job_id, JobStatus.PROCESSING.value, progress=80)
 
+        # Two writes: sections first, then source mirror. Drift window is
+        # acceptable (rerun is idempotent — re-running fixes any divergence).
+        await update_section_summaries(
+            source_id,
+            [(row["seq"], sd.summary, sd.keywords) for row, sd in zip(section_rows, section_digests)],
+        )
         await update_source_digest(
             source_id,
             extraction.summary,
@@ -788,7 +811,7 @@ class WorkerLoop:
             raise PipelineError(f"[processing] {exc}") from exc
         if result is None:
             return  # cancelled
-        extraction, sections = result
+        extraction, sections, section_digests = result
 
         # Stage 5: Persist source + segments + sections atomically, then cleanup
         try:
@@ -800,6 +823,7 @@ class WorkerLoop:
                 list_id,
                 extraction,
                 sections,
+                section_digests,
                 detected_language,
                 cfg,
                 sentence_segments,
@@ -893,8 +917,11 @@ class WorkerLoop:
         list_id: str,
         cfg: BibilabConfig,
         effective_language: str,
-    ) -> tuple[DigestResult, list[Section]] | None:
+    ) -> tuple[DigestResult, list[Section], list[SectionDigest]] | None:
         """Stage 4: Derive sections, chunk per-section, run digest + embed in parallel.
+
+        Returns (extraction, sections, section_digests). The 1-section case
+        produces a 1-element section_digests mirroring the DigestResult.
 
         Pipeline order: `segments → sections → chunks` (section-first, chunk-within).
         Chunks are produced from per-section slices, so a chunk can never cross a
@@ -908,26 +935,26 @@ class WorkerLoop:
         await update_job_status(job_id, JobStatus.PROCESSING.value, progress=40)
         sections = derive_sections(sentence_segments)
         chunks = chunk_by_sections(sentence_segments, sections, language=effective_language)
+        section_texts_list = section_texts(sentence_segments, sections)
 
         meta_raw = parse_job_meta(job)
-        transcript_text = format_turns(sentence_segments, include_time=False)
+        ui_lang = meta_raw.get("ui_lang")
 
-        async def _digest() -> DigestResult:
-            return await self._call_digest(transcript_text, video_meta, cfg, meta_raw.get("ui_lang"))
+        async def _digest() -> tuple[DigestResult, list[SectionDigest]]:
+            return await self._call_digest_sections(section_texts_list, video_meta, cfg, ui_lang)
 
         async def _embed() -> None:
             await asyncio.to_thread(embed_chunks, chunks, source_id, video_meta, list_id)
 
-        extraction: DigestResult
         gather_results = await asyncio.gather(_digest(), _embed(), return_exceptions=True)
-        extraction_raw, embed_raw = gather_results
+        digest_raw, embed_raw = gather_results
         if isinstance(embed_raw, BaseException):
             logger.error("embed_chunks raised but was not the primary error", exc_info=embed_raw)
-        if isinstance(extraction_raw, BaseException):
-            raise extraction_raw
+        if isinstance(digest_raw, BaseException):
+            raise digest_raw
         if isinstance(embed_raw, BaseException):
             raise embed_raw
-        extraction = extraction_raw
+        extraction, section_digests = digest_raw
 
         if job_id in self._cancelled:
             self._cancelled.discard(job_id)
@@ -935,7 +962,7 @@ class WorkerLoop:
             await delete_job(job_id)
             return None
 
-        return extraction, sections
+        return extraction, sections, section_digests
 
     async def _stage_persist(
         self,
@@ -946,6 +973,7 @@ class WorkerLoop:
         list_id: str,
         extraction: DigestResult,
         sections: list[Section],
+        section_digests: list[SectionDigest],
         detected_language: str,
         cfg: BibilabConfig,
         sentence_segments: list[WhisperSegment],
@@ -956,6 +984,7 @@ class WorkerLoop:
         await write_source_with_segments(
             segments=sentence_segments,
             sections=sections,
+            section_digests=section_digests,
             source_id=source_id,
             video_id=video_id,
             platform=video_meta.platform,
