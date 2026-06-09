@@ -144,7 +144,7 @@ describe("chat panel — SSE streaming (phase 6.2)", () => {
 
     enqueue('data: {"type":"meta","message_id":"srv-1"}\n\n');
     enqueue(
-      'data: {"type":"tool_result","id":"r1","name":"find_passages","result":{"query":"X","tool_name":"find_passages","candidates_evaluated":5,"sources_with_hits":1,"sources_total":1,"source_coverage":[{"source_id":"s1","title":"Vid"}],"reranked":true,"scoped_pool_size":1}}\n\n',
+      'data: {"type":"tool_result","id":"r1","name":"find_passages","result":{"query":"X","tool_name":"find_passages","candidates_evaluated":5,"sources_with_hits":1,"sources_total":1,"section_coverage":[{"section_id":"sec-1","source_id":"s1","source_title":"Vid","seq":1,"timestamp_start":0,"timestamp_end":10}],"reranked":true,"scoped_pool_size":1}}\n\n',
     );
 
     // Mid-stream: ledger present but NOT expandable.
@@ -157,7 +157,7 @@ describe("chat panel — SSE streaming (phase 6.2)", () => {
 
     // Final authoritative rag (with context[]) then done.
     enqueue(
-      'data: {"type":"rag","calls":[{"query":"X","tool_name":"find_passages","candidates_evaluated":5,"sources_with_hits":1,"sources_total":1,"source_coverage":[{"source_id":"s1","title":"Vid"}],"context":[{"chunk_id":"c1","citation_index":1,"source_id":"s1","source_title":"Vid","timestamp_start":0,"timestamp_end":10,"rerank_score":2.5,"preview":"unique-preview-text"}],"reranked":true,"scoped_pool_size":1}]}\n\n',
+      'data: {"type":"rag","calls":[{"query":"X","tool_name":"find_passages","candidates_evaluated":5,"sources_with_hits":1,"sources_total":1,"section_coverage":[{"section_id":"sec-1","source_id":"s1","source_title":"Vid","seq":1,"timestamp_start":0,"timestamp_end":10}],"context":[{"chunk_id":"c1","citation_index":1,"section_id":"sec-1","section_seq":1,"source_id":"s1","source_title":"Vid","timestamp_start":0,"timestamp_end":10,"rerank_score":2.5,"preview":"unique-preview-text"}],"reranked":true,"scoped_pool_size":1}]}\n\n',
     );
     enqueue('data: {"type":"delta","content":"answer"}\n\n');
     enqueue('data: {"type":"done"}\n\n');
@@ -298,7 +298,7 @@ describe("chat panel — SSE streaming (phase 6.2)", () => {
 
     // tool_result resolves it to source_id/source_title
     enqueue(
-      'data: {"type":"tool_result","id":"rs1","name":"read_section","result":{"tool_name":"read_section","source_id":"s1","source_title":"Ep 4","section_id":"sec-1","query":"","candidates_evaluated":0,"sources_with_hits":0,"sources_total":1,"source_coverage":[],"context":[],"reranked":false,"scoped_pool_size":1}}\n\n',
+      'data: {"type":"tool_result","id":"rs1","name":"read_section","result":{"tool_name":"read_section","source_id":"s1","source_title":"Ep 4","section_id":"sec-1","query":"","candidates_evaluated":0,"sources_with_hits":0,"sources_total":1,"section_coverage":[],"context":[],"reranked":false,"scoped_pool_size":1}}\n\n',
     );
 
     // Citation with section_id
@@ -308,7 +308,7 @@ describe("chat panel — SSE streaming (phase 6.2)", () => {
 
     // Final rag event then done
     enqueue(
-      'data: {"type":"rag","calls":[{"tool_name":"read_section","source_id":"s1","source_title":"Ep 4","section_id":"sec-1","query":"","candidates_evaluated":0,"sources_with_hits":0,"sources_total":1,"source_coverage":[],"context":[],"reranked":false,"scoped_pool_size":1}]}\n\n',
+      'data: {"type":"rag","calls":[{"tool_name":"read_section","source_id":"s1","source_title":"Ep 4","section_id":"sec-1","query":"","candidates_evaluated":0,"sources_with_hits":0,"sources_total":1,"section_coverage":[],"context":[],"reranked":false,"scoped_pool_size":1}]}\n\n',
     );
     enqueue('data: {"type":"delta","content":"answer"}\n\n');
     enqueue('data: {"type":"done"}\n\n');
@@ -348,12 +348,12 @@ describe("chat panel — SSE streaming (phase 6.2)", () => {
 
     // tool_result resolves it to source_id/source_title/section_id
     enqueue(
-      'data: {"type":"tool_result","id":"rs1","name":"read_section","result":{"tool_name":"read_section","source_id":"s1","source_title":"Ep 4","section_id":"sec-1","query":"","candidates_evaluated":0,"sources_with_hits":0,"sources_total":1,"source_coverage":[],"context":[],"reranked":false,"scoped_pool_size":1}}\n\n',
+      'data: {"type":"tool_result","id":"rs1","name":"read_section","result":{"tool_name":"read_section","source_id":"s1","source_title":"Ep 4","section_id":"sec-1","query":"","candidates_evaluated":0,"sources_with_hits":0,"sources_total":1,"section_coverage":[],"context":[],"reranked":false,"scoped_pool_size":1}}\n\n',
     );
 
     // Final rag event then done
     enqueue(
-      'data: {"type":"rag","calls":[{"tool_name":"read_section","source_id":"s1","source_title":"Ep 4","section_id":"sec-1","query":"","candidates_evaluated":0,"sources_with_hits":0,"sources_total":1,"source_coverage":[],"context":[],"reranked":false,"scoped_pool_size":1}]}\n\n',
+      'data: {"type":"rag","calls":[{"tool_name":"read_section","source_id":"s1","source_title":"Ep 4","section_id":"sec-1","query":"","candidates_evaluated":0,"sources_with_hits":0,"sources_total":1,"section_coverage":[],"context":[],"reranked":false,"scoped_pool_size":1}]}\n\n',
     );
     enqueue('data: {"type":"delta","content":"answer"}\n\n');
     enqueue('data: {"type":"done"}\n\n');
