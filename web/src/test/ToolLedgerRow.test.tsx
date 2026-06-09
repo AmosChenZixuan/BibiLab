@@ -5,7 +5,7 @@ import userEvent from "@testing-library/user-event";
 import { LanguageProvider } from "@/app/LanguageContext";
 import { JobActivityProvider } from "@/components/jobs/JobActivityProvider";
 import { ToolLedgerRow } from "@/components/lists/ToolLedgerRow";
-import { FIND_PASSAGES_TOOL_NAME, READ_SOURCE_TOOL_NAME } from "@/lib/tool-display";
+import { FIND_PASSAGES_TOOL_NAME, READ_SECTION_TOOL_NAME } from "@/lib/tool-display";
 import type { RetrievalCall, PendingRagCall } from "@/lib/chat-utils";
 import { renderWithProviders } from "@/test/utils";
 
@@ -25,11 +25,16 @@ const BASE_CALL: RetrievalCall = {
   candidates_evaluated: 10,
   sources_with_hits: 1,
   sources_total: 16,
-  source_coverage: [{ source_id: "s1", title: "Test Video" }],
+  section_coverage: [
+    { section_id: "sec1", source_id: "s1", source_title: "Test Video", seq: 1, timestamp_start: 0, timestamp_end: 132 },
+    { section_id: "sec2", source_id: "s1", source_title: "Test Video", seq: 2, timestamp_start: 132, timestamp_end: 300 },
+  ],
   context: [
     {
       chunk_id: "c1",
       citation_index: 1,
+      section_id: "sec1",
+      section_seq: 1,
       source_id: "s1",
       source_title: "Test Video",
       timestamp_start: 0,
@@ -40,6 +45,8 @@ const BASE_CALL: RetrievalCall = {
     {
       chunk_id: "c2",
       citation_index: 2,
+      section_id: "sec2",
+      section_seq: 2,
       source_id: "s1",
       source_title: "Test Video",
       timestamp_start: 132,
@@ -54,9 +61,9 @@ const BASE_CALL: RetrievalCall = {
 
 // ---------- search row ----------
 describe("search row", () => {
-  test("collapsed shows source count and cited chunks", () => {
+  test("collapsed shows section count and cited chunks", () => {
     const { container } = renderRow({ call: BASE_CALL });
-    expect(container.innerHTML).toContain("1 sources");
+    expect(container.innerHTML).toContain("2 sources");
     expect(container.innerHTML).toContain("2 chunks cited");
   });
 
@@ -106,27 +113,28 @@ describe("pending rows", () => {
   });
 });
 
-// ---------- read_source completed row ----------
-describe("read_source completed row", () => {
+// ---------- read_section completed row ----------
+describe("read_section completed row", () => {
   const READ_CALL: RetrievalCall = {
     query: "",
-    tool_name: READ_SOURCE_TOOL_NAME,
+    tool_name: READ_SECTION_TOOL_NAME,
     candidates_evaluated: 0,
     sources_with_hits: 0,
     sources_total: 1,
-    source_coverage: [],
+    section_coverage: [],
     context: [],
     reranked: false,
     scoped_pool_size: 1,
+    section_id: "sec-1",
     source_id: "s1",
     source_title: "Ep 4",
   };
 
-  test("renders a read_source row with source_title and BookOpen icon, no per-chunk list, non-expandable", () => {
+  test("renders a read_section row with source_title and BookOpen icon, no per-chunk list, non-expandable", () => {
     const { container } = renderRow({ call: READ_CALL });
     // Source title is visible
     expect(screen.getByText("Ep 4")).toBeInTheDocument();
-    // No expand button (read_source has no toggle)
+    // No expand button (read_section has no toggle)
     expect(container.querySelector('button[aria-label="Toggle retrieval details"]')).toBeNull();
     // No chunk list rendered: no timestamp ranges, no rerank scores
     expect(container.innerHTML).not.toContain("4.53");
@@ -134,10 +142,10 @@ describe("read_source completed row", () => {
   });
 });
 
-// ---------- read_source pending row ----------
-describe("read_source pending row", () => {
-  test("renders a read_source pending chip with icon + spinner, no label, no query text", () => {
-    const pending: PendingRagCall = { id: "p1", tool_name: READ_SOURCE_TOOL_NAME, query: "" };
+// ---------- read_section pending row ----------
+describe("read_section pending row", () => {
+  test("renders a read_section pending chip with icon + spinner, no label, no query text", () => {
+    const pending: PendingRagCall = { id: "p1", tool_name: READ_SECTION_TOOL_NAME, query: "" };
     const { container } = renderRow({ pending });
     // Spinner present
     expect(container.querySelector(".animate-spin")).not.toBeNull();
@@ -160,7 +168,7 @@ describe("facet no-match hint", () => {
       "No source matched #8 — searched all sources instead.",
     );
     expect(icon).toBeTruthy();
-    expect(screen.getByText(/1 sources/)).toBeTruthy();
+    expect(screen.getByText(/2 sources/)).toBeTruthy();
   });
 
   test("default expanded shows amber Facet detail line", async () => {

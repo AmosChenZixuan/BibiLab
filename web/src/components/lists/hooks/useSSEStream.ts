@@ -2,8 +2,8 @@ import { useEffect, useRef, useState } from "react";
 
 import type { JobRegistration } from "@/components/jobs/JobActivityProvider";
 import type { MessageUI } from "@/components/lists/hooks/useConversationHistory";
-import { formatTimestamp, type ContentBlock, type PendingRagCall, type RetrievalCall } from "@/lib/chat-utils";
-import { FIND_PASSAGES_TOOL_NAME, READ_SOURCE_TOOL_NAME } from "@/lib/tool-display";
+import { formatTimestamp, coerceCitationEvent, type ContentBlock, type PendingRagCall, type RetrievalCall } from "@/lib/chat-utils";
+import { FIND_PASSAGES_TOOL_NAME, READ_SECTION_TOOL_NAME } from "@/lib/tool-display";
 import {
   SSE_EVENT_CANCELLED,
   SSE_EVENT_CITATION,
@@ -16,8 +16,6 @@ import {
   SSE_EVENT_TOOL_RESULT,
 } from "@/lib/constants";
 import { LANG_STORAGE_KEY } from "@/lib/utils";
-
-type CitationEvent = { type: "citation"; index: number; source_id: string; chunk_ids: string[] };
 
 interface UseSSEStreamOptions {
   listId: string;
@@ -147,13 +145,13 @@ export function useSSEStream({
               { id, tool_name: FIND_PASSAGES_TOOL_NAME, query: args.query },
             ],
           }));
-        } else if (toolName === READ_SOURCE_TOOL_NAME) {
-          // read_source has no `query` field; the chip shows the tool label only
+        } else if (toolName === READ_SECTION_TOOL_NAME) {
+          // read_section has no `query` field; the chip shows the tool label only
           // (read in full). It will resolve to source_id/source_title on tool_result.
           updateAssistantMsg(assistantMsgId, (m) => ({
             pendingRagCalls: [
               ...m.pendingRagCalls,
-              { id, tool_name: READ_SOURCE_TOOL_NAME, query: "" },
+              { id, tool_name: READ_SECTION_TOOL_NAME, query: "" },
             ],
           }));
         }
@@ -172,7 +170,7 @@ export function useSSEStream({
           if (!callId) {
             console.warn("find_passages tool_result missing id, pending chip not cleared");
           }
-        } else if (toolName === READ_SOURCE_TOOL_NAME) {
+        } else if (toolName === READ_SECTION_TOOL_NAME) {
           const call = event.result as unknown as RetrievalCall;
           const callId = event.id as string;
           updateAssistantMsg(assistantMsgId, (m) => ({
@@ -182,7 +180,7 @@ export function useSSEStream({
               : m.pendingRagCalls,
           }));
           if (!callId) {
-            console.warn("read_source tool_result missing id, pending chip not cleared");
+            console.warn("read_section tool_result missing id, pending chip not cleared");
           }
         }
       } else if (event.type === SSE_EVENT_RAG) {
@@ -196,8 +194,10 @@ export function useSSEStream({
         updateAssistantMsg(assistantMsgId, { rag: { calls } });
       } else if (event.type === SSE_EVENT_CITATION) {
         flushText();
-        const citation = event as unknown as CitationEvent;
-        accBlocks.push(citation);
+        // Coerce the raw SSE event into the ContentBlock citation shape
+        // (number → string for section_id, etc.). See coerceCitationEvent
+        // for the type-contract rationale.
+        accBlocks.push(coerceCitationEvent(event));
         updateAssistantMsg(assistantMsgId, { contentBlocks: [...accBlocks] });
       } else if (event.type === SSE_EVENT_DONE) {
         flushText();

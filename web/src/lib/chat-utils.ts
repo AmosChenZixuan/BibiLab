@@ -2,15 +2,46 @@ import { translateOrFallback } from "@/lib/utils";
 
 export type ContentBlock =
   | { type: "text"; text: string }
-  | { type: "citation"; index: number; source_id: string; chunk_ids: string[] }
+  | { type: "citation"; index: number; section_id: string; source_id: string;
+      timestamp_start: number; chunk_ids: string[] }
   | { type: "paragraph_break" };
 
-type ToolName = "find_passages" | "read_source";
-type RagSource = { source_id: string; title: string };
+type ToolName = "find_passages" | "read_section";
+
+/** Args passed to `onOpenSource` when a citation chip is clicked.
+ *  `sectionId` + `timestampStart` are the citation jump target (used by
+ *  SourcesViewerMode to land on the cited section's tab). Hoisted to
+ *  lib/chat-utils so the shape is shared between the chip call site
+ *  (ChatPanel) and the page-level handler (ListDetailPage). */
+export type OpenSourceOpts = {
+  highlightChunks?: string[];
+  sectionId?: string;
+  timestampStart?: number;
+};
+
+// NB: `section_id` on SectionCoverage / RetrievalChunk below is the integer
+// sections.id serialized by the backend — declared string here to mirror the
+// payload, but it arrives as a number at runtime. These fields are display-only
+// (the ledger reads section_seq / .length, never section_id), so they are NOT
+// coerced. Anyone adding a strict-equality match on them must coerce first —
+// see coerceContentBlock for the citation path that does.
+
+/** A surfaced section in a find_passages result. */
+type SectionCoverage = {
+  section_id: string;
+  source_id: string;
+  source_title: string;
+  seq: number;
+  timestamp_start: number;
+  timestamp_end: number;
+};
+
 /** Single chunk in the persisted context[] array. */
 type RetrievalChunk = {
   chunk_id: string;
   citation_index: number;
+  section_id: string;
+  section_seq: number;
   source_id: string;
   source_title: string;
   timestamp_start: number;
@@ -28,22 +59,23 @@ type FacetScope = {
   matched_count: number | null;
   no_match: boolean;
 };
-/** source_coverage lists only sources whose [N] actually appeared in the assistant text. */
+/** section_coverage lists only sections whose [N] actually appeared in the assistant text. */
 export type RetrievalCall = {
   query: string;
   tool_name: ToolName;
   candidates_evaluated: number;
   sources_with_hits: number;
   sources_total: number;
-  source_coverage: RagSource[];
+  section_coverage: SectionCoverage[];
   // context[] is absent on the streaming tool_result payload;
-  // reconstructed only in persisted metadata.rag. For read_source,
+  // reconstructed only in persisted metadata.rag. For read_section,
   // context is always [] (continuous transcript, not a locator result).
   context?: RetrievalChunk[];
   reranked: boolean;
   scoped_pool_size: number;
   facet_scope?: FacetScope;
-  // read_source rows only — find_passages uses source_coverage
+  // read_section rows only — find_passages uses section_coverage
+  section_id?: string;
   source_id?: string;
   source_title?: string;
 };
@@ -53,6 +85,51 @@ export type PendingRagCall = {
   query: string;
   tool_name: ToolName;
 };
+
+/** Coerce a raw SSE `citation` event into the `ContentBlock` citation shape.
+ *
+ * The backend's `CitationRegistryEntry.section_id` is the INTEGER
+ * `sections.id` (the row PK). The value flows from `get_sections`'s
+ * `r["id"]` into the chunk loop in `chat_tools.py` (`_alloc_section`
+ * is just the funnel that stores it on the entry), then serializes
+ * over SSE as a JSON number. The FE's `ContentBlock.citation.
+ * section_id` type declares `string`, and the citation-jump matcher
+ * in `SourcesViewerMode.resolveTargetIdx` does strict equality
+ * against `SourceSection.section_id` (also `string`). A number on
+ * one side would silently fall through to the `timestampStart`
+ * branch, landing the reader on the wrong section.
+ *
+ * Normalize the field to string here so the type contract and the
+ * jump both work without a backend serialization change. Defaults
+ * to `""` when missing so the caller's `if (target.sectionId)` falsy
+ * check correctly skips the sectionId branch.
+ */
+export function coerceCitationEvent(raw: unknown): ContentBlock {
+  const e = raw as { type?: string; index?: number; section_id?: unknown; source_id?: unknown; timestamp_start?: unknown; chunk_ids?: unknown };
+  if (e?.type !== "citation") {
+    return { type: "paragraph_break" };
+  }
+  return {
+    type: "citation",
+    index: Number(e.index ?? 0),
+    section_id: e.section_id != null ? String(e.section_id) : "",
+    source_id: String(e.source_id ?? ""),
+    timestamp_start: Number(e.timestamp_start ?? 0),
+    chunk_ids: Array.isArray(e.chunk_ids) ? e.chunk_ids.map(String) : [],
+  };
+}
+
+/** Coerce a persisted/streamed `ContentBlock` so a citation's `section_id`
+ *  is a string. Citation blocks reach the FE from two paths — the live SSE
+ *  `citation` event (handled by `coerceCitationEvent`) and the persisted
+ *  `metadata.content_blocks` on history reload — and both carry the integer
+ *  `sections.id`. Text / paragraph_break blocks pass through unchanged. */
+export function coerceContentBlock(raw: unknown): ContentBlock {
+  const b = raw as { type?: string; text?: unknown };
+  if (b?.type === "citation") return coerceCitationEvent(raw);
+  if (b?.type === "text") return { type: "text", text: String(b.text ?? "") };
+  return { type: "paragraph_break" };
+}
 
 export function formatDurationHuman(seconds: number): string {
   if (seconds < 60) return `${seconds}s`;

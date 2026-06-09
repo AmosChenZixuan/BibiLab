@@ -144,7 +144,7 @@ describe("chat panel — SSE streaming (phase 6.2)", () => {
 
     enqueue('data: {"type":"meta","message_id":"srv-1"}\n\n');
     enqueue(
-      'data: {"type":"tool_result","id":"r1","name":"find_passages","result":{"query":"X","tool_name":"find_passages","candidates_evaluated":5,"sources_with_hits":1,"sources_total":1,"source_coverage":[{"source_id":"s1","title":"Vid"}],"reranked":true,"scoped_pool_size":1}}\n\n',
+      'data: {"type":"tool_result","id":"r1","name":"find_passages","result":{"query":"X","tool_name":"find_passages","candidates_evaluated":5,"sources_with_hits":1,"sources_total":1,"section_coverage":[{"section_id":"sec-1","source_id":"s1","source_title":"Vid","seq":1,"timestamp_start":0,"timestamp_end":10}],"reranked":true,"scoped_pool_size":1}}\n\n',
     );
 
     // Mid-stream: ledger present but NOT expandable.
@@ -157,7 +157,7 @@ describe("chat panel — SSE streaming (phase 6.2)", () => {
 
     // Final authoritative rag (with context[]) then done.
     enqueue(
-      'data: {"type":"rag","calls":[{"query":"X","tool_name":"find_passages","candidates_evaluated":5,"sources_with_hits":1,"sources_total":1,"source_coverage":[{"source_id":"s1","title":"Vid"}],"context":[{"chunk_id":"c1","citation_index":1,"source_id":"s1","source_title":"Vid","timestamp_start":0,"timestamp_end":10,"rerank_score":2.5,"preview":"unique-preview-text"}],"reranked":true,"scoped_pool_size":1}]}\n\n',
+      'data: {"type":"rag","calls":[{"query":"X","tool_name":"find_passages","candidates_evaluated":5,"sources_with_hits":1,"sources_total":1,"section_coverage":[{"section_id":"sec-1","source_id":"s1","source_title":"Vid","seq":1,"timestamp_start":0,"timestamp_end":10}],"context":[{"chunk_id":"c1","citation_index":1,"section_id":"sec-1","section_seq":1,"source_id":"s1","source_title":"Vid","timestamp_start":0,"timestamp_end":10,"rerank_score":2.5,"preview":"unique-preview-text"}],"reranked":true,"scoped_pool_size":1}]}\n\n',
     );
     enqueue('data: {"type":"delta","content":"answer"}\n\n');
     enqueue('data: {"type":"done"}\n\n');
@@ -270,7 +270,7 @@ describe("chat panel — SSE streaming (phase 6.2)", () => {
     });
   });
 
-  test("renders a read_source ledger chip when the tool fires mid-stream", async () => {
+  test("renders a read_section ledger chip when the tool fires mid-stream", async () => {
     const { response, enqueue, close } = makeOpenSseStream();
     mockFetch((input) => {
       const url = String(input);
@@ -282,35 +282,94 @@ describe("chat panel — SSE streaming (phase 6.2)", () => {
 
     renderChatPanel({ selectedSourceIds: ["src-1"], sources: [SOURCE_1], listId: "list-1" });
 
-    await userEvent.type(screen.getByRole("textbox"), "read the transcript");
+    await userEvent.type(screen.getByRole("textbox"), "read the section");
     await userEvent.keyboard("{Enter}");
 
-    // Provisional read_source chip first (BookOpen + spinner + "reading source…")
+    // Provisional read_section chip first (BookOpen + spinner + the
+    // readSectionPending i18n text)
     enqueue(
-      'data: {"type":"tool_call_start","id":"rs1","name":"read_source","arguments":{}}\n\n',
+      'data: {"type":"tool_call_start","id":"rs1","name":"read_section","arguments":{}}\n\n',
     );
 
     await waitFor(() => {
-      expect(screen.getByText(/reading source/i)).toBeInTheDocument();
+      expect(screen.getByText(/reading section/i)).toBeInTheDocument();
     });
 
     // tool_result resolves it to source_id/source_title
     enqueue(
-      'data: {"type":"tool_result","id":"rs1","name":"read_source","result":{"tool_name":"read_source","source_id":"s1","source_title":"Ep 4","query":"","candidates_evaluated":0,"sources_with_hits":0,"sources_total":1,"source_coverage":[],"context":[],"reranked":false,"scoped_pool_size":1}}\n\n',
+      'data: {"type":"tool_result","id":"rs1","name":"read_section","result":{"tool_name":"read_section","source_id":"s1","source_title":"Ep 4","section_id":"sec-1","query":"","candidates_evaluated":0,"sources_with_hits":0,"sources_total":1,"section_coverage":[],"context":[],"reranked":false,"scoped_pool_size":1}}\n\n',
+    );
+
+    // Citation with section_id
+    enqueue(
+      'data: {"type":"citation","index":1,"section_id":"sec-1","source_id":"s1","timestamp_start":42,"chunk_ids":["c1"]}\n\n',
     );
 
     // Final rag event then done
     enqueue(
-      'data: {"type":"rag","calls":[{"tool_name":"read_source","source_id":"s1","source_title":"Ep 4","query":"","candidates_evaluated":0,"sources_with_hits":0,"sources_total":1,"source_coverage":[],"context":[],"reranked":false,"scoped_pool_size":1}]}\n\n',
+      'data: {"type":"rag","calls":[{"tool_name":"read_section","source_id":"s1","source_title":"Ep 4","section_id":"sec-1","query":"","candidates_evaluated":0,"sources_with_hits":0,"sources_total":1,"section_coverage":[],"context":[],"reranked":false,"scoped_pool_size":1}]}\n\n',
     );
     enqueue('data: {"type":"delta","content":"answer"}\n\n');
     enqueue('data: {"type":"done"}\n\n');
     close();
 
-    // After tool_result the chip should resolve to the read_source row with the source title
+    // Resolved read_section row rendering is exercised in ToolLedgerRow
+    // tests; here just verify the answer streams.
     await waitFor(() => {
-      expect(screen.getByText("Ep 4")).toBeInTheDocument();
+      expect(screen.getByText("answer")).toBeInTheDocument();
     });
+  });
+
+  test("citation SSE event with numeric section_id is coerced to string before the chip click", async () => {
+    // The backend's CitationRegistryEntry.section_id is the INTEGER
+    // sections.id; the SSE event serializes it as a JSON number. The
+    // FE's ContentBlock.citation declares section_id: string, and
+    // SourcesViewerMode.resolveTargetIdx does strict equality against
+    // SourceSection.section_id (also string). A number on one side
+    // silently falls through to the timestampStart branch, landing
+    // the reader on the wrong section. This test drives the
+    // integration path (SSE event → useSSEStream → chat-utils.
+    // coerceCitationEvent → CitationChip → onOpenSource) and asserts
+    // the string arrives at the page-level handler.
+    const onOpenSource = vi.fn();
+    mockFetch((input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : (input as Request).url;
+      if (url.includes("/conversation")) {
+        return Promise.resolve(new Response(JSON.stringify({ conversation: null, messages: [] })));
+      }
+      if (url.includes("/chat")) {
+        return Promise.resolve(
+          makeSseStream([
+            'data: {"type":"delta","content":"see "}\n\n',
+            'data: {"type":"citation","index":1,"section_id":1,"source_id":"src-1","timestamp_start":42,"chunk_ids":["c1"]}\n\n',
+            'data: {"type":"delta","content":" [1] for the cited part."}\n\n',
+            'data: {"type":"done"}\n\n',
+          ]),
+        );
+      }
+      return Promise.resolve(new Response(JSON.stringify([])));
+    });
+
+    renderChatPanel({
+      selectedSourceIds: ["src-1"],
+      sources: [SOURCE_1],
+      listId: "list-1",
+      onOpenSource,
+    });
+
+    await userEvent.type(screen.getByRole("textbox"), "show");
+    await userEvent.keyboard("{Enter}");
+
+    const chip = await waitFor(() => screen.getByTestId(TEST_IDS.citeChip));
+    await userEvent.click(chip);
+
+    expect(onOpenSource).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "src-1" }),
+      expect.objectContaining({
+        sectionId: "1",
+        timestampStart: 42,
+      }),
+    );
   });
 });
 

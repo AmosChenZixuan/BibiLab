@@ -2,12 +2,14 @@ import { describe, expect, test } from "vitest";
 
 import {
   autoResize,
+  coerceCitationEvent,
+  coerceContentBlock,
   facetNoMatchHint,
   formatDurationHuman,
   formatSubtitle,
   formatTimestamp,
   stripLegacyTokens,
-  RetrievalCall,
+  type RetrievalCall,
 } from "@/lib/chat-utils";
 
 describe("formatDurationHuman", () => {
@@ -108,11 +110,13 @@ describe("RetrievalCall", () => {
       candidates_evaluated: 5,
       sources_with_hits: 2,
       sources_total: 3,
-      source_coverage: [],
+      section_coverage: [],
       context: [
         {
           chunk_id: "c1",
           citation_index: 1,
+          section_id: "sec-1",
+          section_seq: 1,
           source_id: "s1",
           source_title: "Test Video",
           timestamp_start: 120.4,
@@ -138,7 +142,7 @@ describe("RetrievalCall", () => {
       candidates_evaluated: 0,
       sources_with_hits: 0,
       sources_total: 1,
-      source_coverage: [],
+      section_coverage: [],
       context: [],
       reranked: false,
       scoped_pool_size: 1,
@@ -178,5 +182,104 @@ describe("facetNoMatchHint", () => {
   test("no facets falls back to generic", () => {
     expect(facetNoMatchHint(t, { sequence_number: null, season_number: null, matched_count: null, no_match: true }))
       .toBe("No source matched the requested filter — searched all sources instead.");
+  });
+});
+
+describe("coerceCitationEvent", () => {
+  // The SSE citation event comes over the wire with section_id as a
+  // JSON number (backend's CitationRegistryEntry.section_id is the
+  // INTEGER sections.id). The FE's ContentBlock.citation declares
+  // section_id: string, and SourcesViewerMode.resolveTargetIdx does
+  // strict equality against SourceSection.section_id (also string) —
+  // a number on one side silently falls through to the timestampStart
+  // branch, landing the reader on the wrong section. The coercion
+  // normalizes at the SSE-consumer boundary so the type contract and
+  // the jump both work.
+
+  test("coerces section_id from number to string", () => {
+    const result = coerceCitationEvent({
+      type: "citation",
+      index: 3,
+      section_id: 7,                       // number, as the wire delivers
+      source_id: "src-1",
+      timestamp_start: 42.5,
+      chunk_ids: ["c1", "c2"],
+    });
+    expect(result).toEqual({
+      type: "citation",
+      index: 3,
+      section_id: "7",
+      source_id: "src-1",
+      timestamp_start: 42.5,
+      chunk_ids: ["c1", "c2"],
+    });
+  });
+
+  test("passes through a string section_id unchanged", () => {
+    const result = coerceCitationEvent({
+      type: "citation",
+      index: 1,
+      section_id: "sec-1",
+      source_id: "src-1",
+      timestamp_start: 42,
+      chunk_ids: ["c1"],
+    });
+    if (result.type !== "citation") throw new Error("expected citation");
+    expect(result.section_id).toBe("sec-1");
+  });
+
+  test("defaults to empty section_id when missing (so caller's falsy check skips the sectionId branch)", () => {
+    const result = coerceCitationEvent({
+      type: "citation",
+      index: 1,
+      source_id: "src-1",
+      timestamp_start: 42,
+      chunk_ids: [],
+    });
+    if (result.type !== "citation") throw new Error("expected citation");
+    expect(result.section_id).toBe("");
+  });
+
+  test("normalizes chunk_ids to an array of strings", () => {
+    const result = coerceCitationEvent({
+      type: "citation",
+      index: 1,
+      section_id: "1",
+      source_id: "src-1",
+      timestamp_start: 0,
+      chunk_ids: [1, 2, 3],               // numbers, not strings
+    });
+    if (result.type !== "citation") throw new Error("expected citation");
+    expect(result.chunk_ids).toEqual(["1", "2", "3"]);
+  });
+
+  test("non-citation events fall back to paragraph_break (defensive)", () => {
+    const result = coerceCitationEvent({ type: "delta", content: "x" });
+    expect(result).toEqual({ type: "paragraph_break" });
+  });
+});
+
+describe("coerceContentBlock", () => {
+  // Persisted content_blocks (metadata.content_blocks on history reload)
+  // carry the integer sections.id on citation blocks, same as the live SSE
+  // citation event. coerceContentBlock normalizes them on reload so the
+  // citation jump works on reloaded conversations too.
+  test("coerces a citation block's numeric section_id to string", () => {
+    const result = coerceContentBlock({
+      type: "citation", index: 2, section_id: 9, source_id: "src-1",
+      timestamp_start: 12, chunk_ids: ["c1"],
+    });
+    if (result.type !== "citation") throw new Error("expected citation");
+    expect(result.section_id).toBe("9");
+  });
+
+  test("passes a text block through unchanged", () => {
+    expect(coerceContentBlock({ type: "text", text: "hello" })).toEqual({
+      type: "text", text: "hello",
+    });
+  });
+
+  test("passes a paragraph_break through", () => {
+    expect(coerceContentBlock({ type: "paragraph_break" })).toEqual({ type: "paragraph_break" });
   });
 });

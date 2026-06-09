@@ -58,10 +58,15 @@ class SourceContentResponse(BaseModel):
 class SectionListItem(BaseModel):
     """Projected section row for GET /sources/{id}/sections.
 
-    Internal columns (id, source_id, seg_start, seg_end, token_count) are
-    not exposed — they're an implementation detail of the rerun path.
+    `section_id` is the row's primary key projected as a string — the
+    chat citation-jump path needs it to resolve a cited section without
+    relying on the chunk-anchored `timestamp_start` (which can land at
+    a section boundary or outside any section's range). The other
+    internal columns (source_id, seg_start, seg_end, token_count) stay
+    hidden — they're an implementation detail of the rerun path.
     """
 
+    section_id: str
     seq: int
     summary: str
     keywords: list[str]
@@ -73,10 +78,13 @@ class SectionListItem(BaseModel):
         """Project a sections-table row to the API response shape.
 
         Every section row carries a summary/keywords (written with the
-        section in one transaction). Internal columns (id, source_id,
-        seg_start, seg_end, token_count) are not exposed.
+        section in one transaction). `id` is projected as `section_id`
+        (stringified) for the chat citation-jump match key; the other
+        internal columns (source_id, seg_start, seg_end, token_count)
+        are not exposed.
         """
         return cls(
+            section_id=str(row["id"]),
             seq=row["seq"],
             summary=row["summary"],
             keywords=json.loads(row["keywords"]),

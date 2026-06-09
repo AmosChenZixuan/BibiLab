@@ -5,6 +5,7 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import { LanguageProvider } from "@/app/LanguageContext";
 import { JobActivityProvider } from "@/components/jobs/JobActivityProvider";
 import { ChatPanel } from "@/components/lists/ChatPanel";
+import { TEST_IDS } from "@/lib/test-ids";
 import { makeSseStream, mockFetch, renderWithProviders } from "@/test/utils";
 import type { Source } from "@/lib/types";
 
@@ -45,7 +46,7 @@ describe("RAG observability via SSE tool_result", () => {
     mockFetch(() =>
       Promise.resolve(
         makeSseStream([
-          'data: {"type":"tool_result","name":"find_passages","result":{"query":"A","tool_name":"find_passages","candidates_evaluated":30,"sources_with_hits":1,"sources_total":1,"source_coverage":[{"source_id":"s1","title":"Test Video A"}],"context":[{"chunk_id":"c1","citation_index":1,"source_id":"s1","source_title":"Test Video A","timestamp_start":0,"timestamp_end":132,"rerank_score":4.53,"preview":"test preview"}],"reranked":true,"scoped_pool_size":1}}\n\n',
+          'data: {"type":"tool_result","name":"find_passages","result":{"query":"A","tool_name":"find_passages","candidates_evaluated":30,"sources_with_hits":1,"sources_total":1,"section_coverage":[{"section_id":"sec-1","source_id":"s1","source_title":"Test Video A","seq":1,"timestamp_start":0,"timestamp_end":132}],"context":[{"chunk_id":"c1","citation_index":1,"section_id":"sec-1","section_seq":1,"source_id":"s1","source_title":"Test Video A","timestamp_start":0,"timestamp_end":132,"rerank_score":4.53,"preview":"test preview"}],"reranked":true,"scoped_pool_size":1}}\n\n',
           'data: {"type":"delta","content":"Hello"}\n\n',
           'data: {"type":"done"}\n\n',
         ]),
@@ -71,7 +72,7 @@ describe("RAG observability via SSE tool_result", () => {
     mockFetch(() =>
       Promise.resolve(
         makeSseStream([
-          'data: {"type":"tool_result","name":"find_passages","result":{"query":"长期情景记忆","tool_name":"find_passages","candidates_evaluated":10,"sources_with_hits":1,"sources_total":16,"source_coverage":[{"source_id":"s1","title":"Test Video A"}],"context":[{"chunk_id":"c1","citation_index":1,"source_id":"s1","source_title":"Test Video A","timestamp_start":0,"timestamp_end":132,"rerank_score":4.53,"preview":"test preview"}],"reranked":true,"scoped_pool_size":10}}\n\n',
+          'data: {"type":"tool_result","name":"find_passages","result":{"query":"长期情景记忆","tool_name":"find_passages","candidates_evaluated":10,"sources_with_hits":1,"sources_total":16,"section_coverage":[{"section_id":"sec-1","source_id":"s1","source_title":"Test Video A","seq":1,"timestamp_start":0,"timestamp_end":132}],"context":[{"chunk_id":"c1","citation_index":1,"section_id":"sec-1","section_seq":1,"source_id":"s1","source_title":"Test Video A","timestamp_start":0,"timestamp_end":132,"rerank_score":4.53,"preview":"test preview"}],"reranked":true,"scoped_pool_size":10}}\n\n',
           'data: {"type":"delta","content":"Answer"}\n\n',
           'data: {"type":"done"}\n\n',
         ]),
@@ -100,8 +101,8 @@ describe("RAG observability via SSE tool_result", () => {
         makeSseStream([
           'data: {"type":"tool_call_start","id":"tc1","name":"find_passages","arguments":{"query":"A"}}\n\n',
           'data: {"type":"tool_call_start","id":"tc2","name":"find_passages","arguments":{"query":"B"}}\n\n',
-          'data: {"type":"tool_result","id":"tc1","name":"find_passages","result":{"query":"A","tool_name":"find_passages","candidates_evaluated":10,"sources_with_hits":2,"sources_total":4,"source_coverage":[{"source_id":"s1","title":"Video A"},{"source_id":"s2","title":"Video B"}],"context":[{"chunk_id":"c1","citation_index":1,"source_id":"s1","source_title":"Video A","timestamp_start":0,"timestamp_end":60,"rerank_score":3.5,"preview":"preview A"}],"reranked":true,"scoped_pool_size":4}}\n\n',
-          'data: {"type":"tool_result","id":"tc2","name":"find_passages","result":{"query":"B","tool_name":"find_passages","candidates_evaluated":20,"sources_with_hits":1,"sources_total":3,"source_coverage":[{"source_id":"s3","title":"Video C"}],"context":[{"chunk_id":"c2","citation_index":2,"source_id":"s3","source_title":"Video C","timestamp_start":10,"timestamp_end":90,"rerank_score":2.8,"preview":"preview B"}],"reranked":true,"scoped_pool_size":2}}\n\n',
+          'data: {"type":"tool_result","id":"tc1","name":"find_passages","result":{"query":"A","tool_name":"find_passages","candidates_evaluated":10,"sources_with_hits":2,"sources_total":4,"section_coverage":[{"section_id":"sec-1","source_id":"s1","source_title":"Video A","seq":1,"timestamp_start":0,"timestamp_end":60},{"section_id":"sec-2","source_id":"s2","source_title":"Video B","seq":1,"timestamp_start":0,"timestamp_end":60}],"context":[{"chunk_id":"c1","citation_index":1,"section_id":"sec-1","section_seq":1,"source_id":"s1","source_title":"Video A","timestamp_start":0,"timestamp_end":60,"rerank_score":3.5,"preview":"preview A"}],"reranked":true,"scoped_pool_size":4}}\n\n',
+          'data: {"type":"tool_result","id":"tc2","name":"find_passages","result":{"query":"B","tool_name":"find_passages","candidates_evaluated":20,"sources_with_hits":1,"sources_total":3,"section_coverage":[{"section_id":"sec-3","source_id":"s3","source_title":"Video C","seq":1,"timestamp_start":10,"timestamp_end":90}],"context":[{"chunk_id":"c2","citation_index":2,"section_id":"sec-3","section_seq":1,"source_id":"s3","source_title":"Video C","timestamp_start":10,"timestamp_end":90,"rerank_score":2.8,"preview":"preview B"}],"reranked":true,"scoped_pool_size":2}}\n\n',
           'data: {"type":"delta","content":"Answer"}\n\n',
           'data: {"type":"done"}\n\n',
         ]),
@@ -122,6 +123,55 @@ describe("RAG observability via SSE tool_result", () => {
 
     expect(screen.getByText("A")).toBeInTheDocument();
     expect(screen.getByText("B")).toBeInTheDocument();
+  });
+
+  // A persisted citation block carries the section target. section_id reaches
+  // the FE as a string ("sec-1") or — the way the backend actually persists it,
+  // the integer sections.id — as a number (7). useConversationHistory must
+  // coerce both to string so the jump matcher (strict equality against
+  // SourceSection.section_id) doesn't fall through to the timestamp branch.
+  test.each([
+    ["string", "sec-1", "sec-1"],
+    ["numeric (as the backend persists it)", 7, "7"],
+  ])("citation chip click passes %s section_id as a string target", async (_label, stored, expected) => {
+    const onOpenSource = vi.fn();
+    mockFetch((input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : (input as Request).url;
+      if (url.includes("/conversation")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              conversation: { id: "conv-1", list_id: "list-1" },
+              messages: [
+                {
+                  id: "msg-1",
+                  role: "assistant",
+                  content: "",
+                  created_at: "2026-04-08T12:00:00Z",
+                  metadata: {
+                    content_blocks: [
+                      { type: "text", text: "Answer " },
+                      { type: "citation", index: 1, section_id: stored, source_id: "src-1", timestamp_start: 42, chunk_ids: ["c1"] },
+                    ],
+                  },
+                },
+              ],
+            }),
+          ),
+        );
+      }
+      return Promise.resolve(new Response(JSON.stringify([])));
+    });
+
+    renderChatPanel({ selectedSourceIds: ["src-1"], sources: [SOURCE_1], listId: "list-1", onOpenSource });
+
+    const chip = await waitFor(() => screen.getByTestId(TEST_IDS.citeChip));
+    await userEvent.click(chip);
+
+    expect(onOpenSource).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "src-1" }),
+      expect.objectContaining({ highlightChunks: ["c1"], sectionId: expected, timestampStart: 42 }),
+    );
   });
 
 });

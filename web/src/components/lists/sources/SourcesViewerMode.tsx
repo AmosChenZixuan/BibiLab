@@ -7,16 +7,44 @@ import { useJobActivity } from "@/components/jobs/JobActivityProvider";
 import { Banner } from "@/components/lists/Banner";
 import { DigestAccordion } from "@/components/lists/DigestAccordion";
 
+/** Resolve a citation-jump target to a section index. The `sectionId`
+ *  branch is the precise match (the chat citation carries the section
+ *  id directly so it can land on the cited section even when the
+ *  chunk-anchored timestamp falls at a boundary or outside the range);
+ *  `timestampStart` stays as a fallback for legacy citations. Returns
+ *  0 when no target is supplied or the target doesn't match any
+ *  section. */
+function resolveTargetIdx(
+  sections: SourceSection[] | undefined,
+  target?: { sectionId?: string; timestampStart?: number } | null,
+): number {
+  if (!target || !sections || sections.length === 0) return 0;
+  if (target.sectionId) {
+    const i = sections.findIndex((s) => s.section_id === target.sectionId);
+    if (i >= 0) return i;
+  }
+  if (target.timestampStart != null) {
+    const ts = target.timestampStart;
+    const i = sections.findIndex(
+      (s) => ts >= s.timestamp_start && ts <= s.timestamp_end,
+    );
+    if (i >= 0) return i;
+  }
+  return 0;
+}
+
 export function SourcesViewerMode({
   source,
   sourceContent,
   onRefresh,
   listId,
+  targetSection,
 }: {
   source: Source;
   sourceContent: SourceContent | null;
   onRefresh: () => void;
   listId: string;
+  targetSection?: { sectionId?: string; timestampStart?: number } | null;
 }) {
   const { t } = useLanguage();
   const { trackJobs } = useJobActivity();
@@ -100,6 +128,7 @@ export function SourcesViewerMode({
             }}
             listId={listId}
             sections={sections}
+            initialActiveIdx={resolveTargetIdx(sections, targetSection)}
           />
         )}
         {sourceContent?.transcript && (
