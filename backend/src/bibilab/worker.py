@@ -255,11 +255,10 @@ async def _build_section_views(source_ids: list[str]) -> list[_SectionView]:
     (selected-source order, then seq within source).
 
     A source with no section rows raises ``PipelineError("...no sections;
-    re-ingest required")`` (fail-loud — pairs with the one-shot backfill
-    that populates pre-existing sources, so this should never fire in
-    production post-backfill). Segments are loaded once per source; the
-    text is ``format_turns`` with ``include_time=False`` (matches the
-    pre-batching combined-transcript shape).
+    re-ingest required")`` (the contract: every source that flows through
+    the artifact pipeline has section rows). Segments are loaded once per
+    source; the text is ``format_turns`` with ``include_time=False`` (matches
+    the pre-batching combined-transcript shape).
     """
     views: list[_SectionView] = []
     for source_id in source_ids:
@@ -277,10 +276,9 @@ async def _build_section_views(source_ids: list[str]) -> list[_SectionView]:
         for row in rows:
             slice_rows = [by_seq[s] for s in range(row["seg_start"], row["seg_end"] + 1) if s in by_seq]
             if not slice_rows:
-                # The atomic write contract from #452 makes this unreachable
-                # in production (sections + segments land in the same
-                # transaction), but fail-loud rather than silently render
-                # an empty section.
+                # The atomic write contract (sections + segments land in
+                # the same transaction) makes this unreachable in production,
+                # but fail-loud rather than silently render an empty section.
                 raise PipelineError(
                     f"Source {source_id!r} section {row['seq']} references "
                     f"missing segments ({row['seg_start']}..{row['seg_end']}); "

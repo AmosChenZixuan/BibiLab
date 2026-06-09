@@ -82,16 +82,30 @@ class SourceFactory:
     }
 
     @classmethod
-    async def build(cls, list_id: str, **overrides: Any) -> str:
+    async def build(
+        cls,
+        list_id: str,
+        *,
+        segments: list | None = None,
+        sections: list | None = None,
+        **overrides: Any,
+    ) -> str:
         """Insert a sources row via the production write path.
 
-        A column addition in `sources` only requires updating `_DEFAULTS`;
-        the INSERT/ON CONFLICT/COALESCE/thumbnail side effect live in
-        `db._exec_write_source` and apply here automatically.
+        Optional ``segments`` and ``sections`` are passed through to the
+        atomic ``write_source_with_segments`` call (same transaction as
+        the source row). Both default to empty. A column addition in
+        ``sources`` only requires updating ``_DEFAULTS``; the
+        INSERT/ON CONFLICT/COALESCE/thumbnail side effect live in
+        ``db._exec_write_source`` and apply here automatically.
         """
         source_id = overrides.pop("source_id", None) or str(uuid.uuid4())
         fields = {**cls._DEFAULTS, **overrides, "list_id": list_id, "source_id": source_id}
-        await write_source_with_segments(segments=[], **fields)
+        await write_source_with_segments(
+            segments=segments or [],
+            sections=sections,
+            **fields,
+        )
         return source_id
 
 

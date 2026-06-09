@@ -249,13 +249,12 @@ async def test_build_section_views_happy_path_returns_verbatim_text(tmp_bibilab_
     slice. Source order across sources is also preserved."""
     await bootstrap_db()
     await create_list("list-1", "L", "2026-01-01T00:00:00")
-
-    # SourceFactory.build does not accept segments/sections kwargs; seed
-    # the source row first, then write segments + sections via the
-    # production atomic path. `seq` is auto-assigned by _exec_write_sections
-    # (enumerate over the list).
-    source_id = await SourceFactory.build("list-1", video_id="BV1")
-    await write_source_with_segments(
+    source_id = await SourceFactory.build(
+        "list-1",
+        video_id="BV1",
+        title="T",
+        uploader="u",
+        source_url="https://x",
         segments=[
             WhisperSegment(start=0.0, end=1.0, text="alpha", speaker="SPK_0"),
             WhisperSegment(start=1.0, end=2.0, text="beta", speaker="SPK_0"),
@@ -264,22 +263,9 @@ async def test_build_section_views_happy_path_returns_verbatim_text(tmp_bibilab_
             Section(seg_start=0, seg_end=0, token_count=1, timestamp_start=0.0, timestamp_end=1.0),
             Section(seg_start=1, seg_end=1, token_count=1, timestamp_start=1.0, timestamp_end=2.0),
         ],
-        source_id=source_id,
-        video_id="BV1",
-        platform="bilibili",
-        list_id="list-1",
-        title="T",
-        summary="",
-        keywords=[],
-        cover_url=None,
-        source_url="https://x",
-        duration_seconds=0,
-        uploader="u",
-        language="en",
-        whisper_model="large-v3",
-        ai_model="gpt-4o",
-        settings_snapshot={},
     )
+
+    views = await _build_section_views([source_id])
 
     views = await _build_section_views([source_id])
 
@@ -595,25 +581,15 @@ async def test_run_artifact_job_batch_failure_writes_no_partial_artifact(tmp_bib
 
     await bootstrap_db()
     await create_list("list-1", "L", "2026-01-01T00:00:00")
-    source_id = await SourceFactory.build("list-1", video_id="BV1")
-    await write_source_with_segments(
+    source_id = await SourceFactory.build(
+        "list-1",
+        video_id="BV1",
+        title="T",
+        uploader="u",
+        source_url="https://x",
+        language="en",
         segments=[WhisperSegment(start=0.0, end=1.0, text="hello", speaker="SPK_0")],
         sections=[Section(seg_start=0, seg_end=0, token_count=1, timestamp_start=0.0, timestamp_end=1.0)],
-        source_id=source_id,
-        video_id="BV1",
-        platform="bilibili",
-        list_id="list-1",
-        title="T",
-        summary="",
-        keywords=[],
-        cover_url=None,
-        source_url="https://x",
-        duration_seconds=0,
-        uploader="u",
-        language="en",
-        whisper_model="large-v3",
-        ai_model="gpt-4o",
-        settings_snapshot={},
     )
 
     job_id = await create_job(
@@ -660,8 +636,8 @@ async def test_run_artifact_job_batch_failure_writes_no_partial_artifact(tmp_bib
 
 @pytest.mark.asyncio
 async def test_run_artifact_job_no_sections_fails_loud(tmp_bibilab_home):
-    """End-to-end: a source with no `sections` rows (pre-backfill state)
-    causes _run_artifact_job to fail the job with the documented message."""
+    """End-to-end: a source with no `sections` rows causes _run_artifact_job
+    to fail the job with the documented message."""
     from bibilab.db import create_job, get_job
 
     await bootstrap_db()
