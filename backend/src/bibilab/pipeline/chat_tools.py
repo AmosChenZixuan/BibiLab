@@ -700,8 +700,8 @@ def reseed_citation_registry(
     """Reseed the citation registry from stored retrieve tool_blocks in history.
 
     Walks each assistant message's tool_blocks. For each retrieve result,
-    re-creates CitationRegistryEntry instances keyed by source_id so prior
-    [N] markers in old assistant text continue to resolve to the same source.
+    re-creates CitationRegistryEntry instances keyed by section_id so prior
+    [N] markers in old assistant text continue to resolve to the same section.
     """
     for msg in history:
         for block in msg.get("tool_blocks") or []:
@@ -709,20 +709,23 @@ def reseed_citation_registry(
                 continue
             chunks = block.get("result", {}).get("chunks", [])
             for ch in chunks:
-                sid = ch.get("source_id")
-                if not sid:
+                section_id = ch.get("section_id")
+                if not section_id:
                     continue
                 ci = ch.get("citation_index")
                 if ci is None:
                     continue
-                entry = registry.get(sid)
+                entry = registry.get(section_id)
                 if entry is None:
                     entry = CitationRegistryEntry(
                         index=ci,
-                        source_id=sid,
+                        section_id=section_id,
+                        source_id=ch.get("source_id", ""),
                         title=ch.get("video_title", ""),
+                        seq=ch.get("section_seq"),
+                        citable=True,  # a persisted chunk means verbatim was shown
                     )
-                    registry[sid] = entry
+                    registry[section_id] = entry
                 cid = ch.get("chunk_id")
                 if cid:
                     entry.chunk_ids.add(cid)

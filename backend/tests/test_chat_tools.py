@@ -562,6 +562,8 @@ class TestReseedCitationRegistry:
                             "chunks": [
                                 {
                                     "source_id": "s1",
+                                    "section_id": "sec-1",
+                                    "section_seq": 2,
                                     "citation_index": 1,
                                     "chunk_id": "v1_0_10",
                                     "video_title": "Video One",
@@ -578,14 +580,16 @@ class TestReseedCitationRegistry:
         reseed_citation_registry(registry, history)
 
         assert len(registry) == 1
-        assert "s1" in registry
-        entry = registry["s1"]
+        assert "sec-1" in registry
+        entry = registry["sec-1"]
         assert entry.index == 1
+        assert entry.section_id == "sec-1"
         assert entry.source_id == "s1"
         assert entry.title == "Video One"
+        assert entry.seq == 2
         assert "v1_0_10" in entry.chunk_ids
 
-    def test_reseed_accumulates_chunk_ids_for_same_source(self):
+    def test_reseed_accumulates_chunk_ids_for_same_section(self):
         from bibilab.pipeline.chat_tools import reseed_citation_registry
 
         registry: dict = {}
@@ -602,12 +606,16 @@ class TestReseedCitationRegistry:
                             "chunks": [
                                 {
                                     "source_id": "s1",
+                                    "section_id": "sec-1",
+                                    "section_seq": 1,
                                     "citation_index": 1,
                                     "chunk_id": "v1_0_10",
                                     "video_title": "V1",
                                 },
                                 {
                                     "source_id": "s1",
+                                    "section_id": "sec-1",
+                                    "section_seq": 1,
                                     "citation_index": 1,
                                     "chunk_id": "v1_10_20",
                                     "video_title": "V1",
@@ -623,10 +631,58 @@ class TestReseedCitationRegistry:
         reseed_citation_registry(registry, history)
 
         assert len(registry) == 1
-        entry = registry["s1"]
+        entry = registry["sec-1"]
         assert "v1_0_10" in entry.chunk_ids
         assert "v1_10_20" in entry.chunk_ids
         assert len(entry.chunk_ids) == 2
+
+    def test_reseed_separates_sections_within_same_source(self):
+        """Two sections of the same source each get their own registry entry."""
+        from bibilab.pipeline.chat_tools import reseed_citation_registry
+
+        registry: dict = {}
+        history = [
+            {
+                "role": "assistant",
+                "content": "Answer",
+                "tool_blocks": [
+                    {
+                        "tool_use_id": "t1",
+                        "name": "find_passages",
+                        "arguments": {"query": "q"},
+                        "result": {
+                            "chunks": [
+                                {
+                                    "source_id": "s1",
+                                    "section_id": "sec-1",
+                                    "section_seq": 1,
+                                    "citation_index": 1,
+                                    "chunk_id": "v1_0_10",
+                                    "video_title": "V1",
+                                },
+                                {
+                                    "source_id": "s1",
+                                    "section_id": "sec-2",
+                                    "section_seq": 2,
+                                    "citation_index": 2,
+                                    "chunk_id": "v1_50_60",
+                                    "video_title": "V1",
+                                },
+                            ],
+                            "summary": {"sources_total": 1},
+                        },
+                    }
+                ],
+            }
+        ]
+
+        reseed_citation_registry(registry, history)
+
+        assert len(registry) == 2
+        assert "sec-1" in registry
+        assert "sec-2" in registry
+        assert registry["sec-1"].index == 1
+        assert registry["sec-2"].index == 2
 
     def test_reseed_skips_non_retrieve_blocks(self):
         """v2: read_section blocks do NOT feed the citation registry — they
@@ -657,7 +713,9 @@ class TestReseedCitationRegistry:
         from bibilab.pipeline.chat_tools import CitationRegistryEntry, reseed_citation_registry
 
         registry = {
-            "s1": CitationRegistryEntry(index=1, source_id="s1", title="V1", chunk_ids={"v1_0_10"}),
+            "sec-1": CitationRegistryEntry(
+                index=1, section_id="sec-1", source_id="s1", title="V1", chunk_ids={"v1_0_10"}
+            ),
         }
         history = [
             {
@@ -672,6 +730,8 @@ class TestReseedCitationRegistry:
                             "chunks": [
                                 {
                                     "source_id": "s1",
+                                    "section_id": "sec-1",
+                                    "section_seq": 1,
                                     "citation_index": 1,
                                     "chunk_id": "v1_50_60",
                                     "video_title": "V1",
@@ -687,7 +747,7 @@ class TestReseedCitationRegistry:
         reseed_citation_registry(registry, history)
 
         assert len(registry) == 1
-        entry = registry["s1"]
+        entry = registry["sec-1"]
         assert entry.index == 1
         assert "v1_0_10" in entry.chunk_ids
         assert "v1_50_60" in entry.chunk_ids
@@ -710,11 +770,15 @@ class TestReseedCitationRegistry:
                             "chunks": [
                                 {
                                     "source_id": "s1",
+                                    "section_id": "sec-1",
+                                    "section_seq": 1,
                                     "chunk_id": "v1_0_10",
                                     "video_title": "V1",
                                 },
                                 {
                                     "source_id": "s2",
+                                    "section_id": "sec-2",
+                                    "section_seq": 1,
                                     "citation_index": 2,
                                     "chunk_id": "v2_0_10",
                                     "video_title": "V2",
@@ -729,9 +793,9 @@ class TestReseedCitationRegistry:
 
         reseed_citation_registry(registry, history)
 
-        assert "s1" not in registry
-        assert "s2" in registry
-        assert registry["s2"].index == 2
+        assert "sec-1" not in registry
+        assert "sec-2" in registry
+        assert registry["sec-2"].index == 2
 
     def test_reseed_empty_history(self):
         from bibilab.pipeline.chat_tools import CitationRegistryEntry, reseed_citation_registry
@@ -741,11 +805,11 @@ class TestReseedCitationRegistry:
         assert len(registry) == 0
 
         registry_with_entry = {
-            "s1": CitationRegistryEntry(index=1, source_id="s1", title="V1"),
+            "sec-1": CitationRegistryEntry(index=1, section_id="sec-1", source_id="s1", title="V1"),
         }
         reseed_citation_registry(registry_with_entry, [])
         assert len(registry_with_entry) == 1
-        assert "s1" in registry_with_entry
+        assert "sec-1" in registry_with_entry
 
 
 class TestFacetInt:
