@@ -419,7 +419,14 @@ async def test_chat_citation_after_lone_break_not_isolated(client):
     assert len(blocks) == 3
     assert blocks[0] == {"type": "text", "text": "a"}
     assert blocks[1] == {"type": "paragraph_break"}
-    assert blocks[2] == {"type": "citation", "index": 1, "source_id": "s1", "chunk_ids": []}
+    assert blocks[2] == {
+        "type": "citation",
+        "index": 1,
+        "section_id": "",
+        "source_id": "s1",
+        "timestamp_start": 0.0,
+        "chunk_ids": [],
+    }
 
 
 @pytest.mark.asyncio
@@ -1104,6 +1111,8 @@ async def test_run_chat_turn_reseeds_citation_registry_from_history_tool_blocks(
                         "chunks": [
                             {
                                 "source_id": "s1",
+                                "section_id": "sec-1",
+                                "section_seq": 1,
                                 "citation_index": 1,
                                 "chunk_id": "v1_0_10",
                                 "video_title": "Video One",
@@ -1111,6 +1120,8 @@ async def test_run_chat_turn_reseeds_citation_registry_from_history_tool_blocks(
                             },
                             {
                                 "source_id": "s1",
+                                "section_id": "sec-1",
+                                "section_seq": 1,
                                 "citation_index": 1,
                                 "chunk_id": "v1_30_40",
                                 "video_title": "Video One",
@@ -1145,8 +1156,8 @@ async def test_run_chat_turn_reseeds_citation_registry_from_history_tool_blocks(
 
     assert captured_registry, "stream_with_tools was not called"
     reg = captured_registry[0]
-    assert "s1" in reg, f"Expected registry to contain 's1', got keys: {list(reg.keys())}"
-    entry = reg["s1"]
+    assert "sec-1" in reg, f"Expected registry to contain 'sec-1', got keys: {list(reg.keys())}"
+    entry = reg["sec-1"]
     assert entry.index == 1
     assert entry.source_id == "s1"
     assert entry.title == "Video One"

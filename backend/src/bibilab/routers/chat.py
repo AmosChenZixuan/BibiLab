@@ -698,7 +698,9 @@ async def run_chat_turn(
                     {
                         "type": "citation",
                         "index": data["index"],
+                        "section_id": data.get("section_id", ""),
                         "source_id": data["source_id"],
+                        "timestamp_start": data.get("timestamp_start", 0.0),
                         "chunk_ids": data.get("chunk_ids", []),
                     }
                 )
@@ -706,7 +708,7 @@ async def run_chat_turn(
                 parsed = json.loads(event.content)
                 if parsed["name"] in RETRIEVE_TOOL_NAMES:
                     result = parsed["result"]
-                    # Store raw source_coverage for now; narrow by emitted citations in finally.
+                    # Store raw section_coverage for now; narrow by emitted citations in finally.
                     retrieve_calls.append(
                         {
                             "query": result.get("query", ""),
@@ -714,7 +716,7 @@ async def run_chat_turn(
                             "candidates_evaluated": result.get("candidates_evaluated"),
                             "sources_with_hits": result.get("sources_with_hits"),
                             "sources_total": result.get("sources_total"),
-                            "source_coverage": result.get("source_coverage", []),
+                            "section_coverage": result.get("section_coverage", []),
                             "reranked": result.get("reranked", False),
                             "scoped_pool_size": result.get("scoped_pool_size"),
                             "facet_scope": result.get("facet_scope"),
@@ -723,7 +725,14 @@ async def run_chat_turn(
                 elif parsed["name"] == READ_SECTION_TOOL.name:
                     sid = parsed["result"].get("source_id")
                     if sid:  # None on a resolution error → nothing was read, no ledger row
-                        read_source_calls.append({"tool_name": "read_source", "source_id": sid})
+                        read_source_calls.append(
+                            {
+                                "tool_name": READ_SECTION_TOOL.name,
+                                "section_id": parsed["result"].get("section_id", ""),
+                                "source_id": sid,
+                                "source_title": parsed["result"].get("source_title", ""),
+                            }
+                        )
             elif event.type == "error":
                 logger.error("stream_with_tools error: %s", event.content)
                 error_reason = "tool_error"
@@ -761,35 +770,38 @@ async def run_chat_turn(
                 _flush_pending_text(content_blocks, pending_text)
                 pending_text = ""
 
-            # Narrow source_coverage to only sources whose [N] actually appeared in assistant text.
-            # content_blocks (type: "citation") is fully populated at this point.
-            # Reconstruct context[] from citation_registry for each retrieve call.
+            # Narrow section_coverage to only sections whose [N] actually appeared
+            # in assistant text. content_blocks (type: "citation") is fully populated
+            # at this point. Reconstruct context[] from the section-keyed citation
+            # registry for each retrieve call.
             if retrieve_calls:
                 emitted_indices = {cb["index"] for cb in content_blocks if cb.get("type") == "citation"}
                 if emitted_indices:
-                    emitted_source_ids = {
+                    emitted_section_ids = {
                         sid for sid, entry in citation_registry.items() if entry.index in emitted_indices
                     }
                 else:
-                    emitted_source_ids = set()
+                    emitted_section_ids = set()
                 for call in retrieve_calls:
-                    # Narrow source_coverage only when citations were emitted.
-                    if emitted_source_ids:
-                        call["source_coverage"] = [
-                            s for s in call["source_coverage"] if s.get("source_id") in emitted_source_ids
+                    # Narrow section_coverage only when citations were emitted.
+                    if emitted_section_ids:
+                        call["section_coverage"] = [
+                            s for s in call["section_coverage"] if s.get("section_id") in emitted_section_ids
                         ]
                     # Always reconstruct context[] from citation registry.
-                    # One entry per source in source_coverage (narrowed or full).
-                    source_ids_in_call = {s["source_id"] for s in call["source_coverage"]}
+                    # One entry per section in section_coverage (narrowed or full).
+                    section_ids_in_call = {s["section_id"] for s in call["section_coverage"]}
                     context_entries = []
-                    for sid in source_ids_in_call:
+                    for sid in section_ids_in_call:
                         entry = citation_registry.get(sid)
                         if entry is not None:
                             context_entries.append(
                                 {
+                                    "section_id": sid,
+                                    "section_seq": entry.seq,
                                     "chunk_id": entry.first_chunk_id or "",
                                     "citation_index": entry.index,
-                                    "source_id": sid,
+                                    "source_id": entry.source_id,
                                     "source_title": entry.title or "",
                                     "timestamp_start": entry.timestamp_start or 0.0,
                                     "timestamp_end": entry.timestamp_end or 0.0,
@@ -800,13 +812,19 @@ async def run_chat_turn(
                     call["context"] = context_entries
 
             for rs in read_source_calls:
-                entry = citation_registry.get(rs["source_id"])
-                rs["source_title"] = entry.title if entry else ""
-                # read_source rows carry no chunk context — the read is continuous
-                # transcript, not a fenced locator result. A synthetic entry with
-                # zeroed fields would render as "0:00 / 0.00" in the frontend
-                # ledger; an empty array lets the renderer branch on tool_name
-                # and show a "read in full" affordance instead.
+                # registry is keyed by section_id; look up by section_id first, fall
+                # back to source_id for legacy messages persisted before T9.
+                section_id = rs.get("section_id", "")
+                entry = citation_registry.get(section_id) if section_id else None
+                if entry is None:
+                    entry = citation_registry.get(rs["source_id"])
+                if entry is not None and not rs.get("source_title"):
+                    rs["source_title"] = entry.title or ""
+                # read_section rows carry no chunk context — the read is bounded
+                # verbatim transcript, not a fenced locator result. A synthetic entry
+                # with zeroed fields would render as "0:00 / 0.00" in the frontend
+                # ledger; an empty array lets the renderer branch on tool_name and
+                # show a "read in full" affordance instead.
                 rs["context"] = []
             all_calls = retrieve_calls + read_source_calls
 

@@ -1,5 +1,9 @@
+import json
+from unittest.mock import patch
+
 import pytest
 
+from bibilab.routers.chat import _client_tool_result
 from tests.factories import ConversationFactory, MessageFactory
 
 pytestmark = pytest.mark.integration
@@ -222,3 +226,176 @@ async def test_get_or_create_conversation_returns_existing(tmp_bibilab_home):
     existing_id = await ConversationFactory.build("list-1")
     result_id = await get_or_create_conversation("list-1")
     assert result_id == existing_id
+
+
+@pytest.mark.asyncio
+async def test_chat_persists_section_grained_rag(client, mock_stream_llm):
+    """Persisted metadata.rag.calls[0] is section-shaped: section_coverage +
+    context[] each carry section_id, not the legacy source_* keys."""
+    from bibilab.pipeline._shared import StreamEvent, ToolCall
+    from bibilab.pipeline.chat_tools import FIND_PASSAGES_TOOL
+
+    list_id = (await client.post("/lists", json={"name": "SecGrained"})).json()["id"]
+    iteration_count = 0
+
+    async def fake_stream_llm(messages, cfg, tools=None, system=None, **kwargs):
+        nonlocal iteration_count
+        iteration_count += 1
+        if iteration_count == 1:
+            yield StreamEvent(
+                type="tool_call",
+                tool_call=ToolCall(id="tc1", name=FIND_PASSAGES_TOOL.name, arguments={"query": "q"}),
+            )
+            yield StreamEvent(type="done")
+        else:
+            yield StreamEvent(type="delta", content="answer")
+            yield StreamEvent(type="done")
+
+    mock_stream_llm.side_effect = fake_stream_llm
+
+    async def fake_execute_tool(**kwargs):
+        return {
+            "query": kwargs.get("arguments", {}).get("query", ""),
+            "tool_name": FIND_PASSAGES_TOOL.name,
+            "candidates_evaluated": 1,
+            "sources_with_hits": 1,
+            "sources_total": 1,
+            "reranked": False,
+            "scoped_pool_size": 1,
+            "facet_scope": {
+                "sequence_number": None,
+                "season_number": None,
+                "matched_count": None,
+                "no_match": False,
+            },
+            "section_coverage": [
+                {
+                    "section_id": "sec-1",
+                    "source_id": "s1",
+                    "source_title": "Video One",
+                    "seq": 1,
+                    "timestamp_start": 12.5,
+                    "timestamp_end": 60.0,
+                }
+            ],
+            "_chunks": "",
+            "_turn_indices": [1],
+        }
+
+    with patch("bibilab.routers.chat.execute_tool", fake_execute_tool):
+        resp = await client.post(f"/lists/{list_id}/chat", json={"message": "q"})
+    assert resp.status_code == 200
+
+    conv = (await client.get(f"/lists/{list_id}/conversation")).json()
+    assistant_msgs = [m for m in conv["messages"] if m["role"] == "assistant"]
+    assert assistant_msgs, "no assistant message persisted"
+    rag = assistant_msgs[-1]["metadata"]["rag"]
+    assert len(rag["calls"]) == 1
+    call = rag["calls"][0]
+    assert call["tool_name"] == "find_passages"
+    # section_coverage replaces source_coverage
+    assert "section_coverage" in call
+    assert "source_coverage" not in call
+    assert all("section_id" in s for s in call["section_coverage"])
+
+
+@pytest.mark.asyncio
+async def test_chat_citation_block_carries_section_id_and_timestamp(client, mock_stream_llm):
+    """Citation content_blocks include section_id + timestamp_start (T7 → T9 wiring)."""
+    from bibilab.pipeline._shared import StreamEvent, ToolCall
+    from bibilab.pipeline.chat_tools import FIND_PASSAGES_TOOL, CitationRegistryEntry
+    from bibilab.routers import chat as chat_module
+
+    list_id = (await client.post("/lists", json={"name": "CitSection"})).json()["id"]
+
+    async def fake_stream(messages, cfg, tools=None, execute_tool_fn=None, system=None, **kwargs):
+        # Manually populate the registry to simulate execute_find_passages having run.
+        # The stream yields a citation event with section_id + timestamp_start directly.
+        yield StreamEvent(
+            type="tool_call",
+            tool_call=ToolCall(id="tc1", name=FIND_PASSAGES_TOOL.name, arguments={"query": "q"}),
+        )
+        registry = kwargs.get("registry")
+        if registry is not None:
+            registry["sec-1"] = CitationRegistryEntry(
+                index=1,
+                section_id="sec-1",
+                source_id="s1",
+                title="Video One",
+                seq=1,
+                citable=True,
+                chunk_ids={"s1_12_30"},
+                first_chunk_id="s1_12_30",
+                timestamp_start=12.5,
+                timestamp_end=60.0,
+                rerank_score=0.9,
+                preview="verbatim text",
+            )
+        result = await execute_tool_fn(FIND_PASSAGES_TOOL.name, {"query": "q"})
+        tool_result_data = {"name": FIND_PASSAGES_TOOL.name, "result": _client_tool_result(result)}
+        yield StreamEvent(type="tool_result", content=json.dumps(tool_result_data))
+        yield StreamEvent(
+            type="citation",
+            content=json.dumps(
+                {
+                    "index": 1,
+                    "section_id": "sec-1",
+                    "source_id": "s1",
+                    "timestamp_start": 12.5,
+                    "chunk_ids": ["s1_12_30"],
+                }
+            ),
+        )
+        yield StreamEvent(type="delta", content="answer")
+        yield StreamEvent(type="done")
+
+    async def fake_execute_tool(**kwargs):
+        return {
+            "query": "q",
+            "tool_name": FIND_PASSAGES_TOOL.name,
+            "candidates_evaluated": 1,
+            "sources_with_hits": 1,
+            "sources_total": 1,
+            "reranked": False,
+            "scoped_pool_size": 1,
+            "facet_scope": {
+                "sequence_number": None,
+                "season_number": None,
+                "matched_count": None,
+                "no_match": False,
+            },
+            "section_coverage": [
+                {
+                    "section_id": "sec-1",
+                    "source_id": "s1",
+                    "source_title": "Video One",
+                    "seq": 1,
+                    "timestamp_start": 12.5,
+                    "timestamp_end": 60.0,
+                }
+            ],
+            "_chunks": "",
+            "_turn_indices": [1],
+        }
+
+    with (
+        patch.object(chat_module, "stream_with_tools", fake_stream),
+        patch.object(chat_module, "execute_tool", fake_execute_tool),
+    ):
+        resp = await client.post(f"/lists/{list_id}/chat", json={"message": "q"})
+    assert resp.status_code == 200
+
+    conv = (await client.get(f"/lists/{list_id}/conversation")).json()
+    assistant_msgs = [m for m in conv["messages"] if m["role"] == "assistant"]
+    assert assistant_msgs, "no assistant message persisted"
+    blocks = assistant_msgs[-1]["metadata"]["content_blocks"]
+    citation_blocks = [b for b in blocks if b.get("type") == "citation"]
+    assert citation_blocks, "no citation content_block persisted"
+    cb = citation_blocks[0]
+    assert cb["section_id"] == "sec-1"
+    assert cb["timestamp_start"] == 12.5
+    # context[] is section-keyed
+    rag = assistant_msgs[-1]["metadata"]["rag"]
+    call = rag["calls"][0]
+    assert "context" in call
+    assert all("section_id" in c for c in call["context"])
