@@ -26,7 +26,7 @@ from dataclasses import dataclass, replace
 
 from bibilab.pipeline._shared import count_tokens
 from bibilab.pipeline.chunk import RagChunk, chunk_segments
-from bibilab.pipeline.transcribe import WhisperSegment
+from bibilab.pipeline.transcribe import WhisperSegment, format_turns
 
 logger = logging.getLogger(__name__)
 
@@ -170,3 +170,8 @@ def chunk_by_sections(
             )
         chunk_offset += len(per_section)
     return out
+
+
+def section_texts(segments: list[WhisperSegment], sections: list[Section]) -> list[str]:
+    """One formatted text per section, in section order."""
+    return [format_turns(segments[s.seg_start : s.seg_end + 1], include_time=False) for s in sections]

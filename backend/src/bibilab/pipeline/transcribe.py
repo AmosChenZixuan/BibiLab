@@ -257,15 +257,14 @@ async def load_transcript_text(source_id: str, *, include_time: bool = True) -> 
     Default (``include_time=True``) is the UI viewer view (turns + time, raw
     label). Digest callers pass ``include_time=False`` (turns only).
     """
-    from bibilab.db import get_transcript_segments  # local import avoids db<->pipeline cycle
+    from bibilab.db import get_transcript_segments, rows_to_segments  # local import avoids db<->pipeline cycle
 
     try:
         rows = await get_transcript_segments(source_id)
     except Exception:
         logger.exception("Failed to load transcript segments for source %s", source_id)
         raise
-    segs = [WhisperSegment(start=r["start_s"], end=r["end_s"], text=r["text"], speaker=r["speaker"]) for r in rows]
-    return format_turns(segs, include_time=include_time)
+    return format_turns(rows_to_segments(rows), include_time=include_time)
 
 
 __all__ = [

@@ -12,6 +12,7 @@ from bibilab.db import (
     get_source,
     get_source_facets,
     get_transcript_segments,
+    rows_to_segments,
 )
 from bibilab.pipeline._shared import ToolDefinition
 from bibilab.pipeline.digest import parse_facet_int
@@ -464,20 +465,20 @@ async def execute_find_passages(
         (c.source_id, c.seg_start, c.seg_end) for c in displayed if c.seg_start is not None and c.seg_end is not None
     ]
     seg_rows = await get_segments_for_ranges(ranges) if ranges else []
+    all_segs = rows_to_segments(seg_rows)  # convert once; (row, seg) pairs stay aligned below
     segs_by_source: dict[str, list[WhisperSegment]] = {}
-    for r in seg_rows:
-        segs_by_source.setdefault(r["source_id"], []).append(
-            WhisperSegment(start=r["start_s"], end=r["end_s"], text=r["text"], speaker=r["speaker"])
-        )
+    for s, r in zip(all_segs, seg_rows):
+        segs_by_source.setdefault(r["source_id"], []).append(s)
     ns_by_source = {sid: build_speaker_namespace(segs) for sid, segs in segs_by_source.items()}
 
     def _turn_body(c):
         if c.seg_start is None or c.seg_end is None or c.source_id not in segs_by_source:
             return c.content
         idx = source_id_to_index[c.source_id]
-        rows = [r for r in seg_rows if r["source_id"] == c.source_id and c.seg_start <= r["seq"] <= c.seg_end]
         chunk_segs = [
-            WhisperSegment(start=r["start_s"], end=r["end_s"], text=r["text"], speaker=r["speaker"]) for r in rows
+            s
+            for s, r in zip(all_segs, seg_rows)
+            if r["source_id"] == c.source_id and c.seg_start <= r["seq"] <= c.seg_end
         ]
         if not chunk_segs:
             return c.content

@@ -946,11 +946,10 @@ async def test_update_source_facets_missing_row_raises_lookuperror(tmp_bibilab_h
 async def test_long_source_chunks_nest_in_sections(tmp_bibilab_home: Path):
     """Acceptance: after ingest of a long source, every chunk's seg range
     is fully contained in exactly one section's seg range."""
-    from bibilab.db import bootstrap_db, create_list, write_transcript_segments
+    from bibilab.db import bootstrap_db, create_list, get_sections, write_transcript_segments
     from bibilab.pipeline.section import chunk_by_sections, derive_sections
     from bibilab.pipeline.transcribe import WhisperSegment
     from bibilab.worker import WorkerLoop
-    from tests._section_db_seams import get_sections
 
     await bootstrap_db()
     await create_list("list-1", "L", "2026-01-01T00:00:00")
@@ -977,6 +976,9 @@ async def test_long_source_chunks_nest_in_sections(tmp_bibilab_home: Path):
         sequence_number=None,
         season_number=None,
     )
+    from bibilab.pipeline.digest import SectionDigest
+
+    section_digests = [SectionDigest(summary="", keywords=[]) for _ in sections]
     # SimpleNamespace lacks model_dump(); add a lambda so cfg.model_dump() works.
     cfg = SimpleNamespace(
         transcription=SimpleNamespace(model="large-v3", language="en"),
@@ -1001,6 +1003,7 @@ async def test_long_source_chunks_nest_in_sections(tmp_bibilab_home: Path):
         list_id="list-1",
         extraction=extraction,
         sections=sections,
+        section_digests=section_digests,
         detected_language="en",
         cfg=cfg,
         sentence_segments=segs,
@@ -1053,31 +1056,39 @@ async def test_short_source_one_section_byte_identical_chunks(tmp_bibilab_home: 
 @pytest.mark.asyncio
 async def test_re_ingest_replaces_section_rows(tmp_bibilab_home: Path):
     """Re-ingest of a source replaces (does not duplicate) its section rows."""
-    from bibilab.db import bootstrap_db, create_list
+    from bibilab.db import _exec_write_sections, bootstrap_db, create_list, get_db, get_sections
+    from bibilab.pipeline.digest import SectionDigest
     from bibilab.pipeline.section import Section
-    from tests._section_db_seams import get_sections, write_sections
 
     await bootstrap_db()
     await create_list("list-1", "L", "2026-01-01T00:00:00")
     source_id = await SourceFactory.build("list-1", video_id="BV1re")
 
     # First ingest: 2 sections
-    await write_sections(
-        source_id,
-        [
-            Section(seg_start=0, seg_end=5, token_count=100, timestamp_start=0.0, timestamp_end=10.0),
-            Section(seg_start=6, seg_end=12, token_count=200, timestamp_start=11.0, timestamp_end=22.0),
-        ],
-    )
+    async with get_db() as db:
+        await _exec_write_sections(
+            db,
+            source_id,
+            [
+                Section(seg_start=0, seg_end=5, token_count=100, timestamp_start=0.0, timestamp_end=10.0),
+                Section(seg_start=6, seg_end=12, token_count=200, timestamp_start=11.0, timestamp_end=22.0),
+            ],
+            [SectionDigest(summary="s0", keywords=[]), SectionDigest(summary="s1", keywords=[])],
+        )
+        await db.commit()
     assert len(await get_sections(source_id)) == 2
 
     # Re-ingest: 1 section (different shape — re-ingest replaces, not merges)
-    await write_sections(
-        source_id,
-        [
-            Section(seg_start=0, seg_end=20, token_count=500, timestamp_start=0.0, timestamp_end=40.0),
-        ],
-    )
+    async with get_db() as db:
+        await _exec_write_sections(
+            db,
+            source_id,
+            [
+                Section(seg_start=0, seg_end=20, token_count=500, timestamp_start=0.0, timestamp_end=40.0),
+            ],
+            [SectionDigest(summary="s0", keywords=[])],
+        )
+        await db.commit()
     rows = await get_sections(source_id)
     assert len(rows) == 1
     assert rows[0]["seg_end"] == 20

@@ -3,7 +3,7 @@ import logging
 import re
 import sqlite3
 import uuid
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Iterable
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -14,7 +14,9 @@ from pypinyin import Style, lazy_pinyin
 
 import bibilab.config
 from bibilab.models.jobs import JobStatus
+from bibilab.pipeline.digest import SectionDigest
 from bibilab.pipeline.section import Section
+from bibilab.pipeline.transcribe import WhisperSegment
 
 logger = logging.getLogger(__name__)
 
@@ -377,22 +379,40 @@ async def _exec_write_sections(
     db: aiosqlite.Connection,
     source_id: str,
     sections: list[Section],
+    section_digests: list[SectionDigest],
 ) -> None:
     """Replace a source's section rows on the given connection. Does NOT
-    commit. `sections` is a list of `bibilab.pipeline.section.Section`.
+    commit. `sections` is a list of `bibilab.pipeline.section.Section`;
+    `section_digests` carries one SectionDigest per section, in seq order
+    — every section row always has a summary.
 
     Mirrors `_exec_write_transcript_segments` (DELETE+INSERT) so re-ingest
     replaces cleanly. Rows have a surrogate `id`; re-ingest changes it.
     """
+    if len(section_digests) != len(sections):
+        raise ValueError(
+            f"_exec_write_sections: section_digests length {len(section_digests)} != sections length {len(sections)}"
+        )
     await db.execute("DELETE FROM sections WHERE source_id = ?", (source_id,))
+    rows = [
+        (
+            source_id,
+            i,
+            s.seg_start,
+            s.seg_end,
+            s.token_count,
+            s.timestamp_start,
+            s.timestamp_end,
+            sd.summary,
+            json.dumps(sd.keywords),
+        )
+        for i, (s, sd) in enumerate(zip(sections, section_digests))
+    ]
     await db.executemany(
         "INSERT INTO sections (source_id, seq, seg_start, seg_end, "
-        "token_count, timestamp_start, timestamp_end) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?)",
-        [
-            (source_id, i, s.seg_start, s.seg_end, s.token_count, s.timestamp_start, s.timestamp_end)
-            for i, s in enumerate(sections)
-        ],
+        "token_count, timestamp_start, timestamp_end, summary, keywords) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        rows,
     )
 
 
@@ -400,6 +420,7 @@ async def write_source_with_segments(
     *,
     segments: list,
     sections: list | None = None,
+    section_digests: list[SectionDigest] | None = None,
     **source_fields: Any,
 ) -> None:
     """Atomically upsert a source row, its transcript segments, and its
@@ -407,21 +428,24 @@ async def write_source_with_segments(
     none — no orphaned source row, no compensating delete, no orphan
     section rows.
 
-    `sections` is optional; when omitted (legacy call sites, factory) only
-    the source + segments are written. When provided, the section rows are
-    written in the same transaction so a partial failure rolls back the
-    whole write.
+    `sections` is optional; when omitted (segments-only factory path) only
+    the source + segments are written. When provided, `section_digests` is
+    required (one per section, seq order) and the section rows are written
+    in the same transaction so a partial failure rolls back the whole
+    write.
 
     On any failure the exception propagates and the connection closes
     without a commit, so SQLite rolls the whole transaction back. FK holds
     within the transaction: the uncommitted parent source row is visible to
     the child segment / section INSERTs on the same connection.
     """
+    if sections is not None and section_digests is None:
+        raise ValueError("write_source_with_segments: section_digests is required when sections is provided")
     async with get_db() as db:
         await _exec_write_source(db, **source_fields)
         await _exec_write_transcript_segments(db, source_fields["source_id"], segments)
         if sections is not None:
-            await _exec_write_sections(db, source_fields["source_id"], sections)
+            await _exec_write_sections(db, source_fields["source_id"], sections, section_digests)
         await db.commit()
 
 
@@ -480,6 +504,73 @@ async def update_source_facets(source_id: str, **fields: object) -> None:
             # write (TOCTOU). Don't commit a no-op as success.
             raise LookupError(source_id)
         await db.commit()
+
+
+async def update_section_summaries(
+    source_id: str,
+    section_digests: list[tuple[int, str, list[str]]],
+) -> None:
+    """UPDATE existing section rows by seq. Rerun path.
+
+    Each tuple is (seq, summary, keywords). The caller is the worker's
+    rerun path, which built the tuples by zipping `get_sections(source_id)`
+    rows with the new `SectionDigest`s, so seqs are unique and exist by
+    construction. Missing or duplicate seqs are caller bugs; this helper
+    does not pre-validate.
+    """
+    if not section_digests:
+        logger.warning("update_section_summaries: empty input for source_id=%s (no-op)", source_id)
+        return
+    async with get_db() as db:
+        await db.executemany(
+            "UPDATE sections SET summary=?, keywords=? WHERE source_id=? AND seq=?",
+            [(summary, json.dumps(keywords), source_id, seq) for seq, summary, keywords in section_digests],
+        )
+        await db.commit()
+
+
+async def get_sections(source_id: str) -> list[aiosqlite.Row]:
+    """Fetch all section rows for a source, ordered by seq.
+
+    Returns all 10 columns: id, source_id, seq, seg_start, seg_end,
+    token_count, timestamp_start, timestamp_end, summary, keywords.
+    Callers (the API, the rerun path) project what they need.
+    """
+    async with get_db() as db:
+        cursor = await db.execute(
+            "SELECT id, source_id, seq, seg_start, seg_end, "
+            "token_count, timestamp_start, timestamp_end, summary, keywords "
+            "FROM sections WHERE source_id = ? ORDER BY seq",
+            (source_id,),
+        )
+        return await cursor.fetchall()
+
+
+def rows_to_segments(rows: Iterable[aiosqlite.Row]) -> list[WhisperSegment]:
+    """Reconstruct WhisperSegment objects from transcript_segments DB rows."""
+    return [
+        WhisperSegment(
+            start=r["start_s"],
+            end=r["end_s"],
+            text=r["text"],
+            speaker=r["speaker"],
+        )
+        for r in rows
+    ]
+
+
+def rows_to_sections(rows: Iterable[aiosqlite.Row]) -> list[Section]:
+    """Reconstruct Section objects from sections DB rows."""
+    return [
+        Section(
+            seg_start=r["seg_start"],
+            seg_end=r["seg_end"],
+            token_count=r["token_count"],
+            timestamp_start=r["timestamp_start"] or 0.0,
+            timestamp_end=r["timestamp_end"] or 0.0,
+        )
+        for r in rows
+    ]
 
 
 async def get_source(source_id: str) -> aiosqlite.Row | None:

@@ -2,6 +2,7 @@
 
 import json
 
+import httpx
 import pytest
 
 from bibilab.adapters.base import VideoMeta
@@ -13,10 +14,14 @@ from bibilab.pipeline._shared import (
 from bibilab.pipeline.audio import PipelineError
 from bibilab.pipeline.digest import (
     _MAX_KEYWORDS,
+    _REFINE_SECTION_MARKER,
     DigestResult,
+    SectionDigest,
     _parse_response,
+    _parse_section_digest_response,
     clean_str_facet,
     digest,
+    digest_sections,
     parse_facet_int,
 )
 
@@ -445,3 +450,186 @@ class TestCleanStrFacet:
         for bad in [5, True, 1.5, ["x"], {}]:
             with pytest.raises(ValueError):
                 clean_str_facet(bad)
+
+
+class TestSectionDigest:
+    def test_section_digest_parses_summary_and_keywords(self):
+        json_str = '{"summary": "A section.", "keywords": ["x", "y"]}'
+        sd = _parse_section_digest_response(json_str)
+        assert isinstance(sd, SectionDigest)
+        assert sd.summary == "A section."
+        assert sd.keywords == ["x", "y"]
+
+    def test_section_digest_has_no_facet_fields(self):
+        # SectionDigest is the per-section view; facets are source-level
+        # (extracted once at section 1 on DigestResult). They MUST NOT appear
+        # on SectionDigest.
+        assert not hasattr(SectionDigest, "series_name")
+        assert not hasattr(SectionDigest, "sequence_number")
+        assert not hasattr(SectionDigest, "season_number")
+
+    def test_section_digest_keywords_capped_at_max(self):
+        overflow = [f"k{i}" for i in range(_MAX_KEYWORDS + 4)]
+        json_str = json.dumps({"summary": "S", "keywords": overflow})
+        sd = _parse_section_digest_response(json_str)
+        assert len(sd.keywords) == _MAX_KEYWORDS
+        assert sd.keywords == overflow[:_MAX_KEYWORDS]
+
+
+def _two_section_texts() -> list[str]:
+    return ["First half of the transcript.", "Second half of the transcript."]
+
+
+class TestDigestSections:
+    def test_one_section_byte_identical_to_digest(self, mock_call_llm):
+        # 1 input text → calls digest() once, returns (DigestResult, [SectionDigest])
+        # with the section's summary/keywords matching the digest's.
+        mock_call_llm.return_value = '{"summary": "A video.", "keywords": ["x", "y"]}'
+        meta = _make_video_meta()
+        cfg = _make_ai_cfg()
+
+        extraction, section_digests = digest_sections([_two_section_texts()[0]], meta, cfg)
+
+        assert isinstance(extraction, DigestResult)
+        assert extraction.summary == "A video."
+        assert extraction.keywords == ["x", "y"]
+        # Mock was called once (the digest() call) — no refine.
+        assert mock_call_llm.call_count == 1
+        # Section digest mirrors extraction for the single-section case.
+        assert len(section_digests) == 1
+        assert section_digests[0].summary == extraction.summary
+        assert section_digests[0].keywords == extraction.keywords
+
+    def test_n_sections_runs_refine_chain(self, mock_call_llm):
+        # N=3 → first call is digest() (with title/full text), calls 2-3 are
+        # refine (with rolling context + only the current section's text).
+        mock_call_llm.side_effect = [
+            # Call 1: digest() for section 1
+            json.dumps({"summary": "Summary 1.", "keywords": ["k1"], "series_name": "S1", "sequence_number": 1}),
+            # Call 2: refine for section 2
+            json.dumps({"summary": "Summary 2.", "keywords": ["k2"]}),
+            # Call 3: refine for section 3
+            json.dumps({"summary": "Summary 3.", "keywords": ["k3"]}),
+        ]
+        meta = _make_video_meta()
+        cfg = _make_ai_cfg()
+
+        extraction, section_digests = digest_sections(_two_section_texts() + ["Third."], meta, cfg)
+
+        assert len(section_digests) == 3
+        assert [sd.summary for sd in section_digests] == ["Summary 1.", "Summary 2.", "Summary 3."]
+        # Section 1 is the digest — facets extracted once here.
+        assert extraction.series_name == "S1"
+        assert extraction.sequence_number == 1
+        # 3 LLM calls (1 digest + 2 refines).
+        assert mock_call_llm.call_count == 3
+
+    def test_refine_retry_ladder(self, mock_call_llm):
+        # Transient error on the FIRST refine call; recovery on retry.
+        mock_call_llm.side_effect = [
+            # Call 1: digest() succeeds
+            json.dumps({"summary": "Summary 1.", "keywords": ["k1"]}),
+            # Call 2: first refine attempt — transient error
+            httpx.HTTPError("transient"),
+            # Call 3: first refine retry — succeeds (strict-suffix path)
+            json.dumps({"summary": "Summary 2.", "keywords": ["k2"]}),
+        ]
+        meta = _make_video_meta()
+        cfg = _make_ai_cfg()
+
+        extraction, section_digests = digest_sections(_two_section_texts(), meta, cfg)
+
+        assert len(section_digests) == 2
+        assert section_digests[1].summary == "Summary 2."
+        # 3 calls (1 digest + 1 failed refine + 1 successful retry).
+        assert mock_call_llm.call_count == 3
+
+    def test_refine_exhausts_retries_raises_pipeline_error(self, mock_call_llm):
+        # The refine's retry ladder exhausts on a transient error → PipelineError.
+        # Section 1's result is discarded (atomic-or-nothing: caller gets nothing).
+        mock_call_llm.side_effect = [
+            # Call 1: digest() succeeds
+            json.dumps({"summary": "Summary 1.", "keywords": ["k1"]}),
+            # Calls 2-4: refine transient errors (plain + strict ×2)
+            httpx.HTTPError("transient 1"),
+            httpx.HTTPError("transient 2"),
+            httpx.HTTPError("transient 3"),
+        ]
+        meta = _make_video_meta()
+        cfg = _make_ai_cfg()
+
+        with pytest.raises(PipelineError, match="exhausted all retries"):
+            digest_sections(_two_section_texts(), meta, cfg)
+
+    def test_rolling_context_grows_monotonically(self, mock_call_llm):
+        # N=3: each refine prompt's "running" field contains all prior summaries.
+        captured_prompts: list[str] = []
+
+        def capture(prompt, cfg, llm_timeout=120):
+            captured_prompts.append(prompt)
+            if len(captured_prompts) == 1:
+                return json.dumps({"summary": "Sum 1.", "keywords": ["k1"]})
+            return json.dumps({"summary": f"Sum {len(captured_prompts)}.", "keywords": [f"k{len(captured_prompts)}"]})
+
+        mock_call_llm.side_effect = capture
+        meta = _make_video_meta()
+        cfg = _make_ai_cfg()
+
+        digest_sections(_two_section_texts() + ["Third."], meta, cfg)
+
+        # Call 2's prompt (refine of section 2) must contain section 1's summary.
+        assert "Sum 1." in captured_prompts[1]
+        # Call 3's prompt (refine of section 3) must contain both prior summaries.
+        assert "Sum 1." in captured_prompts[2]
+        assert "Sum 2." in captured_prompts[2]
+        # Prior sections' markers are in the rolling context (no current-section
+        # marker — the LLM identifies the current section by the "Current section
+        # transcript:" block in the template).
+        assert _REFINE_SECTION_MARKER.format(n=1) in captured_prompts[1]
+        assert _REFINE_SECTION_MARKER.format(n=1) in captured_prompts[2]
+        assert _REFINE_SECTION_MARKER.format(n=2) in captured_prompts[2]
+
+    def test_facets_extracted_only_from_section_1(self, mock_call_llm):
+        # N=3: only the Section-1 call (digest()) returns facet fields in its
+        # JSON. The refine prompts' responses have NO facet fields, and the
+        # parsed SectionDigest instances therefore have no facet attributes.
+        mock_call_llm.side_effect = [
+            json.dumps({"summary": "S1.", "keywords": ["k1"], "series_name": "X", "sequence_number": 7}),
+            json.dumps({"summary": "S2.", "keywords": ["k2"]}),
+            json.dumps({"summary": "S3.", "keywords": ["k3"]}),
+        ]
+        meta = _make_video_meta()
+        cfg = _make_ai_cfg()
+
+        extraction, section_digests = digest_sections(_two_section_texts() + ["Third."], meta, cfg)
+
+        # Section 1 carries the source-level facets.
+        assert extraction.series_name == "X"
+        assert extraction.sequence_number == 7
+        # Sections 2-3 have NO facet attributes.
+        for sd in section_digests:
+            assert not hasattr(sd, "series_name")
+
+    def test_refine_prompt_in_en_and_zh(self, mock_call_llm):
+        # The refine-specific body is reachable in both languages.
+        captured_prompts: list[str] = []
+
+        def capture(prompt, cfg, llm_timeout=120):
+            captured_prompts.append(prompt)
+            if len(captured_prompts) == 1:
+                return json.dumps({"summary": "S1.", "keywords": ["k1"]})
+            return json.dumps({"summary": "S2.", "keywords": ["k2"]})
+
+        mock_call_llm.side_effect = capture
+        meta = _make_video_meta()
+
+        # en
+        digest_sections(_two_section_texts(), meta, _make_ai_cfg("en"))
+        # The refine prompt's body is in English.
+        assert "Output ONE JSON object" in captured_prompts[1]
+
+        captured_prompts.clear()
+        # zh
+        digest_sections(_two_section_texts(), meta, _make_ai_cfg("zh"), ui_lang="zh")
+        # The refine prompt is wrapped by the Chinese language directive.
+        assert "请用中文回答" in captured_prompts[1]

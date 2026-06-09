@@ -24,7 +24,7 @@ routers/          — one APIRouter per module; aggregated in main.py
   chat.py           /lists/:id/chat (SSE streaming + cancel), /lists/:id/chat/:msg_id/stream (reattach), /lists/:id/conversation (CRUD), /debug/messages/:msg_id (prompt-trace dump read, debug_router); stream_with_tools loop; classify_error (SDK exception → i18n error code)
   lists.py          /lists/* (CRUD)
   ingest.py         /ingest/url (POST)
-  sources.py        /sources/* (source content, covers, rerun, PATCH facets manual edit)
+  sources.py        /sources/* (source content, covers, sections list, rerun, PATCH facets manual edit)
 models/           — Pydantic request/response models + domain errors
   chat.py           ChatRequest, MessageResponse, ConversationResponse
 pipeline/         — one file per stage
@@ -153,10 +153,10 @@ Index: `idx_segments_source` on `(source_id, seq)`. Replaces the on-disk `transc
 | `token_count` | Sum of `count_tokens(seg.text)` across the section's segments |
 | `timestamp_start` | Wall-clock seconds at `segments[seg_start].start` |
 | `timestamp_end` | Wall-clock seconds at `segments[seg_end].end` |
-| `summary` | LLM refine-summary, NULL until #453 lands |
-| `keywords` | LLM keywords, NULL until #453 lands |
+| `summary` | LLM refine-summary; always populated (written with the section row) |
+| `keywords` | LLM keywords (JSON array); always populated |
 
-Index: `idx_sections_source` on `(source_id, seq)`. Chunks produced per-section nest physically (a chunk's `[seg_start, seg_end]` is fully contained in exactly one section's). Production write path is `_exec_write_sections` (called from `write_source_with_segments` in the same transaction as source + segments). Summary/keywords population is deferred to #453.
+Index: `idx_sections_source` on `(source_id, seq)`. Chunks produced per-section nest physically (a chunk's `[seg_start, seg_end]` is fully contained in exactly one section's). Production write path is `_exec_write_sections` (called from `write_source_with_segments` in the same transaction as source + segments); `section_digests` is required whenever `sections` is provided, so every section row carries a summary.
 
 ### `chunks_fts` — FTS5 virtual table
 
@@ -171,7 +171,7 @@ POST /ingest/url → resolve → dedup check → create job(s)
 
 - Dedup via `get_video_statuses` (sources + jobs); skip if processed or in-flight.
 - Full re-process: DELETE /sources/:id then re-ingest.
-- POST /sources/:id/rerun re-runs digest only (LLM summary, keywords, facets); transcript is reused.
+- POST /sources/:id/rerun re-runs the digest section-by-section (`digest_sections` over the stored section rows; updates each section's summary/keywords + the source mirror); transcript and sections are reused, never re-derived. A source with 0 section rows fails loud (re-ingest).
 - Delete removes ChromaDB embeddings and `sources` row (transcript segments cascade via FK)
 
 ### Pipeline stages (per video)
@@ -182,7 +182,7 @@ POST /ingest/url → resolve → dedup check → create job(s)
 4. **punctuate** → ct-punc (zh-gated) → punctuated sentence segments persisted to `transcript_segments`
 5. **derive_sections** → token+pause boundary, target=12000 (zone [7200, 16800]). Short videos = 1 section spanning all. Produces `sections` rows.
 6. **chunk** → greedily merge consecutive **sentence** segments within each section to token target, split at trustworthy sentence boundary. Records `seg_start`/`seg_end` per chunk (source-global indices). Chunks physically nest in sections.
-7. **digest** → LLM: summary, keywords → denormalized into `sources` (parallel with embed)
+7. **digest** → `digest_sections`: section 1 via `digest()` (summary, keywords, facets — extracted once), sections 2..N via a refine prompt with rolling context. Per-section summary/keywords land on each `sections` row; section[0] is mirrored to `sources`. 1-section sources are byte-identical to the pre-section path. (parallel with embed)
 8. **embed** → store chunks in ChromaDB with per-source and per-list scope (parallel with digest). Chroma metadata keys on `source_id` (+ `seg_start`/`seg_end`), not `video_id`.
 9. **write_source** → upsert source row + transcript_segments + sections atomically in one transaction (via `write_source_with_segments`)
 

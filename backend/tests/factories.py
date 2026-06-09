@@ -29,6 +29,9 @@ from typing import Any
 import aiosqlite
 
 from bibilab.db import get_db, write_source_with_segments
+from bibilab.pipeline.digest import SectionDigest
+from bibilab.pipeline.section import Section
+from bibilab.pipeline.transcribe import WhisperSegment
 
 
 def _now() -> str:
@@ -142,3 +145,62 @@ class MessageFactory:
             _now(),
             fields["status"],
         )
+
+
+class SectionedSourceFactory:
+    """Factory for sources with sections and segment rows pre-populated.
+
+    Returns (source_id, segments, sections, section_digests). Defaults: 30
+    segments of 1-second `s{i}.` text → 3 sections of 10 segments each.
+    Pass `n_segments` to change segment count. `section_digests` defaults
+    to one placeholder `SectionDigest(summary=f"S{i} section.",
+    keywords=[f"k{i}"])` per section. Pass any of these to override.
+    """
+
+    @staticmethod
+    async def build(
+        list_id: str,
+        *,
+        n_segments: int = 30,
+        section_digests: list[SectionDigest] | None = None,
+        **source_overrides: Any,
+    ) -> tuple[str, list[WhisperSegment], list[Section], list[SectionDigest]]:
+        source_id = source_overrides.pop("source_id", None) or str(uuid.uuid4())
+        segments = [
+            WhisperSegment(start=float(i), end=float(i + 1), text=f"s{i}.", speaker=None) for i in range(n_segments)
+        ]
+        n_sections = max(1, n_segments // 10)
+        segs_per_section = max(1, n_segments // n_sections)
+        sections: list[Section] = []
+        for s_idx in range(n_sections):
+            seg_start = s_idx * segs_per_section
+            seg_end = min(seg_start + segs_per_section - 1, n_segments - 1)
+            if seg_start > n_segments - 1:
+                break
+            sections.append(
+                Section(
+                    seg_start=seg_start,
+                    seg_end=seg_end,
+                    token_count=100,
+                    timestamp_start=float(seg_start),
+                    timestamp_end=float(seg_end + 1),
+                )
+            )
+        if section_digests is None:
+            section_digests = [
+                SectionDigest(summary=f"S{i} section.", keywords=[f"k{i}"]) for i in range(len(sections))
+            ]
+        # Reuse SourceFactory's defaults; the source_id must match.
+        merged: dict[str, Any] = {
+            **SourceFactory._DEFAULTS,
+            **source_overrides,
+            "list_id": list_id,
+            "source_id": source_id,
+        }
+        await write_source_with_segments(
+            segments=segments,
+            sections=sections,
+            section_digests=section_digests,
+            **merged,
+        )
+        return source_id, segments, sections, section_digests

@@ -1,6 +1,7 @@
 import json
 from datetime import datetime
 
+import aiosqlite
 from pydantic import BaseModel, field_validator
 
 
@@ -51,6 +52,36 @@ class SourceContentResponse(BaseModel):
             series_name=source["series_name"],
             sequence_number=source["sequence_number"],
             season_number=source["season_number"],
+        )
+
+
+class SectionListItem(BaseModel):
+    """Projected section row for GET /sources/{id}/sections.
+
+    Internal columns (id, source_id, seg_start, seg_end, token_count) are
+    not exposed — they're an implementation detail of the rerun path.
+    """
+
+    seq: int
+    summary: str
+    keywords: list[str]
+    timestamp_start: float
+    timestamp_end: float
+
+    @classmethod
+    def from_row(cls, row: aiosqlite.Row) -> "SectionListItem":
+        """Project a sections-table row to the API response shape.
+
+        Every section row carries a summary/keywords (written with the
+        section in one transaction). Internal columns (id, source_id,
+        seg_start, seg_end, token_count) are not exposed.
+        """
+        return cls(
+            seq=row["seq"],
+            summary=row["summary"],
+            keywords=json.loads(row["keywords"]),
+            timestamp_start=row["timestamp_start"],
+            timestamp_end=row["timestamp_end"],
         )
 
 

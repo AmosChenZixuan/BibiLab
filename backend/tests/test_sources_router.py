@@ -405,3 +405,98 @@ async def test_source_content_reads_transcript_from_segments_table(client: httpx
     resp = await client.get("/sources/src-1")
     assert resp.status_code == 200
     assert resp.json()["transcript"] == "[SPK_0 @0:00] 你好。"
+
+
+@pytest.mark.asyncio
+async def test_get_source_sections_returns_projected_list(client: httpx.AsyncClient, tmp_bibilab_home: Path):
+    from bibilab.db import create_list, write_source_with_segments
+    from bibilab.pipeline.digest import SectionDigest
+    from bibilab.pipeline.section import Section
+    from bibilab.pipeline.transcribe import WhisperSegment
+
+    await create_list("list-sections", "Sections Test", "2025-01-01T00:00:00Z")
+
+    source_id = "src-sections-001"
+    segments = [WhisperSegment(start=float(i), end=float(i + 1), text=f"s{i}.", speaker=None) for i in range(20)]
+    sections = [
+        Section(seg_start=0, seg_end=9, token_count=100, timestamp_start=0.0, timestamp_end=10.0),
+        Section(seg_start=10, seg_end=19, token_count=100, timestamp_start=10.0, timestamp_end=20.0),
+    ]
+    await write_source_with_segments(
+        segments=segments,
+        sections=sections,
+        section_digests=[
+            SectionDigest(summary="Sum 0", keywords=["k0"]),
+            SectionDigest(summary="Sum 1", keywords=["k1"]),
+        ],
+        source_id=source_id,
+        video_id="BVsections",
+        platform="bilibili",
+        list_id="list-sections",
+        title="Sections Test Video",
+        summary="Top-level",
+        keywords=["k"],
+        cover_url=None,
+        source_url="https://www.bilibili.com/video/BVsections",
+        duration_seconds=20,
+        uploader="TestUploader",
+        language="en",
+        whisper_model="x",
+        ai_model="y",
+        settings_snapshot={},
+    )
+
+    resp = await client.get(f"/sources/{source_id}/sections")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data) == 2
+    assert data[0] == {
+        "seq": 0,
+        "summary": "Sum 0",
+        "keywords": ["k0"],
+        "timestamp_start": 0.0,
+        "timestamp_end": 10.0,
+    }
+    assert data[1]["seq"] == 1
+    # Response must NOT include internal columns.
+    for row in data:
+        assert "id" not in row
+        assert "source_id" not in row
+        assert "seg_start" not in row
+        assert "seg_end" not in row
+        assert "token_count" not in row
+
+
+@pytest.mark.asyncio
+async def test_get_source_sections_404_for_missing_source(client: httpx.AsyncClient):
+    resp = await client.get("/sources/does-not-exist/sections")
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_get_source_sections_empty_list_is_200(client: httpx.AsyncClient, tmp_bibilab_home: Path):
+    """Source exists but has no section rows — API must be honest about it."""
+    from bibilab.db import bootstrap_db, create_list
+
+    await bootstrap_db()
+    await create_list("list-no-sections", "No Sections Test", "2025-01-01T00:00:00Z")
+
+    # Use SourceFactory to create a source without sections (no segments/sections written)
+    import uuid
+
+    sid = str(uuid.uuid4())
+    await SourceFactory.build(
+        "list-no-sections",
+        source_id=sid,
+        video_id="BVnoSections",
+        title="No Sections Video",
+        summary="s",
+        keywords=["k"],
+        source_url="https://www.bilibili.com/video/BVnoSections",
+        duration_seconds=10,
+        uploader="U",
+    )
+
+    resp = await client.get(f"/sources/{sid}/sections")
+    assert resp.status_code == 200
+    assert resp.json() == []
