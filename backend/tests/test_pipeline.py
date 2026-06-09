@@ -480,7 +480,8 @@ def test_resolved_lang_with_explicit_language():
 # ---------------------------------------------------------------------------
 # _build_initial_prompt language instruction
 # (replaces the old _generate_artifact tests; the lang-instruction contract
-# moved into _build_initial_prompt's call to _resolved_prompt_block)
+# now lives directly in _build_initial_prompt's call to _resolved_lang,
+# _LANG_INSTRUCTION, and _lang_output_directive)
 # ---------------------------------------------------------------------------
 
 

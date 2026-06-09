@@ -46,6 +46,7 @@ from bibilab.pipeline.punctuate import punctuate
 from bibilab.pipeline.section import Section, chunk_by_sections, derive_sections
 from bibilab.pipeline.transcribe import (
     WhisperSegment,
+    _row_to_whisper_segment,
     format_turns,
     load_transcript_text,
     transcribe,
@@ -70,11 +71,22 @@ _PROMPT_OVERHEAD_TOKENS = 500
 _SOFT_COST_BATCH_THRESHOLD = 3
 
 
-@dataclass
+@dataclass(frozen=True)
 class _SectionView:
     """A section's verbatim text + the metadata needed to render its
     multi-batch header. Built once per source, then greedy-packed into
-    batches by the artifact refine flow."""
+    batches by the artifact refine flow.
+
+    Invariants:
+    - ``text`` is the verbatim output of ``format_turns(include_time=False)``
+      over the section's segment slice.
+    - ``token_count`` is the section's precomputed DB value and MUST equal
+      ``count_tokens(text)`` — both ``_pack_sections`` and the per-section
+      budget check trust it.
+    - ``timestamp_end >= timestamp_start``.
+    - ``source_title`` is a snapshot at build time (intentional: artifact
+      output should reflect a stable moment).
+    """
 
     source_id: str
     source_title: str
@@ -238,8 +250,8 @@ async def _build_section_views(source_ids: list[str]) -> list[_SectionView]:
     re-ingest required")`` (fail-loud — pairs with the one-shot backfill
     that populates pre-existing sources, so this should never fire in
     production post-backfill). Segments are loaded once per source; the
-    text is ``format_turns`` with ``include_time=False`` (matches today's
-    artifact input).
+    text is ``format_turns`` with ``include_time=False`` (matches the
+    pre-batching combined-transcript shape).
     """
     views: list[_SectionView] = []
     for source_id in source_ids:
@@ -249,24 +261,24 @@ async def _build_section_views(source_ids: list[str]) -> list[_SectionView]:
         rows = await get_section_ranges(source_id)
         if not rows:
             raise PipelineError(f"Source {source_id!r} has no sections; re-ingest required")
-        # Load the source's segments once.
         seg_rows = await get_transcript_segments(source_id)
         if not seg_rows:
             raise PipelineError(f"Source {source_id!r} has no transcript")
-        # Index by seq for slicing.
         by_seq = {r["seq"]: r for r in seg_rows}
         title = source["title"]
         for row in rows:
             slice_rows = [by_seq[s] for s in range(row["seg_start"], row["seg_end"] + 1) if s in by_seq]
-            slice_segs = [
-                WhisperSegment(
-                    start=r["start_s"],
-                    end=r["end_s"],
-                    text=r["text"],
-                    speaker=r["speaker"],
+            if not slice_rows:
+                # The atomic write contract from #452 makes this unreachable
+                # in production (sections + segments land in the same
+                # transaction), but fail-loud rather than silently render
+                # an empty section.
+                raise PipelineError(
+                    f"Source {source_id!r} section {row['seq']} references "
+                    f"missing segments ({row['seg_start']}..{row['seg_end']}); "
+                    f"re-ingest required"
                 )
-                for r in slice_rows
-            ]
+            slice_segs = [_row_to_whisper_segment(r) for r in slice_rows]
             text = format_turns(slice_segs, include_time=False)
             views.append(
                 _SectionView(
@@ -324,9 +336,9 @@ async def _refine_artifact(
     single-``_call_llm`` behavior, with the byte-identical prompt template
     produced by ``_build_initial_prompt``.
 
-    When sections don't fit, the multi-batch path (filled in by a follow-up
-    task) calls ``_call_llm`` once per batch: batch 1 produces an initial
-    draft; batch k>1 refines the running draft with new sections.
+    When sections don't fit, the multi-batch path calls ``_call_llm`` once
+    per batch: batch 1 produces an initial draft; batch k>1 refines the
+    running draft with new sections.
 
     A single section that alone exceeds the per-batch budget raises
     ``PipelineError`` (sections are atomic — never split). A batch whose
@@ -378,7 +390,7 @@ async def _refine_artifact(
         )
         return await _call_llm_with_retry(llm_prompt, cfg, label="artifact batch 1/1")
 
-    # ---- Multi-batch path (filled in by the next task) ----
+    # ---- Multi-batch path ----
     return await _refine_artifact_multi_batch(
         prompt=prompt,
         batches=batches,
@@ -399,11 +411,11 @@ async def _refine_artifact_multi_batch(
     'integrate' directive. The final ArtifactResult is the last call's
     parsed output.
 
-    By construction, the per-batch prompt fits the budget: batch 1 is
-    the first batch's sections (greedy-packed to ≤ budget tokens),
-    batches k>1 add the running draft + an integrate directive but the
-    draft fits within the reserved budget. So ``ContextWindowExceededError``
-    should never fire on the multi-batch path.
+    The new-sections text per batch is greedy-packed to ≤ budget tokens;
+    the running draft + boilerplate are bounded by ``_DRAFT_RESERVE_TOKENS``
+    and ``_PROMPT_OVERHEAD_TOKENS`` (heuristic reserves — pathological
+    growth of the running draft could still overflow; the retry ladder
+    surfaces that as ``PipelineError``).
     """
     draft: ArtifactResult | None = None
     for i, batch in enumerate(batches, start=1):

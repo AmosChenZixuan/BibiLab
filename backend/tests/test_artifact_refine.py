@@ -566,3 +566,121 @@ async def test_run_artifact_job_uses_refine_artifact_single_batch(tmp_bibilab_ho
     content_path = tmp_bibilab_home / "artifacts" / "list-1" / "art-1.md"
     assert content_path.exists()
     assert content_path.read_text() == "My body."
+
+
+@pytest.mark.asyncio
+async def test_run_artifact_job_batch_failure_writes_no_partial_artifact(tmp_bibilab_home):
+    """End-to-end: when _refine_artifact raises PipelineError, the job
+    ends in 'failed' status, the artifact row is not created, and the
+    content file is not written (no partial artifact)."""
+    from bibilab.db import create_job, get_artifact, get_job
+    from bibilab.pipeline.audio import PipelineError as PE
+
+    await bootstrap_db()
+    await create_list("list-1", "L", "2026-01-01T00:00:00")
+    source_id = await SourceFactory.build("list-1", video_id="BV1")
+    await write_source_with_segments(
+        segments=[WhisperSegment(start=0.0, end=1.0, text="hello", speaker="SPK_0")],
+        sections=[Section(seg_start=0, seg_end=0, token_count=1, timestamp_start=0.0, timestamp_end=1.0)],
+        source_id=source_id,
+        video_id="BV1",
+        platform="bilibili",
+        list_id="list-1",
+        title="T",
+        summary="",
+        keywords=[],
+        cover_url=None,
+        source_url="https://x",
+        duration_seconds=0,
+        uploader="u",
+        language="en",
+        whisper_model="large-v3",
+        ai_model="gpt-4o",
+        settings_snapshot={},
+    )
+
+    job_id = await create_job(
+        "artifact",
+        {
+            "list_id": "list-1",
+            "artifact_id": "art-fail",
+            "type": "study_guide",
+            "prompt": "summarize",
+            "source_ids": [source_id],
+        },
+    )
+    cfg = BibilabConfig()
+    worker = WorkerLoop(home=tmp_bibilab_home, config=cfg, adapter=None)
+    job = {
+        "id": job_id,
+        "meta": json.dumps(
+            {
+                "list_id": "list-1",
+                "artifact_id": "art-fail",
+                "type": "study_guide",
+                "prompt": "summarize",
+                "source_ids": [source_id],
+            }
+        ),
+    }
+
+    async def _fake_refine_fail(*, prompt, sections, cfg, ui_lang=None):
+        raise PE("simulated LLM failure")
+
+    with patch("bibilab.worker._refine_artifact", side_effect=_fake_refine_fail):
+        await worker._run_artifact_job(job)
+
+    # Job is in failed status with the error message.
+    job_row = await get_job(job_id)
+    assert job_row is not None
+    assert job_row["status"] == "failed"
+    assert "simulated LLM failure" in (job_row["error"] or "")
+    # No artifact row created, no content file written.
+    assert await get_artifact("art-fail") is None
+    content_path = tmp_bibilab_home / "artifacts" / "list-1" / "art-fail.md"
+    assert not content_path.exists()
+
+
+@pytest.mark.asyncio
+async def test_run_artifact_job_no_sections_fails_loud(tmp_bibilab_home):
+    """End-to-end: a source with no `sections` rows (pre-backfill state)
+    causes _run_artifact_job to fail the job with the documented message."""
+    from bibilab.db import create_job, get_job
+
+    await bootstrap_db()
+    await create_list("list-1", "L", "2026-01-01T00:00:00")
+    # Source without sections.
+    source_id = await SourceFactory.build("list-1", video_id="BV1")
+
+    job_id = await create_job(
+        "artifact",
+        {
+            "list_id": "list-1",
+            "artifact_id": "art-nosec",
+            "type": "study_guide",
+            "prompt": "summarize",
+            "source_ids": [source_id],
+        },
+    )
+    cfg = BibilabConfig()
+    worker = WorkerLoop(home=tmp_bibilab_home, config=cfg, adapter=None)
+    job = {
+        "id": job_id,
+        "meta": json.dumps(
+            {
+                "list_id": "list-1",
+                "artifact_id": "art-nosec",
+                "type": "study_guide",
+                "prompt": "summarize",
+                "source_ids": [source_id],
+            }
+        ),
+    }
+
+    await worker._run_artifact_job(job)
+
+    # Job is failed with the documented message.
+    job_row = await get_job(job_id)
+    assert job_row is not None
+    assert job_row["status"] == "failed"
+    assert "no sections; re-ingest required" in (job_row["error"] or "")

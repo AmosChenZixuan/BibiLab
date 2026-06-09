@@ -264,8 +264,20 @@ async def load_transcript_text(source_id: str, *, include_time: bool = True) -> 
     except Exception:
         logger.exception("Failed to load transcript segments for source %s", source_id)
         raise
-    segs = [WhisperSegment(start=r["start_s"], end=r["end_s"], text=r["text"], speaker=r["speaker"]) for r in rows]
+    segs = [_row_to_whisper_segment(r) for r in rows]
     return format_turns(segs, include_time=include_time)
+
+
+def _row_to_whisper_segment(row) -> WhisperSegment:
+    """Map a transcript_segments DB row to a WhisperSegment. Single source
+    of truth for the row→typed mapping (also used by chat_tools and the
+    artifact section views)."""
+    return WhisperSegment(
+        start=row["start_s"],
+        end=row["end_s"],
+        text=row["text"],
+        speaker=row["speaker"],
+    )
 
 
 __all__ = [
