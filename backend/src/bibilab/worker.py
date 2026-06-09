@@ -22,6 +22,8 @@ from bibilab.db import (
     get_transcript_segments,
     parse_job_meta,
     reset_stuck_jobs,
+    rows_to_sections,
+    rows_to_segments,
     update_job_meta,
     update_job_status,
     update_section_summaries,
@@ -312,16 +314,7 @@ class WorkerLoop:
             await update_job_status(job_id, JobStatus.FAILED.value, error="Source has no transcript")
             return
 
-        # Reconstruct WhisperSegment objects from the stored rows.
-        whisper_segments = [
-            WhisperSegment(
-                start=r["start_s"],
-                end=r["end_s"],
-                text=r["text"],
-                speaker=r["speaker"],
-            )
-            for r in segments
-        ]
+        whisper_segments = rows_to_segments(segments)
 
         section_rows = await get_sections(source_id)
         if not section_rows:
@@ -332,17 +325,7 @@ class WorkerLoop:
             await update_job_status(job_id, JobStatus.FAILED.value, error=msg)
             return
 
-        # Reconstruct Section objects from the stored rows.
-        sections = [
-            Section(
-                seg_start=r["seg_start"],
-                seg_end=r["seg_end"],
-                token_count=r["token_count"],
-                timestamp_start=r["timestamp_start"] or 0.0,
-                timestamp_end=r["timestamp_end"] or 0.0,
-            )
-            for r in section_rows
-        ]
+        sections = rows_to_sections(section_rows)
         section_texts_list = section_texts(whisper_segments, sections)
         video_meta = VideoMeta.from_source(source)
 
