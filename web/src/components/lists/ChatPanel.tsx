@@ -33,13 +33,8 @@ import {
   formatSubtitle,
   getErrorLabel,
   type ContentBlock,
+  type OpenSourceOpts,
 } from "@/lib/chat-utils";
-
-type OpenSourceOpts = {
-  highlightChunks?: string[];
-  sectionId?: string;
-  timestampStart?: number;
-};
 
 function CitationChip({
   index,

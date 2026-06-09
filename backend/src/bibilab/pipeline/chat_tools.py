@@ -32,6 +32,14 @@ _NO_MATCH_NOTE = "No source matched the requested episode/season; searched all s
 @dataclass
 class CitationRegistryEntry:
     index: int
+    # section_id is typed str but is in fact the INTEGER sections.id row PK
+    # (sourced from `get_sections`'s r["id"], then threaded through
+    # _alloc_section's first arg). The SSE event serializes it as a JSON
+    # number; the FE's ContentBlock.citation.section_id declares str, and
+    # chat-utils.coerceCitationEvent normalizes number→string at the SSE
+    # boundary so strict-equality jumps (SourcesViewerMode.resolveTargetIdx)
+    # don't fall through to the timestampStart branch. Keep this as str to
+    # match the dict-key type in `registry`; the FE coercion is the fix.
     section_id: str
     source_id: str
     title: str = ""

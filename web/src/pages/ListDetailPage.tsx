@@ -11,6 +11,7 @@ import { LabPanel } from "@/components/lists/LabPanel";
 import { ChatPanel } from "@/components/lists/ChatPanel";
 import { SourcesViewerMode } from "@/components/lists/sources/SourcesViewerMode";
 import { SourcesListMode } from "@/components/lists/sources/SourcesListMode";
+import type { OpenSourceOpts } from "@/lib/chat-utils";
 
 export function ListDetailPage() {
   const { t } = useLanguage();
@@ -89,7 +90,7 @@ export function ListDetailPage() {
 
   function handleOpenSource(
     source: Source,
-    opts?: { highlightChunks?: string[]; sectionId?: string; timestampStart?: number },
+    opts?: OpenSourceOpts,
   ) {
     currentSourceIdRef.current = source.id;
     setDetailSource(source);
@@ -147,7 +148,17 @@ export function ListDetailPage() {
             )}
             <button
               type="button"
-              onClick={detailSource ? () => setDetailSource(null) : () => setSourcesCollapsed((v) => !v)}
+              onClick={
+                detailSource
+                  ? () => {
+                      setDetailSource(null);
+                      // Clear the citation jump target so the next open
+                      // (e.g. via the sources list) lands on section 0
+                      // instead of the previous click's cited section.
+                      setTargetSection(null);
+                    }
+                  : () => setSourcesCollapsed((v) => !v)
+              }
               aria-label={detailSource ? "Close viewer" : sourcesCollapsed ? "Expand sources" : "Collapse sources"}
               className={`flex h-7 w-7 items-center justify-center rounded-full text-muted transition hover:bg-border hover:text-ink ${sourcesCollapsed ? "mx-auto" : ""}`}
             >

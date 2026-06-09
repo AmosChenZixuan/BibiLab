@@ -285,15 +285,14 @@ describe("chat panel — SSE streaming (phase 6.2)", () => {
     await userEvent.type(screen.getByRole("textbox"), "read the section");
     await userEvent.keyboard("{Enter}");
 
-    // Provisional read_section chip first (BookOpen + spinner + "reading section…")
+    // Provisional read_section chip first (BookOpen + spinner + the
+    // readSectionPending i18n text)
     enqueue(
       'data: {"type":"tool_call_start","id":"rs1","name":"read_section","arguments":{}}\n\n',
     );
 
-    // Provisional read_section chip: spinner present (i18n text is T6's concern)
     await waitFor(() => {
-      const spinner = document.querySelector('[class*="animate-spin"]');
-      expect(spinner).not.toBeNull();
+      expect(screen.getByText(/reading section/i)).toBeInTheDocument();
     });
 
     // tool_result resolves it to source_id/source_title
@@ -314,10 +313,63 @@ describe("chat panel — SSE streaming (phase 6.2)", () => {
     enqueue('data: {"type":"done"}\n\n');
     close();
 
-    // Resolved read_section row rendering is T3's concern — verify answer streams
+    // Resolved read_section row rendering is exercised in ToolLedgerRow
+    // tests; here just verify the answer streams.
     await waitFor(() => {
       expect(screen.getByText("answer")).toBeInTheDocument();
     });
+  });
+
+  test("citation SSE event with numeric section_id is coerced to string before the chip click", async () => {
+    // The backend's CitationRegistryEntry.section_id is the INTEGER
+    // sections.id; the SSE event serializes it as a JSON number. The
+    // FE's ContentBlock.citation declares section_id: string, and
+    // SourcesViewerMode.resolveTargetIdx does strict equality against
+    // SourceSection.section_id (also string). A number on one side
+    // silently falls through to the timestampStart branch, landing
+    // the reader on the wrong section. This test drives the
+    // integration path (SSE event → useSSEStream → chat-utils.
+    // coerceCitationEvent → CitationChip → onOpenSource) and asserts
+    // the string arrives at the page-level handler.
+    const onOpenSource = vi.fn();
+    mockFetch((input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : (input as Request).url;
+      if (url.includes("/conversation")) {
+        return Promise.resolve(new Response(JSON.stringify({ conversation: null, messages: [] })));
+      }
+      if (url.includes("/chat")) {
+        return Promise.resolve(
+          makeSseStream([
+            'data: {"type":"delta","content":"see "}\n\n',
+            'data: {"type":"citation","index":1,"section_id":1,"source_id":"src-1","timestamp_start":42,"chunk_ids":["c1"]}\n\n',
+            'data: {"type":"delta","content":" [1] for the cited part."}\n\n',
+            'data: {"type":"done"}\n\n',
+          ]),
+        );
+      }
+      return Promise.resolve(new Response(JSON.stringify([])));
+    });
+
+    renderChatPanel({
+      selectedSourceIds: ["src-1"],
+      sources: [SOURCE_1],
+      listId: "list-1",
+      onOpenSource,
+    });
+
+    await userEvent.type(screen.getByRole("textbox"), "show");
+    await userEvent.keyboard("{Enter}");
+
+    const chip = await waitFor(() => screen.getByTestId(TEST_IDS.citeChip));
+    await userEvent.click(chip);
+
+    expect(onOpenSource).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "src-1" }),
+      expect.objectContaining({
+        sectionId: "1",
+        timestampStart: 42,
+      }),
+    );
   });
 });
 

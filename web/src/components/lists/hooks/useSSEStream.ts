@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 
 import type { JobRegistration } from "@/components/jobs/JobActivityProvider";
 import type { MessageUI } from "@/components/lists/hooks/useConversationHistory";
-import { formatTimestamp, type ContentBlock, type PendingRagCall, type RetrievalCall } from "@/lib/chat-utils";
+import { formatTimestamp, coerceCitationEvent, type ContentBlock, type PendingRagCall, type RetrievalCall } from "@/lib/chat-utils";
 import { FIND_PASSAGES_TOOL_NAME, READ_SECTION_TOOL_NAME } from "@/lib/tool-display";
 import {
   SSE_EVENT_CANCELLED,
@@ -16,8 +16,6 @@ import {
   SSE_EVENT_TOOL_RESULT,
 } from "@/lib/constants";
 import { LANG_STORAGE_KEY } from "@/lib/utils";
-
-type CitationEvent = { type: "citation"; index: number; section_id: string; source_id: string; timestamp_start: number; chunk_ids: string[] };
 
 interface UseSSEStreamOptions {
   listId: string;
@@ -196,20 +194,10 @@ export function useSSEStream({
         updateAssistantMsg(assistantMsgId, { rag: { calls } });
       } else if (event.type === SSE_EVENT_CITATION) {
         flushText();
-        // Coerce section_id to string: the backend's CitationRegistryEntry
-        // section_id is the INTEGER sections.id (see chat_tools.py:386), so
-        // the SSE event serializes it as a JSON number. The FE's
-        // ContentBlock type declares section_id: string, and the citation
-        // jump matcher does strict equality against SourceSection.section_id
-        // (also a string) — a number on one side would silently fail the
-        // match. Normalize here so the type contract and the jump both
-        // work without a backend serialization change.
-        const raw = event as unknown as { section_id?: string | number };
-        const citation: CitationEvent = {
-          ...(event as object as Omit<CitationEvent, "section_id">),
-          section_id: raw.section_id != null ? String(raw.section_id) : "",
-        };
-        accBlocks.push(citation);
+        // Coerce the raw SSE event into the ContentBlock citation shape
+        // (number → string for section_id, etc.). See coerceCitationEvent
+        // for the type-contract rationale.
+        accBlocks.push(coerceCitationEvent(event));
         updateAssistantMsg(assistantMsgId, { contentBlocks: [...accBlocks] });
       } else if (event.type === SSE_EVENT_DONE) {
         flushText();

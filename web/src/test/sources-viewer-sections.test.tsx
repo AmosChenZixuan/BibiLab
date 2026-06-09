@@ -64,9 +64,12 @@ describe("SourcesViewerMode sections — source-switch desync", () => {
     // The sectionId match path is the precise match: the chat citation
     // carries the section's id directly so it lands on the cited
     // section even when the chunk-anchored timestamp would fall at a
-    // section boundary or outside any section's range (the bug #455
-    // post-#463 was about). 3 sections, targetSection={sectionId: "sec-2"}
-    // must land on section 2 regardless of the timestamp range.
+    // section boundary or outside any section's range. 3 sections
+    // cover [0,600], [600,1200], [1200,1800]. targetSection with
+    // sectionId="sec-3" and timestampStart=300 must land on section 3
+    // (the sectionId branch), NOT section 1 (where 300 falls) — so
+    // the assertion is load-bearing: if the sectionId and timestamp
+    // branches were ever swapped, the test would fail.
     const contentA = makeContent("src-A", "Source A", "Source A summary");
     const sectionsA = makeSections(3, 0);
 
@@ -83,7 +86,7 @@ describe("SourcesViewerMode sections — source-switch desync", () => {
             sourceContent={contentA}
             onRefresh={vi.fn()}
             listId="list-1"
-            targetSection={{ sectionId: "sec-2" }}
+            targetSection={{ sectionId: "sec-3", timestampStart: 300 }}
           />
         </JobActivityProvider>
       </LanguageProvider>,
@@ -97,15 +100,17 @@ describe("SourcesViewerMode sections — source-switch desync", () => {
       await Promise.resolve();
     });
 
-    // Section 2 is active: its summary is in the body, the 2nd tab is
-    // aria-selected, and the siblings are not.
-    expect(screen.getByText(/Section 2 summary/)).toBeInTheDocument();
+    // Section 3 is active: its summary is in the body, the 3rd tab is
+    // aria-selected, and the siblings are not. (Section 1, where 300
+    // would land on the timestamp branch, is explicitly asserted NOT
+    // to be active.)
+    expect(screen.getByText(/Section 3 summary/)).toBeInTheDocument();
     expect(screen.queryByText(/^Section 1 summary$/)).not.toBeInTheDocument();
-    expect(screen.queryByText(/^Section 3 summary$/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/^Section 2 summary$/)).not.toBeInTheDocument();
     const tabs = screen.getAllByRole("tab");
-    expect(tabs[1]).toHaveAttribute("aria-selected", "true");
+    expect(tabs[2]).toHaveAttribute("aria-selected", "true");
     expect(tabs[0]).toHaveAttribute("aria-selected", "false");
-    expect(tabs[2]).toHaveAttribute("aria-selected", "false");
+    expect(tabs[1]).toHaveAttribute("aria-selected", "false");
   });
 
   test("targetSection selects the containing section tab on open", async () => {

@@ -1,16 +1,15 @@
 import { describe, expect, test } from "vitest";
 
-import type { ContentBlock } from "@/lib/chat-utils";
 import {
   autoResize,
+  coerceCitationEvent,
   facetNoMatchHint,
   formatDurationHuman,
   formatSubtitle,
   formatTimestamp,
   stripLegacyTokens,
-  RetrievalCall,
+  type RetrievalCall,
 } from "@/lib/chat-utils";
-import { READ_SECTION_TOOL_NAME } from "@/lib/tool-display";
 
 describe("formatDurationHuman", () => {
   test("seconds only", () => {
@@ -185,29 +184,76 @@ describe("facetNoMatchHint", () => {
   });
 });
 
-describe("section-grained types", () => {
-  test("ContentBlock citation carries section_id + timestamp_start", () => {
-    const b: ContentBlock = {
-      type: "citation", index: 1, section_id: "sec-1", source_id: "src-1",
-      timestamp_start: 42, chunk_ids: ["c1"],
-    };
-    expect(b.section_id).toBe("sec-1");
-    expect(b.timestamp_start).toBe(42);
+describe("coerceCitationEvent", () => {
+  // The SSE citation event comes over the wire with section_id as a
+  // JSON number (backend's CitationRegistryEntry.section_id is the
+  // INTEGER sections.id). The FE's ContentBlock.citation declares
+  // section_id: string, and SourcesViewerMode.resolveTargetIdx does
+  // strict equality against SourceSection.section_id (also string) —
+  // a number on one side silently falls through to the timestampStart
+  // branch, landing the reader on the wrong section. The coercion
+  // normalizes at the SSE-consumer boundary so the type contract and
+  // the jump both work.
+
+  test("coerces section_id from number to string", () => {
+    const result = coerceCitationEvent({
+      type: "citation",
+      index: 3,
+      section_id: 7,                       // number, as the wire delivers
+      source_id: "src-1",
+      timestamp_start: 42.5,
+      chunk_ids: ["c1", "c2"],
+    });
+    expect(result).toEqual({
+      type: "citation",
+      index: 3,
+      section_id: "7",
+      source_id: "src-1",
+      timestamp_start: 42.5,
+      chunk_ids: ["c1", "c2"],
+    });
   });
 
-  test("read_section tool name constant", () => {
-    expect(READ_SECTION_TOOL_NAME).toBe("read_section");
+  test("passes through a string section_id unchanged", () => {
+    const result = coerceCitationEvent({
+      type: "citation",
+      index: 1,
+      section_id: "sec-1",
+      source_id: "src-1",
+      timestamp_start: 42,
+      chunk_ids: ["c1"],
+    });
+    if (result.type !== "citation") throw new Error("expected citation");
+    expect(result.section_id).toBe("sec-1");
   });
 
-  test("RetrievalCall uses section_coverage", () => {
-    const call: RetrievalCall = {
-      query: "q", tool_name: "find_passages", candidates_evaluated: 0,
-      sources_with_hits: 0, sources_total: 1, reranked: false, scoped_pool_size: 1,
-      section_coverage: [{
-        section_id: "s1", source_id: "src", source_title: "T",
-        seq: 1, timestamp_start: 0, timestamp_end: 60,
-      }],
-    };
-    expect(call.section_coverage[0].section_id).toBe("s1");
+  test("defaults to empty section_id when missing (so caller's falsy check skips the sectionId branch)", () => {
+    const result = coerceCitationEvent({
+      type: "citation",
+      index: 1,
+      source_id: "src-1",
+      timestamp_start: 42,
+      chunk_ids: [],
+    });
+    if (result.type !== "citation") throw new Error("expected citation");
+    expect(result.section_id).toBe("");
+  });
+
+  test("normalizes chunk_ids to an array of strings", () => {
+    const result = coerceCitationEvent({
+      type: "citation",
+      index: 1,
+      section_id: "1",
+      source_id: "src-1",
+      timestamp_start: 0,
+      chunk_ids: [1, 2, 3],               // numbers, not strings
+    });
+    if (result.type !== "citation") throw new Error("expected citation");
+    expect(result.chunk_ids).toEqual(["1", "2", "3"]);
+  });
+
+  test("non-citation events fall back to paragraph_break (defensive)", () => {
+    const result = coerceCitationEvent({ type: "delta", content: "x" });
+    expect(result).toEqual({ type: "paragraph_break" });
   });
 });
