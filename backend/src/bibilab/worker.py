@@ -594,26 +594,18 @@ class WorkerLoop:
         prompt = meta_raw["prompt"]
         source_ids = meta_raw["source_ids"]
         cfg = self._get_config()
-        error_message: str | None = None
         artifact_result: ArtifactResult | None = None
 
         try:
             await update_job_status(job_id, JobStatus.PROCESSING.value, progress=10)
 
-            # Load transcripts for all source_ids
-            transcripts: list[str] = []
+            # Validate sources exist (early, before LLM work).
             for source_id in source_ids:
                 source = await get_source(source_id)
                 if source is None:
                     raise PipelineError(f"Source {source_id!r} not found")
-                transcript_text = await load_transcript_text(source_id, include_time=False)
-                if not transcript_text:
-                    raise PipelineError(f"Source {source_id!r} has no transcript")
-                transcripts.append(f"=== Source: {source['title']} ===\n{transcript_text}")
 
-            combined_transcript = "\n\n".join(transcripts)
-
-            # Check for cancellation before LLM call
+            # Cancellation check before LLM work.
             if job_id in self._cancelled:
                 self._cancelled.discard(job_id)
                 await delete_job(job_id)
@@ -621,9 +613,17 @@ class WorkerLoop:
 
             await update_job_status(job_id, JobStatus.PROCESSING.value, progress=30)
 
-            # Call LLM to generate artifact
-            artifact_result = await self._generate_artifact(
-                prompt, artifact_type, combined_transcript, cfg, meta_raw.get("ui_lang")
+            # Section-batched refine: replaces the old single-call
+            # _generate_artifact. Builds section views (fail-loud on
+            # no-sections), greedy-packs, then single- or multi-batch
+            # LLM path.
+            sections = await _build_section_views(source_ids)
+            artifact_result = await _refine_artifact(
+                prompt=prompt,
+                artifact_type=artifact_type,
+                sections=sections,
+                cfg=cfg,
+                ui_lang=meta_raw.get("ui_lang"),
             )
 
             # Check for cancellation before writing file
@@ -729,63 +729,6 @@ class WorkerLoop:
 
         await update_job_status(job_id, JobStatus.DONE.value, progress=100)
         logger.info("Digest job %s completed for source %s", job_id, source_id)
-
-    async def _generate_artifact(
-        self,
-        prompt: str,
-        artifact_type: str,
-        transcript_text: str,
-        cfg: BibilabConfig,
-        ui_lang: str | None = None,
-    ) -> ArtifactResult:
-        """Call LLM to generate artifact content. Returns title and content."""
-        lang = _resolved_lang(cfg.ai.output_language, ui_lang)
-        lang_instruction = _LANG_INSTRUCTION.get(lang, _LANG_INSTRUCTION["en"])
-
-        llm_prompt = f"""{lang_instruction}
-
-{prompt}
-
-Based on the following transcripts, generate the requested artifact content.
-
-Transcript:
-{transcript_text}
-
-{lang_instruction}
-Respond ONLY with valid JSON matching this schema:
-{{
-  "name": "string (a short title for this artifact)",
-  "content": "string (the main artifact content in markdown format)"
-}}
-{_lang_output_directive(lang)}"""
-
-        last_exc: Exception | None = None
-        for attempt in range(3):
-            try:
-                raw = await asyncio.to_thread(
-                    _call_llm,
-                    llm_prompt,
-                    cfg.ai,
-                )
-                return _parse_llm_json_response(raw, ArtifactResult)
-            except ContextWindowExceededError:
-                # Deterministic — the same prompt would re-overflow every retry.
-                # Surface immediately rather than burning two more calls.
-                raise
-            except Exception as exc:  # noqa: BLE001
-                last_exc = exc
-                logger.warning(
-                    "LLM artifact generation failed (attempt %d/3): %s",
-                    attempt + 1,
-                    exc,
-                )
-                if attempt < 2:
-                    continue
-
-        error_msg = f"LLM artifact generation exhausted all retries: {last_exc}"
-        logger.error(error_msg)
-        # On failure, create artifact with error status
-        raise PipelineError(error_msg)
 
     # -------------------------------------------------------------------------
     # Pipeline stages (full ingest)

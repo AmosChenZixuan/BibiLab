@@ -8,6 +8,7 @@ batch sections, feeding the running draft back to the LLM. Short inputs
 
 from __future__ import annotations
 
+import json
 import logging
 from pathlib import Path
 from unittest.mock import patch
@@ -15,12 +16,13 @@ from unittest.mock import patch
 import pytest
 
 from bibilab.config import BibilabConfig
-from bibilab.db import bootstrap_db, create_list, write_source_with_segments
+from bibilab.db import bootstrap_db, create_list, get_artifact, write_source_with_segments
 from bibilab.pipeline.audio import PipelineError
 from bibilab.pipeline.section import Section
 from bibilab.pipeline.transcribe import WhisperSegment
 from bibilab.worker import (
     ArtifactResult,
+    WorkerLoop,
     _build_initial_prompt,
     _build_refine_prompt,
     _build_section_views,
@@ -499,3 +501,76 @@ async def test_refine_artifact_preserves_source_order_across_batches():
     # The second batch prompt (k=2) contains src-B (greedy pack: A+B in
     # batch 1, B1 in batch 2).
     assert "Source: TB" in p2
+
+
+# --- end-to-end: _run_artifact_job uses _refine_artifact -------------------
+
+
+@pytest.mark.asyncio
+async def test_run_artifact_job_uses_refine_artifact_single_batch(tmp_bibilab_home):
+    """End-to-end: an artifact job for 1 source (1 section) writes the
+    artifact file + DB row. Regression guard: the LLM is called exactly
+    once via _refine_artifact's single-batch path."""
+    await bootstrap_db()
+    await create_list("list-1", "L", "2026-01-01T00:00:00")
+    source_id = await SourceFactory.build("list-1", video_id="BV1")
+    await write_source_with_segments(
+        segments=[
+            WhisperSegment(start=0.0, end=1.0, text="hello", speaker="SPK_0"),
+            WhisperSegment(start=1.0, end=2.0, text="world", speaker="SPK_0"),
+        ],
+        sections=[
+            Section(seg_start=0, seg_end=1, token_count=2, timestamp_start=0.0, timestamp_end=2.0),
+        ],
+        source_id=source_id,
+        video_id="BV1",
+        platform="bilibili",
+        list_id="list-1",
+        title="T",
+        summary="",
+        keywords=[],
+        cover_url=None,
+        source_url="https://x",
+        duration_seconds=0,
+        uploader="u",
+        language="en",
+        whisper_model="large-v3",
+        ai_model="gpt-4o",
+        settings_snapshot={},
+    )
+
+    cfg = BibilabConfig()
+    worker = WorkerLoop(home=tmp_bibilab_home, config=cfg, adapter=None)
+    job = {
+        "id": "job-1",
+        "meta": json.dumps(
+            {
+                "list_id": "list-1",
+                "artifact_id": "art-1",
+                "type": "study_guide",
+                "prompt": "summarize",
+                "source_ids": [source_id],
+            }
+        ),
+    }
+
+    async def _fake_refine(*, prompt, artifact_type, sections, cfg, ui_lang=None):
+        return ArtifactResult(name="My Title", content="My body.")
+
+    with patch("bibilab.worker._refine_artifact", side_effect=_fake_refine) as mock_refine:
+        await worker._run_artifact_job(job)
+
+    # _refine_artifact is the new entry point — it must be called once
+    # with the section views. The OLD _run_artifact_job path (calling
+    # _generate_artifact directly with a combined transcript) would not
+    # touch _refine_artifact at all.
+    assert mock_refine.call_count == 1
+    # The artifact row is created in 'completed' status with the parsed
+    # name + content from the LLM response.
+    art = await get_artifact("art-1")
+    assert art["status"] == "completed"
+    assert art["name"] == "My Title"
+    # The artifact content file is written.
+    content_path = tmp_bibilab_home / "artifacts" / "list-1" / "art-1.md"
+    assert content_path.exists()
+    assert content_path.read_text() == "My body."

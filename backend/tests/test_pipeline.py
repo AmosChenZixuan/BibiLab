@@ -478,28 +478,18 @@ def test_resolved_lang_with_explicit_language():
 
 
 # ---------------------------------------------------------------------------
-# worker._generate_artifact language instruction
+# _build_initial_prompt language instruction
+# (replaces the old _generate_artifact tests; the lang-instruction contract
+# moved into _build_initial_prompt's call to _resolved_prompt_block)
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio
-async def test_generate_artifact_includes_zh_lang_instruction(tmp_path: Path, monkeypatch, mock_call_llm):
-    """_generate_artifact prepends 简体中文 language instruction when ui_lang=zh."""
+def test_build_initial_prompt_includes_zh_lang_instruction():
+    """_build_initial_prompt prepends 简体中文 language instruction when ui_lang=zh."""
     from unittest.mock import MagicMock
 
     from bibilab.config import AIConfig
-    from bibilab.worker import WorkerLoop
-
-    worker = WorkerLoop()
-
-    captured_prompt = None
-
-    def fake_call_llm(prompt, cfg, llm_timeout=120):
-        nonlocal captured_prompt
-        captured_prompt = prompt
-        return '{"name": "Test", "content": "# Test"}'
-
-    mock_call_llm.side_effect = fake_call_llm
+    from bibilab.worker import _build_initial_prompt
 
     cfg = MagicMock()
     cfg.ai = AIConfig(
@@ -510,7 +500,7 @@ async def test_generate_artifact_includes_zh_lang_instruction(tmp_path: Path, mo
         output_language="ui",
     )
 
-    result = await worker._generate_artifact(
+    prompt = _build_initial_prompt(
         prompt="Generate a summary",
         artifact_type="summary",
         transcript_text="This is a test transcript.",
@@ -518,30 +508,16 @@ async def test_generate_artifact_includes_zh_lang_instruction(tmp_path: Path, mo
         ui_lang="zh",
     )
 
-    assert captured_prompt is not None
-    assert captured_prompt.startswith("请用中文回答")
-    assert "All output fields MUST be written in 简体中文" in captured_prompt
-    assert result.name == "Test"
+    assert prompt.startswith("请用中文回答")
+    assert "All output fields MUST be written in 简体中文" in prompt
 
 
-@pytest.mark.asyncio
-async def test_generate_artifact_includes_en_lang_instruction(tmp_path: Path, monkeypatch, mock_call_llm):
-    """_generate_artifact prepends English language instruction when output_language=en."""
+def test_build_initial_prompt_includes_en_lang_instruction():
+    """_build_initial_prompt prepends English language instruction when output_language=en."""
     from unittest.mock import MagicMock
 
     from bibilab.config import AIConfig
-    from bibilab.worker import WorkerLoop
-
-    worker = WorkerLoop()
-
-    captured_prompt = None
-
-    def fake_call_llm(prompt, cfg, llm_timeout=120):
-        nonlocal captured_prompt
-        captured_prompt = prompt
-        return '{"name": "Test", "content": "# Test"}'
-
-    mock_call_llm.side_effect = fake_call_llm
+    from bibilab.worker import _build_initial_prompt
 
     cfg = MagicMock()
     cfg.ai = AIConfig(
@@ -552,7 +528,7 @@ async def test_generate_artifact_includes_en_lang_instruction(tmp_path: Path, mo
         output_language="en",
     )
 
-    await worker._generate_artifact(
+    prompt = _build_initial_prompt(
         prompt="Generate a summary",
         artifact_type="summary",
         transcript_text="This is a test transcript.",
@@ -560,29 +536,16 @@ async def test_generate_artifact_includes_en_lang_instruction(tmp_path: Path, mo
         ui_lang=None,
     )
 
-    assert captured_prompt is not None
-    assert captured_prompt.startswith("Respond in English only")
-    assert "All output fields MUST be written in English" in captured_prompt
+    assert prompt.startswith("Respond in English only")
+    assert "All output fields MUST be written in English" in prompt
 
 
-@pytest.mark.asyncio
-async def test_generate_artifact_unknown_lang_falls_back_to_english(tmp_path: Path, monkeypatch, mock_call_llm):
-    """_generate_artifact with unrecognized output_language falls back to English."""
+def test_build_initial_prompt_unknown_lang_falls_back_to_english():
+    """_build_initial_prompt with unrecognized output_language falls back to English."""
     from unittest.mock import MagicMock
 
     from bibilab.config import AIConfig
-    from bibilab.worker import WorkerLoop
-
-    worker = WorkerLoop()
-
-    captured_prompt = None
-
-    def fake_call_llm(prompt, cfg, llm_timeout=120):
-        nonlocal captured_prompt
-        captured_prompt = prompt
-        return '{"name": "Test", "content": "# Test"}'
-
-    mock_call_llm.side_effect = fake_call_llm
+    from bibilab.worker import _build_initial_prompt
 
     cfg = MagicMock()
     cfg.ai = AIConfig(
@@ -593,7 +556,7 @@ async def test_generate_artifact_unknown_lang_falls_back_to_english(tmp_path: Pa
         output_language="fr",
     )
 
-    await worker._generate_artifact(
+    prompt = _build_initial_prompt(
         prompt="Generate a summary",
         artifact_type="summary",
         transcript_text="French biased transcript",
@@ -601,6 +564,5 @@ async def test_generate_artifact_unknown_lang_falls_back_to_english(tmp_path: Pa
         ui_lang=None,
     )
 
-    assert captured_prompt is not None
-    assert captured_prompt.startswith("Respond in English only")
-    assert "All output fields MUST be written in English" in captured_prompt
+    assert prompt.startswith("Respond in English only")
+    assert "All output fields MUST be written in English" in prompt
