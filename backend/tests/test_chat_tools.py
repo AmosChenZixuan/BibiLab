@@ -194,6 +194,8 @@ async def test_execute_find_passages_returns_raw_chunks_for_replay(monkeypatch):
                     source_id="s1",
                     distance=0.1,
                     score=0.9,
+                    seg_start=0,
+                    seg_end=0,
                 ),
             ],
             candidates_evaluated=5,
@@ -202,7 +204,22 @@ async def test_execute_find_passages_returns_raw_chunks_for_replay(monkeypatch):
             source_coverage=[SourceHit(source_id="s1", video_title="Video One", best_score=-0.9)],
         )
 
+    section_rows = [
+        {
+            "id": "sec-1",
+            "source_id": "s1",
+            "seq": 0,
+            "seg_start": 0,
+            "seg_end": 0,
+            "token_count": 100,
+            "timestamp_start": 0.0,
+            "timestamp_end": 200.0,
+            "summary": "summary",
+            "keywords": "[]",
+        }
+    ]
     monkeypatch.setattr(chat_tools, "retrieve", fake_retrieve)
+    monkeypatch.setattr(chat_tools, "get_sections", AsyncMock(return_value=section_rows))
 
     cfg = BibilabConfig(
         ai=AIConfig(protocol="openai", model="x", api_key="k", base_url=""),
@@ -221,6 +238,7 @@ async def test_execute_find_passages_returns_raw_chunks_for_replay(monkeypatch):
     raw = result["_raw_chunks"]
     assert len(raw) == 1
     assert raw[0]["source_id"] == "s1"
+    assert raw[0]["section_id"] == "sec-1"
     assert raw[0]["content"] == "verbatim text"
     assert raw[0]["video_title"] == "Video One"
     assert raw[0]["timestamp_start"] == 120.4
@@ -247,6 +265,8 @@ async def test_citation_registry_entry_gets_chunk_fields_on_execute_find_passage
                     source_id="s1",
                     distance=0.0,
                     score=0.95,
+                    seg_start=0,
+                    seg_end=0,
                 ),
             ],
             candidates_evaluated=1,
@@ -255,7 +275,22 @@ async def test_citation_registry_entry_gets_chunk_fields_on_execute_find_passage
             source_coverage=[SourceHit(source_id="s1", video_title="Test Video", best_score=-0.95)],
         )
 
+    section_rows = [
+        {
+            "id": "sec-1",
+            "source_id": "s1",
+            "seq": 0,
+            "seg_start": 0,
+            "seg_end": 0,
+            "token_count": 100,
+            "timestamp_start": 0.0,
+            "timestamp_end": 200.0,
+            "summary": "summary",
+            "keywords": "[]",
+        }
+    ]
     monkeypatch.setattr(chat_tools, "retrieve", fake_retrieve)
+    monkeypatch.setattr(chat_tools, "get_sections", AsyncMock(return_value=section_rows))
 
     cfg = BibilabConfig(ai=AIConfig(protocol="openai", model="x", api_key="k"))
     registry: dict = {}
@@ -267,8 +302,8 @@ async def test_citation_registry_entry_gets_chunk_fields_on_execute_find_passage
         registry=registry,
     )
 
-    assert "s1" in registry
-    entry = registry["s1"]
+    assert "sec-1" in registry
+    entry = registry["sec-1"]
     assert entry.timestamp_start == 120.4
     assert entry.timestamp_end == 145.0
     assert entry.rerank_score == 0.95
@@ -293,6 +328,8 @@ async def test_citation_registry_entry_uses_first_chunk_fields(monkeypatch):
                     source_id="s1",
                     distance=0.0,
                     score=0.8,
+                    seg_start=0,
+                    seg_end=0,
                 ),
                 RetrievedChunk(
                     content="second chunk",
@@ -302,6 +339,8 @@ async def test_citation_registry_entry_uses_first_chunk_fields(monkeypatch):
                     source_id="s1",
                     distance=0.0,
                     score=0.9,
+                    seg_start=1,
+                    seg_end=1,
                 ),
             ],
             candidates_evaluated=2,
@@ -310,7 +349,22 @@ async def test_citation_registry_entry_uses_first_chunk_fields(monkeypatch):
             source_coverage=[SourceHit(source_id="s1", video_title="V", best_score=-0.9)],
         )
 
+    section_rows = [
+        {
+            "id": "sec-1",
+            "source_id": "s1",
+            "seq": 0,
+            "seg_start": 0,
+            "seg_end": 1,
+            "token_count": 100,
+            "timestamp_start": 0.0,
+            "timestamp_end": 50.0,
+            "summary": "summary",
+            "keywords": "[]",
+        }
+    ]
     monkeypatch.setattr(chat_tools, "retrieve", fake_retrieve)
+    monkeypatch.setattr(chat_tools, "get_sections", AsyncMock(return_value=section_rows))
 
     cfg = BibilabConfig(ai=AIConfig(protocol="openai", model="x", api_key="k"))
     registry: dict = {}
@@ -322,10 +376,10 @@ async def test_citation_registry_entry_uses_first_chunk_fields(monkeypatch):
         registry=registry,
     )
 
-    entry = registry["s1"]
+    entry = registry["sec-1"]
     # First chunk's timestamps, not second
     assert entry.timestamp_start == 10.0
-    assert entry.timestamp_end == 20.0
+    assert entry.timestamp_end == 40.0
     # First chunk's score
     assert entry.rerank_score == 0.8
 
@@ -1058,8 +1112,9 @@ def test_build_fenced_sections_orders_by_index_and_includes_summary_then_chunks(
 
 @pytest.mark.asyncio
 async def test_execute_find_passages_chunks_grouped_and_fenced(monkeypatch):
-    """_chunks groups by source + fences each group; _raw_chunks
-    preserves the original interleaved rerank order (invariant)."""
+    """T4: _chunks groups by section (not source) + fences each section;
+    _raw_chunks preserves the original interleaved rerank order (invariant).
+    """
     from bibilab.config import AIConfig, BackendConfig, BibilabConfig
     from bibilab.pipeline import chat_tools
     from bibilab.pipeline.chat_tools import build_tool_block_entry
@@ -1076,6 +1131,8 @@ async def test_execute_find_passages_chunks_grouped_and_fenced(monkeypatch):
                     source_id="v1",
                     distance=0.1,
                     score=0.9,
+                    seg_start=0,
+                    seg_end=0,
                 ),
                 RetrievedChunk(
                     content="b1",
@@ -1085,6 +1142,8 @@ async def test_execute_find_passages_chunks_grouped_and_fenced(monkeypatch):
                     source_id="v2",
                     distance=0.1,
                     score=0.8,
+                    seg_start=0,
+                    seg_end=0,
                 ),
                 RetrievedChunk(
                     content="a2",
@@ -1094,6 +1153,8 @@ async def test_execute_find_passages_chunks_grouped_and_fenced(monkeypatch):
                     source_id="v1",
                     distance=0.2,
                     score=0.7,
+                    seg_start=1,
+                    seg_end=1,
                 ),
                 RetrievedChunk(
                     content="b2",
@@ -1103,6 +1164,8 @@ async def test_execute_find_passages_chunks_grouped_and_fenced(monkeypatch):
                     source_id="v2",
                     distance=0.2,
                     score=0.6,
+                    seg_start=1,
+                    seg_end=1,
                 ),
             ],
             candidates_evaluated=4,
@@ -1114,7 +1177,27 @@ async def test_execute_find_passages_chunks_grouped_and_fenced(monkeypatch):
             ],
         )
 
+    section_rows = [
+        {
+            "id": f"sec-{sid}",
+            "source_id": sid,
+            "seq": 0,
+            "seg_start": 0,
+            "seg_end": 1,
+            "token_count": 100,
+            "timestamp_start": 0.0,
+            "timestamp_end": 20.0,
+            "summary": "summary",
+            "keywords": "[]",
+        }
+        for sid in ("v1", "v2")
+    ]
+
+    async def fake_get_sections(sid):
+        return [r for r in section_rows if r["source_id"] == sid]
+
     monkeypatch.setattr(chat_tools, "retrieve", fake_retrieve)
+    monkeypatch.setattr(chat_tools, "get_sections", fake_get_sections)
 
     cfg = BibilabConfig(
         ai=AIConfig(protocol="openai", model="x", api_key="k", base_url=""),
@@ -1124,27 +1207,26 @@ async def test_execute_find_passages_chunks_grouped_and_fenced(monkeypatch):
 
     result = await chat_tools.execute_find_passages(
         query="q",
-        source_ids=["s1", "s2"],
+        source_ids=["v1", "v2"],
         cfg=cfg,
         registry=registry,
     )
 
     chunks = result["_chunks"]
 
-    # Fences present, both sources, ascending order.
-    f1 = chunks.index('===== Source [1]: "Video One" =====')
-    f2 = chunks.index('===== Source [2]: "Video Two" =====')
+    # Section fences present, both surfaces, ascending order.
+    f1 = chunks.index('===== [1] "Video One" · Section 1')
+    f2 = chunks.index('===== [2] "Video Two" · Section 1')
     assert f1 < f2
 
-    # Grouping: both v1 chunk lines precede any v2 chunk line.
-    a2 = chunks.index("a2")
-    b1 = chunks.index("b1")
-    assert a2 < b1, "v1 chunks must cluster before v2 chunks (no interleave)"
-
-    # INVARIANT: _raw_chunks keeps original interleaved order + indices.
+    # INVARIANT: _raw_chunks keeps original interleaved order + section-keyed indices.
     raw = result["_raw_chunks"]
     assert [r["citation_index"] for r in raw] == [1, 2, 1, 2]
     assert [r["content"] for r in raw] == ["a1", "b1", "a2", "b2"]
+    # Each raw chunk carries its section_id / section_seq.
+    for r in raw:
+        assert r["section_id"] in ("sec-v1", "sec-v2")
+        assert r["section_seq"] == 1
 
     # INVARIANT: fences must not leak into the persisted replay block.
     entry = build_tool_block_entry("tu1", "find_passages", {}, result, result["_raw_chunks"])
@@ -1200,8 +1282,26 @@ async def test_execute_find_passages_reconstructs_namespaced_turn_body(monkeypat
         {"source_id": "v1", "seq": 1, "start_s": 5.0, "end_s": 8.0, "speaker": "SPK_1", "text": "再见。"},
         {"source_id": "v1", "seq": 2, "start_s": 9.0, "end_s": 12.0, "speaker": "SPK_0", "text": "结束。"},
     ]
+    # Both chunks land in section 1 (seg range 0..29). T4 needs get_sections
+    # to allocate the section; the section's seq is 0-based in DB, 1-based in
+    # the registry/fence (see the offset in chat_tools.execute_find_passages).
+    section_rows = [
+        {
+            "id": "sec-1",
+            "source_id": "v1",
+            "seq": 0,
+            "seg_start": 0,
+            "seg_end": 29,
+            "token_count": 100,
+            "timestamp_start": 0.0,
+            "timestamp_end": 30.0,
+            "summary": "section summary",
+            "keywords": "[]",
+        }
+    ]
     monkeypatch.setattr(chat_tools, "retrieve", fake_retrieve)
     monkeypatch.setattr(chat_tools, "get_segments_for_ranges", AsyncMock(return_value=seg_rows))
+    monkeypatch.setattr(chat_tools, "get_sections", AsyncMock(return_value=section_rows))
 
     cfg = BibilabConfig(
         ai=AIConfig(protocol="openai", model="x", api_key="k", base_url=""),
@@ -1223,4 +1323,140 @@ async def test_execute_find_passages_reconstructs_namespaced_turn_body(monkeypat
     assert "raw-a1" not in chunks
     assert "raw-a2" not in chunks
 
-    assert registry["v1"].preview == "[S1·SPK0 @0:00] 你好。\n[S1·SPK1 @0:05] 再见。"
+    # T4: registry is keyed by section_id, not source_id.
+    assert "sec-1" in registry
+    assert registry["sec-1"].source_id == "v1"
+    assert registry["sec-1"].seq == 1
+    assert registry["sec-1"].preview == "[S1·SPK0 @0:00] 你好。\n[S1·SPK1 @0:05] 再见。"
+
+
+# ---------------------------------------------------------------------------
+# Task 4: execute_find_passages groups hits by section
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_find_passages_registers_sections_not_sources(tmp_bibilab_home, monkeypatch):
+    """T4: registry keys are section_id, each entry carries seq + citable=True
+    when the section's verbatim is shown, and the rendered body uses the
+    section-keyed fence. Real sections come from the factory; retrieve +
+    get_segments are mocked so the test stays self-contained."""
+    from bibilab.config import AIConfig, BackendConfig, BibilabConfig
+    from bibilab.db import bootstrap_db, create_list, get_sections
+    from bibilab.pipeline import chat_tools
+    from bibilab.pipeline.digest import SectionDigest
+    from bibilab.pipeline.embed import RetrievalResult, RetrievedChunk, SourceHit
+    from bibilab.pipeline.section import Section
+    from tests.factories import SourceFactory
+
+    # Real DB with a 2-section source. 30 segments split 0-14 + 15-29.
+    await bootstrap_db()
+    await create_list("L1", "Test List", "2025-01-01T00:00:00Z")
+    from bibilab.pipeline.transcribe import WhisperSegment
+
+    segs = [
+        WhisperSegment(
+            start=float(i),
+            end=float(i + 1),
+            text=f"sentence {i} about the topic discussed",
+            speaker="SPK_0",
+        )
+        for i in range(30)
+    ]
+    sections = [
+        Section(seg_start=0, seg_end=14, token_count=100, timestamp_start=0.0, timestamp_end=15.0),
+        Section(seg_start=15, seg_end=29, token_count=100, timestamp_start=15.0, timestamp_end=30.0),
+    ]
+    digests = [
+        SectionDigest(summary="sec1 summary about the topic", keywords=["k1"]),
+        SectionDigest(summary="sec2 summary about the topic", keywords=["k2"]),
+    ]
+    source_id = await SourceFactory.build(
+        "L1",
+        video_id="BVtwoSection",
+        title="Two Section Video",
+        segments=segs,
+        sections=sections,
+        section_digests=digests,
+    )
+    section_rows = await get_sections(source_id)
+    section_ids = [r["id"] for r in section_rows]
+
+    # retrieve returns one chunk in each section.
+    async def fake_retrieve(query_text, source_ids, cfg, top_k, **kwargs):
+        return RetrievalResult(
+            chunks=[
+                RetrievedChunk(
+                    content="raw-s1",
+                    video_title="Two Section Video",
+                    timestamp_start=0.0,
+                    timestamp_end=14.0,
+                    source_id=source_id,
+                    distance=0.1,
+                    score=0.9,
+                    seg_start=0,
+                    seg_end=14,
+                ),
+                RetrievedChunk(
+                    content="raw-s2",
+                    video_title="Two Section Video",
+                    timestamp_start=15.0,
+                    timestamp_end=29.0,
+                    source_id=source_id,
+                    distance=0.2,
+                    score=0.8,
+                    seg_start=15,
+                    seg_end=29,
+                ),
+            ],
+            candidates_evaluated=2,
+            sources_with_hits=1,
+            sources_total=1,
+            source_coverage=[SourceHit(source_id=source_id, video_title="Two Section Video", best_score=-0.9)],
+        )
+
+    seg_rows = [
+        {
+            "source_id": source_id,
+            "seq": i,
+            "start_s": float(i),
+            "end_s": float(i + 1),
+            "speaker": "SPK_0",
+            "text": f"sentence {i} about the topic discussed",
+        }
+        for i in range(30)
+    ]
+
+    monkeypatch.setattr(chat_tools, "retrieve", fake_retrieve)
+    monkeypatch.setattr(chat_tools, "get_segments_for_ranges", AsyncMock(return_value=seg_rows))
+    monkeypatch.setattr(chat_tools, "get_sections", AsyncMock(return_value=section_rows))
+
+    cfg = BibilabConfig(
+        ai=AIConfig(protocol="openai", model="x", api_key="k", base_url=""),
+        backend=BackendConfig(),
+    )
+    registry: dict = {}
+    result = await chat_tools.execute_find_passages(
+        query="the topic discussed",
+        source_ids=[source_id],
+        cfg=cfg,
+        registry=registry,
+    )
+
+    # registry keyed by section_id (not source_id), each entry carries seq.
+    assert set(registry.keys()) <= set(section_ids)
+    assert source_id not in registry, "registry must be section-keyed, not source-keyed"
+    for entry in registry.values():
+        assert entry.section_id in section_ids
+        assert entry.seq in (1, 2)
+    # at least one surfaced section shows verbatim → citable
+    assert any(e.citable for e in registry.values())
+    # _chunks contains a section fence
+    assert "· Section" in result["_chunks"]
+    # _raw_chunks carries section_id / section_seq for downstream consumers
+    for r in result["_raw_chunks"]:
+        assert r["section_id"] in section_ids
+        assert r["section_seq"] in (1, 2)
+    # section_coverage replaces source_coverage in the public result
+    assert "section_coverage" in result
+    assert "source_coverage" not in result

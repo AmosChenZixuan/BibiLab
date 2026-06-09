@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 
 from bibilab.config import BibilabConfig
 from bibilab.db import (
+    get_sections,
     get_segments_for_ranges,
     get_source,
     get_source_facets,
@@ -446,8 +447,8 @@ async def execute_find_passages(
     )
 
     # Intra-turn dedup: drop chunks already rendered to the LLM this turn
-    # (parallel / multi-hop find_passages can overlap). source_coverage and the
-    # citation registry stay on the full result — a re-hit source keeps its [N].
+    # (parallel / multi-hop find_passages can overlap). section_coverage and the
+    # citation registry stay on the full result — a re-hit section keeps its [N].
     if seen_chunk_ids is None:
         new_chunks = result.chunks
     else:
@@ -462,27 +463,27 @@ async def execute_find_passages(
             )
     dedup_all_shown = bool(result.chunks) and not new_chunks
 
-    # Assign indices: new sources get next available index
-    next_index = max((e.index for e in registry.values()), default=0) + 1
-    for s in result.source_coverage:
-        sid = s.source_id
-        if sid not in registry:
-            registry[sid] = CitationRegistryEntry(
-                index=next_index,
-                source_id=sid,
-                title=s.video_title,
-            )
-            next_index += 1
-
-    # Build source_id → registry index lookup for chunk formatting. Every sid
-    # in source_coverage was just added to the registry above, so the membership
-    # check is a no-op — read directly.
-    source_id_to_index = {s.source_id: registry[s.source_id].index for s in result.source_coverage}
+    # Load sections for every source that surfaced a chunk this turn, once.
+    # hit_source_ids covers the full new_chunks set (not just deduped-out ones)
+    # so the section lookup sees the same scope as the rendered body.
+    hit_source_ids = {c.source_id for c in new_chunks}
+    sections_by_source: dict[str, list[tuple[str, int, int, int]]] = {}
+    summary_by_section_id: dict[str, str] = {}
+    ts_by_section_id: dict[str, tuple[float, float]] = {}
+    for sid in hit_source_ids:
+        rows = await get_sections(sid)
+        # seq is 0-based in the DB; the registry/fence display 1-based
+        # (matches the "Section N" human label, see _build_section_fence_header).
+        sections_by_source[sid] = [(r["id"], r["seq"] + 1, r["seg_start"], r["seg_end"]) for r in rows]
+        for r in rows:
+            summary_by_section_id[r["id"]] = r["summary"]
+            ts_by_section_id[r["id"]] = (r["timestamp_start"], r["timestamp_end"])
 
     # Reconstruct the speaker-turn body for each displayed chunk (kept from v1).
-    displayed = [c for c in new_chunks if c.source_id in source_id_to_index]
+    # Section allocation happens below; the per-chunk turn body is built first
+    # because the section's verbatim is the body, not just a header.
     ranges = [
-        (c.source_id, c.seg_start, c.seg_end) for c in displayed if c.seg_start is not None and c.seg_end is not None
+        (c.source_id, c.seg_start, c.seg_end) for c in new_chunks if c.seg_start is not None and c.seg_end is not None
     ]
     seg_rows = await get_segments_for_ranges(ranges) if ranges else []
     all_segs = rows_to_segments(seg_rows)  # convert once; (row, seg) pairs stay aligned below
@@ -491,10 +492,9 @@ async def execute_find_passages(
         segs_by_source.setdefault(r["source_id"], []).append(s)
     ns_by_source = {sid: build_speaker_namespace(segs) for sid, segs in segs_by_source.items()}
 
-    def _turn_body(c):
+    def _turn_body_for_index(c, idx: int) -> str:
         if c.seg_start is None or c.seg_end is None or c.source_id not in segs_by_source:
             return c.content
-        idx = source_id_to_index[c.source_id]
         chunk_segs = [
             s
             for s, r in zip(all_segs, seg_rows)
@@ -506,35 +506,57 @@ async def execute_find_passages(
             chunk_segs, include_time=True, citation_index=idx, speaker_namespace=ns_by_source[c.source_id]
         )
 
-    body_by_chunk = {id(c): _turn_body(c) for c in displayed}
+    title_by_source = {s.source_id: s.video_title for s in result.source_coverage}
 
-    # Entry-level fields seeded from the first chunk per source.
-    for c in new_chunks:
-        sid = c.source_id
-        if sid in registry:
-            cid = _chunk_id(c)
-            registry[sid].chunk_ids.add(cid)
-            entry = registry[sid]
-            if entry.timestamp_start is None:
-                entry.first_chunk_id = cid
-                entry.timestamp_start = c.timestamp_start
-                entry.timestamp_end = c.timestamp_end
-                entry.rerank_score = c.score
-                entry.preview = body_by_chunk.get(id(c), c.content)
+    def _alloc_section(section_id: str, source_id: str, title: str, seq: int) -> CitationRegistryEntry:
+        entry = registry.get(section_id)
+        if entry is None:
+            next_index = max((e.index for e in registry.values()), default=0) + 1
+            entry = CitationRegistryEntry(
+                index=next_index,
+                section_id=section_id,
+                source_id=source_id,
+                title=title,
+                seq=seq,
+            )
+            registry[section_id] = entry
+        return entry
 
-    turn_indices = sorted(set(source_id_to_index.values()))
-
+    # Map each displayed chunk → its section; allocate [N] per section.
     chunks_by_index: dict[int, list[str]] = {}
+    summaries_by_index: dict[int, str] = {}
     raw_chunks = []
     for c in new_chunks:
-        if c.source_id not in source_id_to_index:
+        sec = (
+            _section_for_seg(sections_by_source.get(c.source_id, []), c.seg_start) if c.seg_start is not None else None
+        )
+        if sec is None:
             continue
-        idx = source_id_to_index[c.source_id]
-        chunks_by_index.setdefault(idx, []).append(body_by_chunk[id(c)])
+        section_id, seq, _, _ = sec
+        entry = _alloc_section(section_id, c.source_id, title_by_source.get(c.source_id, c.video_title), seq)
+        idx = entry.index
+        entry.citable = True
+        cid = _chunk_id(c)
+        entry.chunk_ids.add(cid)
+        body = _turn_body_for_index(c, idx)
+        # First-chunk seed mirrors the pre-section flow; later chunks expand
+        # the section's [start, end] window.
+        if entry.first_chunk_id is None:
+            entry.first_chunk_id = cid
+            entry.rerank_score = c.score
+            entry.preview = body
+        if entry.timestamp_start is None or c.timestamp_start < entry.timestamp_start:
+            entry.timestamp_start = c.timestamp_start
+        if entry.timestamp_end is None or c.timestamp_end > entry.timestamp_end:
+            entry.timestamp_end = c.timestamp_end
+        chunks_by_index.setdefault(idx, []).append(body)
+        summaries_by_index[idx] = summary_by_section_id.get(section_id, "")
         raw_chunks.append(
             {
                 "source_id": c.source_id,
-                "chunk_id": _chunk_id(c),
+                "section_id": section_id,
+                "section_seq": seq,
+                "chunk_id": cid,
                 "content": c.content,
                 "video_title": c.video_title,
                 "timestamp_start": c.timestamp_start,
@@ -542,6 +564,8 @@ async def execute_find_passages(
                 "citation_index": idx,
             }
         )
+
+    turn_indices = sorted(chunks_by_index)
 
     # The all-directive "no-coverage" note is DELETED — that behavior lives in
     # the grounding prompt. The tool emits only the FACT: empty pool.
@@ -562,12 +586,17 @@ async def execute_find_passages(
             "matched_count": facet_matched_count,
             "no_match": facet_no_match,
         },
-        "source_coverage": [
+        "section_coverage": [
             {
-                "source_id": s.source_id,
-                "title": s.video_title,
+                "section_id": e.section_id,
+                "source_id": e.source_id,
+                "source_title": e.title,
+                "seq": e.seq,
+                "timestamp_start": ts_by_section_id.get(e.section_id, (None, None))[0],
+                "timestamp_end": ts_by_section_id.get(e.section_id, (None, None))[1],
             }
-            for s in result.source_coverage
+            for e in sorted(registry.values(), key=lambda e: e.index)
+            if e.index in turn_indices or e.index in summaries_by_index
         ],
         "_chunks": (
             no_coverage_fact
@@ -575,12 +604,7 @@ async def execute_find_passages(
             + (
                 "All matching passages for this query were already retrieved earlier this turn.\n\n"
                 if dedup_all_shown
-                else (
-                    f"Sources retrieved this turn: {', '.join(f'[{i}]' for i in turn_indices)}. "
-                    "Cite only these indices.\n\n"
-                    f"{_build_source_headers(registry, source_ids)}\n\n"
-                    + _build_fenced_chunks(chunks_by_index, registry)
-                )
+                else _build_fenced_sections(chunks_by_index, summaries_by_index, registry)
             )
         ),
         "_turn_indices": turn_indices,
