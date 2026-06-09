@@ -51,7 +51,7 @@ def _expand_indices(
     for token in tokens:
         n = int(token.strip())
         entry = index_to_entry.get(n)
-        if entry is not None:
+        if entry is not None and entry.citable:
             # chunk_ids snapshot is safe: LLM only emits prose after the
             # retrieve tool result completes — registry is stable at this point.
             # If retrieve ever streams mid-prose, this becomes a race.
@@ -61,18 +61,22 @@ def _expand_indices(
                     content=json.dumps(
                         {
                             "index": n,
+                            "section_id": entry.section_id,
                             "source_id": entry.source_id,
+                            "timestamp_start": entry.timestamp_start or 0.0,
                             "chunk_ids": sorted(entry.chunk_ids),
                         }
                     ),
                 )
             )
         else:
-            logger.warning(
-                "citation_hallucinated_index index=%d registry_size=%d",
-                n,
-                len(index_to_entry),
-            )
+            # Outline-only (citable=False) or unknown index — emit as text.
+            if entry is None:
+                logger.warning(
+                    "citation_hallucinated_index index=%d registry_size=%d",
+                    n,
+                    len(index_to_entry),
+                )
             # D3: a single unknown index emits its original substring; inside a
             # multi-index token each unknown index emits its own digits as text.
             text = matched if len(tokens) == 1 else str(n)

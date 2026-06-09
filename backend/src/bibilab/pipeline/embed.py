@@ -496,7 +496,7 @@ async def retrieve(
 
     No relevance gate (rerank is ordering, not authority) and no per-source
     diversity cap. The LLM filters relevance and decides whether to escalate
-    to read_source.
+    to read_section.
     """
     sources_total = len(source_ids)
     search_pool = scoped_source_ids if scoped_source_ids is not None else source_ids

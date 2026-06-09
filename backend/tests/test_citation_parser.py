@@ -6,8 +6,13 @@ from bibilab.pipeline.chat_tools import CitationRegistryEntry
 from bibilab.pipeline.citation_parser import flush_buffer, parse_delta
 
 
-def _e(index: int, source_id: str = "") -> CitationRegistryEntry:
-    return CitationRegistryEntry(index=index, source_id=source_id or f"s{index}")
+def _e(index: int, source_id: str = "", section_id: str | None = None, citable: bool = True) -> CitationRegistryEntry:
+    return CitationRegistryEntry(
+        index=index,
+        section_id=section_id or f"sec-{index}",
+        source_id=source_id or f"s{index}",
+        citable=citable,
+    )
 
 
 def _lk(*entries: CitationRegistryEntry) -> dict[int, CitationRegistryEntry]:
@@ -300,3 +305,68 @@ class TestTimestampSuffix:
         events, _ = parse_delta("see [7 @ 460s-635s]", "", _lk(_e(1), _e(2)))
         assert _citations(events) == []
         assert "[7 @ 460s-635s]" in _delta_text(events)
+
+
+class TestSectionPayload:
+    """T7 — citation event payload gains section_id + timestamp_start
+    (additive). Old fields (index, source_id, chunk_ids) preserved."""
+
+    def test_citation_event_carries_section_and_timestamp(self):
+        reg = {
+            1: CitationRegistryEntry(
+                index=1,
+                section_id="sec-1",
+                source_id="src-1",
+                title="T",
+                seq=2,
+                citable=True,
+                timestamp_start=42.0,
+            )
+        }
+        events, _ = parse_delta("see [1] here", "", reg)
+        cite = next(e for e in events if e.type == "citation")
+        payload = json.loads(cite.content)
+        assert payload == {
+            "index": 1,
+            "section_id": "sec-1",
+            "source_id": "src-1",
+            "timestamp_start": 42.0,
+            "chunk_ids": [],
+        }
+
+    def test_citation_event_preserves_legacy_fields(self):
+        """All three pre-existing payload keys must remain present."""
+        reg = {
+            1: CitationRegistryEntry(
+                index=1,
+                section_id="sec-1",
+                source_id="src-1",
+                title="T",
+                citable=True,
+            )
+        }
+        events, _ = parse_delta("[1]", "", reg)
+        cite = next(e for e in events if e.type == "citation")
+        payload = json.loads(cite.content)
+        assert "index" in payload
+        assert "source_id" in payload
+        assert "chunk_ids" in payload
+
+    def test_outline_only_section_emits_text_not_citation(self):
+        """citable=False (outline-only) registry entries must NOT emit a citation
+        event — the [N] marker is stripped to text instead. The LLM often
+        references an outline section it never drilled into."""
+        reg = {
+            1: CitationRegistryEntry(
+                index=1,
+                section_id="s",
+                source_id="src",
+                title="T",
+                seq=1,
+                citable=False,
+            )
+        }
+        events, _ = parse_delta("ref [1]", "", reg)
+        assert all(e.type != "citation" for e in events)
+        combined = "".join(e.content or "" for e in events if e.type == "delta")
+        assert "[1]" in combined

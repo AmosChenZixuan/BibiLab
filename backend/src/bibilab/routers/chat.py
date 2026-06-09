@@ -59,7 +59,7 @@ from bibilab.pipeline.chat_runs import (
 from bibilab.pipeline.chat_summary import maybe_compress_conversation
 from bibilab.pipeline.chat_tools import (
     FIND_PASSAGES_TOOL,
-    READ_SOURCE_TOOL,
+    READ_SECTION_TOOL,
     RETRIEVE_TOOL_NAMES,
     CitationRegistryEntry,
     build_tool_block_entry,
@@ -220,7 +220,7 @@ def _client_tool_result(result: dict) -> dict:
 def _llm_tool_message_content(result: dict) -> str:
     """LLM-bound content of a tool result: the formatted excerpts only.
 
-    `_chunks` is set on every tool path (find_passages, read_source narrative,
+    `_chunks` is set on every tool path (find_passages, read_section narrative,
     resolution-error). Other fields (FTS bigram text, telemetry, bookkeeping)
     are client-only or persistence-only.
     """
@@ -238,58 +238,66 @@ def build_grounding_prompt(response_language: str) -> str:
     lang = _LANG_NATIVE_NAME.get(response_language, "English")
     return (
         "## Workflow\n"
-        "You answer questions about a collection of video transcripts using two tools.\n\n"
+        "You answer questions about a collection of video transcripts using two tools. "
+        "Both tools operate at SECTION granularity (a source is split into bounded sections, "
+        "each with its own [N] citation index).\n\n"
         "- `find_passages(query, sequence_number?, season_number?)`: search for "
-        "relevant excerpts. Your DEFAULT for fact-finding. Returns the most "
-        "relevant passages across sources (each fenced under its source with a "
-        "[N] index). Pass sequence_number / season_number ONLY when the current "
-        "message explicitly names an episode (第八集) or season (第二季).\n"
-        "- `read_source(source_id?, sequence_number?, season_number?)`: read ONE "
-        "source's full transcript. Expensive. A question asking what a named "
-        "episode/season COVERS or what HAPPENS in it ('第N集讲了什么', '第一集的"
-        "故事', '介绍第三集') → read_source(sequence_number=N), NOT find_passages. "
-        "A facet on find_passages finds a specific FACT inside a named episode; it "
-        "does NOT summarize the episode. Also use read_source to escalate when "
-        "find_passages shows a source is on-topic but its fragments miss the "
-        "specific thing asked.\n\n"
+        "relevant excerpts. Your DEFAULT for fact-finding. Returns the most relevant "
+        "passages GROUPED BY SECTION — each section is fenced under a [N] index with its "
+        "summary, and the matching excerpts are quoted under that fence. Pass "
+        "sequence_number / season_number ONLY when the current message explicitly names "
+        "an episode (第八集) or season (第二季). A facet match returns the named episode's "
+        "full section OUTLINE — every section in that episode with its summary, one per [N] "
+        "(no quoted excerpts). The outline is for orientation; verbatim text comes from "
+        "the section's own [N] only.\n"
+        "- `read_section(section_id)`: read ONE section's full verbatim transcript. "
+        "Drill a section by its [N] (the index printed in a find_passages fence) when its "
+        "summary/fragments miss the specific thing asked. To read a whole episode verbatim, "
+        "issue parallel read_section calls, one per [N]. Use this to escalate when "
+        "find_passages shows a section is on-topic but its fragments miss the asked specific.\n\n"
+        "A coverage question ('第N集讲了什么', '第一集的故事', 'what does episode N cover', "
+        "'介绍第三集') MUST be answered from a fresh OUTLINE retrieve — call "
+        "find_passages with the matching facet to get the named episode's section outline, "
+        "then synthesize from the per-section summaries. NEVER answer a coverage question "
+        "from conversation history; the summaries are the answer, not your prior prose.\n\n"
         "Decompose the message into distinct SUBJECTS (entities, episodes, items "
         "compared). ONE subject → ONE call. MULTIPLE subjects (comparisons, "
-        "multi-episode) → parallel calls, one per subject, the appropriate tool "
-        "each. For 'what does season N cover', issue parallel read_source calls "
-        "(one per episode), not a single call.\n\n"
-        "Stop/continue is YOUR call: if find_passages fragments answer the "
-        "question, synthesize from them. If a source is clearly on-topic but the "
-        "fragments miss the asked specific, call read_source on that source and "
-        "read it IN FULL before answering. find_passages locates specific facts; "
-        "read_source reads an episode — pick by what the question wants, not by "
-        "cost.\n\n"
-        "Do NOT call a tool when none is needed: greetings, thanks, capability "
-        "questions, and pure acknowledgments ('嗯', 'ok', '我懂了') get a direct "
-        "reply WITHOUT calling any tool. If the current question is already "
-        "answerable from the CONVERSATION HISTORY (you answered it, or a closely "
-        "related question, earlier this conversation), answer directly from that "
-        "context WITHOUT calling a tool — prior excerpt text is gone, but you may "
-        "rely on your own earlier answer.\n\n"
+        "multi-episode) → parallel calls, one per subject, the appropriate tool each. "
+        "For 'what does season N cover', issue parallel find_passages-with-facet calls "
+        "(one per episode) to get each episode's outline, not a single call.\n\n"
+        "Stop/continue is YOUR call: if find_passages fragments or the outline summaries "
+        "answer the question, synthesize from them. If a section is clearly on-topic but "
+        "the fragments miss the asked specific, call read_section on that [N] and read it "
+        "IN FULL before answering. find_passages locates specific facts; read_section drills "
+        "one section — pick by what the question wants, not by cost.\n\n"
+        "Do NOT call a tool when none is needed: greetings, thanks, capability questions, "
+        "and pure acknowledgments ('嗯', 'ok', '我懂了') get a direct reply WITHOUT calling "
+        "any tool. If the current question is already answerable from the CONVERSATION "
+        "HISTORY (you answered it, or a closely related question, earlier this conversation), "
+        "answer directly from that context WITHOUT calling a tool — prior excerpt text is "
+        "gone, but you may rely on your own earlier answer. EXCEPTION: a coverage question "
+        "('what does episode N cover') is NEVER answerable from history; always retrieve.\n\n"
         "## Grounding\n"
-        "Build your answer from retrieved excerpts / read sources alone. Do not "
-        "draw on outside knowledge. Treat the content as authoritative whether "
-        "fictional or real; never refuse on the grounds that content is fictional, "
-        "informal, or not encyclopedic. Copy proper nouns (titles, names, terms) "
-        "verbatim from the source they appear in. Each find_passages excerpt is "
-        "fenced under its source by a `===== Source [N] =====` line; never carry a "
-        "proper noun across a fence. If find_passages returns no excerpts, tell the "
-        "user that the library has no content on this "
-        "topic, and stop — do not use outside knowledge, real-world analogies, or "
-        "encyclopedic definitions. If a scoped search (sequence_number / "
-        "season_number) matched no source, say so before answering from the wider "
-        "pool. If read_source reports a source has no transcript available, you "
-        "cannot answer from that source — tell the user it is not available yet "
-        "and do NOT infer from its title, summary, or duration.\n\n"
+        "Build your answer from retrieved excerpts / read sections alone. Do not draw on "
+        "outside knowledge. Treat the content as authoritative whether fictional or real; "
+        "never refuse on the grounds that content is fictional, informal, or not encyclopedic. "
+        "Copy proper nouns (titles, names, terms) verbatim from the section they appear in. "
+        'Each find_passages excerpt is fenced under its section by a `===== [N] "title" · '
+        "Section S =====` line; never carry a proper noun across a fence. If find_passages "
+        "returns no excerpts, tell the user that the library has no content on this topic, "
+        "and stop — do not use outside knowledge, real-world analogies, or encyclopedic "
+        "definitions. If a scoped search (sequence_number / season_number) matched no source, "
+        "say so before answering from the wider pool. If read_section reports a section has "
+        "no transcript available, you cannot answer from it — tell the user it is not "
+        "available yet and do NOT infer from its title, summary, or duration.\n\n"
         "## Citation\n"
-        "Cite each claim with `[N]`, where N is the source index from the tool "
-        "result. Cite only sources you actually retrieved or read. Place `[N]` "
-        "immediately after the sentence it supports, on the same line. For "
-        'read_source answers, reference moments inline, e.g. "around 1:52 [1]".\n\n'
+        "Cite each claim with `[N]`, where N is the section index from the tool result. "
+        "Cite `[N]` ONLY for sections whose verbatim you were shown — either a find_passages "
+        "excerpt under that [N], or a read_section call on that [N]. Outline summaries "
+        "(the per-section [N] entries returned by a facet-matched find_passages) are "
+        "orientation, not evidence: do not attach `[N]` to a claim drawn ONLY from a "
+        "summary. Place `[N]` immediately after the sentence it supports, on the same line. "
+        'For read_section answers, reference moments inline, e.g. "around 1:52 [1]".\n\n'
         "## Style\n"
         "Be direct and concise. Do not ask follow-up questions or offer "
         f"unsolicited next steps. Respond in {lang}."
@@ -617,7 +625,7 @@ async def run_chat_turn(
     citation_registry: dict[str, CitationRegistryEntry] = {}
     assistant_text_deltas: list[str] = []
     retrieve_calls: list[dict] = []
-    read_source_calls: list[dict] = []
+    read_section_calls: list[dict] = []
     all_calls: list[dict] = []
     content_blocks: list[dict] = []
     pending_text = ""
@@ -655,7 +663,7 @@ async def run_chat_turn(
                 **kwargs,
             )
 
-        tools = [FIND_PASSAGES_TOOL, READ_SOURCE_TOOL]
+        tools = [FIND_PASSAGES_TOOL, READ_SECTION_TOOL]
 
         tool_blocks: list[dict] = []
         # Cumulative LLM message list at end-of-turn. stream_with_tools rebinds
@@ -690,7 +698,9 @@ async def run_chat_turn(
                     {
                         "type": "citation",
                         "index": data["index"],
+                        "section_id": data.get("section_id", ""),
                         "source_id": data["source_id"],
+                        "timestamp_start": data.get("timestamp_start", 0.0),
                         "chunk_ids": data.get("chunk_ids", []),
                     }
                 )
@@ -698,7 +708,7 @@ async def run_chat_turn(
                 parsed = json.loads(event.content)
                 if parsed["name"] in RETRIEVE_TOOL_NAMES:
                     result = parsed["result"]
-                    # Store raw source_coverage for now; narrow by emitted citations in finally.
+                    # Store raw section_coverage for now; narrow by emitted citations in finally.
                     retrieve_calls.append(
                         {
                             "query": result.get("query", ""),
@@ -706,16 +716,23 @@ async def run_chat_turn(
                             "candidates_evaluated": result.get("candidates_evaluated"),
                             "sources_with_hits": result.get("sources_with_hits"),
                             "sources_total": result.get("sources_total"),
-                            "source_coverage": result.get("source_coverage", []),
+                            "section_coverage": result.get("section_coverage", []),
                             "reranked": result.get("reranked", False),
                             "scoped_pool_size": result.get("scoped_pool_size"),
                             "facet_scope": result.get("facet_scope"),
                         }
                     )
-                elif parsed["name"] == READ_SOURCE_TOOL.name:
+                elif parsed["name"] == READ_SECTION_TOOL.name:
                     sid = parsed["result"].get("source_id")
                     if sid:  # None on a resolution error → nothing was read, no ledger row
-                        read_source_calls.append({"tool_name": "read_source", "source_id": sid})
+                        read_section_calls.append(
+                            {
+                                "tool_name": READ_SECTION_TOOL.name,
+                                "section_id": parsed["result"].get("section_id", ""),
+                                "source_id": sid,
+                                "source_title": parsed["result"].get("source_title", ""),
+                            }
+                        )
             elif event.type == "error":
                 logger.error("stream_with_tools error: %s", event.content)
                 error_reason = "tool_error"
@@ -753,35 +770,38 @@ async def run_chat_turn(
                 _flush_pending_text(content_blocks, pending_text)
                 pending_text = ""
 
-            # Narrow source_coverage to only sources whose [N] actually appeared in assistant text.
-            # content_blocks (type: "citation") is fully populated at this point.
-            # Reconstruct context[] from citation_registry for each retrieve call.
+            # Narrow section_coverage to only sections whose [N] actually appeared
+            # in assistant text. content_blocks (type: "citation") is fully populated
+            # at this point. Reconstruct context[] from the section-keyed citation
+            # registry for each retrieve call.
             if retrieve_calls:
                 emitted_indices = {cb["index"] for cb in content_blocks if cb.get("type") == "citation"}
                 if emitted_indices:
-                    emitted_source_ids = {
+                    emitted_section_ids = {
                         sid for sid, entry in citation_registry.items() if entry.index in emitted_indices
                     }
                 else:
-                    emitted_source_ids = set()
+                    emitted_section_ids = set()
                 for call in retrieve_calls:
-                    # Narrow source_coverage only when citations were emitted.
-                    if emitted_source_ids:
-                        call["source_coverage"] = [
-                            s for s in call["source_coverage"] if s.get("source_id") in emitted_source_ids
+                    # Narrow section_coverage only when citations were emitted.
+                    if emitted_section_ids:
+                        call["section_coverage"] = [
+                            s for s in call["section_coverage"] if s.get("section_id") in emitted_section_ids
                         ]
                     # Always reconstruct context[] from citation registry.
-                    # One entry per source in source_coverage (narrowed or full).
-                    source_ids_in_call = {s["source_id"] for s in call["source_coverage"]}
+                    # One entry per section in section_coverage (narrowed or full).
+                    section_ids_in_call = {s["section_id"] for s in call["section_coverage"]}
                     context_entries = []
-                    for sid in source_ids_in_call:
+                    for sid in section_ids_in_call:
                         entry = citation_registry.get(sid)
                         if entry is not None:
                             context_entries.append(
                                 {
+                                    "section_id": sid,
+                                    "section_seq": entry.seq,
                                     "chunk_id": entry.first_chunk_id or "",
                                     "citation_index": entry.index,
-                                    "source_id": sid,
+                                    "source_id": entry.source_id,
                                     "source_title": entry.title or "",
                                     "timestamp_start": entry.timestamp_start or 0.0,
                                     "timestamp_end": entry.timestamp_end or 0.0,
@@ -791,16 +811,22 @@ async def run_chat_turn(
                             )
                     call["context"] = context_entries
 
-            for rs in read_source_calls:
-                entry = citation_registry.get(rs["source_id"])
-                rs["source_title"] = entry.title if entry else ""
-                # read_source rows carry no chunk context — the read is continuous
-                # transcript, not a fenced locator result. A synthetic entry with
-                # zeroed fields would render as "0:00 / 0.00" in the frontend
-                # ledger; an empty array lets the renderer branch on tool_name
-                # and show a "read in full" affordance instead.
+            for rs in read_section_calls:
+                # registry is keyed by section_id; look up by section_id first, fall
+                # back to source_id for legacy messages persisted before T9.
+                section_id = rs.get("section_id", "")
+                entry = citation_registry.get(section_id) if section_id else None
+                if entry is None:
+                    entry = citation_registry.get(rs["source_id"])
+                if entry is not None and not rs.get("source_title"):
+                    rs["source_title"] = entry.title or ""
+                # read_section rows carry no chunk context — the read is bounded
+                # verbatim transcript, not a fenced locator result. A synthetic entry
+                # with zeroed fields would render as "0:00 / 0.00" in the frontend
+                # ledger; an empty array lets the renderer branch on tool_name and
+                # show a "read in full" affordance instead.
                 rs["context"] = []
-            all_calls = retrieve_calls + read_source_calls
+            all_calls = retrieve_calls + read_section_calls
 
             meta: dict[str, Any] = {}
 

@@ -3,15 +3,14 @@
 import json
 import logging
 import re
-from collections.abc import Iterable
 from dataclasses import dataclass, field
 
 from bibilab.config import BibilabConfig
 from bibilab.db import (
+    get_sections,
     get_segments_for_ranges,
     get_source,
     get_source_facets,
-    get_transcript_segments,
     rows_to_segments,
 )
 from bibilab.pipeline._shared import ToolDefinition
@@ -32,11 +31,13 @@ _NO_MATCH_NOTE = "No source matched the requested episode/season; searched all s
 @dataclass
 class CitationRegistryEntry:
     index: int
+    section_id: str
     source_id: str
     title: str = ""
+    seq: int | None = None  # 1-based section seq within the source
+    citable: bool = False  # True once this section's verbatim is shown
     chunk_ids: set[str] = field(default_factory=set)
     # Populated at SSE-build time from execute_find_passages chunk data.
-    # Used to reconstruct context[] for persisted metadata.
     first_chunk_id: str | None = None
     timestamp_start: float | None = None
     timestamp_end: float | None = None
@@ -54,38 +55,43 @@ def strip_internal(result: dict) -> dict:
     return {k: v for k, v in result.items() if not k.startswith("_")}
 
 
-def _build_source_headers(registry: dict[str, CitationRegistryEntry], source_ids: Iterable[str]) -> str:
-    # Bound the LLM-facing source list to the current turn's pool: a source
-    # reseeded from history but de-selected in this turn must not appear here,
-    # or the LLM will see "[5] = …" and try read_source("[5]") only to learn
-    # via the new fail-loud error. The registry itself stays unfiltered — it
-    # is the resolver's lookup table for [N] → source_id.
-    lines = []
-    for entry in sorted(registry.values(), key=lambda e: e.index):
-        if entry.source_id not in source_ids:
-            continue
-        title = entry.title
-        lines.append(f'Source [{entry.index}]: "{title}"')
-    return "\n".join(lines)
+def _mmss(seconds: float | None) -> str:
+    s = int(seconds or 0)
+    m, sec = divmod(s, 60)
+    h, m = divmod(m, 60)
+    return f"{h}:{m:02d}:{sec:02d}" if h else f"{m}:{sec:02d}"
 
 
-def _build_fenced_chunks(
+def _build_section_fence_header(entry: CitationRegistryEntry) -> str:
+    return (
+        f'===== [{entry.index}] "{entry.title}" · Section {entry.seq} '
+        f"({_mmss(entry.timestamp_start)}–{_mmss(entry.timestamp_end)}) ====="
+    )
+
+
+def _build_fenced_sections(
     chunks_by_index: dict[int, list[str]],
+    summaries_by_index: dict[int, str],
     registry: dict[str, CitationRegistryEntry],
 ) -> str:
-    """Render chunks grouped by citation index, each group fenced by its source.
-
-    Buckets are emitted in ascending index order; the caller-supplied order
-    within each bucket (rerank order) is preserved. The fence makes the
-    source boundary structural so the LLM does not graft a proper noun from
-    one source onto another.
+    """Render each surfaced section: fence header, then its summary, then its
+    chunk fragments (if any). Emitted in ascending [N] order. A section with a
+    summary but no chunks (outline-only) renders header + summary only.
     """
-    title_by_index = {e.index: e.title for e in registry.values()}
-    blocks = []
-    for idx in sorted(chunks_by_index):
-        title = title_by_index.get(idx, "")
-        header = f'===== Source [{idx}]: "{title}" ====='
-        blocks.append(header + "\n" + "\n".join(chunks_by_index[idx]))
+    by_index = {e.index: e for e in registry.values()}
+    blocks: list[str] = []
+    for idx in sorted(set(chunks_by_index) | set(summaries_by_index)):
+        entry = by_index.get(idx)
+        if entry is None:
+            continue
+        parts = [_build_section_fence_header(entry)]
+        summary = summaries_by_index.get(idx)
+        if summary:
+            parts.append(summary)
+        body = "\n".join(chunks_by_index.get(idx, []))
+        if body:
+            parts.append(body)
+        blocks.append("\n".join(parts))
     return "\n\n".join(blocks)
 
 
@@ -94,6 +100,20 @@ def _chunk_id(chunk) -> str:
     dedup. Centralizing the formula here guarantees the dedup key can never
     drift from the citation key."""
     return f"{chunk.source_id}_{int(chunk.timestamp_start)}_{int(chunk.timestamp_end)}"
+
+
+def _section_for_seg(sections: list[tuple[str, int, int, int]], seg_start: int) -> tuple[str, int, int, int] | None:
+    """Return the (section_id, seq, seg_start, seg_end) tuple whose range
+    contains `seg_start`, or None if no section contains it.
+
+    Chunks nest in exactly one section (a chunk's [seg_start, seg_end] is fully
+    contained in one section's range — CLAUDE.md sections invariant), so mapping
+    by the chunk's seg_start is sufficient and unambiguous.
+    """
+    for sid, seq, s, e in sections:
+        if s <= seg_start <= e:
+            return (sid, seq, s, e)
+    return None
 
 
 def _partition_unseen_chunks(chunks: list, seen_chunk_ids: set[str]) -> list:
@@ -116,9 +136,9 @@ def _partition_unseen_chunks(chunks: list, seen_chunk_ids: set[str]) -> list:
 
 # Tool defs + registry for the RAG v2 two-tool surface.
 # RETRIEVE_TOOL_NAMES is the set whose tool results carry a replayable chunk
-# array (only find_passages). read_source shares the SAME citation registry and
-# allocates a new [N] when find_passages has not already registered the source
-# this turn (dedup by source_id).
+# array (only find_passages). read_section resolves an already-registered [N]
+# from the citation registry to one section's bounded verbatim transcript
+# (no new index allocation).
 FIND_PASSAGES_TOP_K = 8
 
 FIND_PASSAGES_TOOL = ToolDefinition(
@@ -128,11 +148,11 @@ FIND_PASSAGES_TOOL = ToolDefinition(
         "Returns the most relevant passages across all sources (or a single "
         "episode/season if you pass a facet), each fenced under its source with "
         "a [N] citation index.\n\n"
-        "This is a LOCATOR: it surfaces *which sources* are relevant and gives "
+        "This is a LOCATOR: it surfaces *which sections* are relevant and gives "
         "you fragments to read. The fragments may not fully answer the question. "
-        "If they answer it, synthesize. If a source is clearly on-topic but the "
-        "fragments miss the specific thing asked, call read_source on that source "
-        "to read it in full.\n\n"
+        "If they answer it, synthesize. If a section is clearly on-topic but the "
+        "fragments miss the specific thing asked, call read_section on that [N] "
+        "to read the section in full.\n\n"
         "Pass the user's question in natural form, copying proper nouns verbatim. "
         "Pass sequence_number / season_number ONLY when the current message "
         "explicitly names an episode (第八集) or season (第二季).\n\n"
@@ -157,34 +177,27 @@ FIND_PASSAGES_TOOL = ToolDefinition(
     },
 )
 
-READ_SOURCE_TOOL = ToolDefinition(
-    name="read_source",
+READ_SECTION_TOOL = ToolDefinition(
+    name="read_section",
     description=(
-        "Read ONE source's full continuous transcript (summary + timestamped "
-        "narrative). Expensive — use only when find_passages shows a source is "
-        "on-topic but its fragments miss the specific thing asked, or for "
-        "narrative-coverage questions about a named episode/season.\n\n"
-        "Resolves to EXACTLY ONE source. Pass source_id (the [N] citation index "
-        "from a find_passages result) OR a facet (sequence_number / "
-        "season_number). If a facet matches multiple sources it errors with the "
-        "candidates — narrow it or pass source_id. For 'what does season N "
-        "cover', issue parallel read_source calls (one per episode), not one "
-        "fan-out call.\n\n"
-        "Examples:\n"
-        "  read_source(sequence_number=5)\n"
-        '  read_source(source_id="[5]")'
+        "Read ONE section's full verbatim transcript. A find_passages result "
+        "fences each section under a [N] index; pass that index to read that "
+        "section in full when its summary/fragments miss the specific thing "
+        "asked. For 'what does episode N cover', read the outline summaries "
+        "first; to quote a specific section, read_section that [N]. To read a "
+        "whole episode verbatim, issue parallel read_section calls, one per "
+        "section index.\n\n"
+        'Example:\n  read_section(section_id="[5]")'
     ),
     parameters={
         "type": "object",
         "properties": {
-            "source_id": {
+            "section_id": {
                 "type": "string",
-                "description": ("Citation index from a find_passages result, e.g. '[5]'. Not a source UUID."),
+                "description": "Section citation index from a find_passages result, e.g. '[5]'.",
             },
-            "sequence_number": {"type": "integer", "description": "Episode / part number."},
-            "season_number": {"type": "integer", "description": "Season number."},
         },
-        "required": [],
+        "required": ["section_id"],
     },
 )
 
@@ -195,65 +208,6 @@ RETRIEVE_TOOL_NAMES: frozenset[str] = frozenset({FIND_PASSAGES_TOOL.name})
 _CITATION_INDEX_RE = re.compile(r"^\s*(?:source\s*)?\[?\s*(\d+)\s*\]?\s*$", re.IGNORECASE)
 
 
-async def _resolve_single_source(
-    source_ids: list[str],
-    source_id: str | int | None,
-    sequence_number: int | None,
-    season_number: int | None,
-    registry: dict[str, CitationRegistryEntry] | None = None,
-) -> tuple[str | None, str | None]:
-    """Resolve exactly one source from the pool. Returns (source_id, error_msg).
-
-    Strict cardinality contract: 0 matches → error, >1 → ambiguous
-    error with candidates. Errors are LLM-facing strings (English, like the
-    fence body), returned in the tool result — never raised (a raise aborts the
-    SSE stream).
-    """
-    if source_id is not None:
-        # A bare int is the cleanest form of the index — use it directly. Only a
-        # string needs the anchored regex, whose job is to peel "[5]"/"5"/"Source
-        # [5]" while rejecting stray titles like "Episode 5 discussion". Anything
-        # else fails loud (returned, never raised — a raise aborts the SSE stream).
-        if isinstance(source_id, int):
-            idx = source_id
-        elif isinstance(source_id, str) and (match := _CITATION_INDEX_RE.match(source_id)):
-            idx = int(match.group(1))
-        else:
-            return None, 'source_id must be a citation index like "[5]".'
-        for entry in (registry or {}).values():
-            if entry.index == idx and entry.source_id in source_ids:
-                return entry.source_id, None
-        return None, (
-            f"No source [{idx}] in this conversation. Call find_passages first, "
-            "or pass sequence_number / season_number."
-        )
-
-    predicates = {
-        k: v for k, v in (("sequence_number", sequence_number), ("season_number", season_number)) if v is not None
-    }
-    if not predicates:
-        return None, "read_source needs a source_id, sequence_number, or season_number."
-
-    try:
-        facets = await get_source_facets(source_ids)
-    except Exception:  # noqa: BLE001 - fail closed: an unresolved read is an error, not a guess
-        logger.warning("read_source: get_source_facets failed", exc_info=True)
-        return None, "Could not resolve the source (facet lookup failed); try a source_id."
-
-    matched = _filter_sources_by_facets(source_ids, facets, predicates)
-    if not matched:
-        return None, f"No source matches {predicates}."
-    if len(matched) > 1:
-        cands = ", ".join(
-            f"seq={facets[m].get('sequence_number')} season={facets[m].get('season_number')}" for m in matched
-        )
-        return None, (
-            f"Ambiguous — {len(matched)} sources match {predicates}; "
-            f"specify season_number or source_id. Candidates: [{cands}]"
-        )
-    return matched[0], None
-
-
 def _filter_sources_by_facets(
     source_ids: list[str],
     facets: dict[str, dict[str, int | None]],
@@ -261,99 +215,80 @@ def _filter_sources_by_facets(
 ) -> list[str]:
     """Return source_ids whose stored facets match all (k, v) in predicates.
 
-    Shared by _resolve_single_source (fail-closed) and execute_find_passages
-    (fail-open); the cardinality policy lives at the call site.
+    Used by execute_find_passages facet scoping (fail-open). Card policy lives
+    at the call site.
     """
     return [sid for sid in source_ids if sid in facets and all(facets[sid].get(k) == v for k, v in predicates.items())]
 
 
-def _build_source_narrative(source: dict, segments: list, idx: int) -> str:
-    """Single source header + continuous timestamped transcript.
-
-    Reuses format_turns (include_time) for the speaker-turn body — NOT per-chunk
-    fenced. Narrative continuity is the point.
-    """
-    # Empty-transcript edge: SUPPRESS the header — it only
-    # frames a body, and with no body it just hands the LLM fabrication fuel (a
-    # title it already has from the fence). Return the explicit fact ONLY.
-    if not segments:
+async def _build_section_narrative(entry: CitationRegistryEntry) -> str:
+    """One section's verbatim speaker-turn body, bounded by its seg range,
+    rendered with the section's own citation index."""
+    rows = await get_sections(entry.source_id)
+    sec = next((r for r in rows if r["id"] == entry.section_id), None)
+    if sec is None:
+        return f"section [{entry.index}] not found."
+    seg_rows = await get_segments_for_ranges([(entry.source_id, sec["seg_start"], sec["seg_end"])])
+    if not seg_rows:
+        # Empty-transcript edge: SUPPRESS the header — it only frames a body,
+        # and with no body it just hands the LLM fabrication fuel (a title it
+        # already has from the fence). Return the explicit fact ONLY.
         return (
-            f"source [{idx}] has no transcript available "
+            f"section [{entry.index}] has no transcript available "
             "(it may still be processing, or transcription may have failed)."
         )
-    dur = source.get("duration_seconds")
-    dur_line = f"Duration: {int(dur) // 60}:{int(dur) % 60:02d}, " if dur else ""
-    header = (
-        f'===== Source [{idx}]: "{source.get("title", "")}"\n'
-        f"Summary: {source.get('summary') or '(none)'}\n"
-        f"{dur_line}Language: {source.get('language') or 'unknown'}\n"
-        f"====="
-    )
-    whisper_segs = [
-        WhisperSegment(start=s["start_s"], end=s["end_s"], text=s["text"], speaker=s["speaker"]) for s in segments
-    ]
-    body = format_turns(whisper_segs, include_time=True)
+    segs = rows_to_segments(seg_rows)
+    ns = build_speaker_namespace(segs)
+    header = f'===== [{entry.index}] "{entry.title}" · Section {entry.seq} ====='
+    body = format_turns(segs, include_time=True, citation_index=entry.index, speaker_namespace=ns)
     return header + "\n\n" + body
 
 
-async def execute_read_source(
+async def execute_read_section(
     source_ids: list[str],
-    source_id: str | int | None,
-    sequence_number: int | None,
-    season_number: int | None,
+    section_id: str | int | None,
     registry: dict[str, CitationRegistryEntry] | None = None,
 ) -> dict:
-    if registry is None:
-        registry = {}
+    """Read ONE section's bounded verbatim transcript by [N] citation index.
 
-    resolved, error = await _resolve_single_source(source_ids, source_id, sequence_number, season_number, registry)
-    if error is not None:
-        logger.info(
-            "read_source: unresolved (%s) source_id=%r seq=%s season=%s",
-            error,
-            source_id,
-            sequence_number,
-            season_number,
-        )
-        return {"_chunks": error, "source_id": None, "source_title": "", "tool_name": "read_source"}
-
-    source = await get_source(resolved)
-    if source is None:
-        logger.info("read_source: resolved=%s but source row missing", resolved)
+    The index must already be registered this turn (via find_passages). The
+    LLM-facing body uses format_turns with the section's own citation_index,
+    so the speaker labels match the find_passages fence — citations stay
+    bindable. Drilling flips the section's citable flag (was outline-only).
+    Errors are LLM-facing strings, never raised.
+    """
+    registry = registry or {}
+    # Resolve [N] → the section entry registered this turn.
+    if isinstance(section_id, int):
+        idx = section_id
+    elif isinstance(section_id, str) and (m := _CITATION_INDEX_RE.match(section_id)):
+        idx = int(m.group(1))
+    else:
         return {
-            "_chunks": f"source {resolved!r} not found.",
+            "_chunks": 'section_id must be a citation index like "[5]".',
+            "section_id": None,
             "source_id": None,
             "source_title": "",
-            "tool_name": "read_source",
+            "tool_name": "read_section",
         }
-    # aiosqlite.Row supports [] but not .get; the narrative builder wants the
-    # latter. Convert once at the boundary rather than wrapping every lookup.
-    source = {k: source[k] for k in source.keys()}
-
-    segments = await get_transcript_segments(resolved)
-
-    # Shared registry, dedup by source_id: reuse the existing [N] if
-    # find_passages already registered this source this turn; else allocate next.
-    entry = registry.get(resolved)
+    entry = next((e for e in registry.values() if e.index == idx and e.source_id in source_ids), None)
     if entry is None:
-        next_index = max((e.index for e in registry.values()), default=0) + 1
-        entry = CitationRegistryEntry(index=next_index, source_id=resolved, title=source.get("title", ""))
-        registry[resolved] = entry
-
-    logger.info(
-        "read_source: resolved=%s seq=%s season=%s segments=%d idx=%d",
-        resolved,
-        sequence_number,
-        season_number,
-        len(segments),
-        entry.index,
-    )
-    narrative = _build_source_narrative(source, segments, idx=entry.index)
+        return {
+            "_chunks": (f"No section [{idx}] in this conversation. Call find_passages first."),
+            "section_id": None,
+            "source_id": None,
+            "source_title": "",
+            "tool_name": "read_section",
+        }
+    narrative = await _build_section_narrative(entry)
+    entry.citable = True
+    logger.info("read_section: idx=%d section=%s source=%s", idx, entry.section_id, entry.source_id)
     return {
         "_chunks": narrative,
-        "source_id": resolved,
-        "source_title": source["title"],
-        "tool_name": "read_source",
+        "section_id": entry.section_id,
+        "source_id": entry.source_id,
+        "source_title": entry.title,
+        "tool_name": "read_section",
     }
 
 
@@ -426,8 +361,8 @@ async def execute_find_passages(
     )
 
     # Intra-turn dedup: drop chunks already rendered to the LLM this turn
-    # (parallel / multi-hop find_passages can overlap). source_coverage and the
-    # citation registry stay on the full result — a re-hit source keeps its [N].
+    # (parallel / multi-hop find_passages can overlap). section_coverage and the
+    # citation registry stay on the full result — a re-hit section keeps its [N].
     if seen_chunk_ids is None:
         new_chunks = result.chunks
     else:
@@ -442,27 +377,27 @@ async def execute_find_passages(
             )
     dedup_all_shown = bool(result.chunks) and not new_chunks
 
-    # Assign indices: new sources get next available index
-    next_index = max((e.index for e in registry.values()), default=0) + 1
-    for s in result.source_coverage:
-        sid = s.source_id
-        if sid not in registry:
-            registry[sid] = CitationRegistryEntry(
-                index=next_index,
-                source_id=sid,
-                title=s.video_title,
-            )
-            next_index += 1
-
-    # Build source_id → registry index lookup for chunk formatting. Every sid
-    # in source_coverage was just added to the registry above, so the membership
-    # check is a no-op — read directly.
-    source_id_to_index = {s.source_id: registry[s.source_id].index for s in result.source_coverage}
+    # Load sections for every source that surfaced a chunk this turn, once.
+    # hit_source_ids covers the full new_chunks set (not just deduped-out ones)
+    # so the section lookup sees the same scope as the rendered body.
+    hit_source_ids = {c.source_id for c in new_chunks}
+    sections_by_source: dict[str, list[tuple[str, int, int, int]]] = {}
+    summary_by_section_id: dict[str, str] = {}
+    ts_by_section_id: dict[str, tuple[float, float]] = {}
+    for sid in hit_source_ids:
+        rows = await get_sections(sid)
+        # seq is 0-based in the DB; the registry/fence display 1-based
+        # (matches the "Section N" human label, see _build_section_fence_header).
+        sections_by_source[sid] = [(r["id"], r["seq"] + 1, r["seg_start"], r["seg_end"]) for r in rows]
+        for r in rows:
+            summary_by_section_id[r["id"]] = r["summary"]
+            ts_by_section_id[r["id"]] = (r["timestamp_start"], r["timestamp_end"])
 
     # Reconstruct the speaker-turn body for each displayed chunk (kept from v1).
-    displayed = [c for c in new_chunks if c.source_id in source_id_to_index]
+    # Section allocation happens below; the per-chunk turn body is built first
+    # because the section's verbatim is the body, not just a header.
     ranges = [
-        (c.source_id, c.seg_start, c.seg_end) for c in displayed if c.seg_start is not None and c.seg_end is not None
+        (c.source_id, c.seg_start, c.seg_end) for c in new_chunks if c.seg_start is not None and c.seg_end is not None
     ]
     seg_rows = await get_segments_for_ranges(ranges) if ranges else []
     all_segs = rows_to_segments(seg_rows)  # convert once; (row, seg) pairs stay aligned below
@@ -471,10 +406,9 @@ async def execute_find_passages(
         segs_by_source.setdefault(r["source_id"], []).append(s)
     ns_by_source = {sid: build_speaker_namespace(segs) for sid, segs in segs_by_source.items()}
 
-    def _turn_body(c):
+    def _turn_body_for_index(c, idx: int) -> str:
         if c.seg_start is None or c.seg_end is None or c.source_id not in segs_by_source:
             return c.content
-        idx = source_id_to_index[c.source_id]
         chunk_segs = [
             s
             for s, r in zip(all_segs, seg_rows)
@@ -486,35 +420,57 @@ async def execute_find_passages(
             chunk_segs, include_time=True, citation_index=idx, speaker_namespace=ns_by_source[c.source_id]
         )
 
-    body_by_chunk = {id(c): _turn_body(c) for c in displayed}
+    title_by_source = {s.source_id: s.video_title for s in result.source_coverage}
 
-    # Entry-level fields seeded from the first chunk per source.
-    for c in new_chunks:
-        sid = c.source_id
-        if sid in registry:
-            cid = _chunk_id(c)
-            registry[sid].chunk_ids.add(cid)
-            entry = registry[sid]
-            if entry.timestamp_start is None:
-                entry.first_chunk_id = cid
-                entry.timestamp_start = c.timestamp_start
-                entry.timestamp_end = c.timestamp_end
-                entry.rerank_score = c.score
-                entry.preview = body_by_chunk.get(id(c), c.content)
+    def _alloc_section(section_id: str, source_id: str, title: str, seq: int) -> CitationRegistryEntry:
+        entry = registry.get(section_id)
+        if entry is None:
+            next_index = max((e.index for e in registry.values()), default=0) + 1
+            entry = CitationRegistryEntry(
+                index=next_index,
+                section_id=section_id,
+                source_id=source_id,
+                title=title,
+                seq=seq,
+            )
+            registry[section_id] = entry
+        return entry
 
-    turn_indices = sorted(set(source_id_to_index.values()))
-
+    # Map each displayed chunk → its section; allocate [N] per section.
     chunks_by_index: dict[int, list[str]] = {}
+    summaries_by_index: dict[int, str] = {}
     raw_chunks = []
     for c in new_chunks:
-        if c.source_id not in source_id_to_index:
+        sec = (
+            _section_for_seg(sections_by_source.get(c.source_id, []), c.seg_start) if c.seg_start is not None else None
+        )
+        if sec is None:
             continue
-        idx = source_id_to_index[c.source_id]
-        chunks_by_index.setdefault(idx, []).append(body_by_chunk[id(c)])
+        section_id, seq, _, _ = sec
+        entry = _alloc_section(section_id, c.source_id, title_by_source.get(c.source_id, c.video_title), seq)
+        idx = entry.index
+        entry.citable = True
+        cid = _chunk_id(c)
+        entry.chunk_ids.add(cid)
+        body = _turn_body_for_index(c, idx)
+        # First-chunk seed mirrors the pre-section flow; later chunks expand
+        # the section's [start, end] window.
+        if entry.first_chunk_id is None:
+            entry.first_chunk_id = cid
+            entry.rerank_score = c.score
+            entry.preview = body
+        if entry.timestamp_start is None or c.timestamp_start < entry.timestamp_start:
+            entry.timestamp_start = c.timestamp_start
+        if entry.timestamp_end is None or c.timestamp_end > entry.timestamp_end:
+            entry.timestamp_end = c.timestamp_end
+        chunks_by_index.setdefault(idx, []).append(body)
+        summaries_by_index[idx] = summary_by_section_id.get(section_id, "")
         raw_chunks.append(
             {
                 "source_id": c.source_id,
-                "chunk_id": _chunk_id(c),
+                "section_id": section_id,
+                "section_seq": seq,
+                "chunk_id": cid,
                 "content": c.content,
                 "video_title": c.video_title,
                 "timestamp_start": c.timestamp_start,
@@ -522,6 +478,32 @@ async def execute_find_passages(
                 "citation_index": idx,
             }
         )
+
+    # Facet matched → emit the FULL section outline for each matched source:
+    # register every section (summary, its own [N]); outline-only sections stay
+    # citable=False until drilled. Serves coverage/compare.
+    if scoped_source_ids:
+        for sid in scoped_source_ids:
+            rows = await get_sections(sid)
+            title = title_by_source.get(sid)
+            if title is None:
+                src_row = await get_source(sid)
+                title = src_row["title"] if src_row else ""
+            for r in rows:
+                # ensure ts/summary maps are populated for sources with no chunk hit
+                summary_by_section_id.setdefault(r["id"], r["summary"])
+                ts_by_section_id.setdefault(r["id"], (r["timestamp_start"], r["timestamp_end"]))
+                entry = _alloc_section(r["id"], sid, title, r["seq"])
+                # Outline-only sections have no chunk to derive timestamps from; seed them
+                # from the section row so the fence header (and persisted ledger) show the
+                # real span instead of 0:00–0:00.
+                if entry.timestamp_start is None:
+                    entry.timestamp_start = r["timestamp_start"]
+                    entry.timestamp_end = r["timestamp_end"]
+                summaries_by_index[entry.index] = r["summary"]
+
+    # Recompute turn_indices AFTER outline expansion so outline indices flow into section_coverage.
+    turn_indices = sorted(set(chunks_by_index) | set(summaries_by_index))
 
     # The all-directive "no-coverage" note is DELETED — that behavior lives in
     # the grounding prompt. The tool emits only the FACT: empty pool.
@@ -542,12 +524,17 @@ async def execute_find_passages(
             "matched_count": facet_matched_count,
             "no_match": facet_no_match,
         },
-        "source_coverage": [
+        "section_coverage": [
             {
-                "source_id": s.source_id,
-                "title": s.video_title,
+                "section_id": e.section_id,
+                "source_id": e.source_id,
+                "source_title": e.title,
+                "seq": e.seq,
+                "timestamp_start": ts_by_section_id.get(e.section_id, (None, None))[0],
+                "timestamp_end": ts_by_section_id.get(e.section_id, (None, None))[1],
             }
-            for s in result.source_coverage
+            for e in sorted(registry.values(), key=lambda e: e.index)
+            if e.index in turn_indices
         ],
         "_chunks": (
             no_coverage_fact
@@ -555,12 +542,7 @@ async def execute_find_passages(
             + (
                 "All matching passages for this query were already retrieved earlier this turn.\n\n"
                 if dedup_all_shown
-                else (
-                    f"Sources retrieved this turn: {', '.join(f'[{i}]' for i in turn_indices)}. "
-                    "Cite only these indices.\n\n"
-                    f"{_build_source_headers(registry, source_ids)}\n\n"
-                    + _build_fenced_chunks(chunks_by_index, registry)
-                )
+                else _build_fenced_sections(chunks_by_index, summaries_by_index, registry)
             )
         ),
         "_turn_indices": turn_indices,
@@ -579,9 +561,9 @@ def build_tool_block_entry(
 
     For retrieve-family, internal underscore-prefixed fields are stripped and
     raw chunk snapshots are attached so replay survives re-embedding. For
-    other tools (read_source), underscore-prefixed fields are also stripped —
-    read_source's narrative is 30-150K tokens and is never replayed or reseeded,
-    so persisting it is pure DB bloat.
+    other tools (read_section), underscore-prefixed fields are also stripped —
+    read_section's narrative is bounded to one section and is never replayed
+    or reseeded, so persisting it is pure DB bloat.
     """
     summary = strip_internal(result)
     if name in RETRIEVE_TOOL_NAMES:
@@ -622,12 +604,10 @@ async def execute_tool(
             season_number=season_number,
             seen_chunk_ids=seen_chunk_ids,
         )
-    if tool_name == READ_SOURCE_TOOL.name:
-        return await execute_read_source(
+    if tool_name == READ_SECTION_TOOL.name:
+        return await execute_read_section(
             source_ids=source_ids,
-            source_id=arguments.get("source_id"),
-            sequence_number=_facet_int(arguments.get("sequence_number"), "sequence_number"),
-            season_number=_facet_int(arguments.get("season_number"), "season_number"),
+            section_id=arguments.get("section_id"),
             registry=registry,
         )
     raise ValueError(f"Unknown tool: {tool_name}")
@@ -644,7 +624,7 @@ def expand_message_for_provider(
     synthetic shape the LLM expects so it sees prior tool_use/tool_result
     blocks on subsequent turns.
 
-    v2 rule: drop retrieve-family and read_source tool exchanges
+    v2 rule: drop retrieve-family and read_section tool exchanges
     entirely from cross-turn replay — the LLM may rely on the assistant prose
     but not the prior tool result (stale-context contamination).
     """
@@ -654,8 +634,8 @@ def expand_message_for_provider(
         clean = {k: v for k, v in msg.items() if k != "tool_blocks"}
         return [clean]
 
-    # v2: drop retrieve + read_source tool exchanges from cross-turn replay.
-    blocks = [b for b in blocks if b.get("name") not in (RETRIEVE_TOOL_NAMES | {READ_SOURCE_TOOL.name})]
+    # v2: drop retrieve + read_section tool exchanges from cross-turn replay.
+    blocks = [b for b in blocks if b.get("name") not in (RETRIEVE_TOOL_NAMES | {READ_SECTION_TOOL.name})]
     if not blocks:
         clean = {k: v for k, v in msg.items() if k != "tool_blocks"}
         return [clean]
@@ -726,8 +706,8 @@ def reseed_citation_registry(
     """Reseed the citation registry from stored retrieve tool_blocks in history.
 
     Walks each assistant message's tool_blocks. For each retrieve result,
-    re-creates CitationRegistryEntry instances keyed by source_id so prior
-    [N] markers in old assistant text continue to resolve to the same source.
+    re-creates CitationRegistryEntry instances keyed by section_id so prior
+    [N] markers in old assistant text continue to resolve to the same section.
     """
     for msg in history:
         for block in msg.get("tool_blocks") or []:
@@ -735,20 +715,23 @@ def reseed_citation_registry(
                 continue
             chunks = block.get("result", {}).get("chunks", [])
             for ch in chunks:
-                sid = ch.get("source_id")
-                if not sid:
+                section_id = ch.get("section_id")
+                if not section_id:
                     continue
                 ci = ch.get("citation_index")
                 if ci is None:
                     continue
-                entry = registry.get(sid)
+                entry = registry.get(section_id)
                 if entry is None:
                     entry = CitationRegistryEntry(
                         index=ci,
-                        source_id=sid,
+                        section_id=section_id,
+                        source_id=ch.get("source_id", ""),
                         title=ch.get("video_title", ""),
+                        seq=ch.get("section_seq"),
+                        citable=True,  # a persisted chunk means verbatim was shown
                     )
-                    registry[sid] = entry
+                    registry[section_id] = entry
                 cid = ch.get("chunk_id")
                 if cid:
                     entry.chunk_ids.add(cid)

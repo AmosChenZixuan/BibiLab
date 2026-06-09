@@ -52,6 +52,9 @@ def test_partition_truncates_subsecond_timestamps_to_int():
 
 
 def _retrieve_chunk(source_id, start, end, title="T", score=1.0):
+    # T4: chunks carry seg_start/seg_end so the section mapper can allocate a
+    # [N]. Integer-truncation keeps each chunk in its own (dedup-safe) section
+    # slot — the dedup test cares about chunk-level identity, not section.
     return SimpleNamespace(
         source_id=source_id,
         content=f"{source_id} body @{int(start)}",
@@ -59,8 +62,8 @@ def _retrieve_chunk(source_id, start, end, title="T", score=1.0):
         timestamp_start=start,
         timestamp_end=end,
         score=score,
-        seg_start=None,  # None → speaker reconstruction skipped, no DB hit
-        seg_end=None,
+        seg_start=int(start),
+        seg_end=int(end),
     )
 
 
@@ -74,6 +77,28 @@ def _retrieve_result(chunks):
         sources_total=len(sources),
         reranked=True,
     )
+
+
+# T4: each chunk needs a section row. Dedup tests don't care about section
+# semantics, only chunk-level dedup — give every chunk a section whose
+# range contains it. seg_start is 1-based in the fixture (int(start) for
+# start=10..60 → seg ranges 10..20, 30..40, 50..60), so we expand the
+# section to span the whole range used in the test.
+def _section_for(sid: str, seg_start: int = 0, seg_end: int = 100):
+    return [
+        {
+            "id": f"sec-{sid}",
+            "source_id": sid,
+            "seq": 0,
+            "seg_start": seg_start,
+            "seg_end": seg_end,
+            "token_count": 100,
+            "timestamp_start": 0.0,
+            "timestamp_end": 100.0,
+            "summary": "summary",
+            "keywords": "[]",
+        }
+    ]
 
 
 def _cfg():
@@ -90,7 +115,15 @@ async def test_find_passages_suppresses_already_seen_chunk(monkeypatch):
     async def fake_retrieve(**kwargs):
         return calls.pop(0)
 
+    async def fake_get_sections(sid):
+        return _section_for(sid)
+
+    async def fake_get_segments_for_ranges(ranges):
+        return []
+
     monkeypatch.setattr(chat_tools, "retrieve", fake_retrieve)
+    monkeypatch.setattr(chat_tools, "get_sections", fake_get_sections)
+    monkeypatch.setattr(chat_tools, "get_segments_for_ranges", fake_get_segments_for_ranges)
     seen: set[str] = set()
     registry: dict = {}
 
@@ -113,16 +146,26 @@ async def test_find_passages_no_seen_set_is_unchanged(monkeypatch):
     async def fake_retrieve(**kwargs):
         return _retrieve_result([_retrieve_chunk("s1", 10, 20)])
 
+    async def fake_get_sections(sid):
+        return _section_for(sid)
+
+    async def fake_get_segments_for_ranges(ranges):
+        return []
+
     monkeypatch.setattr(chat_tools, "retrieve", fake_retrieve)
+    monkeypatch.setattr(chat_tools, "get_sections", fake_get_sections)
+    monkeypatch.setattr(chat_tools, "get_segments_for_ranges", fake_get_segments_for_ranges)
     r = await chat_tools.execute_find_passages(query="q", source_ids=["s1"], cfg=_cfg(), registry={})
     assert "s1 body @10" in r["_chunks"]
 
 
 @pytest.mark.asyncio
-async def test_find_passages_partial_overlap_preserves_source_index(monkeypatch):
+async def test_find_passages_partial_overlap_preserves_section_index(monkeypatch):
     """Production scenario: call 2 has partial overlap with call 1. The
-    already-seen chunk is dropped, the new chunk is rendered, and the source's
-    [N] is preserved (it was registered in call 1)."""
+    already-seen chunk is dropped, the new chunk is rendered, and the section's
+    [N] is preserved (it was registered in call 1). T4: registry is keyed by
+    section_id; both chunks here share one section so its [N] survives across
+    calls."""
     calls = [
         _retrieve_result([_retrieve_chunk("s1", 10, 20), _retrieve_chunk("s1", 30, 40)]),
         _retrieve_result([_retrieve_chunk("s1", 10, 20), _retrieve_chunk("s1", 50, 60)]),
@@ -131,7 +174,15 @@ async def test_find_passages_partial_overlap_preserves_source_index(monkeypatch)
     async def fake_retrieve(**kwargs):
         return calls.pop(0)
 
+    async def fake_get_sections(sid):
+        return _section_for(sid)
+
+    async def fake_get_segments_for_ranges(ranges):
+        return []
+
     monkeypatch.setattr(chat_tools, "retrieve", fake_retrieve)
+    monkeypatch.setattr(chat_tools, "get_sections", fake_get_sections)
+    monkeypatch.setattr(chat_tools, "get_segments_for_ranges", fake_get_segments_for_ranges)
     seen: set[str] = set()
     registry: dict = {}
 
@@ -145,8 +196,8 @@ async def test_find_passages_partial_overlap_preserves_source_index(monkeypatch)
     # r1 baseline: both chunks rendered, no dedup.
     assert "s1 body @10" in r1["_chunks"]
     assert "s1 body @30" in r1["_chunks"]
-    # s1's [N] was assigned in r1 and must survive in r2.
-    assert registry["s1"].index == 1
+    # The section's [N] was assigned in r1 and must survive in r2.
+    assert registry["sec-s1"].index == 1
     # s1@50 is new — rendered. s1@10 was already shown — suppressed.
     assert "s1 body @50" in r2["_chunks"]
     assert "s1 body @10" not in r2["_chunks"]
@@ -169,7 +220,15 @@ async def test_find_passages_different_sources_all_unseen(monkeypatch):
     async def fake_retrieve(**kwargs):
         return calls.pop(0)
 
+    async def fake_get_sections(sid):
+        return _section_for(sid)
+
+    async def fake_get_segments_for_ranges(ranges):
+        return []
+
     monkeypatch.setattr(chat_tools, "retrieve", fake_retrieve)
+    monkeypatch.setattr(chat_tools, "get_sections", fake_get_sections)
+    monkeypatch.setattr(chat_tools, "get_segments_for_ranges", fake_get_segments_for_ranges)
     seen: set[str] = set()
     registry: dict = {}
 
@@ -203,7 +262,15 @@ async def test_execute_tool_forwards_seen_chunk_ids_to_find_passages(monkeypatch
     async def fake_retrieve(**kwargs):
         return _retrieve_result([_retrieve_chunk("s1", 10, 20)])
 
+    async def fake_get_sections(sid):
+        return _section_for(sid)
+
+    async def fake_get_segments_for_ranges(ranges):
+        return []
+
     monkeypatch.setattr(chat_tools, "retrieve", fake_retrieve)
+    monkeypatch.setattr(chat_tools, "get_sections", fake_get_sections)
+    monkeypatch.setattr(chat_tools, "get_segments_for_ranges", fake_get_segments_for_ranges)
 
     seen: set[str] = set()
     await chat_tools.execute_tool(
@@ -231,7 +298,15 @@ async def test_find_passages_logs_dedup_count(monkeypatch, caplog):
     async def fake_retrieve(**kwargs):
         return calls.pop(0)
 
+    async def fake_get_sections(sid):
+        return _section_for(sid)
+
+    async def fake_get_segments_for_ranges(ranges):
+        return []
+
     monkeypatch.setattr(chat_tools, "retrieve", fake_retrieve)
+    monkeypatch.setattr(chat_tools, "get_sections", fake_get_sections)
+    monkeypatch.setattr(chat_tools, "get_segments_for_ranges", fake_get_segments_for_ranges)
     seen: set[str] = set()
     registry: dict = {}
 
