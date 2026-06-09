@@ -24,11 +24,16 @@ const DEFAULT_CALL: RetrievalCall = {
   candidates_evaluated: 10,
   sources_with_hits: 1,
   sources_total: 16,
-  source_coverage: [{ source_id: "s1", title: "Test Video" }],
+  section_coverage: [
+    { section_id: "sec1", source_id: "s1", source_title: "Test Video", seq: 1, timestamp_start: 0, timestamp_end: 132 },
+    { section_id: "sec2", source_id: "s1", source_title: "Test Video", seq: 2, timestamp_start: 132, timestamp_end: 300 },
+  ],
   context: [
     {
       chunk_id: "c1",
       citation_index: 1,
+      section_id: "sec1",
+      section_seq: 1,
       source_id: "s1",
       source_title: "Test Video",
       timestamp_start: 0,
@@ -39,6 +44,8 @@ const DEFAULT_CALL: RetrievalCall = {
     {
       chunk_id: "c2",
       citation_index: 2,
+      section_id: "sec2",
+      section_seq: 2,
       source_id: "s1",
       source_title: "Test Video",
       timestamp_start: 132,
@@ -82,7 +89,7 @@ describe("ToolLedger", () => {
       ragCalls: [DEFAULT_CALL],
       pendingRagCalls: [],
     });
-    expect(screen.getByText(/1 sources/)).toBeInTheDocument();
+    expect(screen.getByText(/2 sources/)).toBeInTheDocument();
     expect(screen.getByText(/2 chunks cited/)).toBeInTheDocument();
   });
 
@@ -93,7 +100,7 @@ describe("ToolLedger", () => {
       candidates_evaluated: 8,
       sources_with_hits: 2,
       sources_total: 16,
-      source_coverage: [{ source_id: "s1", title: "Vid" }],
+      section_coverage: [{ section_id: "s1", source_id: "s1", source_title: "Vid", seq: 1, timestamp_start: 0, timestamp_end: 60 }],
       reranked: true,
       scoped_pool_size: 16,
     } as unknown as RetrievalCall;

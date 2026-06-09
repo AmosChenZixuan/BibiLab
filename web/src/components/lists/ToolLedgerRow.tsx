@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Search, BookOpen, Loader2, AlertTriangle, ChevronRight } from "lucide-react";
 import { useLanguage } from "@/app/LanguageContext";
 import { formatMediaTimestamp, facetNoMatchHint, type RetrievalCall, type PendingRagCall } from "@/lib/chat-utils";
-import { READ_SOURCE_TOOL_NAME } from "@/lib/tool-display";
+import { READ_SECTION_TOOL_NAME } from "@/lib/tool-display";
 
 interface ToolLedgerRowProps {
   call?: RetrievalCall;
@@ -15,7 +15,7 @@ export function ToolLedgerRow({ call, pending, streaming = false }: ToolLedgerRo
   const [expanded, setExpanded] = useState(false);
 
   if (pending) {
-    const isReadSource = pending.tool_name === READ_SOURCE_TOOL_NAME;
+    const isReadSource = pending.tool_name === READ_SECTION_TOOL_NAME;
     return (
       <div className="flex items-center gap-1.5 py-0.5 text-xs text-muted opacity-70">
         {isReadSource && <BookOpen size={12} className="shrink-0 opacity-70" aria-hidden />}
@@ -27,8 +27,8 @@ export function ToolLedgerRow({ call, pending, streaming = false }: ToolLedgerRo
 
   if (!call) return null;
 
-  // read_source: icon + source title, no per-chunk expand (context is always [])
-  if (call.tool_name === READ_SOURCE_TOOL_NAME) {
+  // read_section: icon + source title, no per-chunk expand (context is always [])
+  if (call.tool_name === READ_SECTION_TOOL_NAME) {
     return (
       <div className="flex w-full items-center gap-1.5 text-xs text-muted">
         <BookOpen size={12} className="shrink-0 self-center opacity-70" aria-hidden />
@@ -40,7 +40,7 @@ export function ToolLedgerRow({ call, pending, streaming = false }: ToolLedgerRo
   }
 
   // find_passages (locator) call
-  const source_coverage = call.source_coverage ?? [];
+  const section_coverage = call.section_coverage ?? [];
   const context = call.context ?? [];
 
   const facetHint = call.facet_scope?.no_match ? facetNoMatchHint(t, call.facet_scope) : null;
@@ -56,7 +56,7 @@ export function ToolLedgerRow({ call, pending, streaming = false }: ToolLedgerRo
 
   // Default variant: normal search row
   const citedCount = context.length;
-  const sourceSummary = t("chat.ledger.sourceSummary", { sources: source_coverage.length });
+  const sourceSummary = t("chat.ledger.sourceSummary", { sources: section_coverage.length });
   if (streaming) {
     return (
       <div className="flex w-full items-baseline gap-1.5 text-xs text-muted">
@@ -120,7 +120,7 @@ export function ToolLedgerRow({ call, pending, streaming = false }: ToolLedgerRo
                     <span className="shrink-0 font-mono text-blue">[{chunk.citation_index}]</span>
                     <span className="min-w-0 truncate text-ink">{chunk.source_title}</span>
                     <span className="ml-auto shrink-0 font-mono text-muted">
-                      {formatMediaTimestamp(chunk.timestamp_start)}–{formatMediaTimestamp(chunk.timestamp_end)} · {chunk.rerank_score.toFixed(2)}
+                      {formatMediaTimestamp(chunk.timestamp_start)}–{formatMediaTimestamp(chunk.timestamp_end)} · §{chunk.section_seq} · {chunk.rerank_score.toFixed(2)}
                     </span>
                   </div>
                   <div className="mt-0.5 text-muted line-clamp-2" title={chunk.preview}>
