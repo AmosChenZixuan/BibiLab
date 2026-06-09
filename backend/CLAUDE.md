@@ -245,6 +245,10 @@ stream_with_tools(stream_llm loop):
 
 `rag.debug_prompts: true` writes one JSON per chat turn at `~/.bibilab/debug/{message_id}.json` capturing the final cumulative LLM state (system, tools, messages, response, model, timestamp). The chat frontend shows a `</>` icon on assistant bubbles when both `debug_prompts` and the per-message `has_dump` flag are true; clicking opens a right-side drawer with envelope-aware rendering (Styled/Raw toggle). Storage write site: end of `run_chat_turn`. Best-effort: write errors logged as `dump_turn_failed`, never propagated.
 
+## Artifact pipeline
+
+`_run_artifact_job` (worker.py) loads each selected source's sections via `_build_section_views`, reconstructs verbatim text per section with `format_turns(include_time=False)`, and calls `_refine_artifact`. When all sections fit in one batch (the common case — a few short sources, each with 1 section), `_refine_artifact` calls `_call_llm` exactly once with a prompt byte-identical to the legacy single-call template (regression guard: `tests/test_artifact_refine.py::test_refine_artifact_single_batch_byte_identical_prompt`). When sections don't fit, the running-draft refine path calls `_call_llm` once per batch: batch 1 produces an initial draft; batch k>1 feeds the running draft + new sections with an "integrate this new material" directive. Per-section failure (`token_count > budget`) and missing-sections failure (no `sections` rows for a source) both fail loud via `PipelineError`. Soft cost note: `logger.warning` when batch count > 3 (no schema/UI change).
+
 ## Platform Adapters
 
 ```python

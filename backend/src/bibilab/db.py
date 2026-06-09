@@ -602,6 +602,25 @@ async def get_transcript_segments(source_id: str) -> list[aiosqlite.Row]:
         return await cursor.fetchall()
 
 
+async def get_section_ranges(source_id: str) -> list[aiosqlite.Row]:
+    """Return a source's sections ordered by seq.
+
+    Each row carries ``seq, seg_start, seg_end, token_count, timestamp_start,
+    timestamp_end`` — the verbatim-reconstruction contract used by the
+    artifact batched-refine and the chat surface. Pure read;
+    returns ``[]`` when the source has no section rows (the caller decides
+    whether that's a fail-loud error, per its policy).
+    """
+    async with get_db() as db:
+        cursor = await db.execute(
+            "SELECT seq, seg_start, seg_end, token_count, "
+            "timestamp_start, timestamp_end "
+            "FROM sections WHERE source_id = ? ORDER BY seq",
+            (source_id,),
+        )
+        return await cursor.fetchall()
+
+
 async def get_segments_for_ranges(ranges: list[tuple[str, int, int]]) -> list[aiosqlite.Row]:
     """Fetch transcript segments for many (source_id, seq_start, seq_end) ranges in one query.
 
