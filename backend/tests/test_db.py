@@ -1290,25 +1290,35 @@ async def test_update_section_summaries_updates_existing_rows_by_seq(
 
 
 @pytest.mark.asyncio
-async def test_update_section_summaries_rowcount_mismatch_raises(
+async def test_update_section_summaries_missing_seq_is_silent_noop(
     tmp_bibilab_home: Path,
 ):
-    from bibilab.db import bootstrap_db, create_list, update_section_summaries
+    """A seq not in the sections table is silently no-op'd by the UPDATE.
+
+    The helper does not pre-validate: the caller's zip of
+    `get_sections(source_id)` rows with the new digests guarantees unique
+    existing seqs, so a missing seq here is a caller bug — but the
+    database is the source of truth and the UPDATE simply doesn't match.
+    """
+    from bibilab.db import bootstrap_db, create_list, get_sections, update_section_summaries
 
     await bootstrap_db()
     await create_list("list-1", "L", "2026-01-01T00:00:00")
     source_id, _segments, _sections, _digests = await SectionedSourceFactory.build("list-1", video_id="BV1sections2")
 
-    with pytest.raises(LookupError):
-        await update_section_summaries(
-            source_id,
-            [
-                (0, "S0", ["k"]),
-                (1, "S1", ["k"]),
-                (2, "S2", ["k"]),
-                (99, "S99", ["k"]),  # seq 99 doesn't exist
-            ],
-        )
+    # No raise; the missing seq 99 is silently no-op'd.
+    await update_section_summaries(
+        source_id,
+        [
+            (0, "S0", ["k"]),
+            (1, "S1", ["k"]),
+            (2, "S2", ["k"]),
+            (99, "S99", ["k"]),  # seq 99 doesn't exist
+        ],
+    )
+    rows = await get_sections(source_id)
+    # seqs 0-2 are updated; seq 99 was a no-op (no row created).
+    assert [r["summary"] for r in rows] == ["S0", "S1", "S2"]
 
 
 @pytest.mark.asyncio

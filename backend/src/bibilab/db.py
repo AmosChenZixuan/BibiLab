@@ -519,30 +519,18 @@ async def update_section_summaries(
     source_id: str,
     section_digests: list[tuple[int, str, list[str]]],
 ) -> None:
-    """UPDATE existing section rows by seq. Rerun path only.
+    """UPDATE existing section rows by seq. Rerun path.
 
-    Each tuple is (seq, summary, keywords). Pre-validates unique seqs and
-    verifies all seqs exist before any write; runs one executemany.
+    Each tuple is (seq, summary, keywords). The caller is the worker's
+    rerun path, which built the tuples by zipping `get_sections(source_id)`
+    rows with the new `SectionDigest`s, so seqs are unique and exist by
+    construction. Missing or duplicate seqs are caller bugs; this helper
+    does not pre-validate.
     """
     if not section_digests:
         logger.warning("update_section_summaries: empty input for source_id=%s (no-op)", source_id)
         return
-    seqs = [seq for seq, _, _ in section_digests]
-    if len(set(seqs)) != len(seqs):
-        raise ValueError(f"update_section_summaries: duplicate seqs in input: {seqs}")
     async with get_db() as db:
-        # Verify all seqs exist before any write.
-        # seqs is an int list (bounded by section count, no user input); values stay parameterized.
-        placeholders = ",".join("?" * len(seqs))
-        check_cur = await db.execute(
-            f"SELECT seq FROM sections WHERE source_id=? AND seq IN ({placeholders})",
-            [source_id, *seqs],
-        )
-        found = {row["seq"] for row in await check_cur.fetchall()}
-        missing = set(seqs) - found
-        if missing:
-            raise LookupError(f"update_section_summaries: missing seqs for source_id={source_id!r}: {sorted(missing)}")
-        # All seqs exist; safe to batch-update.
         await db.executemany(
             "UPDATE sections SET summary=?, keywords=? WHERE source_id=? AND seq=?",
             [(summary, json.dumps(keywords), source_id, seq) for seq, summary, keywords in section_digests],
