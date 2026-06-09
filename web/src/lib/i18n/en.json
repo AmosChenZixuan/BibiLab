@@ -269,10 +269,8 @@
     },
     "ledger": {
       "summaryPending": "finding passages…",
-      "readSourcePending": "reading source…",
       "sourceSummary": "%{sources} sources",
       "citedChunks": "%{n} chunks cited",
-      "readSourceFallbackTitle": "Untitled source",
       "facetNoMatch": "No source matched %{facets} — searched all sources instead.",
       "facetNoMatchGeneric": "No source matched the requested filter — searched all sources instead.",
       "facetNoMatchLabel": "Facet",
@@ -288,7 +286,9 @@
         "none": "all %{total} sources",
         "scoped": "%{matched} / %{total} sources"
       },
-      "ariaToggle": "Toggle retrieval details"
+      "ariaToggle": "Toggle retrieval details",
+      "readSectionPending": "Reading section…",
+      "readSectionFallbackTitle": "Untitled section"
     },
     "citationMissing": "Source no longer in list",
     "errors": {

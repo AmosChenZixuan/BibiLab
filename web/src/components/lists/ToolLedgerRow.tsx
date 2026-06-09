@@ -20,7 +20,7 @@ export function ToolLedgerRow({ call, pending, streaming = false }: ToolLedgerRo
       <div className="flex items-center gap-1.5 py-0.5 text-xs text-muted opacity-70">
         {isReadSource && <BookOpen size={12} className="shrink-0 opacity-70" aria-hidden />}
         <Loader2 size={12} className="animate-spin shrink-0" />
-        <span>{isReadSource ? t("chat.ledger.readSourcePending") : t("chat.ledger.summaryPending")}</span>
+        <span>{isReadSource ? t("chat.ledger.readSectionPending") : t("chat.ledger.summaryPending")}</span>
       </div>
     );
   }
@@ -33,7 +33,7 @@ export function ToolLedgerRow({ call, pending, streaming = false }: ToolLedgerRo
       <div className="flex w-full items-center gap-1.5 text-xs text-muted">
         <BookOpen size={12} className="shrink-0 self-center opacity-70" aria-hidden />
         <span className="min-w-0 truncate font-medium text-ink">
-          {call.source_title || t("chat.ledger.readSourceFallbackTitle")}
+          {call.source_title || t("chat.ledger.readSectionFallbackTitle")}
         </span>
       </div>
     );

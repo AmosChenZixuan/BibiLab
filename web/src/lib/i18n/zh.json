@@ -269,10 +269,8 @@
     },
     "ledger": {
       "summaryPending": "查找片段中…",
-      "readSourcePending": "读取全文中…",
       "sourceSummary": "%{sources} 个来源",
       "citedChunks": "引用 %{n} 个片段",
-      "readSourceFallbackTitle": "未命名来源",
       "facetNoMatch": "没有来源匹配%{facets}，已改为搜索全部来源。",
       "facetNoMatchGeneric": "没有来源匹配请求的范围，已改为搜索全部来源。",
       "facetNoMatchLabel": "范围",
@@ -288,7 +286,9 @@
         "none": "全部 %{total} 个来源",
         "scoped": "%{matched}/%{total} 个来源"
       },
-      "ariaToggle": "切换检索详情"
+      "ariaToggle": "切换检索详情",
+      "readSectionPending": "正在读取章节…",
+      "readSectionFallbackTitle": "未命名章节"
     },
     "citationMissing": "来源已不在列表中",
     "errors": {
