@@ -1,5 +1,3 @@
-import json
-
 from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.responses import FileResponse
 
@@ -35,16 +33,7 @@ async def get_source_sections(source_id: str) -> list[SectionListItem]:
     if source is None:
         raise HTTPException(status_code=404, detail="Source not found")
     rows = await get_sections(source_id)
-    return [
-        SectionListItem(
-            seq=r["seq"],
-            summary=r["summary"] or "",
-            keywords=json.loads(r["keywords"]) if r["keywords"] else [],
-            timestamp_start=r["timestamp_start"] or 0.0,
-            timestamp_end=r["timestamp_end"] or 0.0,
-        )
-        for r in rows
-    ]
+    return [SectionListItem.from_row(r) for r in rows]
 
 
 @router.post("/sources/{source_id}/rerun", status_code=202)

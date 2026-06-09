@@ -1,5 +1,6 @@
 import json
 from datetime import datetime
+from typing import Any
 
 from pydantic import BaseModel, field_validator
 
@@ -66,6 +67,23 @@ class SectionListItem(BaseModel):
     keywords: list[str]
     timestamp_start: float
     timestamp_end: float
+
+    @classmethod
+    def from_row(cls, row: Any) -> "SectionListItem":
+        """Project a sections-table row to the API response shape.
+
+        Handles the post-backfill / pre-#453 NULL semantics: NULL summary
+        becomes "", NULL/empty keywords becomes [], NULL timestamps become
+        0.0. Internal columns (id, source_id, seg_start, seg_end, token_count)
+        are not exposed.
+        """
+        return cls(
+            seq=row["seq"],
+            summary=row["summary"] or "",
+            keywords=json.loads(row["keywords"]) if row["keywords"] else [],
+            timestamp_start=row["timestamp_start"] or 0.0,
+            timestamp_end=row["timestamp_end"] or 0.0,
+        )
 
 
 class SourceFacetsUpdate(BaseModel):
