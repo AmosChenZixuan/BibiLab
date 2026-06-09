@@ -7,16 +7,49 @@ import { useJobActivity } from "@/components/jobs/JobActivityProvider";
 import { Banner } from "@/components/lists/Banner";
 import { DigestAccordion } from "@/components/lists/DigestAccordion";
 
+/** Resolve a citation-jump target to a section index. Forward-compat: if
+ *  `SourceSection` eventually gains a `section_id` field, the sectionId
+ *  branch becomes the precise match; until then only `timestampStart`
+ *  can resolve, so that branch is the effective matcher. Returns 0 when
+ *  no target is supplied or the target doesn't match any section. */
+function resolveTargetIdx(
+  sections: SourceSection[] | undefined,
+  target?: { sectionId?: string; timestampStart?: number } | null,
+): number {
+  if (!target || !sections || sections.length === 0) return 0;
+  if (target.sectionId) {
+    // Forward-compat: SourceSection doesn't carry section_id yet, so
+    // bracket-access via the key. The match is best-effort — if the
+    // field is absent on every row (current state), this branch never
+    // matches and we fall through to the timestamp matcher.
+    const id = target.sectionId;
+    const i = sections.findIndex(
+      (s) => (s as unknown as { section_id?: string }).section_id === id,
+    );
+    if (i >= 0) return i;
+  }
+  if (target.timestampStart != null) {
+    const ts = target.timestampStart;
+    const i = sections.findIndex(
+      (s) => ts >= s.timestamp_start && ts <= s.timestamp_end,
+    );
+    if (i >= 0) return i;
+  }
+  return 0;
+}
+
 export function SourcesViewerMode({
   source,
   sourceContent,
   onRefresh,
   listId,
+  targetSection,
 }: {
   source: Source;
   sourceContent: SourceContent | null;
   onRefresh: () => void;
   listId: string;
+  targetSection?: { sectionId?: string; timestampStart?: number } | null;
 }) {
   const { t } = useLanguage();
   const { trackJobs } = useJobActivity();
@@ -100,6 +133,7 @@ export function SourcesViewerMode({
             }}
             listId={listId}
             sections={sections}
+            initialActiveIdx={resolveTargetIdx(sections, targetSection)}
           />
         )}
         {sourceContent?.transcript && (

@@ -24,6 +24,9 @@ export function ListDetailPage() {
   const [sourcesCollapsed, setSourcesCollapsed] = useState(false);
   const [labCollapsed, setLabCollapsed] = useState(false);
   const [selectedSourceIds, setSelectedSourceIds] = useState<string[]>([]);
+  const [targetSection, setTargetSection] = useState<
+    { sectionId?: string; timestampStart?: number } | null
+  >(null);
   const tRef = useRef(t);
   tRef.current = t;
 
@@ -84,10 +87,18 @@ export function ListDetailPage() {
     };
   }, []);
 
-  function handleOpenSource(source: Source, _opts?: { highlightChunks?: string[] }) {
+  function handleOpenSource(
+    source: Source,
+    opts?: { highlightChunks?: string[]; sectionId?: string; timestampStart?: number },
+  ) {
     currentSourceIdRef.current = source.id;
     setDetailSource(source);
     setSourceContent(null);
+    setTargetSection(
+      opts?.sectionId || opts?.timestampStart != null
+        ? { sectionId: opts.sectionId, timestampStart: opts.timestampStart }
+        : null,
+    );
     if (openSourceControllerRef.current) {
       openSourceControllerRef.current.abort();
     }
@@ -153,6 +164,7 @@ export function ListDetailPage() {
                   source={detailSource}
                   sourceContent={sourceContent}
                   listId={listId}
+                  targetSection={targetSection}
                   onRefresh={() => {
                     if (detailSource) {
                       void api.getSource(detailSource.id).then((content) => {

@@ -59,6 +59,115 @@ function makeSections(n: number, offset = 0): SourceSection[] {
 }
 
 describe("SourcesViewerMode sections — source-switch desync", () => {
+  test("targetSection selects the containing section tab on open", async () => {
+    // 3 sections covering [0,600], [600,1200], [1200,1800]. targetSection
+    // with timestampStart=700 should land in section 2 — the only section
+    // whose [start,end] range contains 700 unambiguously. The handoff
+    // pins the matcher to timestamp (SourceSection has no section_id at
+    // runtime), so the test exercises the timestamp path directly.
+    const contentA = makeContent("src-A", "Source A", "Source A summary");
+    const sectionsA = makeSections(3, 0);
+
+    vi.spyOn(api, "getSource").mockResolvedValue(contentA);
+    vi.spyOn(api, "getSourceSections").mockResolvedValue(sectionsA);
+    vi.spyOn(api, "listJobs").mockResolvedValue([]);
+
+    const sourceA = makeSource("src-A", "Source A");
+    render(
+      <LanguageProvider>
+        <JobActivityProvider>
+          <SourcesViewerMode
+            source={sourceA}
+            sourceContent={contentA}
+            onRefresh={vi.fn()}
+            listId="list-1"
+            targetSection={{ timestampStart: 700 }}
+          />
+        </JobActivityProvider>
+      </LanguageProvider>,
+    );
+
+    // Let the sections fetch resolve.
+    await act(async () => {
+      await Promise.resolve();
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    // Section 2 is active: its summary is in the body, the 2nd tab is
+    // aria-selected, and the siblings are not.
+    expect(screen.getByText(/Section 2 summary/)).toBeInTheDocument();
+    expect(screen.queryByText(/^Section 1 summary$/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/^Section 3 summary$/)).not.toBeInTheDocument();
+    const tabs = screen.getAllByRole("tab");
+    expect(tabs[1]).toHaveAttribute("aria-selected", "true");
+    expect(tabs[0]).toHaveAttribute("aria-selected", "false");
+    expect(tabs[2]).toHaveAttribute("aria-selected", "false");
+  });
+
+  test("re-jump to the same source re-syncs the active section", async () => {
+    // Sections: [0,600], [600,1200], [1200,1800]. The first citation
+    // lands in section 3 (timestamp 1500). The second citation lands in
+    // section 1 (timestamp 300). The DigestAccordion `key={source.id}`
+    // does NOT change between the two jumps (same source), so the
+    // effect on `initialActiveIdx` — not the mount-time state seed —
+    // is what drives the second switch.
+    const contentA = makeContent("src-A", "Source A", "Source A summary");
+    const sectionsA = makeSections(3, 0);
+
+    vi.spyOn(api, "getSource").mockResolvedValue(contentA);
+    vi.spyOn(api, "getSourceSections").mockResolvedValue(sectionsA);
+    vi.spyOn(api, "listJobs").mockResolvedValue([]);
+
+    const sourceA = makeSource("src-A", "Source A");
+
+    const renderViewer = (target: number) => (
+      <LanguageProvider>
+        <JobActivityProvider>
+          <SourcesViewerMode
+            source={sourceA}
+            sourceContent={contentA}
+            onRefresh={vi.fn()}
+            listId="list-1"
+            targetSection={{ timestampStart: target }}
+          />
+        </JobActivityProvider>
+      </LanguageProvider>
+    );
+
+    // Lower interior point of section 3 — section 3 covers [1200,1800],
+    // 1500 is unambiguously inside. The tab strip is centered on the
+    // initial section; we only assert which tab is aria-selected.
+    const { rerender } = render(renderViewer(1500));
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(screen.getByText(/Section 3 summary/)).toBeInTheDocument();
+    const tabsAfter1500 = screen.getAllByRole("tab");
+    expect(tabsAfter1500[2]).toHaveAttribute("aria-selected", "true");
+
+    // Now re-jump to a timestamp in section 1 (e.g. 300). The
+    // DigestAccordion `key={source.id}` does not change (same source),
+    // so the effect on `initialActiveIdx` must drive the tab switch.
+    rerender(renderViewer(300));
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(screen.getByText(/Section 1 summary/)).toBeInTheDocument();
+    const tabsAfter300 = screen.getAllByRole("tab");
+    expect(tabsAfter300[0]).toHaveAttribute("aria-selected", "true");
+    expect(tabsAfter300[1]).toHaveAttribute("aria-selected", "false");
+    expect(tabsAfter300[2]).toHaveAttribute("aria-selected", "false");
+  });
+
   test("switching source.id resets the active section to the first one", async () => {
     // Source A has 5 sections; the test will navigate to section 3, then
     // switch to source B with 4 sections and assert that the visible

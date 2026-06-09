@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ChevronUp, ChevronDown, MoreVertical, RotateCcw, Pencil } from "lucide-react";
 
 import { useLanguage } from "@/app/LanguageContext";
@@ -35,6 +35,7 @@ export function DigestAccordion({
   onSaveFacets,
   listId,
   sections,
+  initialActiveIdx,
 }: {
   source: { id: string };
   summary: string;
@@ -45,11 +46,18 @@ export function DigestAccordion({
   onSaveFacets: (patch: SourceFacetsPatch) => Promise<void>;
   listId: string;
   sections?: SourceSection[];
+  initialActiveIdx?: number;
 }) {
   const { t } = useLanguage();
   const [expanded, setExpanded] = useState(true);
   const [editingFacets, setEditingFacets] = useState(false);
-  const [activeSectionIdx, setActiveSectionIdx] = useState(0);
+  const [activeSectionIdx, setActiveSectionIdx] = useState(initialActiveIdx ?? 0);
+  // Re-sync when a new citation jump lands on the same source (the
+  // `key={source.id}` only remounts on source switch, so a re-jump
+  // re-runs the same instance and needs an effect to update the tab).
+  useEffect(() => {
+    if (initialActiveIdx != null) setActiveSectionIdx(initialActiveIdx);
+  }, [initialActiveIdx]);
   const { getJobs } = useJobActivity();
 
   const digestJobs = getJobs("digest" as const, listId).filter(
