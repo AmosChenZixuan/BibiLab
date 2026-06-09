@@ -502,7 +502,6 @@ def test_build_initial_prompt_includes_zh_lang_instruction():
 
     prompt = _build_initial_prompt(
         prompt="Generate a summary",
-        artifact_type="summary",
         transcript_text="This is a test transcript.",
         cfg=cfg,
         ui_lang="zh",
@@ -530,7 +529,6 @@ def test_build_initial_prompt_includes_en_lang_instruction():
 
     prompt = _build_initial_prompt(
         prompt="Generate a summary",
-        artifact_type="summary",
         transcript_text="This is a test transcript.",
         cfg=cfg,
         ui_lang=None,
@@ -558,7 +556,6 @@ def test_build_initial_prompt_unknown_lang_falls_back_to_english():
 
     prompt = _build_initial_prompt(
         prompt="Generate a summary",
-        artifact_type="summary",
         transcript_text="French biased transcript",
         cfg=cfg,
         ui_lang=None,

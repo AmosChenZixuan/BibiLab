@@ -145,7 +145,6 @@ def test_build_initial_prompt_matches_today_template_for_single_batch():
     transcript = _render_single_batch_text(sections)
     prompt = _build_initial_prompt(
         prompt="summarize the videos",
-        artifact_type="study_guide",
         transcript_text=transcript,
         cfg=BibilabConfig(),
         ui_lang="en",
@@ -175,7 +174,6 @@ def test_build_refine_prompt_includes_running_draft_and_integrate_directive():
     new_sections_text = "=== Source: Title-src-A · Section 1 (01:00-02:00) ===\nA1 text."
     prompt = _build_refine_prompt(
         prompt="summarize the videos",
-        artifact_type="study_guide",
         draft=draft,
         new_sections_text=new_sections_text,
         cfg=BibilabConfig(),
@@ -200,8 +198,8 @@ def test_build_refine_prompt_uses_lang_directive():
     as the initial prompt)."""
     cfg = BibilabConfig()
     draft = ArtifactResult(name="t", content="c")
-    p_en = _build_refine_prompt("p", "study_guide", draft, "x", cfg, ui_lang="en")
-    p_zh = _build_refine_prompt("p", "study_guide", draft, "x", cfg, ui_lang="zh")
+    p_en = _build_refine_prompt("p", draft, "x", cfg, ui_lang="en")
+    p_zh = _build_refine_prompt("p", draft, "x", cfg, ui_lang="zh")
     # Different ui_lang → different lang directive in the prompt.
     assert p_en != p_zh
 
@@ -328,7 +326,6 @@ async def test_refine_artifact_single_batch_byte_identical_prompt():
     with patch("bibilab.worker._call_llm", return_value=expected_response) as mock_llm:
         result = await _refine_artifact(
             prompt="summarize",
-            artifact_type="study_guide",
             sections=sections,
             cfg=cfg,
             ui_lang="en",
@@ -375,7 +372,6 @@ async def test_refine_artifact_multi_batch_calls_llm_per_batch():
     with patch("bibilab.worker._call_llm", side_effect=responses) as mock_llm:
         result = await _refine_artifact(
             prompt="summarize",
-            artifact_type="study_guide",
             sections=sections,
             cfg=cfg,
             ui_lang="en",
@@ -413,7 +409,6 @@ async def test_refine_artifact_single_section_overflow_fails_loud():
         with pytest.raises(PipelineError, match="alone"):
             await _refine_artifact(
                 prompt="p",
-                artifact_type="t",
                 sections=sections,
                 cfg=cfg,
                 ui_lang="en",
@@ -437,7 +432,6 @@ async def test_refine_artifact_batch_failure_raises_pipeline_error():
         with pytest.raises(PipelineError, match="exhausted all retries"):
             await _refine_artifact(
                 prompt="p",
-                artifact_type="t",
                 sections=sections,
                 cfg=cfg,
                 ui_lang="en",
@@ -459,7 +453,6 @@ async def test_refine_artifact_soft_cost_note_logs_warning_for_many_batches(capl
         with patch("bibilab.worker._call_llm", side_effect=responses):
             await _refine_artifact(
                 prompt="p",
-                artifact_type="t",
                 sections=sections,
                 cfg=cfg,
                 ui_lang="en",
@@ -489,7 +482,6 @@ async def test_refine_artifact_preserves_source_order_across_batches():
     with patch("bibilab.worker._call_llm", side_effect=responses) as mock_llm:
         await _refine_artifact(
             prompt="p",
-            artifact_type="t",
             sections=sections,
             cfg=cfg,
             ui_lang="en",
@@ -554,7 +546,7 @@ async def test_run_artifact_job_uses_refine_artifact_single_batch(tmp_bibilab_ho
         ),
     }
 
-    async def _fake_refine(*, prompt, artifact_type, sections, cfg, ui_lang=None):
+    async def _fake_refine(*, prompt, sections, cfg, ui_lang=None):
         return ArtifactResult(name="My Title", content="My body.")
 
     with patch("bibilab.worker._refine_artifact", side_effect=_fake_refine) as mock_refine:

@@ -153,21 +153,8 @@ def _render_multi_batch_section(sec: _SectionView) -> str:
     return f"{header}\n{sec.text}"
 
 
-def _resolved_prompt_block(
-    cfg: BibilabConfig,
-    ui_lang: str | None,
-) -> tuple[str, str]:
-    """Return (lang_instruction, lang_output_directive) for the artifact
-    prompt builders. Centralized so single-batch and multi-batch prompts
-    use the same lang resolution path."""
-    lang = _resolved_lang(cfg.ai.output_language, ui_lang)
-    lang_instruction = _LANG_INSTRUCTION.get(lang, _LANG_INSTRUCTION["en"])
-    return lang_instruction, _lang_output_directive(lang)
-
-
 def _build_initial_prompt(
     prompt: str,
-    artifact_type: str,
     transcript_text: str,
     cfg: BibilabConfig,
     ui_lang: str | None,
@@ -177,7 +164,9 @@ def _build_initial_prompt(
 
     The single-call case is byte-identical to today's _generate_artifact
     template (regression guard)."""
-    lang_instruction, lang_output_directive = _resolved_prompt_block(cfg, ui_lang)
+    lang = _resolved_lang(cfg.ai.output_language, ui_lang)
+    lang_instruction = _LANG_INSTRUCTION.get(lang, _LANG_INSTRUCTION["en"])
+    lang_output_directive = _lang_output_directive(lang)
     return f"""{lang_instruction}
 
 {prompt}
@@ -198,7 +187,6 @@ Respond ONLY with valid JSON matching this schema:
 
 def _build_refine_prompt(
     prompt: str,
-    artifact_type: str,
     draft: "ArtifactResult",
     new_sections_text: str,
     cfg: BibilabConfig,
@@ -208,7 +196,9 @@ def _build_refine_prompt(
     new material, and instruct the LLM to integrate them. The LLM returns
     a fresh {name, content} JSON — name is re-derived from accumulated
     context (single prompt template family, no special-case)."""
-    lang_instruction, lang_output_directive = _resolved_prompt_block(cfg, ui_lang)
+    lang = _resolved_lang(cfg.ai.output_language, ui_lang)
+    lang_instruction = _LANG_INSTRUCTION.get(lang, _LANG_INSTRUCTION["en"])
+    lang_output_directive = _lang_output_directive(lang)
     # Use json.dumps (not repr interpolation) so the fenced JSON block is
     # actually valid JSON for the LLM to read. ensure_ascii=False keeps
     # non-ASCII characters readable for non-English outputs.
@@ -323,7 +313,6 @@ async def _call_llm_with_retry(
 async def _refine_artifact(
     *,
     prompt: str,
-    artifact_type: str,
     sections: list[_SectionView],
     cfg: BibilabConfig,
     ui_lang: str | None = None,
@@ -383,7 +372,6 @@ async def _refine_artifact(
         transcript_text = _render_single_batch_text(sections)
         llm_prompt = _build_initial_prompt(
             prompt=prompt,
-            artifact_type=artifact_type,
             transcript_text=transcript_text,
             cfg=cfg,
             ui_lang=ui_lang,
@@ -393,7 +381,6 @@ async def _refine_artifact(
     # ---- Multi-batch path (filled in by the next task) ----
     return await _refine_artifact_multi_batch(
         prompt=prompt,
-        artifact_type=artifact_type,
         batches=batches,
         cfg=cfg,
         ui_lang=ui_lang,
@@ -403,7 +390,6 @@ async def _refine_artifact(
 async def _refine_artifact_multi_batch(
     *,
     prompt: str,
-    artifact_type: str,
     batches: list[list[_SectionView]],
     cfg: BibilabConfig,
     ui_lang: str | None,
@@ -430,7 +416,6 @@ async def _refine_artifact_multi_batch(
             # _build_initial_prompt automatically flows here.
             llm_prompt = _build_initial_prompt(
                 prompt=prompt,
-                artifact_type=artifact_type,
                 transcript_text=new_sections_text,
                 cfg=cfg,
                 ui_lang=ui_lang,
@@ -440,7 +425,6 @@ async def _refine_artifact_multi_batch(
             assert draft is not None  # invariant: set by i=1
             llm_prompt = _build_refine_prompt(
                 prompt=prompt,
-                artifact_type=artifact_type,
                 draft=draft,
                 new_sections_text=new_sections_text,
                 cfg=cfg,
@@ -594,16 +578,9 @@ class WorkerLoop:
         prompt = meta_raw["prompt"]
         source_ids = meta_raw["source_ids"]
         cfg = self._get_config()
-        artifact_result: ArtifactResult | None = None
 
         try:
             await update_job_status(job_id, JobStatus.PROCESSING.value, progress=10)
-
-            # Validate sources exist (early, before LLM work).
-            for source_id in source_ids:
-                source = await get_source(source_id)
-                if source is None:
-                    raise PipelineError(f"Source {source_id!r} not found")
 
             # Cancellation check before LLM work.
             if job_id in self._cancelled:
@@ -614,13 +591,11 @@ class WorkerLoop:
             await update_job_status(job_id, JobStatus.PROCESSING.value, progress=30)
 
             # Section-batched refine: replaces the old single-call
-            # _generate_artifact. Builds section views (fail-loud on
-            # no-sections), greedy-packs, then single- or multi-batch
-            # LLM path.
+            # _generate_artifact. _build_section_views handles source
+            # existence + no-sections fail-loud.
             sections = await _build_section_views(source_ids)
             artifact_result = await _refine_artifact(
                 prompt=prompt,
-                artifact_type=artifact_type,
                 sections=sections,
                 cfg=cfg,
                 ui_lang=meta_raw.get("ui_lang"),
