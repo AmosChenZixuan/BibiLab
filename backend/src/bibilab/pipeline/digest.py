@@ -2,6 +2,7 @@
 
 import logging
 import math
+from typing import Callable, TypeVar
 
 from pydantic import BaseModel, ValidationInfo, field_validator
 
@@ -26,6 +27,8 @@ logger = logging.getLogger(__name__)
 # are presentation-only. Kept short and topical; raised from 5 to widen
 # query-topic coverage for the chip.
 _MAX_KEYWORDS = 8
+
+T = TypeVar("T")
 
 
 class SectionDigest(BaseModel):
@@ -196,33 +199,28 @@ def _parse_response(text: str) -> DigestResult:
     return result
 
 
-def digest(
-    transcript_text: str,
+def _wrap_with_lang_directive(body: str, lang: str) -> str:
+    """Wrap a prompt body with the per-language instruction (prepend + append)."""
+    lang_instruction = _LANG_INSTRUCTION.get(lang, _LANG_INSTRUCTION["en"])
+    return f"{lang_instruction}\n\n{body}\n\n{lang_instruction}\n{_lang_output_directive(lang)}"
+
+
+def _call_llm_with_retry(
+    prompt: str,
+    parse_fn: Callable[[str], T],
+    *,
+    label: str,
     meta: VideoMeta,
     cfg: AIConfig,
-    output_language: str = "ui",
-    ui_lang: str | None = None,
-    llm_timeout: int = 120,
-) -> DigestResult:
-    lang = _resolved_lang(output_language, ui_lang)
-    lang_instruction = _LANG_INSTRUCTION.get(lang, _LANG_INSTRUCTION["en"])
-
-    prompt = (
-        lang_instruction
-        + "\n\n"
-        + _DIGEST_PROMPT.format(title=meta.title, transcript=transcript_text, max_keywords=_MAX_KEYWORDS)
-        + f"\n\n{lang_instruction}\n{_lang_output_directive(lang)}"
-    )
-
-    # One plain attempt, then strict-suffix retries. Linear so the attempt
-    # count is unambiguous. Only summary/keywords failures land here now —
-    # facets degrade to None in the validators and never raise.
+    llm_timeout: int,
+) -> T:
+    """Run prompt through the digest retry ladder (plain → strict ×2), parse, surface PipelineError on exhaustion."""
     prompts = [prompt, prompt + _STRICT_SUFFIX, prompt + _STRICT_SUFFIX]
     last_exc: Exception | None = None
     for attempt, p in enumerate(prompts, start=1):
         try:
             raw = _call_llm(p, cfg, llm_timeout=llm_timeout)
-            return _parse_response(raw)
+            return parse_fn(raw)
         except (ContextWindowExceededError, LLMOutputBudgetExceededError):
             # Structural failure — input overflow won't shrink on retry, and
             # output budget exhaustion is identical across attempts (same
@@ -233,26 +231,46 @@ def digest(
         except Exception as exc:
             last_exc = exc
             logger.warning(
-                "LLM digest failed for %s (attempt %d/%d): %s",
+                "LLM %s failed for %s (attempt %d/%d): %s",
+                label,
                 meta.video_id,
                 attempt,
                 len(prompts),
                 exc,
             )
 
-    # All retries exhausted — raise PipelineError instead of silent data loss
-    error_msg = f"LLM digest exhausted all retries for {meta.video_id}: {last_exc}"
+    error_msg = f"LLM {label} exhausted all retries for {meta.video_id}: {last_exc}"
     logger.error(error_msg)
     raise PipelineError(error_msg)
 
 
+def digest(
+    transcript_text: str,
+    meta: VideoMeta,
+    cfg: AIConfig,
+    output_language: str = "ui",
+    ui_lang: str | None = None,
+    llm_timeout: int = 120,
+) -> DigestResult:
+    lang = _resolved_lang(output_language, ui_lang)
+    prompt = _wrap_with_lang_directive(
+        _DIGEST_PROMPT.format(title=meta.title, transcript=transcript_text, max_keywords=_MAX_KEYWORDS),
+        lang,
+    )
+    return _call_llm_with_retry(
+        prompt,
+        _parse_response,
+        label="digest",
+        meta=meta,
+        cfg=cfg,
+        llm_timeout=llm_timeout,
+    )
+
+
 def _build_refine_prompt(running: str, section_text: str, lang: str) -> str:
-    lang_instruction = _LANG_INSTRUCTION.get(lang, _LANG_INSTRUCTION["en"])
-    return (
-        lang_instruction
-        + "\n\n"
-        + _REFINE_PROMPT.format(running=running, section_text=section_text)
-        + f"\n\n{lang_instruction}\n{_lang_output_directive(lang)}"
+    return _wrap_with_lang_directive(
+        _REFINE_PROMPT.format(running=running, section_text=section_text),
+        lang,
     )
 
 
@@ -266,27 +284,14 @@ def _refine_one_section(
 ) -> SectionDigest:
     """Run the refine LLM call with the same retry ladder as digest()."""
     base_prompt = _build_refine_prompt(running=running, section_text=section_text, lang=lang)
-    prompts = [base_prompt, base_prompt + _STRICT_SUFFIX, base_prompt + _STRICT_SUFFIX]
-    last_exc: Exception | None = None
-    for attempt, p in enumerate(prompts, start=1):
-        try:
-            raw = _call_llm(p, cfg, llm_timeout=llm_timeout)
-            return _parse_section_digest_response(raw)
-        except (ContextWindowExceededError, LLMOutputBudgetExceededError):
-            raise
-        except Exception as exc:
-            last_exc = exc
-            logger.warning(
-                "LLM section refine failed for %s (attempt %d/%d): %s",
-                meta.video_id,
-                attempt,
-                len(prompts),
-                exc,
-            )
-
-    error_msg = f"LLM section refine exhausted all retries for {meta.video_id}: {last_exc}"
-    logger.error(error_msg)
-    raise PipelineError(error_msg)
+    return _call_llm_with_retry(
+        base_prompt,
+        _parse_section_digest_response,
+        label="section refine",
+        meta=meta,
+        cfg=cfg,
+        llm_timeout=llm_timeout,
+    )
 
 
 def digest_sections(
@@ -299,9 +304,6 @@ def digest_sections(
 ) -> tuple[DigestResult, list[SectionDigest]]:
     """Run digest on each section: section 1 via digest() (with facets),
     sections 2..N via a lighter refine prompt with rolling context.
-
-    `len(section_texts) == 0` is undefined behavior — derive_sections only
-    returns [] for empty segments, which already failed upstream.
 
     Returns (DigestResult, list[SectionDigest]). For 1-section sources,
     the [SectionDigest] mirrors the DigestResult exactly (byte-identical
