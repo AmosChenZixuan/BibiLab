@@ -318,10 +318,11 @@ class WorkerLoop:
 
         section_rows = await get_sections(source_id)
         if not section_rows:
-            # Defensive: post-backfill this can't happen. Surface a clear
-            # backfill-pointer error so the operator knows the fix.
+            # Defensive: unreachable through the normal ingest path (sections
+            # are written atomically with the source). Surface a re-ingest hint
+            # if it ever happens.
             msg = "Source has no sections; re-ingest the source to derive them"
-            logger.warning("Digest job %s: %s", job_id, msg)
+            logger.error("Digest job %s: %s", job_id, msg)
             await update_job_status(job_id, JobStatus.FAILED.value, error=msg)
             return
 
@@ -342,6 +343,8 @@ class WorkerLoop:
 
         await update_job_status(job_id, JobStatus.PROCESSING.value, progress=80)
 
+        # Two writes: sections first, then source mirror. Drift window is
+        # acceptable (rerun is idempotent — re-running fixes any divergence).
         await update_section_summaries(
             source_id,
             [(row["seq"], sd.summary, sd.keywords) for row, sd in zip(section_rows, section_digests)],

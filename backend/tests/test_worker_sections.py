@@ -140,7 +140,7 @@ async def test_stage_process_short_video_returns_one_section(tmp_bibilab_home: P
 
 
 # ---------------------------------------------------------------------------
-# Task 8: worker ingest uses digest_sections
+# Worker ingest uses digest_sections
 # ---------------------------------------------------------------------------
 
 
@@ -151,8 +151,8 @@ async def test_ingest_one_section_byte_identical(tmp_bibilab_home: Path, mock_ca
     For sources that derive into a single section, the SectionDigest list
     must be byte-identical to the DigestResult's summary/keywords. The
     pre-change `digest()` path produced the same payload; the new
-    `digest_sections` path must preserve that contract so chat [N] →
-    section citations (Task #453) and rerun paths stay aligned.
+    `digest_sections` path must preserve that contract so downstream
+    citation and rerun paths stay aligned.
     """
     from bibilab.db import bootstrap_db, create_list
     from bibilab.worker import WorkerLoop
@@ -320,7 +320,7 @@ async def test_ingest_n_sections_writes_summaries_atomically(tmp_bibilab_home: P
 
 
 # ---------------------------------------------------------------------------
-# Task 9: worker rerun is section-level
+# Worker rerun is section-level
 # ---------------------------------------------------------------------------
 
 
@@ -328,8 +328,7 @@ async def test_ingest_n_sections_writes_summaries_atomically(tmp_bibilab_home: P
 async def test_rerun_updates_section_rows_and_sources_mirror(tmp_bibilab_home: Path, mock_call_llm):
     """Rerun on a sectioned source: 1 digest + (N-1) refines, then
     update_section_summaries populates all section rows, sources row mirrors
-    section[0]. This is the true section-level rerun (replaces the temp
-    1-section workaround from Task 8).
+    section[0]. This is the true section-level rerun.
     """
     from bibilab.db import (
         bootstrap_db,
@@ -527,9 +526,8 @@ async def test_rerun_refine_failure_preserves_prior_valid_summaries(tmp_bibilab_
 
 @pytest.mark.asyncio
 async def test_rerun_legacy_source_without_sections_fails_loud(tmp_bibilab_home: Path, mock_call_llm):
-    """Source has transcript segments but 0 section rows (post-backfill this
-    shouldn't happen, but defensive). Rerun must fail loud with a
-    backfill-pointer message."""
+    """Source has transcript segments but 0 section rows. Rerun must fail
+    loud with a re-ingest pointer."""
     from bibilab.db import bootstrap_db, create_job, create_list, get_job, write_transcript_segments
     from bibilab.pipeline.transcribe import WhisperSegment
     from bibilab.worker import WorkerLoop

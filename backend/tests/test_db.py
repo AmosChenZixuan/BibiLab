@@ -1184,10 +1184,10 @@ async def test_write_source_with_segments_rollback_leaves_no_orphan_sections(
 async def test_write_source_with_segments_rollback_on_section_failure_also_rolls_back_segments(
     tmp_bibilab_home: Path,
 ):
-    """AC3 atomicity: a mid-transaction failure inside the sections writer
+    """Atomicity: a mid-transaction failure inside the sections writer
     must roll back the source row AND the transcript segments — proving the
-    three-table write is one unit, not three independent inserts that the FK
-    cascade happens to mask.
+    three-table write is one unit, not three independent inserts that happen
+    to clean up after each other.
 
     Patches `_exec_write_sections` to raise after the segments are already
     staged. Post-conditions: no source row, no segments, no sections for

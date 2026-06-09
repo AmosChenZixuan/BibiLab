@@ -1,7 +1,7 @@
 import json
 from datetime import datetime
-from typing import Any
 
+import aiosqlite
 from pydantic import BaseModel, field_validator
 
 
@@ -69,13 +69,13 @@ class SectionListItem(BaseModel):
     timestamp_end: float
 
     @classmethod
-    def from_row(cls, row: Any) -> "SectionListItem":
+    def from_row(cls, row: aiosqlite.Row) -> "SectionListItem":
         """Project a sections-table row to the API response shape.
 
-        Handles the post-backfill / pre-#453 NULL semantics: NULL summary
-        becomes "", NULL/empty keywords becomes [], NULL timestamps become
-        0.0. Internal columns (id, source_id, seg_start, seg_end, token_count)
-        are not exposed.
+        Defensive against legacy rows with NULL summary/keywords/timestamps
+        (pre-section-digests path): NULL summary becomes "", NULL/empty
+        keywords becomes [], NULL timestamps become 0.0. Internal columns
+        (id, source_id, seg_start, seg_end, token_count) are not exposed.
         """
         return cls(
             seq=row["seq"],

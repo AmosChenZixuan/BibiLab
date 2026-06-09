@@ -241,7 +241,7 @@ def _call_llm_with_retry(
 
     error_msg = f"LLM {label} exhausted all retries for {meta.video_id}: {last_exc}"
     logger.error(error_msg)
-    raise PipelineError(error_msg)
+    raise PipelineError(error_msg) from last_exc
 
 
 def digest(
