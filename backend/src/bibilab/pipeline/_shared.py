@@ -28,6 +28,18 @@ def count_tokens(text: str) -> int:
     return len(_enc.encode(text))
 
 
+def format_hms(seconds: float | None) -> str:
+    """Format seconds as M:SS (or H:MM:SS when >= 1 hour). `None` → "0:00".
+    Shared between the section fence header (chat_tools) and the per-segment
+    timestamp in format_turns (transcribe) — both call sites must produce
+    the same shape or the rendered body has inconsistent timestamps.
+    """
+    s = int(seconds or 0)
+    m, sec = divmod(s, 60)
+    h, m = divmod(m, 60)
+    return f"{h}:{m:02d}:{sec:02d}" if h else f"{m}:{sec:02d}"
+
+
 # Input-side margin. Absorbs tokenizer drift (cl100k vs. provider-native) and
 # per-message framing overhead. Single-knob; no per-tier ceiling.
 _INPUT_MARGIN = 2048

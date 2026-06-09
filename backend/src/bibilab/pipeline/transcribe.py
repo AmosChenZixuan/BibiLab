@@ -34,6 +34,7 @@ from typing import Any
 
 from bibilab.config import TranscriptionConfig
 from bibilab.model_registry import DIARIZATION_SPEC_ID, VAD_SPEC_ID, WHISPER_SPEC_ID, ensure, get_spec
+from bibilab.pipeline._shared import format_hms
 from bibilab.pipeline.audio import PipelineError
 
 logger = logging.getLogger(__name__)
@@ -242,9 +243,7 @@ def format_turns(
         else:
             label = spk or "SPK?"
         if include_time:
-            h, rem = divmod(int(start), 3600)
-            m, s = divmod(rem, 60)
-            time = f" @{h}:{m:02d}:{s:02d}" if h else f" @{m}:{s:02d}"
+            time = f" @{format_hms(start)}"
         else:
             time = ""
         lines.append(f"[{label}{time}] {' '.join(texts)}")

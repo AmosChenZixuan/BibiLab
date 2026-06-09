@@ -1,5 +1,6 @@
 """Tool definitions and execution for chat."""
 
+import asyncio
 import json
 import logging
 import re
@@ -13,7 +14,7 @@ from bibilab.db import (
     get_source_facets,
     rows_to_segments,
 )
-from bibilab.pipeline._shared import ToolDefinition
+from bibilab.pipeline._shared import ToolDefinition, format_hms
 from bibilab.pipeline.digest import parse_facet_int
 from bibilab.pipeline.embed import retrieve
 from bibilab.pipeline.transcribe import WhisperSegment, build_speaker_namespace, format_turns
@@ -55,17 +56,10 @@ def strip_internal(result: dict) -> dict:
     return {k: v for k, v in result.items() if not k.startswith("_")}
 
 
-def _mmss(seconds: float | None) -> str:
-    s = int(seconds or 0)
-    m, sec = divmod(s, 60)
-    h, m = divmod(m, 60)
-    return f"{h}:{m:02d}:{sec:02d}" if h else f"{m}:{sec:02d}"
-
-
 def _build_section_fence_header(entry: CitationRegistryEntry) -> str:
     return (
         f'===== [{entry.index}] "{entry.title}" · Section {entry.seq} '
-        f"({_mmss(entry.timestamp_start)}–{_mmss(entry.timestamp_end)}) ====="
+        f"({format_hms(entry.timestamp_start)}–{format_hms(entry.timestamp_end)}) ====="
     )
 
 
@@ -244,6 +238,22 @@ async def _build_section_narrative(entry: CitationRegistryEntry) -> str:
     return header + "\n\n" + body
 
 
+def _read_section_error(msg: str) -> dict:
+    """LLM-facing error envelope for execute_read_section. The shape matches
+    the success return except the identity fields are None/empty — the parser
+    + frontend expect a consistent return shape regardless of why the read
+    failed, so the failure mode renders the same as a successful read with no
+    section matched. Centralized so the parse-error and unknown-index branches
+    stay in lockstep if a new field is added to the success return."""
+    return {
+        "_chunks": msg,
+        "section_id": None,
+        "source_id": None,
+        "source_title": "",
+        "tool_name": "read_section",
+    }
+
+
 async def execute_read_section(
     source_ids: list[str],
     section_id: str | int | None,
@@ -264,22 +274,10 @@ async def execute_read_section(
     elif isinstance(section_id, str) and (m := _CITATION_INDEX_RE.match(section_id)):
         idx = int(m.group(1))
     else:
-        return {
-            "_chunks": 'section_id must be a citation index like "[5]".',
-            "section_id": None,
-            "source_id": None,
-            "source_title": "",
-            "tool_name": "read_section",
-        }
+        return _read_section_error('section_id must be a citation index like "[5]".')
     entry = next((e for e in registry.values() if e.index == idx and e.source_id in source_ids), None)
     if entry is None:
-        return {
-            "_chunks": (f"No section [{idx}] in this conversation. Call find_passages first."),
-            "section_id": None,
-            "source_id": None,
-            "source_title": "",
-            "tool_name": "read_section",
-        }
+        return _read_section_error(f"No section [{idx}] in this conversation. Call find_passages first.")
     narrative = await _build_section_narrative(entry)
     entry.citable = True
     logger.info("read_section: idx=%d section=%s source=%s", idx, entry.section_id, entry.source_id)
@@ -377,21 +375,36 @@ async def execute_find_passages(
             )
     dedup_all_shown = bool(result.chunks) and not new_chunks
 
-    # Load sections for every source that surfaced a chunk this turn, once.
-    # hit_source_ids covers the full new_chunks set (not just deduped-out ones)
-    # so the section lookup sees the same scope as the rendered body.
+    # Load sections for every source this turn that needs them — chunk-hit
+    # sources (for the per-chunk section lookup) plus facet-scoped sources
+    # (for the full outline expansion). Batched via asyncio.gather so a
+    # turn touching many sources issues one DB roundtrip total, not N serial
+    # roundtrips — and so the outline loop never re-queries sections the
+    # chunk-hit path already loaded.
     hit_source_ids = {c.source_id for c in new_chunks}
+    load_source_ids = set(hit_source_ids) | set(scoped_source_ids or [])
     sections_by_source: dict[str, list[tuple[str, int, int, int]]] = {}
     summary_by_section_id: dict[str, str] = {}
     ts_by_section_id: dict[str, tuple[float, float]] = {}
-    for sid in hit_source_ids:
-        rows = await get_sections(sid)
-        # seq is 0-based in the DB; the registry/fence display 1-based
-        # (matches the "Section N" human label, see _build_section_fence_header).
-        sections_by_source[sid] = [(r["id"], r["seq"] + 1, r["seg_start"], r["seg_end"]) for r in rows]
-        for r in rows:
-            summary_by_section_id[r["id"]] = r["summary"]
-            ts_by_section_id[r["id"]] = (r["timestamp_start"], r["timestamp_end"])
+    if load_source_ids:
+        rows_list = await asyncio.gather(*(get_sections(sid) for sid in load_source_ids))
+        for sid, rows in zip(load_source_ids, rows_list):
+            # seq is 0-based in the DB; the registry/fence display 1-based
+            # (matches the "Section N" human label, see _build_section_fence_header).
+            sections_by_source[sid] = [(r["id"], r["seq"] + 1, r["seg_start"], r["seg_end"]) for r in rows]
+            for r in rows:
+                summary_by_section_id[r["id"]] = r["summary"]
+                ts_by_section_id[r["id"]] = (r["timestamp_start"], r["timestamp_end"])
+
+    # Batched title fallback for sources the retrieval-result doesn't carry a
+    # title for (typically scoped-but-not-hit sources — the outline loop needs
+    # their title for the registry entry).
+    title_by_source = {s.source_id: s.video_title for s in result.source_coverage}
+    missing_titles = [s for s in (scoped_source_ids or []) if s not in title_by_source]
+    if missing_titles:
+        src_rows = await asyncio.gather(*(get_source(s) for s in missing_titles))
+        for sid, row in zip(missing_titles, src_rows):
+            title_by_source[sid] = row["title"] if row else ""
 
     # Reconstruct the speaker-turn body for each displayed chunk (kept from v1).
     # Section allocation happens below; the per-chunk turn body is built first
@@ -420,12 +433,17 @@ async def execute_find_passages(
             chunk_segs, include_time=True, citation_index=idx, speaker_namespace=ns_by_source[c.source_id]
         )
 
-    title_by_source = {s.source_id: s.video_title for s in result.source_coverage}
+    # next_index is closure-captured by _alloc_section; we update it once per
+    # new section (avoids the O(n) max() walk that the old code did on every
+    # _alloc_section call → O(n²) over the outline pass). Initialized to max+1
+    # so the first new section in an empty registry gets index=1 (matching the
+    # pre-closure behavior — old code did `max(...) + 1` inline per call).
+    next_index = max((e.index for e in registry.values()), default=0) + 1
 
     def _alloc_section(section_id: str, source_id: str, title: str, seq: int) -> CitationRegistryEntry:
+        nonlocal next_index
         entry = registry.get(section_id)
         if entry is None:
-            next_index = max((e.index for e in registry.values()), default=0) + 1
             entry = CitationRegistryEntry(
                 index=next_index,
                 section_id=section_id,
@@ -434,6 +452,7 @@ async def execute_find_passages(
                 seq=seq,
             )
             registry[section_id] = entry
+            next_index += 1
         return entry
 
     # Map each displayed chunk → its section; allocate [N] per section.
@@ -481,26 +500,21 @@ async def execute_find_passages(
 
     # Facet matched → emit the FULL section outline for each matched source:
     # register every section (summary, its own [N]); outline-only sections stay
-    # citable=False until drilled. Serves coverage/compare.
+    # citable=False until drilled. The section load + title fallback already
+    # happened in the batched build above; this loop is pure allocation, no
+    # DB calls. _alloc_section seeds the entry's timestamps from
+    # ts_by_section_id, so outline-only entries carry a real span (no 0:00–0:00).
     if scoped_source_ids:
         for sid in scoped_source_ids:
-            rows = await get_sections(sid)
-            title = title_by_source.get(sid)
-            if title is None:
-                src_row = await get_source(sid)
-                title = src_row["title"] if src_row else ""
-            for r in rows:
-                # ensure ts/summary maps are populated for sources with no chunk hit
-                summary_by_section_id.setdefault(r["id"], r["summary"])
-                ts_by_section_id.setdefault(r["id"], (r["timestamp_start"], r["timestamp_end"]))
-                entry = _alloc_section(r["id"], sid, title, r["seq"])
-                # Outline-only sections have no chunk to derive timestamps from; seed them
-                # from the section row so the fence header (and persisted ledger) show the
-                # real span instead of 0:00–0:00.
+            title = title_by_source.get(sid, "")
+            for section_id, seq, _, _ in sections_by_source.get(sid, []):
+                entry = _alloc_section(section_id, sid, title, seq)
+                # Outline-only sections have no chunk to derive timestamps from;
+                # seed them from the section row so the fence header (and
+                # persisted ledger) show the real span instead of 0:00–0:00.
                 if entry.timestamp_start is None:
-                    entry.timestamp_start = r["timestamp_start"]
-                    entry.timestamp_end = r["timestamp_end"]
-                summaries_by_index[entry.index] = r["summary"]
+                    entry.timestamp_start, entry.timestamp_end = ts_by_section_id[section_id]
+                summaries_by_index[entry.index] = summary_by_section_id[section_id]
 
     # Recompute turn_indices AFTER outline expansion so outline indices flow into section_coverage.
     turn_indices = sorted(set(chunks_by_index) | set(summaries_by_index))
@@ -530,11 +544,12 @@ async def execute_find_passages(
                 "source_id": e.source_id,
                 "source_title": e.title,
                 "seq": e.seq,
-                "timestamp_start": ts_by_section_id.get(e.section_id, (None, None))[0],
-                "timestamp_end": ts_by_section_id.get(e.section_id, (None, None))[1],
+                "timestamp_start": ts[0],
+                "timestamp_end": ts[1],
             }
             for e in sorted(registry.values(), key=lambda e: e.index)
             if e.index in turn_indices
+            for ts in [ts_by_section_id.get(e.section_id, (None, None))]
         ],
         "_chunks": (
             no_coverage_fact
