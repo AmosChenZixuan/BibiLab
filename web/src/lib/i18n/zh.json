@@ -167,6 +167,11 @@
       "cancel": "取消",
       "invalidInt": "需为 ≥ 1 的整数"
     },
+    "sections": {
+      "label": "章节",
+      "previousSection": "上一节",
+      "nextSection": "下一节"
+    },
     "notSignedIn": "未登录",
     "ingest": {
       "alreadyInList": "已在此列表中",

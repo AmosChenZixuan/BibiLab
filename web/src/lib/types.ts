@@ -56,6 +56,17 @@ export type SourceFacetsPatch = {
   season_number?: number | null;
 };
 
+/** Projected section row for GET /sources/{id}/sections.
+ *  Internal columns (id, source_id, seg_start, seg_end, token_count) are
+ *  not exposed — they're an implementation detail of the rerun path. */
+export interface SourceSection {
+  seq: number;
+  summary: string;
+  keywords: string[];
+  timestamp_start: number;
+  timestamp_end: number;
+}
+
 type JobStatus =
   | "queued"
   | "downloading"

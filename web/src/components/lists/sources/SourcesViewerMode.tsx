@@ -1,7 +1,8 @@
 
+import { useEffect, useState } from "react";
 import { useLanguage } from "@/app/LanguageContext";
 import { api } from "@/lib/api";
-import type { Source, SourceContent } from "@/lib/types";
+import type { Source, SourceContent, SourceSection } from "@/lib/types";
 import { useJobActivity } from "@/components/jobs/JobActivityProvider";
 import { Banner } from "@/components/lists/Banner";
 import { DigestAccordion } from "@/components/lists/DigestAccordion";
@@ -19,6 +20,37 @@ export function SourcesViewerMode({
 }) {
   const { t } = useLanguage();
   const { trackJobs } = useJobActivity();
+  const [sections, setSections] = useState<SourceSection[] | undefined>(undefined);
+
+  // Fetch sections alongside the source content so the digest body can
+  // switch to the sectioned layout for N>1. Failures degrade silently —
+  // DigestAccordion falls through to the 1-section path when `sections`
+  // is undefined or empty. The `cancelled` flag (per web/CLAUDE.md) is
+  // enough to guard stale responses: the `key={source.id}` on
+  // <DigestAccordion> remounts the body on source switch, so the new
+  // source's state always starts fresh.
+  useEffect(() => {
+    if (!sourceContent) {
+      setSections(undefined);
+      return;
+    }
+    setSections(undefined);
+    let cancelled = false;
+    void api
+      .getSourceSections(source.id)
+      .then((rows) => {
+        if (cancelled) return;
+        setSections(rows ?? []);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        // Silent degrade: the digest renders the 1-section path.
+        setSections([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [source.id, sourceContent]);
 
   const handleRerunDigest = async (sourceId: string) => {
     try {
@@ -51,6 +83,7 @@ export function SourcesViewerMode({
         )}
         {sourceContent && (
           <DigestAccordion
+            key={source.id}
             source={source}
             summary={sourceContent.summary}
             keywords={sourceContent.keywords}
@@ -66,6 +99,7 @@ export function SourcesViewerMode({
               onRefresh();
             }}
             listId={listId}
+            sections={sections}
           />
         )}
         {sourceContent?.transcript && (
