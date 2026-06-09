@@ -30,12 +30,7 @@ async def get_source_cover(source_id: str) -> FileResponse:
 
 @router.get("/sources/{source_id}/sections")
 async def get_source_sections(source_id: str) -> list[SectionListItem]:
-    """List a source's section rows in seq order.
-
-    Each item carries the section's summary, keywords, and timestamps.
-    Internal columns (id, source_id, seg_start, seg_end, token_count) are
-    not exposed — they're an implementation detail of the rerun path.
-    """
+    """List a source's section rows in seq order."""
     source = await get_source(source_id)
     if source is None:
         raise HTTPException(status_code=404, detail="Source not found")

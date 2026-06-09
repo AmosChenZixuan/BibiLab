@@ -173,10 +173,5 @@ def chunk_by_sections(
 
 
 def section_texts(segments: list[WhisperSegment], sections: list[Section]) -> list[str]:
-    """Return one formatted text per section, in section order.
-
-    Shared by the ingest and rerun paths so both build section text identically.
-    Precondition: `sections` was derived from the same `segments` (true by
-    construction for ingest, true by the rerun read pattern).
-    """
+    """One formatted text per section, in section order."""
     return [format_turns(segments[s.seg_start : s.seg_end + 1], include_time=False) for s in sections]
