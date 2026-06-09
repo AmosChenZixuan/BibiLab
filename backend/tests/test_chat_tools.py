@@ -46,47 +46,50 @@ class TestFindPassagesToolSchema:
         assert "Sources list" not in desc
 
 
-class TestReadSourceToolSchema:
-    def test_read_source_tool_name(self):
-        from bibilab.pipeline.chat_tools import READ_SOURCE_TOOL
+class TestReadSectionToolSchema:
+    def test_read_section_tool_name(self):
+        from bibilab.pipeline.chat_tools import READ_SECTION_TOOL
 
-        assert READ_SOURCE_TOOL.name == "read_source"
+        assert READ_SECTION_TOOL.name == "read_section"
 
-    def test_read_source_tool_schema(self):
-        from bibilab.pipeline.chat_tools import READ_SOURCE_TOOL
+    def test_read_section_tool_schema(self):
+        from bibilab.pipeline.chat_tools import READ_SECTION_TOOL
 
-        props = READ_SOURCE_TOOL.parameters["properties"]
-        assert "source_id" in props
-        assert "sequence_number" in props
-        assert "season_number" in props
-        # All optional — read_source accepts either source_id or a facet
-        assert READ_SOURCE_TOOL.parameters["required"] == []
+        props = READ_SECTION_TOOL.parameters["properties"]
+        assert "section_id" in props
+        # Single required arg — section citation index from a find_passages result
+        assert READ_SECTION_TOOL.parameters["required"] == ["section_id"]
 
-    def test_read_source_tool_no_query(self):
-        from bibilab.pipeline.chat_tools import READ_SOURCE_TOOL
+    def test_read_section_tool_no_facet_args(self):
+        from bibilab.pipeline.chat_tools import READ_SECTION_TOOL
 
-        assert "query" not in READ_SOURCE_TOOL.parameters["properties"]
+        props = READ_SECTION_TOOL.parameters["properties"]
+        # read_section resolves [N] only — no source_id/sequence/season args
+        assert "source_id" not in props
+        assert "sequence_number" not in props
+        assert "season_number" not in props
+        assert "query" not in props
 
 
 class TestExecuteTool:
     @pytest.mark.asyncio
-    async def test_execute_tool_dispatches_to_read_source(self):
+    async def test_execute_tool_dispatches_to_read_section(self):
         from bibilab.config import AIConfig, BibilabConfig
         from bibilab.pipeline import chat_tools
         from bibilab.pipeline.chat_tools import execute_tool
 
         cfg = BibilabConfig(ai=AIConfig(protocol="openai", model="test", api_key="test", base_url=""))
 
-        with patch.object(chat_tools, "execute_read_source", new_callable=AsyncMock) as mock_exec:
-            mock_exec.return_value = {"_chunks": "narrative", "source_id": "a"}
+        with patch.object(chat_tools, "execute_read_section", new_callable=AsyncMock) as mock_exec:
+            mock_exec.return_value = {"_chunks": "narrative", "section_id": "sec-1"}
             result = await execute_tool(
-                tool_name="read_source",
-                arguments={"sequence_number": 5},
+                tool_name="read_section",
+                arguments={"section_id": "[5]"},
                 source_ids=["a", "b"],
                 cfg=cfg,
             )
             mock_exec.assert_awaited_once()
-            assert result["source_id"] == "a"
+            assert result["section_id"] == "sec-1"
 
     @pytest.mark.asyncio
     async def test_execute_tool_dispatches_to_find_passages(self):
@@ -439,27 +442,28 @@ class TestBuildToolBlockEntry:
         assert entry["result"]["chunks"] == raw_chunks
         assert entry["result"]["summary"]["sources_total"] == 3
 
-    def test_build_tool_block_entry_read_source_strips_internal_underscore_fields(self):
-        """v2: read_source is never replayed/reseeded — strip its 30-150K
+    def test_build_tool_block_entry_read_section_strips_internal_underscore_fields(self):
+        """v2: read_section is never replayed/reseeded — strip its 30-150K
         token narrative from the persisted block. Only the summary remains."""
         from bibilab.pipeline.chat_tools import build_tool_block_entry
 
         entry = build_tool_block_entry(
             tool_use_id="toolu_2",
-            name="read_source",
-            arguments={"source_id": "a"},
+            name="read_section",
+            arguments={"section_id": "[5]"},
             result={
                 "_chunks": "30-150K token narrative — must not be persisted",
+                "section_id": "sec-1",
                 "source_id": "a",
             },
             raw_chunks=None,
         )
 
-        assert entry["name"] == "read_source"
+        assert entry["name"] == "read_section"
         # The narrative MUST be stripped — never replayed, never reseeded.
         assert "_chunks" not in entry["result"]
-        # Only the small scalar survives.
-        assert entry["result"] == {"source_id": "a"}
+        # Only the small scalars survive.
+        assert entry["result"] == {"section_id": "sec-1", "source_id": "a"}
 
 
 def test_expand_message_for_provider_text_only_passthrough_anthropic():
@@ -486,8 +490,8 @@ def test_expand_message_for_provider_empty_tool_blocks_passthrough():
     assert out == [{"role": "assistant", "content": "Hi"}]
 
 
-def test_expand_message_for_provider_drops_retrieve_and_read_source_anthropic():
-    """v2: find_passages + read_source tool exchanges are DROPPED
+def test_expand_message_for_provider_drops_retrieve_and_read_section_anthropic():
+    """v2: find_passages + read_section tool exchanges are DROPPED
     from cross-turn replay (stale-context contamination). Only the assistant
     text survives."""
     from bibilab.pipeline.chat_tools import expand_message_for_provider
@@ -504,9 +508,9 @@ def test_expand_message_for_provider_drops_retrieve_and_read_source_anthropic():
             },
             {
                 "tool_use_id": "toolu_2",
-                "name": "read_source",
-                "arguments": {"source_id": "a"},
-                "result": {"_chunks": "big", "source_id": "a"},
+                "name": "read_section",
+                "arguments": {"section_id": "[1]"},
+                "result": {"_chunks": "big", "section_id": "sec-1", "source_id": "a"},
             },
         ],
     }
@@ -625,8 +629,8 @@ class TestReseedCitationRegistry:
         assert len(entry.chunk_ids) == 2
 
     def test_reseed_skips_non_retrieve_blocks(self):
-        """v2: read_source blocks do NOT feed the citation registry — they
-        look up an already-registered source but never register a new one."""
+        """v2: read_section blocks do NOT feed the citation registry — they
+        look up an already-registered section but never register a new one."""
         from bibilab.pipeline.chat_tools import reseed_citation_registry
 
         registry: dict = {}
@@ -637,9 +641,9 @@ class TestReseedCitationRegistry:
                 "tool_blocks": [
                     {
                         "tool_use_id": "t1",
-                        "name": "read_source",
-                        "arguments": {"sequence_number": 5},
-                        "result": {"_chunks": "...", "source_id": "a"},
+                        "name": "read_section",
+                        "arguments": {"section_id": "[5]"},
+                        "result": {"_chunks": "...", "section_id": "sec-1", "source_id": "a"},
                     }
                 ],
             }
@@ -1565,3 +1569,220 @@ async def test_find_passages_facet_emits_full_outline(tmp_bibilab_home, monkeypa
     # section_coverage includes the outline entries (both sections, not just the hit one).
     cov_ids = {row["section_id"] for row in result["section_coverage"]}
     assert cov_ids == set(section_ids)
+
+
+# ---------------------------------------------------------------------------
+# Task 6: read_source -> read_section ([N]=section, bounded verbatim)
+# ---------------------------------------------------------------------------
+
+
+class TestReadSectionUnitPaths:
+    """Pure unit tests for execute_read_section (no DB)."""
+
+    @pytest.mark.asyncio
+    async def test_read_section_unknown_index_fails_loud_not_raises(self):
+        """[9] with no matching registry entry → LLM-facing error, no raise.
+        A raise would abort the SSE stream — read_section must return."""
+        from bibilab.pipeline.chat_tools import execute_read_section
+
+        out = await execute_read_section(source_ids=["src"], section_id="[9]", registry={})
+        assert out["section_id"] is None
+        assert out["source_id"] is None
+        assert out["source_title"] == ""
+        assert out["tool_name"] == "read_section"
+        assert "No section [9]" in out["_chunks"]
+
+    @pytest.mark.asyncio
+    async def test_read_section_non_index_string_fails_loud(self):
+        """A stray title like 'Episode 5 discussion' must fail loud — the
+        anchored regex must NOT silently parse the first int."""
+        from bibilab.pipeline.chat_tools import execute_read_section
+
+        out = await execute_read_section(source_ids=["a"], section_id="Episode 5 discussion", registry={})
+        assert out["section_id"] is None
+        assert "section_id must be a citation index" in out["_chunks"]
+
+    @pytest.mark.asyncio
+    async def test_read_section_pool_membership_enforced(self):
+        """[N] whose section's source_id is NOT in the current source_ids
+        pool (de-selected) must fail loud."""
+        from bibilab.pipeline.chat_tools import CitationRegistryEntry, execute_read_section
+
+        reg = {"sec-a": CitationRegistryEntry(index=1, section_id="sec-a", source_id="a", title="Ep A", seq=1)}
+        # Pool is ["b"] — source "a" is not in the pool
+        out = await execute_read_section(source_ids=["b"], section_id="[1]", registry=reg)
+        assert out["section_id"] is None
+        assert "No section [1]" in out["_chunks"]
+
+
+@pytest.mark.asyncio
+async def test_read_section_returns_bounded_verbatim(tmp_bibilab_home, monkeypatch):
+    """Integration: read_section resolves a [N] citation index from the
+    registry to a single section, returns that section's bounded verbatim
+    transcript (format_turns with citation_index), and flips citable=True."""
+    from bibilab.db import bootstrap_db, create_list, get_sections
+    from bibilab.pipeline import chat_tools
+    from bibilab.pipeline.digest import SectionDigest
+    from bibilab.pipeline.section import Section
+    from bibilab.pipeline.transcribe import WhisperSegment
+    from tests.factories import SourceFactory
+
+    # 2-section source; section 2 has 5 segs (15-19), section 1 has 15 (0-14)
+    await bootstrap_db()
+    await create_list("L1", "Test List", "2025-01-01T00:00:00Z")
+
+    segs = [
+        WhisperSegment(
+            start=float(i),
+            end=float(i + 1),
+            text=f"sentence {i} about the topic",
+            speaker="SPK_0",
+        )
+        for i in range(20)
+    ]
+    sections = [
+        Section(seg_start=0, seg_end=14, token_count=100, timestamp_start=0.0, timestamp_end=15.0),
+        Section(seg_start=15, seg_end=19, token_count=50, timestamp_start=15.0, timestamp_end=20.0),
+    ]
+    digests = [
+        SectionDigest(summary="sec1", keywords=["k1"]),
+        SectionDigest(summary="sec2", keywords=["k2"]),
+    ]
+    source_id = await SourceFactory.build(
+        "L1",
+        video_id="BVreadSection",
+        title="Read Section Video",
+        segments=segs,
+        sections=sections,
+        section_digests=digests,
+    )
+    section_rows = await get_sections(source_id)
+    section_ids = [r["id"] for r in section_rows]
+
+    # Pre-seed registry with [5] → section 2 (the second section, seq=2 1-based).
+    reg = {
+        section_ids[1]: chat_tools.CitationRegistryEntry(
+            index=5,
+            section_id=section_ids[1],
+            source_id=source_id,
+            title="Read Section Video",
+            seq=2,
+        )
+    }
+
+    out = await chat_tools.execute_read_section(source_ids=[source_id], section_id="[5]", registry=reg)
+
+    assert out["tool_name"] == "read_section"
+    assert out["section_id"] == section_ids[1]
+    assert out["source_id"] == source_id
+    assert out["source_title"] == "Read Section Video"
+    # Verbatim body uses citation_index=5 (S5 prefix), bounded to section 2's segs.
+    body = out["_chunks"]
+    assert "[S5·SPK0" in body
+    # Section 2's segs (15..19) are present, section 1's are NOT.
+    assert "sentence 19" in body and "sentence 15" in body
+    assert "sentence 0" not in body and "sentence 14" not in body
+    # Drilling flips the section's citable flag.
+    assert reg[section_ids[1]].citable is True
+    # Header is the section fence format (matches T3's _build_section_fence_header).
+    assert '===== [5] "Read Section Video" · Section 2' in body
+
+
+@pytest.mark.asyncio
+async def test_read_section_section_not_found_branch(monkeypatch):
+    """Section row vanished between find_passages and read_section (e.g. an
+    out-of-band ingest rewrite). Return the LLM-facing fact, never raise."""
+    from bibilab.pipeline import chat_tools
+    from bibilab.pipeline.chat_tools import execute_read_section
+
+    reg = {
+        "sec-ghost": chat_tools.CitationRegistryEntry(
+            index=2, section_id="sec-ghost", source_id="src", title="Ghost", seq=1
+        )
+    }
+
+    async def fake_get_sections(sid):  # noqa: ANN001
+        return []  # no sections left
+
+    monkeypatch.setattr(chat_tools, "get_sections", fake_get_sections)
+    out = await execute_read_section(source_ids=["src"], section_id="[2]", registry=reg)
+    assert "not found" in out["_chunks"].lower() or "section [2]" in out["_chunks"]
+    # Spec returns the entry IDs unconditionally (citable flip on success path
+    # does not depend on narrative content), so structural ids are populated.
+    assert out["section_id"] == "sec-ghost"
+    assert out["source_id"] == "src"
+    # Spec: citable is flipped unconditionally on the success path.
+    assert reg["sec-ghost"].citable is True
+
+
+@pytest.mark.asyncio
+async def test_read_section_empty_segments_branch(monkeypatch):
+    """Section exists but the segments were never written (e.g. transcript
+    failed mid-pipeline). Return fact-only, suppress the header."""
+    from bibilab.pipeline import chat_tools
+    from bibilab.pipeline.chat_tools import execute_read_section
+
+    reg = {
+        "sec-empty": chat_tools.CitationRegistryEntry(
+            index=3, section_id="sec-empty", source_id="src", title="Empty", seq=1
+        )
+    }
+
+    async def fake_get_sections(sid):  # noqa: ANN001
+        return [
+            {
+                "id": "sec-empty",
+                "source_id": "src",
+                "seq": 0,
+                "seg_start": 0,
+                "seg_end": 5,
+                "token_count": 10,
+                "timestamp_start": 0.0,
+                "timestamp_end": 6.0,
+                "summary": "x",
+                "keywords": "[]",
+            }
+        ]
+
+    async def fake_get_segments_for_ranges(ranges):  # noqa: ANN001
+        return []
+
+    monkeypatch.setattr(chat_tools, "get_sections", fake_get_sections)
+    monkeypatch.setattr(chat_tools, "get_segments_for_ranges", fake_get_segments_for_ranges)
+    out = await execute_read_section(source_ids=["src"], section_id="[3]", registry=reg)
+    assert "no transcript available" in out["_chunks"]
+    # Title must NOT leak — the header is suppressed when there's no body.
+    assert "Empty" not in out["_chunks"]
+    assert "=====" not in out["_chunks"]
+    # Spec: citable is flipped unconditionally on the success path.
+    assert reg["sec-empty"].citable is True
+
+
+@pytest.mark.asyncio
+async def test_execute_tool_dispatches_read_section_args(monkeypatch):
+    """execute_tool routes read_section through execute_read_section, passing
+    section_id (no facet coercion)."""
+    from bibilab.config import AIConfig, BibilabConfig
+    from bibilab.pipeline import chat_tools
+    from bibilab.pipeline.chat_tools import execute_tool
+
+    cfg = BibilabConfig(ai=AIConfig(protocol="openai", model="x", api_key="k"))
+
+    seen = {}
+
+    async def fake_execute_read_section(**kwargs):
+        seen.update(kwargs)
+        return {"_chunks": "narr", "section_id": "sec-1"}
+
+    monkeypatch.setattr(chat_tools, "execute_read_section", fake_execute_read_section)
+    await execute_tool(
+        tool_name="read_section",
+        arguments={"section_id": "[3]"},
+        source_ids=["a"],
+        cfg=cfg,
+    )
+    assert seen["section_id"] == "[3]"
+    assert seen["registry"] is None or isinstance(seen["registry"], dict)
+    # No facet coercion — read_section takes [N] only.
+    assert "sequence_number" not in seen
+    assert "season_number" not in seen

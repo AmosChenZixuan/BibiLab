@@ -11,7 +11,6 @@ from bibilab.db import (
     get_segments_for_ranges,
     get_source,
     get_source_facets,
-    get_transcript_segments,
     rows_to_segments,
 )
 from bibilab.pipeline._shared import ToolDefinition
@@ -137,9 +136,9 @@ def _partition_unseen_chunks(chunks: list, seen_chunk_ids: set[str]) -> list:
 
 # Tool defs + registry for the RAG v2 two-tool surface.
 # RETRIEVE_TOOL_NAMES is the set whose tool results carry a replayable chunk
-# array (only find_passages). read_source shares the SAME citation registry and
-# allocates a new [N] when find_passages has not already registered the source
-# this turn (dedup by source_id).
+# array (only find_passages). read_section resolves an already-registered [N]
+# from the citation registry to one section's bounded verbatim transcript
+# (no new index allocation).
 FIND_PASSAGES_TOP_K = 8
 
 FIND_PASSAGES_TOOL = ToolDefinition(
@@ -149,11 +148,11 @@ FIND_PASSAGES_TOOL = ToolDefinition(
         "Returns the most relevant passages across all sources (or a single "
         "episode/season if you pass a facet), each fenced under its source with "
         "a [N] citation index.\n\n"
-        "This is a LOCATOR: it surfaces *which sources* are relevant and gives "
+        "This is a LOCATOR: it surfaces *which sections* are relevant and gives "
         "you fragments to read. The fragments may not fully answer the question. "
-        "If they answer it, synthesize. If a source is clearly on-topic but the "
-        "fragments miss the specific thing asked, call read_source on that source "
-        "to read it in full.\n\n"
+        "If they answer it, synthesize. If a section is clearly on-topic but the "
+        "fragments miss the specific thing asked, call read_section on that [N] "
+        "to read the section in full.\n\n"
         "Pass the user's question in natural form, copying proper nouns verbatim. "
         "Pass sequence_number / season_number ONLY when the current message "
         "explicitly names an episode (第八集) or season (第二季).\n\n"
@@ -178,34 +177,27 @@ FIND_PASSAGES_TOOL = ToolDefinition(
     },
 )
 
-READ_SOURCE_TOOL = ToolDefinition(
-    name="read_source",
+READ_SECTION_TOOL = ToolDefinition(
+    name="read_section",
     description=(
-        "Read ONE source's full continuous transcript (summary + timestamped "
-        "narrative). Expensive — use only when find_passages shows a source is "
-        "on-topic but its fragments miss the specific thing asked, or for "
-        "narrative-coverage questions about a named episode/season.\n\n"
-        "Resolves to EXACTLY ONE source. Pass source_id (the [N] citation index "
-        "from a find_passages result) OR a facet (sequence_number / "
-        "season_number). If a facet matches multiple sources it errors with the "
-        "candidates — narrow it or pass source_id. For 'what does season N "
-        "cover', issue parallel read_source calls (one per episode), not one "
-        "fan-out call.\n\n"
-        "Examples:\n"
-        "  read_source(sequence_number=5)\n"
-        '  read_source(source_id="[5]")'
+        "Read ONE section's full verbatim transcript. A find_passages result "
+        "fences each section under a [N] index; pass that index to read that "
+        "section in full when its summary/fragments miss the specific thing "
+        "asked. For 'what does episode N cover', read the outline summaries "
+        "first; to quote a specific section, read_section that [N]. To read a "
+        "whole episode verbatim, issue parallel read_section calls, one per "
+        "section index.\n\n"
+        'Example:\n  read_section(section_id="[5]")'
     ),
     parameters={
         "type": "object",
         "properties": {
-            "source_id": {
+            "section_id": {
                 "type": "string",
-                "description": ("Citation index from a find_passages result, e.g. '[5]'. Not a source UUID."),
+                "description": "Section citation index from a find_passages result, e.g. '[5]'.",
             },
-            "sequence_number": {"type": "integer", "description": "Episode / part number."},
-            "season_number": {"type": "integer", "description": "Season number."},
         },
-        "required": [],
+        "required": ["section_id"],
     },
 )
 
@@ -216,65 +208,6 @@ RETRIEVE_TOOL_NAMES: frozenset[str] = frozenset({FIND_PASSAGES_TOOL.name})
 _CITATION_INDEX_RE = re.compile(r"^\s*(?:source\s*)?\[?\s*(\d+)\s*\]?\s*$", re.IGNORECASE)
 
 
-async def _resolve_single_source(
-    source_ids: list[str],
-    source_id: str | int | None,
-    sequence_number: int | None,
-    season_number: int | None,
-    registry: dict[str, CitationRegistryEntry] | None = None,
-) -> tuple[str | None, str | None]:
-    """Resolve exactly one source from the pool. Returns (source_id, error_msg).
-
-    Strict cardinality contract: 0 matches → error, >1 → ambiguous
-    error with candidates. Errors are LLM-facing strings (English, like the
-    fence body), returned in the tool result — never raised (a raise aborts the
-    SSE stream).
-    """
-    if source_id is not None:
-        # A bare int is the cleanest form of the index — use it directly. Only a
-        # string needs the anchored regex, whose job is to peel "[5]"/"5"/"Source
-        # [5]" while rejecting stray titles like "Episode 5 discussion". Anything
-        # else fails loud (returned, never raised — a raise aborts the SSE stream).
-        if isinstance(source_id, int):
-            idx = source_id
-        elif isinstance(source_id, str) and (match := _CITATION_INDEX_RE.match(source_id)):
-            idx = int(match.group(1))
-        else:
-            return None, 'source_id must be a citation index like "[5]".'
-        for entry in (registry or {}).values():
-            if entry.index == idx and entry.source_id in source_ids:
-                return entry.source_id, None
-        return None, (
-            f"No source [{idx}] in this conversation. Call find_passages first, "
-            "or pass sequence_number / season_number."
-        )
-
-    predicates = {
-        k: v for k, v in (("sequence_number", sequence_number), ("season_number", season_number)) if v is not None
-    }
-    if not predicates:
-        return None, "read_source needs a source_id, sequence_number, or season_number."
-
-    try:
-        facets = await get_source_facets(source_ids)
-    except Exception:  # noqa: BLE001 - fail closed: an unresolved read is an error, not a guess
-        logger.warning("read_source: get_source_facets failed", exc_info=True)
-        return None, "Could not resolve the source (facet lookup failed); try a source_id."
-
-    matched = _filter_sources_by_facets(source_ids, facets, predicates)
-    if not matched:
-        return None, f"No source matches {predicates}."
-    if len(matched) > 1:
-        cands = ", ".join(
-            f"seq={facets[m].get('sequence_number')} season={facets[m].get('season_number')}" for m in matched
-        )
-        return None, (
-            f"Ambiguous — {len(matched)} sources match {predicates}; "
-            f"specify season_number or source_id. Candidates: [{cands}]"
-        )
-    return matched[0], None
-
-
 def _filter_sources_by_facets(
     source_ids: list[str],
     facets: dict[str, dict[str, int | None]],
@@ -282,99 +215,80 @@ def _filter_sources_by_facets(
 ) -> list[str]:
     """Return source_ids whose stored facets match all (k, v) in predicates.
 
-    Shared by _resolve_single_source (fail-closed) and execute_find_passages
-    (fail-open); the cardinality policy lives at the call site.
+    Used by execute_find_passages facet scoping (fail-open). Card policy lives
+    at the call site.
     """
     return [sid for sid in source_ids if sid in facets and all(facets[sid].get(k) == v for k, v in predicates.items())]
 
 
-def _build_source_narrative(source: dict, segments: list, idx: int) -> str:
-    """Single source header + continuous timestamped transcript.
-
-    Reuses format_turns (include_time) for the speaker-turn body — NOT per-chunk
-    fenced. Narrative continuity is the point.
-    """
-    # Empty-transcript edge: SUPPRESS the header — it only
-    # frames a body, and with no body it just hands the LLM fabrication fuel (a
-    # title it already has from the fence). Return the explicit fact ONLY.
-    if not segments:
+async def _build_section_narrative(entry: CitationRegistryEntry) -> str:
+    """One section's verbatim speaker-turn body, bounded by its seg range,
+    rendered with the section's own citation index."""
+    rows = await get_sections(entry.source_id)
+    sec = next((r for r in rows if r["id"] == entry.section_id), None)
+    if sec is None:
+        return f"section [{entry.index}] not found."
+    seg_rows = await get_segments_for_ranges([(entry.source_id, sec["seg_start"], sec["seg_end"])])
+    if not seg_rows:
+        # Empty-transcript edge: SUPPRESS the header — it only frames a body,
+        # and with no body it just hands the LLM fabrication fuel (a title it
+        # already has from the fence). Return the explicit fact ONLY.
         return (
-            f"source [{idx}] has no transcript available "
+            f"section [{entry.index}] has no transcript available "
             "(it may still be processing, or transcription may have failed)."
         )
-    dur = source.get("duration_seconds")
-    dur_line = f"Duration: {int(dur) // 60}:{int(dur) % 60:02d}, " if dur else ""
-    header = (
-        f'===== Source [{idx}]: "{source.get("title", "")}"\n'
-        f"Summary: {source.get('summary') or '(none)'}\n"
-        f"{dur_line}Language: {source.get('language') or 'unknown'}\n"
-        f"====="
-    )
-    whisper_segs = [
-        WhisperSegment(start=s["start_s"], end=s["end_s"], text=s["text"], speaker=s["speaker"]) for s in segments
-    ]
-    body = format_turns(whisper_segs, include_time=True)
+    segs = rows_to_segments(seg_rows)
+    ns = build_speaker_namespace(segs)
+    header = f'===== [{entry.index}] "{entry.title}" · Section {entry.seq} ====='
+    body = format_turns(segs, include_time=True, citation_index=entry.index, speaker_namespace=ns)
     return header + "\n\n" + body
 
 
-async def execute_read_source(
+async def execute_read_section(
     source_ids: list[str],
-    source_id: str | int | None,
-    sequence_number: int | None,
-    season_number: int | None,
+    section_id: str | int | None,
     registry: dict[str, CitationRegistryEntry] | None = None,
 ) -> dict:
-    if registry is None:
-        registry = {}
+    """Read ONE section's bounded verbatim transcript by [N] citation index.
 
-    resolved, error = await _resolve_single_source(source_ids, source_id, sequence_number, season_number, registry)
-    if error is not None:
-        logger.info(
-            "read_source: unresolved (%s) source_id=%r seq=%s season=%s",
-            error,
-            source_id,
-            sequence_number,
-            season_number,
-        )
-        return {"_chunks": error, "source_id": None, "source_title": "", "tool_name": "read_source"}
-
-    source = await get_source(resolved)
-    if source is None:
-        logger.info("read_source: resolved=%s but source row missing", resolved)
+    The index must already be registered this turn (via find_passages). The
+    LLM-facing body uses format_turns with the section's own citation_index,
+    so the speaker labels match the find_passages fence — citations stay
+    bindable. Drilling flips the section's citable flag (was outline-only).
+    Errors are LLM-facing strings, never raised.
+    """
+    registry = registry or {}
+    # Resolve [N] → the section entry registered this turn.
+    if isinstance(section_id, int):
+        idx = section_id
+    elif isinstance(section_id, str) and (m := _CITATION_INDEX_RE.match(section_id)):
+        idx = int(m.group(1))
+    else:
         return {
-            "_chunks": f"source {resolved!r} not found.",
+            "_chunks": 'section_id must be a citation index like "[5]".',
+            "section_id": None,
             "source_id": None,
             "source_title": "",
-            "tool_name": "read_source",
+            "tool_name": "read_section",
         }
-    # aiosqlite.Row supports [] but not .get; the narrative builder wants the
-    # latter. Convert once at the boundary rather than wrapping every lookup.
-    source = {k: source[k] for k in source.keys()}
-
-    segments = await get_transcript_segments(resolved)
-
-    # Shared registry, dedup by source_id: reuse the existing [N] if
-    # find_passages already registered this source this turn; else allocate next.
-    entry = registry.get(resolved)
+    entry = next((e for e in registry.values() if e.index == idx and e.source_id in source_ids), None)
     if entry is None:
-        next_index = max((e.index for e in registry.values()), default=0) + 1
-        entry = CitationRegistryEntry(index=next_index, source_id=resolved, title=source.get("title", ""))
-        registry[resolved] = entry
-
-    logger.info(
-        "read_source: resolved=%s seq=%s season=%s segments=%d idx=%d",
-        resolved,
-        sequence_number,
-        season_number,
-        len(segments),
-        entry.index,
-    )
-    narrative = _build_source_narrative(source, segments, idx=entry.index)
+        return {
+            "_chunks": (f"No section [{idx}] in this conversation. Call find_passages first."),
+            "section_id": None,
+            "source_id": None,
+            "source_title": "",
+            "tool_name": "read_section",
+        }
+    narrative = await _build_section_narrative(entry)
+    entry.citable = True
+    logger.info("read_section: idx=%d section=%s source=%s", idx, entry.section_id, entry.source_id)
     return {
         "_chunks": narrative,
-        "source_id": resolved,
-        "source_title": source["title"],
-        "tool_name": "read_source",
+        "section_id": entry.section_id,
+        "source_id": entry.source_id,
+        "source_title": entry.title,
+        "tool_name": "read_section",
     }
 
 
@@ -641,9 +555,9 @@ def build_tool_block_entry(
 
     For retrieve-family, internal underscore-prefixed fields are stripped and
     raw chunk snapshots are attached so replay survives re-embedding. For
-    other tools (read_source), underscore-prefixed fields are also stripped —
-    read_source's narrative is 30-150K tokens and is never replayed or reseeded,
-    so persisting it is pure DB bloat.
+    other tools (read_section), underscore-prefixed fields are also stripped —
+    read_section's narrative is bounded to one section and is never replayed
+    or reseeded, so persisting it is pure DB bloat.
     """
     summary = strip_internal(result)
     if name in RETRIEVE_TOOL_NAMES:
@@ -684,12 +598,10 @@ async def execute_tool(
             season_number=season_number,
             seen_chunk_ids=seen_chunk_ids,
         )
-    if tool_name == READ_SOURCE_TOOL.name:
-        return await execute_read_source(
+    if tool_name == READ_SECTION_TOOL.name:
+        return await execute_read_section(
             source_ids=source_ids,
-            source_id=arguments.get("source_id"),
-            sequence_number=_facet_int(arguments.get("sequence_number"), "sequence_number"),
-            season_number=_facet_int(arguments.get("season_number"), "season_number"),
+            section_id=arguments.get("section_id"),
             registry=registry,
         )
     raise ValueError(f"Unknown tool: {tool_name}")
@@ -706,7 +618,7 @@ def expand_message_for_provider(
     synthetic shape the LLM expects so it sees prior tool_use/tool_result
     blocks on subsequent turns.
 
-    v2 rule: drop retrieve-family and read_source tool exchanges
+    v2 rule: drop retrieve-family and read_section tool exchanges
     entirely from cross-turn replay — the LLM may rely on the assistant prose
     but not the prior tool result (stale-context contamination).
     """
@@ -716,8 +628,8 @@ def expand_message_for_provider(
         clean = {k: v for k, v in msg.items() if k != "tool_blocks"}
         return [clean]
 
-    # v2: drop retrieve + read_source tool exchanges from cross-turn replay.
-    blocks = [b for b in blocks if b.get("name") not in (RETRIEVE_TOOL_NAMES | {READ_SOURCE_TOOL.name})]
+    # v2: drop retrieve + read_section tool exchanges from cross-turn replay.
+    blocks = [b for b in blocks if b.get("name") not in (RETRIEVE_TOOL_NAMES | {READ_SECTION_TOOL.name})]
     if not blocks:
         clean = {k: v for k, v in msg.items() if k != "tool_blocks"}
         return [clean]

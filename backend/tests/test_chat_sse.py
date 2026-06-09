@@ -143,8 +143,8 @@ async def test_chat_endpoint_uses_conversation_history(client):
 
 @pytest.mark.asyncio
 async def test_chat_endpoint_includes_tools(client):
-    """find_passages and read_source tools are passed to stream_with_tools."""
-    from bibilab.pipeline.chat_tools import FIND_PASSAGES_TOOL, READ_SOURCE_TOOL
+    """find_passages and read_section tools are passed to stream_with_tools."""
+    from bibilab.pipeline.chat_tools import FIND_PASSAGES_TOOL, READ_SECTION_TOOL
 
     list_id = (await client.post("/lists", json={"name": "Test"})).json()["id"]
 
@@ -160,7 +160,7 @@ async def test_chat_endpoint_includes_tools(client):
     assert resp.status_code == 200
     tool_names = [t.name for t in captured_tools[0]]
     assert FIND_PASSAGES_TOOL.name in tool_names
-    assert READ_SOURCE_TOOL.name in tool_names
+    assert READ_SECTION_TOOL.name in tool_names
 
 
 @pytest.mark.asyncio
@@ -1220,26 +1220,30 @@ async def test_rag_call_carries_facet_scope(client, mock_stream_llm):
 
 
 @pytest.mark.asyncio
-async def test_rag_metadata_includes_read_source_call(client):
-    """read_source calls must appear in metadata.rag.calls alongside find_passages calls."""
-    from bibilab.pipeline.chat_tools import READ_SOURCE_TOOL
+async def test_rag_metadata_includes_read_section_call(client):
+    """read_section calls must appear in metadata.rag.calls alongside find_passages calls.
 
-    list_id = await _create_list(client, "ReadSourceLedger")
+    NOTE: T9 will replace the section-grained ledger reconstruction; this test
+    was renamed for the import only. Full update is T9's job."""
+    from bibilab.pipeline.chat_tools import READ_SECTION_TOOL
+
+    list_id = await _create_list(client, "ReadSectionLedger")
 
     async def fake_stream(messages, cfg, tools=None, execute_tool_fn=None, system=None, **kwargs):
         yield StreamEvent(
             type="tool_call",
-            tool_call=ToolCall(id="c1", name=READ_SOURCE_TOOL.name, arguments={"source_id": "s1"}),
+            tool_call=ToolCall(id="c1", name=READ_SECTION_TOOL.name, arguments={"section_id": "[1]"}),
         )
-        result = await execute_tool_fn(READ_SOURCE_TOOL.name, {"source_id": "s1"})
-        tool_result_data = {"name": READ_SOURCE_TOOL.name, "result": _client_tool_result(result)}
+        result = await execute_tool_fn(READ_SECTION_TOOL.name, {"section_id": "[1]"})
+        tool_result_data = {"name": READ_SECTION_TOOL.name, "result": _client_tool_result(result)}
         yield StreamEvent(type="tool_result", content=json.dumps(tool_result_data))
         yield StreamEvent(type=SSE_EVENT_DELTA, content="ok")
         yield StreamEvent(type=SSE_EVENT_DONE)
 
     async def fake_execute_tool(**kwargs):
         return {
-            "_chunks": "transcript narrative text",
+            "_chunks": "section narrative text",
+            "section_id": "sec-1",
             "source_id": "s1",
         }
 
@@ -1247,7 +1251,7 @@ async def test_rag_metadata_includes_read_source_call(client):
         patch("bibilab.routers.chat.stream_with_tools", fake_stream),
         patch("bibilab.routers.chat.execute_tool", fake_execute_tool),
     ):
-        resp = await client.post(f"/lists/{list_id}/chat", json={"message": "what is in source s1?"})
+        resp = await client.post(f"/lists/{list_id}/chat", json={"message": "what is in section [1]?"})
 
     assert resp.status_code == 200
 
@@ -1257,8 +1261,7 @@ async def test_rag_metadata_includes_read_source_call(client):
     rag = assistant_msgs[-1]["metadata"]["rag"]
     assert len(rag["calls"]) == 1
     call = rag["calls"][0]
-    assert call["tool_name"] == READ_SOURCE_TOOL.name
-    assert call["source_id"] == "s1"
+    assert call["tool_name"] == READ_SECTION_TOOL.name
 
 
 # ---------------------------------------------------------------------------

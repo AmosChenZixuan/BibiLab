@@ -617,17 +617,17 @@ async def test_stream_with_tools_default_sink_none_does_not_crash(mock_stream_ll
 
 @pytest.mark.asyncio
 async def test_second_retrieval_allowed_no_sequential_guard(mock_stream_llm):
-    """v2: find_passages then read_source in successive iterations is allowed.
+    """v2: find_passages then read_section in successive iterations is allowed.
     The sequential guard is deleted; multi-hop is bounded only by the iter cap."""
     from bibilab.config import AIConfig
     from bibilab.pipeline._shared import StreamEvent, ToolCall
-    from bibilab.pipeline.chat_tools import FIND_PASSAGES_TOOL, READ_SOURCE_TOOL
+    from bibilab.pipeline.chat_tools import FIND_PASSAGES_TOOL, READ_SECTION_TOOL
     from bibilab.routers.chat import stream_with_tools
 
     cfg = AIConfig(protocol="openai", model="gpt-4o", api_key="test", base_url="")
 
     find_tc = ToolCall(id="c1", name=FIND_PASSAGES_TOOL.name, arguments={"query": "test"})
-    read_tc = ToolCall(id="c2", name=READ_SOURCE_TOOL.name, arguments={"source_id": "s1"})
+    read_tc = ToolCall(id="c2", name=READ_SECTION_TOOL.name, arguments={"section_id": "[1]"})
 
     calls: list[str] = []
     iter_count = 0
@@ -645,7 +645,7 @@ async def test_second_retrieval_allowed_no_sequential_guard(mock_stream_llm):
 
     async def fake_execute(name, args, **kwargs):
         calls.append(name)
-        return {"_chunks": "x", "source_id": "s1"}
+        return {"_chunks": "x", "section_id": "sec-1", "source_id": "s1"}
 
     mock_stream_llm.side_effect = fake_stream_llm
     evs = [
@@ -653,14 +653,14 @@ async def test_second_retrieval_allowed_no_sequential_guard(mock_stream_llm):
         async for ev in stream_with_tools(
             messages=[{"role": "user", "content": "q"}],
             cfg=cfg,
-            tools=[FIND_PASSAGES_TOOL, READ_SOURCE_TOOL],
+            tools=[FIND_PASSAGES_TOOL, READ_SECTION_TOOL],
             execute_tool_fn=fake_execute,
         )
     ]
     assert evs, "stream must produce events"
 
-    # The guard is DELETED: both find_passages AND read_source execute in successive iterations.
-    assert calls == [FIND_PASSAGES_TOOL.name, READ_SOURCE_TOOL.name]
+    # The guard is DELETED: both find_passages AND read_section execute in successive iterations.
+    assert calls == [FIND_PASSAGES_TOOL.name, READ_SECTION_TOOL.name]
 
 
 @pytest.mark.asyncio

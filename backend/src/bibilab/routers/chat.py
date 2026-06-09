@@ -59,7 +59,7 @@ from bibilab.pipeline.chat_runs import (
 from bibilab.pipeline.chat_summary import maybe_compress_conversation
 from bibilab.pipeline.chat_tools import (
     FIND_PASSAGES_TOOL,
-    READ_SOURCE_TOOL,
+    READ_SECTION_TOOL,
     RETRIEVE_TOOL_NAMES,
     CitationRegistryEntry,
     build_tool_block_entry,
@@ -655,7 +655,7 @@ async def run_chat_turn(
                 **kwargs,
             )
 
-        tools = [FIND_PASSAGES_TOOL, READ_SOURCE_TOOL]
+        tools = [FIND_PASSAGES_TOOL, READ_SECTION_TOOL]
 
         tool_blocks: list[dict] = []
         # Cumulative LLM message list at end-of-turn. stream_with_tools rebinds
@@ -712,7 +712,7 @@ async def run_chat_turn(
                             "facet_scope": result.get("facet_scope"),
                         }
                     )
-                elif parsed["name"] == READ_SOURCE_TOOL.name:
+                elif parsed["name"] == READ_SECTION_TOOL.name:
                     sid = parsed["result"].get("source_id")
                     if sid:  # None on a resolution error → nothing was read, no ledger row
                         read_source_calls.append({"tool_name": "read_source", "source_id": sid})
