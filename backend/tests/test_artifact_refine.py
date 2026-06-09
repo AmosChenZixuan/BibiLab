@@ -16,7 +16,7 @@ from unittest.mock import patch
 import pytest
 
 from bibilab.config import BibilabConfig
-from bibilab.db import bootstrap_db, create_list, get_artifact, write_source_with_segments
+from bibilab.db import bootstrap_db, create_list, get_artifact
 from bibilab.pipeline.audio import PipelineError
 from bibilab.pipeline.section import Section
 from bibilab.pipeline.transcribe import WhisperSegment
@@ -267,8 +267,6 @@ async def test_build_section_views_happy_path_returns_verbatim_text(tmp_bibilab_
 
     views = await _build_section_views([source_id])
 
-    views = await _build_section_views([source_id])
-
     assert len(views) == 2
     # Ordered by source then seq (single source here, so seq order is the test).
     assert views[0].seq == 0
@@ -508,8 +506,9 @@ async def test_run_artifact_job_uses_refine_artifact_single_batch(tmp_bibilab_ho
     once via _refine_artifact's single-batch path."""
     await bootstrap_db()
     await create_list("list-1", "L", "2026-01-01T00:00:00")
-    source_id = await SourceFactory.build("list-1", video_id="BV1")
-    await write_source_with_segments(
+    source_id = await SourceFactory.build(
+        "list-1",
+        video_id="BV1",
         segments=[
             WhisperSegment(start=0.0, end=1.0, text="hello", speaker="SPK_0"),
             WhisperSegment(start=1.0, end=2.0, text="world", speaker="SPK_0"),
@@ -517,21 +516,6 @@ async def test_run_artifact_job_uses_refine_artifact_single_batch(tmp_bibilab_ho
         sections=[
             Section(seg_start=0, seg_end=1, token_count=2, timestamp_start=0.0, timestamp_end=2.0),
         ],
-        source_id=source_id,
-        video_id="BV1",
-        platform="bilibili",
-        list_id="list-1",
-        title="T",
-        summary="",
-        keywords=[],
-        cover_url=None,
-        source_url="https://x",
-        duration_seconds=0,
-        uploader="u",
-        language="en",
-        whisper_model="large-v3",
-        ai_model="gpt-4o",
-        settings_snapshot={},
     )
 
     cfg = BibilabConfig()
