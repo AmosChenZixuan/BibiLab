@@ -319,51 +319,6 @@ describe("chat panel — SSE streaming (phase 6.2)", () => {
       expect(screen.getByText("answer")).toBeInTheDocument();
     });
   });
-
-  test("renders a read_section ledger chip when the tool fires mid-stream (legacy)", async () => {
-    const { response, enqueue, close } = makeOpenSseStream();
-    mockFetch((input) => {
-      const url = String(input);
-      if (url.includes("/chat")) {
-        return Promise.resolve(response);
-      }
-      return Promise.resolve(makeSseStream([]));
-    });
-
-    renderChatPanel({ selectedSourceIds: ["src-1"], sources: [SOURCE_1], listId: "list-1" });
-
-    await userEvent.type(screen.getByRole("textbox"), "read the transcript");
-    await userEvent.keyboard("{Enter}");
-
-    // Provisional read_section chip first (BookOpen + spinner + "reading section…")
-    enqueue(
-      'data: {"type":"tool_call_start","id":"rs1","name":"read_section","arguments":{}}\n\n',
-    );
-
-    // Provisional read_section chip: spinner present (i18n text is T6's concern)
-    await waitFor(() => {
-      const spinner = document.querySelector('[class*="animate-spin"]');
-      expect(spinner).not.toBeNull();
-    });
-
-    // tool_result resolves it to source_id/source_title/section_id
-    enqueue(
-      'data: {"type":"tool_result","id":"rs1","name":"read_section","result":{"tool_name":"read_section","source_id":"s1","source_title":"Ep 4","section_id":"sec-1","query":"","candidates_evaluated":0,"sources_with_hits":0,"sources_total":1,"section_coverage":[],"context":[],"reranked":false,"scoped_pool_size":1}}\n\n',
-    );
-
-    // Final rag event then done
-    enqueue(
-      'data: {"type":"rag","calls":[{"tool_name":"read_section","source_id":"s1","source_title":"Ep 4","section_id":"sec-1","query":"","candidates_evaluated":0,"sources_with_hits":0,"sources_total":1,"section_coverage":[],"context":[],"reranked":false,"scoped_pool_size":1}]}\n\n',
-    );
-    enqueue('data: {"type":"delta","content":"answer"}\n\n');
-    enqueue('data: {"type":"done"}\n\n');
-    close();
-
-    // Resolved read_section row rendering is T3's concern — verify answer streams
-    await waitFor(() => {
-      expect(screen.getByText("answer")).toBeInTheDocument();
-    });
-  });
 });
 
 describe("chat panel — conversation history (phase 6.3)", () => {
