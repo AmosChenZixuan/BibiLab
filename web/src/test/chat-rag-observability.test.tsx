@@ -5,6 +5,7 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import { LanguageProvider } from "@/app/LanguageContext";
 import { JobActivityProvider } from "@/components/jobs/JobActivityProvider";
 import { ChatPanel } from "@/components/lists/ChatPanel";
+import { TEST_IDS } from "@/lib/test-ids";
 import { makeSseStream, mockFetch, renderWithProviders } from "@/test/utils";
 import type { Source } from "@/lib/types";
 
@@ -122,6 +123,65 @@ describe("RAG observability via SSE tool_result", () => {
 
     expect(screen.getByText("A")).toBeInTheDocument();
     expect(screen.getByText("B")).toBeInTheDocument();
+  });
+
+  test("citation chip click passes section target to onOpenSource", async () => {
+    const onOpenSource = vi.fn();
+    mockFetch((input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : (input as Request).url;
+      if (url.includes("/conversation")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              conversation: { id: "conv-1", list_id: "list-1" },
+              messages: [
+                {
+                  id: "msg-1",
+                  role: "assistant",
+                  content: "",
+                  created_at: "2026-04-08T12:00:00Z",
+                  metadata: {
+                    content_blocks: [
+                      { type: "text", text: "Answer " },
+                      {
+                        type: "citation",
+                        index: 1,
+                        section_id: "sec-1",
+                        source_id: "src-1",
+                        timestamp_start: 42,
+                        chunk_ids: ["c1"],
+                      },
+                    ],
+                  },
+                },
+              ],
+            }),
+          ),
+        );
+      }
+      return Promise.resolve(new Response(JSON.stringify([])));
+    });
+
+    renderChatPanel({
+      selectedSourceIds: ["src-1"],
+      sources: [SOURCE_1],
+      listId: "list-1",
+      onOpenSource,
+    });
+
+    const chip = await waitFor(() =>
+      screen.getByTestId(TEST_IDS.citeChip),
+    );
+    await userEvent.click(chip);
+
+    expect(onOpenSource).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "src-1" }),
+      expect.objectContaining({
+        highlightChunks: ["c1"],
+        sectionId: "sec-1",
+        timestampStart: 42,
+      }),
+    );
   });
 
 });

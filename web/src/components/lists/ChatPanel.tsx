@@ -35,18 +35,28 @@ import {
   type ContentBlock,
 } from "@/lib/chat-utils";
 
+type OpenSourceOpts = {
+  highlightChunks?: string[];
+  sectionId?: string;
+  timestampStart?: number;
+};
+
 function CitationChip({
   index,
   sourceId,
   chunkIds,
+  sectionId,
+  timestampStart,
   sources,
   onOpenSource,
 }: {
   index: number;
   sourceId: string;
   chunkIds: string[];
+  sectionId?: string;
+  timestampStart?: number;
   sources: Source[];
-  onOpenSource?: (source: Source, opts?: { highlightChunks?: string[] }) => void;
+  onOpenSource?: (source: Source, opts?: OpenSourceOpts) => void;
 }) {
   const { t } = useLanguage();
   const source = sources.find((s) => s.id === sourceId);
@@ -65,7 +75,11 @@ function CitationChip({
     <span className="group/cite relative inline">
       <button
         type="button"
-        onClick={() => onOpenSource?.(source, { highlightChunks: chunkIds })}
+        onClick={() => onOpenSource?.(source, {
+          highlightChunks: chunkIds,
+          sectionId,
+          timestampStart,
+        })}
         data-testid={TEST_IDS.citeChip}
         className="mx-px border-0 bg-transparent p-0 text-2xs font-semibold text-blue cursor-pointer hover:underline focus-visible:rounded-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue focus-visible:outline-offset-1"
       >
@@ -94,8 +108,10 @@ type CiteData = {
   index: number;
   source_id: string;
   chunk_ids: string[];
+  section_id?: string;
+  timestamp_start?: number;
   sources: Source[];
-  onOpenSource?: (source: Source, opts?: { highlightChunks?: string[] }) => void;
+  onOpenSource?: (source: Source, opts?: OpenSourceOpts) => void;
 };
 
 function CiteEl(props: Record<string, any>) {
@@ -109,6 +125,8 @@ function CiteEl(props: Record<string, any>) {
       index={cite.index}
       sourceId={cite.source_id}
       chunkIds={cite.chunk_ids}
+      sectionId={cite.section_id}
+      timestampStart={cite.timestamp_start}
       sources={cite.sources}
       onOpenSource={cite.onOpenSource}
     />
@@ -164,7 +182,7 @@ function makeRehypeCitePlugin(citations: CiteData[]) {
 function renderParagraphs(
   contentBlocks: ContentBlock[],
   sources: Source[],
-  onOpenSource?: (source: Source, opts?: { highlightChunks?: string[] }) => void,
+  onOpenSource?: (source: Source, opts?: OpenSourceOpts) => void,
   isStreaming?: boolean,
 ) {
   // Split into paragraphs on paragraph_break
@@ -204,6 +222,8 @@ function renderParagraphs(
               index: block.index,
               source_id: block.source_id,
               chunk_ids: block.chunk_ids,
+              section_id: block.section_id,
+              timestamp_start: block.timestamp_start,
               sources,
               onOpenSource,
             });
@@ -263,7 +283,7 @@ interface ChatPanelProps {
   selectedSourceIds: string[];
   sources: Source[];
   listId: string;
-  onOpenSource?: (source: Source, opts?: { highlightChunks?: string[] }) => void;
+  onOpenSource?: (source: Source, opts?: OpenSourceOpts) => void;
 }
 
 export function ChatPanel({
