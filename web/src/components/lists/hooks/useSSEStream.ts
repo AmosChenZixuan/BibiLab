@@ -196,7 +196,19 @@ export function useSSEStream({
         updateAssistantMsg(assistantMsgId, { rag: { calls } });
       } else if (event.type === SSE_EVENT_CITATION) {
         flushText();
-        const citation = event as unknown as CitationEvent;
+        // Coerce section_id to string: the backend's CitationRegistryEntry
+        // section_id is the INTEGER sections.id (see chat_tools.py:386), so
+        // the SSE event serializes it as a JSON number. The FE's
+        // ContentBlock type declares section_id: string, and the citation
+        // jump matcher does strict equality against SourceSection.section_id
+        // (also a string) — a number on one side would silently fail the
+        // match. Normalize here so the type contract and the jump both
+        // work without a backend serialization change.
+        const raw = event as unknown as { section_id?: string | number };
+        const citation: CitationEvent = {
+          ...(event as object as Omit<CitationEvent, "section_id">),
+          section_id: raw.section_id != null ? String(raw.section_id) : "",
+        };
         accBlocks.push(citation);
         updateAssistantMsg(assistantMsgId, { contentBlocks: [...accBlocks] });
       } else if (event.type === SSE_EVENT_DONE) {
