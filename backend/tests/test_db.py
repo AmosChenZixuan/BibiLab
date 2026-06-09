@@ -992,6 +992,7 @@ async def test_write_and_get_sections(tmp_bibilab_home: Path):
         get_db,
         get_sections,
     )
+    from bibilab.pipeline.digest import SectionDigest
     from bibilab.pipeline.section import Section
 
     await bootstrap_db()
@@ -1002,8 +1003,9 @@ async def test_write_and_get_sections(tmp_bibilab_home: Path):
         Section(seg_start=0, seg_end=10, token_count=5800, timestamp_start=0.0, timestamp_end=100.0),
         Section(seg_start=11, seg_end=22, token_count=6100, timestamp_start=101.0, timestamp_end=210.0),
     ]
+    digests = [SectionDigest(summary=f"s{i}", keywords=[]) for i in range(len(sections))]
     async with get_db() as db:
-        await _exec_write_sections(db, source_id, sections)
+        await _exec_write_sections(db, source_id, sections, digests)
         await db.commit()
 
     rows = await get_sections(source_id)
@@ -1027,6 +1029,7 @@ async def test_write_sections_is_idempotent(tmp_bibilab_home: Path):
         get_db,
         get_sections,
     )
+    from bibilab.pipeline.digest import SectionDigest
     from bibilab.pipeline.section import Section
 
     await bootstrap_db()
@@ -1036,11 +1039,12 @@ async def test_write_sections_is_idempotent(tmp_bibilab_home: Path):
     sections = [
         Section(seg_start=0, seg_end=5, token_count=100, timestamp_start=0.0, timestamp_end=10.0),
     ]
+    digests = [SectionDigest(summary="s0", keywords=[])]
     async with get_db() as db:
-        await _exec_write_sections(db, source_id, sections)
+        await _exec_write_sections(db, source_id, sections, digests)
         await db.commit()
     async with get_db() as db:
-        await _exec_write_sections(db, source_id, sections)  # re-ingest
+        await _exec_write_sections(db, source_id, sections, digests)  # re-ingest
         await db.commit()
     rows = await get_sections(source_id)
     assert len(rows) == 1  # DELETE+INSERT, not duplicate
@@ -1056,6 +1060,7 @@ async def test_sections_cascade_on_source_delete(tmp_bibilab_home: Path):
         get_db,
         get_sections,
     )
+    from bibilab.pipeline.digest import SectionDigest
     from bibilab.pipeline.section import Section
 
     await bootstrap_db()
@@ -1068,6 +1073,7 @@ async def test_sections_cascade_on_source_delete(tmp_bibilab_home: Path):
             [
                 Section(seg_start=0, seg_end=5, token_count=100, timestamp_start=0.0, timestamp_end=10.0),
             ],
+            [SectionDigest(summary="s0", keywords=[])],
         )
         await db.commit()
     await delete_source(source_id)
@@ -1086,6 +1092,7 @@ async def test_write_source_with_segments_writes_sections_atomically(tmp_bibilab
         get_source,
         write_source_with_segments,
     )
+    from bibilab.pipeline.digest import SectionDigest
     from bibilab.pipeline.section import Section
 
     await bootstrap_db()
@@ -1097,6 +1104,7 @@ async def test_write_source_with_segments_writes_sections_atomically(tmp_bibilab
     await write_source_with_segments(
         segments=[],
         sections=sections,
+        section_digests=[SectionDigest(summary="s", keywords=[])],
         source_id="src-1",
         video_id="BV1x",
         platform="bilibili",
@@ -1133,6 +1141,7 @@ async def test_write_source_with_segments_rollback_leaves_no_orphan_sections(
         get_sections,
         get_source,
     )
+    from bibilab.pipeline.digest import SectionDigest
     from bibilab.pipeline.section import Section
 
     await bootstrap_db()
@@ -1157,6 +1166,7 @@ async def test_write_source_with_segments_rollback_leaves_no_orphan_sections(
             await db_mod.write_source_with_segments(
                 segments=[],
                 sections=sections,
+                section_digests=[SectionDigest(summary="s", keywords=[])],
                 source_id="src-fail",
                 video_id="BV1fail",
                 platform="bilibili",
@@ -1421,51 +1431,37 @@ async def test_write_source_with_segments_section_digests_persists_summaries(
 
 
 @pytest.mark.asyncio
-async def test_write_source_with_segments_without_section_digests_preserves_old_shape(
+async def test_write_source_with_segments_sections_without_digests_raises(
     tmp_bibilab_home: Path,
 ):
-    """Backward compat: section_digests=None → section rows have NULL
-    summary/keywords. (SourceFactory's path.)"""
-    from bibilab.db import (
-        bootstrap_db,
-        create_list,
-        get_sections,
-        get_source,
-        write_source_with_segments,
-    )
+    """Passing sections without section_digests is a misuse — every section
+    row must carry a summary, so the write raises before any DB work."""
+    from bibilab.db import bootstrap_db, create_list, write_source_with_segments
     from bibilab.pipeline.section import Section
     from bibilab.pipeline.transcribe import WhisperSegment
 
     await bootstrap_db()
     await create_list("list-1", "L", "2026-01-01T00:00:00")
-    source_id = await SourceFactory.build("list-1", video_id="BV1nodigests")
-    source = await get_source(source_id)
-    assert source is not None
 
     segments = [WhisperSegment(start=float(i), end=float(i + 1), text=f"s{i}.", speaker=None) for i in range(15)]
     sections = [Section(seg_start=0, seg_end=14, token_count=100, timestamp_start=0.0, timestamp_end=15.0)]
-    # NOTE: no section_digests kwarg — must still work (legacy shape).
-    await write_source_with_segments(
-        segments=segments,
-        sections=sections,
-        source_id=source_id,
-        video_id=source["video_id"],
-        platform=source["platform"],
-        list_id=source["list_id"],
-        title=source["title"],
-        summary="",
-        keywords=[],
-        cover_url=None,
-        source_url=source["source_url"],
-        duration_seconds=15,
-        uploader=source["uploader"],
-        language=source["language"],
-        whisper_model="x",
-        ai_model="y",
-        settings_snapshot={},
-    )
-
-    rows = await get_sections(source_id)
-    assert len(rows) == 1
-    assert rows[0]["summary"] is None
-    assert rows[0]["keywords"] is None
+    with pytest.raises(ValueError, match="section_digests is required"):
+        await write_source_with_segments(
+            segments=segments,
+            sections=sections,
+            source_id="src-nodigests",
+            video_id="BV1nodigests",
+            platform="bilibili",
+            list_id="list-1",
+            title="T",
+            summary="",
+            keywords=[],
+            cover_url=None,
+            source_url="https://x",
+            duration_seconds=15,
+            uploader="u",
+            language="en",
+            whisper_model="x",
+            ai_model="y",
+            settings_snapshot={},
+        )

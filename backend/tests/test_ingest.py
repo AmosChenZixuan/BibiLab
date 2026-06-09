@@ -1057,6 +1057,7 @@ async def test_short_source_one_section_byte_identical_chunks(tmp_bibilab_home: 
 async def test_re_ingest_replaces_section_rows(tmp_bibilab_home: Path):
     """Re-ingest of a source replaces (does not duplicate) its section rows."""
     from bibilab.db import _exec_write_sections, bootstrap_db, create_list, get_db, get_sections
+    from bibilab.pipeline.digest import SectionDigest
     from bibilab.pipeline.section import Section
 
     await bootstrap_db()
@@ -1072,6 +1073,7 @@ async def test_re_ingest_replaces_section_rows(tmp_bibilab_home: Path):
                 Section(seg_start=0, seg_end=5, token_count=100, timestamp_start=0.0, timestamp_end=10.0),
                 Section(seg_start=6, seg_end=12, token_count=200, timestamp_start=11.0, timestamp_end=22.0),
             ],
+            [SectionDigest(summary="s0", keywords=[]), SectionDigest(summary="s1", keywords=[])],
         )
         await db.commit()
     assert len(await get_sections(source_id)) == 2
@@ -1084,6 +1086,7 @@ async def test_re_ingest_replaces_section_rows(tmp_bibilab_home: Path):
             [
                 Section(seg_start=0, seg_end=20, token_count=500, timestamp_start=0.0, timestamp_end=40.0),
             ],
+            [SectionDigest(summary="s0", keywords=[])],
         )
         await db.commit()
     rows = await get_sections(source_id)

@@ -72,17 +72,16 @@ class SectionListItem(BaseModel):
     def from_row(cls, row: aiosqlite.Row) -> "SectionListItem":
         """Project a sections-table row to the API response shape.
 
-        Defensive against legacy rows with NULL summary/keywords/timestamps
-        (pre-section-digests path): NULL summary becomes "", NULL/empty
-        keywords becomes [], NULL timestamps become 0.0. Internal columns
-        (id, source_id, seg_start, seg_end, token_count) are not exposed.
+        Every section row carries a summary/keywords (written with the
+        section in one transaction). Internal columns (id, source_id,
+        seg_start, seg_end, token_count) are not exposed.
         """
         return cls(
             seq=row["seq"],
-            summary=row["summary"] or "",
-            keywords=json.loads(row["keywords"]) if row["keywords"] else [],
-            timestamp_start=row["timestamp_start"] or 0.0,
-            timestamp_end=row["timestamp_end"] or 0.0,
+            summary=row["summary"],
+            keywords=json.loads(row["keywords"]),
+            timestamp_start=row["timestamp_start"],
+            timestamp_end=row["timestamp_end"],
         )
 
 

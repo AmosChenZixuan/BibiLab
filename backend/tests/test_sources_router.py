@@ -409,7 +409,8 @@ async def test_source_content_reads_transcript_from_segments_table(client: httpx
 
 @pytest.mark.asyncio
 async def test_get_source_sections_returns_projected_list(client: httpx.AsyncClient, tmp_bibilab_home: Path):
-    from bibilab.db import create_list, update_section_summaries, write_source_with_segments
+    from bibilab.db import create_list, write_source_with_segments
+    from bibilab.pipeline.digest import SectionDigest
     from bibilab.pipeline.section import Section
     from bibilab.pipeline.transcribe import WhisperSegment
 
@@ -424,6 +425,10 @@ async def test_get_source_sections_returns_projected_list(client: httpx.AsyncCli
     await write_source_with_segments(
         segments=segments,
         sections=sections,
+        section_digests=[
+            SectionDigest(summary="Sum 0", keywords=["k0"]),
+            SectionDigest(summary="Sum 1", keywords=["k1"]),
+        ],
         source_id=source_id,
         video_id="BVsections",
         platform="bilibili",
@@ -439,11 +444,6 @@ async def test_get_source_sections_returns_projected_list(client: httpx.AsyncCli
         whisper_model="x",
         ai_model="y",
         settings_snapshot={},
-    )
-    # Manually set summaries on the section rows.
-    await update_section_summaries(
-        source_id,
-        [(0, "Sum 0", ["k0"]), (1, "Sum 1", ["k1"])],
     )
 
     resp = await client.get(f"/sources/{source_id}/sections")

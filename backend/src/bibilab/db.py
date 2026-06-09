@@ -379,44 +379,35 @@ async def _exec_write_sections(
     db: aiosqlite.Connection,
     source_id: str,
     sections: list[Section],
-    section_digests: list[SectionDigest] | None = None,
+    section_digests: list[SectionDigest],
 ) -> None:
     """Replace a source's section rows on the given connection. Does NOT
-    commit. `sections` is a list of `bibilab.pipeline.section.Section`.
-
-    When `section_digests` is provided (one SectionDigest per section, in
-    seq order), summary/keywords are written in the same INSERT. Otherwise
-    the columns are left NULL (the legacy path, e.g. SourceFactory).
+    commit. `sections` is a list of `bibilab.pipeline.section.Section`;
+    `section_digests` carries one SectionDigest per section, in seq order
+    — every section row always has a summary.
 
     Mirrors `_exec_write_transcript_segments` (DELETE+INSERT) so re-ingest
     replaces cleanly. Rows have a surrogate `id`; re-ingest changes it.
     """
+    if len(section_digests) != len(sections):
+        raise ValueError(
+            f"_exec_write_sections: section_digests length {len(section_digests)} != sections length {len(sections)}"
+        )
     await db.execute("DELETE FROM sections WHERE source_id = ?", (source_id,))
-    if section_digests is None:
-        rows = [
-            (source_id, i, s.seg_start, s.seg_end, s.token_count, s.timestamp_start, s.timestamp_end, None, None)
-            for i, s in enumerate(sections)
-        ]
-    else:
-        if len(section_digests) != len(sections):
-            raise ValueError(
-                f"_exec_write_sections: section_digests length {len(section_digests)} "
-                f"!= sections length {len(sections)}"
-            )
-        rows = [
-            (
-                source_id,
-                i,
-                s.seg_start,
-                s.seg_end,
-                s.token_count,
-                s.timestamp_start,
-                s.timestamp_end,
-                sd.summary,
-                json.dumps(sd.keywords),
-            )
-            for i, (s, sd) in enumerate(zip(sections, section_digests))
-        ]
+    rows = [
+        (
+            source_id,
+            i,
+            s.seg_start,
+            s.seg_end,
+            s.token_count,
+            s.timestamp_start,
+            s.timestamp_end,
+            sd.summary,
+            json.dumps(sd.keywords),
+        )
+        for i, (s, sd) in enumerate(zip(sections, section_digests))
+    ]
     await db.executemany(
         "INSERT INTO sections (source_id, seq, seg_start, seg_end, "
         "token_count, timestamp_start, timestamp_end, summary, keywords) "
@@ -437,19 +428,19 @@ async def write_source_with_segments(
     none — no orphaned source row, no compensating delete, no orphan
     section rows.
 
-    `sections` is optional; when omitted (legacy call sites, factory) only
-    the source + segments are written. When provided, the section rows are
-    written in the same transaction so a partial failure rolls back the
-    whole write. `section_digests` is optional; when provided, each
-    section row carries its summary/keywords (the ingest path). When
-    omitted, the section rows are written with NULL summary and NULL
-    keywords (the legacy / factory path).
+    `sections` is optional; when omitted (segments-only factory path) only
+    the source + segments are written. When provided, `section_digests` is
+    required (one per section, seq order) and the section rows are written
+    in the same transaction so a partial failure rolls back the whole
+    write.
 
     On any failure the exception propagates and the connection closes
     without a commit, so SQLite rolls the whole transaction back. FK holds
     within the transaction: the uncommitted parent source row is visible to
     the child segment / section INSERTs on the same connection.
     """
+    if sections is not None and section_digests is None:
+        raise ValueError("write_source_with_segments: section_digests is required when sections is provided")
     async with get_db() as db:
         await _exec_write_source(db, **source_fields)
         await _exec_write_transcript_segments(db, source_fields["source_id"], segments)

@@ -153,10 +153,10 @@ Index: `idx_segments_source` on `(source_id, seq)`. Replaces the on-disk `transc
 | `token_count` | Sum of `count_tokens(seg.text)` across the section's segments |
 | `timestamp_start` | Wall-clock seconds at `segments[seg_start].start` |
 | `timestamp_end` | Wall-clock seconds at `segments[seg_end].end` |
-| `summary` | LLM refine-summary, NULL until #453 lands |
-| `keywords` | LLM keywords, NULL until #453 lands |
+| `summary` | LLM refine-summary; always populated (written with the section row) |
+| `keywords` | LLM keywords (JSON array); always populated |
 
-Index: `idx_sections_source` on `(source_id, seq)`. Chunks produced per-section nest physically (a chunk's `[seg_start, seg_end]` is fully contained in exactly one section's). Production write path is `_exec_write_sections` (called from `write_source_with_segments` in the same transaction as source + segments). Summary/keywords population is deferred to #453.
+Index: `idx_sections_source` on `(source_id, seq)`. Chunks produced per-section nest physically (a chunk's `[seg_start, seg_end]` is fully contained in exactly one section's). Production write path is `_exec_write_sections` (called from `write_source_with_segments` in the same transaction as source + segments); `section_digests` is required whenever `sections` is provided, so every section row carries a summary.
 
 ### `chunks_fts` — FTS5 virtual table
 
