@@ -63,8 +63,9 @@ class ArtifactResult(BaseModel):
 
 
 # Token-budget knobs for the artifact section-batched refine.
-# budget = context_window − max_output_tokens − _DRAFT_RESERVE_TOKENS − _PROMPT_OVERHEAD_TOKENS
-_DRAFT_RESERVE_TOKENS = 4096
+# budget = context_window − 2 * max_output_tokens − _PROMPT_OVERHEAD_TOKENS
+# (one max_output for the model's response, one for the running draft fed
+# back into batch k>1; the draft is bounded by max_output_tokens.)
 _PROMPT_OVERHEAD_TOKENS = 500
 
 # Soft cost note: log a warning when refine batches exceed this threshold.
@@ -140,6 +141,13 @@ def _render_single_batch_text(sections: list[_SectionView]) -> str:
     Renders one ``=== Source: {title} ===`` header per source with all its
     sections concatenated, NO per-section header. Sources are joined with
     the same ``"\\n\\n"`` separator today's artifact path uses.
+
+    Per-section text is joined with ``"\\n"`` (NOT ``""``): ``format_turns``
+    produces no trailing newline, so a ``""`` join would glue the last
+    turn of section N onto the first turn of section N+1 on one mangled
+    line. The cost of ``"\\n"`` is a small layout difference from the
+    legacy whole-transcript ``format_turns`` (cross-boundary same-speaker
+    turns don't merge) — the LLM handles the section-break cleanly.
     """
     by_source: dict[str, list[_SectionView]] = {}
     for sec in sections:
@@ -147,7 +155,7 @@ def _render_single_batch_text(sections: list[_SectionView]) -> str:
     parts: list[str] = []
     for source_id, secs in by_source.items():
         title = secs[0].source_title
-        text = "".join(sec.text for sec in secs)
+        text = "\n".join(sec.text for sec in secs)
         parts.append(f"=== Source: {title} ===\n{text}")
     return "\n\n".join(parts)
 
@@ -348,12 +356,12 @@ async def _refine_artifact(
     When the batch count exceeds ``_SOFT_COST_BATCH_THRESHOLD``, a soft
     cost note is logged via ``logger.warning`` (no schema/UI change).
     """
-    budget = cfg.ai.context_window - cfg.ai.max_output_tokens - _DRAFT_RESERVE_TOKENS - _PROMPT_OVERHEAD_TOKENS
+    budget = cfg.ai.context_window - 2 * cfg.ai.max_output_tokens - _PROMPT_OVERHEAD_TOKENS
     if budget <= 0:
         raise PipelineError(
             f"Artifact batch budget non-positive (context_window={cfg.ai.context_window}, "
-            f"max_output_tokens={cfg.ai.max_output_tokens}, "
-            f"draft_reserve={_DRAFT_RESERVE_TOKENS}, prompt_overhead={_PROMPT_OVERHEAD_TOKENS}); "
+            f"2*max_output_tokens={2 * cfg.ai.max_output_tokens}, "
+            f"prompt_overhead={_PROMPT_OVERHEAD_TOKENS}); "
             f"raise max_output_tokens or context_window"
         )
 
@@ -412,10 +420,11 @@ async def _refine_artifact_multi_batch(
     parsed output.
 
     The new-sections text per batch is greedy-packed to ≤ budget tokens;
-    the running draft + boilerplate are bounded by ``_DRAFT_RESERVE_TOKENS``
-    and ``_PROMPT_OVERHEAD_TOKENS`` (heuristic reserves — pathological
-    growth of the running draft could still overflow; the retry ladder
-    surfaces that as ``PipelineError``).
+    the running draft is bounded by ``max_output_tokens`` (the model's
+    hard ceiling on what it can produce, hence what can come back as a
+    fed-back draft) and the prompt boilerplate by ``_PROMPT_OVERHEAD_TOKENS``.
+    ContextWindowExceededError is re-raised by the retry ladder (it would
+    re-overflow deterministically) and surfaces as a job-level failure.
     """
     draft: ArtifactResult | None = None
     for i, batch in enumerate(batches, start=1):

@@ -111,18 +111,34 @@ def test_format_duration_minutes_seconds():
 
 
 def test_render_single_batch_text_groups_by_source_with_no_section_header():
-    """Single-batch (byte-identical to today): `=== Source: {title} ===\n
-    {concatenated section text per source, no per-section header)`. Sections
-    for the same source are concatenated in seq order."""
+    """Single-batch: `=== Source: {title} ===\\n{per-section text, joined
+    with \\n so format_turns turns don't glue together, no per-section
+    header)}`. Sources joined with the same `\\n\\n` separator the
+    legacy artifact path used."""
     a0 = _sv("src-A", 0, "A0 text.", tokens=2)
     a1 = _sv("src-A", 1, "A1 text.", tokens=2)
     b0 = _sv("src-B", 0, "B0 text.", tokens=2)
     out = _render_single_batch_text([a0, a1, b0])
-    # Source A: header + a0 + a1 (no per-section header, concatenated)
+    # Source A: header + a0 + "\n" + a1 (no per-section header, sections
+    # joined with \n so adjacent turns don't glue)
     # Source B: header + b0
-    # Joined with the same separator today's _run_artifact_job uses ("\n\n").
-    expected = "=== Source: Title-src-A ===\nA0 text.A1 text.\n\n=== Source: Title-src-B ===\nB0 text."
+    # Sources joined with the same "\n\n" separator today's _run_artifact_job used.
+    expected = "=== Source: Title-src-A ===\nA0 text.\nA1 text.\n\n=== Source: Title-src-B ===\nB0 text."
     assert out == expected
+
+
+def test_render_single_batch_text_multi_section_source_uses_newline_separator():
+    """Regression: a single source with multiple sections must NOT glue
+    adjacent sections together on one line. format_turns produces no
+    trailing newline, so a ""-join produces corrupted lines like
+    'world[SPK_0] start'. The newline-separator preserves readability."""
+    sec0 = _sv("src-A", 0, "[SPK_0] hello")
+    sec1 = _sv("src-A", 1, "[SPK_0] world")
+    out = _render_single_batch_text([sec0, sec1])
+    # Each section's text on its own line; the last turn of sec0 doesn't
+    # abut the first turn of sec1.
+    assert "hello\n[SPK_0] world" in out
+    assert "hello[SPK_0] world" not in out  # the broken shape
 
 
 def test_render_multi_batch_section_uses_per_section_header():
@@ -357,8 +373,7 @@ async def test_refine_artifact_multi_batch_calls_llm_per_batch():
     parsed output."""
     cfg = BibilabConfig()
     # budget = 60: A=50, B=50 → 2 batches (each section alone).
-    # budget = context_window - max_output_tokens - 4096 - 500
-    cfg.ai.context_window = 60 + 4000 + 4096 + 500
+    cfg.ai.context_window = 60 + 2 * 4000 + 500
     cfg.ai.max_output_tokens = 4000
 
     sections = [
@@ -398,9 +413,9 @@ async def test_refine_artifact_single_section_overflow_fails_loud():
     """A single section whose token_count > budget → PipelineError
     (sections are atomic, never split). No _call_llm call is made."""
     cfg = BibilabConfig()
-    cfg.ai.context_window = 8_000
+    cfg.ai.context_window = 4_904
     cfg.ai.max_output_tokens = 1_000
-    # budget = 8000 - 1000 - 4096 - 500 = 2404
+    # budget = 4904 - 2*1000 - 500 = 2404
 
     sections = [
         _SectionView("src-1", "A", 0, 0.0, 1.0, "A text.", token_count=5_000),  # > 2404
@@ -421,7 +436,7 @@ async def test_refine_artifact_batch_failure_raises_pipeline_error():
     """A batch whose _call_llm raises (not ContextWindowExceededError) is
     retried 3 times, then PipelineError. No partial artifact."""
     cfg = BibilabConfig()
-    cfg.ai.context_window = 60 + 4000 + 4096 + 500
+    cfg.ai.context_window = 60 + 2 * 4000 + 500
     cfg.ai.max_output_tokens = 4000
 
     sections = [
@@ -445,7 +460,7 @@ async def test_refine_artifact_soft_cost_note_logs_warning_for_many_batches(capl
     """4+ batches → logger.warning fires (no schema/UI change)."""
     cfg = BibilabConfig()
     # budget = 75: 4 sections of 50 tokens each → 4 batches (50+50>75).
-    cfg.ai.context_window = 75 + 4000 + 4096 + 500
+    cfg.ai.context_window = 75 + 2 * 4000 + 500
     cfg.ai.max_output_tokens = 4000
     sections = [_SectionView("src-1", "A", i, float(i), float(i + 1), f"text {i}", token_count=50) for i in range(4)]
     responses = [f'{{"name": "t{i}", "content": "c{i}"}}' for i in range(4)]
@@ -470,6 +485,8 @@ async def test_refine_artifact_preserves_source_order_across_batches():
     cfg.ai.max_output_tokens = 4000
     # budget = 90: A=40, B=40 → 1 batch (40+40=80 ≤ 90)
     # Add a 3rd section to force a 2nd batch.
+    cfg.ai.context_window = 90 + 2 * 4000 + 500
+    cfg.ai.max_output_tokens = 4000
     sections = [
         _SectionView("src-A", "TA", 0, 0.0, 1.0, "a", token_count=40),
         _SectionView("src-B", "TB", 0, 0.0, 1.0, "b", token_count=40),
