@@ -152,10 +152,9 @@ class SectionedSourceFactory:
 
     Returns (source_id, segments, sections, section_digests). Defaults: 30
     segments of 1-second `s{i}.` text → 3 sections of 10 segments each.
-    Pass `n_segments` to change segment count; `n_sections` overrides the
-    derived default (3). `section_digests` defaults to one placeholder
-    `SectionDigest(summary=f"S{i} section.", keywords=[f"k{i}"])` per
-    section. Pass any of these to override.
+    Pass `n_segments` to change segment count. `section_digests` defaults
+    to one placeholder `SectionDigest(summary=f"S{i} section.",
+    keywords=[f"k{i}"])` per section. Pass any of these to override.
     """
 
     @staticmethod
@@ -163,7 +162,6 @@ class SectionedSourceFactory:
         list_id: str,
         *,
         n_segments: int = 30,
-        n_sections: int | None = None,
         section_digests: list[SectionDigest] | None = None,
         **source_overrides: Any,
     ) -> tuple[str, list[WhisperSegment], list[Section], list[SectionDigest]]:
@@ -171,9 +169,7 @@ class SectionedSourceFactory:
         segments = [
             WhisperSegment(start=float(i), end=float(i + 1), text=f"s{i}.", speaker=None) for i in range(n_segments)
         ]
-        # Derive n_sections from the segment count if not given.
-        if n_sections is None:
-            n_sections = max(1, n_segments // 10)
+        n_sections = max(1, n_segments // 10)
         segs_per_section = max(1, n_segments // n_sections)
         sections: list[Section] = []
         for s_idx in range(n_sections):
