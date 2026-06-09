@@ -398,9 +398,11 @@ async def _exec_write_sections(
             for i, s in enumerate(sections)
         ]
     else:
-        assert len(section_digests) == len(sections), (
-            f"section_digests length {len(section_digests)} != sections length {len(sections)}"
-        )
+        if len(section_digests) != len(sections):
+            raise ValueError(
+                f"_exec_write_sections: section_digests length {len(section_digests)} "
+                f"!= sections length {len(sections)}"
+            )
         rows = [
             (
                 source_id,
@@ -522,6 +524,8 @@ async def update_section_summaries(
     Each tuple is (seq, summary, keywords). Pre-validates unique seqs and
     verifies all seqs exist before any write; runs one executemany.
     """
+    if not section_digests:
+        return
     seqs = [seq for seq, _, _ in section_digests]
     if len(set(seqs)) != len(seqs):
         raise ValueError(f"update_section_summaries: duplicate seqs in input: {seqs}")
