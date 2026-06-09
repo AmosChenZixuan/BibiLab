@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 
+import type { ContentBlock } from "@/lib/chat-utils";
 import {
   autoResize,
   facetNoMatchHint,
@@ -9,6 +10,7 @@ import {
   stripLegacyTokens,
   RetrievalCall,
 } from "@/lib/chat-utils";
+import { READ_SECTION_TOOL_NAME } from "@/lib/tool-display";
 
 describe("formatDurationHuman", () => {
   test("seconds only", () => {
@@ -108,11 +110,13 @@ describe("RetrievalCall", () => {
       candidates_evaluated: 5,
       sources_with_hits: 2,
       sources_total: 3,
-      source_coverage: [],
+      section_coverage: [],
       context: [
         {
           chunk_id: "c1",
           citation_index: 1,
+          section_id: "sec-1",
+          section_seq: 1,
           source_id: "s1",
           source_title: "Test Video",
           timestamp_start: 120.4,
@@ -138,7 +142,7 @@ describe("RetrievalCall", () => {
       candidates_evaluated: 0,
       sources_with_hits: 0,
       sources_total: 1,
-      source_coverage: [],
+      section_coverage: [],
       context: [],
       reranked: false,
       scoped_pool_size: 1,
@@ -178,5 +182,32 @@ describe("facetNoMatchHint", () => {
   test("no facets falls back to generic", () => {
     expect(facetNoMatchHint(t, { sequence_number: null, season_number: null, matched_count: null, no_match: true }))
       .toBe("No source matched the requested filter — searched all sources instead.");
+  });
+});
+
+describe("section-grained types", () => {
+  test("ContentBlock citation carries section_id + timestamp_start", () => {
+    const b: ContentBlock = {
+      type: "citation", index: 1, section_id: "sec-1", source_id: "src-1",
+      timestamp_start: 42, chunk_ids: ["c1"],
+    };
+    expect(b.section_id).toBe("sec-1");
+    expect(b.timestamp_start).toBe(42);
+  });
+
+  test("read_section tool name constant", () => {
+    expect(READ_SECTION_TOOL_NAME).toBe("read_section");
+  });
+
+  test("RetrievalCall uses section_coverage", () => {
+    const call: RetrievalCall = {
+      query: "q", tool_name: "find_passages", candidates_evaluated: 0,
+      sources_with_hits: 0, sources_total: 1, reranked: false, scoped_pool_size: 1,
+      section_coverage: [{
+        section_id: "s1", source_id: "src", source_title: "T",
+        seq: 1, timestamp_start: 0, timestamp_end: 60,
+      }],
+    };
+    expect(call.section_coverage[0].section_id).toBe("s1");
   });
 });

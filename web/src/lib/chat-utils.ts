@@ -2,15 +2,28 @@ import { translateOrFallback } from "@/lib/utils";
 
 export type ContentBlock =
   | { type: "text"; text: string }
-  | { type: "citation"; index: number; source_id: string; chunk_ids: string[] }
+  | { type: "citation"; index: number; section_id: string; source_id: string;
+      timestamp_start: number; chunk_ids: string[] }
   | { type: "paragraph_break" };
 
-type ToolName = "find_passages" | "read_source";
-type RagSource = { source_id: string; title: string };
+type ToolName = "find_passages" | "read_section";
+
+/** A surfaced section in a find_passages result. */
+type SectionCoverage = {
+  section_id: string;
+  source_id: string;
+  source_title: string;
+  seq: number;
+  timestamp_start: number;
+  timestamp_end: number;
+};
+
 /** Single chunk in the persisted context[] array. */
 type RetrievalChunk = {
   chunk_id: string;
   citation_index: number;
+  section_id: string;
+  section_seq: number;
   source_id: string;
   source_title: string;
   timestamp_start: number;
@@ -28,22 +41,23 @@ type FacetScope = {
   matched_count: number | null;
   no_match: boolean;
 };
-/** source_coverage lists only sources whose [N] actually appeared in the assistant text. */
+/** section_coverage lists only sections whose [N] actually appeared in the assistant text. */
 export type RetrievalCall = {
   query: string;
   tool_name: ToolName;
   candidates_evaluated: number;
   sources_with_hits: number;
   sources_total: number;
-  source_coverage: RagSource[];
+  section_coverage: SectionCoverage[];
   // context[] is absent on the streaming tool_result payload;
-  // reconstructed only in persisted metadata.rag. For read_source,
+  // reconstructed only in persisted metadata.rag. For read_section,
   // context is always [] (continuous transcript, not a locator result).
   context?: RetrievalChunk[];
   reranked: boolean;
   scoped_pool_size: number;
   facet_scope?: FacetScope;
-  // read_source rows only — find_passages uses source_coverage
+  // read_section rows only — find_passages uses section_coverage
+  section_id?: string;
   source_id?: string;
   source_title?: string;
 };
