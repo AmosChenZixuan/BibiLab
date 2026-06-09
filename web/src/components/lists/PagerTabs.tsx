@@ -71,8 +71,10 @@ export function PagerTabs({ sections, activeIdx, onActiveIdxChange }: Props) {
               role="tab"
               aria-selected={i === activeIdx}
               onClick={() => onActiveIdxChange(i)}
-              className={`shrink-0 snap-center border-b-2 border-transparent bg-transparent px-3 py-2 font-mono text-xs tracking-normal text-muted transition-colors hover:text-ink ${
-                i === activeIdx ? "border-blue font-semibold text-blue" : ""
+              className={`shrink-0 snap-center border-b-2 px-3 py-2 font-mono text-xs tracking-normal transition-colors hover:text-ink ${
+                i === activeIdx
+                  ? "border-blue bg-blue/10 font-bold text-blue"
+                  : "border-transparent bg-transparent text-muted"
               }`}
               style={{ flex: "0 0 calc(100% / 3)" }}
               title={`${formatDurationHuman(s.timestamp_start)} – ${formatDurationHuman(s.timestamp_end)}`}
