@@ -167,6 +167,11 @@
       "cancel": "Cancel",
       "invalidInt": "Must be a whole number ≥ 1"
     },
+    "sections": {
+      "label": "Sections",
+      "previousSection": "Previous section",
+      "nextSection": "Next section"
+    },
     "notSignedIn": "Not signed in",
     "ingest": {
       "alreadyInList": "Already in this list",

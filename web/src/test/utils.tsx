@@ -44,6 +44,7 @@ const TOP_LEVEL_METHODS = [
   "deleteSource",
   "rerunDigest",
   "updateSourceFacets",
+  "getSourceSections",
   "previewPlaylist",
   "previewPlaylistMetadata",
   "ingestUrl",

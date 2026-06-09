@@ -7,6 +7,7 @@ import type {
   Source,
   SourceContent,
   SourceFacetsPatch,
+  SourceSection,
   ModelDownloadResponse,
   ModelInfo,
   SyncResponse,
@@ -191,6 +192,10 @@ class SourcesClient {
       body: JSON.stringify(patch),
     });
   }
+
+  getSourceSections(sourceId: string, opts?: { signal?: AbortSignal }) {
+    return this.request<SourceSection[]>(this.baseUrl, `/sources/${sourceId}/sections`, opts);
+  }
 }
 
 class IngestClient {
@@ -363,6 +368,7 @@ export interface ApiClient {
   deleteSource(listId: string, sourceId: string): Promise<void | undefined>;
   rerunDigest(sourceId: string): Promise<{ job_id: string } | undefined>;
   updateSourceFacets(sourceId: string, patch: SourceFacetsPatch): Promise<void | undefined>;
+  getSourceSections(sourceId: string, opts?: { signal?: AbortSignal }): Promise<SourceSection[] | undefined>;
   previewPlaylist(listId: string, url: string): Promise<PreviewResponse | undefined>;
   previewPlaylistMetadata(videoIds: string[]): Promise<VideoMetadataMap | undefined>;
   ingestUrl(listId: string, videos: IngestVideoIn[]): Promise<IngestResult | undefined>;
@@ -423,6 +429,7 @@ export function createApiClient(baseUrl?: string): ApiClient {
     deleteSource: (listId, sourceId) => sources.deleteSource(listId, sourceId),
     rerunDigest: (id) => sources.rerunDigest(id),
     updateSourceFacets: (id, patch) => sources.updateSourceFacets(id, patch),
+    getSourceSections: (id, opts) => sources.getSourceSections(id, opts),
     previewPlaylist: (listId, url) => ingest.previewPlaylist(listId, url),
     previewPlaylistMetadata: (videoIds) => ingest.previewPlaylistMetadata(videoIds),
     ingestUrl: (listId, videos) => ingest.ingestUrl(listId, videos),
