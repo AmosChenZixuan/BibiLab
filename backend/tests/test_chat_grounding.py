@@ -54,20 +54,22 @@ class TestBuildGroundingPrompt:
         assert "same line" in lowered, citation_section
 
     def test_grounding_section_has_fence_pointer(self):
-        """Grounding rule points at the per-source fence structure."""
+        """Grounding rule points at the per-section fence structure."""
         prompt = build_grounding_prompt("en")
         grounding = prompt.split("## Grounding\n", 1)[1].split("\n## ", 1)[0]
-        assert "===== Source [N] =====" in grounding, grounding
+        assert '===== [N] "title" · Section S =====' in grounding, grounding
         assert "across a fence" in grounding.lower(), grounding
 
     def test_grounding_prompt_two_tool_surface(self):
         p = build_grounding_prompt("en")
-        assert "find_passages" in p and "read_source" in p
+        assert "find_passages" in p and "read_section" in p
+        # read_source is GONE — section granularity replaced it
+        assert "read_source" not in p
         # deleted tools must NOT appear
         for dead in ("survey", "retrieve_scoped", "query_list_metadata", "generate_report"):
             assert dead not in p
         # escalation rule present
-        assert "read_source" in p and "in full" in p.lower()
+        assert "read_section" in p and "in full" in p.lower()
 
     def test_grounding_prompt_no_coverage_rule_in_prompt(self):
         """No-coverage behaviour lives in the static prompt now (the backend
@@ -97,16 +99,42 @@ class TestBuildGroundingPrompt:
 
     def test_find_passages_description_has_no_coverage_example(self):
         """The find_passages tool must NOT demonstrate a coverage question
-        ('第N集讲了什么') — that class routes to read_source (live-usage bug fix)."""
+        ('第N集讲了什么') as a find_passages example — coverage routes to an
+        OUTLINE retrieve (find_passages with the matching facet)."""
         from bibilab.pipeline.chat_tools import FIND_PASSAGES_TOOL
 
         assert "讲了什么" not in FIND_PASSAGES_TOOL.description
 
-    def test_grounding_prompt_routes_coverage_to_read_source(self):
-        """A named-episode coverage question must route to read_source, not
-        find_passages-with-facet."""
+    def test_grounding_prompt_routes_coverage_to_outline(self):
+        """A named-episode coverage question must be answered from a fresh
+        OUTLINE retrieve (find_passages with the matching facet), not from
+        conversation history or a per-section read."""
         p = build_grounding_prompt("en")
-        # the coverage→read_source directive is present and names the pattern
+        # the coverage→outline directive names the pattern
         assert "讲了什么" in p
+        # the #396 exemption is present (outline retrieve is the only path)
+        assert "outline" in p.lower()
         # the weak "only when needed" escalation wording is gone
         assert "only when needed" not in p
+
+    def test_grounding_prompt_has_396_coverage_exemption(self):
+        """#396 coverage-confabulation: a coverage question MUST NOT be
+        answered from conversation history — always retrieve the outline."""
+        p = build_grounding_prompt("en").lower()
+        # the exemption text names both the symptom and the rule
+        assert "coverage question" in p
+        # explicit prohibition: history is never the source for coverage
+        assert "never answer a coverage question" in p
+        assert "from conversation history" in p or "from history" in p
+
+    def test_grounding_prompt_citation_distinguishes_verbatim_from_outline(self):
+        """The Citation section must instruct: cite [N] ONLY for sections whose
+        verbatim you saw (find_passages fragments or read_section). Outline
+        summaries are orientation, not citable evidence."""
+        p = build_grounding_prompt("en")
+        citation = p.split("## Citation\n", 1)[1].split("\n## ", 1)[0]
+        # the verbatim-required rule is named
+        assert "verbatim" in citation.lower()
+        # outline summaries are explicitly NOT evidence
+        assert "outline" in citation.lower()
+        assert "orientation" in citation.lower() or "not evidence" in citation.lower()
