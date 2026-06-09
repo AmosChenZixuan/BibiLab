@@ -399,3 +399,154 @@ async def test_chat_citation_block_carries_section_id_and_timestamp(client, mock
     call = rag["calls"][0]
     assert "context" in call
     assert all("section_id" in c for c in call["context"])
+
+
+@pytest.mark.asyncio
+async def test_coverage_question_retrieves_outline_not_history(client, mock_stream_llm):
+    """#396 regression: a coverage question on a non-history episode MUST
+    trigger an outline retrieve (find_passages with the matching facet), not
+    a history-answered confabulation. Catches:
+      - T8 (coverage exemption in grounding prompt): the LLM dispatches
+        find_passages(sequence_number=1) instead of answering from history.
+      - T5 (facet → outline expansion): the tool result the LLM sees
+        carries BOTH section summaries (the outline), not just the hit
+        section's excerpts.
+    """
+    from bibilab.pipeline._shared import StreamEvent, ToolCall
+    from bibilab.pipeline.chat_tools import FIND_PASSAGES_TOOL
+    from bibilab.pipeline.digest import SectionDigest
+    from bibilab.pipeline.section import Section
+    from bibilab.pipeline.transcribe import WhisperSegment
+    from tests.factories import SourceFactory
+
+    list_id = (await client.post("/lists", json={"name": "Coverage396"})).json()["id"]
+
+    # 2-section source with sequence_number=1 facet, each section's summary
+    # carries a unique marker so the test can assert each showed up in the
+    # LLM-facing _chunks.
+    segs = [WhisperSegment(start=float(i), end=float(i + 1), text=f"s{i}.", speaker=None) for i in range(20)]
+    sections = [
+        Section(seg_start=0, seg_end=9, token_count=100, timestamp_start=0.0, timestamp_end=10.0),
+        Section(seg_start=10, seg_end=19, token_count=100, timestamp_start=10.0, timestamp_end=20.0),
+    ]
+    digests = [
+        SectionDigest(summary="OUTLINE_MARKER_ALPHA — opening", keywords=["a"]),
+        SectionDigest(summary="OUTLINE_MARKER_BETA — closing", keywords=["b"]),
+    ]
+    await SourceFactory.build(
+        list_id,
+        video_id="BVcoverage396",
+        title="Coverage 396 Video",
+        sequence_number=1,
+        segments=segs,
+        sections=sections,
+        section_digests=digests,
+    )
+
+    # Turn 1: dispatch the coverage retrieve (T8 invariant — a coverage question
+    # must issue find_passages with the matching facet).
+    # Turn 2: synthesize from the outline (the LLM-visible _chunks has both
+    # summary markers, so a realistic answer cites them).
+    iteration_count = 0
+    tool_call_seen: list[dict] = []
+
+    async def fake_stream_llm(messages, cfg, tools=None, system=None, **kwargs):
+        nonlocal iteration_count
+        iteration_count += 1
+        if iteration_count == 1:
+            tool_call = ToolCall(
+                id="tc1",
+                name=FIND_PASSAGES_TOOL.name,
+                arguments={"query": "第1集讲了什么", "sequence_number": 1},
+            )
+            tool_call_seen.append(tool_call.arguments)
+            yield StreamEvent(type="tool_call", tool_call=tool_call)
+            yield StreamEvent(type="done")
+        else:
+            yield StreamEvent(
+                type="delta",
+                content="OUTLINE_MARKER_ALPHA and OUTLINE_MARKER_BETA together cover the episode.",
+            )
+            yield StreamEvent(type="done")
+
+    mock_stream_llm.side_effect = fake_stream_llm
+
+    # Synthesize the post-T5 outline-shaped tool result: BOTH section
+    # summaries present in _chunks (the outline), and section_coverage lists
+    # both sections. The LLM-bound content is _chunks, exactly what the LLM
+    # sees on turn 2 — if T5 were broken, _chunks would only carry the hit
+    # section and the assertion below would fail.
+    async def fake_execute_tool(**kwargs):
+        return {
+            "query": "第1集讲了什么",
+            "tool_name": FIND_PASSAGES_TOOL.name,
+            "candidates_evaluated": 1,
+            "sources_with_hits": 1,
+            "sources_total": 1,
+            "reranked": False,
+            "scoped_pool_size": 1,
+            "facet_scope": {
+                "sequence_number": 1,
+                "season_number": None,
+                "matched_count": 1,
+                "no_match": False,
+            },
+            "section_coverage": [
+                {
+                    "section_id": "sec-1",
+                    "source_id": "s1",
+                    "source_title": "Coverage 396 Video",
+                    "seq": 1,
+                    "timestamp_start": 0.0,
+                    "timestamp_end": 10.0,
+                },
+                {
+                    "section_id": "sec-2",
+                    "source_id": "s1",
+                    "source_title": "Coverage 396 Video",
+                    "seq": 2,
+                    "timestamp_start": 10.0,
+                    "timestamp_end": 20.0,
+                },
+            ],
+            "_chunks": (
+                '===== [1] "Coverage 396 Video" · Section 1 =====\n\n'
+                "OUTLINE_MARKER_ALPHA — opening\n\n"
+                '===== [2] "Coverage 396 Video" · Section 2 =====\n\n'
+                "OUTLINE_MARKER_BETA — closing"
+            ),
+            "_turn_indices": [1, 2],
+        }
+
+    with patch("bibilab.routers.chat.execute_tool", fake_execute_tool):
+        resp = await client.post(f"/lists/{list_id}/chat", json={"message": "第1集讲了什么"})
+    assert resp.status_code == 200
+
+    # T8 invariant: the LLM dispatched a coverage retrieve with the matching
+    # facet, not a history-answered confabulation.
+    assert tool_call_seen, "no tool_call was emitted — the LLM confabulated from history"
+    assert tool_call_seen[0].get("sequence_number") == 1
+    assert tool_call_seen[0].get("query") == "第1集讲了什么"
+
+    conv = (await client.get(f"/lists/{list_id}/conversation")).json()
+    assistant_msgs = [m for m in conv["messages"] if m["role"] == "assistant"]
+    assert assistant_msgs, "no assistant message persisted"
+    rag = assistant_msgs[-1]["metadata"]["rag"]
+    assert len(rag["calls"]) == 1
+    call = rag["calls"][0]
+    assert call["tool_name"] == "find_passages"
+    # The persisted facet_scope reflects sequence_number=1 (T5/T8 wired end-to-end).
+    assert call["facet_scope"]["sequence_number"] == 1
+    assert call["facet_scope"]["matched_count"] == 1
+    # T5 invariant: BOTH sections of the outline are in the persisted
+    # section_coverage (the LLM got the outline, not a partial hit).
+    cov = call["section_coverage"]
+    assert len(cov) == 2
+    assert {row["seq"] for row in cov} == {1, 2}
+
+    # The LLM's answer text references the outline summaries — the only way
+    # the synthesis can land both markers is from an outline-shaped _chunks
+    # (a single-section hit would have dropped one of the two markers).
+    assistant_content = "".join(m["content"] for m in assistant_msgs if m["role"] == "assistant")
+    assert "OUTLINE_MARKER_ALPHA" in assistant_content
+    assert "OUTLINE_MARKER_BETA" in assistant_content
