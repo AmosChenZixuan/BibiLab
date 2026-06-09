@@ -1181,6 +1181,75 @@ async def test_write_source_with_segments_rollback_leaves_no_orphan_sections(
 
 
 @pytest.mark.asyncio
+async def test_write_source_with_segments_rollback_on_section_failure_also_rolls_back_segments(
+    tmp_bibilab_home: Path,
+):
+    """AC3 atomicity: a mid-transaction failure inside the sections writer
+    must roll back the source row AND the transcript segments — proving the
+    three-table write is one unit, not three independent inserts that the FK
+    cascade happens to mask.
+
+    Patches `_exec_write_sections` to raise after the segments are already
+    staged. Post-conditions: no source row, no segments, no sections for
+    the failing source_id.
+    """
+    from bibilab.db import (
+        bootstrap_db,
+        create_list,
+        get_sections,
+        get_source,
+        get_transcript_segments,
+        write_source_with_segments,
+    )
+    from bibilab.pipeline.digest import SectionDigest
+    from bibilab.pipeline.section import Section
+    from bibilab.pipeline.transcribe import WhisperSegment
+
+    await bootstrap_db()
+    await create_list("list-1", "L", "2026-01-01T00:00:00")
+
+    segments = [WhisperSegment(start=float(i), end=float(i + 1), text=f"seg{i}.", speaker=None) for i in range(15)]
+    sections = [Section(seg_start=0, seg_end=14, token_count=100, timestamp_start=0.0, timestamp_end=15.0)]
+    section_digests = [SectionDigest(summary="S", keywords=["k"])]
+
+    async def boom(*args, **kwargs):
+        raise RuntimeError("simulated mid-write failure")
+
+    import bibilab.db as db_mod
+
+    original = db_mod._exec_write_sections
+    db_mod._exec_write_sections = boom
+    try:
+        with pytest.raises(RuntimeError, match="simulated mid-write failure"):
+            await write_source_with_segments(
+                segments=segments,
+                sections=sections,
+                section_digests=section_digests,
+                source_id="src-ac3",
+                video_id="BV1ac3",
+                platform="bilibili",
+                list_id="list-1",
+                title="T",
+                summary="S",
+                keywords=["k"],
+                cover_url=None,
+                source_url="https://x",
+                duration_seconds=15,
+                uploader="u",
+                language="en",
+                whisper_model="x",
+                ai_model="y",
+                settings_snapshot={},
+            )
+    finally:
+        db_mod._exec_write_sections = original
+
+    assert await get_source("src-ac3") is None
+    assert await get_sections("src-ac3") == []
+    assert await get_transcript_segments("src-ac3") == []
+
+
+@pytest.mark.asyncio
 async def test_write_source_with_segments_sections_omitted_keeps_old_behavior(
     tmp_bibilab_home: Path,
 ):
