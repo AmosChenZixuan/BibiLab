@@ -220,7 +220,7 @@ def _client_tool_result(result: dict) -> dict:
 def _llm_tool_message_content(result: dict) -> str:
     """LLM-bound content of a tool result: the formatted excerpts only.
 
-    `_chunks` is set on every tool path (find_passages, read_source narrative,
+    `_chunks` is set on every tool path (find_passages, read_section narrative,
     resolution-error). Other fields (FTS bigram text, telemetry, bookkeeping)
     are client-only or persistence-only.
     """
@@ -625,7 +625,7 @@ async def run_chat_turn(
     citation_registry: dict[str, CitationRegistryEntry] = {}
     assistant_text_deltas: list[str] = []
     retrieve_calls: list[dict] = []
-    read_source_calls: list[dict] = []
+    read_section_calls: list[dict] = []
     all_calls: list[dict] = []
     content_blocks: list[dict] = []
     pending_text = ""
@@ -725,7 +725,7 @@ async def run_chat_turn(
                 elif parsed["name"] == READ_SECTION_TOOL.name:
                     sid = parsed["result"].get("source_id")
                     if sid:  # None on a resolution error → nothing was read, no ledger row
-                        read_source_calls.append(
+                        read_section_calls.append(
                             {
                                 "tool_name": READ_SECTION_TOOL.name,
                                 "section_id": parsed["result"].get("section_id", ""),
@@ -811,7 +811,7 @@ async def run_chat_turn(
                             )
                     call["context"] = context_entries
 
-            for rs in read_source_calls:
+            for rs in read_section_calls:
                 # registry is keyed by section_id; look up by section_id first, fall
                 # back to source_id for legacy messages persisted before T9.
                 section_id = rs.get("section_id", "")
@@ -826,7 +826,7 @@ async def run_chat_turn(
                 # ledger; an empty array lets the renderer branch on tool_name and
                 # show a "read in full" affordance instead.
                 rs["context"] = []
-            all_calls = retrieve_calls + read_source_calls
+            all_calls = retrieve_calls + read_section_calls
 
             meta: dict[str, Any] = {}
 
