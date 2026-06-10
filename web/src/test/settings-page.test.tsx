@@ -42,7 +42,6 @@ vi.mock("../lib/api", () => {
     api: mockApi,
     notifyHealthChanged: vi.fn(),
     toErrorMessageWithT: (error: unknown) => (error instanceof Error ? error.message : MOCK_ERROR_MESSAGE),
-    setCurrentLang: vi.fn(),
   };
 });
 

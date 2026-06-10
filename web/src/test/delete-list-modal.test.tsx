@@ -11,7 +11,6 @@ vi.mock("@/lib/api", async () => {
   const { createMockApi } = await import("@/test/utils");
   return {
     api: createMockApi(),
-    setCurrentLang: vi.fn(),
   };
 });
 

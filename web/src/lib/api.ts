@@ -20,8 +20,7 @@ import type {
   Conversation,
   Message,
 } from "./types";
-import { LANG_STORAGE_KEY } from "./utils";
-import type { Lang } from "@/app/LanguageContext";
+import { getUiLang } from "./utils";
 
 type ApiErrorDetail = string | { message?: string };
 
@@ -75,14 +74,6 @@ export function notifyBilibiliAuthChanged() {
   window.dispatchEvent(new CustomEvent(BILIBILI_AUTH_REFRESH_EVENT));
 }
 
-// ─── Current UI language ──────────────────────────────────────────────────────
-
-let _currentLang: Lang = (localStorage.getItem(LANG_STORAGE_KEY) as Lang | null) ?? "en";
-
-export function setCurrentLang(lang: Lang) {
-  _currentLang = lang;
-}
-
 // ─── Request helper ───────────────────────────────────────────────────────────
 
 type RequestFn = <T>(
@@ -100,7 +91,7 @@ async function request<T>(
   const response = await fetch(`${baseUrl}${path}`, {
     headers: {
       "Content-Type": "application/json",
-      "X-UI-Lang": _currentLang,
+      "X-UI-Lang": getUiLang(),
       ...(init?.headers ?? {}),
     },
     ...fetchInit,

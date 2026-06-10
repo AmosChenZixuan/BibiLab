@@ -24,7 +24,6 @@ vi.mock("../lib/api", () => {
     },
     toErrorMessageWithT: (error: unknown, _t: (key: string) => string) =>
       error instanceof Error ? error.message : "Request failed",
-    setCurrentLang: vi.fn(),
   };
 });
 

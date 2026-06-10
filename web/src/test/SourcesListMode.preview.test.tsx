@@ -91,7 +91,6 @@ vi.mock("@/lib/api", async () => {
   return {
     api: mockApi,
     ApiError: MockApiError,
-    setCurrentLang: vi.fn(),
     createApiClient: () => mockApi,
     toErrorMessageWithT: vi.fn((e: unknown) => (e instanceof Error ? e.message : String(e))),
     default: mockApi,

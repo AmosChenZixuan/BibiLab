@@ -15,7 +15,7 @@ import {
   SSE_EVENT_TOOL_CALL_START,
   SSE_EVENT_TOOL_RESULT,
 } from "@/lib/constants";
-import { LANG_STORAGE_KEY } from "@/lib/utils";
+import { getUiLang } from "@/lib/utils";
 
 interface UseSSEStreamOptions {
   listId: string;
@@ -335,7 +335,7 @@ export function useSSEStream({
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "X-UI-Lang": localStorage.getItem(LANG_STORAGE_KEY) ?? "en",
+          "X-UI-Lang": getUiLang(),
         },
         body: JSON.stringify({
           message: text,

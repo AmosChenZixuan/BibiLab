@@ -164,7 +164,6 @@ vi.mock("../lib/api", () => {
     createApiClient: () => mockApi,
     api: mockApi,
     toErrorMessageWithT: vi.fn((e: unknown) => (e instanceof Error ? e.message : String(e))),
-    setCurrentLang: vi.fn(),
   };
 });
 

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { createApiClient, setCurrentLang } from "@/lib/api";
+import { createApiClient } from "@/lib/api";
+import { setUiLang } from "@/lib/utils";
 import { mockFetch } from "@/test/utils";
 
 describe("ListsClient.createArtifact", () => {
@@ -79,7 +80,7 @@ describe("ListsClient.createArtifact", () => {
     expect(result.status).toBe("queued");
   });
 
-  test("setCurrentLang('zh') updates X-UI-Lang header to zh", async () => {
+  test("setUiLang('zh') updates X-UI-Lang header to zh", async () => {
     const fetchMock = mockFetch(async () =>
       Response.json(
         {
@@ -96,7 +97,7 @@ describe("ListsClient.createArtifact", () => {
       ),
     );
 
-    setCurrentLang("zh");
+    setUiLang("zh");
     const client = createApiClient("http://localhost:8765/api");
     await client.createArtifact("list-1", {
       type: "brief",
@@ -111,6 +112,6 @@ describe("ListsClient.createArtifact", () => {
       }),
     );
 
-    setCurrentLang("en");
+    setUiLang("en");
   });
 });
