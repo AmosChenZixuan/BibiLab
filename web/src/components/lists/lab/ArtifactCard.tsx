@@ -3,7 +3,7 @@ import { useRef, useState } from "react";
 
 import { useLanguage } from "@/app/LanguageContext";
 import { ContextMenu } from "@/components/ui/ContextMenu";
-import { ARTIFACT_TYPE_KEYS } from "@/lib/artifactTypes";
+import { ARTIFACT_TYPE_KEYS } from "@/lib/tool-display";
 import type { Artifact } from "@/lib/types";
 
 function formatArtifactTypeLabel(type: Artifact["type"], t: (key: string) => string): string {

@@ -1,7 +1,7 @@
 import { X } from "lucide-react";
 
 import { useLanguage } from "@/app/LanguageContext";
-import { ARTIFACT_TYPE_KEYS } from "@/lib/artifactTypes";
+import { ARTIFACT_TYPE_KEYS } from "@/lib/tool-display";
 import type { JobActivityItem } from "./JobActivityProvider";
 import { getJobTitle, getJobTone, useJobActivity } from "./JobActivityProvider";
 

@@ -5,7 +5,7 @@ import { useLanguage } from "@/app/LanguageContext";
 import { Modal } from "@/components/ui/Modal";
 import { useJobActivity } from "@/components/jobs/JobActivityProvider";
 import { api } from "@/lib/api";
-import { ARTIFACT_TYPE_KEYS } from "@/lib/artifactTypes";
+import { ARTIFACT_TYPE_KEYS } from "@/lib/tool-display";
 import { templates } from "@/lib/templates";
 import type { ArtifactJob, ArtifactType } from "@/lib/types";
 
