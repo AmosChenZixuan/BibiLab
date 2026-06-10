@@ -165,6 +165,13 @@ def _partition_unseen_chunks(chunks: list, seen_chunk_ids: set[str]) -> list:
     return new
 
 
+# Tool-name constants. These are the single source of truth for the wire
+# string the LLM sees, what we record in tool_result envelopes, and what we
+# filter in RETRIEVE_TOOL_NAMES. Renaming a tool means updating the
+# constants — every other site already routes through them.
+TOOL_NAME_FIND_PASSAGES = "find_passages"
+TOOL_NAME_READ_SECTION = "read_section"
+
 # Tool defs + registry for the RAG v2 two-tool surface.
 # RETRIEVE_TOOL_NAMES is the set whose tool results carry a replayable chunk
 # array (only find_passages). read_section resolves an already-registered [N]
@@ -173,7 +180,7 @@ def _partition_unseen_chunks(chunks: list, seen_chunk_ids: set[str]) -> list:
 FIND_PASSAGES_TOP_K = 8
 
 FIND_PASSAGES_TOOL = ToolDefinition(
-    name="find_passages",
+    name=TOOL_NAME_FIND_PASSAGES,
     description=(
         "Search the video transcripts for excerpts relevant to a question. "
         "Returns the most relevant passages across all sources (or a single "
@@ -209,7 +216,7 @@ FIND_PASSAGES_TOOL = ToolDefinition(
 )
 
 READ_SECTION_TOOL = ToolDefinition(
-    name="read_section",
+    name=TOOL_NAME_READ_SECTION,
     description=(
         "Read ONE section's full verbatim transcript. A find_passages result "
         "fences each section under a [N] index; pass that index to read that "
@@ -232,7 +239,7 @@ READ_SECTION_TOOL = ToolDefinition(
     },
 )
 
-RETRIEVE_TOOL_NAMES: frozenset[str] = frozenset({FIND_PASSAGES_TOOL.name})
+RETRIEVE_TOOL_NAMES: frozenset[str] = frozenset({TOOL_NAME_FIND_PASSAGES})
 
 # Anchored: a stray title like "Episode 5 discussion" must NOT silently parse
 # to index 5 — only the LLM's own [N] citation form is accepted.
@@ -287,7 +294,7 @@ def _read_section_error(msg: str) -> dict:
         "section_id": None,
         "source_id": None,
         "source_title": "",
-        "tool_name": "read_section",
+        "tool_name": TOOL_NAME_READ_SECTION,
     }
 
 
@@ -323,7 +330,7 @@ async def execute_read_section(
         "section_id": entry.section_id,
         "source_id": entry.source_id,
         "source_title": entry.title,
-        "tool_name": "read_section",
+        "tool_name": TOOL_NAME_READ_SECTION,
     }
 
 
