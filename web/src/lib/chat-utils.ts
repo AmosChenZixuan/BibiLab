@@ -1,4 +1,5 @@
 import { translateOrFallback } from "@/lib/utils";
+import { FIND_PASSAGES_TOOL_NAME, READ_SECTION_TOOL_NAME } from "@/lib/tool-display";
 
 export type ContentBlock =
   | { type: "text"; text: string }
@@ -6,7 +7,7 @@ export type ContentBlock =
       timestamp_start: number; chunk_ids: string[] }
   | { type: "paragraph_break" };
 
-type ToolName = "find_passages" | "read_section";
+type ToolName = typeof FIND_PASSAGES_TOOL_NAME | typeof READ_SECTION_TOOL_NAME;
 
 /** Args passed to `onOpenSource` when a citation chip is clicked.
  *  `sectionId` + `timestampStart` are the citation jump target (used by
