@@ -271,18 +271,17 @@ async def test_ingest_n_sections_produces_ordered_section_digests(tmp_bibilab_ho
 
 
 @pytest.mark.asyncio
-async def test_rerun_updates_section_rows_and_sources_mirror(tmp_bibilab_home: Path, mock_call_llm):
+async def test_rerun_updates_section_rows(tmp_bibilab_home: Path, mock_call_llm):
     """Rerun on a sectioned source: 1 digest + (N-1) refines, then
-    update_section_summaries populates all section rows, sources row mirrors
-    section[0]. This is the true section-level rerun.
-    """
+    update_section_summaries populates all section rows. Sections are the
+    sole digest store (the source carries facets only)."""
     from bibilab.db import bootstrap_db, create_list, get_job, get_sections
     from bibilab.worker import WorkerLoop
 
     await bootstrap_db()
     await create_list("list-rerun", "Rerun Test", "2025-01-01T00:00:00Z")
     source_id = "src-rerun-1"
-    # 30 segs → 3 sections of 10; prior valid summaries, source mirrors section[0].
+    # 30 segs → 3 sections of 10, each with a prior valid summary.
     await SectionedSourceFactory.build(
         "list-rerun",
         source_id=source_id,

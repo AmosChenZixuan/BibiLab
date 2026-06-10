@@ -728,8 +728,9 @@ class WorkerLoop:
 
         await update_job_status(job_id, JobStatus.PROCESSING.value, progress=80)
 
-        # Two writes: sections first, then source mirror. Drift window is
-        # acceptable (rerun is idempotent — re-running fixes any divergence).
+        # Two writes: per-section summaries, then the source's facet columns.
+        # No transaction needed — they touch disjoint rows/columns and a
+        # rerun is idempotent (re-running fixes any partial write).
         await update_section_summaries(
             source_id,
             [(row["seq"], sd.summary, sd.keywords) for row, sd in zip(section_rows, section_digests)],
