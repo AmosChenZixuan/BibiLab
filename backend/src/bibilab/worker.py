@@ -24,7 +24,6 @@ from bibilab.db import (
     get_source,
     get_transcript_segments,
     parse_job_meta,
-    reset_stuck_jobs,
     rows_to_sections,
     rows_to_segments,
     update_job_meta,
@@ -56,6 +55,30 @@ from bibilab.pipeline.transcribe import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+async def reset_stuck_jobs() -> None:
+    """Start-of-day sweep: flip any job in an active transient state back to queued.
+
+    Lives here (next to its only caller, ``WorkerLoop.start``) rather than
+    in ``bibilab.db`` because the row state machine is a worker concern —
+    the data layer only knows about CRUD on a row, not which transitions
+    are valid at start of day.
+    """
+    from bibilab.db.connection import _now, get_db
+
+    stuck_statuses = (
+        f"'{JobStatus.DOWNLOADING.value}', '{JobStatus.TRANSCRIBING.value}', '{JobStatus.PROCESSING.value}'"
+    )
+    async with get_db() as db:
+        await db.execute(
+            f"""
+            UPDATE jobs SET status='{JobStatus.QUEUED.value}', updated_at=?
+            WHERE status IN ({stuck_statuses})
+            """,
+            (_now(),),
+        )
+        await db.commit()
 
 
 class ArtifactResult(BaseModel):
