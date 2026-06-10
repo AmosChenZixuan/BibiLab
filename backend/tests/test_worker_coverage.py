@@ -310,8 +310,8 @@ async def test_stage_process_chunks_sentence_segments(tmp_bibilab_home: Path, mo
 async def test_stage_persist_atomic_no_orphan_on_segment_write_failure(tmp_bibilab_home: Path):
     """Source + segments persist in one transaction. A segment-write failure rolls
     the source upsert back too — no orphaned source row (atomicity, not compensation)."""
-    import bibilab.db as db
     from bibilab.db import bootstrap_db, create_job, create_list, get_source
+    from bibilab.db import sources as db_sources
     from bibilab.pipeline.transcribe import WhisperSegment
 
     await bootstrap_db()
@@ -328,7 +328,7 @@ async def test_stage_persist_atomic_no_orphan_on_segment_write_failure(tmp_bibil
     async def _boom(*args, **kwargs):
         raise Exception("disk full")
 
-    with patch.object(db, "_exec_write_transcript_segments", _boom):
+    with patch.object(db_sources, "_exec_write_transcript_segments", _boom):
         with pytest.raises(Exception, match="disk full"):
             await loop._stage_persist(
                 job_id=job_id,

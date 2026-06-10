@@ -911,8 +911,8 @@ async def test_write_source_with_segments_atomic_happy(tmp_bibilab_home: Path):
 async def test_write_source_with_segments_rolls_back_on_segment_failure(tmp_bibilab_home: Path, monkeypatch):
     """If the segment write fails, the source upsert rolls back with it — no
     orphaned source row (the bug the old compensating delete tried to patch)."""
-    import bibilab.db as db
     from bibilab.db import bootstrap_db, create_list, get_source, write_source_with_segments
+    from bibilab.db import sources as db_sources
     from bibilab.pipeline.transcribe import WhisperSegment
 
     await bootstrap_db()
@@ -921,7 +921,7 @@ async def test_write_source_with_segments_rolls_back_on_segment_failure(tmp_bibi
     async def _boom(*args, **kwargs):
         raise RuntimeError("segment write failed")
 
-    monkeypatch.setattr(db, "_exec_write_transcript_segments", _boom)
+    monkeypatch.setattr(db_sources, "_exec_write_transcript_segments", _boom)
 
     with pytest.raises(RuntimeError):
         await write_source_with_segments(
@@ -1129,6 +1129,7 @@ async def test_write_source_with_segments_rollback_leaves_no_orphan_sections(
         get_sections,
         get_source,
     )
+    from bibilab.db import sources as db_sources
     from bibilab.pipeline.digest import SectionDigest
     from bibilab.pipeline.section import Section
 
@@ -1143,12 +1144,12 @@ async def test_write_source_with_segments_rollback_leaves_no_orphan_sections(
     # must NOT commit.
     from bibilab import db as db_mod
 
-    original = db_mod._exec_write_sections
+    original = db_sources._exec_write_sections
 
     async def boom(*args, **kwargs):
         raise RuntimeError("simulated section-write failure")
 
-    db_mod._exec_write_sections = boom
+    db_sources._exec_write_sections = boom
     try:
         with pytest.raises(RuntimeError, match="simulated"):
             await db_mod.write_source_with_segments(
@@ -1170,7 +1171,7 @@ async def test_write_source_with_segments_rollback_leaves_no_orphan_sections(
                 settings_snapshot={},
             )
     finally:
-        db_mod._exec_write_sections = original
+        db_sources._exec_write_sections = original
 
     assert await get_source("src-fail") is None
     assert await get_sections("src-fail") == []
@@ -1197,6 +1198,7 @@ async def test_write_source_with_segments_rollback_on_section_failure_also_rolls
         get_transcript_segments,
         write_source_with_segments,
     )
+    from bibilab.db import sources as db_sources
     from bibilab.pipeline.digest import SectionDigest
     from bibilab.pipeline.section import Section
     from bibilab.pipeline.transcribe import WhisperSegment
@@ -1211,10 +1213,8 @@ async def test_write_source_with_segments_rollback_on_section_failure_also_rolls
     async def boom(*args, **kwargs):
         raise RuntimeError("simulated mid-write failure")
 
-    import bibilab.db as db_mod
-
-    original = db_mod._exec_write_sections
-    db_mod._exec_write_sections = boom
+    original = db_sources._exec_write_sections
+    db_sources._exec_write_sections = boom
     try:
         with pytest.raises(RuntimeError, match="simulated mid-write failure"):
             await write_source_with_segments(
@@ -1236,7 +1236,7 @@ async def test_write_source_with_segments_rollback_on_section_failure_also_rolls
                 settings_snapshot={},
             )
     finally:
-        db_mod._exec_write_sections = original
+        db_sources._exec_write_sections = original
 
     assert await get_source("src-ac3") is None
     assert await get_sections("src-ac3") == []
