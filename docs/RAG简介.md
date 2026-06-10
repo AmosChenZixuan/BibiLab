@@ -5,16 +5,18 @@
 
 1. 转录 (transcribe.py)
 Whisper 把音频转成一堆带时间戳的小 segment（5–15 秒一段）。
-2. 切片 (chunk.py)
-贪心合并相邻 segment，凑到 ~300 token 就封一个 RagChunk，超过 400 token 的单段直接独立成块。每块记下 timestamp_start/end 和 sequence_index。
-目的：让一块里的内容是一个完整的语义片段，而不是 5 秒一段太碎。
-3. 双轨入库 (embed.py: embed_chunks)
+2. 分段 (section.py)
+`derive_sections` 按 token 量 + 静音边界把整条转录切成有界 section（目标 ~12000 token/段，区间 [7200, 16800]）。短视频自动归为 1 段。每段记 `seg_start`/`seg_end`（segment 索引范围）和 `timestamp_start`/`timestamp_end`。
+3. 切片 (chunk.py)
+每个 section 内部贪心合并相邻 segment，凑到 token 目标就封一个 RagChunk（中文 800 token / 英文 300 token；超 1/3 的单段直接独立成块）。chunk 的 `[seg_start, seg_end]` 物理上落在一个 section 的范围内（"chunk 必然内嵌在某个 section 里"是不变式），便于后续按 section 精读。
+目的：让一块里的内容是一个完整的语义片段，而不是 5 秒一段太碎；并让 LLM 能整段精读（`read_section` 走 `seg_start..seg_end` 的有界提取）。
+4. 双轨入库 (embed.py: embed_chunks)
 每个 chunk 同时写两份索引：
 
-    - 向量库（ChromaDB）：用本地 ONNX MiniLM 模型把文本变成向量，存进 ~/.bibilab/chroma/，metadata 带 video_id / list_id / video_title / 时间戳。
+    - 向量库（ChromaDB）：用本地 ONNX MiniLM 模型把文本变成向量，存进 ~/.bibilab/chroma/，metadata 带 source_id / list_id / video_title / seg_start / seg_end / 时间戳。
     - 关键词库（SQLite FTS5）：populate_fts() 把同一批 chunk 文本插入 chunks_fts 虚拟表，让 SQLite 的 BM25 能直接打分。
 
-两份都按 video_id 幂等，重新跑会先 delete 老数据再插。
+两份都按 source_id 幂等，重新跑会先 delete 老数据再插。
 
 ▎ 为什么写两份：向量擅长语义近似（"他在讲什么意思"），BM25 擅长精确字面（"他有没有说过 XX 这个词"）。两边各有失误的场景，所以查询要混搭。
 

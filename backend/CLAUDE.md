@@ -31,9 +31,9 @@ pipeline/         — one file per stage
   _shared.py        sync _call_llm + async stream_llm (OpenAI/Anthropic), StreamEvent/ToolCall/ToolDefinition dataclasses
   audio.py          FFmpeg audio extraction (video → .wav)
   transcribe.py     FunASR AutoModel (SenseVoice/Whisper) + CAM++ diarization → VAD segments w/ speaker labels
-  chunk.py          greedy segment merger → ~300-token RAG chunks
+  chunk.py          per-section greedy segment merger → token target (`zh=800`, `en=300`); physical chunk `[seg_start, seg_end]` is fully contained in one section's range
   section.py        Section dataclass + derive_sections (token+pause boundary, target=12000) + chunk_by_sections (per-section chunking with source-global re-stamp)
-  digest.py         LLM summary + keywords + facets (series_name, sequence_number, season_number) → denormalized into sources
+  digest.py         LLM facets (series_name, sequence_number, season_number) → source facets; per-section summary + keywords → sections table (sections are the sole digest store; source carries facets only)
   embed.py          ChromaDB embed + retrieve() (hybrid search → rerank → aggregation), FTS5 populate
   rerank.py         lazy ONNX cross-encoder reranker (Xenova/bge-reranker-base, XLM-RoBERTa zh+en; batched inference)
   chat_tools.py     two tool definitions (find_passages, read_section) + execution dispatcher + section fencing + CitationRegistry + facet narrative builder; `_NO_MATCH_NOTE` is a fact-only string prepended when facet matching fails
@@ -84,14 +84,14 @@ asr_models.py     — Unified ASR model registry (Whisper + SenseVoice + diariza
 | `status` | `queued` → `downloading` → `transcribing` → `processing` → `done` \| `failed` \| `needs_auth` |
 | `progress` | 0–100 |
 | `error` | Error message, nullable |
-| `meta` | JSON blob: `{ list_id, video_id, title, cover_url, platform, source_url, rerun, ... }` |
+| `meta` | JSON blob: `{ video_id, list_id, title, cover_url, duration_seconds, uploader, source_url, platform, ui_lang }` (ingest); `{ source_id, list_id, source_title, ui_lang }` (digest rerun) |
 
 ### `sources` — active video catalog
 
 | Column | Notes |
 |---|---|
 | `video_id` | Platform-native ID (e.g. `bvid`) |
-| `title`, `summary`, `keywords` | Denormalized from platform metadata + LLM output |
+| `title`, `summary`, `keywords` | `title` is platform metadata; `summary`/`keywords` columns DROPPED post-#465 — sections are the sole digest store |
 | `language`, `uploader`, `duration_seconds` | Video metadata |
 | `whisper_model`, `ai_model` | Processing config at ingest time |
 | `cover_url`, `processed_at`, `settings_snapshot` | Ingest-time state |
@@ -171,7 +171,7 @@ POST /ingest/url → resolve → dedup check → create job(s)
 
 - Dedup via `get_video_statuses` (sources + jobs); skip if processed or in-flight.
 - Full re-process: DELETE /sources/:id then re-ingest.
-- POST /sources/:id/rerun re-runs the digest section-by-section (`digest_sections` over the stored section rows; updates each section's summary/keywords + the source mirror); transcript and sections are reused, never re-derived. A source with 0 section rows fails loud (re-ingest).
+- POST /sources/:id/rerun re-runs the digest section-by-section (`digest_sections` over the stored section rows; updates each section's summary/keywords + the source's facet columns); transcript and sections are reused, never re-derived. A source with 0 section rows fails loud (re-ingest).
 - Delete removes ChromaDB embeddings and `sources` row (transcript segments cascade via FK)
 
 ### Pipeline stages (per video)
@@ -182,7 +182,7 @@ POST /ingest/url → resolve → dedup check → create job(s)
 4. **punctuate** → ct-punc (zh-gated) → punctuated sentence segments persisted to `transcript_segments`
 5. **derive_sections** → token+pause boundary, target=12000 (zone [7200, 16800]). Short videos = 1 section spanning all. Produces `sections` rows.
 6. **chunk** → greedily merge consecutive **sentence** segments within each section to token target, split at trustworthy sentence boundary. Records `seg_start`/`seg_end` per chunk (source-global indices). Chunks physically nest in sections.
-7. **digest** → `digest_sections`: section 1 via `digest()` (summary, keywords, facets — extracted once), sections 2..N via a refine prompt with rolling context. Per-section summary/keywords land on each `sections` row; section[0] is mirrored to `sources`. 1-section sources are byte-identical to the pre-section path. (parallel with embed)
+7. **digest** → `digest_sections`: section 1 via `digest()` (summary, keywords, facets — extracted once), sections 2..N via a refine prompt with rolling context. Per-section summary/keywords land on each `sections` row; facets land on `sources` via `apply_digest_facets`. 1-section sources are byte-identical to the pre-section path. (parallel with embed)
 8. **embed** → store chunks in ChromaDB with per-source and per-list scope (parallel with digest). Chroma metadata keys on `source_id` (+ `seg_start`/`seg_end`), not `video_id`.
 9. **write_source** → upsert source row + transcript_segments + sections atomically in one transaction (via `write_source_with_segments`)
 
