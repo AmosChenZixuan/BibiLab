@@ -27,8 +27,6 @@ function LoadingDots() {
 
 export function DigestAccordion({
   source,
-  summary,
-  keywords,
   onRerun,
   onRefresh,
   facets,
@@ -38,8 +36,6 @@ export function DigestAccordion({
   initialActiveIdx,
 }: {
   source: { id: string };
-  summary: string;
-  keywords: string[];
   onRerun: (sourceId: string) => void;
   onRefresh: (sourceId: string) => void;
   facets: Facets;
@@ -81,13 +77,14 @@ export function DigestAccordion({
     await onRerun(source.id);
   };
 
-  // 1-section case: byte-identical to today. No pager, no per-section block.
-  // The PagerTabs path is gated on `sections && sections.length > 1` so the
-  // 1-section markup is unchanged (regression guard).
+  // Sections are the sole digest store. 1-section sources render section 0
+  // (no pager); multi-section sources render the active tab via PagerTabs
+  // (gated on length > 1, so the 1-section markup is unchanged). While the
+  // sections fetch is in flight (`sections` undefined) the body is empty.
   const showPager = Array.isArray(sections) && sections.length > 1;
-  const activeSection = showPager ? sections[activeSectionIdx] : null;
-  const visibleSummary = activeSection ? activeSection.summary : summary;
-  const visibleKeywords = activeSection ? activeSection.keywords : keywords;
+  const activeSection = sections?.[showPager ? activeSectionIdx : 0] ?? null;
+  const visibleSummary = activeSection?.summary ?? "";
+  const visibleKeywords = activeSection?.keywords ?? [];
 
   return (
     <div className="overflow-hidden rounded-2xl border border-border bg-blue/25">

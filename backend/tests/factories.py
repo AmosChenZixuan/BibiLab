@@ -69,8 +69,6 @@ class SourceFactory:
         "video_id": "BV1xxx",
         "platform": "bilibili",
         "title": "Test Video",
-        "summary": "",
-        "keywords": [],
         "cover_url": None,
         "source_url": "https://www.bilibili.com/video/BV1xxx",
         "duration_seconds": 0,

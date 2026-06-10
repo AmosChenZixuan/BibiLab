@@ -48,7 +48,7 @@ The root defaults to `~/.bibilab/`; override it with the `BIBILAB_HOME` env var 
 | Decision | Choice | Rationale |
 |---|---|---|
 | Path storage | Relative paths in DB, resolved at read time | Enables home directory migration without DB updates |
-| Digest storage | Summary and keywords in `sources` table | No intermediate .md file needed |
+| Digest storage | Per-section summary and keywords in `sections` table (one row per section, ≥1 per source); `sources` carries facets only | Bounds digest length on long transcripts; short videos = 1 section ⇒ same content. No source-level summary/keywords column, no intermediate .md file |
 | Facet edit vs extract | `parse_facet_int`/`clean_str_facet` shared; digest path degrades bad values to `null`, manual `PATCH /sources/:id/facets` raises → 422; manual write is REPLACE (`update_source_facets`, explicit null clears) vs digest COALESCE-preserve; PATCH returns 204 | A typed edit is deliberate (reject), an LLM guess is best-effort (degrade) |
 | Job vs source dedup | `sources` is the dedup source; `jobs` is ephemeral | A video is "processed" if it has a `sources` row |
 | Transcript storage | Punctuated sentence segments in `transcript_segments` table, keyed by `source_id` with FK cascade | Re-chunking never requires re-transcription (segments persist, ASR not re-run) |

@@ -1,5 +1,4 @@
 import asyncio
-import json
 import uuid
 from datetime import datetime, timezone
 from urllib.parse import quote
@@ -166,8 +165,6 @@ async def get_list_sources(list_id: str) -> list[SourceResponse]:
             video_id=r["video_id"],
             platform=r["platform"],
             title=r["title"],
-            summary=r["summary"],
-            keywords=json.loads(r["keywords"] or "[]"),
             cover_url=r["cover_url"],
             source_url=r["source_url"],
             duration_seconds=r["duration_seconds"],

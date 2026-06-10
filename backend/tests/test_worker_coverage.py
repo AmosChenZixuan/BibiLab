@@ -372,7 +372,7 @@ async def test_worker_start_stop(tmp_bibilab_home: Path):
 
 @pytest.mark.asyncio
 async def test_run_digest_job_success(tmp_bibilab_home: Path, mock_call_llm):
-    from bibilab.db import bootstrap_db, create_job, create_list, get_source, write_source_with_segments
+    from bibilab.db import bootstrap_db, create_job, create_list, write_source_with_segments
     from bibilab.pipeline.digest import SectionDigest
     from bibilab.pipeline.section import Section
     from bibilab.pipeline.transcribe import WhisperSegment
@@ -391,8 +391,6 @@ async def test_run_digest_job_success(tmp_bibilab_home: Path, mock_call_llm):
         platform="bilibili",
         list_id="list-digest",
         title="Digest Test",
-        summary="old summary",
-        keywords=["old"],
         cover_url=None,
         source_url="https://bilibili.com/video/BVdigest001",
         duration_seconds=60,
@@ -418,8 +416,10 @@ async def test_run_digest_job_success(tmp_bibilab_home: Path, mock_call_llm):
     }
     await worker._run_digest_job(job)
 
-    source = await get_source(source_id)
-    assert source["summary"] == "new summary"
+    from bibilab.db import get_sections
+
+    sections = await get_sections(source_id)
+    assert sections[0]["summary"] == "new summary"
 
     from bibilab.db import get_job
 
@@ -457,7 +457,6 @@ async def test_run_digest_job_no_transcript(tmp_bibilab_home: Path):
         source_id=source_id,
         video_id="BVnoTrans",
         title="No Transcript",
-        summary="old",
         source_url="https://bilibili.com/video/BVnoTrans",
         duration_seconds=60,
         uploader="TestUser",
@@ -496,7 +495,6 @@ async def test_run_digest_job_llm_failure(tmp_bibilab_home: Path, mock_call_llm)
         source_id=source_id,
         video_id="BVllmFail",
         title="LLM Fail",
-        summary="old",
         source_url="https://bilibili.com/video/BVllmFail",
         duration_seconds=60,
         uploader="TestUser",
@@ -519,9 +517,3 @@ async def test_run_digest_job_llm_failure(tmp_bibilab_home: Path, mock_call_llm)
 
     row = await get_job(job_id)
     assert dict(row)["status"] == "failed"
-
-    # Source digest unchanged
-    from bibilab.db import get_source
-
-    source = await get_source(source_id)
-    assert source["summary"] == "old"

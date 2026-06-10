@@ -276,7 +276,7 @@ async def test_rerun_updates_section_rows_and_sources_mirror(tmp_bibilab_home: P
     update_section_summaries populates all section rows, sources row mirrors
     section[0]. This is the true section-level rerun.
     """
-    from bibilab.db import bootstrap_db, create_list, get_job, get_sections, get_source
+    from bibilab.db import bootstrap_db, create_list, get_job, get_sections
     from bibilab.worker import WorkerLoop
 
     await bootstrap_db()
@@ -288,8 +288,6 @@ async def test_rerun_updates_section_rows_and_sources_mirror(tmp_bibilab_home: P
         source_id=source_id,
         video_id="BVrerun1",
         title="Rerun Test",
-        summary="OLD 0",
-        keywords=["old0"],
         section_digests=[SectionDigest(summary=f"OLD {i}", keywords=[f"old{i}"]) for i in range(3)],
     )
 
@@ -307,10 +305,6 @@ async def test_rerun_updates_section_rows_and_sources_mirror(tmp_bibilab_home: P
     # All 3 section rows updated, in seq order.
     rows = await get_sections(source_id)
     assert [r["summary"] for r in rows] == ["NEW 0", "NEW 1", "NEW 2"]
-    # Sources row mirrors section[0].
-    updated = await get_source(source_id)
-    assert updated["summary"] == "NEW 0"
-    assert json.loads(updated["keywords"]) == ["new0"]
 
 
 @pytest.mark.asyncio
@@ -328,8 +322,6 @@ async def test_rerun_refine_failure_preserves_prior_valid_summaries(tmp_bibilab_
         source_id=source_id,
         video_id="BVrerunFail",
         title="Rerun Fail",
-        summary="PRIOR 0",
-        keywords=["k0"],
         section_digests=[SectionDigest(summary=f"PRIOR {i}", keywords=[f"k{i}"]) for i in range(3)],
     )
 

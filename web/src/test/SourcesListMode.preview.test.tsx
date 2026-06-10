@@ -34,8 +34,6 @@ function makeSource(overrides: Partial<Source> = {}): Source {
     video_id: "BVtest",
     platform: "bilibili",
     title: "Test Source",
-    summary: "",
-    keywords: [],
     cover_url: "https://example.com/cover.jpg",
     source_url: "https://bilibili.com/video/BVtest",
     duration_seconds: 180,

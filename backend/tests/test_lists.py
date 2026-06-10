@@ -62,7 +62,6 @@ async def test_get_lists_returns_thumbnail_fields_and_prefers_cached_cover(
         source_id=source_id,
         video_id="BV1cover",
         title="Episode 1",
-        summary="A summary.",
         cover_url="https://example.com/remote-cover.jpg",
         source_url="https://www.bilibili.com/video/BV1cover",
     )
@@ -145,8 +144,6 @@ async def test_get_list_sources(client: httpx.AsyncClient, tmp_bibilab_home: Pat
         source_id=source_id,
         video_id="BV1abc",
         title="Intro",
-        summary="A summary.",
-        keywords=["ai"],
         source_url="https://www.bilibili.com/video/BV1abc",
     )
     resp = await client.get(f"/lists/{list_id}/sources")
@@ -169,7 +166,6 @@ async def test_delete_source_from_list(client: httpx.AsyncClient, tmp_bibilab_ho
         source_id=source_id,
         video_id="BV1abc",
         title="Intro",
-        summary="S",
         source_url="https://www.bilibili.com/video/BV1abc",
     )
     with patch("bibilab.routers.lists.clear_embeddings_for_source") as mock_clear:
@@ -198,7 +194,6 @@ async def test_delete_source_clears_thumbnail_and_cover(
         source_id=source_id,
         video_id="BV1abc",
         title="Intro",
-        summary="S",
         source_url="https://www.bilibili.com/video/BV1abc",
     )
 
@@ -237,7 +232,6 @@ async def test_first_source_auto_assigned_as_thumbnail(client: httpx.AsyncClient
         source_id=source_id,
         video_id="BVfirstVid",
         title="First Video",
-        summary="S",
         source_url="https://www.bilibili.com/video/BVfirstVid",
     )
 

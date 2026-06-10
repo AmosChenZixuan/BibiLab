@@ -35,8 +35,6 @@ class SourceResponse(PlatformResource):
 
     video_id: str
     platform: str
-    summary: str
-    keywords: list[str]
     duration_seconds: int
     uploader: str
     language: str | None
