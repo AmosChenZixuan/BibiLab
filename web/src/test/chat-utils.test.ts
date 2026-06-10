@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 
+import { FIND_PASSAGES_TOOL_NAME } from "@/lib/tool-display";
 import {
   autoResize,
   coerceCitationEvent,
@@ -106,7 +107,7 @@ describe("RetrievalCall", () => {
   test("has all required fields (v2 find_passages)", () => {
     const call: RetrievalCall = {
       query: "test query",
-      tool_name: "find_passages",
+      tool_name: FIND_PASSAGES_TOOL_NAME,
       candidates_evaluated: 5,
       sources_with_hits: 2,
       sources_total: 3,
@@ -128,7 +129,7 @@ describe("RetrievalCall", () => {
       reranked: true,
       scoped_pool_size: 3,
     };
-    expect(call.tool_name).toBe("find_passages");
+    expect(call.tool_name).toBe(FIND_PASSAGES_TOOL_NAME);
     expect(call.context![0].chunk_id).toBe("c1");
     expect(call.context![0].citation_index).toBe(1);
     expect(call.context![0].timestamp_start).toBe(120.4);
@@ -138,7 +139,7 @@ describe("RetrievalCall", () => {
   test("context can be empty array", () => {
     const call: RetrievalCall = {
       query: "test",
-      tool_name: "find_passages",
+      tool_name: FIND_PASSAGES_TOOL_NAME,
       candidates_evaluated: 0,
       sources_with_hits: 0,
       sources_total: 1,
