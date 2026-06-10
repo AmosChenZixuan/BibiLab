@@ -5,7 +5,8 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from bibilab.adapters.base import AuthRequiredError, DownloadError, VideoMeta
 from bibilab.adapters.bilibili import BilibiliAdapter
 from bibilab.config import BibilabConfig, get_config
-from bibilab.db import create_job, get_list
+from bibilab.db.jobs import create_job
+from bibilab.db.lists import get_list
 from bibilab.models._enums import VideoStatus
 from bibilab.models.ingest import (
     IngestPreviewRequest,

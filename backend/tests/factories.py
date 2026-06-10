@@ -28,7 +28,8 @@ from typing import Any
 
 import aiosqlite
 
-from bibilab.db import get_db, write_source_with_segments
+from bibilab.db.connection import get_db
+from bibilab.db.sources import write_source_with_segments
 from bibilab.pipeline.digest import SectionDigest
 from bibilab.pipeline.section import Section
 from bibilab.pipeline.transcribe import WhisperSegment

@@ -3,7 +3,7 @@ import logging
 from typing import Any
 
 from bibilab.config import bibilab_home, load_config
-from bibilab.db import source_exists_sync
+from bibilab.db.connection import source_exists_sync
 from bibilab.pipeline.embed import clear_embeddings_for_source, clear_fts_for_source_sync
 
 logger = logging.getLogger(__name__)

@@ -6,7 +6,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from bibilab.db import bootstrap_db, create_list
+from bibilab.db.connection import bootstrap_db
+from bibilab.db.lists import create_list
 from bibilab.worker import WorkerLoop
 from tests.factories import SourceFactory
 

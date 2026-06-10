@@ -11,7 +11,8 @@ pytestmark = pytest.mark.integration
 
 @pytest.mark.asyncio
 async def test_get_source_returns_transcript(client: httpx.AsyncClient, tmp_bibilab_home: Path):
-    from bibilab.db import create_list, write_transcript_segments
+    from bibilab.db.lists import create_list
+    from bibilab.db.sources import write_transcript_segments
     from bibilab.pipeline.transcribe import WhisperSegment
 
     list_id = "list-for-source-test"
@@ -53,7 +54,7 @@ async def test_get_source_returns_transcript(client: httpx.AsyncClient, tmp_bibi
 
 @pytest.mark.asyncio
 async def test_get_source_cover(client: httpx.AsyncClient, tmp_bibilab_home: Path):
-    from bibilab.db import create_list
+    from bibilab.db.lists import create_list
 
     list_id = "list-for-cover-test"
     await create_list(list_id, "Cover Test List", "2025-01-01T00:00:00Z")
@@ -101,7 +102,8 @@ async def test_rerun_source_not_found(client: httpx.AsyncClient):
 @pytest.mark.asyncio
 async def test_rerun_source_success(client: httpx.AsyncClient, tmp_bibilab_home: Path, mock_call_llm):
     """POST /sources/{source_id}/rerun re-runs digest (section summaries + source facets)."""
-    from bibilab.db import create_list, write_transcript_segments
+    from bibilab.db.lists import create_list
+    from bibilab.db.sources import write_transcript_segments
     from bibilab.pipeline.transcribe import WhisperSegment
 
     await create_list("list-rerun-test", "Rerun Test", "2025-01-01T00:00:00Z")
@@ -136,7 +138,7 @@ async def test_rerun_source_success(client: httpx.AsyncClient, tmp_bibilab_home:
     assert "job_id" in data
 
     # Verify job was created in DB
-    from bibilab.db import get_job
+    from bibilab.db.jobs import get_job
 
     job = await get_job(data["job_id"])
     assert job is not None
@@ -150,7 +152,9 @@ async def test_rerun_source_success(client: httpx.AsyncClient, tmp_bibilab_home:
 @pytest.mark.asyncio
 async def test_rerun_source_dedup_conflict(client: httpx.AsyncClient, tmp_bibilab_home: Path):
     """POST /sources/{source_id}/rerun returns 409 when a digest job for that source is already pending."""
-    from bibilab.db import create_job, create_list, write_transcript_segments
+    from bibilab.db.jobs import create_job
+    from bibilab.db.lists import create_list
+    from bibilab.db.sources import write_transcript_segments
     from bibilab.pipeline.transcribe import WhisperSegment
 
     await create_list("list-dedup", "Dedup Test", "2025-01-01T00:00:00Z")
@@ -185,7 +189,8 @@ async def test_rerun_source_dedup_conflict(client: httpx.AsyncClient, tmp_bibila
 @pytest.mark.asyncio
 async def test_rerun_source_respects_ui_lang_header(client: httpx.AsyncClient, tmp_bibilab_home: Path, monkeypatch):
     """POST /sources/{source_id}/rerun with X-UI-Lang:zh stores ui_lang in job meta."""
-    from bibilab.db import create_list, write_transcript_segments
+    from bibilab.db.lists import create_list
+    from bibilab.db.sources import write_transcript_segments
     from bibilab.pipeline.transcribe import WhisperSegment
 
     await create_list("list-lang-test", "Lang Test", "2025-01-01T00:00:00Z")
@@ -212,7 +217,7 @@ async def test_rerun_source_respects_ui_lang_header(client: httpx.AsyncClient, t
     assert resp.status_code == 202
     data = resp.json()
 
-    from bibilab.db import get_job
+    from bibilab.db.jobs import get_job
 
     job = await get_job(data["job_id"])
     meta = json.loads(dict(job)["meta"])
@@ -222,7 +227,9 @@ async def test_rerun_source_respects_ui_lang_header(client: httpx.AsyncClient, t
 async def test_patch_facets_replace(client: httpx.AsyncClient, tmp_bibilab_home: Path):
     import uuid
 
-    from bibilab.db import bootstrap_db, create_list, get_source
+    from bibilab.db.connection import bootstrap_db
+    from bibilab.db.lists import create_list
+    from bibilab.db.sources import get_source
 
     await bootstrap_db()
     await create_list("L", "L", "2026-01-01T00:00:00")
@@ -253,7 +260,9 @@ async def test_patch_facets_replace(client: httpx.AsyncClient, tmp_bibilab_home:
 async def test_patch_facets_kindless_number_persists(client: httpx.AsyncClient, tmp_bibilab_home: Path):
     import uuid
 
-    from bibilab.db import bootstrap_db, create_list, get_source
+    from bibilab.db.connection import bootstrap_db
+    from bibilab.db.lists import create_list
+    from bibilab.db.sources import get_source
 
     await bootstrap_db()
     await create_list("L2", "L2", "2026-01-01T00:00:00")
@@ -276,7 +285,8 @@ async def test_patch_facets_kindless_number_persists(client: httpx.AsyncClient, 
 async def test_patch_facets_invalid_int_422(client: httpx.AsyncClient, tmp_bibilab_home: Path):
     import uuid
 
-    from bibilab.db import bootstrap_db, create_list
+    from bibilab.db.connection import bootstrap_db
+    from bibilab.db.lists import create_list
 
     await bootstrap_db()
     await create_list("L3", "L3", "2026-01-01T00:00:00")
@@ -296,7 +306,7 @@ async def test_patch_facets_invalid_int_422(client: httpx.AsyncClient, tmp_bibil
 
 
 async def test_patch_facets_404(client: httpx.AsyncClient, tmp_bibilab_home: Path):
-    from bibilab.db import bootstrap_db
+    from bibilab.db.connection import bootstrap_db
 
     await bootstrap_db()
     r = await client.patch("/sources/does-not-exist/facets", json={"series_name": "X"})
@@ -307,7 +317,9 @@ async def test_patch_facets_empty_body_noop(client: httpx.AsyncClient, tmp_bibil
     """Empty {} patch on a live source is an idempotent 204 no-op; row unchanged."""
     import uuid
 
-    from bibilab.db import bootstrap_db, create_list, get_source
+    from bibilab.db.connection import bootstrap_db
+    from bibilab.db.lists import create_list
+    from bibilab.db.sources import get_source
 
     await bootstrap_db()
     await create_list("Le", "Le", "2026-01-01T00:00:00")
@@ -338,7 +350,8 @@ async def test_patch_facets_toctou_lookuperror_maps_to_404(client: httpx.AsyncCl
     (not a silent 204)."""
     import uuid
 
-    from bibilab.db import bootstrap_db, create_list
+    from bibilab.db.connection import bootstrap_db
+    from bibilab.db.lists import create_list
 
     await bootstrap_db()
     await create_list("Lt", "Lt", "2026-01-01T00:00:00")
@@ -370,7 +383,13 @@ async def test_patch_facets_toctou_lookuperror_maps_to_404(client: httpx.AsyncCl
 
 @pytest.mark.asyncio
 async def test_source_content_reads_transcript_from_segments_table(client: httpx.AsyncClient, tmp_bibilab_home: Path):
-    from bibilab.db import _now, bootstrap_db, create_list, get_db, write_transcript_segments
+    from bibilab.db.connection import (
+        _now,
+        bootstrap_db,
+        get_db,
+    )
+    from bibilab.db.lists import create_list
+    from bibilab.db.sources import write_transcript_segments
     from bibilab.pipeline.transcribe import WhisperSegment
 
     await bootstrap_db()
@@ -390,7 +409,8 @@ async def test_source_content_reads_transcript_from_segments_table(client: httpx
 
 @pytest.mark.asyncio
 async def test_get_source_sections_returns_projected_list(client: httpx.AsyncClient, tmp_bibilab_home: Path):
-    from bibilab.db import create_list, write_source_with_segments
+    from bibilab.db.lists import create_list
+    from bibilab.db.sources import write_source_with_segments
     from bibilab.pipeline.digest import SectionDigest
     from bibilab.pipeline.section import Section
     from bibilab.pipeline.transcribe import WhisperSegment
@@ -456,7 +476,8 @@ async def test_get_source_sections_404_for_missing_source(client: httpx.AsyncCli
 @pytest.mark.asyncio
 async def test_get_source_sections_empty_list_is_200(client: httpx.AsyncClient, tmp_bibilab_home: Path):
     """Source exists but has no section rows — API must be honest about it."""
-    from bibilab.db import bootstrap_db, create_list
+    from bibilab.db.connection import bootstrap_db
+    from bibilab.db.lists import create_list
 
     await bootstrap_db()
     await create_list("list-no-sections", "No Sections Test", "2025-01-01T00:00:00Z")

@@ -14,23 +14,18 @@ from pydantic import BaseModel
 from bibilab.adapters.base import AuthRequiredError, VideoMeta
 from bibilab.cleanup import cleanup_job_artifacts
 from bibilab.config import BibilabConfig, bibilab_home, load_config
-from bibilab.db import (
-    apply_digest_facets,
-    create_artifact,
+from bibilab.db.artifacts import create_artifact
+from bibilab.db.jobs import (
     delete_job,
-    get_list,
     get_pending_jobs,
-    get_sections,
-    get_source,
-    get_transcript_segments,
     parse_job_meta,
-    rows_to_sections,
-    rows_to_segments,
     update_job_meta,
     update_job_status,
-    update_section_summaries,
-    write_source_with_segments,
 )
+from bibilab.db.lists import get_list
+from bibilab.db.sections import get_sections, rows_to_sections, update_section_summaries
+from bibilab.db.segments import get_transcript_segments, rows_to_segments
+from bibilab.db.sources import apply_digest_facets, get_source, write_source_with_segments
 from bibilab.model_registry import ensure
 from bibilab.models.jobs import JobStatus
 

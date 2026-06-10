@@ -8,7 +8,9 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from bibilab.db import bootstrap_db, create_list, parse_job_meta
+from bibilab.db.connection import bootstrap_db
+from bibilab.db.jobs import parse_job_meta
+from bibilab.db.lists import create_list
 from bibilab.worker import WorkerLoop, _download_cover
 from tests.factories import SourceFactory
 
@@ -73,7 +75,8 @@ class TestParseJobMeta:
 @pytest.mark.asyncio
 @pytest.mark.parametrize("model_name", ["large-v3", "cam++"])
 async def test_download_model_job_success(model_name: str, tmp_bibilab_home: Path):
-    from bibilab.db import bootstrap_db, create_job
+    from bibilab.db.connection import bootstrap_db
+    from bibilab.db.jobs import create_job
 
     await bootstrap_db()
     meta = {"model_name": model_name}
@@ -89,7 +92,8 @@ async def test_download_model_job_success(model_name: str, tmp_bibilab_home: Pat
 
 @pytest.mark.asyncio
 async def test_download_model_job_unknown_model(tmp_bibilab_home: Path):
-    from bibilab.db import bootstrap_db, create_job
+    from bibilab.db.connection import bootstrap_db
+    from bibilab.db.jobs import create_job
 
     await bootstrap_db()
     meta = {"model_name": "garbage"}
@@ -101,7 +105,7 @@ async def test_download_model_job_unknown_model(tmp_bibilab_home: Path):
 
     await worker._run_job(job)
 
-    from bibilab.db import get_db
+    from bibilab.db.connection import get_db
 
     async with get_db() as db:
         cursor = await db.execute("SELECT status, error FROM jobs WHERE id=?", (job_id,))
@@ -117,7 +121,8 @@ async def test_download_model_job_unknown_model(tmp_bibilab_home: Path):
 
 @pytest.mark.asyncio
 async def test_run_job_cancelled_before_start(tmp_bibilab_home: Path):
-    from bibilab.db import bootstrap_db, create_job
+    from bibilab.db.connection import bootstrap_db
+    from bibilab.db.jobs import create_job
 
     await bootstrap_db()
     job_id = await create_job("ingest", {})
@@ -135,7 +140,8 @@ async def test_run_job_cancelled_before_start(tmp_bibilab_home: Path):
 @pytest.mark.asyncio
 async def test_run_job_auth_required_error(tmp_bibilab_home: Path):
     from bibilab.adapters.base import AuthRequiredError
-    from bibilab.db import bootstrap_db, create_job
+    from bibilab.db.connection import bootstrap_db
+    from bibilab.db.jobs import create_job
 
     await bootstrap_db()
     job_id = await create_job("ingest", {})
@@ -152,7 +158,8 @@ async def test_run_job_auth_required_error(tmp_bibilab_home: Path):
 
 @pytest.mark.asyncio
 async def test_run_job_pipeline_error(tmp_bibilab_home: Path):
-    from bibilab.db import bootstrap_db, create_job
+    from bibilab.db.connection import bootstrap_db
+    from bibilab.db.jobs import create_job
     from bibilab.pipeline.audio import PipelineError
 
     await bootstrap_db()
@@ -170,7 +177,8 @@ async def test_run_job_pipeline_error(tmp_bibilab_home: Path):
 
 @pytest.mark.asyncio
 async def test_run_job_generic_exception(tmp_bibilab_home: Path):
-    from bibilab.db import bootstrap_db, create_job
+    from bibilab.db.connection import bootstrap_db
+    from bibilab.db.jobs import create_job
 
     await bootstrap_db()
     job_id = await create_job("ingest", {})
@@ -192,7 +200,8 @@ async def test_run_job_generic_exception(tmp_bibilab_home: Path):
 
 @pytest.mark.asyncio
 async def test_artifact_job_missing_source(tmp_bibilab_home: Path):
-    from bibilab.db import bootstrap_db, create_job
+    from bibilab.db.connection import bootstrap_db
+    from bibilab.db.jobs import create_job
 
     await bootstrap_db()
     await create_list("list-1", "Test", "2026-01-01T00:00:00")
@@ -212,7 +221,7 @@ async def test_artifact_job_missing_source(tmp_bibilab_home: Path):
 
     await worker._run_artifact_job(job)
 
-    from bibilab.db import get_db
+    from bibilab.db.connection import get_db
 
     async with get_db() as db:
         cursor = await db.execute("SELECT status, error FROM artifacts WHERE id=?", (artifact_id,))
@@ -232,7 +241,8 @@ async def test_artifact_job_missing_source(tmp_bibilab_home: Path):
 @pytest.mark.asyncio
 async def test_stage_transcribe_punctuates_and_returns_sentences(tmp_bibilab_home: Path, monkeypatch):
     from bibilab.config import BibilabConfig
-    from bibilab.db import bootstrap_db, create_job
+    from bibilab.db.connection import bootstrap_db
+    from bibilab.db.jobs import create_job
     from bibilab.pipeline.transcribe import WhisperSegment
 
     await bootstrap_db()
@@ -267,7 +277,7 @@ async def test_stage_transcribe_punctuates_and_returns_sentences(tmp_bibilab_hom
 async def test_stage_process_chunks_sentence_segments(tmp_bibilab_home: Path, monkeypatch):
     """_stage_process chunks sentence_segments, not vad_segments."""
     from bibilab.config import BibilabConfig
-    from bibilab.db import bootstrap_db
+    from bibilab.db.connection import bootstrap_db
     from bibilab.pipeline.transcribe import WhisperSegment
     from bibilab.worker import WorkerLoop
 
@@ -310,8 +320,11 @@ async def test_stage_process_chunks_sentence_segments(tmp_bibilab_home: Path, mo
 async def test_stage_persist_atomic_no_orphan_on_segment_write_failure(tmp_bibilab_home: Path):
     """Source + segments persist in one transaction. A segment-write failure rolls
     the source upsert back too — no orphaned source row (atomicity, not compensation)."""
-    from bibilab.db import bootstrap_db, create_job, create_list, get_source
     from bibilab.db import sources as db_sources
+    from bibilab.db.connection import bootstrap_db
+    from bibilab.db.jobs import create_job
+    from bibilab.db.lists import create_list
+    from bibilab.db.sources import get_source
     from bibilab.pipeline.transcribe import WhisperSegment
 
     await bootstrap_db()
@@ -372,7 +385,10 @@ async def test_worker_start_stop(tmp_bibilab_home: Path):
 
 @pytest.mark.asyncio
 async def test_run_digest_job_success(tmp_bibilab_home: Path, mock_call_llm):
-    from bibilab.db import bootstrap_db, create_job, create_list, write_source_with_segments
+    from bibilab.db.connection import bootstrap_db
+    from bibilab.db.jobs import create_job
+    from bibilab.db.lists import create_list
+    from bibilab.db.sources import write_source_with_segments
     from bibilab.pipeline.digest import SectionDigest
     from bibilab.pipeline.section import Section
     from bibilab.pipeline.transcribe import WhisperSegment
@@ -416,12 +432,12 @@ async def test_run_digest_job_success(tmp_bibilab_home: Path, mock_call_llm):
     }
     await worker._run_digest_job(job)
 
-    from bibilab.db import get_sections
+    from bibilab.db.sections import get_sections
 
     sections = await get_sections(source_id)
     assert sections[0]["summary"] == "new summary"
 
-    from bibilab.db import get_job
+    from bibilab.db.jobs import get_job
 
     row = await get_job(job_id)
     assert dict(row)["status"] == "done"
@@ -429,7 +445,8 @@ async def test_run_digest_job_success(tmp_bibilab_home: Path, mock_call_llm):
 
 @pytest.mark.asyncio
 async def test_run_digest_job_source_not_found(tmp_bibilab_home: Path):
-    from bibilab.db import bootstrap_db, create_job
+    from bibilab.db.connection import bootstrap_db
+    from bibilab.db.jobs import create_job
 
     await bootstrap_db()
     job_id = await create_job("digest", {"source_id": "nonexistent", "list_id": "list-digest"})
@@ -438,7 +455,7 @@ async def test_run_digest_job_source_not_found(tmp_bibilab_home: Path):
     job = {"id": job_id, "type": "digest", "meta": json.dumps({"source_id": "nonexistent", "list_id": "list-digest"})}
     await worker._run_digest_job(job)
 
-    from bibilab.db import get_job
+    from bibilab.db.jobs import get_job
 
     row = await get_job(job_id)
     assert dict(row)["status"] == "failed"
@@ -447,7 +464,9 @@ async def test_run_digest_job_source_not_found(tmp_bibilab_home: Path):
 
 @pytest.mark.asyncio
 async def test_run_digest_job_no_transcript(tmp_bibilab_home: Path):
-    from bibilab.db import bootstrap_db, create_job, create_list
+    from bibilab.db.connection import bootstrap_db
+    from bibilab.db.jobs import create_job
+    from bibilab.db.lists import create_list
 
     await bootstrap_db()
     await create_list("list-no-transcript", "No Transcript", "2025-01-01T00:00:00Z")
@@ -475,7 +494,7 @@ async def test_run_digest_job_no_transcript(tmp_bibilab_home: Path):
     }
     await worker._run_digest_job(job)
 
-    from bibilab.db import get_job
+    from bibilab.db.jobs import get_job
 
     row = await get_job(job_id)
     assert dict(row)["status"] == "failed"
@@ -484,7 +503,10 @@ async def test_run_digest_job_no_transcript(tmp_bibilab_home: Path):
 
 @pytest.mark.asyncio
 async def test_run_digest_job_llm_failure(tmp_bibilab_home: Path, mock_call_llm):
-    from bibilab.db import bootstrap_db, create_job, create_list, write_transcript_segments
+    from bibilab.db.connection import bootstrap_db
+    from bibilab.db.jobs import create_job
+    from bibilab.db.lists import create_list
+    from bibilab.db.sources import write_transcript_segments
     from bibilab.pipeline.transcribe import WhisperSegment
 
     await bootstrap_db()
@@ -513,7 +535,7 @@ async def test_run_digest_job_llm_failure(tmp_bibilab_home: Path, mock_call_llm)
     job = {"id": job_id, "type": "digest", "meta": json.dumps({"source_id": source_id, "list_id": "list-llm-fail"})}
     await worker._run_digest_job(job)
 
-    from bibilab.db import get_job
+    from bibilab.db.jobs import get_job
 
     row = await get_job(job_id)
     assert dict(row)["status"] == "failed"

@@ -7,26 +7,27 @@ import aiosqlite
 from fastapi import APIRouter, Depends, HTTPException, Request
 
 from bibilab.config import BibilabConfig, bibilab_home, cover_path, get_config
-from bibilab.db import (
-    clear_fts_for_list,
-    delete_artifacts_for_list,
-    delete_source,
-    delete_sources_for_list,
+from bibilab.db.artifacts import delete_artifacts_for_list, get_artifacts_for_list
+from bibilab.db.connection import get_db
+from bibilab.db.fts import clear_fts_for_list
+from bibilab.db.lists import (
+    create_list as db_create_list,
+)
+from bibilab.db.lists import (
+    delete_list as db_delete_list,
+)
+from bibilab.db.lists import (
     get_all_lists,
-    get_artifacts_for_list,
-    get_db,
     get_list,
     get_list_with_display,
-    get_source,
-    get_sources_for_list,
     update_list_name,
     update_list_thumbnail,
 )
-from bibilab.db import (
-    create_list as db_create_list,
-)
-from bibilab.db import (
-    delete_list as db_delete_list,
+from bibilab.db.sources import (
+    delete_source,
+    delete_sources_for_list,
+    get_source,
+    get_sources_for_list,
 )
 from bibilab.models.lists import (
     ListCreateRequest,

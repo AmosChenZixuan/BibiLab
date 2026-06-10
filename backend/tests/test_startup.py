@@ -231,7 +231,7 @@ async def test_bibilab_dirs_bootstrapped(client: httpx.AsyncClient, tmp_bibilab_
 async def test_bootstrap_db_creates_lists_table(tmp_path: Path):
     import sqlite3
 
-    from bibilab.db import bootstrap_db
+    from bibilab.db.connection import bootstrap_db
 
     with patch("bibilab.config.bibilab_home", return_value=tmp_path):
         await bootstrap_db()

@@ -22,7 +22,10 @@ def tmp_bibilab_home(tmp_path: Path):
 
 @pytest.mark.asyncio
 async def test_lists_table_exists(tmp_bibilab_home: Path):
-    from bibilab.db import bootstrap_db, get_db
+    from bibilab.db.connection import (
+        bootstrap_db,
+        get_db,
+    )
 
     await bootstrap_db()
     async with get_db() as db:
@@ -33,7 +36,10 @@ async def test_lists_table_exists(tmp_bibilab_home: Path):
 
 @pytest.mark.asyncio
 async def test_sources_table_exists(tmp_bibilab_home: Path):
-    from bibilab.db import bootstrap_db, get_db
+    from bibilab.db.connection import (
+        bootstrap_db,
+        get_db,
+    )
 
     await bootstrap_db()
     async with get_db() as db:
@@ -44,7 +50,10 @@ async def test_sources_table_exists(tmp_bibilab_home: Path):
 
 @pytest.mark.asyncio
 async def test_jobs_table_uses_meta_for_source_fields(tmp_bibilab_home: Path):
-    from bibilab.db import bootstrap_db, get_db
+    from bibilab.db.connection import (
+        bootstrap_db,
+        get_db,
+    )
 
     await bootstrap_db()
     async with get_db() as db:
@@ -59,7 +68,10 @@ async def test_jobs_table_uses_meta_for_source_fields(tmp_bibilab_home: Path):
 
 @pytest.mark.asyncio
 async def test_sections_table_exists(tmp_bibilab_home: Path):
-    from bibilab.db import bootstrap_db, get_db
+    from bibilab.db.connection import (
+        bootstrap_db,
+        get_db,
+    )
 
     await bootstrap_db()
     async with get_db() as db:
@@ -70,7 +82,10 @@ async def test_sections_table_exists(tmp_bibilab_home: Path):
 
 @pytest.mark.asyncio
 async def test_sections_index_exists(tmp_bibilab_home: Path):
-    from bibilab.db import bootstrap_db, get_db
+    from bibilab.db.connection import (
+        bootstrap_db,
+        get_db,
+    )
 
     await bootstrap_db()
     async with get_db() as db:
@@ -81,7 +96,10 @@ async def test_sections_index_exists(tmp_bibilab_home: Path):
 
 @pytest.mark.asyncio
 async def test_sections_table_columns(tmp_bibilab_home: Path):
-    from bibilab.db import bootstrap_db, get_db
+    from bibilab.db.connection import (
+        bootstrap_db,
+        get_db,
+    )
 
     await bootstrap_db()
     async with get_db() as db:
@@ -104,7 +122,12 @@ async def test_sections_table_columns(tmp_bibilab_home: Path):
 
 @pytest.mark.asyncio
 async def test_create_and_get_list(tmp_bibilab_home: Path):
-    from bibilab.db import bootstrap_db, create_list, get_all_lists, get_list
+    from bibilab.db.connection import bootstrap_db
+    from bibilab.db.lists import (
+        create_list,
+        get_all_lists,
+        get_list,
+    )
 
     await bootstrap_db()
     await create_list("list-1", "ML Course", "2026-01-01T00:00:00")
@@ -117,11 +140,9 @@ async def test_create_and_get_list(tmp_bibilab_home: Path):
 
 @pytest.mark.asyncio
 async def test_write_and_get_source(tmp_bibilab_home: Path):
-    from bibilab.db import (
-        bootstrap_db,
-        create_list,
-        get_source,
-    )
+    from bibilab.db.connection import bootstrap_db
+    from bibilab.db.lists import create_list
+    from bibilab.db.sources import get_source
 
     await bootstrap_db()
     await create_list("list-1", "ML Course", "2026-01-01T00:00:00")
@@ -143,9 +164,9 @@ async def test_write_and_get_source(tmp_bibilab_home: Path):
 
 @pytest.mark.asyncio
 async def test_delete_source(tmp_bibilab_home: Path):
-    from bibilab.db import (
-        bootstrap_db,
-        create_list,
+    from bibilab.db.connection import bootstrap_db
+    from bibilab.db.lists import create_list
+    from bibilab.db.sources import (
         delete_source,
         get_source,
     )
@@ -170,11 +191,11 @@ async def test_delete_source(tmp_bibilab_home: Path):
 @pytest.mark.asyncio
 async def test_sources_unique_constraint(tmp_bibilab_home: Path):
     """Test that (video_id, list_id) is unique - same video in two lists creates two rows."""
-    from bibilab.db import (
+    from bibilab.db.connection import (
         bootstrap_db,
-        create_list,
         get_db,
     )
+    from bibilab.db.lists import create_list
 
     await bootstrap_db()
     await create_list("list-1", "List 1", "2026-01-01T00:00:00")
@@ -244,7 +265,9 @@ async def test_sources_unique_constraint(tmp_bibilab_home: Path):
 
 @pytest.mark.asyncio
 async def test_get_sources_for_list(tmp_bibilab_home: Path):
-    from bibilab.db import bootstrap_db, create_list, get_sources_for_list
+    from bibilab.db.connection import bootstrap_db
+    from bibilab.db.lists import create_list
+    from bibilab.db.sources import get_sources_for_list
 
     await bootstrap_db()
     await create_list("list-1", "ML Course", "2026-01-01T00:00:00")
@@ -265,7 +288,7 @@ async def test_get_sources_for_list(tmp_bibilab_home: Path):
 
 @pytest.mark.asyncio
 async def test_get_video_statuses_empty(tmp_bibilab_home: Path) -> None:
-    from bibilab.db import bootstrap_db
+    from bibilab.db.connection import bootstrap_db
     from bibilab.video_status import get_video_statuses
 
     await bootstrap_db()
@@ -275,7 +298,8 @@ async def test_get_video_statuses_empty(tmp_bibilab_home: Path) -> None:
 
 @pytest.mark.asyncio
 async def test_get_video_statuses_all_new(tmp_bibilab_home: Path) -> None:
-    from bibilab.db import bootstrap_db, create_list
+    from bibilab.db.connection import bootstrap_db
+    from bibilab.db.lists import create_list
     from bibilab.video_status import get_video_statuses
 
     await bootstrap_db()
@@ -286,7 +310,8 @@ async def test_get_video_statuses_all_new(tmp_bibilab_home: Path) -> None:
 
 @pytest.mark.asyncio
 async def test_get_video_statuses_all_processed(tmp_bibilab_home: Path) -> None:
-    from bibilab.db import bootstrap_db, create_list
+    from bibilab.db.connection import bootstrap_db
+    from bibilab.db.lists import create_list
     from bibilab.video_status import get_video_statuses
 
     await bootstrap_db()
@@ -309,7 +334,9 @@ async def test_get_video_statuses_all_processed(tmp_bibilab_home: Path) -> None:
 
 @pytest.mark.asyncio
 async def test_get_video_statuses_all_in_progress(tmp_bibilab_home: Path) -> None:
-    from bibilab.db import bootstrap_db, create_job, create_list
+    from bibilab.db.connection import bootstrap_db
+    from bibilab.db.jobs import create_job
+    from bibilab.db.lists import create_list
     from bibilab.video_status import get_video_statuses
 
     await bootstrap_db()
@@ -322,7 +349,12 @@ async def test_get_video_statuses_all_in_progress(tmp_bibilab_home: Path) -> Non
 
 @pytest.mark.asyncio
 async def test_get_video_statuses_all_needs_auth(tmp_bibilab_home: Path) -> None:
-    from bibilab.db import bootstrap_db, create_job, create_list, get_db
+    from bibilab.db.connection import (
+        bootstrap_db,
+        get_db,
+    )
+    from bibilab.db.jobs import create_job
+    from bibilab.db.lists import create_list
     from bibilab.video_status import get_video_statuses
 
     await bootstrap_db()
@@ -338,7 +370,12 @@ async def test_get_video_statuses_all_needs_auth(tmp_bibilab_home: Path) -> None
 
 @pytest.mark.asyncio
 async def test_get_video_statuses_mixed(tmp_bibilab_home: Path) -> None:
-    from bibilab.db import bootstrap_db, create_job, create_list, get_db
+    from bibilab.db.connection import (
+        bootstrap_db,
+        get_db,
+    )
+    from bibilab.db.jobs import create_job
+    from bibilab.db.lists import create_list
     from bibilab.video_status import get_video_statuses
 
     await bootstrap_db()
@@ -365,7 +402,12 @@ async def test_get_video_statuses_mixed(tmp_bibilab_home: Path) -> None:
 
 @pytest.mark.asyncio
 async def test_get_video_statuses_done_job_not_in_progress(tmp_bibilab_home: Path) -> None:
-    from bibilab.db import bootstrap_db, create_job, create_list, update_job_status
+    from bibilab.db.connection import bootstrap_db
+    from bibilab.db.jobs import (
+        create_job,
+        update_job_status,
+    )
+    from bibilab.db.lists import create_list
     from bibilab.video_status import get_video_statuses
 
     await bootstrap_db()
@@ -378,7 +420,12 @@ async def test_get_video_statuses_done_job_not_in_progress(tmp_bibilab_home: Pat
 
 @pytest.mark.asyncio
 async def test_get_video_statuses_failed_is_new(tmp_bibilab_home: Path) -> None:
-    from bibilab.db import bootstrap_db, create_job, create_list, update_job_status
+    from bibilab.db.connection import bootstrap_db
+    from bibilab.db.jobs import (
+        create_job,
+        update_job_status,
+    )
+    from bibilab.db.lists import create_list
     from bibilab.video_status import get_video_statuses
 
     await bootstrap_db()
@@ -391,7 +438,9 @@ async def test_get_video_statuses_failed_is_new(tmp_bibilab_home: Path) -> None:
 
 @pytest.mark.asyncio
 async def test_get_video_statuses_job_list_id_isolation(tmp_bibilab_home: Path) -> None:
-    from bibilab.db import bootstrap_db, create_job, create_list
+    from bibilab.db.connection import bootstrap_db
+    from bibilab.db.jobs import create_job
+    from bibilab.db.lists import create_list
     from bibilab.video_status import get_video_statuses
 
     await bootstrap_db()
@@ -405,7 +454,9 @@ async def test_get_video_statuses_job_list_id_isolation(tmp_bibilab_home: Path) 
 @pytest.mark.asyncio
 async def test_get_video_statuses_job_video_id_isolation(tmp_bibilab_home: Path) -> None:
     """A job for a different video_id in the same list must not affect the result."""
-    from bibilab.db import bootstrap_db, create_job, create_list
+    from bibilab.db.connection import bootstrap_db
+    from bibilab.db.jobs import create_job
+    from bibilab.db.lists import create_list
     from bibilab.video_status import get_video_statuses
 
     await bootstrap_db()
@@ -417,7 +468,12 @@ async def test_get_video_statuses_job_video_id_isolation(tmp_bibilab_home: Path)
 
 @pytest.mark.asyncio
 async def test_get_video_statuses_precedence_needs_auth_over_processed(tmp_bibilab_home: Path) -> None:
-    from bibilab.db import bootstrap_db, create_job, create_list, get_db
+    from bibilab.db.connection import (
+        bootstrap_db,
+        get_db,
+    )
+    from bibilab.db.jobs import create_job
+    from bibilab.db.lists import create_list
     from bibilab.video_status import get_video_statuses
 
     await bootstrap_db()
@@ -598,7 +654,15 @@ class TestDeriveVideoStatuses:
 
 @pytest.mark.asyncio
 async def test_update_job_meta_merges_existing_keys(tmp_bibilab_home: Path):
-    from bibilab.db import bootstrap_db, create_job, get_db, get_job, update_job_meta
+    from bibilab.db.connection import (
+        bootstrap_db,
+        get_db,
+    )
+    from bibilab.db.jobs import (
+        create_job,
+        get_job,
+        update_job_meta,
+    )
 
     await bootstrap_db()
     await create_job("ingest", {"video_id": "BV1", "list_id": "list-1", "title": "Original"})
@@ -618,7 +682,8 @@ async def test_update_job_meta_merges_existing_keys(tmp_bibilab_home: Path):
 
 @pytest.mark.asyncio
 async def test_update_job_meta_noops_on_missing_job(tmp_bibilab_home: Path):
-    from bibilab.db import bootstrap_db, update_job_meta
+    from bibilab.db.connection import bootstrap_db
+    from bibilab.db.jobs import update_job_meta
 
     await bootstrap_db()
     await update_job_meta("nonexistent-id", {"source_id": "src-123"})
@@ -627,12 +692,10 @@ async def test_update_job_meta_noops_on_missing_job(tmp_bibilab_home: Path):
 @pytest.mark.asyncio
 async def test_message_tool_blocks_round_trip(tmp_bibilab_home: Path):
     """update_turn_terminal + get_recent_messages round-trip the tool_blocks JSON."""
-    from bibilab.db import (
-        bootstrap_db,
-        create_list,
-        get_recent_messages,
-        update_turn_terminal,
-    )
+    from bibilab.db import update_turn_terminal
+    from bibilab.db.connection import bootstrap_db
+    from bibilab.db.lists import create_list
+    from bibilab.db.messages import get_recent_messages
 
     await bootstrap_db()
     await create_list("list-1", "Test List", "2026-01-01T00:00:00")
@@ -685,12 +748,10 @@ async def test_message_tool_blocks_round_trip(tmp_bibilab_home: Path):
 async def test_update_turn_terminal_failed_leaves_user_error_null(tmp_bibilab_home: Path):
     """On a failed turn both rows flip to 'failed', but the error code lands only
     on the assistant row — the user message did not fail and must keep error=NULL."""
-    from bibilab.db import (
-        bootstrap_db,
-        create_list,
-        get_recent_messages,
-        update_turn_terminal,
-    )
+    from bibilab.db import update_turn_terminal
+    from bibilab.db.connection import bootstrap_db
+    from bibilab.db.lists import create_list
+    from bibilab.db.messages import get_recent_messages
 
     await bootstrap_db()
     await create_list("list-1", "Test List", "2026-01-01T00:00:00")
@@ -719,7 +780,9 @@ async def test_update_turn_terminal_failed_leaves_user_error_null(tmp_bibilab_ho
 
 @pytest.mark.asyncio
 async def test_get_source_facets(tmp_bibilab_home: Path):
-    from bibilab.db import bootstrap_db, create_list, get_source_facets
+    from bibilab.db.connection import bootstrap_db
+    from bibilab.db.lists import create_list
+    from bibilab.db.sources import get_source_facets
 
     await bootstrap_db()
     await create_list("list-1", "Course", "2026-01-01T00:00:00")
@@ -764,7 +827,8 @@ async def _insert_source(
 ) -> str:
     from datetime import datetime, timezone
 
-    from bibilab.db import create_list, get_db
+    from bibilab.db.connection import get_db
+    from bibilab.db.lists import create_list
 
     now = datetime.now(timezone.utc).isoformat()
     await create_list(list_id, "L", now)
@@ -779,7 +843,9 @@ async def _insert_source(
 
 @pytest.mark.asyncio
 async def test_transcript_segments_roundtrip(tmp_bibilab_home: Path):
-    from bibilab.db import bootstrap_db, get_transcript_segments, write_transcript_segments
+    from bibilab.db.connection import bootstrap_db
+    from bibilab.db.segments import get_transcript_segments
+    from bibilab.db.sources import write_transcript_segments
     from bibilab.pipeline.transcribe import WhisperSegment
 
     await bootstrap_db()
@@ -798,7 +864,12 @@ async def test_transcript_segments_roundtrip(tmp_bibilab_home: Path):
 
 @pytest.mark.asyncio
 async def test_transcript_segments_cascade_on_source_delete(tmp_bibilab_home: Path):
-    from bibilab.db import bootstrap_db, delete_source, get_transcript_segments, write_transcript_segments
+    from bibilab.db.connection import bootstrap_db
+    from bibilab.db.segments import get_transcript_segments
+    from bibilab.db.sources import (
+        delete_source,
+        write_transcript_segments,
+    )
     from bibilab.pipeline.transcribe import WhisperSegment
 
     await bootstrap_db()
@@ -813,7 +884,8 @@ async def test_transcript_segments_cascade_on_source_delete(tmp_bibilab_home: Pa
 async def test_transcript_segments_rejects_orphan(tmp_bibilab_home: Path):
     import aiosqlite
 
-    from bibilab.db import bootstrap_db, write_transcript_segments
+    from bibilab.db.connection import bootstrap_db
+    from bibilab.db.sources import write_transcript_segments
     from bibilab.pipeline.transcribe import WhisperSegment
 
     await bootstrap_db()
@@ -825,7 +897,9 @@ async def test_transcript_segments_rejects_orphan(tmp_bibilab_home: Path):
 
 @pytest.mark.asyncio
 async def test_get_segments_for_ranges_batches_multiple_sources(tmp_bibilab_home: Path):
-    from bibilab.db import bootstrap_db, get_segments_for_ranges, write_transcript_segments
+    from bibilab.db.connection import bootstrap_db
+    from bibilab.db.segments import get_segments_for_ranges
+    from bibilab.db.sources import write_transcript_segments
     from bibilab.pipeline.transcribe import WhisperSegment
 
     await bootstrap_db()
@@ -853,14 +927,17 @@ async def test_get_segments_for_ranges_batches_multiple_sources(tmp_bibilab_home
 
 @pytest.mark.asyncio
 async def test_get_segments_for_ranges_empty_returns_empty():
-    from bibilab.db import get_segments_for_ranges
+    from bibilab.db.segments import get_segments_for_ranges
 
     assert await get_segments_for_ranges([]) == []
 
 
 @pytest.mark.asyncio
 async def test_sources_has_no_transcript_path_column(tmp_bibilab_home: Path):
-    from bibilab.db import bootstrap_db, get_db
+    from bibilab.db.connection import (
+        bootstrap_db,
+        get_db,
+    )
 
     await bootstrap_db()
     async with get_db() as db:
@@ -888,11 +965,11 @@ _SOURCE_FIELDS = dict(
 
 @pytest.mark.asyncio
 async def test_write_source_with_segments_atomic_happy(tmp_bibilab_home: Path):
-    from bibilab.db import (
-        bootstrap_db,
-        create_list,
+    from bibilab.db.connection import bootstrap_db
+    from bibilab.db.lists import create_list
+    from bibilab.db.segments import get_transcript_segments
+    from bibilab.db.sources import (
         get_source,
-        get_transcript_segments,
         write_source_with_segments,
     )
     from bibilab.pipeline.transcribe import WhisperSegment
@@ -911,8 +988,13 @@ async def test_write_source_with_segments_atomic_happy(tmp_bibilab_home: Path):
 async def test_write_source_with_segments_rolls_back_on_segment_failure(tmp_bibilab_home: Path, monkeypatch):
     """If the segment write fails, the source upsert rolls back with it — no
     orphaned source row (the bug the old compensating delete tried to patch)."""
-    from bibilab.db import bootstrap_db, create_list, get_source, write_source_with_segments
     from bibilab.db import sources as db_sources
+    from bibilab.db.connection import bootstrap_db
+    from bibilab.db.lists import create_list
+    from bibilab.db.sources import (
+        get_source,
+        write_source_with_segments,
+    )
     from bibilab.pipeline.transcribe import WhisperSegment
 
     await bootstrap_db()
@@ -940,7 +1022,9 @@ async def test_write_source_with_segments_rolls_back_on_segment_failure(tmp_bibi
 async def test_get_messages_beyond_window_excludes_non_done(tmp_bibilab_home: Path):
     """get_messages_beyond_window must not surface cancelled/failed rows to
     the summarizer — they would render as blank 'assistant:' lines."""
-    from bibilab.db import bootstrap_db, create_list, get_messages_beyond_window
+    from bibilab.db.connection import bootstrap_db
+    from bibilab.db.lists import create_list
+    from bibilab.db.messages import get_messages_beyond_window
 
     await bootstrap_db()
     await create_list("list-1", "L", "2026-01-01T00:00:00")
@@ -975,13 +1059,13 @@ async def test_get_messages_beyond_window_excludes_non_done(tmp_bibilab_home: Pa
 
 @pytest.mark.asyncio
 async def test_write_and_get_sections(tmp_bibilab_home: Path):
-    from bibilab.db import (
-        _exec_write_sections,
+    from bibilab.db.connection import (
         bootstrap_db,
-        create_list,
         get_db,
-        get_sections,
     )
+    from bibilab.db.lists import create_list
+    from bibilab.db.sections import get_sections
+    from bibilab.db.sources import _exec_write_sections
     from bibilab.pipeline.digest import SectionDigest
     from bibilab.pipeline.section import Section
 
@@ -1012,13 +1096,13 @@ async def test_write_and_get_sections(tmp_bibilab_home: Path):
 
 @pytest.mark.asyncio
 async def test_write_sections_is_idempotent(tmp_bibilab_home: Path):
-    from bibilab.db import (
-        _exec_write_sections,
+    from bibilab.db.connection import (
         bootstrap_db,
-        create_list,
         get_db,
-        get_sections,
     )
+    from bibilab.db.lists import create_list
+    from bibilab.db.sections import get_sections
+    from bibilab.db.sources import _exec_write_sections
     from bibilab.pipeline.digest import SectionDigest
     from bibilab.pipeline.section import Section
 
@@ -1042,13 +1126,15 @@ async def test_write_sections_is_idempotent(tmp_bibilab_home: Path):
 
 @pytest.mark.asyncio
 async def test_sections_cascade_on_source_delete(tmp_bibilab_home: Path):
-    from bibilab.db import (
-        _exec_write_sections,
+    from bibilab.db.connection import (
         bootstrap_db,
-        create_list,
-        delete_source,
         get_db,
-        get_sections,
+    )
+    from bibilab.db.lists import create_list
+    from bibilab.db.sections import get_sections
+    from bibilab.db.sources import (
+        _exec_write_sections,
+        delete_source,
     )
     from bibilab.pipeline.digest import SectionDigest
     from bibilab.pipeline.section import Section
@@ -1075,10 +1161,10 @@ async def test_write_source_with_segments_writes_sections_atomically(tmp_bibilab
     """write_source_with_segments must persist sections in the SAME
     transaction as the source row and segments — no orphan section rows on
     partial failure."""
-    from bibilab.db import (
-        bootstrap_db,
-        create_list,
-        get_sections,
+    from bibilab.db.connection import bootstrap_db
+    from bibilab.db.lists import create_list
+    from bibilab.db.sections import get_sections
+    from bibilab.db.sources import (
         get_source,
         write_source_with_segments,
     )
@@ -1123,13 +1209,11 @@ async def test_write_source_with_segments_rollback_leaves_no_orphan_sections(
     """If _exec_write_sections raises, the parent source + segments must
     NOT commit. Verifies the FK cascade is not silently saving us — the
     transaction is rolled back as a unit."""
-    from bibilab.db import (
-        bootstrap_db,
-        create_list,
-        get_sections,
-        get_source,
-    )
     from bibilab.db import sources as db_sources
+    from bibilab.db.connection import bootstrap_db
+    from bibilab.db.lists import create_list
+    from bibilab.db.sections import get_sections
+    from bibilab.db.sources import get_source, write_source_with_segments
     from bibilab.pipeline.digest import SectionDigest
     from bibilab.pipeline.section import Section
 
@@ -1142,8 +1226,6 @@ async def test_write_source_with_segments_rollback_leaves_no_orphan_sections(
 
     # Patch _exec_write_sections to raise mid-transaction; parent source
     # must NOT commit.
-    from bibilab import db as db_mod
-
     original = db_sources._exec_write_sections
 
     async def boom(*args, **kwargs):
@@ -1152,7 +1234,7 @@ async def test_write_source_with_segments_rollback_leaves_no_orphan_sections(
     db_sources._exec_write_sections = boom
     try:
         with pytest.raises(RuntimeError, match="simulated"):
-            await db_mod.write_source_with_segments(
+            await write_source_with_segments(
                 segments=[],
                 sections=sections,
                 section_digests=[SectionDigest(summary="s", keywords=[])],
@@ -1190,15 +1272,15 @@ async def test_write_source_with_segments_rollback_on_section_failure_also_rolls
     staged. Post-conditions: no source row, no segments, no sections for
     the failing source_id.
     """
-    from bibilab.db import (
-        bootstrap_db,
-        create_list,
-        get_sections,
+    from bibilab.db import sources as db_sources
+    from bibilab.db.connection import bootstrap_db
+    from bibilab.db.lists import create_list
+    from bibilab.db.sections import get_sections
+    from bibilab.db.segments import get_transcript_segments
+    from bibilab.db.sources import (
         get_source,
-        get_transcript_segments,
         write_source_with_segments,
     )
-    from bibilab.db import sources as db_sources
     from bibilab.pipeline.digest import SectionDigest
     from bibilab.pipeline.section import Section
     from bibilab.pipeline.transcribe import WhisperSegment
@@ -1249,7 +1331,9 @@ async def test_write_source_with_segments_sections_omitted_keeps_old_behavior(
 ):
     """Backwards compat: omitting `sections=` must still work (other call
     sites / tests don't pass it)."""
-    from bibilab.db import bootstrap_db, create_list, get_source
+    from bibilab.db.connection import bootstrap_db
+    from bibilab.db.lists import create_list
+    from bibilab.db.sources import get_source
 
     await bootstrap_db()
     await create_list("list-1", "L", "2026-01-01T00:00:00")
@@ -1264,7 +1348,12 @@ async def test_write_source_with_segments_sections_omitted_keeps_old_behavior(
 async def test_update_section_summaries_updates_existing_rows_by_seq(
     tmp_bibilab_home: Path,
 ):
-    from bibilab.db import bootstrap_db, create_list, get_sections, update_section_summaries
+    from bibilab.db.connection import bootstrap_db
+    from bibilab.db.lists import create_list
+    from bibilab.db.sections import (
+        get_sections,
+        update_section_summaries,
+    )
 
     await bootstrap_db()
     await create_list("list-1", "L", "2026-01-01T00:00:00")
@@ -1294,7 +1383,12 @@ async def test_update_section_summaries_missing_seq_is_silent_noop(
     existing seqs, so a missing seq here is a caller bug — but the
     database is the source of truth and the UPDATE simply doesn't match.
     """
-    from bibilab.db import bootstrap_db, create_list, get_sections, update_section_summaries
+    from bibilab.db.connection import bootstrap_db
+    from bibilab.db.lists import create_list
+    from bibilab.db.sections import (
+        get_sections,
+        update_section_summaries,
+    )
 
     await bootstrap_db()
     await create_list("list-1", "L", "2026-01-01T00:00:00")
@@ -1319,7 +1413,9 @@ async def test_update_section_summaries_missing_seq_is_silent_noop(
 async def test_get_sections_returns_all_columns_ordered_by_seq(
     tmp_bibilab_home: Path,
 ):
-    from bibilab.db import bootstrap_db, create_list, get_sections
+    from bibilab.db.connection import bootstrap_db
+    from bibilab.db.lists import create_list
+    from bibilab.db.sections import get_sections
 
     await bootstrap_db()
     await create_list("list-1", "L", "2026-01-01T00:00:00")
@@ -1357,10 +1453,10 @@ async def test_write_source_with_segments_section_digests_persists_summaries(
     """Atomic write with section_digests: section rows must have non-NULL
     summary/keywords, and the writes must be in the same transaction as
     source + segments (one call → all three land)."""
-    from bibilab.db import (
-        bootstrap_db,
-        create_list,
-        get_sections,
+    from bibilab.db.connection import bootstrap_db
+    from bibilab.db.lists import create_list
+    from bibilab.db.sections import get_sections
+    from bibilab.db.sources import (
         get_source,
         write_source_with_segments,
     )
@@ -1418,7 +1514,9 @@ async def test_write_source_with_segments_sections_without_digests_raises(
 ):
     """Passing sections without section_digests is a misuse — every section
     row must carry a summary, so the write raises before any DB work."""
-    from bibilab.db import bootstrap_db, create_list, write_source_with_segments
+    from bibilab.db.connection import bootstrap_db
+    from bibilab.db.lists import create_list
+    from bibilab.db.sources import write_source_with_segments
     from bibilab.pipeline.section import Section
     from bibilab.pipeline.transcribe import WhisperSegment
 

@@ -5,14 +5,14 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse
 
 from bibilab.config import BibilabConfig, bibilab_home, get_config
-from bibilab.db import (
-    create_job,
+from bibilab.db.artifacts import (
     delete_artifact,
     get_artifact,
     get_artifacts_for_list,
-    get_list,
     update_artifact_name,
 )
+from bibilab.db.jobs import create_job
+from bibilab.db.lists import get_list
 from bibilab.models.artifacts import (
     ArtifactCreateRequest,
     ArtifactPatchRequest,

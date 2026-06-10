@@ -15,7 +15,8 @@ from pathlib import Path
 
 from bibilab.adapters.base import VideoMeta
 from bibilab.config import BibilabConfig, bibilab_home, models_dir
-from bibilab.db import _pinyin_index_tokens, _tokenize_cjk, get_db_path, query_fts_rows
+from bibilab.db.connection import get_db_path
+from bibilab.db.fts import _pinyin_index_tokens, _tokenize_cjk, query_fts_rows
 from bibilab.model_registry import EMBEDDING_SPEC_ID, ensure
 from bibilab.pipeline.chat_inference_pool import get_chat_pool
 from bibilab.pipeline.chunk import RagChunk

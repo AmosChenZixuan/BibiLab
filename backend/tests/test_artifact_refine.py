@@ -16,7 +16,9 @@ from unittest.mock import patch
 import pytest
 
 from bibilab.config import BibilabConfig
-from bibilab.db import bootstrap_db, create_list, get_artifact
+from bibilab.db.artifacts import get_artifact
+from bibilab.db.connection import bootstrap_db
+from bibilab.db.lists import create_list
 from bibilab.pipeline.audio import PipelineError
 from bibilab.pipeline.section import Section
 from bibilab.pipeline.transcribe import WhisperSegment
@@ -560,7 +562,8 @@ async def test_run_artifact_job_batch_failure_writes_no_partial_artifact(tmp_bib
     """End-to-end: when _refine_artifact raises PipelineError, the job
     ends in 'failed' status, the artifact row is not created, and the
     content file is not written (no partial artifact)."""
-    from bibilab.db import create_job, get_artifact, get_job
+    from bibilab.db.artifacts import get_artifact
+    from bibilab.db.jobs import create_job, get_job
     from bibilab.pipeline.audio import PipelineError as PE
 
     await bootstrap_db()
@@ -622,7 +625,7 @@ async def test_run_artifact_job_batch_failure_writes_no_partial_artifact(tmp_bib
 async def test_run_artifact_job_no_sections_fails_loud(tmp_bibilab_home):
     """End-to-end: a source with no `sections` rows causes _run_artifact_job
     to fail the job with the documented message."""
-    from bibilab.db import create_job, get_job
+    from bibilab.db.jobs import create_job, get_job
 
     await bootstrap_db()
     await create_list("list-1", "L", "2026-01-01T00:00:00")

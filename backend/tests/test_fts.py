@@ -8,7 +8,8 @@ import pytest
 
 from bibilab.adapters.base import VideoMeta
 from bibilab.config import BibilabConfig, _reset_cache
-from bibilab.db import (
+from bibilab.db.connection import bootstrap_db, get_db
+from bibilab.db.fts import (
     _cjk_bigram_tokens,
     _cjk_query_tokens,
     _cjk_runs,
@@ -16,9 +17,7 @@ from bibilab.db import (
     _pinyin_index_tokens,
     _pinyin_tokens,
     _tokenize_cjk,
-    bootstrap_db,
     clear_fts_for_list,
-    get_db,
     query_fts_rows,
 )
 from bibilab.pipeline.chunk import RagChunk
@@ -31,7 +30,7 @@ pytestmark = pytest.mark.integration
 def tmp_bibilab_home(tmp_path: Path):
     _reset_cache()
     with patch("bibilab.config.bibilab_home", return_value=tmp_path):
-        with patch("bibilab.db.get_db_path", return_value=tmp_path / "bibilab.db"):
+        with patch("bibilab.db.connection.get_db_path", return_value=tmp_path / "bibilab.db"):
             with patch("bibilab.pipeline.embed.get_db_path", return_value=tmp_path / "bibilab.db"):
                 yield tmp_path
 

@@ -12,20 +12,18 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import Response, StreamingResponse
 
 from bibilab.config import AIConfig, BibilabConfig, bibilab_home, get_config
-from bibilab.db import (
-    VISIBLE_MESSAGE_STATUS,
-    assert_message_in_list,
+from bibilab.db.conversations import (
     delete_conversation,
     get_conversation_by_list,
-    get_list,
     get_or_create_conversation,
-    get_recent_messages,
-    get_sources_for_list,
     set_active_stream,
 )
-from bibilab.db import (
+from bibilab.db.conversations import (
     get_conversation as get_conv_row,
 )
+from bibilab.db.lists import get_list
+from bibilab.db.messages import VISIBLE_MESSAGE_STATUS, assert_message_in_list, get_recent_messages
+from bibilab.db.sources import get_sources_for_list
 from bibilab.models.chat import (
     ChatRequest,
     ConversationResponse,

@@ -113,7 +113,7 @@ async def test_chat_endpoint_uses_conversation_history(client):
     """Prior conversation messages are included in LLM context."""
     list_id = (await client.post("/lists", json={"name": "Test"})).json()["id"]
 
-    from bibilab.db import get_or_create_conversation
+    from bibilab.db.conversations import get_or_create_conversation
 
     conv_id = await get_or_create_conversation(list_id)
     await MessageFactory.build(
@@ -1360,7 +1360,8 @@ async def test_run_chat_turn_transitions_user_to_terminal_status(
     assistant — done on success, cancelled on asyncio.CancelledError,
     failed on any other producer exception — in one batched transaction."""
     from bibilab.config import AIConfig, BackendConfig, BibilabConfig
-    from bibilab.db import bootstrap_db, create_list
+    from bibilab.db.connection import bootstrap_db
+    from bibilab.db.lists import create_list
     from bibilab.pipeline.chat_runs import ChatRunRegistry
     from bibilab.routers import chat as chat_module
     from bibilab.routers.chat import run_chat_turn

@@ -7,13 +7,9 @@ import re
 from dataclasses import dataclass, field
 
 from bibilab.config import BibilabConfig
-from bibilab.db import (
-    get_sections,
-    get_segments_for_ranges,
-    get_source,
-    get_source_facets,
-    rows_to_segments,
-)
+from bibilab.db.sections import get_sections
+from bibilab.db.segments import get_segments_for_ranges, rows_to_segments
+from bibilab.db.sources import get_source, get_source_facets
 from bibilab.pipeline._shared import ToolDefinition, format_hms
 from bibilab.pipeline.digest import parse_facet_int
 from bibilab.pipeline.embed import retrieve

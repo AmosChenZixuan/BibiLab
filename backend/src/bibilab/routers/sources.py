@@ -2,7 +2,9 @@ from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.responses import FileResponse
 
 from bibilab.config import cover_path
-from bibilab.db import create_job, get_pending_jobs, get_sections, get_source, parse_job_meta, update_source_facets
+from bibilab.db.jobs import create_job, get_pending_jobs, parse_job_meta
+from bibilab.db.sections import get_sections
+from bibilab.db.sources import get_source, update_source_facets
 from bibilab.models.sources import SectionListItem, SourceContentResponse, SourceFacetsUpdate
 from bibilab.pipeline.transcribe import load_transcript_text
 

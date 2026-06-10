@@ -3,7 +3,7 @@
 import pytest
 
 from bibilab.config import RagConfig, load_config, save_config
-from bibilab.db import get_or_create_conversation
+from bibilab.db.conversations import get_or_create_conversation
 from tests.factories import MessageFactory
 
 pytestmark = pytest.mark.integration

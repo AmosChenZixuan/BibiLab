@@ -5,7 +5,7 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from bibilab.config import BibilabConfig, get_config
-from bibilab.db import create_job
+from bibilab.db.jobs import create_job
 from bibilab.model_registry import (
     _integrity_ok,
     _target_dir,

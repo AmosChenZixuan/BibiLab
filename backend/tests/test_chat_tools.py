@@ -1537,7 +1537,9 @@ async def test_find_passages_registers_sections_not_sources(tmp_bibilab_home, mo
     section-keyed fence. Real sections come from the factory; retrieve +
     get_segments are mocked so the test stays self-contained."""
     from bibilab.config import AIConfig, BackendConfig, BibilabConfig
-    from bibilab.db import bootstrap_db, create_list, get_sections
+    from bibilab.db.connection import bootstrap_db
+    from bibilab.db.lists import create_list
+    from bibilab.db.sections import get_sections
     from bibilab.pipeline import chat_tools
     from bibilab.pipeline.digest import SectionDigest
     from bibilab.pipeline.embed import RetrievalResult, RetrievedChunk, SourceHit
@@ -1668,7 +1670,9 @@ async def test_find_passages_facet_emits_full_outline(tmp_bibilab_home, monkeypa
     — every section gets its own [N], even when the query hit only one
     section's chunks. Outline-only sections stay citable=False until drilled."""
     from bibilab.config import AIConfig, BackendConfig, BibilabConfig
-    from bibilab.db import bootstrap_db, create_list, get_sections
+    from bibilab.db.connection import bootstrap_db
+    from bibilab.db.lists import create_list
+    from bibilab.db.sections import get_sections
     from bibilab.pipeline import chat_tools
     from bibilab.pipeline.digest import SectionDigest
     from bibilab.pipeline.embed import RetrievalResult, SourceHit
@@ -1818,7 +1822,9 @@ async def test_read_section_returns_bounded_verbatim(tmp_bibilab_home, monkeypat
     """Integration: read_section resolves a [N] citation index from the
     registry to a single section, returns that section's bounded verbatim
     transcript (format_turns with citation_index), and flips citable=True."""
-    from bibilab.db import bootstrap_db, create_list, get_sections
+    from bibilab.db.connection import bootstrap_db
+    from bibilab.db.lists import create_list
+    from bibilab.db.sections import get_sections
     from bibilab.pipeline import chat_tools
     from bibilab.pipeline.digest import SectionDigest
     from bibilab.pipeline.section import Section

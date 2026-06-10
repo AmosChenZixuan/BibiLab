@@ -8,7 +8,10 @@ pytestmark = pytest.mark.integration
 @pytest.mark.asyncio
 async def test_startup_sweep_marks_orphans_failed(tmp_bibilab_home):  # noqa: ARG001
     """Seed DB with messages.status='streaming' rows, run sweep, assert they're fixed."""
-    from bibilab.db import bootstrap_db, get_db
+    from bibilab.db.connection import (
+        bootstrap_db,
+        get_db,
+    )
     from bibilab.main import sweep_orphaned_streams
 
     await bootstrap_db()
@@ -86,7 +89,7 @@ async def test_reattach_404_for_nonexistent_list(client):
 @pytest.mark.asyncio
 async def test_reattach_404_message_not_in_list(client, tmp_bibilab_home):  # noqa: ARG001
     """GET stream returns 404 when the message does not belong to the given list."""
-    from bibilab.db import get_db
+    from bibilab.db.connection import get_db
 
     list_id = "list-reattach-test"
     now = "2026-01-01T00:00:00"
@@ -108,7 +111,7 @@ async def test_reattach_404_message_not_in_list(client, tmp_bibilab_home):  # no
 @pytest.mark.asyncio
 async def test_cancel_404_for_nonexistent_message(client, tmp_bibilab_home):  # noqa: ARG001
     """Cancel returns 404 when message does not exist in the given list."""
-    from bibilab.db import get_db
+    from bibilab.db.connection import get_db
 
     list_id = "list-cancel-test"
     now = "2026-01-01T00:00:00"
@@ -132,7 +135,11 @@ async def test_sweep_marks_both_pending_and_streaming_failed(tmp_bibilab_home): 
     """A server-restart sweep must flip BOTH rows of an in-flight turn —
     the user row (status='pending') and the assistant row (status='streaming')
     — to 'failed' so neither leaks into the next conversation replay."""
-    from bibilab.db import bootstrap_db, create_list, get_db
+    from bibilab.db.connection import (
+        bootstrap_db,
+        get_db,
+    )
+    from bibilab.db.lists import create_list
     from bibilab.main import sweep_orphaned_streams
     from tests.factories import ConversationFactory, MessageFactory
 

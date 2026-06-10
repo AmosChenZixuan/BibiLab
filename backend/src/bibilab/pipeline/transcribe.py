@@ -256,7 +256,7 @@ async def load_transcript_text(source_id: str, *, include_time: bool = True) -> 
     Default (``include_time=True``) is the UI viewer view (turns + time, raw
     label). Digest callers pass ``include_time=False`` (turns only).
     """
-    from bibilab.db import get_transcript_segments, rows_to_segments  # local import avoids db<->pipeline cycle
+    from bibilab.db.segments import get_transcript_segments, rows_to_segments  # local import avoids db<->pipeline cycle
 
     try:
         rows = await get_transcript_segments(source_id)

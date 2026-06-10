@@ -10,7 +10,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from bibilab.config import bibilab_home, load_config
-from bibilab.db import bootstrap_db, get_db
+from bibilab.db.connection import bootstrap_db, get_db
 from bibilab.pipeline.chat_runs import get_chat_run_registry
 from bibilab.routers.artifacts import router as artifacts_router
 from bibilab.routers.auth import router as auth_router
@@ -44,7 +44,8 @@ async def sweep_orphaned_streams() -> None:
     was abandoned by the previous process — both rows of the orphaned
     turn are flipped in one UPDATE.
     """
-    from bibilab.db import IN_FLIGHT_MESSAGE_STATUSES, _in_placeholders
+    from bibilab.db.messages import IN_FLIGHT_MESSAGE_STATUSES
+    from bibilab.db.sources import _in_placeholders
 
     in_flight_placeholders = _in_placeholders(IN_FLIGHT_MESSAGE_STATUSES)
     async with get_db() as db:

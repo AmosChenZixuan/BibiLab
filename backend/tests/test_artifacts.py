@@ -73,7 +73,7 @@ async def test_get_artifact_metadata(client: httpx.AsyncClient, tmp_bibilab_home
     artifact_file.parent.mkdir(parents=True, exist_ok=True)
     artifact_file.write_text("# Test Artifact\n\nContent here.", encoding="utf-8")
 
-    from bibilab.db import create_artifact
+    from bibilab.db.artifacts import create_artifact
 
     await create_artifact(
         artifact_id=artifact_id,
@@ -115,7 +115,7 @@ async def test_get_artifact_content(client: httpx.AsyncClient, tmp_bibilab_home:
     artifact_file.parent.mkdir(parents=True, exist_ok=True)
     artifact_file.write_text("# Test Artifact\n\nContent here.", encoding="utf-8")
 
-    from bibilab.db import create_artifact
+    from bibilab.db.artifacts import create_artifact
 
     await create_artifact(
         artifact_id=artifact_id,
@@ -148,7 +148,7 @@ async def test_patch_artifact_rename(client: httpx.AsyncClient, tmp_bibilab_home
     artifact_file.parent.mkdir(parents=True, exist_ok=True)
     artifact_file.write_text("# Old Name\n\nContent.", encoding="utf-8")
 
-    from bibilab.db import create_artifact
+    from bibilab.db.artifacts import create_artifact
 
     await create_artifact(
         artifact_id=artifact_id,
@@ -181,7 +181,7 @@ async def test_delete_artifact(client: httpx.AsyncClient, tmp_bibilab_home: Path
     artifact_file.parent.mkdir(parents=True, exist_ok=True)
     artifact_file.write_text("# To Delete\n\nContent.", encoding="utf-8")
 
-    from bibilab.db import create_artifact
+    from bibilab.db.artifacts import create_artifact
 
     await create_artifact(
         artifact_id=artifact_id,
@@ -217,7 +217,7 @@ async def test_delete_artifact_content_file_missing_ok(client: httpx.AsyncClient
     content_path = f"artifacts/{list_id}/{artifact_id}.md"
     # Don't create the file - it should already be missing
 
-    from bibilab.db import create_artifact
+    from bibilab.db.artifacts import create_artifact
 
     await create_artifact(
         artifact_id=artifact_id,
@@ -250,7 +250,7 @@ async def test_create_artifact_stores_ui_lang_in_job_meta(client: httpx.AsyncCli
     """POST /lists/{list_id}/artifacts stores resolved ui_lang in job meta."""
     import json as json_module
 
-    from bibilab.db import get_job
+    from bibilab.db.jobs import get_job
 
     list_id = (await client.post("/lists", json={"name": "Test List"})).json()["id"]
     resp = await client.post(

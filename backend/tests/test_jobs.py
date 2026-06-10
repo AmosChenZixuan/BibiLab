@@ -14,7 +14,8 @@ pytestmark = pytest.mark.integration
 @pytest_asyncio.fixture()
 async def seeded_job(tmp_bibilab_home: Path):  # noqa: ARG001
     """Bootstrap DB and insert a queued job (tmp_bibilab_home ensures patch is active)."""
-    from bibilab.db import bootstrap_db, create_job
+    from bibilab.db.connection import bootstrap_db
+    from bibilab.db.jobs import create_job
 
     await bootstrap_db()
     return await create_job(
@@ -65,7 +66,12 @@ async def test_delete_queued_job(client: httpx.AsyncClient, seeded_job: str):
 
 @pytest.mark.asyncio
 async def test_state_transitions(tmp_bibilab_home: Path):
-    from bibilab.db import bootstrap_db, create_job, get_job, update_job_status
+    from bibilab.db.connection import bootstrap_db
+    from bibilab.db.jobs import (
+        create_job,
+        get_job,
+        update_job_status,
+    )
 
     await bootstrap_db()
     job_id = await create_job("ingest", {"source_url": "https://b.tv/BV1", "platform": "bilibili"})
@@ -88,11 +94,11 @@ async def test_state_transitions(tmp_bibilab_home: Path):
 
 @pytest.mark.asyncio
 async def test_reset_stuck_jobs(tmp_bibilab_home: Path):
-    from bibilab.db import (
-        bootstrap_db,
+    from bibilab.db import reset_stuck_jobs
+    from bibilab.db.connection import bootstrap_db
+    from bibilab.db.jobs import (
         create_job,
         get_job,
-        reset_stuck_jobs,
         update_job_status,
     )
 
@@ -108,7 +114,11 @@ async def test_reset_stuck_jobs(tmp_bibilab_home: Path):
 
 @pytest.mark.asyncio
 async def test_delete_job_cleans_up_ingest_artifacts(client: httpx.AsyncClient, tmp_bibilab_home: Path):
-    from bibilab.db import bootstrap_db, create_job, get_job
+    from bibilab.db.connection import bootstrap_db
+    from bibilab.db.jobs import (
+        create_job,
+        get_job,
+    )
 
     await bootstrap_db()
     source_id = "src-cleanup"
@@ -153,7 +163,11 @@ async def test_delete_job_cleans_up_ingest_artifacts(client: httpx.AsyncClient, 
 
 @pytest.mark.asyncio
 async def test_delete_job_cleans_up_cover_when_source_id_in_meta(client: httpx.AsyncClient, tmp_bibilab_home: Path):
-    from bibilab.db import bootstrap_db, create_job, get_job
+    from bibilab.db.connection import bootstrap_db
+    from bibilab.db.jobs import (
+        create_job,
+        get_job,
+    )
 
     await bootstrap_db()
     source_id = "BV1cover-cleanup"

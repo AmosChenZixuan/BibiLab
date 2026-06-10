@@ -7,12 +7,10 @@ from tests.factories import ConversationFactory, MessageFactory
 
 @pytest.mark.asyncio
 async def test_no_compression_below_threshold(tmp_bibilab_home, mock_call_llm):
-    from bibilab.db import (
-        bootstrap_db,
-        create_list,
-        get_conversation,
-        get_message_count,
-    )
+    from bibilab.db.connection import bootstrap_db
+    from bibilab.db.conversations import get_conversation
+    from bibilab.db.lists import create_list
+    from bibilab.db.messages import get_message_count
     from bibilab.pipeline.chat_summary import COMPRESSION_THRESHOLD, maybe_compress_conversation
 
     await bootstrap_db()
@@ -39,12 +37,10 @@ async def test_no_compression_below_threshold(tmp_bibilab_home, mock_call_llm):
 
 @pytest.mark.asyncio
 async def test_compression_triggers_above_threshold(tmp_bibilab_home, mock_call_llm):
-    from bibilab.db import (
-        bootstrap_db,
-        create_list,
-        get_conversation,
-        get_message_count,
-    )
+    from bibilab.db.connection import bootstrap_db
+    from bibilab.db.conversations import get_conversation
+    from bibilab.db.lists import create_list
+    from bibilab.db.messages import get_message_count
     from bibilab.pipeline.chat_summary import COMPRESSION_THRESHOLD, SLIDING_WINDOW_SIZE, maybe_compress_conversation
 
     await bootstrap_db()
@@ -75,11 +71,9 @@ async def test_compression_triggers_above_threshold(tmp_bibilab_home, mock_call_
 
 @pytest.mark.asyncio
 async def test_existing_summary_included_in_prompt(tmp_bibilab_home, mock_call_llm):
-    from bibilab.db import (
-        bootstrap_db,
-        compress_conversation,
-        create_list,
-    )
+    from bibilab.db.connection import bootstrap_db
+    from bibilab.db.lists import create_list
+    from bibilab.db.messages import compress_conversation
     from bibilab.pipeline.chat_summary import COMPRESSION_THRESHOLD, maybe_compress_conversation
 
     await bootstrap_db()
@@ -116,11 +110,9 @@ async def test_existing_summary_included_in_prompt(tmp_bibilab_home, mock_call_l
 
 @pytest.mark.asyncio
 async def test_compression_deletes_old_messages(tmp_bibilab_home, mock_call_llm):
-    from bibilab.db import (
-        bootstrap_db,
-        create_list,
-        get_message_count,
-    )
+    from bibilab.db.connection import bootstrap_db
+    from bibilab.db.lists import create_list
+    from bibilab.db.messages import get_message_count
     from bibilab.pipeline.chat_summary import COMPRESSION_THRESHOLD, SLIDING_WINDOW_SIZE, maybe_compress_conversation
 
     await bootstrap_db()
@@ -146,10 +138,8 @@ async def test_compression_deletes_old_messages(tmp_bibilab_home, mock_call_llm)
 
 @pytest.mark.asyncio
 async def test_no_compression_when_no_messages_to_compress(tmp_bibilab_home, mock_call_llm):
-    from bibilab.db import (
-        bootstrap_db,
-        create_list,
-    )
+    from bibilab.db.connection import bootstrap_db
+    from bibilab.db.lists import create_list
     from bibilab.pipeline.chat_summary import SLIDING_WINDOW_SIZE, maybe_compress_conversation
 
     await bootstrap_db()
@@ -172,7 +162,7 @@ async def test_no_compression_when_no_messages_to_compress(tmp_bibilab_home, moc
 
 @pytest.mark.asyncio
 async def test_nonexistent_conversation_noops(tmp_bibilab_home, mock_call_llm):
-    from bibilab.db import bootstrap_db
+    from bibilab.db.connection import bootstrap_db
     from bibilab.pipeline.chat_summary import maybe_compress_conversation
 
     await bootstrap_db()
@@ -188,10 +178,8 @@ async def test_nonexistent_conversation_noops(tmp_bibilab_home, mock_call_llm):
 @pytest.mark.asyncio
 async def test_compression_prompt_no_legacy_citation_preservation(tmp_bibilab_home, mock_call_llm):
     """Compression prompt does not preserve legacy [title @ Ts-Ts] citations."""
-    from bibilab.db import (
-        bootstrap_db,
-        create_list,
-    )
+    from bibilab.db.connection import bootstrap_db
+    from bibilab.db.lists import create_list
     from bibilab.pipeline.chat_summary import COMPRESSION_THRESHOLD, maybe_compress_conversation
 
     await bootstrap_db()
@@ -223,11 +211,9 @@ async def test_compression_prompt_no_legacy_citation_preservation(tmp_bibilab_ho
 
 @pytest.mark.asyncio
 async def test_get_message_count_empty(tmp_bibilab_home):
-    from bibilab.db import (
-        bootstrap_db,
-        create_list,
-        get_message_count,
-    )
+    from bibilab.db.connection import bootstrap_db
+    from bibilab.db.lists import create_list
+    from bibilab.db.messages import get_message_count
 
     await bootstrap_db()
     await create_list("list-1", "Test List", "2026-01-01T00:00:00")
@@ -238,11 +224,9 @@ async def test_get_message_count_empty(tmp_bibilab_home):
 
 @pytest.mark.asyncio
 async def test_get_message_count_after_creates(tmp_bibilab_home):
-    from bibilab.db import (
-        bootstrap_db,
-        create_list,
-        get_message_count,
-    )
+    from bibilab.db.connection import bootstrap_db
+    from bibilab.db.lists import create_list
+    from bibilab.db.messages import get_message_count
 
     await bootstrap_db()
     await create_list("list-1", "Test List", "2026-01-01T00:00:00")
@@ -265,7 +249,10 @@ async def test_get_message_count_after_creates(tmp_bibilab_home):
 async def test_get_messages_beyond_window_returns_older_messages(tmp_bibilab_home):
     from datetime import datetime, timedelta
 
-    from bibilab.db import bootstrap_db, get_db
+    from bibilab.db.connection import (
+        bootstrap_db,
+        get_db,
+    )
 
     await bootstrap_db()
 
@@ -290,7 +277,7 @@ async def test_get_messages_beyond_window_returns_older_messages(tmp_bibilab_hom
             )
         await db.commit()
 
-    from bibilab.db import get_messages_beyond_window
+    from bibilab.db.messages import get_messages_beyond_window
 
     window_size = 5
     beyond = await get_messages_beyond_window(conv_id, window_size)
@@ -310,7 +297,9 @@ async def test_get_messages_beyond_window_returns_older_messages(tmp_bibilab_hom
 async def test_aborted_messages_do_not_trigger_compression(tmp_bibilab_home, mock_call_llm):
     """Cancelled/failed rows must not push the count past the >30 threshold —
     otherwise we'd summarize blank assistant turns."""
-    from bibilab.db import bootstrap_db, create_list, get_message_count
+    from bibilab.db.connection import bootstrap_db
+    from bibilab.db.lists import create_list
+    from bibilab.db.messages import get_message_count
     from bibilab.pipeline.chat_summary import COMPRESSION_THRESHOLD, maybe_compress_conversation
 
     await bootstrap_db()

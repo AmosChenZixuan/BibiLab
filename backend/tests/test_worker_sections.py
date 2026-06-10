@@ -48,7 +48,7 @@ def _empty_digest_sections(*args, **kwargs):
 
 async def _run_digest_rerun(worker, source_id: str, list_id: str, title: str) -> str:
     """Create a digest (rerun) job for source_id and run it. Returns the job id."""
-    from bibilab.db import create_job
+    from bibilab.db.jobs import create_job
 
     meta = {"source_id": source_id, "list_id": list_id, "source_title": title}
     job_id = await create_job("digest", meta)
@@ -60,7 +60,8 @@ async def _run_digest_rerun(worker, source_id: str, list_id: str, title: str) ->
 async def test_stage_process_returns_sections_for_long_source(tmp_bibilab_home: Path):
     """A long synthetic source: _stage_process must return
     (extraction, sections) with sections spanning the segments."""
-    from bibilab.db import bootstrap_db, create_list
+    from bibilab.db.connection import bootstrap_db
+    from bibilab.db.lists import create_list
     from bibilab.worker import WorkerLoop
 
     await bootstrap_db()
@@ -111,7 +112,8 @@ async def test_stage_process_returns_sections_for_long_source(tmp_bibilab_home: 
 @pytest.mark.asyncio
 async def test_stage_process_short_video_returns_one_section(tmp_bibilab_home: Path):
     """A short source: 1 section, byte-identical chunks to pre-change."""
-    from bibilab.db import bootstrap_db, create_list
+    from bibilab.db.connection import bootstrap_db
+    from bibilab.db.lists import create_list
     from bibilab.worker import WorkerLoop
 
     await bootstrap_db()
@@ -164,7 +166,8 @@ async def test_ingest_one_section_byte_identical(tmp_bibilab_home: Path, mock_ca
     `digest_sections` path must preserve that contract so downstream
     citation and rerun paths stay aligned.
     """
-    from bibilab.db import bootstrap_db, create_list
+    from bibilab.db.connection import bootstrap_db
+    from bibilab.db.lists import create_list
     from bibilab.worker import WorkerLoop
 
     await bootstrap_db()
@@ -221,7 +224,8 @@ async def test_ingest_n_sections_produces_ordered_section_digests(tmp_bibilab_ho
     carries the section-1 facets. (Atomic persistence of these rows is
     covered by test_db's section_digests write tests.)
     """
-    from bibilab.db import bootstrap_db, create_list
+    from bibilab.db.connection import bootstrap_db
+    from bibilab.db.lists import create_list
     from bibilab.pipeline.section import derive_sections
     from bibilab.worker import WorkerLoop
 
@@ -275,7 +279,10 @@ async def test_rerun_updates_section_rows(tmp_bibilab_home: Path, mock_call_llm)
     """Rerun on a sectioned source: 1 digest + (N-1) refines, then
     update_section_summaries populates all section rows. Sections are the
     sole digest store (the source carries facets only)."""
-    from bibilab.db import bootstrap_db, create_list, get_job, get_sections
+    from bibilab.db.connection import bootstrap_db
+    from bibilab.db.jobs import get_job
+    from bibilab.db.lists import create_list
+    from bibilab.db.sections import get_sections
     from bibilab.worker import WorkerLoop
 
     await bootstrap_db()
@@ -310,7 +317,10 @@ async def test_rerun_updates_section_rows(tmp_bibilab_home: Path, mock_call_llm)
 async def test_rerun_refine_failure_preserves_prior_valid_summaries(tmp_bibilab_home: Path, mock_call_llm):
     """Section 2's refine exhausts retries → job fails; section rows retain
     their prior valid summaries (no NULL window)."""
-    from bibilab.db import bootstrap_db, create_list, get_job, get_sections
+    from bibilab.db.connection import bootstrap_db
+    from bibilab.db.jobs import get_job
+    from bibilab.db.lists import create_list
+    from bibilab.db.sections import get_sections
     from bibilab.worker import WorkerLoop
 
     await bootstrap_db()
@@ -345,7 +355,10 @@ async def test_rerun_refine_failure_preserves_prior_valid_summaries(tmp_bibilab_
 async def test_rerun_legacy_source_without_sections_fails_loud(tmp_bibilab_home: Path, mock_call_llm):
     """Source has transcript segments but 0 section rows. Rerun must fail
     loud with a re-ingest pointer."""
-    from bibilab.db import bootstrap_db, create_list, get_job, write_transcript_segments
+    from bibilab.db.connection import bootstrap_db
+    from bibilab.db.jobs import get_job
+    from bibilab.db.lists import create_list
+    from bibilab.db.sources import write_transcript_segments
     from bibilab.pipeline.transcribe import WhisperSegment
     from bibilab.worker import WorkerLoop
 

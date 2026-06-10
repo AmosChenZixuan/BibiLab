@@ -30,7 +30,10 @@ async def test_db_uses_aiosqlite_not_sqlite3(tmp_bibilab_home: Path):
     This test checks that the connection returned is an aiosqlite connection,
     which has async-compatible execute() returning an async cursor.
     """
-    from bibilab.db import bootstrap_db, get_db
+    from bibilab.db.connection import (
+        bootstrap_db,
+        get_db,
+    )
 
     await bootstrap_db()
 
@@ -55,7 +58,11 @@ async def test_concurrent_db_operations_do_not_block_event_loop(tmp_bibilab_home
 
     With aiosqlite, concurrent operations can run without blocking.
     """
-    from bibilab.db import bootstrap_db, create_list, get_all_lists
+    from bibilab.db.connection import bootstrap_db
+    from bibilab.db.lists import (
+        create_list,
+        get_all_lists,
+    )
 
     await bootstrap_db()
 
@@ -66,7 +73,7 @@ async def test_concurrent_db_operations_do_not_block_event_loop(tmp_bibilab_home
     # Verify the DB uses aiosqlite first
     import aiosqlite
 
-    from bibilab.db import get_db
+    from bibilab.db.connection import get_db
 
     async with get_db() as db:
         assert isinstance(db, aiosqlite.Connection), "get_db must return aiosqlite.Connection for true async support"
@@ -96,12 +103,12 @@ async def test_worker_never_double_dispatches_same_job(tmp_bibilab_home: Path):
     The fix should atomically mark jobs as in-flight before releasing
     the lock that prevents other coroutines from picking them.
     """
-    from bibilab.db import (
-        JobStatus,
-        bootstrap_db,
+    from bibilab.db.connection import bootstrap_db
+    from bibilab.db.jobs import (
         create_job,
         get_pending_jobs,
     )
+    from bibilab.models.jobs import JobStatus
 
     await bootstrap_db()
 

@@ -1,7 +1,7 @@
 import asyncio
 from typing import Literal
 
-from bibilab.db import get_jobs_for_video_ids, get_source_video_ids
+from bibilab.db.jobs import get_jobs_for_video_ids, get_source_video_ids
 from bibilab.models.jobs import JobStatus
 
 

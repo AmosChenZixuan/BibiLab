@@ -40,7 +40,8 @@ async def test_ingest_dedup(client: httpx.AsyncClient, tmp_bibilab_home: Path):
     """Submitting the same video twice should skip on second attempt."""
     import uuid
 
-    from bibilab.db import bootstrap_db, create_list
+    from bibilab.db.connection import bootstrap_db
+    from bibilab.db.lists import create_list
 
     await bootstrap_db()
     await create_list("list-1", "Test", "2026-01-01T00:00:00")
@@ -81,7 +82,9 @@ async def test_ingest_rerun_endpoint_removed(client: httpx.AsyncClient):
 @pytest.mark.asyncio
 async def test_write_source_stores_relative_paths(tmp_bibilab_home: Path):
     """After a source write, the source row is persisted correctly."""
-    from bibilab.db import bootstrap_db, create_list, get_source
+    from bibilab.db.connection import bootstrap_db
+    from bibilab.db.lists import create_list
+    from bibilab.db.sources import get_source
 
     await bootstrap_db()
     await create_list("list-1", "Test", "2026-01-01T00:00:00")
@@ -108,7 +111,9 @@ async def test_pipeline_creates_covers_and_segments(tmp_bibilab_home: Path, mock
     """Full pipeline with mocks: covers + transcript segments persisted."""
     import uuid
 
-    from bibilab.db import bootstrap_db, create_list, get_source
+    from bibilab.db.connection import bootstrap_db
+    from bibilab.db.lists import create_list
+    from bibilab.db.sources import get_source
     from bibilab.pipeline.chunk import WhisperSegment
     from bibilab.worker import WorkerLoop
 
@@ -182,7 +187,7 @@ async def test_pipeline_creates_covers_and_segments(tmp_bibilab_home: Path, mock
     )
 
     # Verify transcript segments were written
-    from bibilab.db import get_transcript_segments
+    from bibilab.db.segments import get_transcript_segments
 
     segs = await get_transcript_segments(source_id)
     assert len(segs) > 0, "transcript segments should be persisted"
@@ -356,7 +361,8 @@ async def test_preview_medialist(client: httpx.AsyncClient, mock_resolve_mediali
 async def test_preview_processed_status(client: httpx.AsyncClient, mock_resolve_single, tmp_bibilab_home: Path):
     import uuid
 
-    from bibilab.db import bootstrap_db, create_list
+    from bibilab.db.connection import bootstrap_db
+    from bibilab.db.lists import create_list
 
     await bootstrap_db()
     await create_list("list-1", "Test", "2026-01-01T00:00:00")
@@ -380,7 +386,9 @@ async def test_preview_processed_status(client: httpx.AsyncClient, mock_resolve_
 
 @pytest.mark.asyncio
 async def test_preview_in_progress_status(client: httpx.AsyncClient, mock_resolve_single, tmp_bibilab_home: Path):
-    from bibilab.db import bootstrap_db, create_job, create_list
+    from bibilab.db.connection import bootstrap_db
+    from bibilab.db.jobs import create_job
+    from bibilab.db.lists import create_list
 
     await bootstrap_db()
     await create_list("list-1", "Test", "2026-01-01T00:00:00")
@@ -410,7 +418,12 @@ async def test_preview_in_progress_status(client: httpx.AsyncClient, mock_resolv
 
 @pytest.mark.asyncio
 async def test_preview_needs_auth_status(client: httpx.AsyncClient, mock_resolve_single, tmp_bibilab_home: Path):
-    from bibilab.db import bootstrap_db, create_job, create_list, update_job_status
+    from bibilab.db.connection import bootstrap_db
+    from bibilab.db.jobs import (
+        create_job,
+        update_job_status,
+    )
+    from bibilab.db.lists import create_list
     from bibilab.models.jobs import JobStatus
 
     await bootstrap_db()
@@ -503,7 +516,8 @@ async def test_preview_no_sources_or_jobs_created(
     mock_resolve_single,
     tmp_bibilab_home: Path,
 ):
-    from bibilab.db import bootstrap_db, get_pending_jobs
+    from bibilab.db.connection import bootstrap_db
+    from bibilab.db.jobs import get_pending_jobs
 
     await bootstrap_db()
     list_id = (await client.post("/lists", json={"name": "Test"})).json()["id"]
@@ -594,7 +608,9 @@ async def test_write_source_persists_facet_columns(tmp_bibilab_home: Path):
     """A source write persists series_name, sequence_number, season_number."""
     import uuid
 
-    from bibilab.db import bootstrap_db, create_list, get_source
+    from bibilab.db.connection import bootstrap_db
+    from bibilab.db.lists import create_list
+    from bibilab.db.sources import get_source
 
     await bootstrap_db()
     list_id = "list-facet-ws"
@@ -625,10 +641,10 @@ async def test_apply_digest_facets_persists_facets(tmp_bibilab_home: Path):
     """apply_digest_facets writes all 3 facet columns."""
     import uuid
 
-    from bibilab.db import (
+    from bibilab.db.connection import bootstrap_db
+    from bibilab.db.lists import create_list
+    from bibilab.db.sources import (
         apply_digest_facets,
-        bootstrap_db,
-        create_list,
         get_source,
     )
 
@@ -665,10 +681,10 @@ async def test_apply_digest_facets_rerun_preserves_processed_at(tmp_bibilab_home
     """bump_processed_at=False (rerun) leaves processed_at untouched so list ordering is stable."""
     import uuid
 
-    from bibilab.db import (
+    from bibilab.db.connection import bootstrap_db
+    from bibilab.db.lists import create_list
+    from bibilab.db.sources import (
         apply_digest_facets,
-        bootstrap_db,
-        create_list,
         get_source,
     )
 
@@ -688,7 +704,7 @@ async def test_apply_digest_facets_rerun_preserves_processed_at(tmp_bibilab_home
         uploader="U",
     )
     # Pin processed_at to a known past timestamp.
-    from bibilab.db import get_db
+    from bibilab.db.connection import get_db
 
     async with get_db() as db:
         await db.execute(
@@ -711,10 +727,10 @@ async def test_apply_digest_facets_default_bumps_processed_at(tmp_bibilab_home: 
     """Default bump_processed_at=True preserves the old invariant: every digest write moves processed_at to now."""
     import uuid
 
-    from bibilab.db import (
+    from bibilab.db.connection import bootstrap_db
+    from bibilab.db.lists import create_list
+    from bibilab.db.sources import (
         apply_digest_facets,
-        bootstrap_db,
-        create_list,
         get_source,
     )
 
@@ -733,7 +749,7 @@ async def test_apply_digest_facets_default_bumps_processed_at(tmp_bibilab_home: 
         duration_seconds=300,
         uploader="U",
     )
-    from bibilab.db import get_db
+    from bibilab.db.connection import get_db
 
     async with get_db() as db:
         await db.execute(
@@ -753,7 +769,9 @@ async def test_write_source_reingest_coalesces_facets(tmp_bibilab_home: Path):
     """Re-ingest with null facets preserves prior values; non-null overwrites."""
     import uuid
 
-    from bibilab.db import bootstrap_db, create_list, get_source
+    from bibilab.db.connection import bootstrap_db
+    from bibilab.db.lists import create_list
+    from bibilab.db.sources import get_source
 
     await bootstrap_db()
     list_id = "list-facet-coalesce"
@@ -807,10 +825,10 @@ async def test_apply_digest_facets_coalesces_facets(tmp_bibilab_home: Path):
     """apply_digest_facets with null facets preserves prior values."""
     import uuid
 
-    from bibilab.db import (
+    from bibilab.db.connection import bootstrap_db
+    from bibilab.db.lists import create_list
+    from bibilab.db.sources import (
         apply_digest_facets,
-        bootstrap_db,
-        create_list,
         get_source,
     )
 
@@ -845,7 +863,12 @@ async def test_update_source_facets_replace_semantics(tmp_bibilab_home: Path):
     """update_source_facets REPLACES (explicit None clears), unlike the digest COALESCE path."""
     import uuid
 
-    from bibilab.db import bootstrap_db, create_list, get_source, update_source_facets
+    from bibilab.db.connection import bootstrap_db
+    from bibilab.db.lists import create_list
+    from bibilab.db.sources import (
+        get_source,
+        update_source_facets,
+    )
 
     await bootstrap_db()
     list_id = "list-usf"
@@ -876,7 +899,12 @@ async def test_update_source_facets_replace_semantics(tmp_bibilab_home: Path):
 async def test_update_source_facets_partial_and_noop(tmp_bibilab_home: Path):
     import uuid
 
-    from bibilab.db import bootstrap_db, create_list, get_source, update_source_facets
+    from bibilab.db.connection import bootstrap_db
+    from bibilab.db.lists import create_list
+    from bibilab.db.sources import (
+        get_source,
+        update_source_facets,
+    )
 
     await bootstrap_db()
     list_id = "list-usf2"
@@ -908,7 +936,8 @@ async def test_update_source_facets_missing_row_raises_lookuperror(tmp_bibilab_h
 
     import pytest
 
-    from bibilab.db import bootstrap_db, update_source_facets
+    from bibilab.db.connection import bootstrap_db
+    from bibilab.db.sources import update_source_facets
 
     await bootstrap_db()
     with pytest.raises(LookupError):
@@ -919,7 +948,10 @@ async def test_update_source_facets_missing_row_raises_lookuperror(tmp_bibilab_h
 async def test_long_source_chunks_nest_in_sections(tmp_bibilab_home: Path):
     """Acceptance: after ingest of a long source, every chunk's seg range
     is fully contained in exactly one section's seg range."""
-    from bibilab.db import bootstrap_db, create_list, get_sections, write_transcript_segments
+    from bibilab.db.connection import bootstrap_db
+    from bibilab.db.lists import create_list
+    from bibilab.db.sections import get_sections
+    from bibilab.db.sources import write_transcript_segments
     from bibilab.pipeline.section import chunk_by_sections, derive_sections
     from bibilab.pipeline.transcribe import WhisperSegment
     from bibilab.worker import WorkerLoop
@@ -996,7 +1028,8 @@ async def test_long_source_chunks_nest_in_sections(tmp_bibilab_home: Path):
 async def test_short_source_one_section_byte_identical_chunks(tmp_bibilab_home: Path):
     """Regression guard: a short video (1 section) produces the same chunk
     set as the pre-change single `chunk_segments` call."""
-    from bibilab.db import bootstrap_db, create_list
+    from bibilab.db.connection import bootstrap_db
+    from bibilab.db.lists import create_list
     from bibilab.pipeline.chunk import chunk_segments
     from bibilab.pipeline.section import chunk_by_sections, derive_sections
     from bibilab.pipeline.transcribe import WhisperSegment
@@ -1029,7 +1062,13 @@ async def test_short_source_one_section_byte_identical_chunks(tmp_bibilab_home: 
 @pytest.mark.asyncio
 async def test_re_ingest_replaces_section_rows(tmp_bibilab_home: Path):
     """Re-ingest of a source replaces (does not duplicate) its section rows."""
-    from bibilab.db import _exec_write_sections, bootstrap_db, create_list, get_db, get_sections
+    from bibilab.db.connection import (
+        bootstrap_db,
+        get_db,
+    )
+    from bibilab.db.lists import create_list
+    from bibilab.db.sections import get_sections
+    from bibilab.db.sources import _exec_write_sections
     from bibilab.pipeline.digest import SectionDigest
     from bibilab.pipeline.section import Section
 

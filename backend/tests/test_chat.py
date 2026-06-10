@@ -11,7 +11,10 @@ pytestmark = pytest.mark.integration
 
 @pytest.mark.asyncio
 async def test_conversations_table_exists(tmp_bibilab_home):
-    from bibilab.db import bootstrap_db, get_db
+    from bibilab.db.connection import (
+        bootstrap_db,
+        get_db,
+    )
 
     await bootstrap_db()
     async with get_db() as db:
@@ -34,7 +37,10 @@ async def test_conversations_table_exists(tmp_bibilab_home):
 
 @pytest.mark.asyncio
 async def test_messages_table_exists(tmp_bibilab_home):
-    from bibilab.db import bootstrap_db, get_db
+    from bibilab.db.connection import (
+        bootstrap_db,
+        get_db,
+    )
 
     await bootstrap_db()
     async with get_db() as db:
@@ -54,11 +60,13 @@ async def test_messages_table_exists(tmp_bibilab_home):
 
 @pytest.mark.asyncio
 async def test_delete_list_cascades_to_conversation(tmp_bibilab_home):
-    from bibilab.db import (
+    from bibilab.db.connection import (
         bootstrap_db,
+        get_db,
+    )
+    from bibilab.db.lists import (
         create_list,
         delete_list,
-        get_db,
     )
 
     await bootstrap_db()
@@ -74,12 +82,12 @@ async def test_delete_list_cascades_to_conversation(tmp_bibilab_home):
 
 @pytest.mark.asyncio
 async def test_delete_conversation_cascades_messages(tmp_bibilab_home):
-    from bibilab.db import (
+    from bibilab.db.connection import (
         bootstrap_db,
-        create_list,
-        delete_conversation,
         get_db,
     )
+    from bibilab.db.conversations import delete_conversation
+    from bibilab.db.lists import create_list
 
     await bootstrap_db()
     await create_list("list-1", "Test List", "2026-01-01T00:00:00")
@@ -209,7 +217,9 @@ async def test_delete_conversation_no_op(client):
 
 @pytest.mark.asyncio
 async def test_get_or_create_conversation_creates_new(tmp_bibilab_home):
-    from bibilab.db import bootstrap_db, create_list, get_or_create_conversation
+    from bibilab.db.connection import bootstrap_db
+    from bibilab.db.conversations import get_or_create_conversation
+    from bibilab.db.lists import create_list
 
     await bootstrap_db()
     await create_list("list-1", "Test", "2026-01-01T00:00:00")
@@ -219,7 +229,9 @@ async def test_get_or_create_conversation_creates_new(tmp_bibilab_home):
 
 @pytest.mark.asyncio
 async def test_get_or_create_conversation_returns_existing(tmp_bibilab_home):
-    from bibilab.db import bootstrap_db, create_list, get_or_create_conversation
+    from bibilab.db.connection import bootstrap_db
+    from bibilab.db.conversations import get_or_create_conversation
+    from bibilab.db.lists import create_list
 
     await bootstrap_db()
     await create_list("list-1", "Test", "2026-01-01T00:00:00")

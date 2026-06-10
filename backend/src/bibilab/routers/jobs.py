@@ -5,7 +5,7 @@ import sqlite3
 from fastapi import APIRouter, HTTPException, Request
 
 from bibilab.cleanup import cleanup_job_artifacts
-from bibilab.db import delete_job, get_job, list_jobs
+from bibilab.db.jobs import delete_job, get_job, list_jobs
 from bibilab.models.jobs import TERMINAL_STATUSES, JobResponse, JobStatus
 
 router = APIRouter()

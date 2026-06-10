@@ -5,7 +5,9 @@ from unittest.mock import patch
 
 import pytest
 
-from bibilab.db import bootstrap_db, create_list, get_section_ranges
+from bibilab.db.connection import bootstrap_db
+from bibilab.db.lists import create_list
+from bibilab.db.sections import get_section_ranges
 from bibilab.pipeline.section import Section
 from tests.factories import SourceFactory
 

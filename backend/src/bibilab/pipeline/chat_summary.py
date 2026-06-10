@@ -4,9 +4,9 @@ import asyncio
 import logging
 
 from bibilab.config import BibilabConfig
-from bibilab.db import (
+from bibilab.db.conversations import get_conversation
+from bibilab.db.messages import (
     compress_conversation,
-    get_conversation,
     get_message_count,
     get_messages_beyond_window,
 )

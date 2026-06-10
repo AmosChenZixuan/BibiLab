@@ -117,7 +117,7 @@ async def test_delete_list_not_found(client: httpx.AsyncClient):
 
 @pytest.mark.asyncio
 async def test_delete_list_rejects_active_jobs(client: httpx.AsyncClient, tmp_bibilab_home: Path):
-    from bibilab.db import create_job
+    from bibilab.db.jobs import create_job
 
     list_id = (await client.post("/lists", json={"name": "Active"})).json()["id"]
     await create_job(
@@ -157,7 +157,7 @@ async def test_get_list_sources(client: httpx.AsyncClient, tmp_bibilab_home: Pat
 
 @pytest.mark.asyncio
 async def test_delete_source_from_list(client: httpx.AsyncClient, tmp_bibilab_home: Path, tmp_path: Path):
-    from bibilab.db import get_source
+    from bibilab.db.sources import get_source
 
     list_id = (await client.post("/lists", json={"name": "ML"})).json()["id"]
     source_id = "src-delete-src"
@@ -180,7 +180,7 @@ async def test_delete_source_from_list(client: httpx.AsyncClient, tmp_bibilab_ho
 async def test_delete_source_clears_thumbnail_and_cover(
     client: httpx.AsyncClient, tmp_bibilab_home: Path, tmp_path: Path
 ):
-    from bibilab.db import get_list
+    from bibilab.db.lists import get_list
 
     list_id = (await client.post("/lists", json={"name": "ML"})).json()["id"]
     source_id = "src-thumb-src"
@@ -220,7 +220,7 @@ async def test_delete_source_not_found(client: httpx.AsyncClient):
 
 @pytest.mark.asyncio
 async def test_first_source_auto_assigned_as_thumbnail(client: httpx.AsyncClient, tmp_bibilab_home: Path):
-    from bibilab.db import get_list_with_display
+    from bibilab.db.lists import get_list_with_display
 
     # Create an empty list
     list_id = (await client.post("/lists", json={"name": "Empty"})).json()["id"]
@@ -242,7 +242,14 @@ async def test_first_source_auto_assigned_as_thumbnail(client: httpx.AsyncClient
 
 @pytest.mark.asyncio
 async def test_delete_source_cascades_segments_no_txt(client: httpx.AsyncClient, tmp_bibilab_home: Path):
-    from bibilab.db import _now, bootstrap_db, create_list, get_db, get_transcript_segments, write_transcript_segments
+    from bibilab.db.connection import (
+        _now,
+        bootstrap_db,
+        get_db,
+    )
+    from bibilab.db.lists import create_list
+    from bibilab.db.segments import get_transcript_segments
+    from bibilab.db.sources import write_transcript_segments
     from bibilab.pipeline.transcribe import WhisperSegment
 
     await bootstrap_db()

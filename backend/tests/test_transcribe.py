@@ -65,7 +65,7 @@ async def test_load_transcript_text_default_includes_time_grouped():
         {"start_s": 0.0, "end_s": 2.0, "text": "你好。", "speaker": "SPK_0"},
         {"start_s": 2.0, "end_s": 4.0, "text": "再说一句。", "speaker": "SPK_0"},
     ]
-    with patch("bibilab.db.get_transcript_segments", return_value=rows):
+    with patch("bibilab.db.segments.get_transcript_segments", return_value=rows):
         out = await load_transcript_text("sid")
     assert out == "[SPK_0 @0:00] 你好。 再说一句。"  # grouped + time, raw label
 
@@ -75,7 +75,7 @@ async def test_load_transcript_text_digest_variant_drops_time():
     from bibilab.pipeline.transcribe import load_transcript_text
 
     rows = [{"start_s": 9.0, "end_s": 11.0, "text": "重点。", "speaker": "SPK_0"}]
-    with patch("bibilab.db.get_transcript_segments", return_value=rows):
+    with patch("bibilab.db.segments.get_transcript_segments", return_value=rows):
         out = await load_transcript_text("sid", include_time=False)
     assert out == "[SPK_0] 重点。"
 
