@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from bibilab.pipeline._shared import _resolved_lang
+from bibilab.pipeline._shared import resolve_response_language
 from bibilab.pipeline.audio import PipelineError, extract_audio
 from bibilab.pipeline.chunk import _SENT_END, RagChunk, chunk_segments
 from bibilab.pipeline.transcribe import WhisperSegment
@@ -463,24 +463,34 @@ def test_chunk_seg_range_oversized_segment_is_its_own_range():
 # ---------------------------------------------------------------------------
 
 
-def test_resolved_lang_with_ui_returns_ui_lang():
-    assert _resolved_lang("ui", "zh") == "zh"
-    assert _resolved_lang("ui", "en") == "en"
+def test_resolve_response_language_with_ui_returns_ui_lang():
+    from bibilab.config import AIConfig
+
+    cfg = AIConfig(protocol="openai", model="gpt-4o-mini", api_key="k", output_language="ui")
+    assert resolve_response_language(cfg, "zh") == "zh"
+    assert resolve_response_language(cfg, "en") == "en"
 
 
-def test_resolved_lang_with_ui_falls_back_to_en():
-    assert _resolved_lang("ui", None) == "en"
+def test_resolve_response_language_with_ui_falls_back_to_en():
+    from bibilab.config import AIConfig
+
+    cfg = AIConfig(protocol="openai", model="gpt-4o-mini", api_key="k", output_language="ui")
+    assert resolve_response_language(cfg, None) == "en"
 
 
-def test_resolved_lang_with_explicit_language():
-    assert _resolved_lang("zh", None) == "zh"
-    assert _resolved_lang("en", "zh") == "en"
+def test_resolve_response_language_with_explicit_language():
+    from bibilab.config import AIConfig
+
+    cfg = AIConfig(protocol="openai", model="gpt-4o-mini", api_key="k", output_language="en")
+    assert resolve_response_language(cfg, "zh") == "en"
+    cfg_zh = AIConfig(protocol="openai", model="gpt-4o-mini", api_key="k", output_language="zh")
+    assert resolve_response_language(cfg_zh, None) == "zh"
 
 
 # ---------------------------------------------------------------------------
 # _build_initial_prompt language instruction
 # (replaces the old _generate_artifact tests; the lang-instruction contract
-# now lives directly in _build_initial_prompt's call to _resolved_lang,
+# now lives directly in _build_initial_prompt's call to resolve_response_language,
 # _LANG_INSTRUCTION, and _lang_output_directive)
 # ---------------------------------------------------------------------------
 

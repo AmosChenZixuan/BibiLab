@@ -3,7 +3,7 @@
 import json
 import logging
 from dataclasses import dataclass
-from typing import AsyncGenerator, TypeVar
+from typing import TYPE_CHECKING, AsyncGenerator, Callable, TypeVar
 
 import anthropic
 import openai
@@ -13,6 +13,9 @@ from openai import AsyncOpenAI
 from pydantic import BaseModel
 
 from bibilab.config import AIConfig
+
+if TYPE_CHECKING:
+    from bibilab.adapters.base import VideoMeta
 
 logger = logging.getLogger(__name__)
 
@@ -160,10 +163,17 @@ def _lang_output_directive(lang: str) -> str:
     return f"All output fields MUST be written in {_LANG_NATIVE_NAME.get(lang, 'English')}."
 
 
-def _resolved_lang(output_language: str, ui_lang: str | None) -> str:
-    if output_language == "ui":
+def resolve_response_language(cfg: AIConfig, ui_lang: str | None) -> str:
+    """Return the language string to use in LLM-generated output.
+
+    AIConfig.output_language wins when explicitly set; "ui" means follow
+    the UI's X-UI-Lang header (passed in as ui_lang). Falls back to "en"
+    when "ui" is selected but no ui_lang was provided, so the resolver
+    never returns None/empty for downstream prompt interpolation.
+    """
+    if cfg.output_language == "ui":
         return ui_lang or "en"
-    return output_language
+    return cfg.output_language
 
 
 _STRICT_SUFFIX = "\nReturn ONLY valid JSON. Do not add any explanation or markdown fences."
@@ -219,6 +229,96 @@ def _parse_llm_json_response(text: str, model_cls: type[_T]) -> _T:
         lines = text.splitlines()
         text = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:])
     return model_cls.model_validate(json.loads(text))
+
+
+# SDK exception → frontend-stable i18n error code. Order matters: the first
+# matching type wins, so concrete subclasses (RateLimitError, AuthError) must
+# appear before their base (APIError). Used by _classify_llm_error.
+_ERROR_CODE_MAP: tuple[tuple[type[Exception], str], ...] = (
+    (ContextWindowExceededError, "llm_context_window_exceeded"),
+    (LLMOutputBudgetExceededError, "llm_output_budget_exceeded"),
+    (LLMEmptyResponseError, "llm_empty_response"),
+    (openai.APIConnectionError, "llm_connection_error"),
+    (anthropic.APIConnectionError, "llm_connection_error"),
+    (openai.AuthenticationError, "llm_auth_error"),
+    (openai.PermissionDeniedError, "llm_auth_error"),
+    (anthropic.AuthenticationError, "llm_auth_error"),
+    (openai.RateLimitError, "llm_rate_limit_error"),
+    (anthropic.RateLimitError, "llm_rate_limit_error"),
+    (openai.APIError, "llm_api_error"),
+    (anthropic.APIError, "llm_api_error"),
+)
+
+
+def _classify_llm_error(exception: Exception) -> str:
+    """Map SDK exception types to a stable error code for i18n on the frontend."""
+    for exc_type, code in _ERROR_CODE_MAP:
+        if isinstance(exception, exc_type):
+            return code
+    return "internal_error"
+
+
+# Sync helper. Async callers (worker) reach it via asyncio.to_thread.
+# ``max_attempts`` defaults to ``len(prompts)`` — digest passes
+# [plain, strict, strict] for 3 distinct prompts (default behavior); worker
+# passes [single_prompt] with max_attempts=3 to retry the same prompt 3×.
+_T2 = TypeVar("_T2")
+
+
+def _call_llm_with_retry(
+    prompts: list[str],
+    parse_fn: Callable[[str], _T2],
+    *,
+    cfg: AIConfig,
+    label: str,
+    llm_timeout: int = 120,
+    meta: "VideoMeta | None" = None,
+    max_attempts: int | None = None,
+) -> _T2:
+    """Cycle through ``prompts`` retrying transient failures up to ``max_attempts`` total.
+
+    On ``ContextWindowExceededError`` / ``LLMOutputBudgetExceededError`` raise
+    immediately (input overflow and output budget exhaustion are identical
+    across attempts). On any other exception, log + retry. On exhaustion
+    raise ``PipelineError``. ``meta`` is optional — when provided, the
+    video_id is included in retry logs."""
+    # Local import: pipeline/audio imports from pipeline/_shared transitively,
+    # so a top-level import here would cycle.
+    from bibilab.pipeline.audio import PipelineError
+
+    attempts_budget = max_attempts if max_attempts is not None else len(prompts)
+    sequence = [prompts[i % len(prompts)] for i in range(attempts_budget)]
+    last_exc: Exception | None = None
+    for attempt, p in enumerate(sequence, start=1):
+        try:
+            raw = _call_llm(p, cfg, llm_timeout=llm_timeout)
+            return parse_fn(raw)
+        except (ContextWindowExceededError, LLMOutputBudgetExceededError):
+            # Input overflow and output budget exhaustion are identical
+            # across attempts (same prompt + same budget) — re-raise rather
+            # than burning two more calls. Transient errors fall through
+            # to the generic except below and get retried.
+            raise
+        except Exception as exc:
+            last_exc = exc
+            if meta is not None:
+                logger.warning(
+                    "LLM %s failed for %s (attempt %d/%d): %s",
+                    label,
+                    meta.video_id,
+                    attempt,
+                    attempts_budget,
+                    exc,
+                )
+            else:
+                logger.warning("LLM %s failed (attempt %d/%d): %s", label, attempt, attempts_budget, exc)
+
+    if meta is not None:
+        error_msg = f"LLM {label} exhausted all retries for {meta.video_id}: {last_exc}"
+    else:
+        error_msg = f"LLM {label} exhausted all retries: {last_exc}"
+    logger.error(error_msg)
+    raise PipelineError(error_msg) from last_exc
 
 
 @dataclass

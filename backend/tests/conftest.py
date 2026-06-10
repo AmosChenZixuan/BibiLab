@@ -47,15 +47,17 @@ def mock_stream_llm():
 
 @pytest.fixture()
 def mock_call_llm():
-    """Patch the three `_call_llm` seams with a single configurable fake.
+    """Patch every `_call_llm` reference in the codebase with one fake.
 
-    Patches:
-        bibilab.pipeline.digest._call_llm
-        bibilab.pipeline.chat_summary._call_llm
-        bibilab.worker._call_llm
+    The unified `_call_llm_with_retry` in `pipeline/_shared.py` is the
+    canonical call path, but digest, chat_summary, and worker each `from
+    bibilab.pipeline._shared import _call_llm` at module level — that
+    re-import binds a *separate* name, and patching the source module's
+    attribute doesn't reach it. Patch the source AND each re-import site
+    so the mock is effective everywhere.
 
-    Default return: "{}" (empty JSON object — the lowest common denominator across
-    digest/chat_summary/artifact LLM consumers, all of which parse JSON).
+    Default return: "{}" (empty JSON object — the lowest common denominator
+    across digest/chat_summary/artifact LLM consumers, all of which parse JSON).
 
     Override per test by reassigning attributes on the yielded mock:
         mock_call_llm.return_value = "..."                 # canned string
@@ -65,9 +67,11 @@ def mock_call_llm():
     """
     mock = MagicMock(return_value=_DEFAULT_LLM_RESPONSE)
     with (
-        patch("bibilab.pipeline.digest._call_llm", mock),
+        patch("bibilab.pipeline._shared._call_llm", mock),
+        # chat_summary still re-imports _call_llm at module scope — that
+        # re-import binds a separate name, so patching the source module
+        # alone doesn't reach it. Patch the re-import site too.
         patch("bibilab.pipeline.chat_summary._call_llm", mock),
-        patch("bibilab.worker._call_llm", mock),
     ):
         yield mock
 
