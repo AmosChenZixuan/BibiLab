@@ -10,7 +10,7 @@ pytestmark = pytest.mark.integration
 
 
 @pytest.mark.asyncio
-async def test_get_source_returns_digest_and_transcript(client: httpx.AsyncClient, tmp_bibilab_home: Path):
+async def test_get_source_returns_transcript(client: httpx.AsyncClient, tmp_bibilab_home: Path):
     from bibilab.db import create_list, write_transcript_segments
     from bibilab.pipeline.transcribe import WhisperSegment
 
@@ -100,7 +100,7 @@ async def test_rerun_source_not_found(client: httpx.AsyncClient):
 
 @pytest.mark.asyncio
 async def test_rerun_source_success(client: httpx.AsyncClient, tmp_bibilab_home: Path, mock_call_llm):
-    """POST /sources/{source_id}/rerun re-runs digest and updates summary/keywords."""
+    """POST /sources/{source_id}/rerun re-runs digest (section summaries + source facets)."""
     from bibilab.db import create_list, write_transcript_segments
     from bibilab.pipeline.transcribe import WhisperSegment
 
