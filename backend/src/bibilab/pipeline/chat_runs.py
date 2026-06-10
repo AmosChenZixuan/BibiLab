@@ -9,10 +9,13 @@ the LLM turn in flight.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
 from typing import Literal
+
+from bibilab.db import IN_FLIGHT_ASST_STATUS, IN_FLIGHT_USER_STATUS, _now, get_db
 
 logger = logging.getLogger(__name__)
 
@@ -107,3 +110,107 @@ _registry = ChatRunRegistry()
 
 def get_chat_run_registry() -> ChatRunRegistry:
     return _registry
+
+
+class ActiveStreamConflict(Exception):
+    """Raised when attempting to start a second stream on an active conversation."""
+
+
+async def create_user_and_assistant_atomic(
+    conversation_id: str,
+    user_msg_id: str,
+    assistant_msg_id: str,
+    user_text: str,
+) -> None:
+    """Insert user + streaming assistant message atomically, set active_stream_message_id.
+
+    Uses BEGIN IMMEDIATE to serialize concurrent callers — the second caller
+    sees active_stream_message_id != NULL and gets ActiveStreamConflict.
+    """
+    now = _now()
+    async with get_db() as db:
+        await db.execute("BEGIN IMMEDIATE")
+        try:
+            cursor = await db.execute(
+                "SELECT active_stream_message_id FROM conversations WHERE id=?",
+                (conversation_id,),
+            )
+            row = await cursor.fetchone()
+            if row and row["active_stream_message_id"] is not None:
+                raise ActiveStreamConflict(
+                    f"Conversation {conversation_id} already has active stream {row['active_stream_message_id']}"
+                )
+
+            await db.execute(
+                "INSERT INTO messages (id, conversation_id, role, content, metadata, created_at, status) "
+                "VALUES (?, ?, 'user', ?, NULL, ?, ?)",
+                (user_msg_id, conversation_id, user_text, now, IN_FLIGHT_USER_STATUS),
+            )
+            await db.execute(
+                "INSERT INTO messages (id, conversation_id, role, content, metadata, created_at, status) "
+                "VALUES (?, ?, 'assistant', '', NULL, ?, ?)",
+                (assistant_msg_id, conversation_id, now, IN_FLIGHT_ASST_STATUS),
+            )
+            await db.execute(
+                "UPDATE conversations SET active_stream_message_id=? WHERE id=?",
+                (assistant_msg_id, conversation_id),
+            )
+            await db.commit()
+        except ActiveStreamConflict:
+            await db.execute("ROLLBACK")
+            raise
+        except Exception:
+            await db.execute("ROLLBACK")
+            raise
+
+
+async def update_turn_terminal(
+    *,
+    conversation_id: str,
+    user_msg_id: str,
+    asst_msg_id: str,
+    asst_content: str,
+    asst_metadata: dict | None,
+    asst_tool_blocks: list[dict] | None,
+    status: str,
+    error: str | None,
+) -> None:
+    """Atomically flip a turn to its terminal status and clear the
+    conversation's active-stream pointer.
+
+    All three writes — user row, assistant row, conversations.active_stream_message_id
+    — commit in one transaction so a process kill between them cannot
+    strand an orphan or leave a wedged active-stream pointer that 409s
+    future POSTs. The user row's content/metadata/tool_blocks are unchanged
+    from insert time, so the user UPDATE is narrowed to status + error
+    only. The conversation's user row also gets a NULL error (the
+    assistant failed, not the user). Both message UPDATEs assert rowcount
+    to catch stale ids (programmer error).
+    """
+    async with get_db() as db:
+        cur = await db.execute(
+            "UPDATE messages SET status=?, error=NULL WHERE id=?",
+            (status, user_msg_id),
+        )
+        if cur.rowcount == 0:
+            raise RuntimeError(f"update_turn_terminal: user_msg_id={user_msg_id!r} not found")
+        cur = await db.execute(
+            "UPDATE messages SET content=?, metadata=?, status=?, error=?, tool_blocks=? WHERE id=?",
+            (
+                asst_content,
+                json.dumps(asst_metadata) if asst_metadata is not None else None,
+                status,
+                error,
+                json.dumps(asst_tool_blocks) if asst_tool_blocks is not None else None,
+                asst_msg_id,
+            ),
+        )
+        if cur.rowcount == 0:
+            raise RuntimeError(f"update_turn_terminal: asst_msg_id={asst_msg_id!r} not found")
+        # Clear the active-stream pointer in the same transaction so a
+        # crash here cannot wedge a future POST with HTTP 409.
+        await db.execute(
+            "UPDATE conversations SET active_stream_message_id=NULL WHERE id=?",
+            (conversation_id,),
+        )
+        await db.commit()

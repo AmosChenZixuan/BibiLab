@@ -92,9 +92,9 @@ async def test_reset_stuck_jobs(tmp_bibilab_home: Path):
         bootstrap_db,
         create_job,
         get_job,
-        reset_stuck_jobs,
         update_job_status,
     )
+    from bibilab.worker import reset_stuck_jobs
 
     await bootstrap_db()
     job_id = await create_job("ingest", {"source_url": "https://b.tv/BV1", "platform": "bilibili"})

@@ -631,8 +631,8 @@ async def test_message_tool_blocks_round_trip(tmp_bibilab_home: Path):
         bootstrap_db,
         create_list,
         get_recent_messages,
-        update_turn_terminal,
     )
+    from bibilab.pipeline.chat_runs import update_turn_terminal
 
     await bootstrap_db()
     await create_list("list-1", "Test List", "2026-01-01T00:00:00")
@@ -689,8 +689,8 @@ async def test_update_turn_terminal_failed_leaves_user_error_null(tmp_bibilab_ho
         bootstrap_db,
         create_list,
         get_recent_messages,
-        update_turn_terminal,
     )
+    from bibilab.pipeline.chat_runs import update_turn_terminal
 
     await bootstrap_db()
     await create_list("list-1", "Test List", "2026-01-01T00:00:00")
