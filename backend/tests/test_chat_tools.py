@@ -1184,13 +1184,39 @@ def test_build_fenced_sections_orders_by_index_and_includes_summary_then_chunks(
         ),
     }
     summaries = {1: "Section one summary", 2: "Section two summary"}
-    chunks_by_index = {1: ["[S1·SPK0 @0:01] hello"], 2: []}
+    chunks_by_index = {1: [(0, 0, "[S1·SPK0 @0:01] hello")], 2: []}
     out = _build_fenced_sections(chunks_by_index, summaries, reg)
     # index order, header → summary → chunk body; section 2 has summary, no chunks
     assert out.index('[1] "T" · Section 1') < out.index('[2] "T" · Section 2')
     assert "Section one summary" in out
     assert "[S1·SPK0 @0:01] hello" in out
     assert "Section two summary" in out
+
+
+def test_join_section_fragments_sorts_chronologically_and_marks_gaps():
+    from bibilab.pipeline.chat_tools import _FRAGMENT_GAP, _join_section_fragments
+
+    # Fragments arrive in rerank (out-of-spoken) order: seg 5 before seg 0.
+    out = _join_section_fragments([(5, 6, "later"), (0, 1, "earlier")])
+    # Chronological: earlier renders before later.
+    assert out.index("earlier") < out.index("later")
+    # Non-adjacent (seg 1 → seg 5) ⇒ gap marker between them.
+    assert _FRAGMENT_GAP in out
+
+
+def test_join_section_fragments_no_gap_when_adjacent():
+    from bibilab.pipeline.chat_tools import _FRAGMENT_GAP, _join_section_fragments
+
+    # seg_end 1 → next seg_start 2: contiguous, no transcript skipped.
+    out = _join_section_fragments([(0, 1, "first"), (2, 3, "second")])
+    assert _FRAGMENT_GAP not in out
+    assert out == "first\nsecond"
+
+
+def test_join_section_fragments_empty():
+    from bibilab.pipeline.chat_tools import _join_section_fragments
+
+    assert _join_section_fragments([]) == ""
 
 
 @pytest.mark.asyncio
