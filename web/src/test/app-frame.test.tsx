@@ -222,4 +222,22 @@ describe("app frame", () => {
     expect(screen.getByText("test_user")).toBeInTheDocument();
     expect(screen.getByLabelText("Sign out")).toBeInTheDocument();
   });
+
+  test("renders the BrandMark inside the navbar home link", async () => {
+    renderFrame({
+      overall: "ok",
+      dependencies: {
+        cuda: { status: "ok", message: "" },
+        embedding_model: { status: "ok", message: "" },
+      },
+    });
+
+    const homeLink = await screen.findByRole("link", { name: "Home" });
+    const svg = homeLink.querySelector("svg");
+    expect(svg).toBeInTheDocument();
+    // The mark is decorative — the link's accessible name comes from the
+    // parent's aria-label="Home", not the SVG.
+    expect(svg).toHaveAttribute("aria-hidden", "true");
+    expect(homeLink.className).toContain("text-muted");
+  });
 });

@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="web/public/favicon.svg" alt="Bibilab" width="80" />
+</p>
+
 # Bibilab
 
 Transform video content into searchable, AI-assisted **private notebooks**. A

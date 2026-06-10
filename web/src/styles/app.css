@@ -37,6 +37,8 @@
 }
 
 @theme {
+  /* Brand mark is ink-only (see components/ui/BrandMark.tsx). Pink/blue/sky
+     are UI accents; they are never applied to the mark. */
   /* ── Colors ──────────────────────────────────────────────────────────────── */
   --color-ink:     #334155;       /* primary text — slate-700 */
   --color-muted:   #64748b;       /* secondary text — slate-500 */
