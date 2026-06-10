@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Search, BookOpen, Loader2, AlertTriangle, ChevronRight } from "lucide-react";
 import { useLanguage } from "@/app/LanguageContext";
 import { formatMediaTimestamp, facetNoMatchHint, type RetrievalCall, type PendingRagCall } from "@/lib/chat-utils";
-import { READ_SECTION_TOOL_NAME } from "@/lib/tool-display";
+import { READ_SECTION_TOOL_NAME } from "@/lib/utils";
 
 interface ToolLedgerRowProps {
   call?: RetrievalCall;
