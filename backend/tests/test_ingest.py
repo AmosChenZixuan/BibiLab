@@ -49,7 +49,6 @@ async def test_ingest_dedup(client: httpx.AsyncClient, tmp_bibilab_home: Path):
         source_id=str(uuid.uuid4()),
         video_id="BV1abc123",
         title="T",
-        summary="S",
         source_url="https://www.bilibili.com/video/BV1abc123",
         uploader="",
     )
@@ -93,8 +92,6 @@ async def test_write_source_stores_relative_paths(tmp_bibilab_home: Path):
         source_id="test-uuid-1234",
         video_id="BV1relative",
         title="Test",
-        summary="Test summary.",
-        keywords=["test"],
         cover_url="https://example.com/cover.jpg",
         source_url="https://bilibili.com/video/BV1relative",
         duration_seconds=3600,
@@ -368,7 +365,6 @@ async def test_preview_processed_status(client: httpx.AsyncClient, mock_resolve_
         source_id=str(uuid.uuid4()),
         video_id="BV1abc123",
         title="T",
-        summary="S",
         source_url="https://www.bilibili.com/video/BV1abc123",
         uploader="",
     )
@@ -610,8 +606,6 @@ async def test_write_source_persists_facet_columns(tmp_bibilab_home: Path):
         source_id=source_id,
         video_id="BVfacet001",
         title="罗翔说刑法 EP08",
-        summary="A lecture on criminal law.",
-        keywords=["law"],
         source_url="https://example.com/BVfacet001",
         duration_seconds=600,
         uploader="UploaderX",
@@ -627,15 +621,15 @@ async def test_write_source_persists_facet_columns(tmp_bibilab_home: Path):
     assert source["season_number"] is None
 
 
-async def test_update_source_digest_persists_facets(tmp_bibilab_home: Path):
-    """update_source_digest writes all 3 facet columns."""
+async def test_apply_digest_facets_persists_facets(tmp_bibilab_home: Path):
+    """apply_digest_facets writes all 3 facet columns."""
     import uuid
 
     from bibilab.db import (
+        apply_digest_facets,
         bootstrap_db,
         create_list,
         get_source,
-        update_source_digest,
     )
 
     await bootstrap_db()
@@ -648,17 +642,13 @@ async def test_update_source_digest_persists_facets(tmp_bibilab_home: Path):
         source_id=source_id,
         video_id="BVfacet002",
         title="Test",
-        summary="Old summary",
-        keywords=["old"],
         source_url="https://example.com/BVfacet002",
         duration_seconds=300,
         uploader="U",
     )
 
-    await update_source_digest(
+    await apply_digest_facets(
         source_id,
-        "New summary",
-        ["new"],
         series_name="Test Series",
         sequence_number=42,
         season_number=2,
@@ -666,21 +656,20 @@ async def test_update_source_digest_persists_facets(tmp_bibilab_home: Path):
 
     source = await get_source(source_id)
     assert source is not None
-    assert source["summary"] == "New summary"
     assert source["series_name"] == "Test Series"
     assert source["sequence_number"] == 42
     assert source["season_number"] == 2
 
 
-async def test_update_source_digest_rerun_preserves_processed_at(tmp_bibilab_home: Path):
+async def test_apply_digest_facets_rerun_preserves_processed_at(tmp_bibilab_home: Path):
     """bump_processed_at=False (rerun) leaves processed_at untouched so list ordering is stable."""
     import uuid
 
     from bibilab.db import (
+        apply_digest_facets,
         bootstrap_db,
         create_list,
         get_source,
-        update_source_digest,
     )
 
     await bootstrap_db()
@@ -694,8 +683,6 @@ async def test_update_source_digest_rerun_preserves_processed_at(tmp_bibilab_hom
         source_id=source_id,
         video_id="BVrerunPA01",
         title="Test",
-        summary="Old summary",
-        keywords=["old"],
         source_url="https://example.com/BVrerunPA01",
         duration_seconds=300,
         uploader="U",
@@ -710,28 +697,25 @@ async def test_update_source_digest_rerun_preserves_processed_at(tmp_bibilab_hom
         )
         await db.commit()
 
-    await update_source_digest(
+    await apply_digest_facets(
         source_id,
-        "Rerun summary",
-        ["new"],
         bump_processed_at=False,
     )
 
     source = await get_source(source_id)
     assert source is not None
     assert source["processed_at"] == original_pa
-    assert source["summary"] == "Rerun summary"
 
 
-async def test_update_source_digest_default_bumps_processed_at(tmp_bibilab_home: Path):
+async def test_apply_digest_facets_default_bumps_processed_at(tmp_bibilab_home: Path):
     """Default bump_processed_at=True preserves the old invariant: every digest write moves processed_at to now."""
     import uuid
 
     from bibilab.db import (
+        apply_digest_facets,
         bootstrap_db,
         create_list,
         get_source,
-        update_source_digest,
     )
 
     await bootstrap_db()
@@ -745,8 +729,6 @@ async def test_update_source_digest_default_bumps_processed_at(tmp_bibilab_home:
         source_id=source_id,
         video_id="BVbumpPA01",
         title="Test",
-        summary="Old",
-        keywords=["old"],
         source_url="https://example.com/BVbumpPA01",
         duration_seconds=300,
         uploader="U",
@@ -760,7 +742,7 @@ async def test_update_source_digest_default_bumps_processed_at(tmp_bibilab_home:
         )
         await db.commit()
 
-    await update_source_digest(source_id, "New", ["new"])
+    await apply_digest_facets(source_id)
 
     source = await get_source(source_id)
     assert source is not None
@@ -784,8 +766,6 @@ async def test_write_source_reingest_coalesces_facets(tmp_bibilab_home: Path):
         platform="bilibili",
         list_id=list_id,
         title="T",
-        summary="s",
-        keywords=["k"],
         cover_url=None,
         source_url="https://example.com/BVcoalesce01",
         duration_seconds=10,
@@ -823,15 +803,15 @@ async def test_write_source_reingest_coalesces_facets(tmp_bibilab_home: Path):
     assert source["season_number"] == 1  # still preserved
 
 
-async def test_update_source_digest_coalesces_facets(tmp_bibilab_home: Path):
-    """update_source_digest with null facets preserves prior values."""
+async def test_apply_digest_facets_coalesces_facets(tmp_bibilab_home: Path):
+    """apply_digest_facets with null facets preserves prior values."""
     import uuid
 
     from bibilab.db import (
+        apply_digest_facets,
         bootstrap_db,
         create_list,
         get_source,
-        update_source_digest,
     )
 
     await bootstrap_db()
@@ -844,8 +824,6 @@ async def test_update_source_digest_coalesces_facets(tmp_bibilab_home: Path):
         source_id=source_id,
         video_id="BVcoalesce02",
         title="T",
-        summary="old",
-        keywords=["old"],
         source_url="https://example.com/BVcoalesce02",
         duration_seconds=10,
         uploader="U",
@@ -854,11 +832,10 @@ async def test_update_source_digest_coalesces_facets(tmp_bibilab_home: Path):
         season_number=2,
     )
 
-    # Rerun whose digest produced no facets — summary updates, facets survive.
-    await update_source_digest(source_id, "new summary", ["new"])
+    # Rerun whose digest produced no facets — prior facets survive.
+    await apply_digest_facets(source_id)
     source = await get_source(source_id)
     assert source is not None
-    assert source["summary"] == "new summary"
     assert source["series_name"] == "Keep Me"
     assert source["sequence_number"] == 3
     assert source["season_number"] == 2
@@ -879,8 +856,6 @@ async def test_update_source_facets_replace_semantics(tmp_bibilab_home: Path):
         source_id=source_id,
         video_id="BVusf01",
         title="T",
-        summary="s",
-        keywords=["k"],
         source_url="https://example.com/BVusf01",
         duration_seconds=10,
         uploader="U",
@@ -912,8 +887,6 @@ async def test_update_source_facets_partial_and_noop(tmp_bibilab_home: Path):
         source_id=source_id,
         video_id="BVusf02",
         title="T",
-        summary="s",
-        keywords=["k"],
         source_url="https://example.com/BVusf02",
         duration_seconds=10,
         uploader="U",

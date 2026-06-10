@@ -20,8 +20,6 @@ export type Source = {
   video_id: string;
   platform: string;
   title: string;
-  summary: string;
-  keywords: string[];
   cover_url: string | null;
   source_url: string;
   duration_seconds: number;
@@ -40,8 +38,6 @@ export type SourceContent = {
   uploader: string;
   language: string | null;
   processed_at: string;
-  summary: string;
-  keywords: string[];
   cover_url: string | null;
   transcript: string;
   settings_snapshot: Record<string, unknown>;

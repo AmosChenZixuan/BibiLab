@@ -18,8 +18,6 @@ function makeSource(id: string, title: string): Source {
     video_id: id,
     platform: "bilibili",
     title,
-    summary: "",
-    keywords: [],
     cover_url: null,
     source_url: "https://example.com",
     duration_seconds: 0,
@@ -29,7 +27,7 @@ function makeSource(id: string, title: string): Source {
   };
 }
 
-function makeContent(id: string, title: string, summary: string): SourceContent {
+function makeContent(id: string, title: string): SourceContent {
   return {
     id,
     video_id: id,
@@ -40,8 +38,6 @@ function makeContent(id: string, title: string, summary: string): SourceContent 
     uploader: "",
     language: null,
     processed_at: "2026-01-01T00:00:00Z",
-    summary,
-    keywords: [],
     cover_url: null,
     transcript: "transcript text",
     settings_snapshot: {},
@@ -96,7 +92,7 @@ describe("SourcesViewerMode sections — source-switch desync", () => {
     // (the sectionId branch), NOT section 1 (where 300 falls) — so
     // the assertion is load-bearing: if the sectionId and timestamp
     // branches were ever swapped, the test would fail.
-    const contentA = makeContent("src-A", "Source A", "Source A summary");
+    const contentA = makeContent("src-A", "Source A");
     mockSingleSource(contentA, makeSections(3, 0));
 
     render(viewer({
@@ -125,7 +121,7 @@ describe("SourcesViewerMode sections — source-switch desync", () => {
     // whose [start,end] range contains 700 unambiguously. The handoff
     // pins the matcher to timestamp (SourceSection has no section_id at
     // runtime), so the test exercises the timestamp path directly.
-    const contentA = makeContent("src-A", "Source A", "Source A summary");
+    const contentA = makeContent("src-A", "Source A");
     mockSingleSource(contentA, makeSections(3, 0));
 
     render(viewer({
@@ -153,7 +149,7 @@ describe("SourcesViewerMode sections — source-switch desync", () => {
     // does NOT change between the two jumps (same source), so the
     // effect on `initialActiveIdx` — not the mount-time state seed —
     // is what drives the second switch.
-    const contentA = makeContent("src-A", "Source A", "Source A summary");
+    const contentA = makeContent("src-A", "Source A");
     mockSingleSource(contentA, makeSections(3, 0));
 
     const sourceA = makeSource("src-A", "Source A");
@@ -189,8 +185,8 @@ describe("SourcesViewerMode sections — source-switch desync", () => {
     // body is section 1 of source B (not section 3 of source B, which
     // is what would happen if activeSectionIdx persisted across the
     // remount).
-    const contentA = makeContent("src-A", "Source A", "Source A summary");
-    const contentB = makeContent("src-B", "Source B", "Source B summary");
+    const contentA = makeContent("src-A", "Source A");
+    const contentB = makeContent("src-B", "Source B");
     const sectionsA = makeSections(5, 0);
     const sectionsB = makeSections(4, 100);
 

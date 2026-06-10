@@ -30,8 +30,6 @@ const state = {
     video_id: string;
     platform: string;
     title: string;
-    summary: string;
-    keywords: string[];
     cover_url: string | null;
     source_url: string;
     duration_seconds: number;
@@ -143,8 +141,6 @@ vi.mock("../lib/api", () => {
       uploader: "",
       language: null,
       processed_at: "2026-03-31T20:00:00Z",
-      summary: "",
-      keywords: [],
       cover_url: null,
       transcript: "This is the transcript text...",
       settings_snapshot: {},
@@ -254,8 +250,6 @@ describe("list detail page", () => {
         video_id: "BV1old",
         platform: "bilibili",
         title: "Existing Source",
-        summary: "",
-        keywords: [],
         cover_url: null,
         source_url: "https://www.bilibili.com/video/BV1old",
         duration_seconds: 0,
@@ -323,8 +317,6 @@ describe("list detail page", () => {
         video_id: "BV1old",
         platform: "bilibili",
         title: "Existing Source",
-        summary: "",
-        keywords: [],
         cover_url: null,
         source_url: "https://www.bilibili.com/video/BV1old",
         duration_seconds: 0,
@@ -345,12 +337,20 @@ describe("list detail page", () => {
       uploader: "TestUploader",
       language: null,
       processed_at: "2026-03-31T20:00:00Z",
-      summary: "Great video",
-      keywords: ["ml", "ai"],
       cover_url: null,
       transcript: "hello transcript",
       settings_snapshot: {},
     });
+    vi.mocked(api.getSourceSections).mockResolvedValue([
+      {
+        section_id: "sec-1",
+        seq: 1,
+        summary: "Great video",
+        keywords: ["ml", "ai"],
+        timestamp_start: 0,
+        timestamp_end: 600,
+      },
+    ]);
 
     const router = createMemoryRouter(routes, { initialEntries: ["/lists/list-1"] });
     render(withRouter(router));
@@ -404,8 +404,6 @@ describe("list detail page", () => {
         video_id: "BV1first",
         platform: "bilibili",
         title: "Source One",
-        summary: "",
-        keywords: [],
         cover_url: null,
         source_url: "https://www.bilibili.com/video/BV1first",
         duration_seconds: 0,
@@ -418,8 +416,6 @@ describe("list detail page", () => {
         video_id: "BV1second",
         platform: "bilibili",
         title: "Source Two",
-        summary: "",
-        keywords: [],
         cover_url: null,
         source_url: "https://www.bilibili.com/video/BV1second",
         duration_seconds: 0,

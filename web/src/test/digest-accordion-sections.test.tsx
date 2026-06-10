@@ -14,8 +14,6 @@ afterEach(() => {
 
 const baseProps = {
   source: { id: "src-1" },
-  summary: "Source-level summary (legacy, used for 1-section case)",
-  keywords: ["alpha", "beta"],
   onRerun: vi.fn(),
   onRefresh: vi.fn(),
   facets: { seriesName: "Series A", sequenceNumber: 1, seasonNumber: null },
@@ -45,19 +43,18 @@ function renderDigest(extra: Partial<React.ComponentProps<typeof DigestAccordion
 }
 
 describe("DigestAccordion sections", () => {
-  test("1-section case (sections undefined): renders the legacy markup, no pager", () => {
+  test("sections not yet loaded (undefined): no digest body, no pager", () => {
     renderDigest();
-    // The 1-section path is byte-identical: source-level summary + chips,
-    // no role="tablist".
-    expect(screen.getByText(/Source-level summary/)).toBeInTheDocument();
-    expect(screen.getAllByText(/^(alpha|beta)$/)).toHaveLength(2);
+    // Sections are the sole digest store; until they arrive there is no
+    // summary/keywords to show and no pager.
+    expect(screen.queryByText(/summary text/)).not.toBeInTheDocument();
     expect(screen.queryByRole("tablist")).not.toBeInTheDocument();
   });
 
-  test("1-section case (sections has 1 item): still renders the legacy markup, no pager", () => {
+  test("1-section case: renders section 0's summary + keywords, no pager", () => {
     renderDigest({ sections: makeSections(1) });
-    expect(screen.getByText(/Source-level summary/)).toBeInTheDocument();
-    expect(screen.getAllByText(/^(alpha|beta)$/)).toHaveLength(2);
+    expect(screen.getByText(/Section 1 summary text/)).toBeInTheDocument();
+    expect(screen.getAllByText(/^(kw-1a|kw-1b)$/)).toHaveLength(2);
     expect(screen.queryByRole("tablist")).not.toBeInTheDocument();
   });
 

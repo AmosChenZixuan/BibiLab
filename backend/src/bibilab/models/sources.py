@@ -15,8 +15,6 @@ class SourceContentResponse(BaseModel):
     uploader: str
     language: str | None
     processed_at: datetime | None
-    summary: str
-    keywords: list[str]
     cover_url: str | None
     transcript: str
     series_name: str | None = None
@@ -25,9 +23,6 @@ class SourceContentResponse(BaseModel):
 
     @classmethod
     def from_source(cls, source: dict, transcript: str) -> "SourceContentResponse":
-        keywords = source["keywords"]
-        if not isinstance(keywords, list):
-            keywords = json.loads(keywords or "[]")
         processed_at_str = source["processed_at"]
         processed_at: datetime | None = None
         if processed_at_str:
@@ -45,8 +40,6 @@ class SourceContentResponse(BaseModel):
             uploader=source["uploader"],
             language=source["language"],
             processed_at=processed_at,
-            summary=source["summary"],
-            keywords=keywords,
             cover_url=source["cover_url"],
             transcript=transcript,
             series_name=source["series_name"],

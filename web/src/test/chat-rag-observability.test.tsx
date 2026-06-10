@@ -14,8 +14,6 @@ const SOURCE_1: Source = {
   video_id: "BV1test",
   platform: "bilibili",
   title: "Test Video A",
-  summary: "A test video",
-  keywords: [],
   cover_url: null,
   source_url: "https://bilibili.com/video/BV1test",
   duration_seconds: 3600,

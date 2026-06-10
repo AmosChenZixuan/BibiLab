@@ -15,6 +15,7 @@ from bibilab.adapters.base import AuthRequiredError, VideoMeta
 from bibilab.cleanup import cleanup_job_artifacts
 from bibilab.config import BibilabConfig, bibilab_home, load_config
 from bibilab.db import (
+    apply_digest_facets,
     create_artifact,
     delete_job,
     get_list,
@@ -29,7 +30,6 @@ from bibilab.db import (
     update_job_meta,
     update_job_status,
     update_section_summaries,
-    update_source_digest,
     write_source_with_segments,
 )
 from bibilab.model_registry import ensure
@@ -734,10 +734,8 @@ class WorkerLoop:
             source_id,
             [(row["seq"], sd.summary, sd.keywords) for row, sd in zip(section_rows, section_digests)],
         )
-        await update_source_digest(
+        await apply_digest_facets(
             source_id,
-            extraction.summary,
-            extraction.keywords,
             series_name=extraction.series_name,
             sequence_number=extraction.sequence_number,
             season_number=extraction.season_number,
@@ -990,8 +988,6 @@ class WorkerLoop:
             platform=video_meta.platform,
             list_id=list_id,
             title=video_meta.title,
-            summary=extraction.summary,
-            keywords=extraction.keywords,
             cover_url=video_meta.cover_url,
             source_url=video_meta.source_url,
             duration_seconds=video_meta.duration_seconds,

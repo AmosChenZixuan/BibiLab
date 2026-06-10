@@ -21,8 +21,6 @@ describe("job spirit", () => {
         video_id: "BV1abc",
         platform: "bilibili",
         title: "Message Queues",
-        summary: "",
-        keywords: [],
         cover_url: null,
         source_url: "https://www.bilibili.com/video/BV1abc",
         duration_seconds: 0,

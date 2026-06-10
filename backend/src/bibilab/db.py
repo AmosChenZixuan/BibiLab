@@ -80,8 +80,6 @@ CREATE TABLE IF NOT EXISTS sources (
     platform          TEXT NOT NULL,
     list_id           TEXT NOT NULL REFERENCES lists(id),
     title             TEXT NOT NULL DEFAULT '',
-    summary           TEXT NOT NULL DEFAULT '',
-    keywords          TEXT NOT NULL DEFAULT '[]',
     cover_url         TEXT,
     source_url        TEXT NOT NULL DEFAULT '',
     duration_seconds  INTEGER NOT NULL DEFAULT 0,
@@ -286,8 +284,6 @@ async def _exec_write_source(
     platform: str,
     list_id: str,
     title: str,
-    summary: str,
-    keywords: list[str],
     cover_url: str | None,
     source_url: str,
     duration_seconds: int,
@@ -308,17 +304,15 @@ async def _exec_write_source(
     await db.execute(
         """
         INSERT INTO sources
-            (id, video_id, platform, list_id, title, summary, keywords,
+            (id, video_id, platform, list_id, title,
              cover_url, source_url, duration_seconds, uploader,
              language, whisper_model, ai_model,
              processed_at, settings_snapshot,
              series_name, sequence_number, season_number)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(video_id, list_id) DO UPDATE SET
             platform=excluded.platform,
             title=excluded.title,
-            summary=excluded.summary,
-            keywords=excluded.keywords,
             cover_url=excluded.cover_url,
             source_url=excluded.source_url,
             duration_seconds=excluded.duration_seconds,
@@ -338,8 +332,6 @@ async def _exec_write_source(
             platform,
             list_id,
             title,
-            summary,
-            json.dumps(keywords),
             cover_url,
             source_url,
             duration_seconds,
@@ -449,26 +441,24 @@ async def write_source_with_segments(
         await db.commit()
 
 
-async def update_source_digest(
+async def apply_digest_facets(
     source_id: str,
-    summary: str,
-    keywords: list[str],
     series_name: str | None = None,
     sequence_number: int | None = None,
     season_number: int | None = None,
     bump_processed_at: bool = True,
 ) -> None:
+    # Mirrors the facets the digest step extracted onto the source row (summaries
+    # live per-section in the sections table; the source carries facets only).
     # Reruns pass bump_processed_at=False: processed_at anchors list ordering
     # (ORDER BY processed_at ASC in list_sources), and a digest rerun shouldn't
     # move the source within the list.
     sets = [
-        "summary=?",
-        "keywords=?",
         "series_name=COALESCE(?, series_name)",
         "sequence_number=COALESCE(?, sequence_number)",
         "season_number=COALESCE(?, season_number)",
     ]
-    params: list[object] = [summary, json.dumps(keywords), series_name, sequence_number, season_number]
+    params: list[object] = [series_name, sequence_number, season_number]
     if bump_processed_at:
         sets.append("processed_at=?")
         params.append(_now())
@@ -484,7 +474,7 @@ async def update_source_digest(
 
 
 # Manual-edit facet writer. Replace semantics (explicit None clears), distinct
-# from update_source_digest's COALESCE-preserve.
+# from apply_digest_facets's COALESCE-preserve.
 _FACET_WRITE_COLUMNS = ("series_name", "sequence_number", "season_number")
 
 

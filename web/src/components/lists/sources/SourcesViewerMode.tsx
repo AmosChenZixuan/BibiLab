@@ -113,8 +113,6 @@ export function SourcesViewerMode({
           <DigestAccordion
             key={source.id}
             source={source}
-            summary={sourceContent.summary}
-            keywords={sourceContent.keywords}
             onRerun={handleRerunDigest}
             onRefresh={() => onRefresh()}
             facets={{
