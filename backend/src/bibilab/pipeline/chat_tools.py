@@ -71,8 +71,37 @@ def _build_section_fence_header(entry: CitationRegistryEntry) -> str:
     )
 
 
+# Rendered between two non-adjacent fragments of one section to signal that
+# transcript was elided between them. Adjacent fragments join on a plain
+# newline (continuous speech); a gap marker means the model must not read
+# across the boundary as if it were continuous.
+_FRAGMENT_GAP = "[…]"
+
+
+def _join_section_fragments(fragments: list[tuple[int, int, str]]) -> str:
+    """Join a section's chunk fragments in chronological (segment) order.
+
+    Each fragment is (seg_start, seg_end, body). Retrieval returns chunks in
+    rerank order, so a section's fragments can arrive out of spoken order;
+    sorting by seg_start restores it. Chunk ranges are disjoint and nest within
+    a section, so the sorted seg_end is monotonic. Between two fragments that are
+    not seg-adjacent (a gap in segment indices ⇒ skipped transcript) a
+    `_FRAGMENT_GAP` marker is inserted so the elision reads as a gap, not as
+    continuous speech.
+    """
+    if not fragments:
+        return ""
+    ordered = sorted(fragments, key=lambda f: f[0])
+    out = ordered[0][2]
+    prev_end = ordered[0][1]
+    for seg_start, seg_end, body in ordered[1:]:
+        out += (f"\n\n{_FRAGMENT_GAP}\n\n" if seg_start > prev_end + 1 else "\n") + body
+        prev_end = seg_end
+    return out
+
+
 def _build_fenced_sections(
-    chunks_by_index: dict[int, list[str]],
+    chunks_by_index: dict[int, list[tuple[int, int, str]]],
     summaries_by_index: dict[int, str],
     registry: dict[str, CitationRegistryEntry],
 ) -> str:
@@ -90,7 +119,7 @@ def _build_fenced_sections(
         summary = summaries_by_index.get(idx)
         if summary:
             parts.append(summary)
-        body = "\n".join(chunks_by_index.get(idx, []))
+        body = _join_section_fragments(chunks_by_index.get(idx, []))
         if body:
             parts.append(body)
         blocks.append("\n".join(parts))
@@ -464,7 +493,7 @@ async def execute_find_passages(
         return entry
 
     # Map each displayed chunk → its section; allocate [N] per section.
-    chunks_by_index: dict[int, list[str]] = {}
+    chunks_by_index: dict[int, list[tuple[int, int, str]]] = {}
     summaries_by_index: dict[int, str] = {}
     raw_chunks = []
     for c in new_chunks:
@@ -490,7 +519,8 @@ async def execute_find_passages(
             entry.timestamp_start = c.timestamp_start
         if entry.timestamp_end is None or c.timestamp_end > entry.timestamp_end:
             entry.timestamp_end = c.timestamp_end
-        chunks_by_index.setdefault(idx, []).append(body)
+        seg_end = c.seg_end if c.seg_end is not None else c.seg_start
+        chunks_by_index.setdefault(idx, []).append((c.seg_start, seg_end, body))
         summaries_by_index[idx] = summary_by_section_id.get(section_id, "")
         raw_chunks.append(
             {

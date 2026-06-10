@@ -47,7 +47,7 @@ LLM delta stream
 1. User sends message → `chat_endpoint` resolves facet, builds `source_pool` + `facet_scope`
 2. `stream_with_tools` starts with empty `registry: dict[section_id, CitationRegistryEntry]`
 3. LLM calls `find_passages` (locator) or `read_section(section_id="[N]")` (drill) → `execute_find_passages` / `execute_read_section` assign indices, format body
-4. `find_passages` tool result: chunks grouped by section under per-section `===== [N] "Title" · Section M (mm:ss–mm:ss) =====` fences; on facet match, full section OUTLINE (every section, summaries only, non-citable) is emitted instead
+4. `find_passages` tool result: chunks grouped by section under per-section `===== [N] "Title" · Section M (mm:ss–mm:ss) =====` fences; within a fence, fragments render in chronological (segment) order — not rerank order — with a `[…]` gap marker between non-seg-adjacent fragments to mark elided transcript; on facet match, full section OUTLINE (every section, summaries only, non-citable) is emitted instead
 5. `read_section` tool result: one section's bounded verbatim transcript (segments within `seg_start..seg_end`), `citable=True` on success
 6. LLM responds with deltas containing `[N]` tokens
 7. `CitationParser` strips `[N]`, emits `citation` SSE events with `{index, section_id, source_id, timestamp_start, chunk_ids}` — **only for citable entries**; outline-only `[N]` renders as plain text

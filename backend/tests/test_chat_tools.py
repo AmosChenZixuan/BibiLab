@@ -1184,13 +1184,39 @@ def test_build_fenced_sections_orders_by_index_and_includes_summary_then_chunks(
         ),
     }
     summaries = {1: "Section one summary", 2: "Section two summary"}
-    chunks_by_index = {1: ["[S1·SPK0 @0:01] hello"], 2: []}
+    chunks_by_index = {1: [(0, 0, "[S1·SPK0 @0:01] hello")], 2: []}
     out = _build_fenced_sections(chunks_by_index, summaries, reg)
     # index order, header → summary → chunk body; section 2 has summary, no chunks
     assert out.index('[1] "T" · Section 1') < out.index('[2] "T" · Section 2')
     assert "Section one summary" in out
     assert "[S1·SPK0 @0:01] hello" in out
     assert "Section two summary" in out
+
+
+def test_join_section_fragments_sorts_chronologically_and_marks_gaps():
+    from bibilab.pipeline.chat_tools import _FRAGMENT_GAP, _join_section_fragments
+
+    # Fragments arrive in rerank (out-of-spoken) order: seg 5 before seg 0.
+    out = _join_section_fragments([(5, 6, "later"), (0, 1, "earlier")])
+    # Chronological: earlier renders before later.
+    assert out.index("earlier") < out.index("later")
+    # Non-adjacent (seg 1 → seg 5) ⇒ gap marker between them.
+    assert _FRAGMENT_GAP in out
+
+
+def test_join_section_fragments_no_gap_when_adjacent():
+    from bibilab.pipeline.chat_tools import _FRAGMENT_GAP, _join_section_fragments
+
+    # seg_end 1 → next seg_start 2: contiguous, no transcript skipped.
+    out = _join_section_fragments([(0, 1, "first"), (2, 3, "second")])
+    assert _FRAGMENT_GAP not in out
+    assert out == "first\nsecond"
+
+
+def test_join_section_fragments_empty():
+    from bibilab.pipeline.chat_tools import _join_section_fragments
+
+    assert _join_section_fragments([]) == ""
 
 
 @pytest.mark.asyncio
@@ -1415,6 +1441,88 @@ async def test_execute_find_passages_reconstructs_namespaced_turn_body(monkeypat
     assert registry["sec-1"].source_id == "v1"
     assert registry["sec-1"].seq == 1
     assert registry["sec-1"].preview == "[S1·SPK0 @0:00] 你好。\n[S1·SPK1 @0:05] 再见。"
+
+
+@pytest.mark.asyncio
+async def test_execute_find_passages_orders_same_section_chronologically_with_gap(monkeypatch):
+    """#464 end-to-end: two hits in one section returned in REVERSE rerank order
+    (the later-seg fragment scores highest) render chronologically in the fence,
+    with a gap marker between the non-adjacent fragments. Guards the wiring from
+    chunk seg-range → _join_section_fragments — a transposed/wrong tuple arg at
+    the append site would pass the helper's own unit tests but fail here."""
+    from unittest.mock import AsyncMock
+
+    from bibilab.config import AIConfig, BackendConfig, BibilabConfig
+    from bibilab.pipeline import chat_tools
+    from bibilab.pipeline.chat_tools import _FRAGMENT_GAP
+    from bibilab.pipeline.embed import RetrievalResult, RetrievedChunk, SourceHit
+
+    async def fake_retrieve(query_text, source_ids, cfg, top_k, **kwargs):
+        return RetrievalResult(
+            chunks=[
+                # rerank-top is the LATER fragment (seg 10-11) — out of spoken order.
+                RetrievedChunk(
+                    content="late",
+                    video_title="V1",
+                    timestamp_start=100.0,
+                    timestamp_end=110.0,
+                    source_id="v1",
+                    distance=0.1,
+                    score=0.9,
+                    seg_start=10,
+                    seg_end=11,
+                ),
+                RetrievedChunk(
+                    content="early",
+                    video_title="V1",
+                    timestamp_start=0.0,
+                    timestamp_end=8.0,
+                    source_id="v1",
+                    distance=0.2,
+                    score=0.7,
+                    seg_start=0,
+                    seg_end=1,
+                ),
+            ],
+            candidates_evaluated=2,
+            sources_with_hits=1,
+            sources_total=1,
+            source_coverage=[SourceHit(source_id="v1", video_title="V1", best_score=-0.9)],
+        )
+
+    # Both chunks nest in one section (seg 0..29).
+    seg_rows = [
+        {"source_id": "v1", "seq": 0, "start_s": 0.0, "end_s": 4.0, "speaker": "SPK_0", "text": "EARLY."},
+        {"source_id": "v1", "seq": 1, "start_s": 5.0, "end_s": 8.0, "speaker": "SPK_0", "text": "early-two."},
+        {"source_id": "v1", "seq": 10, "start_s": 100.0, "end_s": 105.0, "speaker": "SPK_0", "text": "LATE."},
+        {"source_id": "v1", "seq": 11, "start_s": 106.0, "end_s": 110.0, "speaker": "SPK_0", "text": "late-two."},
+    ]
+    section_rows = [
+        {
+            "id": "sec-1",
+            "source_id": "v1",
+            "seq": 0,
+            "seg_start": 0,
+            "seg_end": 29,
+            "token_count": 100,
+            "timestamp_start": 0.0,
+            "timestamp_end": 110.0,
+            "summary": "summary",
+            "keywords": "[]",
+        }
+    ]
+    monkeypatch.setattr(chat_tools, "retrieve", fake_retrieve)
+    monkeypatch.setattr(chat_tools, "get_segments_for_ranges", AsyncMock(return_value=seg_rows))
+    monkeypatch.setattr(chat_tools, "get_sections", AsyncMock(return_value=section_rows))
+
+    cfg = BibilabConfig(ai=AIConfig(protocol="openai", model="x", api_key="k", base_url=""), backend=BackendConfig())
+
+    result = await chat_tools.execute_find_passages(query="q", source_ids=["v1"], cfg=cfg, registry={})
+    chunks = result["_chunks"]
+
+    # Chronological despite LATE being the rerank-top chunk, with the gap marker
+    # between the two non-adjacent (seg 1 → seg 10) fragments.
+    assert chunks.index("EARLY.") < chunks.index(_FRAGMENT_GAP) < chunks.index("LATE.")
 
 
 # ---------------------------------------------------------------------------
