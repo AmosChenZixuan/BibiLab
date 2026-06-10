@@ -25,7 +25,6 @@ vi.mock("@/lib/api", async () => {
       listJobs: vi.fn().mockResolvedValue([]),
       deleteJob: vi.fn().mockResolvedValue(undefined),
     }),
-    setCurrentLang: vi.fn(),
   };
 });
 

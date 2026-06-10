@@ -38,7 +38,6 @@ vi.mock("@/lib/api", async () => {
   return {
     api: mockApi,
     createApiClient: () => mockApi,
-    setCurrentLang: vi.fn(),
   };
 });
 

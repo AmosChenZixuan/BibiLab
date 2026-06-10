@@ -38,7 +38,6 @@ vi.mock("@/lib/api", async () => {
       listArtifacts: vi.fn().mockResolvedValue([]),
       getArtifactContent: vi.fn().mockResolvedValue({ content: "# Study Guide\n\nContent here" }),
     }),
-    setCurrentLang: vi.fn(),
   };
 });
 

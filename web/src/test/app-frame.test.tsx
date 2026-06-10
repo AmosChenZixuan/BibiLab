@@ -26,7 +26,6 @@ vi.mock("../lib/api", () => {
     notifyBilibiliAuthChanged: vi.fn(),
     createApiClient: () => mockApi,
     api: mockApi,
-    setCurrentLang: vi.fn(),
   };
 });
 

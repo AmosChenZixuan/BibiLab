@@ -1,5 +1,15 @@
 export const LANG_STORAGE_KEY = "bibilab-lang";
 
+export type Lang = "en" | "zh";
+
+export function getUiLang(): Lang {
+  return localStorage.getItem(LANG_STORAGE_KEY) === "zh" ? "zh" : "en";
+}
+
+export function setUiLang(next: Lang): void {
+  localStorage.setItem(LANG_STORAGE_KEY, next);
+}
+
 export function translateOrFallback(t: (key: string) => string, key: string, fallback: string): string {
   const translated = t(key);
   return translated !== key ? translated : fallback;
