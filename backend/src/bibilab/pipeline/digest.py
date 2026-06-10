@@ -2,7 +2,6 @@
 
 import logging
 import math
-from typing import Callable, TypeVar
 
 from pydantic import BaseModel, ValidationInfo, field_validator
 
@@ -11,14 +10,11 @@ from bibilab.config import AIConfig
 from bibilab.pipeline._shared import (
     _LANG_INSTRUCTION,
     _STRICT_SUFFIX,
-    ContextWindowExceededError,
-    LLMOutputBudgetExceededError,
-    _call_llm,
+    _call_llm_with_retry,
     _lang_output_directive,
     _parse_llm_json_response,
-    _resolved_lang,
+    resolve_response_language,
 )
-from bibilab.pipeline.audio import PipelineError
 
 logger = logging.getLogger(__name__)
 
@@ -27,8 +23,6 @@ logger = logging.getLogger(__name__)
 # are presentation-only. Kept short and topical; raised from 5 to widen
 # query-topic coverage for the chip.
 _MAX_KEYWORDS = 8
-
-T = TypeVar("T")
 
 
 class SectionDigest(BaseModel):
@@ -205,45 +199,6 @@ def _wrap_with_lang_directive(body: str, lang: str) -> str:
     return f"{lang_instruction}\n\n{body}\n\n{lang_instruction}\n{_lang_output_directive(lang)}"
 
 
-def _call_llm_with_retry(
-    prompt: str,
-    parse_fn: Callable[[str], T],
-    *,
-    label: str,
-    meta: VideoMeta,
-    cfg: AIConfig,
-    llm_timeout: int,
-) -> T:
-    """Run prompt through the digest retry ladder (plain → strict ×2), parse, surface PipelineError on exhaustion."""
-    prompts = [prompt, prompt + _STRICT_SUFFIX, prompt + _STRICT_SUFFIX]
-    last_exc: Exception | None = None
-    for attempt, p in enumerate(prompts, start=1):
-        try:
-            raw = _call_llm(p, cfg, llm_timeout=llm_timeout)
-            return parse_fn(raw)
-        except (ContextWindowExceededError, LLMOutputBudgetExceededError):
-            # Structural failure — input overflow won't shrink on retry, and
-            # output budget exhaustion is identical across attempts (same
-            # prompt + same budget). Surface immediately rather than burning
-            # two more calls. Transient errors fall through to the generic
-            # except below and get retried.
-            raise
-        except Exception as exc:
-            last_exc = exc
-            logger.warning(
-                "LLM %s failed for %s (attempt %d/%d): %s",
-                label,
-                meta.video_id,
-                attempt,
-                len(prompts),
-                exc,
-            )
-
-    error_msg = f"LLM {label} exhausted all retries for {meta.video_id}: {last_exc}"
-    logger.error(error_msg)
-    raise PipelineError(error_msg) from last_exc
-
-
 def digest(
     transcript_text: str,
     meta: VideoMeta,
@@ -252,13 +207,19 @@ def digest(
     ui_lang: str | None = None,
     llm_timeout: int = 120,
 ) -> DigestResult:
-    lang = _resolved_lang(output_language, ui_lang)
+    # The output_language parameter wins over cfg.output_language — the worker
+    # calls with cfg.ai.output_language explicitly, but keeping the parameter
+    # preserves the public digest() signature.
+    if output_language != "ui":
+        lang = output_language
+    else:
+        lang = resolve_response_language(cfg, ui_lang)
     prompt = _wrap_with_lang_directive(
         _DIGEST_PROMPT.format(title=meta.title, transcript=transcript_text, max_keywords=_MAX_KEYWORDS),
         lang,
     )
     return _call_llm_with_retry(
-        prompt,
+        [prompt, prompt + _STRICT_SUFFIX, prompt + _STRICT_SUFFIX],
         _parse_response,
         label="digest",
         meta=meta,
@@ -285,7 +246,7 @@ def _refine_one_section(
     """Run the refine LLM call with the same retry ladder as digest()."""
     base_prompt = _build_refine_prompt(running=running, section_text=section_text, lang=lang)
     return _call_llm_with_retry(
-        base_prompt,
+        [base_prompt, base_prompt + _STRICT_SUFFIX, base_prompt + _STRICT_SUFFIX],
         _parse_section_digest_response,
         label="section refine",
         meta=meta,
@@ -309,7 +270,10 @@ def digest_sections(
     the [SectionDigest] mirrors the DigestResult exactly (byte-identical
     contract).
     """
-    lang = _resolved_lang(output_language, ui_lang)
+    if output_language != "ui":
+        lang = output_language
+    else:
+        lang = resolve_response_language(cfg, ui_lang)
 
     # Section 1: existing digest() — extracts facets once.
     extraction = digest(section_texts[0], meta, cfg, output_language, ui_lang, llm_timeout)

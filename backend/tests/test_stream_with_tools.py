@@ -488,99 +488,98 @@ class TestClassifyError:
         The tool_error code is set explicitly at the yield site in run_chat_turn,
         not derived from exception inspection.
         """
-        from bibilab.routers.chat import classify_error
+        from bibilab.pipeline._shared import _classify_llm_error
 
-        assert classify_error(Exception("something broke")) == "internal_error"
+        assert _classify_llm_error(Exception("something broke")) == "internal_error"
 
     def test_context_window_exceeded(self):
         """resolve_max_tokens' overflow error gets its own code, not internal_error,
         so the chat toast is meaningful rather than a generic server error."""
-        from bibilab.pipeline._shared import ContextWindowExceededError
-        from bibilab.routers.chat import classify_error
+        from bibilab.pipeline._shared import ContextWindowExceededError, _classify_llm_error
 
-        assert classify_error(ContextWindowExceededError("too big")) == "llm_context_window_exceeded"
+        assert _classify_llm_error(ContextWindowExceededError("too big")) == "llm_context_window_exceeded"
 
     def test_openai_connection_error(self):
-        from bibilab.routers.chat import classify_error
+        from bibilab.pipeline._shared import _classify_llm_error
 
-        assert classify_error(openai.APIConnectionError(request=self._req)) == "llm_connection_error"
+        assert _classify_llm_error(openai.APIConnectionError(request=self._req)) == "llm_connection_error"
 
     def test_openai_timeout(self):
-        from bibilab.routers.chat import classify_error
+        from bibilab.pipeline._shared import _classify_llm_error
 
-        assert classify_error(openai.APITimeoutError(request=self._req)) == "llm_connection_error"
+        assert _classify_llm_error(openai.APITimeoutError(request=self._req)) == "llm_connection_error"
 
     def test_openai_auth_error(self):
-        from bibilab.routers.chat import classify_error
+        from bibilab.pipeline._shared import _classify_llm_error
 
         assert (
-            classify_error(openai.AuthenticationError(message="bad key", response=self._resp, body=None))
+            _classify_llm_error(openai.AuthenticationError(message="bad key", response=self._resp, body=None))
             == "llm_auth_error"
         )
 
     def test_openai_permission_denied(self):
-        from bibilab.routers.chat import classify_error
+        from bibilab.pipeline._shared import _classify_llm_error
 
         assert (
-            classify_error(openai.PermissionDeniedError(message="not allowed", response=self._resp, body=None))
+            _classify_llm_error(openai.PermissionDeniedError(message="not allowed", response=self._resp, body=None))
             == "llm_auth_error"
         )
 
     def test_openai_rate_limit(self):
-        from bibilab.routers.chat import classify_error
+        from bibilab.pipeline._shared import _classify_llm_error
 
         assert (
-            classify_error(openai.RateLimitError(message="too many", response=self._resp, body=None))
+            _classify_llm_error(openai.RateLimitError(message="too many", response=self._resp, body=None))
             == "llm_rate_limit_error"
         )
 
     def test_openai_api_error_subclass(self):
-        from bibilab.routers.chat import classify_error
+        from bibilab.pipeline._shared import _classify_llm_error
 
         class SomeOpenAIError(openai.APIError):
             pass
 
-        assert classify_error(SomeOpenAIError(message="generic", request=self._req, body=None)) == "llm_api_error"
+        assert _classify_llm_error(SomeOpenAIError(message="generic", request=self._req, body=None)) == "llm_api_error"
 
     def test_anthropic_connection_error(self):
-        from bibilab.routers.chat import classify_error
+        from bibilab.pipeline._shared import _classify_llm_error
 
-        assert classify_error(anthropic.APIConnectionError(request=self._req)) == "llm_connection_error"
+        assert _classify_llm_error(anthropic.APIConnectionError(request=self._req)) == "llm_connection_error"
 
     def test_anthropic_auth_error(self):
-        from bibilab.routers.chat import classify_error
+        from bibilab.pipeline._shared import _classify_llm_error
 
         assert (
-            classify_error(anthropic.AuthenticationError(message="bad key", response=self._resp, body=None))
+            _classify_llm_error(anthropic.AuthenticationError(message="bad key", response=self._resp, body=None))
             == "llm_auth_error"
         )
 
     def test_anthropic_rate_limit(self):
-        from bibilab.routers.chat import classify_error
+        from bibilab.pipeline._shared import _classify_llm_error
 
         assert (
-            classify_error(anthropic.RateLimitError(message="too many", response=self._resp, body=None))
+            _classify_llm_error(anthropic.RateLimitError(message="too many", response=self._resp, body=None))
             == "llm_rate_limit_error"
         )
 
     def test_openai_api_status_error_still_api_error(self):
-        from bibilab.routers.chat import classify_error
+        from bibilab.pipeline._shared import _classify_llm_error
 
         assert (
-            classify_error(openai.APIStatusError(message="status 500", response=self._resp, body=None))
+            _classify_llm_error(openai.APIStatusError(message="status 500", response=self._resp, body=None))
             == "llm_api_error"
         )
 
     def test_anthropic_timeout(self):
-        from bibilab.routers.chat import classify_error
+        from bibilab.pipeline._shared import _classify_llm_error
 
-        assert classify_error(anthropic.APITimeoutError(request=self._req)) == "llm_connection_error"
+        assert _classify_llm_error(anthropic.APITimeoutError(request=self._req)) == "llm_connection_error"
 
     def test_anthropic_api_status_error_still_api_error(self):
-        from bibilab.routers.chat import classify_error
+        from bibilab.pipeline._shared import _classify_llm_error
 
         assert (
-            classify_error(anthropic.APIStatusError(message="status 500", response=self._resp, body=None))
+            _classify_llm_error(anthropic.APIStatusError(message="status 500", response=self._resp, body=None))
             == "llm_api_error"
         )
 

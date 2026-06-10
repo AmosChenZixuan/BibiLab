@@ -34,13 +34,15 @@ from bibilab.db import (
 )
 from bibilab.model_registry import ensure
 from bibilab.models.jobs import JobStatus
+
+# Aliased module import for _call_llm_with_retry (long signature; kept off the explicit
+# import list to avoid dragging every kwarg onto a bare-name import line).
+from bibilab.pipeline import _shared as _shared_pipeline
 from bibilab.pipeline._shared import (
     _LANG_INSTRUCTION,
-    ContextWindowExceededError,
-    _call_llm,
     _lang_output_directive,
     _parse_llm_json_response,
-    _resolved_lang,
+    resolve_response_language,
 )
 from bibilab.pipeline.audio import PipelineError, extract_audio
 from bibilab.pipeline.digest import DigestResult, SectionDigest, digest_sections
@@ -185,7 +187,7 @@ def _build_initial_prompt(
 
     The single-call case is byte-identical to today's _generate_artifact
     template (regression guard)."""
-    lang = _resolved_lang(cfg.ai.output_language, ui_lang)
+    lang = resolve_response_language(cfg.ai, ui_lang)
     lang_instruction = _LANG_INSTRUCTION.get(lang, _LANG_INSTRUCTION["en"])
     lang_output_directive = _lang_output_directive(lang)
     return f"""{lang_instruction}
@@ -217,7 +219,7 @@ def _build_refine_prompt(
     new material, and instruct the LLM to integrate them. The LLM returns
     a fresh {name, content} JSON — name is re-derived from accumulated
     context (single prompt template family, no special-case)."""
-    lang = _resolved_lang(cfg.ai.output_language, ui_lang)
+    lang = resolve_response_language(cfg.ai, ui_lang)
     lang_instruction = _LANG_INSTRUCTION.get(lang, _LANG_INSTRUCTION["en"])
     lang_output_directive = _lang_output_directive(lang)
     # Use json.dumps (not repr interpolation) so the fenced JSON block is
@@ -301,34 +303,6 @@ async def _build_section_views(source_ids: list[str]) -> list[_SectionView]:
     return views
 
 
-async def _call_llm_with_retry(
-    llm_prompt: str,
-    cfg: BibilabConfig,
-    *,
-    label: str,
-) -> ArtifactResult:
-    """Run ``_call_llm`` with the standard 3-attempt retry ladder. On
-    ``ContextWindowExceededError``, raise immediately (deterministic — the
-    same prompt would re-overflow). On other failures, retry 3 times then
-    raise ``PipelineError``."""
-    last_exc: Exception | None = None
-    for attempt in range(3):
-        try:
-            raw = await asyncio.to_thread(_call_llm, llm_prompt, cfg.ai)
-            return _parse_llm_json_response(raw, ArtifactResult)
-        except ContextWindowExceededError:
-            # Deterministic — no point retrying.
-            raise
-        except Exception as exc:  # noqa: BLE001
-            last_exc = exc
-            logger.warning("LLM %s failed (attempt %d/3): %s", label, attempt + 1, exc)
-            if attempt < 2:
-                continue
-    error_msg = f"LLM {label} exhausted all retries: {last_exc}"
-    logger.error(error_msg)
-    raise PipelineError(error_msg)
-
-
 async def _refine_artifact(
     *,
     prompt: str,
@@ -395,7 +369,14 @@ async def _refine_artifact(
             cfg=cfg,
             ui_lang=ui_lang,
         )
-        return await _call_llm_with_retry(llm_prompt, cfg, label="artifact batch 1/1")
+        return await asyncio.to_thread(
+            _shared_pipeline._call_llm_with_retry,
+            [llm_prompt],
+            lambda raw: _parse_llm_json_response(raw, ArtifactResult),
+            cfg=cfg.ai,
+            label="artifact batch 1/1",
+            max_attempts=3,
+        )
 
     # ---- Multi-batch path ----
     return await _refine_artifact_multi_batch(
@@ -450,7 +431,14 @@ async def _refine_artifact_multi_batch(
                 cfg=cfg,
                 ui_lang=ui_lang,
             )
-        draft = await _call_llm_with_retry(llm_prompt, cfg, label=label)
+        draft = await asyncio.to_thread(
+            _shared_pipeline._call_llm_with_retry,
+            [llm_prompt],
+            lambda raw: _parse_llm_json_response(raw, ArtifactResult),
+            cfg=cfg.ai,
+            label=label,
+            max_attempts=3,
+        )
     assert draft is not None  # invariant: at least one batch
     return draft
 

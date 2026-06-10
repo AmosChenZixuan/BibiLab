@@ -8,8 +8,6 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-import anthropic
-import openai
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import Response, StreamingResponse
 
@@ -39,13 +37,12 @@ from bibilab.models.chat import (
 )
 from bibilab.pipeline._shared import (
     _LANG_NATIVE_NAME,
-    ContextWindowExceededError,
-    LLMEmptyResponseError,
-    LLMOutputBudgetExceededError,
     StreamEvent,
     ToolCall,
     ToolDefinition,
+    _classify_llm_error,
     _no_text_error,
+    resolve_response_language,
     stream_llm,
 )
 from bibilab.pipeline.chat_runs import (
@@ -75,15 +72,6 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 debug_router = APIRouter()
-
-
-def resolve_response_language(cfg: AIConfig, ui_lang: str) -> str:
-    """Return the language string to use in chat responses.
-
-    AIConfig.output_language wins when explicitly set; "ui" means follow
-    the UI's X-UI-Lang header (passed in as ui_lang).
-    """
-    return ui_lang if cfg.output_language == "ui" else cfg.output_language
 
 
 # SSE event types — used both as stream-internal event discriminators (stream_llm yield)
@@ -118,30 +106,6 @@ _SYNTHESIS_DIRECTIVE = (
     "Answer the user's question now in prose, using only the information already "
     "retrieved. If the retrieved content is insufficient, say so plainly."
 )
-
-
-_ERROR_CODE_MAP: tuple[tuple[type[Exception], str], ...] = (
-    (ContextWindowExceededError, "llm_context_window_exceeded"),
-    (LLMOutputBudgetExceededError, "llm_output_budget_exceeded"),
-    (LLMEmptyResponseError, "llm_empty_response"),
-    (openai.APIConnectionError, "llm_connection_error"),
-    (anthropic.APIConnectionError, "llm_connection_error"),
-    (openai.AuthenticationError, "llm_auth_error"),
-    (openai.PermissionDeniedError, "llm_auth_error"),
-    (anthropic.AuthenticationError, "llm_auth_error"),
-    (openai.RateLimitError, "llm_rate_limit_error"),
-    (anthropic.RateLimitError, "llm_rate_limit_error"),
-    (openai.APIError, "llm_api_error"),
-    (anthropic.APIError, "llm_api_error"),
-)
-
-
-def classify_error(exception: Exception) -> str:
-    """Map SDK exception types to a stable error code for i18n on the frontend."""
-    for exc_type, code in _ERROR_CODE_MAP:
-        if isinstance(exception, exc_type):
-            return code
-    return "internal_error"
 
 
 _PARAGRAPH_SPLIT = re.compile(r"\n{2,}")
@@ -412,7 +376,7 @@ async def stream_with_tools(
                 # If the LLM produced no visible text across the whole turn
                 # (first turn with no tools, tool-using turn where the model
                 # never produced text, or forced synthesis also empty), surface
-                # it as a typed error so classify_error maps to a code. Branch on
+                # it as a typed error so _classify_llm_error maps to a code. Branch on
                 # the terminal stop_reason: a length cutoff → llm_output_budget_exceeded
                 # ("raise max output tokens"); anything else → llm_empty_response, so
                 # we never give false budget advice for a refusal or transient blank.
@@ -762,7 +726,7 @@ async def run_chat_turn(
         raise
     except Exception as e:
         logger.exception("producer failed message_id=%s", message_id)
-        error_reason = classify_error(e)
+        error_reason = _classify_llm_error(e)
         final_status = "failed"
     finally:
         try:

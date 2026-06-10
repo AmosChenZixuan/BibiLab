@@ -323,7 +323,7 @@ async def test_refine_artifact_single_batch_byte_identical_prompt():
     ]
     expected_response = '{"name": "My Title", "content": "My body."}'
 
-    with patch("bibilab.worker._call_llm", return_value=expected_response) as mock_llm:
+    with patch("bibilab.pipeline._shared._call_llm", return_value=expected_response) as mock_llm:
         result = await _refine_artifact(
             prompt="summarize",
             sections=sections,
@@ -368,7 +368,7 @@ async def test_refine_artifact_multi_batch_calls_llm_per_batch():
         '{"name": "Initial", "content": "First pass."}',
         '{"name": "Refined", "content": "Second pass."}',
     ]
-    with patch("bibilab.worker._call_llm", side_effect=responses) as mock_llm:
+    with patch("bibilab.pipeline._shared._call_llm", side_effect=responses) as mock_llm:
         result = await _refine_artifact(
             prompt="summarize",
             sections=sections,
@@ -404,7 +404,7 @@ async def test_refine_artifact_single_section_overflow_fails_loud():
     sections = [
         _SectionView("src-1", "A", 0, 0.0, 1.0, "A text.", token_count=5_000),  # > 2404
     ]
-    with patch("bibilab.worker._call_llm") as mock_llm:
+    with patch("bibilab.pipeline._shared._call_llm") as mock_llm:
         with pytest.raises(PipelineError, match="alone"):
             await _refine_artifact(
                 prompt="p",
@@ -427,7 +427,7 @@ async def test_refine_artifact_batch_failure_raises_pipeline_error():
         _SectionView("src-1", "A", 0, 0.0, 1.0, "A text.", token_count=50),
         _SectionView("src-1", "A", 1, 1.0, 2.0, "A1 text.", token_count=50),
     ]
-    with patch("bibilab.worker._call_llm", side_effect=RuntimeError("boom")) as mock_llm:
+    with patch("bibilab.pipeline._shared._call_llm", side_effect=RuntimeError("boom")) as mock_llm:
         with pytest.raises(PipelineError, match="exhausted all retries"):
             await _refine_artifact(
                 prompt="p",
@@ -449,7 +449,7 @@ async def test_refine_artifact_soft_cost_note_logs_warning_for_many_batches(capl
     sections = [_SectionView("src-1", "A", i, float(i), float(i + 1), f"text {i}", token_count=50) for i in range(4)]
     responses = [f'{{"name": "t{i}", "content": "c{i}"}}' for i in range(4)]
     with caplog.at_level(logging.WARNING, logger="bibilab.worker"):
-        with patch("bibilab.worker._call_llm", side_effect=responses):
+        with patch("bibilab.pipeline._shared._call_llm", side_effect=responses):
             await _refine_artifact(
                 prompt="p",
                 sections=sections,
@@ -480,7 +480,7 @@ async def test_refine_artifact_preserves_source_order_across_batches():
         '{"name": "n1", "content": "c1"}',
         '{"name": "n2", "content": "c2"}',
     ]
-    with patch("bibilab.worker._call_llm", side_effect=responses) as mock_llm:
+    with patch("bibilab.pipeline._shared._call_llm", side_effect=responses) as mock_llm:
         await _refine_artifact(
             prompt="p",
             sections=sections,
