@@ -13,7 +13,7 @@
 
 ### v1
 
-9. ~~**RAG Q&A**~~ — List-scoped multi-turn chat with transcript citations, hybrid search, cross-encoder reranking, a per-query quantile gate, and LLM-driven tool-calling retrieval (the classifier was eliminated). Implemented (epic #193 → redesign #229 → tool-calling epic #285).
+9. ~~**RAG Q&A**~~ — List-scoped multi-turn chat with transcript citations, hybrid search, cross-encoder reranking (gateless top-k), and LLM-driven tool-calling retrieval (the classifier was eliminated). Implemented (epic #193 → redesign #229 → tool-calling epic #285 → v2 redesign epic #369 → bounded-sections epic #457).
 10. ~~**Multimodal vision**~~ — Cancelled. No plan to ship; full stack (config + DB column + worker) removed in #405.
 11. **Source truth panel** — User-supplied corrections injected into RAG context. Open: stored as annotations on the note file, or a separate overlay table?
 
