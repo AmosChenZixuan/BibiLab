@@ -15,6 +15,7 @@ import pytest
 
 from bibilab.config import AIConfig, bibilab_home
 from bibilab.pipeline._shared import StreamEvent, ToolCall, ToolDefinition
+from bibilab.pipeline.chat_tools import TOOL_NAME_FIND_PASSAGES
 
 
 def test_dump_turn_writes_one_file_per_message(tmp_bibilab_home):
@@ -67,14 +68,16 @@ def test_dump_turn_serializes_tool_definitions(tmp_bibilab_home):
     debug_path = debug_dir / "msg_x.json"
     tools = [
         ToolDefinition(
-            name="find_passages",
+            name=TOOL_NAME_FIND_PASSAGES,
             description="locator",
             parameters={"type": "object", "properties": {"query": {"type": "string"}}},
         )
     ]
     _dump_turn(debug_path, system="s", messages=[], tools=tools, response_text="r")
     payload = json.loads(debug_path.read_text())
-    assert payload["tools"] == [{"name": "find_passages", "description": "locator", "parameters": tools[0].parameters}]
+    assert payload["tools"] == [
+        {"name": TOOL_NAME_FIND_PASSAGES, "description": "locator", "parameters": tools[0].parameters}
+    ]
 
 
 def test_dump_turn_swallows_errors(tmp_bibilab_home, caplog):
@@ -134,7 +137,7 @@ _NOISY_FIND_PASSAGES_RESULT = {
     "reranked": 8,
     "scoped_pool_size": 12,
     "facet_scope": {"no_match": False, "matched_count": 12},
-    "tool_name": "find_passages",
+    "tool_name": TOOL_NAME_FIND_PASSAGES,
 }
 
 
@@ -152,7 +155,7 @@ async def _drive_stream_with_tools(
     async def fake_stream_llm(messages, cfg, tools, **kwargs):
         captured["calls"].append(list(messages))
         if len(captured["calls"]) == 1:
-            tc = ToolCall(id="toolu_a", name="find_passages", arguments={"query": "q"})
+            tc = ToolCall(id="toolu_a", name=TOOL_NAME_FIND_PASSAGES, arguments={"query": "q"})
             yield StreamEvent(type="tool_call", tool_call=tc)
             yield StreamEvent(type="done")
             return
@@ -377,7 +380,7 @@ async def test_messages_sink_export_via_stream_with_tools_directly(mock_stream_l
         nonlocal call_count
         call_count += 1
         if call_count == 1:
-            yield StreamEvent(type="tool_call", tool_call=ToolCall(id="u1", name="find_passages", arguments={}))
+            yield StreamEvent(type="tool_call", tool_call=ToolCall(id="u1", name=TOOL_NAME_FIND_PASSAGES, arguments={}))
         else:
             yield StreamEvent(type="delta", content="x")
             yield StreamEvent(type="done")
@@ -416,7 +419,7 @@ async def test_messages_sink_populated_on_tool_execution_error(mock_stream_llm):
     from bibilab.routers import chat as chat_module
 
     async def fake_stream_llm(messages, cfg, tools=None, system=None):
-        yield StreamEvent(type="tool_call", tool_call=ToolCall(id="u1", name="find_passages", arguments={}))
+        yield StreamEvent(type="tool_call", tool_call=ToolCall(id="u1", name=TOOL_NAME_FIND_PASSAGES, arguments={}))
 
     mock_stream_llm.side_effect = fake_stream_llm
 

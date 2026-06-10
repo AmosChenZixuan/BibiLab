@@ -12,6 +12,7 @@ from bibilab.pipeline._shared import (
     _serialize_messages,
     resolve_max_tokens,
 )
+from bibilab.pipeline.chat_tools import TOOL_NAME_FIND_PASSAGES
 
 
 def _cfg(context_window: int = 128000, max_output_tokens: int = 16384) -> AIConfig:
@@ -166,7 +167,7 @@ def test_serialize_messages_includes_tool_calls() -> None:
                     "id": "c1",
                     "type": "function",
                     "function": {
-                        "name": "find_passages",
+                        "name": TOOL_NAME_FIND_PASSAGES,
                         "arguments": '{"query": "a long query string here"}',
                     },
                 }
@@ -175,7 +176,7 @@ def test_serialize_messages_includes_tool_calls() -> None:
         {
             "role": "tool",
             "tool_call_id": "c1",
-            "name": "find_passages",
+            "name": TOOL_NAME_FIND_PASSAGES,
             "content": "tool result payload",
         },
     ]
@@ -205,7 +206,7 @@ def test_serialize_messages_includes_anthropic_tool_blocks() -> None:
                 {
                     "type": "tool_use",
                     "id": "tu1",
-                    "name": "find_passages",
+                    "name": TOOL_NAME_FIND_PASSAGES,
                     "input": {"query": "a long anthropic query string"},
                 },
             ],
