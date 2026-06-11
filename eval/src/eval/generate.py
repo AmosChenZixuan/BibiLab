@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sys
 import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
@@ -13,9 +14,9 @@ from eval.dashboard import TaskDashboard
 from eval.models import DEFAULT_FLOOR, EvalCase, EvalSet
 
 MAX_SOURCES = 10
-# Per-source input cap for fact extraction. A single short video's facts live in the
-# first few thousand chars; a tighter cap cuts input cost/latency on the long sources
-# (the timeout-prone ones) without dropping the bulk of the content.
+# Per-source input cap for fact extraction. A single short video's facts live in
+# the first few thousand words; a tighter cap cuts input cost/latency on the long
+# sources (the timeout-prone ones) without dropping the bulk of the content.
 MAX_WORDS_PER_SOURCE = 2400
 # Fact extraction sends a whole transcript to a (often weak/slow) model; give it more
 # room than the default so a legitimately-slow call completes instead of timing out.
@@ -379,8 +380,9 @@ CATEGORY_PROMPTS: dict[str, str] = {
 }
 
 # Stratified sampling: every selected category gets DEFAULT_FLOOR questions for
-# baseline signal; the failure-prone retrieval shapes (where #523 regressions
-# hide) get a surplus on top so they aren't under-sampled at natural frequency.
+# baseline signal; the failure-prone retrieval shapes (enumeration, multi_hop,
+# coverage, causal_absent) get a surplus on top so they aren't under-sampled at
+# natural frequency.
 DEFAULT_WEIGHTS: dict[str, int] = {
     "enumeration": 2,
     "multi_hop": 2,
@@ -389,18 +391,13 @@ DEFAULT_WEIGHTS: dict[str, int] = {
 }
 
 
-def resolve_counts(
-    categories: list[str],
-    floor: int = DEFAULT_FLOOR,
-    weights: dict[str, int] | None = None,
-) -> dict[str, int]:
+def resolve_counts(categories: list[str], floor: int = DEFAULT_FLOOR) -> dict[str, int]:
     """Per-category question counts: floor for every category, plus a per-type surplus.
 
     Frequency only modulates the surplus above the floor, so rare-but-failure-prone
     types (enumeration, multi_hop, coverage, causal_absent) still get enough signal.
     """
-    weights = DEFAULT_WEIGHTS if weights is None else weights
-    return {cat: floor + max(0, weights.get(cat, 0)) for cat in categories}
+    return {cat: floor + DEFAULT_WEIGHTS.get(cat, 0) for cat in categories}
 
 
 def _read_transcript(source_id: str) -> str:
@@ -511,11 +508,13 @@ def _extract_one_source(source: dict, ai_cfg: Any, language: str = "zh") -> tupl
         raw2, call_err2 = _safe_extract_call(base_prompt + _RETRY_HINT, ai_cfg)
         data, err2 = _try_parse_object(raw2) if raw2 is not None else (None, call_err2)
         if data is None:
+            content_1 = raw if raw is not None else f"(no response: {call_err})"
+            content_2 = raw2 if raw2 is not None else f"(no response: {call_err2})"
             artifact = _persist_failed_raw(
                 f"facts_{sid}",
-                f"--- attempt 1 ---\n{raw}\n\n--- attempt 2 ---\n{raw2}",
+                f"--- attempt 1 ---\n{content_1}\n\n--- attempt 2 ---\n{content_2}",
             )
-            return (None, f"source {sid}: {err2 or err} (raw persisted: {artifact.name})")
+            return (None, f"source {sid}: {err} | {err2} (raw persisted: {artifact.name})")
 
     data["id"] = sid
     return (data, None)
@@ -618,7 +617,6 @@ def generate_eval_set(
         status = f"{n_ok}/{n_sources} sources, {fact_word_count} words ({compression}:1)"
         dash.done("__facts__", ok=ok_all, status=status)
         if facts_errors:
-            import sys
             print(f"[generate] {len(facts_errors)} source(s) failed extraction:", file=sys.stderr)
             for e in facts_errors:
                 print(f"  - {e}", file=sys.stderr)
@@ -627,11 +625,18 @@ def generate_eval_set(
             count = counts[category]
             dash.start(category, status=f"generating {count} questions")
             if category not in CATEGORY_PROMPTS:
+                print(f"[generate] unknown category: {category!r} (no prompt registered)", file=sys.stderr)
                 dash.done(category, ok=False, status="unknown category")
                 return (category, [])
             prompt = CATEGORY_PROMPTS[category].format(count=count)
             full_prompt = _with_language(f"{prompt}\n\n视频内容要点：\n{facts_block}", language)
-            raw = _call_llm(full_prompt, ai_cfg, llm_timeout=180)
+            # Same timeout budget as fact extraction — both steps are timeout-prone on weak models.
+            try:
+                raw = _call_llm(full_prompt, ai_cfg, llm_timeout=EXTRACTION_LLM_TIMEOUT)
+            except Exception as e:
+                print(f"[generate] {category!r} LLM call failed: {type(e).__name__}: {e}", file=sys.stderr)
+                dash.done(category, ok=False, status=f"call error: {type(e).__name__}")
+                return (category, [])
             stripped = strip_json_fences(raw)
             try:
                 data = json.loads(stripped)

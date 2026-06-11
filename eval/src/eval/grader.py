@@ -155,6 +155,14 @@ async def _grade_one(prompt: str, ai_cfg: AIConfig) -> tuple[int | None, str, in
         return (None, f"LLM call failed: {e}", llm_ms)
 
 
+def _notify_all_dims(score: int | None, on_dim_done) -> None:
+    """Fan a single score out to all three grading dimensions (used when one
+    judgment fills all dims, e.g. the causal_absent abstention branch)."""
+    if on_dim_done:
+        for dim in ("CR", "G", "AR"):
+            on_dim_done(dim, score is not None)
+
+
 async def _grade_case(
     case_result: RunCaseResult,
     question: str,
@@ -176,9 +184,7 @@ async def _grade_case(
         score, reasoning, ms = await _grade_one(
             build_abstention_prompt(question, expected_answer_draft, answer, language), ai_cfg
         )
-        if on_dim_done:
-            for dim in ("CR", "G", "AR"):
-                on_dim_done(dim, score is not None)
+        _notify_all_dims(score, on_dim_done)
         reasoning = reasoning or "Failed to grade"
         return GradeResult(
             case_id=case_result.case_id,
