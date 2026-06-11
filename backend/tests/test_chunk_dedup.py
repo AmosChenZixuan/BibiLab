@@ -7,7 +7,7 @@ import pytest
 
 from bibilab.config import BibilabConfig
 from bibilab.pipeline import chat_tools
-from bibilab.pipeline.chat_tools import _partition_unseen_chunks
+from bibilab.pipeline.chat_tools import TOOL_NAME_FIND_PASSAGES, _partition_unseen_chunks
 
 
 def _chunk(source_id: str, start: float, end: float):
@@ -274,7 +274,7 @@ async def test_execute_tool_forwards_seen_chunk_ids_to_find_passages(monkeypatch
 
     seen: set[str] = set()
     await chat_tools.execute_tool(
-        tool_name="find_passages",
+        tool_name=TOOL_NAME_FIND_PASSAGES,
         arguments={"query": "q"},
         source_ids=["s1"],
         cfg=_cfg(),
