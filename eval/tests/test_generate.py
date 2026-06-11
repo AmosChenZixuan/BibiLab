@@ -123,6 +123,40 @@ def test_extract_one_source_persists_on_final_failure(monkeypatch, tmp_path):
     assert artifacts[0].name in err
 
 
+def test_extract_one_source_survives_call_exception(monkeypatch, tmp_path):
+    # A timeout / API error on the LLM call must become a per-source error, not
+    # propagate — otherwise one slow source crashes the whole generation.
+    monkeypatch.setattr("bibilab.config.bibilab_home", lambda: tmp_path)
+
+    def boom(*a, **k):
+        raise TimeoutError("llm timed out")
+
+    monkeypatch.setattr("eval.generate._call_llm", boom)
+    fact, err = _extract_one_source({"id": "s1", "transcript": "hi"}, ai_cfg=None)
+    assert fact is None
+    assert "s1" in err
+    assert "TimeoutError" in err
+
+
+def test_extract_facts_call_exception_is_partial_not_crash(monkeypatch, tmp_path):
+    # The reported hard-stop: a source whose call raises must be skipped with an
+    # error, leaving the other sources' facts intact (partial success).
+    monkeypatch.setattr("bibilab.config.bibilab_home", lambda: tmp_path)
+
+    def fake(prompt, *a, **k):
+        if "boom" in prompt:
+            raise RuntimeError("api error")
+        return '{"facts":["t"]}'
+
+    monkeypatch.setattr("eval.generate._call_llm", fake)
+    sources = [{"id": "s1", "transcript": "ok"}, {"id": "s2", "transcript": "boom"}]
+    facts, errors = _extract_facts(sources, ai_cfg=None)
+    assert len(facts) == 1
+    assert facts[0]["id"] == "s1"
+    assert len(errors) == 1
+    assert "s2" in errors[0]
+
+
 def test_extract_one_source_rejects_non_object(monkeypatch, tmp_path):
     # Malformed shape: returns a JSON array instead of the expected object.
     monkeypatch.setattr("eval.generate._call_llm", lambda p, *a, **k: '[1, 2, 3]')

@@ -67,21 +67,21 @@ def test_parse_grade_response_with_markdown_fences():
 
 def test_build_abstention_prompt_includes_expected_and_answer():
     prompt = build_abstention_prompt(
-        question="人偶一族为什么和法师结盟？",
-        expected_answer_draft="资料里提到了结盟，但没有解释原因。",
-        answer="因为他们有共同的敌人。",
+        question="为什么主角要做出那个决定？",
+        expected_answer_draft="资料里提到了这件事，但没有解释原因。",
+        answer="因为他想要复仇。",
     )
-    assert "人偶一族为什么和法师结盟" in prompt
-    assert "资料里提到了结盟" in prompt
-    assert "因为他们有共同的敌人" in prompt
+    assert "为什么主角要做出那个决定" in prompt
+    assert "资料里提到了这件事" in prompt
+    assert "因为他想要复仇" in prompt
     # the rubric must frame absent context as the EXPECTED outcome, not a failure
     assert "EXPECTED" in prompt or "not a failure" in prompt
 
 
 def test_build_coverage_groundedness_prompt_accepts_summaries():
     prompt = build_coverage_groundedness_prompt(
-        answer="这一集主要讲了人偶一族的起源。",
-        chunks_text="[1] 人偶一族的起源概要……",
+        answer="这一集主要讲了主角的身世。",
+        chunks_text="[1] 主角身世的概要……",
     )
     assert "summary-derived" in prompt or "summaries" in prompt
     assert "do NOT penalize" in prompt

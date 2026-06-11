@@ -13,7 +13,13 @@ from eval.dashboard import TaskDashboard
 from eval.models import DEFAULT_FLOOR, EvalCase, EvalSet
 
 MAX_SOURCES = 10
-MAX_WORDS_PER_SOURCE = 3000
+# Per-source input cap for fact extraction. A single short video's facts live in the
+# first few thousand chars; a tighter cap cuts input cost/latency on the long sources
+# (the timeout-prone ones) without dropping the bulk of the content.
+MAX_WORDS_PER_SOURCE = 2400
+# Fact extraction sends a whole transcript to a (often weak/slow) model; give it more
+# room than the default so a legitimately-slow call completes instead of timing out.
+EXTRACTION_LLM_TIMEOUT = 180
 # Rough CJK char → word budget multiplier. Chinese has no whitespace, so str.split()
 # treats a transcript as one giant token. Count chars and divide by ~1.5 to approximate
 # token budget against the word-budget ceiling used for whitespace-segmented text.
@@ -72,7 +78,7 @@ CATEGORY_PROMPTS: dict[str, str] = {
 
 良好示例：
 - "什么是 RAG？"
-- "黑塔的守护者叫什么名字？"
+- "主角的师父叫什么名字？"
 - "BM25 的 k1 参数默认值是多少？"
 
 禁止示例（这些属于其它维度，不要在这里生成）：
@@ -102,9 +108,9 @@ CATEGORY_PROMPTS: dict[str, str] = {
 - 不需要预先知道是哪一集——正是要靠检索找出来
 
 良好示例：
-- "人偶一族第一次登场是在哪一集？"
+- "主角第一次登场是在哪一集？"
 - "讲 chunking 策略的是哪个视频？"
-- "槐孟子被提到 365 次那段在哪里？"
+- "主角立下誓言那段在哪里？"
 
 禁止示例（这些属于其它维度，不要在这里生成）：
 - "第十六集讲了什么？" （属于 coverage——已经指定了集数，问的是内容概览）
@@ -132,9 +138,9 @@ CATEGORY_PROMPTS: dict[str, str] = {
 - **不是**对比差异（那是 comparison），**不是**单条事实（那是 single_fact）
 
 良好示例：
-- "人偶一族里出现过哪些角色？"
+- "故事里出现过哪些主要角色？"
 - "做向量检索有哪些常用的索引结构？"
-- "黑塔的规则一共有哪几条？"
+- "故事设定里的规则一共有哪几条？"
 
 禁止示例（这些属于其它维度，不要在这里生成）：
 - "什么是 HNSW？" （属于 single_fact——单条事实）
@@ -165,7 +171,7 @@ CATEGORY_PROMPTS: dict[str, str] = {
 
 良好示例：
 - "第三集和第五集的战斗有什么不同？"
-- "人偶一族和法师两方的立场分别是什么，区别在哪？"
+- "正反两方的立场分别是什么，区别在哪？"
 - "dense retrieval 和 BM25 在长尾召回上各有什么短板？"
 
 禁止示例（这些属于其它维度，不要在这里生成）：
@@ -200,7 +206,7 @@ CATEGORY_PROMPTS: dict[str, str] = {
 - 与 comparison 的区别：对比是并行（各对象独立检索）；多跳是串行（后一步依赖前一步结果）
 
 良好示例：
-- "杀死黑塔守护者的那个人，后来结局如何？" （先查守护者是谁杀的→得到名字→再查那个人的结局）
+- "打败反派的那个人，后来结局如何？" （先查反派是被谁打败的→得到名字→再查那个人的结局）
 - "提出混合检索方案的那位作者，他还讲过哪些方法？" （先查方案是谁提的→再查此人其它内容）
 
 禁止示例（这些属于其它维度，不要在这里生成）：
@@ -240,8 +246,8 @@ CATEGORY_PROMPTS: dict[str, str] = {
 - "讲 chunking 那个视频整体讲了啥？"
 
 禁止示例（这些属于其它维度，不要在这里生成）：
-- "人偶一族第一次登场在哪一集？" （属于 locate——问位置，不是某集概览）
-- "黑塔守护者叫什么？" （属于 single_fact——单条事实）
+- "主角第一次登场在哪一集？" （属于 locate——问位置，不是某集概览）
+- "主角的师父叫什么？" （属于 single_fact——单条事实）
 - "第三集和第五集有什么不同？" （属于 comparison）
 
 设计要领：
@@ -277,9 +283,9 @@ CATEGORY_PROMPTS: dict[str, str] = {
 3. 用「为什么 X」「X 是出于什么原因」的方式问出来
 4. 如果要点其实交代了原因，那不是缺失题（是 single_fact / multi_hop），**换一个**或跳过
 
-良好示例（假设要点写了「人偶一族与法师结盟」但没写原因）：
-- "人偶一族为什么会和法师结盟？"
-- "黑塔守护者当初是出于什么原因立下那条规则的？"
+良好示例（假设要点写了「两个阵营结盟」但没写原因）：
+- "这两个阵营为什么会结盟？"
+- "主角当初是出于什么原因离开家乡的？"
 
 禁止示例：
 - "为什么用 BM25？" 若要点其实给了理由 → 原因没缺失，不算
@@ -308,8 +314,8 @@ CATEGORY_PROMPTS: dict[str, str] = {
 - 既包含剧情事件的先后（第一集→第三集发生了什么），也包含同一事物随时间的新旧演变（之前用 A，后来改用 B）
 
 良好示例：
-- "人偶一族和法师结盟之前，两方之间发生过什么？"
-- "黑塔的规则是先立的，还是守护者先出现的？"
+- "这两个阵营结盟之前，彼此之间发生过什么？"
+- "故事里那条规则是先立的，还是主角先出现的？"
 - "之前流行的 sentence-window chunking 后来被什么取代了？"
 
 禁止示例（这些属于其它维度，不要在这里生成）：
@@ -345,14 +351,14 @@ CATEGORY_PROMPTS: dict[str, str] = {
 - 与 enumeration 的区别：enumeration 列的是同类的**多个项**；entity_profile 聚的是**同一个实体**的多面信息
 
 良好示例：
-- "槐孟子是个什么样的角色？"
-- "人偶一族这个组织是怎么回事？"
+- "主角是个什么样的角色？"
+- "故事里那个组织是怎么回事？"
 - "BM25 在这些内容里都被用来做什么？"
 
 禁止示例（这些属于其它维度，不要在这里生成）：
 - "有哪些角色？" （属于 enumeration——列多个实体，不是聚焦一个）
-- "槐孟子在第几集登场？" （属于 locate——问位置）
-- "槐孟子的名字怎么写？" （属于 single_fact——单条事实）
+- "某个角色在第几集登场？" （属于 locate——问位置）
+- "某个角色的名字怎么写？" （属于 single_fact——单条事实）
 
 设计要领（强制先做）：
 1. 在要点里挑一个**被多处提及**的实体（至少 2-3 个不同段落 / 来源都讲到它）
@@ -474,8 +480,22 @@ def _try_parse_object(raw: str) -> tuple[dict | None, str | None]:
         return (None, f"JSONDecodeError: {e}; raw prefix: {raw[:200]!r}")
 
 
+def _safe_extract_call(prompt: str, ai_cfg: Any) -> tuple[str | None, str | None]:
+    """Run one extraction LLM call, turning any failure into an error string.
+
+    A timeout / API error on ONE source must not crash the whole generation —
+    the run is partial-success by design (see `_extract_facts`). Returns
+    (raw | None, error | None).
+    """
+    try:
+        return (_call_llm(prompt, ai_cfg, llm_timeout=EXTRACTION_LLM_TIMEOUT), None)
+    except Exception as e:
+        return (None, f"{type(e).__name__}: {e}")
+
+
 def _extract_one_source(source: dict, ai_cfg: Any, language: str = "zh") -> tuple[dict | None, str | None]:
-    """Extract facts for a single source. Retries once on malformed JSON.
+    """Extract facts for a single source. Retries once on malformed JSON or a
+    failed call (timeout / API error).
 
     Returns (fact_dict | None, error | None). On success, fact_dict carries the
     source id (set by caller, not LLM, to prevent id hallucination). On final
@@ -484,11 +504,12 @@ def _extract_one_source(source: dict, ai_cfg: Any, language: str = "zh") -> tupl
     sid = source["id"]
     body = f"{SOURCE_FACTS_PROMPT}\n\n文字稿内容：\n{source.get('transcript', '')}"
     base_prompt = _with_language(body, language)
-    raw = _call_llm(base_prompt, ai_cfg, llm_timeout=120)
-    data, err = _try_parse_object(raw)
+
+    raw, call_err = _safe_extract_call(base_prompt, ai_cfg)
+    data, err = _try_parse_object(raw) if raw is not None else (None, call_err)
     if data is None:
-        raw2 = _call_llm(base_prompt + _RETRY_HINT, ai_cfg, llm_timeout=120)
-        data, err2 = _try_parse_object(raw2)
+        raw2, call_err2 = _safe_extract_call(base_prompt + _RETRY_HINT, ai_cfg)
+        data, err2 = _try_parse_object(raw2) if raw2 is not None else (None, call_err2)
         if data is None:
             artifact = _persist_failed_raw(
                 f"facts_{sid}",
