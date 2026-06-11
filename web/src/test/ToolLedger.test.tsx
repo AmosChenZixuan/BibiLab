@@ -6,7 +6,7 @@ import { LanguageProvider } from "@/app/LanguageContext";
 import { ToolLedger } from "@/components/lists/ToolLedger";
 import type { RetrievalCall, PendingRagCall } from "@/lib/chat-utils";
 import { FIND_PASSAGES_TOOL_NAME } from "@/lib/utils";
-import { renderWithProviders } from "@/test/utils";
+import { MOCK_RETRIEVAL_CALL, renderWithProviders } from "@/test/utils";
 
 afterEach(() => {
   cleanup();
@@ -17,46 +17,6 @@ function renderLedger(props: React.ComponentProps<typeof ToolLedger>) {
     providers: [LanguageProvider],
   });
 }
-
-const DEFAULT_CALL: RetrievalCall = {
-  query: "长期情景记忆",
-  tool_name: FIND_PASSAGES_TOOL_NAME,
-  candidates_evaluated: 10,
-  sources_with_hits: 1,
-  sources_total: 16,
-  section_coverage: [
-    { section_id: "sec1", source_id: "s1", source_title: "Test Video", seq: 1, timestamp_start: 0, timestamp_end: 132 },
-    { section_id: "sec2", source_id: "s1", source_title: "Test Video", seq: 2, timestamp_start: 132, timestamp_end: 300 },
-  ],
-  context: [
-    {
-      chunk_id: "c1",
-      citation_index: 1,
-      section_id: "sec1",
-      section_seq: 1,
-      source_id: "s1",
-      source_title: "Test Video",
-      timestamp_start: 0,
-      timestamp_end: 132,
-      rerank_score: 4.53,
-      preview: "面试官问在构建一个长期陪伴性AI角色时 如何设计…",
-    },
-    {
-      chunk_id: "c2",
-      citation_index: 2,
-      section_id: "sec2",
-      section_seq: 2,
-      source_id: "s1",
-      source_title: "Test Video",
-      timestamp_start: 132,
-      timestamp_end: 300,
-      rerank_score: 3.21,
-      preview: "Another preview text",
-    },
-  ],
-  reranked: true,
-  scoped_pool_size: 10,
-};
 
 describe("ToolLedger", () => {
   test("returns null when all arrays are empty", () => {
@@ -69,7 +29,7 @@ describe("ToolLedger", () => {
 
   test("renders one row per completed search call", () => {
     renderLedger({
-      ragCalls: [DEFAULT_CALL],
+      ragCalls: [MOCK_RETRIEVAL_CALL],
       pendingRagCalls: [],
     });
     expect(screen.getByText(/长期情景记忆/)).toBeInTheDocument();
@@ -86,7 +46,7 @@ describe("ToolLedger", () => {
 
   test("search row collapsed shows source count and cited chunks", () => {
     renderLedger({
-      ragCalls: [DEFAULT_CALL],
+      ragCalls: [MOCK_RETRIEVAL_CALL],
       pendingRagCalls: [],
     });
     expect(screen.getByText(/2 sources/)).toBeInTheDocument();
@@ -112,7 +72,7 @@ describe("ToolLedger", () => {
   });
 
   test("ordering: completed search calls render before pending", () => {
-    const ragCall: RetrievalCall = { ...DEFAULT_CALL, query: "rag-query" };
+    const ragCall: RetrievalCall = { ...MOCK_RETRIEVAL_CALL, query: "rag-query" };
     const pending: PendingRagCall = { id: "p1", query: "pending-retrieve", tool_name: FIND_PASSAGES_TOOL_NAME };
 
     const { container } = renderLedger({

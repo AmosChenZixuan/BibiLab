@@ -7,7 +7,7 @@ import { JobActivityProvider } from "@/components/jobs/JobActivityProvider";
 import { ToolLedgerRow } from "@/components/lists/ToolLedgerRow";
 import { FIND_PASSAGES_TOOL_NAME, READ_SECTION_TOOL_NAME } from "@/lib/utils";
 import type { RetrievalCall, PendingRagCall } from "@/lib/chat-utils";
-import { renderWithProviders } from "@/test/utils";
+import { MOCK_RETRIEVAL_CALL, renderWithProviders } from "@/test/utils";
 
 afterEach(() => {
   cleanup();
@@ -19,56 +19,16 @@ function renderRow(props: React.ComponentProps<typeof ToolLedgerRow>) {
   });
 }
 
-const BASE_CALL: RetrievalCall = {
-  query: "长期情景记忆",
-  tool_name: FIND_PASSAGES_TOOL_NAME,
-  candidates_evaluated: 10,
-  sources_with_hits: 1,
-  sources_total: 16,
-  section_coverage: [
-    { section_id: "sec1", source_id: "s1", source_title: "Test Video", seq: 1, timestamp_start: 0, timestamp_end: 132 },
-    { section_id: "sec2", source_id: "s1", source_title: "Test Video", seq: 2, timestamp_start: 132, timestamp_end: 300 },
-  ],
-  context: [
-    {
-      chunk_id: "c1",
-      citation_index: 1,
-      section_id: "sec1",
-      section_seq: 1,
-      source_id: "s1",
-      source_title: "Test Video",
-      timestamp_start: 0,
-      timestamp_end: 132,
-      rerank_score: 4.53,
-      preview: "面试官问在构建一个长期陪伴性AI角色时 如何设计…",
-    },
-    {
-      chunk_id: "c2",
-      citation_index: 2,
-      section_id: "sec2",
-      section_seq: 2,
-      source_id: "s1",
-      source_title: "Test Video",
-      timestamp_start: 132,
-      timestamp_end: 300,
-      rerank_score: 3.21,
-      preview: "Another preview text",
-    },
-  ],
-  reranked: true,
-  scoped_pool_size: 10,
-};
-
 // ---------- search row ----------
 describe("search row", () => {
   test("collapsed shows section count and cited chunks", () => {
-    const { container } = renderRow({ call: BASE_CALL });
+    const { container } = renderRow({ call: MOCK_RETRIEVAL_CALL });
     expect(container.innerHTML).toContain("2 sources");
     expect(container.innerHTML).toContain("2 chunks cited");
   });
 
   test("expands on click showing cited chunks + metadata + chunk list", async () => {
-    const { container } = renderRow({ call: BASE_CALL });
+    const { container } = renderRow({ call: MOCK_RETRIEVAL_CALL });
     const toggle = container.querySelector('button[aria-label="Toggle retrieval details"]');
     expect(toggle).not.toBeNull();
     await userEvent.click(toggle!);
@@ -81,14 +41,14 @@ describe("search row", () => {
   });
 
   test("streaming disables expand: no toggle button, collapsed only", async () => {
-    const { container } = renderRow({ call: BASE_CALL, streaming: true });
+    const { container } = renderRow({ call: MOCK_RETRIEVAL_CALL, streaming: true });
     expect(container.querySelector('button[aria-label="Toggle retrieval details"]')).toBeNull();
     expect(container.innerHTML).toContain("长期情景记忆");
     expect(container.innerHTML).not.toContain("Another preview text");
   });
 
   test("toggle collapses", async () => {
-    const { container } = renderRow({ call: BASE_CALL });
+    const { container } = renderRow({ call: MOCK_RETRIEVAL_CALL });
     const toggle = container.querySelector('button[aria-label="Toggle retrieval details"]')!;
     await userEvent.click(toggle);
     await userEvent.click(toggle);
@@ -163,7 +123,7 @@ const NO_MATCH = {
 
 describe("facet no-match hint", () => {
   test("default collapsed shows amber warning icon with hint aria-label", () => {
-    renderRow({ call: { ...BASE_CALL, facet_scope: NO_MATCH } });
+    renderRow({ call: { ...MOCK_RETRIEVAL_CALL, facet_scope: NO_MATCH } });
     const icon = screen.getByLabelText(
       "No source matched #8 — searched all sources instead.",
     );
@@ -172,7 +132,7 @@ describe("facet no-match hint", () => {
   });
 
   test("default expanded shows amber Facet detail line", async () => {
-    const { container } = renderRow({ call: { ...BASE_CALL, facet_scope: NO_MATCH } });
+    const { container } = renderRow({ call: { ...MOCK_RETRIEVAL_CALL, facet_scope: NO_MATCH } });
     await userEvent.click(container.querySelector('button[aria-label="Toggle retrieval details"]')!);
     expect(container.innerHTML).toContain("Facet");
     expect(container.innerHTML).toContain("No source matched #8 — searched all sources instead.");
@@ -180,25 +140,25 @@ describe("facet no-match hint", () => {
 
   test("no hint when no_match is false", () => {
     renderRow({
-      call: { ...BASE_CALL, facet_scope: { ...NO_MATCH, no_match: false } },
+      call: { ...MOCK_RETRIEVAL_CALL, facet_scope: { ...NO_MATCH, no_match: false } },
     });
     expect(screen.queryByLabelText(/No source matched/)).toBeNull();
   });
 
   test("no hint when facet_scope absent", () => {
-    renderRow({ call: BASE_CALL });
+    renderRow({ call: MOCK_RETRIEVAL_CALL });
     expect(screen.queryByLabelText(/No source matched/)).toBeNull();
   });
 
   test("streaming default still shows the icon (visible without expand)", () => {
-    renderRow({ call: { ...BASE_CALL, facet_scope: NO_MATCH }, streaming: true });
+    renderRow({ call: { ...MOCK_RETRIEVAL_CALL, facet_scope: NO_MATCH }, streaming: true });
     expect(
       screen.getByLabelText("No source matched #8 — searched all sources instead."),
     ).toBeTruthy();
   });
 
   test("empty variant also surfaces the hint", () => {
-    const emptyCall = { ...BASE_CALL, context: [], facet_scope: NO_MATCH };
+    const emptyCall = { ...MOCK_RETRIEVAL_CALL, context: [], facet_scope: NO_MATCH };
     renderRow({ call: emptyCall });
     expect(
       screen.getByLabelText("No source matched #8 — searched all sources instead."),

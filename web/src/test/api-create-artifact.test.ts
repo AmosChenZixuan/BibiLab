@@ -8,11 +8,6 @@ describe("ListsClient.createArtifact", () => {
     vi.restoreAllMocks();
   });
 
-  test("createArtifact is a function on ListsClient", () => {
-    const client = createApiClient("http://localhost:8765/api");
-    expect(typeof client.createArtifact).toBe("function");
-  });
-
   test("createArtifact calls POST /api/lists/{listId}/artifacts with correct body", async () => {
     const fetchMock = mockFetch(async () =>
       Response.json(

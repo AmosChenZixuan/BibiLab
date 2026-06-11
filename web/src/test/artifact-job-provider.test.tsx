@@ -8,11 +8,6 @@ import { renderWithProviders } from "@/test/utils";
 vi.mock("@/lib/api", async () => {
   const { createMockApi } = await import("@/test/utils");
   return {
-    createApiClient: () =>
-      createMockApi({
-        deleteJob: vi.fn(),
-        listJobs: vi.fn(),
-      }),
     api: createMockApi({
       deleteJob: vi.fn(),
       listJobs: vi.fn(),
