@@ -73,10 +73,6 @@ export function DigestAccordion({
     }
   }
 
-  const handleRerun = async () => {
-    await onRerun(source.id);
-  };
-
   // Sections are the sole digest store. 1-section sources render section 0
   // (no pager); multi-section sources render the active tab via PagerTabs
   // (gated on length > 1, so the 1-section markup is unchanged). While the
@@ -110,7 +106,7 @@ export function DigestAccordion({
                 {
                   label: t("lists.rerunDigest"),
                   icon: <RotateCcw size={14} />,
-                  onClick: handleRerun,
+                  onClick: () => void onRerun(source.id),
                 },
               ]}
               trigger={({ toggle, triggerRef }) => (

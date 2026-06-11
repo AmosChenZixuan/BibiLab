@@ -106,7 +106,7 @@ export function DebugDrawer({
             {thisTurn.length > 0 && (
               <>
                 <div className="text-xs uppercase tracking-wider text-(--color-muted) mt-4 mb-2">
-                  本轮调用链
+                  Current turn
                 </div>
                 {thisTurn.map((m, i) => (
                   <MessageCard key={`turn-${i}`} value={m} />

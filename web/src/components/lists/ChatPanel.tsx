@@ -397,8 +397,8 @@ export function ChatPanel({
     if (!text || !hasSources || isStreaming) return;
     setInputValue("");
     if (textareaRef.current) {
-      textareaRef.current.style.height = "auto";
-      textareaRef.current.style.overflowY = "hidden";
+      textareaRef.current.value = "";
+      autoResize(textareaRef.current);
     }
     void sendMessage(text);
   }
