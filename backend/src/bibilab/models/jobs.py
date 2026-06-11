@@ -16,6 +16,13 @@ class JobStatus(StrEnum):
 
 TERMINAL_STATUSES = {JobStatus.DONE, JobStatus.FAILED, JobStatus.NEEDS_AUTH}
 
+ACTIVE_JOB_STATUSES: tuple[JobStatus, ...] = (
+    JobStatus.QUEUED,
+    JobStatus.DOWNLOADING,
+    JobStatus.TRANSCRIBING,
+    JobStatus.PROCESSING,
+)
+
 
 class JobResponse(BaseModel):
     id: str

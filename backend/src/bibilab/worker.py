@@ -58,19 +58,18 @@ logger = logging.getLogger(__name__)
 
 
 async def reset_stuck_jobs() -> None:
-    from bibilab.db import _now, get_db
-    from bibilab.models.jobs import JobStatus
+    from bibilab.db import _in_placeholders, _now, get_db
+    from bibilab.models.jobs import ACTIVE_JOB_STATUSES, JobStatus
 
-    stuck_statuses = (
-        f"'{JobStatus.DOWNLOADING.value}', '{JobStatus.TRANSCRIBING.value}', '{JobStatus.PROCESSING.value}'"
-    )
+    stuck = tuple(s for s in ACTIVE_JOB_STATUSES if s is not JobStatus.QUEUED)
+    placeholders = _in_placeholders(list(stuck))
     async with get_db() as db:
         await db.execute(
             f"""
-            UPDATE jobs SET status='{JobStatus.QUEUED.value}', updated_at=?
-            WHERE status IN ({stuck_statuses})
+            UPDATE jobs SET status=?, updated_at=?
+            WHERE status IN ({placeholders})
             """,
-            (_now(),),
+            (JobStatus.QUEUED, _now(), *stuck),
         )
         await db.commit()
 
