@@ -104,3 +104,16 @@ def test_eval_set_locked_cases():
     )
     assert len(es.locked_cases) == 1
     assert es.locked_cases[0].id == "c1"
+
+
+def test_eval_case_carries_evidence():
+    from eval.models import EvalCase, Evidence
+    c = EvalCase(
+        id="c1", category="single_fact", question="q",
+        expected_answer_draft="a", locked=False, notes="",
+        evidence=[Evidence(source_id="s1", section_seq=0, snippet="...")],
+    )
+    assert c.evidence[0].source_id == "s1"
+    # backward compat: evidence defaults to empty when omitted (old persisted sets)
+    c2 = EvalCase(id="c2", category="locate", question="q", expected_answer_draft="a")
+    assert c2.evidence == []

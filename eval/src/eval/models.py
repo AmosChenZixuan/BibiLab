@@ -30,6 +30,12 @@ class ProfileSnapshot(BaseModel):
     api_key: str | None = None
 
 
+class Evidence(BaseModel):
+    source_id: str
+    section_seq: int
+    snippet: str = ""  # short quoted span the claim came from (for human review)
+
+
 class EvalCase(BaseModel):
     id: str
     category: CATEGORY
@@ -37,6 +43,7 @@ class EvalCase(BaseModel):
     expected_answer_draft: str = ""
     locked: bool = False
     notes: str = ""
+    evidence: list[Evidence] = Field(default_factory=list)
 
 
 class EvalSet(BaseModel):
