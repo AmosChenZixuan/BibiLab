@@ -1,0 +1,15 @@
+<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+  <style>
+    .tile   { fill: #111827; }
+    .glyph  { fill: #ffffff; stroke: #ffffff; }
+    @media (prefers-color-scheme: dark) {
+      .tile  { fill: #f8fafc; }
+      .glyph { fill: #111827; stroke: #111827; }
+    }
+  </style>
+  <rect class="tile" width="64" height="64" rx="16"/>
+  <g class="glyph" stroke-width="5" stroke-linejoin="round">
+    <path d="M12 18 Q20 14 28 22 L28 49 L12 49 Z"/>
+    <path d="M52 18 Q44 14 36 22 L36 49 L52 49 Z"/>
+  </g>
+</svg>

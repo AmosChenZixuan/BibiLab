@@ -6,6 +6,7 @@ import { BilibiliQrModal } from "@/components/auth/BilibiliQrModal";
 import { useLanguage } from "@/app/LanguageContext";
 import { JobActivityProvider } from "@/components/jobs/JobActivityProvider";
 import { JobSpirit } from "@/components/jobs/JobSpirit";
+import { BrandMark } from "@/components/ui/BrandMark";
 import { api, HEALTH_REFRESH_EVENT, BILIBILI_AUTH_REFRESH_EVENT, notifyBilibiliAuthChanged } from "@/lib/api";
 import type { HealthRefreshDetail } from "@/lib/api";
 import { deriveOverallHealthTier, HEALTH_META } from "@/lib/health";
@@ -104,10 +105,8 @@ export function AppFrame() {
           ref={setNavElement}
           className="fixed inset-x-0 top-0 z-nav flex h-14 items-center justify-between bg-white px-4 md:px-6 xl:px-12"
         >
-          <NavLink className="inline-flex items-center gap-2" to="/" aria-label="Home">
-            <span className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-pink text-base font-bold text-white/95">
-              B
-            </span>
+          <NavLink className="inline-flex items-center gap-2 text-muted" to="/" aria-label="Home">
+            <BrandMark className="h-7 w-7" />
           </NavLink>
 
           <div className="inline-flex items-center gap-2">
