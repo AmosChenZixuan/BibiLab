@@ -19,6 +19,7 @@ from bibilab.models.artifacts import (
     ArtifactResponse,
 )
 from bibilab.models.jobs import JobResponse, JobStatus
+from bibilab.pipeline._shared import resolve_response_language
 from bibilab.routers._model_gate import require_models_present
 
 router = APIRouter()
@@ -48,9 +49,7 @@ async def create_artifact_endpoint(
 
     artifact_id = str(uuid.uuid4())
 
-    ui_lang_header = request.headers.get("X-UI-Lang", "en")
-    output_lang = cfg.ai.output_language
-    resolved_lang = ui_lang_header if output_lang == "ui" else output_lang
+    resolved_lang = resolve_response_language(cfg.ai, request.headers.get("X-UI-Lang", "en"))
 
     # Queue a job for artifact generation (worker will create artifact record on success)
     job_id = await create_job(
