@@ -257,3 +257,51 @@ async def test_cleanup_removes_orphan_cover_when_no_source(setup_pipeline_test: 
         cleanup_job_artifacts(job)
 
     assert not cover.exists(), "orphan cover (no source row) must be purged"
+
+
+@pytest.mark.asyncio
+async def test_cleanup_clears_embeddings_with_correct_signature(setup_pipeline_test: Path):
+    """cleanup_job_artifacts must call clear_embeddings_for_source(source_id) with one arg.
+
+    Regression: a previous version called clear_embeddings_for_source(source_id, load_config()),
+    but the production function only accepts source_id. The worker's outer except swallowed the
+    TypeError, which left orphan embeddings AND skipped the FTS cleanup on the next line.
+    The spec=... mock below enforces the real function's signature so any future extra-arg
+    regression fails loud.
+    """
+    from bibilab.cleanup import cleanup_job_artifacts
+    from bibilab.pipeline.embed import clear_embeddings_for_source
+
+    await bootstrap_db()
+    source_id = str(uuid.uuid4())
+
+    covers = setup_pipeline_test / "covers"
+    covers.mkdir(parents=True, exist_ok=True)
+    (covers / f"{source_id}.jpg").write_bytes(b"orphan cover")
+
+    job = {
+        "id": "job-partial-ingest",
+        "type": "ingest",
+        "status": "failed",
+        "meta": {"source_id": source_id, "video_id": "BVpartial", "list_id": "list-x"},
+    }
+
+    embed_calls: list = []
+    fts_calls: list = []
+
+    def _record_embed(source_id_arg):
+        embed_calls.append(source_id_arg)
+
+    with (
+        patch(
+            "bibilab.cleanup.clear_embeddings_for_source",
+            MagicMock(spec=clear_embeddings_for_source, side_effect=_record_embed),
+        ),
+        patch("bibilab.cleanup.clear_fts_for_source_sync", lambda *a, **k: fts_calls.append(a)),
+    ):
+        cleanup_job_artifacts(job)
+
+    assert embed_calls == [source_id], (
+        f"clear_embeddings_for_source must be called with one arg, got calls: {embed_calls!r}"
+    )
+    assert fts_calls, "clear_fts_for_source_sync must be reached — if it was skipped, an earlier call raised"
