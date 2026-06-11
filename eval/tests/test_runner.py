@@ -1,3 +1,4 @@
+import importlib
 import uuid
 from eval.reporter import _mean
 from eval.models import RunCaseResult
@@ -29,3 +30,15 @@ def test_run_case_result_defaults():
     )
     assert r.error is None
     assert r.case_id == "c1"
+
+
+def test_runner_module_imports():
+    """Smoke test: eval.runner must import without errors.
+
+    Regression guard: the chat-pipeline tool surface was renamed in the
+    bounded-sections work (READ_SOURCE_TOOL -> READ_SECTION_TOOL). A stale
+    import in eval.runner crashed the entire eval framework at import time.
+    """
+    module = importlib.import_module("eval.runner")
+    assert hasattr(module, "CHAT_TOOLS")
+    assert module.CHAT_TOOLS, "CHAT_TOOLS should not be empty"

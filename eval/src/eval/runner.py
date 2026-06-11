@@ -9,7 +9,7 @@ from bibilab.routers.chat import stream_with_tools, build_grounding_prompt, _llm
 from bibilab.pipeline._shared import ToolDefinition
 from bibilab.pipeline.chat_tools import (
     FIND_PASSAGES_TOOL,
-    READ_SOURCE_TOOL,
+    READ_SECTION_TOOL,
     RETRIEVE_TOOL_NAMES,
     execute_tool,
     CitationRegistryEntry,
@@ -23,7 +23,7 @@ from eval.storage import load_eval_set, save_eval_run
 
 CHAT_TOOLS: list[ToolDefinition] = [
     FIND_PASSAGES_TOOL,
-    READ_SOURCE_TOOL,
+    READ_SECTION_TOOL,
 ]
 
 
