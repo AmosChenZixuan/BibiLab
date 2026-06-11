@@ -22,10 +22,6 @@ class Language(str, Enum):
     ZH = "zh"
     EN = "en"
 
-    @property
-    def display_name(self) -> str:
-        return {"zh": "Chinese", "en": "English"}[self.value]
-
 
 DEFAULT_LANGUAGE = Language.ZH
 
