@@ -5,7 +5,7 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import { DigestAccordion } from "@/components/lists/DigestAccordion";
 import { JobActivityProvider } from "@/components/jobs/JobActivityProvider";
 import { LanguageProvider } from "@/app/LanguageContext";
-import type { SourceSection } from "@/lib/types";
+import { makeSections } from "@/test/utils";
 
 afterEach(() => {
   cleanup();
@@ -20,17 +20,6 @@ const baseProps = {
   onSaveFacets: vi.fn().mockResolvedValue(undefined),
   listId: "list-1",
 };
-
-function makeSections(n: number, startSec = 0): SourceSection[] {
-  return Array.from({ length: n }, (_, i) => ({
-    section_id: `sec-${i + 1}`,
-    seq: i + 1,
-    summary: `Section ${i + 1} summary text`,
-    keywords: [`kw-${i + 1}a`, `kw-${i + 1}b`],
-    timestamp_start: startSec + i * 600,
-    timestamp_end: startSec + (i + 1) * 600,
-  }));
-}
 
 function renderDigest(extra: Partial<React.ComponentProps<typeof DigestAccordion>> = {}) {
   return render(
@@ -52,14 +41,14 @@ describe("DigestAccordion sections", () => {
   });
 
   test("1-section case: renders section 0's summary + keywords, no pager", () => {
-    renderDigest({ sections: makeSections(1) });
+    renderDigest({ sections: makeSections(1, { keywordsPerSection: 2, summarySuffix: " text" }) });
     expect(screen.getByText(/Section 1 summary text/)).toBeInTheDocument();
     expect(screen.getAllByText(/^(kw-1a|kw-1b)$/)).toHaveLength(2);
     expect(screen.queryByRole("tablist")).not.toBeInTheDocument();
   });
 
   test("3-section case: all tabs visible, no arrows (page fits the visible window exactly)", () => {
-    renderDigest({ sections: makeSections(3) });
+    renderDigest({ sections: makeSections(3, { keywordsPerSection: 2, summarySuffix: " text" }) });
     // Section summaries render via the active section (initially section 1).
     expect(screen.getByText(/Section 1 summary text/)).toBeInTheDocument();
     // Pager is rendered with the three tab buttons.
@@ -71,7 +60,7 @@ describe("DigestAccordion sections", () => {
   });
 
   test("5-section case: arrows visible, both enabled at the start", () => {
-    renderDigest({ sections: makeSections(5) });
+    renderDigest({ sections: makeSections(5, { keywordsPerSection: 2, summarySuffix: " text" }) });
     const prev = screen.getByLabelText("Previous section");
     const next = screen.getByLabelText("Next section");
     expect(prev).toBeInTheDocument();
@@ -82,7 +71,7 @@ describe("DigestAccordion sections", () => {
 
   test("5-section case: clicking Next advances the active section and updates the body", async () => {
     const user = userEvent.setup();
-    renderDigest({ sections: makeSections(5) });
+    renderDigest({ sections: makeSections(5, { keywordsPerSection: 2, summarySuffix: " text" }) });
     expect(screen.getByText(/Section 1 summary text/)).toBeInTheDocument();
 
     await user.click(screen.getByLabelText("Next section"));
@@ -94,7 +83,7 @@ describe("DigestAccordion sections", () => {
 
   test("5-section case: at the end, Next is disabled and Previous is enabled", async () => {
     const user = userEvent.setup();
-    renderDigest({ sections: makeSections(5) });
+    renderDigest({ sections: makeSections(5, { keywordsPerSection: 2, summarySuffix: " text" }) });
     const prev = screen.getByLabelText("Previous section");
     const next = screen.getByLabelText("Next section");
 
@@ -110,7 +99,7 @@ describe("DigestAccordion sections", () => {
 
   test("5-section case: clicking a tab directly switches to that section", async () => {
     const user = userEvent.setup();
-    renderDigest({ sections: makeSections(5) });
+    renderDigest({ sections: makeSections(5, { keywordsPerSection: 2, summarySuffix: " text" }) });
     const tabs = screen.getAllByRole("tab");
     // 4th tab = section 4 (tabs render in section order).
     await user.click(tabs[3]);

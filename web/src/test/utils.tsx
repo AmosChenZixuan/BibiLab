@@ -6,7 +6,8 @@ import type { ComponentType, ReactElement, ReactNode } from "react";
 import { type MockedFunction, type MockInstance, vi } from "vitest";
 
 import type { ApiClient } from "@/lib/api";
-import type { Source } from "@/lib/types";
+import type { RetrievalCall } from "@/lib/chat-utils";
+import type { Source, SourceSection } from "@/lib/types";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -54,6 +55,89 @@ export const SOURCE_2: Source = {
   language: "en",
   processed_at: "2026-04-08T13:00:00Z",
 };
+
+// ─── Retrieval fixtures ─────────────────────────────────────────────────────
+
+/** Canonical find_passages `RetrievalCall` — shared by the ToolLedger and
+ *  ToolLedgerRow test suites. Mutate via spread at the call site:
+ *  `const streaming = { ...MOCK_RETRIEVAL_CALL, query: "..." };`. */
+export const MOCK_RETRIEVAL_CALL: RetrievalCall = {
+  query: "长期情景记忆",
+  tool_name: "find_passages",
+  candidates_evaluated: 10,
+  sources_with_hits: 1,
+  sources_total: 16,
+  section_coverage: [
+    { section_id: "sec1", source_id: "s1", source_title: "Test Video", seq: 1, timestamp_start: 0, timestamp_end: 132 },
+    { section_id: "sec2", source_id: "s1", source_title: "Test Video", seq: 2, timestamp_start: 132, timestamp_end: 300 },
+  ],
+  context: [
+    {
+      chunk_id: "c1",
+      citation_index: 1,
+      section_id: "sec1",
+      section_seq: 1,
+      source_id: "s1",
+      source_title: "Test Video",
+      timestamp_start: 0,
+      timestamp_end: 132,
+      rerank_score: 4.53,
+      preview: "面试官问在构建一个长期陪伴性AI角色时 如何设计…",
+    },
+    {
+      chunk_id: "c2",
+      citation_index: 2,
+      section_id: "sec2",
+      section_seq: 2,
+      source_id: "s1",
+      source_title: "Test Video",
+      timestamp_start: 132,
+      timestamp_end: 300,
+      rerank_score: 3.21,
+      preview: "Another preview text",
+    },
+  ],
+  reranked: true,
+  scoped_pool_size: 10,
+};
+
+// ─── Section fixtures ────────────────────────────────────────────────────────
+
+/**
+ * Build a list of `SourceSection` fixtures. Defaults match the
+ * SourcesViewerMode test style (1 keyword per section, `summary` text
+ * `Section N summary`). Pass `summarySuffix` (e.g. " text") and/or
+ * `keywordsPerSection: 2` for the DigestAccordion test style.
+ *
+ * - `idOffset` shifts the section_id sequence (e.g. idOffset=100 → `sec-101`).
+ * - `startSec` shifts the timestamp window (defaults to 0; the
+ *   SourcesViewerMode test ignores this and uses raw `i * 600`).
+ */
+export function makeSections(
+  n: number,
+  opts: {
+    idOffset?: number;
+    startSec?: number;
+    keywordsPerSection?: number;
+    summarySuffix?: string;
+  } = {},
+): SourceSection[] {
+  const { idOffset = 0, startSec = 0, keywordsPerSection = 1, summarySuffix = "" } = opts;
+  return Array.from({ length: n }, (_, i) => {
+    const idx = idOffset + i + 1;
+    return {
+      section_id: `sec-${idx}`,
+      seq: i + 1,
+      summary: `Section ${idx} summary${summarySuffix}`,
+      keywords: Array.from(
+        { length: keywordsPerSection },
+        (_, k) => `kw-${idx}${keywordsPerSection > 1 ? String.fromCharCode(97 + k) : ""}`,
+      ),
+      timestamp_start: startSec + i * 600,
+      timestamp_end: startSec + (i + 1) * 600,
+    };
+  });
+}
 
 // ─── createMockApi ───────────────────────────────────────────────────────────
 

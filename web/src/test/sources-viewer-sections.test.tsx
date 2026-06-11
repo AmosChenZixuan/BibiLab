@@ -6,6 +6,7 @@ import { LanguageProvider } from "@/app/LanguageContext";
 import { api } from "@/lib/api";
 import { SourcesViewerMode } from "@/components/lists/sources/SourcesViewerMode";
 import type { Source, SourceContent, SourceSection } from "@/lib/types";
+import { makeSections } from "@/test/utils";
 
 afterEach(() => {
   cleanup();
@@ -42,17 +43,6 @@ function makeContent(id: string, title: string): SourceContent {
     transcript: "transcript text",
     settings_snapshot: {},
   };
-}
-
-function makeSections(n: number, offset = 0): SourceSection[] {
-  return Array.from({ length: n }, (_, i) => ({
-    section_id: `sec-${offset + i + 1}`,
-    seq: i + 1,
-    summary: `Section ${offset + i + 1} summary`,
-    keywords: [`kw-${offset + i + 1}`],
-    timestamp_start: i * 600,
-    timestamp_end: (i + 1) * 600,
-  }));
 }
 
 /** Spy the three APIs SourcesViewerMode calls for a single source. */
@@ -93,7 +83,7 @@ describe("SourcesViewerMode sections — source-switch desync", () => {
     // the assertion is load-bearing: if the sectionId and timestamp
     // branches were ever swapped, the test would fail.
     const contentA = makeContent("src-A", "Source A");
-    mockSingleSource(contentA, makeSections(3, 0));
+    mockSingleSource(contentA, makeSections(3, { idOffset: 0 }));
 
     render(viewer({
       source: makeSource("src-A", "Source A"),
@@ -122,7 +112,7 @@ describe("SourcesViewerMode sections — source-switch desync", () => {
     // pins the matcher to timestamp (SourceSection has no section_id at
     // runtime), so the test exercises the timestamp path directly.
     const contentA = makeContent("src-A", "Source A");
-    mockSingleSource(contentA, makeSections(3, 0));
+    mockSingleSource(contentA, makeSections(3, { idOffset: 0 }));
 
     render(viewer({
       source: makeSource("src-A", "Source A"),
@@ -150,7 +140,7 @@ describe("SourcesViewerMode sections — source-switch desync", () => {
     // effect on `initialActiveIdx` — not the mount-time state seed —
     // is what drives the second switch.
     const contentA = makeContent("src-A", "Source A");
-    mockSingleSource(contentA, makeSections(3, 0));
+    mockSingleSource(contentA, makeSections(3, { idOffset: 0 }));
 
     const sourceA = makeSource("src-A", "Source A");
     const atTimestamp = (target: number) =>
@@ -187,8 +177,8 @@ describe("SourcesViewerMode sections — source-switch desync", () => {
     // remount).
     const contentA = makeContent("src-A", "Source A");
     const contentB = makeContent("src-B", "Source B");
-    const sectionsA = makeSections(5, 0);
-    const sectionsB = makeSections(4, 100);
+    const sectionsA = makeSections(5, { idOffset: 0 });
+    const sectionsB = makeSections(4, { idOffset: 100 });
 
     vi.spyOn(api, "getSource").mockImplementation(async (id) => {
       if (id === "src-A") return contentA;
