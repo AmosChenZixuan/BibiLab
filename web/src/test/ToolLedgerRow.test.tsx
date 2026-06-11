@@ -5,7 +5,7 @@ import userEvent from "@testing-library/user-event";
 import { LanguageProvider } from "@/app/LanguageContext";
 import { JobActivityProvider } from "@/components/jobs/JobActivityProvider";
 import { ToolLedgerRow } from "@/components/lists/ToolLedgerRow";
-import { FIND_PASSAGES_TOOL_NAME, READ_SECTION_TOOL_NAME } from "@/lib/tool-display";
+import { FIND_PASSAGES_TOOL_NAME, READ_SECTION_TOOL_NAME } from "@/lib/utils";
 import type { RetrievalCall, PendingRagCall } from "@/lib/chat-utils";
 import { renderWithProviders } from "@/test/utils";
 

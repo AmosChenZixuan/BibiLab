@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import { FIND_PASSAGES_TOOL_NAME } from "@/lib/tool-display";
+import { FIND_PASSAGES_TOOL_NAME } from "@/lib/utils";
 import {
   autoResize,
   coerceCitationEvent,

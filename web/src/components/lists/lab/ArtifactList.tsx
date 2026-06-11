@@ -10,7 +10,7 @@ import type { Artifact, ArtifactJob, ArtifactStatus } from "@/lib/types";
 
 import { Sparkles } from "lucide-react";
 
-import { ARTIFACT_TYPE_KEYS } from "@/lib/tool-display";
+import { ARTIFACT_TYPE_KEYS } from "@/lib/artifact-types";
 import { ArtifactCard } from "./ArtifactCard";
 import { ViewPromptModal } from "./ViewPromptModal";
 

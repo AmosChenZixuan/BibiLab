@@ -5,7 +5,7 @@ import userEvent from "@testing-library/user-event";
 import { LanguageProvider } from "@/app/LanguageContext";
 import { ToolLedger } from "@/components/lists/ToolLedger";
 import type { RetrievalCall, PendingRagCall } from "@/lib/chat-utils";
-import { FIND_PASSAGES_TOOL_NAME } from "@/lib/tool-display";
+import { FIND_PASSAGES_TOOL_NAME } from "@/lib/utils";
 import { renderWithProviders } from "@/test/utils";
 
 afterEach(() => {

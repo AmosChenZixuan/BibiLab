@@ -1,3 +1,6 @@
+export const FIND_PASSAGES_TOOL_NAME = "find_passages";
+export const READ_SECTION_TOOL_NAME = "read_section";
+
 export const LANG_STORAGE_KEY = "bibilab-lang";
 
 export type Lang = "en" | "zh";

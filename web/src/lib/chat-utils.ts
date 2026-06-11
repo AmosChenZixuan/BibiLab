@@ -1,5 +1,4 @@
-import { translateOrFallback } from "@/lib/utils";
-import { FIND_PASSAGES_TOOL_NAME, READ_SECTION_TOOL_NAME } from "@/lib/tool-display";
+import { FIND_PASSAGES_TOOL_NAME, READ_SECTION_TOOL_NAME, translateOrFallback } from "@/lib/utils";
 
 export type ContentBlock =
   | { type: "text"; text: string }
