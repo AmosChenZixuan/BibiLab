@@ -8,3 +8,8 @@ def an_async_generator(items: list[Any]) -> AsyncGenerator:
             yield item
 
     return gen()
+
+
+async def create_list(client, name: str) -> str:
+    """Helper: POST /lists and return the new list id."""
+    return (await client.post("/lists", json={"name": name})).json()["id"]

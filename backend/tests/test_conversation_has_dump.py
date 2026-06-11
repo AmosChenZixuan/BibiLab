@@ -4,13 +4,10 @@ import pytest
 
 from bibilab.config import RagConfig, load_config, save_config
 from bibilab.db import get_or_create_conversation
+from tests import create_list
 from tests.factories import MessageFactory
 
 pytestmark = pytest.mark.integration
-
-
-async def _create_list(client, name: str) -> str:
-    return (await client.post("/lists", json={"name": name})).json()["id"]
 
 
 def _enable_debug_prompts() -> None:
@@ -22,7 +19,7 @@ def _enable_debug_prompts() -> None:
 async def test_has_dump_true_when_dir_exists(client, tmp_bibilab_home):
     """has_dump is True for a message whose id matches a flat .json file in debug/."""
     _enable_debug_prompts()
-    list_id = await _create_list(client, "dump-exists")
+    list_id = await create_list(client, "dump-exists")
     conv_id = await get_or_create_conversation(list_id)
     await MessageFactory.build(conv_id, message_id="msg_abc", role="user", content="hi")
 
@@ -38,7 +35,7 @@ async def test_has_dump_true_when_dir_exists(client, tmp_bibilab_home):
 async def test_has_dump_false_when_no_dir(client, tmp_bibilab_home):
     """has_dump is False for all messages when debug/ exists but no matching file."""
     _enable_debug_prompts()
-    list_id = await _create_list(client, "dump-missing")
+    list_id = await create_list(client, "dump-missing")
     conv_id = await get_or_create_conversation(list_id)
     await MessageFactory.build(conv_id, message_id="msg_xyz", role="user", content="hi")
 
@@ -52,7 +49,7 @@ async def test_has_dump_false_when_no_dir(client, tmp_bibilab_home):
 async def test_has_dump_false_when_debug_dir_missing(client, tmp_bibilab_home):
     """has_dump is False for all messages when debug/ does not exist at all."""
     _enable_debug_prompts()
-    list_id = await _create_list(client, "dump-no-dir")
+    list_id = await create_list(client, "dump-no-dir")
     conv_id = await get_or_create_conversation(list_id)
     await MessageFactory.build(conv_id, message_id="msg_qrs", role="user", content="hi")
 
@@ -70,7 +67,7 @@ async def test_has_dump_skips_glob_when_debug_prompts_off(client, tmp_bibilab_ho
     """
     from bibilab.routers import chat as chat_module
 
-    list_id = await _create_list(client, "dump-off")
+    list_id = await create_list(client, "dump-off")
     conv_id = await get_or_create_conversation(list_id)
     await MessageFactory.build(conv_id, message_id="msg_off", role="user", content="hi")
 
