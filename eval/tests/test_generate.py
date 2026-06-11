@@ -6,17 +6,36 @@ from eval.generate import (
     _extract_one_source,
     _load_per_source,
     _read_transcript,
+    generate_eval_set,
 )
 
 
 def test_category_prompts_exist():
-    for cat in ("narrow", "broad", "cross_ref", "absence", "temporal"):
+    from eval.models import ALL_CATEGORIES
+
+    for cat in ALL_CATEGORIES:
         assert cat in CATEGORY_PROMPTS
+    # the prompt set covers exactly the taxonomy, no orphans
+    assert set(CATEGORY_PROMPTS) == set(ALL_CATEGORIES)
 
 
 def test_max_constants():
     assert MAX_SOURCES > 0
     assert MAX_WORDS_PER_SOURCE > 0
+
+
+def test_resolve_counts_floor_and_weights():
+    from eval.generate import DEFAULT_WEIGHTS, resolve_counts
+
+    cats = ["single_fact", "enumeration", "multi_hop", "coverage", "causal_absent"]
+    counts = resolve_counts(cats, floor=3)
+    # every selected category gets at least the floor
+    assert all(v >= 3 for v in counts.values())
+    # unweighted category sits exactly at the floor
+    assert counts["single_fact"] == 3
+    # all weighted categories in DEFAULT_WEIGHTS get their surplus on top of the floor
+    for cat in DEFAULT_WEIGHTS:
+        assert counts[cat] == 3 + DEFAULT_WEIGHTS[cat]
 
 
 def test_read_transcript(monkeypatch):
@@ -105,6 +124,40 @@ def test_extract_one_source_persists_on_final_failure(monkeypatch, tmp_path):
     assert artifacts[0].name in err
 
 
+def test_extract_one_source_survives_call_exception(monkeypatch, tmp_path):
+    # A timeout / API error on the LLM call must become a per-source error, not
+    # propagate — otherwise one slow source crashes the whole generation.
+    monkeypatch.setattr("bibilab.config.bibilab_home", lambda: tmp_path)
+
+    def boom(*a, **k):
+        raise TimeoutError("llm timed out")
+
+    monkeypatch.setattr("eval.generate._call_llm", boom)
+    fact, err = _extract_one_source({"id": "s1", "transcript": "hi"}, ai_cfg=None)
+    assert fact is None
+    assert "s1" in err
+    assert "TimeoutError" in err
+
+
+def test_extract_facts_call_exception_is_partial_not_crash(monkeypatch, tmp_path):
+    # The reported hard-stop: a source whose call raises must be skipped with an
+    # error, leaving the other sources' facts intact (partial success).
+    monkeypatch.setattr("bibilab.config.bibilab_home", lambda: tmp_path)
+
+    def fake(prompt, *a, **k):
+        if "boom" in prompt:
+            raise RuntimeError("api error")
+        return '{"facts":["t"]}'
+
+    monkeypatch.setattr("eval.generate._call_llm", fake)
+    sources = [{"id": "s1", "transcript": "ok"}, {"id": "s2", "transcript": "boom"}]
+    facts, errors = _extract_facts(sources, ai_cfg=None)
+    assert len(facts) == 1
+    assert facts[0]["id"] == "s1"
+    assert len(errors) == 1
+    assert "s2" in errors[0]
+
+
 def test_extract_one_source_rejects_non_object(monkeypatch, tmp_path):
     # Malformed shape: returns a JSON array instead of the expected object.
     monkeypatch.setattr("eval.generate._call_llm", lambda p, *a, **k: '[1, 2, 3]')
@@ -157,3 +210,55 @@ def test_extract_facts_reports_progress(monkeypatch):
     _extract_facts(sources, ai_cfg=None, on_progress=lambda d, t, e: progress.append((d, t, e)))
     assert len(progress) == 3
     assert progress[-1] == (3, 3, 0)
+
+
+def test_generate_eval_set(monkeypatch):
+    """End-to-end: counts: dict[str, int] is consumed per-category; the LLM is
+    called once per category and its questions populate EvalCases."""
+    monkeypatch.setattr("eval.generate._read_transcript", lambda sid: "transcript text")
+    monkeypatch.setattr(
+        "eval.generate._extract_facts",
+        lambda sources, ai_cfg, language, on_progress: (
+            [{"id": s["id"], "title": s.get("title", ""), "facts": ["fact a", "fact b"]} for s in sources],
+            [],
+        ),
+    )
+    monkeypatch.setattr(
+        "eval.generate._call_llm",
+        lambda prompt, *a, **k: (
+            '{"questions": ['
+            '{"question": "Q1?", "expected_answer_draft": "A1."}, '
+            '{"question": "Q2?", "expected_answer_draft": "A2."}'
+            ']}'
+        ),
+    )
+    sources = [{"id": "s1", "title": "T1"}, {"id": "s2", "title": "T2"}]
+    es = generate_eval_set("list1", sources, {"single_fact": 3, "enumeration": 5}, ai_cfg=None)
+    assert es.list_id == "list1"
+    # 2 categories × 2 questions each (per the canned LLM response)
+    assert len(es.cases) == 4
+    cats = {c.category for c in es.cases}
+    assert cats == {"single_fact", "enumeration"}
+
+
+def test_generate_eval_set_unknown_category_skips_and_warns(monkeypatch, capsys):
+    """An unknown category (drift between CATEGORY and CATEGORY_PROMPTS) must be
+    skipped without crashing the whole run, and the user must see a stderr line."""
+    monkeypatch.setattr("eval.generate._read_transcript", lambda sid: "transcript text")
+    monkeypatch.setattr(
+        "eval.generate._extract_facts",
+        lambda sources, ai_cfg, language, on_progress: (
+            [{"id": s["id"], "title": "", "facts": ["f"]} for s in sources], []
+        ),
+    )
+    monkeypatch.setattr(
+        "eval.generate._call_llm",
+        lambda prompt, *a, **k: '{"questions": []}',
+    )
+    sources = [{"id": "s1", "title": "T1"}]
+    es = generate_eval_set("list1", sources, {"single_fact": 3, "ghost": 3}, ai_cfg=None)
+    # 'ghost' is skipped (no CATEGORY_PROMPTS entry); 'single_fact' produced 0 questions
+    assert {c.category for c in es.cases} == set()
+    err = capsys.readouterr().err
+    assert "ghost" in err
+    assert "unknown category" in err

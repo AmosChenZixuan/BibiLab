@@ -19,10 +19,10 @@ def test_aggregate_scores_by_category():
         make_grade("n1", cr=4, g=3, ar=5),
         make_grade("n2", cr=5, g=4, ar=4),
     ]
-    categories = {"n1": "narrow", "n2": "narrow"}
+    categories = {"n1": "single_fact", "n2": "single_fact"}
     agg = aggregate_scores(grades, categories)
-    assert agg["narrow"]["context_relevance"] == 4.5
-    assert agg["narrow"]["groundedness"] == 3.5
+    assert agg["single_fact"]["context_relevance"] == 4.5
+    assert agg["single_fact"]["groundedness"] == 3.5
 
 
 def test_aggregate_overall():
@@ -30,31 +30,31 @@ def test_aggregate_overall():
         make_grade("n1", cr=4, g=3, ar=5),
         make_grade("b1", cr=2, g=2, ar=3),
     ]
-    categories = {"n1": "narrow", "b1": "broad"}
+    categories = {"n1": "single_fact", "b1": "enumeration"}
     agg = aggregate_scores(grades, categories)
     assert agg["overall"]["context_relevance"] == 3.0
 
 
 def test_diff_scores():
-    current = {"narrow": {"context_relevance": 4.0, "groundedness": 3.0, "answer_relevance": 4.0}}
-    previous = {"narrow": {"context_relevance": 3.5, "groundedness": 3.0, "answer_relevance": 4.5}}
+    current = {"single_fact": {"context_relevance": 4.0, "groundedness": 3.0, "answer_relevance": 4.0}}
+    previous = {"single_fact": {"context_relevance": 3.5, "groundedness": 3.0, "answer_relevance": 4.5}}
     diff = diff_scores(current, previous)
-    assert diff["narrow"]["context_relevance"] == 0.5
-    assert diff["narrow"]["groundedness"] == 0.0
-    assert diff["narrow"]["answer_relevance"] == -0.5
+    assert diff["single_fact"]["context_relevance"] == 0.5
+    assert diff["single_fact"]["groundedness"] == 0.0
+    assert diff["single_fact"]["answer_relevance"] == -0.5
 
 
 def test_diff_scores_missing_category():
-    current = {"narrow": {"context_relevance": 4.0, "groundedness": 3.0, "answer_relevance": 4.0}}
+    current = {"single_fact": {"context_relevance": 4.0, "groundedness": 3.0, "answer_relevance": 4.0}}
     previous = {}
     diff = diff_scores(current, previous)
-    assert "narrow" not in diff
+    assert "single_fact" not in diff
 
 
 def test_format_report_text():
     agg = {
         "overall": {"context_relevance": 4.0, "groundedness": 3.5, "answer_relevance": 3.8},
-        "narrow": {"context_relevance": 4.5, "groundedness": 4.0, "answer_relevance": 4.0},
+        "single_fact": {"context_relevance": 4.5, "groundedness": 4.0, "answer_relevance": 4.0},
     }
     text = format_report_text("my-list", 3, "glm-4.7-flash", "gpt-4o", agg, None)
     assert "my-list" in text
@@ -68,9 +68,9 @@ def test_aggregate_ignores_failed_grades():
         make_grade("n1", cr=4, g=None, ar=3),  # g=None means grading failed
         make_grade("n2", cr=5, g=4, ar=4),
     ]
-    categories = {"n1": "narrow", "n2": "narrow"}
+    categories = {"n1": "single_fact", "n2": "single_fact"}
     agg = aggregate_scores(grades, categories)
-    assert agg["narrow"]["groundedness"] == 4.0  # only n2 counted
+    assert agg["single_fact"]["groundedness"] == 4.0  # only n2 counted
 
 
 def test_count_failed_grades():

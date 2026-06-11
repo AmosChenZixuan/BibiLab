@@ -1,10 +1,25 @@
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Any, Literal, get_args
 
 from pydantic import BaseModel, Field
 
-CATEGORY = Literal["narrow", "broad", "cross_ref", "absence", "temporal"]
+CATEGORY = Literal[
+    "single_fact",
+    "locate",
+    "enumeration",
+    "comparison",
+    "multi_hop",
+    "coverage",
+    "causal_absent",
+    "temporal",
+    "entity_profile",
+]
+
+# Single source of truth for the taxonomy — CLI defaults derive from the Literal.
+ALL_CATEGORIES: tuple[str, ...] = get_args(CATEGORY)
+DEFAULT_CATEGORIES = ",".join(ALL_CATEGORIES)
+DEFAULT_FLOOR = 3
 
 
 class ProfileSnapshot(BaseModel):

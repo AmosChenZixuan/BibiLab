@@ -72,6 +72,39 @@ Return ONLY valid JSON. Do not add any explanation or markdown fences.
 Format: {{"score": <1-5>, "reasoning": "<explain completeness and directness>"}}{_lang_suffix(language)}"""
 
 
+def build_coverage_groundedness_prompt(answer: str, chunks_text: str, language: str = "zh") -> str:
+    return f"""Evaluate GROUNDEDNESS for a COVERAGE answer (an overview of one episode/source). The retrieved context is that episode's per-section OUTLINE summaries; synthesizing an overview FROM those summaries is legitimately grounded — do NOT penalize the answer for paraphrasing or combining summaries instead of quoting verbatim. Penalize only claims that contradict the summaries or add facts not present in them.
+
+Answer:
+{answer}
+
+Retrieved chunks (section outline summaries):
+{chunks_text}
+
+{RUBRIC}
+
+Return ONLY valid JSON. Do not add any explanation or markdown fences.
+Format: {{"score": <1-5>, "reasoning": "<quote claims unsupported by the summaries, or confirm the overview is summary-derived>"}}{_lang_suffix(language)}"""
+
+
+def build_abstention_prompt(question: str, expected_answer_draft: str, answer: str, language: str = "zh") -> str:
+    return f"""Evaluate ABSTENTION CORRECTNESS. This question asks about something whose answer is NOT present in the corpus — the correct behavior is to tell the user the library has no content on it / does not explain it, WITHOUT fabricating an answer. Empty or irrelevant retrieved context is the EXPECTED outcome here, not a failure.
+
+Question: {question}
+
+Expected (correct abstention): {expected_answer_draft}
+
+Answer to grade:
+{answer}
+
+Score 5 if the answer correctly states the information is not covered (matching the expected abstention) and invents no facts. Score 1 if it fabricates an answer or hallucinates a cause instead of abstaining. Use middle scores when it hedges but still asserts unsupported claims.
+
+{RUBRIC}
+
+Return ONLY valid JSON. Do not add any explanation or markdown fences.
+Format: {{"score": <1-5>, "reasoning": "<did it abstain correctly or fabricate?>"}}{_lang_suffix(language)}"""
+
+
 def parse_grade_response(response: str) -> tuple[int | None, str]:
     raw = strip_json_fences(response)
     try:
@@ -122,9 +155,19 @@ async def _grade_one(prompt: str, ai_cfg: AIConfig) -> tuple[int | None, str, in
         return (None, f"LLM call failed: {e}", llm_ms)
 
 
+def _notify_all_dims(score: int | None, on_dim_done) -> None:
+    """Fan a single score out to all three grading dimensions (used when one
+    judgment fills all dims, e.g. the causal_absent abstention branch)."""
+    if on_dim_done:
+        for dim in ("CR", "G", "AR"):
+            on_dim_done(dim, score is not None)
+
+
 async def _grade_case(
     case_result: RunCaseResult,
     question: str,
+    category: str,
+    expected_answer_draft: str,
     ai_cfg: AIConfig,
     language: str = "zh",
     on_dim_done=None,
@@ -132,15 +175,45 @@ async def _grade_case(
     chunks_text = _chunks_text_from_case(case_result)
     answer = case_result.answer or "(no answer)"
 
+    if category == "causal_absent":
+        # The correct behavior is a grounded abstention; the corpus genuinely lacks
+        # the cause, so empty/irrelevant context is the RIGHT outcome, not a failure.
+        # One abstention judgment (answer vs the "not covered" draft) fills all three
+        # dimensions, so the category-agnostic aggregate scores a correct abstention
+        # as a PASS instead of penalizing absent context.
+        score, reasoning, ms = await _grade_one(
+            build_abstention_prompt(question, expected_answer_draft, answer, language), ai_cfg
+        )
+        _notify_all_dims(score, on_dim_done)
+        reasoning = reasoning or "Failed to grade"
+        return GradeResult(
+            case_id=case_result.case_id,
+            context_relevance=score,
+            context_relevance_reasoning=reasoning,
+            groundedness=score,
+            groundedness_reasoning=reasoning,
+            answer_relevance=score,
+            answer_relevance_reasoning=reasoning,
+            llm_duration_ms=ms,
+        )
+
     async def _wrap(prompt, dim):
         out = await _grade_one(prompt, ai_cfg)
         if on_dim_done:
             on_dim_done(dim, out[0] is not None)
         return out
 
+    # Coverage answers synthesize from section OUTLINE summaries (non-citable
+    # orientation); use a groundedness rubric that accepts summary-derived synthesis.
+    groundedness_prompt = (
+        build_coverage_groundedness_prompt(answer, chunks_text, language)
+        if category == "coverage"
+        else build_groundedness_prompt(answer, chunks_text, language)
+    )
+
     (cr_score, cr_reasoning, cr_ms), (g_score, g_reasoning, g_ms), (ar_score, ar_reasoning, ar_ms) = await asyncio.gather(
         _wrap(build_context_relevance_prompt(question, chunks_text, language), "CR"),
-        _wrap(build_groundedness_prompt(answer, chunks_text, language), "G"),
+        _wrap(groundedness_prompt, "G"),
         _wrap(build_answer_relevance_prompt(question, answer, language), "AR"),
     )
 
@@ -186,7 +259,11 @@ async def grade_run(
 
             eval_case = case_map.get(case_result.case_id)
             question = eval_case.question if eval_case else case_result.case_id
-            grade = await _grade_case(case_result, question, ai_cfg, language, on_dim_done=_dim_done)
+            category = eval_case.category if eval_case else ""
+            expected = eval_case.expected_answer_draft if eval_case else ""
+            grade = await _grade_case(
+                case_result, question, category, expected, ai_cfg, language, on_dim_done=_dim_done
+            )
             scores = f"CR={grade.context_relevance} G={grade.groundedness} AR={grade.answer_relevance}"
             ok = grade.context_relevance is not None and grade.groundedness is not None and grade.answer_relevance is not None
             dash.done(case_result.case_id, ok=ok, status=scores)

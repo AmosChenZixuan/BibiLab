@@ -1,9 +1,15 @@
+import asyncio
+
 from eval.grader import (
+    build_abstention_prompt,
     build_context_relevance_prompt,
+    build_coverage_groundedness_prompt,
     build_groundedness_prompt,
     build_answer_relevance_prompt,
     parse_grade_response,
+    _grade_case,
 )
+from eval.models import RunCaseResult
 
 
 def test_build_context_relevance_prompt():
@@ -57,3 +63,68 @@ def test_parse_grade_response_with_markdown_fences():
     score, reasoning = parse_grade_response(response)
     assert score == 3
     assert reasoning == "mixed"
+
+
+def test_build_abstention_prompt_includes_expected_and_answer():
+    prompt = build_abstention_prompt(
+        question="为什么主角要做出那个决定？",
+        expected_answer_draft="资料里提到了这件事，但没有解释原因。",
+        answer="因为他想要复仇。",
+    )
+    assert "为什么主角要做出那个决定" in prompt
+    assert "资料里提到了这件事" in prompt
+    assert "因为他想要复仇" in prompt
+    # the rubric must frame absent context as the EXPECTED outcome, not a failure
+    assert "EXPECTED" in prompt or "not a failure" in prompt
+
+
+def test_build_coverage_groundedness_prompt_accepts_summaries():
+    prompt = build_coverage_groundedness_prompt(
+        answer="这一集主要讲了主角的身世。",
+        chunks_text="[1] 主角身世的概要……",
+    )
+    assert "summary-derived" in prompt or "summaries" in prompt
+    assert "do NOT penalize" in prompt
+
+
+def test_grade_case_causal_absent_correct_abstention_passes(monkeypatch):
+    # A correct abstention has NO retrieved context (the corpus lacks the cause).
+    # The category-agnostic CR/G rubric would score that 1; the abstention branch
+    # must instead score the correct "not covered" answer as a PASS across all dims.
+    monkeypatch.setattr(
+        "eval.grader._call_llm",
+        lambda p, *a, **k: '{"score": 5, "reasoning": "correctly abstained"}',
+    )
+    case = RunCaseResult(case_id="c1", answer="资料里没有解释原因。", llm_context=[])
+    grade = asyncio.run(
+        _grade_case(case, "为什么X会发生？", "causal_absent", "资料里没有解释其原因。", ai_cfg=None)
+    )
+    assert grade.context_relevance == 5
+    assert grade.groundedness == 5
+    assert grade.answer_relevance == 5
+
+
+def test_grade_case_coverage_uses_summary_groundedness(monkeypatch):
+    # Coverage answers synthesize from per-section OUTLINE summaries; the
+    # category-agnostic groundedness prompt would penalize paraphrasing. The
+    # coverage branch must select build_coverage_groundedness_prompt instead.
+    prompts_seen: list[str] = []
+
+    def fake_call(prompt, *a, **k):
+        prompts_seen.append(prompt)
+        return '{"score": 4, "reasoning": "ok"}'
+
+    monkeypatch.setattr("eval.grader._call_llm", fake_call)
+    case = RunCaseResult(
+        case_id="c1",
+        answer="这一集讲了主角的身世。",
+        llm_context=["[1] 主角身世的概要……"],
+    )
+    asyncio.run(_grade_case(case, "这一集讲了什么？", "coverage", "", ai_cfg=None))
+    # Exactly one of the three calls used the coverage-specific groundedness prompt.
+    assert any("OUTLINE summaries" in p for p in prompts_seen)
+    # The category-agnostic groundedness prompt would not contain the "OUTLINE"
+    # framing; verify we did NOT call it for coverage.
+    assert not any(p.startswith("Evaluate GROUNDEDNESS for a COVERAGE") is False
+                   and "OUTLINE summaries" not in p and "Evaluate GROUNDEDNESS:" in p
+                   for p in prompts_seen)

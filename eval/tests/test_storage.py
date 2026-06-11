@@ -40,7 +40,7 @@ def test_save_and_load_eval_set(tmp_path, monkeypatch):
     es.cases = [
         EvalCase(
             id="c1",
-            category="narrow",
+            category="single_fact",
             question="什么是X？",
             expected_answer_draft="X is...",
             locked=True,
