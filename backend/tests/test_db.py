@@ -1,6 +1,5 @@
 import json
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 
@@ -12,12 +11,6 @@ from tests.factories import (
 )
 
 pytestmark = pytest.mark.integration
-
-
-@pytest.fixture()
-def tmp_bibilab_home(tmp_path: Path):
-    with patch("bibilab.config.bibilab_home", return_value=tmp_path):
-        yield tmp_path
 
 
 @pytest.mark.asyncio
