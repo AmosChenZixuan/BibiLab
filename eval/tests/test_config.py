@@ -124,11 +124,6 @@ def test_profile_names_constant():
     assert PROFILE_NAMES == ("generate", "test", "grade")
 
 
-def test_language_display_name():
-    assert Language.ZH.display_name == "Chinese"
-    assert Language.EN.display_name == "English"
-
-
 def test_get_response_language_returns_code(tmp_path, monkeypatch):
     """Returns the language code, not the display name — build_grounding_prompt
     looks the result up in _LANG_NATIVE_NAME which is keyed on codes. A

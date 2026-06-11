@@ -93,16 +93,12 @@ class TaskDashboard:
             t.error = error
             t.ended_at = time.monotonic()
 
-    def set_banner(self, banner: str | None):
-        with self._lock:
-            self.banner = banner
-
     # ---- rendering --------------------------------------------------------
 
     def _render(self) -> Group:
         counts = {"queued": 0, "running": 0, "done": 0, "error": 0}
         for t in self._tasks.values():
-            counts[t.state] = counts.get(t.state, 0) + 1
+            counts[t.state] += 1
         elapsed = int(time.monotonic() - self._started_at)
 
         total = len(self._tasks)

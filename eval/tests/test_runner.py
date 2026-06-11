@@ -1,5 +1,4 @@
 import importlib
-import uuid
 from eval.reporter import _mean
 from eval.models import RunCaseResult
 

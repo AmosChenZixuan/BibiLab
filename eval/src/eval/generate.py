@@ -242,9 +242,8 @@ CATEGORY_PROMPTS: dict[str, str] = {
 def _read_transcript(source_id: str) -> str:
     """Load a source's transcript text from bibilab's segments store.
 
-    Transcripts moved from per-source files to the `transcript_segments` table
-    in the v2 backend; this is the canonical loader. Returns "" on no
-    segments or a DB-level error (the caller treats both as "missing").
+    Returns "" on no segments or a DB-level error (the caller treats both as
+    "missing").
     """
     import asyncio
     import sqlite3

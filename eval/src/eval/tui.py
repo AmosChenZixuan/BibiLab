@@ -9,7 +9,13 @@ from textual.widgets import Footer, Header, Input, Static, TextArea
 from textual.binding import Binding
 from textual.screen import ModalScreen
 
-from eval.storage import load_eval_set, save_eval_set
+from eval.storage import (
+    list_runs as _list_runs,
+    load_eval_run,
+    load_eval_set,
+    load_graded_run,
+    save_eval_set,
+)
 
 
 class _QuitConfirm(ModalScreen[bool]):
@@ -481,7 +487,6 @@ def run_config_tui():
 # -- Report TUI --
 
 from eval.reporter import aggregate_scores  # noqa: E402
-from eval.storage import load_eval_run, load_graded_run, list_runs as _list_runs  # noqa: E402
 
 
 def _fmt_diff(dv: float) -> str:
