@@ -1,26 +1,18 @@
-import json
 import logging
 from typing import Any
 
 from bibilab.config import bibilab_home
-from bibilab.db import source_exists_sync
+from bibilab.db import parse_job_meta, source_exists_sync
 from bibilab.pipeline.embed import clear_embeddings_for_source, clear_fts_for_source_sync
 
 logger = logging.getLogger(__name__)
-
-
-def _parse_meta(job: dict[str, Any]) -> dict[str, Any]:
-    meta = job.get("meta", {})
-    if isinstance(meta, str):
-        return json.loads(meta or "{}")
-    return meta
 
 
 def cleanup_job_artifacts(job: dict[str, Any]) -> None:
     if job.get("type") != "ingest" or job.get("status") == "done":
         return
 
-    meta = _parse_meta(job)
+    meta = parse_job_meta(job)
     video_id = meta.get("video_id")
     if not isinstance(video_id, str) or not video_id:
         return
