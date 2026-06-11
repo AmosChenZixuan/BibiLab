@@ -6,6 +6,7 @@ import type { ComponentType, ReactElement, ReactNode } from "react";
 import { type MockedFunction, type MockInstance, vi } from "vitest";
 
 import type { ApiClient } from "@/lib/api";
+import type { Source } from "@/lib/types";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -18,10 +19,40 @@ type MockedMethod<T> = T extends (...args: infer A) => infer R
 /** Fully-mocked `ApiClient` — every method is a `MockedFunction` of the real
  *  signature, so `mockedApi.getHealth.mockResolvedValue(...)` is type-checked
  *  against the real return type. The nested `auth` group is also mocked. */
-export type MockedApiClient = {
+type MockedApiClient = {
   [K in keyof ApiClient]: K extends "auth"
     ? { [NK in keyof ApiClient[K]]: MockedMethod<ApiClient[K][NK]> }
     : MockedMethod<ApiClient[K]>;
+};
+
+// ─── Shared fixtures ────────────────────────────────────────────────────────
+
+/** Canonical source fixture used by the chat-panel tests. */
+export const SOURCE_1: Source = {
+  id: "src-1",
+  video_id: "BV1test",
+  platform: "bilibili",
+  title: "Test Video A",
+  cover_url: null,
+  source_url: "https://bilibili.com/video/BV1test",
+  duration_seconds: 3600,
+  uploader: "TestUploader",
+  language: "en",
+  processed_at: "2026-04-08T12:00:00Z",
+};
+
+/** Second source fixture for tests that need two sources. */
+export const SOURCE_2: Source = {
+  id: "src-2",
+  video_id: "BV1test2",
+  platform: "bilibili",
+  title: "Test Video B",
+  cover_url: null,
+  source_url: "https://bilibili.com/video/BV1test2",
+  duration_seconds: 1800,
+  uploader: "TestUploader",
+  language: "en",
+  processed_at: "2026-04-08T13:00:00Z",
 };
 
 // ─── createMockApi ───────────────────────────────────────────────────────────
@@ -237,4 +268,56 @@ export function mockFetch(
   ) => Promise<Response>,
 ): MockInstance {
   return vi.spyOn(window, "fetch").mockImplementation(handler);
+}
+
+// ─── renderChatPanel ─────────────────────────────────────────────────────────
+
+/**
+ * Render a `ChatPanel` (or any compatible component) inside a provider
+ * stack. The default props match the minimum mount surface used by the
+ * SSE and RAG-observability tests; pass overrides to select sources,
+ * change `listId`, or supply `onOpenSource`. Tests with a different
+ * signature (e.g. `chat-panel.test.tsx`'s `{ skipMock }`) keep their
+ * own renderer.
+ *
+ * Both the component and the providers are passed in (rather than
+ * imported here) so this module has no runtime dependency on either
+ * `ChatPanel` or the providers. This is load-bearing: tests that only
+ * use `createMockApi` (e.g. `useDebugDump.test.tsx`) load `utils.tsx`
+ * without pulling in the providers' transitive `@/lib/api` import —
+ * which would otherwise defeat the `vi.mock("@/lib/api", …)` mock when
+ * this file is dynamically imported from inside the mock factory.
+ */
+export function renderChatPanel(
+  Component: ComponentType<{
+    selectedSourceIds: string[];
+    sources: Source[];
+    listId: string;
+    onOpenSource?: (
+      source: Source,
+      opts?: { sectionId?: string; timestampStart?: number; highlightChunks?: string[] },
+    ) => void;
+  }>,
+  options: {
+    providers?: ComponentType<{ children: ReactNode }>[];
+  } & Partial<{
+    selectedSourceIds: string[];
+    sources: Source[];
+    listId: string;
+    onOpenSource?: (
+      source: Source,
+      opts?: { sectionId?: string; timestampStart?: number; highlightChunks?: string[] },
+    ) => void;
+  }> = {},
+): RenderResult {
+  const { providers, ...props } = options;
+  return renderWithProviders(
+    <Component
+      selectedSourceIds={[]}
+      sources={[]}
+      listId="list-1"
+      {...props}
+    />,
+    { providers: providers ?? [] },
+  );
 }

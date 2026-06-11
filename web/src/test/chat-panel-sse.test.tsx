@@ -6,56 +6,23 @@ import { LanguageProvider } from "@/app/LanguageContext";
 import { JobActivityProvider } from "@/components/jobs/JobActivityProvider";
 import { ChatPanel } from "@/components/lists/ChatPanel";
 import { TEST_IDS } from "@/lib/test-ids";
-import { makeOpenSseStream, makeSseStream, mockFetch, renderWithProviders } from "@/test/utils";
-import type { Source } from "@/lib/types";
-
-const SOURCE_1: Source = {
-  id: "src-1",
-  video_id: "BV1test",
-  platform: "bilibili",
-  title: "Test Video A",
-  cover_url: null,
-  source_url: "https://bilibili.com/video/BV1test",
-  duration_seconds: 3600,
-  uploader: "TestUploader",
-  language: "en",
-  processed_at: "2026-04-08T12:00:00Z",
-};
-
-const SOURCE_2: Source = {
-  id: "src-2",
-  video_id: "BV1test2",
-  platform: "bilibili",
-  title: "Test Video B",
-  cover_url: null,
-  source_url: "https://bilibili.com/video/BV1test2",
-  duration_seconds: 1800,
-  uploader: "TestUploader",
-  language: "en",
-  processed_at: "2026-04-08T13:00:00Z",
-};
+import {
+  makeOpenSseStream,
+  makeSseStream,
+  mockFetch,
+  renderChatPanel,
+  SOURCE_1,
+} from "@/test/utils";
 
 const ASSISTANT_MSG_ID = "msg-assistant-1";
 const USER_MSG_ID = "msg-user-1";
-
-function renderChatPanel(props?: Partial<React.ComponentProps<typeof ChatPanel>>) {
-  return renderWithProviders(
-    <ChatPanel
-      selectedSourceIds={[]}
-      sources={[]}
-      listId="list-1"
-      {...props}
-    />,
-    { providers: [LanguageProvider, JobActivityProvider] },
-  );
-}
 
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
 });
 
-describe("chat panel — SSE streaming (phase 6.2)", () => {
+describe("chat panel — SSE streaming", () => {
   test("user message appears immediately, assistant streams in via SSE", async () => {
     const fetchSpy = mockFetch(() =>
       Promise.resolve(
@@ -67,7 +34,7 @@ describe("chat panel — SSE streaming (phase 6.2)", () => {
       ),
     );
 
-    renderChatPanel({
+    renderChatPanel(ChatPanel, { providers: [LanguageProvider, JobActivityProvider],
       selectedSourceIds: ["src-1"],
       sources: [SOURCE_1],
       listId: "list-1",
@@ -104,7 +71,7 @@ describe("chat panel — SSE streaming (phase 6.2)", () => {
       return Promise.resolve(makeSseStream([]));
     });
 
-    renderChatPanel({
+    renderChatPanel(ChatPanel, { providers: [LanguageProvider, JobActivityProvider],
       selectedSourceIds: ["src-1"],
       sources: [SOURCE_1],
       listId: "list-1",
@@ -133,7 +100,7 @@ describe("chat panel — SSE streaming (phase 6.2)", () => {
       return Promise.resolve(makeSseStream([]));
     });
 
-    renderChatPanel({ selectedSourceIds: ["src-1"], sources: [SOURCE_1], listId: "list-1" });
+    renderChatPanel(ChatPanel, { providers: [LanguageProvider, JobActivityProvider], selectedSourceIds: ["src-1"], sources: [SOURCE_1], listId: "list-1" });
 
     await userEvent.type(screen.getByRole("textbox"), "what is X?");
     await userEvent.keyboard("{Enter}");
@@ -178,7 +145,7 @@ describe("chat panel — SSE streaming (phase 6.2)", () => {
       ),
     );
 
-    renderChatPanel({
+    renderChatPanel(ChatPanel, { providers: [LanguageProvider, JobActivityProvider],
       selectedSourceIds: ["src-1"],
       sources: [SOURCE_1],
       listId: "list-1",
@@ -203,7 +170,7 @@ describe("chat panel — SSE streaming (phase 6.2)", () => {
       ),
     );
 
-    renderChatPanel({
+    renderChatPanel(ChatPanel, { providers: [LanguageProvider, JobActivityProvider],
       selectedSourceIds: ["src-1"],
       sources: [SOURCE_1],
       listId: "list-1",
@@ -227,7 +194,7 @@ describe("chat panel — SSE streaming (phase 6.2)", () => {
 
   test("streamed citation after a \\n\\n renders inline, not on its own line", async () => {
     mockFetch((input: RequestInfo | URL) => {
-      const url = typeof input === "string" ? input : input instanceof URL ? input.href : (input as Request).url;
+      const url = String(input);
       if (url.includes("/conversation")) {
         return Promise.resolve(new Response(JSON.stringify({ conversation: null, messages: [] })));
       }
@@ -243,7 +210,7 @@ describe("chat panel — SSE streaming (phase 6.2)", () => {
       return Promise.resolve(new Response(JSON.stringify([])));
     });
 
-    renderChatPanel({
+    renderChatPanel(ChatPanel, { providers: [LanguageProvider, JobActivityProvider],
       selectedSourceIds: ["src-1"],
       sources: [SOURCE_1],
       listId: "list-1",
@@ -276,7 +243,7 @@ describe("chat panel — SSE streaming (phase 6.2)", () => {
       return Promise.resolve(makeSseStream([]));
     });
 
-    renderChatPanel({ selectedSourceIds: ["src-1"], sources: [SOURCE_1], listId: "list-1" });
+    renderChatPanel(ChatPanel, { providers: [LanguageProvider, JobActivityProvider], selectedSourceIds: ["src-1"], sources: [SOURCE_1], listId: "list-1" });
 
     await userEvent.type(screen.getByRole("textbox"), "read the section");
     await userEvent.keyboard("{Enter}");
@@ -329,7 +296,7 @@ describe("chat panel — SSE streaming (phase 6.2)", () => {
     // the string arrives at the page-level handler.
     const onOpenSource = vi.fn();
     mockFetch((input: RequestInfo | URL) => {
-      const url = typeof input === "string" ? input : input instanceof URL ? input.href : (input as Request).url;
+      const url = String(input);
       if (url.includes("/conversation")) {
         return Promise.resolve(new Response(JSON.stringify({ conversation: null, messages: [] })));
       }
@@ -346,7 +313,7 @@ describe("chat panel — SSE streaming (phase 6.2)", () => {
       return Promise.resolve(new Response(JSON.stringify([])));
     });
 
-    renderChatPanel({
+    renderChatPanel(ChatPanel, { providers: [LanguageProvider, JobActivityProvider],
       selectedSourceIds: ["src-1"],
       sources: [SOURCE_1],
       listId: "list-1",
@@ -369,10 +336,10 @@ describe("chat panel — SSE streaming (phase 6.2)", () => {
   });
 });
 
-describe("chat panel — conversation history (phase 6.3)", () => {
+describe("chat panel — conversation history", () => {
   test("on mount loads conversation via GET /lists/:id/conversation", async () => {
     const fetchSpy = mockFetch((input: RequestInfo | URL) => {
-      const url = typeof input === "string" ? input : input instanceof URL ? input.href : (input as Request).url;
+      const url = String(input);
       if (url.includes("/conversation")) {
         return Promise.resolve(
           new Response(
@@ -389,7 +356,7 @@ describe("chat panel — conversation history (phase 6.3)", () => {
       return Promise.resolve(new Response(JSON.stringify([])));
     });
 
-    renderChatPanel({
+    renderChatPanel(ChatPanel, { providers: [LanguageProvider, JobActivityProvider],
       selectedSourceIds: ["src-1"],
       sources: [SOURCE_1],
       listId: "list-1",
@@ -409,7 +376,7 @@ describe("chat panel — conversation history (phase 6.3)", () => {
   test("clear button triggers DELETE /lists/:id/conversation and resets to empty state", async () => {
     let deleteCalled = false;
     mockFetch((input: RequestInfo | URL, init?: RequestInit) => {
-      const url = typeof input === "string" ? input : input instanceof URL ? input.href : (input as Request).url;
+      const url = String(input);
       const method = init?.method ?? "GET";
       if (url.includes("/conversation") && method === "DELETE") {
         deleteCalled = true;
@@ -430,7 +397,7 @@ describe("chat panel — conversation history (phase 6.3)", () => {
       return Promise.resolve(new Response(JSON.stringify([])));
     });
 
-    renderChatPanel({
+    renderChatPanel(ChatPanel, { providers: [LanguageProvider, JobActivityProvider],
       selectedSourceIds: ["src-1"],
       sources: [SOURCE_1],
       listId: "list-1",
@@ -452,7 +419,7 @@ describe("chat panel — conversation history (phase 6.3)", () => {
 
   test("message list dims to 50% opacity while clear popover is open", async () => {
     mockFetch((input: RequestInfo | URL) => {
-      const url = typeof input === "string" ? input : input instanceof URL ? input.href : (input as Request).url;
+      const url = String(input);
       if (url.includes("/conversation")) {
         return Promise.resolve(
           new Response(
@@ -468,7 +435,7 @@ describe("chat panel — conversation history (phase 6.3)", () => {
       return Promise.resolve(new Response(JSON.stringify([])));
     });
 
-    renderChatPanel({
+    renderChatPanel(ChatPanel, { providers: [LanguageProvider, JobActivityProvider],
       selectedSourceIds: ["src-1"],
       sources: [SOURCE_1],
       listId: "list-1",
@@ -493,7 +460,7 @@ describe("chat panel — conversation history (phase 6.3)", () => {
       ),
     );
 
-    renderChatPanel({
+    renderChatPanel(ChatPanel, { providers: [LanguageProvider, JobActivityProvider],
       selectedSourceIds: ["src-1"],
       sources: [SOURCE_1],
       listId: "list-1",
@@ -525,7 +492,7 @@ describe("chat panel — conversation history (phase 6.3)", () => {
       ),
     );
 
-    renderChatPanel({
+    renderChatPanel(ChatPanel, { providers: [LanguageProvider, JobActivityProvider],
       selectedSourceIds: ["src-1"],
       sources: [SOURCE_1],
       listId: "list-1",
@@ -551,7 +518,7 @@ describe("chat panel — conversation history (phase 6.3)", () => {
   test("retry on a mid-history failed assistant retries that specific turn's user message", async () => {
     let requestBody: string | null = null;
     mockFetch((input: RequestInfo | URL, init?: RequestInit) => {
-      const url = typeof input === "string" ? input : input instanceof URL ? input.href : (input as Request).url;
+      const url = String(input);
       const method = init?.method ?? "GET";
       if (url.includes("/conversation") && method === "GET") {
         return Promise.resolve(
@@ -606,7 +573,7 @@ describe("chat panel — conversation history (phase 6.3)", () => {
       return Promise.resolve(new Response(JSON.stringify([])));
     });
 
-    renderChatPanel({
+    renderChatPanel(ChatPanel, { providers: [LanguageProvider, JobActivityProvider],
       selectedSourceIds: ["src-1"],
       sources: [SOURCE_1],
       listId: "list-1",
@@ -631,7 +598,7 @@ describe("chat panel — conversation history (phase 6.3)", () => {
 
   test("live SSE error with classified code displays localized message", async () => {
     mockFetch((input: RequestInfo | URL, init?: RequestInit) => {
-      const url = typeof input === "string" ? input : input instanceof URL ? input.href : (input as Request).url;
+      const url = String(input);
       const method = init?.method ?? "GET";
       if (url.includes("/conversation") && method === "GET") {
         return Promise.resolve(
@@ -648,7 +615,7 @@ describe("chat panel — conversation history (phase 6.3)", () => {
       return Promise.resolve(new Response(JSON.stringify([])));
     });
 
-    renderChatPanel({
+    renderChatPanel(ChatPanel, { providers: [LanguageProvider, JobActivityProvider],
       selectedSourceIds: ["src-1"],
       sources: [SOURCE_1],
       listId: "list-1",

@@ -6,33 +6,12 @@ import { LanguageProvider } from "@/app/LanguageContext";
 import { JobActivityProvider } from "@/components/jobs/JobActivityProvider";
 import { ChatPanel } from "@/components/lists/ChatPanel";
 import { TEST_IDS } from "@/lib/test-ids";
-import { makeSseStream, mockFetch, renderWithProviders } from "@/test/utils";
-import type { Source } from "@/lib/types";
-
-const SOURCE_1: Source = {
-  id: "src-1",
-  video_id: "BV1test",
-  platform: "bilibili",
-  title: "Test Video A",
-  cover_url: null,
-  source_url: "https://bilibili.com/video/BV1test",
-  duration_seconds: 3600,
-  uploader: "TestUploader",
-  language: "en",
-  processed_at: "2026-04-08T12:00:00Z",
-};
-
-function renderChatPanel(props?: Partial<React.ComponentProps<typeof ChatPanel>>) {
-  return renderWithProviders(
-    <ChatPanel
-      selectedSourceIds={[]}
-      sources={[]}
-      listId="list-1"
-      {...props}
-    />,
-    { providers: [LanguageProvider, JobActivityProvider] },
-  );
-}
+import {
+  makeSseStream,
+  mockFetch,
+  renderChatPanel,
+  SOURCE_1,
+} from "@/test/utils";
 
 afterEach(() => {
   cleanup();
@@ -51,7 +30,7 @@ describe("RAG observability via SSE tool_result", () => {
       ),
     );
 
-    renderChatPanel({
+    renderChatPanel(ChatPanel, { providers: [LanguageProvider, JobActivityProvider],
       selectedSourceIds: ["src-1"],
       sources: [SOURCE_1],
       listId: "list-1",
@@ -77,7 +56,7 @@ describe("RAG observability via SSE tool_result", () => {
       ),
     );
 
-    renderChatPanel({
+    renderChatPanel(ChatPanel, { providers: [LanguageProvider, JobActivityProvider],
       selectedSourceIds: ["src-1"],
       sources: [SOURCE_1],
       listId: "list-1",
@@ -107,7 +86,7 @@ describe("RAG observability via SSE tool_result", () => {
       ),
     );
 
-    renderChatPanel({
+    renderChatPanel(ChatPanel, { providers: [LanguageProvider, JobActivityProvider],
       selectedSourceIds: ["src-1"],
       sources: [SOURCE_1],
       listId: "list-1",
@@ -134,7 +113,7 @@ describe("RAG observability via SSE tool_result", () => {
   ])("citation chip click passes %s section_id as a string target", async (_label, stored, expected) => {
     const onOpenSource = vi.fn();
     mockFetch((input: RequestInfo | URL) => {
-      const url = typeof input === "string" ? input : input instanceof URL ? input.href : (input as Request).url;
+      const url = String(input);
       if (url.includes("/conversation")) {
         return Promise.resolve(
           new Response(
@@ -161,7 +140,7 @@ describe("RAG observability via SSE tool_result", () => {
       return Promise.resolve(new Response(JSON.stringify([])));
     });
 
-    renderChatPanel({ selectedSourceIds: ["src-1"], sources: [SOURCE_1], listId: "list-1", onOpenSource });
+    renderChatPanel(ChatPanel, { providers: [LanguageProvider, JobActivityProvider], selectedSourceIds: ["src-1"], sources: [SOURCE_1], listId: "list-1", onOpenSource });
 
     const chip = await waitFor(() => screen.getByTestId(TEST_IDS.citeChip));
     await userEvent.click(chip);

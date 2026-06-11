@@ -6,38 +6,17 @@ import { LanguageProvider } from "@/app/LanguageContext";
 import { JobActivityProvider } from "@/components/jobs/JobActivityProvider";
 import { ChatPanel } from "@/components/lists/ChatPanel";
 import { TEST_IDS } from "@/lib/test-ids";
-import type { Source } from "@/lib/types";
-import { makeSseStream, mockFetch, renderWithProviders } from "@/test/utils";
-
-const SOURCE_1: Source = {
-  id: "src-1",
-  video_id: "BV1test",
-  platform: "bilibili",
-  title: "Test Video A",
-  cover_url: null,
-  source_url: "https://bilibili.com/video/BV1test",
-  duration_seconds: 3600,
-  uploader: "TestUploader",
-  language: "en",
-  processed_at: "2026-04-08T12:00:00Z",
-};
-
-const SOURCE_2: Source = {
-  id: "src-2",
-  video_id: "BV1test2",
-  platform: "bilibili",
-  title: "Test Video B",
-  cover_url: null,
-  source_url: "https://bilibili.com/video/BV1test2",
-  duration_seconds: 1800,
-  uploader: "TestUploader",
-  language: "en",
-  processed_at: "2026-04-08T13:00:00Z",
-};
+import {
+  makeSseStream,
+  mockFetch,
+  renderWithProviders,
+  SOURCE_1,
+  SOURCE_2,
+} from "@/test/utils";
 
 function makeConversationMock() {
   return mockFetch((input: RequestInfo | URL, init?: RequestInit) => {
-    const url = typeof input === "string" ? input : input instanceof URL ? input.href : (input as Request).url;
+    const url = String(input);
     const method = init?.method ?? "GET";
     if (url.includes("/conversation") && method === "GET") {
       return Promise.resolve(
@@ -78,7 +57,7 @@ describe("chat panel", () => {
   test("citation chip renders cite-missing for unknown source", async () => {
     // Mock conversation with a citation block for a source not in the list
     mockFetch((input: RequestInfo | URL, init?: RequestInit) => {
-      const url = typeof input === "string" ? input : input instanceof URL ? input.href : (input as Request).url;
+      const url = String(input);
       const method = init?.method ?? "GET";
       if (url.includes("/conversation") && method === "GET") {
         return Promise.resolve(
@@ -125,7 +104,7 @@ describe("chat panel", () => {
 
   test("multi-paragraph response renders separate <p> elements", async () => {
     mockFetch((input: RequestInfo | URL, init?: RequestInit) => {
-      const url = typeof input === "string" ? input : input instanceof URL ? input.href : (input as Request).url;
+      const url = String(input);
       const method = init?.method ?? "GET";
       if (url.includes("/conversation") && method === "GET") {
         return Promise.resolve(
@@ -173,7 +152,7 @@ describe("chat panel", () => {
 
   test("citation between two text fragments renders inline within one <p>", async () => {
     mockFetch((input: RequestInfo | URL, init?: RequestInit) => {
-      const url = typeof input === "string" ? input : input instanceof URL ? input.href : (input as Request).url;
+      const url = String(input);
       const method = init?.method ?? "GET";
       if (url.includes("/conversation") && method === "GET") {
         return Promise.resolve(
@@ -221,7 +200,7 @@ describe("chat panel", () => {
 
   test("citation after a lone paragraph_break attaches to the previous paragraph", async () => {
     mockFetch((input: RequestInfo | URL, init?: RequestInit) => {
-      const url = typeof input === "string" ? input : input instanceof URL ? input.href : (input as Request).url;
+      const url = String(input);
       const method = init?.method ?? "GET";
       if (url.includes("/conversation") && method === "GET") {
         return Promise.resolve(
@@ -276,7 +255,7 @@ describe("chat panel", () => {
 
   test("citation inside bullet list renders chip inline within <li>", async () => {
     mockFetch((input: RequestInfo | URL, init?: RequestInit) => {
-      const url = typeof input === "string" ? input : input instanceof URL ? input.href : (input as Request).url;
+      const url = String(input);
       const method = init?.method ?? "GET";
       if (url.includes("/conversation") && method === "GET") {
         return Promise.resolve(
@@ -328,7 +307,7 @@ describe("chat panel", () => {
 
   test("citation after heading keeps chip inline within the heading block", async () => {
     mockFetch((input: RequestInfo | URL, init?: RequestInit) => {
-      const url = typeof input === "string" ? input : input instanceof URL ? input.href : (input as Request).url;
+      const url = String(input);
       const method = init?.method ?? "GET";
       if (url.includes("/conversation") && method === "GET") {
         return Promise.resolve(
@@ -380,7 +359,7 @@ describe("chat panel", () => {
 
   test("consecutive citations in same paragraph both render as chips", async () => {
     mockFetch((input: RequestInfo | URL, init?: RequestInit) => {
-      const url = typeof input === "string" ? input : input instanceof URL ? input.href : (input as Request).url;
+      const url = String(input);
       const method = init?.method ?? "GET";
       if (url.includes("/conversation") && method === "GET") {
         return Promise.resolve(
@@ -542,7 +521,7 @@ describe("chat panel", () => {
 
   test("known error code displays localized message", async () => {
     mockFetch((input: RequestInfo | URL, init?: RequestInit) => {
-      const url = typeof input === "string" ? input : input instanceof URL ? input.href : (input as Request).url;
+      const url = String(input);
       const method = init?.method ?? "GET";
       if (url.includes("/conversation") && method === "GET") {
         return Promise.resolve(
@@ -590,7 +569,7 @@ describe("chat panel", () => {
 
   test("unknown error string displays as-is without i18n key match", async () => {
     mockFetch((input: RequestInfo | URL, init?: RequestInit) => {
-      const url = typeof input === "string" ? input : input instanceof URL ? input.href : (input as Request).url;
+      const url = String(input);
       const method = init?.method ?? "GET";
       if (url.includes("/conversation") && method === "GET") {
         return Promise.resolve(
@@ -638,7 +617,7 @@ describe("chat panel", () => {
 
   test("shows </> debug button only when debug_prompts is on AND has_dump is true", async () => {
     mockFetch((input: RequestInfo | URL, init?: RequestInit) => {
-      const url = typeof input === "string" ? input : input instanceof URL ? input.href : (input as Request).url;
+      const url = String(input);
       const method = init?.method ?? "GET";
       if (url.includes("/conversation") && method === "GET") {
         return Promise.resolve(
@@ -691,7 +670,7 @@ describe("chat panel", () => {
 
   test("hides </> debug button when has_dump is false", async () => {
     mockFetch((input: RequestInfo | URL, init?: RequestInit) => {
-      const url = typeof input === "string" ? input : input instanceof URL ? input.href : (input as Request).url;
+      const url = String(input);
       const method = init?.method ?? "GET";
       if (url.includes("/conversation") && method === "GET") {
         return Promise.resolve(
@@ -745,7 +724,7 @@ describe("chat panel", () => {
 
   test("hides </> debug button when debug_prompts is off", async () => {
     mockFetch((input: RequestInfo | URL, init?: RequestInit) => {
-      const url = typeof input === "string" ? input : input instanceof URL ? input.href : (input as Request).url;
+      const url = String(input);
       const method = init?.method ?? "GET";
       if (url.includes("/conversation") && method === "GET") {
         return Promise.resolve(
@@ -799,7 +778,7 @@ describe("chat panel", () => {
 
   test("opens drawer on icon click and closes on Esc", async () => {
     mockFetch((input: RequestInfo | URL, init?: RequestInit) => {
-      const url = typeof input === "string" ? input : input instanceof URL ? input.href : (input as Request).url;
+      const url = String(input);
       const method = init?.method ?? "GET";
       if (url.includes("/conversation") && method === "GET") {
         return Promise.resolve(
