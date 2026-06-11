@@ -450,10 +450,6 @@ export function SourcesListMode({
     if (trimmed) void doSubmit(trimmed);
   }, [doSubmit, url]);
 
-  const handleQrModalClose = useCallback(() => {
-    setShowQrModal(false);
-  }, []);
-
   return (
     <>
       <div className="flex h-full flex-col">
@@ -537,7 +533,7 @@ export function SourcesListMode({
       )}
       <BilibiliQrModal
         open={showQrModal}
-        onClose={handleQrModalClose}
+        onClose={() => setShowQrModal(false)}
         onSuccess={handleQrModalSuccess}
       />
     </>
