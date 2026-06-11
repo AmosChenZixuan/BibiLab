@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
@@ -9,9 +10,8 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from bibilab.db import get_sections, get_segments_for_ranges
-from bibilab.pipeline._shared import _call_llm
 
-from eval._utils import strip_json_fences
+from eval._utils import safe_call_llm, strip_json_fences
 
 EXTRACTION_LLM_TIMEOUT = 180
 
@@ -27,22 +27,13 @@ _EXTRACT_PROMPT = """你是一个信息抽取助手。下面是一段视频文�
 只返回单个 JSON 对象，无 markdown fences，无多余文字：
 {"claims": [{"text": "...", "entities": ["..."], "is_cause": false, "has_time": false}]}"""
 
-_LANG_INSTRUCTION = {
-    "en": "\n\nIMPORTANT: write every `text` field in English.",
-    "zh": "",
-}
-
-
-def _safe_call(prompt: str, ai_cfg: Any) -> tuple[str | None, str | None]:
-    try:
-        return (_call_llm(prompt, ai_cfg, llm_timeout=EXTRACTION_LLM_TIMEOUT), None)
-    except Exception as e:  # timeout/API error on one span must not crash the pool
-        return (None, f"{type(e).__name__}: {e}")
+_EN_SUFFIX = "\n\nIMPORTANT: write every `text` field in English."
 
 
 def extract_claims_for_span(span: dict, ai_cfg: Any, language: str = "zh") -> tuple[list[Claim], str | None]:
-    prompt = f"{_EXTRACT_PROMPT}{_LANG_INSTRUCTION.get(language, '')}\n\n文字稿：\n{span['text']}"
-    raw, call_err = _safe_call(prompt, ai_cfg)
+    suffix = _EN_SUFFIX if language == "en" else ""
+    prompt = f"{_EXTRACT_PROMPT}{suffix}\n\n文字稿：\n{span['text']}"
+    raw, call_err = safe_call_llm(prompt, ai_cfg, llm_timeout=EXTRACTION_LLM_TIMEOUT)
     if raw is None:
         return ([], call_err)
     try:
@@ -50,20 +41,22 @@ def extract_claims_for_span(span: dict, ai_cfg: Any, language: str = "zh") -> tu
         items = data.get("claims", []) if isinstance(data, dict) else []
     except json.JSONDecodeError as e:
         return ([], f"JSONDecodeError: {e}")
-    snippet = span["text"][:120]
-    claims = [
-        Claim(
+    claims: list[Claim] = []
+    for it in items:
+        text = str(it.get("text", "")).strip()
+        if not text:
+            continue
+        claims.append(Claim(
             source_id=span["source_id"],
             section_seq=span["section_seq"],
-            text=str(it.get("text", "")).strip(),
-            snippet=snippet,
+            text=text,
+            # snippet is the claim itself, not the section's opening — reviewers
+            # need to see what the claim actually said, not the section's first 120 chars.
+            snippet=text[:120],
             entities=[str(x) for x in it.get("entities", []) if x],
             is_cause=bool(it.get("is_cause", False)),
             has_time=bool(it.get("has_time", False)),
-        )
-        for it in items
-        if str(it.get("text", "")).strip()
-    ]
+        ))
     return (claims, None)
 
 
@@ -78,15 +71,27 @@ class Claim(BaseModel):
 
 
 async def load_spans(source_id: str) -> list[dict]:
-    """One span per section: {source_id, section_seq, text}. Reads each section's
-    segments once via the shared range helper."""
+    """One span per section: {source_id, section_seq, text}. Batches all section
+    ranges into one DB query, then walks the returned segments in order to
+    assemble each section's text. Segments are already in (source_id, seq)
+    order from the range helper, so we bin by section-range membership."""
     sections = await get_sections(source_id)
-    spans: list[dict] = []
-    for sec in sections:
-        rows = await get_segments_for_ranges([(source_id, sec["seg_start"], sec["seg_end"])])
-        text = " ".join(r["text"] for r in rows)
-        spans.append({"source_id": source_id, "section_seq": sec["seq"], "text": text})
-    return spans
+    if not sections:
+        return []
+    ranges = [(source_id, sec["seg_start"], sec["seg_end"]) for sec in sections]
+    rows = await get_segments_for_ranges(ranges)
+    section_texts: dict[int, list[str]] = {sec["seq"]: [] for sec in sections}
+    for r in rows:
+        seq = r["seq"]
+        for sec in sections:
+            if sec["seg_start"] <= seq <= sec["seg_end"]:
+                section_texts[sec["seq"]].append(r["text"])
+                break
+    return [
+        {"source_id": source_id, "section_seq": sec["seq"],
+         "text": " ".join(section_texts[sec["seq"]])}
+        for sec in sections
+    ]
 
 
 def _cache_dir() -> Path:

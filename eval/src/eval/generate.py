@@ -1,13 +1,11 @@
 from __future__ import annotations
 
-import asyncio as _asyncio
+import asyncio
 import json
 import uuid
 from typing import Any
 
-from bibilab.pipeline._shared import _call_llm
-
-from eval._utils import now_iso, strip_json_fences
+from eval._utils import now_iso, safe_call_llm, strip_json_fences
 from eval.claims import Claim, build_claim_pool, load_spans
 from eval.dashboard import TaskDashboard
 from eval.models import DEFAULT_FLOOR, EvalCase, EvalSet, Evidence
@@ -46,25 +44,13 @@ def resolve_counts(categories: list[str], floor: int = DEFAULT_FLOOR) -> dict[st
     return {cat: floor + DEFAULT_WEIGHTS.get(cat, 0) for cat in categories}
 
 
-def _safe_extract_call(prompt: str, ai_cfg: Any) -> tuple[str | None, str | None]:
-    """Run one LLM call, turning any failure into an error string.
-
-    A timeout / API error must not crash the surrounding step — the run is
-    partial-success by design.
-    """
-    try:
-        return (_call_llm(prompt, ai_cfg), None)
-    except Exception as e:
-        return (None, f"{type(e).__name__}: {e}")
-
-
 def _spans_for_sources(source_ids: list[str]) -> list[dict]:
+    """Load spans for many sources in parallel (one DB roundtrip per source,
+    dispatched concurrently via asyncio.gather)."""
     async def _all():
-        out = []
-        for sid in source_ids:
-            out.extend(await load_spans(sid))
-        return out
-    return _asyncio.run(_all())
+        nested = await asyncio.gather(*(load_spans(sid) for sid in source_ids))
+        return [s for batch in nested for s in batch]
+    return asyncio.run(_all())
 
 
 def generate_eval_set(
@@ -138,7 +124,7 @@ def phrase_question(category: str, claims: list[Claim], ai_cfg, language: str = 
         '只返回 JSON：{"question":"...","expected_answer_draft":"..."}'
     )
     prompt = _with_language(body, language)
-    raw, call_err = _safe_extract_call(prompt, ai_cfg)
+    raw, call_err = safe_call_llm(prompt, ai_cfg)
     if raw is None:
         return ("", "", call_err)
     try:

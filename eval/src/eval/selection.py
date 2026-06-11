@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from typing import Callable
 
 from eval.claims import Claim
 
@@ -20,101 +21,81 @@ def _entity_index(pool: list[Claim]) -> dict[str, list[Claim]]:
     return out
 
 
-def _single_fact(pool, count):
+def _take(predicate: Callable[[object], object], items, count: int) -> list:
+    """Collect up to `count` predicate-return values (not the inputs). The
+    predicate returns either the desired output (a list[Claim] or other) or
+    a falsy value to skip the input. Centralizes the count-bounded loop."""
+    out: list = []
+    for it in items:
+        result = predicate(it)
+        if result:
+            out.append(result)
+            if len(out) >= count:
+                break
+    return out
+
+
+def _single_fact(pool, count, _by_s, _by_e):
     return [[c] for c in pool[:count]]
 
 
-def _locate(pool, count):
+def _locate(pool, count, _by_s, _by_e):
     # any claim; the case's gold span IS its location — phrasing asks "where/which episode"
     return [[c] for c in pool[:count]]
 
 
-def _coverage(pool, count):
-    sets = []
-    for _sid, claims in _by_source(pool).items():
-        if len(claims) >= 2:
-            sets.append(list(claims))
-        if len(sets) >= count:
-            break
-    return sets
+def _coverage(pool, count, by_s, _by_e):
+    def _ok(claims):
+        return list(claims) if len(claims) >= 2 else False
+    return _take(_ok, by_s.values(), count)
 
 
-def _enumeration(pool, count):
-    # ≥3 claims in one source naming distinct entities → the entities are the list
-    sets = []
-    for _sid, claims in _by_source(pool).items():
+def _enumeration(pool, count, by_s, _by_e):
+    def _ok(claims):
         named = [c for c in claims if c.entities]
         distinct = {e for c in named for e in c.entities}
-        if len(named) >= 3 and len(distinct) >= 3:
-            sets.append(named)
-        if len(sets) >= count:
-            break
-    return sets
+        return named if len(named) >= 3 and len(distinct) >= 3 else False
+    return _take(_ok, by_s.values(), count)
 
 
-def _comparison(pool, count):
-    idx = _entity_index(pool)
-    sets = []
-    for _e, claims in idx.items():
+def _comparison(pool, count, _by_s, by_e):
+    def _ok(claims):
         srcs = {c.source_id for c in claims}
-        if len(srcs) >= 2:
-            a = next(c for c in claims if c.source_id == min(srcs))
-            b = next(c for c in claims if c.source_id == max(srcs))
-            sets.append([a, b])
-        if len(sets) >= count:
-            break
-    return sets
+        if len(srcs) < 2:
+            return False
+        return [next(c for c in claims if c.source_id == min(srcs)),
+                next(c for c in claims if c.source_id == max(srcs))]
+    return _take(_ok, by_e.values(), count)
 
 
-def _multi_hop(pool, count):
-    # entity bridge: claim A names E (A not about E only), claim B in a DIFFERENT
-    # span is about E → answer of hop 1 (E) feeds hop 2
-    idx = _entity_index(pool)
-    sets = []
-    for _e, claims in idx.items():
+def _multi_hop(pool, count, _by_s, by_e):
+    def _ok(claims):
         spans = {(c.source_id, c.section_seq) for c in claims}
-        if len(spans) >= 2:
-            a, b = claims[0], claims[1]
-            sets.append([a, b])
-        if len(sets) >= count:
-            break
-    return sets
+        return [claims[0], claims[1]] if len(spans) >= 2 else False
+    return _take(_ok, by_e.values(), count)
 
 
-def _entity_profile(pool, count):
-    sets = []
-    for _e, claims in _entity_index(pool).items():
+def _entity_profile(pool, count, _by_s, by_e):
+    def _ok(claims):
         spans = {(c.source_id, c.section_seq) for c in claims}
-        if len(claims) >= 2 and len(spans) >= 2:
-            sets.append(list(claims))
-        if len(sets) >= count:
-            break
-    return sets
+        return list(claims) if len(claims) >= 2 and len(spans) >= 2 else False
+    return _take(_ok, by_e.values(), count)
 
 
-def _temporal(pool, count):
-    sets = []
-    for _sid, claims in _by_source(pool).items():
+def _temporal(pool, count, by_s, _by_e):
+    def _ok(claims):
         timed = [c for c in claims if c.has_time]
-        if len(timed) >= 2:
-            sets.append(timed)
-        if len(sets) >= count:
-            break
-    return sets
+        return timed if len(timed) >= 2 else False
+    return _take(_ok, by_s.values(), count)
 
 
-def _causal_absent(pool, count):
-    # event claim about entity E with NO is_cause claim mentioning E anywhere → provable absence
+def _causal_absent(pool, count, _by_s, _by_e):
     cause_entities = {e for c in pool if c.is_cause for e in c.entities}
-    sets = []
-    for c in pool:
+    def _ok(c):
         if c.is_cause or not c.entities:
-            continue
-        if not any(e in cause_entities for e in c.entities):
-            sets.append([c])
-        if len(sets) >= count:
-            break
-    return sets
+            return False
+        return [c] if not any(e in cause_entities for e in c.entities) else False
+    return _take(_ok, pool, count)
 
 
 _SELECTORS = {
@@ -128,4 +109,8 @@ def select(category: str, pool: list[Claim], count: int) -> list[list[Claim]]:
     """Up to `count` claim-sets for `category`. Each set's spans become the case's
     gold evidence. Returns [] when the pool can't satisfy the type's structure."""
     fn = _SELECTORS.get(category)
-    return fn(pool, count) if fn else []
+    if fn is None:
+        return []
+    by_s = _by_source(pool)
+    by_e = _entity_index(pool)
+    return fn(pool, count, by_s, by_e)
