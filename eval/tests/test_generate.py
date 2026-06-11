@@ -10,13 +10,31 @@ from eval.generate import (
 
 
 def test_category_prompts_exist():
-    for cat in ("narrow", "broad", "cross_ref", "absence", "temporal"):
+    from eval.models import ALL_CATEGORIES
+
+    for cat in ALL_CATEGORIES:
         assert cat in CATEGORY_PROMPTS
+    # the prompt set covers exactly the taxonomy, no orphans
+    assert set(CATEGORY_PROMPTS) == set(ALL_CATEGORIES)
 
 
 def test_max_constants():
     assert MAX_SOURCES > 0
     assert MAX_WORDS_PER_SOURCE > 0
+
+
+def test_resolve_counts_floor_and_weights():
+    from eval.generate import DEFAULT_WEIGHTS, resolve_counts
+
+    cats = ["single_fact", "enumeration", "multi_hop"]
+    counts = resolve_counts(cats, floor=3)
+    # every selected category gets at least the floor
+    assert all(v >= 3 for v in counts.values())
+    # unweighted category sits exactly at the floor
+    assert counts["single_fact"] == 3
+    # failure-prone shapes get a surplus on top of the floor
+    assert counts["enumeration"] == 3 + DEFAULT_WEIGHTS["enumeration"]
+    assert counts["multi_hop"] == 3 + DEFAULT_WEIGHTS["multi_hop"]
 
 
 def test_read_transcript(monkeypatch):

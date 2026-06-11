@@ -5,13 +5,13 @@ from eval.models import EvalCase, EvalSet, RunCaseResult, EvalRun, GradeResult, 
 def test_eval_case_creation():
     case = EvalCase(
         id=str(uuid.uuid4()),
-        category="narrow",
+        category="single_fact",
         question="什么是RAG？",
         expected_answer_draft="RAG 是检索增强生成...",
         locked=False,
         notes="",
     )
-    assert case.category == "narrow"
+    assert case.category == "single_fact"
     assert not case.locked
 
 
@@ -93,11 +93,11 @@ def test_eval_set_locked_cases():
         updated_at="2026-05-24T10:00:00",
         cases=[
             EvalCase(
-                id="c1", category="narrow", question="q1",
+                id="c1", category="single_fact", question="q1",
                 expected_answer_draft="a", locked=True, notes="",
             ),
             EvalCase(
-                id="c2", category="broad", question="q2",
+                id="c2", category="enumeration", question="q2",
                 expected_answer_draft="a", locked=False, notes="",
             ),
         ],

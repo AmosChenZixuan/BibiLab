@@ -1,9 +1,15 @@
+import asyncio
+
 from eval.grader import (
+    build_abstention_prompt,
     build_context_relevance_prompt,
+    build_coverage_groundedness_prompt,
     build_groundedness_prompt,
     build_answer_relevance_prompt,
     parse_grade_response,
+    _grade_case,
 )
+from eval.models import RunCaseResult
 
 
 def test_build_context_relevance_prompt():
@@ -57,3 +63,42 @@ def test_parse_grade_response_with_markdown_fences():
     score, reasoning = parse_grade_response(response)
     assert score == 3
     assert reasoning == "mixed"
+
+
+def test_build_abstention_prompt_includes_expected_and_answer():
+    prompt = build_abstention_prompt(
+        question="人偶一族为什么和法师结盟？",
+        expected_answer_draft="资料里提到了结盟，但没有解释原因。",
+        answer="因为他们有共同的敌人。",
+    )
+    assert "人偶一族为什么和法师结盟" in prompt
+    assert "资料里提到了结盟" in prompt
+    assert "因为他们有共同的敌人" in prompt
+    # the rubric must frame absent context as the EXPECTED outcome, not a failure
+    assert "EXPECTED" in prompt or "not a failure" in prompt
+
+
+def test_build_coverage_groundedness_prompt_accepts_summaries():
+    prompt = build_coverage_groundedness_prompt(
+        answer="这一集主要讲了人偶一族的起源。",
+        chunks_text="[1] 人偶一族的起源概要……",
+    )
+    assert "summary-derived" in prompt or "summaries" in prompt
+    assert "do NOT penalize" in prompt
+
+
+def test_grade_case_causal_absent_correct_abstention_passes(monkeypatch):
+    # A correct abstention has NO retrieved context (the corpus lacks the cause).
+    # The category-agnostic CR/G rubric would score that 1; the abstention branch
+    # must instead score the correct "not covered" answer as a PASS across all dims.
+    monkeypatch.setattr(
+        "eval.grader._call_llm",
+        lambda p, *a, **k: '{"score": 5, "reasoning": "correctly abstained"}',
+    )
+    case = RunCaseResult(case_id="c1", answer="资料里没有解释原因。", llm_context=[])
+    grade = asyncio.run(
+        _grade_case(case, "为什么X会发生？", "causal_absent", "资料里没有解释其原因。", ai_cfg=None)
+    )
+    assert grade.context_relevance == 5
+    assert grade.groundedness == 5
+    assert grade.answer_relevance == 5

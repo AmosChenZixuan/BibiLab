@@ -6,6 +6,7 @@ import sys
 import click
 
 from eval.config import resolve_profile, get_language
+from eval.models import DEFAULT_CATEGORIES, DEFAULT_FLOOR
 from eval.storage import (
     save_eval_set,
     load_eval_set,
@@ -143,12 +144,12 @@ def _create_interactive():
     if list_id is None:
         return
 
-    cats_default = "narrow,broad,cross_ref,absence,temporal"
+    cats_default = DEFAULT_CATEGORIES
     cats_input = click.prompt("Categories (comma-separated)", default=cats_default, show_default=False)
     click.echo(f"  Categories: {cats_input}")
     cats = [c.strip() for c in cats_input.split(",") if c.strip()]
-    count = click.prompt("Count per category", type=int, default=3)
-    _do_create(list_id, cats, count)
+    floor = click.prompt("Floor (min questions per category)", type=int, default=DEFAULT_FLOOR)
+    _do_create(list_id, cats, floor)
 
 
 def _review_interactive():
@@ -195,8 +196,8 @@ def main(ctx):
 # ── shared execution ─────────────────────────────────────────────────
 
 
-def _do_create(list_id: str, cats: list[str], count: int):
-    from eval.generate import generate_eval_set
+def _do_create(list_id: str, cats: list[str], floor: int):
+    from eval.generate import generate_eval_set, resolve_counts
     from bibilab.db import get_sources_for_list
 
     try:
@@ -206,12 +207,17 @@ def _do_create(list_id: str, cats: list[str], count: int):
         sys.exit(1)
 
     language = get_language()
-    click.echo(f"Generating eval set for list {list_id} ({len(cats)} categories, {count} each, lang={language})...")
+    counts = resolve_counts(cats, floor)
+    total = sum(counts.values())
+    click.echo(
+        f"Generating eval set for list {list_id} "
+        f"({len(cats)} categories, floor {floor}, {total} questions, lang={language})..."
+    )
 
     try:
         rows = asyncio.run(get_sources_for_list(list_id))
         all_sources = [dict(r) for r in rows]
-        es = generate_eval_set(list_id, all_sources, cats, count, ai_cfg, language)
+        es = generate_eval_set(list_id, all_sources, counts, ai_cfg, language)
     except Exception as e:
         click.echo(f"Error generating eval set: {e}", err=True)
         sys.exit(1)
@@ -328,16 +334,16 @@ def _list_cmd():
 
 @main.command()
 @click.argument("list_id", required=False, default=None)
-@click.option("--categories", default="narrow,broad,cross_ref,absence,temporal", help="Comma-separated categories.")
-@click.option("--count", default=3, help="Questions per category.")
-def create(list_id, categories, count):
+@click.option("--categories", default=DEFAULT_CATEGORIES, help="Comma-separated categories.")
+@click.option("--floor", default=DEFAULT_FLOOR, help="Minimum questions per category (failure-prone types get a surplus on top).")
+def create(list_id, categories, floor):
     """Generate eval set for a list."""
     if list_id is None:
         list_id = _pick_list()
         if list_id is None:
             return
     cats = [c.strip() for c in categories.split(",") if c.strip()]
-    _do_create(list_id, cats, count)
+    _do_create(list_id, cats, floor)
 
 
 @main.command()
