@@ -17,6 +17,7 @@ from bibilab.models.ingest import (
     VideoMetadataMapResponse,
     VideoMetadataRequest,
 )
+from bibilab.pipeline._shared import resolve_response_language
 from bibilab.routers._model_gate import require_models_present
 from bibilab.video_status import get_video_statuses
 
@@ -131,9 +132,7 @@ async def ingest_url(
     request: Request,
     cfg: BibilabConfig = Depends(get_config),
 ) -> IngestUrlResponse:
-    ui_lang_header = request.headers.get("X-UI-Lang", "en")
-    output_lang = cfg.ai.output_language
-    resolved_lang = ui_lang_header if output_lang == "ui" else output_lang
+    resolved_lang = resolve_response_language(cfg.ai, request.headers.get("X-UI-Lang", "en"))
 
     if await get_list(req.list_id) is None:
         raise HTTPException(status_code=404, detail="List not found")
