@@ -777,7 +777,7 @@ async def run_chat_turn(
 
             for rs in read_section_calls:
                 # registry is keyed by section_id; look up by section_id first, fall
-                # back to source_id for legacy messages persisted before T9.
+                # back to source_id for legacy messages persisted before the section-granularity migration.
                 section_id = rs.get("section_id", "")
                 entry = citation_registry.get(section_id) if section_id else None
                 if entry is None:

@@ -2,7 +2,15 @@ from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.responses import FileResponse
 
 from bibilab.config import cover_path
-from bibilab.db import create_job, get_pending_jobs, get_sections, get_source, parse_job_meta, update_source_facets
+from bibilab.db import (
+    create_job,
+    get_pending_jobs,
+    get_sections,
+    get_source,
+    parse_job_meta,
+    source_has_segments,
+    update_source_facets,
+)
 from bibilab.models.sources import SectionListItem, SourceContentResponse, SourceFacetsUpdate
 from bibilab.pipeline.transcribe import load_transcript_text
 
@@ -46,8 +54,7 @@ async def rerun_source(source_id: str, request: Request) -> dict:
     if source is None:
         raise HTTPException(status_code=404, detail="Source not found")
 
-    transcript_text = await load_transcript_text(source_id)
-    if not transcript_text:
+    if not await source_has_segments(source_id):
         raise HTTPException(status_code=404, detail="Source has no transcript")
 
     # Dedup: reject if a non-terminal digest job already exists for this source

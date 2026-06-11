@@ -450,7 +450,7 @@ async def execute_find_passages(
         for sid, row in zip(missing_titles, src_rows):
             title_by_source[sid] = row["title"] if row else ""
 
-    # Reconstruct the speaker-turn body for each displayed chunk (kept from v1).
+    # Reconstruct the speaker-turn body for each displayed chunk.
     # Section allocation happens below; the per-chunk turn body is built first
     # because the section's verbatim is the body, not just a header.
     ranges = [
@@ -714,7 +714,7 @@ def expand_message_for_provider(
                 logger.warning("expand_message_for_provider skipping malformed block: missing keys")
                 continue
             assistant_content.append({"type": "tool_use", "id": tool_use_id, "name": name, "input": arguments})
-            result_payload = json.dumps(b.get("result"))
+            result_payload = json.dumps(result)
             tool_result_content.append({"type": "tool_result", "tool_use_id": tool_use_id, "content": result_payload})
         if text:
             assistant_content.append({"type": "text", "text": text})
@@ -744,7 +744,7 @@ def expand_message_for_provider(
                     "function": {"name": name, "arguments": json.dumps(arguments)},
                 }
             )
-            result_payload = json.dumps(b.get("result"))
+            result_payload = json.dumps(result)
             out.append(
                 {
                     "role": "tool",
