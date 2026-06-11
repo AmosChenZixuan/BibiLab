@@ -10,6 +10,7 @@ from typing import Any
 from bibilab.pipeline._shared import _call_llm
 
 from eval._utils import now_iso, strip_json_fences
+from eval.claims import Claim
 from eval.dashboard import TaskDashboard
 from eval.models import DEFAULT_FLOOR, EvalCase, EvalSet
 
@@ -672,3 +673,37 @@ def generate_eval_set(
         updated_at=now,
         cases=cases,
     )
+
+
+_PHRASE_SHAPE = {
+    "single_fact": "问一个答案就是下面某条事实的单点问题。",
+    "locate": "问下面这件事/这句话出现在哪一集 / 哪个来源；答案是它的位置。",
+    "coverage": "问'这一集讲了什么'；答案综合下面同一来源的所有事实成一段梗概。",
+    "enumeration": "问'有哪些……'；答案把下面事实里的同类项列全。",
+    "comparison": "问下面两条（来自不同来源）的差异 / 异同。",
+    "multi_hop": "问一个需要先得到下面第一条里的对象、再用它得到第二条答案的两跳问题。",
+    "entity_profile": "问下面这个实体整体是怎样的；答案聚合它的多处提及。",
+    "temporal": "问下面这些事件的先后顺序 / 时间线。",
+    "causal_absent": "问'为什么 X'，X 是下面这条事实里的事件；但下面没有解释原因——答案必须是'资料里提到了 X，但没有解释其原因'，不要编造原因。",
+}
+
+
+def phrase_question(category: str, claims: list[Claim], ai_cfg, language: str = "zh"
+                    ) -> tuple[str, str, str | None]:
+    facts = "\n".join(f"- {c.text}" for c in claims)
+    body = (
+        f"你是一个知识库用户，根据下面的事实出一道题。题型要求：{_PHRASE_SHAPE.get(category, '')}\n\n"
+        "强约束：用真实用户口吻；只用中文；不要提到'视频/文字稿/资料/摘要'；"
+        "expected_answer_draft 必须能从下面事实直接得到（causal_absent 除外，见题型要求）。\n\n"
+        f"事实：\n{facts}\n\n"
+        '只返回 JSON：{"question":"...","expected_answer_draft":"..."}'
+    )
+    prompt = _with_language(body, language)
+    raw, call_err = _safe_extract_call(prompt, ai_cfg)
+    if raw is None:
+        return ("", "", call_err)
+    try:
+        data = json.loads(strip_json_fences(raw))
+    except json.JSONDecodeError as e:
+        return ("", "", f"JSONDecodeError: {e}")
+    return (str(data.get("question", "")).strip(), str(data.get("expected_answer_draft", "")).strip(), None)

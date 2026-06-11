@@ -262,3 +262,24 @@ def test_generate_eval_set_unknown_category_skips_and_warns(monkeypatch, capsys)
     err = capsys.readouterr().err
     assert "ghost" in err
     assert "unknown category" in err
+
+
+def test_phrase_question_parses_qa(monkeypatch):
+    from eval.claims import Claim
+    from eval.generate import phrase_question
+    monkeypatch.setattr("eval.generate._call_llm",
+        lambda p, *a, **k: '{"question":"谁打败了B？","expected_answer_draft":"A。"}')
+    claims = [Claim(source_id="s1", section_seq=0, text="A defeated B", snippet="A defeated B")]
+    q, a, err = phrase_question("single_fact", claims, ai_cfg=None, language="zh")
+    assert err is None and q == "谁打败了B？" and a == "A。"
+
+
+def test_phrase_question_call_failure(monkeypatch):
+    from eval.claims import Claim
+    from eval.generate import phrase_question
+    def boom(*a, **k):
+        raise TimeoutError("slow")
+    monkeypatch.setattr("eval.generate._call_llm", boom)
+    claims = [Claim(source_id="s1", section_seq=0, text="x", snippet="x")]
+    q, a, err = phrase_question("single_fact", claims, ai_cfg=None)
+    assert q == "" and "TimeoutError" in err
