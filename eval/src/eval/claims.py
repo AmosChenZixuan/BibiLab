@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import hashlib
 import json
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -84,3 +87,41 @@ async def load_spans(source_id: str) -> list[dict]:
         text = " ".join(r["text"] for r in rows)
         spans.append({"source_id": source_id, "section_seq": sec["seq"], "text": text})
     return spans
+
+
+def _cache_dir() -> Path:
+    from bibilab.config import bibilab_home
+    d = bibilab_home() / "evals" / "_claims_cache"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def _cache_path(span: dict) -> Path:
+    h = hashlib.sha1(span["text"].encode("utf-8")).hexdigest()[:16]
+    return _cache_dir() / f"{span['source_id']}_{span['section_seq']}_{h}.json"
+
+
+def build_claim_pool(spans: list[dict], ai_cfg: Any, language: str = "zh") -> tuple[list[Claim], list[str]]:
+    pool: list[Claim] = []
+    errors: list[str] = []
+
+    def _one(span: dict) -> tuple[list[Claim], str | None]:
+        cp = _cache_path(span)
+        if cp.exists():
+            return ([Claim.model_validate(c) for c in json.loads(cp.read_text())], None)
+        claims, err = extract_claims_for_span(span, ai_cfg, language)
+        if err is None:
+            cp.write_text(json.dumps([c.model_dump() for c in claims], ensure_ascii=False))
+        return (claims, err)
+
+    if not spans:
+        return ([], [])
+    with ThreadPoolExecutor(max_workers=min(len(spans), 8)) as pool_exec:
+        futures = {pool_exec.submit(_one, s): s for s in spans}
+        for fut in as_completed(futures):
+            s = futures[fut]
+            claims, err = fut.result()
+            pool.extend(claims)
+            if err is not None:
+                errors.append(f"source {s['source_id']} sec {s['section_seq']}: {err}")
+    return (pool, errors)

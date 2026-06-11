@@ -1,5 +1,5 @@
 import asyncio
-from eval.claims import Claim, extract_claims_for_span, load_spans
+from eval.claims import Claim, build_claim_pool, extract_claims_for_span, load_spans
 
 
 def test_claim_defaults():
@@ -48,3 +48,32 @@ def test_extract_claims_call_failure_is_error_not_crash(monkeypatch):
     span = {"source_id": "s1", "section_seq": 0, "text": "x"}
     claims, err = extract_claims_for_span(span, ai_cfg=None)
     assert claims == [] and "TimeoutError" in err
+
+
+def test_build_claim_pool_partial_failure(monkeypatch, tmp_path):
+    monkeypatch.setattr("eval.claims._cache_dir", lambda: tmp_path)
+    spans = [
+        {"source_id": "s1", "section_seq": 0, "text": "good"},
+        {"source_id": "s2", "section_seq": 0, "text": "boom"},
+    ]
+    def fake(prompt, *a, **k):
+        if "boom" in prompt:
+            raise RuntimeError("api error")
+        return '{"claims":[{"text":"f","entities":[],"is_cause":false,"has_time":false}]}'
+    monkeypatch.setattr("eval.claims._call_llm", fake)
+    pool, errors = build_claim_pool(spans, ai_cfg=None)
+    assert len(pool) == 1 and pool[0].source_id == "s1"
+    assert len(errors) == 1 and "s2" in errors[0]
+
+
+def test_build_claim_pool_uses_cache(monkeypatch, tmp_path):
+    monkeypatch.setattr("eval.claims._cache_dir", lambda: tmp_path)
+    spans = [{"source_id": "s1", "section_seq": 0, "text": "same"}]
+    calls = []
+    def fake(prompt, *a, **k):
+        calls.append(1)
+        return '{"claims":[{"text":"f","entities":[],"is_cause":false,"has_time":false}]}'
+    monkeypatch.setattr("eval.claims._call_llm", fake)
+    build_claim_pool(spans, ai_cfg=None)
+    build_claim_pool(spans, ai_cfg=None)   # second run hits cache
+    assert len(calls) == 1
