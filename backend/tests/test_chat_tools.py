@@ -1,4 +1,4 @@
-"""Tests for the RAG v2 two-tool surface: find_passages + read_source + registry + provider expansion."""
+"""Tests for the RAG v2 two-tool surface: find_passages + read_section + registry + provider expansion."""
 
 import json
 import logging
@@ -525,7 +525,7 @@ def test_expand_message_for_provider_drops_retrieve_and_read_section_anthropic()
     assert "tool_blocks" not in out[0]
 
 
-def test_expand_message_for_provider_drops_retrieve_and_read_source_openai():
+def test_expand_message_for_provider_drops_find_passages_openai():
     from bibilab.pipeline.chat_tools import expand_message_for_provider
 
     msg = {
@@ -1530,24 +1530,12 @@ async def test_execute_find_passages_orders_same_section_chronologically_with_ga
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio
-async def test_find_passages_registers_sections_not_sources(tmp_bibilab_home, monkeypatch):
-    """T4: registry keys are section_id, each entry carries seq + citable=True
-    when the section's verbatim is shown, and the rendered body uses the
-    section-keyed fence. Real sections come from the factory; retrieve +
-    get_segments are mocked so the test stays self-contained."""
-    from bibilab.config import AIConfig, BackendConfig, BibilabConfig
-    from bibilab.db import bootstrap_db, create_list, get_sections
-    from bibilab.pipeline import chat_tools
+async def _build_two_section_source(list_id: str, **source_overrides) -> str:
+    """Seed a 2-section, 30-segment source with topic-mentioning sentences."""
     from bibilab.pipeline.digest import SectionDigest
-    from bibilab.pipeline.embed import RetrievalResult, RetrievedChunk, SourceHit
     from bibilab.pipeline.section import Section
-    from tests.factories import SourceFactory
-
-    # Real DB with a 2-section source. 30 segments split 0-14 + 15-29.
-    await bootstrap_db()
-    await create_list("L1", "Test List", "2025-01-01T00:00:00Z")
     from bibilab.pipeline.transcribe import WhisperSegment
+    from tests.factories import SourceFactory
 
     segs = [
         WhisperSegment(
@@ -1566,13 +1554,33 @@ async def test_find_passages_registers_sections_not_sources(tmp_bibilab_home, mo
         SectionDigest(summary="sec1 summary about the topic", keywords=["k1"]),
         SectionDigest(summary="sec2 summary about the topic", keywords=["k2"]),
     ]
-    source_id = await SourceFactory.build(
-        "L1",
-        video_id="BVtwoSection",
-        title="Two Section Video",
+    return await SourceFactory.build(
+        list_id,
         segments=segs,
         sections=sections,
         section_digests=digests,
+        **source_overrides,
+    )
+
+
+@pytest.mark.asyncio
+async def test_find_passages_registers_sections_not_sources(tmp_bibilab_home, monkeypatch):
+    """T4: registry keys are section_id, each entry carries seq + citable=True
+    when the section's verbatim is shown, and the rendered body uses the
+    section-keyed fence. Real sections come from the factory; retrieve +
+    get_segments are mocked so the test stays self-contained."""
+    from bibilab.config import AIConfig, BackendConfig, BibilabConfig
+    from bibilab.db import bootstrap_db, create_list, get_sections
+    from bibilab.pipeline import chat_tools
+    from bibilab.pipeline.embed import RetrievalResult, RetrievedChunk, SourceHit
+
+    # Real DB with a 2-section source. 30 segments split 0-14 + 15-29.
+    await bootstrap_db()
+    await create_list("L1", "Test List", "2025-01-01T00:00:00Z")
+    source_id = await _build_two_section_source(
+        "L1",
+        video_id="BVtwoSection",
+        title="Two Section Video",
     )
     section_rows = await get_sections(source_id)
     section_ids = [r["id"] for r in section_rows]
@@ -1670,41 +1678,16 @@ async def test_find_passages_facet_emits_full_outline(tmp_bibilab_home, monkeypa
     from bibilab.config import AIConfig, BackendConfig, BibilabConfig
     from bibilab.db import bootstrap_db, create_list, get_sections
     from bibilab.pipeline import chat_tools
-    from bibilab.pipeline.digest import SectionDigest
     from bibilab.pipeline.embed import RetrievalResult, SourceHit
-    from bibilab.pipeline.section import Section
-    from bibilab.pipeline.transcribe import WhisperSegment
-    from tests.factories import SourceFactory
 
     # Real DB with a 2-section source. 30 segments split 0-14 + 15-29.
     await bootstrap_db()
     await create_list("L1", "Test List", "2025-01-01T00:00:00Z")
-
-    segs = [
-        WhisperSegment(
-            start=float(i),
-            end=float(i + 1),
-            text=f"sentence {i} about the topic discussed",
-            speaker="SPK_0",
-        )
-        for i in range(30)
-    ]
-    sections = [
-        Section(seg_start=0, seg_end=14, token_count=100, timestamp_start=0.0, timestamp_end=15.0),
-        Section(seg_start=15, seg_end=29, token_count=100, timestamp_start=15.0, timestamp_end=30.0),
-    ]
-    digests = [
-        SectionDigest(summary="sec1 summary about the topic", keywords=["k1"]),
-        SectionDigest(summary="sec2 summary about the topic", keywords=["k2"]),
-    ]
-    source_id = await SourceFactory.build(
+    source_id = await _build_two_section_source(
         "L1",
         video_id="BVfacetSource",
         title="Facet Match Video",
         sequence_number=1,
-        segments=segs,
-        sections=sections,
-        section_digests=digests,
     )
     section_rows = await get_sections(source_id)
     section_ids = [r["id"] for r in section_rows]
@@ -1770,7 +1753,7 @@ async def test_find_passages_facet_emits_full_outline(tmp_bibilab_home, monkeypa
 
 
 # ---------------------------------------------------------------------------
-# Task 6: read_source -> read_section ([N]=section, bounded verbatim)
+# read_section: [N]=section, bounded verbatim
 # ---------------------------------------------------------------------------
 
 
