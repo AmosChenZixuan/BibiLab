@@ -17,6 +17,9 @@ const TERMINAL_JOB_STATUSES = new Set(["done", "failed", "needs_auth"]);
 
 const POLL_INTERVAL_MS = 5_000;
 
+const FALLBACK_INGEST_LABEL = "Queued source";
+const FALLBACK_DIGEST_LABEL = "Digest";
+
 type JobProducer = "ingest" | "model_download" | "artifact" | "digest";
 
 export type JobRegistration = {
@@ -129,7 +132,7 @@ function extractIngestTitle(meta: Job["meta"]): string {
   if ("source_url" in meta && typeof meta.source_url === "string" && meta.source_url.trim()) {
     return meta.source_url;
   }
-  return "Queued source";
+  return FALLBACK_INGEST_LABEL;
 }
 
 function inferTrackedMeta(job: Job): TrackedJobMeta {
@@ -154,7 +157,7 @@ function inferTrackedMeta(job: Job): TrackedJobMeta {
   if (isDigestJob(job)) {
     const sourceTitle = typeof job.meta.source_title === "string" && job.meta.source_title.trim()
       ? job.meta.source_title
-      : "Digest";
+      : FALLBACK_DIGEST_LABEL;
     return {
       producer: "digest",
       label: sourceTitle,
@@ -164,7 +167,7 @@ function inferTrackedMeta(job: Job): TrackedJobMeta {
 
   return {
     producer: "ingest",
-    label: isIngestJob(job) ? extractIngestTitle(job.meta) : "Queued source",
+    label: isIngestJob(job) ? extractIngestTitle(job.meta) : FALLBACK_INGEST_LABEL,
     contextKey: isIngestJob(job) && typeof job.meta.list_id === "string" ? job.meta.list_id : null,
   };
 }
@@ -198,7 +201,7 @@ function toActivityItem(job: Job, meta: TrackedJobMeta): JobActivityItem {
 export function getJobTitle(job: Job, fallbackLabel: string): string {
   if (isIngestJob(job)) {
     const title = extractIngestTitle(job.meta);
-    if (title !== "Queued source") {
+    if (title !== FALLBACK_INGEST_LABEL) {
       return title;
     }
   }
@@ -339,15 +342,19 @@ export function JobActivityProvider({ children }: { children: React.ReactNode })
     });
   }, []);
 
-  const dismissJob = useCallback(async (jobId: string) => {
+  const deleteJob = useCallback(async (jobId: string, clearErrorOnSuccess: boolean) => {
     try {
       await run(jobId, () => api.deleteJob(jobId));
       removeJobLocally(jobId);
-      setErrorMessage(null);
+      if (clearErrorOnSuccess) {
+        setErrorMessage(null);
+      }
     } catch (error) {
       setErrorMessage(toErrorMessageWithT(error, t));
     }
   }, [run, removeJobLocally, t]);
+
+  const dismissJob = useCallback((jobId: string) => deleteJob(jobId, true), [deleteJob]);
 
   const clearTerminalJobs = useCallback(() => {
     const terminalIds = visibleJobs.filter((job) => job.isTerminal).map((job) => job.job.id);
@@ -358,14 +365,7 @@ export function JobActivityProvider({ children }: { children: React.ReactNode })
     void Promise.all(terminalIds.map((jobId) => dismissJob(jobId)));
   }, [dismissJob, visibleJobs]);
 
-  const cancelJob = useCallback(async (jobId: string) => {
-    try {
-      await run(jobId, () => api.deleteJob(jobId));
-      removeJobLocally(jobId);
-    } catch (error) {
-      setErrorMessage(toErrorMessageWithT(error, t));
-    }
-  }, [run, removeJobLocally, t]);
+  const cancelJob = useCallback((jobId: string) => deleteJob(jobId, false), [deleteJob]);
 
   const getJobs = useCallback(
     (producer: JobProducer, contextKey?: string) => {
