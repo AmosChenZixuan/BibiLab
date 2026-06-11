@@ -15,13 +15,19 @@ from eval._utils import safe_call_llm, strip_json_fences
 
 EXTRACTION_LLM_TIMEOUT = 180
 
-_EXTRACT_PROMPT = """你是一个信息抽取助手。下面是一段视频文字稿。请抽取其中**明确陈述**的原子事实。
+# Framed as abstractive summary-into-N-points (not open-ended extraction):
+# extract/select-everything tasks give reasoning models no natural stop and let
+# thinking fill the whole output budget (finish_reason=length, 0 content on
+# small-context models); "概括成最多 N 个要点" is content-bounded and finishes.
+# The {"claims": [...]} schema is unchanged so downstream parsing is untouched.
+_EXTRACT_PROMPT = """你是一个内容概括助手。下面是一段视频文字稿。请把它概括成若干**要点**（最多 15 条），每个要点对应文字稿里明确说到的一件事。
 
 强约束：
-- 每条事实一句话，只用文字稿里出现的信息，不要推断、补充或联想。
-- entities：该事实里出现的专有名词（人名、组织、地名、设定名）；没有就空数组。
-- is_cause：这条事实是否在**解释某件事为什么发生 / 动机 / 由来**（是→true）。
-- has_time：这条事实是否带**时间或先后顺序**标记（"之后""第二天""先……再……"等，是→true）。
+- 每个要点一句话，只用文字稿里出现的信息，不要推断、补充或联想。
+- 内容较少时给出更少的要点即可，不要为凑数而编造。
+- entities：该要点里出现的专有名词（人名、组织、地名、设定名）；没有就空数组。
+- is_cause：这个要点是否在**解释某件事为什么发生 / 动机 / 由来**（是→true）。
+- has_time：这个要点是否带**时间或先后顺序**标记（"之后""第二天""先……再……"等，是→true）。
 - 文字稿空白或纯非语言标记时，返回空数组。
 
 只返回单个 JSON 对象，无 markdown fences，无多余文字：

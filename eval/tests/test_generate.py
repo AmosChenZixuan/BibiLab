@@ -52,7 +52,7 @@ def test_generate_eval_set_produces_evidence_anchored_cases(monkeypatch):
     monkeypatch.setattr("eval.generate.load_spans", fake_spans)
 
     def fake_call(prompt, *a, **k):
-        if "信息抽取" in prompt:  # extraction
+        if "内容概括" in prompt:  # extraction (summary-into-N-points)
             return '{"claims":[{"text":"E acts","entities":["E"],"is_cause":false,"has_time":false}]}'
         return '{"question":"q?","expected_answer_draft":"a"}'  # phrasing
 
