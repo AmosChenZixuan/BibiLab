@@ -15,7 +15,7 @@ from bibilab.routers.chat import (
     SSE_EVENT_TOOL_RESULT,
     _client_tool_result,
 )
-from tests import an_async_generator
+from tests import an_async_generator, create_list
 from tests.factories import MessageFactory
 
 pytestmark = pytest.mark.integration
@@ -32,14 +32,6 @@ def _parse_sse(text: str) -> list[dict]:
 async def _get_assistant_msgs(client, list_id: str) -> list[dict]:
     conv_resp = await client.get(f"/lists/{list_id}/conversation")
     return [m for m in conv_resp.json()["messages"] if m["role"] == "assistant"]
-
-
-async def _create_list(client, name: str) -> str:
-    return (await client.post("/lists", json={"name": name})).json()["id"]
-
-
-async def _async_noop(*_args, **_kwargs):
-    return None
 
 
 @pytest.mark.asyncio
@@ -216,7 +208,7 @@ async def test_patch_conversation_endpoint_gone(client):
 @pytest.mark.asyncio
 async def test_smoke_scenario_1_chitchat_no_tool_calls(client):
     """Chitchat: LLM responds directly, no retrieve tool, no tool_result in SSE."""
-    list_id = await _create_list(client, "Smoke 1")
+    list_id = await create_list(client, "Smoke 1")
 
     async def fake_stream(messages, cfg, tools=None, execute_tool_fn=None, system=None, **kwargs):
         yield StreamEvent(type=SSE_EVENT_DELTA, content="You're welcome!")
@@ -258,7 +250,7 @@ async def test_smoke_scenario_1_chitchat_no_tool_calls(client):
 )
 async def test_smoke_scenario_2_retrieve(client, tool_name, query, user_message, delta_text, result_overrides):
     """LLM calls find_passages tool with correct tool_name before answering."""
-    list_id = await _create_list(client, f"Smoke retrieve {tool_name}")
+    list_id = await create_list(client, f"Smoke retrieve {tool_name}")
 
     retrieve_result = {"tool_name": tool_name, **result_overrides}
 
@@ -922,7 +914,7 @@ async def test_chat_endpoint_classify_error_reaches_sse_terminal_payload(client,
 
 @pytest.mark.asyncio
 async def test_run_chat_turn_drops_tool_blocks_on_turn_2(monkeypatch, mock_stream_llm):
-    """Prior-turn find_passages / read_source tool exchanges are
+    """Prior-turn find_passages / read_section tool exchanges are
     dropped from cross-turn replay to avoid stale-context contamination. The
     LLM sees only the synthesized prose from prior turns; to re-ground on
     prior evidence it must re-call the tool in the current turn.
@@ -1238,7 +1230,7 @@ async def test_rag_metadata_includes_read_section_call(client):
     was renamed for the import only. Full update is T9's job."""
     from bibilab.pipeline.chat_tools import READ_SECTION_TOOL
 
-    list_id = await _create_list(client, "ReadSectionLedger")
+    list_id = await create_list(client, "ReadSectionLedger")
 
     async def fake_stream(messages, cfg, tools=None, execute_tool_fn=None, system=None, **kwargs):
         yield StreamEvent(
@@ -1299,7 +1291,7 @@ async def test_chat_endpoint_excludes_aborted_turn_from_llm_history(client, user
     """
     from tests.factories import ConversationFactory, MessageFactory
 
-    list_id = await _create_list(client, "T")
+    list_id = await create_list(client, "T")
     conv_id = await ConversationFactory.build(list_id)
     await MessageFactory.build(conv_id, role="user", content="u1", status="done")
     await MessageFactory.build(conv_id, role="assistant", content="a1", status="done")
@@ -1432,7 +1424,7 @@ async def test_done_turns_replay_unchanged(client):
     regress when we add the status filter."""
     from tests.factories import ConversationFactory, MessageFactory
 
-    list_id = await _create_list(client, "T")
+    list_id = await create_list(client, "T")
     conv_id = await ConversationFactory.build(list_id)
     await MessageFactory.build(conv_id, role="user", content="u1", status="done")
     await MessageFactory.build(conv_id, role="assistant", content="a1", status="done")

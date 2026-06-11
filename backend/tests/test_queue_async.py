@@ -1,4 +1,4 @@
-"""Test demonstrating async DB layer issues - tests should fail with current sync implementation."""
+"""Tests verifying the async DB layer uses aiosqlite (not the legacy sync sqlite3 path)."""
 
 import asyncio
 from pathlib import Path
@@ -21,14 +21,8 @@ def tmp_bibilab_home(tmp_path: Path):
 
 @pytest.mark.asyncio
 async def test_db_uses_aiosqlite_not_sqlite3(tmp_bibilab_home: Path):
-    """
-    Verify that get_db() uses aiosqlite for true async support.
-
-    Current implementation uses sqlite3.connect() which is synchronous and
-    blocks the event loop during I/O operations.
-
-    This test checks that the connection returned is an aiosqlite connection,
-    which has async-compatible execute() returning an async cursor.
+    """Verify that get_db() returns an aiosqlite connection (async-compatible
+    execute() returning an async cursor), not the legacy sync sqlite3 path.
     """
     from bibilab.db import bootstrap_db, get_db
 
