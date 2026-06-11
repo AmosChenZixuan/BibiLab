@@ -592,6 +592,16 @@ async def get_transcript_segments(source_id: str) -> list[aiosqlite.Row]:
         return await cursor.fetchall()
 
 
+async def source_has_segments(source_id: str) -> bool:
+    """Cheap existence check — does this source have any transcript segments?"""
+    async with get_db() as db:
+        cur = await db.execute(
+            "SELECT 1 FROM transcript_segments WHERE source_id = ? LIMIT 1",
+            (source_id,),
+        )
+        return await cur.fetchone() is not None
+
+
 async def get_section_ranges(source_id: str) -> list[aiosqlite.Row]:
     """Return a source's sections ordered by seq.
 
