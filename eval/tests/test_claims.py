@@ -1,5 +1,5 @@
 import asyncio
-from eval.claims import Claim, load_spans
+from eval.claims import Claim, extract_claims_for_span, load_spans
 
 
 def test_claim_defaults():
@@ -22,3 +22,29 @@ def test_load_spans_builds_section_text(monkeypatch):
     monkeypatch.setattr("eval.claims.get_segments_for_ranges", fake_segs)
     spans = asyncio.run(load_spans("s1"))
     assert [(s["section_seq"], s["text"]) for s in spans] == [(0, "hello world"), (1, "again")]
+
+
+def test_extract_claims_tags_and_provenance(monkeypatch):
+    raw = (
+        '{"claims": ['
+        '{"text": "A defeated B", "entities": ["A","B"], "is_cause": false, "has_time": true},'
+        '{"text": "B did it out of revenge", "entities": ["B"], "is_cause": true, "has_time": false}'
+        ']}'
+    )
+    monkeypatch.setattr("eval.claims._call_llm", lambda p, *a, **k: raw)
+    span = {"source_id": "s1", "section_seq": 0, "text": "A defeated B. B did it out of revenge."}
+    claims, err = extract_claims_for_span(span, ai_cfg=None, language="zh")
+    assert err is None
+    assert len(claims) == 2
+    assert claims[0].source_id == "s1" and claims[0].section_seq == 0   # provenance injected, not from LLM
+    assert claims[0].has_time is True and claims[1].is_cause is True
+    assert claims[0].snippet  # snippet populated from the span text
+
+
+def test_extract_claims_call_failure_is_error_not_crash(monkeypatch):
+    def boom(*a, **k):
+        raise TimeoutError("slow")
+    monkeypatch.setattr("eval.claims._call_llm", boom)
+    span = {"source_id": "s1", "section_seq": 0, "text": "x"}
+    claims, err = extract_claims_for_span(span, ai_cfg=None)
+    assert claims == [] and "TimeoutError" in err
