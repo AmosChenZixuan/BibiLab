@@ -5,8 +5,10 @@ between label and digits, closing bracket must match the opening family:
 ``[N]`` ``[Source N]`` ``(Source N)`` ``（Source N）`` ``[来源N]`` ``（来源N）``
 ``(来源N)`` ``【N】`` ``【来源N】``. Inside one wrapper, digit groups separated by
 ``,`` ``，`` ``、`` (optional spaces) emit one citation event per index (D2).
-An optional ``@ Xs-Ys`` timestamp suffix after the index list is silently
-consumed (the LLM may copy it from citation-formatted chunks).
+An optional ``@M:SS`` clock timestamp after the index list is silently
+consumed — the fence header and turn lines render time as ``@M:SS`` (or
+``@H:MM:SS``), so the LLM copies that shape; a range joins two clocks with
+``-``, ``–`` or ``—``.
 """
 
 import json
@@ -26,18 +28,25 @@ _OPENERS = "".join(_BRACKET_PAIRS)
 _SEP = r"[,，、]"
 _OPEN_CLASS = r"[\[\(（【]"
 
+# Clock timestamp the LLM may append (matching the @M:SS / @H:MM:SS shape the
+# fence renders); a range joins two clocks with -, – or —. Silently consumed.
+_CLOCK = r"\d+:\d{2}(?::\d{2})?"
+_TS_SUFFIX = rf"(?: *@ *{_CLOCK}(?: *[-–—] *{_CLOCK})?)?"
+
 # Inner shape: optional label (Source / 来源) + optional single space, then
 # digit groups separated by _SEP with optional surrounding spaces (D2).
-_INNER = rf"(?:[Ss][Oo][Uu][Rr][Cc][Ee]|来源)? ?(\d+(?: *{_SEP} *\d+)*)(?: *@ *\d+s-\d+s)?"
+_INNER = rf"(?:[Ss][Oo][Uu][Rr][Cc][Ee]|来源)? ?(\d+(?: *{_SEP} *\d+)*){_TS_SUFFIX}"
 
 # Full wrapper regex: capture group 1 = opener, group 2 = inner index list,
 # group 3 = closer. Closer validated against the opener family in parse_delta.
 _CITATION_RE = re.compile(rf"({_OPEN_CLASS})" + _INNER + r"([\]\)）】])")
 
 # A trailing fragment is held for the next delta iff it is a viable prefix of a
-# token: an opener, optionally followed by a partial label and/or a partial
-# index list that has not yet hit its closing bracket (D5).
-_VIABLE_PREFIX_RE = re.compile(rf"{_OPEN_CLASS}(?:[Ss]?[Oo]?[Uu]?[Rr]?[Cc]?[Ee]?|来?源?) ?\d*(?: *{_SEP} *\d*)*$")
+# token: an opener, optionally followed by a partial label, a partial index
+# list, and/or a partial @M:SS suffix that has not yet hit its closing bracket (D5).
+_VIABLE_PREFIX_RE = re.compile(
+    rf"{_OPEN_CLASS}(?:[Ss]?[Oo]?[Uu]?[Rr]?[Cc]?[Ee]?|来?源?) ?\d*(?: *{_SEP} *\d*)*(?: *@[\d :–—-]*)?$"
+)
 
 
 def _expand_indices(
