@@ -13,7 +13,7 @@ import aiosqlite
 from pypinyin import Style, lazy_pinyin
 
 import bibilab.config
-from bibilab.models.jobs import JobStatus
+from bibilab.models.jobs import ACTIVE_JOB_STATUSES
 from bibilab.pipeline.digest import SectionDigest
 from bibilab.pipeline.section import Section
 from bibilab.pipeline.transcribe import WhisperSegment
@@ -840,19 +840,15 @@ async def delete_job(job_id: str) -> None:
 
 
 async def get_pending_jobs() -> list[aiosqlite.Row]:
-    active_statuses = (
-        f"'{JobStatus.QUEUED.value}', "
-        f"'{JobStatus.DOWNLOADING.value}', "
-        f"'{JobStatus.TRANSCRIBING.value}', "
-        f"'{JobStatus.PROCESSING.value}'"
-    )
+    placeholders = _in_placeholders(list(ACTIVE_JOB_STATUSES))
     async with get_db() as db:
         cursor = await db.execute(
             f"""
             SELECT * FROM jobs
-            WHERE status IN ({active_statuses})
+            WHERE status IN ({placeholders})
             ORDER BY created_at ASC
-            """
+            """,
+            tuple(ACTIVE_JOB_STATUSES),
         )
         return await cursor.fetchall()
 

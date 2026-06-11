@@ -28,6 +28,7 @@ from bibilab.db import (
 from bibilab.db import (
     delete_list as db_delete_list,
 )
+from bibilab.models.jobs import ACTIVE_JOB_STATUSES
 from bibilab.models.lists import (
     ListCreateRequest,
     ListResponse,
@@ -37,8 +38,6 @@ from bibilab.models.lists import (
 from bibilab.pipeline.embed import clear_embeddings_for_list, clear_embeddings_for_source, clear_fts_for_source_sync
 
 router = APIRouter()
-
-_ACTIVE_JOB_STATUSES = ("queued", "downloading", "transcribing", "processing")
 
 
 def _purge_source_resources(source_id: str) -> None:
@@ -124,7 +123,7 @@ async def delete_list(list_id: str, cfg: BibilabConfig = Depends(get_config)) ->
     if row is None:
         raise HTTPException(status_code=404, detail="List not found")
 
-    placeholders = ",".join("?" * len(_ACTIVE_JOB_STATUSES))
+    placeholders = ",".join("?" * len(ACTIVE_JOB_STATUSES))
     async with get_db() as db:
         cursor = await db.execute_fetchall(
             f"""
@@ -133,7 +132,7 @@ async def delete_list(list_id: str, cfg: BibilabConfig = Depends(get_config)) ->
               AND status IN ({placeholders})
             LIMIT 1
             """,
-            (list_id, *_ACTIVE_JOB_STATUSES),
+            (list_id, *ACTIVE_JOB_STATUSES),
         )
         if len(cursor) > 0:
             raise HTTPException(status_code=409, detail="Cannot delete a list with active jobs")
@@ -182,7 +181,7 @@ async def delete_list_source(list_id: str, source_id: str, cfg: BibilabConfig = 
     if source is None or source["list_id"] != list_id:
         raise HTTPException(status_code=404, detail="Source not found")
 
-    placeholders = ",".join("?" * len(_ACTIVE_JOB_STATUSES))
+    placeholders = ",".join("?" * len(ACTIVE_JOB_STATUSES))
     async with get_db() as db:
         cursor = await db.execute_fetchall(
             f"""
@@ -192,7 +191,7 @@ async def delete_list_source(list_id: str, source_id: str, cfg: BibilabConfig = 
               AND status IN ({placeholders})
             LIMIT 1
             """,
-            (source["video_id"], list_id, *_ACTIVE_JOB_STATUSES),
+            (source["video_id"], list_id, *ACTIVE_JOB_STATUSES),
         )
         if len(cursor) > 0:
             raise HTTPException(status_code=409, detail="Cannot delete a source with active jobs")

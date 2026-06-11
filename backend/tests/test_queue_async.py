@@ -97,11 +97,11 @@ async def test_worker_never_double_dispatches_same_job(tmp_bibilab_home: Path):
     the lock that prevents other coroutines from picking them.
     """
     from bibilab.db import (
-        JobStatus,
         bootstrap_db,
         create_job,
         get_pending_jobs,
     )
+    from bibilab.models.jobs import JobStatus
 
     await bootstrap_db()
 
