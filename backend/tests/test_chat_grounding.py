@@ -12,9 +12,12 @@ class TestBuildGroundingPrompt:
             f"Expected four ## headers in order, got: {headers}"
         )
 
-    def test_line_count_under_30(self):
+    def test_line_count_bounded(self):
+        # The Workflow section is an agentic-RAG operating manual (Plan→Act→Reflect +
+        # a 10-shape playbook + stopping rules), so it is line-structured rather than a
+        # terse blurb. Still bounded to catch unbounded prompt bloat.
         prompt = build_grounding_prompt("en")
-        assert len(prompt.split("\n")) <= 30, f"Prompt has {len(prompt.split(chr(10)))} lines, must be <= 30"
+        assert len(prompt.split("\n")) <= 45, f"Prompt has {len(prompt.split(chr(10)))} lines, must be <= 45"
 
     def test_no_forbidden_substrings(self):
         prompt = build_grounding_prompt("en")
@@ -126,6 +129,49 @@ class TestBuildGroundingPrompt:
         # explicit prohibition: history is never the source for coverage
         assert "never answer a coverage question" in p
         assert "from conversation history" in p or "from history" in p
+
+    def test_workflow_encodes_react_loop(self):
+        """The Workflow is a Plan→Act→Reflect operating manual (the #523 rewrite)."""
+        workflow = build_grounding_prompt("en").split("## Grounding", 1)[0]
+        for phase in ("PLAN", "ACT", "REFLECT"):
+            assert phase in workflow, workflow
+        assert "Plan → Act → Reflect" in workflow
+
+    def test_workflow_has_playbook_with_failure_shapes(self):
+        """The need-shape → strategy playbook names the failure-prone shapes the
+        rewrite must handle (comparison, multi-hop, enumeration, causal-absent)."""
+        workflow = build_grounding_prompt("en").split("## Grounding", 1)[0]
+        assert "Playbook" in workflow
+        lowered = workflow.lower()
+        for shape in ("comparison", "multi-hop", "enumeration", "causal"):
+            assert shape in lowered, shape
+
+    def test_workflow_has_stopping_discipline(self):
+        """The three stopping rules that fix thrash + facet drop + redundant read."""
+        workflow = build_grounding_prompt("en").split("## Grounding", 1)[0]
+        lowered = workflow.lower()
+        # one-retrieval-per-need (anti-thrash); no reword-and-retry of the same need
+        assert "one retrieval per need" in lowered
+        assert "not allowed" in lowered
+        # keep the facet across the turn (anti facet-drop)
+        assert "keep the same sequence_number" in lowered
+        # answer from read_section, don't re-search (anti redundant-read)
+        assert "after read_section, answer from it" in lowered
+
+    def test_style_forbids_narrating_plan_and_reflection(self):
+        """`## Style` contract (silent-plan): the reply is the answer only — the
+        model must NOT narrate its plan / tool choice / reflection into the output.
+        The Plan→Act→Reflect reasoning stays in the model's own thinking, so
+        streaming it as visible preamble is disallowed."""
+        prompt = build_grounding_prompt("en")
+        style = prompt.split("## Style\n", 1)[1].lower()
+        assert "do not narrate" in style
+        assert "plan" in style and "reflection" in style
+        # the direct-answer discipline is retained
+        assert "direct" in style
+        # and the Workflow PLAN step marks planning as internal, not output
+        workflow = prompt.split("## Grounding", 1)[0].lower()
+        assert "do not write the plan into your reply" in workflow
 
     def test_grounding_prompt_citation_distinguishes_verbatim_from_outline(self):
         """The Citation section must instruct: cite [N] ONLY for sections whose
