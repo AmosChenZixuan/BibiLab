@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import threading
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -24,6 +25,11 @@ logger = logging.getLogger(__name__)
 
 
 _chroma_collections: dict[str, "chromadb.Collection"] = {}
+# Serializes the lazy ChromaDB client construction. chromadb 1.x corrupts its
+# global client state (RustBindingsAPI / "tenant default_tenant" errors) if two
+# threads build the PersistentClient concurrently on a cold cache — which
+# hybrid_search does via its parallel vector + FTS-backfill Chroma calls.
+_chroma_lock = threading.Lock()
 
 
 @dataclass
@@ -228,15 +234,16 @@ _TRANSCRIPT_COLLECTION = "bibilab_transcripts"
 
 
 def _get_collection() -> "chromadb.Collection":
-    global _chroma_collections
     if _TRANSCRIPT_COLLECTION not in _chroma_collections:
-        import chromadb  # noqa: PLC0415
+        with _chroma_lock:
+            if _TRANSCRIPT_COLLECTION not in _chroma_collections:
+                import chromadb  # noqa: PLC0415
 
-        client = chromadb.PersistentClient(path=str(bibilab_home() / "chroma"))
-        _chroma_collections[_TRANSCRIPT_COLLECTION] = client.get_or_create_collection(
-            _TRANSCRIPT_COLLECTION,
-            embedding_function=_default_embedding_function(),
-        )
+                client = chromadb.PersistentClient(path=str(bibilab_home() / "chroma"))
+                _chroma_collections[_TRANSCRIPT_COLLECTION] = client.get_or_create_collection(
+                    _TRANSCRIPT_COLLECTION,
+                    embedding_function=_default_embedding_function(),
+                )
     return _chroma_collections[_TRANSCRIPT_COLLECTION]
 
 
@@ -408,6 +415,18 @@ async def query_chunks(
     ]
 
 
+def _fetch_raw_documents(chunk_ids: list[str]) -> dict[str, str]:
+    """Map chunk_id → raw chunk text from Chroma (the canonical chunk-text store).
+
+    The FTS index column holds tokenized text (unigram+bigram soup) needed for
+    CJK BM25 matching, not readable prose. Chroma stores the raw chunk.text under
+    the same id, so the BM25 arm looks its display/rerank text up there.
+    """
+    collection = _get_collection()
+    got = collection.get(ids=chunk_ids)
+    return dict(zip(got.get("ids") or [], got.get("documents") or []))
+
+
 async def query_fts(
     query_text: str,
     source_ids: list[str],
@@ -430,10 +449,25 @@ async def query_fts(
         return []
 
     rows = await query_fts_rows(query_text, source_ids, top_k)
+    if not rows:
+        return []
+
+    # The FTS content column is tokenized token-soup (needed for CJK BM25
+    # matching) — it must never reach the reranker or the rendered result.
+    # Replace it with the raw chunk text from Chroma (same chunk_id). On a
+    # Chroma error, fall back to the FTS content so the BM25 arm still
+    # contributes (mirrors query_chunks' fail-soft on Chroma errors).
+    chunk_ids = [row["chunk_id"] for row in rows]
+    try:
+        loop = asyncio.get_running_loop()
+        raw_by_id = await loop.run_in_executor(get_chat_pool(), _fetch_raw_documents, chunk_ids)
+    except Exception as exc:  # noqa: BLE001 - ChromaDB errors vary by version
+        logger.warning("FTS raw-text backfill from Chroma failed: %s", exc)
+        raw_by_id = {}
 
     return [
         _row_from_chroma(
-            content=row["content"],
+            content=raw_by_id.get(row["chunk_id"]) or row["content"],
             metadata={
                 "source_id": row["source_id"],
                 "video_title": row["video_title"],

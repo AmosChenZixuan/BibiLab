@@ -176,17 +176,42 @@ async def test_query_fts_bm25_ranking(tmp_bibilab_home: Path):
 
 
 @pytest.mark.asyncio
-async def test_query_fts_integration(tmp_bibilab_home: Path):
+async def test_query_fts_integration(tmp_bibilab_home: Path, monkeypatch):
     """Test query_fts (the high-level async function) with mocked source lookup."""
     await bootstrap_db()
     meta = _make_meta()
     populate_fts(_make_chunks(["machine learning is great", "deep learning rocks"]), "SRC1", meta)
+    # Stub the Chroma raw-text lookup so the test stays FTS-only (no model load).
+    # English isn't bigram-tokenized, so the FTS content already equals the raw
+    # text; an empty map exercises the fallback-to-FTS-content path.
+    monkeypatch.setattr("bibilab.pipeline.embed._fetch_raw_documents", lambda chunk_ids: {})
 
     results = await query_fts("learning", ["SRC1"], BibilabConfig())
 
     assert len(results) == 2
     assert all(r.score is not None and r.score > 0 for r in results)  # negated BM25 rank; higher = more relevant
     assert all("learning" in r.content for r in results)
+
+
+@pytest.mark.asyncio
+async def test_query_fts_returns_raw_text_not_tokenized(tmp_bibilab_home: Path, monkeypatch):
+    """The FTS index stores tokenized (bigram) CJK text for BM25 matching; query_fts
+    must return the raw chunk text (from Chroma) so the reranker and rendered result
+    see prose, not token-soup. Regression guard for the FTS-arm pollution bug."""
+    await bootstrap_db()
+    meta = _make_meta()
+    text = "黑噬君是一只章鱼状的外部脑"
+    populate_fts(_make_chunks([text]), "SRC1", meta)
+    # chunk_id == f"{source_id}_{sequence_index}" (the same id Chroma stores under).
+    monkeypatch.setattr(
+        "bibilab.pipeline.embed._fetch_raw_documents",
+        lambda chunk_ids: {cid: text for cid in chunk_ids},
+    )
+
+    results = await query_fts("章鱼", ["SRC1"], BibilabConfig())
+
+    assert len(results) == 1
+    assert results[0].content == text  # raw prose, not "黑 噬 君 ... 黑噬 噬君 ..."
 
 
 def test_escape_fts_query_empty_string():

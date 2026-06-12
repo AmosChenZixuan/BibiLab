@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import time
+from concurrent.futures import ThreadPoolExecutor
+
 import pytest
 
 from bibilab.config import AIConfig, BackendConfig, BibilabConfig, RagConfig
@@ -9,6 +12,35 @@ from bibilab.pipeline import embed
 from bibilab.pipeline.embed import RetrievedChunk, retrieve
 
 pytestmark = pytest.mark.integration
+
+
+def test_get_collection_cold_init_constructs_once_under_concurrency(monkeypatch):
+    """Concurrent cold-cache _get_collection() must build the Chroma client exactly
+    once. chromadb 1.x corrupts its global client state if two threads construct the
+    PersistentClient at once — which hybrid_search's parallel Chroma calls provoke."""
+    monkeypatch.setattr(embed, "_chroma_collections", {})
+    monkeypatch.setattr(embed, "_default_embedding_function", lambda: None)
+
+    constructions: list[int] = []
+
+    class _FakeClient:
+        def __init__(self, path):
+            pass
+
+        def get_or_create_collection(self, name, embedding_function):
+            constructions.append(1)
+            time.sleep(0.02)  # widen the race window so an unlocked init double-builds
+            return object()
+
+    import chromadb  # noqa: PLC0415
+
+    monkeypatch.setattr(chromadb, "PersistentClient", _FakeClient)
+
+    with ThreadPoolExecutor(max_workers=8) as ex:
+        results = list(ex.map(lambda _: embed._get_collection(), range(8)))
+
+    assert len(constructions) == 1
+    assert all(r is results[0] for r in results)
 
 
 def _cfg(*, reranking: bool = True) -> BibilabConfig:
