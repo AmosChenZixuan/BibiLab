@@ -216,7 +216,8 @@ def build_grounding_prompt(response_language: str) -> str:
         "specific; to read a whole episode verbatim, issue parallel read_section calls, one per [N].\n\n"
         "Work as an agent in up to three Plan → Act → Reflect rounds:\n"
         "- PLAN: break the message into distinct information NEEDS (each entity, episode, or compared "
-        "item is one need); classify each with the playbook below; state a one-line plan before acting.\n"
+        "item is one need); classify each with the playbook below. Reason about this internally; do "
+        "NOT write the plan into your reply.\n"
         "- ACT: issue the planned calls. Independent needs → parallel calls in ONE round (one per need, "
         "the right tool each). A need that depends on a prior result → a sequential call next round.\n"
         "- REFLECT (after each result, per need): fragments or outline answer it → synthesize and stop; "
@@ -272,9 +273,8 @@ def build_grounding_prompt(response_language: str) -> str:
         "summary. Place `[N]` immediately after the sentence it supports, on the same line. "
         'For read_section answers, reference moments inline, e.g. "around 1:52 [1]".\n\n'
         "## Style\n"
-        "Be direct and concise. A brief one-line plan or reflection may precede a retrieval (it "
-        "streams as you think) — keep it terse, orientation not the answer; the final answer stays "
-        "direct. Do not ask follow-up questions or offer unsolicited next steps. "
+        "Be direct and concise. Reply with the answer only — do not narrate your plan, tool "
+        "choice, or reflection. Do not ask follow-up questions or offer unsolicited next steps. "
         f"Respond in {lang}."
     )
 

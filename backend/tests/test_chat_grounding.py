@@ -158,15 +158,20 @@ class TestBuildGroundingPrompt:
         # answer from read_section, don't re-search (anti redundant-read)
         assert "after read_section, answer from it" in lowered
 
-    def test_style_permits_brief_plan_reflect_preamble(self):
-        """`## Style` carve-out: a brief plan/reflect line may stream as preamble,
-        but the final answer stays direct (UX decision (i))."""
-        style = build_grounding_prompt("en").split("## Style\n", 1)[1]
-        lowered = style.lower()
-        assert "plan" in lowered and "reflection" in lowered
-        assert "terse" in lowered
+    def test_style_forbids_narrating_plan_and_reflection(self):
+        """`## Style` contract (silent-plan): the reply is the answer only — the
+        model must NOT narrate its plan / tool choice / reflection into the output.
+        The Plan→Act→Reflect reasoning stays in the model's own thinking, so
+        streaming it as visible preamble is disallowed."""
+        prompt = build_grounding_prompt("en")
+        style = prompt.split("## Style\n", 1)[1].lower()
+        assert "do not narrate" in style
+        assert "plan" in style and "reflection" in style
         # the direct-answer discipline is retained
-        assert "direct" in lowered
+        assert "direct" in style
+        # and the Workflow PLAN step marks planning as internal, not output
+        workflow = prompt.split("## Grounding", 1)[0].lower()
+        assert "do not write the plan into your reply" in workflow
 
     def test_grounding_prompt_citation_distinguishes_verbatim_from_outline(self):
         """The Citation section must instruct: cite [N] ONLY for sections whose
