@@ -137,6 +137,16 @@ export function useSSEStream({
           console.warn("tool_call_start missing required fields", event);
           return;
         }
+        // A tool round separates the preceding preamble from the text that
+        // follows (next preamble or the synthesized answer). Flush + force a
+        // paragraph break so each renders as its own markdown block — a header
+        // or list glued onto the preamble's line would not render. Idempotent
+        // across parallel calls (second call sees empty text + trailing break).
+        flushText();
+        if (accBlocks.length > 0 && accBlocks[accBlocks.length - 1].type !== "paragraph_break") {
+          accBlocks.push({ type: "paragraph_break" });
+          updateAssistantMsg(assistantMsgId, { contentBlocks: [...accBlocks] });
+        }
         if (toolName === FIND_PASSAGES_TOOL_NAME) {
           const args = event.arguments as { query: string };
           updateAssistantMsg(assistantMsgId, (m) => ({

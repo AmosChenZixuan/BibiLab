@@ -202,6 +202,12 @@ def build_grounding_prompt(response_language: str) -> str:
     lang = _LANG_NATIVE_NAME.get(response_language, "English")
     return (
         "## Workflow\n"
+        "Before EVERY tool call, the FIRST thing you output that turn MUST be one or two short, natural "
+        "sentences to the user that convey your retrieval reasoning for this step: what you're looking "
+        "for and how you framed it; if the question has several distinct parts, that you're looking them "
+        "up separately; on a later round, why you're continuing rather than answering yet. Speak the way "
+        "a person thinking aloud would; NEVER name the tools, their parameters, or index numbers. Then "
+        "make the tool call(s) in the SAME turn. When you already have enough to answer, skip this.\n\n"
         "You answer questions about a collection of video transcripts using two tools, both at "
         "SECTION granularity (a source is split into bounded sections, each with its own [N] "
         "citation index).\n\n"
@@ -222,13 +228,14 @@ def build_grounding_prompt(response_language: str) -> str:
         "`光合作用是怎么进行的` not `光合作用 过程 原理 步骤`; write `量子计算` not `量子计算 应用 介绍 讲解`.\n\n"
         "Work as an agent in up to three Plan → Act → Reflect rounds:\n"
         "- PLAN: break the message into distinct information NEEDS (each entity, episode, or compared "
-        "item is one need); classify each with the playbook below. Reason about this internally; do "
-        "NOT write the plan into your reply.\n"
+        "item is one need); classify each with the playbook below. Your spoken opening line reflects "
+        "this plan in plain language.\n"
         "- ACT: issue the planned calls. Independent needs → parallel calls in ONE round (one per need, "
         "the right tool each). A need that depends on a prior result → a sequential call next round.\n"
         "- REFLECT (after each result, per need): fragments or outline answer it → synthesize and stop; "
         "section on-topic but fragments miss the specific → read_section that [N] once, then answer; "
-        "off-topic or corpus clearly lacks it → say the library has no content on it and stop.\n\n"
+        "off-topic or corpus clearly lacks it → say the library has no content on it and stop. Voice the "
+        "continue-or-answer decision as your next opening line before acting again.\n\n"
         "Playbook (need shape → strategy):\n"
         "- Single fact / definition / yes-no → 1× find_passages in natural language; "
         "missing specific → read_section once.\n"
@@ -279,8 +286,11 @@ def build_grounding_prompt(response_language: str) -> str:
         "summary. Place `[N]` immediately after the sentence it supports, on the same line. "
         'For read_section answers, reference moments inline, e.g. "around 1:52 [1]".\n\n'
         "## Style\n"
-        "Be direct and concise. Reply with the answer only — do not narrate your plan, tool "
-        "choice, or reflection. Do not ask follow-up questions or offer unsolicited next steps. "
+        "Be direct and concise. Keep the spoken opening before each tool call to a line or two — it is "
+        "orientation, the answer itself is the point. Never expose the machinery: do not name the tools "
+        "or their parameters (query, sequence_number, season_number), and do not write index markers "
+        "like [21] as if they were steps — [N] is only for citing a claim. Do not ask follow-up "
+        "questions or offer unsolicited next steps. "
         f"Respond in {lang}."
     )
 
@@ -685,6 +695,18 @@ async def run_chat_turn(
                         "chunk_ids": data.get("chunk_ids", []),
                     }
                 )
+            elif event.type == SSE_EVENT_TOOL_CALL_START:
+                # A tool round separates the preceding preamble from the text that
+                # follows it (the next preamble or the synthesized answer). Flush
+                # the preamble and force a paragraph break so each renders as its
+                # own markdown block — a header/list/table glued to the preamble's
+                # line would not render. Idempotent across parallel calls (the
+                # second call sees empty pending_text + a trailing break).
+                if pending_text:
+                    _flush_pending_text(content_blocks, pending_text)
+                    pending_text = ""
+                if content_blocks and content_blocks[-1].get("type") != "paragraph_break":
+                    content_blocks.append({"type": "paragraph_break"})
             elif event.type == "tool_result":
                 parsed = json.loads(event.content)
                 if parsed["name"] in RETRIEVE_TOOL_NAMES:

@@ -422,6 +422,42 @@ async def test_chat_citation_after_lone_break_not_isolated(client):
 
 
 @pytest.mark.asyncio
+async def test_chat_tool_call_boundary_forces_paragraph_break(client):
+    """A tool round separates the preamble from the synthesized answer.
+
+    Without a break the preamble and a markdown answer would persist in one
+    text block ("preamble## Header") and the header would not render. The
+    tool_call_start flush+break makes each its own block.
+    """
+    list_id = (await client.post("/lists", json={"name": "T"})).json()["id"]
+
+    async def fake_stream(*args, **kwargs):
+        async for ev in an_async_generator(
+            [
+                StreamEvent(type="delta", content="让我查一下相关内容。"),
+                StreamEvent(
+                    type="tool_call_start",
+                    content='{"id":"t1","name":"find_passages","arguments":{"query":"X"}}',
+                ),
+                StreamEvent(type="delta", content="## 第四纪元\n\n众神纪元。"),
+                StreamEvent(type="done"),
+            ]
+        ):
+            yield ev
+
+    with patch("bibilab.routers.chat.stream_with_tools", side_effect=fake_stream):
+        await client.post(f"/lists/{list_id}/chat", json={"message": "hi"})
+
+    msgs = await _get_assistant_msgs(client, list_id)
+    blocks = msgs[0]["metadata"]["content_blocks"]
+    types = [b["type"] for b in blocks]
+    assert types == ["text", "paragraph_break", "text", "paragraph_break", "text"]
+    # The preamble is its own block; the answer's header starts its own block.
+    assert blocks[0] == {"type": "text", "text": "让我查一下相关内容。"}
+    assert blocks[2] == {"type": "text", "text": "## 第四纪元"}
+
+
+@pytest.mark.asyncio
 async def test_chat_sse_multi_find_passages_no_crash(client):
     """Smoke test: two find_passages calls in one turn do not crash the SSE stream.
 

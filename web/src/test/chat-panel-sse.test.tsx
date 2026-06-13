@@ -481,6 +481,41 @@ describe("chat panel — conversation history", () => {
     });
   });
 
+  test("preamble before a tool call renders separately from a markdown answer", async () => {
+    mockFetch((input) => {
+      const url = String(input);
+      if (url.includes("/chat")) {
+        return Promise.resolve(
+          makeSseStream([
+            'data: {"type":"delta","content":"让我查一下相关内容。"}\n\n',
+            'data: {"type":"tool_call_start","id":"t1","name":"find_passages","arguments":{"query":"第四纪元"}}\n\n',
+            'data: {"type":"delta","content":"## 第四纪元\\n\\n众神纪元。"}\n\n',
+            'data: {"type":"done"}\n\n',
+          ]),
+        );
+      }
+      return Promise.resolve(makeSseStream([]));
+    });
+
+    renderChatPanel(ChatPanel, {
+      providers: [LanguageProvider, JobActivityProvider],
+      selectedSourceIds: ["src-1"],
+      sources: [SOURCE_1],
+      listId: "list-1",
+    });
+
+    await userEvent.type(screen.getByRole("textbox"), "第四纪元的编年史");
+    await userEvent.keyboard("{Enter}");
+
+    // The tool boundary forces a paragraph break, so the answer's "## 第四纪元"
+    // renders as its own heading rather than inline text glued to the preamble.
+    await waitFor(() => {
+      const heading = screen.getByText("第四纪元", { selector: "h2" });
+      expect(heading.tagName).toBe("H2");
+    });
+    expect(screen.getByText("让我查一下相关内容。")).toBeInTheDocument();
+  });
+
   test("bubble uses bubble-user for user and bubble-assistant for assistant", async () => {
     mockFetch(() =>
       Promise.resolve(

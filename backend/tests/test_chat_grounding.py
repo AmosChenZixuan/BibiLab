@@ -179,15 +179,24 @@ class TestBuildGroundingPrompt:
         model must NOT narrate its plan / tool choice / reflection into the output.
         The Plan→Act→Reflect reasoning stays in the model's own thinking, so
         streaming it as visible preamble is disallowed."""
+
+    def test_workflow_mandates_spoken_preamble_before_tool_calls(self):
+        """ReAct preamble contract: the Workflow opens with a strong, prominent
+        directive that the model MUST speak a short natural reasoning line before
+        every tool call (a soft buried instruction did not survive on weak models).
+        `## Style` keeps it brief and forbids exposing the machinery."""
         prompt = build_grounding_prompt("en")
+        workflow = prompt.split("## Grounding", 1)[0]
+        # the mandate is imperative and fires before every tool call
+        assert "before every tool call" in workflow.lower()
+        assert "must" in workflow.lower()
+        # it is the prominent opening of the Workflow section, not buried at the end
+        opening = workflow.split("\n\n", 2)[0] if "\n\n" in workflow else workflow
+        assert "before every tool call" in opening.lower()
         style = prompt.split("## Style\n", 1)[1].lower()
-        assert "do not narrate" in style
-        assert "plan" in style and "reflection" in style
-        # the direct-answer discipline is retained
+        # machinery stays hidden; answer stays direct
+        assert "do not name the tools" in style
         assert "direct" in style
-        # and the Workflow PLAN step marks planning as internal, not output
-        workflow = prompt.split("## Grounding", 1)[0].lower()
-        assert "do not write the plan into your reply" in workflow
 
     def test_grounding_prompt_citation_distinguishes_verbatim_from_outline(self):
         """The Citation section must instruct: cite [N] ONLY for sections whose
