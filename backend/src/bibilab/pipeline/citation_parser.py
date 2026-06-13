@@ -3,12 +3,12 @@
 Recognized wrappers (D1, case-insensitive on ``Source``), one optional space
 between label and digits, closing bracket must match the opening family:
 ``[N]`` ``[Source N]`` ``(Source N)`` ``（Source N）`` ``[来源N]`` ``（来源N）``
-``(来源N)`` ``【N】`` ``【来源N】``. Inside one wrapper, digit groups separated by
-``,`` ``，`` ``、`` (optional spaces) emit one citation event per index (D2).
-An optional ``@M:SS`` clock timestamp after the index list is silently
-consumed — the fence header and turn lines render time as ``@M:SS`` (or
-``@H:MM:SS``), so the LLM copies that shape; a range joins two clocks with
-``-``, ``–`` or ``—``.
+``(来源N)`` ``【N】`` ``【来源N】`` ``［N］`` ``［Source N］`` ``［来源N］``.
+Inside one wrapper, digit groups separated by ``,`` ``，`` ``、`` (optional
+spaces) emit one citation event per index (D2). An optional ``@M:SS`` clock
+timestamp after the index list is silently consumed — the fence header and
+turn lines render time as ``@M:SS`` (or ``@H:MM:SS``), so the LLM copies that
+shape; a range joins two clocks with ``-``, ``–`` or ``—``.
 """
 
 import json
@@ -20,13 +20,15 @@ from bibilab.pipeline.chat_tools import CitationRegistryEntry
 
 logger = logging.getLogger(__name__)
 
-# Opening bracket → its matching closing bracket (the four wrapper families).
-_BRACKET_PAIRS = {"[": "]", "(": ")", "（": "）", "【": "】"}
+# Opening bracket → its matching closing bracket (the wrapper families).
+# Fullwidth square ［］ is included because the LLM sometimes emits it; fullwidth
+# parens （） are the existing symmetric case (added in #323).
+_BRACKET_PAIRS = {"[": "]", "(": ")", "（": "）", "【": "】", "［": "］"}
 _OPENERS = "".join(_BRACKET_PAIRS)
 
 # Multi-index separators (D2): ASCII / fullwidth comma, ideographic comma.
 _SEP = r"[,，、]"
-_OPEN_CLASS = r"[\[\(（【]"
+_OPEN_CLASS = r"[\[\(（【［]"
 
 # Clock timestamp the LLM may append (matching the @M:SS / @H:MM:SS shape the
 # fence renders); a range joins two clocks with -, – or —. Silently consumed.
@@ -39,7 +41,7 @@ _INNER = rf"(?:[Ss][Oo][Uu][Rr][Cc][Ee]|来源)? ?(\d+(?: *{_SEP} *\d+)*){_TS_SU
 
 # Full wrapper regex: capture group 1 = opener, group 2 = inner index list,
 # group 3 = closer. Closer validated against the opener family in parse_delta.
-_CITATION_RE = re.compile(rf"({_OPEN_CLASS})" + _INNER + r"([\]\)）】])")
+_CITATION_RE = re.compile(rf"({_OPEN_CLASS})" + _INNER + r"([\]\)）】］])")
 
 # A trailing fragment is held for the next delta iff it is a viable prefix of a
 # token: an opener, optionally followed by a partial label, a partial index

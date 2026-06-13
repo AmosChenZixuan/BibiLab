@@ -166,6 +166,31 @@ class TestNonCanonicalWrappers:
         events, _ = parse_delta("see [1] there", "", _lk(_e(1)))
         assert _citations(events) == [1]
 
+    def test_fullwidth_square_bare(self):
+        events, _ = parse_delta("见［3］处", "", _lk(_e(3)))
+        assert _citations(events) == [3]
+        assert _delta_text(events) == "见处"
+
+    def test_fullwidth_square_source_label(self):
+        events, _ = parse_delta("见［Source 3］处", "", _lk(_e(3)))
+        assert _citations(events) == [3]
+        assert _delta_text(events) == "见处"
+
+    def test_fullwidth_square_multi_index(self):
+        events, _ = parse_delta("见［3, 5］处", "", _lk(_e(3), _e(5)))
+        assert _citations(events) == [3, 5]
+
+    def test_fullwidth_square_split_across_deltas(self):
+        # The opening ［ held alone until the closing ］ arrives.
+        events1, buf1 = parse_delta("见［", "", _lk(_e(3)))
+        assert _citations(events1) == []
+        assert _delta_text(events1) == "见"
+        assert buf1 == "［"
+        events2, buf2 = parse_delta("3］处", buf1, _lk(_e(3)))
+        assert _citations(events2) == [3]
+        assert _delta_text(events2) == "处"
+        assert buf2 == ""
+
 
 class TestMultiIndex:
     """AC2 — D2 multi-index: one citation event per index, in order, no text between."""
