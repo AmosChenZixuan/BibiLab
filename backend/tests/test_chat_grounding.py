@@ -180,21 +180,23 @@ class TestBuildGroundingPrompt:
         The Plan→Act→Reflect reasoning stays in the model's own thinking, so
         streaming it as visible preamble is disallowed."""
 
-    def test_workflow_mandates_spoken_preamble_before_tool_calls(self):
-        """ReAct preamble contract: the Workflow opens with a strong, prominent
-        directive that the model MUST speak a short natural reasoning line before
-        every tool call (a soft buried instruction did not survive on weak models).
-        `## Style` keeps it brief and forbids exposing the machinery."""
+    def test_preamble_trigger_lives_at_decision_point_not_system_prompt(self):
+        """ReAct preamble contract: the 'narrate before a tool call' trigger lives
+        at the per-round decision point (`_PREAMBLE_TRIGGER`, injected at the
+        message tail by stream_with_tools), NOT in the cached system prompt — the
+        system prompt is static for the turn and can't sit beside a later round's
+        action. The system prompt keeps only the narration STYLE."""
+        from bibilab.routers.chat import _PREAMBLE_TRIGGER
         prompt = build_grounding_prompt("en")
-        workflow = prompt.split("## Grounding", 1)[0]
-        # the mandate is imperative and fires before every tool call
-        assert "before every tool call" in workflow.lower()
-        assert "must" in workflow.lower()
-        # it is the prominent opening of the Workflow section, not buried at the end
-        opening = workflow.split("\n\n", 2)[0] if "\n\n" in workflow else workflow
-        assert "before every tool call" in opening.lower()
+        # the operative trigger is NOT baked into the (cached) system prompt
+        assert "before every tool call" not in prompt.lower()
+        # it lives in the per-round trigger: imperative + machinery-free
+        trig = _PREAMBLE_TRIGGER.lower()
+        assert "before every tool call" in trig
+        assert "must" in trig
+        assert "never name the tools" in trig
+        # the system prompt still owns the narration style + machinery prohibition
         style = prompt.split("## Style\n", 1)[1].lower()
-        # machinery stays hidden; answer stays direct
         assert "do not name the tools" in style
         assert "direct" in style
 

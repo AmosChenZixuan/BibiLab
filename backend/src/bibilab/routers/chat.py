@@ -107,6 +107,43 @@ _SYNTHESIS_DIRECTIVE = (
     "retrieved. If the retrieved content is insufficient, say so plainly."
 )
 
+# The "narrate before acting" trigger is attached to every message the model is
+# about to act on — the initial question and each tool result — instead of to the
+# system prompt. The system prompt is static for the whole turn and cached, so a
+# directive placed there sits arbitrarily far behind a later round's action; a
+# "speak before EVERY tool call" instruction has to ride next to each action to
+# stay fresh on a weak model. Attaching it to the message list (not a throwaway
+# per-call copy) also keeps it visible in the prompt-trace dump. ## Style owns the
+# narration *form* (brief, no machinery); this owns the *trigger*. Phrased to be
+# skipped on the turn the model already has enough to answer.
+_PREAMBLE_TRIGGER = (
+    "Before EVERY tool call — the first and every later one — the FIRST thing you output MUST be "
+    "one or two short, natural sentences saying what you're after this step and why: how you framed "
+    "it; if the question has several distinct parts, that you're looking them up separately; after a "
+    "result, what it gave you and why you need another step instead of answering yet. Speak plainly, "
+    "the way a person thinking aloud would; never name the tools, their parameters, or index numbers. "
+    "Then make the call in the same turn. Only when you already have enough to answer, skip this and "
+    "answer directly."
+)
+
+
+def _attach_preamble_trigger(messages: list[dict], protocol: str) -> list[dict]:
+    """Return a copy of `messages` with the preamble trigger appended at the tail
+    (the next decision point), without mutating the caller's list. Anthropic must
+    end on a user turn and forbids two consecutive user messages, so the trigger
+    folds into the trailing user message's content blocks; other protocols take a
+    trailing user message.
+    """
+    msgs = list(messages)
+    if protocol == "anthropic" and msgs and msgs[-1].get("role") == "user":
+        content = msgs[-1]["content"]
+        blocks = [{"type": "text", "text": content}] if isinstance(content, str) else list(content)
+        blocks.append({"type": "text", "text": _PREAMBLE_TRIGGER})
+        msgs[-1] = {"role": "user", "content": blocks}
+    else:
+        msgs.append({"role": "user", "content": _PREAMBLE_TRIGGER})
+    return msgs
+
 
 _PARAGRAPH_SPLIT = re.compile(r"\n{2,}")
 
@@ -202,12 +239,6 @@ def build_grounding_prompt(response_language: str) -> str:
     lang = _LANG_NATIVE_NAME.get(response_language, "English")
     return (
         "## Workflow\n"
-        "Before EVERY tool call, the FIRST thing you output that turn MUST be one or two short, natural "
-        "sentences to the user that convey your retrieval reasoning for this step: what you're looking "
-        "for and how you framed it; if the question has several distinct parts, that you're looking them "
-        "up separately; on a later round, why you're continuing rather than answering yet. Speak the way "
-        "a person thinking aloud would; NEVER name the tools, their parameters, or index numbers. Then "
-        "make the tool call(s) in the SAME turn. When you already have enough to answer, skip this.\n\n"
         "You answer questions about a collection of video transcripts using two tools, both at "
         "SECTION granularity (a source is split into bounded sections, each with its own [N] "
         "citation index).\n\n"
@@ -228,14 +259,12 @@ def build_grounding_prompt(response_language: str) -> str:
         "`光合作用是怎么进行的` not `光合作用 过程 原理 步骤`; write `量子计算` not `量子计算 应用 介绍 讲解`.\n\n"
         "Work as an agent in up to three Plan → Act → Reflect rounds:\n"
         "- PLAN: break the message into distinct information NEEDS (each entity, episode, or compared "
-        "item is one need); classify each with the playbook below. Your spoken opening line reflects "
-        "this plan in plain language.\n"
+        "item is one need); classify each with the playbook below.\n"
         "- ACT: issue the planned calls. Independent needs → parallel calls in ONE round (one per need, "
         "the right tool each). A need that depends on a prior result → a sequential call next round.\n"
         "- REFLECT (after each result, per need): fragments or outline answer it → synthesize and stop; "
         "section on-topic but fragments miss the specific → read_section that [N] once, then answer; "
-        "off-topic or corpus clearly lacks it → say the library has no content on it and stop. Voice the "
-        "continue-or-answer decision as your next opening line before acting again.\n\n"
+        "off-topic or corpus clearly lacks it → say the library has no content on it and stop.\n\n"
         "Playbook (need shape → strategy):\n"
         "- Single fact / definition / yes-no → 1× find_passages in natural language; "
         "missing specific → read_section once.\n"
@@ -309,6 +338,10 @@ async def stream_with_tools(
         registry = {}
 
     messages = list(messages)
+    # Round-1 decision point: the trailing user question is what round 1 acts on.
+    # Attach the narrate-before-acting trigger here (and again onto each tool result
+    # below) so every action is immediately preceded by it.
+    messages = _attach_preamble_trigger(messages, cfg.protocol)
     seen_chunk_ids: set[str] = set()
     iteration = 0
     parse_buffer = ""
@@ -507,6 +540,15 @@ async def stream_with_tools(
                             "content": _llm_tool_message_content(results[tc.id]),
                         }
                     )
+            # Next decision point: the model reacts to these results next round.
+            # Attach a fresh trigger on the tail so narrate-before-acting rides right
+            # next to that action rather than fading behind the cached system prompt —
+            # UNLESS the next round is the forced synthesis turn (budget spent), which
+            # must answer in prose, not call a tool. A "narrate before your tool call"
+            # trigger there is dead weight, and can coax a misleading "let me search…"
+            # opening before an answer that does no search.
+            if iteration < MAX_TOOL_ITERATIONS:
+                messages = _attach_preamble_trigger(messages, cfg.protocol)
             continue
     finally:
         # Export the cumulative LLM message list to the caller's sink (if provided).

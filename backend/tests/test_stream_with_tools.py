@@ -248,6 +248,137 @@ async def test_stream_with_tools_loopback_find_passages(mock_stream_llm):
 
 
 @pytest.mark.asyncio
+async def test_preamble_trigger_attached_per_decision_point(mock_stream_llm):
+    """The narrate-before-acting trigger is persisted onto every message the model
+    acts on — the initial question AND each tool result — so it rides next to each
+    action and lands in messages_sink (the prompt-trace dump source). Exactly one
+    trigger per decision point, no accumulation."""
+    from bibilab.config import AIConfig
+    from bibilab.pipeline.chat_tools import FIND_PASSAGES_TOOL
+    from bibilab.routers.chat import _PREAMBLE_TRIGGER, stream_with_tools
+
+    cfg = AIConfig(protocol="openai", model="gpt-4o", api_key="test", base_url="")
+    find_tc = ToolCall(id="c1", name=FIND_PASSAGES_TOOL.name, arguments={"query": "q"})
+    find_result = {
+        "query": "q",
+        "tool_name": FIND_PASSAGES_TOOL.name,
+        "candidates_evaluated": 1,
+        "sources_with_hits": 1,
+        "sources_total": 1,
+        "source_coverage": [],
+        "_chunks": [],
+        "_turn_indices": [],
+        "_raw_chunks": [],
+    }
+
+    call_count = 0
+
+    async def fake_stream(messages, cfg, tools=None, system=None):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            yield StreamEvent(type="tool_call", tool_call=find_tc)
+        else:
+            yield StreamEvent(type="delta", content="Answer")
+            yield StreamEvent(type="done")
+
+    async def fake_execute(tool_name, arguments, **kwargs):
+        return find_result
+
+    mock_stream_llm.side_effect = fake_stream
+    sink: list[dict] = []
+    async for _ in stream_with_tools(
+        messages=[{"role": "user", "content": "what is this about?"}],
+        cfg=cfg,
+        tools=[FIND_PASSAGES_TOOL],
+        execute_tool_fn=fake_execute,
+        messages_sink=sink,
+    ):
+        pass
+
+    triggers = [m for m in sink if m.get("role") == "user" and m.get("content") == _PREAMBLE_TRIGGER]
+    assert len(triggers) == 2, sink
+    # round-1 decision point: trigger right after the user question.
+    assert sink[0] == {"role": "user", "content": "what is this about?"}
+    assert sink[1] == {"role": "user", "content": _PREAMBLE_TRIGGER}
+    # round-2 decision point: trigger right after the tool result message.
+    tool_idx = next(i for i, m in enumerate(sink) if m.get("role") == "tool")
+    assert sink[tool_idx + 1] == {"role": "user", "content": _PREAMBLE_TRIGGER}
+
+
+@pytest.mark.asyncio
+async def test_preamble_trigger_skipped_before_forced_synthesis(mock_stream_llm):
+    """The forced synthesis turn must answer in prose, not call a tool — so no
+    narrate-before-a-tool-call trigger is attached before it. After the final tool
+    round the synthesis directive follows the tool result directly (no trigger
+    between), and the total trigger count excludes that last round."""
+    from bibilab.config import AIConfig
+    from bibilab.pipeline.chat_tools import FIND_PASSAGES_TOOL
+    from bibilab.routers.chat import (
+        _PREAMBLE_TRIGGER,
+        _SYNTHESIS_DIRECTIVE,
+        MAX_TOOL_ITERATIONS,
+        stream_with_tools,
+    )
+
+    cfg = AIConfig(protocol="openai", model="gpt-4o", api_key="test", base_url="")
+
+    call_count = 0
+
+    async def fake_stream(messages, cfg, tools=None, system=None):
+        nonlocal call_count
+        call_count += 1
+        if call_count <= MAX_TOOL_ITERATIONS:
+            yield StreamEvent(
+                type="tool_call",
+                tool_call=ToolCall(id=f"c{call_count}", name=FIND_PASSAGES_TOOL.name, arguments={"query": "q"}),
+            )
+        else:
+            yield StreamEvent(type="delta", content="final answer")
+            yield StreamEvent(type="done")
+
+    async def fake_execute(name, args, **kwargs):
+        return {"_chunks": "x"}
+
+    mock_stream_llm.side_effect = fake_stream
+    sink: list[dict] = []
+    async for _ in stream_with_tools(
+        messages=[{"role": "user", "content": "q"}],
+        cfg=cfg,
+        tools=[FIND_PASSAGES_TOOL],
+        execute_tool_fn=fake_execute,
+        messages_sink=sink,
+    ):
+        pass
+
+    triggers = [m for m in sink if m.get("content") == _PREAMBLE_TRIGGER]
+    # question + after round 1 + after round 2 = 3; the final round (-> synthesis) is skipped.
+    assert len(triggers) == MAX_TOOL_ITERATIONS, sink
+    synth_idx = next(i for i, m in enumerate(sink) if m.get("content") == _SYNTHESIS_DIRECTIVE)
+    # the synthesis directive follows the last tool result directly — no trigger between.
+    assert sink[synth_idx - 1].get("role") == "tool"
+
+
+def test_attach_preamble_trigger_anthropic_folds_into_user_blocks():
+    """Anthropic forbids two consecutive user turns, so the trigger folds into the
+    trailing user message's content blocks rather than appending a new message; the
+    caller's list is never mutated."""
+    from bibilab.routers.chat import _PREAMBLE_TRIGGER, _attach_preamble_trigger
+
+    original = [{"role": "user", "content": "hi"}]
+    out = _attach_preamble_trigger(original, "anthropic")
+    # caller's list untouched
+    assert original == [{"role": "user", "content": "hi"}]
+    # no second user message — folded into one user turn's blocks
+    assert len(out) == 1
+    assert out[0]["role"] == "user"
+    assert out[0]["content"] == [
+        {"type": "text", "text": "hi"},
+        {"type": "text", "text": _PREAMBLE_TRIGGER},
+    ]
+
+
+@pytest.mark.asyncio
 async def test_stream_with_tools_max_iterations_graceful(mock_stream_llm):
     """After MAX_TOOL_ITERATIONS the loop stops *executing* tools but keeps them
     advertised, so the serving layer's tool-call grammar stays on and a stubborn
