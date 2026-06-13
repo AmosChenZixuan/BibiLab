@@ -158,6 +158,22 @@ class TestBuildGroundingPrompt:
         # answer from read_section, don't re-search (anti redundant-read)
         assert "after read_section, answer from it" in lowered
 
+    def test_workflow_has_query_phrasing_rule_with_exemplars(self):
+        """find_passages query hygiene: the Workflow must carry an explicit rule
+        that the `query` argument is a natural-language, entity-centric phrase —
+        never keyword soup, never padded with generic intent words — backed by
+        >=2 bad→good exemplars targeting the `query` PARAM specifically."""
+        workflow = build_grounding_prompt("en").split("## Grounding", 1)[0]
+        lowered = workflow.lower()
+        # the rule names the query argument and the keyword-soup prohibition
+        assert "query phrasing" in lowered
+        assert "natural-language" in lowered
+        assert "keyword" in lowered
+        # generic intent words are explicitly called out as DF-noise
+        assert "做法" in workflow and "步骤" in workflow
+        # >=2 bad→good exemplars present (the `not` contrast marks each pair)
+        assert workflow.count("` not `") >= 2, workflow
+
     def test_style_forbids_narrating_plan_and_reflection(self):
         """`## Style` contract (silent-plan): the reply is the answer only — the
         model must NOT narrate its plan / tool choice / reflection into the output.
