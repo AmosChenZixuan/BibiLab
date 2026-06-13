@@ -29,6 +29,8 @@ _COURSE_RE = re.compile(r"bilibili\.com/cheese", re.IGNORECASE)
 # Strip ANSI escape codes from yt_dlp output
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 _AUTH_RE = re.compile(r"log\s*in|sign\s*in|403", re.IGNORECASE)
+# Multi-part page selector in a video '?p=N' url
+_PART_RE = re.compile(r"[?&]p=(\d+)")
 
 _METADATA_CONCURRENCY = 8
 # Parallel DASH-fragment downloads per video (audio is served fragmented).
@@ -203,7 +205,7 @@ class BilibiliAdapter(PlatformAdapter):
             else:
                 # extract_flat entries carry no id; derive the part from the '?p=N' url
                 base_id = playlist_id
-                m = re.search(r"[?&]p=(\d+)", e.get("url") or "")
+                m = _PART_RE.search(e.get("url") or "")
                 part_num = int(m.group(1)) if m else None
             if part_num is None:
                 continue
@@ -328,25 +330,28 @@ class BilibiliAdapter(PlatformAdapter):
                 for page in pages:
                     p_num = page.get("page", 1)
                     part_id = f"{bvid}_p{p_num}"
+                    part_name = page.get("part") or ""
                     page_meta[part_id] = VideoMeta(
                         video_id=part_id,
-                        title=base_title,
+                        # Composite "<part> - <video>": part name leads so it survives
+                        # single-line truncation (the parent video title is long and
+                        # identical across parts), while the parent title still trails
+                        # as context — needed when a multi-part video sits in a collection.
+                        title=f"{part_name} - {base_title}" if part_name else base_title,
                         platform="bilibili",
                         source_url=f"{base_url}?p={p_num}",
                         cover_url=cover_url,
                         duration_seconds=int(page.get("duration", 0) or 0),
                         uploader=uploader,
-                        part_label=f"P{p_num}: {page['part']}" if page.get("part") else f"P{p_num}",
+                        part_label=f"P{p_num}",
                     )
                 if already_has_parts:
-                    for orig_id in orig_ids:
-                        meta = page_meta.get(orig_id)
-                        if meta is not None:
-                            result[orig_id] = meta
+                    result.update({oid: page_meta[oid] for oid in orig_ids if oid in page_meta})
                 else:
                     result.update(page_meta)
+                    part_ids = list(page_meta)
                     for orig_id in orig_ids:
-                        expanded[orig_id] = list(page_meta)
+                        expanded[orig_id] = part_ids
             else:
                 meta = VideoMeta(
                     video_id=bvid,

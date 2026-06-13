@@ -459,11 +459,11 @@ class TestGetVideosMetadataExpansion:
         assert "BV1multi" not in result
         assert "BV1multi" in expanded
         assert expanded["BV1multi"] == ["BV1multi_p1", "BV1multi_p2", "BV1multi_p3"]
-        assert result["BV1multi_p1"].title == "Multi Part Video"
-        assert result["BV1multi_p1"].part_label == "P1: Intro"
+        assert result["BV1multi_p1"].title == "Intro - Multi Part Video"
+        assert result["BV1multi_p1"].part_label == "P1"
         assert result["BV1multi_p1"].duration_seconds == 600
-        assert result["BV1multi_p2"].title == "Multi Part Video"
-        assert result["BV1multi_p3"].title == "Multi Part Video"
+        assert result["BV1multi_p2"].title == "Main - Multi Part Video"
+        assert result["BV1multi_p3"].title == "Outro - Multi Part Video"
 
     @pytest.mark.asyncio
     async def test_single_page_video_not_expanded(self):
@@ -587,8 +587,10 @@ class TestGetVideosMetadataExpansion:
         assert expanded == {}
         assert result["BV1test_p1"].duration_seconds == 600
         assert result["BV1test_p2"].duration_seconds == 1800
-        assert result["BV1test_p1"].part_label == "P1: Intro"
-        assert result["BV1test_p2"].part_label == "P2: Main"
+        assert result["BV1test_p1"].title == "Intro - Multi Part Video"
+        assert result["BV1test_p2"].title == "Main - Multi Part Video"
+        assert result["BV1test_p1"].part_label == "P1"
+        assert result["BV1test_p2"].part_label == "P2"
         assert result["BV1test_p1"].source_url == "https://www.bilibili.com/video/BV1test?p=1"
 
     @pytest.mark.asyncio
