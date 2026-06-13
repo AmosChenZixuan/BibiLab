@@ -165,6 +165,42 @@ class TestResolveFlat:
         assert result.videos[1].part_label == "P2"
         assert result.videos[2].part_label == "P3"
 
+    def test_resolve_flat_video_uses_flat_extraction(self):
+        """Video branch passes extract_flat='in_playlist' — flat enumeration avoids
+        resolving formats for every part of a multi-part video (slow preview fix)."""
+        adapter = BilibiliAdapter(cookie="test_cookie")
+        captured_opts: list = []
+
+        with patch("bibilab.adapters.bilibili.yt_dlp.YoutubeDL", _make_mock_ydl(captured_opts)):
+            adapter.resolve_flat("https://www.bilibili.com/video/BV1x")
+
+        assert captured_opts[0].get("extract_flat") == "in_playlist"
+
+    def test_resolve_flat_multipart_flat_entries_derive_part_from_url(self):
+        """Flat multipart entries carry no id; the part number is derived from the
+        '?p=N' url and the playlist BVID."""
+        adapter = BilibiliAdapter(cookie="test_cookie")
+        info = {
+            "_type": "playlist",
+            "id": "BV1multi",
+            "title": "Multi Part",
+            "webpage_url": "https://www.bilibili.com/video/BV1multi",
+            "entries": [
+                {"id": None, "title": None, "duration": None, "url": "https://www.bilibili.com/video/BV1multi?p=1"},
+                {"id": None, "title": None, "duration": None, "url": "https://www.bilibili.com/video/BV1multi?p=2"},
+            ],
+        }
+
+        with patch("yt_dlp.YoutubeDL") as mock_ydl:
+            mock_instance = MagicMock()
+            mock_instance.extract_info.return_value = info
+            mock_ydl.return_value.__enter__.return_value = mock_instance
+
+            result = adapter.resolve_flat("https://www.bilibili.com/video/BV1multi")
+
+        assert [v.video_id for v in result.videos] == ["BV1multi_p1", "BV1multi_p2"]
+        assert [v.part_label for v in result.videos] == ["P1", "P2"]
+
     def test_resolve_flat_course_raises_auth_required(self):
         """Course URL raises AuthRequiredError."""
         from bibilab.adapters.base import AuthRequiredError
@@ -509,6 +545,51 @@ class TestGetVideosMetadataExpansion:
         assert expanded == {}
         assert "BV1test_p1" in result
         assert "BV1test_p2" in result
+
+    @pytest.mark.asyncio
+    async def test_already_requested_parts_get_distinct_per_part_metadata(self):
+        """Parts requested individually (with _p suffix) must each get their own page
+        title/duration/url — not the combined base-video metadata shared across parts."""
+        adapter = BilibiliAdapter(cookie="test_cookie")
+
+        class MockResponse:
+            status_code = 200
+
+            def json(self):
+                return {
+                    "data": {
+                        "title": "Multi Part Video",
+                        "pic": "https://example.com/cover.jpg",
+                        "duration": 3600,  # combined duration of all parts
+                        "owner": {"name": "Author"},
+                        "pages": [
+                            {"page": 1, "part": "Intro", "duration": 600},
+                            {"page": 2, "part": "Main", "duration": 1800},
+                        ],
+                    }
+                }
+
+        class MockClient:
+            async def get(self, url):
+                return MockResponse()
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                pass
+
+        with patch("httpx.AsyncClient") as mock_client:
+            mock_client.return_value.__aenter__.return_value = MockClient()
+
+            result, expanded = await adapter.get_videos_metadata(["BV1test_p1", "BV1test_p2"])
+
+        assert expanded == {}
+        assert result["BV1test_p1"].duration_seconds == 600
+        assert result["BV1test_p2"].duration_seconds == 1800
+        assert result["BV1test_p1"].part_label == "P1: Intro"
+        assert result["BV1test_p2"].part_label == "P2: Main"
+        assert result["BV1test_p1"].source_url == "https://www.bilibili.com/video/BV1test?p=1"
 
     @pytest.mark.asyncio
     async def test_multipart_video_empty_part_name_no_trailing_colon(self):

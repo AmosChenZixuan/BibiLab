@@ -121,7 +121,7 @@ class BilibiliAdapter(PlatformAdapter):
         rtype = _resource_type(url)
 
         if rtype == "video":
-            opts = _ydl_opts(self._cookie)
+            opts = _ydl_opts(self._cookie, extract_flat="in_playlist")
             try:
                 with yt_dlp.YoutubeDL(opts) as ydl:
                     info = ydl.extract_info(url, download=False)
@@ -197,15 +197,30 @@ class BilibiliAdapter(PlatformAdapter):
 
         videos = []
         for e in entries:
-            if not e.get("id"):
+            eid = e.get("id")
+            if eid:
+                base_id, part_num = _split_video_id(eid)
+            else:
+                # extract_flat entries carry no id; derive the part from the '?p=N' url
+                base_id = playlist_id
+                m = re.search(r"[?&]p=(\d+)", e.get("url") or "")
+                part_num = int(m.group(1)) if m else None
+            if part_num is None:
                 continue
-            base_id, part_num = _split_video_id(e.get("id", ""))
-            if part_num is not None:
-                e["id"] = f"{base_id}_p{part_num}"
-            vm = _info_to_video_meta(e, fallback_uploader=base_uploader)
-            if part_num is not None:
-                vm.part_label = f"P{part_num}"
-            videos.append(vm)
+            videos.append(
+                VideoMeta(
+                    video_id=f"{base_id}_p{part_num}",
+                    title=e.get("title") or title,
+                    platform="bilibili",
+                    source_url=e.get("url")
+                    or e.get("webpage_url")
+                    or f"https://www.bilibili.com/video/{base_id}?p={part_num}",
+                    cover_url=e.get("thumbnail") or "",
+                    duration_seconds=int(e.get("duration") or 0),
+                    uploader=e.get("uploader") or base_uploader,
+                    part_label=f"P{part_num}",
+                )
+            )
 
         return PlaylistMeta(
             playlist_id=playlist_id,
@@ -305,13 +320,15 @@ class BilibiliAdapter(PlatformAdapter):
             orig_ids = unique_bvids[bvid]
             already_has_parts = any(_split_video_id(vid)[1] is not None for vid in orig_ids)
 
-            if len(pages) > 1 and not already_has_parts:
-                part_ids = []
+            if len(pages) > 1:
+                # Per-part metadata keyed by f"{bvid}_p{page}", used both to expand a
+                # bare BVID and to fill parts that were requested individually (already
+                # carry a _pN suffix) — each part keeps its own title/duration/url.
+                page_meta = {}
                 for page in pages:
                     p_num = page.get("page", 1)
                     part_id = f"{bvid}_p{p_num}"
-                    part_ids.append(part_id)
-                    result[part_id] = VideoMeta(
+                    page_meta[part_id] = VideoMeta(
                         video_id=part_id,
                         title=base_title,
                         platform="bilibili",
@@ -321,8 +338,15 @@ class BilibiliAdapter(PlatformAdapter):
                         uploader=uploader,
                         part_label=f"P{p_num}: {page['part']}" if page.get("part") else f"P{p_num}",
                     )
-                for orig_id in orig_ids:
-                    expanded[orig_id] = part_ids
+                if already_has_parts:
+                    for orig_id in orig_ids:
+                        meta = page_meta.get(orig_id)
+                        if meta is not None:
+                            result[orig_id] = meta
+                else:
+                    result.update(page_meta)
+                    for orig_id in orig_ids:
+                        expanded[orig_id] = list(page_meta)
             else:
                 meta = VideoMeta(
                     video_id=bvid,
