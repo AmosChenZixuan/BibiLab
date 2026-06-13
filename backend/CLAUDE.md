@@ -259,8 +259,9 @@ class PlatformAdapter:
     def download(video_id, source_url) -> Path
 ```
 
-v0: `BilibiliAdapter` — single video. Cookie-based auth in config.
-403 → `AuthRequiredError` → job `needs_auth` → UI prompts user.
+`BilibiliAdapter` resolves single videos, multi-part videos (`?p=N`), and collection/favorite playlists; courses raise `AuthRequiredError`. Cookie-based auth in config. 403 → `AuthRequiredError` → job `needs_auth` → UI prompts user.
+
+**Two-phase resolve**: `resolve_flat` enumerates fast via `extract_flat="in_playlist"` — keep it flat; a multi-part video comes back as a flat playlist of `?p=N` parts (no per-part title/duration), and non-flat extraction re-resolves every part's stream formats (~15× slower) for data phase 2 supplies anyway. `get_videos_metadata` then enriches each part from the bilibili view API (per-part title/duration) and expands a bare multi-part BVID into `_pN` parts. Part title is the composite `"<part> - <video>"` (part-first so it survives single-line truncation while the parent title trails as collection context).
 
 **QR login flow**: `POST /auth/bilibili/qr` → get `{url, key}` → UI polls `GET /auth/bilibili/qr/status?key=...` (query param, not path param — avoids key in server logs) → on success, cookie saved to config.
 
