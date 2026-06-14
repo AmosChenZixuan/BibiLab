@@ -13,6 +13,10 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT"></a>
 </p>
 
+<p align="center">
+  <b>English</b> · <a href="README.zh-CN.md">中文</a>
+</p>
+
 Transform video content into searchable, AI-assisted **private notebooks**. A
 local FastAPI backend runs the full processing pipeline (download → transcribe →
 punctuate → chunk → digest ∥ embed) and a React + TypeScript SPA is the user
@@ -247,7 +251,7 @@ uv run pytest
 
 Commit messages: `"<type> | <scope> | #<issue> <description>"`. Type is
 `feat | fix | refactor | chore | docs`. PR titles follow the same format
-(prefix with `#<issue>` when applicable). No co-author trailers. Branch
+(prefix with `#<issue>` when applicable). Branch
 first — never commit directly to `master`.
 
 When amending a fix to an unpushed commit, use
