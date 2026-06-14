@@ -2,7 +2,20 @@
   <img src="web/public/favicon.svg" alt="Bibilab" width="80" />
 </p>
 
-# Bibilab
+<h1 align="center">Bibilab</h1>
+
+<p align="center">
+  A local, private <strong>NotebookLM for video</strong> — turn videos &amp; playlists
+  into a searchable, citation-backed AI notebook. No cloud.
+</p>
+
+<p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT"></a>
+</p>
+
+<p align="center">
+  <b>English</b> · <a href="README.zh-CN.md">中文</a>
+</p>
 
 Transform video content into searchable, AI-assisted **private notebooks**. A
 local FastAPI backend runs the full processing pipeline (download → transcribe →
@@ -21,6 +34,21 @@ surface. Single-user, single-machine, no cloud.
 > | `docs/` | Architecture, citation system, RAG intro | `docs/citation_system.md`, `docs/RAG简介.md`, `docs/roadmap.md` |
 
 ---
+
+## Bibilab vs Google NotebookLM
+
+Same "chat with your sources" idea, built for people who want it **local, open, and
+video-native** instead of cloud-hosted. NotebookLM is a polished managed product;
+Bibilab trades that polish for full ownership of your data and models.
+
+|                                                            | Bibilab | NotebookLM |
+| ---------------------------------------------------------- | :-----: | :--------: |
+| Runs fully local, no account                               |    ✓    |     ✗      |
+| Self-hosted / OpenAI-compatible models (Ollama, LM Studio) |    ✓    |     ✗      |
+| Open source                                                |    ✓    |     ✗      |
+| Bilibili & non-YouTube video ingest                        |    ✓    |     ✗      |
+| Speaker-attributed transcripts                             |    ✓    |     —      |
+| Inline citations back to the source                        |    ✓    |     ✓      |
 
 ## What it does
 
@@ -223,7 +251,7 @@ uv run pytest
 
 Commit messages: `"<type> | <scope> | #<issue> <description>"`. Type is
 `feat | fix | refactor | chore | docs`. PR titles follow the same format
-(prefix with `#<issue>` when applicable). No co-author trailers. Branch
+(prefix with `#<issue>` when applicable). Branch
 first — never commit directly to `master`.
 
 When amending a fix to an unpushed commit, use
@@ -318,3 +346,7 @@ For deeper docs that the README doesn't duplicate, see:
 For agent-specific context (memory, feedback) that this README deliberately
 omits, see `~/.claude/projects/.../memory/MEMORY.md` and the
 [`CLAUDE.md`](CLAUDE.md) at the project root.
+
+## License
+
+[MIT](LICENSE) © AmosChenZixuan
