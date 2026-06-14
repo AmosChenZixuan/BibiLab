@@ -284,12 +284,16 @@ async def test_preamble_trigger_attached_per_decision_point(mock_stream_llm):
     ):
         pass
 
-    triggers = [m for m in sink if m.get("role") == "user" and m.get("content") == _PREAMBLE_TRIGGER]
-    assert len(triggers) == 2, sink
-    assert sink[0] == {"role": "user", "content": "what is this about?"}
-    assert sink[1] == {"role": "user", "content": _PREAMBLE_TRIGGER}
+    # initial question: trigger folded into the question string, not a second user turn
+    assert sink[0] == {"role": "user", "content": f"what is this about?\n\n{_PREAMBLE_TRIGGER}"}
+    # tool-result decision point: trigger appended after the tool message (tool→user, not user→user)
     tool_idx = next(i for i, m in enumerate(sink) if m.get("role") == "tool")
     assert sink[tool_idx + 1] == {"role": "user", "content": _PREAMBLE_TRIGGER}
+    # one trigger per decision point (initial + one tool result), no accumulation
+    decision_points = [
+        m for m in sink if isinstance(m.get("content"), str) and m["content"].endswith(_PREAMBLE_TRIGGER)
+    ]
+    assert len(decision_points) == 2, sink
     # preamble text emitted before the tool_call lives on the assistant message (dump-visible)
     asst_with_tool = next(m for m in sink if m.get("role") == "assistant" and m.get("tool_calls"))
     assert asst_with_tool["content"] == "looking that up."
@@ -342,6 +346,56 @@ async def test_preamble_trigger_folds_into_anthropic_tool_result_round(mock_stre
 
 
 @pytest.mark.asyncio
+async def test_whitespace_only_preamble_emits_no_text_block(mock_stream_llm):
+    """A whitespace-only delta before a tool call must NOT become a text block on the
+    fed-back assistant message — Anthropic rejects whitespace-only text blocks, and the
+    OpenAI content must be None, not a blank string."""
+    from bibilab.config import AIConfig
+    from bibilab.pipeline.chat_tools import FIND_PASSAGES_TOOL
+    from bibilab.routers.chat import stream_with_tools
+
+    find_tc = ToolCall(id="c1", name=FIND_PASSAGES_TOOL.name, arguments={"query": "q"})
+
+    for protocol in ("anthropic", "openai"):
+        call_count = 0
+
+        async def stream(messages, cfg, tools=None, system=None):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                yield StreamEvent(type="delta", content="\n  ")  # stray whitespace only
+                yield StreamEvent(type="tool_call", tool_call=find_tc)
+            else:
+                yield StreamEvent(type="delta", content="Answer")
+                yield StreamEvent(type="done")
+
+        cfg = AIConfig(protocol=protocol, model="m", api_key="test", base_url="")
+        mock_stream_llm.side_effect = stream
+        sink: list[dict] = []
+        async for _ in stream_with_tools(
+            messages=[{"role": "user", "content": "q"}],
+            cfg=cfg,
+            tools=[FIND_PASSAGES_TOOL],
+            execute_tool_fn=_noop_execute,
+            messages_sink=sink,
+        ):
+            pass
+
+        if protocol == "anthropic":
+            asst = next(
+                m
+                for m in sink
+                if m.get("role") == "assistant"
+                and isinstance(m.get("content"), list)
+                and any(b.get("type") == "tool_use" for b in m["content"])
+            )
+            assert all(b.get("type") != "text" for b in asst["content"]), asst
+        else:
+            asst = next(m for m in sink if m.get("role") == "assistant" and m.get("tool_calls"))
+            assert asst["content"] is None, asst
+
+
+@pytest.mark.asyncio
 async def test_preamble_trigger_skipped_before_forced_synthesis(mock_stream_llm):
     """Forced synthesis turn gets no trigger (synthesis directive follows the last tool result directly)."""
     from bibilab.config import AIConfig
@@ -379,7 +433,7 @@ async def test_preamble_trigger_skipped_before_forced_synthesis(mock_stream_llm)
     ):
         pass
 
-    triggers = [m for m in sink if m.get("content") == _PREAMBLE_TRIGGER]
+    triggers = [m for m in sink if isinstance(m.get("content"), str) and m["content"].endswith(_PREAMBLE_TRIGGER)]
     assert len(triggers) == MAX_TOOL_ITERATIONS, sink
     synth_idx = next(i for i, m in enumerate(sink) if m.get("content") == _SYNTHESIS_DIRECTIVE)
     assert sink[synth_idx - 1].get("role") == "tool"

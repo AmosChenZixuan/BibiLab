@@ -445,4 +445,6 @@ async def test_messages_sink_populated_on_tool_execution_error(mock_stream_llm):
     # only assert that the user message the LLM actually saw is present.
     assert len(sink) >= 1
     assert sink[0]["role"] == "user"
-    assert sink[0]["content"] == "q"
+    # The preamble trigger is folded into the question for OpenAI, so the user
+    # message the LLM saw starts with the question text.
+    assert sink[0]["content"].startswith("q")

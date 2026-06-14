@@ -117,11 +117,22 @@ _PREAMBLE_TRIGGER = (
 
 
 def _attach_preamble_trigger(messages: list[dict], protocol: str) -> list[dict]:
-    """Return a copy of `messages` with the trigger folded (Anthropic) or appended (other) at the tail."""
+    """Return a copy of `messages` with the preamble trigger at the tail.
+
+    Folds the trigger into the trailing user message when there is one (the initial
+    question, or an Anthropic tool_result turn) so we never emit two consecutive
+    user turns that a strict chat template might merge or drop. When the tail is not
+    a user message (OpenAI tool messages), append a new user turn instead.
+    """
 
     msgs = list(messages)
-    if protocol == "anthropic" and msgs and msgs[-1].get("role") == "user":
-        content = msgs[-1]["content"]
+    tail = msgs[-1] if msgs else None
+    if not tail or tail.get("role") != "user":
+        msgs.append({"role": "user", "content": _PREAMBLE_TRIGGER})
+        return msgs
+
+    content = tail["content"]
+    if protocol == "anthropic":
         if isinstance(content, str):
             blocks = [{"type": "text", "text": content}]
         elif isinstance(content, list):
@@ -132,7 +143,10 @@ def _attach_preamble_trigger(messages: list[dict], protocol: str) -> list[dict]:
             )
         blocks.append({"type": "text", "text": _PREAMBLE_TRIGGER})
         msgs[-1] = {"role": "user", "content": blocks}
+    elif isinstance(content, str):
+        msgs[-1] = {"role": "user", "content": f"{content}\n\n{_PREAMBLE_TRIGGER}"}
     else:
+        # OpenAI multimodal/list content — append rather than risk mangling it.
         msgs.append({"role": "user", "content": _PREAMBLE_TRIGGER})
     return msgs
 
@@ -487,7 +501,7 @@ async def stream_with_tools(
             # All tools in v2 loop back; feed results to the LLM for the next iteration.
             tool_used = True
             if cfg.protocol == "anthropic":
-                anthropic_content = ([{"type": "text", "text": round_text}] if round_text else []) + [
+                anthropic_content = ([{"type": "text", "text": round_text}] if round_text.strip() else []) + [
                     {"type": "tool_use", "id": tc.id, "name": tc.name, "input": tc.arguments} for tc in tool_calls
                 ]
                 messages.append({"role": "assistant", "content": anthropic_content})
@@ -513,7 +527,13 @@ async def stream_with_tools(
                     }
                     for tc in tool_calls
                 ]
-                messages.append({"role": "assistant", "content": round_text or None, "tool_calls": openai_tool_calls})
+                messages.append(
+                    {
+                        "role": "assistant",
+                        "content": round_text if round_text.strip() else None,
+                        "tool_calls": openai_tool_calls,
+                    }
+                )
                 for tc in tool_calls:
                     messages.append(
                         {
