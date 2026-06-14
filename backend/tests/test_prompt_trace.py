@@ -182,6 +182,21 @@ async def _drive_stream_with_tools(
     return {"second_call_messages": captured["calls"][-1], "sse_tool_result": captured["sse_tool_result"]}
 
 
+def _last_tool_result_content(messages: list[dict], protocol: str) -> str:
+    """Protocol-aware extract of the most recent tool-result content (trigger is now the tail, not the tool result)."""
+    if protocol == "anthropic":
+        for m in reversed(messages):
+            if m.get("role") == "user" and isinstance(m.get("content"), list):
+                block = next((b for b in m["content"] if b.get("type") == "tool_result"), None)
+                if block is not None:
+                    return block["content"]
+        raise AssertionError(f"no tool_result block found in {messages}")
+    for m in reversed(messages):
+        if m.get("role") == "tool":
+            return m["content"]
+    raise AssertionError(f"no tool message found in {messages}")
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("protocol", ["anthropic", "openai"])
 async def test_llm_tool_message_feeds_only_chunks_excerpts_no_noise(mock_stream_llm, protocol):
@@ -193,23 +208,7 @@ async def test_llm_tool_message_feeds_only_chunks_excerpts_no_noise(mock_stream_
     )
 
     second = captured["second_call_messages"]
-    # The tool message is appended after the original user message; take the last one
-    # with role in (user, tool) — that's the loopback tool message.
-    tool_messages = [m for m in second if m.get("role") in ("user", "tool")]
-    assert tool_messages, f"expected a tool message, got {second}"
-    msg = tool_messages[-1]
-    if protocol == "anthropic":
-        # Anthropic: tool_result is the sole content block.
-        assert msg["role"] == "user"
-        blocks = msg["content"]
-        assert len(blocks) == 1
-        block = blocks[0]
-        assert block["type"] == "tool_result"
-        content = block["content"]
-    else:
-        # OpenAI: tool message with content string.
-        assert msg["role"] == "tool"
-        content = msg["content"]
+    content = _last_tool_result_content(second, protocol)
 
     expected = _NOISY_FIND_PASSAGES_RESULT["_chunks"]
     assert content == expected, f"LLM tool message must equal `_chunks` exactly; got {content!r}"
@@ -237,12 +236,7 @@ async def test_llm_tool_message_error_path_also_feeds_chunks_only(mock_stream_ll
     captured = await _drive_stream_with_tools(mock_stream_llm, protocol=protocol, tool_result=error_result)
 
     second = captured["second_call_messages"]
-    tool_messages = [m for m in second if m.get("role") in ("user", "tool")]
-    msg = tool_messages[-1]
-    if protocol == "anthropic":
-        content = msg["content"][0]["content"]
-    else:
-        content = msg["content"]
+    content = _last_tool_result_content(second, protocol)
     assert content == "source 's999' not found."
 
 
@@ -354,9 +348,12 @@ async def test_end_of_turn_dump_captures_cumulative_state_after_tool_use(
     # tool exchange — assistant(tool_calls) + tool result.
     assert "user" in roles
     assert "tool" in roles, f"dump missing tool role — cumulative state did not propagate. Got: {roles}"
-    # Sanity: the user message is first, tool result is last.
+    # Sanity: the user message is first; the cumulative state ends with the
+    # next-round narrate-before-acting trigger, appended onto the tool result.
     assert roles[0] == "user"
-    assert roles[-1] == "tool"
+    from bibilab.routers.chat import _PREAMBLE_TRIGGER
+
+    assert payload["messages"][-1] == {"role": "user", "content": _PREAMBLE_TRIGGER}
     # The assistant message has tool_calls (openai protocol).
     assistant_msgs = [m for m in payload["messages"] if m.get("role") == "assistant"]
     assert len(assistant_msgs) == 1
@@ -403,8 +400,11 @@ async def test_messages_sink_export_via_stream_with_tools_directly(mock_stream_l
 
     roles = [m.get("role") for m in sink]
     assert "tool" in roles
-    # Pre-existing user message + assistant(tool_calls) + tool result.
-    assert roles[-1] == "tool"
+    # Cumulative state: user question + assistant(tool_calls) + tool result, with
+    # the next-round narrate-before-acting trigger appended on the tail.
+    from bibilab.routers.chat import _PREAMBLE_TRIGGER
+
+    assert sink[-1] == {"role": "user", "content": _PREAMBLE_TRIGGER}
 
 
 @pytest.mark.asyncio
@@ -445,4 +445,6 @@ async def test_messages_sink_populated_on_tool_execution_error(mock_stream_llm):
     # only assert that the user message the LLM actually saw is present.
     assert len(sink) >= 1
     assert sink[0]["role"] == "user"
-    assert sink[0]["content"] == "q"
+    # The preamble trigger is folded into the question for OpenAI, so the user
+    # message the LLM saw starts with the question text.
+    assert sink[0]["content"].startswith("q")

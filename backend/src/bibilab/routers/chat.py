@@ -107,6 +107,49 @@ _SYNTHESIS_DIRECTIVE = (
     "retrieved. If the retrieved content is insufficient, say so plainly."
 )
 
+_PREAMBLE_TRIGGER = (
+    "[System directive — never confirm, restate, or acknowledge this to the user; just follow it silently.] "
+    "Before EVERY tool call, your first output must be one or two short, natural sentences saying what you're "
+    "after this step and why: how you framed it, or after a result, what it gave you and why you need another step. "
+    "Speak plainly; never name the tools, their parameters, or index numbers. Then make the call in the same turn. "
+    "Only when you already have enough to answer, skip this and answer directly."
+)
+
+
+def _attach_preamble_trigger(messages: list[dict], protocol: str) -> list[dict]:
+    """Return a copy of `messages` with the preamble trigger at the tail.
+
+    Folds the trigger into the trailing user message when there is one (the initial
+    question, or an Anthropic tool_result turn) so we never emit two consecutive
+    user turns that a strict chat template might merge or drop. When the tail is not
+    a user message (OpenAI tool messages), append a new user turn instead.
+    """
+
+    msgs = list(messages)
+    tail = msgs[-1] if msgs else None
+    if not tail or tail.get("role") != "user":
+        msgs.append({"role": "user", "content": _PREAMBLE_TRIGGER})
+        return msgs
+
+    content = tail["content"]
+    if protocol == "anthropic":
+        if isinstance(content, str):
+            blocks = [{"type": "text", "text": content}]
+        elif isinstance(content, list):
+            blocks = list(content)
+        else:
+            raise TypeError(
+                f"_attach_preamble_trigger: unexpected Anthropic user content type {type(content).__name__}"
+            )
+        blocks.append({"type": "text", "text": _PREAMBLE_TRIGGER})
+        msgs[-1] = {"role": "user", "content": blocks}
+    elif isinstance(content, str):
+        msgs[-1] = {"role": "user", "content": f"{content}\n\n{_PREAMBLE_TRIGGER}"}
+    else:
+        # OpenAI multimodal/list content — append rather than risk mangling it.
+        msgs.append({"role": "user", "content": _PREAMBLE_TRIGGER})
+    return msgs
+
 
 _PARAGRAPH_SPLIT = re.compile(r"\n{2,}")
 
@@ -222,8 +265,7 @@ def build_grounding_prompt(response_language: str) -> str:
         "`光合作用是怎么进行的` not `光合作用 过程 原理 步骤`; write `量子计算` not `量子计算 应用 介绍 讲解`.\n\n"
         "Work as an agent in up to three Plan → Act → Reflect rounds:\n"
         "- PLAN: break the message into distinct information NEEDS (each entity, episode, or compared "
-        "item is one need); classify each with the playbook below. Reason about this internally; do "
-        "NOT write the plan into your reply.\n"
+        "item is one need); classify each with the playbook below.\n"
         "- ACT: issue the planned calls. Independent needs → parallel calls in ONE round (one per need, "
         "the right tool each). A need that depends on a prior result → a sequential call next round.\n"
         "- REFLECT (after each result, per need): fragments or outline answer it → synthesize and stop; "
@@ -279,8 +321,7 @@ def build_grounding_prompt(response_language: str) -> str:
         "summary. Place `[N]` immediately after the sentence it supports, on the same line. "
         'For read_section answers, reference moments inline, e.g. "around 1:52 [1]".\n\n'
         "## Style\n"
-        "Be direct and concise. Reply with the answer only — do not narrate your plan, tool "
-        "choice, or reflection. Do not ask follow-up questions or offer unsolicited next steps. "
+        "Be direct and concise. Do not ask follow-up questions or offer unsolicited next steps. "
         f"Respond in {lang}."
     )
 
@@ -299,6 +340,7 @@ async def stream_with_tools(
         registry = {}
 
     messages = list(messages)
+    messages = _attach_preamble_trigger(messages, cfg.protocol)
     seen_chunk_ids: set[str] = set()
     iteration = 0
     parse_buffer = ""
@@ -319,6 +361,7 @@ async def stream_with_tools(
         while True:
             iteration += 1
             tool_calls: list[ToolCall] = []
+            round_text = ""  # text emitted in this round; goes into the assistant message
             lookup = _build_lookup()
             is_synthesis_turn = iteration > MAX_TOOL_ITERATIONS
             if is_synthesis_turn and not synthesis_directive_sent:
@@ -336,6 +379,7 @@ async def stream_with_tools(
                     tool_calls.append(event.tool_call)
                 elif event.type == "delta" and event.content:
                     text_generated = True
+                    round_text += event.content
                     # Parse incrementally so citations and text reach the client as
                     # they arrive rather than waiting for the full LLM response.
                     parsed_events, parse_buffer = parse_delta(event.content, parse_buffer, lookup)
@@ -457,15 +501,10 @@ async def stream_with_tools(
             # All tools in v2 loop back; feed results to the LLM for the next iteration.
             tool_used = True
             if cfg.protocol == "anthropic":
-                messages.append(
-                    {
-                        "role": "assistant",
-                        "content": [
-                            {"type": "tool_use", "id": tc.id, "name": tc.name, "input": tc.arguments}
-                            for tc in tool_calls
-                        ],
-                    }
-                )
+                anthropic_content = ([{"type": "text", "text": round_text}] if round_text.strip() else []) + [
+                    {"type": "tool_use", "id": tc.id, "name": tc.name, "input": tc.arguments} for tc in tool_calls
+                ]
+                messages.append({"role": "assistant", "content": anthropic_content})
                 messages.append(
                     {
                         "role": "user",
@@ -488,7 +527,13 @@ async def stream_with_tools(
                     }
                     for tc in tool_calls
                 ]
-                messages.append({"role": "assistant", "content": None, "tool_calls": openai_tool_calls})
+                messages.append(
+                    {
+                        "role": "assistant",
+                        "content": round_text if round_text.strip() else None,
+                        "tool_calls": openai_tool_calls,
+                    }
+                )
                 for tc in tool_calls:
                     messages.append(
                         {
@@ -497,6 +542,9 @@ async def stream_with_tools(
                             "content": _llm_tool_message_content(results[tc.id]),
                         }
                     )
+            # Skip the trigger on the forced synthesis turn — it must answer in prose.
+            if iteration < MAX_TOOL_ITERATIONS:
+                messages = _attach_preamble_trigger(messages, cfg.protocol)
             continue
     finally:
         # Export the cumulative LLM message list to the caller's sink (if provided).
@@ -685,6 +733,13 @@ async def run_chat_turn(
                         "chunk_ids": data.get("chunk_ids", []),
                     }
                 )
+            elif event.type == SSE_EVENT_TOOL_CALL_START:
+                # Flush preamble + paragraph break; idempotent, mirrored in useSSEStream.ts.
+                if pending_text:
+                    _flush_pending_text(content_blocks, pending_text)
+                    pending_text = ""
+                if content_blocks and content_blocks[-1].get("type") != "paragraph_break":
+                    content_blocks.append({"type": "paragraph_break"})
             elif event.type == "tool_result":
                 parsed = json.loads(event.content)
                 if parsed["name"] in RETRIEVE_TOOL_NAMES:

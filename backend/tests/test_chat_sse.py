@@ -422,6 +422,40 @@ async def test_chat_citation_after_lone_break_not_isolated(client):
 
 
 @pytest.mark.asyncio
+async def test_chat_sse_parallel_tool_calls_single_paragraph_break(client):
+    """Two find_passages in one round must produce exactly one paragraph_break
+    between the preamble and the answer (idempotent across parallel calls)."""
+    list_id = (await client.post("/lists", json={"name": "T"})).json()["id"]
+
+    async def fake_stream(*args, **kwargs):
+        async for ev in an_async_generator(
+            [
+                StreamEvent(type="delta", content="让我查一下相关内容。"),
+                StreamEvent(
+                    type="tool_call_start",
+                    content='{"id":"t1","name":"find_passages","arguments":{"query":"X"}}',
+                ),
+                StreamEvent(
+                    type="tool_call_start",
+                    content='{"id":"t2","name":"find_passages","arguments":{"query":"Y"}}',
+                ),
+                StreamEvent(type="delta", content="## Topic\n\nDetails here."),
+                StreamEvent(type="done"),
+            ]
+        ):
+            yield ev
+
+    with patch("bibilab.routers.chat.stream_with_tools", side_effect=fake_stream):
+        await client.post(f"/lists/{list_id}/chat", json={"message": "hi"})
+
+    msgs = await _get_assistant_msgs(client, list_id)
+    blocks = msgs[0]["metadata"]["content_blocks"]
+    types = [b["type"] for b in blocks]
+    assert types == ["text", "paragraph_break", "text", "paragraph_break", "text"]
+    assert all(not (a == "paragraph_break" and b == "paragraph_break") for a, b in zip(types, types[1:]))
+
+
+@pytest.mark.asyncio
 async def test_chat_sse_multi_find_passages_no_crash(client):
     """Smoke test: two find_passages calls in one turn do not crash the SSE stream.
 

@@ -179,15 +179,31 @@ class TestBuildGroundingPrompt:
         model must NOT narrate its plan / tool choice / reflection into the output.
         The Plan→Act→Reflect reasoning stays in the model's own thinking, so
         streaming it as visible preamble is disallowed."""
+
+    def test_preamble_trigger_lives_at_decision_point_not_system_prompt(self):
+        """ReAct preamble contract: the 'narrate before a tool call' trigger lives
+        at the per-round decision point (`_PREAMBLE_TRIGGER`, injected at the
+        message tail by stream_with_tools), NOT in the cached system prompt — the
+        system prompt is static for the turn and can't sit beside a later round's
+        action. The system prompt keeps only the narration STYLE."""
+        from bibilab.routers.chat import _PREAMBLE_TRIGGER
+
         prompt = build_grounding_prompt("en")
+        # the operative trigger is NOT baked into the (cached) system prompt
+        assert "before every tool call" not in prompt.lower()
+        # it lives in the per-round trigger: imperative + machinery-free
+        trig = _PREAMBLE_TRIGGER.lower()
+        assert "before every tool call" in trig
+        assert "must" in trig
+        assert "never name the tools" in trig
+        # anti-echo: framed as a system directive that must not be confirmed/restated
+        # in the answer (regression guard against the model acknowledging the rule
+        # to the user, which leaks the prompt).
+        assert "system directive" in trig
+        assert "never confirm" in trig or "never restate" in trig
+        # the system prompt owns the direct-answer style; machinery prohibition lives in the trigger
         style = prompt.split("## Style\n", 1)[1].lower()
-        assert "do not narrate" in style
-        assert "plan" in style and "reflection" in style
-        # the direct-answer discipline is retained
         assert "direct" in style
-        # and the Workflow PLAN step marks planning as internal, not output
-        workflow = prompt.split("## Grounding", 1)[0].lower()
-        assert "do not write the plan into your reply" in workflow
 
     def test_grounding_prompt_citation_distinguishes_verbatim_from_outline(self):
         """The Citation section must instruct: cite [N] ONLY for sections whose

@@ -17,6 +17,10 @@ from bibilab.pipeline._shared import (
 from tests import an_async_generator
 
 
+async def _noop_execute(*_args, **_kwargs):
+    return {"_chunks": "x"}
+
+
 @pytest.mark.asyncio
 async def test_stream_llm_passes_list_content_to_anthropic():
     """Anthropic path: messages with list-type content are passed through as-is."""
@@ -245,6 +249,194 @@ async def test_stream_with_tools_loopback_find_passages(mock_stream_llm):
     delta_events = [e for e in events if e.type == "delta"]
     assert len(delta_events) == 1
     assert delta_events[0].content == "Answer based on chunks"
+
+
+@pytest.mark.asyncio
+async def test_preamble_trigger_attached_per_decision_point(mock_stream_llm):
+    """Trigger is persisted at the initial question AND each tool result (one per decision point, no accumulation).
+    The round's preamble text lands in the assistant message's content so the prompt-trace dump shows it."""
+    from bibilab.config import AIConfig
+    from bibilab.pipeline.chat_tools import FIND_PASSAGES_TOOL
+    from bibilab.routers.chat import _PREAMBLE_TRIGGER, stream_with_tools
+
+    cfg = AIConfig(protocol="openai", model="gpt-4o", api_key="test", base_url="")
+    find_tc = ToolCall(id="c1", name=FIND_PASSAGES_TOOL.name, arguments={"query": "q"})
+    call_count = 0
+
+    async def stream(messages, cfg, tools=None, system=None):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            yield StreamEvent(type="delta", content="looking that up.")
+            yield StreamEvent(type="tool_call", tool_call=find_tc)
+        else:
+            yield StreamEvent(type="delta", content="Answer")
+            yield StreamEvent(type="done")
+
+    mock_stream_llm.side_effect = stream
+    sink: list[dict] = []
+    async for _ in stream_with_tools(
+        messages=[{"role": "user", "content": "what is this about?"}],
+        cfg=cfg,
+        tools=[FIND_PASSAGES_TOOL],
+        execute_tool_fn=_noop_execute,
+        messages_sink=sink,
+    ):
+        pass
+
+    # initial question: trigger folded into the question string, not a second user turn
+    assert sink[0] == {"role": "user", "content": f"what is this about?\n\n{_PREAMBLE_TRIGGER}"}
+    # tool-result decision point: trigger appended after the tool message (tool→user, not user→user)
+    tool_idx = next(i for i, m in enumerate(sink) if m.get("role") == "tool")
+    assert sink[tool_idx + 1] == {"role": "user", "content": _PREAMBLE_TRIGGER}
+    # one trigger per decision point (initial + one tool result), no accumulation
+    decision_points = [
+        m for m in sink if isinstance(m.get("content"), str) and m["content"].endswith(_PREAMBLE_TRIGGER)
+    ]
+    assert len(decision_points) == 2, sink
+    # preamble text emitted before the tool_call lives on the assistant message (dump-visible)
+    asst_with_tool = next(m for m in sink if m.get("role") == "assistant" and m.get("tool_calls"))
+    assert asst_with_tool["content"] == "looking that up."
+
+
+@pytest.mark.asyncio
+async def test_preamble_trigger_folds_into_anthropic_tool_result_round(mock_stream_llm):
+    """Anthropic: trigger folds into the trailing user message (round 1 question; round 2 tool_result)."""
+    from bibilab.config import AIConfig
+    from bibilab.pipeline.chat_tools import FIND_PASSAGES_TOOL
+    from bibilab.routers.chat import _PREAMBLE_TRIGGER, stream_with_tools
+
+    cfg = AIConfig(protocol="anthropic", model="claude", api_key="test", base_url="")
+    find_tc = ToolCall(id="c1", name=FIND_PASSAGES_TOOL.name, arguments={"query": "q"})
+    call_count = 0
+
+    async def stream(messages, cfg, tools=None, system=None):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            yield StreamEvent(type="tool_call", tool_call=find_tc)
+        else:
+            yield StreamEvent(type="delta", content="Answer")
+            yield StreamEvent(type="done")
+
+    mock_stream_llm.side_effect = stream
+    sink: list[dict] = []
+    async for _ in stream_with_tools(
+        messages=[{"role": "user", "content": "what is this about?"}],
+        cfg=cfg,
+        tools=[FIND_PASSAGES_TOOL],
+        execute_tool_fn=_noop_execute,
+        messages_sink=sink,
+    ):
+        pass
+
+    # round 1: trigger folded into the original user message's content blocks
+    user_msgs = [m for m in sink if m.get("role") == "user" and "what is this about?" in str(m.get("content"))]
+    assert {"type": "text", "text": _PREAMBLE_TRIGGER} in user_msgs[0]["content"]
+
+    # round 2: trigger folded into the trailing tool_result user message
+    tool_result_msgs = [
+        m
+        for m in sink
+        if m.get("role") == "user"
+        and isinstance(m.get("content"), list)
+        and any(b.get("type") == "tool_result" and b.get("tool_use_id") == "c1" for b in m["content"])
+    ]
+    assert {"type": "text", "text": _PREAMBLE_TRIGGER} in tool_result_msgs[0]["content"]
+
+
+@pytest.mark.asyncio
+async def test_whitespace_only_preamble_emits_no_text_block(mock_stream_llm):
+    """A whitespace-only delta before a tool call must NOT become a text block on the
+    fed-back assistant message — Anthropic rejects whitespace-only text blocks, and the
+    OpenAI content must be None, not a blank string."""
+    from bibilab.config import AIConfig
+    from bibilab.pipeline.chat_tools import FIND_PASSAGES_TOOL
+    from bibilab.routers.chat import stream_with_tools
+
+    find_tc = ToolCall(id="c1", name=FIND_PASSAGES_TOOL.name, arguments={"query": "q"})
+
+    for protocol in ("anthropic", "openai"):
+        call_count = 0
+
+        async def stream(messages, cfg, tools=None, system=None):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                yield StreamEvent(type="delta", content="\n  ")  # stray whitespace only
+                yield StreamEvent(type="tool_call", tool_call=find_tc)
+            else:
+                yield StreamEvent(type="delta", content="Answer")
+                yield StreamEvent(type="done")
+
+        cfg = AIConfig(protocol=protocol, model="m", api_key="test", base_url="")
+        mock_stream_llm.side_effect = stream
+        sink: list[dict] = []
+        async for _ in stream_with_tools(
+            messages=[{"role": "user", "content": "q"}],
+            cfg=cfg,
+            tools=[FIND_PASSAGES_TOOL],
+            execute_tool_fn=_noop_execute,
+            messages_sink=sink,
+        ):
+            pass
+
+        if protocol == "anthropic":
+            asst = next(
+                m
+                for m in sink
+                if m.get("role") == "assistant"
+                and isinstance(m.get("content"), list)
+                and any(b.get("type") == "tool_use" for b in m["content"])
+            )
+            assert all(b.get("type") != "text" for b in asst["content"]), asst
+        else:
+            asst = next(m for m in sink if m.get("role") == "assistant" and m.get("tool_calls"))
+            assert asst["content"] is None, asst
+
+
+@pytest.mark.asyncio
+async def test_preamble_trigger_skipped_before_forced_synthesis(mock_stream_llm):
+    """Forced synthesis turn gets no trigger (synthesis directive follows the last tool result directly)."""
+    from bibilab.config import AIConfig
+    from bibilab.pipeline.chat_tools import FIND_PASSAGES_TOOL
+    from bibilab.routers.chat import (
+        _PREAMBLE_TRIGGER,
+        _SYNTHESIS_DIRECTIVE,
+        MAX_TOOL_ITERATIONS,
+        stream_with_tools,
+    )
+
+    cfg = AIConfig(protocol="openai", model="gpt-4o", api_key="test", base_url="")
+    call_count = 0
+
+    async def stream(messages, cfg, tools=None, system=None):
+        nonlocal call_count
+        call_count += 1
+        if call_count <= MAX_TOOL_ITERATIONS:
+            yield StreamEvent(
+                type="tool_call",
+                tool_call=ToolCall(id=f"c{call_count}", name=FIND_PASSAGES_TOOL.name, arguments={"query": "q"}),
+            )
+        else:
+            yield StreamEvent(type="delta", content="final answer")
+            yield StreamEvent(type="done")
+
+    mock_stream_llm.side_effect = stream
+    sink: list[dict] = []
+    async for _ in stream_with_tools(
+        messages=[{"role": "user", "content": "q"}],
+        cfg=cfg,
+        tools=[FIND_PASSAGES_TOOL],
+        execute_tool_fn=_noop_execute,
+        messages_sink=sink,
+    ):
+        pass
+
+    triggers = [m for m in sink if isinstance(m.get("content"), str) and m["content"].endswith(_PREAMBLE_TRIGGER)]
+    assert len(triggers) == MAX_TOOL_ITERATIONS, sink
+    synth_idx = next(i for i, m in enumerate(sink) if m.get("content") == _SYNTHESIS_DIRECTIVE)
+    assert sink[synth_idx - 1].get("role") == "tool"
 
 
 @pytest.mark.asyncio

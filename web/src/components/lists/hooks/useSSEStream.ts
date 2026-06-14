@@ -137,6 +137,12 @@ export function useSSEStream({
           console.warn("tool_call_start missing required fields", event);
           return;
         }
+        // Flush preamble + paragraph break so the next block renders as its own markdown. Idempotent; mirrored in routers/chat.py.
+        flushText();
+        if (accBlocks.length > 0 && accBlocks[accBlocks.length - 1].type !== "paragraph_break") {
+          accBlocks.push({ type: "paragraph_break" });
+          updateAssistantMsg(assistantMsgId, { contentBlocks: [...accBlocks] });
+        }
         if (toolName === FIND_PASSAGES_TOOL_NAME) {
           const args = event.arguments as { query: string };
           updateAssistantMsg(assistantMsgId, (m) => ({

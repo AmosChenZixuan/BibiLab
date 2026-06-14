@@ -481,6 +481,41 @@ describe("chat panel — conversation history", () => {
     });
   });
 
+  test("preamble before a tool call renders separately from a markdown answer", async () => {
+    mockFetch((input) => {
+      const url = String(input);
+      if (url.includes("/chat")) {
+        return Promise.resolve(
+          makeSseStream([
+            'data: {"type":"delta","content":"让我查一下相关内容。"}\n\n',
+            'data: {"type":"tool_call_start","id":"t1","name":"find_passages","arguments":{"query":"X"}}\n\n',
+            'data: {"type":"delta","content":"## Topic\\n\\nDetails here."}\n\n',
+            'data: {"type":"done"}\n\n',
+          ]),
+        );
+      }
+      return Promise.resolve(makeSseStream([]));
+    });
+
+    renderChatPanel(ChatPanel, {
+      providers: [LanguageProvider, JobActivityProvider],
+      selectedSourceIds: ["src-1"],
+      sources: [SOURCE_1],
+      listId: "list-1",
+    });
+
+    await userEvent.type(screen.getByRole("textbox"), "what is X?");
+    await userEvent.keyboard("{Enter}");
+
+    // The preamble must NOT be in the same paragraph as the heading — a
+    // missing break would render the h2 as inline text after the preamble.
+    await waitFor(() => {
+      const heading = screen.getByText("Topic", { selector: "h2" });
+      expect(heading.tagName).toBe("H2");
+      expect(heading.closest("p, div")).not.toHaveTextContent("让我查一下相关内容。");
+    });
+  });
+
   test("bubble uses bubble-user for user and bubble-assistant for assistant", async () => {
     mockFetch(() =>
       Promise.resolve(
