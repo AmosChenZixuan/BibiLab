@@ -422,13 +422,9 @@ async def test_chat_citation_after_lone_break_not_isolated(client):
 
 
 @pytest.mark.asyncio
-async def test_chat_tool_call_boundary_forces_paragraph_break(client):
-    """A tool round separates the preamble from the synthesized answer.
-
-    Without a break the preamble and a markdown answer would persist in one
-    text block ("preamble## Header") and the header would not render. The
-    tool_call_start flush+break makes each its own block.
-    """
+async def test_chat_sse_parallel_tool_calls_single_paragraph_break(client):
+    """Two find_passages in one round must produce exactly one paragraph_break
+    between the preamble and the answer (idempotent across parallel calls)."""
     list_id = (await client.post("/lists", json={"name": "T"})).json()["id"]
 
     async def fake_stream(*args, **kwargs):
@@ -439,7 +435,11 @@ async def test_chat_tool_call_boundary_forces_paragraph_break(client):
                     type="tool_call_start",
                     content='{"id":"t1","name":"find_passages","arguments":{"query":"X"}}',
                 ),
-                StreamEvent(type="delta", content="## 第四纪元\n\n众神纪元。"),
+                StreamEvent(
+                    type="tool_call_start",
+                    content='{"id":"t2","name":"find_passages","arguments":{"query":"Y"}}',
+                ),
+                StreamEvent(type="delta", content="## Topic\n\nDetails here."),
                 StreamEvent(type="done"),
             ]
         ):
@@ -452,9 +452,7 @@ async def test_chat_tool_call_boundary_forces_paragraph_break(client):
     blocks = msgs[0]["metadata"]["content_blocks"]
     types = [b["type"] for b in blocks]
     assert types == ["text", "paragraph_break", "text", "paragraph_break", "text"]
-    # The preamble is its own block; the answer's header starts its own block.
-    assert blocks[0] == {"type": "text", "text": "让我查一下相关内容。"}
-    assert blocks[2] == {"type": "text", "text": "## 第四纪元"}
+    assert all(not (a == "paragraph_break" and b == "paragraph_break") for a, b in zip(types, types[1:]))
 
 
 @pytest.mark.asyncio

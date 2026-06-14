@@ -183,10 +183,7 @@ async def _drive_stream_with_tools(
 
 
 def _last_tool_result_content(messages: list[dict], protocol: str) -> str:
-    """Pull the most recent tool-result content out of an LLM message list,
-    protocol-aware. The narrate-before-acting trigger now rides next to each tool
-    result (a sibling text block on Anthropic, a trailing user message on OpenAI),
-    so the tool result is located explicitly rather than as the last turn."""
+    """Protocol-aware extract of the most recent tool-result content (trigger is now the tail, not the tool result)."""
     if protocol == "anthropic":
         for m in reversed(messages):
             if m.get("role") == "user" and isinstance(m.get("content"), list):

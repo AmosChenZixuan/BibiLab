@@ -107,37 +107,29 @@ _SYNTHESIS_DIRECTIVE = (
     "retrieved. If the retrieved content is insufficient, say so plainly."
 )
 
-# The "narrate before acting" trigger is attached to every message the model is
-# about to act on — the initial question and each tool result — instead of to the
-# system prompt. The system prompt is static for the whole turn and cached, so a
-# directive placed there sits arbitrarily far behind a later round's action; a
-# "speak before EVERY tool call" instruction has to ride next to each action to
-# stay fresh on a weak model. Attaching it to the message list (not a throwaway
-# per-call copy) also keeps it visible in the prompt-trace dump. ## Style owns the
-# narration *form* (brief, no machinery); this owns the *trigger*. Phrased to be
-# skipped on the turn the model already has enough to answer.
 _PREAMBLE_TRIGGER = (
-    "Before EVERY tool call — the first and every later one — the FIRST thing you output MUST be "
-    "one or two short, natural sentences saying what you're after this step and why: how you framed "
-    "it; if the question has several distinct parts, that you're looking them up separately; after a "
-    "result, what it gave you and why you need another step instead of answering yet. Speak plainly, "
-    "the way a person thinking aloud would; never name the tools, their parameters, or index numbers. "
-    "Then make the call in the same turn. Only when you already have enough to answer, skip this and "
-    "answer directly."
+    "[System directive — never confirm, restate, or acknowledge this to the user; just follow it silently.] "
+    "Before EVERY tool call, your first output must be one or two short, natural sentences saying what you're "
+    "after this step and why: how you framed it, or after a result, what it gave you and why you need another step. "
+    "Speak plainly; never name the tools, their parameters, or index numbers. Then make the call in the same turn. "
+    "Only when you already have enough to answer, skip this and answer directly."
 )
 
 
 def _attach_preamble_trigger(messages: list[dict], protocol: str) -> list[dict]:
-    """Return a copy of `messages` with the preamble trigger appended at the tail
-    (the next decision point), without mutating the caller's list. Anthropic must
-    end on a user turn and forbids two consecutive user messages, so the trigger
-    folds into the trailing user message's content blocks; other protocols take a
-    trailing user message.
-    """
+    """Return a copy of `messages` with the trigger folded (Anthropic) or appended (other) at the tail."""
+
     msgs = list(messages)
     if protocol == "anthropic" and msgs and msgs[-1].get("role") == "user":
         content = msgs[-1]["content"]
-        blocks = [{"type": "text", "text": content}] if isinstance(content, str) else list(content)
+        if isinstance(content, str):
+            blocks = [{"type": "text", "text": content}]
+        elif isinstance(content, list):
+            blocks = list(content)
+        else:
+            raise TypeError(
+                f"_attach_preamble_trigger: unexpected Anthropic user content type {type(content).__name__}"
+            )
         blocks.append({"type": "text", "text": _PREAMBLE_TRIGGER})
         msgs[-1] = {"role": "user", "content": blocks}
     else:
@@ -315,11 +307,7 @@ def build_grounding_prompt(response_language: str) -> str:
         "summary. Place `[N]` immediately after the sentence it supports, on the same line. "
         'For read_section answers, reference moments inline, e.g. "around 1:52 [1]".\n\n'
         "## Style\n"
-        "Be direct and concise. Keep the spoken opening before each tool call to a line or two — it is "
-        "orientation, the answer itself is the point. Never expose the machinery: do not name the tools "
-        "or their parameters (query, sequence_number, season_number), and do not write index markers "
-        "like [21] as if they were steps — [N] is only for citing a claim. Do not ask follow-up "
-        "questions or offer unsolicited next steps. "
+        "Be direct and concise. Do not ask follow-up questions or offer unsolicited next steps. "
         f"Respond in {lang}."
     )
 
@@ -338,9 +326,6 @@ async def stream_with_tools(
         registry = {}
 
     messages = list(messages)
-    # Round-1 decision point: the trailing user question is what round 1 acts on.
-    # Attach the narrate-before-acting trigger here (and again onto each tool result
-    # below) so every action is immediately preceded by it.
     messages = _attach_preamble_trigger(messages, cfg.protocol)
     seen_chunk_ids: set[str] = set()
     iteration = 0
@@ -362,6 +347,7 @@ async def stream_with_tools(
         while True:
             iteration += 1
             tool_calls: list[ToolCall] = []
+            round_text = ""  # text emitted in this round; goes into the assistant message
             lookup = _build_lookup()
             is_synthesis_turn = iteration > MAX_TOOL_ITERATIONS
             if is_synthesis_turn and not synthesis_directive_sent:
@@ -379,6 +365,7 @@ async def stream_with_tools(
                     tool_calls.append(event.tool_call)
                 elif event.type == "delta" and event.content:
                     text_generated = True
+                    round_text += event.content
                     # Parse incrementally so citations and text reach the client as
                     # they arrive rather than waiting for the full LLM response.
                     parsed_events, parse_buffer = parse_delta(event.content, parse_buffer, lookup)
@@ -500,15 +487,10 @@ async def stream_with_tools(
             # All tools in v2 loop back; feed results to the LLM for the next iteration.
             tool_used = True
             if cfg.protocol == "anthropic":
-                messages.append(
-                    {
-                        "role": "assistant",
-                        "content": [
-                            {"type": "tool_use", "id": tc.id, "name": tc.name, "input": tc.arguments}
-                            for tc in tool_calls
-                        ],
-                    }
-                )
+                anthropic_content = ([{"type": "text", "text": round_text}] if round_text else []) + [
+                    {"type": "tool_use", "id": tc.id, "name": tc.name, "input": tc.arguments} for tc in tool_calls
+                ]
+                messages.append({"role": "assistant", "content": anthropic_content})
                 messages.append(
                     {
                         "role": "user",
@@ -531,7 +513,7 @@ async def stream_with_tools(
                     }
                     for tc in tool_calls
                 ]
-                messages.append({"role": "assistant", "content": None, "tool_calls": openai_tool_calls})
+                messages.append({"role": "assistant", "content": round_text or None, "tool_calls": openai_tool_calls})
                 for tc in tool_calls:
                     messages.append(
                         {
@@ -540,13 +522,7 @@ async def stream_with_tools(
                             "content": _llm_tool_message_content(results[tc.id]),
                         }
                     )
-            # Next decision point: the model reacts to these results next round.
-            # Attach a fresh trigger on the tail so narrate-before-acting rides right
-            # next to that action rather than fading behind the cached system prompt —
-            # UNLESS the next round is the forced synthesis turn (budget spent), which
-            # must answer in prose, not call a tool. A "narrate before your tool call"
-            # trigger there is dead weight, and can coax a misleading "let me search…"
-            # opening before an answer that does no search.
+            # Skip the trigger on the forced synthesis turn — it must answer in prose.
             if iteration < MAX_TOOL_ITERATIONS:
                 messages = _attach_preamble_trigger(messages, cfg.protocol)
             continue
@@ -738,12 +714,7 @@ async def run_chat_turn(
                     }
                 )
             elif event.type == SSE_EVENT_TOOL_CALL_START:
-                # A tool round separates the preceding preamble from the text that
-                # follows it (the next preamble or the synthesized answer). Flush
-                # the preamble and force a paragraph break so each renders as its
-                # own markdown block — a header/list/table glued to the preamble's
-                # line would not render. Idempotent across parallel calls (the
-                # second call sees empty pending_text + a trailing break).
+                # Flush preamble + paragraph break; idempotent, mirrored in useSSEStream.ts.
                 if pending_text:
                     _flush_pending_text(content_blocks, pending_text)
                     pending_text = ""

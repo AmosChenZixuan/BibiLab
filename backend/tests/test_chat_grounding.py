@@ -187,6 +187,7 @@ class TestBuildGroundingPrompt:
         system prompt is static for the turn and can't sit beside a later round's
         action. The system prompt keeps only the narration STYLE."""
         from bibilab.routers.chat import _PREAMBLE_TRIGGER
+
         prompt = build_grounding_prompt("en")
         # the operative trigger is NOT baked into the (cached) system prompt
         assert "before every tool call" not in prompt.lower()
@@ -195,9 +196,13 @@ class TestBuildGroundingPrompt:
         assert "before every tool call" in trig
         assert "must" in trig
         assert "never name the tools" in trig
-        # the system prompt still owns the narration style + machinery prohibition
+        # anti-echo: framed as a system directive that must not be confirmed/restated
+        # in the answer (regression guard against the model acknowledging the rule
+        # to the user, which leaks the prompt).
+        assert "system directive" in trig
+        assert "never confirm" in trig or "never restate" in trig
+        # the system prompt owns the direct-answer style; machinery prohibition lives in the trigger
         style = prompt.split("## Style\n", 1)[1].lower()
-        assert "do not name the tools" in style
         assert "direct" in style
 
     def test_grounding_prompt_citation_distinguishes_verbatim_from_outline(self):

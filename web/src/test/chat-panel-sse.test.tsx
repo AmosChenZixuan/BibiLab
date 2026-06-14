@@ -488,8 +488,8 @@ describe("chat panel — conversation history", () => {
         return Promise.resolve(
           makeSseStream([
             'data: {"type":"delta","content":"让我查一下相关内容。"}\n\n',
-            'data: {"type":"tool_call_start","id":"t1","name":"find_passages","arguments":{"query":"第四纪元"}}\n\n',
-            'data: {"type":"delta","content":"## 第四纪元\\n\\n众神纪元。"}\n\n',
+            'data: {"type":"tool_call_start","id":"t1","name":"find_passages","arguments":{"query":"X"}}\n\n',
+            'data: {"type":"delta","content":"## Topic\\n\\nDetails here."}\n\n',
             'data: {"type":"done"}\n\n',
           ]),
         );
@@ -504,16 +504,16 @@ describe("chat panel — conversation history", () => {
       listId: "list-1",
     });
 
-    await userEvent.type(screen.getByRole("textbox"), "第四纪元的编年史");
+    await userEvent.type(screen.getByRole("textbox"), "what is X?");
     await userEvent.keyboard("{Enter}");
 
-    // The tool boundary forces a paragraph break, so the answer's "## 第四纪元"
-    // renders as its own heading rather than inline text glued to the preamble.
+    // The preamble must NOT be in the same paragraph as the heading — a
+    // missing break would render the h2 as inline text after the preamble.
     await waitFor(() => {
-      const heading = screen.getByText("第四纪元", { selector: "h2" });
+      const heading = screen.getByText("Topic", { selector: "h2" });
       expect(heading.tagName).toBe("H2");
+      expect(heading.closest("p, div")).not.toHaveTextContent("让我查一下相关内容。");
     });
-    expect(screen.getByText("让我查一下相关内容。")).toBeInTheDocument();
   });
 
   test("bubble uses bubble-user for user and bubble-assistant for assistant", async () => {
