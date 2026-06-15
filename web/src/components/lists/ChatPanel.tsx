@@ -279,6 +279,11 @@ interface ChatPanelProps {
   sources: Source[];
   listId: string;
   onOpenSource?: (source: Source, opts?: OpenSourceOpts) => void;
+  /** When set, ChatPanel sends this message immediately and calls
+   *  `onPendingMessageConsumed` to clear it. Used to pipe a digest
+   *  keyword click into the chat input. */
+  pendingMessage?: { text: string; nonce: number } | null;
+  onPendingMessageConsumed?: () => void;
 }
 
 export function ChatPanel({
@@ -286,6 +291,8 @@ export function ChatPanel({
   sources,
   listId,
   onOpenSource,
+  pendingMessage,
+  onPendingMessageConsumed,
 }: ChatPanelProps) {
   const { t } = useLanguage();
   const { trackJobs } = useJobActivity();
@@ -391,6 +398,27 @@ export function ChatPanel({
       void reattach(activeStreamMessageId);
     }
   }, [activeStreamMessageId, isStreaming, reattach]);
+
+  // Drain a pending keyword-driven message from the page. The `nonce`
+  // guarantees a fresh effect even when the user re-clicks the same
+  // keyword. The `isStreaming` and `hasSources` guards mirror
+  // `handleSend` so the chip path can't bypass them. If a stream is
+  // already in flight, the pending message stays set and the effect
+  // re-fires when `isStreaming` flips to false — otherwise a rapid
+  // second click would be silently dropped by `useSSEStream.sendMessage`'s
+  // internal no-op guard.
+  //
+  // The dep list intentionally omits `sendMessage` and
+  // `onPendingMessageConsumed`: both are unstable (recreated on every
+  // render), and including them would re-fire the effect on every
+  // parent render, defeating the gates and creating a feedback loop
+  // (effect → sendMessage → state update → render → new closure →
+  // effect again). The guards above are the source of truth.
+  useEffect(() => {
+    if (!pendingMessage || isStreaming || !hasSources) return;
+    void sendMessage(pendingMessage.text);
+    onPendingMessageConsumed?.();
+  }, [pendingMessage, isStreaming, hasSources]);
 
   function handleSend() {
     const text = inputValue.trim();

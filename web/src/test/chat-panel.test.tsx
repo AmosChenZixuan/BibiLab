@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, test, vi } from "vitest";
+import { useState } from "react";
 
 import { LanguageProvider } from "@/app/LanguageContext";
 import { JobActivityProvider } from "@/components/jobs/JobActivityProvider";
@@ -847,6 +848,130 @@ describe("chat panel", () => {
     fireEvent.keyDown(document, { key: "Escape" });
     await waitFor(() => {
       expect(screen.queryByTestId(TEST_IDS.debugDrawer)).toBeNull();
+    });
+  });
+
+  test("pendingMessage auto-sends and consumes the prop", async () => {
+    let postedMessage: string | null = null;
+    mockFetch((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = init?.method ?? "GET";
+      if (url.includes("/conversation") && method === "GET") {
+        return Promise.resolve(
+          new Response(JSON.stringify({ conversation: null, messages: [] })),
+        );
+      }
+      if (url.includes("/chat") && method === "POST") {
+        postedMessage = JSON.parse(String(init?.body ?? "{}")).message;
+        return Promise.resolve(makeSseStream(['data: {"type":"done"}\n\n']));
+      }
+      return Promise.resolve(new Response(JSON.stringify([])));
+    });
+
+    const onPendingMessageConsumed = vi.fn();
+    renderChatPanel(
+      {
+        selectedSourceIds: ["src-1"],
+        sources: [SOURCE_1],
+        pendingMessage: { text: "Discuss alpha", nonce: 1 },
+        onPendingMessageConsumed,
+      },
+      { skipMock: true },
+    );
+
+    await waitFor(() => {
+      expect(postedMessage).toBe("Discuss alpha");
+      expect(onPendingMessageConsumed).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  test("pendingMessage does not send when no sources are selected", async () => {
+    let posted = false;
+    mockFetch((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = init?.method ?? "GET";
+      if (url.includes("/conversation") && method === "GET") {
+        return Promise.resolve(
+          new Response(JSON.stringify({ conversation: null, messages: [] })),
+        );
+      }
+      if (url.includes("/chat") && method === "POST") {
+        posted = true;
+        return Promise.resolve(makeSseStream(['data: {"type":"done"}\n\n']));
+      }
+      return Promise.resolve(new Response(JSON.stringify([])));
+    });
+
+    const onPendingMessageConsumed = vi.fn();
+    renderChatPanel(
+      {
+        selectedSourceIds: [],
+        sources: [],
+        pendingMessage: { text: "Discuss alpha", nonce: 1 },
+        onPendingMessageConsumed,
+      },
+      { skipMock: true },
+    );
+
+    // Give any stray effect a chance to fire.
+    await new Promise((r) => setTimeout(r, 50));
+    expect(posted).toBe(false);
+    expect(onPendingMessageConsumed).not.toHaveBeenCalled();
+  });
+
+  test("new pendingMessage nonce re-fires send even with identical text", async () => {
+    const postedMessages: string[] = [];
+    mockFetch((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = init?.method ?? "GET";
+      if (url.includes("/conversation") && method === "GET") {
+        return Promise.resolve(
+          new Response(JSON.stringify({ conversation: null, messages: [] })),
+        );
+      }
+      if (url.includes("/chat") && method === "POST") {
+        postedMessages.push(JSON.parse(String(init?.body ?? "{}")).message);
+        return Promise.resolve(makeSseStream(['data: {"type":"done"}\n\n']));
+      }
+      return Promise.resolve(new Response(JSON.stringify([])));
+    });
+
+    // Use a stateful wrapper so onPendingMessageConsumed can clear the
+    // prop via a real setState (mirroring ListDetailPage). A bare
+    // `vi.fn()` callback would never clear the prop, and the auto-send
+    // effect would re-fire on every `isStreaming` flip.
+    function Harness() {
+      const [msg, setMsg] = useState<{ text: string; nonce: number } | null>({ text: "Discuss alpha", nonce: 1 });
+      return (
+        <>
+          <button
+            type="button"
+            data-testid="set-msg-2"
+            onClick={() => setMsg({ text: "Discuss alpha", nonce: 2 })}
+          >
+            set
+          </button>
+          <ChatPanel
+            selectedSourceIds={["src-1"]}
+            sources={[SOURCE_1]}
+            listId="list-1"
+            pendingMessage={msg}
+            onPendingMessageConsumed={() => setMsg(null)}
+          />
+        </>
+      );
+    }
+
+    renderWithProviders(<Harness />, { providers: [LanguageProvider, JobActivityProvider] });
+
+    await waitFor(() => {
+      expect(postedMessages).toEqual(["Discuss alpha"]);
+    });
+
+    fireEvent.click(screen.getByTestId("set-msg-2"));
+
+    await waitFor(() => {
+      expect(postedMessages).toEqual(["Discuss alpha", "Discuss alpha"]);
     });
   });
 });

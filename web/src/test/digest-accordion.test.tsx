@@ -5,6 +5,7 @@ import { DigestAccordion } from "@/components/lists/DigestAccordion";
 import { JobActivityProvider, useJobActivity } from "@/components/jobs/JobActivityProvider";
 import { LanguageProvider } from "@/app/LanguageContext";
 import { api } from "@/lib/api";
+import { TEST_IDS } from "@/lib/test-ids";
 import type { Job } from "@/lib/types";
 
 afterEach(() => {
@@ -66,6 +67,27 @@ describe("DigestAccordion", () => {
       </LanguageProvider>,
     );
     expect(screen.getAllByText(/^(alpha|beta)$/)).toHaveLength(2);
+  });
+
+  test("keyword chips are clickable and fire onDiscussKeyword with the translated message", () => {
+    const onDiscussKeyword = vi.fn();
+    render(
+      <LanguageProvider>
+        <JobActivityProvider>
+          <DigestAccordion {...baseProps} onDiscussKeyword={onDiscussKeyword} />
+        </JobActivityProvider>
+      </LanguageProvider>,
+    );
+    const chips = screen.getAllByTestId(TEST_IDS.digestKeywordChip);
+    expect(chips).toHaveLength(2);
+    expect(chips[0]).toHaveTextContent("alpha");
+    expect(chips[0]).toHaveAttribute("aria-label", "Discuss alpha");
+    fireEvent.click(chips[0]);
+    expect(onDiscussKeyword).toHaveBeenCalledTimes(1);
+    expect(onDiscussKeyword).toHaveBeenCalledWith("Discuss alpha");
+    fireEvent.click(chips[1]);
+    expect(onDiscussKeyword).toHaveBeenCalledTimes(2);
+    expect(onDiscussKeyword).toHaveBeenLastCalledWith("Discuss beta");
   });
 
   test("shows facet strip and an Edit metadata menu item", () => {

@@ -291,6 +291,7 @@
       "readSectionFallbackTitle": "Untitled section"
     },
     "citationMissing": "Source no longer in list",
+    "discussKeyword": "Discuss %{keyword}",
     "errors": {
       "tool_error": "Tool execution failed",
       "stream_timeout": "Stream timed out",

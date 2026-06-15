@@ -291,6 +291,7 @@
       "readSectionFallbackTitle": "未命名章节"
     },
     "citationMissing": "来源已不在列表中",
+    "discussKeyword": "聊一聊%{keyword}",
     "errors": {
       "tool_error": "工具执行失败",
       "stream_timeout": "请求超时",

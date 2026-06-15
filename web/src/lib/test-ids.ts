@@ -6,5 +6,6 @@ export const TEST_IDS = {
   citeChip: "cite-chip",
   citeChipTooltip: "cite-chip-tooltip",
   citeMissing: "cite-missing",
+  digestKeywordChip: "digest-keyword-chip",
   debugDrawer: "debug-drawer",
 } as const;
