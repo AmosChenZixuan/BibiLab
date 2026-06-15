@@ -31,7 +31,9 @@ export function ListDetailPage() {
   // Carries a keyword-driven message from the digest chip click in
   // SourcesViewerMode to the always-mounted ChatPanel. The `nonce` makes
   // every click fire a fresh effect even when the user clicks the same
-  // keyword twice in a row.
+  // keyword twice in a row. ChatPanel always acknowledges (via
+  // `onPendingMessageConsumed`) so the prop is cleared whether the
+  // message is dispatched or rejected by chat.
   const [pendingChatMessage, setPendingChatMessage] = useState<
     { text: string; nonce: number } | null
   >(null);
@@ -121,7 +123,8 @@ export function ListDetailPage() {
   }
 
   // Buffer a chat message from the digest chip; ChatPanel picks it up
-  // via prop and clears it after sending.
+  // via prop and acknowledges (sends or rejects) it. The page does
+  // not gate on chat state — chat owns the decision.
   function handleDiscussKeyword(message: string) {
     setPendingChatMessage({ text: message, nonce: Date.now() });
   }

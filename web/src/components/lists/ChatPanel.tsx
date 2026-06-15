@@ -280,8 +280,9 @@ interface ChatPanelProps {
   listId: string;
   onOpenSource?: (source: Source, opts?: OpenSourceOpts) => void;
   /** When set, ChatPanel sends this message immediately and calls
-   *  `onPendingMessageConsumed` to clear it. Used to pipe a digest
-   *  keyword click into the chat input. */
+   *  `onPendingMessageConsumed` to acknowledge it (whether the send
+   *  is dispatched or rejected — e.g. a stream is already in flight).
+   *  Used to pipe a digest keyword click into the chat input. */
   pendingMessage?: { text: string; nonce: number } | null;
   onPendingMessageConsumed?: () => void;
 }
@@ -356,6 +357,11 @@ export function ChatPanel({
     stoppedLabel: t("chat.stopped"),
   });
 
+  // Shared "can we send right now?" gate. Used by both the manual
+  // `handleSend` path and the auto-send effect (chip click) — keeps
+  // the two in lockstep.
+  const canSend = hasSources && !isStreaming;
+
   const reattachedRef = useRef<string | null>(null);
 
   const { isAtBottom, messageListRef, scrollToBottom } = useAutoScroll({
@@ -399,30 +405,22 @@ export function ChatPanel({
     }
   }, [activeStreamMessageId, isStreaming, reattach]);
 
-  // Drain a pending keyword-driven message from the page. The `nonce`
-  // guarantees a fresh effect even when the user re-clicks the same
-  // keyword. The `isStreaming` and `hasSources` guards mirror
-  // `handleSend` so the chip path can't bypass them. If a stream is
-  // already in flight, the pending message stays set and the effect
-  // re-fires when `isStreaming` flips to false — otherwise a rapid
-  // second click would be silently dropped by `useSSEStream.sendMessage`'s
-  // internal no-op guard.
-  //
-  // The dep list intentionally omits `sendMessage` and
-  // `onPendingMessageConsumed`: both are unstable (recreated on every
-  // render), and including them would re-fire the effect on every
-  // parent render, defeating the gates and creating a feedback loop
-  // (effect → sendMessage → state update → render → new closure →
-  // effect again). The guards above are the source of truth.
+  // Drain a pending keyword-driven message from the page. Chat owns
+  // the accept/reject decision and always acks via
+  // onPendingMessageConsumed so the page's slot never accumulates
+  // clicks. `sendMessage` and `onPendingMessageConsumed` are
+  // unstable closures — omitting them from deps avoids a feedback
+  // loop.
   useEffect(() => {
-    if (!pendingMessage || isStreaming || !hasSources) return;
-    void sendMessage(pendingMessage.text);
+    if (!pendingMessage) return;
+    if (canSend) void sendMessage(pendingMessage.text);
     onPendingMessageConsumed?.();
-  }, [pendingMessage, isStreaming, hasSources]);
+  }, [pendingMessage, canSend]);
+
 
   function handleSend() {
     const text = inputValue.trim();
-    if (!text || !hasSources || isStreaming) return;
+    if (!text || !canSend) return;
     setInputValue("");
     if (textareaRef.current) {
       textareaRef.current.value = "";

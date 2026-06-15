@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { useState } from "react";
@@ -8,6 +8,7 @@ import { JobActivityProvider } from "@/components/jobs/JobActivityProvider";
 import { ChatPanel } from "@/components/lists/ChatPanel";
 import { TEST_IDS } from "@/lib/test-ids";
 import {
+  makeOpenSseStream,
   makeSseStream,
   mockFetch,
   renderWithProviders,
@@ -852,7 +853,7 @@ describe("chat panel", () => {
   });
 
   test("pendingMessage auto-sends and consumes the prop", async () => {
-    let postedMessage: string | null = null;
+    const postedMessages: string[] = [];
     mockFetch((input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       const method = init?.method ?? "GET";
@@ -862,31 +863,36 @@ describe("chat panel", () => {
         );
       }
       if (url.includes("/chat") && method === "POST") {
-        postedMessage = JSON.parse(String(init?.body ?? "{}")).message;
+        postedMessages.push(JSON.parse(String(init?.body ?? "{}")).message);
         return Promise.resolve(makeSseStream(['data: {"type":"done"}\n\n']));
       }
       return Promise.resolve(new Response(JSON.stringify([])));
     });
 
-    const onPendingMessageConsumed = vi.fn();
-    renderChatPanel(
-      {
-        selectedSourceIds: ["src-1"],
-        sources: [SOURCE_1],
-        pendingMessage: { text: "Discuss alpha", nonce: 1 },
-        onPendingMessageConsumed,
-      },
-      { skipMock: true },
-    );
+    function Harness() {
+      const [msg, setMsg] = useState<{ text: string; nonce: number } | null>({ text: "Discuss alpha", nonce: 1 });
+      return (
+        <ChatPanel
+          selectedSourceIds={["src-1"]}
+          sources={[SOURCE_1]}
+          listId="list-1"
+          pendingMessage={msg}
+          onPendingMessageConsumed={() => setMsg(null)}
+        />
+      );
+    }
 
+    renderWithProviders(<Harness />, { providers: [LanguageProvider, JobActivityProvider] });
+
+    // Exactly one POST should be sent; subsequent isStreaming flips must
+    // not re-send (chat ack'd once; pendingMessage is now null).
     await waitFor(() => {
-      expect(postedMessage).toBe("Discuss alpha");
-      expect(onPendingMessageConsumed).toHaveBeenCalledTimes(1);
+      expect(postedMessages).toEqual(["Discuss alpha"]);
     });
   });
 
-  test("pendingMessage does not send when no sources are selected", async () => {
-    let posted = false;
+  test("pendingMessage is acknowledged but not sent when no sources are selected", async () => {
+    const postedMessages: string[] = [];
     mockFetch((input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       const method = init?.method ?? "GET";
@@ -896,7 +902,7 @@ describe("chat panel", () => {
         );
       }
       if (url.includes("/chat") && method === "POST") {
-        posted = true;
+        postedMessages.push(JSON.parse(String(init?.body ?? "{}")).message);
         return Promise.resolve(makeSseStream(['data: {"type":"done"}\n\n']));
       }
       return Promise.resolve(new Response(JSON.stringify([])));
@@ -913,10 +919,12 @@ describe("chat panel", () => {
       { skipMock: true },
     );
 
-    // Give any stray effect a chance to fire.
-    await new Promise((r) => setTimeout(r, 50));
-    expect(posted).toBe(false);
-    expect(onPendingMessageConsumed).not.toHaveBeenCalled();
+    // Chat rejects (no sources to chat with) but still acknowledges the
+    // pendingMessage so the page clears it. No fetch is made.
+    await waitFor(() => {
+      expect(onPendingMessageConsumed).toHaveBeenCalledTimes(1);
+    });
+    expect(postedMessages).toEqual([]);
   });
 
   test("new pendingMessage nonce re-fires send even with identical text", async () => {
@@ -973,5 +981,83 @@ describe("chat panel", () => {
     await waitFor(() => {
       expect(postedMessages).toEqual(["Discuss alpha", "Discuss alpha"]);
     });
+  });
+
+  test("chat acknowledges a chip click that arrives during a stream (rejects without re-sending)", async () => {
+    // Use an open SSE stream so we can hold isStreaming=true across
+    // the second chip click, then complete to confirm only the first
+    // message reached the wire.
+    let sseEnqueue: ((chunk: string) => void) | null = null;
+    let sseClose: (() => void) | null = null;
+    const postedMessages: string[] = [];
+    mockFetch((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = init?.method ?? "GET";
+      if (url.includes("/conversation") && method === "GET") {
+        return Promise.resolve(
+          new Response(JSON.stringify({ conversation: null, messages: [] })),
+        );
+      }
+      if (url.includes("/chat") && method === "POST") {
+        postedMessages.push(JSON.parse(String(init?.body ?? "{}")).message);
+        if (postedMessages.length === 1) {
+          const { response, enqueue, close } = makeOpenSseStream();
+          sseEnqueue = enqueue;
+          sseClose = close;
+          return Promise.resolve(response);
+        }
+        return Promise.resolve(makeSseStream(['data: {"type":"done"}\n\n']));
+      }
+      return Promise.resolve(new Response(JSON.stringify([])));
+    });
+
+    function Harness() {
+      const [pending, setPending] = useState<{ text: string; nonce: number } | null>(null);
+      const [nonce, setNonce] = useState(0);
+      return (
+        <>
+          <button
+            type="button"
+            data-testid="trigger-pending"
+            onClick={() => {
+              setNonce((n) => n + 1);
+              setPending({ text: "Discuss alpha", nonce: nonce + 1 });
+            }}
+          >
+            trigger
+          </button>
+          <ChatPanel
+            selectedSourceIds={["src-1"]}
+            sources={[SOURCE_1]}
+            listId="list-1"
+            pendingMessage={pending}
+            onPendingMessageConsumed={() => setPending(null)}
+          />
+        </>
+      );
+    }
+
+    renderWithProviders(<Harness />, { providers: [LanguageProvider, JobActivityProvider] });
+
+    // First click — accepted and sent
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("trigger-pending"));
+    });
+
+    // Second click while isStreaming=true — should be rejected
+    // (acknowledged, but not sent)
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("trigger-pending"));
+    });
+
+    // Complete the first stream; only one message should have been POSTed
+    await act(async () => {
+      sseEnqueue?.('data: {"type":"done"}\n\n');
+      sseClose?.();
+    });
+
+    // The second click must not have been queued and re-fired on stream end
+    await new Promise((r) => setTimeout(r, 50));
+    expect(postedMessages).toEqual(["Discuss alpha"]);
   });
 });
