@@ -7,6 +7,7 @@ import { DigestFacets, type Facets } from "@/components/lists/DigestFacets";
 import { PagerTabs } from "@/components/lists/PagerTabs";
 import { useJobActivity } from "@/components/jobs/JobActivityProvider";
 import { useDismissOnDone } from "@/components/jobs/useDismissOnDone";
+import { TEST_IDS } from "@/lib/test-ids";
 import type { DigestJob, SourceFacetsPatch, SourceSection } from "@/lib/types";
 
 function LoadingDots() {
@@ -34,6 +35,7 @@ export function DigestAccordion({
   listId,
   sections,
   initialActiveIdx,
+  onDiscussKeyword,
 }: {
   source: { id: string };
   onRerun: (sourceId: string) => void;
@@ -43,6 +45,7 @@ export function DigestAccordion({
   listId: string;
   sections?: SourceSection[];
   initialActiveIdx?: number;
+  onDiscussKeyword?: (message: string) => void;
 }) {
   const { t } = useLanguage();
   const [expanded, setExpanded] = useState(true);
@@ -170,14 +173,21 @@ export function DigestAccordion({
           <div className={`transition-opacity duration-300 ${activeJob ? "opacity-30" : "opacity-100"}`}>
             {visibleKeywords.length > 0 && (
               <div className="flex flex-wrap gap-1.5">
-                {visibleKeywords.map((kw) => (
-                  <span
-                    key={kw}
-                    className="inline-block rounded-full bg-blue/10 px-2.5 py-0.5 text-xs text-blue/80"
-                  >
-                    {kw}
-                  </span>
-                ))}
+                {visibleKeywords.map((kw) => {
+                  const discussMessage = t("chat.discussKeyword", { keyword: kw });
+                  return (
+                    <button
+                      key={kw}
+                      type="button"
+                      data-testid={TEST_IDS.digestKeywordChip}
+                      onClick={() => onDiscussKeyword?.(discussMessage)}
+                      aria-label={discussMessage}
+                      className="inline-block cursor-pointer rounded-full border-0 bg-blue/10 px-2.5 py-0.5 text-xs text-blue/80 transition hover:bg-blue/20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue focus-visible:outline-offset-1"
+                    >
+                      {kw}
+                    </button>
+                  );
+                })}
               </div>
             )}
           </div>

@@ -28,6 +28,15 @@ export function ListDetailPage() {
   const [targetSection, setTargetSection] = useState<
     { sectionId?: string; timestampStart?: number } | null
   >(null);
+  // Carries a keyword-driven message from the digest chip click in
+  // SourcesViewerMode to the always-mounted ChatPanel. The `nonce` makes
+  // every click fire a fresh effect even when the user clicks the same
+  // keyword twice in a row. ChatPanel always acknowledges (via
+  // `onPendingMessageConsumed`) so the prop is cleared whether the
+  // message is dispatched or rejected by chat.
+  const [pendingChatMessage, setPendingChatMessage] = useState<
+    { text: string; nonce: number } | null
+  >(null);
   const tRef = useRef(t);
   tRef.current = t;
 
@@ -113,6 +122,13 @@ export function ListDetailPage() {
     });
   }
 
+  // Buffer a chat message from the digest chip; ChatPanel picks it up
+  // via prop and acknowledges (sends or rejects) it. The page does
+  // not gate on chat state — chat owns the decision.
+  function handleDiscussKeyword(message: string) {
+    setPendingChatMessage({ text: message, nonce: Date.now() });
+  }
+
   async function handleRenameCommit(newName: string) {
     try {
       const updated = await api.updateList(listId, { name: newName });
@@ -184,6 +200,7 @@ export function ListDetailPage() {
                       });
                     }
                   }}
+                  onDiscussKeyword={handleDiscussKeyword}
                 />
               ) : (
                 <SourcesListMode
@@ -210,6 +227,8 @@ export function ListDetailPage() {
             sources={sources}
             listId={listId}
             onOpenSource={handleOpenSource}
+            pendingMessage={pendingChatMessage}
+            onPendingMessageConsumed={() => setPendingChatMessage(null)}
           />
         </div>
 

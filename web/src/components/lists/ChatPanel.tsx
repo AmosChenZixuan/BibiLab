@@ -279,6 +279,12 @@ interface ChatPanelProps {
   sources: Source[];
   listId: string;
   onOpenSource?: (source: Source, opts?: OpenSourceOpts) => void;
+  /** When set, ChatPanel sends this message immediately and calls
+   *  `onPendingMessageConsumed` to acknowledge it (whether the send
+   *  is dispatched or rejected — e.g. a stream is already in flight).
+   *  Used to pipe a digest keyword click into the chat input. */
+  pendingMessage?: { text: string; nonce: number } | null;
+  onPendingMessageConsumed?: () => void;
 }
 
 export function ChatPanel({
@@ -286,6 +292,8 @@ export function ChatPanel({
   sources,
   listId,
   onOpenSource,
+  pendingMessage,
+  onPendingMessageConsumed,
 }: ChatPanelProps) {
   const { t } = useLanguage();
   const { trackJobs } = useJobActivity();
@@ -349,6 +357,11 @@ export function ChatPanel({
     stoppedLabel: t("chat.stopped"),
   });
 
+  // Shared "can we send right now?" gate. Used by both the manual
+  // `handleSend` path and the auto-send effect (chip click) — keeps
+  // the two in lockstep.
+  const canSend = hasSources && !isStreaming;
+
   const reattachedRef = useRef<string | null>(null);
 
   const { isAtBottom, messageListRef, scrollToBottom } = useAutoScroll({
@@ -392,9 +405,22 @@ export function ChatPanel({
     }
   }, [activeStreamMessageId, isStreaming, reattach]);
 
+  // Drain a pending keyword-driven message from the page. Chat owns
+  // the accept/reject decision and always acks via
+  // onPendingMessageConsumed so the page's slot never accumulates
+  // clicks. `sendMessage` and `onPendingMessageConsumed` are
+  // unstable closures — omitting them from deps avoids a feedback
+  // loop.
+  useEffect(() => {
+    if (!pendingMessage) return;
+    if (canSend) void sendMessage(pendingMessage.text);
+    onPendingMessageConsumed?.();
+  }, [pendingMessage, canSend]);
+
+
   function handleSend() {
     const text = inputValue.trim();
-    if (!text || !hasSources || isStreaming) return;
+    if (!text || !canSend) return;
     setInputValue("");
     if (textareaRef.current) {
       textareaRef.current.value = "";

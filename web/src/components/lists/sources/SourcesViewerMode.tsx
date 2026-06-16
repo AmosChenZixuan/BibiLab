@@ -39,12 +39,14 @@ export function SourcesViewerMode({
   onRefresh,
   listId,
   targetSection,
+  onDiscussKeyword,
 }: {
   source: Source;
   sourceContent: SourceContent | null;
   onRefresh: () => void;
   listId: string;
   targetSection?: { sectionId?: string; timestampStart?: number } | null;
+  onDiscussKeyword?: (message: string) => void;
 }) {
   const { t } = useLanguage();
   const { trackJobs } = useJobActivity();
@@ -127,6 +129,7 @@ export function SourcesViewerMode({
             listId={listId}
             sections={sections}
             initialActiveIdx={resolveTargetIdx(sections, targetSection)}
+            onDiscussKeyword={onDiscussKeyword}
           />
         )}
         {sourceContent?.transcript && (
