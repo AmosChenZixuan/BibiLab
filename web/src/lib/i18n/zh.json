@@ -118,6 +118,7 @@
       "studyGuide": "学习指南",
       "blogPost": "博客文章",
       "customReport": "自定义报告",
+      "chatMessage": "聊天回复",
       "custom": "自定义"
     },
     "reportsModal": {
@@ -226,6 +227,7 @@
     "final": "用户看到的回答"
   },
   "chat": {
+    "saveToNote": "保存笔记",
     "header": {
       "title": "聊天"
     },

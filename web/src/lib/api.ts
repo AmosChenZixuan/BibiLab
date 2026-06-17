@@ -156,6 +156,13 @@ class ListsClient {
       body: JSON.stringify(body),
     }) as Promise<Job>;
   }
+
+  saveChatMessage(listId: string, messageId: string): Promise<Artifact | undefined> {
+    return this.request<Artifact>(this.baseUrl, `/lists/${listId}/chat/save-message`, {
+      method: "POST",
+      body: JSON.stringify({ message_id: messageId }),
+    });
+  }
 }
 
 class SourcesClient {
@@ -354,6 +361,7 @@ export interface ApiClient {
   updateList(listId: string, patch: BibilabListPatch): Promise<BibilabList | undefined>;
   deleteList(listId: string): Promise<void | undefined>;
   createArtifact(listId: string, body: { type: ArtifactType; prompt: string; source_ids: string[] }): Promise<Job>;
+  saveChatMessage(listId: string, messageId: string): Promise<Artifact | undefined>;
   listSources(listId: string, opts?: { signal?: AbortSignal }): Promise<Source[] | undefined>;
   getSource(sourceId: string, opts?: { signal?: AbortSignal }): Promise<SourceContent | undefined>;
   deleteSource(listId: string, sourceId: string): Promise<void | undefined>;
@@ -415,6 +423,7 @@ export function createApiClient(baseUrl?: string): ApiClient {
     updateList: (id, patch) => lists.updateList(id, patch),
     deleteList: (id) => lists.deleteList(id),
     createArtifact: (id, body) => lists.createArtifact(id, body),
+    saveChatMessage: (id, messageId) => lists.saveChatMessage(id, messageId),
     listSources: (id, opts) => sources.listSources(id, opts),
     getSource: (id, opts) => sources.getSource(id, opts),
     deleteSource: (listId, sourceId) => sources.deleteSource(listId, sourceId),

@@ -15,19 +15,25 @@ from bibilab.config import AIConfig, BibilabConfig, bibilab_home, get_config
 from bibilab.db import (
     VISIBLE_MESSAGE_STATUS,
     assert_message_in_list,
+    create_artifact,
     delete_conversation,
+    get_artifact,
     get_conversation_by_list,
     get_list,
+    get_message,
     get_or_create_conversation,
     get_recent_messages,
     get_sources_for_list,
+    get_user_prompt_for_assistant,
     set_active_stream,
 )
 from bibilab.db import (
     get_conversation as get_conv_row,
 )
+from bibilab.models.artifacts import ArtifactResponse
 from bibilab.models.chat import (
     ChatRequest,
+    ChatSaveMessageRequest,
     ConversationResponse,
     GetConversationResponse,
     MessageResponse,
@@ -67,6 +73,7 @@ from bibilab.pipeline.chat_tools import (
 )
 from bibilab.pipeline.citation_parser import flush_buffer, parse_delta
 from bibilab.routers._model_gate import require_models_present
+from bibilab.worker import _build_chat_message_markdown, _load_sources_for_message
 
 logger = logging.getLogger(__name__)
 
@@ -1047,6 +1054,72 @@ async def cancel_stream(
     if not await assert_message_in_list(message_id, list_id):
         raise HTTPException(404, "Message not in list")
     run_registry.cancel(message_id)
+
+
+@router.post("/lists/{list_id}/chat/save-message", status_code=201)
+async def save_chat_message_to_artifact(
+    list_id: str,
+    req: ChatSaveMessageRequest,
+    http_request: Request,
+) -> ArtifactResponse:
+    """Save a finished assistant message as a markdown artifact.
+
+    Verbatim prose + a References section listing each [N] → source title
+    @ timestamp. No LLM, no job queue — direct write.
+    """
+    list_row = await get_list(list_id)
+    if list_row is None:
+        raise HTTPException(status_code=404, detail="List not found")
+
+    msg_row = await get_message(req.message_id)
+    if msg_row is None or not await assert_message_in_list(req.message_id, list_id):
+        raise HTTPException(status_code=404, detail="Message not found")
+    if msg_row["role"] != "assistant":
+        raise HTTPException(status_code=422, detail="Only assistant messages can be saved")
+    if msg_row["status"] != "done":
+        raise HTTPException(status_code=422, detail=f"Message must be done (status={msg_row['status']})")
+
+    msg = dict(msg_row)
+    raw_meta = msg.get("metadata")
+    msg["metadata"] = json.loads(raw_meta) if isinstance(raw_meta, str) and raw_meta else raw_meta
+
+    sources_by_id = await _load_sources_for_message(msg)
+    ui_lang = http_request.headers.get("X-UI-Lang", "en")
+    content = _build_chat_message_markdown(msg, sources_by_id, lang=ui_lang)
+
+    # Collect unique source ids for the Lab card subtitle count.
+    cited_source_ids: list[str] = []
+    seen_ids: set[str] = set()
+    for b in (msg["metadata"] or {}).get("content_blocks", []):
+        if b.get("type") == "citation" and b.get("source_id") and b["source_id"] not in seen_ids:
+            cited_source_ids.append(b["source_id"])
+            seen_ids.add(b["source_id"])
+
+    # Name = the user prompt that triggered this reply; fall back to first line.
+    user_prompt = (await get_user_prompt_for_assistant(req.message_id)) or ""
+    base_name = user_prompt.strip() or next(
+        (ln.strip() for ln in content.splitlines() if ln.strip()),
+        "",
+    )
+    name = base_name[:60] + ("…" if len(base_name) > 60 else "")
+
+    artifact_id = str(uuid4())
+    content_path = bibilab_home() / "artifacts" / list_id / f"{artifact_id}.md"
+    content_path.parent.mkdir(parents=True, exist_ok=True)
+    content_path.write_text(content, encoding="utf-8")
+
+    await create_artifact(
+        artifact_id=artifact_id,
+        list_id=list_id,
+        name=name,
+        type="chat_message",
+        prompt=user_prompt,
+        source_ids=cited_source_ids,
+        status="completed",
+        content_path=str(content_path.relative_to(bibilab_home())),
+    )
+    saved = await get_artifact(artifact_id)
+    return ArtifactResponse.from_row(dict(saved))
 
 
 @debug_router.get("/debug/messages/{message_id}")

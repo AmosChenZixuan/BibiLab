@@ -64,6 +64,10 @@ class ChatRequest(BaseModel):
     source_ids: list[str] | None = None
 
 
+class ChatSaveMessageRequest(BaseModel):
+    message_id: str
+
+
 class GetConversationResponse(BaseModel):
     conversation: ConversationResponse | None
     messages: list[MessageResponse]

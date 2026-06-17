@@ -8,4 +8,5 @@ export const TEST_IDS = {
   citeMissing: "cite-missing",
   digestKeywordChip: "digest-keyword-chip",
   debugDrawer: "debug-drawer",
+  chatSaveToArtifact: "chat-save-to-artifact",
 } as const;

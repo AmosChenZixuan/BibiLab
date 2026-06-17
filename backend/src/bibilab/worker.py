@@ -22,6 +22,7 @@ from bibilab.db import (
     get_pending_jobs,
     get_sections,
     get_source,
+    get_sources_by_ids,
     get_transcript_segments,
     parse_job_meta,
     rows_to_sections,
@@ -149,6 +150,59 @@ def _format_duration(seconds: float) -> str:
     (no H:MM:SS) — the header is for orientation, not parsing."""
     s = int(seconds)
     return f"{s // 60:02d}:{s % 60:02d}"
+
+
+async def _load_sources_for_message(message: dict) -> dict[str, Any]:
+    """Return {source_id: row} for every source cited in message.metadata.content_blocks.
+
+    Citations without a `source_id` are skipped. Empty/missing content_blocks → {}.
+    """
+    ids = {
+        b.get("source_id")
+        for b in (message.get("metadata") or {}).get("content_blocks", [])
+        if b.get("type") == "citation" and b.get("source_id")
+    }
+    return await get_sources_by_ids(list(ids))
+
+
+_REFERENCES_HEADER = {"en": "## References", "zh": "## 引用来源"}
+
+
+def _build_chat_message_markdown(
+    message: dict,
+    sources_by_id: dict[str, Any],
+    *,
+    lang: str = "en",
+) -> str:
+    """Verbatim prose + a localized References section listing each [N] → source title @ timestamp.
+
+    Citations whose `source_id` is not in sources_by_id are dropped from References
+    (prose keeps the [N] marker). Citations with no timestamp get no `@ MM:SS` suffix.
+    """
+    prose = message["content"]
+    citations = [b for b in (message.get("metadata") or {}).get("content_blocks", []) if b.get("type") == "citation"]
+    if not citations:
+        return prose
+
+    seen: set[int] = set()
+    lines: list[str] = []
+    for c in citations:
+        idx = c["index"]
+        if idx in seen:
+            continue
+        seen.add(idx)
+        source = sources_by_id.get(c["source_id"])
+        if source is None:
+            continue
+        ts = c.get("timestamp_start")
+        ts_str = f" @ {_format_duration(ts)}" if ts is not None else ""
+        lines.append(f"[{idx}] {source['title']}{ts_str}")
+
+    header = _REFERENCES_HEADER.get(lang, _REFERENCES_HEADER["en"])
+    # Each reference on its own line: use blank-line separators so plain
+    # react-markdown (no remark-gfm) renders them as separate paragraphs
+    # instead of collapsing single \n into a soft break (space).
+    return prose + f"\n\n{header}\n\n" + "\n\n".join(lines)
 
 
 def _render_single_batch_text(sections: list[_SectionView]) -> str:

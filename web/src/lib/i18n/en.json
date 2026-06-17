@@ -118,6 +118,7 @@
       "studyGuide": "Study Guide",
       "blogPost": "Blog Post",
       "customReport": "Custom Report",
+      "chatMessage": "Chat Reply",
       "custom": "Custom"
     },
     "reportsModal": {
@@ -226,6 +227,7 @@
     "final": "Response shown to user"
   },
   "chat": {
+    "saveToNote": "Save to note",
     "header": {
       "title": "Chat"
     },
