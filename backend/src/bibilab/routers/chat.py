@@ -1081,19 +1081,20 @@ async def save_chat_message_to_artifact(
 
     msg = dict(msg_row)
     raw_meta = msg.get("metadata")
-    msg["metadata"] = json.loads(raw_meta) if isinstance(raw_meta, str) and raw_meta else raw_meta
+    if isinstance(raw_meta, str) and raw_meta:
+        try:
+            msg["metadata"] = json.loads(raw_meta)
+        except json.JSONDecodeError:
+            logger.warning(
+                "corrupt message metadata message_id=%s list_id=%s; treating as empty",
+                req.message_id,
+                list_id,
+            )
+            msg["metadata"] = None
 
     sources_by_id = await _load_sources_for_message(msg)
     ui_lang = http_request.headers.get("X-UI-Lang", "en")
     content = _build_chat_message_markdown(msg, sources_by_id, lang=ui_lang)
-
-    # Collect unique source ids for the Lab card subtitle count.
-    cited_source_ids: list[str] = []
-    seen_ids: set[str] = set()
-    for b in (msg["metadata"] or {}).get("content_blocks", []):
-        if b.get("type") == "citation" and b.get("source_id") and b["source_id"] not in seen_ids:
-            cited_source_ids.append(b["source_id"])
-            seen_ids.add(b["source_id"])
 
     # Name = the user prompt that triggered this reply; fall back to first line.
     user_prompt = (await get_user_prompt_for_assistant(req.message_id)) or ""
@@ -1108,16 +1109,28 @@ async def save_chat_message_to_artifact(
     content_path.parent.mkdir(parents=True, exist_ok=True)
     content_path.write_text(content, encoding="utf-8")
 
-    await create_artifact(
-        artifact_id=artifact_id,
-        list_id=list_id,
-        name=name,
-        type="chat_message",
-        prompt=user_prompt,
-        source_ids=cited_source_ids,
-        status="completed",
-        content_path=str(content_path.relative_to(bibilab_home())),
-    )
+    try:
+        await create_artifact(
+            artifact_id=artifact_id,
+            list_id=list_id,
+            name=name,
+            type="chat_message",
+            prompt=user_prompt,
+            source_ids=list(sources_by_id.keys()),
+            status="completed",
+            content_path=str(content_path.relative_to(bibilab_home())),
+        )
+    except Exception:
+        # Roll back the .md file so we don't leak an orphan with no DB row.
+        logger.exception(
+            "save_chat_message_artifact_failed list_id=%s message_id=%s artifact_id=%s",
+            list_id,
+            req.message_id,
+            artifact_id,
+        )
+        content_path.unlink(missing_ok=True)
+        raise
+
     saved = await get_artifact(artifact_id)
     return ArtifactResponse.from_row(dict(saved))
 

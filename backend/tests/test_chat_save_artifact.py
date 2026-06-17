@@ -349,3 +349,36 @@ async def test_save_message_no_citations_writes_prose_only(client: httpx.AsyncCl
     content = (tmp_bibilab_home / resp.json()["content_path"]).read_text(encoding="utf-8")
     assert "Just prose, no citations." in content
     assert "## References" not in content
+
+
+@pytest.mark.asyncio
+async def test_save_message_corrupt_metadata_degrades_silently(client: httpx.AsyncClient, tmp_bibilab_home: Path):
+    """A malformed JSON metadata blob should NOT 500 — the prose is still saved."""
+    from bibilab.db import get_db
+
+    list_id = (await client.post("/lists", json={"name": "L"})).json()["id"]
+    conv_id = await ConversationFactory.build(list_id)
+    msg_id = (
+        await MessageFactory.build(
+            conv_id,
+            role="assistant",
+            status="done",
+            content="Prose, citations unreachable due to corrupt metadata.",
+            metadata=None,
+        )
+    )["id"]
+    async with get_db() as db:
+        await db.execute(
+            "UPDATE messages SET metadata=? WHERE id=?",
+            ("not valid json{", msg_id),
+        )
+        await db.commit()
+
+    resp = await client.post(
+        f"/lists/{list_id}/chat/save-message",
+        json={"message_id": msg_id},
+    )
+    assert resp.status_code == 201
+    content = (tmp_bibilab_home / resp.json()["content_path"]).read_text(encoding="utf-8")
+    assert "Prose, citations unreachable" in content
+    assert "## References" not in content  # citations were dropped on bad metadata
