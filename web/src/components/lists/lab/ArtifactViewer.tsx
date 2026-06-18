@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { Copy } from "lucide-react";
 
 import { useLanguage } from "@/app/LanguageContext";
@@ -60,7 +61,7 @@ export function ArtifactViewer({ artifact }: ArtifactViewerProps) {
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
         {content ? (
           <div className="prose prose-sm max-w-none">
-            <ReactMarkdown>{content}</ReactMarkdown>
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
           </div>
         ) : (
           <p className="text-sm text-muted">{t("lab.artifactViewer.loading")}</p>
