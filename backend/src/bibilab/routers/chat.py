@@ -23,6 +23,7 @@ from bibilab.db import (
     get_message,
     get_or_create_conversation,
     get_recent_messages,
+    get_sources_by_ids,
     get_sources_for_list,
     get_user_prompt_for_assistant,
     set_active_stream,
@@ -73,7 +74,6 @@ from bibilab.pipeline.chat_tools import (
 )
 from bibilab.pipeline.citation_parser import flush_buffer, parse_delta
 from bibilab.routers._model_gate import require_models_present
-from bibilab.worker import _build_chat_message_markdown, _load_sources_for_message
 
 logger = logging.getLogger(__name__)
 
@@ -1056,6 +1056,63 @@ async def cancel_stream(
     run_registry.cancel(message_id)
 
 
+def _format_duration(seconds: float) -> str:
+    """mm:ss formatter for [N] @ MM:SS in references."""
+    s = int(seconds)
+    return f"{s // 60:02d}:{s % 60:02d}"
+
+
+_REFERENCES_HEADER = {"en": "## References", "zh": "## 引用来源"}
+
+
+async def _load_sources_for_message(message: dict) -> dict[str, Any]:
+    """{source_id: row} for every source cited in message.metadata.content_blocks.
+    Empty/missing content_blocks → {}.
+    """
+    ids = {
+        b.get("source_id")
+        for b in (message.get("metadata") or {}).get("content_blocks", [])
+        if b.get("type") == "citation" and b.get("source_id")
+    }
+    return await get_sources_by_ids(list(ids))
+
+
+def _build_chat_message_markdown(
+    message: dict,
+    sources_by_id: dict[str, Any],
+    *,
+    lang: str = "en",
+) -> str:
+    """Verbatim prose + a localized References section listing each [N] → source title @ timestamp.
+
+    Citations whose `source_id` is not in sources_by_id are dropped from References
+    (prose keeps the [N] marker). Citations with no timestamp get no `@ MM:SS` suffix.
+    """
+    prose = message["content"]
+    citations = [b for b in (message.get("metadata") or {}).get("content_blocks", []) if b.get("type") == "citation"]
+    if not citations:
+        return prose
+
+    seen: set[int] = set()
+    lines: list[str] = []
+    for c in citations:
+        idx = c["index"]
+        if idx in seen:
+            continue
+        seen.add(idx)
+        source = sources_by_id.get(c["source_id"])
+        if source is None:
+            continue
+        ts = c.get("timestamp_start")
+        ts_str = f" @ {_format_duration(ts)}" if ts is not None else ""
+        lines.append(f"[{idx}] {source['title']}{ts_str}")
+
+    header = _REFERENCES_HEADER.get(lang, _REFERENCES_HEADER["en"])
+    # Blank-line separators so plain react-markdown (no remark-gfm) renders each
+    # reference on its own paragraph instead of collapsing \n into a soft break.
+    return prose + f"\n\n{header}\n\n" + "\n\n".join(lines)
+
+
 @router.post("/lists/{list_id}/chat/save-message", status_code=201)
 async def save_chat_message_to_artifact(
     list_id: str,
@@ -1082,55 +1139,31 @@ async def save_chat_message_to_artifact(
     msg = dict(msg_row)
     raw_meta = msg.get("metadata")
     if isinstance(raw_meta, str) and raw_meta:
-        try:
-            msg["metadata"] = json.loads(raw_meta)
-        except json.JSONDecodeError:
-            logger.warning(
-                "corrupt message metadata message_id=%s list_id=%s; treating as empty",
-                req.message_id,
-                list_id,
-            )
-            msg["metadata"] = None
+        msg["metadata"] = json.loads(raw_meta)
 
     sources_by_id = await _load_sources_for_message(msg)
     ui_lang = http_request.headers.get("X-UI-Lang", "en")
     content = _build_chat_message_markdown(msg, sources_by_id, lang=ui_lang)
 
-    # Name = the user prompt that triggered this reply; fall back to first line.
     user_prompt = (await get_user_prompt_for_assistant(req.message_id)) or ""
-    base_name = user_prompt.strip() or next(
-        (ln.strip() for ln in content.splitlines() if ln.strip()),
-        "",
-    )
-    name = base_name[:60] + ("…" if len(base_name) > 60 else "")
+    name = user_prompt.strip() or next((ln.strip() for ln in content.splitlines() if ln.strip()), "")
+    name = name[:60] + ("…" if len(name) > 60 else "")
 
     artifact_id = str(uuid4())
     content_path = bibilab_home() / "artifacts" / list_id / f"{artifact_id}.md"
     content_path.parent.mkdir(parents=True, exist_ok=True)
     content_path.write_text(content, encoding="utf-8")
 
-    try:
-        await create_artifact(
-            artifact_id=artifact_id,
-            list_id=list_id,
-            name=name,
-            type="chat_message",
-            prompt=user_prompt,
-            source_ids=list(sources_by_id.keys()),
-            status="completed",
-            content_path=str(content_path.relative_to(bibilab_home())),
-        )
-    except Exception:
-        # Roll back the .md file so we don't leak an orphan with no DB row.
-        logger.exception(
-            "save_chat_message_artifact_failed list_id=%s message_id=%s artifact_id=%s",
-            list_id,
-            req.message_id,
-            artifact_id,
-        )
-        content_path.unlink(missing_ok=True)
-        raise
-
+    await create_artifact(
+        artifact_id=artifact_id,
+        list_id=list_id,
+        name=name,
+        type="chat_message",
+        prompt=user_prompt,
+        source_ids=list(sources_by_id.keys()),
+        status="completed",
+        content_path=str(content_path.relative_to(bibilab_home())),
+    )
     saved = await get_artifact(artifact_id)
     return ArtifactResponse.from_row(dict(saved))
 
