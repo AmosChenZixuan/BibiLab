@@ -96,6 +96,11 @@
       "reports": "Reports",
       "mindMap": "Mind Map"
     },
+    "mindMapViewer": {
+      "zoomIn": "Zoom in",
+      "zoomOut": "Zoom out",
+      "resetView": "Reset view"
+    },
     "artifactList": {
       "emptyTitle": "Output will be saved here.",
       "emptyDesc": "Generate your first report after adding sources."

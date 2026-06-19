@@ -96,6 +96,11 @@
       "reports": "报告",
       "mindMap": "思维导图"
     },
+    "mindMapViewer": {
+      "zoomIn": "放大",
+      "zoomOut": "缩小",
+      "resetView": "重置视图"
+    },
     "artifactList": {
       "emptyTitle": "输出将保存在此处。",
       "emptyDesc": "添加来源后再生成你的第一份报告。"

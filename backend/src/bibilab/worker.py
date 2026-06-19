@@ -315,10 +315,10 @@ Output rules:
 _MIND_MAP_FENCE_RE = re.compile(r"^```json\s*$", re.MULTILINE)
 
 
-def _validate_mind_map_fence(content: str) -> str:
-    """Return the JSON source between the single ```json fence and its
-    closer. Fail-loud via PipelineError on 0/2+/unclosed fences — the LLM
-    contract is exactly one well-formed fence."""
+def _validate_mind_map_fence(content: str) -> dict:
+    """Parse and validate the single ```json fence in a mind-map artifact.
+    Returns the parsed dict. Raises PipelineError on 0/2+/unclosed fences,
+    malformed JSON, or a missing `root` object."""
     fences = list(_MIND_MAP_FENCE_RE.finditer(content))
     if len(fences) != 1:
         raise PipelineError(f"Mind map artifact must contain exactly one ```json fence, got {len(fences)}")
@@ -326,7 +326,13 @@ def _validate_mind_map_fence(content: str) -> str:
     end = content.find("\n```", start)
     if end == -1:
         raise PipelineError("Mind map ```json fence is not closed")
-    return content[start:end].strip("\n")
+    try:
+        parsed = json.loads(content[start:end])
+    except json.JSONDecodeError as exc:
+        raise PipelineError(f"Mind map JSON is malformed: {exc}") from exc
+    if not isinstance(parsed, dict) or not isinstance(parsed.get("root"), dict):
+        raise PipelineError("Mind map JSON must have a `root` object")
+    return parsed
 
 
 async def _build_section_views(source_ids: list[str]) -> list[_SectionView]:
@@ -693,17 +699,9 @@ class WorkerLoop:
             )
 
             if is_mind_map:
-                # Fail-loud contract: the LLM must emit exactly one
-                # well-formed ```json fence with a parseable `{root: {...}}`
-                # payload. Validation runs before any file write so a
-                # malformed output never produces a half-saved artifact.
-                payload = _validate_mind_map_fence(artifact_result.content)
-                try:
-                    parsed = json.loads(payload)
-                except json.JSONDecodeError as exc:
-                    raise PipelineError(f"Mind map JSON is malformed: {exc}") from exc
-                if not isinstance(parsed, dict) or not isinstance(parsed.get("root"), dict):
-                    raise PipelineError("Mind map JSON must have a `root` object")
+                # Fail-loud contract: fence validator raises PipelineError on
+                # any structural violation before the file is written.
+                _validate_mind_map_fence(artifact_result.content)
 
             # Check for cancellation before writing file
             if job_id in self._cancelled:

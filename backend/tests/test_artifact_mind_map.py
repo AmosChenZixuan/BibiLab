@@ -37,9 +37,8 @@ def test_validate_mind_map_fence_single_returns_source():
     failures (0/2+/unclosed/multiple) and the happy path collapse into
     one test because the function is a pure regex split — one test per
     branch is overkill."""
-    inner = '{\n  "name": "x",\n  "root": {"label": "T"}\n}'
-    body = f"# Topic\n\n```json\n{inner}\n```\n"
-    assert _validate_mind_map_fence(body) == inner
+    body = '# Topic\n\n```json\n{\n  "name": "x",\n  "root": {"label": "T"}\n}\n```\n'
+    assert _validate_mind_map_fence(body) == {"name": "x", "root": {"label": "T"}}
 
     # Zero fences → PipelineError.
     with pytest.raises(PipelineError, match="exactly one"):
@@ -133,11 +132,18 @@ async def test_run_artifact_job_mind_map_dispatches_and_validates(tmp_bibilab_ho
 
 
 @pytest.mark.asyncio
-async def test_run_artifact_job_mind_map_fence_validation_fails_job(tmp_bibilab_home):
-    """An LLM response with zero or multiple ```mermaid fences must fail
-    the job with PipelineError, write no content file, and create no
-    artifact row. This guards the contract: a half-baked mind map is worse
-    than no mind map."""
+@pytest.mark.parametrize(
+    "bad_content,expected_error",
+    [
+        # Two fences — fence validator raises "exactly one".
+        ("```json\na\n```\n```json\nb\n```", "exactly one"),
+        # One fence, valid syntax, but no `root` key — shape check raises.
+        ('```json\n{"name": "x"}\n```\n', "`root`"),
+    ],
+)
+async def test_run_artifact_job_mind_map_bad_output_fails_job(tmp_bibilab_home, bad_content, expected_error):
+    """LLM output that fails fence or shape validation marks the job failed,
+    writes no file, and creates no artifact row."""
     from bibilab.db import create_job
 
     await bootstrap_db()
@@ -159,7 +165,6 @@ async def test_run_artifact_job_mind_map_fence_validation_fails_job(tmp_bibilab_
             "source_ids": [source_id],
         },
     )
-
     cfg = BibilabConfig()
     worker = WorkerLoop(home=tmp_bibilab_home, config=cfg, adapter=None)
     job = {
@@ -175,76 +180,16 @@ async def test_run_artifact_job_mind_map_fence_validation_fails_job(tmp_bibilab_
         ),
     }
 
-    async def _fake_refine_bad(*, prompt, sections, cfg, ui_lang=None):
+    async def _fake_refine(*, prompt, sections, cfg, ui_lang=None):
         from bibilab.worker import ArtifactResult
 
-        # Two json fences — invalid.
-        return ArtifactResult(name="Bad", content="```json\na\n```\n```json\nb\n```")
+        return ArtifactResult(name="Bad", content=bad_content)
 
-    with patch("bibilab.worker._refine_artifact", side_effect=_fake_refine_bad):
+    with patch("bibilab.worker._refine_artifact", side_effect=_fake_refine):
         await worker._run_artifact_job(job)
 
     job_row = await get_job(actual_id)
     assert job_row["status"] == "failed"
-    assert "exactly one" in (job_row["error"] or "")
+    assert expected_error in (job_row["error"] or "")
     assert await get_artifact("art-bad") is None
     assert not (tmp_bibilab_home / "artifacts" / "list-1" / "art-bad.md").exists()
-
-
-@pytest.mark.asyncio
-async def test_run_artifact_job_mind_map_shape_validation_fails_job(tmp_bibilab_home):
-    """Fence passes but the JSON inside is malformed or has the wrong
-    shape (missing `root`, `root` not an object). The worker must fail
-    loud instead of writing a half-saved artifact the renderer can't
-    parse."""
-    from bibilab.db import create_job
-
-    await bootstrap_db()
-    await create_list("list-1", "L", "2026-01-01T00:00:00")
-    source_id = await SourceFactory.build(
-        "list-1",
-        video_id="BV1",
-        segments=[WhisperSegment(start=0.0, end=1.0, text="hi", speaker="SPK_0")],
-        sections=[Section(seg_start=0, seg_end=0, token_count=1, timestamp_start=0.0, timestamp_end=1.0)],
-    )
-
-    actual_id = await create_job(
-        "artifact",
-        {
-            "list_id": "list-1",
-            "artifact_id": "art-shape",
-            "type": "mind_map",
-            "prompt": "ignored",
-            "source_ids": [source_id],
-        },
-    )
-
-    cfg = BibilabConfig()
-    worker = WorkerLoop(home=tmp_bibilab_home, config=cfg, adapter=None)
-    job = {
-        "id": actual_id,
-        "meta": json.dumps(
-            {
-                "list_id": "list-1",
-                "artifact_id": "art-shape",
-                "type": "mind_map",
-                "prompt": "ignored",
-                "source_ids": [source_id],
-            }
-        ),
-    }
-
-    async def _fake_refine_no_root(*, prompt, sections, cfg, ui_lang=None):
-        from bibilab.worker import ArtifactResult
-
-        # Single well-formed fence, but the JSON has no `root` key.
-        return ArtifactResult(name="Bad", content='```json\n{"name": "x"}\n```\n')
-
-    with patch("bibilab.worker._refine_artifact", side_effect=_fake_refine_no_root):
-        await worker._run_artifact_job(job)
-
-    job_row = await get_job(actual_id)
-    assert job_row["status"] == "failed"
-    assert "`root`" in (job_row["error"] or "")
-    assert await get_artifact("art-shape") is None
-    assert not (tmp_bibilab_home / "artifacts" / "list-1" / "art-shape.md").exists()

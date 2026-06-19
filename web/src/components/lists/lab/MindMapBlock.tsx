@@ -1,6 +1,8 @@
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, Minus, Plus, RotateCcw } from "lucide-react";
 
+import { useLanguage } from "@/app/LanguageContext";
+
 interface MindNode {
   label: string;
   children?: MindNode[];
@@ -24,6 +26,7 @@ function parseMindTree(content: string): MindNode | null {
 }
 
 export const MindMapBlock: React.FC<{ content: string }> = ({ content }) => {
+  const { t } = useLanguage();
   const tree = useMemo(() => parseMindTree(content), [content]);
   // Default: only the root's direct children are expanded; everything
   // deeper starts collapsed so the initial view isn't an explosion.
@@ -43,7 +46,6 @@ export const MindMapBlock: React.FC<{ content: string }> = ({ content }) => {
   const [scale, setScale] = useState(1);
   const [tx, setTx] = useState(0);
   const [ty, setTy] = useState(0);
-  const [userInteracted, setUserInteracted] = useState(false);
   const dragRef = useRef<{ x: number; y: number; tx: number; ty: number } | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const innerRef = useRef<HTMLDivElement>(null);
@@ -113,14 +115,6 @@ export const MindMapBlock: React.FC<{ content: string }> = ({ content }) => {
     };
   }, [edges, collapsed, scale, tx, ty, canvasSize.w, canvasSize.h]);
 
-  // Fit-to-screen on first mount: scale to fit the tree in the canvas
-  // and center it. Skipped if the user has already dragged/zoomed.
-  useLayoutEffect(() => {
-    if (userInteracted) return;
-    fitToScreen();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tree]);
-
   if (!tree) {
     return (
       <div className="rounded-lg border border-pink/30 bg-pink/5 p-3 text-xs text-pink" role="alert">
@@ -140,7 +134,6 @@ export const MindMapBlock: React.FC<{ content: string }> = ({ content }) => {
 
   function onMouseDown(e: React.MouseEvent) {
     if (e.button !== 0) return;
-    setUserInteracted(true);
     dragRef.current = { x: e.clientX, y: e.clientY, tx, ty };
   }
 
@@ -157,7 +150,6 @@ export const MindMapBlock: React.FC<{ content: string }> = ({ content }) => {
 
   function onWheel(e: React.WheelEvent) {
     e.preventDefault();
-    setUserInteracted(true);
     const delta = -e.deltaY * 0.001;
     setScale((s) => Math.max(0.3, Math.min(3, s + delta)));
   }
@@ -181,7 +173,6 @@ export const MindMapBlock: React.FC<{ content: string }> = ({ content }) => {
     setScale(s);
     setTx((cw - tw * s) / 2);
     setTy((ch - th * s) / 2);
-    setUserInteracted(false);
   }
 
   return (
@@ -199,7 +190,7 @@ export const MindMapBlock: React.FC<{ content: string }> = ({ content }) => {
       >
         <div
           ref={innerRef}
-          className="origin-top-left"
+          className="origin-top-left w-max"
           style={{
             transform: `translate(${tx}px, ${ty}px) scale(${scale})`,
           }}
@@ -223,7 +214,7 @@ export const MindMapBlock: React.FC<{ content: string }> = ({ content }) => {
               />
             ))}
           </svg>
-          <div ref={treeRef} className="flex items-start gap-0 p-8">
+          <div ref={treeRef} className="flex items-start p-8">
             <TreeNode
               node={tree}
               path="0"
@@ -239,9 +230,9 @@ export const MindMapBlock: React.FC<{ content: string }> = ({ content }) => {
       {/* Control bar — top right, bigger icons so the +/- read clearly. */}
       <div className="absolute right-3 top-3 flex flex-col gap-1 rounded-full border border-border bg-white p-1 shadow-sm">
         {[
-          { label: "Zoom in", onClick: () => setScale((s) => Math.min(3, s + 0.2)), icon: Plus, iconSize: 18, strokeWidth: 2.5 },
-          { label: "Zoom out", onClick: () => setScale((s) => Math.max(0.3, s - 0.2)), icon: Minus, iconSize: 18, strokeWidth: 2.5 },
-          { label: "Reset view", onClick: fitToScreen, icon: RotateCcw, iconSize: 16 },
+          { label: t("lab.mindMapViewer.zoomIn"), onClick: () => setScale((s) => Math.min(3, s + 0.2)), icon: Plus, iconSize: 18, strokeWidth: 2.5 },
+          { label: t("lab.mindMapViewer.zoomOut"), onClick: () => setScale((s) => Math.max(0.3, s - 0.2)), icon: Minus, iconSize: 18, strokeWidth: 2.5 },
+          { label: t("lab.mindMapViewer.resetView"), onClick: fitToScreen, icon: RotateCcw, iconSize: 16 },
         ].map(({ label, onClick, icon: Icon, iconSize, strokeWidth }) => (
           <button
             key={label}
@@ -295,7 +286,7 @@ const TreeNode: React.FC<{
       : "text-sm font-medium whitespace-nowrap text-ink";
 
   return (
-    <div className="flex flex-row items-center" data-path={path}>
+    <div className="flex flex-row items-center">
       {/* Node card — inert today (no click handler). Kept as a <div>, not
           a button, to avoid announcing a non-action to screen readers. */}
       <div
