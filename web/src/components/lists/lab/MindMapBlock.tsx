@@ -8,20 +8,6 @@ interface MindNode {
 
 const MIND_JSON_RE = /^```json\s*\n([\s\S]*?)\n```\s*$/m;
 
-type Role = "root" | "leaf" | "branch";
-
-const CARD: Record<Role, string> = {
-  root: "rounded-2xl border-2 border-blue/30 bg-blue/10 px-5 py-3 shadow-sm",
-  branch: "rounded-xl border border-border bg-white px-4 py-2 text-sm shadow-sm transition hover:shadow",
-  leaf: "rounded-lg border border-border bg-sky/8 px-3 py-1.5 text-sm shadow-sm",
-};
-
-const LABEL: Record<Role, string> = {
-  root: "text-base font-semibold text-blue",
-  branch: "text-sm font-medium text-ink",
-  leaf: "text-sm text-ink",
-};
-
 const CONTROL_BTN =
   "flex h-9 w-9 items-center justify-center rounded-full text-muted transition hover:bg-border hover:text-ink";
 
@@ -31,8 +17,8 @@ function parseMindTree(content: string): MindNode | null {
   try {
     const parsed = JSON.parse(j[1]);
     if (parsed?.root) return parsed.root as MindNode;
-  } catch {
-    /* malformed JSON: fall through to null */
+  } catch (err) {
+    console.warn("parseMindTree: malformed JSON inside fence", err);
   }
   return null;
 }
@@ -138,7 +124,7 @@ export const MindMapBlock: React.FC<{ content: string }> = ({ content }) => {
   if (!tree) {
     return (
       <div className="rounded-lg border border-pink/30 bg-pink/5 p-3 text-xs text-pink" role="alert">
-        Mind map data is malformed — could not find a ```json tree fence.
+        Mind map data is malformed or could not be parsed.
       </div>
     );
   }
@@ -289,23 +275,35 @@ const TreeNode: React.FC<{
   const children = node.children ?? [];
   const hasChildren = children.length > 0;
   const collapsed = isCollapsed(path);
-  const role: Role = depth === 0 ? "root" : depth >= 2 ? "leaf" : "branch";
+  const isRoot = depth === 0;
+  const isLeaf = depth >= 2;
+  // Three visual tiers: root, internal (depth=1), leaf. The class names
+  // are inline (not in a Record lookup) because the taxonomy is purely
+  // a visual interpolation keyed by depth, not a semantic role.
+  const cardClass = isRoot
+    ? "rounded-2xl border-2 border-blue/30 bg-blue/10 px-5 py-3 shadow-sm"
+    : isLeaf
+      ? "rounded-lg border border-border bg-sky/8 px-3 py-1.5 text-sm shadow-sm"
+      : "rounded-xl border border-border bg-white px-4 py-2 text-sm shadow-sm";
+  const labelClass = isRoot
+    ? "text-base font-semibold text-blue"
+    : isLeaf
+      ? "text-sm text-ink"
+      : "text-sm font-medium text-ink";
 
   return (
     <div className="flex flex-row items-center" data-path={path}>
-      {/* Node card — a click-target div (role=button) reserved for
-          future use; today it does nothing on click. */}
+      {/* Node card — inert today (no click handler). Kept as a <div>, not
+          a button, to avoid announcing a non-action to screen readers. */}
       <div
         ref={(el) => {
           if (el) nodeRefs.current.set(path, el);
           else nodeRefs.current.delete(path);
         }}
-        role="button"
-        tabIndex={0}
         data-tree-node={path}
-        className={`${CARD[role]} cursor-pointer select-none`}
+        className={`${cardClass} select-none`}
       >
-        <span className={LABEL[role]}>{node.label}</span>
+        <span className={labelClass}>{node.label}</span>
       </div>
 
       {/* Separate expand/collapse button — a round button at the joint

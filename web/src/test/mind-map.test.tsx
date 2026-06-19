@@ -103,9 +103,10 @@ describe("ArtifactViewer mind map", () => {
       providers: [LanguageProvider],
     });
     await screen.findByTestId("mindmap-canvas");
-    // Click the 中式佳肴 node card (role=button, separate from the toggle).
-    const branchCard = screen.getByRole("button", { name: "中式佳肴" });
-    await userEvent.click(branchCard);
+    // Click the 中式佳肴 node card (separate from the toggle).
+    const branchCard = document.querySelector('[data-tree-node="0.0"]');
+    expect(branchCard).toBeInTheDocument();
+    await userEvent.click(branchCard as HTMLElement);
     // Clicking the card alone must not collapse or expand.
     expect(screen.queryByText("红油冒菜")).not.toBeInTheDocument();
   });

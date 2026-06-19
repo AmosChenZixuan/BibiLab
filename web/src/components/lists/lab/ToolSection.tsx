@@ -36,6 +36,8 @@ export function ToolSection({ listId, selectedSourceIds }: ToolSectionProps) {
         source_ids: selectedSourceIds,
       })) as ArtifactJob;
       trackJobs([{ id: job.id, producer: "artifact", label: "mind_map", contextKey: listId }]);
+    } catch (err) {
+      console.error("createArtifact(mind_map) failed", err);
     } finally {
       setMindMapPending(false);
     }

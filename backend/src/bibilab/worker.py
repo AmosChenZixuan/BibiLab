@@ -694,10 +694,16 @@ class WorkerLoop:
 
             if is_mind_map:
                 # Fail-loud contract: the LLM must emit exactly one
-                # well-formed ```mermaid fence. Validation runs before any
-                # file write so a malformed output never produces a
-                # half-saved artifact.
-                _validate_mind_map_fence(artifact_result.content)
+                # well-formed ```json fence with a parseable `{root: {...}}`
+                # payload. Validation runs before any file write so a
+                # malformed output never produces a half-saved artifact.
+                payload = _validate_mind_map_fence(artifact_result.content)
+                try:
+                    parsed = json.loads(payload)
+                except json.JSONDecodeError as exc:
+                    raise PipelineError(f"Mind map JSON is malformed: {exc}") from exc
+                if not isinstance(parsed, dict) or not isinstance(parsed.get("root"), dict):
+                    raise PipelineError("Mind map JSON must have a `root` object")
 
             # Check for cancellation before writing file
             if job_id in self._cancelled:
