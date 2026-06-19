@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { ChevronDown, ChevronLeft, ChevronRight, Copy, Maximize2, Minus, Plus, RotateCcw } from "lucide-react";
+import { ChevronLeft, ChevronRight, Copy, Minus, Plus, RotateCcw } from "lucide-react";
 
 import { useLanguage } from "@/app/LanguageContext";
 import { api } from "@/lib/api";
@@ -30,27 +30,16 @@ function parseMindTree(content: string): MindTree | null {
   if (j) {
     try {
       const parsed = JSON.parse(j[1]);
-      if (parsed && typeof parsed === "object" && parsed.root && typeof parsed.root === "object") {
-        return parsed as MindTree;
-      }
+      if (parsed?.root) return parsed as MindTree;
     } catch {
-      // fall through to Mermaid
+      /* fall through to Mermaid */
     }
   }
   // Fallback: old Mermaid `flowchart TD` artifacts from the previous
   // mind-map implementation. The grammar is small: `id[label]` defines
   // a node, `A --> B[label]` defines an edge (parent → child).
   const m = MIND_MERMAID_RE.exec(content);
-  if (m) return parseMermaidFlowchart(m[1]);
-  return null;
-}
-
-function collectPaths(node: MindNode, path: string, depth: number, acc: string[] = []): string[] {
-  if (depth >= 1) acc.push(path);
-  (node.children ?? []).forEach((child, i) => {
-    collectPaths(child, `${path}.${i}`, depth + 1, acc);
-  });
-  return acc;
+  return m ? parseMermaidFlowchart(m[1]) : null;
 }
 
 function parseMermaidFlowchart(source: string): MindTree | null {
@@ -107,7 +96,16 @@ const MindMapBlock: React.FC<{ content: string }> = ({ content }) => {
   // deeper starts collapsed so the initial view isn't an explosion.
   const [collapsed, setCollapsed] = useState<Set<string>>(() => {
     if (!tree) return new Set();
-    return new Set(collectPaths(tree.root, "0", 0));
+    const acc: string[] = [];
+    const walk = (node: MindNode, path: string) => {
+      (node.children ?? []).forEach((child, i) => {
+        const childPath = `${path}.${i}`;
+        acc.push(childPath);
+        walk(child, childPath);
+      });
+    };
+    walk(tree.root, "0");
+    return new Set(acc);
   });
   const [scale, setScale] = useState(1);
   const [tx, setTx] = useState(0);
@@ -150,7 +148,6 @@ const MindMapBlock: React.FC<{ content: string }> = ({ content }) => {
         setCanvasSize({ w: cb.width, h: cb.height });
       }
       const ib = inner.getBoundingClientRect();
-      const safeScale = scale === 0 ? 1 : scale;
       const out: { key: string; d: string }[] = [];
       for (const { parent, child } of edges) {
         const p = nodeRefs.current.get(parent);
@@ -160,10 +157,10 @@ const MindMapBlock: React.FC<{ content: string }> = ({ content }) => {
         const cr = c.getBoundingClientRect();
         // Viewport → transformed-div local: subtract the inner div's
         // viewport origin and undo the scale (transform-origin is top-left).
-        const x1 = (pr.right - ib.left) / safeScale;
-        const y1 = (pr.top + pr.height / 2 - ib.top) / safeScale;
-        const x2 = (cr.left - ib.left) / safeScale;
-        const y2 = (cr.top + cr.height / 2 - ib.top) / safeScale;
+        const x1 = (pr.right - ib.left) / scale;
+        const y1 = (pr.top + pr.height / 2 - ib.top) / scale;
+        const x2 = (cr.left - ib.left) / scale;
+        const y2 = (cr.top + cr.height / 2 - ib.top) / scale;
         const midX = (x1 + x2) / 2;
         out.push({
           key: `${parent}->${child}`,
@@ -206,10 +203,6 @@ const MindMapBlock: React.FC<{ content: string }> = ({ content }) => {
       else next.add(path);
       return next;
     });
-  }
-
-  function isCollapsed(path: string) {
-    return collapsed.has(path);
   }
 
   function onMouseDown(e: React.MouseEvent) {
@@ -258,10 +251,6 @@ const MindMapBlock: React.FC<{ content: string }> = ({ content }) => {
     setUserInteracted(false);
   }
 
-  function reset() {
-    fitToScreen();
-  }
-
   return (
     <div className="relative h-[60vh] min-h-[420px] w-full select-none overflow-hidden rounded-2xl border border-border bg-white/40">
       {/* Tree canvas — panned/zoomed via CSS transform. */}
@@ -306,7 +295,7 @@ const MindMapBlock: React.FC<{ content: string }> = ({ content }) => {
               node={tree.root}
               path="0"
               depth={0}
-              isCollapsed={isCollapsed}
+              isCollapsed={(p) => collapsed.has(p)}
               onToggle={toggle}
               nodeRefs={nodeRefs}
             />
@@ -338,7 +327,7 @@ const MindMapBlock: React.FC<{ content: string }> = ({ content }) => {
           type="button"
           aria-label="Reset view"
           title="Reset view"
-          onClick={reset}
+          onClick={fitToScreen}
           className="flex h-9 w-9 items-center justify-center rounded-full text-muted transition hover:bg-border hover:text-ink"
         >
           <RotateCcw size={16} />
@@ -364,19 +353,18 @@ const TreeNode: React.FC<{
   const children = node.children ?? [];
   const hasChildren = children.length > 0;
   const collapsed = isCollapsed(path);
-  const isRoot = depth === 0;
-  const isLeaf = depth >= 2;
-  const cardClass = isRoot
-    ? "rounded-2xl border-2 border-blue/30 bg-blue/10 px-5 py-3 shadow-sm"
-    : isLeaf
-      ? "rounded-lg border border-border bg-sky/8 px-3 py-1.5 text-sm shadow-sm"
-      : "rounded-xl border border-border bg-white px-4 py-2 text-sm shadow-sm transition hover:shadow";
+  const role: "root" | "leaf" | "branch" = depth === 0 ? "root" : depth >= 2 ? "leaf" : "branch";
 
-  const labelClass = isRoot
-    ? "text-base font-semibold text-blue"
-    : isLeaf
-      ? "text-sm text-ink"
-      : "text-sm font-medium text-ink";
+  const CARD: Record<typeof role, string> = {
+    root: "rounded-2xl border-2 border-blue/30 bg-blue/10 px-5 py-3 shadow-sm",
+    branch: "rounded-xl border border-border bg-white px-4 py-2 text-sm shadow-sm transition hover:shadow",
+    leaf: "rounded-lg border border-border bg-sky/8 px-3 py-1.5 text-sm shadow-sm",
+  };
+  const LABEL: Record<typeof role, string> = {
+    root: "text-base font-semibold text-blue",
+    branch: "text-sm font-medium text-ink",
+    leaf: "text-sm text-ink",
+  };
 
   return (
     <div className="flex flex-row items-center" data-path={path}>
@@ -390,9 +378,9 @@ const TreeNode: React.FC<{
         role="button"
         tabIndex={0}
         data-tree-node={path}
-        className={`${cardClass} cursor-pointer select-none`}
+        className={`${CARD[role]} cursor-pointer select-none`}
       >
-        <span className={labelClass}>{node.label}</span>
+        <span className={LABEL[role]}>{node.label}</span>
       </div>
 
       {/* Separate expand/collapse button — a round button at the joint
