@@ -154,6 +154,7 @@ const TOP_LEVEL_METHODS = [
   "updateList",
   "deleteList",
   "createArtifact",
+  "saveChatMessage",
   "listSources",
   "getSource",
   "deleteSource",

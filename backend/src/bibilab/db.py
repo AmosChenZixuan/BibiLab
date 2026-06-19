@@ -569,6 +569,19 @@ async def get_source(source_id: str) -> aiosqlite.Row | None:
         return await cursor.fetchone()
 
 
+async def get_sources_by_ids(source_ids: list[str]) -> dict[str, aiosqlite.Row]:
+    """Return {source_id: row} for the given ids. Empty input → {}."""
+    if not source_ids:
+        return {}
+    placeholders = _in_placeholders(source_ids)
+    async with get_db() as db:
+        cursor = await db.execute(
+            f"SELECT * FROM sources WHERE id IN ({placeholders})",
+            source_ids,
+        )
+        return {row["id"]: row for row in await cursor.fetchall()}
+
+
 async def write_transcript_segments(source_id: str, segments: list) -> None:
     """Replace all transcript segments for a source. `segments` is a list of
     WhisperSegment (start, end, text, speaker). Idempotent (DELETE then INSERT).
@@ -1044,6 +1057,37 @@ async def assert_message_in_list(message_id: str, list_id: str) -> bool:
             (message_id, list_id),
         )
         return await cursor.fetchone() is not None
+
+
+async def get_message(message_id: str) -> aiosqlite.Row | None:
+    async with get_db() as db:
+        cursor = await db.execute("SELECT * FROM messages WHERE id=?", (message_id,))
+        return await cursor.fetchone()
+
+
+async def get_user_prompt_for_assistant(assistant_message_id: str) -> str | None:
+    """Return the user message text that triggered this assistant message.
+
+    Walks the conversation to find the most recent user message at or before
+    the assistant's created_at. Returns None if the assistant message doesn't
+    exist or no preceding user message is found.
+    """
+    async with get_db() as db:
+        cursor = await db.execute(
+            "SELECT conversation_id, created_at FROM messages WHERE id=?",
+            (assistant_message_id,),
+        )
+        asst = await cursor.fetchone()
+        if asst is None:
+            return None
+        cursor = await db.execute(
+            "SELECT content FROM messages "
+            "WHERE conversation_id=? AND role='user' AND created_at <= ? "
+            "ORDER BY created_at DESC LIMIT 1",
+            (asst["conversation_id"], asst["created_at"]),
+        )
+        user_row = await cursor.fetchone()
+        return user_row["content"] if user_row else None
 
 
 # ---------------------------------------------------------------------------

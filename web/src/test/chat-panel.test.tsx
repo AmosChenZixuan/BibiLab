@@ -1061,3 +1061,78 @@ describe("chat panel", () => {
     expect(postedMessages).toEqual(["Discuss alpha"]);
   });
 });
+
+describe("chat panel — save assistant message to artifact", () => {
+  function seedAssistantMessage() {
+    return mockFetch((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = init?.method ?? "GET";
+      if (url.includes("/conversation") && method === "GET") {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              conversation: { id: "conv-1", list_id: "list-1" },
+              messages: [
+                {
+                  id: "msg-1",
+                  role: "assistant",
+                  content: "",
+                  created_at: "2026-04-08T12:00:00Z",
+                  status: "done",
+                  metadata: {
+                    content_blocks: [{ type: "text", text: "Here is the answer." }],
+                  },
+                },
+              ],
+            }),
+          ),
+        );
+      }
+      return Promise.resolve(new Response(JSON.stringify([])));
+    });
+  }
+
+  test("does NOT render save button when onSaveToArtifact is omitted", async () => {
+    seedAssistantMessage();
+    renderChatPanel(
+      { selectedSourceIds: ["src-1"], sources: [SOURCE_1] },
+      { skipMock: true },
+    );
+    await waitFor(() => {
+      expect(screen.getByText("Here is the answer.")).toBeInTheDocument();
+    });
+    expect(screen.queryByTestId(TEST_IDS.chatSaveToArtifact)).not.toBeInTheDocument();
+  });
+
+  test("renders 'Save to note' label on a finished assistant message", async () => {
+    seedAssistantMessage();
+    renderChatPanel(
+      {
+        selectedSourceIds: ["src-1"],
+        sources: [SOURCE_1],
+        onSaveToArtifact: vi.fn(),
+      },
+      { skipMock: true },
+    );
+    await waitFor(() => {
+      expect(screen.getByTestId(TEST_IDS.chatSaveToArtifact)).toBeInTheDocument();
+    });
+    expect(screen.getByText("Save to note")).toBeInTheDocument();
+  });
+
+  test("clicking pin calls onSaveToArtifact with the message id", async () => {
+    seedAssistantMessage();
+    const onSave = vi.fn();
+    renderChatPanel(
+      {
+        selectedSourceIds: ["src-1"],
+        sources: [SOURCE_1],
+        onSaveToArtifact: onSave,
+      },
+      { skipMock: true },
+    );
+    const pin = await screen.findByTestId(TEST_IDS.chatSaveToArtifact);
+    await userEvent.click(pin);
+    expect(onSave).toHaveBeenCalledWith("msg-1");
+  });
+});

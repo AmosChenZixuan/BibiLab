@@ -11,6 +11,7 @@ import {
   Code,
   MessageSquare,
   MessageSquareOff,
+  Pin,
   RotateCcw,
   SendHorizontal,
   Square,
@@ -285,6 +286,8 @@ interface ChatPanelProps {
    *  Used to pipe a digest keyword click into the chat input. */
   pendingMessage?: { text: string; nonce: number } | null;
   onPendingMessageConsumed?: () => void;
+  /** Fires when the user clicks the pin icon on a finished assistant message. */
+  onSaveToArtifact?: (messageId: string) => void;
 }
 
 export function ChatPanel({
@@ -294,6 +297,7 @@ export function ChatPanel({
   onOpenSource,
   pendingMessage,
   onPendingMessageConsumed,
+  onSaveToArtifact,
 }: ChatPanelProps) {
   const { t } = useLanguage();
   const { trackJobs } = useJobActivity();
@@ -603,7 +607,22 @@ export function ChatPanel({
                       </div>
                     )}
                     {!msg.isStreaming && !msg.error && (
-                      <span className="text-2xs text-muted font-mono px-1">{msg.timestamp}</span>
+                      <div className="flex items-center gap-1.5 px-1 text-2xs text-muted">
+                        {onSaveToArtifact && (
+                          <button
+                            type="button"
+                            className="inline-flex items-center gap-1 hover:text-blue
+                                       transition-colors"
+                            onClick={() => onSaveToArtifact(msg.id)}
+                            data-testid={TEST_IDS.chatSaveToArtifact}
+                          >
+                            <Pin size={11} />
+                            <span>{t("chat.saveToNote")}</span>
+                          </button>
+                        )}
+                        {onSaveToArtifact && <span aria-hidden="true">·</span>}
+                        <span className="font-mono">{msg.timestamp}</span>
+                      </div>
                     )}
                   </>
                 )}

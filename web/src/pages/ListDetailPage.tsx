@@ -129,6 +129,16 @@ export function ListDetailPage() {
     setPendingChatMessage({ text: message, nonce: Date.now() });
   }
 
+  async function handleSaveToArtifact(messageId: string) {
+    try {
+      await api.saveChatMessage(listId, messageId);
+      const next = await api.listArtifacts(listId);
+      setArtifacts(next ?? []);
+    } catch (err) {
+      setLoadError(toErrorMessageWithT(err, tRef.current));
+    }
+  }
+
   async function handleRenameCommit(newName: string) {
     try {
       const updated = await api.updateList(listId, { name: newName });
@@ -229,6 +239,7 @@ export function ListDetailPage() {
             onOpenSource={handleOpenSource}
             pendingMessage={pendingChatMessage}
             onPendingMessageConsumed={() => setPendingChatMessage(null)}
+            onSaveToArtifact={handleSaveToArtifact}
           />
         </div>
 
