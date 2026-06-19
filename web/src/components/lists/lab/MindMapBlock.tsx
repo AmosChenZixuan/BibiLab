@@ -280,16 +280,19 @@ const TreeNode: React.FC<{
   // Three visual tiers: root, internal (depth=1), leaf. The class names
   // are inline (not in a Record lookup) because the taxonomy is purely
   // a visual interpolation keyed by depth, not a semantic role.
+  // `shrink-0` + `whitespace-nowrap` keep CJK labels on a single line —
+  // without them, flexbox shrinks cards down to one character wide
+  // because CJK breaks at every character boundary.
   const cardClass = isRoot
-    ? "rounded-2xl border-2 border-blue/30 bg-blue/10 px-5 py-3 shadow-sm"
+    ? "shrink-0 rounded-2xl border-2 border-blue/30 bg-blue/10 px-5 py-3 whitespace-nowrap shadow-sm"
     : isLeaf
-      ? "rounded-lg border border-border bg-sky/8 px-3 py-1.5 text-sm shadow-sm"
-      : "rounded-xl border border-border bg-white px-4 py-2 text-sm shadow-sm";
+      ? "shrink-0 rounded-lg border border-border bg-sky/8 px-3 py-1.5 text-sm whitespace-nowrap shadow-sm"
+      : "shrink-0 rounded-xl border border-border bg-white px-4 py-2 text-sm whitespace-nowrap shadow-sm";
   const labelClass = isRoot
-    ? "text-base font-semibold text-blue"
+    ? "text-base font-semibold whitespace-nowrap text-blue"
     : isLeaf
-      ? "text-sm text-ink"
-      : "text-sm font-medium text-ink";
+      ? "text-sm whitespace-nowrap text-ink"
+      : "text-sm font-medium whitespace-nowrap text-ink";
 
   return (
     <div className="flex flex-row items-center" data-path={path}>
