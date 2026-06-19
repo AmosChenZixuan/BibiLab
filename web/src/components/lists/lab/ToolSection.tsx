@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useState } from "react";
 import { Brain, FileText } from "lucide-react";
 
 import { useLanguage } from "@/app/LanguageContext";
@@ -12,6 +12,9 @@ interface ToolSectionProps {
   selectedSourceIds: string[];
 }
 
+const TOOL_BTN =
+  "flex flex-col items-center gap-1 rounded-xl border border-border bg-white/64 px-2 py-3 text-center transition hover:bg-white hover:shadow-sm disabled:cursor-not-allowed disabled:opacity-40";
+
 export function ToolSection({ listId, selectedSourceIds }: ToolSectionProps) {
   const { t } = useLanguage();
   const { trackJobs } = useJobActivity();
@@ -20,7 +23,7 @@ export function ToolSection({ listId, selectedSourceIds }: ToolSectionProps) {
 
   const hasSelection = selectedSourceIds.length > 0;
 
-  const handleMindMap = useCallback(async () => {
+  async function handleMindMap() {
     if (!hasSelection || mindMapPending) return;
     setMindMapPending(true);
     try {
@@ -36,33 +39,38 @@ export function ToolSection({ listId, selectedSourceIds }: ToolSectionProps) {
     } finally {
       setMindMapPending(false);
     }
-  }, [hasSelection, mindMapPending, listId, selectedSourceIds, trackJobs]);
+  }
 
   return (
     <div
       className="grid shrink-0 grid-cols-2 gap-2 px-4 py-3 sm:grid-cols-3 lg:grid-cols-4"
       data-testid="tool-section"
     >
-      <button
-        type="button"
-        onClick={() => hasSelection && setReportsOpen(true)}
-        disabled={!hasSelection}
-        className="flex flex-col items-center gap-1 rounded-xl border border-border bg-white/64 px-2 py-3 text-center transition hover:bg-white hover:shadow-sm disabled:cursor-not-allowed disabled:opacity-40"
-      >
-        <FileText size={16} className="text-muted" />
-        <span className="text-xs font-medium text-ink">{t("lab.toolSection.reports")}</span>
-      </button>
-
-      <button
-        type="button"
-        onClick={handleMindMap}
-        disabled={!hasSelection || mindMapPending}
-        aria-busy={mindMapPending}
-        className="flex flex-col items-center gap-1 rounded-xl border border-border bg-white/64 px-2 py-3 text-center transition hover:bg-white hover:shadow-sm disabled:cursor-not-allowed disabled:opacity-40"
-      >
-        <Brain size={16} className="text-muted" />
-        <span className="text-xs font-medium text-ink">{t("lab.toolSection.mindMap")}</span>
-      </button>
+      {[
+        {
+          label: t("lab.toolSection.reports"),
+          icon: FileText,
+          onClick: () => hasSelection && setReportsOpen(true),
+          disabled: !hasSelection,
+        },
+        {
+          label: t("lab.toolSection.mindMap"),
+          icon: Brain,
+          onClick: handleMindMap,
+          disabled: !hasSelection || mindMapPending,
+        },
+      ].map(({ label, icon: Icon, onClick, disabled }) => (
+        <button
+          key={label}
+          type="button"
+          onClick={onClick}
+          disabled={disabled}
+          className={TOOL_BTN}
+        >
+          <Icon size={16} className="text-muted" />
+          <span className="text-xs font-medium text-ink">{label}</span>
+        </button>
+      ))}
 
       <ReportsModal
         open={reportsOpen}

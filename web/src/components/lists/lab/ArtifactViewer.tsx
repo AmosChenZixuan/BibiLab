@@ -12,6 +12,16 @@ interface ArtifactViewerProps {
   artifact: Artifact;
 }
 
+const MARKDOWN_COMPONENTS = {
+  pre({ children }: { children?: ReactNode }) {
+    return (
+      <pre className="overflow-x-auto rounded-lg bg-border/30 p-3 text-xs">
+        {children}
+      </pre>
+    );
+  },
+};
+
 export function ArtifactViewer({ artifact }: ArtifactViewerProps) {
   const { t } = useLanguage();
   const [content, setContent] = useState<string | null>(null);
@@ -68,18 +78,7 @@ export function ArtifactViewer({ artifact }: ArtifactViewerProps) {
             <MindMapBlock content={content} />
           ) : (
             <div className="prose prose-sm max-w-none">
-              <ReactMarkdown
-                remarkPlugins={[remarkGfm]}
-                components={{
-                  pre({ children }: { children?: ReactNode }) {
-                    return (
-                      <pre className="overflow-x-auto rounded-lg bg-border/30 p-3 text-xs">
-                        {children}
-                      </pre>
-                    );
-                  },
-                }}
-              >
+              <ReactMarkdown remarkPlugins={[remarkGfm]} components={MARKDOWN_COMPONENTS}>
                 {content}
               </ReactMarkdown>
             </div>

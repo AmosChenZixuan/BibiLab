@@ -6,18 +6,31 @@ interface MindNode {
   children?: MindNode[];
 }
 
-interface MindTree {
-  root: MindNode;
-}
-
 const MIND_JSON_RE = /^```json\s*\n([\s\S]*?)\n```\s*$/m;
 
-function parseMindTree(content: string): MindTree | null {
+type Role = "root" | "leaf" | "branch";
+
+const CARD: Record<Role, string> = {
+  root: "rounded-2xl border-2 border-blue/30 bg-blue/10 px-5 py-3 shadow-sm",
+  branch: "rounded-xl border border-border bg-white px-4 py-2 text-sm shadow-sm transition hover:shadow",
+  leaf: "rounded-lg border border-border bg-sky/8 px-3 py-1.5 text-sm shadow-sm",
+};
+
+const LABEL: Record<Role, string> = {
+  root: "text-base font-semibold text-blue",
+  branch: "text-sm font-medium text-ink",
+  leaf: "text-sm text-ink",
+};
+
+const CONTROL_BTN =
+  "flex h-9 w-9 items-center justify-center rounded-full text-muted transition hover:bg-border hover:text-ink";
+
+function parseMindTree(content: string): MindNode | null {
   const j = MIND_JSON_RE.exec(content);
   if (!j) return null;
   try {
     const parsed = JSON.parse(j[1]);
-    if (parsed?.root) return parsed as MindTree;
+    if (parsed?.root) return parsed.root as MindNode;
   } catch {
     /* malformed JSON: fall through to null */
   }
@@ -38,7 +51,7 @@ export const MindMapBlock: React.FC<{ content: string }> = ({ content }) => {
         walk(child, childPath);
       });
     };
-    walk(tree.root, "0");
+    walk(tree, "0");
     return new Set(acc);
   });
   const [scale, setScale] = useState(1);
@@ -64,7 +77,7 @@ export const MindMapBlock: React.FC<{ content: string }> = ({ content }) => {
         walk(node.children![i], childPath);
       }
     }
-    if (tree) walk(tree.root, "0");
+    if (tree) walk(tree, "0");
     return out;
   }, [tree]);
 
@@ -112,7 +125,7 @@ export const MindMapBlock: React.FC<{ content: string }> = ({ content }) => {
       cancelAnimationFrame(raf);
       ro.disconnect();
     };
-  }, [edges, collapsed, scale, tx, ty, content, canvasSize.w, canvasSize.h]);
+  }, [edges, collapsed, scale, tx, ty, canvasSize.w, canvasSize.h]);
 
   // Fit-to-screen on first mount: scale to fit the tree in the canvas
   // and center it. Skipped if the user has already dragged/zoomed.
@@ -120,7 +133,7 @@ export const MindMapBlock: React.FC<{ content: string }> = ({ content }) => {
     if (userInteracted) return;
     fitToScreen();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [content]);
+  }, [tree]);
 
   if (!tree) {
     return (
@@ -226,7 +239,7 @@ export const MindMapBlock: React.FC<{ content: string }> = ({ content }) => {
           </svg>
           <div ref={treeRef} className="flex items-start gap-0 p-8">
             <TreeNode
-              node={tree.root}
+              node={tree}
               path="0"
               depth={0}
               isCollapsed={(p) => collapsed.has(p)}
@@ -239,33 +252,22 @@ export const MindMapBlock: React.FC<{ content: string }> = ({ content }) => {
 
       {/* Control bar — top right, bigger icons so the +/- read clearly. */}
       <div className="absolute right-3 top-3 flex flex-col gap-1 rounded-full border border-border bg-white p-1 shadow-sm">
-        <button
-          type="button"
-          aria-label="Zoom in"
-          title="Zoom in"
-          onClick={() => setScale((s) => Math.min(3, s + 0.2))}
-          className="flex h-9 w-9 items-center justify-center rounded-full text-muted transition hover:bg-border hover:text-ink"
-        >
-          <Plus size={18} strokeWidth={2.5} />
-        </button>
-        <button
-          type="button"
-          aria-label="Zoom out"
-          title="Zoom out"
-          onClick={() => setScale((s) => Math.max(0.3, s - 0.2))}
-          className="flex h-9 w-9 items-center justify-center rounded-full text-muted transition hover:bg-border hover:text-ink"
-        >
-          <Minus size={18} strokeWidth={2.5} />
-        </button>
-        <button
-          type="button"
-          aria-label="Reset view"
-          title="Reset view"
-          onClick={fitToScreen}
-          className="flex h-9 w-9 items-center justify-center rounded-full text-muted transition hover:bg-border hover:text-ink"
-        >
-          <RotateCcw size={16} />
-        </button>
+        {[
+          { label: "Zoom in", onClick: () => setScale((s) => Math.min(3, s + 0.2)), icon: Plus, iconSize: 18, strokeWidth: 2.5 },
+          { label: "Zoom out", onClick: () => setScale((s) => Math.max(0.3, s - 0.2)), icon: Minus, iconSize: 18, strokeWidth: 2.5 },
+          { label: "Reset view", onClick: fitToScreen, icon: RotateCcw, iconSize: 16 },
+        ].map(({ label, onClick, icon: Icon, iconSize, strokeWidth }) => (
+          <button
+            key={label}
+            type="button"
+            aria-label={label}
+            title={label}
+            onClick={onClick}
+            className={CONTROL_BTN}
+          >
+            <Icon size={iconSize} strokeWidth={strokeWidth} />
+          </button>
+        ))}
       </div>
     </div>
   );
@@ -287,18 +289,7 @@ const TreeNode: React.FC<{
   const children = node.children ?? [];
   const hasChildren = children.length > 0;
   const collapsed = isCollapsed(path);
-  const role: "root" | "leaf" | "branch" = depth === 0 ? "root" : depth >= 2 ? "leaf" : "branch";
-
-  const CARD: Record<typeof role, string> = {
-    root: "rounded-2xl border-2 border-blue/30 bg-blue/10 px-5 py-3 shadow-sm",
-    branch: "rounded-xl border border-border bg-white px-4 py-2 text-sm shadow-sm transition hover:shadow",
-    leaf: "rounded-lg border border-border bg-sky/8 px-3 py-1.5 text-sm shadow-sm",
-  };
-  const LABEL: Record<typeof role, string> = {
-    root: "text-base font-semibold text-blue",
-    branch: "text-sm font-medium text-ink",
-    leaf: "text-sm text-ink",
-  };
+  const role: Role = depth === 0 ? "root" : depth >= 2 ? "leaf" : "branch";
 
   return (
     <div className="flex flex-row items-center" data-path={path}>

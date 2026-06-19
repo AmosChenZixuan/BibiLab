@@ -93,7 +93,8 @@
       "minimize": "最小化"
     },
     "toolSection": {
-      "reports": "报告"
+      "reports": "报告",
+      "mindMap": "思维导图"
     },
     "artifactList": {
       "emptyTitle": "输出将保存在此处。",
@@ -136,10 +137,6 @@
       "custom": "自定义",
       "customDesc": "自定义格式",
       "submit": "生成"
-    },
-    "toolSection": {
-      "reports": "报告",
-      "mindMap": "思维导图"
     },
     "viewPromptModal": {
       "title": "提示词",

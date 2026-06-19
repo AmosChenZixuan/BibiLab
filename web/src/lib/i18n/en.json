@@ -93,7 +93,8 @@
       "minimize": "minimize"
     },
     "toolSection": {
-      "reports": "Reports"
+      "reports": "Reports",
+      "mindMap": "Mind Map"
     },
     "artifactList": {
       "emptyTitle": "Output will be saved here.",
@@ -136,10 +137,6 @@
       "custom": "Custom",
       "customDesc": "Your own format",
       "submit": "Generate"
-    },
-    "toolSection": {
-      "reports": "Reports",
-      "mindMap": "Mind Map"
     },
     "viewPromptModal": {
       "title": "Prompt",
