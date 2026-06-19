@@ -119,6 +119,7 @@
       "blogPost": "Blog Post",
       "customReport": "Custom Report",
       "chatMessage": "Chat Reply",
+      "mindMap": "Mind Map",
       "custom": "Custom"
     },
     "reportsModal": {
@@ -135,6 +136,10 @@
       "custom": "Custom",
       "customDesc": "Your own format",
       "submit": "Generate"
+    },
+    "toolSection": {
+      "reports": "Reports",
+      "mindMap": "Mind Map"
     },
     "viewPromptModal": {
       "title": "Prompt",

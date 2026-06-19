@@ -30,6 +30,22 @@ vi.mock("@/lib/api", async () => {
   };
 });
 
+// Stub the job activity context so trackJobs is observable in tests.
+vi.mock("@/components/jobs/JobActivityProvider", async () => {
+  const actual = await vi.importActual<typeof import("@/components/jobs/JobActivityProvider")>(
+    "@/components/jobs/JobActivityProvider",
+  );
+  return {
+    ...actual,
+    useJobActivity: () => ({
+      trackJobs: vi.fn(),
+      jobs: [],
+      dismissJob: vi.fn(),
+      activeJobs: [],
+    }),
+  };
+});
+
 function renderToolSection(props?: Partial<React.ComponentProps<typeof ToolSection>>) {
   return renderWithProviders(
     <ToolSection
@@ -66,5 +82,27 @@ describe("ToolSection", () => {
     // Modal should open with dialog role and Reports as heading
     expect(screen.getByRole("dialog")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Generate Report" })).toBeInTheDocument();
+  });
+
+  test("Mind Map card submits a mind_map job directly without a modal", async () => {
+    const { api } = await import("@/lib/api");
+    renderToolSection();
+    const mindMapBtn = screen.getByRole("button", { name: /mind map/i });
+    await userEvent.click(mindMapBtn);
+    expect(api.createArtifact).toHaveBeenCalledWith(
+      "list-1",
+      expect.objectContaining({
+        type: "mind_map",
+        source_ids: ["src-1", "src-2"],
+      }),
+    );
+    // No modal opens for the mind map — it's a direct action.
+    expect(screen.queryByRole("heading", { name: "Generate Report" })).not.toBeInTheDocument();
+  });
+
+  test("Mind Map card is disabled when no sources are selected", () => {
+    renderToolSection({ selectedSourceIds: [] });
+    const mindMapBtn = screen.getByRole("button", { name: /mind map/i });
+    expect(mindMapBtn).toBeDisabled();
   });
 });

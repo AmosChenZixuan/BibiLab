@@ -267,3 +267,30 @@ async def test_create_artifact_stores_ui_lang_in_job_meta(client: httpx.AsyncCli
     job_row = await get_job(job_id)
     meta = json_module.loads(job_row["meta"])
     assert meta["ui_lang"] == "zh"
+
+
+@pytest.mark.asyncio
+async def test_create_artifact_mind_map_queues_job(client: httpx.AsyncClient):
+    """type='mind_map' is just another string the router forwards into
+    job meta. No backend logic gates on the type — that lives in the
+    worker. This test pins the API contract."""
+    import json as json_module
+
+    from bibilab.db import get_job
+
+    list_id = (await client.post("/lists", json={"name": "Test List"})).json()["id"]
+    resp = await client.post(
+        f"/lists/{list_id}/artifacts",
+        json={
+            "type": "mind_map",
+            "prompt": "ignored by worker",
+            "source_ids": ["src1"],
+        },
+    )
+    assert resp.status_code == 201
+    job_id = resp.json()["id"]
+    job_row = await get_job(job_id)
+    meta = json_module.loads(job_row["meta"])
+    assert meta["type"] == "mind_map"
+    assert meta["prompt"] == "ignored by worker"
+    assert meta["source_ids"] == ["src1"]

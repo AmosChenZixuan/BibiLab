@@ -119,6 +119,7 @@
       "blogPost": "博客文章",
       "customReport": "自定义报告",
       "chatMessage": "聊天回复",
+      "mindMap": "思维导图",
       "custom": "自定义"
     },
     "reportsModal": {
@@ -135,6 +136,10 @@
       "custom": "自定义",
       "customDesc": "自定义格式",
       "submit": "生成"
+    },
+    "toolSection": {
+      "reports": "报告",
+      "mindMap": "思维导图"
     },
     "viewPromptModal": {
       "title": "提示词",
