@@ -7,6 +7,7 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 
 import { LanguageProvider } from "@/app/LanguageContext";
 import { ArtifactViewer } from "@/components/lists/lab/ArtifactViewer";
+import { MindMapBlock } from "@/components/lists/lab/MindMapBlock";
 import { renderWithProviders, createMockApi } from "@/test/utils";
 
 vi.mock("@/lib/api", async () => {
@@ -131,29 +132,26 @@ describe("ArtifactViewer mind map", () => {
     expect(await screen.findByRole("alert")).toBeInTheDocument();
     expect(screen.getByText(/Mind map data is malformed/)).toBeInTheDocument();
   });
+});
 
-  test("falls back to Mermaid flowchart parser for old-format artifacts", async () => {
-    const { api } = await import("@/lib/api");
-    const oldMermaid = [
-      "```mermaid",
-      "flowchart TD",
-      "A[Root Label]",
-      "A --> B[Branch]",
-      "B --> C[Leaf]",
-      "```",
-    ].join("\n");
-    vi.mocked(api.getArtifactContent).mockResolvedValueOnce({
-      content: oldMermaid,
-    });
+describe("MindMapBlock (standalone)", () => {
+  afterEach(cleanup);
 
-    renderWithProviders(<ArtifactViewer artifact={MIND_MAP_ARTIFACT} />, {
+  const CONTENT = "```json\n{ \"name\": \"x\", \"root\": { \"label\": \"Root\" } }\n```\n";
+
+  test("renders the canvas and controls directly without ArtifactViewer", () => {
+    renderWithProviders(<MindMapBlock content={CONTENT} />, {
       providers: [LanguageProvider],
     });
-    expect(await screen.findByTestId("mindmap-canvas")).toBeInTheDocument();
-    expect(screen.getByText("Root Label")).toBeInTheDocument();
-    // Branches are collapsed by default — verify the branch is there.
-    expect(screen.getByText("Branch")).toBeInTheDocument();
-    // Leaf is at depth 2, so it's hidden until the branch expands.
-    expect(screen.queryByText("Leaf")).not.toBeInTheDocument();
+    expect(screen.getByTestId("mindmap-canvas")).toBeInTheDocument();
+    expect(screen.getByText("Root")).toBeInTheDocument();
+    expect(screen.getByLabelText("Zoom in")).toBeInTheDocument();
+  });
+
+  test("renders error banner when content has no JSON fence", () => {
+    renderWithProviders(<MindMapBlock content="no fence" />, {
+      providers: [LanguageProvider],
+    });
+    expect(screen.getByRole("alert")).toBeInTheDocument();
   });
 });
