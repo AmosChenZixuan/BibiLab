@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+import re
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
@@ -266,6 +267,72 @@ Respond ONLY with valid JSON matching this schema:
   "content": "string (the main artifact content in markdown format)"
 }}
 {lang_output_directive}"""
+
+
+# Mind-map artifact (type='mind_map'). The LLM is told to emit exactly one
+# ```json fence describing a recursive node tree — the existing
+# _build_initial_prompt / _build_refine_prompt wrap _MIND_MAP_PROMPT verbatim
+# via the standard `prompt` arg, so no separate prompt family is needed.
+_MIND_MAP_PROMPT = """\
+Produce a hierarchical mind map that captures the central topic and its
+sub-themes across the supplied transcript(s).
+
+Output rules:
+
+1. The `content` field MUST be a markdown document with EXACTLY ONE fenced
+   code block. The fence MUST start with ```json on its own line and be
+   closed with ``` on its own line. The JSON inside MUST be a single
+   object with this shape:
+
+   {
+     "name": "string (a short title for this mind map)",
+     "root": {
+       "label": "string (root node, 2-6 words)",
+       "children": [
+         {"label": "string (branch)", "children": [{"label": "string"}, ...]},
+         ...
+       ]
+     }
+   }
+
+2. Hierarchy (cap total nodes at ~30; do not pad):
+
+   - Root: the overall topic.
+   - 2-5 main branches (level 1).
+   - 1-5 children per branch (level 2+).
+
+3. Node label rules:
+
+   - Keep labels SHORT: a single phrase, ideally 1-6 words.
+   - Mirror the majority language of the source transcript.
+   - Do NOT use quotation marks, backslashes, or unescaped newlines
+     inside labels.
+   - Do NOT use markdown formatting (bold, italic, links) inside labels.
+
+4. No explanatory text outside the fence."""
+
+
+_MIND_MAP_FENCE_RE = re.compile(r"^```json\s*$", re.MULTILINE)
+
+
+def _validate_mind_map_fence(content: str) -> dict:
+    """Parse and validate the single ```json fence in a mind-map artifact.
+    Returns the parsed dict. Raises PipelineError on 0/2+/unclosed fences,
+    malformed JSON, or a missing `root` object."""
+    fences = list(_MIND_MAP_FENCE_RE.finditer(content))
+    if len(fences) != 1:
+        raise PipelineError(f"Mind map artifact must contain exactly one ```json fence, got {len(fences)}")
+    start = fences[0].end()
+    end = content.find("\n```", start)
+    if end == -1:
+        raise PipelineError("Mind map ```json fence is not closed")
+    try:
+        parsed = json.loads(content[start:end])
+    except json.JSONDecodeError as exc:
+        raise PipelineError(f"Mind map JSON is malformed: {exc}") from exc
+    if not isinstance(parsed, dict) or not isinstance(parsed.get("root"), dict):
+        raise PipelineError("Mind map JSON must have a `root` object")
+    return parsed
 
 
 async def _build_section_views(source_ids: list[str]) -> list[_SectionView]:
@@ -602,6 +669,12 @@ class WorkerLoop:
         prompt = meta_raw["prompt"]
         source_ids = meta_raw["source_ids"]
         cfg = self._get_config()
+        # Mind-map jobs ignore the user-supplied prompt (_MIND_MAP_PROMPT is
+        # the directive); the rebind also feeds create_artifact's prompt
+        # column so the view-prompt modal shows what the LLM actually saw.
+        is_mind_map = artifact_type == "mind_map"
+        if is_mind_map:
+            prompt = _MIND_MAP_PROMPT
 
         try:
             await update_job_status(job_id, JobStatus.PROCESSING.value, progress=10)
@@ -624,6 +697,11 @@ class WorkerLoop:
                 cfg=cfg,
                 ui_lang=meta_raw.get("ui_lang"),
             )
+
+            if is_mind_map:
+                # Fail-loud contract: fence validator raises PipelineError on
+                # any structural violation before the file is written.
+                _validate_mind_map_fence(artifact_result.content)
 
             # Check for cancellation before writing file
             if job_id in self._cancelled:

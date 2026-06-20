@@ -93,7 +93,13 @@
       "minimize": "minimize"
     },
     "toolSection": {
-      "reports": "Reports"
+      "reports": "Reports",
+      "mindMap": "Mind Map"
+    },
+    "mindMapViewer": {
+      "zoomIn": "Zoom in",
+      "zoomOut": "Zoom out",
+      "resetView": "Reset view"
     },
     "artifactList": {
       "emptyTitle": "Output will be saved here.",
@@ -119,6 +125,7 @@
       "blogPost": "Blog Post",
       "customReport": "Custom Report",
       "chatMessage": "Chat Reply",
+      "mindMap": "Mind Map",
       "custom": "Custom"
     },
     "reportsModal": {

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Copy } from "lucide-react";
@@ -6,10 +6,21 @@ import { Copy } from "lucide-react";
 import { useLanguage } from "@/app/LanguageContext";
 import { api } from "@/lib/api";
 import type { Artifact } from "@/lib/types";
+import { MindMapBlock } from "./MindMapBlock";
 
 interface ArtifactViewerProps {
   artifact: Artifact;
 }
+
+const MARKDOWN_COMPONENTS = {
+  pre({ children }: { children?: ReactNode }) {
+    return (
+      <pre className="overflow-x-auto rounded-lg bg-border/30 p-3 text-xs">
+        {children}
+      </pre>
+    );
+  },
+};
 
 export function ArtifactViewer({ artifact }: ArtifactViewerProps) {
   const { t } = useLanguage();
@@ -38,6 +49,7 @@ export function ArtifactViewer({ artifact }: ArtifactViewerProps) {
   }
 
   const sourceCount = artifact.source_ids.length;
+  const isMindMap = artifact.type === "mind_map";
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
@@ -48,21 +60,29 @@ export function ArtifactViewer({ artifact }: ArtifactViewerProps) {
             {t(sourceCount === 1 ? "lab.artifactViewer.basedOnSingular" : "lab.artifactViewer.basedOnPlural", { count: sourceCount })}
           </p>
         </div>
-        <button
-          type="button"
-          aria-label="Copy markdown"
-          disabled={!content}
-          onClick={handleCopy}
-          className="flex h-7 w-7 items-center justify-center rounded-full text-muted transition hover:bg-border hover:text-ink disabled:opacity-40"
-        >
-          <Copy size={14} />
-        </button>
+        {!isMindMap && (
+          <button
+            type="button"
+            aria-label="Copy markdown"
+            disabled={!content}
+            onClick={handleCopy}
+            className="flex h-7 w-7 items-center justify-center rounded-full text-muted transition hover:bg-border hover:text-ink disabled:opacity-40"
+          >
+            <Copy size={14} />
+          </button>
+        )}
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
         {content ? (
-          <div className="prose prose-sm max-w-none">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
-          </div>
+          isMindMap ? (
+            <MindMapBlock content={content} />
+          ) : (
+            <div className="prose prose-sm max-w-none">
+              <ReactMarkdown remarkPlugins={[remarkGfm]} components={MARKDOWN_COMPONENTS}>
+                {content}
+              </ReactMarkdown>
+            </div>
+          )
         ) : (
           <p className="text-sm text-muted">{t("lab.artifactViewer.loading")}</p>
         )}

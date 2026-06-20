@@ -93,7 +93,13 @@
       "minimize": "最小化"
     },
     "toolSection": {
-      "reports": "报告"
+      "reports": "报告",
+      "mindMap": "思维导图"
+    },
+    "mindMapViewer": {
+      "zoomIn": "放大",
+      "zoomOut": "缩小",
+      "resetView": "重置视图"
     },
     "artifactList": {
       "emptyTitle": "输出将保存在此处。",
@@ -119,6 +125,7 @@
       "blogPost": "博客文章",
       "customReport": "自定义报告",
       "chatMessage": "聊天回复",
+      "mindMap": "思维导图",
       "custom": "自定义"
     },
     "reportsModal": {
