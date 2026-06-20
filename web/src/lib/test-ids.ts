@@ -9,4 +9,6 @@ export const TEST_IDS = {
   digestKeywordChip: "digest-keyword-chip",
   debugDrawer: "debug-drawer",
   chatSaveToArtifact: "chat-save-to-artifact",
+  sourceRow: "source-row",
+  sourceRowDeleted: "source-row-deleted",
 } as const;

@@ -28,7 +28,7 @@ interface UseSSEStreamOptions {
 }
 
 interface UseSSEStreamReturn {
-  sendMessage: (text: string) => Promise<void>;
+  sendMessage: (text: string, opts?: { sourceIds?: string[] }) => Promise<void>;
   stopStreaming: () => void;
   retryMessage: (assistantMessageId: string) => void;
   reattach: (messageId: string) => Promise<void>;
@@ -295,9 +295,14 @@ export function useSSEStream({
     }
   }
 
-  async function sendMessage(text: string): Promise<void> {
+  async function sendMessage(text: string, opts?: { sourceIds?: string[] }): Promise<void> {
     if (!text) return;
     if (isStreamingRef.current) return;
+    // One-shot override for callers that pipe a non-current selection
+    // (e.g. the mindmap node click → chat path auto-scopes to the
+    // artifact's persistent source_ids without mutating the page-level
+    // selection).
+    const sourceIds = opts?.sourceIds ?? selectedSourceIds;
 
     const userMsgId = `user-${Date.now()}`;
     const assistantMsgId = `assistant-${Date.now()}`;
@@ -345,7 +350,7 @@ export function useSSEStream({
         },
         body: JSON.stringify({
           message: text,
-          source_ids: selectedSourceIds,
+          source_ids: sourceIds,
         }),
         signal: controller.signal,
       });

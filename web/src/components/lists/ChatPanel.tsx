@@ -35,6 +35,7 @@ import {
   getErrorLabel,
   type ContentBlock,
   type OpenSourceOpts,
+  type PendingChatMessage,
 } from "@/lib/chat-utils";
 
 function CitationChip({
@@ -283,8 +284,10 @@ interface ChatPanelProps {
   /** When set, ChatPanel sends this message immediately and calls
    *  `onPendingMessageConsumed` to acknowledge it (whether the send
    *  is dispatched or rejected — e.g. a stream is already in flight).
-   *  Used to pipe a digest keyword click into the chat input. */
-  pendingMessage?: { text: string; nonce: number } | null;
+   *  Used to pipe a digest keyword click into the chat input. The
+   *  `sourceIds` override lets a caller scope one send to a non-current
+   *  selection (e.g. the mindmap artifact's persistent source_ids). */
+  pendingMessage?: PendingChatMessage | null;
   onPendingMessageConsumed?: () => void;
   /** Fires when the user clicks the pin icon on a finished assistant message. */
   onSaveToArtifact?: (messageId: string) => void;
@@ -417,7 +420,7 @@ export function ChatPanel({
   // loop.
   useEffect(() => {
     if (!pendingMessage) return;
-    if (canSend) void sendMessage(pendingMessage.text);
+    if (canSend) void sendMessage(pendingMessage.text, { sourceIds: pendingMessage.sourceIds });
     onPendingMessageConsumed?.();
   }, [pendingMessage, canSend]);
 

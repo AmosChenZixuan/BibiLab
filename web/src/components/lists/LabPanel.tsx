@@ -3,7 +3,8 @@ import { ArrowLeftToLine, ArrowRightToLine, Minimize2 } from "lucide-react";
 
 import { useLanguage } from "@/app/LanguageContext";
 import { COLLAPSED_PANEL, MIN_PANEL } from "@/components/lists/panel-resize";
-import type { Artifact } from "@/lib/types";
+import type { Artifact, Source } from "@/lib/types";
+import type { MindMapAskInChat, OpenSourceOpts } from "@/lib/chat-utils";
 
 import { ArtifactList } from "./lab/ArtifactList";
 import { ArtifactViewer } from "./lab/ArtifactViewer";
@@ -17,11 +18,14 @@ interface LabPanelProps {
   labW: number;
   selectedSourceIds: string[];
   artifacts: Artifact[];
+  sources?: Source[];
   onArtifactsChange: (updater: (prev: Artifact[]) => Artifact[]) => void;
   onToggleCollapse: () => void;
+  onAskInChatFromMindmap?: MindMapAskInChat;
+  onOpenSource?: (source: Source, opts?: OpenSourceOpts) => void;
 }
 
-export function LabPanel({ listId, labCollapsed, labW, selectedSourceIds, artifacts, onArtifactsChange, onToggleCollapse }: LabPanelProps) {
+export function LabPanel({ listId, labCollapsed, labW, selectedSourceIds, artifacts, sources, onArtifactsChange, onToggleCollapse, onAskInChatFromMindmap, onOpenSource }: LabPanelProps) {
   const { t } = useLanguage();
   const panelBase = "flex h-full shrink-0 flex-col overflow-hidden";
 
@@ -90,7 +94,14 @@ export function LabPanel({ listId, labCollapsed, labW, selectedSourceIds, artifa
               </div>
             </div>
           ) : (
-            selectedArtifact && <ArtifactViewer artifact={selectedArtifact} />
+            selectedArtifact && (
+              <ArtifactViewer
+                artifact={selectedArtifact}
+                sources={sources}
+                onAskInChatFromMindmap={onAskInChatFromMindmap}
+                onOpenSource={onOpenSource}
+              />
+            )
           )}
         </div>
       )}
