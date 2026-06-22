@@ -8,7 +8,18 @@ interface MindNode {
   children?: MindNode[];
 }
 
+// Inner callback the TreeNode fires when a card is clicked. The
+// page-level handler (MindMapAskInChat, in lib/chat-utils) is the
+// wrapper that adds the artifact's source_ids; this file only knows
+// about the topic + parent-topic pair.
+type MindMapAskHandler = (topic: string, parentTopic: string | null) => void;
+
 const MIND_JSON_RE = /^```json\s*\n([\s\S]*?)\n```\s*$/m;
+
+// Shared cursor + focus ring for clickable node cards. Per-tier hover
+// color is appended inline since each tier has a different base bg.
+const INTERACTIVE_SUFFIX =
+  "cursor-pointer transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue focus-visible:outline-offset-2";
 
 const CONTROL_BTN =
   "flex h-9 w-9 items-center justify-center rounded-full text-muted transition hover:bg-border hover:text-ink";
@@ -25,7 +36,7 @@ function parseMindTree(content: string): MindNode | null {
   return null;
 }
 
-export const MindMapBlock: React.FC<{ content: string }> = ({ content }) => {
+export const MindMapBlock: React.FC<{ content: string; onAskInChat?: MindMapAskHandler }> = ({ content, onAskInChat }) => {
   const { t } = useLanguage();
   const tree = useMemo(() => parseMindTree(content), [content]);
   // Default: only the root's direct children are expanded; everything
@@ -219,8 +230,10 @@ export const MindMapBlock: React.FC<{ content: string }> = ({ content }) => {
               node={tree}
               path="0"
               depth={0}
+              parentLabel={null}
               isCollapsed={(p) => collapsed.has(p)}
               onToggle={toggle}
+              onAskInChat={onAskInChat}
               nodeRefs={nodeRefs}
             />
           </div>
@@ -252,53 +265,80 @@ export const MindMapBlock: React.FC<{ content: string }> = ({ content }) => {
 
 // Horizontal mind-map node (NotebookLM-style): root on the left, branches
 // stacking vertically to its right, each branch's own children further
-// to the right. The node card is a click-target (placeholder for future
-// use). Expand/collapse is a SEPARATE round button — the card itself
-// never toggles. Connector curves are drawn in an SVG overlay.
+// to the right. The node card is a click-target — when `onAskInChat` is
+// wired, clicking fires `discuss {label}, in the larger context of {parent}`
+// into the chat (root passes parent=null → "Discuss {label}"). Expand/collapse
+// is a SEPARATE round button — the card itself never toggles. Connector
+// curves are drawn in an SVG overlay.
 const TreeNode: React.FC<{
   node: MindNode;
   path: string;
   depth: number;
+  parentLabel: string | null;
   isCollapsed: (path: string) => boolean;
   onToggle: (path: string) => void;
+  onAskInChat?: MindMapAskHandler;
   nodeRefs: React.MutableRefObject<Map<string, HTMLElement>>;
-}> = ({ node, path, depth, isCollapsed, onToggle, nodeRefs }) => {
+}> = ({ node, path, depth, parentLabel, isCollapsed, onToggle, onAskInChat, nodeRefs }) => {
   const children = node.children ?? [];
   const hasChildren = children.length > 0;
   const collapsed = isCollapsed(path);
   const isRoot = depth === 0;
   const isLeaf = depth >= 2;
+  const clickable = !!onAskInChat;
   // Three visual tiers: root, internal (depth=1), leaf. The class names
   // are inline (not in a Record lookup) because the taxonomy is purely
   // a visual interpolation keyed by depth, not a semantic role.
   // `shrink-0` + `whitespace-nowrap` keep CJK labels on a single line —
   // without them, flexbox shrinks cards down to one character wide
   // because CJK breaks at every character boundary.
+  // Hover state only applies when the card is clickable; non-clickable
+  // cards stay visually flat.
+  const interactiveSuffix = clickable
+    ? isRoot
+      ? `${INTERACTIVE_SUFFIX} hover:bg-blue/20`
+      : isLeaf
+        ? `${INTERACTIVE_SUFFIX} hover:bg-sky/20`
+        : `${INTERACTIVE_SUFFIX} hover:brightness-95`
+    : "";
   const cardClass = isRoot
-    ? "shrink-0 rounded-2xl border-2 border-blue/30 bg-blue/10 px-5 py-3 whitespace-nowrap shadow-sm"
+    ? `shrink-0 rounded-2xl border-2 border-blue/30 bg-blue/10 px-5 py-3 whitespace-nowrap shadow-sm ${interactiveSuffix}`
     : isLeaf
-      ? "shrink-0 rounded-lg border border-border bg-sky/8 px-3 py-1.5 text-sm whitespace-nowrap shadow-sm"
-      : "shrink-0 rounded-xl border border-border bg-white px-4 py-2 text-sm whitespace-nowrap shadow-sm";
+      ? `shrink-0 rounded-lg border border-border bg-sky/8 px-3 py-1.5 text-sm whitespace-nowrap shadow-sm ${interactiveSuffix}`
+      : `shrink-0 rounded-xl border border-border bg-white px-4 py-2 text-sm whitespace-nowrap shadow-sm ${interactiveSuffix}`;
   const labelClass = isRoot
     ? "text-base font-semibold whitespace-nowrap text-blue"
     : isLeaf
       ? "text-sm whitespace-nowrap text-ink"
       : "text-sm font-medium whitespace-nowrap text-ink";
 
+  // The card is a <button> only when it has an action; otherwise it stays
+  // a <div> so screen readers don't announce a non-action.
+  const cardProps = {
+    ref: (el: HTMLElement | null) => {
+      if (el) nodeRefs.current.set(path, el);
+      else nodeRefs.current.delete(path);
+    },
+    "data-tree-node": path,
+    className: `${cardClass} select-none`,
+    title: node.label,
+  };
+
   return (
     <div className="flex flex-row items-center">
-      {/* Node card — inert today (no click handler). Kept as a <div>, not
-          a button, to avoid announcing a non-action to screen readers. */}
-      <div
-        ref={(el) => {
-          if (el) nodeRefs.current.set(path, el);
-          else nodeRefs.current.delete(path);
-        }}
-        data-tree-node={path}
-        className={`${cardClass} select-none`}
-      >
-        <span className={labelClass}>{node.label}</span>
-      </div>
+      {clickable ? (
+        <button
+          type="button"
+          {...cardProps}
+          onClick={() => onAskInChat?.(node.label, parentLabel)}
+        >
+          <span className={labelClass}>{node.label}</span>
+        </button>
+      ) : (
+        <div {...cardProps}>
+          <span className={labelClass}>{node.label}</span>
+        </div>
+      )}
 
       {/* Separate expand/collapse button — a round button at the joint
           of the connector curve. Hidden for leaves. */}
@@ -331,8 +371,10 @@ const TreeNode: React.FC<{
               node={child}
               path={`${path}.${i}`}
               depth={depth + 1}
+              parentLabel={node.label}
               isCollapsed={isCollapsed}
               onToggle={onToggle}
+              onAskInChat={onAskInChat}
               nodeRefs={nodeRefs}
             />
           ))}

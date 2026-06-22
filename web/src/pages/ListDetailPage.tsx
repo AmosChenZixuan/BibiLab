@@ -11,7 +11,7 @@ import { LabPanel } from "@/components/lists/LabPanel";
 import { ChatPanel } from "@/components/lists/ChatPanel";
 import { SourcesViewerMode } from "@/components/lists/sources/SourcesViewerMode";
 import { SourcesListMode } from "@/components/lists/sources/SourcesListMode";
-import type { OpenSourceOpts } from "@/lib/chat-utils";
+import type { OpenSourceOpts, PendingChatMessage } from "@/lib/chat-utils";
 
 export function ListDetailPage() {
   const { t } = useLanguage();
@@ -29,14 +29,12 @@ export function ListDetailPage() {
     { sectionId?: string; timestampStart?: number } | null
   >(null);
   // Carries a keyword-driven message from the digest chip click in
-  // SourcesViewerMode to the always-mounted ChatPanel. The `nonce` makes
-  // every click fire a fresh effect even when the user clicks the same
-  // keyword twice in a row. ChatPanel always acknowledges (via
+  // SourcesViewerMode (or a mindmap node click in the Lab) to the
+  // always-mounted ChatPanel. ChatPanel always acknowledges (via
   // `onPendingMessageConsumed`) so the prop is cleared whether the
-  // message is dispatched or rejected by chat.
-  const [pendingChatMessage, setPendingChatMessage] = useState<
-    { text: string; nonce: number } | null
-  >(null);
+  // message is dispatched or rejected. See `PendingChatMessage` in
+  // lib/chat-utils for the full shape + rationale.
+  const [pendingChatMessage, setPendingChatMessage] = useState<PendingChatMessage | null>(null);
   const tRef = useRef(t);
   tRef.current = t;
 
@@ -127,6 +125,24 @@ export function ListDetailPage() {
   // not gate on chat state — chat owns the decision.
   function handleDiscussKeyword(message: string) {
     setPendingChatMessage({ text: message, nonce: Date.now() });
+  }
+
+  // Buffer a chat message from a mindmap node click. The topic label
+  // and (optional) parent label are composed into a localized
+  // "Discuss X" / "Discuss X, in the larger context of Y" string here
+  // so the mindmap component only emits structured data. The chat
+  // scope is locked to the artifact's persistent source_ids so the
+  // generated mindmap stays coherent with the question.
+  function handleAskInChatFromMindmap(
+    topic: string,
+    parentTopic: string | null,
+    sourceIds: string[],
+  ) {
+    const text =
+      parentTopic == null
+        ? t("lab.mindMap.discuss", { topic })
+        : t("lab.mindMap.discussInContext", { topic, context: parentTopic });
+    setPendingChatMessage({ text, nonce: Date.now(), sourceIds });
   }
 
   async function handleSaveToArtifact(messageId: string) {
@@ -260,8 +276,11 @@ export function ListDetailPage() {
             labW={labW}
             selectedSourceIds={selectedSourceIds}
             artifacts={artifacts}
+            sources={sources}
             onArtifactsChange={setArtifacts}
             onToggleCollapse={() => setLabCollapsed((v) => !v)}
+            onAskInChatFromMindmap={handleAskInChatFromMindmap}
+            onOpenSource={handleOpenSource}
           />
         </div>
       </div>

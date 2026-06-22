@@ -101,6 +101,10 @@
       "zoomOut": "Zoom out",
       "resetView": "Reset view"
     },
+    "mindMap": {
+      "discuss": "Discuss %{topic}",
+      "discussInContext": "Discuss %{topic}, in the larger context of %{context}"
+    },
     "artifactList": {
       "emptyTitle": "Output will be saved here.",
       "emptyDesc": "Generate your first report after adding sources."
@@ -108,7 +112,11 @@
     "artifactViewer": {
       "basedOnSingular": "based on %{count} source",
       "basedOnPlural": "based on %{count} sources",
-      "loading": "Loading..."
+      "loading": "Loading...",
+      "viewSources": "View %{count} sources",
+      "sources": "Sources",
+      "deletedSource": "Deleted source",
+      "close": "Close"
     },
     "artifactCard": {
       "open": "Open",

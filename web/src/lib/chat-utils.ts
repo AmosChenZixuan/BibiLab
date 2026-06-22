@@ -19,6 +19,32 @@ export type OpenSourceOpts = {
   timestampStart?: number;
 };
 
+/** Buffered message piped from a non-chat UI trigger (digest keyword,
+ *  mindmap node click) into the always-mounted ChatPanel. ChatPanel
+ *  drains via its `pendingMessage` prop effect and always acks
+ *  (`onPendingMessageConsumed`) so the prop is cleared whether the send
+ *  is dispatched or rejected. The `nonce` is an effect re-fire trigger:
+ *  identical clicks (same text) need a fresh nonce to re-run the
+ *  drain effect. `sourceIds` is an optional one-shot override so a
+ *  caller can scope a single send to a non-current selection without
+ *  mutating the page-level selection state. */
+export type PendingChatMessage = {
+  text: string;
+  nonce: number;
+  sourceIds?: string[];
+};
+
+/** Page-level handler fired when a mindmap node is clicked. `sourceIds`
+ *  is the artifact's persistent `source_ids` (MindMapBlock has no
+ *  knowledge of sources; ArtifactViewer injects them). The page turns
+ *  the structured data into a localized message and queues it via
+ *  `PendingChatMessage`. */
+export type MindMapAskInChat = (
+  topic: string,
+  parentTopic: string | null,
+  sourceIds: string[],
+) => void;
+
 // NB: `section_id` on SectionCoverage / RetrievalChunk below is the integer
 // sections.id serialized by the backend — declared string here to mirror the
 // payload, but it arrives as a number at runtime. These fields are display-only
