@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
-from bibilab.config import BibilabConfig, models_dir
+from bibilab.config import BibilabConfig, bibilab_home, models_dir
 
 logger = logging.getLogger(__name__)
 
@@ -173,9 +173,11 @@ def _download_modelscope(spec: ModelSpec, target: Path) -> None:
     shutil.rmtree(tmp, ignore_errors=True)
     from modelscope.hub.snapshot_download import snapshot_download  # noqa: PLC0415
 
+    # cache_dir keeps ModelScope's lock/metadata cache inside ~/.bibilab (default: ~/.cache/modelscope/hub).
+    ms_cache = str(bibilab_home() / "models" / ".ms_cache")
     logger.info("Downloading model from ModelScope: %s", spec.modelscope_id)
     try:
-        snapshot_download(spec.modelscope_id, local_dir=str(tmp))
+        snapshot_download(spec.modelscope_id, local_dir=str(tmp), cache_dir=ms_cache)
     except Exception:
         logger.exception("ModelScope download failed for %s", spec.modelscope_id)
         shutil.rmtree(tmp, ignore_errors=True)
