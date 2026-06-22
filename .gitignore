@@ -11,6 +11,7 @@ dist/
 
 # Node
 node_modules/
+package-lock.json
 *.tsbuildinfo
 plugin/main.js
 plugin/main.js.map
