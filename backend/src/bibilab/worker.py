@@ -868,7 +868,7 @@ class WorkerLoop:
 
         # Stage 2: Audio extraction
         try:
-            wav_path = await self._stage_extract_audio(job_id, video_path)
+            wav_path = await self._stage_extract_audio(job_id, video_path, video_meta.duration_seconds)
         except Exception as exc:
             raise PipelineError(f"[transcribing] {exc}") from exc
         if wav_path is None:
@@ -946,11 +946,12 @@ class WorkerLoop:
         self,
         job_id: str,
         video_path: Path,
+        expected_duration: float = 0.0,
     ) -> Path | None:
         """Stage 2: Extract audio from downloaded video."""
         await update_job_status(job_id, JobStatus.TRANSCRIBING.value, progress=25)
         try:
-            wav_path = await asyncio.to_thread(extract_audio, video_path)
+            wav_path = await asyncio.to_thread(extract_audio, video_path, expected_duration)
         except Exception:
             # video_path exists but audio extraction failed - video will be cleaned up
             # by cancel_or_delete_job using the full job dict from DB

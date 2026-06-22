@@ -73,7 +73,7 @@ async def test_extract_audio_cancellation_stops_pipeline(setup_pipeline_test: Pa
 
     worker = WorkerLoop(concurrency=1, adapter=mock_adapter, home=setup_pipeline_test)
 
-    def mock_extract_audio(path):
+    def mock_extract_audio(path, expected_duration=0.0):
         stages_called.append("extract_audio")
         return tmp_wav
 

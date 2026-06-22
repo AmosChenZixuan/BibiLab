@@ -1,5 +1,6 @@
 """Unit tests for pipeline modules (mocked I/O and LLM)."""
 
+import logging
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -52,6 +53,93 @@ def test_extract_audio_ffmpeg_error(tmp_path: Path):
 
         with pytest.raises(PipelineError, match="FFmpeg"):
             extract_audio(video)
+
+
+def _probe_by_suffix(durations: dict[str, float]):
+    """side_effect for ffmpeg.probe: pick a duration by the path's suffix."""
+
+    def _probe(path: str):
+        for suffix, dur in durations.items():
+            if str(path).endswith(suffix):
+                return {"format": {"duration": str(dur)}}
+        raise AssertionError(f"unexpected probe path {path}")
+
+    return _probe
+
+
+def _mock_extract(mock_ffmpeg, wav: Path, durations: dict[str, float]) -> None:
+    """Wire the ffmpeg mock to "succeed" and report the given probe durations."""
+    import ffmpeg
+
+    mock_chain = MagicMock()
+    mock_ffmpeg.input.return_value = mock_chain
+    mock_chain.output.return_value = mock_chain
+    mock_chain.overwrite_output.return_value = mock_chain
+    mock_chain.run.return_value = (b"", b"")
+    mock_ffmpeg.Error = ffmpeg.Error
+    mock_ffmpeg.probe.side_effect = _probe_by_suffix(durations)
+    wav.write_bytes(b"wav")
+
+
+def test_extract_audio_raises_on_truncated_faststart(tmp_path: Path):
+    # Reproduces the bug: container reports full 60s (front moov intact), but
+    # ffmpeg decoded only 23.6s — silent truncation. No expected_duration given,
+    # so only the container-vs-decoded check fires.
+    video = tmp_path / "video.m4a"
+    video.write_bytes(b"fake")
+    wav = tmp_path / "video.wav"
+
+    with patch("bibilab.pipeline.audio.ffmpeg") as mock_ffmpeg:
+        _mock_extract(mock_ffmpeg, wav, {".m4a": 60.0, ".wav": 23.6})
+        with pytest.raises(PipelineError, match="audio_truncated"):
+            extract_audio(video)
+
+    assert video.exists()  # source NOT deleted on validation failure
+
+
+def test_extract_audio_raises_below_expected_duration(tmp_path: Path):
+    # Container and decoded agree (30s) but the platform's known duration is 60s —
+    # the file itself is short. Only the expected-vs-decoded check catches this.
+    video = tmp_path / "video.m4a"
+    video.write_bytes(b"fake")
+    wav = tmp_path / "video.wav"
+
+    with patch("bibilab.pipeline.audio.ffmpeg") as mock_ffmpeg:
+        _mock_extract(mock_ffmpeg, wav, {".m4a": 30.0, ".wav": 30.0})
+        with pytest.raises(PipelineError, match="audio_truncated"):
+            extract_audio(video, expected_duration=60.0)
+
+
+def test_extract_audio_warns_when_no_reference_available(tmp_path: Path, caplog):
+    # Both references unknown: the container can't be probed (0.0) and no
+    # expected_duration is given. Nothing can validate the decode, so it must
+    # pass — but the unverified skip is logged, never silent.
+    video = tmp_path / "video.m4a"
+    video.write_bytes(b"fake")
+    wav = tmp_path / "video.wav"
+
+    with patch("bibilab.pipeline.audio.ffmpeg") as mock_ffmpeg:
+        _mock_extract(mock_ffmpeg, wav, {".m4a": 0.0, ".wav": 20.0})
+        with caplog.at_level(logging.WARNING):
+            result = extract_audio(video, expected_duration=0.0)
+
+    assert result == wav
+    assert not video.exists()
+    assert "unverified" in caplog.text
+
+
+def test_extract_audio_healthy_passes_and_deletes_source(tmp_path: Path):
+    # ~0.97 coverage against both signals → passes, source deleted.
+    video = tmp_path / "video.m4a"
+    video.write_bytes(b"fake")
+    wav = tmp_path / "video.wav"
+
+    with patch("bibilab.pipeline.audio.ffmpeg") as mock_ffmpeg:
+        _mock_extract(mock_ffmpeg, wav, {".m4a": 60.0, ".wav": 58.0})
+        result = extract_audio(video, expected_duration=60.0)
+
+    assert result == wav
+    assert not video.exists()
 
 
 # ---------------------------------------------------------------------------
