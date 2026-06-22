@@ -517,3 +517,87 @@ async def test_run_digest_job_llm_failure(tmp_bibilab_home: Path, mock_call_llm)
 
     row = await get_job(job_id)
     assert dict(row)["status"] == "failed"
+
+
+# ---------------------------------------------------------------------------
+# Download stage: .part hygiene + concurrency cap
+# ---------------------------------------------------------------------------
+
+
+def _video_meta(video_id: str):
+    from bibilab.adapters.base import VideoMeta
+
+    return VideoMeta(
+        video_id=video_id,
+        title="t",
+        platform="bilibili",
+        source_url=f"https://www.bilibili.com/video/{video_id}",
+        cover_url="https://example.com/c.jpg",
+        duration_seconds=100,
+        uploader="u",
+    )
+
+
+class TestDownloadHygieneAndCap:
+    @pytest.mark.asyncio
+    async def test_purges_stale_part_before_download(self, tmp_bibilab_home: Path, downloads_dir: Path):
+        """A stale .part from a prior attempt must be gone before the new download
+        runs, so yt-dlp never resumes onto corrupt bytes."""
+        await bootstrap_db()
+        stale = downloads_dir / "BVstale.m4a.part"
+        stale.write_bytes(b"old partial")
+
+        seen = {}
+        final = downloads_dir / "BVstale.m4a"
+
+        def fake_download(video_id: str, source_url: str):
+            seen["stale_existed_at_download"] = stale.exists()
+            final.write_bytes(b"new audio")
+            return final
+
+        adapter = MagicMock()
+        adapter.download = MagicMock(side_effect=fake_download)
+        worker = WorkerLoop(adapter=adapter, home=tmp_bibilab_home)
+
+        with patch("bibilab.worker._download_cover", MagicMock(return_value=True)):
+            result = await worker._stage_download("job-x", _video_meta("BVstale"), "src-1")
+
+        assert seen["stale_existed_at_download"] is False
+        assert result == final
+
+    @pytest.mark.asyncio
+    async def test_download_cap_serializes(self, tmp_bibilab_home: Path, downloads_dir: Path):
+        """max_concurrent_downloads=1 serializes the download stage even when
+        multiple jobs run concurrently."""
+        import asyncio
+        import threading
+        import time
+
+        await bootstrap_db()
+
+        lock = threading.Lock()
+        active = 0
+        peak = 0
+
+        def fake_download(video_id: str, source_url: str):
+            nonlocal active, peak
+            with lock:
+                active += 1
+                peak = max(peak, active)
+            time.sleep(0.05)
+            with lock:
+                active -= 1
+            p = downloads_dir / f"{video_id}.m4a"
+            p.write_bytes(b"a")
+            return p
+
+        adapter = MagicMock()
+        adapter.download = MagicMock(side_effect=fake_download)
+        worker = WorkerLoop(adapter=adapter, home=tmp_bibilab_home, max_concurrent_downloads=1)
+
+        with patch("bibilab.worker._download_cover", MagicMock(return_value=True)):
+            await asyncio.gather(
+                *(worker._stage_download(f"job-{i}", _video_meta(f"BV{i}"), f"src-{i}") for i in range(3))
+            )
+
+        assert peak == 1

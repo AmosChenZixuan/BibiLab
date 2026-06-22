@@ -86,6 +86,11 @@ class BackendConfig(BaseModel):
     # parallelism only — transcription is serialized by a lock regardless, since
     # it is GPU-compute/GIL-bound and gains nothing from concurrency.
     max_concurrent_jobs: int = 4
+    # Max simultaneous video downloads, independent of max_concurrent_jobs.
+    # bilibili throttles per-IP (token bucket), so parallel downloads on one IP
+    # don't raise aggregate throughput and only aggravate mid-stream drops.
+    # Default 1 serializes the download stage; other stages stay concurrent.
+    max_concurrent_downloads: int = 1
     cors_origins: list[str] = [
         "http://localhost",
         "http://localhost:5173",

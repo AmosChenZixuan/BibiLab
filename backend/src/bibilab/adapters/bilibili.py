@@ -39,7 +39,14 @@ _FRAGMENT_CONCURRENCY = 4
 # Per-fragment HTTP retries. yt-dlp's bare opts default to 0 (None → RetryManager
 # short-circuits), so transient CDN timeouts propagate as fatal DownloadError.
 _FRAGMENT_RETRIES = 5
-_HTTP_RETRIES = 3
+# Per-request retries for the contiguous audio download. Each retry resumes from
+# the .part via Range (no re-download, no sleep), so a high budget cheaply rides
+# out bilibili's per-IP throttle dropping long connections mid-stream.
+_HTTP_RETRIES = 10
+# Per-read socket timeout (s). Slow-but-progressing transfers reset it on each
+# read; it only trips on a true stall, turning a silent hang into a retriable
+# error that resumes from the .part instead of wedging the serialized stage.
+_SOCKET_TIMEOUT = 60
 _BILIBILI_NAV_URL = "https://api.bilibili.com/x/web-interface/nav"
 _cookie_file_cache: tuple[str, Path] | None = None
 
@@ -242,6 +249,7 @@ class BilibiliAdapter(PlatformAdapter):
             "concurrent_fragment_downloads": _FRAGMENT_CONCURRENCY,
             "retries": _HTTP_RETRIES,
             "fragment_retries": _FRAGMENT_RETRIES,
+            "socket_timeout": _SOCKET_TIMEOUT,
         }
 
         _, part_num = _split_video_id(video_id)
