@@ -13,7 +13,7 @@ import httpx
 from pydantic import BaseModel
 
 from bibilab.adapters.base import AuthRequiredError, VideoMeta
-from bibilab.cleanup import cleanup_job_artifacts
+from bibilab.cleanup import cleanup_job_artifacts, purge_download_files
 from bibilab.config import BibilabConfig, bibilab_home, load_config
 from bibilab.db import (
     apply_digest_facets,
@@ -545,6 +545,7 @@ class WorkerLoop:
         config: BibilabConfig | None = None,
         adapter: Any = None,
         home: Path | None = None,
+        max_concurrent_downloads: int = 1,
     ) -> None:
         self._config = config
         self._adapter = adapter
@@ -554,6 +555,8 @@ class WorkerLoop:
         self._running = False
         self._cancelled: set[str] = set()
         self._in_flight: set[str] = set()
+        # Serializes the download stage independently of job concurrency.
+        self._download_sem = asyncio.Semaphore(max_concurrent_downloads)
 
     async def start(self) -> None:
         await reset_stuck_jobs()
@@ -914,6 +917,16 @@ class WorkerLoop:
         await update_job_status(job_id, JobStatus.DONE.value, progress=100)
         logger.info("Job %s completed for video %s", job_id, video_id)
 
+    async def _abort_if_cancelled(self, job_id: str) -> bool:
+        """If the job is cancelled, purge its artifacts, delete it, and report
+        True so the caller stops. Safe to call more than once within a stage."""
+        if job_id not in self._cancelled:
+            return False
+        self._cancelled.discard(job_id)
+        await asyncio.to_thread(cleanup_job_artifacts, {"id": job_id})
+        await delete_job(job_id)
+        return True
+
     async def _stage_download(
         self,
         job_id: str,
@@ -922,17 +935,24 @@ class WorkerLoop:
     ) -> Path | None:
         """Stage 1: Download video file and cover image."""
         await update_job_status(job_id, JobStatus.DOWNLOADING.value, progress=10)
-        if job_id in self._cancelled:
-            self._cancelled.discard(job_id)
-            await asyncio.to_thread(cleanup_job_artifacts, {"id": job_id})
-            await delete_job(job_id)
+        if await self._abort_if_cancelled(job_id):
             return None
 
-        video_path: Path = await asyncio.to_thread(
-            self._get_adapter().download,
-            video_meta.video_id,
-            video_meta.source_url,
-        )
+        # .part hygiene: purge any downloads/{id}.* left by a prior failed/corrupt
+        # attempt so this download starts clean and never resumes onto stale bytes.
+        await asyncio.to_thread(purge_download_files, video_meta.video_id)
+
+        # Cap concurrent downloads (default 1): bilibili's per-IP throttle makes
+        # parallel downloads throughput-neutral while aggravating mid-stream drops.
+        async with self._download_sem:
+            # A job cancelled while blocked on the semaphore must not still download.
+            if await self._abort_if_cancelled(job_id):
+                return None
+            video_path: Path = await asyncio.to_thread(
+                self._get_adapter().download,
+                video_meta.video_id,
+                video_meta.source_url,
+            )
 
         # Download cover
         covers_dir = self._bibilab_home / "covers"
@@ -1086,5 +1106,4 @@ class WorkerLoop:
         )
 
         # Cleanup downloads
-        for path in (self._bibilab_home / "downloads").glob(f"{video_id}.*"):
-            path.unlink(missing_ok=True)
+        purge_download_files(video_id)

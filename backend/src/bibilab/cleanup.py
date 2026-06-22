@@ -8,6 +8,16 @@ from bibilab.pipeline.embed import clear_embeddings_for_source, clear_fts_for_so
 logger = logging.getLogger(__name__)
 
 
+def purge_download_files(video_id: str) -> None:
+    """Remove any downloads/{video_id}.* files, including yt-dlp .part residue.
+
+    Used as partial-failure cleanup and as pre-download hygiene, so a new
+    download never resumes onto bytes left by a previous failed/corrupt attempt.
+    """
+    for path in (bibilab_home() / "downloads").glob(f"{video_id}.*"):
+        path.unlink(missing_ok=True)
+
+
 def cleanup_job_artifacts(job: dict[str, Any]) -> None:
     if job.get("type") != "ingest" or job.get("status") == "done":
         return
@@ -19,8 +29,7 @@ def cleanup_job_artifacts(job: dict[str, Any]) -> None:
 
     home = bibilab_home()
 
-    for path in (home / "downloads").glob(f"{video_id}.*"):
-        path.unlink(missing_ok=True)
+    purge_download_files(video_id)
 
     # Clean up cover image and embeddings using source_id from meta.
     # A committed source row means the ingest reached persist (Stage 5) and its

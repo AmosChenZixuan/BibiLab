@@ -102,6 +102,14 @@ def tmp_bibilab_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
         yield tmp_path
 
 
+@pytest.fixture()
+def downloads_dir(tmp_bibilab_home: Path) -> Path:
+    """The ~/.bibilab/downloads directory, created and ready for temp files."""
+    path = tmp_bibilab_home / "downloads"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
 @pytest_asyncio.fixture()
 async def client(tmp_bibilab_home: Path):  # noqa: ARG001
     from bibilab.main import create_app
