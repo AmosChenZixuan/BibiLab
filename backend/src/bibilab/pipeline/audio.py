@@ -8,8 +8,8 @@ import ffmpeg
 logger = logging.getLogger(__name__)
 
 # Minimum fraction of the reference duration the decoded audio must cover.
-# Healthy extractions land ~0.96 (trailing end-silence + rounding); below this
-# the audio is incomplete or corrupt. See issue #546.
+# Healthy extractions land ~0.95+ (trailing end-silence + rounding); below this
+# the audio is incomplete or corrupt.
 _DURATION_FLOOR = 0.9
 
 
@@ -29,24 +29,37 @@ def _probe_duration(path: Path) -> float:
 def _validate_audio_duration(decoded: float, container: float, expected: float) -> None:
     """Fail loud when decoded audio is too short against a known reference.
 
-    A damaged faststart m4a makes ffmpeg exit 0 with a short wav (the front
-    ``moov`` keeps the container parseable), so length must be checked
-    explicitly. Two independent references, either of which fires:
+    A byte-truncated faststart m4a still decodes to a short wav with ffmpeg
+    exiting 0 (the leading ``moov`` keeps the container parseable), so duration
+    must be checked explicitly rather than trusting the exit code. Two
+    independent references, either of which fires:
 
-    - ``container``: the input m4a's own duration — catches ffmpeg silently
+    - ``container``: the input file's own reported duration — catches ffmpeg
       dropping audio even when the authoritative length is unknown.
-    - ``expected``: the platform-reported ``duration_seconds`` — catches a file
-      that is itself short (its container agrees with the truncated decode).
+    - ``expected``: the platform-reported duration — catches a file that is
+      itself short (its container agrees with the truncated decode).
 
-    Unknown references (``0``) are skipped (see issue #546 zero-duration guard).
+    A reference of ``0`` means "unknown" and is skipped. When *both* are unknown
+    nothing can be validated, so the skip is logged rather than passing silently
+    (a truncated file would otherwise slip through undetected).
     """
+    checked = False
     for label, ref in (("container", container), ("expected", expected)):
-        if ref > 0 and decoded < ref * _DURATION_FLOOR:
+        if ref <= 0:
+            continue
+        checked = True
+        if decoded < ref * _DURATION_FLOOR:
             raise PipelineError(
                 f"audio_truncated: decoded audio {decoded:.1f}s is below "
                 f"{_DURATION_FLOOR:.0%} of {label} duration {ref:.1f}s — "
                 f"incomplete or corrupt download"
             )
+    if not checked:
+        logger.warning(
+            "Audio duration unverified: no container or expected reference "
+            "available (decoded %.1fs) — a truncated file cannot be detected here",
+            decoded,
+        )
 
 
 def extract_audio(video_path: Path, expected_duration: float = 0.0) -> Path:
