@@ -86,11 +86,9 @@ class BackendConfig(BaseModel):
     # parallelism only — transcription is serialized by a lock regardless, since
     # it is GPU-compute/GIL-bound and gains nothing from concurrency.
     max_concurrent_jobs: int = 4
-    # Max simultaneous video downloads, independent of max_concurrent_jobs.
-    # bilibili's CDN throttles per-CONNECTION (~1 MB/s each), not per-IP, so
-    # parallel downloads scale aggregate throughput.
-    max_concurrent_downloads: int = Field(default=2, ge=1, le=8)
-    # Per-file segment count for the pypdl multi-segment path. Measured: 4
+    # Per-file connection count for the pypdl multi-segment download. bilibili
+    # throttles per-CONNECTION, so segments are the download throughput lever;
+    # download concurrency itself rides max_concurrent_jobs. Measured: 4
     # connections already saturate the per-IP throughput ceiling (~20 MB/s),
     # so higher values add no speed and only risk a per-IP connection 403.
     download_segments: int = Field(default=4, ge=1, le=8)

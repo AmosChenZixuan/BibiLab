@@ -101,7 +101,6 @@ def make_lifespan(*, start_worker: bool) -> Callable[[], AsyncGenerator[None, No
             cfg = load_config()
             worker = WorkerLoop(
                 concurrency=cfg.backend.max_concurrent_jobs,
-                max_concurrent_downloads=cfg.backend.max_concurrent_downloads,
             )
             await worker.start()
         app.state.worker = worker

@@ -753,11 +753,6 @@ class TestDownloadConfigDefaults:
     """Pydantic Field(ge, le) pins the values; these tests guard against
     accidental regression of the defaults and per-field bounds."""
 
-    def test_max_concurrent_downloads_default_is_two(self):
-        from bibilab.config import BackendConfig
-
-        assert BackendConfig().max_concurrent_downloads == 2
-
     def test_download_segments_default_is_four(self):
         from bibilab.config import BackendConfig
 
@@ -771,16 +766,6 @@ class TestDownloadConfigDefaults:
 
         with pytest.raises(ValidationError):
             BackendConfig(download_segments=9)
-
-    def test_high_connection_product_loads_without_crash(self):
-        """No cross-product validator: field-valid values must not fail config
-        load. A boot-time ValidationError here would wedge the whole worker for
-        a config the user can only fix by editing the same file that won't load."""
-        from bibilab.config import BackendConfig
-
-        cfg = BackendConfig(max_concurrent_downloads=8, download_segments=8)  # 64
-        assert cfg.max_concurrent_downloads == 8
-        assert cfg.download_segments == 8
 
 
 class TestDownloadAuthMapping:
