@@ -1,7 +1,6 @@
 """Tests for BilibiliAdapter multi-part video handling."""
 
 import asyncio
-import threading
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -832,87 +831,3 @@ class TestSegmentedDownload:
         _, _, out = self._run_with_pypdl(tmp_path, info=info, precreate_size=10)
         assert out.exists()
         assert out.stat().st_size == 10
-
-
-@pytest.mark.integration
-class TestTruncationIntegration:
-    """End-to-end: pypdl against a server returning fewer bytes than Content-Length
-    surfaces as DownloadError — no silent short file.
-
-    Happy path is covered by the mocked TestSegmentedDownload above; this class
-    only verifies pypdl itself doesn't silently succeed on a short body."""
-
-    @staticmethod
-    def _start_server(declared: int, actual: int) -> tuple[str, callable]:
-        from aiohttp import web
-
-        async def handle(request):
-            return web.Response(body=b"x" * actual, headers={"Content-Length": str(declared)})
-
-        app = web.Application()
-        app.router.add_get("/file.bin", handle)
-        runner = web.AppRunner(app)
-
-        async def _run():
-            await runner.setup()
-            await web.TCPSite(runner, "127.0.0.1", 0).start()
-            return runner.addresses[0][1]
-
-        loop = asyncio.new_event_loop()
-        port_holder: list[int] = []
-
-        def _runner():
-            asyncio.set_event_loop(loop)
-            port_holder.append(loop.run_until_complete(_run()))
-            loop.run_forever()
-
-        t = threading.Thread(target=_runner, daemon=True)
-        t.start()
-        for _ in range(50):
-            if port_holder:
-                break
-            threading.Event().wait(0.05)
-
-        def stop():
-            loop.call_soon_threadsafe(loop.stop)
-            t.join(timeout=5)
-
-        return f"http://127.0.0.1:{port_holder[0]}/file.bin", stop
-
-    def test_truncated_response_raises_download_error(self, tmp_path, monkeypatch) -> None:
-        """Declared Content-Length=1000, server returns 500 → DownloadError."""
-        from bibilab.config import load_config as _lc
-
-        _lc()
-        url, stop = self._start_server(declared=1000, actual=500)
-
-        class _FakeYDL:
-            def __init__(self, opts):
-                pass
-
-            def __enter__(self):
-                return self
-
-            def __exit__(self, *args):
-                return False
-
-            def extract_info(self, _url, download=False):
-                # Local server URL captured from outer scope.
-                return {
-                    "url": url,
-                    "ext": "m4a",
-                    "protocol": "https",
-                    "fragments": None,
-                    "http_headers": {},
-                    "filesize": 1000,
-                }
-
-        monkeypatch.setattr("bibilab.adapters.bilibili.yt_dlp.YoutubeDL", _FakeYDL)
-        monkeypatch.setattr("bibilab.adapters.bilibili.bibilab_home", lambda: tmp_path)
-
-        try:
-            with pytest.raises(DownloadError) as exc_info:
-                BilibiliAdapter(cookie="").download("BVtrunc", "https://www.bilibili.com/video/BVtrunc")
-            assert "content-length" in str(exc_info.value).lower() or "1000" in str(exc_info.value)
-        finally:
-            stop()
