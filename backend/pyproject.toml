@@ -29,6 +29,7 @@ dependencies = [
     "tokenizers>=0.22.0",
     "yt-dlp>=2026.3.17",
     "pypinyin>=0.55.0",
+    "pypdl>=1.5.0",
 ]
 
 
