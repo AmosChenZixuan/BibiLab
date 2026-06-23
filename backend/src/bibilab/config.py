@@ -5,7 +5,7 @@ import threading
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 logger = logging.getLogger(__name__)
 
@@ -88,17 +88,36 @@ class BackendConfig(BaseModel):
     max_concurrent_jobs: int = 4
     # Max simultaneous video downloads, independent of max_concurrent_jobs.
     # bilibili's CDN throttles per-CONNECTION (~1 MB/s each), not per-IP, so
-    # parallel downloads scale near-linearly to the connection knee.
-    # Total connection budget = max_concurrent_downloads × download_segments.
-    max_concurrent_downloads: int = 2
-    # Segments per file in the pypdl multi-segment path. Default 4.
-    download_segments: int = 4
+    # parallel downloads scale aggregate throughput. Total connection budget
+    # = max_concurrent_downloads × download_segments; the model_validator
+    # below caps the product at 16 so a single misconfigured job can't
+    # exhaust bilibili's per-IP connection quota.
+    max_concurrent_downloads: int = Field(default=2, ge=1, le=8)
+    # Per-file segment count for the pypdl multi-segment path. 4 is the
+    # empirically tuned point: raising it rarely helps on a per-connection-
+    # throttled CDN; lowering it trades throughput for fewer concurrent
+    # connections per job (see the cap×segments budget above).
+    download_segments: int = Field(default=4, ge=1, le=16)
     cors_origins: list[str] = [
         "http://localhost",
         "http://localhost:5173",
         "http://127.0.0.1",
         "http://127.0.0.1:5173",
     ]
+
+    @model_validator(mode="after")
+    def _connection_budget_within_cap(self) -> "BackendConfig":
+        # 16 = the connection-count ceiling bilibili enforces per IP. Above
+        # this, the next request gets rate-limited or 403'd, and a single
+        # misconfigured job can poison the whole worker's throughput.
+        if self.max_concurrent_downloads * self.download_segments > 16:
+            raise ValueError(
+                f"max_concurrent_downloads ({self.max_concurrent_downloads}) × "
+                f"download_segments ({self.download_segments}) = "
+                f"{self.max_concurrent_downloads * self.download_segments} "
+                f"exceeds bilibili's per-IP connection cap (16)."
+            )
+        return self
 
 
 class RagConfig(BaseModel):

@@ -1,6 +1,5 @@
 """Tests for BilibiliAdapter multi-part video handling."""
 
-import asyncio
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -662,10 +661,28 @@ class TestDownloadPathSelection:
     """
 
     @staticmethod
-    def _make_ydl_factory(info_for_resolve: dict):
+    def _make_ydl_factory(
+        info_for_resolve: dict,
+        *,
+        native: dict | Exception | None = None,
+        captured: list | None = None,
+    ):
+        """Build a fake YoutubeDL class.
+
+        - `extract_info(download=False)` returns `info_for_resolve`.
+        - `extract_info(download=True)` returns `native` (defaults to
+          ``{"ext": "m4a"}`` for a successful native call) OR raises
+          `native` if it's an Exception — covers the native-fallback error
+          path that goes through `_map_ytdlp_error`.
+        - If `captured` is provided, every constructed instance appends
+          its opts to the list so tests can assert on the native-path
+          retry budget.
+        """
+
         class _FakeYDL:
             def __init__(self, opts):
-                pass
+                if captured is not None:
+                    captured.append(opts)
 
             def __enter__(self):
                 return self
@@ -673,8 +690,12 @@ class TestDownloadPathSelection:
             def __exit__(self, *args):
                 return False
 
-            def extract_info(self, url, download=False):
-                return info_for_resolve if not download else {"ext": "m4a"}
+            def extract_info(self, _url, download=False):
+                if not download:
+                    return info_for_resolve
+                if isinstance(native, Exception):
+                    raise native
+                return native if native is not None else {"ext": "m4a"}
 
         return _FakeYDL
 
@@ -684,15 +705,88 @@ class TestDownloadPathSelection:
             {"protocol": "mhtml_dash", "fragments": [{"path": "seg0"}], "ext": "m4a"},
             {"protocol": "rtmp", "fragments": None, "ext": "m4a"},
         ],
-        ids=["mhtml_dash_with_fragments", "rtmp_unknown_protocol"],
+        ids=["mhtml_dash_with_fragments", "non_https_protocol_no_fragments"],
     )
     def test_non_https_or_fragmented_skips_pypdl(self, tmp_path, info: dict) -> None:
+        from bibilab.adapters.bilibili import _FRAGMENT_RETRIES, _HTTP_RETRIES, _SOCKET_TIMEOUT
+
+        captured: list = []
+        factory = self._make_ydl_factory(info, captured=captured)
         adapter = BilibiliAdapter(cookie="c")
-        with patch("bibilab.adapters.bilibili.yt_dlp.YoutubeDL", self._make_ydl_factory(info)):
+        with patch("bibilab.adapters.bilibili.yt_dlp.YoutubeDL", factory):
             with patch("bibilab.adapters.bilibili.Pypdl") as mock_pypdl:
                 with patch("bibilab.adapters.bilibili.bibilab_home", return_value=tmp_path):
                     adapter.download("BVfallback", "https://www.bilibili.com/video/BVfallback")
         mock_pypdl.assert_not_called()
+        # Native path must carry the retry budget so a transient CDN drop
+        # is retried instead of raised — without these opts, yt-dlp's
+        # RetryManager short-circuits on 0 and the first timeout is fatal.
+        native_opts = next(o for o in captured if "retries" in o)
+        assert native_opts["retries"] == _HTTP_RETRIES
+        assert native_opts["fragment_retries"] == _FRAGMENT_RETRIES
+        assert native_opts["socket_timeout"] == _SOCKET_TIMEOUT
+
+    def test_missing_direct_url_falls_back_to_native(self, tmp_path) -> None:
+        """When yt-dlp resolves to https but returns no direct URL in info
+        (unknown format, manifest-only response), the native yt-dlp path
+        runs and Pypdl is not invoked — covers the second fallback branch
+        in download()."""
+        adapter = BilibiliAdapter(cookie="c")
+        info = {"protocol": "https", "fragments": None, "ext": "m4a"}  # no "url" key
+        factory = self._make_ydl_factory(info)
+        with patch("bibilab.adapters.bilibili.yt_dlp.YoutubeDL", factory):
+            with patch("bibilab.adapters.bilibili.Pypdl") as mock_pypdl:
+                with patch("bibilab.adapters.bilibili.bibilab_home", return_value=tmp_path):
+                    adapter.download("BVnourl", "https://www.bilibili.com/video/BVnourl")
+        mock_pypdl.assert_not_called()
+
+    def test_native_fallback_maps_auth_error(self, tmp_path) -> None:
+        """A 403 raised by yt-dlp on the native-fallback path must surface
+        as AuthRequiredError via _map_ytdlp_error — same contract as the
+        resolve path, and a second call site of the new helper."""
+        import yt_dlp
+
+        info = {"protocol": "mhtml_dash", "fragments": [{"path": "seg0"}], "ext": "m4a"}
+        auth_err = yt_dlp.utils.DownloadError("ERROR: [Bilibili] 403 Forbidden")
+        factory = self._make_ydl_factory(info, native=auth_err)
+        adapter = BilibiliAdapter(cookie="")
+        with patch("bibilab.adapters.bilibili.yt_dlp.YoutubeDL", factory):
+            with patch("bibilab.adapters.bilibili.bibilab_home", return_value=tmp_path):
+                with pytest.raises(AuthRequiredError) as exc_info:
+                    adapter.download("BVauth_native", "https://www.bilibili.com/video/BVauth_native")
+        assert exc_info.value.resource_type == "video"
+
+
+class TestDownloadConfigDefaults:
+    """The two load-bearing config defaults — defended in the issue with
+    live measurements. Pydantic Field(ge, le) pins the values; these tests
+    guard against accidental regression."""
+
+    def test_max_concurrent_downloads_default_is_two(self):
+        from bibilab.config import BackendConfig
+
+        assert BackendConfig().max_concurrent_downloads == 2
+
+    def test_download_segments_default_is_four(self):
+        from bibilab.config import BackendConfig
+
+        assert BackendConfig().download_segments == 4
+
+    def test_connection_budget_validator_rejects_over_cap(self):
+        """cap × segments > 16 must fail-loud at config load — bilibili's
+        per-IP connection cap, exceeded means rate-limited 403s."""
+        from pydantic import ValidationError
+
+        from bibilab.config import BackendConfig
+
+        with pytest.raises(ValidationError):
+            BackendConfig(max_concurrent_downloads=8, download_segments=4)  # 8×4=32
+
+    def test_connection_budget_validator_accepts_at_cap(self):
+        from bibilab.config import BackendConfig
+
+        # 2 × 8 = 16: at the cap, valid.
+        BackendConfig(max_concurrent_downloads=2, download_segments=8)
 
 
 class TestDownloadAuthMapping:
@@ -785,7 +879,9 @@ class TestSegmentedDownload:
         # Pypdl must be constructed with allow_reuse=True (lets us call shutdown
         # explicitly) and our backend logger (so pypdl doesn't write pypdl.log).
         assert mock_cls.call_args.kwargs == {"allow_reuse": True, "logger": bilibili_mod.logger}
-        assert bilibili_mod.logger is logging.getLogger("bibilab.adapters.bilibili")
+        # Compare by logger name (not `is`) so the assertion survives pytest
+        # logging interception / module reimports.
+        assert bilibili_mod.logger.name == logging.getLogger("bibilab.adapters.bilibili").name
         kwargs = pypdl_instance.start.call_args.kwargs
         assert kwargs["multisegment"] is True
         assert kwargs["segments"] == 4
@@ -831,3 +927,13 @@ class TestSegmentedDownload:
         _, _, out = self._run_with_pypdl(tmp_path, info=info, precreate_size=10)
         assert out.exists()
         assert out.stat().st_size == 10
+
+    def test_https_bestaudio_filesize_approx_used_when_filesize_missing(self, tmp_path) -> None:
+        """If yt-dlp reports only an approximate size (no `filesize` key but
+        `filesize_approx` set), the post-download size check still fires —
+        the helper is not silently permissive when the fallback applies."""
+        info = self._https_info()
+        info.pop("filesize", None)
+        info["filesize_approx"] = 1234
+        with pytest.raises(DownloadError):
+            self._run_with_pypdl(tmp_path, info=info, precreate_size=5)

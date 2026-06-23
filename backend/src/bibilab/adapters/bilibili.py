@@ -4,10 +4,12 @@ import asyncio
 import logging
 import re
 from pathlib import Path
+from typing import Literal
 
 import httpx
 import yt_dlp
 from pypdl import Pypdl
+from pypdl.utils import MainThreadException
 
 from bibilab.adapters.base import (
     AuthRequiredError,
@@ -29,7 +31,11 @@ _COURSE_RE = re.compile(r"bilibili\.com/cheese", re.IGNORECASE)
 
 # Strip ANSI escape codes from yt_dlp output
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
-_AUTH_RE = re.compile(r"log\s*in|sign\s*in|403", re.IGNORECASE)
+# Auth-signal matchers on the lowercased yt-dlp error message. Word boundaries
+# keep benign substrings (BVIDs like BV1f4s4120Mn, archived-id "bilibili
+# 4120229_part4") from misclassifying as 412 Precondition Failed.
+_AUTH_RE = re.compile(r"\b(log\s*in|sign\s*in|403)\b", re.IGNORECASE)
+_412_RE = re.compile(r"\b(412|http\s*error\s*412|status\s*code\s*412)\b", re.IGNORECASE)
 # Multi-part page selector in a video '?p=N' url
 _PART_RE = re.compile(r"[?&]p=(\d+)")
 
@@ -51,12 +57,15 @@ _SOCKET_TIMEOUT = 60
 # Retries per segment in the pypdl multi-segment path. pypdl retries the
 # failed segment in-place (no re-download of completed segments), so a small
 # budget cheaply rides out transient CDN drops without leaving short files.
+# Value chosen below _FRAGMENT_RETRIES=5 because pypdl retries one segment
+# at a time (not the whole file) — even budget=1 catches most CDN blips; 3
+# covers the rare 2-3-segment retry storm.
 _PYPDL_RETRIES = 3
 _BILIBILI_NAV_URL = "https://api.bilibili.com/x/web-interface/nav"
 _cookie_file_cache: tuple[str, Path] | None = None
 
 
-def _resource_type(url: str) -> str:
+def _resource_type(url: str) -> Literal["video", "playlist", "course"]:
     if _COURSE_RE.search(url):
         return "course"
     if _PLAYLIST_RE.search(url):
@@ -113,13 +122,13 @@ def _info_to_video_meta(info: dict, platform: str = "bilibili", fallback_uploade
     )
 
 
-def _map_ytdlp_error(exc: yt_dlp.utils.DownloadError, resource: str) -> Exception:
-    """Surface a yt-dlp DownloadError as either AuthRequiredError (login/403/412)
-    or a clean DownloadError with ANSI codes stripped."""
+def _map_ytdlp_error(exc: yt_dlp.utils.DownloadError, resource: Literal["video", "playlist", "course"]) -> Exception:
+    """Surface a yt-dlp DownloadError as either AuthRequiredError (login / 403 /
+    Precondition Failed) or a clean DownloadError with ANSI codes stripped."""
     msg = str(exc).lower()
-    if _AUTH_RE.search(msg) or "412" in msg:
+    if _AUTH_RE.search(msg) or _412_RE.search(msg):
         return AuthRequiredError(resource)
-    return DownloadError(_ANSI_RE.sub("", str(exc)))
+    return DownloadError(_ANSI_RE.sub("", f"yt-dlp download failed: {exc}"))
 
 
 class BilibiliAdapter(PlatformAdapter):
@@ -252,8 +261,9 @@ class BilibiliAdapter(PlatformAdapter):
         downloads_dir.mkdir(parents=True, exist_ok=True)
 
         # Resolve the direct media URL + headers once. yt-dlp's full download
-        # pipeline is single-stream; a direct DASH-audio URL fed to a multi-
-        # segment downloader delivers ~10× throughput on bilibili.
+        # pipeline is single-stream; a direct DASH-audio URL handed to a
+        # multi-segment downloader parallelizes across bilibili's per-connection
+        # throttle, which is the per-job speedup this branch is for.
         resolve_opts = _ydl_opts(self._cookie, quiet=False)
         _, part_num = _split_video_id(video_id)
         if part_num is not None:
@@ -266,37 +276,55 @@ class BilibiliAdapter(PlatformAdapter):
             raise _map_ytdlp_error(exc, "video") from exc
 
         # pypdl needs a contiguous https body (Content-Length, no fragments).
-        # Anything else keeps the existing yt-dlp path so we don't regress.
+        # Anything else falls back to native yt-dlp so we don't regress on
+        # formats pypdl can't segment.
         if info.get("protocol") != "https" or info.get("fragments"):
+            logger.info(
+                "bilibili download using native yt-dlp: protocol=%s fragments=%s",
+                info.get("protocol"),
+                bool(info.get("fragments")),
+            )
             return self._native_download(video_id, source_url, downloads_dir, part_num)
 
         direct_url = info.get("url")
         if not direct_url:
+            # Native path is the no-regression fallback: yt-dlp's resolve can
+            # return a manifest-only info dict for an unknown format, with no
+            # direct media URL. Logged so the fallback rate is observable in
+            # production — a sudden spike would mean yt-dlp's info shape changed.
+            logger.info("bilibili download using native yt-dlp: no direct url in resolve info")
             return self._native_download(video_id, source_url, downloads_dir, part_num)
 
-        output_path = downloads_dir / f"{video_id}.{info.get('ext', 'm4a')}"
-        return self._segmented_download(video_id, direct_url, info, output_path)
+        return self._segmented_download(video_id, direct_url, info, downloads_dir)
 
     def _segmented_download(
         self,
         video_id: str,
         url: str,
         info: dict,
-        output_path: Path,
+        downloads_dir: Path,
     ) -> Path:
         """Hand a resolved direct URL to pypdl for multi-segment download.
 
-        pypdl retries per-segment on transient CDN drops and validates the
-        assembled size against Content-Length, so a partial file never escapes
-        this path silently.
+        Pypdl retries per-segment on transient CDN drops; download() validates
+        the assembled size against the reported filesize after pypdl returns,
+        so a partial file never escapes this path silently.
         """
         cfg = get_config()
+        output_path = downloads_dir / f"{video_id}.{info.get('ext', 'm4a')}"
+
         # Cookie auth must reach pypdl — yt-dlp's http_headers don't include it.
-        headers = {**(info.get("http_headers") or {}), "Referer": "https://www.bilibili.com"}
+        headers = {**info.get("http_headers", {}), "Referer": "https://www.bilibili.com"}
         if self._cookie:
             headers["Cookie"] = self._cookie
 
+        # Bilibili sometimes reports only an approximate size (filesize_approx);
+        # using it makes the post-download size check stricter when both keys
+        # are present, and falls back to pypdl's own Content-Length check when
+        # neither is.
         expected_size = info.get("filesize") or info.get("filesize_approx")
+        if expected_size is None:
+            logger.debug("no filesize reported by yt-dlp; relying on pypdl's own Content-Length check")
 
         # Pass our own logger so pypdl doesn't write to pypdl.log in cwd —
         # output goes through the backend's logging tree (basicConfig in
@@ -313,9 +341,17 @@ class BilibiliAdapter(PlatformAdapter):
                 display=False,
                 headers=headers,
             )
-        except (RuntimeError, TypeError, ValueError) as exc:
-            raise DownloadError(f"segmented download failed: {exc}") from exc
+        # Pypdl surfaces start() parameter errors as RuntimeError/TypeError/ValueError
+        # and transport/state failures (network drop, aiohttp timeout, exhausted
+        # retry budget) as MainThreadException. Do NOT broaden to Exception —
+        # asyncio.CancelledError is a BaseException subclass and must propagate
+        # so the worker's cooperative cancellation still works.
+        except (RuntimeError, TypeError, ValueError, MainThreadException) as exc:
+            raise DownloadError(_ANSI_RE.sub("", f"segmented download failed: {exc}")) from exc
         finally:
+            # Pypdl keeps a background aiohttp session open between calls; we
+            # instantiate per-job (not pooled), so shutdown() prevents that
+            # session from leaking across downloads.
             dl.shutdown()
 
         if expected_size and output_path.exists() and output_path.stat().st_size != expected_size:
