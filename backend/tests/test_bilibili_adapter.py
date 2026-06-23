@@ -751,7 +751,7 @@ class TestDownloadPathSelection:
 
 class TestDownloadConfigDefaults:
     """Pydantic Field(ge, le) pins the values; these tests guard against
-    accidental regression of the defaults and the connection-budget cap."""
+    accidental regression of the defaults and per-field bounds."""
 
     def test_max_concurrent_downloads_default_is_two(self):
         from bibilab.config import BackendConfig
@@ -763,20 +763,24 @@ class TestDownloadConfigDefaults:
 
         assert BackendConfig().download_segments == 4
 
-    def test_connection_budget_validator_rejects_over_cap(self):
-        """cap × segments > 16 fails loud at config load."""
+    def test_download_segments_rejects_above_field_bound(self):
+        """4 connections already saturate throughput; segments are capped at 8."""
         from pydantic import ValidationError
 
         from bibilab.config import BackendConfig
 
         with pytest.raises(ValidationError):
-            BackendConfig(max_concurrent_downloads=8, download_segments=4)  # 8×4=32
+            BackendConfig(download_segments=9)
 
-    def test_connection_budget_validator_accepts_at_cap(self):
+    def test_high_connection_product_loads_without_crash(self):
+        """No cross-product validator: field-valid values must not fail config
+        load. A boot-time ValidationError here would wedge the whole worker for
+        a config the user can only fix by editing the same file that won't load."""
         from bibilab.config import BackendConfig
 
-        # At the cap (2 × 8 = 16), valid.
-        BackendConfig(max_concurrent_downloads=2, download_segments=8)
+        cfg = BackendConfig(max_concurrent_downloads=8, download_segments=8)  # 64
+        assert cfg.max_concurrent_downloads == 8
+        assert cfg.download_segments == 8
 
 
 class TestDownloadAuthMapping:
@@ -820,19 +824,23 @@ class TestDownloadAuthMapping:
 class TestSegmentedDownload:
     """Resolve → segmented pypdl path on direct https bestaudio URLs.
 
-    Mocks pypdl to capture the kwargs it would receive; pre-creates a fake
-    output file so download() can complete its size-check.
+    Mocks pypdl to capture the kwargs it would receive. pypdl.start() returns
+    a list of completed downloads — a non-empty list is success, an empty list
+    means every segment failed. Truncation of a complete file is caught
+    downstream by extract_audio (#546), not here, so there is no byte-count
+    size check to mock.
     """
 
     @staticmethod
-    def _https_info(filesize: int = 1234) -> dict:
+    def _https_info() -> dict:
+        # No filesize key: bilibili DASH typically reports only filesize_approx
+        # (or nothing), which the download path deliberately does not validate.
         return {
             "url": "https://example.com/audio.m4s",
             "ext": "m4a",
             "protocol": "https",
             "fragments": None,
             "http_headers": {"User-Agent": "yt-dlp/test"},
-            "filesize": filesize,
         }
 
     def _run_with_pypdl(
@@ -841,31 +849,41 @@ class TestSegmentedDownload:
         *,
         cookie: str = "",
         info: dict | None = None,
-        precreate_size: int = 1234,
+        start_result=("ok",),
     ):
         """Run download() with mocked yt-dlp + pypdl; return (Pypdl_mock_cls, instance, output_path).
 
-        `precreate_size` lets tests assert the size-mismatch branch by writing
-        fewer bytes than `info["filesize"]` (default 1234)."""
+        `start_result` is what pypdl.start() returns: a non-empty list = success,
+        an empty list = every segment failed."""
         info = info if info is not None else self._https_info()
         (tmp_path / "downloads").mkdir(parents=True, exist_ok=True)
         out = tmp_path / "downloads" / "BVseg.m4a"
-        out.write_bytes(b"x" * precreate_size)
+        out.write_bytes(b"x" * 32)
         pypdl_instance = MagicMock()
+        pypdl_instance.start.return_value = start_result
 
         with patch("bibilab.adapters.bilibili.yt_dlp.YoutubeDL") as mock_ydl:
             mock_ydl.return_value.__enter__.return_value.extract_info.return_value = info
             with patch("bibilab.adapters.bilibili.Pypdl", return_value=pypdl_instance) as mock_cls:
                 with patch("bibilab.adapters.bilibili.bibilab_home", return_value=tmp_path):
                     BilibiliAdapter(cookie=cookie).download("BVseg", "https://www.bilibili.com/video/BVseg")
-        return mock_cls, pypdl_instance, out
+        return mock_cls, pypdl_instance, out, mock_ydl
+
+    def test_resolve_uses_bestaudio_format(self, tmp_path) -> None:
+        """The resolve must request bestaudio/best. Without it yt-dlp returns a
+        merged video+audio info dict with no direct url, and download() falls
+        back to the slow single-stream path — the segmented path never runs."""
+        _, _, _, mock_ydl = self._run_with_pypdl(tmp_path)
+        # First YoutubeDL(...) construction is the resolve; its opts dict is positional arg 0.
+        resolve_opts = mock_ydl.call_args_list[0].args[0]
+        assert resolve_opts["format"] == "bestaudio/best"
 
     def test_https_bestaudio_uses_pypdl_with_segments_and_retries(self, tmp_path) -> None:
         import logging
 
         from bibilab.adapters import bilibili as bilibili_mod
 
-        mock_cls, pypdl_instance, _ = self._run_with_pypdl(tmp_path)
+        mock_cls, pypdl_instance, _, _ = self._run_with_pypdl(tmp_path)
         # Pypdl must be constructed with allow_reuse=True (lets us call shutdown
         # explicitly) and our backend logger (so pypdl doesn't write pypdl.log).
         assert mock_cls.call_args.kwargs == {"allow_reuse": True, "logger": bilibili_mod.logger}
@@ -893,7 +911,7 @@ class TestSegmentedDownload:
     def test_pypdl_headers_include_referer_and_optional_cookie(
         self, tmp_path, cookie: str, expect_cookie: bool
     ) -> None:
-        _, pypdl_instance, _ = self._run_with_pypdl(tmp_path, cookie=cookie)
+        _, pypdl_instance, _, _ = self._run_with_pypdl(tmp_path, cookie=cookie)
         headers = pypdl_instance.start.call_args.kwargs["headers"]
         assert headers["Referer"] == "https://www.bilibili.com"
         if expect_cookie:
@@ -901,29 +919,26 @@ class TestSegmentedDownload:
         else:
             assert "Cookie" not in headers
 
-    def test_https_bestaudio_short_file_raises_download_error(self, tmp_path) -> None:
-        """If on-disk size doesn't match expected, DownloadError is raised and
-        the short file is removed so a retry starts clean."""
+    def test_all_segments_failed_raises_and_removes_file(self, tmp_path) -> None:
+        """pypdl signals total failure by returning an empty list (no raise).
+        download() must surface that as DownloadError and delete the stub so a
+        retry starts clean — otherwise a missing/partial file flows downstream."""
         with pytest.raises(DownloadError) as exc_info:
-            self._run_with_pypdl(tmp_path, precreate_size=5)
-        assert "content-length" in str(exc_info.value).lower()
+            self._run_with_pypdl(tmp_path, start_result=[])
+        assert "no segments completed" in str(exc_info.value).lower()
         assert not (tmp_path / "downloads" / "BVseg.m4a").exists()
 
-    def test_https_bestaudio_no_expected_size_skips_size_check(self, tmp_path) -> None:
-        """If yt-dlp didn't surface filesize, pypdl's own validation is the
-        only guarantee — download() must not raise a spurious size mismatch."""
-        info = self._https_info()
-        info.pop("filesize", None)
-        _, _, out = self._run_with_pypdl(tmp_path, info=info, precreate_size=10)
+    def test_succeeds_without_filesize(self, tmp_path) -> None:
+        """bilibili usually reports no exact filesize; a successful pypdl run
+        must still return the path (no spurious size validation)."""
+        _, _, out, _ = self._run_with_pypdl(tmp_path)
         assert out.exists()
-        assert out.stat().st_size == 10
 
-    def test_https_bestaudio_filesize_approx_used_when_filesize_missing(self, tmp_path) -> None:
-        """If yt-dlp reports only an approximate size (no `filesize` key but
-        `filesize_approx` set), the post-download size check still fires —
-        the helper is not silently permissive when the fallback applies."""
+    def test_good_file_not_deleted_on_size_estimate_mismatch(self, tmp_path) -> None:
+        """Regression guard: yt-dlp's filesize_approx is an estimate that
+        mismatches the real byte count by a few bytes. A successful download
+        whose on-disk size differs from that estimate must NOT be deleted."""
         info = self._https_info()
-        info.pop("filesize", None)
-        info["filesize_approx"] = 1234
-        with pytest.raises(DownloadError):
-            self._run_with_pypdl(tmp_path, info=info, precreate_size=5)
+        info["filesize_approx"] = 999_999  # deliberately != the 32-byte stub
+        _, _, out, _ = self._run_with_pypdl(tmp_path, info=info)
+        assert out.exists()

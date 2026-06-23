@@ -90,28 +90,16 @@ class BackendConfig(BaseModel):
     # bilibili's CDN throttles per-CONNECTION (~1 MB/s each), not per-IP, so
     # parallel downloads scale aggregate throughput.
     max_concurrent_downloads: int = Field(default=2, ge=1, le=8)
-    # Per-file segment count for the pypdl multi-segment path.
-    download_segments: int = Field(default=4, ge=1, le=16)
+    # Per-file segment count for the pypdl multi-segment path. Measured: 4
+    # connections already saturate the per-IP throughput ceiling (~20 MB/s),
+    # so higher values add no speed and only risk a per-IP connection 403.
+    download_segments: int = Field(default=4, ge=1, le=8)
     cors_origins: list[str] = [
         "http://localhost",
         "http://localhost:5173",
         "http://127.0.0.1",
         "http://127.0.0.1:5173",
     ]
-
-    @model_validator(mode="after")
-    def _connection_budget_within_cap(self) -> "BackendConfig":
-        # 16 = the connection-count ceiling bilibili enforces per IP. Above
-        # this, the next request gets rate-limited or 403'd, and a single
-        # misconfigured job can poison the whole worker's throughput.
-        if self.max_concurrent_downloads * self.download_segments > 16:
-            raise ValueError(
-                f"max_concurrent_downloads ({self.max_concurrent_downloads}) × "
-                f"download_segments ({self.download_segments}) = "
-                f"{self.max_concurrent_downloads * self.download_segments} "
-                f"exceeds bilibili's per-IP connection cap (16)."
-            )
-        return self
 
 
 class RagConfig(BaseModel):

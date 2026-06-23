@@ -261,7 +261,14 @@ class BilibiliAdapter(PlatformAdapter):
         # pipeline is single-stream; a direct DASH-audio URL handed to a
         # multi-segment downloader parallelizes across bilibili's per-connection
         # throttle, which is the per-job speedup this branch is for.
+        #
+        # The format selector must match the native path's ("bestaudio/best").
+        # Without it yt-dlp resolves the default best video+audio, which comes
+        # back as a merged "https+https" info dict with no top-level direct url
+        # — so every resolve would fail the https/url check below and fall back
+        # to the slow single-stream path, and the segmented path would never run.
         resolve_opts = _ydl_opts(self._cookie, quiet=False)
+        resolve_opts["format"] = "bestaudio/best"
         _, part_num = _split_video_id(video_id)
         if part_num is not None:
             resolve_opts["playlist_items"] = str(part_num)
@@ -303,9 +310,14 @@ class BilibiliAdapter(PlatformAdapter):
     ) -> Path:
         """Hand a resolved direct URL to pypdl for multi-segment download.
 
-        Pypdl retries per-segment on transient CDN drops; download() validates
-        the assembled size against the reported filesize after pypdl returns,
-        so a partial file never escapes this path silently.
+        Pypdl retries per-segment on transient CDN drops. On total failure it
+        does NOT raise — it returns an empty success list — so we inspect the
+        return value and raise DownloadError, turning a silent miss into a
+        clean, classifiable error. Truncation of an otherwise-complete file is
+        caught downstream by extract_audio's decoded-duration check (#546); we
+        deliberately do not byte-compare against yt-dlp's reported size, which
+        for bilibili is only an estimate (filesize_approx) and mismatches a
+        good file by a few bytes.
         """
         cfg = get_config()
         output_path = downloads_dir / f"{video_id}.{info.get('ext', 'm4a')}"
@@ -315,16 +327,12 @@ class BilibiliAdapter(PlatformAdapter):
         if self._cookie:
             headers["Cookie"] = self._cookie
 
-        # Bilibili sometimes reports only an approximate size; using it makes
-        # the post-download size check stricter when both keys are present.
-        expected_size = info.get("filesize") or info.get("filesize_approx")
-
         # Pass our own logger so pypdl doesn't write to pypdl.log in cwd —
         # output goes through the backend's logging tree (basicConfig in
         # main.py formats it consistently with the rest of the app).
         dl = Pypdl(allow_reuse=True, logger=logger)
         try:
-            dl.start(
+            succeeded = dl.start(
                 url=url,
                 file_path=str(output_path),
                 multisegment=True,
@@ -346,10 +354,12 @@ class BilibiliAdapter(PlatformAdapter):
             # session from leaking across downloads.
             dl.shutdown()
 
-        if expected_size and output_path.exists() and output_path.stat().st_size != expected_size:
-            actual = output_path.stat().st_size
+        # Empty success list = every segment exhausted its retries without
+        # raising. Without this check the method would return a path to a
+        # missing/partial file and the failure would surface far downstream.
+        if not succeeded:
             output_path.unlink(missing_ok=True)
-            raise DownloadError(f"downloaded file size {actual} does not match Content-Length {expected_size}")
+            raise DownloadError("segmented download failed: no segments completed")
 
         return output_path
 
