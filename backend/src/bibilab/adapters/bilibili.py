@@ -7,6 +7,7 @@ from pathlib import Path
 
 import httpx
 import yt_dlp
+from pypdl import Pypdl
 
 from bibilab.adapters.base import (
     AuthRequiredError,
@@ -15,7 +16,7 @@ from bibilab.adapters.base import (
     PlaylistMeta,
     VideoMeta,
 )
-from bibilab.config import bibilab_home
+from bibilab.config import bibilab_home, get_config
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +48,10 @@ _HTTP_RETRIES = 10
 # read; it only trips on a true stall, turning a silent hang into a retriable
 # error that resumes from the .part instead of wedging the serialized stage.
 _SOCKET_TIMEOUT = 60
+# Retries per segment in the pypdl multi-segment path. pypdl retries the
+# failed segment in-place (no re-download of completed segments), so a small
+# budget cheaply rides out transient CDN drops without leaving short files.
+_PYPDL_RETRIES = 3
 _BILIBILI_NAV_URL = "https://api.bilibili.com/x/web-interface/nav"
 _cookie_file_cache: tuple[str, Path] | None = None
 
@@ -241,6 +246,110 @@ class BilibiliAdapter(PlatformAdapter):
 
     def download(self, video_id: str, source_url: str) -> Path:
         downloads_dir = bibilab_home() / "downloads"
+        downloads_dir.mkdir(parents=True, exist_ok=True)
+
+        # Resolve the direct media URL + headers once. This avoids running the
+        # full yt-dlp download pipeline on every call (which is single-stream
+        # and per-IP-throttled) when we can hand a direct DASH-audio URL to a
+        # multi-segment downloader for ~10× throughput (per #548 measurement).
+        resolve_opts = _ydl_opts(self._cookie, quiet=False)
+        _, part_num = _split_video_id(video_id)
+        if part_num is not None:
+            resolve_opts["playlist_items"] = str(part_num)
+
+        try:
+            with yt_dlp.YoutubeDL(resolve_opts) as ydl:
+                info = ydl.extract_info(source_url, download=False)
+        except yt_dlp.utils.DownloadError as exc:
+            return self._native_download(video_id, source_url, downloads_dir, exc)
+
+        # Native fallback for non-https / fragmented / unknown-length formats —
+        # pypdl's segmented path assumes a contiguous HTTP body (Content-Length
+        # present, no fragments). Anything else keeps the existing yt-dlp path
+        # so we don't regress on live formats yt-dlp already handles.
+        protocol = info.get("protocol")
+        if protocol != "https" or info.get("fragments"):
+            return self._native_download(video_id, source_url, downloads_dir, None)
+
+        ext = info.get("ext", "m4a")
+        direct_url = info.get("url")
+        if not direct_url:
+            # Resolve succeeded but didn't return a URL — fall back to native.
+            return self._native_download(video_id, source_url, downloads_dir, None)
+
+        output_path = downloads_dir / f"{video_id}.{ext}"
+        return self._segmented_download(video_id, direct_url, info, output_path)
+
+    def _segmented_download(
+        self,
+        video_id: str,
+        url: str,
+        info: dict,
+        output_path: Path,
+    ) -> Path:
+        """Hand a resolved direct URL to pypdl for multi-segment download.
+
+        pypdl retries per-segment on transient CDN drops and validates the
+        assembled size against Content-Length, so a partial file never escapes
+        this path silently. If the assembled file is still short after retries,
+        we raise DownloadError — the .part hygiene in worker.py cleans residue
+        on the next attempt. #546 audio-duration remains the final backstop.
+        """
+        cfg = get_config()
+        headers: dict[str, str] = dict(info.get("http_headers") or {})
+        # Cookie auth must reach pypdl — yt-dlp's http_headers don't include it.
+        if self._cookie:
+            headers["Cookie"] = self._cookie
+        # bilibili rejects direct CDN requests without a bilibili Referer.
+        headers.setdefault("Referer", "https://www.bilibili.com")
+
+        expected_size = info.get("filesize") or info.get("filesize_approx")
+
+        dl = Pypdl(allow_reuse=True)
+        try:
+            dl.start(
+                url=url,
+                file_path=str(output_path),
+                multisegment=True,
+                segments=cfg.backend.download_segments,
+                retries=_PYPDL_RETRIES,
+                block=True,
+                display=False,
+                headers=headers,
+            )
+        except (RuntimeError, TypeError, ValueError) as exc:
+            raise DownloadError(f"segmented download failed: {exc}") from exc
+        finally:
+            dl.shutdown()
+
+        if expected_size and output_path.exists() and output_path.stat().st_size != expected_size:
+            output_path.unlink(missing_ok=True)
+            raise DownloadError(
+                f"downloaded file size {output_path.stat().st_size if output_path.exists() else 0} "
+                f"does not match Content-Length {expected_size}"
+            )
+
+        if not output_path.exists():
+            raise DownloadError("segmented download produced no file")
+
+        return output_path
+
+    def _native_download(
+        self,
+        video_id: str,
+        source_url: str,
+        downloads_dir: Path,
+        resolve_exc: Exception | None,
+    ) -> Path:
+        """Existing yt-dlp download path — used for non-https / fragmented
+        formats, when resolve didn't return a direct URL, or when resolve
+        itself surfaced an auth-required error (we re-raise with mapping)."""
+        if resolve_exc is not None:
+            msg = str(resolve_exc).lower()
+            if _AUTH_RE.search(msg) or "412" in msg:
+                raise AuthRequiredError("video") from resolve_exc
+            raise DownloadError(_ANSI_RE.sub("", str(resolve_exc))) from resolve_exc
+
         output_template = str(downloads_dir / f"{video_id}.%(ext)s")
         opts = {
             **_ydl_opts(self._cookie, quiet=False),

@@ -88,6 +88,9 @@ class TestDownloadMultiPart:
     def test_download_sets_native_retry_opts(self, tmp_path):
         # Without these, yt-dlp's bare opts default to 0 internal retries
         # (RetryManager does _retries or 0), and transient CDN timeouts become fatal.
+        # Per #548: download() now does resolve-then-segmented/native. Retries
+        # apply to the NATIVE fallback path (second invocation); the segmented
+        # path uses pypdl's per-segment retries instead.
         from bibilab.adapters.bilibili import _FRAGMENT_RETRIES, _HTTP_RETRIES, _SOCKET_TIMEOUT
 
         adapter = BilibiliAdapter(cookie="test_cookie")
@@ -97,11 +100,14 @@ class TestDownloadMultiPart:
             with patch("bibilab.adapters.bilibili.bibilab_home", return_value=tmp_path):
                 adapter.download("BV1test", "https://www.bilibili.com/video/BV1test")
 
-        assert captured_opts[0]["retries"] == _HTTP_RETRIES
-        assert captured_opts[0]["fragment_retries"] == _FRAGMENT_RETRIES
+        # Two yt-dlp calls now: resolve (download=False), then native download
+        # since the mocked info has no protocol/url, the native fallback runs.
+        native_opts = captured_opts[1]
+        assert native_opts["retries"] == _HTTP_RETRIES
+        assert native_opts["fragment_retries"] == _FRAGMENT_RETRIES
         # A stalled connection must become a retriable error, not an indefinite
         # hang that wedges the serialized download stage.
-        assert captured_opts[0]["socket_timeout"] == _SOCKET_TIMEOUT
+        assert native_opts["socket_timeout"] == _SOCKET_TIMEOUT
 
 
 class TestSplitVideoId:
