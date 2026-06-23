@@ -88,15 +88,9 @@ class BackendConfig(BaseModel):
     max_concurrent_jobs: int = 4
     # Max simultaneous video downloads, independent of max_concurrent_jobs.
     # bilibili's CDN throttles per-CONNECTION (~1 MB/s each), not per-IP, so
-    # parallel downloads scale aggregate throughput. Total connection budget
-    # = max_concurrent_downloads × download_segments; the model_validator
-    # below caps the product at 16 so a single misconfigured job can't
-    # exhaust bilibili's per-IP connection quota.
+    # parallel downloads scale aggregate throughput.
     max_concurrent_downloads: int = Field(default=2, ge=1, le=8)
-    # Per-file segment count for the pypdl multi-segment path. 4 is the
-    # empirically tuned point: raising it rarely helps on a per-connection-
-    # throttled CDN; lowering it trades throughput for fewer concurrent
-    # connections per job (see the cap×segments budget above).
+    # Per-file segment count for the pypdl multi-segment path.
     download_segments: int = Field(default=4, ge=1, le=16)
     cors_origins: list[str] = [
         "http://localhost",

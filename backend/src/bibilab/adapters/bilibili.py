@@ -57,9 +57,6 @@ _SOCKET_TIMEOUT = 60
 # Retries per segment in the pypdl multi-segment path. pypdl retries the
 # failed segment in-place (no re-download of completed segments), so a small
 # budget cheaply rides out transient CDN drops without leaving short files.
-# Value chosen below _FRAGMENT_RETRIES=5 because pypdl retries one segment
-# at a time (not the whole file) — even budget=1 catches most CDN blips; 3
-# covers the rare 2-3-segment retry storm.
 _PYPDL_RETRIES = 3
 _BILIBILI_NAV_URL = "https://api.bilibili.com/x/web-interface/nav"
 _cookie_file_cache: tuple[str, Path] | None = None
@@ -128,7 +125,7 @@ def _map_ytdlp_error(exc: yt_dlp.utils.DownloadError, resource: Literal["video",
     msg = str(exc).lower()
     if _AUTH_RE.search(msg) or _412_RE.search(msg):
         return AuthRequiredError(resource)
-    return DownloadError(_ANSI_RE.sub("", f"yt-dlp download failed: {exc}"))
+    return DownloadError(_ANSI_RE.sub("", str(exc)))
 
 
 class BilibiliAdapter(PlatformAdapter):
@@ -318,13 +315,9 @@ class BilibiliAdapter(PlatformAdapter):
         if self._cookie:
             headers["Cookie"] = self._cookie
 
-        # Bilibili sometimes reports only an approximate size (filesize_approx);
-        # using it makes the post-download size check stricter when both keys
-        # are present, and falls back to pypdl's own Content-Length check when
-        # neither is.
+        # Bilibili sometimes reports only an approximate size; using it makes
+        # the post-download size check stricter when both keys are present.
         expected_size = info.get("filesize") or info.get("filesize_approx")
-        if expected_size is None:
-            logger.debug("no filesize reported by yt-dlp; relying on pypdl's own Content-Length check")
 
         # Pass our own logger so pypdl doesn't write to pypdl.log in cwd —
         # output goes through the backend's logging tree (basicConfig in
@@ -341,11 +334,10 @@ class BilibiliAdapter(PlatformAdapter):
                 display=False,
                 headers=headers,
             )
-        # Pypdl surfaces start() parameter errors as RuntimeError/TypeError/ValueError
-        # and transport/state failures (network drop, aiohttp timeout, exhausted
-        # retry budget) as MainThreadException. Do NOT broaden to Exception —
-        # asyncio.CancelledError is a BaseException subclass and must propagate
-        # so the worker's cooperative cancellation still works.
+        # Tuple narrow on purpose: pypdl parameter errors hit the three builtins
+        # and transport/state failures hit MainThreadException. Do NOT broaden
+        # to Exception — asyncio.CancelledError must propagate so the worker's
+        # cooperative cancellation still works.
         except (RuntimeError, TypeError, ValueError, MainThreadException) as exc:
             raise DownloadError(_ANSI_RE.sub("", f"segmented download failed: {exc}")) from exc
         finally:

@@ -667,17 +667,9 @@ class TestDownloadPathSelection:
         native: dict | Exception | None = None,
         captured: list | None = None,
     ):
-        """Build a fake YoutubeDL class.
-
-        - `extract_info(download=False)` returns `info_for_resolve`.
-        - `extract_info(download=True)` returns `native` (defaults to
-          ``{"ext": "m4a"}`` for a successful native call) OR raises
-          `native` if it's an Exception — covers the native-fallback error
-          path that goes through `_map_ytdlp_error`.
-        - If `captured` is provided, every constructed instance appends
-          its opts to the list so tests can assert on the native-path
-          retry budget.
-        """
+        """Fake YoutubeDL. `extract_info(download=True)` raises `native` if
+        it's an Exception, otherwise returns it (defaults to `{"ext": "m4a"}`).
+        If `captured` is given, every constructed instance appends its opts."""
 
         class _FakeYDL:
             def __init__(self, opts):
@@ -743,7 +735,7 @@ class TestDownloadPathSelection:
     def test_native_fallback_maps_auth_error(self, tmp_path) -> None:
         """A 403 raised by yt-dlp on the native-fallback path must surface
         as AuthRequiredError via _map_ytdlp_error — same contract as the
-        resolve path, and a second call site of the new helper."""
+        resolve path."""
         import yt_dlp
 
         info = {"protocol": "mhtml_dash", "fragments": [{"path": "seg0"}], "ext": "m4a"}
@@ -758,9 +750,8 @@ class TestDownloadPathSelection:
 
 
 class TestDownloadConfigDefaults:
-    """The two load-bearing config defaults — defended in the issue with
-    live measurements. Pydantic Field(ge, le) pins the values; these tests
-    guard against accidental regression."""
+    """Pydantic Field(ge, le) pins the values; these tests guard against
+    accidental regression of the defaults and the connection-budget cap."""
 
     def test_max_concurrent_downloads_default_is_two(self):
         from bibilab.config import BackendConfig
@@ -773,8 +764,7 @@ class TestDownloadConfigDefaults:
         assert BackendConfig().download_segments == 4
 
     def test_connection_budget_validator_rejects_over_cap(self):
-        """cap × segments > 16 must fail-loud at config load — bilibili's
-        per-IP connection cap, exceeded means rate-limited 403s."""
+        """cap × segments > 16 fails loud at config load."""
         from pydantic import ValidationError
 
         from bibilab.config import BackendConfig
@@ -785,7 +775,7 @@ class TestDownloadConfigDefaults:
     def test_connection_budget_validator_accepts_at_cap(self):
         from bibilab.config import BackendConfig
 
-        # 2 × 8 = 16: at the cap, valid.
+        # At the cap (2 × 8 = 16), valid.
         BackendConfig(max_concurrent_downloads=2, download_segments=8)
 
 
