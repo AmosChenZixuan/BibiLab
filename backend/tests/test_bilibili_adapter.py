@@ -784,7 +784,7 @@ class TestSegmentedDownload:
 
     def test_https_bestaudio_uses_pypdl_with_segments_and_retries(self, tmp_path) -> None:
         mock_cls, pypdl_instance = self._run_with_pypdl(tmp_path, cookie="")
-        mock_cls.assert_called_once_with(allow_reuse=True)
+        mock_cls.assert_called_once_with(allow_reuse=True, logger=mock_cls.call_args.kwargs["logger"])
         kwargs = pypdl_instance.start.call_args.kwargs
         assert kwargs["multisegment"] is True
         assert kwargs["segments"] == 4
@@ -794,6 +794,28 @@ class TestSegmentedDownload:
         assert kwargs["url"].endswith("/audio.m4s")
         assert kwargs["file_path"].endswith(".m4a")
         pypdl_instance.shutdown.assert_called_once()
+
+    def test_pypdl_logger_routed_to_backend(self, tmp_path) -> None:
+        """Pypdl must not write pypdl.log in cwd — it gets our backend logger."""
+        import logging
+
+        from bibilab.adapters import bilibili as bilibili_mod
+
+        (tmp_path / "downloads").mkdir(parents=True, exist_ok=True)
+        (tmp_path / "downloads" / "BVlog.m4a").write_bytes(b"x" * 1234)
+        pypdl_instance = MagicMock()
+        info = self._https_info()
+
+        with patch("bibilab.adapters.bilibili.yt_dlp.YoutubeDL") as mock_ydl:
+            mock_ydl.return_value.__enter__.return_value.extract_info.return_value = info
+            with patch("bibilab.adapters.bilibili.Pypdl", return_value=pypdl_instance) as mock_cls:
+                with patch("bibilab.adapters.bilibili.bibilab_home", return_value=tmp_path):
+                    BilibiliAdapter(cookie="").download("BVlog", "https://www.bilibili.com/video/BVlog")
+
+        passed_logger = mock_cls.call_args.kwargs["logger"]
+        assert passed_logger is bilibili_mod.logger
+        assert passed_logger.name == "bibilab.adapters.bilibili"
+        assert passed_logger is logging.getLogger("bibilab.adapters.bilibili")
 
     def test_https_bestaudio_passes_cookie_and_referer_headers(self, tmp_path) -> None:
         _, pypdl_instance = self._run_with_pypdl(tmp_path, cookie="SESSID=abc; bili_jct=xyz")

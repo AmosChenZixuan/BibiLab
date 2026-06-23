@@ -298,7 +298,10 @@ class BilibiliAdapter(PlatformAdapter):
 
         expected_size = info.get("filesize") or info.get("filesize_approx")
 
-        dl = Pypdl(allow_reuse=True)
+        # Pass our own logger so pypdl doesn't write to pypdl.log in cwd —
+        # output goes through the backend's logging tree (basicConfig in
+        # main.py formats it consistently with the rest of the app).
+        dl = Pypdl(allow_reuse=True, logger=logger)
         try:
             dl.start(
                 url=url,
