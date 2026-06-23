@@ -1,32 +1,78 @@
-"""Tests for #548: native yt-dlp fallback when info dict signals fragmented
-or non-https protocol. Pypdl segmented path must NOT run in these cases."""
+"""Tests for native yt-dlp fallback when the resolve path can't hand off to pypdl.
 
-from unittest.mock import MagicMock, patch
+Non-https / fragmented formats must skip the segmented path so existing yt-dlp
+behaviors (which already handle them) are preserved.
+"""
+
+from unittest.mock import patch
 
 import pytest
 
 from bibilab.adapters.bilibili import BilibiliAdapter
 
 
-def _info(protocol: str = "https", fragments: list | None = None, ext: str = "m4a") -> dict:
-    """Build an yt-dlp info dict as returned by extract_info(download=False)."""
-    return {
-        "url": "https://example.com/audio",
-        "ext": ext,
-        "protocol": protocol,
-        "fragments": fragments,
-        "http_headers": {"User-Agent": "yt-dlp/test"},
-    }
+class _FakeYDL:
+    """Mock yt_dlp.YoutubeDL: capture opts, return a given info dict on resolve."""
+
+    def __init__(self, opts):
+        self.opts = opts
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return False
+
+    def extract_info(self, url, download=False):
+        return self._info
+
+    @property
+    def _info(self):
+        # Hooked per-test by setting self.info before calling download().
+        raise RuntimeError("test must set fake_ydl.info")
 
 
 @pytest.fixture
-def captured_ydl():
-    """Capture every yt_dlp.YoutubeDL instance + the args passed to extract_info."""
-    instances: list = []
+def fake_ydl():
+    captured: list = []
 
-    class FakeYDL:
+    def factory(opts):
+        inst = _FakeYDL(opts)
+        captured.append(inst)
+        return inst
+
+    return captured, factory
+
+
+def test_fragmented_protocol_uses_native_ytdlp(tmp_path, fake_ydl) -> None:
+    captured, factory = fake_ydl
+
+    def resolve_side_effect(self, url, download=False):
+        if download:
+            return {"ext": "m4a"}
+        self.info = {"protocol": "mhtml_dash", "fragments": [{"path": "seg0"}], "ext": "m4a"}
+        return self.info
+
+    _FakeYDL.extract_info = resolve_side_effect
+
+    adapter = BilibiliAdapter(cookie="c")
+    with patch("bibilab.adapters.bilibili.yt_dlp.YoutubeDL", factory):
+        with patch("bibilab.adapters.bilibili.Pypdl") as mock_pypdl:
+            with patch("bibilab.adapters.bilibili.bibilab_home", return_value=tmp_path):
+                adapter.download("BVfallback", "https://www.bilibili.com/video/BVfallback")
+
+    mock_pypdl.assert_not_called()
+    # Two yt-dlp invocations: resolve (download=False), native download (True).
+    assert len(captured) == 2
+    assert "retries" in captured[1].opts
+
+
+def test_unknown_protocol_uses_native_ytdlp(tmp_path) -> None:
+    """When yt-dlp returns a protocol pypdl can't handle, native path runs."""
+
+    class FixedYDL:
         def __init__(self, opts):
-            instances.append(opts)
+            pass
 
         def __enter__(self):
             return self
@@ -35,53 +81,12 @@ def captured_ydl():
             return False
 
         def extract_info(self, url, download=False):
-            return _info(protocol="mhtml_dash", fragments=[{"path": "seg0"}])
+            return {"protocol": "rtmp", "fragments": None, "ext": "m4a"}
 
-    return instances, FakeYDL
+    adapter = BilibiliAdapter(cookie="c")
+    with patch("bibilab.adapters.bilibili.yt_dlp.YoutubeDL", FixedYDL):
+        with patch("bibilab.adapters.bilibili.Pypdl") as mock_pypdl:
+            with patch("bibilab.adapters.bilibili.bibilab_home", return_value=tmp_path):
+                adapter.download("BVrtmp", "https://example.com/video")
 
-
-class TestDownloadFallback:
-    """AC2: when info dict has non-https protocol OR fragments, segmented path
-    is skipped and the existing native yt-dlp download is used (no regression)."""
-
-    def test_fragmented_protocol_uses_native_ytdlp(self, tmp_path, captured_ydl):
-        """protocol=mhtml_dash (or any non-https) must skip Pypdl entirely."""
-        opts_list, FakeYDL = captured_ydl
-        adapter = BilibiliAdapter(cookie="c")
-
-        with patch("bibilab.adapters.bilibili.yt_dlp.YoutubeDL", FakeYDL):
-            with patch("bibilab.adapters.bilibili.Pypdl") as mock_pypdl:
-                with patch("bibilab.adapters.bilibili.bibilab_home", return_value=tmp_path):
-                    adapter.download("BVfallback", "https://www.bilibili.com/video/BVfallback")
-
-        # Pypdl must NEVER be instantiated on the fragmented path.
-        mock_pypdl.assert_not_called()
-        # Native yt-dlp ran twice: once for resolve (download=False), once for actual download.
-        assert len(opts_list) == 2
-        # Second invocation is the native fallback download.
-        # We just check it had download-related yt-dlp retry knobs applied.
-        assert "retries" in opts_list[1]
-
-    def test_unknown_protocol_uses_native_ytdlp(self, tmp_path):
-        """When yt-dlp returns a protocol pypdl can't handle, native path runs."""
-
-        class FakeYDL:
-            def __init__(self, opts):
-                pass
-
-            def __enter__(self):
-                return self
-
-            def __exit__(self, *args):
-                return False
-
-            def extract_info(self, url, download=False):
-                return _info(protocol="rtmp")
-
-        adapter = BilibiliAdapter(cookie="c")
-        with patch("bibilab.adapters.bilibili.yt_dlp.YoutubeDL", FakeYDL):
-            with patch("bibilab.adapters.bilibili.Pypdl") as mock_pypdl:
-                with patch("bibilab.adapters.bilibili.bibilab_home", return_value=tmp_path):
-                    adapter.download("BVrtmp", "https://example.com/video")
-
-        mock_pypdl.assert_not_called()
+    mock_pypdl.assert_not_called()

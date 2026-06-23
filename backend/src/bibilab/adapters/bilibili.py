@@ -113,6 +113,15 @@ def _info_to_video_meta(info: dict, platform: str = "bilibili", fallback_uploade
     )
 
 
+def _map_ytdlp_error(exc: yt_dlp.utils.DownloadError, resource: str) -> Exception:
+    """Surface a yt-dlp DownloadError as either AuthRequiredError (login/403/412)
+    or a clean DownloadError with ANSI codes stripped."""
+    msg = str(exc).lower()
+    if _AUTH_RE.search(msg) or "412" in msg:
+        return AuthRequiredError(resource)
+    return DownloadError(_ANSI_RE.sub("", str(exc)))
+
+
 class BilibiliAdapter(PlatformAdapter):
     def __init__(self, cookie: str = "") -> None:
         self._cookie = cookie
@@ -140,10 +149,7 @@ class BilibiliAdapter(PlatformAdapter):
                 with yt_dlp.YoutubeDL(opts) as ydl:
                     info = ydl.extract_info(url, download=False)
             except yt_dlp.utils.DownloadError as exc:
-                msg = str(exc).lower()
-                if _AUTH_RE.search(msg):
-                    raise AuthRequiredError("video") from exc
-                raise DownloadError(_ANSI_RE.sub("", str(exc))) from exc
+                raise _map_ytdlp_error(exc, "video") from exc
 
             if info.get("_type") == "playlist":
                 return self._resolve_playlist(info)
@@ -168,10 +174,7 @@ class BilibiliAdapter(PlatformAdapter):
             with yt_dlp.YoutubeDL(opts) as ydl:
                 info = ydl.extract_info(url, download=False)
         except yt_dlp.utils.DownloadError as exc:
-            msg = str(exc).lower()
-            if _AUTH_RE.search(msg):
-                raise AuthRequiredError("playlist") from exc
-            raise DownloadError(_ANSI_RE.sub("", str(exc))) from exc
+            raise _map_ytdlp_error(exc, "playlist") from exc
 
         playlist_id = info.get("id", url)
         title = info.get("title", "Untitled Playlist")
@@ -248,10 +251,9 @@ class BilibiliAdapter(PlatformAdapter):
         downloads_dir = bibilab_home() / "downloads"
         downloads_dir.mkdir(parents=True, exist_ok=True)
 
-        # Resolve the direct media URL + headers once. This avoids running the
-        # full yt-dlp download pipeline on every call (which is single-stream
-        # and per-IP-throttled) when we can hand a direct DASH-audio URL to a
-        # multi-segment downloader for ~10× throughput (per #548 measurement).
+        # Resolve the direct media URL + headers once. yt-dlp's full download
+        # pipeline is single-stream; a direct DASH-audio URL fed to a multi-
+        # segment downloader delivers ~10× throughput on bilibili.
         resolve_opts = _ydl_opts(self._cookie, quiet=False)
         _, part_num = _split_video_id(video_id)
         if part_num is not None:
@@ -261,23 +263,18 @@ class BilibiliAdapter(PlatformAdapter):
             with yt_dlp.YoutubeDL(resolve_opts) as ydl:
                 info = ydl.extract_info(source_url, download=False)
         except yt_dlp.utils.DownloadError as exc:
-            return self._native_download(video_id, source_url, downloads_dir, exc)
+            raise _map_ytdlp_error(exc, "video") from exc
 
-        # Native fallback for non-https / fragmented / unknown-length formats —
-        # pypdl's segmented path assumes a contiguous HTTP body (Content-Length
-        # present, no fragments). Anything else keeps the existing yt-dlp path
-        # so we don't regress on live formats yt-dlp already handles.
-        protocol = info.get("protocol")
-        if protocol != "https" or info.get("fragments"):
-            return self._native_download(video_id, source_url, downloads_dir, None)
+        # pypdl needs a contiguous https body (Content-Length, no fragments).
+        # Anything else keeps the existing yt-dlp path so we don't regress.
+        if info.get("protocol") != "https" or info.get("fragments"):
+            return self._native_download(video_id, source_url, downloads_dir, part_num)
 
-        ext = info.get("ext", "m4a")
         direct_url = info.get("url")
         if not direct_url:
-            # Resolve succeeded but didn't return a URL — fall back to native.
-            return self._native_download(video_id, source_url, downloads_dir, None)
+            return self._native_download(video_id, source_url, downloads_dir, part_num)
 
-        output_path = downloads_dir / f"{video_id}.{ext}"
+        output_path = downloads_dir / f"{video_id}.{info.get('ext', 'm4a')}"
         return self._segmented_download(video_id, direct_url, info, output_path)
 
     def _segmented_download(
@@ -291,17 +288,13 @@ class BilibiliAdapter(PlatformAdapter):
 
         pypdl retries per-segment on transient CDN drops and validates the
         assembled size against Content-Length, so a partial file never escapes
-        this path silently. If the assembled file is still short after retries,
-        we raise DownloadError — the .part hygiene in worker.py cleans residue
-        on the next attempt. #546 audio-duration remains the final backstop.
+        this path silently.
         """
         cfg = get_config()
-        headers: dict[str, str] = dict(info.get("http_headers") or {})
         # Cookie auth must reach pypdl — yt-dlp's http_headers don't include it.
+        headers = {**(info.get("http_headers") or {}), "Referer": "https://www.bilibili.com"}
         if self._cookie:
             headers["Cookie"] = self._cookie
-        # bilibili rejects direct CDN requests without a bilibili Referer.
-        headers.setdefault("Referer", "https://www.bilibili.com")
 
         expected_size = info.get("filesize") or info.get("filesize_approx")
 
@@ -323,14 +316,9 @@ class BilibiliAdapter(PlatformAdapter):
             dl.shutdown()
 
         if expected_size and output_path.exists() and output_path.stat().st_size != expected_size:
+            actual = output_path.stat().st_size
             output_path.unlink(missing_ok=True)
-            raise DownloadError(
-                f"downloaded file size {output_path.stat().st_size if output_path.exists() else 0} "
-                f"does not match Content-Length {expected_size}"
-            )
-
-        if not output_path.exists():
-            raise DownloadError("segmented download produced no file")
+            raise DownloadError(f"downloaded file size {actual} does not match Content-Length {expected_size}")
 
         return output_path
 
@@ -339,17 +327,10 @@ class BilibiliAdapter(PlatformAdapter):
         video_id: str,
         source_url: str,
         downloads_dir: Path,
-        resolve_exc: Exception | None,
+        part_num: int | None,
     ) -> Path:
-        """Existing yt-dlp download path — used for non-https / fragmented
-        formats, when resolve didn't return a direct URL, or when resolve
-        itself surfaced an auth-required error (we re-raise with mapping)."""
-        if resolve_exc is not None:
-            msg = str(resolve_exc).lower()
-            if _AUTH_RE.search(msg) or "412" in msg:
-                raise AuthRequiredError("video") from resolve_exc
-            raise DownloadError(_ANSI_RE.sub("", str(resolve_exc))) from resolve_exc
-
+        """Existing yt-dlp download path — used for non-https / fragmented /
+        unknown-length formats when the segmented path can't run."""
         output_template = str(downloads_dir / f"{video_id}.%(ext)s")
         opts = {
             **_ydl_opts(self._cookie, quiet=False),
@@ -360,8 +341,6 @@ class BilibiliAdapter(PlatformAdapter):
             "fragment_retries": _FRAGMENT_RETRIES,
             "socket_timeout": _SOCKET_TIMEOUT,
         }
-
-        _, part_num = _split_video_id(video_id)
         if part_num is not None:
             opts["playlist_items"] = str(part_num)
 
@@ -369,12 +348,9 @@ class BilibiliAdapter(PlatformAdapter):
             with yt_dlp.YoutubeDL(opts) as ydl:
                 info = ydl.extract_info(source_url, download=True)
         except yt_dlp.utils.DownloadError as exc:
-            msg = str(exc).lower()
-            if _AUTH_RE.search(msg) or "412" in msg:
-                raise AuthRequiredError("video") from exc
-            raise DownloadError(_ANSI_RE.sub("", str(exc))) from exc
+            raise _map_ytdlp_error(exc, "video") from exc
 
-        return downloads_dir / f"{video_id}.{info.get('ext', 'mp4')}"
+        return downloads_dir / f"{video_id}.{info.get('ext', 'm4a')}"
 
     async def get_videos_metadata(self, video_ids: list[str]) -> tuple[dict[str, VideoMeta], dict[str, list[str]]]:
         if not video_ids:

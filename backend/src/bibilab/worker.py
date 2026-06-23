@@ -942,10 +942,9 @@ class WorkerLoop:
         # attempt so this download starts clean and never resumes onto stale bytes.
         await asyncio.to_thread(purge_download_files, video_meta.video_id)
 
-        # Cap concurrent downloads (default 2): bilibili throttles per-CONNECTION,
-        # not per-IP, so multiple jobs downloading in parallel scale aggregate
-        # throughput (each does its own segmented download via pypdl). Per #548,
-        # total connections ≈ max_concurrent_downloads × download_segments.
+        # Cap concurrent downloads. bilibili throttles per-CONNECTION, not per-IP,
+        # so parallel downloads scale aggregate throughput. Each job's pypdl
+        # run opens its own segments — total connections ≈ cap × segments.
         async with self._download_sem:
             # A job cancelled while blocked on the semaphore must not still download.
             if await self._abort_if_cancelled(job_id):
