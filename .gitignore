@@ -8,8 +8,6 @@ dist/
 .pytest_cache/
 .ruff_cache/
 .coverage
-# pypdl auto-creates pypdl.log in cwd via FileHandler("pypdl.log", mode="a").
-pypdl.log
 
 # Node
 node_modules/
