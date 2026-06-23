@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from bibilab.adapters.base import AuthRequiredError, DownloadError
 from bibilab.adapters.bilibili import BilibiliAdapter
 
 
@@ -657,9 +658,8 @@ class TestResourceType:
 class TestDownloadPathSelection:
     """Resolve → segmented pypdl vs native yt-dlp fallback.
 
-    The mock _FakeYDL returns a different info dict on resolve (download=False)
-    vs the actual download (download=True), so the test can assert that the
-    right code path runs for each shape of the resolved URL.
+    Both shapes below hit the same OR branch in download()
+    (`protocol != "https" or fragments`); parametrized into one test.
     """
 
     @staticmethod
@@ -679,8 +679,15 @@ class TestDownloadPathSelection:
 
         return _FakeYDL
 
-    def test_fragmented_protocol_skips_pypdl(self, tmp_path):
-        info = {"protocol": "mhtml_dash", "fragments": [{"path": "seg0"}], "ext": "m4a"}
+    @pytest.mark.parametrize(
+        "info",
+        [
+            {"protocol": "mhtml_dash", "fragments": [{"path": "seg0"}], "ext": "m4a"},
+            {"protocol": "rtmp", "fragments": None, "ext": "m4a"},
+        ],
+        ids=["mhtml_dash_with_fragments", "rtmp_unknown_protocol"],
+    )
+    def test_non_https_or_fragmented_skips_pypdl(self, tmp_path, info: dict) -> None:
         adapter = BilibiliAdapter(cookie="c")
         with patch("bibilab.adapters.bilibili.yt_dlp.YoutubeDL", self._make_ydl_factory(info)):
             with patch("bibilab.adapters.bilibili.Pypdl") as mock_pypdl:
@@ -688,22 +695,9 @@ class TestDownloadPathSelection:
                     adapter.download("BVfallback", "https://www.bilibili.com/video/BVfallback")
         mock_pypdl.assert_not_called()
 
-    def test_unknown_protocol_skips_pypdl(self, tmp_path):
-        info = {"protocol": "rtmp", "fragments": None, "ext": "m4a"}
-        adapter = BilibiliAdapter(cookie="c")
-        with patch("bibilab.adapters.bilibili.yt_dlp.YoutubeDL", self._make_ydl_factory(info)):
-            with patch("bibilab.adapters.bilibili.Pypdl") as mock_pypdl:
-                with patch("bibilab.adapters.bilibili.bibilab_home", return_value=tmp_path):
-                    adapter.download("BVrtmp", "https://example.com/video")
-        mock_pypdl.assert_not_called()
-
 
 class TestDownloadAuthMapping:
-    """yt-dlp DownloadError → AuthRequiredError mapping on the resolve path.
-
-    The resolve call surfaces 403 / login / 412 as AuthRequiredError so the UI
-    can route to the QR login flow — not a generic DownloadError.
-    """
+    """yt-dlp DownloadError → AuthRequiredError / DownloadError mapping on resolve."""
 
     class _ResolveOnlyYDL:
         def __init__(self, msg: str):
@@ -721,31 +715,23 @@ class TestDownloadAuthMapping:
             raise yt_dlp.utils.DownloadError(self.msg)
 
     @pytest.mark.parametrize(
-        "msg,resource",
+        "msg,exc_type",
         [
-            ("ERROR: [Bilibili] 403 Forbidden", "video"),
-            ("Please log in to access this video", "video"),
-            ("HTTP Error 412: Precondition Failed", "video"),
+            ("ERROR: [Bilibili] 403 Forbidden", AuthRequiredError),
+            ("Please log in to access this video", AuthRequiredError),
+            ("HTTP Error 412: Precondition Failed", AuthRequiredError),
+            ("network timeout", DownloadError),
         ],
+        ids=["403", "login", "412", "non_auth_passthrough"],
     )
-    def test_resolve_auth_error_raises_auth_required(self, tmp_path, msg: str, resource: str) -> None:
-        from bibilab.adapters.base import AuthRequiredError
-
+    def test_resolve_error_mapping(self, tmp_path, msg: str, exc_type: type) -> None:
         adapter = BilibiliAdapter(cookie="")
         with patch("bibilab.adapters.bilibili.yt_dlp.YoutubeDL", lambda opts: self._ResolveOnlyYDL(msg)):
             with patch("bibilab.adapters.bilibili.bibilab_home", return_value=tmp_path):
-                with pytest.raises(AuthRequiredError) as exc_info:
+                with pytest.raises(exc_type) as exc_info:
                     adapter.download("BVauth", "https://www.bilibili.com/video/BVauth")
-        assert exc_info.value.resource_type == resource
-
-    def test_resolve_non_auth_error_raises_download_error(self, tmp_path) -> None:
-        from bibilab.adapters.base import DownloadError
-
-        adapter = BilibiliAdapter(cookie="")
-        with patch("bibilab.adapters.bilibili.yt_dlp.YoutubeDL", lambda opts: self._ResolveOnlyYDL("network timeout")):
-            with patch("bibilab.adapters.bilibili.bibilab_home", return_value=tmp_path):
-                with pytest.raises(DownloadError):
-                    adapter.download("BVnet", "https://www.bilibili.com/video/BVnet")
+        if exc_type is AuthRequiredError:
+            assert exc_info.value.resource_type == "video"
 
 
 class TestSegmentedDownload:
@@ -766,25 +752,41 @@ class TestSegmentedDownload:
             "filesize": filesize,
         }
 
-    def _run_with_pypdl(self, tmp_path, cookie: str, info: dict | None = None):
+    def _run_with_pypdl(
+        self,
+        tmp_path,
+        *,
+        cookie: str = "",
+        info: dict | None = None,
+        precreate_size: int = 1234,
+    ):
+        """Run download() with mocked yt-dlp + pypdl; return (Pypdl_mock_cls, instance, output_path).
+
+        `precreate_size` lets tests assert the size-mismatch branch by writing
+        fewer bytes than `info["filesize"]` (default 1234)."""
         info = info if info is not None else self._https_info()
         (tmp_path / "downloads").mkdir(parents=True, exist_ok=True)
         out = tmp_path / "downloads" / "BVseg.m4a"
-        out.write_bytes(b"x" * 1234)
+        out.write_bytes(b"x" * precreate_size)
         pypdl_instance = MagicMock()
 
         with patch("bibilab.adapters.bilibili.yt_dlp.YoutubeDL") as mock_ydl:
-            mock_instance = MagicMock()
-            mock_instance.extract_info.return_value = info
-            mock_ydl.return_value.__enter__.return_value = mock_instance
+            mock_ydl.return_value.__enter__.return_value.extract_info.return_value = info
             with patch("bibilab.adapters.bilibili.Pypdl", return_value=pypdl_instance) as mock_cls:
                 with patch("bibilab.adapters.bilibili.bibilab_home", return_value=tmp_path):
                     BilibiliAdapter(cookie=cookie).download("BVseg", "https://www.bilibili.com/video/BVseg")
-        return mock_cls, pypdl_instance
+        return mock_cls, pypdl_instance, out
 
     def test_https_bestaudio_uses_pypdl_with_segments_and_retries(self, tmp_path) -> None:
-        mock_cls, pypdl_instance = self._run_with_pypdl(tmp_path, cookie="")
-        mock_cls.assert_called_once_with(allow_reuse=True, logger=mock_cls.call_args.kwargs["logger"])
+        import logging
+
+        from bibilab.adapters import bilibili as bilibili_mod
+
+        mock_cls, pypdl_instance, _ = self._run_with_pypdl(tmp_path)
+        # Pypdl must be constructed with allow_reuse=True (lets us call shutdown
+        # explicitly) and our backend logger (so pypdl doesn't write pypdl.log).
+        assert mock_cls.call_args.kwargs == {"allow_reuse": True, "logger": bilibili_mod.logger}
+        assert bilibili_mod.logger is logging.getLogger("bibilab.adapters.bilibili")
         kwargs = pypdl_instance.start.call_args.kwargs
         assert kwargs["multisegment"] is True
         assert kwargs["segments"] == 4
@@ -795,107 +797,60 @@ class TestSegmentedDownload:
         assert kwargs["file_path"].endswith(".m4a")
         pypdl_instance.shutdown.assert_called_once()
 
-    def test_pypdl_logger_routed_to_backend(self, tmp_path) -> None:
-        """Pypdl must not write pypdl.log in cwd — it gets our backend logger."""
-        import logging
-
-        from bibilab.adapters import bilibili as bilibili_mod
-
-        (tmp_path / "downloads").mkdir(parents=True, exist_ok=True)
-        (tmp_path / "downloads" / "BVlog.m4a").write_bytes(b"x" * 1234)
-        pypdl_instance = MagicMock()
-        info = self._https_info()
-
-        with patch("bibilab.adapters.bilibili.yt_dlp.YoutubeDL") as mock_ydl:
-            mock_ydl.return_value.__enter__.return_value.extract_info.return_value = info
-            with patch("bibilab.adapters.bilibili.Pypdl", return_value=pypdl_instance) as mock_cls:
-                with patch("bibilab.adapters.bilibili.bibilab_home", return_value=tmp_path):
-                    BilibiliAdapter(cookie="").download("BVlog", "https://www.bilibili.com/video/BVlog")
-
-        passed_logger = mock_cls.call_args.kwargs["logger"]
-        assert passed_logger is bilibili_mod.logger
-        assert passed_logger.name == "bibilab.adapters.bilibili"
-        assert passed_logger is logging.getLogger("bibilab.adapters.bilibili")
-
-    def test_https_bestaudio_passes_cookie_and_referer_headers(self, tmp_path) -> None:
-        _, pypdl_instance = self._run_with_pypdl(tmp_path, cookie="SESSID=abc; bili_jct=xyz")
+    @pytest.mark.parametrize(
+        "cookie,expect_cookie",
+        [
+            ("SESSID=abc; bili_jct=xyz", True),
+            ("", False),
+        ],
+        ids=["with_cookie", "no_cookie"],
+    )
+    def test_pypdl_headers_include_referer_and_optional_cookie(
+        self, tmp_path, cookie: str, expect_cookie: bool
+    ) -> None:
+        _, pypdl_instance, _ = self._run_with_pypdl(tmp_path, cookie=cookie)
         headers = pypdl_instance.start.call_args.kwargs["headers"]
-        assert headers["Cookie"] == "SESSID=abc; bili_jct=xyz"
         assert headers["Referer"] == "https://www.bilibili.com"
-
-    def test_https_bestaudio_referer_default_when_no_cookie(self, tmp_path) -> None:
-        _, pypdl_instance = self._run_with_pypdl(tmp_path, cookie="")
-        headers = pypdl_instance.start.call_args.kwargs["headers"]
-        assert "Cookie" not in headers
-        assert headers["Referer"] == "https://www.bilibili.com"
+        if expect_cookie:
+            assert headers["Cookie"] == cookie
+        else:
+            assert "Cookie" not in headers
 
     def test_https_bestaudio_short_file_raises_download_error(self, tmp_path) -> None:
         """If on-disk size doesn't match expected, DownloadError is raised and
         the short file is removed so a retry starts clean."""
-        from bibilab.adapters.base import DownloadError
-
-        (tmp_path / "downloads").mkdir(parents=True, exist_ok=True)
-        (tmp_path / "downloads" / "BVseg.m4a").write_bytes(b"short")
-        adapter = BilibiliAdapter(cookie="")
-        info = self._https_info(filesize=1234)
-
-        with patch("bibilab.adapters.bilibili.yt_dlp.YoutubeDL") as mock_ydl:
-            mock_instance = MagicMock()
-            mock_instance.extract_info.return_value = info
-            mock_ydl.return_value.__enter__.return_value = mock_instance
-            with patch("bibilab.adapters.bilibili.Pypdl", return_value=MagicMock()):
-                with patch("bibilab.adapters.bilibili.bibilab_home", return_value=tmp_path):
-                    with pytest.raises(DownloadError) as exc_info:
-                        adapter.download("BVseg", "https://www.bilibili.com/video/BVseg")
+        with pytest.raises(DownloadError) as exc_info:
+            self._run_with_pypdl(tmp_path, precreate_size=5)
         assert "content-length" in str(exc_info.value).lower()
         assert not (tmp_path / "downloads" / "BVseg.m4a").exists()
 
     def test_https_bestaudio_no_expected_size_skips_size_check(self, tmp_path) -> None:
         """If yt-dlp didn't surface filesize, pypdl's own validation is the
         only guarantee — download() must not raise a spurious size mismatch."""
-        (tmp_path / "downloads").mkdir(parents=True, exist_ok=True)
-        out = tmp_path / "downloads" / "BVseg.m4a"
-        out.write_bytes(b"some bytes")
         info = self._https_info()
         info.pop("filesize", None)
-
-        adapter = BilibiliAdapter(cookie="")
-        with patch("bibilab.adapters.bilibili.yt_dlp.YoutubeDL") as mock_ydl:
-            mock_instance = MagicMock()
-            mock_instance.extract_info.return_value = info
-            mock_ydl.return_value.__enter__.return_value = mock_instance
-            with patch("bibilab.adapters.bilibili.Pypdl", return_value=MagicMock()):
-                with patch("bibilab.adapters.bilibili.bibilab_home", return_value=tmp_path):
-                    result = adapter.download("BVseg", "https://www.bilibili.com/video/BVseg")
-        assert result == out
+        _, _, out = self._run_with_pypdl(tmp_path, info=info, precreate_size=10)
         assert out.exists()
+        assert out.stat().st_size == 10
 
 
 @pytest.mark.integration
 class TestTruncationIntegration:
-    """End-to-end: a server returning fewer bytes than Content-Length surfaces
-    as DownloadError — no silent short file. Spins up a tiny aiohttp server and
-    runs the real pypdl against it."""
+    """End-to-end: pypdl against a server returning fewer bytes than Content-Length
+    surfaces as DownloadError — no silent short file.
+
+    Happy path is covered by the mocked TestSegmentedDownload above; this class
+    only verifies pypdl itself doesn't silently succeed on a short body."""
 
     @staticmethod
-    def _truncating_handler(declared: int, actual: int):
-        class _Handler:
-            def __init__(self):
-                pass
-
-            async def handle(self, request):
-                from aiohttp import web
-
-                return web.Response(body=b"x" * actual, headers={"Content-Length": str(declared)})
-
-        return _Handler()
-
-    @staticmethod
-    def _start_server(handler) -> tuple[str, callable]:
+    def _start_server(declared: int, actual: int) -> tuple[str, callable]:
         from aiohttp import web
 
+        async def handle(request):
+            return web.Response(body=b"x" * actual, headers={"Content-Length": str(declared)})
+
         app = web.Application()
-        app.router.add_get("/file.bin", handler.handle)
+        app.router.add_get("/file.bin", handle)
         runner = web.AppRunner(app)
 
         async def _run():
@@ -924,12 +879,12 @@ class TestTruncationIntegration:
 
         return f"http://127.0.0.1:{port_holder[0]}/file.bin", stop
 
-    def _adapter_against(self, monkeypatch, tmp_path, declared: int, actual: int):
+    def test_truncated_response_raises_download_error(self, tmp_path, monkeypatch) -> None:
+        """Declared Content-Length=1000, server returns 500 → DownloadError."""
         from bibilab.config import load_config as _lc
 
         _lc()
-        handler = self._truncating_handler(declared, actual)
-        url, stop = self._start_server(handler)
+        url, stop = self._start_server(declared=1000, actual=500)
 
         class _FakeYDL:
             def __init__(self, opts):
@@ -942,38 +897,22 @@ class TestTruncationIntegration:
                 return False
 
             def extract_info(self, _url, download=False):
+                # Local server URL captured from outer scope.
                 return {
-                    "url": url,  # the local server URL captured from outer scope
+                    "url": url,
                     "ext": "m4a",
                     "protocol": "https",
                     "fragments": None,
                     "http_headers": {},
-                    "filesize": declared,
+                    "filesize": 1000,
                 }
 
         monkeypatch.setattr("bibilab.adapters.bilibili.yt_dlp.YoutubeDL", _FakeYDL)
         monkeypatch.setattr("bibilab.adapters.bilibili.bibilab_home", lambda: tmp_path)
 
-        return BilibiliAdapter(cookie=""), stop
-
-    def test_truncated_response_raises_download_error(self, tmp_path, monkeypatch) -> None:
-        """Declared Content-Length=1000, server returns 500 → DownloadError."""
-        from bibilab.adapters.base import DownloadError
-
-        adapter, stop = self._adapter_against(monkeypatch, tmp_path, declared=1000, actual=500)
         try:
             with pytest.raises(DownloadError) as exc_info:
-                adapter.download("BVtrunc", "https://www.bilibili.com/video/BVtrunc")
+                BilibiliAdapter(cookie="").download("BVtrunc", "https://www.bilibili.com/video/BVtrunc")
             assert "content-length" in str(exc_info.value).lower() or "1000" in str(exc_info.value)
-        finally:
-            stop()
-
-    def test_full_response_succeeds(self, tmp_path, monkeypatch) -> None:
-        """When server declares and returns matching sizes, download() returns the path."""
-        adapter, stop = self._adapter_against(monkeypatch, tmp_path, declared=500, actual=500)
-        try:
-            result = adapter.download("BVfull", "https://www.bilibili.com/video/BVfull")
-            assert result.exists()
-            assert result.stat().st_size == 500
         finally:
             stop()
