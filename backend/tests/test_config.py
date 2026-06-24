@@ -33,3 +33,15 @@ def test_backend_download_connections_default() -> None:
     16 is calibrated: bounds the throttle tail AND matches the bench headline
     (max 5.7s vs native 60.3s on the throttled path)."""
     assert BibilabConfig().backend.download_connections == 16
+
+
+@pytest.mark.parametrize("bad", [0, -1, 65, 256])
+def test_backend_download_connections_rejects_out_of_range(bad: int) -> None:
+    """0 is meaningless to aria2c; >64 hits the same per-IP throttle this
+    knob is meant to bound."""
+    from pydantic import ValidationError
+
+    from bibilab.config import BackendConfig
+
+    with pytest.raises(ValidationError):
+        BackendConfig(download_connections=bad)

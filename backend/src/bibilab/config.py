@@ -91,12 +91,11 @@ class BackendConfig(BaseModel):
     # don't raise aggregate throughput and only aggravate mid-stream drops.
     # Default 1 serializes the download stage; other stages stay concurrent.
     max_concurrent_downloads: int = 1
-    # Per-file connection count fed to aria2c as `-x{n} -s{n}`. Calibrated
-    # against a throttled-window benchmark: 16 bounds the per-IP throttle tail
-    # AND matches the best observed speedup; smaller values bound the tail but
-    # underdeliver on the unthrottled common path. Independent of
-    # max_concurrent_jobs (parallel videos): that's the batch throughput lever,
-    # this is the per-file one. Ignored when aria2c is absent on PATH.
+    # Per-file connection count fed to aria2c as `-x{n} -s{n}`. Bounds the
+    # per-IP throttle tail on single/low-concurrency ingests where per-file
+    # connections are the only parallel dimension; ignored on batch (>=
+    # max_concurrent_jobs parallel videos, the per-IP ceiling saturates first)
+    # and on hosts without aria2c on PATH. Independent of max_concurrent_jobs.
     download_connections: int = 16
     cors_origins: list[str] = [
         "http://localhost",
@@ -104,6 +103,15 @@ class BackendConfig(BaseModel):
         "http://127.0.0.1",
         "http://127.0.0.1:5173",
     ]
+
+    @field_validator("download_connections")
+    @classmethod
+    def _check_download_connections(cls, v: int) -> int:
+        # 0 is meaningless to aria2c; very large values (e.g. 256) hit the
+        # same per-IP throttle this knob is meant to bound.
+        if not 1 <= v <= 64:
+            raise ValueError(f"download_connections must be in [1, 64], got {v!r}")
+        return v
 
 
 class RagConfig(BaseModel):
