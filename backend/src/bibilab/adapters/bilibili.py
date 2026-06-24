@@ -253,10 +253,10 @@ class BilibiliAdapter(PlatformAdapter):
             "socket_timeout": _SOCKET_TIMEOUT,
         }
         # Route through aria2c when available. With multiple per-file
-        # connections it sidesteps the per-IP throttle that clamps a single
-        # yt-dlp stream on contiguous DASH. On aria2c-absent hosts we fall
-        # back to the native opts above and ingest still works, just slower
-        # under throttle.
+        # connections it sidesteps the per-IP throttle that clamps a
+        # single yt-dlp stream on contiguous transfers. On aria2c-absent
+        # hosts we fall back to the native opts above and ingest still
+        # works, just slower under throttle.
         if shutil.which("aria2c"):
             n = load_config().backend.download_connections
             opts["external_downloader"] = "aria2c"

@@ -31,7 +31,7 @@ def test_removed_field_absent(path: tuple[str, ...], field: str) -> None:
 def test_backend_download_connections_default() -> None:
     """Default per-file connection count fed to aria2c -x/-s.
     16 is calibrated: bounds the throttle tail AND matches the bench headline
-    (max 5.7s vs native 60.3s on the throttled path)."""
+    (max 5.7s vs native 64.8s on the throttled path)."""
     assert BibilabConfig().backend.download_connections == 16
 
 
@@ -45,3 +45,32 @@ def test_backend_download_connections_rejects_out_of_range(bad: int) -> None:
 
     with pytest.raises(ValidationError):
         BackendConfig(download_connections=bad)
+
+
+@pytest.mark.parametrize("good", [1, 16, 64])
+def test_backend_download_connections_accepts_boundary_values(good: int) -> None:
+    """Validator allows the inclusive endpoints [1, 64]."""
+    from bibilab.config import BackendConfig
+
+    assert BackendConfig(download_connections=good).download_connections == good
+
+
+def test_backend_per_ip_connection_budget_rejects_excess() -> None:
+    """max_concurrent_downloads × download_connections must stay ≤ 64 — the
+    per-IP connection ceiling that aria2c is meant to bound, applied to the
+    full parallel-videos product."""
+    from pydantic import ValidationError
+
+    from bibilab.config import BackendConfig
+
+    # 4 parallel videos × 17 connections/file = 68 per-IP, above the budget.
+    with pytest.raises(ValidationError):
+        BackendConfig(max_concurrent_downloads=4, download_connections=17)
+
+
+def test_backend_per_ip_connection_budget_accepts_default_product() -> None:
+    """Defaults (1 × 16 = 16) stay well within the per-IP budget."""
+    from bibilab.config import BackendConfig
+
+    cfg = BackendConfig()
+    assert cfg.max_concurrent_downloads * cfg.download_connections == 16

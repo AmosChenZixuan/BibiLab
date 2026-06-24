@@ -113,6 +113,21 @@ class BackendConfig(BaseModel):
             raise ValueError(f"download_connections must be in [1, 64], got {v!r}")
         return v
 
+    @model_validator(mode="after")
+    def _check_per_ip_connection_budget(self) -> "BackendConfig":
+        # bilibili throttles per-IP. Total connections in flight = videos
+        # downloading concurrently × per-file aria2c connections. Beyond
+        # ~64, the same throttle this knob is meant to bound comes back
+        # via aggregate load.
+        total = self.max_concurrent_downloads * self.download_connections
+        if total > 64:
+            raise ValueError(
+                f"max_concurrent_downloads ({self.max_concurrent_downloads}) × "
+                f"download_connections ({self.download_connections}) = {total} "
+                f"exceeds per-IP connection budget (64)."
+            )
+        return self
+
 
 class RagConfig(BaseModel):
     max_distance: float = 0.8
