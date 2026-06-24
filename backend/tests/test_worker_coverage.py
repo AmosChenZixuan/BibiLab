@@ -567,8 +567,9 @@ class TestDownloadHygieneAndCap:
 
     @pytest.mark.asyncio
     async def test_download_cap_serializes(self, tmp_bibilab_home: Path, downloads_dir: Path):
-        """max_concurrent_downloads=1 serializes the download stage even when
-        multiple jobs run concurrently."""
+        """concurrency=1 serializes the download stage even when multiple
+        jobs are dispatched concurrently. The download semaphore is gone;
+        the main job-concurrency gate is the only cap."""
         import asyncio
         import threading
         import time
@@ -593,11 +594,15 @@ class TestDownloadHygieneAndCap:
 
         adapter = MagicMock()
         adapter.download = MagicMock(side_effect=fake_download)
-        worker = WorkerLoop(adapter=adapter, home=tmp_bibilab_home, max_concurrent_downloads=1)
+        # Bypass the main loop's _in_flight gate by calling _stage_download
+        # directly; the only cap left is whatever _stage_download enforces,
+        # which is none — so peak should now be 3, not 1. This test now
+        # pins that the download-only semaphore was removed.
+        worker = WorkerLoop(adapter=adapter, home=tmp_bibilab_home, concurrency=1)
 
         with patch("bibilab.worker._download_cover", MagicMock(return_value=True)):
             await asyncio.gather(
                 *(worker._stage_download(f"job-{i}", _video_meta(f"BV{i}"), f"src-{i}") for i in range(3))
             )
 
-        assert peak == 1
+        assert peak == 3

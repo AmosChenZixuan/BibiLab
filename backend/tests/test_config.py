@@ -18,6 +18,7 @@ from bibilab.config import BibilabConfig
         (("rag",), "chunk_pause_threshold"),
         ((), "transcript_collection_name"),
         (("transcription",), "llm_timeout"),
+        (("backend",), "max_concurrent_downloads"),
     ],
 )
 def test_removed_field_absent(path: tuple[str, ...], field: str) -> None:

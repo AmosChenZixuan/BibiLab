@@ -545,7 +545,6 @@ class WorkerLoop:
         config: BibilabConfig | None = None,
         adapter: Any = None,
         home: Path | None = None,
-        max_concurrent_downloads: int = 1,
     ) -> None:
         self._config = config
         self._adapter = adapter
@@ -555,8 +554,6 @@ class WorkerLoop:
         self._running = False
         self._cancelled: set[str] = set()
         self._in_flight: set[str] = set()
-        # Serializes the download stage independently of job concurrency.
-        self._download_sem = asyncio.Semaphore(max_concurrent_downloads)
 
     async def start(self) -> None:
         await reset_stuck_jobs()
@@ -942,17 +939,13 @@ class WorkerLoop:
         # attempt so this download starts clean and never resumes onto stale bytes.
         await asyncio.to_thread(purge_download_files, video_meta.video_id)
 
-        # Cap concurrent downloads (default 1): bilibili's per-IP throttle makes
-        # parallel downloads throughput-neutral while aggravating mid-stream drops.
-        async with self._download_sem:
-            # A job cancelled while blocked on the semaphore must not still download.
-            if await self._abort_if_cancelled(job_id):
-                return None
-            video_path: Path = await asyncio.to_thread(
-                self._get_adapter().download,
-                video_meta.video_id,
-                video_meta.source_url,
-            )
+        if await self._abort_if_cancelled(job_id):
+            return None
+        video_path: Path = await asyncio.to_thread(
+            self._get_adapter().download,
+            video_meta.video_id,
+            video_meta.source_url,
+        )
 
         # Download cover
         covers_dir = self._bibilab_home / "covers"
