@@ -98,14 +98,26 @@ class BackendConfig(BaseModel):
         "http://127.0.0.1:5173",
     ]
 
-    @field_validator("download_connections")
+    @model_validator(mode="before")
     @classmethod
-    def _check_download_connections(cls, v: int) -> int:
-        # 0 is meaningless to aria2c; very large values (e.g. 256) hit the
-        # same per-IP throttle this knob is meant to bound.
-        if not 1 <= v <= 64:
-            raise ValueError(f"download_connections must be in [1, 64], got {v!r}")
-        return v
+    def _check_download_connections_and_scale(cls, data: Any) -> Any:
+        # Two responsibilities, in order: bounds check first (fail loud),
+        # then auto-scale so the per-IP budget product (max_concurrent_jobs
+        # × download_connections) stays ≤ 64. The bench ceiling is ~20 MB/s
+        # aggregate; past ~64 sub-conns the per-connection throttle this
+        # whole knob exists to bound comes back via aggregate load.
+        # Single-video (jobs=1) keeps the bench-calibrated 16.
+        # mode="before" (mutates the input dict) so this fires on both
+        # __init__ and JSON-deserialize paths; mode="after" returning
+        # model_copy is silently ignored when validating via __init__.
+        if isinstance(data, dict):
+            conns = data.get("download_connections", 16)
+            if not 1 <= conns <= 64:
+                raise ValueError(f"download_connections must be in [1, 64], got {conns!r}")
+            jobs = data.get("max_concurrent_jobs", 4)
+            if jobs * conns > 64:
+                data = {**data, "download_connections": max(1, 64 // jobs)}
+        return data
 
 
 class RagConfig(BaseModel):

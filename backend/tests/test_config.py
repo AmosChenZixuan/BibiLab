@@ -46,3 +46,40 @@ def test_backend_download_connections_rejects_out_of_range(bad: int) -> None:
 
     with pytest.raises(ValidationError):
         BackendConfig(download_connections=bad)
+
+
+def test_backend_download_connections_keeps_default_at_jobs_1() -> None:
+    """Single-video (jobs=1) keeps the bench-calibrated 16 — the value prop
+    the per-IP budget exists to protect, not flatten."""
+    from bibilab.config import BackendConfig
+
+    cfg = BackendConfig(max_concurrent_jobs=1)
+    assert cfg.download_connections == 16
+
+
+def test_backend_download_connections_scales_down_at_high_jobs() -> None:
+    """With max_concurrent_jobs=8 the user's stated 16 would yield 128
+    sub-connections (>64 ceiling); auto-scale to 64//8=8."""
+    from bibilab.config import BackendConfig
+
+    cfg = BackendConfig(max_concurrent_jobs=8, download_connections=16)
+    assert cfg.download_connections == 8
+    assert cfg.max_concurrent_jobs * cfg.download_connections == 64
+
+
+def test_backend_download_connections_scales_at_jobs_4() -> None:
+    """With max_concurrent_jobs=4 the user's stated 16 yields exactly 64,
+    which is the ceiling — no scaling needed."""
+    from bibilab.config import BackendConfig
+
+    cfg = BackendConfig(max_concurrent_jobs=4, download_connections=16)
+    assert cfg.download_connections == 16
+
+
+def test_backend_download_connections_floor_at_one() -> None:
+    """Even at extreme jobs counts, download_connections never drops below 1
+    (aria2c -x1 is still meaningful — it just doesn't add parallelism)."""
+    from bibilab.config import BackendConfig
+
+    cfg = BackendConfig(max_concurrent_jobs=128, download_connections=16)
+    assert cfg.download_connections == 1
