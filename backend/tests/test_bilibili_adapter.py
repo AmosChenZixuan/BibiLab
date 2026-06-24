@@ -106,9 +106,8 @@ class TestDownloadMultiPart:
 
 
 class TestDownloadAria2c:
-    """Three observable behaviors: download() routes through yt-dlp + aria2c
-    when available, falls back to native yt-dlp when not, and honors
-    download_connections."""
+    """AC1+AC3+AC4 — download() routes through yt-dlp + aria2c when available,
+    falls back to native yt-dlp when not, and honors download_connections."""
 
     @staticmethod
     def _patched_download(tmp_path, *, aria2c_path, download_connections):
