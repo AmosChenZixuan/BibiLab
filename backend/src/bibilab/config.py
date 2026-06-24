@@ -5,7 +5,7 @@ import threading
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, field_validator, model_validator
 
 logger = logging.getLogger(__name__)
 
@@ -86,9 +86,6 @@ class BackendConfig(BaseModel):
     # parallelism only — transcription is serialized by a lock regardless, since
     # it is GPU-compute/GIL-bound and gains nothing from concurrency.
     max_concurrent_jobs: int = 4
-    # Per-file connection count fed to aria2c as `-x{n} -s{n}`. Bounds the
-    # per-IP throttle tail; ignored on hosts without aria2c on PATH.
-    download_connections: int = Field(16, ge=1, le=64)
     cors_origins: list[str] = [
         "http://localhost",
         "http://localhost:5173",
@@ -96,14 +93,17 @@ class BackendConfig(BaseModel):
         "http://127.0.0.1:5173",
     ]
 
-    @model_validator(mode="after")
-    def _scale_download_connections(self) -> "BackendConfig":
-        # Keep jobs×conns ≤ 64: a high max_concurrent_jobs without a parallel
-        # conns drop recreates the per-IP throttle tail this whole knob exists
-        # to bound.
-        if self.max_concurrent_jobs * self.download_connections > 64:
-            self.download_connections = max(1, 64 // self.max_concurrent_jobs)
-        return self
+    @property
+    def download_connections(self) -> int:
+        """Per-file aria2c connection count (`-x{n} -s{n}`), derived from job
+        concurrency — not a configurable knob.
+
+        Capped at 16 because aria2's -x (--max-connection-per-server) saturates
+        there: one CDN host won't open more. Scaled down further so the total
+        across all in-flight downloads (jobs × this) stays within bilibili's
+        ~64 per-IP connection budget, past which the throttle re-arms.
+        """
+        return max(1, min(16, 64 // self.max_concurrent_jobs))
 
 
 class RagConfig(BaseModel):
