@@ -3,6 +3,7 @@
 import asyncio
 import logging
 import re
+import shutil
 from pathlib import Path
 
 import httpx
@@ -15,7 +16,7 @@ from bibilab.adapters.base import (
     PlaylistMeta,
     VideoMeta,
 )
-from bibilab.config import bibilab_home
+from bibilab.config import bibilab_home, load_config
 
 logger = logging.getLogger(__name__)
 
@@ -251,6 +252,17 @@ class BilibiliAdapter(PlatformAdapter):
             "fragment_retries": _FRAGMENT_RETRIES,
             "socket_timeout": _SOCKET_TIMEOUT,
         }
+        # Route through aria2c when available. It bounds the per-connection
+        # throttle tail (master-native hits ~0.85 MB/s on a single connection
+        # 30% of downloads → 64 s for a 64 MB file; aria2c -x16 holds max 5.7 s
+        # in the same window). On aria2c-absent hosts we fall back to native
+        # yt-dlp above and ingest still works, just slower.
+        if shutil.which("aria2c"):
+            n = load_config().backend.download_connections
+            opts["external_downloader"] = "aria2c"
+            opts["external_downloader_args"] = {
+                "aria2c": [f"-x{n}", f"-s{n}", "-k1M", "--file-allocation=none"],
+            }
 
         _, part_num = _split_video_id(video_id)
         if part_num is not None:

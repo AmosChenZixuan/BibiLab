@@ -95,13 +95,71 @@ class TestDownloadMultiPart:
 
         with patch("bibilab.adapters.bilibili.yt_dlp.YoutubeDL", _make_mock_ydl(captured_opts)):
             with patch("bibilab.adapters.bilibili.bibilab_home", return_value=tmp_path):
-                adapter.download("BV1test", "https://www.bilibili.com/video/BV1test")
+                with patch("bibilab.adapters.bilibili.shutil.which", return_value="/usr/bin/aria2c"):
+                    adapter.download("BV1test", "https://www.bilibili.com/video/BV1test")
 
         assert captured_opts[0]["retries"] == _HTTP_RETRIES
         assert captured_opts[0]["fragment_retries"] == _FRAGMENT_RETRIES
         # A stalled connection must become a retriable error, not an indefinite
         # hang that wedges the serialized download stage.
         assert captured_opts[0]["socket_timeout"] == _SOCKET_TIMEOUT
+
+
+class TestDownloadAria2c:
+    """AC1+AC3+AC4 — download() routes through yt-dlp + aria2c when available,
+    falls back to native yt-dlp when not, and honors download_connections."""
+
+    @staticmethod
+    def _patched_download(tmp_path, *, aria2c_path, download_connections):
+        """Helper: build a BilibiliAdapter, run download() under all the
+        mocks needed to capture yt-dlp opts deterministically."""
+        from bibilab.config import BibilabConfig
+
+        adapter = BilibiliAdapter(cookie="test_cookie")
+        captured_opts: list = []
+        cfg = BibilabConfig()
+        cfg.backend.download_connections = download_connections
+
+        with patch("bibilab.adapters.bilibili.yt_dlp.YoutubeDL", _make_mock_ydl(captured_opts)):
+            with patch("bibilab.adapters.bilibili.bibilab_home", return_value=tmp_path):
+                with patch("bibilab.adapters.bilibili.shutil.which", return_value=aria2c_path):
+                    with patch("bibilab.adapters.bilibili.load_config", return_value=cfg):
+                        adapter.download("BV1test", "https://www.bilibili.com/video/BV1test")
+        return captured_opts[0]
+
+    def test_download_uses_aria2c_when_available(self, tmp_path):
+        opts = self._patched_download(tmp_path, aria2c_path="/usr/bin/aria2c", download_connections=16)
+
+        assert opts["external_downloader"] == "aria2c"
+        assert opts["external_downloader_args"]["aria2c"] == [
+            "-x16",
+            "-s16",
+            "-k1M",
+            "--file-allocation=none",
+        ]
+
+    def test_download_falls_back_to_native_when_aria2c_absent(self, tmp_path):
+        from bibilab.adapters.bilibili import _FRAGMENT_RETRIES, _HTTP_RETRIES, _SOCKET_TIMEOUT
+
+        opts = self._patched_download(tmp_path, aria2c_path=None, download_connections=16)
+
+        # No aria2c → no external_downloader key. Native retry/timeout opts still
+        # present so the download keeps working (just slower under throttle).
+        assert "external_downloader" not in opts
+        assert "external_downloader_args" not in opts
+        assert opts["retries"] == _HTTP_RETRIES
+        assert opts["fragment_retries"] == _FRAGMENT_RETRIES
+        assert opts["socket_timeout"] == _SOCKET_TIMEOUT
+
+    def test_download_propagates_download_connections(self, tmp_path):
+        opts = self._patched_download(tmp_path, aria2c_path="/usr/bin/aria2c", download_connections=8)
+
+        assert opts["external_downloader_args"]["aria2c"] == [
+            "-x8",
+            "-s8",
+            "-k1M",
+            "--file-allocation=none",
+        ]
 
 
 class TestSplitVideoId:
