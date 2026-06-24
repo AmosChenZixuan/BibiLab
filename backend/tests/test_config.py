@@ -26,3 +26,10 @@ def test_removed_field_absent(path: tuple[str, ...], field: str) -> None:
     for attr in path:
         obj = getattr(obj, attr)
     assert field not in obj.model_dump()
+
+
+def test_backend_download_connections_default() -> None:
+    """Default per-file connection count fed to aria2c -x/-s.
+    16 is calibrated: bounds the throttle tail AND matches the bench headline
+    (max 5.7s vs native 60.3s on the throttled path)."""
+    assert BibilabConfig().backend.download_connections == 16

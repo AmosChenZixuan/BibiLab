@@ -91,6 +91,13 @@ class BackendConfig(BaseModel):
     # don't raise aggregate throughput and only aggravate mid-stream drops.
     # Default 1 serializes the download stage; other stages stay concurrent.
     max_concurrent_downloads: int = 1
+    # Per-file connection count fed to aria2c as `-x{n} -s{n}`. Calibrated
+    # against the throttled-window bench in #553: 16 bounds the throttle tail
+    # AND matches the headline (max 5.7s vs native 60.3s on throttled rounds);
+    # -x4 bounds the tail but underdelivers. Independent of max_concurrent_jobs
+    # (parallel videos): that's the batch throughput lever, this is the
+    # per-file one. Ignored when aria2c is absent on PATH.
+    download_connections: int = 16
     cors_origins: list[str] = [
         "http://localhost",
         "http://localhost:5173",
