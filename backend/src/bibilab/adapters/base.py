@@ -59,5 +59,9 @@ class PlatformAdapter(ABC):
         Returns (metadata_map, expanded_map) where expanded maps original IDs to part IDs."""
 
     @abstractmethod
-    def download(self, video_id: str, source_url: str) -> Path:
-        """Download a video and return the path to the local file."""
+    def download(self, video_id: str, source_url: str, connections: int) -> Path:
+        """Download a video and return the path to the local file.
+
+        connections is the per-file parallel-connection budget the worker passes
+        (BackendConfig.download_connections); adapters that can't use it may ignore it.
+        """
