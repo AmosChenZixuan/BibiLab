@@ -550,7 +550,7 @@ class TestDownloadHygieneAndCap:
         seen = {}
         final = downloads_dir / "BVstale.m4a"
 
-        def fake_download(video_id: str, source_url: str):
+        def fake_download(video_id: str, source_url: str, connections: int):
             seen["stale_existed_at_download"] = stale.exists()
             final.write_bytes(b"new audio")
             return final
@@ -566,10 +566,10 @@ class TestDownloadHygieneAndCap:
         assert result == final
 
     @pytest.mark.asyncio
-    async def test_download_cap_serializes(self, tmp_bibilab_home: Path, downloads_dir: Path):
-        """concurrency=1 serializes the download stage even when multiple
-        jobs are dispatched concurrently. The download semaphore is gone;
-        the main job-concurrency gate is the only cap."""
+    async def test_no_download_only_cap(self, tmp_bibilab_home: Path, downloads_dir: Path):
+        """The download-only semaphore is gone — multiple concurrent calls to
+        _stage_download are bounded only by the outer job-concurrency gate
+        (which this test bypasses by calling _stage_download directly)."""
         import asyncio
         import threading
         import time
@@ -580,7 +580,7 @@ class TestDownloadHygieneAndCap:
         active = 0
         peak = 0
 
-        def fake_download(video_id: str, source_url: str):
+        def fake_download(video_id: str, source_url: str, connections: int):
             nonlocal active, peak
             with lock:
                 active += 1
@@ -594,10 +594,6 @@ class TestDownloadHygieneAndCap:
 
         adapter = MagicMock()
         adapter.download = MagicMock(side_effect=fake_download)
-        # Bypass the main loop's _in_flight gate by calling _stage_download
-        # directly; the only cap left is whatever _stage_download enforces,
-        # which is none — so peak should now be 3, not 1. This test now
-        # pins that the download-only semaphore was removed.
         worker = WorkerLoop(adapter=adapter, home=tmp_bibilab_home, concurrency=1)
 
         with patch("bibilab.worker._download_cover", MagicMock(return_value=True)):

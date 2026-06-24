@@ -5,7 +5,7 @@ import threading
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 logger = logging.getLogger(__name__)
 
@@ -87,10 +87,8 @@ class BackendConfig(BaseModel):
     # it is GPU-compute/GIL-bound and gains nothing from concurrency.
     max_concurrent_jobs: int = 4
     # Per-file connection count fed to aria2c as `-x{n} -s{n}`. Bounds the
-    # per-IP throttle tail on single/low-concurrency ingests where per-file
-    # connections are the only parallel dimension; ignored on hosts without
-    # aria2c on PATH.
-    download_connections: int = 16
+    # per-IP throttle tail; ignored on hosts without aria2c on PATH.
+    download_connections: int = Field(16, ge=1, le=64)
     cors_origins: list[str] = [
         "http://localhost",
         "http://localhost:5173",
@@ -98,26 +96,14 @@ class BackendConfig(BaseModel):
         "http://127.0.0.1:5173",
     ]
 
-    @model_validator(mode="before")
-    @classmethod
-    def _check_download_connections_and_scale(cls, data: Any) -> Any:
-        # Two responsibilities, in order: bounds check first (fail loud),
-        # then auto-scale so the per-IP budget product (max_concurrent_jobs
-        # × download_connections) stays ≤ 64. The bench ceiling is ~20 MB/s
-        # aggregate; past ~64 sub-conns the per-connection throttle this
-        # whole knob exists to bound comes back via aggregate load.
-        # Single-video (jobs=1) keeps the bench-calibrated 16.
-        # mode="before" (mutates the input dict) so this fires on both
-        # __init__ and JSON-deserialize paths; mode="after" returning
-        # model_copy is silently ignored when validating via __init__.
-        if isinstance(data, dict):
-            conns = data.get("download_connections", 16)
-            if not 1 <= conns <= 64:
-                raise ValueError(f"download_connections must be in [1, 64], got {conns!r}")
-            jobs = data.get("max_concurrent_jobs", 4)
-            if jobs * conns > 64:
-                data = {**data, "download_connections": max(1, 64 // jobs)}
-        return data
+    @model_validator(mode="after")
+    def _scale_download_connections(self) -> "BackendConfig":
+        # Keep jobs×conns ≤ 64: a high max_concurrent_jobs without a parallel
+        # conns drop recreates the per-IP throttle tail this whole knob exists
+        # to bound.
+        if self.max_concurrent_jobs * self.download_connections > 64:
+            self.download_connections = max(1, 64 // self.max_concurrent_jobs)
+        return self
 
 
 class RagConfig(BaseModel):

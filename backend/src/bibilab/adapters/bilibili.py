@@ -16,7 +16,7 @@ from bibilab.adapters.base import (
     PlaylistMeta,
     VideoMeta,
 )
-from bibilab.config import bibilab_home, load_config
+from bibilab.config import bibilab_home
 
 logger = logging.getLogger(__name__)
 
@@ -240,7 +240,7 @@ class BilibiliAdapter(PlatformAdapter):
             videos=videos,
         )
 
-    def download(self, video_id: str, source_url: str) -> Path:
+    def download(self, video_id: str, source_url: str, connections: int) -> Path:
         downloads_dir = bibilab_home() / "downloads"
         output_template = str(downloads_dir / f"{video_id}.%(ext)s")
         opts = {
@@ -252,16 +252,13 @@ class BilibiliAdapter(PlatformAdapter):
             "fragment_retries": _FRAGMENT_RETRIES,
             "socket_timeout": _SOCKET_TIMEOUT,
         }
-        # Route through aria2c when available. With multiple per-file
-        # connections it sidesteps the per-IP throttle that clamps a single
-        # yt-dlp stream on contiguous DASH. On aria2c-absent hosts we fall
-        # back to the native opts above and ingest still works, just slower
-        # under throttle.
+        # aria2c sidesteps the per-IP throttle that clamps a single yt-dlp
+        # stream on contiguous DASH. Absent-aria2c falls back to native opts
+        # — ingest still works, just slower under throttle.
         if shutil.which("aria2c"):
-            n = load_config().backend.download_connections
             opts["external_downloader"] = "aria2c"
             opts["external_downloader_args"] = {
-                "aria2c": [f"-x{n}", f"-s{n}", "-k1M", "--file-allocation=none"],
+                "aria2c": [f"-x{connections}", f"-s{connections}", "-k1M", "--file-allocation=none"],
             }
 
         _, part_num = _split_video_id(video_id)

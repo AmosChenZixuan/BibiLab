@@ -945,6 +945,7 @@ class WorkerLoop:
             self._get_adapter().download,
             video_meta.video_id,
             video_meta.source_url,
+            self._get_config().backend.download_connections,
         )
 
         # Download cover
