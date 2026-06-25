@@ -82,6 +82,18 @@ class ArtifactResult(BaseModel):
     content: str
 
 
+class MindMapResult(BaseModel):
+    """Mind-map LLM output: a single {name, root} JSON object with no
+    envelope wrapper. The worker renders the markdown file body via
+    `_render_mind_map_markdown`; the LLM never sees a content-fence
+    indirection. Mirrors the inner schema in `_MIND_MAP_PROMPT` so the
+    prompt and parser agree on one shape only (the prior `name` key
+    collision with ArtifactResult is gone)."""
+
+    name: str
+    root: dict
+
+
 # Token-budget knobs for the artifact section-batched refine.
 # budget = context_window − 2 * max_output_tokens − _PROMPT_OVERHEAD_TOKENS
 # (one max_output for the model's response, one for the running draft fed

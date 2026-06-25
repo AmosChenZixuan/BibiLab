@@ -27,6 +27,43 @@ from tests.factories import SourceFactory
 
 pytestmark = pytest.mark.integration
 
+# MindMapResult import will be enabled as each slice lands.
+# from bibilab.worker import MindMapResult
+
+
+# --- MindMapResult model --------------------------------------------------
+
+
+def test_mind_map_result_accepts_valid_input():
+    """MindMapResult(name, root) constructs from a plain dict root and
+    exposes both fields. This is the seam that lets the LLM emit a single
+    JSON object with no envelope wrapper."""
+    from bibilab.worker import MindMapResult
+
+    mm = MindMapResult(name="Topic", root={"label": "Root", "children": []})
+    assert mm.name == "Topic"
+    assert mm.root == {"label": "Root", "children": []}
+
+
+def test_mind_map_result_rejects_missing_root():
+    """Missing `root` is a contract violation; Pydantic must raise."""
+    from pydantic import ValidationError
+
+    from bibilab.worker import MindMapResult
+
+    with pytest.raises(ValidationError):
+        MindMapResult(name="Topic")  # type: ignore[call-arg]
+
+
+def test_mind_map_result_rejects_non_dict_root():
+    """`root` must be a dict (recursive tree); a string is rejected."""
+    from pydantic import ValidationError
+
+    from bibilab.worker import MindMapResult
+
+    with pytest.raises(ValidationError):
+        MindMapResult(name="Topic", root="not a dict")  # type: ignore[arg-type]
+
 
 # --- _validate_mind_map_fence ---------------------------------------------
 
