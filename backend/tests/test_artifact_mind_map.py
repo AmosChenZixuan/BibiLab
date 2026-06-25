@@ -122,6 +122,23 @@ def test_mind_map_prompt_instructs_only_name_and_root():
     assert "```json" not in _MIND_MAP_PROMPT
 
 
+# --- Backward compat: legacy on-disk artifacts --------------------------
+
+
+def test_legacy_fence_with_name_key_still_parses():
+    """On-disk artifacts produced before this refactor carried both
+    `name` and `root` inside the ```json fence (the LLM wrote the full
+    inner schema). After the refactor, `_render_mind_map_markdown`
+    emits only `{"root": ...}`. The fence validator must accept BOTH
+    shapes so existing artifacts remain readable — the frontend fence
+    parser (`parseMindTree`) reads `parsed.root` from either."""
+    legacy_body = '# Topic\n\n```json\n{\n  "name": "Legacy",\n  "root": {"label": "L", "children": []}\n}\n```\n'
+    assert _validate_mind_map_fence(legacy_body) == {
+        "name": "Legacy",
+        "root": {"label": "L", "children": []},
+    }
+
+
 # --- _run_artifact_job dispatch + happy path ------------------------------
 
 
