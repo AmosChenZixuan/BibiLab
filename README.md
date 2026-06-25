@@ -83,6 +83,7 @@ content.
 | Node | ≥ 20 | `web` |
 | [`uv`](https://docs.astral.sh/uv/) | latest | Python package + venv manager |
 | FFmpeg | system | Audio extraction (`ffmpeg-python` shells out) |
+| `aria2` | system | Multi-connection downloader (`apt install aria2` / `brew install aria2`); bounds per-IP throttle tail via yt-dlp's `external_downloader` |
 | `yt-dlp` | auto-installed via `uv` | Bilibili / YouTube adapters |
 
 > CUDA is optional. The default ASR / embedding / reranker models run on CPU;

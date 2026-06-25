@@ -86,17 +86,24 @@ class BackendConfig(BaseModel):
     # parallelism only — transcription is serialized by a lock regardless, since
     # it is GPU-compute/GIL-bound and gains nothing from concurrency.
     max_concurrent_jobs: int = 4
-    # Max simultaneous video downloads, independent of max_concurrent_jobs.
-    # bilibili throttles per-IP (token bucket), so parallel downloads on one IP
-    # don't raise aggregate throughput and only aggravate mid-stream drops.
-    # Default 1 serializes the download stage; other stages stay concurrent.
-    max_concurrent_downloads: int = 1
     cors_origins: list[str] = [
         "http://localhost",
         "http://localhost:5173",
         "http://127.0.0.1",
         "http://127.0.0.1:5173",
     ]
+
+    @property
+    def download_connections(self) -> int:
+        """Per-file aria2c connection count (`-x{n} -s{n}`), derived from job
+        concurrency — not a configurable knob.
+
+        Capped at 16 because aria2's -x (--max-connection-per-server) saturates
+        there: one CDN host won't open more. Scaled down further so the total
+        across all in-flight downloads (jobs × this) stays within bilibili's
+        ~64 per-IP connection budget, past which the throttle re-arms.
+        """
+        return max(1, min(16, 64 // self.max_concurrent_jobs))
 
 
 class RagConfig(BaseModel):

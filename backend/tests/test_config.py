@@ -18,6 +18,10 @@ from bibilab.config import BibilabConfig
         (("rag",), "chunk_pause_threshold"),
         ((), "transcript_collection_name"),
         (("transcription",), "llm_timeout"),
+        (("backend",), "max_concurrent_downloads"),
+        # download_connections is a derived @property, never a stored field —
+        # this guards against it being re-added as a configurable knob.
+        (("backend",), "download_connections"),
     ],
 )
 def test_removed_field_absent(path: tuple[str, ...], field: str) -> None:
@@ -26,3 +30,21 @@ def test_removed_field_absent(path: tuple[str, ...], field: str) -> None:
     for attr in path:
         obj = getattr(obj, attr)
     assert field not in obj.model_dump()
+
+
+def test_backend_download_connections_default() -> None:
+    """At the default 4 jobs, the derived per-file aria2c connection count is 16
+    (the -x saturation cap), and the total stays within the per-IP budget."""
+    cfg = BibilabConfig().backend
+    assert cfg.download_connections == 16
+    assert cfg.max_concurrent_jobs * cfg.download_connections == 64
+
+
+def test_backend_download_connections_derived_from_jobs() -> None:
+    """download_connections is read-only and scales down with job concurrency so
+    jobs × connections never exceeds the 64 per-IP budget; floors at 1."""
+    from bibilab.config import BackendConfig
+
+    assert BackendConfig(max_concurrent_jobs=1).download_connections == 16
+    assert BackendConfig(max_concurrent_jobs=8).download_connections == 8
+    assert BackendConfig(max_concurrent_jobs=128).download_connections == 1

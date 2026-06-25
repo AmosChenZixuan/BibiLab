@@ -550,7 +550,7 @@ class TestDownloadHygieneAndCap:
         seen = {}
         final = downloads_dir / "BVstale.m4a"
 
-        def fake_download(video_id: str, source_url: str):
+        def fake_download(video_id: str, source_url: str, connections: int):
             seen["stale_existed_at_download"] = stale.exists()
             final.write_bytes(b"new audio")
             return final
@@ -566,9 +566,10 @@ class TestDownloadHygieneAndCap:
         assert result == final
 
     @pytest.mark.asyncio
-    async def test_download_cap_serializes(self, tmp_bibilab_home: Path, downloads_dir: Path):
-        """max_concurrent_downloads=1 serializes the download stage even when
-        multiple jobs run concurrently."""
+    async def test_no_download_only_cap(self, tmp_bibilab_home: Path, downloads_dir: Path):
+        """The download-only semaphore is gone — multiple concurrent calls to
+        _stage_download are bounded only by the outer job-concurrency gate
+        (which this test bypasses by calling _stage_download directly)."""
         import asyncio
         import threading
         import time
@@ -579,7 +580,7 @@ class TestDownloadHygieneAndCap:
         active = 0
         peak = 0
 
-        def fake_download(video_id: str, source_url: str):
+        def fake_download(video_id: str, source_url: str, connections: int):
             nonlocal active, peak
             with lock:
                 active += 1
@@ -593,11 +594,11 @@ class TestDownloadHygieneAndCap:
 
         adapter = MagicMock()
         adapter.download = MagicMock(side_effect=fake_download)
-        worker = WorkerLoop(adapter=adapter, home=tmp_bibilab_home, max_concurrent_downloads=1)
+        worker = WorkerLoop(adapter=adapter, home=tmp_bibilab_home, concurrency=1)
 
         with patch("bibilab.worker._download_cover", MagicMock(return_value=True)):
             await asyncio.gather(
                 *(worker._stage_download(f"job-{i}", _video_meta(f"BV{i}"), f"src-{i}") for i in range(3))
             )
 
-        assert peak == 1
+        assert peak == 3

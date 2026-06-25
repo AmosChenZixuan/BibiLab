@@ -3,6 +3,7 @@
 import asyncio
 import logging
 import re
+import shutil
 from pathlib import Path
 
 import httpx
@@ -239,7 +240,7 @@ class BilibiliAdapter(PlatformAdapter):
             videos=videos,
         )
 
-    def download(self, video_id: str, source_url: str) -> Path:
+    def download(self, video_id: str, source_url: str, connections: int) -> Path:
         downloads_dir = bibilab_home() / "downloads"
         output_template = str(downloads_dir / f"{video_id}.%(ext)s")
         opts = {
@@ -251,6 +252,14 @@ class BilibiliAdapter(PlatformAdapter):
             "fragment_retries": _FRAGMENT_RETRIES,
             "socket_timeout": _SOCKET_TIMEOUT,
         }
+        # aria2c sidesteps the per-IP throttle that clamps a single yt-dlp
+        # stream on contiguous DASH. Absent-aria2c falls back to native opts
+        # — ingest still works, just slower under throttle.
+        if shutil.which("aria2c"):
+            opts["external_downloader"] = "aria2c"
+            opts["external_downloader_args"] = {
+                "aria2c": [f"-x{connections}", f"-s{connections}", "-k1M", "--file-allocation=none"],
+            }
 
         _, part_num = _split_video_id(video_id)
         if part_num is not None:
