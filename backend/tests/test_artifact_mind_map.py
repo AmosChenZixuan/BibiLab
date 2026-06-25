@@ -65,6 +65,23 @@ def test_mind_map_result_rejects_non_dict_root():
         MindMapResult(name="Topic", root="not a dict")  # type: ignore[arg-type]
 
 
+# --- _render_mind_map_markdown --------------------------------------------
+
+
+def test_render_mind_map_markdown_roundtrips_through_fence_validator():
+    """`_render_mind_map_markdown(mm)` produces a content string whose
+    single ```json fence re-parses to `{"root": mm.root}` via
+    `_validate_mind_map_fence`. This is the write-side symmetry check:
+    whatever the LLM returns, the on-disk file round-trips back to the
+    same tree."""
+    from bibilab.worker import MindMapResult, _render_mind_map_markdown
+
+    root = {"label": "Topic", "children": [{"label": "Branch"}]}
+    mm = MindMapResult(name="Topic Map", root=root)
+    content = _render_mind_map_markdown(mm)
+    assert _validate_mind_map_fence(content) == {"root": root}
+
+
 # --- _validate_mind_map_fence ---------------------------------------------
 
 

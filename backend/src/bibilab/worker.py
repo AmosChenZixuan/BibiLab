@@ -347,6 +347,16 @@ def _validate_mind_map_fence(content: str) -> dict:
     return parsed
 
 
+def _render_mind_map_markdown(mm: MindMapResult) -> str:
+    """Build the artifact file body for a mind_map job from the parsed
+    `MindMapResult`. The result is byte-identical to the prior LLM-emitted
+    format (one ```json fence holding `{"root": ...}`), so on-disk
+    artifacts produced before and after this change are interchangeable
+    and the frontend fence parser is unaffected."""
+    payload = json.dumps({"root": mm.root}, ensure_ascii=False, indent=2)
+    return f"```json\n{payload}\n```\n"
+
+
 async def _build_section_views(source_ids: list[str]) -> list[_SectionView]:
     """Load each source's sections, reconstruct their verbatim text from
     the segment slice, and return a flat ordered list of _SectionView
