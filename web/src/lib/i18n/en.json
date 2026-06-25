@@ -193,7 +193,8 @@
       "alreadyInList": "Already in this list",
       "playlistAllProcessed": "All %{count} videos are already in this list",
       "playlistAllQueuedNeedsAuth": "All %{count} videos already queued — %{authCount} need authentication. Check the jobs panel.",
-      "playlistPartiallySkipped": "%{queued} of %{total} queued. %{skipped} already in list."
+      "playlistPartiallySkipped": "%{queued} of %{total} queued. %{skipped} already in list.",
+      "retrySkippedProcessed": "Already in this list — removed the stale failed entry."
     },
     "preview": {
       "title": "Preview playlist",
