@@ -21,6 +21,7 @@ from bibilab.pipeline.transcribe import WhisperSegment
 from bibilab.worker import (
     _MIND_MAP_PROMPT,
     WorkerLoop,
+    _refine_mind_map,
     _validate_mind_map_fence,
 )
 from tests.factories import SourceFactory
@@ -253,3 +254,106 @@ async def test_run_artifact_job_mind_map_bad_output_fails_job(tmp_bibilab_home, 
     assert expected_error in (job_row["error"] or "")
     assert await get_artifact("art-bad") is None
     assert not (tmp_bibilab_home / "artifacts" / "list-1" / "art-bad.md").exists()
+
+
+# --- _refine_mind_map -----------------------------------------------------
+
+
+def _section_view(source_id: str, title: str, seq: int, tokens: int) -> object:
+    """Tiny _SectionView stand-in for refine tests; the same shape the
+    worker passes around (text + token_count + headers)."""
+    from bibilab.worker import _SectionView
+
+    return _SectionView(
+        source_id=source_id,
+        source_title=title,
+        seq=seq,
+        timestamp_start=0.0,
+        timestamp_end=1.0,
+        text=f"{title} text.",
+        token_count=tokens,
+    )
+
+
+@pytest.mark.asyncio
+async def test_refine_mind_map_single_batch_parses_mind_map_result(mock_call_llm):
+    """Sections fit in one batch → one LLM call. The LLM returns a JSON
+    object with `name` + `root` only (no `content` envelope, no fence);
+    `_refine_mind_map` parses it as MindMapResult and returns it."""
+    cfg = BibilabConfig()
+    cfg.ai.context_window = 32_000
+    cfg.ai.max_output_tokens = 4_000
+    sections = [
+        _section_view("src-A", "A", 0, 2),
+        _section_view("src-B", "B", 0, 2),
+    ]
+    mock_call_llm.return_value = json.dumps({"name": "Topic Map", "root": {"label": "Topic", "children": []}})
+
+    result = await _refine_mind_map(sections=sections, cfg=cfg, ui_lang="en")
+
+    from bibilab.worker import MindMapResult
+
+    assert isinstance(result, MindMapResult)
+    assert result.name == "Topic Map"
+    assert result.root == {"label": "Topic", "children": []}
+    assert mock_call_llm.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_refine_mind_map_multi_batch_refines_running_draft(mock_call_llm):
+    """Sections don't fit in one batch → 2 LLM calls. Batch 1 produces
+    the initial MindMapResult; batch 2 refines it with the running draft
+    shown in the prompt."""
+    cfg = BibilabConfig()
+    # Tiny budget: each section alone exceeds → 2 batches.
+    cfg.ai.context_window = 60 + 2 * 4000 + 500
+    cfg.ai.max_output_tokens = 4000
+    sections = [
+        _section_view("src-1", "A", 0, 50),
+        _section_view("src-1", "A", 1, 50),
+    ]
+    mock_call_llm.side_effect = [
+        json.dumps({"name": "Initial", "root": {"label": "A"}}),
+        json.dumps({"name": "Refined", "root": {"label": "A", "children": [{"label": "B"}]}}),
+    ]
+
+    result = await _refine_mind_map(sections=sections, cfg=cfg, ui_lang="en")
+
+    assert mock_call_llm.call_count == 2
+    # Final result is the second call's parsed output.
+    assert result.name == "Refined"
+    assert result.root["label"] == "A"
+    assert result.root["children"] == [{"label": "B"}]
+    # The second prompt must contain the running draft (first call's
+    # `name` and `root`) so the LLM can integrate.
+    second_prompt = mock_call_llm.call_args_list[1][0][0]
+    assert "Initial" in second_prompt
+    assert '"label": "A"' in second_prompt
+
+
+@pytest.mark.asyncio
+async def test_refine_mind_map_malformed_json_raises_pipeline_error(mock_call_llm):
+    """LLM returns invalid JSON → retry ladder exhausts → PipelineError."""
+    cfg = BibilabConfig()
+    cfg.ai.context_window = 32_000
+    cfg.ai.max_output_tokens = 4_000
+    sections = [_section_view("src-A", "A", 0, 2)]
+    mock_call_llm.return_value = "{not valid json"
+
+    with pytest.raises(PipelineError):
+        await _refine_mind_map(sections=sections, cfg=cfg, ui_lang="en")
+
+
+@pytest.mark.asyncio
+async def test_refine_mind_map_missing_root_raises_pipeline_error(mock_call_llm):
+    """LLM returns valid JSON but missing the `root` key → Pydantic
+    ValidationError → retry ladder exhausts → PipelineError. This is the
+    failure mode the original `name` collision was producing."""
+    cfg = BibilabConfig()
+    cfg.ai.context_window = 32_000
+    cfg.ai.max_output_tokens = 4_000
+    sections = [_section_view("src-A", "A", 0, 2)]
+    mock_call_llm.return_value = json.dumps({"name": "X"})  # no `root`
+
+    with pytest.raises(PipelineError):
+        await _refine_mind_map(sections=sections, cfg=cfg, ui_lang="en")

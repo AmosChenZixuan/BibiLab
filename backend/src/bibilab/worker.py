@@ -548,6 +548,184 @@ async def _refine_artifact_multi_batch(
     return draft
 
 
+# Mind-map refine path. Mirrors `_refine_artifact` structurally (same
+# budget / atomicity / threshold logic, same single- and multi-batch
+# shape) but parses the LLM response as MindMapResult and asks the LLM
+# for `{name, root}` only — no envelope, no fenced JSON block. The
+# mind_map worker builds the file body itself via
+# `_render_mind_map_markdown`.
+
+
+def _build_mind_map_initial_prompt(
+    *,
+    transcript_text: str,
+    cfg: BibilabConfig,
+    ui_lang: str | None,
+) -> str:
+    """Same shape as `_build_initial_prompt` but the trailing schema
+    directive is `{name, root}` instead of `{name, content}`. Mind_map
+    has no envelope; the LLM emits a single JSON object, the worker
+    renders the markdown file body."""
+    lang = resolve_response_language(cfg.ai, ui_lang)
+    lang_instruction = _LANG_INSTRUCTION.get(lang, _LANG_INSTRUCTION["en"])
+    lang_output_directive = _lang_output_directive(lang)
+    return f"""{lang_instruction}
+
+{_MIND_MAP_PROMPT}
+
+Based on the following transcripts, generate the requested artifact content.
+
+Transcript:
+{transcript_text}
+
+{lang_instruction}
+Respond ONLY with valid JSON matching this schema:
+{{
+  "name": "string (a short title for this mind map)",
+  "root": "object (recursive tree: {{label, children}})"
+}}
+{lang_output_directive}"""
+
+
+def _build_mind_map_refine_prompt(
+    *,
+    draft: MindMapResult,
+    new_sections_text: str,
+    cfg: BibilabConfig,
+    ui_lang: str | None,
+) -> str:
+    """Mind_map refine prompt: shows the running draft as `{name, root}`
+    JSON and asks the LLM to integrate new sections. Same shape as
+    `_build_refine_prompt` but the schema directive and the running-draft
+    block are MindMapResult-shaped, not ArtifactResult-shaped."""
+    lang = resolve_response_language(cfg.ai, ui_lang)
+    lang_instruction = _LANG_INSTRUCTION.get(lang, _LANG_INSTRUCTION["en"])
+    lang_output_directive = _lang_output_directive(lang)
+    draft_block = json.dumps({"name": draft.name, "root": draft.root}, ensure_ascii=False)
+    integrate_directive = (
+        "Integrate this new material into the draft. Refine the draft's "
+        "name and root tree to reflect the accumulated material."
+    )
+    return f"""{lang_instruction}
+
+{_MIND_MAP_PROMPT}
+
+{integrate_directive}
+
+Current draft (name + root):
+```json
+{draft_block}
+```
+
+New material:
+{new_sections_text}
+
+{lang_instruction}
+Respond ONLY with valid JSON matching this schema:
+{{
+  "name": "string (a short title for this mind map)",
+  "root": "object (recursive tree: {{label, children}})"
+}}
+{lang_output_directive}"""
+
+
+async def _refine_mind_map(
+    *,
+    sections: list[_SectionView],
+    cfg: BibilabConfig,
+    ui_lang: str | None = None,
+) -> MindMapResult:
+    """Section-batched refine for mind_map. Single- and multi-batch paths
+    parallel `_refine_artifact`; the parser target is MindMapResult so
+    the LLM emits `{name, root}` only — no envelope, no nested fence."""
+    budget = cfg.ai.context_window - 2 * cfg.ai.max_output_tokens - _PROMPT_OVERHEAD_TOKENS
+    if budget <= 0:
+        raise PipelineError(
+            f"Mind map batch budget non-positive (context_window={cfg.ai.context_window}, "
+            f"2*max_output_tokens={2 * cfg.ai.max_output_tokens}, "
+            f"prompt_overhead={_PROMPT_OVERHEAD_TOKENS}); "
+            f"raise max_output_tokens or context_window"
+        )
+
+    for sec in sections:
+        if sec.token_count > budget:
+            raise PipelineError(
+                f"Source {sec.source_id!r} section {sec.seq} alone "
+                f"({sec.token_count} tokens) exceeds the mind map batch "
+                f"budget ({budget} tokens); reduce section size or raise "
+                f"context_window"
+            )
+
+    batches = _pack_sections(sections, budget)
+    if len(batches) > _SOFT_COST_BATCH_THRESHOLD:
+        logger.warning(
+            "Mind map refine using %d batches (threshold=%d); consider "
+            "raising context_window or selecting fewer sources",
+            len(batches),
+            _SOFT_COST_BATCH_THRESHOLD,
+        )
+
+    if len(batches) == 1:
+        transcript_text = _render_single_batch_text(sections)
+        llm_prompt = _build_mind_map_initial_prompt(
+            transcript_text=transcript_text,
+            cfg=cfg,
+            ui_lang=ui_lang,
+        )
+        return await asyncio.to_thread(
+            _shared_pipeline._call_llm_with_retry,
+            [llm_prompt],
+            lambda raw: _parse_llm_json_response(raw, MindMapResult),
+            cfg=cfg.ai,
+            label="mind_map batch 1/1",
+            max_attempts=3,
+        )
+
+    return await _refine_mind_map_multi_batch(
+        batches=batches,
+        cfg=cfg,
+        ui_lang=ui_lang,
+    )
+
+
+async def _refine_mind_map_multi_batch(
+    *,
+    batches: list[list[_SectionView]],
+    cfg: BibilabConfig,
+    ui_lang: str | None,
+) -> MindMapResult:
+    """Multi-batch mind_map refine: batch 1 produces the initial
+    MindMapResult; batch k>1 refines the running draft with new sections."""
+    draft: MindMapResult | None = None
+    for i, batch in enumerate(batches, start=1):
+        label = f"mind_map batch {i}/{len(batches)}"
+        new_sections_text = "\n".join(_render_multi_batch_section(s) for s in batch)
+        if i == 1:
+            llm_prompt = _build_mind_map_initial_prompt(
+                transcript_text=new_sections_text,
+                cfg=cfg,
+                ui_lang=ui_lang,
+            )
+        else:
+            assert draft is not None  # invariant: set by i=1
+            llm_prompt = _build_mind_map_refine_prompt(
+                draft=draft,
+                new_sections_text=new_sections_text,
+                cfg=cfg,
+                ui_lang=ui_lang,
+            )
+        draft = await asyncio.to_thread(
+            _shared_pipeline._call_llm_with_retry,
+            [llm_prompt],
+            lambda raw: _parse_llm_json_response(raw, MindMapResult),
+            cfg=cfg.ai,
+            label=label,
+            max_attempts=3,
+        )
+    assert draft is not None  # invariant: at least one batch
+    return draft
+
+
 def _download_cover(cover_url: str, dest: Path) -> bool:
     """Download cover image from URL to dest path. Returns True on success."""
     try:
