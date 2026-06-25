@@ -1444,10 +1444,8 @@ async def test_write_source_with_segments_sections_without_digests_raises(
 async def test_get_messages_beyond_window_orders_by_rowid_when_timestamps_collide(
     tmp_bibilab_home: Path,
 ):
-    """When multiple messages share `created_at` (same-microsecond inserts in
-    the same transaction), the rowid tiebreaker is what disambiguates order.
-    The outer ORDER BY must resolve rowid from the subquery's projection —
-    not from the implicit column on the underlying table.
+    """8 messages inserted in the same transaction share `created_at`; the
+    rowid tiebreaker must yield ascending insertion order across the window.
     """
     from bibilab.db import bootstrap_db, get_db, get_messages_beyond_window
 
