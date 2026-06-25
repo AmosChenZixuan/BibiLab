@@ -1438,3 +1438,40 @@ async def test_write_source_with_segments_sections_without_digests_raises(
             ai_model="y",
             settings_snapshot={},
         )
+
+
+@pytest.mark.asyncio
+async def test_get_messages_beyond_window_orders_by_rowid_when_timestamps_collide(
+    tmp_bibilab_home: Path,
+):
+    """When multiple messages share `created_at` (same-microsecond inserts in
+    the same transaction), the rowid tiebreaker is what disambiguates order.
+    The outer ORDER BY must resolve rowid from the subquery's projection —
+    not from the implicit column on the underlying table.
+    """
+    from bibilab.db import bootstrap_db, get_db, get_messages_beyond_window
+
+    await bootstrap_db()
+
+    shared_ts = "2026-06-25T12:00:00+00:00"
+    conv_id = "test-conv-rowid"
+    async with get_db() as db:
+        await db.execute(
+            "INSERT INTO lists (id, name, created_at) VALUES (?, ?, ?)",
+            ("test-list-rowid", "T", "2026-01-01T00:00:00"),
+        )
+        await db.execute(
+            "INSERT INTO conversations (id, list_id, summary, created_at, updated_at) "
+            "VALUES (?, ?, NULL, ?, ?)",
+            (conv_id, "test-list-rowid", "2026-01-01T00:00:00", "2026-01-01T00:00:00"),
+        )
+        for i in range(8):
+            await db.execute(
+                "INSERT INTO messages (id, conversation_id, role, content, metadata, created_at) "
+                "VALUES (?, ?, ?, ?, NULL, ?)",
+                (f"m-{i:02d}", conv_id, "user", f"M{i}", shared_ts),
+            )
+        await db.commit()
+
+    beyond = await get_messages_beyond_window(conv_id, window_size=3)
+    assert [r["id"] for r in beyond] == [f"m-{i:02d}" for i in range(5)]

@@ -969,12 +969,12 @@ async def get_messages_beyond_window(
             """
             SELECT id, conversation_id, role, content, metadata, created_at, status, error, tool_blocks
             FROM (
-                SELECT *, ROW_NUMBER() OVER (ORDER BY created_at DESC, rowid DESC) AS _rn
+                SELECT *, rowid AS _rowid, ROW_NUMBER() OVER (ORDER BY created_at DESC, rowid DESC) AS _rn
                 FROM messages
                 WHERE conversation_id=? AND status=?
             )
             WHERE _rn > ?
-            ORDER BY created_at ASC, rowid ASC
+            ORDER BY created_at ASC, _rowid ASC
             """,
             (conversation_id, VISIBLE_MESSAGE_STATUS, window_size),
         )
