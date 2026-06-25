@@ -1743,7 +1743,6 @@ async def test_find_passages_facet_emits_full_outline(tmp_bibilab_home, monkeypa
     for entry in outline_only:
         assert entry.citable, "outline-only sections are first-class citations"
         assert entry.preview, "outline-only preview should be the section summary"
-        assert entry.preview == entry.title or "summary" in entry.preview.lower() or len(entry.preview) > 0
     # All section summaries appear in the fenced body.
     assert "sec1 summary about the topic" in result["_chunks"]
     assert "sec2 summary about the topic" in result["_chunks"]

@@ -546,11 +546,7 @@ async def execute_find_passages(
     # Facet matched → emit the FULL section outline for each matched source:
     # register every section (summary, its own [N]). Outline-only sections
     # (no chunk hit) are first-class citations: citable from the start, with
-    # the section summary attached as `preview` so the ledger row has a body
-    # (not an empty quote). The section load + title fallback already
-    # happened in the batched build above; this loop is pure allocation, no
-    # DB calls. _alloc_section seeds the entry's timestamps from
-    # ts_by_section_id, so outline-only entries carry a real span (no 0:00–0:00).
+    # the section summary attached as `preview` so the ledger row has a body.
     if scoped_source_ids:
         for sid in scoped_source_ids:
             title = title_by_source.get(sid, "")
@@ -562,9 +558,6 @@ async def execute_find_passages(
                 if entry.timestamp_start is None:
                     entry.timestamp_start, entry.timestamp_end = ts_by_section_id[section_id]
                 if not entry.chunk_ids:
-                    # Outline-only: citable (clickable [N]) and previewed by
-                    # the section summary so the user can verify the citation
-                    # in-place without a read_section drill.
                     entry.citable = True
                     entry.preview = summary_by_section_id[section_id]
                 summaries_by_index[entry.index] = summary_by_section_id[section_id]
