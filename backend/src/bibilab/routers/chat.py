@@ -842,14 +842,14 @@ async def run_chat_turn(
                                 {
                                     "section_id": sid,
                                     "section_seq": entry.seq,
-                                    "chunk_id": entry.first_chunk_id or "",
+                                    "chunk_id": entry.first_chunk_id,
                                     "citation_index": entry.index,
                                     "source_id": entry.source_id,
-                                    "source_title": entry.title or "",
-                                    "timestamp_start": entry.timestamp_start or 0.0,
-                                    "timestamp_end": entry.timestamp_end or 0.0,
-                                    "rerank_score": entry.rerank_score or 0.0,
-                                    "preview": entry.preview or "",
+                                    "source_title": entry.title,
+                                    "timestamp_start": entry.timestamp_start,
+                                    "timestamp_end": entry.timestamp_end,
+                                    "rerank_score": entry.rerank_score,
+                                    "preview": entry.preview,
                                 }
                             )
                     call["context"] = context_entries
