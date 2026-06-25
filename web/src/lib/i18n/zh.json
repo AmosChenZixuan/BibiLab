@@ -193,7 +193,8 @@
       "alreadyInList": "已在此列表中",
       "playlistAllProcessed": "全部 %{count} 个视频已在此列表中",
       "playlistAllQueuedNeedsAuth": "全部 %{count} 个视频已排队 — %{authCount} 个需要认证。请查看任务面板。",
-      "playlistPartiallySkipped": "已排队 %{queued}/%{total}。%{skipped} 个已在列表中。"
+      "playlistPartiallySkipped": "已排队 %{queued}/%{total}。%{skipped} 个已在列表中。",
+      "retrySkippedProcessed": "已在此列表中 — 已移除失效的失败记录。"
     },
     "preview": {
       "title": "预览播放列表",
