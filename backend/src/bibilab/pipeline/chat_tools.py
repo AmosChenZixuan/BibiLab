@@ -44,7 +44,7 @@ class CitationRegistryEntry:
     source_id: str
     title: str = ""
     seq: int | None = None  # 1-based section seq within the source
-    citable: bool = False  # True once this section's verbatim is shown
+    citable: bool = False  # True if the section's [N] is a clickable citation in the chat UI
     chunk_ids: set[str] = field(default_factory=set)
     # Populated at SSE-build time from execute_find_passages chunk data.
     first_chunk_id: str | None = None
@@ -544,8 +544,10 @@ async def execute_find_passages(
         )
 
     # Facet matched → emit the FULL section outline for each matched source:
-    # register every section (summary, its own [N]); outline-only sections stay
-    # citable=False until drilled. The section load + title fallback already
+    # register every section (summary, its own [N]). Outline-only sections
+    # (no chunk hit) are first-class citations: citable from the start, with
+    # the section summary attached as `preview` so the ledger row has a body
+    # (not an empty quote). The section load + title fallback already
     # happened in the batched build above; this loop is pure allocation, no
     # DB calls. _alloc_section seeds the entry's timestamps from
     # ts_by_section_id, so outline-only entries carry a real span (no 0:00–0:00).
@@ -559,6 +561,12 @@ async def execute_find_passages(
                 # persisted ledger) show the real span instead of 0:00–0:00.
                 if entry.timestamp_start is None:
                     entry.timestamp_start, entry.timestamp_end = ts_by_section_id[section_id]
+                if not entry.chunk_ids:
+                    # Outline-only: citable (clickable [N]) and previewed by
+                    # the section summary so the user can verify the citation
+                    # in-place without a read_section drill.
+                    entry.citable = True
+                    entry.preview = summary_by_section_id[section_id]
                 summaries_by_index[entry.index] = summary_by_section_id[section_id]
 
     # Recompute turn_indices AFTER outline expansion so outline indices flow into section_coverage.
