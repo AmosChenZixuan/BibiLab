@@ -83,12 +83,8 @@ class ArtifactResult(BaseModel):
 
 
 class MindMapResult(BaseModel):
-    """Mind-map LLM output: a single {name, root} JSON object with no
-    envelope wrapper. The worker renders the markdown file body via
-    `_render_mind_map_markdown`; the LLM never sees a content-fence
-    indirection. Mirrors the inner schema in `_MIND_MAP_PROMPT` so the
-    prompt and parser agree on one shape only (the prior `name` key
-    collision with ArtifactResult is gone)."""
+    """Mind-map LLM output: a single `{name, root}` JSON object. The
+    worker renders the markdown file body via `_render_mind_map_markdown`."""
 
     name: str
     root: dict
@@ -282,13 +278,9 @@ Respond ONLY with valid JSON matching this schema:
 
 
 # Mind-map artifact (type='mind_map'). The LLM emits a single JSON object
-# matching `MindMapResult` (name + recursive root tree). The worker
-# renders the markdown file body via `_render_mind_map_markdown`; the LLM
-# never wraps its response in a fenced JSON block, which removes the
-# nested-JSON parsing class that broke on weaker models. The standard
-# `_build_initial_prompt` / `_build_refine_prompt` wrap this prompt
-# verbatim and parse the LLM response as MindMapResult — no separate
-# envelope schema.
+# matching `MindMapResult`. Mind_map has its own refine path
+# (`_refine_mind_map`) — it does not go through `_refine_artifact` /
+# `ArtifactResult`.
 _MIND_MAP_PROMPT = """\
 Produce a hierarchical mind map that captures the central topic and its
 sub-themes across the supplied transcript(s).
@@ -348,11 +340,8 @@ def _validate_mind_map_fence(content: str) -> dict:
 
 
 def _render_mind_map_markdown(mm: MindMapResult) -> str:
-    """Build the artifact file body for a mind_map job from the parsed
-    `MindMapResult`. The result is byte-identical to the prior LLM-emitted
-    format (one ```json fence holding `{"root": ...}`), so on-disk
-    artifacts produced before and after this change are interchangeable
-    and the frontend fence parser is unaffected."""
+    """Build the artifact file body for a mind_map job: one ```json fence
+    holding `{"root": ...}`."""
     payload = json.dumps({"root": mm.root}, ensure_ascii=False, indent=2)
     return f"```json\n{payload}\n```\n"
 
@@ -528,7 +517,7 @@ async def _refine_artifact_multi_batch(
             )
         else:
             # Subsequent batches: refine the running draft.
-            assert draft is not None  # invariant: set by i=1
+            assert draft is not None
             llm_prompt = _build_refine_prompt(
                 prompt=prompt,
                 draft=draft,
@@ -544,16 +533,14 @@ async def _refine_artifact_multi_batch(
             label=label,
             max_attempts=3,
         )
-    assert draft is not None  # invariant: at least one batch
+    assert draft is not None
     return draft
 
 
-# Mind-map refine path. Mirrors `_refine_artifact` structurally (same
-# budget / atomicity / threshold logic, same single- and multi-batch
-# shape) but parses the LLM response as MindMapResult and asks the LLM
-# for `{name, root}` only — no envelope, no fenced JSON block. The
-# mind_map worker builds the file body itself via
-# `_render_mind_map_markdown`.
+# Mind-map refine path. Parses the LLM response as `MindMapResult`; the
+# LLM is asked for `{name, root}` only — no envelope, no fenced JSON
+# block. Mirrors `_refine_artifact` structurally (same budget /
+# atomicity / threshold logic, same single- and multi-batch shape).
 
 
 def _build_mind_map_initial_prompt(
@@ -563,9 +550,7 @@ def _build_mind_map_initial_prompt(
     ui_lang: str | None,
 ) -> str:
     """Same shape as `_build_initial_prompt` but the trailing schema
-    directive is `{name, root}` instead of `{name, content}`. Mind_map
-    has no envelope; the LLM emits a single JSON object, the worker
-    renders the markdown file body."""
+    directive is `{name, root}` instead of `{name, content}`."""
     lang = resolve_response_language(cfg.ai, ui_lang)
     lang_instruction = _LANG_INSTRUCTION.get(lang, _LANG_INSTRUCTION["en"])
     lang_output_directive = _lang_output_directive(lang)
@@ -594,10 +579,9 @@ def _build_mind_map_refine_prompt(
     cfg: BibilabConfig,
     ui_lang: str | None,
 ) -> str:
-    """Mind_map refine prompt: shows the running draft as `{name, root}`
-    JSON and asks the LLM to integrate new sections. Same shape as
-    `_build_refine_prompt` but the schema directive and the running-draft
-    block are MindMapResult-shaped, not ArtifactResult-shaped."""
+    """Same shape as `_build_refine_prompt` but the schema directive and
+    the running-draft block are MindMapResult-shaped, not ArtifactResult-
+    shaped."""
     lang = resolve_response_language(cfg.ai, ui_lang)
     lang_instruction = _LANG_INSTRUCTION.get(lang, _LANG_INSTRUCTION["en"])
     lang_output_directive = _lang_output_directive(lang)
@@ -635,9 +619,9 @@ async def _refine_mind_map(
     cfg: BibilabConfig,
     ui_lang: str | None = None,
 ) -> MindMapResult:
-    """Section-batched refine for mind_map. Single- and multi-batch paths
-    parallel `_refine_artifact`; the parser target is MindMapResult so
-    the LLM emits `{name, root}` only — no envelope, no nested fence."""
+    """Section-batched refine for mind_map. Parses the LLM response as
+    `MindMapResult`; single- and multi-batch paths parallel
+    `_refine_artifact`."""
     budget = cfg.ai.context_window - 2 * cfg.ai.max_output_tokens - _PROMPT_OVERHEAD_TOKENS
     if budget <= 0:
         raise PipelineError(
@@ -707,7 +691,7 @@ async def _refine_mind_map_multi_batch(
                 ui_lang=ui_lang,
             )
         else:
-            assert draft is not None  # invariant: set by i=1
+            assert draft is not None
             llm_prompt = _build_mind_map_refine_prompt(
                 draft=draft,
                 new_sections_text=new_sections_text,
@@ -722,7 +706,7 @@ async def _refine_mind_map_multi_batch(
             label=label,
             max_attempts=3,
         )
-    assert draft is not None  # invariant: at least one batch
+    assert draft is not None
     return draft
 
 
@@ -869,9 +853,10 @@ class WorkerLoop:
         prompt = meta_raw["prompt"]
         source_ids = meta_raw["source_ids"]
         cfg = self._get_config()
-        # Mind-map jobs ignore the user-supplied prompt (_MIND_MAP_PROMPT is
-        # the directive); the rebind also feeds create_artifact's prompt
-        # column so the view-prompt modal shows what the LLM actually saw.
+        # Mind-map jobs ignore the user-supplied prompt and use
+        # `_MIND_MAP_PROMPT` instead. The rebind also feeds
+        # `create_artifact`'s `prompt` column so the view-prompt modal
+        # shows what the LLM actually saw.
         is_mind_map = artifact_type == "mind_map"
         if is_mind_map:
             prompt = _MIND_MAP_PROMPT
@@ -887,12 +872,8 @@ class WorkerLoop:
 
             await update_job_status(job_id, JobStatus.PROCESSING.value, progress=30)
 
-            # Section-batched refine: replaces the old single-call
-            # _generate_artifact. _build_section_views handles source
-            # existence + no-sections fail-loud. Mind-map jobs take a
-            # separate path: the LLM emits a single `{name, root}` JSON
-            # object (no envelope, no nested fence) and the worker
-            # renders the markdown file body itself.
+            # _build_section_views handles source existence + no-sections
+            # fail-loud.
             sections = await _build_section_views(source_ids)
             if is_mind_map:
                 mind_map_result = await _refine_mind_map(
