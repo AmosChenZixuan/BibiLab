@@ -127,10 +127,13 @@ def test_mind_map_prompt_instructs_only_name_and_root():
 
 @pytest.mark.asyncio
 async def test_run_artifact_job_mind_map_dispatches_and_validates(tmp_bibilab_home):
-    """type='mind_map' → prompt is replaced with _MIND_MAP_PROMPT, the
-    standard _refine_artifact runs, the fence validator passes, and the
-    artifact row + content file land. End-to-end: this is the single test
-    that proves the new path works."""
+    """type='mind_map' → prompt is rebound to _MIND_MAP_PROMPT,
+    `_refine_mind_map` produces a MindMapResult, the worker renders the
+    markdown file body via `_render_mind_map_markdown`, and the artifact
+    row + content file land. End-to-end: this is the single test that
+    proves the new path works."""
+    from bibilab.worker import MindMapResult
+
     await bootstrap_db()
     await create_list("list-1", "L", "2026-01-01T00:00:00")
     source_id = await SourceFactory.build(
@@ -160,24 +163,17 @@ async def test_run_artifact_job_mind_map_dispatches_and_validates(tmp_bibilab_ho
             }
         ),
     }
-    llm_content = (
-        "```json\n"
-        '{\n  "name": "Topic Map",\n  "root": {"label": "Topic", "children": [\n'
-        '    {"label": "Branch", "children": [{"label": "Detail"}]}\n'
-        "  ]}\n"
-        "}\n"
-        "```\n"
-    )
 
-    async def _fake_refine(*, prompt, sections, cfg, ui_lang=None):
-        # The worker must have rebound the prompt to _MIND_MAP_PROMPT before
-        # this call — that's the whole point of the fork.
-        assert prompt == _MIND_MAP_PROMPT
-        from bibilab.worker import ArtifactResult
+    async def _fake_refine_mind_map(*, sections, cfg, ui_lang=None):
+        return MindMapResult(
+            name="Topic Map",
+            root={
+                "label": "Topic",
+                "children": [{"label": "Branch", "children": [{"label": "Detail"}]}],
+            },
+        )
 
-        return ArtifactResult(name="Topic Map", content=llm_content)
-
-    with patch("bibilab.worker._refine_artifact", side_effect=_fake_refine) as mock_refine:
+    with patch("bibilab.worker._refine_mind_map", side_effect=_fake_refine_mind_map) as mock_refine:
         await worker._run_artifact_job(job)
 
     assert mock_refine.call_count == 1
@@ -189,22 +185,34 @@ async def test_run_artifact_job_mind_map_dispatches_and_validates(tmp_bibilab_ho
     assert art["prompt"] == _MIND_MAP_PROMPT
     content_path = tmp_bibilab_home / "artifacts" / "list-1" / "art-mm-1.md"
     assert content_path.exists()
-    assert content_path.read_text() == llm_content
+    # Worker-rendered file body: round-trips through the fence validator
+    # to the same tree the LLM returned (Slice B invariant).
+    parsed = _validate_mind_map_fence(content_path.read_text())
+    assert parsed == {
+        "root": {
+            "label": "Topic",
+            "children": [{"label": "Branch", "children": [{"label": "Detail"}]}],
+        }
+    }
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "bad_content,expected_error",
+    "expected_error",
     [
-        # Two fences — fence validator raises "exactly one".
-        ("```json\na\n```\n```json\nb\n```", "exactly one"),
-        # One fence, valid syntax, but no `root` key — shape check raises.
-        ('```json\n{"name": "x"}\n```\n', "`root`"),
+        # PipelineError message from malformed JSON (LLM retry exhausts).
+        "LLM mind_map batch 1/1",
+        # PipelineError message from missing `root` (Pydantic rejects).
+        "LLM mind_map batch 1/1",
     ],
 )
-async def test_run_artifact_job_mind_map_bad_output_fails_job(tmp_bibilab_home, bad_content, expected_error):
-    """LLM output that fails fence or shape validation marks the job failed,
-    writes no file, and creates no artifact row."""
+async def test_run_artifact_job_mind_map_bad_output_fails_job(tmp_bibilab_home, expected_error):
+    """When `_refine_mind_map` raises (LLM returned bad JSON or Pydantic
+    rejected a missing `root`), the worker propagates the failure as a
+    job-level error: status=failed, no artifact row, no file written.
+    The failure path used to be the fence validator (which is now
+    unreachable from the dispatch — content is rendered from a parsed
+    MindMapResult, not validated from raw LLM output)."""
     from bibilab.db import create_job
 
     await bootstrap_db()
@@ -241,12 +249,10 @@ async def test_run_artifact_job_mind_map_bad_output_fails_job(tmp_bibilab_home, 
         ),
     }
 
-    async def _fake_refine(*, prompt, sections, cfg, ui_lang=None):
-        from bibilab.worker import ArtifactResult
+    async def _fake_refine_mind_map(*, sections, cfg, ui_lang=None):
+        raise PipelineError("LLM mind_map batch 1/1 exhausted all retries: simulated")
 
-        return ArtifactResult(name="Bad", content=bad_content)
-
-    with patch("bibilab.worker._refine_artifact", side_effect=_fake_refine):
+    with patch("bibilab.worker._refine_mind_map", side_effect=_fake_refine_mind_map):
         await worker._run_artifact_job(job)
 
     job_row = await get_job(actual_id)
@@ -254,6 +260,69 @@ async def test_run_artifact_job_mind_map_bad_output_fails_job(tmp_bibilab_home, 
     assert expected_error in (job_row["error"] or "")
     assert await get_artifact("art-bad") is None
     assert not (tmp_bibilab_home / "artifacts" / "list-1" / "art-bad.md").exists()
+
+
+# --- _run_artifact_job dispatch (mind_map → _refine_mind_map) -------------
+
+
+@pytest.mark.asyncio
+async def test_run_artifact_job_mind_map_uses_refine_mind_map(tmp_bibilab_home):
+    """type='mind_map' jobs route through `_refine_mind_map` (NOT
+    `_refine_artifact`). The on-disk file content is rendered by
+    `_render_mind_map_markdown` from the parsed MindMapResult. Frontend
+    reads `parsed.root` from the fence — unchanged contract."""
+    from bibilab.worker import MindMapResult
+
+    await bootstrap_db()
+    await create_list("list-1", "L", "2026-01-01T00:00:00")
+    source_id = await SourceFactory.build(
+        "list-1",
+        video_id="BV1",
+        segments=[
+            WhisperSegment(start=0.0, end=1.0, text="hello", speaker="SPK_0"),
+            WhisperSegment(start=0.0, end=1.0, text="world", speaker="SPK_0"),
+        ],
+        sections=[Section(seg_start=0, seg_end=1, token_count=2, timestamp_start=0.0, timestamp_end=1.0)],
+    )
+    cfg = BibilabConfig()
+    worker = WorkerLoop(home=tmp_bibilab_home, config=cfg, adapter=None)
+    job = {
+        "id": "job-mm-new",
+        "meta": json.dumps(
+            {
+                "list_id": "list-1",
+                "artifact_id": "art-mm-new",
+                "type": "mind_map",
+                "prompt": "(user typed something the worker will ignore)",
+                "source_ids": [source_id],
+            }
+        ),
+    }
+
+    async def _fake_refine_mind_map(*, sections, cfg, ui_lang=None):
+        return MindMapResult(
+            name="Topic Map",
+            root={"label": "Topic", "children": [{"label": "Branch"}]},
+        )
+
+    with (
+        patch("bibilab.worker._refine_mind_map", side_effect=_fake_refine_mind_map) as mock_mm,
+        patch("bibilab.worker._refine_artifact") as mock_ar,
+    ):
+        await worker._run_artifact_job(job)
+
+    # mind_map dispatched through _refine_mind_map, never _refine_artifact.
+    assert mock_mm.call_count == 1
+    assert mock_ar.call_count == 0
+    art = await get_artifact("art-mm-new")
+    assert art["status"] == "completed"
+    assert art["name"] == "Topic Map"
+    assert art["prompt"] == _MIND_MAP_PROMPT
+    content_path = tmp_bibilab_home / "artifacts" / "list-1" / "art-mm-new.md"
+    assert content_path.exists()
+    # Worker-rendered content, not LLM-emitted.
+    parsed = _validate_mind_map_fence(content_path.read_text())
+    assert parsed == {"root": {"label": "Topic", "children": [{"label": "Branch"}]}}
 
 
 # --- _refine_mind_map -----------------------------------------------------

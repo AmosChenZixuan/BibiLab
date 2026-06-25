@@ -889,19 +889,28 @@ class WorkerLoop:
 
             # Section-batched refine: replaces the old single-call
             # _generate_artifact. _build_section_views handles source
-            # existence + no-sections fail-loud.
+            # existence + no-sections fail-loud. Mind-map jobs take a
+            # separate path: the LLM emits a single `{name, root}` JSON
+            # object (no envelope, no nested fence) and the worker
+            # renders the markdown file body itself.
             sections = await _build_section_views(source_ids)
-            artifact_result = await _refine_artifact(
-                prompt=prompt,
-                sections=sections,
-                cfg=cfg,
-                ui_lang=meta_raw.get("ui_lang"),
-            )
-
             if is_mind_map:
-                # Fail-loud contract: fence validator raises PipelineError on
-                # any structural violation before the file is written.
-                _validate_mind_map_fence(artifact_result.content)
+                mind_map_result = await _refine_mind_map(
+                    sections=sections,
+                    cfg=cfg,
+                    ui_lang=meta_raw.get("ui_lang"),
+                )
+                content = _render_mind_map_markdown(mind_map_result)
+                artifact_name = mind_map_result.name
+            else:
+                artifact_result = await _refine_artifact(
+                    prompt=prompt,
+                    sections=sections,
+                    cfg=cfg,
+                    ui_lang=meta_raw.get("ui_lang"),
+                )
+                content = artifact_result.content
+                artifact_name = artifact_result.name
 
             # Check for cancellation before writing file
             if job_id in self._cancelled:
@@ -915,13 +924,13 @@ class WorkerLoop:
             artifacts_dir = self._bibilab_home / "artifacts" / list_id
             artifacts_dir.mkdir(parents=True, exist_ok=True)
             content_path = artifacts_dir / f"{artifact_id}.md"
-            content_path.write_text(artifact_result.content, encoding="utf-8")
+            content_path.write_text(content, encoding="utf-8")
 
             # Create artifact record with success status
             await create_artifact(
                 artifact_id=artifact_id,
                 list_id=list_id,
-                name=artifact_result.name,
+                name=artifact_name,
                 type=artifact_type,
                 prompt=prompt,
                 source_ids=source_ids,
