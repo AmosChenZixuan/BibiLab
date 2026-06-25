@@ -1438,3 +1438,52 @@ async def test_write_source_with_segments_sections_without_digests_raises(
             ai_model="y",
             settings_snapshot={},
         )
+
+
+@pytest.mark.asyncio
+async def test_get_user_prompt_for_assistant_picks_user_with_rowid_below_assistant(
+    tmp_bibilab_home: Path,
+):
+    """When user messages share created_at with the assistant, the trigger is
+    the user whose rowid is just below the assistant's — i.e., the one
+    inserted immediately before it in the same _create_turn transaction.
+
+    Regression for #543: the prior query used `created_at <= asst.created_at`
+    with no rowid join, and the issue's proposed `, rowid DESC` tiebreaker
+    only sorts within the timestamp bucket — it returns the *latest* user,
+    not the trigger. The fix replaces the timestamp filter with `rowid <
+    asst.rowid`, making the lookup robust regardless of timestamp quirks.
+    """
+    from bibilab.db import bootstrap_db, create_list, get_user_prompt_for_assistant
+
+    await bootstrap_db()
+    await create_list("list-1", "Test List", "2026-01-01T00:00:00")
+    conv_id = await ConversationFactory.build("list-1")
+    shared_ts = "2026-06-25T12:00:00+00:00"
+
+    # u1 (rowid N) → a1 (rowid N+1) → u2 (rowid N+2). All share created_at.
+    # The trigger for a1 is u1 (rowid N, just below a1.rowid N+1),
+    # not u2 (rowid N+2, inserted *after* a1).
+    await MessageFactory.build(
+        conv_id,
+        role="user",
+        content="first",
+        message_id="u1",
+        created_at=shared_ts,
+    )
+    await MessageFactory.build(
+        conv_id,
+        role="assistant",
+        content="",
+        message_id="a1",
+        created_at=shared_ts,
+    )
+    await MessageFactory.build(
+        conv_id,
+        role="user",
+        content="retry",
+        message_id="u2",
+        created_at=shared_ts,
+    )
+
+    assert await get_user_prompt_for_assistant("a1") == "first"
