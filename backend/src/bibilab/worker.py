@@ -281,47 +281,47 @@ Respond ONLY with valid JSON matching this schema:
 {lang_output_directive}"""
 
 
-# Mind-map artifact (type='mind_map'). The LLM is told to emit exactly one
-# ```json fence describing a recursive node tree — the existing
-# _build_initial_prompt / _build_refine_prompt wrap _MIND_MAP_PROMPT verbatim
-# via the standard `prompt` arg, so no separate prompt family is needed.
+# Mind-map artifact (type='mind_map'). The LLM emits a single JSON object
+# matching `MindMapResult` (name + recursive root tree). The worker
+# renders the markdown file body via `_render_mind_map_markdown`; the LLM
+# never wraps its response in a fenced JSON block, which removes the
+# nested-JSON parsing class that broke on weaker models. The standard
+# `_build_initial_prompt` / `_build_refine_prompt` wrap this prompt
+# verbatim and parse the LLM response as MindMapResult — no separate
+# envelope schema.
 _MIND_MAP_PROMPT = """\
 Produce a hierarchical mind map that captures the central topic and its
 sub-themes across the supplied transcript(s).
 
-Output rules:
+Respond with a single JSON object (no surrounding markdown, no fenced
+code block) matching this exact shape:
 
-1. The `content` field MUST be a markdown document with EXACTLY ONE fenced
-   code block. The fence MUST start with ```json on its own line and be
-   closed with ``` on its own line. The JSON inside MUST be a single
-   object with this shape:
+  {
+    "name": "string (a short title for this mind map)",
+    "root": {
+      "label": "string (root node, 2-6 words)",
+      "children": [
+        {"label": "string (branch)", "children": [{"label": "string"}, ...]},
+        ...
+      ]
+    }
+  }
 
-   {
-     "name": "string (a short title for this mind map)",
-     "root": {
-       "label": "string (root node, 2-6 words)",
-       "children": [
-         {"label": "string (branch)", "children": [{"label": "string"}, ...]},
-         ...
-       ]
-     }
-   }
+Rules:
 
-2. Hierarchy (cap total nodes at ~30; do not pad):
-
+1. Hierarchy (cap total nodes at ~30; do not pad):
    - Root: the overall topic.
    - 2-5 main branches (level 1).
    - 1-5 children per branch (level 2+).
 
-3. Node label rules:
-
+2. Node label rules:
    - Keep labels SHORT: a single phrase, ideally 1-6 words.
    - Mirror the majority language of the source transcript.
    - Do NOT use quotation marks, backslashes, or unescaped newlines
      inside labels.
    - Do NOT use markdown formatting (bold, italic, links) inside labels.
 
-4. No explanatory text outside the fence."""
+3. No explanatory text outside the JSON object."""
 
 
 _MIND_MAP_FENCE_RE = re.compile(r"^```json\s*$", re.MULTILINE)

@@ -105,14 +105,20 @@ def test_validate_mind_map_fence_single_returns_source():
         _validate_mind_map_fence("```json\nstuff\n")
 
 
-def test_mind_map_prompt_includes_directive_and_fence_spec():
-    """The _MIND_MAP_PROMPT body must encode the rules the LLM needs:
-    exact-one-fence, JSON shape (name + recursive root with label/
-    children), and label-text punctuation limits. A regression that
-    drops any of these would silently let the LLM emit unparseable JSON."""
-    assert "```json" in _MIND_MAP_PROMPT
-    assert '"name"' in _MIND_MAP_PROMPT and '"root"' in _MIND_MAP_PROMPT
-    assert "EXACTLY ONE" in _MIND_MAP_PROMPT
+def test_mind_map_prompt_instructs_only_name_and_root():
+    """The prompt must ask the LLM for a single JSON object with `name`
+    and `root`. Any directive that points the model at a `content`
+    envelope or a fenced JSON block re-introduces the nesting pattern
+    the refactor kills. These assertions lock the structural intent."""
+    assert '"name"' in _MIND_MAP_PROMPT
+    assert '"root"' in _MIND_MAP_PROMPT
+    # No envelope wrapper directive — `content` is not a field the LLM
+    # should emit.
+    assert '"content"' not in _MIND_MAP_PROMPT
+    # No fence directive — the worker constructs the file body itself;
+    # asking the LLM to wrap a JSON block in ```json re-opens the
+    # nesting class this PR eliminates.
+    assert "```json" not in _MIND_MAP_PROMPT
 
 
 # --- _run_artifact_job dispatch + happy path ------------------------------
