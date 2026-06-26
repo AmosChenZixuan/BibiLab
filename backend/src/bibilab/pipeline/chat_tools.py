@@ -308,7 +308,7 @@ async def execute_read_section(
     The index must already be registered this turn (via find_passages). The
     LLM-facing body uses format_turns with the section's own citation_index,
     so the speaker labels match the find_passages fence — citations stay
-    bindable. Drilling flips the section's citable flag (was outline-only).
+    bindable. The section stays citable (find_passages already registered it).
     Errors are LLM-facing strings, never raised.
     """
     registry = registry or {}
