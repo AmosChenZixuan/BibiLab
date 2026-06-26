@@ -1068,13 +1068,14 @@ async def get_message(message_id: str) -> aiosqlite.Row | None:
 async def get_user_prompt_for_assistant(assistant_message_id: str) -> str | None:
     """Return the user message text that triggered this assistant message.
 
-    Walks the conversation to find the most recent user message at or before
-    the assistant's created_at. Returns None if the assistant message doesn't
-    exist or no preceding user message is found.
+    Finds the user message with the highest rowid below the assistant's rowid
+    in the same conversation — i.e., the message inserted immediately before
+    this assistant in the same _create_turn transaction. Returns None if the
+    assistant message doesn't exist or no preceding user message is found.
     """
     async with get_db() as db:
         cursor = await db.execute(
-            "SELECT conversation_id, created_at FROM messages WHERE id=?",
+            "SELECT conversation_id, rowid FROM messages WHERE id=?",
             (assistant_message_id,),
         )
         asst = await cursor.fetchone()
@@ -1082,9 +1083,9 @@ async def get_user_prompt_for_assistant(assistant_message_id: str) -> str | None
             return None
         cursor = await db.execute(
             "SELECT content FROM messages "
-            "WHERE conversation_id=? AND role='user' AND created_at <= ? "
-            "ORDER BY created_at DESC LIMIT 1",
-            (asst["conversation_id"], asst["created_at"]),
+            "WHERE conversation_id=? AND role='user' AND rowid < ? "
+            "ORDER BY rowid DESC LIMIT 1",
+            (asst["conversation_id"], asst["rowid"]),
         )
         user_row = await cursor.fetchone()
         return user_row["content"] if user_row else None
