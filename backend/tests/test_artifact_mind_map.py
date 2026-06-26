@@ -1,9 +1,9 @@
 """Mind-map artifact (type='mind_map').
 
 The mind-map path forks inside _run_artifact_job: meta.prompt is replaced
-by _MIND_MAP_PROMPT, the result is fed to the standard _refine_artifact
-section-batched pipeline, and the LLM output is contract-checked for
-exactly one ```mermaid fence before the file is written.
+by _MIND_MAP_PROMPT, the sections are fed to _refine_mind_map (which parses
+the LLM response as MindMapResult), and the worker renders the file body via
+_render_mind_map_markdown.
 """
 
 from __future__ import annotations
@@ -22,7 +22,6 @@ from bibilab.worker import (
     _MIND_MAP_PROMPT,
     WorkerLoop,
     _refine_mind_map,
-    _validate_mind_map_fence,
 )
 from tests.factories import SourceFactory
 
@@ -55,41 +54,23 @@ def test_mind_map_result_rejects_non_dict_root():
 # --- _render_mind_map_markdown --------------------------------------------
 
 
-def test_render_mind_map_markdown_roundtrips_through_fence_validator():
-    """`_render_mind_map_markdown(mm)` produces a content string whose
-    single ```json fence re-parses to `{"root": mm.root}` via
-    `_validate_mind_map_fence`. This is the write-side symmetry check:
-    whatever the LLM returns, the on-disk file round-trips back to the
-    same tree."""
+def _parse_rendered_fence(content: str) -> dict:
+    """Extract + parse the single ```json fence body of a rendered mind_map
+    file. Test-side oracle for _render_mind_map_markdown; production reads
+    the on-disk file via the frontend's parseMindTree, not the backend."""
+    inner = content.split("```json\n", 1)[1].rsplit("\n```", 1)[0]
+    return json.loads(inner)
+
+
+def test_render_mind_map_markdown_roundtrips():
+    """`_render_mind_map_markdown(mm)` writes a single ```json fence that
+    re-parses to `{"root": mm.root}` — the write-side symmetry check."""
     from bibilab.worker import MindMapResult, _render_mind_map_markdown
 
     root = {"label": "Topic", "children": [{"label": "Branch"}]}
     mm = MindMapResult(name="Topic Map", root=root)
     content = _render_mind_map_markdown(mm)
-    assert _validate_mind_map_fence(content) == {"root": root}
-
-
-# --- _validate_mind_map_fence ---------------------------------------------
-
-
-def test_validate_mind_map_fence_single_returns_source():
-    """Well-formed content with one closed JSON fence → returns the inner
-    JSON, stripped of leading/trailing newlines. The four contract
-    failures (0/2+/unclosed/multiple) and the happy path collapse into
-    one test because the function is a pure regex split — one test per
-    branch is overkill."""
-    body = '# Topic\n\n```json\n{\n  "name": "x",\n  "root": {"label": "T"}\n}\n```\n'
-    assert _validate_mind_map_fence(body) == {"name": "x", "root": {"label": "T"}}
-
-    # Zero fences → PipelineError.
-    with pytest.raises(PipelineError, match="exactly one"):
-        _validate_mind_map_fence("no fence here")
-    # Two fences → PipelineError.
-    with pytest.raises(PipelineError, match="exactly one"):
-        _validate_mind_map_fence("```json\na\n```\n```json\nb\n```")
-    # Unclosed fence → PipelineError.
-    with pytest.raises(PipelineError, match="not closed"):
-        _validate_mind_map_fence("```json\nstuff\n")
+    assert _parse_rendered_fence(content) == {"root": root}
 
 
 def test_mind_map_prompt_instructs_only_name_and_root():
@@ -99,23 +80,6 @@ def test_mind_map_prompt_instructs_only_name_and_root():
     assert '"root"' in _MIND_MAP_PROMPT
     assert '"content"' not in _MIND_MAP_PROMPT
     assert "```json" not in _MIND_MAP_PROMPT
-
-
-# --- Backward compat: legacy on-disk artifacts --------------------------
-
-
-def test_legacy_fence_with_name_key_still_parses():
-    """On-disk artifacts produced before this refactor carried both
-    `name` and `root` inside the ```json fence (the LLM wrote the full
-    inner schema). After the refactor, `_render_mind_map_markdown`
-    emits only `{"root": ...}`. The fence validator must accept BOTH
-    shapes so existing artifacts remain readable — the frontend fence
-    parser (`parseMindTree`) reads `parsed.root` from either."""
-    legacy_body = '# Topic\n\n```json\n{\n  "name": "Legacy",\n  "root": {"label": "L", "children": []}\n}\n```\n'
-    assert _validate_mind_map_fence(legacy_body) == {
-        "name": "Legacy",
-        "root": {"label": "L", "children": []},
-    }
 
 
 # --- _run_artifact_job dispatch + happy path ------------------------------
@@ -183,7 +147,7 @@ async def test_run_artifact_job_mind_map_dispatches_and_validates(tmp_bibilab_ho
     assert art["prompt"] == _MIND_MAP_PROMPT
     content_path = tmp_bibilab_home / "artifacts" / "list-1" / "art-mm-1.md"
     assert content_path.exists()
-    parsed = _validate_mind_map_fence(content_path.read_text())
+    parsed = _parse_rendered_fence(content_path.read_text())
     assert parsed == {
         "root": {
             "label": "Topic",
