@@ -149,6 +149,7 @@ class MessageFactory:
         "content": "",
         "metadata": None,
         "status": "done",  # matches schema DEFAULT
+        "created_at": None,  # None → use _now(); pass an ISO string to force a timestamp
     }
 
     @classmethod
@@ -156,13 +157,14 @@ class MessageFactory:
         fields = {**cls._DEFAULTS, **overrides}
         message_id = fields.pop("message_id", None) or str(uuid.uuid4())
         metadata_json = json.dumps(fields["metadata"]) if fields["metadata"] is not None else None
+        created_at = fields.pop("created_at") or _now()
         return await _insert_message(
             message_id,
             conversation_id,
             fields["role"],
             fields["content"],
             metadata_json,
-            _now(),
+            created_at,
             fields["status"],
         )
 

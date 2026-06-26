@@ -2,7 +2,9 @@ import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type {
+  IngestJob,
   IngestVideoIn,
+  Job,
   PreviewResponse,
   PreviewVideo,
   Source,
@@ -49,7 +51,28 @@ const state = {
   metadataResponse: null as VideoMetadataMap | null,
   ingestResult: { queued: [] as string[], skipped: [] as string[] },
   ingestCalls: [] as Array<{ listId: string; videos: IngestVideoIn[] }>,
+  jobs: [] as Job[],
 };
+
+function makeFailedIngestJob(overrides: Partial<IngestJob> = {}): IngestJob {
+  return {
+    id: "job-failed-1",
+    type: "ingest",
+    status: "failed",
+    progress: 0,
+    error: "[transcribing] audio_truncated",
+    created_at: "2024-01-01T00:00:00Z",
+    updated_at: "2024-01-01T00:00:00Z",
+    meta: {
+      list_id: "list-1",
+      video_id: "BV1",
+      title: "Failed Video",
+      source_url: "https://bilibili.com/video/BV1",
+      platform: "bilibili",
+    },
+    ...overrides,
+  };
+}
 
 vi.mock("@/lib/api", async () => {
   const { createMockApi } = await import("@/test/utils");
@@ -71,6 +94,8 @@ vi.mock("@/lib/api", async () => {
     previewPlaylistMetadata: mockPreviewPlaylistMetadata,
     ingestUrl: mockIngestUrl,
     listSources: mockListSources,
+    listJobs: vi.fn(() => Promise.resolve(state.jobs)),
+    deleteJob: vi.fn().mockResolvedValue(undefined),
     deleteSource: vi.fn().mockResolvedValue(undefined),
     auth: {
       generateBilibiliQr: vi.fn().mockResolvedValue(null),
@@ -123,6 +148,7 @@ afterEach(() => {
   state.metadataResponse = null;
   state.ingestResult = { queued: ["job-1"], skipped: [] };
   state.ingestCalls = [];
+  state.jobs = [];
 });
 
 // ─── Tests ─────────────────────────────────────────────────────────────────────
@@ -376,6 +402,41 @@ describe("SourcesListMode preview flow", () => {
     await waitFor(() => {
       expect(api.previewPlaylistMetadata).toHaveBeenCalledWith(["BV1", "BV2"]);
     });
+  });
+});
+
+describe("SourcesListMode retry of a failed job", () => {
+  it("surfaces the skip and dismisses the row when the video is already a source", async () => {
+    // Dedup returns the video as already-processed: queued empty, skipped set.
+    state.jobs = [makeFailedIngestJob()];
+    state.ingestResult = { queued: [], skipped: ["BV1"] };
+    renderMode();
+
+    const retryBtn = await screen.findByRole("button", { name: /retry/i });
+    await userEvent.click(retryBtn);
+
+    await waitFor(() => {
+      expect(screen.getByText(/already in this list/i)).toBeInTheDocument();
+    });
+    // The stale failed row is cleared rather than left as a silent no-op.
+    expect(api.deleteJob).toHaveBeenCalledWith("job-failed-1");
+  });
+
+  it("queues a new job and dismisses the old when the video is retryable", async () => {
+    state.jobs = [makeFailedIngestJob()];
+    state.ingestResult = { queued: ["job-new"], skipped: [] };
+    renderMode();
+
+    const retryBtn = await screen.findByRole("button", { name: /retry/i });
+    await userEvent.click(retryBtn);
+
+    await waitFor(() => {
+      expect(api.ingestUrl).toHaveBeenCalledWith(
+        "list-1",
+        expect.arrayContaining([expect.objectContaining({ video_id: "BV1" })]),
+      );
+    });
+    expect(api.deleteJob).toHaveBeenCalledWith("job-failed-1");
   });
 });
 

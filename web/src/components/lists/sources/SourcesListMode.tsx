@@ -268,7 +268,15 @@ export function SourcesListMode({
       };
       try {
         const result = await api.ingestUrl(listId, [payload]);
-        if (!result || result.queued.length === 0) return;
+        if (!result) return;
+        if (result.queued.length === 0) {
+          // Dedup skipped it: the video already exists as a working source, so
+          // this failed job is a stale later re-download attempt — not retryable.
+          // Clear the dead row and say why, instead of a silent no-op.
+          setError(t("lists.ingest.retrySkippedProcessed"));
+          await dismissJob(job.id);
+          return;
+        }
         trackJobs(
           result.queued.map((id) => ({
             id,

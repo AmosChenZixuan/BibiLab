@@ -62,9 +62,12 @@ type SectionCoverage = {
   timestamp_end: number;
 };
 
-/** Single chunk in the persisted context[] array. */
+/** Single chunk in the persisted context[] array.
+ *  For outline-only entries (facet match, no chunks), `chunk_id` and
+ *  `rerank_score` are null and `preview` carries the section summary.
+ *  `section_id` is always populated. */
 type RetrievalChunk = {
-  chunk_id: string;
+  chunk_id: string | null;
   citation_index: number;
   section_id: string;
   section_seq: number;
@@ -72,7 +75,7 @@ type RetrievalChunk = {
   source_title: string;
   timestamp_start: number;
   timestamp_end: number;
-  rerank_score: number;
+  rerank_score: number | null;
   preview: string;
 };
 /** Echo of the LLM-extracted facet predicate + deterministic match outcome.

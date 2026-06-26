@@ -115,12 +115,13 @@ export function ToolLedgerRow({ call, pending, streaming = false }: ToolLedgerRo
           {context.length > 0 && (
             <div className="flex flex-col gap-1.5 border-l border-border pl-3">
               {context.map((chunk) => (
-                <div key={chunk.chunk_id} className="flex min-w-0 flex-col">
+                <div key={chunk.section_id} className="flex min-w-0 flex-col">
                   <div className="flex min-w-0 items-baseline gap-1.5">
                     <span className="shrink-0 font-mono text-blue">[{chunk.citation_index}]</span>
                     <span className="min-w-0 truncate text-ink">{chunk.source_title}</span>
                     <span className="ml-auto shrink-0 font-mono text-muted">
-                      {formatMediaTimestamp(chunk.timestamp_start)}–{formatMediaTimestamp(chunk.timestamp_end)} · §{chunk.section_seq} · {chunk.rerank_score.toFixed(2)}
+                      {formatMediaTimestamp(chunk.timestamp_start)}–{formatMediaTimestamp(chunk.timestamp_end)} · §{chunk.section_seq}
+                      {chunk.rerank_score != null && ` · ${chunk.rerank_score.toFixed(2)}`}
                     </span>
                   </div>
                   <div className="mt-0.5 text-muted line-clamp-2" title={chunk.preview}>
