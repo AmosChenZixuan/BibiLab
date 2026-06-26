@@ -1674,7 +1674,8 @@ async def test_find_passages_registers_sections_not_sources(tmp_bibilab_home, mo
 async def test_find_passages_facet_emits_full_outline(tmp_bibilab_home, monkeypatch):
     """T5: a facet match expands to the matched source's FULL section outline
     — every section gets its own [N], even when the query hit only one
-    section's chunks. Outline-only sections stay citable=False until drilled."""
+    section's chunks. Outline-only sections are first-class citations
+    (citable=True, preview=<section summary>) so the ledger row has a body."""
     from bibilab.config import AIConfig, BackendConfig, BibilabConfig
     from bibilab.db import bootstrap_db, create_list, get_sections
     from bibilab.pipeline import chat_tools
@@ -1734,9 +1735,14 @@ async def test_find_passages_facet_emits_full_outline(tmp_bibilab_home, monkeypa
     assert {e.section_id for e in registry.values()} == set(section_ids)
     # facet_scope reports the matched count.
     assert result["facet_scope"]["matched_count"] == 1
-    # Outline-only sections (no verbatim) stay citable=False.
-    outline_only = [e for e in registry.values() if not e.citable]
+    # Outline-only sections (no verbatim) are first-class citations: citable
+    # from the start with the section summary as preview so the ledger row
+    # renders a body (not an empty quote) and the [N] is clickable in the UI.
+    outline_only = [e for e in registry.values() if not e.chunk_ids]
     assert outline_only, "at least one section must be outline-only (no chunk hit)"
+    for entry in outline_only:
+        assert entry.citable, "outline-only sections are first-class citations"
+        assert entry.preview, "outline-only preview should be the section summary"
     # All section summaries appear in the fenced body.
     assert "sec1 summary about the topic" in result["_chunks"]
     assert "sec2 summary about the topic" in result["_chunks"]

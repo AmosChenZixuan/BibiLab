@@ -81,7 +81,7 @@ def _expand_indices(
                 )
             )
         else:
-            # Outline-only (citable=False) or unknown index — emit as text.
+            # Non-citable entry or unknown index — emit as text.
             if entry is None:
                 logger.warning(
                     "citation_hallucinated_index index=%d registry_size=%d",
