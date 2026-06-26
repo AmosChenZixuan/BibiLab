@@ -3,7 +3,6 @@
 import asyncio
 import json
 import logging
-import re
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
@@ -80,6 +79,14 @@ class ArtifactResult(BaseModel):
 
     name: str
     content: str
+
+
+class MindMapResult(BaseModel):
+    """Mind-map LLM output: a single `{name, root}` JSON object. The
+    worker renders the markdown file body via `_render_mind_map_markdown`."""
+
+    name: str
+    root: dict
 
 
 # Token-budget knobs for the artifact section-batched refine.
@@ -193,17 +200,43 @@ def _render_multi_batch_section(sec: _SectionView) -> str:
     return f"{header}\n{sec.text}"
 
 
+# Per-artifact-type refine knobs. The refine loop (`_refine_batched`) is
+# shared; only the JSON schema directive shown to the LLM, the multi-batch
+# "integrate" wording, and the parse model differ between `artifact` and
+# `mind_map`.
+_ARTIFACT_SCHEMA_DIRECTIVE = (
+    '{\n  "name": "string (a short title for this artifact)",\n'
+    '  "content": "string (the main artifact content in markdown format)"\n}'
+)
+_MIND_MAP_SCHEMA_DIRECTIVE = (
+    '{\n  "name": "string (a short title for this mind map)",\n'
+    '  "root": "object (recursive tree: {label, children})"\n}'
+)
+_ARTIFACT_INTEGRATE_DIRECTIVE = (
+    "Integrate this new material into the draft. Keep the same JSON "
+    "schema; refine the draft's name and content to reflect the "
+    "accumulated material."
+)
+_MIND_MAP_INTEGRATE_DIRECTIVE = (
+    "Integrate this new material into the draft. Refine the draft's "
+    "name and root tree to reflect the accumulated material."
+)
+
+
 def _build_initial_prompt(
     prompt: str,
     transcript_text: str,
     cfg: BibilabConfig,
     ui_lang: str | None,
+    schema_directive: str = _ARTIFACT_SCHEMA_DIRECTIVE,
 ) -> str:
     """Build the prompt for the first batch of a section-batched refine,
     or for the single-call path when everything fits in one batch.
 
-    The single-call case is byte-identical to today's _generate_artifact
-    template (regression guard)."""
+    The artifact single-call case is byte-identical to today's
+    _generate_artifact template (regression guard). `schema_directive` is
+    the JSON shape the LLM must return — defaults to ArtifactResult's
+    {name, content}; mind_map passes {name, root}."""
     lang = resolve_response_language(cfg.ai, ui_lang)
     lang_instruction = _LANG_INSTRUCTION.get(lang, _LANG_INSTRUCTION["en"])
     lang_output_directive = _lang_output_directive(lang)
@@ -218,37 +251,32 @@ Transcript:
 
 {lang_instruction}
 Respond ONLY with valid JSON matching this schema:
-{{
-  "name": "string (a short title for this artifact)",
-  "content": "string (the main artifact content in markdown format)"
-}}
+{schema_directive}
 {lang_output_directive}"""
 
 
 def _build_refine_prompt(
     prompt: str,
-    draft: "ArtifactResult",
+    draft: BaseModel,
     new_sections_text: str,
     cfg: BibilabConfig,
     ui_lang: str | None,
+    schema_directive: str = _ARTIFACT_SCHEMA_DIRECTIVE,
+    draft_label: str = "name + content",
+    integrate_directive: str = _ARTIFACT_INTEGRATE_DIRECTIVE,
 ) -> str:
     """Build the prompt for batch k>1: show the running draft, show the
     new material, and instruct the LLM to integrate them. The LLM returns
-    a fresh {name, content} JSON — name is re-derived from accumulated
-    context (single prompt template family, no special-case)."""
+    a fresh JSON object matching `schema_directive`. Defaults are
+    ArtifactResult's {name, content}; mind_map overrides the three knobs."""
     lang = resolve_response_language(cfg.ai, ui_lang)
     lang_instruction = _LANG_INSTRUCTION.get(lang, _LANG_INSTRUCTION["en"])
     lang_output_directive = _lang_output_directive(lang)
     # Use json.dumps (not repr interpolation) so the fenced JSON block is
     # actually valid JSON for the LLM to read. ensure_ascii=False keeps
     # non-ASCII characters readable for non-English outputs.
-    draft_block = json.dumps({"name": draft.name, "content": draft.content}, ensure_ascii=False)
-    draft_text = f"Current draft (name + content):\n```json\n{draft_block}\n```\n"
-    integrate_directive = (
-        "Integrate this new material into the draft. Keep the same JSON "
-        "schema; refine the draft's name and content to reflect the "
-        "accumulated material."
-    )
+    draft_block = json.dumps(draft.model_dump(), ensure_ascii=False)
+    draft_text = f"Current draft ({draft_label}):\n```json\n{draft_block}\n```\n"
     return f"""{lang_instruction}
 
 {prompt}
@@ -262,77 +290,53 @@ New material to integrate:
 
 {lang_instruction}
 Respond ONLY with valid JSON matching this schema:
-{{
-  "name": "string (a short title for this artifact)",
-  "content": "string (the main artifact content in markdown format)"
-}}
+{schema_directive}
 {lang_output_directive}"""
 
 
-# Mind-map artifact (type='mind_map'). The LLM is told to emit exactly one
-# ```json fence describing a recursive node tree — the existing
-# _build_initial_prompt / _build_refine_prompt wrap _MIND_MAP_PROMPT verbatim
-# via the standard `prompt` arg, so no separate prompt family is needed.
+# Mind-map artifact (type='mind_map'). The LLM emits a single JSON object
+# matching `MindMapResult` ({name, root}) — no `content` envelope, no fenced
+# block. It shares the `_refine_batched` loop via `_MIND_MAP_SPEC`.
 _MIND_MAP_PROMPT = """\
 Produce a hierarchical mind map that captures the central topic and its
 sub-themes across the supplied transcript(s).
 
-Output rules:
+Respond with a single JSON object (no surrounding markdown, no fenced
+code block) matching this exact shape:
 
-1. The `content` field MUST be a markdown document with EXACTLY ONE fenced
-   code block. The fence MUST start with ```json on its own line and be
-   closed with ``` on its own line. The JSON inside MUST be a single
-   object with this shape:
+  {
+    "name": "string (a short title for this mind map)",
+    "root": {
+      "label": "string (root node, 2-6 words)",
+      "children": [
+        {"label": "string (branch)", "children": [{"label": "string"}, ...]},
+        ...
+      ]
+    }
+  }
 
-   {
-     "name": "string (a short title for this mind map)",
-     "root": {
-       "label": "string (root node, 2-6 words)",
-       "children": [
-         {"label": "string (branch)", "children": [{"label": "string"}, ...]},
-         ...
-       ]
-     }
-   }
+Rules:
 
-2. Hierarchy (cap total nodes at ~30; do not pad):
-
+1. Hierarchy (cap total nodes at ~30; do not pad):
    - Root: the overall topic.
    - 2-5 main branches (level 1).
    - 1-5 children per branch (level 2+).
 
-3. Node label rules:
-
+2. Node label rules:
    - Keep labels SHORT: a single phrase, ideally 1-6 words.
    - Mirror the majority language of the source transcript.
    - Do NOT use quotation marks, backslashes, or unescaped newlines
      inside labels.
    - Do NOT use markdown formatting (bold, italic, links) inside labels.
 
-4. No explanatory text outside the fence."""
+3. No explanatory text outside the JSON object."""
 
 
-_MIND_MAP_FENCE_RE = re.compile(r"^```json\s*$", re.MULTILINE)
-
-
-def _validate_mind_map_fence(content: str) -> dict:
-    """Parse and validate the single ```json fence in a mind-map artifact.
-    Returns the parsed dict. Raises PipelineError on 0/2+/unclosed fences,
-    malformed JSON, or a missing `root` object."""
-    fences = list(_MIND_MAP_FENCE_RE.finditer(content))
-    if len(fences) != 1:
-        raise PipelineError(f"Mind map artifact must contain exactly one ```json fence, got {len(fences)}")
-    start = fences[0].end()
-    end = content.find("\n```", start)
-    if end == -1:
-        raise PipelineError("Mind map ```json fence is not closed")
-    try:
-        parsed = json.loads(content[start:end])
-    except json.JSONDecodeError as exc:
-        raise PipelineError(f"Mind map JSON is malformed: {exc}") from exc
-    if not isinstance(parsed, dict) or not isinstance(parsed.get("root"), dict):
-        raise PipelineError("Mind map JSON must have a `root` object")
-    return parsed
+def _render_mind_map_markdown(mm: MindMapResult) -> str:
+    """Build the artifact file body for a mind_map job: one ```json fence
+    holding `{"root": ...}`."""
+    payload = json.dumps({"root": mm.root}, ensure_ascii=False, indent=2)
+    return f"```json\n{payload}\n```\n"
 
 
 async def _build_section_views(source_ids: list[str]) -> list[_SectionView]:
@@ -386,50 +390,75 @@ async def _build_section_views(source_ids: list[str]) -> list[_SectionView]:
     return views
 
 
-async def _refine_artifact(
+@dataclass(frozen=True)
+class _RefineSpec:
+    """The per-artifact-type knobs `_refine_batched` varies over: the
+    Pydantic model that parses the LLM response, the JSON schema directive
+    and multi-batch "integrate" wording shown to the LLM, the running-draft
+    label, and the batch-label prefix used in retry logs / error messages."""
+
+    model: type[BaseModel]
+    schema_directive: str
+    draft_label: str
+    integrate_directive: str
+    label_prefix: str
+
+
+_ARTIFACT_SPEC = _RefineSpec(
+    model=ArtifactResult,
+    schema_directive=_ARTIFACT_SCHEMA_DIRECTIVE,
+    draft_label="name + content",
+    integrate_directive=_ARTIFACT_INTEGRATE_DIRECTIVE,
+    label_prefix="artifact",
+)
+_MIND_MAP_SPEC = _RefineSpec(
+    model=MindMapResult,
+    schema_directive=_MIND_MAP_SCHEMA_DIRECTIVE,
+    draft_label="name + root",
+    integrate_directive=_MIND_MAP_INTEGRATE_DIRECTIVE,
+    label_prefix="mind_map",
+)
+
+
+async def _refine_batched(
     *,
     prompt: str,
     sections: list[_SectionView],
     cfg: BibilabConfig,
-    ui_lang: str | None = None,
-) -> ArtifactResult:
-    """Section-batched, running-draft refine for the artifact pipeline.
+    ui_lang: str | None,
+    spec: _RefineSpec,
+) -> BaseModel:
+    """Section-batched, running-draft refine shared by all artifact types.
 
-    When all sections fit in one batch (the common case — a few short
-    sources, each with 1 section), this collapses to the legacy
-    single-``_call_llm`` behavior, with the byte-identical prompt template
-    produced by ``_build_initial_prompt``.
-
-    When sections don't fit, the multi-batch path calls ``_call_llm`` once
-    per batch: batch 1 produces an initial draft; batch k>1 refines the
-    running draft with new sections.
+    When all sections fit in one batch (the common case), this collapses to
+    a single ``_call_llm`` with the ``_build_initial_prompt`` template (the
+    artifact single-batch path stays byte-identical to the legacy template).
+    When they don't fit, batch 1 produces the initial draft and batch k>1
+    refines the running draft with new sections.
 
     A single section that alone exceeds the per-batch budget raises
-    ``PipelineError`` (sections are atomic — never split). A batch whose
-    ``_call_llm`` exhausts the 3-attempt retry ladder raises
-    ``PipelineError`` (no partial artifact).
-
-    When the batch count exceeds ``_SOFT_COST_BATCH_THRESHOLD``, a soft
-    cost note is logged via ``logger.warning`` (no schema/UI change).
+    ``PipelineError`` (sections are atomic — never split); a batch whose
+    retry ladder is exhausted also raises (no partial artifact). Batch count
+    over ``_SOFT_COST_BATCH_THRESHOLD`` logs a soft cost note. The only
+    per-type variation is carried by ``spec``.
     """
     budget = cfg.ai.context_window - 2 * cfg.ai.max_output_tokens - _PROMPT_OVERHEAD_TOKENS
     if budget <= 0:
         raise PipelineError(
-            f"Artifact batch budget non-positive (context_window={cfg.ai.context_window}, "
+            f"{spec.label_prefix} batch budget non-positive (context_window={cfg.ai.context_window}, "
             f"2*max_output_tokens={2 * cfg.ai.max_output_tokens}, "
             f"prompt_overhead={_PROMPT_OVERHEAD_TOKENS}); "
             f"raise max_output_tokens or context_window"
         )
 
-    # Atomicity guard: a section alone > budget cannot be split. The
-    # packing is greedy, so an oversized section is the only thing that
-    # can produce a batch whose total exceeds the budget. Detect and fail
-    # loud here, before the LLM call.
+    # Atomicity guard: a section alone > budget cannot be split. The packing
+    # is greedy, so an oversized section is the only thing that can produce a
+    # batch over budget. Fail loud here, before the LLM call.
     for sec in sections:
         if sec.token_count > budget:
             raise PipelineError(
                 f"Source {sec.source_id!r} section {sec.seq} alone "
-                f"({sec.token_count} tokens) exceeds the artifact batch "
+                f"({sec.token_count} tokens) exceeds the {spec.label_prefix} batch "
                 f"budget ({budget} tokens); reduce section size or raise "
                 f"context_window"
             )
@@ -437,93 +466,82 @@ async def _refine_artifact(
     batches = _pack_sections(sections, budget)
     if len(batches) > _SOFT_COST_BATCH_THRESHOLD:
         logger.warning(
-            "Artifact refine using %d batches (threshold=%d); consider "
-            "raising context_window or selecting fewer sources",
+            "%s refine using %d batches (threshold=%d); consider raising context_window or selecting fewer sources",
+            spec.label_prefix,
             len(batches),
             _SOFT_COST_BATCH_THRESHOLD,
         )
 
-    # ---- Single-batch path (byte-identical regression guard) ----
-    if len(batches) == 1:
-        transcript_text = _render_single_batch_text(sections)
-        llm_prompt = _build_initial_prompt(
-            prompt=prompt,
-            transcript_text=transcript_text,
-            cfg=cfg,
-            ui_lang=ui_lang,
-        )
-        return await asyncio.to_thread(
-            _shared_pipeline._call_llm_with_retry,
-            [llm_prompt],
-            lambda raw: _parse_llm_json_response(raw, ArtifactResult),
-            cfg=cfg.ai,
-            label="artifact batch 1/1",
-            max_attempts=3,
-        )
-
-    # ---- Multi-batch path ----
-    return await _refine_artifact_multi_batch(
-        prompt=prompt,
-        batches=batches,
-        cfg=cfg,
-        ui_lang=ui_lang,
-    )
-
-
-async def _refine_artifact_multi_batch(
-    *,
-    prompt: str,
-    batches: list[list[_SectionView]],
-    cfg: BibilabConfig,
-    ui_lang: str | None,
-) -> ArtifactResult:
-    """Multi-batch refine: batch 1 produces an initial draft; batch k>1
-    feeds the running draft + new sections to the LLM with an
-    'integrate' directive. The final ArtifactResult is the last call's
-    parsed output.
-
-    The new-sections text per batch is greedy-packed to ≤ budget tokens;
-    the running draft is bounded by ``max_output_tokens`` (the model's
-    hard ceiling on what it can produce, hence what can come back as a
-    fed-back draft) and the prompt boilerplate by ``_PROMPT_OVERHEAD_TOKENS``.
-    ContextWindowExceededError is re-raised by the retry ladder (it would
-    re-overflow deterministically) and surfaces as a job-level failure.
-    """
-    draft: ArtifactResult | None = None
+    draft: BaseModel | None = None
     for i, batch in enumerate(batches, start=1):
-        label = f"artifact batch {i}/{len(batches)}"
-        new_sections_text = "\n".join(_render_multi_batch_section(s) for s in batch)
+        label = f"{spec.label_prefix} batch {i}/{len(batches)}"
         if i == 1:
-            # First batch: same template as the single-batch path (single
-            # source of truth via _build_initial_prompt), just with the
-            # multi-batch section text. Any schema change in
-            # _build_initial_prompt automatically flows here.
+            # Single-batch renders ALL sections (byte-identical guard);
+            # multi-batch batch 1 renders only its own sections.
+            if len(batches) == 1:
+                text = _render_single_batch_text(sections)
+            else:
+                text = "\n".join(_render_multi_batch_section(s) for s in batch)
             llm_prompt = _build_initial_prompt(
-                prompt=prompt,
-                transcript_text=new_sections_text,
-                cfg=cfg,
-                ui_lang=ui_lang,
+                prompt,
+                text,
+                cfg,
+                ui_lang,
+                schema_directive=spec.schema_directive,
             )
         else:
-            # Subsequent batches: refine the running draft.
-            assert draft is not None  # invariant: set by i=1
+            assert draft is not None
+            text = "\n".join(_render_multi_batch_section(s) for s in batch)
             llm_prompt = _build_refine_prompt(
-                prompt=prompt,
-                draft=draft,
-                new_sections_text=new_sections_text,
-                cfg=cfg,
-                ui_lang=ui_lang,
+                prompt,
+                draft,
+                text,
+                cfg,
+                ui_lang,
+                schema_directive=spec.schema_directive,
+                draft_label=spec.draft_label,
+                integrate_directive=spec.integrate_directive,
             )
         draft = await asyncio.to_thread(
             _shared_pipeline._call_llm_with_retry,
             [llm_prompt],
-            lambda raw: _parse_llm_json_response(raw, ArtifactResult),
+            lambda raw: _parse_llm_json_response(raw, spec.model),
             cfg=cfg.ai,
             label=label,
             max_attempts=3,
         )
-    assert draft is not None  # invariant: at least one batch
+    assert draft is not None
     return draft
+
+
+async def _refine_artifact(
+    *,
+    prompt: str,
+    sections: list[_SectionView],
+    cfg: BibilabConfig,
+    ui_lang: str | None = None,
+) -> ArtifactResult:
+    """Section-batched refine for text artifacts (brief, study guide, …)."""
+    result = await _refine_batched(prompt=prompt, sections=sections, cfg=cfg, ui_lang=ui_lang, spec=_ARTIFACT_SPEC)
+    assert isinstance(result, ArtifactResult)
+    return result
+
+
+async def _refine_mind_map(
+    *,
+    sections: list[_SectionView],
+    cfg: BibilabConfig,
+    ui_lang: str | None = None,
+) -> MindMapResult:
+    """Section-batched refine for mind_map: same loop as `_refine_artifact`,
+    but the LLM is asked for `{name, root}` and the result parses as
+    MindMapResult. The worker renders the file body via
+    `_render_mind_map_markdown`."""
+    result = await _refine_batched(
+        prompt=_MIND_MAP_PROMPT, sections=sections, cfg=cfg, ui_lang=ui_lang, spec=_MIND_MAP_SPEC
+    )
+    assert isinstance(result, MindMapResult)
+    return result
 
 
 def _download_cover(cover_url: str, dest: Path) -> bool:
@@ -669,9 +687,10 @@ class WorkerLoop:
         prompt = meta_raw["prompt"]
         source_ids = meta_raw["source_ids"]
         cfg = self._get_config()
-        # Mind-map jobs ignore the user-supplied prompt (_MIND_MAP_PROMPT is
-        # the directive); the rebind also feeds create_artifact's prompt
-        # column so the view-prompt modal shows what the LLM actually saw.
+        # Mind-map jobs ignore the user-supplied prompt and use
+        # `_MIND_MAP_PROMPT` instead. The rebind also feeds
+        # `create_artifact`'s `prompt` column so the view-prompt modal
+        # shows what the LLM actually saw.
         is_mind_map = artifact_type == "mind_map"
         if is_mind_map:
             prompt = _MIND_MAP_PROMPT
@@ -687,21 +706,26 @@ class WorkerLoop:
 
             await update_job_status(job_id, JobStatus.PROCESSING.value, progress=30)
 
-            # Section-batched refine: replaces the old single-call
-            # _generate_artifact. _build_section_views handles source
-            # existence + no-sections fail-loud.
+            # _build_section_views handles source existence + no-sections
+            # fail-loud.
             sections = await _build_section_views(source_ids)
-            artifact_result = await _refine_artifact(
-                prompt=prompt,
-                sections=sections,
-                cfg=cfg,
-                ui_lang=meta_raw.get("ui_lang"),
-            )
-
             if is_mind_map:
-                # Fail-loud contract: fence validator raises PipelineError on
-                # any structural violation before the file is written.
-                _validate_mind_map_fence(artifact_result.content)
+                mind_map_result = await _refine_mind_map(
+                    sections=sections,
+                    cfg=cfg,
+                    ui_lang=meta_raw.get("ui_lang"),
+                )
+                content = _render_mind_map_markdown(mind_map_result)
+                artifact_name = mind_map_result.name
+            else:
+                artifact_result = await _refine_artifact(
+                    prompt=prompt,
+                    sections=sections,
+                    cfg=cfg,
+                    ui_lang=meta_raw.get("ui_lang"),
+                )
+                content = artifact_result.content
+                artifact_name = artifact_result.name
 
             # Check for cancellation before writing file
             if job_id in self._cancelled:
@@ -715,13 +739,13 @@ class WorkerLoop:
             artifacts_dir = self._bibilab_home / "artifacts" / list_id
             artifacts_dir.mkdir(parents=True, exist_ok=True)
             content_path = artifacts_dir / f"{artifact_id}.md"
-            content_path.write_text(artifact_result.content, encoding="utf-8")
+            content_path.write_text(content, encoding="utf-8")
 
             # Create artifact record with success status
             await create_artifact(
                 artifact_id=artifact_id,
                 list_id=list_id,
-                name=artifact_result.name,
+                name=artifact_name,
                 type=artifact_type,
                 prompt=prompt,
                 source_ids=source_ids,
