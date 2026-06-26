@@ -1459,8 +1459,7 @@ async def test_get_messages_beyond_window_orders_by_rowid_when_timestamps_collid
             ("test-list-rowid", "T", "2026-01-01T00:00:00"),
         )
         await db.execute(
-            "INSERT INTO conversations (id, list_id, summary, created_at, updated_at) "
-            "VALUES (?, ?, NULL, ?, ?)",
+            "INSERT INTO conversations (id, list_id, summary, created_at, updated_at) VALUES (?, ?, NULL, ?, ?)",
             (conv_id, "test-list-rowid", "2026-01-01T00:00:00", "2026-01-01T00:00:00"),
         )
         for i in range(8):
