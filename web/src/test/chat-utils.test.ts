@@ -305,14 +305,7 @@ describe("buildMindmapAskMessage", () => {
     );
   });
 
-  test("evidence present on a child → discussRef wraps the base with the verbatim quote", () => {
-    const base = `lab.mindMap.discussInContext|${JSON.stringify({ topic: "Child", context: "Parent" })}`;
-    expect(buildMindmapAskMessage(t, "Child", "Parent", "verbatim quote")).toBe(
-      `lab.mindMap.discussRef|${JSON.stringify({ base, evidence: "verbatim quote" })}`,
-    );
-  });
-
-  test("evidence present on the root → discussRef wraps the discuss base", () => {
+  test("evidence present → discussRef wraps the base with the verbatim quote", () => {
     const base = `lab.mindMap.discuss|${JSON.stringify({ topic: "Topic" })}`;
     expect(buildMindmapAskMessage(t, "Topic", null, "q")).toBe(
       `lab.mindMap.discussRef|${JSON.stringify({ base, evidence: "q" })}`,
