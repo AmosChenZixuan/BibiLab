@@ -344,6 +344,9 @@ Rules:
      another language.
    - Prefer a passage naming the node's topic, entities, or events over
      generic framing.
+   - Escape any quotation marks, backslashes, or newlines so the quote is
+     valid inside the JSON string; if a passage cannot be escaped cleanly,
+     pick a different one.
 
 4. No explanatory text outside the JSON object."""
 
