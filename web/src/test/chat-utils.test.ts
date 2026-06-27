@@ -3,6 +3,7 @@ import { describe, expect, test } from "vitest";
 import { FIND_PASSAGES_TOOL_NAME } from "@/lib/utils";
 import {
   autoResize,
+  buildMindmapAskMessage,
   coerceCitationEvent,
   coerceContentBlock,
   facetNoMatchHint,
@@ -282,5 +283,39 @@ describe("coerceContentBlock", () => {
 
   test("passes a paragraph_break through", () => {
     expect(coerceContentBlock({ type: "paragraph_break" })).toEqual({ type: "paragraph_break" });
+  });
+});
+
+describe("buildMindmapAskMessage", () => {
+  // Stub t: echo the chosen i18n key + its params so we can assert which
+  // template the branch picked and that evidence is threaded. i18n
+  // interpolation itself is LanguageContext's job, tested elsewhere.
+  const t = (key: string, params?: Record<string, string | number>) =>
+    `${key}|${JSON.stringify(params ?? {})}`;
+
+  test("root node, no evidence → today's discuss message", () => {
+    expect(buildMindmapAskMessage(t, "Topic", null, "")).toBe(
+      `lab.mindMap.discuss|${JSON.stringify({ topic: "Topic" })}`,
+    );
+  });
+
+  test("child node, no evidence → discussInContext (unchanged from today)", () => {
+    expect(buildMindmapAskMessage(t, "Child", "Parent", "")).toBe(
+      `lab.mindMap.discussInContext|${JSON.stringify({ topic: "Child", context: "Parent" })}`,
+    );
+  });
+
+  test("evidence present on a child → discussRef wraps the base with the verbatim quote", () => {
+    const base = `lab.mindMap.discussInContext|${JSON.stringify({ topic: "Child", context: "Parent" })}`;
+    expect(buildMindmapAskMessage(t, "Child", "Parent", "verbatim quote")).toBe(
+      `lab.mindMap.discussRef|${JSON.stringify({ base, evidence: "verbatim quote" })}`,
+    );
+  });
+
+  test("evidence present on the root → discussRef wraps the discuss base", () => {
+    const base = `lab.mindMap.discuss|${JSON.stringify({ topic: "Topic" })}`;
+    expect(buildMindmapAskMessage(t, "Topic", null, "q")).toBe(
+      `lab.mindMap.discussRef|${JSON.stringify({ base, evidence: "q" })}`,
+    );
   });
 });

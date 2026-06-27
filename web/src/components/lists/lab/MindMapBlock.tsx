@@ -5,14 +5,17 @@ import { useLanguage } from "@/app/LanguageContext";
 
 interface MindNode {
   label: string;
+  // Verbatim transcript quote grounding this node, captured at generation
+  // time. Absent on legacy artifacts → threaded as "" (today's behavior).
+  evidence?: string;
   children?: MindNode[];
 }
 
 // Inner callback the TreeNode fires when a card is clicked. The
 // page-level handler (MindMapAskInChat, in lib/chat-utils) is the
 // wrapper that adds the artifact's source_ids; this file only knows
-// about the topic + parent-topic pair.
-type MindMapAskHandler = (topic: string, parentTopic: string | null) => void;
+// about the topic + parent-topic pair plus the node's evidence quote.
+type MindMapAskHandler = (topic: string, parentTopic: string | null, evidence: string) => void;
 
 const MIND_JSON_RE = /^```json\s*\n([\s\S]*?)\n```\s*$/m;
 
@@ -330,7 +333,7 @@ const TreeNode: React.FC<{
         <button
           type="button"
           {...cardProps}
-          onClick={() => onAskInChat?.(node.label, parentLabel)}
+          onClick={() => onAskInChat?.(node.label, parentLabel, node.evidence ?? "")}
         >
           <span className={labelClass}>{node.label}</span>
         </button>

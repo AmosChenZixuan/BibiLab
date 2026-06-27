@@ -11,7 +11,7 @@ import { LabPanel } from "@/components/lists/LabPanel";
 import { ChatPanel } from "@/components/lists/ChatPanel";
 import { SourcesViewerMode } from "@/components/lists/sources/SourcesViewerMode";
 import { SourcesListMode } from "@/components/lists/sources/SourcesListMode";
-import type { OpenSourceOpts, PendingChatMessage } from "@/lib/chat-utils";
+import { buildMindmapAskMessage, type OpenSourceOpts, type PendingChatMessage } from "@/lib/chat-utils";
 
 export function ListDetailPage() {
   const { t } = useLanguage();
@@ -137,11 +137,9 @@ export function ListDetailPage() {
     topic: string,
     parentTopic: string | null,
     sourceIds: string[],
+    evidence: string,
   ) {
-    const text =
-      parentTopic == null
-        ? t("lab.mindMap.discuss", { topic })
-        : t("lab.mindMap.discussInContext", { topic, context: parentTopic });
+    const text = buildMindmapAskMessage(t, topic, parentTopic, evidence);
     setPendingChatMessage({ text, nonce: Date.now(), sourceIds });
   }
 

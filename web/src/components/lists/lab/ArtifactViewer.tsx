@@ -185,7 +185,8 @@ export function ArtifactViewer({ artifact, sources, onAskInChatFromMindmap, onOp
               content={content}
               onAskInChat={
                 onAskInChatFromMindmap
-                  ? (topic, parent) => onAskInChatFromMindmap(topic, parent, artifact.source_ids)
+                  ? (topic, parent, evidence) =>
+                      onAskInChatFromMindmap(topic, parent, artifact.source_ids, evidence)
                   : undefined
               }
             />

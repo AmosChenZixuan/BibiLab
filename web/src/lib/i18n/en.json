@@ -103,7 +103,8 @@
     },
     "mindMap": {
       "discuss": "Discuss %{topic}",
-      "discussInContext": "Discuss %{topic}, in the larger context of %{context}"
+      "discussInContext": "Discuss %{topic}, in the larger context of %{context}",
+      "discussRef": "%{base}. Reference passage: \"%{evidence}\""
     },
     "artifactList": {
       "emptyTitle": "Output will be saved here.",
