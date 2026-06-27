@@ -210,7 +210,7 @@ _ARTIFACT_SCHEMA_DIRECTIVE = (
 )
 _MIND_MAP_SCHEMA_DIRECTIVE = (
     '{\n  "name": "string (a short title for this mind map)",\n'
-    '  "root": "object (recursive tree: {label, children})"\n}'
+    '  "root": "object (recursive tree: {label, evidence, children})"\n}'
 )
 _ARTIFACT_INTEGRATE_DIRECTIVE = (
     "Integrate this new material into the draft. Keep the same JSON "
@@ -219,7 +219,10 @@ _ARTIFACT_INTEGRATE_DIRECTIVE = (
 )
 _MIND_MAP_INTEGRATE_DIRECTIVE = (
     "Integrate this new material into the draft. Refine the draft's "
-    "name and root tree to reflect the accumulated material."
+    "name and root tree to reflect the accumulated material. Keep each "
+    "node's existing 'evidence' quote verbatim (copy it unchanged); only "
+    "replace a quote if you are pulling a fresh verbatim passage from the "
+    "new material for that node."
 )
 
 
@@ -308,8 +311,10 @@ code block) matching this exact shape:
     "name": "string (a short title for this mind map)",
     "root": {
       "label": "string (root node, 2-6 words)",
+      "evidence": "string (a verbatim quote, see rule 3)",
       "children": [
-        {"label": "string (branch)", "children": [{"label": "string"}, ...]},
+        {"label": "string (branch)", "evidence": "string",
+         "children": [{"label": "string", "evidence": "string"}, ...]},
         ...
       ]
     }
@@ -329,7 +334,21 @@ Rules:
      inside labels.
    - Do NOT use markdown formatting (bold, italic, links) inside labels.
 
-3. No explanatory text outside the JSON object."""
+3. Node "evidence" rules:
+   - For EVERY node, include an "evidence" field: one short verbatim
+     quote (1-2 sentences) copied from a source transcript exactly as
+     written — no paraphrase. A node label is often a synthesized
+     abstraction; the quote is the literal passage that grounds it, so a
+     later search can find the source.
+   - Quote in the transcript's own language even when the label is in
+     another language.
+   - Prefer a passage naming the node's topic, entities, or events over
+     generic framing.
+   - Escape any quotation marks, backslashes, or newlines so the quote is
+     valid inside the JSON string; if a passage cannot be escaped cleanly,
+     pick a different one.
+
+4. No explanatory text outside the JSON object."""
 
 
 def _render_mind_map_markdown(mm: MindMapResult) -> str:

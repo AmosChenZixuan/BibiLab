@@ -103,7 +103,8 @@
     },
     "mindMap": {
       "discuss": "讨论 %{topic}",
-      "discussInContext": "结合%{context}，讨论%{topic}"
+      "discussInContext": "结合%{context}，讨论%{topic}",
+      "discussRef": "%{base}。参考原文：\"%{evidence}\""
     },
     "artifactList": {
       "emptyTitle": "输出将保存在此处。",

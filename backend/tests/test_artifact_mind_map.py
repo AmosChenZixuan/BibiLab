@@ -82,6 +82,41 @@ def test_mind_map_prompt_instructs_only_name_and_root():
     assert "```json" not in _MIND_MAP_PROMPT
 
 
+def test_render_mind_map_markdown_preserves_node_evidence():
+    """AC1: a node's `evidence` quote survives rendering verbatim. The
+    untyped `root` dict carries `evidence` through with no model/render
+    change; absent `evidence` renders identically to today."""
+    from bibilab.worker import MindMapResult, _render_mind_map_markdown
+
+    quote = "这就是众神纪元开始之前的近古时代。"
+    root = {
+        "label": "近古纪元",
+        "evidence": quote,
+        "children": [{"label": "无 evidence 的子节点"}],
+    }
+    mm = MindMapResult(name="Topic Map", root=root)
+    parsed = _parse_rendered_fence(_render_mind_map_markdown(mm))
+    assert parsed["root"]["evidence"] == quote
+    # A node without `evidence` is unchanged — no injected default.
+    assert "evidence" not in parsed["root"]["children"][0]
+
+
+def test_mind_map_directives_instruct_evidence():
+    """AC2: the generation prompt and both refine directives must name
+    `evidence` and require it be a verbatim quote, so the multi-batch
+    refine loop preserves it instead of paraphrasing the BM25 anchor away."""
+    from bibilab.worker import (
+        _MIND_MAP_INTEGRATE_DIRECTIVE,
+        _MIND_MAP_SCHEMA_DIRECTIVE,
+    )
+
+    assert '"evidence"' in _MIND_MAP_PROMPT
+    assert "verbatim" in _MIND_MAP_PROMPT
+    assert "evidence" in _MIND_MAP_SCHEMA_DIRECTIVE
+    assert "evidence" in _MIND_MAP_INTEGRATE_DIRECTIVE
+    assert "verbatim" in _MIND_MAP_INTEGRATE_DIRECTIVE
+
+
 # --- _run_artifact_job dispatch + happy path ------------------------------
 
 

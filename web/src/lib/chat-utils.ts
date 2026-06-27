@@ -43,7 +43,26 @@ export type MindMapAskInChat = (
   topic: string,
   parentTopic: string | null,
   sourceIds: string[],
+  evidence: string,
 ) => void;
+
+/** Compose the chat message for a clicked mindmap node. A synthesized
+ *  node label may not appear in any transcript; the node's `evidence`
+ *  (a verbatim quote captured at generation time) is appended so chat
+ *  retrieval has an in-corpus phrase to match. Empty `evidence` yields
+ *  the bare discuss / discussInContext message (today's behavior). */
+export function buildMindmapAskMessage(
+  t: (key: string, params?: Record<string, string | number>) => string,
+  topic: string,
+  parentTopic: string | null,
+  evidence: string,
+): string {
+  const base =
+    parentTopic == null
+      ? t("lab.mindMap.discuss", { topic })
+      : t("lab.mindMap.discussInContext", { topic, context: parentTopic });
+  return evidence ? t("lab.mindMap.discussRef", { base, evidence }) : base;
+}
 
 // NB: `section_id` on SectionCoverage / RetrievalChunk below is the integer
 // sections.id serialized by the backend — declared string here to mirror the

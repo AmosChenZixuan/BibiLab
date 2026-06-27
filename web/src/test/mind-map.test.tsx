@@ -62,7 +62,7 @@ const SAMPLE_SOURCES: Source[] = [
 
 function renderArtifact(
   artifact = MIND_MAP_ARTIFACT,
-  props: { sources?: Source[]; onAskInChatFromMindmap?: (topic: string, parentTopic: string | null, sourceIds: string[]) => void; onOpenSource?: (s: Source) => void } = {},
+  props: { sources?: Source[]; onAskInChatFromMindmap?: (topic: string, parentTopic: string | null, sourceIds: string[], evidence: string) => void; onOpenSource?: (s: Source) => void } = {},
 ) {
   return renderWithProviders(
     <ArtifactViewer artifact={artifact} sources={props.sources} onAskInChatFromMindmap={props.onAskInChatFromMindmap} onOpenSource={props.onOpenSource} />,
@@ -118,7 +118,7 @@ describe("ArtifactViewer mind map", () => {
     // Branch A is at depth 1, so its immediate parent is the root.
     await userEvent.click(screen.getByRole("button", { name: "Branch A" }));
     expect(onAsk).toHaveBeenCalledTimes(1);
-    expect(onAsk).toHaveBeenCalledWith("Branch A", "Main Topic", MIND_MAP_ARTIFACT.source_ids);
+    expect(onAsk).toHaveBeenCalledWith("Branch A", "Main Topic", MIND_MAP_ARTIFACT.source_ids, "");
   });
 
   test("clicking a leaf fires onAskInChat with the branch as parent (verifies recursive parentLabel threading)", async () => {
@@ -130,7 +130,7 @@ describe("ArtifactViewer mind map", () => {
     expect(await screen.findByText("Leaf A1")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Leaf A1" }));
     expect(onAsk).toHaveBeenCalledTimes(1);
-    expect(onAsk).toHaveBeenCalledWith("Leaf A1", "Branch A", MIND_MAP_ARTIFACT.source_ids);
+    expect(onAsk).toHaveBeenCalledWith("Leaf A1", "Branch A", MIND_MAP_ARTIFACT.source_ids, "");
   });
 
   test("clicking the root node fires onAskInChat with parent=null", async () => {
@@ -139,7 +139,28 @@ describe("ArtifactViewer mind map", () => {
     await screen.findByTestId("mindmap-canvas");
     await userEvent.click(screen.getByRole("button", { name: "Main Topic" }));
     expect(onAsk).toHaveBeenCalledTimes(1);
-    expect(onAsk).toHaveBeenCalledWith("Main Topic", null, MIND_MAP_ARTIFACT.source_ids);
+    expect(onAsk).toHaveBeenCalledWith("Main Topic", null, MIND_MAP_ARTIFACT.source_ids, "");
+  });
+
+  test("clicking a node threads its evidence quote through to onAskInChat (AC4)", async () => {
+    const { api } = await import("@/lib/api");
+    const quote = "这就是众神纪元开始之前的近古时代。";
+    vi.mocked(api.getArtifactContent).mockResolvedValueOnce({
+      content: [
+        "```json",
+        '{ "name": "M", "root": {',
+        '  "label": "近古纪元", "evidence": "' + quote + '",',
+        '  "children": [{"label": "无证据子节点"}] } }',
+        "```",
+      ].join("\n"),
+    });
+    const onAsk = vi.fn();
+    renderArtifact(MIND_MAP_ARTIFACT, { onAskInChatFromMindmap: onAsk });
+    await screen.findByTestId("mindmap-canvas");
+    // Root carries evidence → it threads through; a child without evidence
+    // passes "" (today's behavior).
+    await userEvent.click(screen.getByRole("button", { name: "近古纪元" }));
+    expect(onAsk).toHaveBeenCalledWith("近古纪元", null, MIND_MAP_ARTIFACT.source_ids, quote);
   });
 
   test("'View N sources' button opens a popover listing every artifact source_id, with deleted sources as placeholders", async () => {
