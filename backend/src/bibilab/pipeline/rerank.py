@@ -8,6 +8,7 @@ import threading
 
 from bibilab.config import load_config
 from bibilab.model_registry import ensure
+from bibilab.pipeline._shared import interpreting_providers
 from bibilab.pipeline.chat_inference_pool import get_chat_pool
 from bibilab.pipeline.embed import RetrievedChunk
 
@@ -37,9 +38,13 @@ class ONNXCrossEncoder:
         so = ort.SessionOptions()
         so.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
         so.log_severity_level = 3
+        # Kernel-based EPs only — excludes compiler-based EPs (CoreML on macOS),
+        # which JIT-recompile the cross-encoder per input shape: int8 hangs >90s
+        # and fp32 spikes to ~6.5 GB RSS, OOM-killing the 16 GB worker on the
+        # first chat retrieve. Shared with embed.py (its #570 fix); CPU-only here.
         self._session = ort.InferenceSession(
             str(model_dir / _MODEL_FILENAME),
-            providers=ort.get_available_providers(),
+            providers=interpreting_providers(),
             sess_options=so,
         )
         from tokenizers import Tokenizer  # noqa: PLC0415
