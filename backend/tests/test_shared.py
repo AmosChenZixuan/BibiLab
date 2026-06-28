@@ -6,17 +6,24 @@ from bibilab.pipeline._shared import interpreting_providers
 
 
 def test_interpreting_providers_drops_compiling_eps(monkeypatch):
-    # CoreML (compiling) must be filtered; CUDA + CPU (interpreting) kept in order.
+    # Compiler-based EPs (CoreML, DirectML) filtered; kernel-based EPs
+    # (CUDA, ROCm, CPU) kept in priority order.
     monkeypatch.setattr(
         ort,
         "get_available_providers",
         lambda: [
             "CoreMLExecutionProvider",
+            "DmlExecutionProvider",
             "CUDAExecutionProvider",
+            "ROCMExecutionProvider",
             "CPUExecutionProvider",
         ],
     )
-    assert interpreting_providers() == ["CUDAExecutionProvider", "CPUExecutionProvider"]
+    assert interpreting_providers() == [
+        "CUDAExecutionProvider",
+        "ROCMExecutionProvider",
+        "CPUExecutionProvider",
+    ]
 
 
 def test_interpreting_providers_macos_falls_back_to_cpu(monkeypatch):
