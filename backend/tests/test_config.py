@@ -22,8 +22,8 @@ from bibilab.config import BibilabConfig
         # download_connections is a derived @property, never a stored field —
         # this guards against it being re-added as a configurable knob.
         (("backend",), "download_connections"),
-        # reranker_spec_id (#567) removed in #573 — one int8 reranker ships, the
-        # spec is a model_registry constant, not a config knob.
+        # reranker_spec_id removed — one int8 reranker ships; the spec is a
+        # model_registry constant, not a config knob.
         (("rag",), "reranker_spec_id"),
     ],
 )
@@ -36,10 +36,10 @@ def test_removed_field_absent(path: tuple[str, ...], field: str) -> None:
 
 
 def test_legacy_reranker_spec_id_in_config_is_ignored() -> None:
-    """An existing config.json written by #567 carries rag.reranker_spec_id. After
-    #573 dropped the field, loading such a file must NOT brick (Pydantic
-    extra='ignore') and the stale key must not survive a round-trip — otherwise an
-    upgrade either 422s on load or silently re-persists a dead knob."""
+    """An existing config.json written before the field was dropped still carries
+    rag.reranker_spec_id. Loading such a file must NOT brick (Pydantic extra='ignore')
+    and the stale key must not survive a round-trip — otherwise an upgrade either 422s
+    on load or silently re-persists a dead knob."""
     cfg = BibilabConfig.model_validate({"rag": {"reranker_spec_id": "bge-reranker-base"}})
     assert "reranker_spec_id" not in cfg.rag.model_dump()
 

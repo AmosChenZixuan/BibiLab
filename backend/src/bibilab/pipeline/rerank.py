@@ -40,7 +40,7 @@ class ONNXCrossEncoder:
         # Kernel-based EPs only — excludes compiler-based EPs (CoreML on macOS),
         # which JIT-recompile the cross-encoder per input shape: int8 hangs >90s
         # and fp32 spikes to ~6.5 GB RSS, OOM-killing the 16 GB worker on the
-        # first chat retrieve. Shared with embed.py (its #570 fix); CPU-only here.
+        # first chat retrieve. Shared with embed.py; CPU-only here.
         self._session = ort.InferenceSession(
             str(model_dir / _MODEL_FILENAME),
             providers=interpreting_providers(),

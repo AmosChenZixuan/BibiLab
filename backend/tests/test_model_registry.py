@@ -95,15 +95,14 @@ def test_registry_sizes_corrected():
 
 
 def test_quantized_reranker_is_sole_reranker_spec():
-    """int8 quantized reranker (266.4 MiB) is the only reranker shipped (#573); its
-    on-disk file is normalized to model.onnx so the loader needs no filename branch,
-    and it downloads the remote model_quantized.onnx."""
+    """The int8 quantized reranker is the only reranker shipped; its on-disk file is
+    normalized to model.onnx so the loader needs no filename branch, and it downloads
+    the remote model_quantized.onnx. (size_mb is covered by test_registry_sizes_corrected.)"""
     rerankers = [s for s in list_specs() if s.kind == "reranker"]
     assert [s.id for s in rerankers] == ["bge-reranker-base-q"]
 
     spec = get_spec("bge-reranker-base-q")
     assert spec.backend == "http_files"
-    assert spec.size_mb == 266
     assert spec.integrity_files == ["model.onnx", "tokenizer.json"]
     assert spec.http_files is not None
     url_by_rel = {rel: url for url, rel in spec.http_files}
@@ -112,7 +111,7 @@ def test_quantized_reranker_is_sole_reranker_spec():
 
 
 def test_fp32_reranker_spec_removed():
-    """The fp32 'bge-reranker-base' spec was deleted in #573 (one reranker ships).
+    """The fp32 'bge-reranker-base' spec was deleted (one reranker ships).
     get_spec must fail loud rather than resolve a dead spec id."""
     with pytest.raises(ValueError):
         get_spec("bge-reranker-base")
@@ -128,9 +127,9 @@ def test_ctpunc_spec_registered():
 
 
 def test_reranker_spec_id_constant_is_quantized():
-    """#573 makes the reranker a single module constant (mirrors EMBEDDING_SPEC_ID)
-    instead of a config knob — it must name the registered int8 spec, the single
-    source of truth rerank.py / required_models / health all resolve."""
+    """The reranker is a single module constant (mirrors EMBEDDING_SPEC_ID) instead
+    of a config knob — it must name the registered int8 spec, the single source of
+    truth rerank.py / required_models / health all resolve."""
     from bibilab.model_registry import RERANKER_SPEC_ID
 
     assert RERANKER_SPEC_ID == "bge-reranker-base-q"
