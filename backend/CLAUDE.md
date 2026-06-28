@@ -35,7 +35,7 @@ pipeline/         — one file per stage
   section.py        Section dataclass + derive_sections (token+pause boundary, target=12000) + chunk_by_sections (per-section chunking with source-global re-stamp)
   digest.py         LLM facets (series_name, sequence_number, season_number) → source facets; per-section summary + keywords → sections table (sections are the sole digest store; source carries facets only)
   embed.py          ChromaDB embed + retrieve() (hybrid search → rerank → aggregation), FTS5 populate
-  rerank.py         lazy ONNX cross-encoder reranker (Xenova/bge-reranker-base, XLM-RoBERTa zh+en; batched inference)
+  rerank.py         lazy ONNX cross-encoder reranker (Xenova/bge-reranker-base, XLM-RoBERTa zh+en; batched inference; variant config-selected via cfg.rag.reranker_spec_id, default int8 quantized)
   chat_tools.py     two tool definitions (find_passages, read_section) + execution dispatcher + section fencing + CitationRegistry + facet narrative builder; `_NO_MATCH_NOTE` is a fact-only string prepended when facet matching fails
   chat_summary.py   conversation compression (sliding window + LLM summary; summary is prose only — [N] markers not preserved)
   citation_parser.py incremental citation parser — strips [N] tokens from LLM deltas, emits citation SSE events with {index, section_id, source_id, timestamp_start, chunk_ids}
@@ -275,7 +275,7 @@ class PlatformAdapter:
   "ai": { "protocol": "openai|anthropic", "model": "", "api_key": "", "base_url": null, "output_language": "ui", "context_window": 128000, "max_output_tokens": 16384 },
   "transcription": { "model": "sensevoice-small|large-v3", "device": "cuda|cpu", "language": "auto" },
   "backend": { "port": 8765, "max_concurrent_jobs": 1, "cors_origins": [...] },
-  "rag": { "max_distance": 0.8, "reranking_enabled": true, "hybrid_enabled": true, "debug_prompts": false }
+  "rag": { "max_distance": 0.8, "reranking_enabled": true, "hybrid_enabled": true, "reranker_spec_id": "bge-reranker-base-q", "debug_prompts": false }
 }
 ```
-Reranker model is fixed to `Xenova/bge-reranker-base` (XLM-RoBERTa, Chinese + English). `FIND_PASSAGES_TOP_K = 8`. Opt-in prompt-trace dump writes one JSON per chat turn at `~/.bibilab/debug/{message_id}.json` capturing the final cumulative LLM state when `rag.debug_prompts` is true; off by default.
+Reranker is `Xenova/bge-reranker-base` (XLM-RoBERTa, Chinese + English), variant selected by `rag.reranker_spec_id` — default `bge-reranker-base-q` (int8 quantized: ~4× smaller, faster on CPU); set to `bge-reranker-base` for fp32. Only the selected spec downloads. Note: int8 under CoreML is unusably slow, so on macOS the reranker must run on an interpreting EP (see #559). `FIND_PASSAGES_TOP_K = 8`. Opt-in prompt-trace dump writes one JSON per chat turn at `~/.bibilab/debug/{message_id}.json` capturing the final cumulative LLM state when `rag.debug_prompts` is true; off by default.
