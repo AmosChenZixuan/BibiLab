@@ -27,7 +27,7 @@ def test_interpreting_providers_drops_compiling_eps(monkeypatch):
 
 
 def test_interpreting_providers_macos_falls_back_to_cpu(monkeypatch):
-    # The real macOS provider set: only CPU survives the whitelist.
+    # The real macOS provider set: only CPU survives the allowlist.
     monkeypatch.setattr(
         ort,
         "get_available_providers",
