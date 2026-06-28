@@ -155,7 +155,8 @@ _SPECS: dict[str, ModelSpec] = {
 }
 
 EMBEDDING_SPEC_ID = "multilingual-e5"
-RERANKER_SPEC_ID = "bge-reranker-base"
+# Reranker spec is not a constant here — it's config-selected via
+# cfg.rag.reranker_spec_id (fp32 vs int8 quantized). The single source of truth.
 DIARIZATION_SPEC_ID = "cam++"
 VAD_SPEC_ID = "fsmn-vad"
 PUNC_SPEC_ID = "ct-punc"
@@ -317,7 +318,7 @@ def required_models(cfg: BibilabConfig) -> list[ModelSpec]:
     specs.append(get_spec(PUNC_SPEC_ID))
     specs.append(get_spec(EMBEDDING_SPEC_ID))
     if cfg.rag.reranking_enabled:
-        specs.append(get_spec(RERANKER_SPEC_ID))
+        specs.append(get_spec(cfg.rag.reranker_spec_id))
     return specs
 
 
@@ -332,7 +333,6 @@ __all__ = [
     "ModelKind",
     "ModelSpec",
     "PUNC_SPEC_ID",
-    "RERANKER_SPEC_ID",
     "VAD_SPEC_ID",
     "WHISPER_SPEC_ID",
     "ensure",

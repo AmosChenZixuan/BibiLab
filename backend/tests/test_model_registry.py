@@ -120,6 +120,28 @@ def test_ctpunc_spec_registered():
     assert spec.local_subdir == "asr/ct-punc"
 
 
+def test_reranker_spec_id_constant_removed():
+    """Selection now flows through config (cfg.rag.reranker_spec_id), so the old
+    module constant is dead — importing it must fail to prevent a stale second
+    source of truth."""
+    import bibilab.model_registry as mr
+
+    assert not hasattr(mr, "RERANKER_SPEC_ID")
+
+
+def test_required_models_follows_configured_reranker_spec():
+    """required_models must reflect the config-selected reranker, not a hardcoded
+    spec — otherwise the download set diverges from what rerank.py loads."""
+    from bibilab.config import BibilabConfig
+    from bibilab.model_registry import required_models
+
+    cfg = BibilabConfig()
+    cfg.rag.reranker_spec_id = "bge-reranker-base"  # opt back into fp32
+    ids = [s.id for s in required_models(cfg)]
+    assert "bge-reranker-base" in ids
+    assert "bge-reranker-base-q" not in ids
+
+
 def test_ctpunc_is_required_unconditionally():
     from bibilab.config import BibilabConfig
     from bibilab.model_registry import PUNC_SPEC_ID, required_models

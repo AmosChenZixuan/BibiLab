@@ -32,6 +32,16 @@ def test_removed_field_absent(path: tuple[str, ...], field: str) -> None:
     assert field not in obj.model_dump()
 
 
+def test_reranker_spec_id_default_is_quantized_and_resolves() -> None:
+    """Quantized is the runtime default (macOS OOM fix); the default must name a
+    real registered spec or every reranker download breaks."""
+    from bibilab.model_registry import get_spec
+
+    spec_id = BibilabConfig().rag.reranker_spec_id
+    assert spec_id == "bge-reranker-base-q"
+    assert get_spec(spec_id).kind == "reranker"
+
+
 def test_backend_download_connections_default() -> None:
     """At the default 4 jobs, the derived per-file aria2c connection count is 16
     (the -x saturation cap), and the total stays within the per-IP budget."""

@@ -110,6 +110,11 @@ class RagConfig(BaseModel):
     max_distance: float = 0.8
     reranking_enabled: bool = True
     hybrid_enabled: bool = True
+    # Which reranker spec to load (model_registry id). Default is the int8
+    # quantized model: ~4× smaller, it shrinks the CoreML compile footprint that
+    # OOM-kills the 16 GB macOS worker, and runs faster on CPU. Set to
+    # "bge-reranker-base" to opt back into fp32. Only the selected spec downloads.
+    reranker_spec_id: str = "bge-reranker-base-q"
     # Opt-in: dump one JSON per chat turn to ~/.bibilab/debug/{message_id}.json,
     # capturing the final cumulative LLM state (system, tools, messages, response, model, timestamp).
     debug_prompts: bool = False
