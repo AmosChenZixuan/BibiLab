@@ -95,7 +95,7 @@ _SPECS: dict[str, ModelSpec] = {
         display_name="Multilingual Embedding (MiniLM-L12-v2)",
         kind="embedding",
         backend="http_files",
-        size_mb=420,
+        size_mb=449,
         integrity_files=["onnx/model.onnx", "onnx/tokenizer.json"],
         local_subdir="embedding",
         http_files=[
@@ -114,12 +114,36 @@ _SPECS: dict[str, ModelSpec] = {
         display_name="bge-reranker-base (Cross-encoder)",
         kind="reranker",
         backend="http_files",
-        size_mb=280,
+        size_mb=1061,
         integrity_files=["model.onnx", "tokenizer.json"],
         local_subdir="reranker/Xenova_bge-reranker-base",
         http_files=[
             (
                 "https://huggingface.co/Xenova/bge-reranker-base/resolve/main/onnx/model.onnx",
+                "model.onnx",
+            ),
+            (
+                "https://huggingface.co/Xenova/bge-reranker-base/resolve/main/tokenizer.json",
+                "tokenizer.json",
+            ),
+        ],
+    ),
+    # int8 quantized variant: ~4× smaller (266 vs 1061 MiB) and ~1.8× faster on
+    # CPU. Shrinks the CoreML compile footprint that OOM-kills the 16 GB macOS
+    # worker, so it's the runtime default. The remote file is model_quantized.onnx
+    # but is stored as model.onnx in its own subdir, so the loader stays
+    # filename-agnostic and never collides with the fp32 download.
+    "bge-reranker-base-q": ModelSpec(
+        id="bge-reranker-base-q",
+        display_name="bge-reranker-base int8 (Cross-encoder)",
+        kind="reranker",
+        backend="http_files",
+        size_mb=266,
+        integrity_files=["model.onnx", "tokenizer.json"],
+        local_subdir="reranker/Xenova_bge-reranker-base-q",
+        http_files=[
+            (
+                "https://huggingface.co/Xenova/bge-reranker-base/resolve/main/onnx/model_quantized.onnx",
                 "model.onnx",
             ),
             (
