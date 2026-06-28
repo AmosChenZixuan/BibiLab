@@ -155,8 +155,7 @@ _SPECS: dict[str, ModelSpec] = {
 }
 
 EMBEDDING_SPEC_ID = "multilingual-e5"
-# Reranker spec is not a constant here — it's config-selected via
-# cfg.rag.reranker_spec_id (fp32 vs int8 quantized), the single source of truth.
+# Reranker variant is host-derived (see reranker_spec_id), not a fixed constant.
 DIARIZATION_SPEC_ID = "cam++"
 VAD_SPEC_ID = "fsmn-vad"
 PUNC_SPEC_ID = "ct-punc"
@@ -304,6 +303,22 @@ def ensure(spec_id: str) -> Path:
 # ---- Config-driven helpers -------------------------------------------
 
 
+def reranker_spec_id() -> str:
+    """Pick the reranker variant from the host's usable execution providers.
+
+    A GPU EP (CUDA/ROCm) runs the fp32 graph ~37× faster than CPU and far faster
+    than the int8 graph — whose quantized ops aren't GPU-accelerated and fall
+    back, slower than int8 on CPU. With no GPU EP, int8 is ~1.8× faster on CPU
+    and ¼ the memory (and fits the macOS compile budget). So: GPU → fp32, else
+    int8. interpreting_providers() already drops the compiling EPs (CoreML /
+    TensorRT / DirectML), so this only ever sees CUDA / ROCm / CPU.
+    """
+    from bibilab.pipeline._shared import interpreting_providers  # noqa: PLC0415
+
+    gpu = any(p in ("CUDAExecutionProvider", "ROCMExecutionProvider") for p in interpreting_providers())
+    return "bge-reranker-base" if gpu else "bge-reranker-base-q"
+
+
 def required_models(cfg: BibilabConfig) -> list[ModelSpec]:
     """Return model specs required under the current config."""
     specs: list[ModelSpec] = []
@@ -318,7 +333,7 @@ def required_models(cfg: BibilabConfig) -> list[ModelSpec]:
     specs.append(get_spec(PUNC_SPEC_ID))
     specs.append(get_spec(EMBEDDING_SPEC_ID))
     if cfg.rag.reranking_enabled:
-        specs.append(get_spec(cfg.rag.reranker_spec_id))
+        specs.append(get_spec(reranker_spec_id()))
     return specs
 
 
@@ -340,4 +355,5 @@ __all__ = [
     "list_specs",
     "missing_required_models",
     "required_models",
+    "reranker_spec_id",
 ]

@@ -121,7 +121,7 @@ def test_ctpunc_spec_registered():
 
 
 def test_reranker_spec_id_constant_removed():
-    """Selection now flows through config (cfg.rag.reranker_spec_id), so the old
+    """The variant is host-derived via reranker_spec_id(), so the old fixed
     module constant is dead — importing it must fail to prevent a stale second
     source of truth."""
     import bibilab.model_registry as mr
@@ -129,17 +129,35 @@ def test_reranker_spec_id_constant_removed():
     assert not hasattr(mr, "RERANKER_SPEC_ID")
 
 
-def test_required_models_follows_configured_reranker_spec():
-    """required_models must reflect the config-selected reranker, not a hardcoded
-    spec — otherwise the download set diverges from what rerank.py loads."""
+def test_reranker_spec_id_picks_variant_by_gpu_ep():
+    """Host-derived: a GPU EP (CUDA/ROCm) selects fp32 (far faster on GPU; int8's
+    quant ops aren't GPU-accelerated); CPU-only selects int8 (faster + leaner on
+    CPU, fits the macOS compile budget)."""
+    from bibilab.model_registry import reranker_spec_id
+
+    P = "bibilab.pipeline._shared.interpreting_providers"
+    with patch(P, return_value=["CUDAExecutionProvider", "CPUExecutionProvider"]):
+        assert reranker_spec_id() == "bge-reranker-base"
+    with patch(P, return_value=["ROCMExecutionProvider", "CPUExecutionProvider"]):
+        assert reranker_spec_id() == "bge-reranker-base"
+    with patch(P, return_value=["CPUExecutionProvider"]):
+        assert reranker_spec_id() == "bge-reranker-base-q"
+
+
+def test_required_models_follows_host_derived_reranker():
+    """The download set must track the host-derived variant — otherwise it
+    diverges from what rerank.py loads."""
     from bibilab.config import BibilabConfig
     from bibilab.model_registry import required_models
 
     cfg = BibilabConfig()
-    cfg.rag.reranker_spec_id = "bge-reranker-base"  # opt back into fp32
-    ids = [s.id for s in required_models(cfg)]
-    assert "bge-reranker-base" in ids
-    assert "bge-reranker-base-q" not in ids
+    P = "bibilab.pipeline._shared.interpreting_providers"
+    with patch(P, return_value=["CUDAExecutionProvider", "CPUExecutionProvider"]):
+        ids = [s.id for s in required_models(cfg)]
+        assert "bge-reranker-base" in ids and "bge-reranker-base-q" not in ids
+    with patch(P, return_value=["CPUExecutionProvider"]):
+        ids = [s.id for s in required_models(cfg)]
+        assert "bge-reranker-base-q" in ids and "bge-reranker-base" not in ids
 
 
 def test_ctpunc_is_required_unconditionally():

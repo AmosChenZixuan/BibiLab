@@ -6,18 +6,20 @@ import asyncio
 import logging
 import threading
 
-from bibilab.config import load_config
-from bibilab.model_registry import ensure
+from bibilab.model_registry import ensure, reranker_spec_id
+from bibilab.pipeline._shared import interpreting_providers
 from bibilab.pipeline.chat_inference_pool import get_chat_pool
 from bibilab.pipeline.embed import RetrievedChunk
 
 logger = logging.getLogger(__name__)
 
 # Cross-encoder is bge-reranker-base (XLM-RoBERTa) — Chinese + English, the
-# project's primary content languages. Which *variant* (fp32 vs int8 quantized)
-# loads is config-selected via cfg.rag.reranker_spec_id. Quantization changes the
-# cross-encoder's exact scores, but a given variant is deterministic across
-# machines, so the gateless top-k ordering stays reproducible per deployment.
+# project's primary content languages. EP and variant are one host-derived
+# decision: interpreting_providers() drops compiling EPs (CoreML/TensorRT/DML),
+# and reranker_spec_id() picks fp32 when a GPU EP survives (fp32 is far faster
+# on GPU; int8's quant ops aren't GPU-accelerated) else int8 (faster/leaner on
+# CPU). A given host loads exactly one variant, so its top-k ordering is
+# deterministic; it differs across host classes, which never share a deployment.
 _MODEL_FILENAME = "model.onnx"
 _TOKENIZER_FILENAME = "tokenizer.json"
 
@@ -31,7 +33,7 @@ class ONNXCrossEncoder:
 
         self._np = np
 
-        model_dir = ensure(load_config().rag.reranker_spec_id)
+        model_dir = ensure(reranker_spec_id())
         import onnxruntime as ort  # noqa: PLC0415
 
         so = ort.SessionOptions()
@@ -39,7 +41,7 @@ class ONNXCrossEncoder:
         so.log_severity_level = 3
         self._session = ort.InferenceSession(
             str(model_dir / _MODEL_FILENAME),
-            providers=ort.get_available_providers(),
+            providers=interpreting_providers(),
             sess_options=so,
         )
         from tokenizers import Tokenizer  # noqa: PLC0415
