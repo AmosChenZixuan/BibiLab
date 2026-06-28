@@ -86,6 +86,31 @@ def test_modelspec_rejects_empty_integrity_files():
         )
 
 
+def test_registry_sizes_corrected():
+    """size_mb drives download UI/estimates; fp32 reranker (1060.9 MiB) and the
+    e5 embedder (448.5 MiB) were declared far too low. The old fp32 280 actually
+    matched the quantized file, not fp32."""
+    assert get_spec("bge-reranker-base").size_mb == 1061
+    assert get_spec("multilingual-e5").size_mb == 449
+
+
+def test_quantized_reranker_spec_registered():
+    """int8 quantized reranker (266.4 MiB) — registered as its own spec so the
+    fp32 spec stays selectable; on-disk file normalized to model.onnx so the
+    loader needs no filename branch."""
+    spec = get_spec("bge-reranker-base-q")
+    assert spec.kind == "reranker"
+    assert spec.backend == "http_files"
+    assert spec.size_mb == 266
+    assert spec.integrity_files == ["model.onnx", "tokenizer.json"]
+    # distinct dir from fp32 so a download never overwrites the other model
+    assert spec.local_subdir != get_spec("bge-reranker-base").local_subdir
+    assert spec.http_files is not None
+    url_by_rel = {rel: url for url, rel in spec.http_files}
+    assert url_by_rel["model.onnx"].endswith("onnx/model_quantized.onnx")
+    assert "tokenizer.json" in url_by_rel
+
+
 def test_ctpunc_spec_registered():
     spec = get_spec("ct-punc")
     assert spec.kind == "punctuation"
@@ -93,6 +118,28 @@ def test_ctpunc_spec_registered():
     assert spec.modelscope_id == "iic/punc_ct-transformer_cn-en-common-vocab471067-large"
     assert spec.integrity_files == ["configuration.json"]
     assert spec.local_subdir == "asr/ct-punc"
+
+
+def test_reranker_spec_id_constant_removed():
+    """Selection now flows through config (cfg.rag.reranker_spec_id), so the old
+    module constant is dead — importing it must fail to prevent a stale second
+    source of truth."""
+    import bibilab.model_registry as mr
+
+    assert not hasattr(mr, "RERANKER_SPEC_ID")
+
+
+def test_required_models_follows_configured_reranker_spec():
+    """required_models must reflect the config-selected reranker, not a hardcoded
+    spec — otherwise the download set diverges from what rerank.py loads."""
+    from bibilab.config import BibilabConfig
+    from bibilab.model_registry import required_models
+
+    cfg = BibilabConfig()
+    cfg.rag.reranker_spec_id = "bge-reranker-base"  # opt back into fp32
+    ids = [s.id for s in required_models(cfg)]
+    assert "bge-reranker-base" in ids
+    assert "bge-reranker-base-q" not in ids
 
 
 def test_ctpunc_is_required_unconditionally():

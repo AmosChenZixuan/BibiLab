@@ -5,34 +5,24 @@ from __future__ import annotations
 import asyncio
 import logging
 import threading
-from pathlib import Path
-from typing import TYPE_CHECKING
 
-if TYPE_CHECKING:
-    pass
-
-from bibilab.config import models_dir
-from bibilab.model_registry import RERANKER_SPEC_ID, ensure
+from bibilab.config import load_config
+from bibilab.model_registry import ensure
 from bibilab.pipeline.chat_inference_pool import get_chat_pool
 from bibilab.pipeline.embed import RetrievedChunk
 
 logger = logging.getLogger(__name__)
 
-# bge-reranker-base (XLM-RoBERTa) handles Chinese + English, matching
-# the project's primary content languages. Model is intentionally fixed
-# rather than configurable — it's the only viable cross-encoder that
-# covers both languages, and score-distribution differences across
-# reranker models would invalidate the gateless top-k ordering invariant.
-_MODEL_REPO = "Xenova/bge-reranker-base"
+# Cross-encoder is bge-reranker-base (XLM-RoBERTa) — Chinese + English, the
+# project's primary content languages. Which *variant* (fp32 vs int8 quantized)
+# loads is config-selected via cfg.rag.reranker_spec_id. Quantization changes the
+# cross-encoder's exact scores, but a given variant is deterministic across
+# machines, so the gateless top-k ordering stays reproducible per deployment.
 _MODEL_FILENAME = "model.onnx"
 _TOKENIZER_FILENAME = "tokenizer.json"
 
 _reranker: ONNXCrossEncoder | None = None
 _reranker_lock = threading.Lock()
-
-
-def _model_dir() -> Path:
-    return models_dir("reranker", _MODEL_REPO.replace("/", "_"))
 
 
 class ONNXCrossEncoder:
@@ -41,8 +31,7 @@ class ONNXCrossEncoder:
 
         self._np = np
 
-        ensure(RERANKER_SPEC_ID)
-        model_dir = _model_dir()
+        model_dir = ensure(load_config().rag.reranker_spec_id)
         import onnxruntime as ort  # noqa: PLC0415
 
         so = ort.SessionOptions()

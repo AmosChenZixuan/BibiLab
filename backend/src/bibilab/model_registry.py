@@ -95,7 +95,7 @@ _SPECS: dict[str, ModelSpec] = {
         display_name="Multilingual Embedding (MiniLM-L12-v2)",
         kind="embedding",
         backend="http_files",
-        size_mb=420,
+        size_mb=449,
         integrity_files=["onnx/model.onnx", "onnx/tokenizer.json"],
         local_subdir="embedding",
         http_files=[
@@ -114,7 +114,7 @@ _SPECS: dict[str, ModelSpec] = {
         display_name="bge-reranker-base (Cross-encoder)",
         kind="reranker",
         backend="http_files",
-        size_mb=280,
+        size_mb=1061,
         integrity_files=["model.onnx", "tokenizer.json"],
         local_subdir="reranker/Xenova_bge-reranker-base",
         http_files=[
@@ -128,10 +128,35 @@ _SPECS: dict[str, ModelSpec] = {
             ),
         ],
     ),
+    # int8 quantized variant: ~4× smaller (266 vs 1061 MiB) and ~1.8× faster on
+    # CPU. Shrinks the CoreML compile footprint that OOM-kills the 16 GB macOS
+    # worker, so it's the runtime default. The remote file is model_quantized.onnx
+    # but is stored as model.onnx in its own subdir, so the loader stays
+    # filename-agnostic and never collides with the fp32 download.
+    "bge-reranker-base-q": ModelSpec(
+        id="bge-reranker-base-q",
+        display_name="bge-reranker-base int8 (Cross-encoder)",
+        kind="reranker",
+        backend="http_files",
+        size_mb=266,
+        integrity_files=["model.onnx", "tokenizer.json"],
+        local_subdir="reranker/Xenova_bge-reranker-base-q",
+        http_files=[
+            (
+                "https://huggingface.co/Xenova/bge-reranker-base/resolve/main/onnx/model_quantized.onnx",
+                "model.onnx",
+            ),
+            (
+                "https://huggingface.co/Xenova/bge-reranker-base/resolve/main/tokenizer.json",
+                "tokenizer.json",
+            ),
+        ],
+    ),
 }
 
 EMBEDDING_SPEC_ID = "multilingual-e5"
-RERANKER_SPEC_ID = "bge-reranker-base"
+# Reranker spec is not a constant here — it's config-selected via
+# cfg.rag.reranker_spec_id (fp32 vs int8 quantized), the single source of truth.
 DIARIZATION_SPEC_ID = "cam++"
 VAD_SPEC_ID = "fsmn-vad"
 PUNC_SPEC_ID = "ct-punc"
@@ -293,7 +318,7 @@ def required_models(cfg: BibilabConfig) -> list[ModelSpec]:
     specs.append(get_spec(PUNC_SPEC_ID))
     specs.append(get_spec(EMBEDDING_SPEC_ID))
     if cfg.rag.reranking_enabled:
-        specs.append(get_spec(RERANKER_SPEC_ID))
+        specs.append(get_spec(cfg.rag.reranker_spec_id))
     return specs
 
 
@@ -308,7 +333,6 @@ __all__ = [
     "ModelKind",
     "ModelSpec",
     "PUNC_SPEC_ID",
-    "RERANKER_SPEC_ID",
     "VAD_SPEC_ID",
     "WHISPER_SPEC_ID",
     "ensure",

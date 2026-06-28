@@ -6,7 +6,6 @@ from bibilab.config import BibilabConfig, get_config
 from bibilab.model_registry import (
     DIARIZATION_SPEC_ID,
     EMBEDDING_SPEC_ID,
-    RERANKER_SPEC_ID,
     _integrity_ok,
     _target_dir,
     get_spec,
@@ -79,15 +78,15 @@ def _check_embedding_model() -> dict:
     }
 
 
-def _check_reranker_model() -> dict:
-    spec = get_spec(RERANKER_SPEC_ID)
+def _check_reranker_model(cfg: BibilabConfig) -> dict:
+    spec = get_spec(cfg.rag.reranker_spec_id)
     if _integrity_ok(spec):
         return {"status": "ok", "message": str(_target_dir(spec))}
     return {
         "status": "error",
         "message": (
             f"Reranker model not found at {_target_dir(spec)}. "
-            "It downloads automatically on first chat query (~280 MB)."
+            f"It downloads automatically on first chat query (~{spec.size_mb} MB)."
         ),
     }
 
@@ -102,7 +101,7 @@ async def health(cfg: BibilabConfig = Depends(get_config)) -> dict:
         "ffmpeg": _check_ffmpeg(),
         "cuda": _check_cuda(),
         "embedding_model": _check_embedding_model(),
-        "reranker_model": _check_reranker_model(),
+        "reranker_model": _check_reranker_model(cfg),
         "diarization_model": _check_diarization_model(),
     }
 
