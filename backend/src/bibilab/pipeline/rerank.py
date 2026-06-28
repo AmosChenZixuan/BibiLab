@@ -15,11 +15,9 @@ logger = logging.getLogger(__name__)
 
 # Cross-encoder is bge-reranker-base (XLM-RoBERTa) — Chinese + English, the
 # project's primary content languages. Which *variant* (fp32 vs int8 quantized)
-# loads is config-selected via cfg.rag.reranker_spec_id; the model dir comes
-# straight from ensure() so a registry local_subdir change takes effect with no
-# second path computation here. Quantization changes the cross-encoder's exact
-# scores, but a given variant is deterministic across machines, so the gateless
-# top-k ordering stays reproducible per deployment.
+# loads is config-selected via cfg.rag.reranker_spec_id. Quantization changes the
+# cross-encoder's exact scores, but a given variant is deterministic across
+# machines, so the gateless top-k ordering stays reproducible per deployment.
 _MODEL_FILENAME = "model.onnx"
 _TOKENIZER_FILENAME = "tokenizer.json"
 

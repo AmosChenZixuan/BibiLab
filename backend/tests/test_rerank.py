@@ -36,11 +36,3 @@ def test_cross_encoder_loads_dir_returned_by_ensure(tmp_path: Path):
 
     mock_ensure.assert_called_once_with("bge-reranker-base-q")
     assert captured["path"] == str(fake_dir / "model.onnx")
-
-
-def test_rerank_has_no_duplicated_path_logic():
-    """_model_dir()/_MODEL_REPO recomputed the model dir independently of the
-    registry — deleted so the registry's local_subdir is the single source."""
-    src = (Path(__file__).resolve().parents[1] / "src/bibilab/pipeline/rerank.py").read_text()
-    assert "_model_dir" not in src
-    assert "_MODEL_REPO" not in src

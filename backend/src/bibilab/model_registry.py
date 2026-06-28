@@ -156,7 +156,7 @@ _SPECS: dict[str, ModelSpec] = {
 
 EMBEDDING_SPEC_ID = "multilingual-e5"
 # Reranker spec is not a constant here — it's config-selected via
-# cfg.rag.reranker_spec_id (fp32 vs int8 quantized). The single source of truth.
+# cfg.rag.reranker_spec_id (fp32 vs int8 quantized), the single source of truth.
 DIARIZATION_SPEC_ID = "cam++"
 VAD_SPEC_ID = "fsmn-vad"
 PUNC_SPEC_ID = "ct-punc"
