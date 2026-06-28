@@ -43,6 +43,39 @@ def format_hms(seconds: float | None) -> str:
     return f"{h}:{m:02d}:{sec:02d}" if h else f"{m}:{sec:02d}"
 
 
+def interpreting_providers() -> list[str]:
+    """ONNX kernel-based execution providers — no compiler-based EP.
+
+    ONNX Runtime splits EPs into two designs: *kernel-based* ones dispatch
+    stateless per-op kernels (CPU, CUDA, ROCm), while *compiler-based* ones run
+    GetCapability/Compile() to fuse partitions into a JIT'd custom op (CoreML,
+    DirectML, TensorRT, OpenVINO, MIGraphX, NNAPI, QNN, …). The JIT holds a
+    second copy of the weights and recompiles per input shape — pathological for
+    this BERT-family embedding model. CoreML, measured:
+
+    - Chat query (one short string/turn): ~5 ms on CPU vs ~37 ms under CoreML,
+      and the CoreML session inflates to ~3.4 GB vs ~1.0 GB on CPU.
+    - Ingest (batches of 512-token chunks through the shared singleton session):
+      CoreML recompiles per input shape and collapses — ~48x slower (measured
+      0.2 vs ~10 chunks/s), OOMs at a full source's batch, and deadlocks when
+      two ingest jobs hit the session concurrently. CPU stays fast and stable.
+
+    There is no speed case for a compiling accelerator here, so allowlist the
+    kernel-based EPs (honest memory). The allowlist, not a denylist, is the
+    fail-safe direction: the compiler-based set is large and keeps growing, and
+    an unrecognised new one must fall back to CPU/CUDA, never slip through to a
+    fresh OOM. ROCm (AMD's HIP port of the CUDA kernels) is kernel-based, so it
+    stays alongside CUDA.
+    """
+    import onnxruntime as ort  # noqa: PLC0415
+
+    return [
+        p
+        for p in ort.get_available_providers()
+        if p in ("CUDAExecutionProvider", "ROCMExecutionProvider", "CPUExecutionProvider")
+    ]
+
+
 # Input-side margin. Absorbs tokenizer drift (cl100k vs. provider-native) and
 # per-message framing overhead. Single-knob; no per-tier ceiling.
 _INPUT_MARGIN = 2048

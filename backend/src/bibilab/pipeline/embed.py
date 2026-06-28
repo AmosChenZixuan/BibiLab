@@ -170,9 +170,11 @@ class ONNXMultilingualEmbedding:
         so = ort.SessionOptions()
         so.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
         so.log_severity_level = 3
+        from bibilab.pipeline._shared import interpreting_providers  # noqa: PLC0415
+
         self._session = ort.InferenceSession(
             str(model_dir / "onnx" / "model.onnx"),
-            providers=ort.get_available_providers(),
+            providers=interpreting_providers(),
             sess_options=so,
         )
         from tokenizers import Tokenizer  # noqa: PLC0415
