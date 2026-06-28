@@ -3,7 +3,7 @@ import logging
 import os
 import threading
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, field_validator, model_validator
 
@@ -114,7 +114,7 @@ class RagConfig(BaseModel):
     # quantized model: ~4× smaller, it shrinks the CoreML compile footprint that
     # OOM-kills the 16 GB macOS worker, and runs faster on CPU. Set to
     # "bge-reranker-base" to opt back into fp32. Only the selected spec downloads.
-    reranker_spec_id: str = "bge-reranker-base-q"
+    reranker_spec_id: Literal["bge-reranker-base", "bge-reranker-base-q"] = "bge-reranker-base-q"
     # Opt-in: dump one JSON per chat turn to ~/.bibilab/debug/{message_id}.json,
     # capturing the final cumulative LLM state (system, tools, messages, response, model, timestamp).
     debug_prompts: bool = False

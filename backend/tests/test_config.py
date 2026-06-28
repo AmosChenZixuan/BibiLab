@@ -5,6 +5,7 @@ BibilabConfig instance, so a future re-introduction is caught.
 """
 
 import pytest
+from pydantic import ValidationError
 
 from bibilab.config import BibilabConfig
 
@@ -40,6 +41,14 @@ def test_reranker_spec_id_default_is_quantized_and_resolves() -> None:
     spec_id = BibilabConfig().rag.reranker_spec_id
     assert spec_id == "bge-reranker-base-q"
     assert get_spec(spec_id).kind == "reranker"
+
+
+def test_reranker_spec_id_rejects_unknown_spec() -> None:
+    """The field is a Literal of registered reranker ids, so a config.json typo
+    fails loud at load with a field-named ValidationError — not a late KeyError
+    deep in required_models / reranker init."""
+    with pytest.raises(ValidationError):
+        BibilabConfig.model_validate({"rag": {"reranker_spec_id": "bge-reranker-base-int8"}})
 
 
 def test_backend_download_connections_default() -> None:
