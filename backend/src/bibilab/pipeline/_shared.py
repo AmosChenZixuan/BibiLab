@@ -43,6 +43,33 @@ def format_hms(seconds: float | None) -> str:
     return f"{h}:{m:02d}:{sec:02d}" if h else f"{m}:{sec:02d}"
 
 
+def interpreting_providers() -> list[str]:
+    """ONNX execution providers that run the graph as-is — no compiling EP.
+
+    Whitelists the interpreting providers (CUDA for onnxruntime-gpu installs,
+    else CPU) and drops every compiling EP, chiefly CoreML on macOS. A compiling
+    EP JITs its own copy of the weights, and CoreML in particular is pathological
+    for this BERT-family embedding model:
+
+    - Chat query (one short string/turn): ~5 ms on CPU vs ~37 ms under CoreML,
+      and the CoreML session inflates to ~3.4 GB vs ~1.0 GB on CPU.
+    - Ingest (batches of 512-token chunks through the shared singleton session):
+      CoreML recompiles per input shape and collapses — ~48x slower (measured
+      0.2 vs ~10 chunks/s), OOMs at a full source's batch, and deadlocks when
+      two ingest jobs hit the session concurrently. CPU stays fast and stable.
+
+    There is no speed case for an accelerator here, so pin the interpreting EPs
+    unconditionally. CUDA is interpreting (honest memory), so it stays.
+    """
+    import onnxruntime as ort  # noqa: PLC0415
+
+    return [
+        p
+        for p in ort.get_available_providers()
+        if p in ("CUDAExecutionProvider", "CPUExecutionProvider")
+    ]
+
+
 # Input-side margin. Absorbs tokenizer drift (cl100k vs. provider-native) and
 # per-message framing overhead. Single-knob; no per-tier ceiling.
 _INPUT_MARGIN = 2048
