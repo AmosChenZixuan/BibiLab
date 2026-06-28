@@ -13,6 +13,7 @@ from bibilab.model_registry import (
     list_specs,
     missing_required_models,
     required_models,
+    reranker_spec_id,
 )
 from bibilab.models.models import ModelDownloadResponse, ModelInfo, SyncResponse
 
@@ -23,8 +24,13 @@ logger = logging.getLogger(__name__)
 @router.get("/models")
 async def list_models(cfg: BibilabConfig = Depends(get_config)) -> list[ModelInfo]:
     required_ids = {s.id for s in required_models(cfg)}
+    host_reranker = reranker_spec_id()
     out: list[ModelInfo] = []
     for spec in list_specs():
+        # Only the host-derived reranker variant is exposed; the other variant is
+        # never loaded here, so listing it (with a download button) is misleading.
+        if spec.kind == "reranker" and spec.id != host_reranker:
+            continue
         installed = _integrity_ok(spec)
         out.append(
             ModelInfo(
