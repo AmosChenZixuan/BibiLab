@@ -291,9 +291,7 @@ async def test_preamble_trigger_attached_per_decision_point(mock_stream_llm):
     tool_idx = next(i for i, m in enumerate(sink) if m.get("role") == "tool")
     assert sink[tool_idx + 1] == {"role": "user", "content": trigger}
     # one trigger per decision point (initial + one tool result), no accumulation
-    decision_points = [
-        m for m in sink if isinstance(m.get("content"), str) and m["content"].endswith(trigger)
-    ]
+    decision_points = [m for m in sink if isinstance(m.get("content"), str) and m["content"].endswith(trigger)]
     assert len(decision_points) == 2, sink
     # preamble text emitted before the tool_call lives on the assistant message (dump-visible)
     asst_with_tool = next(m for m in sink if m.get("role") == "assistant" and m.get("tool_calls"))
