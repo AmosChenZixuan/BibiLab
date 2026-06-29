@@ -136,6 +136,15 @@ Open `http://localhost:8765`. `install.sh` probes for working GPU passthrough an
 picks the `cpu` or `cuda` torch variant automatically — GPU only accelerates ASR
 transcription, so the CPU image is fully functional, just slower to transcribe.
 
+| Host | Variant |
+|---|---|
+| NVIDIA + Container Toolkit (Linux / WSL2) | `cuda` — GPU transcription |
+| No GPU, macOS, AMD/Intel GPU | `cpu` — everything on CPU |
+| Windows native (no WSL) | run `install.sh` from WSL/Git Bash; no GPU passthrough |
+
+A wrong `cuda` guess can't crash you — the app clamps back to CPU at runtime if the
+GPU isn't really there. AMD/ROCm acceleration is not yet supported.
+
 Data lives in `~/.bibilab` on the host (bind-mounted to `/data`), **shared with a
 native install** — the same DB, models, and config. The container runs as your
 host user, so files stay yours. To update, re-run `./install.sh`.
