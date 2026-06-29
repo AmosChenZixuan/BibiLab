@@ -5,7 +5,7 @@ Python/FastAPI backend. Managed with `uv`.
 ## Commands
 
 ```bash
-uv sync --dev                        # Install all dependencies
+uv sync --dev --extra cpu            # Install all deps (cpu torch; use --extra cuda on an NVIDIA box)
 uv run python -c "import torch; print(torch.cuda.is_available())"  # Verify CUDA
 uv run ruff check .                  # Lint
 uv run ruff format .                 # Format

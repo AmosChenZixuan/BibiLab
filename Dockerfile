@@ -11,8 +11,10 @@ RUN npm run build
 
 # Stage 2 — Python backend serving the built SPA on a single port.
 FROM python:3.12-slim
+# ffmpeg: audio extraction. aria2: multi-connection downloader yt-dlp shells out to
+# (absent → slower single-stream fallback, see adapters/bilibili.py).
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ffmpeg \
+    && apt-get install -y --no-install-recommends ffmpeg aria2 \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=ghcr.io/astral-sh/uv:0.9.27 /uv /uvx /bin/
 
