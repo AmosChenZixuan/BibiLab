@@ -37,10 +37,8 @@ class ONNXCrossEncoder:
         so = ort.SessionOptions()
         so.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
         so.log_severity_level = 3
-        # Kernel-based EPs only — excludes compiler-based EPs (CoreML on macOS),
-        # which JIT-recompile the cross-encoder per input shape: int8 hangs >90s
-        # and fp32 spikes to ~6.5 GB RSS, OOM-killing the 16 GB worker on the
-        # first chat retrieve. Shared with embed.py; CPU-only here.
+        # Providers from the shared helper — excludes compiler-based EPs (CoreML)
+        # that OOM/hang this model on macOS; see interpreting_providers() for why.
         self._session = ort.InferenceSession(
             str(model_dir / _MODEL_FILENAME),
             providers=interpreting_providers(),

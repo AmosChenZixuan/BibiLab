@@ -51,7 +51,8 @@ def interpreting_providers() -> list[str]:
     GetCapability/Compile() to fuse partitions into a JIT'd custom op (CoreML,
     DirectML, TensorRT, OpenVINO, MIGraphX, NNAPI, QNN, …). The JIT holds a
     second copy of the weights and recompiles per input shape — pathological for
-    this BERT-family embedding model. CoreML, measured:
+    these BERT-family models (the embedder and the cross-encoder reranker that
+    share this helper). CoreML, measured on the embedder:
 
     - Chat query (one short string/turn): ~5 ms on CPU vs ~37 ms under CoreML,
       and the CoreML session inflates to ~3.4 GB vs ~1.0 GB on CPU.
