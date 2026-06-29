@@ -123,9 +123,11 @@ first use — expect ~1–3 GB the first time you ingest a video.
 
 Build and run everything in a container — no local Python/Node setup.
 
-**Prerequisites:** Docker (with Compose). For GPU-accelerated transcription, also
-install the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html);
-without it (or on non-NVIDIA hosts) the container runs on CPU.
+**Prerequisites:** Docker (with Compose). For GPU-accelerated transcription you
+need the NVIDIA driver plus GPU-enabled Docker — **Docker Desktop (WSL2 backend)
+has this built in**, while a native Docker Engine needs the
+[NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html).
+Without GPU support (or on non-NVIDIA hosts) the container runs on CPU.
 
 ```bash
 git clone <repo-url> bibilab && cd bibilab
@@ -138,7 +140,7 @@ transcription, so the CPU image is fully functional, just slower to transcribe.
 
 | Host | Variant |
 |---|---|
-| NVIDIA + Container Toolkit (Linux / WSL2) | `cuda` — GPU transcription |
+| NVIDIA + GPU-enabled Docker (Docker Desktop WSL2, or Linux + Toolkit) | `cuda` — GPU transcription |
 | No GPU, macOS, AMD/Intel GPU | `cpu` — everything on CPU |
 | Windows native (no WSL) | run `install.sh` from WSL/Git Bash; no GPU passthrough |
 
