@@ -1,0 +1,18 @@
+services:
+  bibilab:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        TORCH_VARIANT: ${TORCH_VARIANT:-cpu}
+    image: bibilab:${TORCH_VARIANT:-cpu}
+    # Run as the host user so files written to the bind mount stay user-owned and
+    # interchangeable with a native install. install.sh writes UID/GID to .env.
+    user: "${UID:-1000}:${GID:-1000}"
+    environment:
+      BIBILAB_HOME: /data
+    volumes:
+      - ${HOME}/.bibilab:/data
+    ports:
+      - "8765:8765"
+    restart: unless-stopped

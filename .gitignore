@@ -9,6 +9,9 @@ dist/
 .ruff_cache/
 .coverage
 
+# Docker
+.env
+
 # Node
 node_modules/
 package-lock.json

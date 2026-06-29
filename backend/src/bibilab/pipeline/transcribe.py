@@ -66,6 +66,17 @@ class WhisperSegment:
     speaker: str | None = None
 
 
+def _resolve_device(cfg: TranscriptionConfig) -> str:
+    # config defaults device to "cuda"; in a cpu-only container (or a host where GPU
+    # passthrough isn't wired) torch.cuda.is_available() is False, so honoring "cuda"
+    # would crash model load. Clamp to cpu instead — the single device decision point.
+    if cfg.device != "cuda":
+        return "cpu"
+    import torch  # noqa: PLC0415
+
+    return "cuda:0" if torch.cuda.is_available() else "cpu"
+
+
 def _load_funasr(cfg: TranscriptionConfig) -> Any:
     global _funasr_pipeline, _funasr_key
     from funasr import AutoModel  # noqa: PLC0415
@@ -74,7 +85,7 @@ def _load_funasr(cfg: TranscriptionConfig) -> Any:
     if _funasr_pipeline is not None and _funasr_key == key:
         return _funasr_pipeline
 
-    device = "cuda:0" if cfg.device == "cuda" else "cpu"
+    device = _resolve_device(cfg)
     spk_path = ensure(DIARIZATION_SPEC_ID)
     vad_path = ensure(VAD_SPEC_ID)
 

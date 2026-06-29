@@ -118,6 +118,27 @@ empty `chroma/` / `models/` / `downloads/` directories. The local models
 (SenseVoice / Whisper, ONNX MiniLM, BGE reranker) are downloaded lazily on
 first use — expect ~1–3 GB the first time you ingest a video.
 
+### Docker (one-click)
+
+Build and run everything in a container — no local Python/Node setup.
+
+**Prerequisites:** Docker (with Compose). For GPU-accelerated transcription, also
+install the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html);
+without it (or on non-NVIDIA hosts) the container runs on CPU.
+
+```bash
+git clone <repo-url> bibilab && cd bibilab
+./install.sh        # detects GPU once, builds the matching image, starts the container
+```
+
+Open `http://localhost:8765`. `install.sh` probes for working GPU passthrough and
+picks the `cpu` or `cuda` torch variant automatically — GPU only accelerates ASR
+transcription, so the CPU image is fully functional, just slower to transcribe.
+
+Data lives in `~/.bibilab` on the host (bind-mounted to `/data`), **shared with a
+native install** — the same DB, models, and config. The container runs as your
+host user, so files stay yours. To update, re-run `./install.sh`.
+
 ### Pre-commit hooks
 
 ```bash

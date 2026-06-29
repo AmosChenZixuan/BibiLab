@@ -8,11 +8,34 @@ import pytest
 
 from bibilab.config import TranscriptionConfig
 from bibilab.model_registry import get_spec
-from bibilab.pipeline.transcribe import WhisperSegment, build_speaker_namespace, format_turns
+from bibilab.pipeline.transcribe import (
+    WhisperSegment,
+    _resolve_device,
+    build_speaker_namespace,
+    format_turns,
+)
 
 
 def _seg(text, start=0.0, end=1.0, speaker="SPK_0"):
     return WhisperSegment(start=start, end=end, text=text, speaker=speaker)
+
+
+def test_resolve_device_cpu_passthrough():
+    assert _resolve_device(TranscriptionConfig(device="cpu")) == "cpu"
+
+
+def test_resolve_device_cuda_when_gpu_present(monkeypatch):
+    import torch
+
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+    assert _resolve_device(TranscriptionConfig(device="cuda")) == "cuda:0"
+
+
+def test_resolve_device_clamps_cuda_to_cpu_without_gpu(monkeypatch):
+    import torch
+
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+    assert _resolve_device(TranscriptionConfig(device="cuda")) == "cpu"
 
 
 def test_format_turns_digest_variant_grouped_no_time_raw_label():
