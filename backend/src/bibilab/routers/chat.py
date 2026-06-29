@@ -123,7 +123,21 @@ _PREAMBLE_TRIGGER = (
 )
 
 
-def _attach_preamble_trigger(messages: list[dict], protocol: str) -> list[dict]:
+def _build_preamble_trigger(response_language: str) -> str:
+    """Build the preamble trigger with a trailing response-language clause.
+
+    The trigger is injected at the message tail, making it the highest-recency
+    instruction at the tool-call decision point — stronger than the system
+    prompt's far-away `Respond in X` directive. Without a language clause here the
+    model narrates the preamble in the prompt's own language (English) while the
+    final answer obeys the system directive, producing a split-language reply. The
+    clause forces the preamble into the same language as the answer.
+    """
+    lang = _LANG_NATIVE_NAME.get(response_language, "English")
+    return f"{_PREAMBLE_TRIGGER} Write these sentences in {lang}."
+
+
+def _attach_preamble_trigger(messages: list[dict], protocol: str, response_language: str) -> list[dict]:
     """Return a copy of `messages` with the preamble trigger at the tail.
 
     Folds the trigger into the trailing user message when there is one (the initial
@@ -132,10 +146,11 @@ def _attach_preamble_trigger(messages: list[dict], protocol: str) -> list[dict]:
     a user message (OpenAI tool messages), append a new user turn instead.
     """
 
+    trigger = _build_preamble_trigger(response_language)
     msgs = list(messages)
     tail = msgs[-1] if msgs else None
     if not tail or tail.get("role") != "user":
-        msgs.append({"role": "user", "content": _PREAMBLE_TRIGGER})
+        msgs.append({"role": "user", "content": trigger})
         return msgs
 
     content = tail["content"]
@@ -148,13 +163,13 @@ def _attach_preamble_trigger(messages: list[dict], protocol: str) -> list[dict]:
             raise TypeError(
                 f"_attach_preamble_trigger: unexpected Anthropic user content type {type(content).__name__}"
             )
-        blocks.append({"type": "text", "text": _PREAMBLE_TRIGGER})
+        blocks.append({"type": "text", "text": trigger})
         msgs[-1] = {"role": "user", "content": blocks}
     elif isinstance(content, str):
-        msgs[-1] = {"role": "user", "content": f"{content}\n\n{_PREAMBLE_TRIGGER}"}
+        msgs[-1] = {"role": "user", "content": f"{content}\n\n{trigger}"}
     else:
         # OpenAI multimodal/list content — append rather than risk mangling it.
-        msgs.append({"role": "user", "content": _PREAMBLE_TRIGGER})
+        msgs.append({"role": "user", "content": trigger})
     return msgs
 
 
@@ -342,12 +357,13 @@ async def stream_with_tools(
     registry: dict[str, CitationRegistryEntry] | None = None,
     tool_block_sink: list[dict] | None = None,
     messages_sink: list[dict] | None = None,
+    response_language: str = "en",
 ) -> AsyncGenerator[StreamEvent, None]:
     if registry is None:
         registry = {}
 
     messages = list(messages)
-    messages = _attach_preamble_trigger(messages, cfg.protocol)
+    messages = _attach_preamble_trigger(messages, cfg.protocol, response_language)
     seen_chunk_ids: set[str] = set()
     iteration = 0
     parse_buffer = ""
@@ -551,7 +567,7 @@ async def stream_with_tools(
                     )
             # Skip the trigger on the forced synthesis turn — it must answer in prose.
             if iteration < MAX_TOOL_ITERATIONS:
-                messages = _attach_preamble_trigger(messages, cfg.protocol)
+                messages = _attach_preamble_trigger(messages, cfg.protocol, response_language)
             continue
     finally:
         # Export the cumulative LLM message list to the caller's sink (if provided).
@@ -716,6 +732,7 @@ async def run_chat_turn(
             registry=citation_registry,
             tool_block_sink=tool_blocks,
             messages_sink=final_messages,
+            response_language=response_language,
         ):
             payload = _serialize_event_for_buffer(event)
             if payload is not None:

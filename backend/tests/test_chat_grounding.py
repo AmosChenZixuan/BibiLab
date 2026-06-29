@@ -205,6 +205,21 @@ class TestBuildGroundingPrompt:
         style = prompt.split("## Style\n", 1)[1].lower()
         assert "direct" in style
 
+    def test_attached_preamble_trigger_carries_response_language(self):
+        """The preamble (emitted before each tool call) must obey the response
+        language. The trigger is the highest-recency instruction at the decision
+        point, so without a language clause it out-competes the far-away
+        system-prompt `Respond in X` and the model narrates the preamble in the
+        prompt's own language (English) while the final answer stays in the
+        configured language — the split-language symptom. Assert the attached
+        trigger names the native language so the preamble matches the answer."""
+        from bibilab.routers.chat import _attach_preamble_trigger
+
+        zh = _attach_preamble_trigger([{"role": "user", "content": "你好"}], "openai", "zh")
+        assert "简体中文" in zh[-1]["content"], zh[-1]["content"]
+        en = _attach_preamble_trigger([{"role": "user", "content": "hi"}], "openai", "en")
+        assert "English" in en[-1]["content"], en[-1]["content"]
+
     def test_grounding_prompt_citation_distinguishes_verbatim_from_outline(self):
         """The Citation section must instruct: cite [N] ONLY for sections whose
         verbatim you saw (find_passages fragments or read_section). Outline

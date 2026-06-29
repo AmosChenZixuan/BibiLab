@@ -351,9 +351,9 @@ async def test_end_of_turn_dump_captures_cumulative_state_after_tool_use(
     # Sanity: the user message is first; the cumulative state ends with the
     # next-round narrate-before-acting trigger, appended onto the tool result.
     assert roles[0] == "user"
-    from bibilab.routers.chat import _PREAMBLE_TRIGGER
+    from bibilab.routers.chat import _build_preamble_trigger
 
-    assert payload["messages"][-1] == {"role": "user", "content": _PREAMBLE_TRIGGER}
+    assert payload["messages"][-1] == {"role": "user", "content": _build_preamble_trigger("en")}
     # The assistant message has tool_calls (openai protocol).
     assistant_msgs = [m for m in payload["messages"] if m.get("role") == "assistant"]
     assert len(assistant_msgs) == 1
@@ -402,9 +402,9 @@ async def test_messages_sink_export_via_stream_with_tools_directly(mock_stream_l
     assert "tool" in roles
     # Cumulative state: user question + assistant(tool_calls) + tool result, with
     # the next-round narrate-before-acting trigger appended on the tail.
-    from bibilab.routers.chat import _PREAMBLE_TRIGGER
+    from bibilab.routers.chat import _build_preamble_trigger
 
-    assert sink[-1] == {"role": "user", "content": _PREAMBLE_TRIGGER}
+    assert sink[-1] == {"role": "user", "content": _build_preamble_trigger("en")}
 
 
 @pytest.mark.asyncio
