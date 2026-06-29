@@ -99,8 +99,8 @@ git clone <repo-url> bibilab && cd bibilab
 
 # 2. Backend
 cd backend
-uv sync --dev --extra cpu         # creates .venv, installs everything (cpu torch)
-# On an NVIDIA box, swap in --extra cuda for GPU-accelerated transcription.
+uv sync --dev                     # creates .venv, installs everything (cpu torch by default)
+# On an NVIDIA box, for GPU transcription: uv sync --no-default-groups --group dev --group cuda
 uv run python -m bibilab.main     # serves API on :8765 + SPA in prod
 # In dev, run the SPA separately — see step 3.
 cd ..

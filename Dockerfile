@@ -30,8 +30,9 @@ COPY backend/ /app/backend/
 COPY --from=web /web/dist /app/web/dist
 
 # torch variant chosen per host at install time (cpu default, cuda on NVIDIA boxes).
+# --no-default-groups drops dev + the cpu default, leaving only the picked variant.
 ARG TORCH_VARIANT=cpu
-RUN uv sync --extra ${TORCH_VARIANT} --no-dev --frozen
+RUN uv sync --no-default-groups --group ${TORCH_VARIANT} --frozen
 
 EXPOSE 8765
 CMD ["python", "-m", "bibilab.main"]

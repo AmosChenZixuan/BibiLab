@@ -91,8 +91,8 @@ git clone <repo-url> bibilab && cd bibilab
 
 # 2. 后端
 cd backend
-uv sync --dev --extra cpu         # 创建 .venv,安装全部依赖(cpu 版 torch)
-# NVIDIA 机器改用 --extra cuda 以启用 GPU 加速转写。
+uv sync --dev                     # 创建 .venv,安装全部依赖(默认 cpu 版 torch)
+# NVIDIA 机器启用 GPU 转写:uv sync --no-default-groups --group dev --group cuda
 uv run python -m bibilab.main     # 在 :8765 提供 API,生产环境同时托管 SPA
 # 开发模式下单独跑 SPA —— 见第 3 步。
 cd ..

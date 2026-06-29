@@ -29,32 +29,25 @@ dependencies = [
     "pypinyin>=0.55.0",
 ]
 
-# torch is the only GPU consumer (ASR). cpu and cuda are conflicting extras, each
-# pinning torch/torchaudio to a different PyTorch wheel index, so one uv.lock covers
-# both variants. Pick one — local/CI uses cpu, the Docker image passes --extra per host.
-[project.optional-dependencies]
-cpu = [
-    "torch>=2.0",
-    "torchaudio>=2.0",
-]
-cuda = [
-    "torch>=2.0",
-    "torchaudio>=2.0",
-]
-
+# torch is the only GPU consumer (ASR). cpu and cuda are conflicting dependency
+# groups, each pinning torch/torchaudio to a different PyTorch wheel index, so one
+# uv.lock covers both variants. cpu is a default group → bare `uv sync` / `uv run`
+# get the cpu wheel with no flags; the Docker image overrides with
+# `--no-default-groups --group cuda` on NVIDIA hosts.
 [tool.uv]
+default-groups = ["dev", "cpu"]
 conflicts = [
-    [{ extra = "cpu" }, { extra = "cuda" }],
+    [{ group = "cpu" }, { group = "cuda" }],
 ]
 
 [tool.uv.sources]
 torch = [
-    { index = "pytorch-cpu", extra = "cpu" },
-    { index = "pytorch-cuda", extra = "cuda" },
+    { index = "pytorch-cpu", group = "cpu" },
+    { index = "pytorch-cuda", group = "cuda" },
 ]
 torchaudio = [
-    { index = "pytorch-cpu", extra = "cpu" },
-    { index = "pytorch-cuda", extra = "cuda" },
+    { index = "pytorch-cpu", group = "cpu" },
+    { index = "pytorch-cuda", group = "cuda" },
 ]
 
 [[tool.uv.index]]
@@ -73,6 +66,14 @@ dev = [
     "pytest>=9.0.2",
     "pytest-asyncio>=1.3.0",
     "ruff>=0.15.8",
+]
+cpu = [
+    "torch>=2.0",
+    "torchaudio>=2.0",
+]
+cuda = [
+    "torch>=2.0",
+    "torchaudio>=2.0",
 ]
 
 [tool.ruff]
