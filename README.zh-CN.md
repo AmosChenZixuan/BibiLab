@@ -91,7 +91,8 @@ git clone <repo-url> bibilab && cd bibilab
 
 # 2. 后端
 cd backend
-uv sync --dev                     # 创建 .venv,安装全部依赖
+uv sync --dev --extra cpu         # 创建 .venv,安装全部依赖(cpu 版 torch)
+# NVIDIA 机器改用 --extra cuda 以启用 GPU 加速转写。
 uv run python -m bibilab.main     # 在 :8765 提供 API,生产环境同时托管 SPA
 # 开发模式下单独跑 SPA —— 见第 3 步。
 cd ..
@@ -108,6 +109,35 @@ npm run dev                       # Vite 跑在 :5173,把 /api 与 /proxy 代理
 首次运行会创建 `~/.bibilab/`,含一个空的 SQLite 库、一个配置文件,以及空的
 `chroma/` / `models/` / `downloads/` 目录。本地模型(SenseVoice / Whisper、ONNX
 MiniLM、BGE reranker)在首次使用时惰性下载 —— 第一次入库视频时预计需要 ~1–3 GB。
+
+### Docker(一键部署)
+
+在容器里构建并运行一切 —— 无需本地配置 Python/Node。
+
+**前置条件:** Docker(含 Compose)。要启用 GPU 加速转写,需要 NVIDIA 驱动 +
+支持 GPU 的 Docker —— **Docker Desktop(WSL2 后端)已内置**,而原生 Docker Engine
+需要安装 [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html)。
+没有 GPU 支持(或非 NVIDIA 主机)时,容器以 CPU 运行。
+
+```bash
+git clone <repo-url> bibilab && cd bibilab
+./install.sh        # 一次性探测 GPU,构建匹配的镜像,启动容器
+```
+
+打开 `http://localhost:8765`。`install.sh` 探测 GPU 直通是否真正可用,自动选择
+`cpu` 或 `cuda` 版 torch —— GPU 只加速 ASR 转写,所以 CPU 镜像功能完整,只是转写更慢。
+
+| 主机 | 变体 |
+|---|---|
+| NVIDIA + 支持 GPU 的 Docker(Docker Desktop WSL2,或 Linux + Toolkit) | `cuda` —— GPU 转写 |
+| 无 GPU、macOS、AMD/Intel GPU | `cpu` —— 全部走 CPU |
+| Windows 原生(无 WSL) | 从 WSL/Git Bash 运行 `install.sh`;无 GPU 直通 |
+
+即便误选了 `cuda` 也不会崩 —— 若 GPU 实际不可用,应用会在运行时回退到 CPU。
+暂不支持 AMD/ROCm 加速。
+
+数据存放在主机的 `~/.bibilab`(绑定挂载到 `/data`),**与原生安装共享** —— 同一套
+DB、模型与配置。容器以你的主机用户身份运行,文件归属仍是你。更新时重新运行 `./install.sh`。
 
 ### Pre-commit 钩子
 

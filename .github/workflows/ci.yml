@@ -35,10 +35,10 @@ jobs:
           version: "latest"
       - name: Install dependencies
         working-directory: backend
-        run: uv sync --dev
+        run: uv sync --dev --extra cpu
       - name: Run tests
         working-directory: backend
-        run: uv run pytest
+        run: uv run --extra cpu pytest
 
   frontend-build:
     name: Frontend build
