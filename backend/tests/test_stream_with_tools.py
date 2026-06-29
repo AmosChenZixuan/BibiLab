@@ -257,8 +257,9 @@ async def test_preamble_trigger_attached_per_decision_point(mock_stream_llm):
     The round's preamble text lands in the assistant message's content so the prompt-trace dump shows it."""
     from bibilab.config import AIConfig
     from bibilab.pipeline.chat_tools import FIND_PASSAGES_TOOL
-    from bibilab.routers.chat import _PREAMBLE_TRIGGER, stream_with_tools
+    from bibilab.routers.chat import _build_preamble_trigger, stream_with_tools
 
+    trigger = _build_preamble_trigger("en")
     cfg = AIConfig(protocol="openai", model="gpt-4o", api_key="test", base_url="")
     find_tc = ToolCall(id="c1", name=FIND_PASSAGES_TOOL.name, arguments={"query": "q"})
     call_count = 0
@@ -285,14 +286,12 @@ async def test_preamble_trigger_attached_per_decision_point(mock_stream_llm):
         pass
 
     # initial question: trigger folded into the question string, not a second user turn
-    assert sink[0] == {"role": "user", "content": f"what is this about?\n\n{_PREAMBLE_TRIGGER}"}
+    assert sink[0] == {"role": "user", "content": f"what is this about?\n\n{trigger}"}
     # tool-result decision point: trigger appended after the tool message (tool→user, not user→user)
     tool_idx = next(i for i, m in enumerate(sink) if m.get("role") == "tool")
-    assert sink[tool_idx + 1] == {"role": "user", "content": _PREAMBLE_TRIGGER}
+    assert sink[tool_idx + 1] == {"role": "user", "content": trigger}
     # one trigger per decision point (initial + one tool result), no accumulation
-    decision_points = [
-        m for m in sink if isinstance(m.get("content"), str) and m["content"].endswith(_PREAMBLE_TRIGGER)
-    ]
+    decision_points = [m for m in sink if isinstance(m.get("content"), str) and m["content"].endswith(trigger)]
     assert len(decision_points) == 2, sink
     # preamble text emitted before the tool_call lives on the assistant message (dump-visible)
     asst_with_tool = next(m for m in sink if m.get("role") == "assistant" and m.get("tool_calls"))
@@ -304,8 +303,9 @@ async def test_preamble_trigger_folds_into_anthropic_tool_result_round(mock_stre
     """Anthropic: trigger folds into the trailing user message (round 1 question; round 2 tool_result)."""
     from bibilab.config import AIConfig
     from bibilab.pipeline.chat_tools import FIND_PASSAGES_TOOL
-    from bibilab.routers.chat import _PREAMBLE_TRIGGER, stream_with_tools
+    from bibilab.routers.chat import _build_preamble_trigger, stream_with_tools
 
+    trigger = _build_preamble_trigger("en")
     cfg = AIConfig(protocol="anthropic", model="claude", api_key="test", base_url="")
     find_tc = ToolCall(id="c1", name=FIND_PASSAGES_TOOL.name, arguments={"query": "q"})
     call_count = 0
@@ -332,7 +332,7 @@ async def test_preamble_trigger_folds_into_anthropic_tool_result_round(mock_stre
 
     # round 1: trigger folded into the original user message's content blocks
     user_msgs = [m for m in sink if m.get("role") == "user" and "what is this about?" in str(m.get("content"))]
-    assert {"type": "text", "text": _PREAMBLE_TRIGGER} in user_msgs[0]["content"]
+    assert {"type": "text", "text": trigger} in user_msgs[0]["content"]
 
     # round 2: trigger folded into the trailing tool_result user message
     tool_result_msgs = [
@@ -342,7 +342,7 @@ async def test_preamble_trigger_folds_into_anthropic_tool_result_round(mock_stre
         and isinstance(m.get("content"), list)
         and any(b.get("type") == "tool_result" and b.get("tool_use_id") == "c1" for b in m["content"])
     ]
-    assert {"type": "text", "text": _PREAMBLE_TRIGGER} in tool_result_msgs[0]["content"]
+    assert {"type": "text", "text": trigger} in tool_result_msgs[0]["content"]
 
 
 @pytest.mark.asyncio
@@ -401,12 +401,14 @@ async def test_preamble_trigger_skipped_before_forced_synthesis(mock_stream_llm)
     from bibilab.config import AIConfig
     from bibilab.pipeline.chat_tools import FIND_PASSAGES_TOOL
     from bibilab.routers.chat import (
-        _PREAMBLE_TRIGGER,
-        _SYNTHESIS_DIRECTIVE,
         MAX_TOOL_ITERATIONS,
+        _build_preamble_trigger,
+        _build_synthesis_directive,
         stream_with_tools,
     )
 
+    trigger = _build_preamble_trigger("en")
+    synthesis = _build_synthesis_directive("en")
     cfg = AIConfig(protocol="openai", model="gpt-4o", api_key="test", base_url="")
     call_count = 0
 
@@ -433,9 +435,9 @@ async def test_preamble_trigger_skipped_before_forced_synthesis(mock_stream_llm)
     ):
         pass
 
-    triggers = [m for m in sink if isinstance(m.get("content"), str) and m["content"].endswith(_PREAMBLE_TRIGGER)]
+    triggers = [m for m in sink if isinstance(m.get("content"), str) and m["content"].endswith(trigger)]
     assert len(triggers) == MAX_TOOL_ITERATIONS, sink
-    synth_idx = next(i for i, m in enumerate(sink) if m.get("content") == _SYNTHESIS_DIRECTIVE)
+    synth_idx = next(i for i, m in enumerate(sink) if m.get("content") == synthesis)
     assert sink[synth_idx - 1].get("role") == "tool"
 
 
