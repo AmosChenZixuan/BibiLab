@@ -220,6 +220,16 @@ class TestBuildGroundingPrompt:
         en = _attach_preamble_trigger([{"role": "user", "content": "hi"}], "openai", "en")
         assert "English" in en[-1]["content"], en[-1]["content"]
 
+    def test_synthesis_directive_carries_response_language(self):
+        """The forced-synthesis directive produces the final answer on the
+        iteration-exhausted path and is injected at the message tail, so — like
+        the preamble trigger — it out-competes the system prompt's language
+        directive and must name the response language itself."""
+        from bibilab.routers.chat import _build_synthesis_directive
+
+        assert "简体中文" in _build_synthesis_directive("zh")
+        assert "English" in _build_synthesis_directive("en")
+
     def test_grounding_prompt_citation_distinguishes_verbatim_from_outline(self):
         """The Citation section must instruct: cite [N] ONLY for sections whose
         verbatim you saw (find_passages fragments or read_section). Outline

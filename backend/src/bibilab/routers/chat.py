@@ -123,6 +123,14 @@ _PREAMBLE_TRIGGER = (
 )
 
 
+def _native_lang_name(response_language: str) -> str:
+    """Map a language code to its native display name for LLM directives, falling
+    back to English for unknown codes — smaller models follow a readable name more
+    reliably than a raw ISO code. Single source for the fallback so every
+    tail-injected directive and the system prompt name the language identically."""
+    return _LANG_NATIVE_NAME.get(response_language, "English")
+
+
 def _build_preamble_trigger(response_language: str) -> str:
     """Build the preamble trigger with a trailing response-language clause.
 
@@ -133,8 +141,17 @@ def _build_preamble_trigger(response_language: str) -> str:
     final answer obeys the system directive, producing a split-language reply. The
     clause forces the preamble into the same language as the answer.
     """
-    lang = _LANG_NATIVE_NAME.get(response_language, "English")
-    return f"{_PREAMBLE_TRIGGER} Write these sentences in {lang}."
+    return f"{_PREAMBLE_TRIGGER} Write these sentences in {_native_lang_name(response_language)}."
+
+
+def _build_synthesis_directive(response_language: str) -> str:
+    """Build the forced-synthesis directive with a trailing response-language
+    clause. Like the preamble trigger, this is appended at the message tail (when
+    tool iterations are exhausted) and out-competes the system prompt's language
+    directive — and it produces the *final answer*, so a leaked-language answer
+    here is worse than a leaked preamble. The clause keeps it in the answer's
+    language."""
+    return f"{_SYNTHESIS_DIRECTIVE} Respond in {_native_lang_name(response_language)}."
 
 
 def _attach_preamble_trigger(messages: list[dict], protocol: str, response_language: str) -> list[dict]:
@@ -264,7 +281,7 @@ def build_grounding_prompt(response_language: str) -> str:
     placed at the tail — strongest recency, no repetition. The tail
     directive governs all output, including no-content refusals.
     """
-    lang = _LANG_NATIVE_NAME.get(response_language, "English")
+    lang = _native_lang_name(response_language)
     return (
         "## Workflow\n"
         "You answer questions about a collection of video transcripts using two tools, both at "
@@ -390,7 +407,7 @@ async def stream_with_tools(
             if is_synthesis_turn and not synthesis_directive_sent:
                 # Tell the model the budget is spent so it answers in prose. Tools
                 # stay advertised below (grammar on) — see _SYNTHESIS_DIRECTIVE.
-                messages.append({"role": "user", "content": _SYNTHESIS_DIRECTIVE})
+                messages.append({"role": "user", "content": _build_synthesis_directive(response_language)})
                 synthesis_directive_sent = True
             # Keep tools advertised even on the synthesis turn: with tools in the
             # request the serving layer keeps its tool-call grammar active, so a

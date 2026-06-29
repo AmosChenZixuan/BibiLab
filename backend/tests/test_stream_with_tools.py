@@ -403,13 +403,14 @@ async def test_preamble_trigger_skipped_before_forced_synthesis(mock_stream_llm)
     from bibilab.config import AIConfig
     from bibilab.pipeline.chat_tools import FIND_PASSAGES_TOOL
     from bibilab.routers.chat import (
-        _SYNTHESIS_DIRECTIVE,
         MAX_TOOL_ITERATIONS,
         _build_preamble_trigger,
+        _build_synthesis_directive,
         stream_with_tools,
     )
 
     trigger = _build_preamble_trigger("en")
+    synthesis = _build_synthesis_directive("en")
     cfg = AIConfig(protocol="openai", model="gpt-4o", api_key="test", base_url="")
     call_count = 0
 
@@ -438,7 +439,7 @@ async def test_preamble_trigger_skipped_before_forced_synthesis(mock_stream_llm)
 
     triggers = [m for m in sink if isinstance(m.get("content"), str) and m["content"].endswith(trigger)]
     assert len(triggers) == MAX_TOOL_ITERATIONS, sink
-    synth_idx = next(i for i, m in enumerate(sink) if m.get("content") == _SYNTHESIS_DIRECTIVE)
+    synth_idx = next(i for i, m in enumerate(sink) if m.get("content") == synthesis)
     assert sink[synth_idx - 1].get("role") == "tool"
 
 
