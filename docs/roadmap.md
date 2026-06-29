@@ -19,7 +19,7 @@
 
 ### v2
 
-12. **Mindmap generation** — Mermaid output from LLM. Open: generated on-demand or stored alongside digests?
+12. ~~**Mindmap generation**~~ — Shipped as a `mind_map` artifact (LLM-emitted JSON tree, interactive viewer, node→chat/sources evidence). Stored alongside other artifacts (#536 → #566).
 13. **Audio overview** — LLM script + TTS, scoped to list. Open: TTS engine choice (local or cloud)? Does this become a downloadable artifact or a playable inline player?
 
 ### v3

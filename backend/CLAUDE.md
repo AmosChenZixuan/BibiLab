@@ -46,7 +46,7 @@ video_status.py   — derive_video_statuses (status mapping extracted from db.py
 config.py         — settings persisted to ~/.bibilab/config.json; includes models_dir() helper
 worker.py         — SQLite-polling job dispatcher; accepts config/adapter/home via constructor for testability
 cleanup.py        — resource cleanup utilities
-asr_models.py     — Unified ASR model registry (Whisper + SenseVoice + diarization)
+model_registry.py — Unified model dependency registry; all non-LLM downloads (ASR, VAD, diarization, embedding, reranker, punctuation) via ensure() with per-model locks + atomic .partial→rename. Holds RERANKER_SPEC_ID.
 ```
 
 ## Conventions
@@ -103,7 +103,7 @@ asr_models.py     — Unified ASR model registry (Whisper + SenseVoice + diariza
 | Column | Notes |
 |---|---|
 | `name` | User-visible name (initial = type label, renameable) |
-| `type` | `"brief"` \| `"study_guide"` \| `"blog_post"` \| `"custom_report"` |
+| `type` | `"brief"` \| `"study_guide"` \| `"blog_post"` \| `"custom_report"` \| `"mind_map"` (JSON tree, viewer-rendered) \| `"chat_message"` (saved chat turn) |
 | `prompt` | Exact prompt string submitted |
 | `source_ids` | JSON array of source UUIDs |
 | `status` | `generating` → `done` \| `failed` |
