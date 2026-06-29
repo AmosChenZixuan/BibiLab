@@ -6,18 +6,18 @@ import asyncio
 import logging
 import threading
 
-from bibilab.config import load_config
-from bibilab.model_registry import ensure
+from bibilab.model_registry import RERANKER_SPEC_ID, ensure
+from bibilab.pipeline._shared import interpreting_providers
 from bibilab.pipeline.chat_inference_pool import get_chat_pool
 from bibilab.pipeline.embed import RetrievedChunk
 
 logger = logging.getLogger(__name__)
 
 # Cross-encoder is bge-reranker-base (XLM-RoBERTa) — Chinese + English, the
-# project's primary content languages. Which *variant* (fp32 vs int8 quantized)
-# loads is config-selected via cfg.rag.reranker_spec_id. Quantization changes the
-# cross-encoder's exact scores, but a given variant is deterministic across
-# machines, so the gateless top-k ordering stays reproducible per deployment.
+# project's primary content languages. One spec ships: the int8 quantized
+# RERANKER_SPEC_ID. Quantization changes the cross-encoder's exact scores, but
+# the model is deterministic on a kernel EP (CPU here), so the gateless top-k
+# ordering stays reproducible per deployment.
 _MODEL_FILENAME = "model.onnx"
 _TOKENIZER_FILENAME = "tokenizer.json"
 
@@ -31,15 +31,17 @@ class ONNXCrossEncoder:
 
         self._np = np
 
-        model_dir = ensure(load_config().rag.reranker_spec_id)
+        model_dir = ensure(RERANKER_SPEC_ID)
         import onnxruntime as ort  # noqa: PLC0415
 
         so = ort.SessionOptions()
         so.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
         so.log_severity_level = 3
+        # Providers from the shared helper — excludes compiler-based EPs (CoreML)
+        # that OOM/hang this model on macOS; see interpreting_providers() for why.
         self._session = ort.InferenceSession(
             str(model_dir / _MODEL_FILENAME),
-            providers=ort.get_available_providers(),
+            providers=interpreting_providers(),
             sess_options=so,
         )
         from tokenizers import Tokenizer  # noqa: PLC0415

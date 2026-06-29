@@ -5,7 +5,6 @@ BibilabConfig instance, so a future re-introduction is caught.
 """
 
 import pytest
-from pydantic import ValidationError
 
 from bibilab.config import BibilabConfig
 
@@ -23,6 +22,9 @@ from bibilab.config import BibilabConfig
         # download_connections is a derived @property, never a stored field —
         # this guards against it being re-added as a configurable knob.
         (("backend",), "download_connections"),
+        # reranker_spec_id removed — one int8 reranker ships; the spec is a
+        # model_registry constant, not a config knob.
+        (("rag",), "reranker_spec_id"),
     ],
 )
 def test_removed_field_absent(path: tuple[str, ...], field: str) -> None:
@@ -33,22 +35,13 @@ def test_removed_field_absent(path: tuple[str, ...], field: str) -> None:
     assert field not in obj.model_dump()
 
 
-def test_reranker_spec_id_default_is_quantized_and_resolves() -> None:
-    """Quantized is the runtime default (macOS OOM fix); the default must name a
-    real registered spec or every reranker download breaks."""
-    from bibilab.model_registry import get_spec
-
-    spec_id = BibilabConfig().rag.reranker_spec_id
-    assert spec_id == "bge-reranker-base-q"
-    assert get_spec(spec_id).kind == "reranker"
-
-
-def test_reranker_spec_id_rejects_unknown_spec() -> None:
-    """The field is a Literal of registered reranker ids, so a config.json typo
-    fails loud at load with a field-named ValidationError — not a late KeyError
-    deep in required_models / reranker init."""
-    with pytest.raises(ValidationError):
-        BibilabConfig.model_validate({"rag": {"reranker_spec_id": "bge-reranker-base-int8"}})
+def test_legacy_reranker_spec_id_in_config_is_ignored() -> None:
+    """An existing config.json written before the field was dropped still carries
+    rag.reranker_spec_id. Loading such a file must NOT brick (Pydantic extra='ignore')
+    and the stale key must not survive a round-trip — otherwise an upgrade either 422s
+    on load or silently re-persists a dead knob."""
+    cfg = BibilabConfig.model_validate({"rag": {"reranker_spec_id": "bge-reranker-base"}})
+    assert "reranker_spec_id" not in cfg.rag.model_dump()
 
 
 def test_backend_download_connections_default() -> None:
