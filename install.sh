@@ -1,7 +1,14 @@
 #!/usr/bin/env bash
 # One-shot installer: detect GPU once, build the matching image, start Bibilab.
+# --dev appends compose.dev.yml: live-mount backend/src + uvicorn --reload, so host
+# edits hot-reload with no rebuild (see compose.dev.yml).
 set -euo pipefail
 cd "$(dirname "$0")"
+
+DEV_OVERLAY=""
+if [[ "${1:-}" == "--dev" ]]; then
+  DEV_OVERLAY=":compose.dev.yml"
+fi
 
 # Real passthrough probe: a working host nvidia-smi does NOT prove a container can
 # see the GPU. On native Linux Docker Engine you need nvidia-container-toolkit wired
@@ -12,10 +19,10 @@ cd "$(dirname "$0")"
 # surfaces the cuda state.
 if probe_output=$(docker run --rm --gpus all nvidia/cuda:12.4.0-base-ubuntu22.04 nvidia-smi 2>&1); then
   TORCH_VARIANT=cuda
-  COMPOSE_FILE=compose.yml:compose.cuda.yml
+  COMPOSE_FILE=compose.yml:compose.cuda.yml${DEV_OVERLAY}
 else
   TORCH_VARIANT=cpu
-  COMPOSE_FILE=compose.yml
+  COMPOSE_FILE=compose.yml${DEV_OVERLAY}
   echo "GPU probe failed; falling back to cpu variant." >&2
   echo "$probe_output" | tail -5 >&2
   if command -v nvidia-smi >/dev/null && nvidia-smi -L >/dev/null 2>&1; then

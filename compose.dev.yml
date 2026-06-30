@@ -1,0 +1,26 @@
+# Dev override: live-mount the backend source over the baked copy and run uvicorn
+# with --reload, so host edits to backend/src/ hot-reload in the container with no
+# rebuild. The image installs the package editable (.pth → /app/backend/src), so the
+# mounted host files become the imported package. Compose appends this volume to the
+# base /data mount and replaces the Dockerfile CMD.
+#
+# Use: ./install.sh --dev   (wires COMPOSE_FILE=...:compose.dev.yml in .env)
+#  or: docker compose -f compose.yml -f compose.dev.yml up -d
+#
+# Scope: backend only. The SPA is still served from the baked web/dist — rebuild, or
+# run Vite (`cd web && npm run dev`, :5173 with backend proxy) for live frontend edits.
+services:
+  bibilab:
+    volumes:
+      - ./backend/src:/app/backend/src
+    # Port pinned to BIBILAB_PORT/the host mapping (compose.yml), not config.json.
+    command:
+      - uvicorn
+      - bibilab.main:app
+      - --host
+      - "0.0.0.0"
+      - --port
+      - "8765"
+      - --reload
+      - --reload-dir
+      - /app/backend/src
