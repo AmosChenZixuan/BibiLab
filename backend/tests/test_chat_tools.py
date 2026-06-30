@@ -1801,6 +1801,36 @@ class TestReadSectionUnitPaths:
         assert out["section_id"] is None
         assert "No section [1]" in out["_chunks"]
 
+    @pytest.mark.asyncio
+    async def test_read_section_accepts_fence_label_and_existing_forms(self, monkeypatch):
+        """The LLM copies the whole fence label '[4] "title…"' from the
+        find_passages header. The leading [N] must parse even with trailing
+        title text, resolving to the registered entry (no error envelope).
+        Existing bare/bracketed forms must keep resolving."""
+        from bibilab.pipeline import chat_tools
+        from bibilab.pipeline.chat_tools import CitationRegistryEntry, execute_read_section
+
+        async def _fake_narrative(entry):
+            return f"BODY-{entry.index}"
+
+        monkeypatch.setattr(chat_tools, "_build_section_narrative", _fake_narrative)
+        reg = {
+            "sec-4": CitationRegistryEntry(index=4, section_id="sec-4", source_id="src", title="Ep 11", seq=11),
+            "sec-5": CitationRegistryEntry(index=5, section_id="sec-5", source_id="src", title="Ep 12", seq=12),
+        }
+        cases = {
+            '[4] "《诡秘之主》广播剧第一季-第11集"': "sec-4",  # fence label, CJK title
+            "[4] Episode 11 of Season 1": "sec-4",  # fence label, English title
+            "[5]": "sec-5",  # existing forms below must not regress
+            "5": "sec-5",
+            "source 5": "sec-5",
+            " [5] ": "sec-5",
+        }
+        for sid, want in cases.items():
+            out = await execute_read_section(source_ids=["src"], section_id=sid, registry=reg)
+            assert out["section_id"] == want, sid
+            assert "must be a citation index" not in out["_chunks"], sid
+
 
 @pytest.mark.asyncio
 async def test_read_section_returns_bounded_verbatim(tmp_bibilab_home, monkeypatch):

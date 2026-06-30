@@ -241,9 +241,11 @@ READ_SECTION_TOOL = ToolDefinition(
 
 RETRIEVE_TOOL_NAMES: frozenset[str] = frozenset({TOOL_NAME_FIND_PASSAGES})
 
-# Anchored: a stray title like "Episode 5 discussion" must NOT silently parse
-# to index 5 — only the LLM's own [N] citation form is accepted.
-_CITATION_INDEX_RE = re.compile(r"^\s*(?:source\s*)?\[?\s*(\d+)\s*\]?\s*$", re.IGNORECASE)
+# A bracketed [N] parses even with trailing text — the LLM copies the whole
+# fence label ('[4] "title…"') it sees in find_passages results. A BARE index
+# stays whole-string-anchored: a stray title like "Episode 5 discussion" must
+# NOT silently parse to 5 (it would read the wrong section).
+_CITATION_INDEX_RE = re.compile(r"^\s*(?:source\s*)?\[?\s*(\d+)\s*(?:\].*|)$", re.IGNORECASE)
 
 
 def _filter_sources_by_facets(
