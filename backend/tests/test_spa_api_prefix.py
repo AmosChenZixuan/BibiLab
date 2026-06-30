@@ -1,8 +1,8 @@
 """Single-port production serves the SPA and the API on one origin. The SPA calls
 /api/* (api client prefixes origin + "/api"); in dev Vite's proxy strips /api. In
 production the backend mounts the API as a sub-application at /api (create_app's
-SPA-serving path), so /api/* reaches the same routers and url_for is prefix-correct.
-These guard that mount — it only exists on the SPA-serving path (web/dist present)."""
+SPA-serving path), so /api/* reaches the same routers. These guard that mount —
+it only exists on the SPA-serving path (web/dist present)."""
 
 from __future__ import annotations
 
@@ -56,9 +56,10 @@ async def test_non_api_path_falls_through_to_spa(spa_client: httpx.AsyncClient):
     assert "<title>spa</title>" in res.text
 
 
-async def test_cover_url_for_is_api_prefixed_under_mount(spa_client: httpx.AsyncClient):
-    # url_for resolves against the mount context: get_source_cover → /api/sources/...
-    # not /sources/... (the lists.py:51 inconsistency the mount fixes for free).
+async def test_cover_url_is_api_prefixed(spa_client: httpx.AsyncClient):
+    # The served list response carries an /api-prefixed cover URL (built from the
+    # API_PREFIX literal, not url_for — url_for can't emit /api when routers are
+    # registered at both root and the mount), so the SPA's /api/* client reaches it.
     from bibilab.config import cover_path
     from bibilab.db import create_list
     from tests.factories import SourceFactory

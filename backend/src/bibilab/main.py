@@ -155,11 +155,10 @@ def create_app(*, start_worker: bool = True) -> FastAPI:
         # Single-port production: the SPA is served from the same origin as the API and
         # calls /api/* (the api client prefixes window.location.origin + "/api"). In dev,
         # Vite's proxy strips /api before forwarding. In production the same routers are
-        # mounted again as a sub-application under /api, so /api/* reaches them and
-        # request.url_for resolves to /api-prefixed URLs (e.g. cover links) — no request
-        # scope mutation. The sub-app shares the parent's state so handlers that read
-        # app.state (jobs.py → worker) work under the mount. Mounted before the catch-all
-        # below so /api/* isn't swallowed by the SPA fallback.
+        # mounted again as a sub-application under /api, so /api/* reaches them with no
+        # request-scope mutation. The sub-app shares the parent's state so handlers that
+        # read app.state (jobs.py → worker) work under the mount. Mounted before the
+        # catch-all below so /api/* isn't swallowed by the SPA fallback.
         api = FastAPI()
         api.state = app.state
         _include_api_routers(api)
