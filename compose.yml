@@ -7,8 +7,10 @@ services:
         TORCH_VARIANT: ${TORCH_VARIANT:-cpu}
     image: bibilab:${TORCH_VARIANT:-cpu}
     # Run as the host user so files written to the bind mount stay user-owned and
-    # interchangeable with a native install. install.sh writes UID/GID to .env.
-    user: "${UID:-1000}:${GID:-1000}"
+    # interchangeable with a native install. install.sh writes UID/GID to .env;
+    # :? refuses to silently default to 1000:1000 if those env vars are unset
+    # (which would land bind-mount writes under a foreign uid).
+    user: "${UID:?UID must be set; run ./install.sh}:${GID:?GID must be set}"
     environment:
       BIBILAB_HOME: /data
     volumes:

@@ -29,11 +29,10 @@ dependencies = [
     "pypinyin>=0.55.0",
 ]
 
-# torch is the only GPU consumer (ASR). cpu and cuda are conflicting dependency
-# groups, each pinning torch/torchaudio to a different PyTorch wheel index, so one
-# uv.lock covers both variants. cpu is a default group → bare `uv sync` / `uv run`
-# get the cpu wheel with no flags; the Docker image overrides with
-# `--no-default-groups --group cuda` on NVIDIA hosts.
+# torch is the only production GPU consumer (FunASR ASR in pipeline/transcribe.py;
+# routers/health.py probes but allocates nothing). cpu and cuda are conflicting
+# dependency groups pinning torch/torchaudio to different PyTorch wheel indices;
+# uv.lock covers both; cpu is a default group, so bare `uv sync` installs cpu.
 [tool.uv]
 default-groups = ["dev", "cpu"]
 conflicts = [

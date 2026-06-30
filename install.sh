@@ -4,23 +4,51 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 # Real passthrough probe: a working host nvidia-smi does NOT prove a container can
-# see the GPU (on WSL2 you also need nvidia-container-toolkit wired into the daemon).
-# Run nvidia-smi inside a throwaway --gpus container — exit 0 is the only proof.
-if docker run --rm --gpus all nvidia/cuda:12.4.0-base-ubuntu22.04 nvidia-smi >/dev/null 2>&1; then
+# see the GPU. On native Linux Docker Engine you need nvidia-container-toolkit wired
+# into the daemon (Docker Desktop's WSL2 backend bundles it). Run nvidia-smi inside
+# a throwaway --gpus container — exit 0 is the strongest probe we can run without
+# baking probe logic into the image. Soft-fails are still possible; if a later
+# error says "no CUDA device" anyway, the cpu image just runs slower and /health
+# surfaces the cuda state.
+if probe_output=$(docker run --rm --gpus all nvidia/cuda:12.4.0-base-ubuntu22.04 nvidia-smi 2>&1); then
   TORCH_VARIANT=cuda
   COMPOSE_FILE=compose.yml:compose.cuda.yml
 else
   TORCH_VARIANT=cpu
   COMPOSE_FILE=compose.yml
+  echo "GPU probe failed; falling back to cpu variant." >&2
+  echo "$probe_output" | tail -5 >&2
+  if command -v nvidia-smi >/dev/null && nvidia-smi -L >/dev/null 2>&1; then
+    echo "Host has an NVIDIA GPU but the container can't see it — likely missing nvidia-container-toolkit." >&2
+  fi
 fi
 
-cat > .env <<EOF
-TORCH_VARIANT=$TORCH_VARIANT
-COMPOSE_FILE=$COMPOSE_FILE
-UID=$(id -u)
-GID=$(id -g)
-EOF
+# Preserve any developer-set keys (BIBILAB_PORT, HF_ENDPOINT, etc.); only the four
+# we manage here are written. Re-runs are idempotent.
+existing_env=""
+if [[ -f .env ]]; then
+  existing_env=$(grep -v -E '^(TORCH_VARIANT|COMPOSE_FILE|UID|GID)=' .env || true)
+fi
+{
+  if [[ -n "$existing_env" ]]; then
+    printf '%s\n' "$existing_env"
+  fi
+  printf 'TORCH_VARIANT=%s\n' "$TORCH_VARIANT"
+  printf 'COMPOSE_FILE=%s\n' "$COMPOSE_FILE"
+  printf 'UID=%s\n' "$(id -u)"
+  printf 'GID=%s\n' "$(id -g)"
+} > .env
 
 echo "GPU probe → $TORCH_VARIANT variant"
 docker compose up --build -d
-echo "Bibilab is starting at http://localhost:8765"
+echo "Waiting for Bibilab to become healthy..."
+for i in {1..30}; do
+  if curl -fsS http://localhost:8765/health 2>/dev/null | grep -q '"overall"'; then
+    echo "Bibilab is up at http://localhost:8765"
+    exit 0
+  fi
+  sleep 1
+done
+echo "Bibilab did not become healthy in 30s. Check 'docker compose logs'." >&2
+docker compose logs --tail=50 >&2
+exit 1
