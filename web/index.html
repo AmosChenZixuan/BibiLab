@@ -3,7 +3,8 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <!-- ponytail: favicon inlined as a data URI so the single-port backend never has to serve /favicon.svg. Mirrors public/favicon.svg (guarded by favicon-inline.test.ts). For more public files (robots.txt, manifest) switch to real static serving instead of inlining. -->
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB2aWV3Qm94PSIwIDAgNjQgNjQiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CiAgPHN0eWxlPgogICAgLnRpbGUgICB7IGZpbGw6ICMxMTE4Mjc7IH0KICAgIC5nbHlwaCAgeyBmaWxsOiAjZmZmZmZmOyBzdHJva2U6ICNmZmZmZmY7IH0KICAgIEBtZWRpYSAocHJlZmVycy1jb2xvci1zY2hlbWU6IGRhcmspIHsKICAgICAgLnRpbGUgIHsgZmlsbDogI2Y4ZmFmYzsgfQogICAgICAuZ2x5cGggeyBmaWxsOiAjMTExODI3OyBzdHJva2U6ICMxMTE4Mjc7IH0KICAgIH0KICA8L3N0eWxlPgogIDxyZWN0IGNsYXNzPSJ0aWxlIiB3aWR0aD0iNjQiIGhlaWdodD0iNjQiIHJ4PSIxNiIvPgogIDxnIGNsYXNzPSJnbHlwaCIgc3Ryb2tlLXdpZHRoPSI1IiBzdHJva2UtbGluZWpvaW49InJvdW5kIj4KICAgIDxwYXRoIGQ9Ik0xMiAxOCBRMjAgMTQgMjggMjIgTDI4IDQ5IEwxMiA0OSBaIi8+CiAgICA8cGF0aCBkPSJNNTIgMTggUTQ0IDE0IDM2IDIyIEwzNiA0OSBMNTIgNDkgWiIvPgogIDwvZz4KPC9zdmc+Cg==" />
     <title>Bibilab</title>
   </head>
   <body>
