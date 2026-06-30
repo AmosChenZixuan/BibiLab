@@ -99,7 +99,8 @@ git clone <repo-url> bibilab && cd bibilab
 
 # 2. Backend
 cd backend
-uv sync --dev                     # creates .venv, installs everything
+uv sync --dev                     # creates .venv, installs everything (cpu torch by default)
+# On an NVIDIA box, for GPU transcription: uv sync --no-default-groups --group dev --group cuda
 uv run python -m bibilab.main     # serves API on :8765 + SPA in prod
 # In dev, run the SPA separately — see step 3.
 cd ..
@@ -117,6 +118,38 @@ The first run creates `~/.bibilab/` with an empty SQLite DB, a config file, and
 empty `chroma/` / `models/` / `downloads/` directories. The local models
 (SenseVoice / Whisper, ONNX MiniLM, BGE reranker) are downloaded lazily on
 first use — expect ~1–3 GB the first time you ingest a video.
+
+### Docker (one-click)
+
+Build and run everything in a container — no local Python/Node setup.
+
+**Prerequisites:** Docker (with Compose). For GPU-accelerated transcription you
+need the NVIDIA driver plus GPU-enabled Docker — **Docker Desktop (WSL2 backend)
+has this built in**, while a native Docker Engine needs the
+[NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html).
+Without GPU support (or on non-NVIDIA hosts) the container runs on CPU.
+
+```bash
+git clone <repo-url> bibilab && cd bibilab
+./install.sh        # detects GPU once, builds the matching image, starts the container
+```
+
+Open `http://localhost:8765`. `install.sh` probes for working GPU passthrough and
+picks the `cpu` or `cuda` torch variant automatically — GPU only accelerates ASR
+transcription, so the CPU image is fully functional, just slower to transcribe.
+
+| Host | Variant |
+|---|---|
+| NVIDIA + GPU-enabled Docker (Docker Desktop WSL2, or Linux + Toolkit) | `cuda` — GPU transcription |
+| No GPU, macOS, AMD/Intel GPU | `cpu` — everything on CPU |
+| Windows native (no WSL) | run `install.sh` from WSL/Git Bash; no GPU passthrough |
+
+A wrong `cuda` guess can't crash you — the app clamps back to CPU at runtime if the
+GPU isn't really there. AMD/ROCm acceleration is not yet supported.
+
+Data lives in `~/.bibilab` on the host (bind-mounted to `/data`), **shared with a
+native install** — the same DB, models, and config. The container runs as your
+host user, so files stay yours. To update, re-run `./install.sh`.
 
 ### Pre-commit hooks
 

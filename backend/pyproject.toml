@@ -21,8 +21,6 @@ dependencies = [
     "openai>=1.0.0",
     "pydantic-settings>=2.13.1",
     "tiktoken>=0.12.0",
-    "torch>=2.0",
-    "torchaudio>=2.0",
     "uvicorn[standard]>=0.42.0",
     "numpy>=2.0.0",
     "onnxruntime>=1.20.0",
@@ -31,12 +29,50 @@ dependencies = [
     "pypinyin>=0.55.0",
 ]
 
+# torch is the only production GPU consumer (FunASR ASR in pipeline/transcribe.py;
+# routers/health.py probes but allocates nothing). cpu and cuda are conflicting
+# dependency groups pinning torch/torchaudio to different PyTorch wheel indices;
+# uv.lock covers both; cpu is a default group, so bare `uv sync` installs cpu.
+[tool.uv]
+default-groups = ["dev", "cpu"]
+conflicts = [
+    [{ group = "cpu" }, { group = "cuda" }],
+]
+
+[tool.uv.sources]
+torch = [
+    { index = "pytorch-cpu", group = "cpu" },
+    { index = "pytorch-cuda", group = "cuda" },
+]
+torchaudio = [
+    { index = "pytorch-cpu", group = "cpu" },
+    { index = "pytorch-cuda", group = "cuda" },
+]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-cuda"
+url = "https://download.pytorch.org/whl/cu124"
+explicit = true
+
 
 [dependency-groups]
 dev = [
     "pytest>=9.0.2",
     "pytest-asyncio>=1.3.0",
     "ruff>=0.15.8",
+]
+cpu = [
+    "torch>=2.0",
+    "torchaudio>=2.0",
+]
+cuda = [
+    "torch>=2.0",
+    "torchaudio>=2.0",
 ]
 
 [tool.ruff]

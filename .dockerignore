@@ -1,0 +1,10 @@
+.git
+.env
+web/dist
+**/node_modules
+**/.venv
+**/__pycache__
+**/*.pyc
+# Eval framework lives at repo root as a separate uv package — host-only dev tool,
+# not part of the runtime image. Excluded from build context (~1.4 MB saved per build).
+/eval/

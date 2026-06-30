@@ -2,17 +2,52 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from bibilab.config import TranscriptionConfig
 from bibilab.model_registry import get_spec
-from bibilab.pipeline.transcribe import WhisperSegment, build_speaker_namespace, format_turns
+from bibilab.pipeline.transcribe import (
+    WhisperSegment,
+    _resolve_device,
+    build_speaker_namespace,
+    format_turns,
+)
 
 
 def _seg(text, start=0.0, end=1.0, speaker="SPK_0"):
     return WhisperSegment(start=start, end=end, text=text, speaker=speaker)
+
+
+def test_resolve_device_cpu_passthrough():
+    assert _resolve_device(TranscriptionConfig(device="cpu")) == "cpu"
+
+
+def test_resolve_device_cuda_when_gpu_present(monkeypatch):
+    import torch
+
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+    assert _resolve_device(TranscriptionConfig(device="cuda")) == "cuda:0"
+
+
+def test_resolve_device_clamps_cuda_to_cpu_without_gpu(monkeypatch):
+    import torch
+
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+    assert _resolve_device(TranscriptionConfig(device="cuda")) == "cpu"
+
+
+@pytest.mark.parametrize("device", ["auto", "Cuda", "cuda:1"])
+def test_resolve_device_non_cuda_always_returns_cpu(device, monkeypatch):
+    """Predicate is strict `!= "cuda"`, not a membership test — anything that
+    isn't exactly the string "cuda" must clamp to cpu, even when a GPU is
+    available. TranscriptionConfig rejects these values at construction, so we
+    duck-type with SimpleNamespace to exercise _resolve_device directly."""
+    monkeypatch.setattr("torch.cuda.is_available", lambda: True)
+    cfg = SimpleNamespace(device=device)
+    assert _resolve_device(cfg) == "cpu"
 
 
 def test_format_turns_digest_variant_grouped_no_time_raw_label():
@@ -117,6 +152,7 @@ def test_load_funasr_whisper_passes_local_checkpoint_as_model(tmp_bibilab_home: 
     call_kwargs = mock_auto.call_args.kwargs
     assert call_kwargs["hub"] == "openai"
     assert call_kwargs["model"] == str(models_root / "asr" / "whisper" / "large-v3.pt")
+    assert call_kwargs["device"] == "cpu"  # cfg.device="cpu" short-circuits _resolve_device
     # Must NOT pass model_path: funasr's openai branch reads `model` and derives
     # model_path from it; a stray model_path with no `model` trips its assert.
     assert "model_path" not in call_kwargs

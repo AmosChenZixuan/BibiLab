@@ -4,9 +4,9 @@ from collections.abc import AsyncGenerator, Callable
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from bibilab.config import bibilab_home, load_config
@@ -147,6 +147,26 @@ def create_app(*, start_worker: bool = True) -> FastAPI:
     app.include_router(models_router)
 
     if web_dist.joinpath("index.html").exists():
+        # Single-port production: the SPA is served from the same origin as the API and
+        # calls /api/* (the api client prefixes window.location.origin + "/api"). In dev,
+        # Vite's proxy strips /api before forwarding to the backend, whose routers mount
+        # at root. Mirror that strip here so the served SPA's /api/* calls reach the
+        # root-mounted routers — without it every API call 404/405s. Only registered in
+        # the SPA-serving (production) path; the dev backend never receives /api.
+        #
+        # ponytail: runtime scope rewrite, a stopgap. The deeper fix is to mount the API
+        # routers as a sub-application under /api (app.mount("/api", api_app), routers
+        # shared via a helper) so no request scope is mutated and url_for becomes
+        # prefix-correct. Deferred to keep this PR's diff small.
+        @app.middleware("http")
+        async def _strip_api_prefix(request: Request, call_next: Callable) -> Response:
+            path = request.scope["path"]
+            if path == "/api" or path.startswith("/api/"):
+                stripped = path[len("/api") :] or "/"
+                request.scope["path"] = stripped
+                request.scope["raw_path"] = stripped.encode()
+            return await call_next(request)
+
         assets_dir = web_dist / "assets"
         if assets_dir.exists():
             app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
@@ -167,7 +187,14 @@ def create_app(*, start_worker: bool = True) -> FastAPI:
 app = create_app()
 
 if __name__ == "__main__":
+    import os
+
     import uvicorn
 
     cfg = load_config()
-    uvicorn.run(app, host="0.0.0.0", port=cfg.backend.port)
+    # The container pins the bind port via BIBILAB_PORT and maps a fixed host port to
+    # it. config.json is bind-mounted from the host and shared with a native install;
+    # a custom backend.port there would otherwise desync the in-container bind from the
+    # fixed port-mapping. Native runs leave BIBILAB_PORT unset and honor config.json.
+    port = int(os.environ.get("BIBILAB_PORT", cfg.backend.port))
+    uvicorn.run(app, host="0.0.0.0", port=port)
