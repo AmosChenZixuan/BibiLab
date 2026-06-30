@@ -1814,17 +1814,20 @@ class TestReadSectionUnitPaths:
             return f"BODY-{entry.index}"
 
         monkeypatch.setattr(chat_tools, "_build_section_narrative", _fake_narrative)
+        # registry is keyed by section_id (a stringified sections.id row PK),
+        # independent of the [N] index — production allocates index as a running
+        # counter, so PKs deliberately differ from the index here.
         reg = {
-            "sec-4": CitationRegistryEntry(index=4, section_id="sec-4", source_id="src", title="Ep 11", seq=11),
-            "sec-5": CitationRegistryEntry(index=5, section_id="sec-5", source_id="src", title="Ep 12", seq=12),
+            "317": CitationRegistryEntry(index=4, section_id="317", source_id="src", title="Ep 11", seq=11),
+            "318": CitationRegistryEntry(index=5, section_id="318", source_id="src", title="Ep 12", seq=12),
         }
         cases = {
-            '[4] "示例视频标题-第11集"': "sec-4",  # fence label, CJK title
-            "[4] Episode 11 of Season 1": "sec-4",  # fence label, English title
-            "[5]": "sec-5",  # existing forms below must not regress
-            "5": "sec-5",
-            "source 5": "sec-5",
-            " [5] ": "sec-5",
+            '[4] "示例视频标题-第11集"': "317",  # fence label, CJK title → index 4
+            "[4] Episode 11 of Season 1": "317",  # fence label, English title → index 4
+            "[5]": "318",  # existing forms below must not regress → index 5
+            "5": "318",
+            "source 5": "318",
+            " [5] ": "318",
         }
         for sid, want in cases.items():
             out = await execute_read_section(source_ids=["src"], section_id=sid, registry=reg)
