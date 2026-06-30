@@ -68,24 +68,32 @@ class WhisperSegment:
 
 def _resolve_device(cfg: TranscriptionConfig) -> str:
     # config defaults device to "cuda"; in a cpu-only container (or a host where GPU
-    # passthrough isn't wired) torch.cuda.is_available() is False, so honoring "cuda"
-    # would crash model load. Clamp to cpu instead — the single device decision point.
+    # passthrough isn't wired) torch.cuda.is_available() is False, so FunASR would
+    # trip on `device='cuda'` during tensor allocation. Clamp to cpu instead —
+    # the single device decision point. Logged so an operator can tell why a
+    # `cuda` config silently fell back (cf. /health `cuda` field for the same).
     if cfg.device != "cuda":
         return "cpu"
     import torch  # noqa: PLC0415
 
-    return "cuda:0" if torch.cuda.is_available() else "cpu"
+    if torch.cuda.is_available():
+        return "cuda:0"
+    logger.warning("transcription.device='cuda' requested but torch.cuda.is_available() is False; clamping to cpu")
+    return "cpu"
 
 
 def _load_funasr(cfg: TranscriptionConfig) -> Any:
     global _funasr_pipeline, _funasr_key
     from funasr import AutoModel  # noqa: PLC0415
 
-    key = (cfg.model, cfg.device)
+    # Key on the resolved device, not cfg.device — otherwise a config that
+    # requests "cuda" hits the CPU-loaded pipeline on a subsequent call when
+    # the host gains a working GPU (or vice versa).
+    device = _resolve_device(cfg)
+    key = (cfg.model, device)
     if _funasr_pipeline is not None and _funasr_key == key:
         return _funasr_pipeline
 
-    device = _resolve_device(cfg)
     spk_path = ensure(DIARIZATION_SPEC_ID)
     vad_path = ensure(VAD_SPEC_ID)
 
