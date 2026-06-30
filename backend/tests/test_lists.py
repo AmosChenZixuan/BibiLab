@@ -81,7 +81,7 @@ async def test_get_lists_returns_thumbnail_fields_and_prefers_cached_cover(
             "name": "Annotated",
             "created_at": patch_resp.json()["created_at"],
             "thumbnail_source_id": source_id,
-            "thumbnail_url": f"http://testserver/sources/{source_id}/cover",
+            "thumbnail_url": f"/api/sources/{source_id}/cover",
             "source_count": 1,
             "updated_at": patch_resp.json()["updated_at"],
         }

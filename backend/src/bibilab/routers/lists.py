@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from urllib.parse import quote
 
 import aiosqlite
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException
 
 from bibilab.config import BibilabConfig, bibilab_home, cover_path, get_config
 from bibilab.db import (
@@ -39,20 +39,26 @@ from bibilab.pipeline.embed import clear_embeddings_for_list, clear_embeddings_f
 
 router = APIRouter()
 
+# Cover URLs the SPA consumes are /api-prefixed: the api client serves the SPA and the
+# API on one origin, calling /api/* (mounted sub-app in prod, Vite proxy in dev). url_for
+# can't produce this prefix — every router is registered at root *and* under the /api mount,
+# so url_for resolves to the un-prefixed root copy. A relative literal is the single source.
+API_PREFIX = "/api"
+
 
 def _purge_source_resources(source_id: str) -> None:
     cover_path(source_id).unlink(missing_ok=True)
 
 
-async def _build_list_response(row: aiosqlite.Row, request: Request) -> ListResponse:
+async def _build_list_response(row: aiosqlite.Row) -> ListResponse:
     thumbnail_url = None
     if row["thumbnail_source_id"]:
         if cover_path(row["thumbnail_source_id"]).exists():
-            thumbnail_url = str(request.url_for("get_source_cover", source_id=row["thumbnail_source_id"]))
+            thumbnail_url = f"{API_PREFIX}/sources/{row['thumbnail_source_id']}/cover"
         else:
             source = await get_source(row["thumbnail_source_id"])
             if source is not None and source["cover_url"]:
-                thumbnail_url = f"/api/proxy/cover?url={quote(source['cover_url'], safe='')}"
+                thumbnail_url = f"{API_PREFIX}/proxy/cover?url={quote(source['cover_url'], safe='')}"
 
     return ListResponse(
         id=row["id"],
@@ -85,13 +91,13 @@ async def create_list(req: ListCreateRequest) -> ListResponse:
 
 
 @router.get("/lists")
-async def get_lists(request: Request) -> list[ListResponse]:
+async def get_lists() -> list[ListResponse]:
     rows = await get_all_lists()
-    return [await _build_list_response(r, request) for r in rows]
+    return [await _build_list_response(r) for r in rows]
 
 
 @router.patch("/lists/{list_id}")
-async def update_list(list_id: str, req: ListUpdateRequest, request: Request) -> ListResponse:
+async def update_list(list_id: str, req: ListUpdateRequest) -> ListResponse:
     row = await get_list(list_id)
     if row is None:
         raise HTTPException(status_code=404, detail="List not found")
@@ -114,7 +120,7 @@ async def update_list(list_id: str, req: ListUpdateRequest, request: Request) ->
     next_row = await get_list_with_display(list_id)
     if next_row is None:
         raise HTTPException(status_code=404, detail="List not found")
-    return await _build_list_response(next_row, request)
+    return await _build_list_response(next_row)
 
 
 @router.delete("/lists/{list_id}", status_code=204)

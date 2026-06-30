@@ -4,9 +4,9 @@ from collections.abc import AsyncGenerator, Callable
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from bibilab.config import bibilab_home, load_config
@@ -121,6 +121,21 @@ def make_lifespan(*, start_worker: bool) -> Callable[[], AsyncGenerator[None, No
     return lifespan
 
 
+def _include_api_routers(target: FastAPI) -> None:
+    target.include_router(health_router)
+    target.include_router(auth_router)
+    target.include_router(config_router)
+    target.include_router(jobs_router)
+    target.include_router(lists_router)
+    target.include_router(ingest_router)
+    target.include_router(artifacts_router)
+    target.include_router(chat_router)
+    target.include_router(debug_router)
+    target.include_router(proxy_router)
+    target.include_router(sources_router)
+    target.include_router(models_router)
+
+
 def create_app(*, start_worker: bool = True) -> FastAPI:
     cfg = load_config()
     app = FastAPI(title="Bibilab Backend", lifespan=make_lifespan(start_worker=start_worker))
@@ -133,39 +148,22 @@ def create_app(*, start_worker: bool = True) -> FastAPI:
         allow_headers=["*"],
     )
 
-    app.include_router(health_router)
-    app.include_router(auth_router)
-    app.include_router(config_router)
-    app.include_router(jobs_router)
-    app.include_router(lists_router)
-    app.include_router(ingest_router)
-    app.include_router(artifacts_router)
-    app.include_router(chat_router)
-    app.include_router(debug_router)
-    app.include_router(proxy_router)
-    app.include_router(sources_router)
-    app.include_router(models_router)
+    # Root mount: dev (Vite proxies /api → here, prefix already stripped) + install.sh /health.
+    _include_api_routers(app)
 
     if web_dist.joinpath("index.html").exists():
         # Single-port production: the SPA is served from the same origin as the API and
         # calls /api/* (the api client prefixes window.location.origin + "/api"). In dev,
-        # Vite's proxy strips /api before forwarding to the backend, whose routers mount
-        # at root. Mirror that strip here so the served SPA's /api/* calls reach the
-        # root-mounted routers — without it every API call 404/405s. Only registered in
-        # the SPA-serving (production) path; the dev backend never receives /api.
-        #
-        # ponytail: runtime scope rewrite, a stopgap. The deeper fix is to mount the API
-        # routers as a sub-application under /api (app.mount("/api", api_app), routers
-        # shared via a helper) so no request scope is mutated and url_for becomes
-        # prefix-correct. Deferred to keep this PR's diff small.
-        @app.middleware("http")
-        async def _strip_api_prefix(request: Request, call_next: Callable) -> Response:
-            path = request.scope["path"]
-            if path == "/api" or path.startswith("/api/"):
-                stripped = path[len("/api") :] or "/"
-                request.scope["path"] = stripped
-                request.scope["raw_path"] = stripped.encode()
-            return await call_next(request)
+        # Vite's proxy strips /api before forwarding. In production the same routers are
+        # mounted again as a sub-application under /api, so /api/* reaches them and
+        # request.url_for resolves to /api-prefixed URLs (e.g. cover links) — no request
+        # scope mutation. The sub-app shares the parent's state so handlers that read
+        # app.state (jobs.py → worker) work under the mount. Mounted before the catch-all
+        # below so /api/* isn't swallowed by the SPA fallback.
+        api = FastAPI()
+        api.state = app.state
+        _include_api_routers(api)
+        app.mount("/api", api)
 
         assets_dir = web_dist / "assets"
         if assets_dir.exists():
