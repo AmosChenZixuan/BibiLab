@@ -30,23 +30,32 @@ dependencies = [
 ]
 
 # torch is the only production GPU consumer (FunASR ASR in pipeline/transcribe.py;
-# routers/health.py probes but allocates nothing). cpu and cuda are conflicting
+# routers/health.py probes but allocates nothing). cpu, cuda and rocm are conflicting
 # dependency groups pinning torch/torchaudio to different PyTorch wheel indices;
-# uv.lock covers both; cpu is a default group, so bare `uv sync` installs cpu.
+# uv.lock covers all three; cpu is a default group, so bare `uv sync` installs cpu.
+# rocm torch drives AMD GPUs through the same `cuda` device API (HIP under the hood).
 [tool.uv]
 default-groups = ["dev", "cpu"]
 conflicts = [
-    [{ group = "cpu" }, { group = "cuda" }],
+    [{ group = "cpu" }, { group = "cuda" }, { group = "rocm" }],
 ]
 
 [tool.uv.sources]
 torch = [
     { index = "pytorch-cpu", group = "cpu" },
     { index = "pytorch-cuda", group = "cuda" },
+    { index = "pytorch-rocm", group = "rocm" },
 ]
 torchaudio = [
     { index = "pytorch-cpu", group = "cpu" },
     { index = "pytorch-cuda", group = "cuda" },
+    { index = "pytorch-rocm", group = "rocm" },
+]
+# rocm torch pulls pytorch-triton-rocm, published only on the rocm wheel index
+# (not PyPI). uv requires a group-scoped source's package to also appear in that
+# group's dependency list (below), so it's listed there too; torch pins the version.
+pytorch-triton-rocm = [
+    { index = "pytorch-rocm", group = "rocm" },
 ]
 
 [[tool.uv.index]]
@@ -57,6 +66,11 @@ explicit = true
 [[tool.uv.index]]
 name = "pytorch-cuda"
 url = "https://download.pytorch.org/whl/cu124"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-rocm"
+url = "https://download.pytorch.org/whl/rocm6.2.4"
 explicit = true
 
 
@@ -73,6 +87,11 @@ cpu = [
 cuda = [
     "torch>=2.0",
     "torchaudio>=2.0",
+]
+rocm = [
+    "torch>=2.0",
+    "torchaudio>=2.0",
+    "pytorch-triton-rocm",
 ]
 
 [tool.ruff]

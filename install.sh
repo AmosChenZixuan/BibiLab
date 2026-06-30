@@ -13,6 +13,13 @@ cd "$(dirname "$0")"
 if probe_output=$(docker run --rm --gpus all nvidia/cuda:12.4.0-base-ubuntu22.04 nvidia-smi 2>&1); then
   TORCH_VARIANT=cuda
   COMPOSE_FILE=compose.yml:compose.cuda.yml
+elif command -v rocminfo >/dev/null && rocminfo >/dev/null 2>&1; then
+  # AMD/ROCm. Unlike NVIDIA there is no container-toolkit shim that can be missing —
+  # container GPU access is plain device passthrough (/dev/kfd + /dev/dri, granted in
+  # compose.rocm.yml). So a working host rocminfo is sufficient; no throwaway-container
+  # probe needed. ROCm torch drives the AMD GPU through the same `cuda` device API.
+  TORCH_VARIANT=rocm
+  COMPOSE_FILE=compose.yml:compose.rocm.yml
 else
   TORCH_VARIANT=cpu
   COMPOSE_FILE=compose.yml
