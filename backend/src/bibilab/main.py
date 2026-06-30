@@ -167,7 +167,14 @@ def create_app(*, start_worker: bool = True) -> FastAPI:
 app = create_app()
 
 if __name__ == "__main__":
+    import os
+
     import uvicorn
 
     cfg = load_config()
-    uvicorn.run(app, host="0.0.0.0", port=cfg.backend.port)
+    # The container pins the bind port via BIBILAB_PORT and maps a fixed host port to
+    # it. config.json is bind-mounted from the host and shared with a native install;
+    # a custom backend.port there would otherwise desync the in-container bind from the
+    # fixed port-mapping. Native runs leave BIBILAB_PORT unset and honor config.json.
+    port = int(os.environ.get("BIBILAB_PORT", cfg.backend.port))
+    uvicorn.run(app, host="0.0.0.0", port=port)

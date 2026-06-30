@@ -13,6 +13,9 @@ services:
     user: "${UID:?UID must be set; run ./install.sh}:${GID:?GID must be set}"
     environment:
       BIBILAB_HOME: /data
+      # Pin the in-container bind port to the mapped host port below, independent of
+      # any custom backend.port in the bind-mounted (host-shared) config.json.
+      BIBILAB_PORT: 8765
     volumes:
       - ${HOME}/.bibilab:/data
     ports:

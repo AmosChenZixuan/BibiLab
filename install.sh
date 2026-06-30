@@ -40,6 +40,13 @@ fi
 } > .env
 
 echo "GPU probe → $TORCH_VARIANT variant"
+
+# Create the bind-mount source before compose does. Docker auto-creates a missing
+# host path as root:root, but the container runs as the host uid (compose `user:`)
+# and would then fail to write the DB/caches under /data. A fresh one-click user
+# has no ~/.bibilab yet, so this is the common case, not the edge.
+mkdir -p "$HOME/.bibilab"
+
 docker compose up --build -d
 echo "Waiting for Bibilab to become healthy..."
 for i in {1..30}; do
