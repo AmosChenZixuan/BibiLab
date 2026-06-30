@@ -1819,7 +1819,7 @@ class TestReadSectionUnitPaths:
             "sec-5": CitationRegistryEntry(index=5, section_id="sec-5", source_id="src", title="Ep 12", seq=12),
         }
         cases = {
-            '[4] "《诡秘之主》广播剧第一季-第11集"': "sec-4",  # fence label, CJK title
+            '[4] "示例视频标题-第11集"': "sec-4",  # fence label, CJK title
             "[4] Episode 11 of Season 1": "sec-4",  # fence label, English title
             "[5]": "sec-5",  # existing forms below must not regress
             "5": "sec-5",
