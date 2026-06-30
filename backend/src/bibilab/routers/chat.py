@@ -136,12 +136,17 @@ def _build_preamble_trigger(response_language: str) -> str:
 
     The trigger is injected at the message tail, making it the highest-recency
     instruction at the tool-call decision point — stronger than the system
-    prompt's far-away `Respond in X` directive. Without a language clause here the
-    model narrates the preamble in the prompt's own language (English) while the
-    final answer obeys the system directive, producing a split-language reply. The
-    clause forces the preamble into the same language as the answer.
+    prompt's far-away `Respond in X` directive. Re-attached every non-synthesis turn,
+    so it also anchors the post-tool *answer* turn — where source-language chunks (e.g.
+    Chinese transcript) otherwise out-pull the distant system directive. The clause must
+    govern the answer too: scoping it to "these sentences" left the answer anchorless
+    once the model skips the preamble, dropping the clause with it.
     """
-    return f"{_PREAMBLE_TRIGGER} Write these sentences in {_native_lang_name(response_language)}."
+    return (
+        f"{_PREAMBLE_TRIGGER} Write everything you output — both these preamble "
+        f"sentences and your final answer — in {_native_lang_name(response_language)}, "
+        f"regardless of the language of the retrieved source material."
+    )
 
 
 def _build_synthesis_directive(response_language: str) -> str:
