@@ -1801,6 +1801,39 @@ class TestReadSectionUnitPaths:
         assert out["section_id"] is None
         assert "No section [1]" in out["_chunks"]
 
+    @pytest.mark.asyncio
+    async def test_read_section_accepts_fence_label_and_existing_forms(self, monkeypatch):
+        """The LLM copies the whole fence label '[4] "title…"' from the
+        find_passages header. The leading [N] must parse even with trailing
+        title text, resolving to the registered entry (no error envelope).
+        Existing bare/bracketed forms must keep resolving."""
+        from bibilab.pipeline import chat_tools
+        from bibilab.pipeline.chat_tools import CitationRegistryEntry, execute_read_section
+
+        async def _fake_narrative(entry):
+            return f"BODY-{entry.index}"
+
+        monkeypatch.setattr(chat_tools, "_build_section_narrative", _fake_narrative)
+        # registry is keyed by section_id (a stringified sections.id row PK),
+        # independent of the [N] index — production allocates index as a running
+        # counter, so PKs deliberately differ from the index here.
+        reg = {
+            "317": CitationRegistryEntry(index=4, section_id="317", source_id="src", title="Ep 11", seq=11),
+            "318": CitationRegistryEntry(index=5, section_id="318", source_id="src", title="Ep 12", seq=12),
+        }
+        cases = {
+            '[4] "示例视频标题-第11集"': "317",  # fence label, CJK title → index 4
+            "[4] Episode 11 of Season 1": "317",  # fence label, English title → index 4
+            "[5]": "318",  # existing forms below must not regress → index 5
+            "5": "318",
+            "source 5": "318",
+            " [5] ": "318",
+        }
+        for sid, want in cases.items():
+            out = await execute_read_section(source_ids=["src"], section_id=sid, registry=reg)
+            assert out["section_id"] == want, sid
+            assert "must be a citation index" not in out["_chunks"], sid
+
 
 @pytest.mark.asyncio
 async def test_read_section_returns_bounded_verbatim(tmp_bibilab_home, monkeypatch):
