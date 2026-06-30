@@ -1,0 +1,18 @@
+services:
+  bibilab:
+    # AMD ROCm GPU passthrough: the kernel fusion driver (/dev/kfd) + render nodes
+    # (/dev/dri), plus the video/render groups that own them. No special container
+    # runtime is needed (unlike NVIDIA) — bind the device nodes and grant the groups.
+    devices:
+      - /dev/kfd
+      - /dev/dri
+    group_add:
+      - video
+      - render
+    # Most consumer Radeon cards aren't on ROCm's official gfx allowlist and need
+    # HSA_OVERRIDE_GFX_VERSION set to the nearest supported arch (e.g. 11.0.0 for
+    # RDNA3) to run at all. We can't guess the value, so pass it through from .env.
+    # Bare list form (not `VAR: ${VAR:-}`) so an unset value is omitted entirely,
+    # never injected as an empty string ROCm would misparse as a 0.0.0 override.
+    environment:
+      - HSA_OVERRIDE_GFX_VERSION
