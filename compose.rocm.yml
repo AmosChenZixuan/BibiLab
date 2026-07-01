@@ -6,9 +6,14 @@ services:
     devices:
       - /dev/kfd
       - /dev/dri
+    # Join the groups by *numeric* host GID (probed into .env by install.sh). Group
+    # names would fail: the slim runtime image has no `render` group so the container
+    # won't start, and a name would resolve to a container GID that need not match the
+    # host owner of /dev/kfd. Numeric GIDs need no in-image group entry and match the
+    # device owner exactly, so the container user can actually reach the GPU.
     group_add:
-      - video
-      - render
+      - "${VIDEO_GID}"
+      - "${RENDER_GID}"
     # Most consumer Radeon cards aren't on ROCm's official gfx allowlist and need
     # HSA_OVERRIDE_GFX_VERSION set to the nearest supported arch (e.g. 11.0.0 for
     # RDNA3) to run at all. We can't guess the value, so pass it through from .env.
