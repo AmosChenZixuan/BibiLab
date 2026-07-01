@@ -127,7 +127,10 @@ Build and run everything in a container — no local Python/Node setup.
 need the NVIDIA driver plus GPU-enabled Docker — **Docker Desktop (WSL2 backend)
 has this built in**, while a native Docker Engine needs the
 [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html).
-Without GPU support (or on non-NVIDIA hosts) the container runs on CPU.
+For an **AMD GPU**, install the host `amdgpu`/ROCm kernel driver and make sure your
+user is in the `render`/`video` groups — `install.sh` wires the container device
+flags but cannot install host drivers. Without GPU support (or on non-NVIDIA/AMD
+hosts) the container runs on CPU.
 
 ```bash
 git clone <repo-url> bibilab && cd bibilab
@@ -135,17 +138,20 @@ git clone <repo-url> bibilab && cd bibilab
 ```
 
 Open `http://localhost:8765`. `install.sh` probes for working GPU passthrough and
-picks the `cpu` or `cuda` torch variant automatically — GPU only accelerates ASR
-transcription, so the CPU image is fully functional, just slower to transcribe.
+picks the `cpu`, `cuda`, or `rocm` torch variant automatically — GPU only accelerates
+ASR transcription, so the CPU image is fully functional, just slower to transcribe.
 
 | Host | Variant |
 |---|---|
 | NVIDIA + GPU-enabled Docker (Docker Desktop WSL2, or Linux + Toolkit) | `cuda` — GPU transcription |
-| No GPU, macOS, AMD/Intel GPU | `cpu` — everything on CPU |
+| AMD + host ROCm driver (Linux, `rocminfo` works) | `rocm` — GPU transcription |
+| No GPU, macOS, Intel GPU | `cpu` — everything on CPU |
 | Windows native (no WSL) | run `install.sh` from WSL/Git Bash; no GPU passthrough |
 
 A wrong `cuda` guess can't crash you — the app clamps back to CPU at runtime if the
-GPU isn't really there. AMD/ROCm acceleration is not yet supported.
+GPU isn't really there. If your AMD card isn't on ROCm's official support list (most
+consumer Radeon cards), set `HSA_OVERRIDE_GFX_VERSION` in `.env` to the nearest
+supported arch (e.g. `11.0.0` for RDNA3) before re-running `install.sh`.
 
 Data lives in `~/.bibilab` on the host (bind-mounted to `/data`), **shared with a
 native install** — the same DB, models, and config. The container runs as your
