@@ -17,6 +17,7 @@ from bibilab.routers.auth import router as auth_router
 from bibilab.routers.chat import debug_router
 from bibilab.routers.chat import router as chat_router
 from bibilab.routers.config_router import router as config_router
+from bibilab.routers.eval import router as eval_router
 from bibilab.routers.health import router as health_router
 from bibilab.routers.ingest import router as ingest_router
 from bibilab.routers.jobs import router as jobs_router
@@ -134,6 +135,7 @@ def _include_api_routers(target: FastAPI) -> None:
     target.include_router(proxy_router)
     target.include_router(sources_router)
     target.include_router(models_router)
+    target.include_router(eval_router)
 
 
 def create_app(*, start_worker: bool = True) -> FastAPI:
