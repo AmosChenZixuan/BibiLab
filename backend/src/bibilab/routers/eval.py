@@ -11,7 +11,7 @@ import time
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from bibilab.config import AIConfig, BibilabConfig, get_config
+from bibilab.config import AIConfig, BibilabConfig, deep_merge, get_config
 from bibilab.db import get_list, get_sources_for_list
 from bibilab.models.eval import (
     EvalChatRequest,
@@ -38,24 +38,13 @@ router = APIRouter()
 _CITATION_INDEX_RE = re.compile(r"\[(\d+)\]")
 
 
-class _ToolExecutionError(RuntimeError):
-    """Raised when stream_with_tools yields an SSE_EVENT_ERROR (a tool call
-    failed) so the pipeline try/except below classifies and returns it as a
-    500, same as an LLM SDK exception."""
-
-
 def _merge_ai_config(base: AIConfig, override: EvalLLMOverride | None) -> AIConfig:
     """Field-level merge: an omitted override field inherits `base`'s value.
     context_window / output_language are never overridable — the request only
     exposes the fields an eval framework needs to A/B-test."""
     if override is None:
         return base
-    data = base.model_dump()
-    for field_name in ("protocol", "model", "api_key", "base_url", "max_output_tokens"):
-        value = getattr(override, field_name)
-        if value is not None:
-            data[field_name] = value
-    return AIConfig(**data)
+    return AIConfig(**deep_merge(base.model_dump(), override.model_dump(exclude_none=True)))
 
 
 def _build_find_passages_call(
@@ -159,7 +148,11 @@ async def run_chat_eval(
             elif event.type == "tool_result":
                 tool_results.append(json.loads(event.content))
             elif event.type == "error":
-                raise _ToolExecutionError(event.content)
+                # A tool call failed inside stream_with_tools (see its
+                # SSE_EVENT_ERROR branch). Not an SDK exception type, so
+                # _classify_llm_error below falls through to "internal_error" —
+                # same code an unclassified pipeline exception gets.
+                raise RuntimeError(event.content)
     except Exception as e:  # noqa: BLE001 — classified below, mirrors run_chat_turn's producer catch
         logger.exception("eval_run_chat pipeline failed list_id=%s", request.list_id)
         raise HTTPException(status_code=500, detail={"error": _classify_llm_error(e)}) from e
