@@ -499,6 +499,73 @@ async def test_stream_with_tools_max_iterations_graceful(mock_stream_llm):
 
 
 @pytest.mark.asyncio
+async def test_stream_with_tools_stats_out_param_one_round(mock_stream_llm):
+    """stats out-param (mirrors messages_sink) reports iterations=1,
+    synthesis_forced=False for a plain one-round answer with no tool calls."""
+    from bibilab.config import AIConfig
+    from bibilab.routers.chat import stream_with_tools
+
+    cfg = AIConfig(protocol="openai", model="gpt-4o", api_key="test", base_url="")
+
+    async def fake_stream(messages, cfg, tools=None, system=None):
+        yield StreamEvent(type="delta", content="Hello")
+        yield StreamEvent(type="done")
+
+    async def noop(*args, **kwargs):
+        return {}
+
+    mock_stream_llm.side_effect = fake_stream
+    stats: dict = {}
+    async for _ in stream_with_tools(
+        messages=[{"role": "user", "content": "hi"}],
+        cfg=cfg,
+        tools=[],
+        execute_tool_fn=noop,
+        stats=stats,
+    ):
+        pass
+
+    assert stats == {"iterations": 1, "synthesis_forced": False}
+
+
+@pytest.mark.asyncio
+async def test_stream_with_tools_stats_out_param_synthesis_forced(mock_stream_llm):
+    """stats reports synthesis_forced=True once the loop hits MAX_TOOL_ITERATIONS,
+    and iterations counts the tool-using rounds. Populated even on the
+    no-text exception path — the finally block runs before the raise
+    propagates, same guarantee messages_sink already relies on."""
+    from bibilab.config import AIConfig
+    from bibilab.pipeline.chat_tools import FIND_PASSAGES_TOOL
+    from bibilab.routers.chat import MAX_TOOL_ITERATIONS, stream_with_tools
+
+    cfg = AIConfig(protocol="openai", model="gpt-4o", api_key="test", base_url="")
+    tc = ToolCall(id="c1", name=FIND_PASSAGES_TOOL.name, arguments={"query": "test"})
+
+    async def fake_stream(messages, cfg, tools=None, system=None):
+        yield StreamEvent(type="tool_call", tool_call=tc)
+
+    async def fake_execute(name, args, **kwargs):
+        return {"ok": True, "_chunks": "stub"}
+
+    mock_stream_llm.side_effect = fake_stream
+    stats: dict = {}
+    with pytest.raises(LLMEmptyResponseError):
+        async for _ in stream_with_tools(
+            messages=[{"role": "user", "content": "hi"}],
+            cfg=cfg,
+            tools=[FIND_PASSAGES_TOOL],
+            execute_tool_fn=fake_execute,
+            stats=stats,
+        ):
+            pass
+
+    assert stats["synthesis_forced"] is True
+    # MAX_TOOL_ITERATIONS tool-using rounds + 1 synthesis round before the
+    # forced-followup call kicks in (see test_stream_with_tools_max_iterations_graceful).
+    assert stats["iterations"] == MAX_TOOL_ITERATIONS + 1
+
+
+@pytest.mark.asyncio
 async def test_stream_with_tools_forces_synthesis_when_exhausted_turn_returns_empty(mock_stream_llm):
     """When the synthesis turn produces no text, force one more LLM call so the user always gets an answer."""
     from bibilab.config import AIConfig
