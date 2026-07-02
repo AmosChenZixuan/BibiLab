@@ -1665,6 +1665,95 @@ async def test_find_passages_registers_sections_not_sources(tmp_bibilab_home, mo
     assert "source_coverage" not in result
 
 
+@pytest.mark.asyncio
+async def test_find_passages_full_text_joins_all_section_chunks(tmp_bibilab_home, monkeypatch):
+    """full_text carries every chunk fenced under a section's [N], joined —
+    not just the first chunk, which is all `preview` captures (SPA ledger
+    hover only needs a taste, eval grading needs the whole thing)."""
+    from bibilab.config import AIConfig, BackendConfig, BibilabConfig
+    from bibilab.db import bootstrap_db, create_list, get_sections
+    from bibilab.pipeline import chat_tools
+    from bibilab.pipeline.embed import RetrievalResult, RetrievedChunk, SourceHit
+
+    await bootstrap_db()
+    await create_list("L1", "Test List", "2025-01-01T00:00:00Z")
+    source_id = await _build_two_section_source(
+        "L1",
+        video_id="BVfulltext",
+        title="Full Text Video",
+    )
+    section_rows = await get_sections(source_id)
+    section1_id = section_rows[0]["id"]
+
+    # Two non-adjacent chunks, both inside section 1's seg range (0-14).
+    async def fake_retrieve(query_text, source_ids, cfg, top_k, **kwargs):
+        return RetrievalResult(
+            chunks=[
+                RetrievedChunk(
+                    content="raw-a",
+                    video_title="Full Text Video",
+                    timestamp_start=0.0,
+                    timestamp_end=1.0,
+                    source_id=source_id,
+                    distance=0.1,
+                    score=0.9,
+                    seg_start=0,
+                    seg_end=1,
+                ),
+                RetrievedChunk(
+                    content="raw-b",
+                    video_title="Full Text Video",
+                    timestamp_start=10.0,
+                    timestamp_end=12.0,
+                    source_id=source_id,
+                    distance=0.2,
+                    score=0.8,
+                    seg_start=10,
+                    seg_end=12,
+                ),
+            ],
+            candidates_evaluated=2,
+            sources_with_hits=1,
+            sources_total=1,
+            source_coverage=[SourceHit(source_id=source_id, video_title="Full Text Video", best_score=-0.9)],
+        )
+
+    seg_rows = [
+        {
+            "source_id": source_id,
+            "seq": i,
+            "start_s": float(i),
+            "end_s": float(i + 1),
+            "speaker": "SPK_0",
+            "text": f"sentence {i} about the topic discussed",
+        }
+        for i in range(30)
+    ]
+    monkeypatch.setattr(chat_tools, "retrieve", fake_retrieve)
+    monkeypatch.setattr(chat_tools, "get_segments_for_ranges", AsyncMock(return_value=seg_rows))
+    monkeypatch.setattr(chat_tools, "get_sections", AsyncMock(return_value=section_rows))
+
+    cfg = BibilabConfig(
+        ai=AIConfig(protocol="openai", model="x", api_key="k", base_url=""),
+        backend=BackendConfig(),
+    )
+    registry: dict = {}
+    await chat_tools.execute_find_passages(
+        query="the topic discussed",
+        source_ids=[source_id],
+        cfg=cfg,
+        registry=registry,
+    )
+
+    entry = registry[section1_id]
+    assert entry.full_text is not None
+    assert "sentence 0" in entry.full_text
+    assert "sentence 10" in entry.full_text
+    assert entry.full_text != entry.preview
+    assert entry.preview is not None
+    assert "sentence 10" not in entry.preview
+
+
 # ---------------------------------------------------------------------------
 # Task 5: facet → full section OUTLINE
 # ---------------------------------------------------------------------------

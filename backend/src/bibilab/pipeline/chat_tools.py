@@ -52,6 +52,12 @@ class CitationRegistryEntry:
     timestamp_end: float | None = None
     rerank_score: float | None = None
     preview: str | None = None
+    # Full evidence text shown to the LLM for this section — all joined chunk
+    # fragments (find_passages) or the section summary (outline-only, no chunk
+    # hit). Unlike `preview` (first chunk only, for the SPA ledger hover), this
+    # is the complete grounding text, consumed by the eval endpoint for
+    # groundedness scoring. See _build_fenced_sections.
+    full_text: str | None = None
 
 
 def strip_internal(result: dict) -> dict:
@@ -122,6 +128,7 @@ def _build_fenced_sections(
         body = _join_section_fragments(chunks_by_index.get(idx, []))
         if body:
             parts.append(body)
+        entry.full_text = body or summary or ""
         blocks.append("\n".join(parts))
     return "\n\n".join(blocks)
 
