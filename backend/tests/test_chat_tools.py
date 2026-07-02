@@ -1995,6 +1995,9 @@ async def test_read_section_returns_bounded_verbatim(tmp_bibilab_home, monkeypat
     assert reg[section_ids[1]].citable is True
     # Header is the section fence format (matches T3's _build_section_fence_header).
     assert '===== [5] "Read Section Video" · Section 2' in body
+    # Registry entry carries the full narrative too (mirrors find_passages'
+    # full_text — a consumer never needs the raw, client-stripped tool result).
+    assert reg[section_ids[1]].full_text == body
 
 
 @pytest.mark.asyncio

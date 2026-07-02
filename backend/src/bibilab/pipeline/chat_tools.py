@@ -333,6 +333,11 @@ async def execute_read_section(
         return _read_section_error(f"No section [{idx}] in this conversation. Call find_passages first.")
     narrative = await _build_section_narrative(entry)
     entry.citable = True
+    # Mirrors the find_passages side (_build_fenced_sections): the registry
+    # entry carries the full evidence text regardless of which tool surfaced
+    # it, so a consumer reading the registry never needs the raw (and
+    # client-stripped) tool result to get grounding text.
+    entry.full_text = narrative
     logger.info("read_section: idx=%d section=%s source=%s", idx, entry.section_id, entry.source_id)
     return {
         "_chunks": narrative,
