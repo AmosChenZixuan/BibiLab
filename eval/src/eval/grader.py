@@ -132,14 +132,13 @@ def _chunks_text_from_case(case_result: RunCaseResult) -> str:
 async def _grade_one(prompt: str, llm: dict | None) -> tuple[int | None, str, int]:
     t0 = time.monotonic()
     try:
-        raw = await asyncio.to_thread(api.call_llm, prompt, llm, timeout=120)
+        raw = await asyncio.to_thread(api.call_llm, prompt, llm)
         score, reasoning = parse_grade_response(raw)
         if score is None:
             raw2 = await asyncio.to_thread(
                 api.call_llm,
                 prompt + "\n\nYour previous response was invalid. Return ONLY valid JSON.",
                 llm,
-                timeout=120,
             )
             score2, reasoning2 = parse_grade_response(raw2)
             llm_ms = int((time.monotonic() - t0) * 1000)

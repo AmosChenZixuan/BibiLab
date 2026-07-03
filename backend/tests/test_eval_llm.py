@@ -8,7 +8,6 @@ provider calls without any LLM SDK on the eval side.
 import pytest
 
 from bibilab.config import get_config
-from tests import create_list  # noqa: F401 — parity with sibling eval tests
 
 pytestmark = pytest.mark.integration
 

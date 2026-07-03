@@ -63,10 +63,7 @@ async def run_single_case(
     list_id: str,
     llm: dict | None,
     language: str,
-    on_status=None,
 ) -> RunCaseResult:
-    if on_status:
-        on_status("waiting backend")
     try:
         body = await api.run_chat(query=case.question, list_id=list_id, llm=llm, language=language)
         return map_response(case.id, body)
@@ -104,13 +101,12 @@ async def run_eval(
 
         async def _run_one(case: EvalCase) -> RunCaseResult:
             async with sem:
-                dash.start(case.id, status="dispatched")
+                dash.start(case.id, status="waiting backend")
                 result = await run_single_case(
                     case=case,
                     list_id=eval_set.list_id,
                     llm=llm,
                     language=language,
-                    on_status=lambda s, _id=case.id: dash.update(_id, s),
                 )
                 if result.error:
                     dash.done(case.id, ok=False, status="failed", error=result.error)

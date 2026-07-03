@@ -404,8 +404,6 @@ def _read_transcript(source_id: str) -> str:
     Returns "" on any fetch failure (the caller treats missing and failed
     alike — the run is partial-success by design).
     """
-    import sys
-
     try:
         return api.get_transcript(source_id)
     except Exception as e:
