@@ -56,7 +56,9 @@ def _merge_ai_config(base: AIConfig, override: EvalLLMOverride | None) -> AIConf
         # Cross-field constraint violated (e.g. max_output_tokens >= the
         # non-overridable context_window): a caller input problem, not a
         # server fault — surface it as 422, not an unclassified 500.
-        raise HTTPException(status_code=422, detail=str(e)) from e
+        # Messages only, never str(e): pydantic's full rendering embeds the
+        # merged input dict, which contains the backend's api_key.
+        raise HTTPException(status_code=422, detail="; ".join(err["msg"] for err in e.errors())) from e
 
 
 def _build_find_passages_call(result: dict, registry: dict[str, CitationRegistryEntry]) -> EvalFindPassagesCall:

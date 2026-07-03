@@ -253,7 +253,12 @@ async def test_eval_endpoint_llm_override_invalid_merge_422(client):
         json={"query": "hi", "list_id": list_id, "llm": {"max_output_tokens": 10_000_000}},
     )
     assert resp.status_code == 422
-    assert "max_output_tokens" in str(resp.json()["detail"])
+    detail = str(resp.json()["detail"])
+    assert "max_output_tokens" in detail
+    # Pydantic's default error rendering embeds the merged input dict —
+    # including the backend's api_key. The detail must carry messages only.
+    assert "input_value" not in detail
+    assert "api_key" not in detail
 
 
 @pytest.mark.asyncio
