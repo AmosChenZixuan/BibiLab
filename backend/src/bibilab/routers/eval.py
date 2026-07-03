@@ -1,8 +1,9 @@
 """Stateless JSON chat endpoint for driving the RAG pipeline from an eval
 framework — no persistence, no SSE, full retrieval telemetry (not narrowed to
-only what the LLM cited). See docs/specs or issue #581 for the design
-rationale; this intentionally does NOT reuse the SPA-shaped rag/citations
-ledger `run_chat_turn` persists."""
+only what the LLM cited). Intentionally does NOT reuse the SPA-shaped
+rag/citations ledger `run_chat_turn` persists: that shape drops uncited
+sections and truncates evidence to a first-chunk preview — both hide what a
+grader needs to score retrieval and generation separately."""
 
 import json
 import logging

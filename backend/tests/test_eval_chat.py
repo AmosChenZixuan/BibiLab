@@ -1,8 +1,8 @@
-"""Integration tests for POST /eval/run_chat (issue #581).
+"""Integration tests for POST /eval/run_chat.
 
 Grader-shaped contract: full retrieved-section set per tool call (not
 narrowed to only what the LLM cited), full evidence text, cited flags, no
-persistence. See shipit-spec-eval-run-chat.md / issue #581 design notes.
+persistence.
 """
 
 from unittest.mock import AsyncMock, patch
@@ -23,8 +23,8 @@ async def _fake_no_tool_stream(messages, cfg, tools=None, system=None):
 
 @pytest.mark.asyncio
 async def test_eval_endpoint_trivial_query_returns_single_json_response(client, mock_stream_llm):
-    """AC1 + AC8: a trivial query needing no retrieval returns 200 with a
-    single JSON body (not SSE), empty tool_calls, and a non-empty answer."""
+    """A trivial query needing no retrieval returns 200 with a single JSON
+    body (not SSE), empty tool_calls, and a non-empty answer."""
     list_id = await create_list(client, "L")
     mock_stream_llm.side_effect = _fake_no_tool_stream
 
@@ -42,7 +42,7 @@ async def test_eval_endpoint_trivial_query_returns_single_json_response(client, 
 
 @pytest.mark.asyncio
 async def test_eval_endpoint_no_db_writes(client, mock_stream_llm):
-    """AC2: zero rows added to messages/conversations by a call."""
+    """Zero rows added to messages/conversations by a call — stateless."""
     from bibilab.db import get_db
 
     list_id = await create_list(client, "L")
@@ -63,7 +63,7 @@ async def test_eval_endpoint_no_db_writes(client, mock_stream_llm):
 
 @pytest.mark.asyncio
 async def test_eval_endpoint_llm_override_partial_merge(client, mock_stream_llm):
-    """AC6: an llm override with only `model` set leaves api_key/base_url/
+    """An llm override with only `model` set leaves api_key/base_url/
     protocol at the backend's configured (default, in this test env) values."""
     list_id = await create_list(client, "L")
     captured: dict = {}
@@ -90,7 +90,7 @@ async def test_eval_endpoint_llm_override_partial_merge(client, mock_stream_llm)
 
 @pytest.mark.asyncio
 async def test_eval_endpoint_language_null_defaults_en(client, mock_stream_llm):
-    """AC7: language=null resolves to "en" regardless of backend
+    """language=null resolves to "en" regardless of backend
     cfg.ai.output_language, driven directly against the router function so
     the backend config can be pinned to a non-default output_language."""
     from bibilab.config import AIConfig, BackendConfig, BibilabConfig
@@ -119,7 +119,7 @@ async def test_eval_endpoint_language_null_defaults_en(client, mock_stream_llm):
 
 @pytest.mark.asyncio
 async def test_eval_endpoint_missing_models_412(client):
-    """AC9: missing required models -> 412 with {error, missing}."""
+    """Missing required models -> 412 with {error, missing}."""
     list_id = await create_list(client, "L")
     with patch("bibilab.routers._model_gate.missing_required_models", return_value=["reranker"]):
         resp = await client.post("/eval/run_chat", json={"query": "hi", "list_id": list_id})
@@ -131,14 +131,14 @@ async def test_eval_endpoint_missing_models_412(client):
 
 @pytest.mark.asyncio
 async def test_eval_endpoint_unknown_list_404(client):
-    """AC10: unknown list_id -> 404."""
+    """Unknown list_id -> 404."""
     resp = await client.post("/eval/run_chat", json={"query": "hi", "list_id": "does-not-exist"})
     assert resp.status_code == 404
 
 
 @pytest.mark.asyncio
 async def test_eval_endpoint_pipeline_error_classified_500(client, mock_stream_llm):
-    """AC11: a pipeline exception surfaces as 500 with a classified error code."""
+    """A pipeline exception surfaces as 500 with a classified error code."""
     list_id = await create_list(client, "L")
     mock_stream_llm.side_effect = LLMEmptyResponseError("boom")
 
@@ -152,7 +152,7 @@ async def test_eval_endpoint_pipeline_error_classified_500(client, mock_stream_l
 async def test_eval_endpoint_retrieval_keeps_full_section_set_with_full_text_and_cited(
     client, mock_stream_llm, monkeypatch
 ):
-    """AC3 + AC4 + AC5, one scenario: find_passages surfaces two sections,
+    """Core grader contract in one scenario: find_passages surfaces two sections,
     only one gets cited. tool_calls[].sections[] must include BOTH (cited
     flag distinguishing them, not narrowed to only the cited one), the cited
     section's full_text must join both of its chunks (not just the first,
