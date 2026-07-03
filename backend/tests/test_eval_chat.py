@@ -287,3 +287,182 @@ async def test_eval_endpoint_retrieval_keeps_full_section_set_with_full_text_and
 
     assert "sentence 0" in cited["full_text"]
     assert "sentence 10" in cited["full_text"], "full_text must join every chunk, not just the first"
+
+
+@pytest.mark.asyncio
+async def test_eval_endpoint_llm_override_invalid_merge_422(client):
+    """An override violating AIConfig's cross-field constraint
+    (max_output_tokens >= the non-overridable context_window) is caller
+    error -> 422 with a message, not an unclassified bare 500."""
+    list_id = await create_list(client, "L")
+    resp = await client.post(
+        "/eval/run_chat",
+        json={"query": "hi", "list_id": list_id, "llm": {"max_output_tokens": 10_000_000}},
+    )
+    assert resp.status_code == 422
+    assert "max_output_tokens" in str(resp.json()["detail"])
+
+
+@pytest.mark.asyncio
+async def test_eval_endpoint_unknown_protocol_422(client):
+    """protocol is a closed enum on the wire: a typo ('antropic') must fail
+    validation loudly instead of silently selecting the OpenAI wire branch."""
+    resp = await client.post(
+        "/eval/run_chat",
+        json={"query": "hi", "list_id": "x", "llm": {"protocol": "antropic"}},
+    )
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_eval_endpoint_tool_failure_maps_to_tool_error(client, mock_stream_llm, monkeypatch):
+    """A tool-execution failure surfaces as the same "tool_error" code
+    production records — an eval harness must be able to tell a retrieval
+    failure from a backend bug (internal_error)."""
+    from bibilab.pipeline import chat_tools
+
+    list_id = await create_list(client, "L")
+
+    async def boom(*args, **kwargs):
+        raise RuntimeError("chroma down")
+
+    monkeypatch.setattr(chat_tools, "retrieve", boom)
+
+    async def fake_stream(messages, cfg, tools=None, system=None):
+        yield StreamEvent(
+            type="tool_call",
+            tool_call=ToolCall(id="c1", name=FIND_PASSAGES_TOOL.name, arguments={"query": "q"}),
+        )
+
+    mock_stream_llm.side_effect = fake_stream
+
+    resp = await client.post("/eval/run_chat", json={"query": "q", "list_id": list_id})
+
+    assert resp.status_code == 500
+    assert resp.json()["detail"]["error"] == "tool_error"
+
+
+@pytest.mark.asyncio
+async def test_eval_endpoint_multi_call_turn_keeps_per_call_evidence(client, mock_stream_llm, monkeypatch):
+    """Two find_passages calls hitting the SAME section in one turn: the
+    first call's sections[] row must keep the evidence THAT call showed the
+    LLM, even though the second call overwrites the shared registry's
+    full_text (rows are snapshotted at tool_result time, not read from
+    final registry state). Also: the preamble streamed before the first tool
+    call is separated from the synthesis by a paragraph break, matching what
+    production renders around a tool call."""
+    from bibilab.db import get_sections
+    from bibilab.pipeline import chat_tools
+    from bibilab.pipeline.digest import SectionDigest
+    from bibilab.pipeline.embed import RetrievalResult, RetrievedChunk, SourceHit
+    from bibilab.pipeline.section import Section
+    from bibilab.pipeline.transcribe import WhisperSegment
+    from tests.factories import SourceFactory
+
+    list_id = await create_list(client, "L")
+
+    segs = [
+        WhisperSegment(start=float(i), end=float(i + 1), text=f"sentence {i} about the topic", speaker="SPK_0")
+        for i in range(30)
+    ]
+    source_id = await SourceFactory.build(
+        list_id,
+        video_id="BVevalmulti",
+        title="Multi Call Video",
+        segments=segs,
+        sections=[Section(seg_start=0, seg_end=29, token_count=100, timestamp_start=0.0, timestamp_end=30.0)],
+        section_digests=[SectionDigest(summary="sec1 summary", keywords=["k1"])],
+    )
+    section_rows = await get_sections(source_id)
+
+    def make_chunk(seg_start, seg_end, score):
+        return RetrievedChunk(
+            content=f"raw-{seg_start}",
+            video_title="Multi Call Video",
+            timestamp_start=float(seg_start),
+            timestamp_end=float(seg_end + 1),
+            source_id=source_id,
+            distance=0.1,
+            score=score,
+            seg_start=seg_start,
+            seg_end=seg_end,
+        )
+
+    retrieve_count = 0
+
+    async def fake_retrieve(query_text, source_ids, cfg, top_k, **kwargs):
+        nonlocal retrieve_count
+        retrieve_count += 1
+        # Call 1 surfaces two chunks; call 2 re-hits the same section with a
+        # DIFFERENT (unseen) chunk, which rewrites the registry's full_text.
+        chunks = [make_chunk(0, 1, 0.9), make_chunk(10, 12, 0.8)] if retrieve_count == 1 else [make_chunk(5, 6, 0.7)]
+        return RetrievalResult(
+            chunks=chunks,
+            candidates_evaluated=len(chunks),
+            sources_with_hits=1,
+            sources_total=1,
+            source_coverage=[SourceHit(source_id=source_id, video_title="Multi Call Video", best_score=-0.9)],
+        )
+
+    seg_rows = [
+        {
+            "source_id": source_id,
+            "seq": i,
+            "start_s": float(i),
+            "end_s": float(i + 1),
+            "speaker": "SPK_0",
+            "text": f"sentence {i} about the topic",
+        }
+        for i in range(30)
+    ]
+    monkeypatch.setattr(chat_tools, "retrieve", fake_retrieve)
+    monkeypatch.setattr(chat_tools, "get_segments_for_ranges", AsyncMock(return_value=seg_rows))
+    monkeypatch.setattr(chat_tools, "get_sections", AsyncMock(return_value=section_rows))
+
+    llm_call_count = 0
+
+    async def fake_stream(messages, cfg, tools=None, system=None):
+        nonlocal llm_call_count
+        llm_call_count += 1
+        if llm_call_count == 1:
+            yield StreamEvent(type="delta", content="Let me check.")
+            yield StreamEvent(
+                type="tool_call",
+                tool_call=ToolCall(id="c1", name=FIND_PASSAGES_TOOL.name, arguments={"query": "topic a"}),
+            )
+        elif llm_call_count == 2:
+            yield StreamEvent(
+                type="tool_call",
+                tool_call=ToolCall(id="c2", name=FIND_PASSAGES_TOOL.name, arguments={"query": "topic b"}),
+            )
+        else:
+            yield StreamEvent(type="delta", content="Covered here [1].")
+            yield StreamEvent(type="done")
+
+    mock_stream_llm.side_effect = fake_stream
+
+    resp = await client.post("/eval/run_chat", json={"query": "the topic", "list_id": list_id})
+
+    assert resp.status_code == 200
+    body = resp.json()
+
+    # Preamble and synthesis carry the production paragraph break, not fused text.
+    assert body["answer"] == "Let me check.\n\nCovered here [1]."
+
+    assert len(body["tool_calls"]) == 2
+    first, second = body["tool_calls"]
+    first_s1 = {s["index"]: s for s in first["sections"]}[1]
+    second_s1 = {s["index"]: s for s in second["sections"]}[1]
+
+    # Call 1's row keeps call 1's evidence (chunks at segs 0-1 and 10-12)...
+    assert "sentence 0" in first_s1["full_text"]
+    assert "sentence 10" in first_s1["full_text"]
+    # ...and call 2's chunk (segs 5-6) must NOT bleed into call 1's row.
+    assert "sentence 5 " not in first_s1["full_text"]
+    # Call 2's row carries call 2's chunk.
+    assert "sentence 5 " in second_s1["full_text"]
+    # The section summary the LLM saw above the fragments is part of the evidence.
+    assert "sec1 summary" in first_s1["full_text"]
+    # cited comes from the citation events; both rows describe the same section.
+    assert first_s1["cited"] is True
+    assert second_s1["cited"] is True

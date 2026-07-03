@@ -1900,7 +1900,7 @@ class TestReadSectionUnitPaths:
         from bibilab.pipeline.chat_tools import CitationRegistryEntry, execute_read_section
 
         async def _fake_narrative(entry):
-            return f"BODY-{entry.index}"
+            return f"BODY-{entry.index}", f"BODY-{entry.index}"
 
         monkeypatch.setattr(chat_tools, "_build_section_narrative", _fake_narrative)
         # registry is keyed by section_id (a stringified sections.id row PK),
@@ -1995,9 +1995,11 @@ async def test_read_section_returns_bounded_verbatim(tmp_bibilab_home, monkeypat
     assert reg[section_ids[1]].citable is True
     # Header is the section fence format (matches T3's _build_section_fence_header).
     assert '===== [5] "Read Section Video" · Section 2' in body
-    # Registry entry carries the full narrative too (mirrors find_passages'
-    # full_text — a consumer never needs the raw, client-stripped tool result).
-    assert reg[section_ids[1]].full_text == body
+    # Registry entry carries the header-less verbatim body (mirrors
+    # find_passages' full_text — a consumer never needs the raw,
+    # client-stripped tool result, and a fence header is framing, not evidence).
+    assert reg[section_ids[1]].full_text == body.split("\n\n", 1)[1]
+    assert not reg[section_ids[1]].full_text.startswith("=====")
 
 
 @pytest.mark.asyncio
@@ -2068,6 +2070,9 @@ async def test_read_section_empty_segments_branch(monkeypatch):
     assert "=====" not in out["_chunks"]
     # Spec: citable is flipped unconditionally on the success path.
     assert reg["sec-empty"].citable is True
+    # A failed read stores no evidence — the error sentence must never
+    # masquerade as the section's grounding text.
+    assert reg["sec-empty"].full_text is None
 
 
 @pytest.mark.asyncio

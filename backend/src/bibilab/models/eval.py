@@ -8,7 +8,9 @@ class EvalLLMOverride(BaseModel):
     omitted field inherits the backend's configured value (see
     eval.py:_merge_ai_config)."""
 
-    protocol: str | None = None
+    # Literal, not free str: every dispatch downstream is `== "anthropic" else
+    # <openai branch>`, so a typo would silently pick the wrong wire protocol.
+    protocol: Literal["openai", "anthropic"] | None = None
     model: str | None = None
     api_key: str | None = None
     base_url: str | None = None
@@ -48,6 +50,7 @@ class EvalFindPassagesCall(BaseModel):
 
 class EvalReadSectionCall(BaseModel):
     tool_name: Literal["read_section"] = "read_section"
+    index: int
     section_id: str
     source_id: str
     source_title: str

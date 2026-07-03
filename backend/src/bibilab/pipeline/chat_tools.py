@@ -52,11 +52,13 @@ class CitationRegistryEntry:
     timestamp_end: float | None = None
     rerank_score: float | None = None
     preview: str | None = None
-    # Full evidence text shown to the LLM for this section — all joined chunk
-    # fragments (find_passages) or the section summary (outline-only, no chunk
-    # hit). Unlike `preview` (first chunk only, for the SPA ledger hover), this
-    # is the complete grounding text, consumed by the eval endpoint for
-    # groundedness scoring. See _build_fenced_sections.
+    # Full evidence text shown to the LLM for this section — everything under
+    # the fence header (summary + joined chunk fragments for find_passages,
+    # header-less verbatim body for read_section). Unlike `preview` (first
+    # chunk only, for the SPA ledger hover), this is the complete grounding
+    # text, consumed by the eval endpoint for groundedness scoring. Last
+    # writer wins across a turn — per-call consumers must snapshot at
+    # tool_result time. See _build_fenced_sections / execute_read_section.
     full_text: str | None = None
 
 
@@ -128,7 +130,11 @@ def _build_fenced_sections(
         body = _join_section_fragments(chunks_by_index.get(idx, []))
         if body:
             parts.append(body)
-        entry.full_text = body or summary or ""
+        # Everything below the fence header — summary AND fragments — is
+        # grounding text the LLM saw, so full_text carries all of it. Dropping
+        # the summary when chunks exist would make a summary-derived claim
+        # grade as ungrounded against this field.
+        entry.full_text = "\n".join(parts[1:])
         blocks.append("\n".join(parts))
     return "\n\n".join(blocks)
 
@@ -268,13 +274,18 @@ def _filter_sources_by_facets(
     return [sid for sid in source_ids if sid in facets and all(facets[sid].get(k) == v for k, v in predicates.items())]
 
 
-async def _build_section_narrative(entry: CitationRegistryEntry) -> str:
+async def _build_section_narrative(entry: CitationRegistryEntry) -> tuple[str, str | None]:
     """One section's verbatim speaker-turn body, bounded by its seg range,
-    rendered with the section's own citation index."""
+    rendered with the section's own citation index.
+
+    Returns (llm_text, evidence_body): evidence_body is the header-less
+    verbatim body for the registry's full_text, or None when the read failed
+    (missing section / no transcript) — an error sentence must never become a
+    section's grounding evidence."""
     rows = await get_sections(entry.source_id)
     sec = next((r for r in rows if r["id"] == entry.section_id), None)
     if sec is None:
-        return f"section [{entry.index}] not found."
+        return f"section [{entry.index}] not found.", None
     seg_rows = await get_segments_for_ranges([(entry.source_id, sec["seg_start"], sec["seg_end"])])
     if not seg_rows:
         # Empty-transcript edge: SUPPRESS the header — it only frames a body,
@@ -282,13 +293,14 @@ async def _build_section_narrative(entry: CitationRegistryEntry) -> str:
         # already has from the fence). Return the explicit fact ONLY.
         return (
             f"section [{entry.index}] has no transcript available "
-            "(it may still be processing, or transcription may have failed)."
+            "(it may still be processing, or transcription may have failed).",
+            None,
         )
     segs = rows_to_segments(seg_rows)
     ns = build_speaker_namespace(segs)
     header = f'===== [{entry.index}] "{entry.title}" · Section {entry.seq} ====='
     body = format_turns(segs, include_time=True, citation_index=entry.index, speaker_namespace=ns)
-    return header + "\n\n" + body
+    return header + "\n\n" + body, body
 
 
 def _read_section_error(msg: str) -> dict:
@@ -331,13 +343,16 @@ async def execute_read_section(
     entry = next((e for e in registry.values() if e.index == idx and e.source_id in source_ids), None)
     if entry is None:
         return _read_section_error(f"No section [{idx}] in this conversation. Call find_passages first.")
-    narrative = await _build_section_narrative(entry)
+    narrative, evidence = await _build_section_narrative(entry)
     entry.citable = True
     # Mirrors the find_passages side (_build_fenced_sections): the registry
     # entry carries the full evidence text regardless of which tool surfaced
     # it, so a consumer reading the registry never needs the raw (and
-    # client-stripped) tool result to get grounding text.
-    entry.full_text = narrative
+    # client-stripped) tool result to get grounding text. Header-less, and
+    # only on a successful read — a failed read must not clobber evidence a
+    # prior find_passages call recorded, nor store an error sentence as text.
+    if evidence is not None:
+        entry.full_text = evidence
     logger.info("read_section: idx=%d section=%s source=%s", idx, entry.section_id, entry.source_id)
     return {
         "_chunks": narrative,
@@ -584,6 +599,13 @@ async def execute_find_passages(
     no_coverage_fact = "" if result.chunks else "find_passages found no relevant excerpts for this query.\n\n"
     no_match_fact = f"{_NO_MATCH_NOTE}\n\n" if facet_no_match else ""
 
+    # Rendered unconditionally, not just when shown to the LLM: the render is
+    # also what populates entry.full_text, and outline-registered sections land
+    # in section_coverage even when dedup_all_shown suppresses the LLM-facing
+    # text — skipping it would leave their evidence empty for registry
+    # consumers (the eval endpoint).
+    fenced_sections = _build_fenced_sections(chunks_by_index, summaries_by_index, registry)
+
     return {
         "query": query,
         "tool_name": FIND_PASSAGES_TOOL.name,
@@ -617,7 +639,7 @@ async def execute_find_passages(
             + (
                 "All matching passages for this query were already retrieved earlier this turn.\n\n"
                 if dedup_all_shown
-                else _build_fenced_sections(chunks_by_index, summaries_by_index, registry)
+                else fenced_sections
             )
         ),
         "_turn_indices": turn_indices,

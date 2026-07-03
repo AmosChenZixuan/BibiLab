@@ -6,10 +6,10 @@ ledger `run_chat_turn` persists."""
 
 import json
 import logging
-import re
 import time
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import ValidationError
 
 from bibilab.config import AIConfig, BibilabConfig, deep_merge, get_config
 from bibilab.db import get_list, get_sources_for_list
@@ -29,13 +29,19 @@ from bibilab.pipeline.chat_tools import (
     execute_tool,
 )
 from bibilab.routers._model_gate import require_models_present
-from bibilab.routers.chat import build_grounding_prompt, stream_with_tools
+from bibilab.routers.chat import (
+    SSE_EVENT_CITATION,
+    SSE_EVENT_DELTA,
+    SSE_EVENT_ERROR,
+    SSE_EVENT_TOOL_CALL_START,
+    SSE_EVENT_TOOL_RESULT,
+    build_grounding_prompt,
+    stream_with_tools,
+)
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
-
-_CITATION_INDEX_RE = re.compile(r"\[(\d+)\]")
 
 
 def _merge_ai_config(base: AIConfig, override: EvalLLMOverride | None) -> AIConfig:
@@ -44,12 +50,16 @@ def _merge_ai_config(base: AIConfig, override: EvalLLMOverride | None) -> AIConf
     exposes the fields an eval framework needs to A/B-test."""
     if override is None:
         return base
-    return AIConfig(**deep_merge(base.model_dump(), override.model_dump(exclude_none=True)))
+    try:
+        return AIConfig(**deep_merge(base.model_dump(), override.model_dump(exclude_none=True)))
+    except ValidationError as e:
+        # Cross-field constraint violated (e.g. max_output_tokens >= the
+        # non-overridable context_window): a caller input problem, not a
+        # server fault — surface it as 422, not an unclassified 500.
+        raise HTTPException(status_code=422, detail=str(e)) from e
 
 
-def _build_find_passages_call(
-    result: dict, registry: dict[str, CitationRegistryEntry], cited: set[int]
-) -> EvalFindPassagesCall:
+def _build_find_passages_call(result: dict, registry: dict[str, CitationRegistryEntry]) -> EvalFindPassagesCall:
     sections = []
     for s in result.get("section_coverage", []):
         entry = registry.get(s["section_id"])
@@ -65,7 +75,8 @@ def _build_find_passages_call(
                 timestamp_end=entry.timestamp_end,
                 rerank_score=entry.rerank_score,
                 full_text=entry.full_text or "",
-                cited=entry.index in cited,
+                # Patched after the stream ends, once every citation event is in.
+                cited=False,
             )
         )
     return EvalFindPassagesCall(
@@ -80,21 +91,20 @@ def _build_find_passages_call(
     )
 
 
-def _build_read_section_call(
-    result: dict, registry: dict[str, CitationRegistryEntry], cited: set[int]
-) -> EvalReadSectionCall | None:
-    source_id = result.get("source_id")
-    if not source_id:
+def _build_read_section_call(result: dict, registry: dict[str, CitationRegistryEntry]) -> EvalReadSectionCall | None:
+    if not result.get("source_id"):
         # Resolution error (bad/unknown index) — nothing was read, no row.
         return None
-    section_id = result.get("section_id", "")
-    entry = registry.get(section_id)
+    entry = registry.get(result.get("section_id", ""))
+    if entry is None:
+        return None
     return EvalReadSectionCall(
-        section_id=str(section_id),
-        source_id=source_id,
-        source_title=result.get("source_title", ""),
-        full_text=(entry.full_text if entry else None) or "",
-        cited=entry is not None and entry.index in cited,
+        index=entry.index,
+        section_id=str(entry.section_id),
+        source_id=entry.source_id,
+        source_title=entry.title,
+        full_text=entry.full_text or "",
+        cited=False,
     )
 
 
@@ -125,7 +135,8 @@ async def run_chat_eval(
     messages = [{"role": "user", "content": request.query}]
 
     answer_parts: list[str] = []
-    tool_results: list[dict] = []
+    cited_indices: set[int] = set()
+    tool_calls: list[EvalFindPassagesCall | EvalReadSectionCall] = []
     stats: dict = {}
 
     start = time.monotonic()
@@ -140,37 +151,57 @@ async def run_chat_eval(
             response_language=response_language,
             stats=stats,
         ):
-            if event.type == "delta" and event.content:
+            if event.type == SSE_EVENT_DELTA and event.content:
                 answer_parts.append(event.content)
-            elif event.type == "citation":
+            elif event.type == SSE_EVENT_CITATION:
                 data = json.loads(event.content)
+                cited_indices.add(data["index"])
                 answer_parts.append(f"[{data['index']}]")
-            elif event.type == "tool_result":
-                tool_results.append(json.loads(event.content))
-            elif event.type == "error":
-                # A tool call failed inside stream_with_tools (see its
-                # SSE_EVENT_ERROR branch). Not an SDK exception type, so
-                # _classify_llm_error below falls through to "internal_error" —
-                # same code an unclassified pipeline exception gets.
-                raise RuntimeError(event.content)
+            elif event.type == SSE_EVENT_TOOL_CALL_START:
+                # Production (run_chat_turn) inserts a paragraph break when a
+                # tool call interrupts the stream; without it the preamble and
+                # the post-tool synthesis fuse into one run-on string (no
+                # whitespace at all in CJK) that no real client ever renders.
+                if answer_parts and answer_parts[-1] != "\n\n":
+                    answer_parts.append("\n\n")
+            elif event.type == SSE_EVENT_TOOL_RESULT:
+                # Build the row NOW, not after the stream: full_text on the
+                # shared registry is last-writer-wins, so a later call that
+                # re-surfaces the same section would rewrite the evidence
+                # this call actually showed the LLM.
+                parsed = json.loads(event.content)
+                call: EvalFindPassagesCall | EvalReadSectionCall | None = None
+                if parsed["name"] == FIND_PASSAGES_TOOL.name:
+                    call = _build_find_passages_call(parsed["result"], citation_registry)
+                elif parsed["name"] == READ_SECTION_TOOL.name:
+                    call = _build_read_section_call(parsed["result"], citation_registry)
+                if call is not None:
+                    tool_calls.append(call)
+            elif event.type == SSE_EVENT_ERROR:
+                # A tool call failed inside stream_with_tools. Production
+                # records this turn as "tool_error" — keep the codes aligned
+                # so an eval harness can tell a retrieval failure (or a
+                # model-emitted malformed tool call) from a backend bug.
+                raise HTTPException(status_code=500, detail={"error": "tool_error"})
+    except HTTPException:
+        raise
     except Exception as e:  # noqa: BLE001 — classified below, mirrors run_chat_turn's producer catch
         logger.exception("eval_run_chat pipeline failed list_id=%s", request.list_id)
         raise HTTPException(status_code=500, detail={"error": _classify_llm_error(e)}) from e
 
     latency_ms = int((time.monotonic() - start) * 1000)
     answer = "".join(answer_parts)
-    cited_indices = {int(m) for m in _CITATION_INDEX_RE.findall(answer)}
 
-    tool_calls: list[EvalFindPassagesCall | EvalReadSectionCall] = []
-    for parsed in tool_results:
-        name = parsed["name"]
-        result = parsed["result"]
-        if name == FIND_PASSAGES_TOOL.name:
-            tool_calls.append(_build_find_passages_call(result, citation_registry, cited_indices))
-        elif name == READ_SECTION_TOOL.name:
-            call = _build_read_section_call(result, citation_registry, cited_indices)
-            if call is not None:
-                tool_calls.append(call)
+    # cited comes from the citation events — the pipeline's authoritative
+    # judgment of what rendered as a citation — never from re-parsing [N] out
+    # of the answer text, where a marker the parser rejected (hallucinated or
+    # non-citable index, passed through as plain text) would false-positive.
+    for call in tool_calls:
+        if isinstance(call, EvalFindPassagesCall):
+            for section in call.sections:
+                section.cited = section.index in cited_indices
+        else:
+            call.cited = call.index in cited_indices
 
     return EvalChatResponse(
         answer=answer,
