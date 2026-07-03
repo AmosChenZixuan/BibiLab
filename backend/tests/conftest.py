@@ -72,6 +72,8 @@ def mock_call_llm():
         # re-import binds a separate name, so patching the source module
         # alone doesn't reach it. Patch the re-import site too.
         patch("bibilab.pipeline.chat_summary._call_llm", mock),
+        # routers/eval.py (POST /eval/llm) re-imports it the same way.
+        patch("bibilab.routers.eval._call_llm", mock),
     ):
         yield mock
 
