@@ -50,6 +50,12 @@ async def test_get_source_returns_transcript(client: httpx.AsyncClient, tmp_bibi
     assert data["cover_url"] == "https://example.com/cover.jpg"
     assert data["video_id"] == video_id
 
+    # include_time=false: same turns without time labels — the view the eval
+    # framework feeds to case-generation prompts.
+    resp = await client.get(f"/sources/{source_id}", params={"include_time": "false"})
+    assert resp.status_code == 200
+    assert resp.json()["transcript"] == "[SPK?] hello transcript"
+
 
 @pytest.mark.asyncio
 async def test_get_source_cover(client: httpx.AsyncClient, tmp_bibilab_home: Path):
