@@ -1673,7 +1673,8 @@ async def test_find_passages_full_text_joins_all_section_chunks(tmp_bibilab_home
     from bibilab.config import AIConfig, BackendConfig, BibilabConfig
     from bibilab.db import bootstrap_db, create_list, get_sections
     from bibilab.pipeline import chat_tools
-    from bibilab.pipeline.embed import RetrievalResult, RetrievedChunk, SourceHit
+    from bibilab.pipeline.embed import RetrievalResult, SourceHit
+    from tests.factories import make_retrieved_chunk, make_seg_rows
 
     await bootstrap_db()
     await create_list("L1", "Test List", "2025-01-01T00:00:00Z")
@@ -1689,28 +1690,8 @@ async def test_find_passages_full_text_joins_all_section_chunks(tmp_bibilab_home
     async def fake_retrieve(query_text, source_ids, cfg, top_k, **kwargs):
         return RetrievalResult(
             chunks=[
-                RetrievedChunk(
-                    content="raw-a",
-                    video_title="Full Text Video",
-                    timestamp_start=0.0,
-                    timestamp_end=1.0,
-                    source_id=source_id,
-                    distance=0.1,
-                    score=0.9,
-                    seg_start=0,
-                    seg_end=1,
-                ),
-                RetrievedChunk(
-                    content="raw-b",
-                    video_title="Full Text Video",
-                    timestamp_start=10.0,
-                    timestamp_end=12.0,
-                    source_id=source_id,
-                    distance=0.2,
-                    score=0.8,
-                    seg_start=10,
-                    seg_end=12,
-                ),
+                make_retrieved_chunk(source_id, 0, 1, score=0.9, title="Full Text Video"),
+                make_retrieved_chunk(source_id, 10, 12, score=0.8, title="Full Text Video"),
             ],
             candidates_evaluated=2,
             sources_with_hits=1,
@@ -1718,19 +1699,8 @@ async def test_find_passages_full_text_joins_all_section_chunks(tmp_bibilab_home
             source_coverage=[SourceHit(source_id=source_id, video_title="Full Text Video", best_score=-0.9)],
         )
 
-    seg_rows = [
-        {
-            "source_id": source_id,
-            "seq": i,
-            "start_s": float(i),
-            "end_s": float(i + 1),
-            "speaker": "SPK_0",
-            "text": f"sentence {i} about the topic discussed",
-        }
-        for i in range(30)
-    ]
     monkeypatch.setattr(chat_tools, "retrieve", fake_retrieve)
-    monkeypatch.setattr(chat_tools, "get_segments_for_ranges", AsyncMock(return_value=seg_rows))
+    monkeypatch.setattr(chat_tools, "get_segments_for_ranges", AsyncMock(return_value=make_seg_rows(source_id)))
     monkeypatch.setattr(chat_tools, "get_sections", AsyncMock(return_value=section_rows))
 
     cfg = BibilabConfig(

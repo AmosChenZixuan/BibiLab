@@ -37,7 +37,6 @@ async def test_eval_endpoint_trivial_query_returns_single_json_response(client, 
     assert body["tool_calls"] == []
     assert body["iterations_used"] == 1
     assert body["synthesis_forced"] is False
-    assert body["detected_language"] == "en"
     assert body["latency_ms"] >= 0
 
 
@@ -113,9 +112,8 @@ async def test_eval_endpoint_language_null_defaults_en(client, mock_stream_llm):
         backend=BackendConfig(),
     )
     request = EvalChatRequest(query="hi", list_id=list_id, language=None)
-    response = await run_chat_eval(request, cfg)
+    await run_chat_eval(request, cfg)
 
-    assert response.detected_language == "en"
     assert captured_system[0].rstrip().endswith("Respond in English.")
 
 
@@ -163,17 +161,13 @@ async def test_eval_endpoint_retrieval_keeps_full_section_set_with_full_text_and
     from bibilab.db import get_sections
     from bibilab.pipeline import chat_tools
     from bibilab.pipeline.digest import SectionDigest
-    from bibilab.pipeline.embed import RetrievalResult, RetrievedChunk, SourceHit
+    from bibilab.pipeline.embed import RetrievalResult, SourceHit
     from bibilab.pipeline.section import Section
-    from bibilab.pipeline.transcribe import WhisperSegment
-    from tests.factories import SourceFactory
+    from tests.factories import SourceFactory, make_retrieved_chunk, make_seg_rows, make_whisper_segments
 
     list_id = await create_list(client, "L")
 
-    segs = [
-        WhisperSegment(start=float(i), end=float(i + 1), text=f"sentence {i} about the topic", speaker="SPK_0")
-        for i in range(30)
-    ]
+    segs = make_whisper_segments()
     sections = [
         Section(seg_start=0, seg_end=14, token_count=100, timestamp_start=0.0, timestamp_end=15.0),
         Section(seg_start=15, seg_end=29, token_count=100, timestamp_start=15.0, timestamp_end=30.0),
@@ -196,40 +190,10 @@ async def test_eval_endpoint_retrieval_keeps_full_section_set_with_full_text_and
         return RetrievalResult(
             chunks=[
                 # Two chunks in section 1 (index 1) — full_text must join both.
-                RetrievedChunk(
-                    content="raw-a",
-                    video_title="Eval Full Text Video",
-                    timestamp_start=0.0,
-                    timestamp_end=1.0,
-                    source_id=source_id,
-                    distance=0.1,
-                    score=0.9,
-                    seg_start=0,
-                    seg_end=1,
-                ),
-                RetrievedChunk(
-                    content="raw-b",
-                    video_title="Eval Full Text Video",
-                    timestamp_start=10.0,
-                    timestamp_end=12.0,
-                    source_id=source_id,
-                    distance=0.2,
-                    score=0.8,
-                    seg_start=10,
-                    seg_end=12,
-                ),
+                make_retrieved_chunk(source_id, 0, 1, score=0.9, title="Eval Full Text Video"),
+                make_retrieved_chunk(source_id, 10, 12, score=0.8, title="Eval Full Text Video"),
                 # One chunk in section 2 (index 2) — never cited by the LLM.
-                RetrievedChunk(
-                    content="raw-c",
-                    video_title="Eval Full Text Video",
-                    timestamp_start=16.0,
-                    timestamp_end=17.0,
-                    source_id=source_id,
-                    distance=0.3,
-                    score=0.7,
-                    seg_start=16,
-                    seg_end=17,
-                ),
+                make_retrieved_chunk(source_id, 16, 17, score=0.7, title="Eval Full Text Video"),
             ],
             candidates_evaluated=3,
             sources_with_hits=1,
@@ -237,19 +201,8 @@ async def test_eval_endpoint_retrieval_keeps_full_section_set_with_full_text_and
             source_coverage=[SourceHit(source_id=source_id, video_title="Eval Full Text Video", best_score=-0.9)],
         )
 
-    seg_rows = [
-        {
-            "source_id": source_id,
-            "seq": i,
-            "start_s": float(i),
-            "end_s": float(i + 1),
-            "speaker": "SPK_0",
-            "text": f"sentence {i} about the topic",
-        }
-        for i in range(30)
-    ]
     monkeypatch.setattr(chat_tools, "retrieve", fake_retrieve)
-    monkeypatch.setattr(chat_tools, "get_segments_for_ranges", AsyncMock(return_value=seg_rows))
+    monkeypatch.setattr(chat_tools, "get_segments_for_ranges", AsyncMock(return_value=make_seg_rows(source_id)))
     monkeypatch.setattr(chat_tools, "get_sections", AsyncMock(return_value=section_rows))
 
     call_count = 0
@@ -354,17 +307,13 @@ async def test_eval_endpoint_multi_call_turn_keeps_per_call_evidence(client, moc
     from bibilab.db import get_sections
     from bibilab.pipeline import chat_tools
     from bibilab.pipeline.digest import SectionDigest
-    from bibilab.pipeline.embed import RetrievalResult, RetrievedChunk, SourceHit
+    from bibilab.pipeline.embed import RetrievalResult, SourceHit
     from bibilab.pipeline.section import Section
-    from bibilab.pipeline.transcribe import WhisperSegment
-    from tests.factories import SourceFactory
+    from tests.factories import SourceFactory, make_retrieved_chunk, make_seg_rows, make_whisper_segments
 
     list_id = await create_list(client, "L")
 
-    segs = [
-        WhisperSegment(start=float(i), end=float(i + 1), text=f"sentence {i} about the topic", speaker="SPK_0")
-        for i in range(30)
-    ]
+    segs = make_whisper_segments()
     source_id = await SourceFactory.build(
         list_id,
         video_id="BVevalmulti",
@@ -375,19 +324,6 @@ async def test_eval_endpoint_multi_call_turn_keeps_per_call_evidence(client, moc
     )
     section_rows = await get_sections(source_id)
 
-    def make_chunk(seg_start, seg_end, score):
-        return RetrievedChunk(
-            content=f"raw-{seg_start}",
-            video_title="Multi Call Video",
-            timestamp_start=float(seg_start),
-            timestamp_end=float(seg_end + 1),
-            source_id=source_id,
-            distance=0.1,
-            score=score,
-            seg_start=seg_start,
-            seg_end=seg_end,
-        )
-
     retrieve_count = 0
 
     async def fake_retrieve(query_text, source_ids, cfg, top_k, **kwargs):
@@ -395,7 +331,14 @@ async def test_eval_endpoint_multi_call_turn_keeps_per_call_evidence(client, moc
         retrieve_count += 1
         # Call 1 surfaces two chunks; call 2 re-hits the same section with a
         # DIFFERENT (unseen) chunk, which rewrites the registry's full_text.
-        chunks = [make_chunk(0, 1, 0.9), make_chunk(10, 12, 0.8)] if retrieve_count == 1 else [make_chunk(5, 6, 0.7)]
+        chunks = (
+            [
+                make_retrieved_chunk(source_id, 0, 1, score=0.9, title="Multi Call Video"),
+                make_retrieved_chunk(source_id, 10, 12, score=0.8, title="Multi Call Video"),
+            ]
+            if retrieve_count == 1
+            else [make_retrieved_chunk(source_id, 5, 6, score=0.7, title="Multi Call Video")]
+        )
         return RetrievalResult(
             chunks=chunks,
             candidates_evaluated=len(chunks),
@@ -404,19 +347,8 @@ async def test_eval_endpoint_multi_call_turn_keeps_per_call_evidence(client, moc
             source_coverage=[SourceHit(source_id=source_id, video_title="Multi Call Video", best_score=-0.9)],
         )
 
-    seg_rows = [
-        {
-            "source_id": source_id,
-            "seq": i,
-            "start_s": float(i),
-            "end_s": float(i + 1),
-            "speaker": "SPK_0",
-            "text": f"sentence {i} about the topic",
-        }
-        for i in range(30)
-    ]
     monkeypatch.setattr(chat_tools, "retrieve", fake_retrieve)
-    monkeypatch.setattr(chat_tools, "get_segments_for_ranges", AsyncMock(return_value=seg_rows))
+    monkeypatch.setattr(chat_tools, "get_segments_for_ranges", AsyncMock(return_value=make_seg_rows(source_id)))
     monkeypatch.setattr(chat_tools, "get_sections", AsyncMock(return_value=section_rows))
 
     llm_call_count = 0

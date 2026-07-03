@@ -208,6 +208,5 @@ async def run_chat_eval(
         tool_calls=tool_calls,
         iterations_used=stats.get("iterations", 0),
         synthesis_forced=stats.get("synthesis_forced", False),
-        detected_language=response_language,
         latency_ms=latency_ms,
     )

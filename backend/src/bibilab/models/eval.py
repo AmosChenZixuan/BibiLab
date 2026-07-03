@@ -66,5 +66,4 @@ class EvalChatResponse(BaseModel):
     tool_calls: list[EvalToolCall]
     iterations_used: int
     synthesis_forced: bool
-    detected_language: str | None
     latency_ms: int
