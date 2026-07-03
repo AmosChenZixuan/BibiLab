@@ -1,5 +1,5 @@
 import uuid
-from eval.models import EvalCase, EvalSet, RunCaseResult, EvalRun, GradeResult, GradedRun
+from eval.models import EvalCase, EvalSet, RunCaseResult, GradeResult
 
 
 def test_eval_case_creation():

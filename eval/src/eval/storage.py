@@ -4,8 +4,7 @@ import json
 import os
 from pathlib import Path
 
-from bibilab.config import bibilab_home
-
+from eval.config import bibilab_home
 from eval.models import EvalSet, EvalRun, GradedRun
 
 

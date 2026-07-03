@@ -21,9 +21,13 @@ from eval.storage import (
 
 
 def _pick_list() -> str | None:
-    from bibilab.db import get_all_lists
+    from eval import api
 
-    rows = asyncio.run(get_all_lists())
+    try:
+        rows = api.get_lists()
+    except Exception as e:
+        click.echo(f"Error: backend unreachable: {e}", err=True)
+        return None
     if not rows:
         click.echo("No lists found. Import videos first.")
         return None
@@ -196,12 +200,26 @@ def main(ctx):
 # ── shared execution ─────────────────────────────────────────────────
 
 
+def _llm_override(profile) -> dict | None:
+    """ProfileSnapshot → request `llm` override; None profile = no override
+    (the backend serves the call with its own configured LLM). Empty strings
+    count as unset too — a blank api_key/model must inherit the backend's
+    value, not override it with ""."""
+    if profile is None:
+        return None
+    return {k: v for k, v in profile.model_dump().items() if v not in (None, "")} or None
+
+
+def _profile_label(profile) -> str:
+    return profile.model if profile else "(backend default)"
+
+
 def _do_create(list_id: str, cats: list[str], floor: int):
+    from eval import api
     from eval.generate import generate_eval_set, resolve_counts
-    from bibilab.db import get_sources_for_list
 
     try:
-        ai_cfg = resolve_profile("generate")
+        profile = resolve_profile("generate")
     except KeyError as e:
         click.echo(f"Error: {e}", err=True)
         sys.exit(1)
@@ -215,9 +233,8 @@ def _do_create(list_id: str, cats: list[str], floor: int):
     )
 
     try:
-        rows = asyncio.run(get_sources_for_list(list_id))
-        all_sources = [dict(r) for r in rows]
-        es = generate_eval_set(list_id, all_sources, counts, ai_cfg, language)
+        all_sources = api.get_sources(list_id)
+        es = generate_eval_set(list_id, all_sources, counts, _llm_override(profile), language)
     except Exception as e:
         click.echo(f"Error generating eval set: {e}", err=True)
         sys.exit(1)
@@ -234,19 +251,21 @@ def _do_run(eval_set_id: str, model: str | None, concurrency: int | None):
     from eval.runner import run_eval, DEFAULT_CONCURRENCY
 
     try:
-        ai_cfg = resolve_profile("test")
+        profile = resolve_profile("test")
     except KeyError as e:
         click.echo(f"Error: {e}", err=True)
         sys.exit(1)
 
+    llm = _llm_override(profile)
     if model:
-        ai_cfg.model = model
+        llm = {**(llm or {}), "model": model}
 
     conc = concurrency if concurrency is not None else DEFAULT_CONCURRENCY
-    click.echo(f"Running eval with model: {ai_cfg.model} (lang={get_language()}, concurrency={conc})...")
+    label = model or _profile_label(profile)
+    click.echo(f"Running eval with model: {label} (lang={get_language()}, concurrency={conc})...")
 
     try:
-        run_result = asyncio.run(run_eval(eval_set_id, ai_cfg, concurrency=conc))
+        run_result = asyncio.run(run_eval(eval_set_id, llm, concurrency=conc))
     except Exception as e:
         click.echo(f"Error running eval: {e}", err=True)
         sys.exit(1)
@@ -266,16 +285,16 @@ def _do_grade(run_id: str):
     from eval.reporter import aggregate_scores, format_report_text, count_failed_grades
 
     try:
-        ai_cfg = resolve_profile("grade")
+        profile = resolve_profile("grade")
     except KeyError as e:
         click.echo(f"Error: {e}", err=True)
         sys.exit(1)
 
     language = get_language()
-    click.echo(f"Grading run {run_id} with {ai_cfg.model} (lang={language})...")
+    click.echo(f"Grading run {run_id} with {_profile_label(profile)} (lang={language})...")
 
     try:
-        gr = asyncio.run(grade_run(run_id, ai_cfg, language))
+        gr = asyncio.run(grade_run(run_id, _llm_override(profile), language))
     except Exception as e:
         click.echo(f"Error grading run: {e}", err=True)
         sys.exit(1)
@@ -292,7 +311,7 @@ def _do_grade(run_id: str):
         format_report_text(
             es.id, len(gr.grades),
             eval_run.test_profile.model,
-            ai_cfg.model, agg,
+            gr.grade_profile.model, agg,
         )
     )
     if any(failed.values()):

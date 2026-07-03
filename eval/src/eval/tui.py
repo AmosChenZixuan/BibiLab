@@ -303,7 +303,7 @@ class ConfigApp(App):
         self._refresh()
 
     def _rebuild_rows(self):
-        rows: list[_Row] = [_Row("language")]
+        rows: list[_Row] = [_Row("language"), _Row("backend_url")]
         for name in self.profile_names:
             rows.append(_Row("profile", profile=name))
             entry = self.cfg["profiles"].get(name)
@@ -330,6 +330,14 @@ class ConfigApp(App):
 
             if row.kind == "language":
                 main.mount(Static(f"{sel} Language: {lang}    (space: zh↔en)", classes=cls))
+            elif row.kind == "backend_url":
+                if self._editing_field == ("", "backend_url"):
+                    main.mount(Static(f"{sel} Backend URL:", classes=cls))
+                    inp = Input(value=self.cfg.get("backend_url", ""), id="field-edit")
+                    main.mount(inp)
+                    inp.focus()
+                else:
+                    main.mount(Static(f"{sel} Backend URL: {self.cfg.get('backend_url', '')}    (enter: edit)", classes=cls))
                 main.mount(Static("Profiles", classes="section"))
             elif row.kind == "profile":
                 entry = self.cfg["profiles"].get(row.profile)
@@ -398,13 +406,16 @@ class ConfigApp(App):
 
     def _backend_seed(self) -> dict:
         try:
-            from bibilab.config import load_config
-            ai = load_config().ai
+            from eval import api
+            ai = api.get_backend_ai()
             return {
-                "protocol": ai.protocol,
-                "model": ai.model,
-                "base_url": ai.base_url,
-                "api_key": ai.api_key,
+                "protocol": ai.get("protocol", "openai"),
+                "model": ai.get("model", ""),
+                "base_url": ai.get("base_url") or "",
+                # The config endpoint masks api_key. Leave it empty: an empty
+                # override field is treated as unset, so calls inherit the
+                # backend's real key.
+                "api_key": "",
             }
         except Exception as e:
             self.notify(f"Backend config unavailable: {e}", severity="warning", timeout=5)
@@ -415,6 +426,11 @@ class ConfigApp(App):
             self._commit_field()
             return
         row = self.rows[self.cursor]
+        if row.kind == "backend_url":
+            self._edit_backup = self.cfg.get("backend_url", "")
+            self._editing_field = ("", "backend_url")
+            self._refresh()
+            return
         if row.kind != "field":
             return
         entry = self.cfg["profiles"].get(row.profile) or {}
@@ -432,11 +448,16 @@ class ConfigApp(App):
             self.notify(f"Edit lost ({e}); restoring previous value.", severity="error", timeout=5)
             new_val = self._edit_backup
         profile, field = self._editing_field
-        entry = self.cfg["profiles"].get(profile)
-        if isinstance(entry, dict):
-            if entry.get(field, "") != new_val:
-                entry[field] = new_val
+        if not profile and field == "backend_url":
+            if self.cfg.get("backend_url", "") != new_val:
+                self.cfg["backend_url"] = new_val
                 self._dirty = True
+        else:
+            entry = self.cfg["profiles"].get(profile)
+            if isinstance(entry, dict):
+                if entry.get(field, "") != new_val:
+                    entry[field] = new_val
+                    self._dirty = True
         self._editing_field = None
         self._refresh()
 
