@@ -26,7 +26,7 @@ src/eval/
   config.py    Flat schema: three profiles (generate/test/grade, null=backend) + language (zh|en) + backend_url
   generate.py   LLM-supervised eval set generation per category
   tui.py        textual TUIs: ReviewApp (cases), ConfigApp (profiles + backend_url), ReportApp (report)
-  runner.py     run locked cases via POST /api/eval/run_chat; map_response builds RunCaseResult (llm_context ← sections[].full_text)
+  runner.py     run locked cases via POST /api/eval/run_chat; map_response builds RunCaseResult (llm_context ← response llm_context, the exact LLM-bound tool messages)
   grader.py     LLM-as-judge: 3 calls per case (context relevance, groundedness, answer relevance)
   reporter.py   aggregate scores, diff, JSON export
   dashboard.py  rich.live TaskDashboard (per-task spinner + sub-status + elapsed)
@@ -35,6 +35,7 @@ src/eval/
 
 ## Conventions
 
+- The target backend must serve `/api/*` — the Docker image and any SPA-built source run do; a bare `python -m bibilab.main` without a `web/dist` build mounts routes at the root only, so every eval call 404s.
 - Never `import bibilab` — all backend data and every LLM call goes through `api.py` over HTTP. LLM calls route through `POST /api/eval/llm` so provider requests are byte-identical to the backend's own (`_call_llm` runs server-side).
 - `resolve_profile(name)` returns `ProfileSnapshot | None` — None means "no `llm` override in the request", the backend serves the call with its own configured LLM. Empty-string profile fields also count as unset (a blank api_key must inherit the backend's key, not override it).
 - `get_response_language()` returns the language code ("zh"/"en") — sent as the `language` request field, which the grounding prompt keys on (not the display name)

@@ -78,6 +78,11 @@ EvalToolCall = Annotated[EvalFindPassagesCall | EvalReadSectionCall, Field(discr
 class EvalChatResponse(BaseModel):
     answer: str
     tool_calls: list[EvalToolCall]
+    # Exact LLM-bound tool message per tool execution, in call order — fence
+    # headers, facet notes, resolution-error narratives and all. This is what
+    # a grader must judge groundedness against; sections[].full_text is the
+    # header-less per-section slice of it.
+    llm_context: list[str]
     iterations_used: int
     synthesis_forced: bool
     latency_ms: int

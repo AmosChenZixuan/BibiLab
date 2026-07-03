@@ -81,6 +81,10 @@ _RUN_CHAT_BODY = {
     "iterations_used": 3,
     "synthesis_forced": False,
     "latency_ms": 1234,
+    "llm_context": [
+        '===== [1] "EP2" · Section 1 (0:00–0:15) =====\n[S1] Alice explains it.\n\n===== [2] "EP3" · Section 1 =====\n[S2] unrelated.',
+        '[1] "EP2" · Section 1 — full text:\n[S1] Alice explains it at length.',
+    ],
 }
 
 
@@ -88,12 +92,9 @@ def test_map_response_full_mapping():
     r = map_response("c1", _RUN_CHAT_BODY)
 
     assert r.answer == "Alice explains it in episode 2. [1]"
-    # llm_context: one entry per tool call in call order, built from full_text —
-    # the exact post-dedup grounding text the model read (grading parity).
-    assert r.llm_context == [
-        "===== [1] fence =====\n[S1] Alice explains it.\n\n===== [2] fence =====\n[S2] unrelated.",
-        "[S1] Alice explains it at length.",
-    ]
+    # llm_context passes through verbatim from the endpoint — the exact
+    # LLM-bound tool messages, fence headers included (grading parity).
+    assert r.llm_context == _RUN_CHAT_BODY["llm_context"]
     # citations: only cited sections, from the pipeline's cited flags.
     assert r.citations == [
         {"index": 1, "source_id": "src-a", "section_id": "sec-1"},

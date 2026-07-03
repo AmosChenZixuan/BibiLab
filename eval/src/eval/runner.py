@@ -25,25 +25,19 @@ _RAG_CALL_FIELDS = (
 def map_response(case_id: str, body: dict) -> RunCaseResult:
     """Map a /api/eval/run_chat response into a RunCaseResult.
 
-    llm_context gets one entry per tool call, in call order, built from the
-    sections' full_text — the exact post-dedup grounding text the model read
-    (the endpoint's HTTP replacement for the old in-process capture), so
-    grading judges against what the LLM actually saw.
+    llm_context comes straight from the endpoint's `llm_context` — the exact
+    LLM-bound tool message per call (fence headers, facet notes and all), so
+    grading judges against what the LLM actually read, not a reconstruction.
     """
     citations: list[dict] = []
     rag_calls: list[dict] = []
-    llm_context: list[str] = []
 
     for call in body.get("tool_calls", []):
         if call.get("tool_name") == "find_passages":
             sections = call.get("sections", [])
-            if sections:
-                llm_context.append("\n\n".join(s["full_text"] for s in sections))
             rag_calls.append({k: call.get(k) for k in _RAG_CALL_FIELDS})
             cited = [s for s in sections if s.get("cited")]
         else:  # read_section
-            if call.get("full_text"):
-                llm_context.append(call["full_text"])
             cited = [call] if call.get("cited") else []
         for s in cited:
             citations.append(
@@ -56,7 +50,7 @@ def map_response(case_id: str, body: dict) -> RunCaseResult:
         citations=citations,
         rag_calls=rag_calls,
         tool_blocks=body.get("tool_calls", []),
-        llm_context=llm_context,
+        llm_context=body.get("llm_context", []),
         # Whole-turn wall time including tool execution — LLM-only timing is
         # not recoverable over the sync JSON endpoint.
         llm_duration_ms=body.get("latency_ms", 0),

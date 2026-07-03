@@ -39,6 +39,7 @@ from bibilab.routers.chat import (
     SSE_EVENT_ERROR,
     SSE_EVENT_TOOL_CALL_START,
     SSE_EVENT_TOOL_RESULT,
+    _llm_tool_message_content,
     build_grounding_prompt,
     stream_with_tools,
 )
@@ -151,9 +152,15 @@ async def run_chat_eval(
     system_message = build_grounding_prompt(response_language=response_language)
 
     citation_registry: dict[str, CitationRegistryEntry] = {}
+    llm_context: list[str] = []
 
     async def execute_tool_bound(name: str, args: dict, **kwargs) -> dict:
-        return await execute_tool(tool_name=name, arguments=args, source_ids=source_ids, cfg=cfg, **kwargs)
+        result = await execute_tool(tool_name=name, arguments=args, source_ids=source_ids, cfg=cfg, **kwargs)
+        # Captured here because the tool_result SSE event strips _-prefixed
+        # fields: this is the exact message the LLM reads (fence headers,
+        # facet notes, resolution-error narratives), which a grader needs.
+        llm_context.append(_llm_tool_message_content(result))
+        return result
 
     tools = [FIND_PASSAGES_TOOL, READ_SECTION_TOOL]
     messages = [{"role": "user", "content": request.query}]
@@ -230,6 +237,7 @@ async def run_chat_eval(
     return EvalChatResponse(
         answer=answer,
         tool_calls=tool_calls,
+        llm_context=llm_context,
         iterations_used=stats.get("iterations", 0),
         synthesis_forced=stats.get("synthesis_forced", False),
         latency_ms=latency_ms,
