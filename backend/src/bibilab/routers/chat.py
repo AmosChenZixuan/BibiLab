@@ -380,6 +380,7 @@ async def stream_with_tools(
     tool_block_sink: list[dict] | None = None,
     messages_sink: list[dict] | None = None,
     response_language: str = "en",
+    stats: dict | None = None,
 ) -> AsyncGenerator[StreamEvent, None]:
     if registry is None:
         registry = {}
@@ -598,6 +599,9 @@ async def stream_with_tools(
         if messages_sink is not None:
             messages_sink.clear()
             messages_sink.extend(messages)
+        if stats is not None:
+            stats["iterations"] = iteration
+            stats["synthesis_forced"] = synthesis_directive_sent
 
 
 def _serialize_event_for_buffer(event: StreamEvent) -> dict | None:

@@ -118,6 +118,50 @@ class SourceFactory:
         return source_id
 
 
+def make_whisper_segments(n: int = 30) -> list[WhisperSegment]:
+    """1-second topic-mentioning sentence segments for seeding sources."""
+    return [
+        WhisperSegment(start=float(i), end=float(i + 1), text=f"sentence {i} about the topic", speaker="SPK_0")
+        for i in range(n)
+    ]
+
+
+def make_seg_rows(source_id: str, n: int = 30) -> list[dict]:
+    """Rows shaped like `get_segments_for_ranges` output, for mocking it."""
+    return [
+        {
+            "source_id": source_id,
+            "seq": i,
+            "start_s": float(i),
+            "end_s": float(i + 1),
+            "speaker": "SPK_0",
+            "text": f"sentence {i} about the topic",
+        }
+        for i in range(n)
+    ]
+
+
+def make_retrieved_chunk(source_id: str, seg_start: int, seg_end: int, *, score: float, title: str):
+    """A post-rerank RetrievedChunk for faking `retrieve` results; only the
+    seg range and score matter to consumers (rendering reconstructs text
+    from segments, not chunk content)."""
+    # Deferred like the test files' own embed imports, so importing factories
+    # never pulls the embedding stack at collection time.
+    from bibilab.pipeline.embed import RetrievedChunk
+
+    return RetrievedChunk(
+        content=f"raw-{seg_start}",
+        video_title=title,
+        timestamp_start=float(seg_start),
+        timestamp_end=float(seg_end + 1),
+        source_id=source_id,
+        distance=0.1,
+        score=score,
+        seg_start=seg_start,
+        seg_end=seg_end,
+    )
+
+
 class ConversationFactory:
     """Build a `conversations` row. Returns the new conversation_id."""
 

@@ -1665,6 +1665,65 @@ async def test_find_passages_registers_sections_not_sources(tmp_bibilab_home, mo
     assert "source_coverage" not in result
 
 
+@pytest.mark.asyncio
+async def test_find_passages_full_text_joins_all_section_chunks(tmp_bibilab_home, monkeypatch):
+    """full_text carries every chunk fenced under a section's [N], joined —
+    not just the first chunk, which is all `preview` captures (SPA ledger
+    hover only needs a taste, eval grading needs the whole thing)."""
+    from bibilab.config import AIConfig, BackendConfig, BibilabConfig
+    from bibilab.db import bootstrap_db, create_list, get_sections
+    from bibilab.pipeline import chat_tools
+    from bibilab.pipeline.embed import RetrievalResult, SourceHit
+    from tests.factories import make_retrieved_chunk, make_seg_rows
+
+    await bootstrap_db()
+    await create_list("L1", "Test List", "2025-01-01T00:00:00Z")
+    source_id = await _build_two_section_source(
+        "L1",
+        video_id="BVfulltext",
+        title="Full Text Video",
+    )
+    section_rows = await get_sections(source_id)
+    section1_id = section_rows[0]["id"]
+
+    # Two non-adjacent chunks, both inside section 1's seg range (0-14).
+    async def fake_retrieve(query_text, source_ids, cfg, top_k, **kwargs):
+        return RetrievalResult(
+            chunks=[
+                make_retrieved_chunk(source_id, 0, 1, score=0.9, title="Full Text Video"),
+                make_retrieved_chunk(source_id, 10, 12, score=0.8, title="Full Text Video"),
+            ],
+            candidates_evaluated=2,
+            sources_with_hits=1,
+            sources_total=1,
+            source_coverage=[SourceHit(source_id=source_id, video_title="Full Text Video", best_score=-0.9)],
+        )
+
+    monkeypatch.setattr(chat_tools, "retrieve", fake_retrieve)
+    monkeypatch.setattr(chat_tools, "get_segments_for_ranges", AsyncMock(return_value=make_seg_rows(source_id)))
+    monkeypatch.setattr(chat_tools, "get_sections", AsyncMock(return_value=section_rows))
+
+    cfg = BibilabConfig(
+        ai=AIConfig(protocol="openai", model="x", api_key="k", base_url=""),
+        backend=BackendConfig(),
+    )
+    registry: dict = {}
+    await chat_tools.execute_find_passages(
+        query="the topic discussed",
+        source_ids=[source_id],
+        cfg=cfg,
+        registry=registry,
+    )
+
+    entry = registry[section1_id]
+    assert entry.full_text is not None
+    assert "sentence 0" in entry.full_text
+    assert "sentence 10" in entry.full_text
+    assert entry.full_text != entry.preview
+    assert entry.preview is not None
+    assert "sentence 10" not in entry.preview
+
+
 # ---------------------------------------------------------------------------
 # Task 5: facet → full section OUTLINE
 # ---------------------------------------------------------------------------
@@ -1811,7 +1870,7 @@ class TestReadSectionUnitPaths:
         from bibilab.pipeline.chat_tools import CitationRegistryEntry, execute_read_section
 
         async def _fake_narrative(entry):
-            return f"BODY-{entry.index}"
+            return f"BODY-{entry.index}", f"BODY-{entry.index}"
 
         monkeypatch.setattr(chat_tools, "_build_section_narrative", _fake_narrative)
         # registry is keyed by section_id (a stringified sections.id row PK),
@@ -1906,6 +1965,11 @@ async def test_read_section_returns_bounded_verbatim(tmp_bibilab_home, monkeypat
     assert reg[section_ids[1]].citable is True
     # Header is the section fence format (matches T3's _build_section_fence_header).
     assert '===== [5] "Read Section Video" · Section 2' in body
+    # Registry entry carries the header-less verbatim body (mirrors
+    # find_passages' full_text — a consumer never needs the raw,
+    # client-stripped tool result, and a fence header is framing, not evidence).
+    assert reg[section_ids[1]].full_text == body.split("\n\n", 1)[1]
+    assert not reg[section_ids[1]].full_text.startswith("=====")
 
 
 @pytest.mark.asyncio
@@ -1976,6 +2040,9 @@ async def test_read_section_empty_segments_branch(monkeypatch):
     assert "=====" not in out["_chunks"]
     # Spec: citable is flipped unconditionally on the success path.
     assert reg["sec-empty"].citable is True
+    # A failed read stores no evidence — the error sentence must never
+    # masquerade as the section's grounding text.
+    assert reg["sec-empty"].full_text is None
 
 
 @pytest.mark.asyncio

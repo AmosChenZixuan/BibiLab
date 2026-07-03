@@ -22,6 +22,7 @@ uv run python -m bibilab.main       # Start server (localhost:8765)
 routers/          — one APIRouter per module; aggregated in main.py
   auth.py           /auth/bilibili/* (QR login, cookie management)
   chat.py           /lists/:id/chat (SSE streaming + cancel), /lists/:id/chat/:msg_id/stream (reattach), /lists/:id/conversation (CRUD), /debug/messages/:msg_id (prompt-trace dump read, debug_router); stream_with_tools loop; classify_error (SDK exception → i18n error code)
+  eval.py           /eval/run_chat (stateless one-shot JSON chat for eval frameworks; no persistence — see "Eval endpoint" below)
   lists.py          /lists/* (CRUD)
   ingest.py         /ingest/url (POST)
   sources.py        /sources/* (source content, covers, sections list, rerun, PATCH facets manual edit)
@@ -241,6 +242,10 @@ stream_with_tools(stream_llm loop):
 - **Final `rag` event**: In the `finally` block, after `context[]` is reconstructed from the citation registry, `run_chat_turn` emits one `rag` SSE event carrying the authoritative persisted-shape `rag.calls` just before the terminal event. The client replaces its incrementally-built ledger so expand works post-stream without a manual reload (the streaming `tool_result` payload omits `context[]`).
 - **Lifecycle**: Startup sweep flips leftover in-flight rows (`'streaming'` + `'pending'`, via `IN_FLIGHT_MESSAGE_STATUSES`) to `failed`. Shutdown cancels all tasks, drains with 5s timeout. Buffer eviction fires 60s after terminal status.
 - Compression: triggered when message count > 30; keeps sliding window of 10; summarizes older messages via `_call_llm` in `asyncio.create_task`. The summary is prose only — the compression prompt does **not** preserve `[N]` markers (deliberate; see `docs/citation_system.md`). Only post-window messages retain live citations; the summary is injected into the system prompt on subsequent requests.
+
+### Eval endpoint (`POST /eval/run_chat`)
+
+Stateless one-shot JSON chat for eval frameworks. The engine is shared imported code (`build_grounding_prompt`, `stream_with_tools`, `execute_tool`, model gate, error classifier) — pipeline changes reach it automatically. Input differs by design: no history/summary replay (single bare message — prod's multi-turn assembly is never exercised here), `language` = request value or `"en"` (ignores `cfg.ai.output_language`), optional `llm` override field-merged onto `cfg.ai` (422 detail stays messages-only; `str(e)` would leak `api_key` via the merged dump). Output differs by design: full retrieved set per tool call with `cited` flags + `full_text` evidence, vs prod's cited-only + `preview`; rows snapshot at `tool_result` time since registry `full_text` is last-writer-wins across a turn. Mirrored literals to keep in sync when touching prod: the `"\n\n"` break around tool calls and the `"tool_error"` code. `CitationRegistryEntry.full_text` = post-dedup grounding text the LLM saw for a section; in-memory only, never persisted or SPA-visible.
 
 ### Prompt-trace observability (opt-in)
 
