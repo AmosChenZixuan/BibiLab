@@ -140,3 +140,15 @@ def test_backend_url_default_and_roundtrip(tmp_path, monkeypatch):
     cfg.backend_url = "http://10.0.0.2:8765"
     save_eval_config(cfg)
     assert get_backend_url() == "http://10.0.0.2:8765"
+
+
+def test_backend_url_blank_falls_back_to_default(tmp_path, monkeypatch):
+    """A blank URL (TUI edit cleared, stale file) must never persist — httpx
+    raises on an empty base_url before the TUI can render a fix screen."""
+    from eval.config import DEFAULT_BACKEND_URL, get_backend_url
+
+    monkeypatch.setattr("eval.config.bibilab_home", lambda: tmp_path)
+    tmp_path.joinpath("eval_config.json").write_text(
+        json.dumps({"profiles": {}, "language": "zh", "backend_url": "  "})
+    )
+    assert get_backend_url() == DEFAULT_BACKEND_URL

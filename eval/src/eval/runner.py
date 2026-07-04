@@ -33,11 +33,13 @@ def map_response(case_id: str, body: dict) -> RunCaseResult:
     rag_calls: list[dict] = []
 
     for call in body.get("tool_calls", []):
-        if call.get("tool_name") == "find_passages":
-            sections = call.get("sections", [])
+        # Dispatch on shape, not tool_name: any retrieve-family call carries a
+        # sections list plus the telemetry fields, so a future second retrieve
+        # tool lands in rag_calls without a rename here.
+        if "sections" in call:
             rag_calls.append({k: call.get(k) for k in _RAG_CALL_FIELDS})
-            cited = [s for s in sections if s.get("cited")]
-        else:  # read_section
+            cited = [s for s in call["sections"] if s.get("cited")]
+        else:  # read_section-shaped: the call itself is the (single) section
             cited = [call] if call.get("cited") else []
         for s in cited:
             citations.append(

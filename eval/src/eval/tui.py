@@ -324,6 +324,7 @@ class ConfigApp(App):
 
         lang = self.cfg.get("language", "zh")
 
+        profiles_header_mounted = False
         for i, row in enumerate(self.rows):
             sel = "→" if i == self.cursor else " "
             cls = "row row-selected" if i == self.cursor else "row"
@@ -338,8 +339,10 @@ class ConfigApp(App):
                     inp.focus()
                 else:
                     main.mount(Static(f"{sel} Backend URL: {self.cfg.get('backend_url', '')}    (enter: edit)", classes=cls))
-                main.mount(Static("Profiles", classes="section"))
             elif row.kind == "profile":
+                if not profiles_header_mounted:
+                    main.mount(Static("Profiles", classes="section"))
+                    profiles_header_mounted = True
                 entry = self.cfg["profiles"].get(row.profile)
                 if entry is None:
                     summary = "(backend)"
@@ -409,7 +412,7 @@ class ConfigApp(App):
             from eval import api
             ai = api.get_backend_ai()
             return {
-                "protocol": ai.get("protocol", "openai"),
+                "protocol": ai.get("protocol", ""),
                 "model": ai.get("model", ""),
                 "base_url": ai.get("base_url") or "",
                 # The config endpoint masks api_key. Leave it empty: an empty
@@ -419,7 +422,9 @@ class ConfigApp(App):
             }
         except Exception as e:
             self.notify(f"Backend config unavailable: {e}", severity="warning", timeout=5)
-            return {"protocol": "openai", "model": "", "base_url": "", "api_key": ""}
+            # All-empty seed = all-unset: if saved untouched, the profile sends
+            # no override instead of guessing "openai" at the backend.
+            return {"protocol": "", "model": "", "base_url": "", "api_key": ""}
 
     def action_edit(self):
         if self._editing_field is not None:

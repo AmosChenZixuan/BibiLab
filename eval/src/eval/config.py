@@ -58,6 +58,16 @@ class EvalConfig(BaseModel):
             return v
         return {k: val for k, val in v.items() if k in PROFILE_NAMES}
 
+    @field_validator("backend_url", mode="before")
+    @classmethod
+    def _fallback_backend_url(cls, v):
+        # Blank falls back to default rather than persisting: an empty base_url
+        # makes httpx raise on every call, and the TUI can't render past it to
+        # let the user fix it.
+        if isinstance(v, str):
+            v = v.strip()
+        return v or DEFAULT_BACKEND_URL
+
     @field_validator("language", mode="before")
     @classmethod
     def _fallback_language(cls, v):

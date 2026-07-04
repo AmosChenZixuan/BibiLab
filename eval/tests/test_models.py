@@ -1,5 +1,17 @@
 import uuid
-from eval.models import EvalCase, EvalSet, RunCaseResult, GradeResult
+from eval.models import EvalCase, EvalSet, ProfileSnapshot, RunCaseResult, GradeResult
+
+
+def test_default_profile_snapshot_produces_no_override():
+    """An untouched/empty profile must send NO `llm` override — a non-empty
+    field default (protocol was "openai") leaks through _llm_override's
+    empty-means-unset filter and overrides the backend's real protocol."""
+    from eval.cli import _llm_override
+
+    assert _llm_override(ProfileSnapshot()) is None
+    assert _llm_override(None) is None
+    # An actually-set field still overrides.
+    assert _llm_override(ProfileSnapshot(model="m-x")) == {"model": "m-x"}
 
 
 def test_eval_case_creation():
