@@ -5,7 +5,7 @@ import sys
 
 import click
 
-from eval.config import resolve_profile, get_language
+from eval.config import resolve_profile, get_response_language
 from eval.models import DEFAULT_CATEGORIES, DEFAULT_FLOOR
 from eval.storage import (
     save_eval_set,
@@ -224,7 +224,7 @@ def _do_create(list_id: str, cats: list[str], floor: int):
         click.echo(f"Error: {e}", err=True)
         sys.exit(1)
 
-    language = get_language()
+    language = get_response_language()
     counts = resolve_counts(cats, floor)
     total = sum(counts.values())
     click.echo(
@@ -262,7 +262,7 @@ def _do_run(eval_set_id: str, model: str | None, concurrency: int | None):
 
     conc = concurrency if concurrency is not None else DEFAULT_CONCURRENCY
     label = model or _profile_label(profile)
-    click.echo(f"Running eval with model: {label} (lang={get_language()}, concurrency={conc})...")
+    click.echo(f"Running eval with model: {label} (lang={get_response_language()}, concurrency={conc})...")
 
     try:
         run_result = asyncio.run(run_eval(eval_set_id, llm, concurrency=conc))
@@ -290,7 +290,7 @@ def _do_grade(run_id: str):
         click.echo(f"Error: {e}", err=True)
         sys.exit(1)
 
-    language = get_language()
+    language = get_response_language()
     click.echo(f"Grading run {run_id} with {_profile_label(profile)} (lang={language})...")
 
     try:
