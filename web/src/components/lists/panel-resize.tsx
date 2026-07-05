@@ -1,7 +1,12 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
 
 export const MIN_PANEL = 280;
-export const MIN_CHAT_PANEL = 720;  // max-w-2xl (672) + px-4.5×2 padding + breathing room
+// Drag floor for the chat panel. Decoupled from the content cap: content self-caps at
+// max-w-3xl (768) and centers, so the panel may go narrower and wrap hard without overflow.
+export const MIN_CHAT_PANEL = 400;
+// Initial on-load chat width — seeds the centered 768 reading column on first paint.
+// The user can drag chat down to MIN_CHAT_PANEL to expand Sources/Lab past their default.
+export const DEFAULT_CHAT = 768;
 export const COLLAPSED_PANEL = 48;
 const RESIZER_SIZE = 16;
 
@@ -29,13 +34,14 @@ export function usePanelResize(
   // whatever the last set value was; the drag handler's clamp keeps it inside constraints.
   const ratiosRebalanced = useRef<boolean>(false);
 
-  // Split the post-MIN_CHAT_PANEL remainder 50/50 — gives chat its min width while letting
-  // the user redistribute mass via the drag clamp. Runs from the first measurement only;
-  // the render's pixel-width clamp below handles the infeasible narrow-viewport case.
+  // Split the post-DEFAULT_CHAT remainder 50/50 — seeds chat at its comfortable reading
+  // width while letting the user redistribute mass via the drag clamp (down to the lower
+  // MIN_CHAT_PANEL floor). Runs from the first measurement only; the render's pixel-width
+  // clamp below handles the infeasible narrow-viewport case.
   const rebalanceRatioRefs = useCallback((workspaceWidth: number) => {
     if (ratiosRebalanced.current) return;
     if (workspaceWidth <= 0 || sourcesCollapsed || labCollapsed) return;
-    const availableRatio = 1 - MIN_CHAT_PANEL / workspaceWidth;
+    const availableRatio = 1 - DEFAULT_CHAT / workspaceWidth;
     sourcesRatio.current = availableRatio / 2;
     labRatio.current = availableRatio / 2;
     ratiosRebalanced.current = true;
