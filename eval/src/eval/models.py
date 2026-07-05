@@ -23,8 +23,11 @@ DEFAULT_FLOOR = 3
 
 
 class ProfileSnapshot(BaseModel):
-    """Frozen record of which LLM was used. Stored on EvalRun / GradedRun."""
-    protocol: str = "openai"
+    """Frozen record of which LLM was used. Stored on EvalRun / GradedRun.
+    Every field defaults to unset ("" / None): a real default like "openai"
+    would survive cli._llm_override's empty-means-unset filter and silently
+    override the backend's configured protocol."""
+    protocol: str = ""
     model: str = ""
     base_url: str | None = None
     api_key: str | None = None

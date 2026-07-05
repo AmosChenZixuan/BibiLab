@@ -241,6 +241,14 @@ async def test_eval_endpoint_retrieval_keeps_full_section_set_with_full_text_and
     assert "sentence 0" in cited["full_text"]
     assert "sentence 10" in cited["full_text"], "full_text must join every chunk, not just the first"
 
+    # llm_context: the exact LLM-visible tool message per call, captured before
+    # the SSE payload strips it — fence headers included, so a grader can bind
+    # [N] answer markers to source titles. full_text alone is header-less.
+    assert len(body["llm_context"]) == 1
+    assert body["llm_context"][0].startswith('===== [1] "Eval Full Text Video"')
+    assert "sentence 0" in body["llm_context"][0]
+    assert "sentence 16" in body["llm_context"][0], "uncited section is part of what the LLM read"
+
 
 @pytest.mark.asyncio
 async def test_eval_endpoint_llm_override_invalid_merge_422(client):

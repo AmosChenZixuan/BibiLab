@@ -5,10 +5,8 @@ import sys
 import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from typing import Any
 
-from bibilab.pipeline._shared import _call_llm
-
+from eval import api
 from eval._utils import now_iso, strip_json_fences
 from eval.dashboard import TaskDashboard
 from eval.models import DEFAULT_FLOOR, EvalCase, EvalSet
@@ -401,22 +399,15 @@ def resolve_counts(categories: list[str], floor: int = DEFAULT_FLOOR) -> dict[st
 
 
 def _read_transcript(source_id: str) -> str:
-    """Load a source's transcript text from bibilab's segments store.
+    """Fetch a source's timestamp-free transcript from the backend.
 
-    Returns "" on no segments or a DB-level error (the caller treats both as
-    "missing").
+    Returns "" on any fetch failure (the caller treats missing and failed
+    alike — the run is partial-success by design).
     """
-    import asyncio
-    import sqlite3
-    import sys
-    from bibilab.pipeline.transcribe import load_transcript_text
-
     try:
-        return asyncio.run(load_transcript_text(source_id, include_time=False))
-    except sqlite3.OperationalError:
-        # DB-level failure (table missing, DB locked). Programming errors
-        # (TypeError, AttributeError) propagate so they're visible.
-        print(f"[generate] failed to load transcript for {source_id}", file=sys.stderr)
+        return api.get_transcript(source_id)
+    except Exception as e:
+        print(f"[generate] failed to load transcript for {source_id}: {e}", file=sys.stderr)
         return ""
 
 
@@ -455,8 +446,9 @@ _RETRY_HINT = (
 
 def _persist_failed_raw(kind: str, raw: str) -> Path:
     """Write the raw LLM response to ~/.bibilab/evals/_failed/ for inspection."""
-    from bibilab.config import bibilab_home
     from datetime import datetime, timezone
+
+    from eval.config import bibilab_home
 
     failed_dir = bibilab_home() / "evals" / "_failed"
     failed_dir.mkdir(parents=True, exist_ok=True)
@@ -477,7 +469,7 @@ def _try_parse_object(raw: str) -> tuple[dict | None, str | None]:
         return (None, f"JSONDecodeError: {e}; raw prefix: {raw[:200]!r}")
 
 
-def _safe_extract_call(prompt: str, ai_cfg: Any) -> tuple[str | None, str | None]:
+def _safe_extract_call(prompt: str, llm: dict | None) -> tuple[str | None, str | None]:
     """Run one extraction LLM call, turning any failure into an error string.
 
     A timeout / API error on ONE source must not crash the whole generation —
@@ -485,12 +477,12 @@ def _safe_extract_call(prompt: str, ai_cfg: Any) -> tuple[str | None, str | None
     (raw | None, error | None).
     """
     try:
-        return (_call_llm(prompt, ai_cfg, llm_timeout=EXTRACTION_LLM_TIMEOUT), None)
+        return (api.call_llm(prompt, llm, timeout=EXTRACTION_LLM_TIMEOUT), None)
     except Exception as e:
         return (None, f"{type(e).__name__}: {e}")
 
 
-def _extract_one_source(source: dict, ai_cfg: Any, language: str = "zh") -> tuple[dict | None, str | None]:
+def _extract_one_source(source: dict, llm: dict | None, language: str = "zh") -> tuple[dict | None, str | None]:
     """Extract facts for a single source. Retries once on malformed JSON or a
     failed call (timeout / API error).
 
@@ -502,10 +494,10 @@ def _extract_one_source(source: dict, ai_cfg: Any, language: str = "zh") -> tupl
     body = f"{SOURCE_FACTS_PROMPT}\n\n文字稿内容：\n{source.get('transcript', '')}"
     base_prompt = _with_language(body, language)
 
-    raw, call_err = _safe_extract_call(base_prompt, ai_cfg)
+    raw, call_err = _safe_extract_call(base_prompt, llm)
     data, err = _try_parse_object(raw) if raw is not None else (None, call_err)
     if data is None:
-        raw2, call_err2 = _safe_extract_call(base_prompt + _RETRY_HINT, ai_cfg)
+        raw2, call_err2 = _safe_extract_call(base_prompt + _RETRY_HINT, llm)
         data, err2 = _try_parse_object(raw2) if raw2 is not None else (None, call_err2)
         if data is None:
             content_1 = raw if raw is not None else f"(no response: {call_err})"
@@ -522,7 +514,7 @@ def _extract_one_source(source: dict, ai_cfg: Any, language: str = "zh") -> tupl
 
 def _extract_facts(
     sources: list[dict],
-    ai_cfg: Any,
+    llm: dict | None,
     language: str = "zh",
     on_progress=None,
 ) -> tuple[list[dict], list[str]]:
@@ -540,7 +532,7 @@ def _extract_facts(
     done = 0
 
     with ThreadPoolExecutor(max_workers=len(sources)) as pool:
-        futures = {pool.submit(_extract_one_source, s, ai_cfg, language): s for s in sources}
+        futures = {pool.submit(_extract_one_source, s, llm, language): s for s in sources}
         for fut in as_completed(futures):
             data, err = fut.result()
             if data is not None:
@@ -575,7 +567,7 @@ def generate_eval_set(
     list_id: str,
     sources: list[dict],
     counts: dict[str, int],
-    ai_cfg: Any,
+    llm: dict | None,
     language: str = "zh",
 ) -> EvalSet:
     if not counts:
@@ -602,7 +594,7 @@ def generate_eval_set(
         def _on_progress(done: int, total: int, n_errors: int):
             dash.update("__facts__", f"extracting {done}/{total} ({n_errors} failed)")
 
-        facts, facts_errors = _extract_facts(per_source, ai_cfg, language, on_progress=_on_progress)
+        facts, facts_errors = _extract_facts(per_source, llm, language, on_progress=_on_progress)
         facts_block = _format_facts(facts)
 
         if not facts:
@@ -632,7 +624,7 @@ def generate_eval_set(
             full_prompt = _with_language(f"{prompt}\n\n视频内容要点：\n{facts_block}", language)
             # Same timeout budget as fact extraction — both steps are timeout-prone on weak models.
             try:
-                raw = _call_llm(full_prompt, ai_cfg, llm_timeout=EXTRACTION_LLM_TIMEOUT)
+                raw = api.call_llm(full_prompt, llm, timeout=EXTRACTION_LLM_TIMEOUT)
             except Exception as e:
                 print(f"[generate] {category!r} LLM call failed: {type(e).__name__}: {e}", file=sys.stderr)
                 dash.done(category, ok=False, status=f"call error: {type(e).__name__}")

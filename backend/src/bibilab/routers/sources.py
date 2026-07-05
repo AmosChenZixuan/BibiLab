@@ -18,11 +18,11 @@ router = APIRouter()
 
 
 @router.get("/sources/{source_id}")
-async def get_source_content(source_id: str) -> SourceContentResponse:
+async def get_source_content(source_id: str, include_time: bool = True) -> SourceContentResponse:
     source = await get_source(source_id)
     if source is None:
         raise HTTPException(status_code=404, detail="Source not found")
-    transcript = await load_transcript_text(source["id"])
+    transcript = await load_transcript_text(source["id"], include_time=include_time)
     return SourceContentResponse.from_source(source, transcript)
 
 

@@ -1,157 +1,78 @@
 from __future__ import annotations
 
 import asyncio
-import json
-import time
 import uuid
 
-from bibilab.routers.chat import stream_with_tools, build_grounding_prompt, _llm_tool_message_content
-from bibilab.pipeline._shared import ToolDefinition
-from bibilab.pipeline.chat_tools import (
-    FIND_PASSAGES_TOOL,
-    READ_SECTION_TOOL,
-    RETRIEVE_TOOL_NAMES,
-    execute_tool,
-    CitationRegistryEntry,
-)
-from bibilab.config import AIConfig, BibilabConfig, load_config
-
+from eval import api
 from eval._utils import now_iso
+from eval.config import get_response_language
 from eval.dashboard import TaskDashboard
-from eval.models import EvalCase, EvalRun, ProfileSnapshot, RunCaseResult
+from eval.models import EvalCase, EvalRun, RunCaseResult
 from eval.storage import load_eval_set, save_eval_run
 
-CHAT_TOOLS: list[ToolDefinition] = [
-    FIND_PASSAGES_TOOL,
-    READ_SECTION_TOOL,
-]
+# Telemetry fields copied off a find_passages tool call into rag_calls rows.
+_RAG_CALL_FIELDS = (
+    "query",
+    "candidates_evaluated",
+    "sources_with_hits",
+    "sources_total",
+    "reranked",
+    "scoped_pool_size",
+    "facet_scope",
+)
+
+
+def map_response(case_id: str, body: dict) -> RunCaseResult:
+    """Map a /api/eval/run_chat response into a RunCaseResult.
+
+    llm_context comes straight from the endpoint's `llm_context` — the exact
+    LLM-bound tool message per call (fence headers, facet notes and all), so
+    grading judges against what the LLM actually read, not a reconstruction.
+    """
+    citations: list[dict] = []
+    rag_calls: list[dict] = []
+
+    for call in body.get("tool_calls", []):
+        # Dispatch on shape, not tool_name: any retrieve-family call carries a
+        # sections list plus the telemetry fields, so a future second retrieve
+        # tool lands in rag_calls without a rename here.
+        if "sections" in call:
+            rag_calls.append({k: call.get(k) for k in _RAG_CALL_FIELDS})
+            cited = [s for s in call["sections"] if s.get("cited")]
+        else:  # read_section-shaped: the call itself is the (single) section
+            cited = [call] if call.get("cited") else []
+        for s in cited:
+            citations.append(
+                {"index": s["index"], "source_id": s["source_id"], "section_id": s["section_id"]}
+            )
+
+    return RunCaseResult(
+        case_id=case_id,
+        answer=body.get("answer", ""),
+        citations=citations,
+        rag_calls=rag_calls,
+        tool_blocks=body.get("tool_calls", []),
+        llm_context=body.get("llm_context", []),
+        # Whole-turn wall time including tool execution — LLM-only timing is
+        # not recoverable over the sync JSON endpoint.
+        llm_duration_ms=body.get("latency_ms", 0),
+        error=None,
+    )
 
 
 async def run_single_case(
     case: EvalCase,
     list_id: str,
-    source_ids: list[str],
-    ai_cfg: AIConfig,
-    backend_cfg: BibilabConfig,
-    system_prompt: str,
-    on_status=None,
+    llm: dict | None,
+    language: str,
 ) -> RunCaseResult:
     try:
-        registry: dict[str, CitationRegistryEntry] = {}
-        tool_block_sink: list[dict] = []
-        # Exact LLM-visible tool context, in message order. Captured via the
-        # same function that feeds the model so grading parity is structural,
-        # not a re-derived copy (groundedness/context-relevance are only valid
-        # when the grader judges against what the LLM actually read).
-        llm_context: list[str] = []
-
-        async def execute_tool_fn(name, args, **kwargs):
-            result = await execute_tool(
-                name, args,
-                source_ids=source_ids,
-                cfg=backend_cfg,
-                **kwargs,
-            )
-            llm_context.append(_llm_tool_message_content(result))
-            return result
-
-        messages = [{"role": "user", "content": case.question}]
-
-        text_deltas: list[str] = []
-        citations: list[dict] = []
-
-        # LLM timing: sum gaps between consecutive events, excluding tool execution gaps
-        # (tool_call_start → tool_result). This isolates actual model inference time.
-        llm_total_s = 0.0
-        prev_ts = time.monotonic()
-        in_tool_exec = False
-        first_delta_seen = False
-
-        def _status(s: str):
-            if on_status:
-                on_status(s)
-
-        _status("waiting LLM")
-
-        async for event in stream_with_tools(
-            messages=messages,
-            cfg=ai_cfg,
-            tools=CHAT_TOOLS,
-            execute_tool_fn=execute_tool_fn,
-            system=system_prompt,
-            registry=registry,
-            tool_block_sink=tool_block_sink,
-        ):
-            now = time.monotonic()
-
-            if not in_tool_exec:
-                llm_total_s += now - prev_ts
-            prev_ts = now
-
-            if event.type == "tool_call_start":
-                in_tool_exec = True
-                try:
-                    tc = json.loads(event.content or "{}")
-                    q = (tc.get("arguments") or {}).get("query", "")
-                    _status(f"retrieving \"{q[:40]}\"")
-                except json.JSONDecodeError:
-                    _status("retrieving")
-            elif event.type == "tool_result":
-                in_tool_exec = False
-                _status("synthesizing")
-
-            if event.type == "delta":
-                if not first_delta_seen and (event.content or "").strip():
-                    first_delta_seen = True
-                    _status("writing answer")
-                text_deltas.append(event.content or "")
-            elif event.type == "citation":
-                try:
-                    data = json.loads(event.content or "{}")
-                except json.JSONDecodeError:
-                    data = {}
-                citations.append({
-                    "index": data.get("index", 0),
-                    "source_id": data.get("source_id", ""),
-                    "chunk_ids": data.get("chunk_ids", []),
-                })
-            elif event.type == "done":
-                break
-            elif event.type == "error":
-                raise RuntimeError(f"Stream error: {event.content}")
-
-        answer = "".join(text_deltas)
-        llm_duration_ms = int(llm_total_s * 1000)
-
-        return RunCaseResult(
-            case_id=case.id,
-            answer=answer,
-            citations=citations,
-            rag_calls=[
-                b["result"]["summary"]
-                for b in tool_block_sink
-                if b.get("name") in RETRIEVE_TOOL_NAMES
-                and isinstance(b.get("result"), dict)
-                and isinstance(b["result"].get("summary"), dict)
-            ],
-            tool_blocks=tool_block_sink,
-            llm_context=llm_context,
-            llm_duration_ms=llm_duration_ms,
-            error=None,
-        )
+        body = await api.run_chat(query=case.question, list_id=list_id, llm=llm, language=language)
+        return map_response(case.id, body)
     except asyncio.CancelledError:
         raise
     except Exception as exc:
-        return RunCaseResult(
-            case_id=case.id,
-            answer="",
-            citations=[],
-            rag_calls=[],
-            tool_blocks=[],
-            llm_context=[],
-            llm_duration_ms=0,
-            error=str(exc),
-        )
+        return RunCaseResult(case_id=case.id, answer="", error=str(exc))
 
 
 DEFAULT_CONCURRENCY = 4
@@ -159,21 +80,10 @@ DEFAULT_CONCURRENCY = 4
 
 async def run_eval(
     eval_set_id: str,
-    ai_cfg: AIConfig | None = None,
-    system_prompt: str | None = None,
+    llm: dict | None = None,
     concurrency: int = DEFAULT_CONCURRENCY,
 ) -> EvalRun:
-    from bibilab.db import get_sources_for_list
-    from eval.config import get_response_language
-
-    if ai_cfg is None:
-        backend_cfg = load_config()
-        ai_cfg = backend_cfg.ai
-    else:
-        backend_cfg = load_config()
-
-    if system_prompt is None:
-        system_prompt = build_grounding_prompt(response_language=get_response_language())
+    language = get_response_language()
 
     eval_set = load_eval_set(eval_set_id)
     locked = eval_set.locked_cases
@@ -181,9 +91,9 @@ async def run_eval(
     if not locked:
         raise ValueError("No locked cases in eval set. Review and lock cases first.")
 
-    rows = await get_sources_for_list(eval_set.list_id)
-    rows_dict = [dict(r) for r in rows]
-    source_ids = [r["id"] for r in rows_dict]
+    # Resolved up front: records what will serve the run, and fails fast when
+    # the backend is unreachable (every case would fail anyway).
+    test_profile = api.effective_profile(llm)
 
     run_id = str(uuid.uuid4())
 
@@ -193,15 +103,12 @@ async def run_eval(
 
         async def _run_one(case: EvalCase) -> RunCaseResult:
             async with sem:
-                dash.start(case.id, status="dispatched")
+                dash.start(case.id, status="waiting backend")
                 result = await run_single_case(
                     case=case,
                     list_id=eval_set.list_id,
-                    source_ids=source_ids,
-                    ai_cfg=ai_cfg,
-                    backend_cfg=backend_cfg,
-                    system_prompt=system_prompt,
-                    on_status=lambda s, _id=case.id: dash.update(_id, s),
+                    llm=llm,
+                    language=language,
                 )
                 if result.error:
                     dash.done(case.id, ok=False, status="failed", error=result.error)
@@ -217,11 +124,7 @@ async def run_eval(
     run = EvalRun(
         id=run_id,
         eval_set_id=eval_set_id,
-        test_profile=ProfileSnapshot(
-            model=ai_cfg.model,
-            protocol=ai_cfg.protocol,
-            base_url=ai_cfg.base_url,
-        ),
+        test_profile=test_profile,
         timestamp=now_iso(),
         cases=results,
     )

@@ -69,35 +69,23 @@ def test_unknown_profile_names_filtered(tmp_path, monkeypatch):
     assert cfg.profiles["test"] is None
 
 
-def test_resolve_profile_null_uses_backend(tmp_path, monkeypatch):
+def test_resolve_profile_null_returns_none(tmp_path, monkeypatch):
+    """None = no override: requests omit the `llm` field and the backend
+    serves the call with its own configured LLM."""
     monkeypatch.setattr("eval.config.bibilab_home", lambda: tmp_path)
-    monkeypatch.setattr("bibilab.config.bibilab_home", lambda: tmp_path)
-    monkeypatch.setattr("bibilab.config._config_cache", None)
-    backend = {
-        "ai": {
-            "protocol": "openai",
-            "model": "gpt-4o",
-            "api_key": "sk-test",
-            "base_url": "https://api.openai.com/v1",
-            "output_language": "ui",
-        }
-    }
-    tmp_path.joinpath("config.json").write_text(json.dumps(backend))
     tmp_path.joinpath("eval_config.json").write_text(
         json.dumps({"profiles": {"generate": None}, "language": "zh"})
     )
-    ai = resolve_profile("generate")
-    assert ai.model == "gpt-4o"
-    assert ai.api_key == "sk-test"
+    assert resolve_profile("generate") is None
 
 
 def test_resolve_profile_custom(tmp_path, monkeypatch):
     monkeypatch.setattr("eval.config.bibilab_home", lambda: tmp_path)
     tmp_path.joinpath("eval_config.json").write_text(json.dumps(SAMPLE_CONFIG))
-    ai = resolve_profile("test")
-    assert ai.model == "glm-4.7-flash"
-    assert ai.api_key == "ollama"
-    assert ai.base_url == "http://localhost:11434/v1"
+    profile = resolve_profile("test")
+    assert profile.model == "glm-4.7-flash"
+    assert profile.api_key == "ollama"
+    assert profile.base_url == "http://localhost:11434/v1"
 
 
 def test_resolve_unknown_profile_raises(tmp_path, monkeypatch):
@@ -140,3 +128,27 @@ def test_get_response_language_returns_code(tmp_path, monkeypatch):
 
     cfg_path.write_text('{"language": "en", "profiles": {}}')
     assert get_response_language() == "en"
+
+
+def test_backend_url_default_and_roundtrip(tmp_path, monkeypatch):
+    from eval.config import DEFAULT_BACKEND_URL, get_backend_url
+
+    monkeypatch.setattr("eval.config.bibilab_home", lambda: tmp_path)
+    assert get_backend_url() == DEFAULT_BACKEND_URL == "http://127.0.0.1:8765"
+
+    cfg = load_eval_config()
+    cfg.backend_url = "http://10.0.0.2:8765"
+    save_eval_config(cfg)
+    assert get_backend_url() == "http://10.0.0.2:8765"
+
+
+def test_backend_url_blank_falls_back_to_default(tmp_path, monkeypatch):
+    """A blank URL (TUI edit cleared, stale file) must never persist — httpx
+    raises on an empty base_url before the TUI can render a fix screen."""
+    from eval.config import DEFAULT_BACKEND_URL, get_backend_url
+
+    monkeypatch.setattr("eval.config.bibilab_home", lambda: tmp_path)
+    tmp_path.joinpath("eval_config.json").write_text(
+        json.dumps({"profiles": {}, "language": "zh", "backend_url": "  "})
+    )
+    assert get_backend_url() == DEFAULT_BACKEND_URL

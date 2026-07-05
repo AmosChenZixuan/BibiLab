@@ -5,6 +5,7 @@ rag/citations ledger `run_chat_turn` persists: that shape drops uncited
 sections and truncates evidence to a first-chunk preview — both hide what a
 grader needs to score retrieval and generation separately."""
 
+import asyncio
 import json
 import logging
 import time
@@ -19,10 +20,12 @@ from bibilab.models.eval import (
     EvalChatResponse,
     EvalFindPassagesCall,
     EvalLLMOverride,
+    EvalLLMRequest,
+    EvalLLMResponse,
     EvalReadSectionCall,
     EvalSection,
 )
-from bibilab.pipeline._shared import _classify_llm_error
+from bibilab.pipeline._shared import _call_llm, _classify_llm_error
 from bibilab.pipeline.chat_tools import (
     FIND_PASSAGES_TOOL,
     READ_SECTION_TOOL,
@@ -36,6 +39,7 @@ from bibilab.routers.chat import (
     SSE_EVENT_ERROR,
     SSE_EVENT_TOOL_CALL_START,
     SSE_EVENT_TOOL_RESULT,
+    _llm_tool_message_content,
     build_grounding_prompt,
     stream_with_tools,
 )
@@ -111,6 +115,24 @@ def _build_read_section_call(result: dict, registry: dict[str, CitationRegistryE
     )
 
 
+@router.post("/eval/llm")
+async def run_llm_eval(
+    request: EvalLLMRequest,
+    cfg: BibilabConfig = Depends(get_config),
+) -> EvalLLMResponse:
+    """Bare LLM call through the backend's own `_call_llm` — provider requests
+    are byte-identical to the backend's, so the eval framework needs no LLM SDK.
+    Stateless like run_chat; nothing persisted."""
+    effective_ai = _merge_ai_config(cfg.ai, request.llm)
+    try:
+        # _call_llm is sync (SDK clients); don't block the event loop.
+        text = await asyncio.to_thread(_call_llm, request.prompt, effective_ai, llm_timeout=request.timeout)
+    except Exception as e:  # noqa: BLE001 — classified, same envelope as run_chat
+        logger.exception("eval_llm call failed")
+        raise HTTPException(status_code=500, detail={"error": _classify_llm_error(e)}) from e
+    return EvalLLMResponse(text=text)
+
+
 @router.post("/eval/run_chat")
 async def run_chat_eval(
     request: EvalChatRequest,
@@ -130,9 +152,15 @@ async def run_chat_eval(
     system_message = build_grounding_prompt(response_language=response_language)
 
     citation_registry: dict[str, CitationRegistryEntry] = {}
+    llm_context: list[str] = []
 
     async def execute_tool_bound(name: str, args: dict, **kwargs) -> dict:
-        return await execute_tool(tool_name=name, arguments=args, source_ids=source_ids, cfg=cfg, **kwargs)
+        result = await execute_tool(tool_name=name, arguments=args, source_ids=source_ids, cfg=cfg, **kwargs)
+        # Captured here because the tool_result SSE event strips _-prefixed
+        # fields: this is the exact message the LLM reads (fence headers,
+        # facet notes, resolution-error narratives), which a grader needs.
+        llm_context.append(_llm_tool_message_content(result))
+        return result
 
     tools = [FIND_PASSAGES_TOOL, READ_SECTION_TOOL]
     messages = [{"role": "user", "content": request.query}]
@@ -209,6 +237,7 @@ async def run_chat_eval(
     return EvalChatResponse(
         answer=answer,
         tool_calls=tool_calls,
+        llm_context=llm_context,
         iterations_used=stats.get("iterations", 0),
         synthesis_forced=stats.get("synthesis_forced", False),
         latency_ms=latency_ms,

@@ -8,11 +8,18 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
-from bibilab.config import AIConfig, bibilab_home
-
 from eval.models import ProfileSnapshot
 
 _EVAL_CONFIG_NAME = "eval_config.json"
+
+DEFAULT_BACKEND_URL = "http://127.0.0.1:8765"
+
+
+def bibilab_home() -> Path:
+    """Same resolution as the backend's (env override, else ~/.bibilab) —
+    only for eval's own files (eval_config.json, evals/ storage); all backend
+    data is reached over HTTP."""
+    return Path(os.environ.get("BIBILAB_HOME", "~/.bibilab")).expanduser()
 
 ProfileName = Literal["generate", "test", "grade"]
 PROFILE_NAMES: tuple[ProfileName, ...] = ("generate", "test", "grade")
@@ -40,6 +47,7 @@ class EvalConfig(BaseModel):
         }
     )
     language: Language = DEFAULT_LANGUAGE
+    backend_url: str = DEFAULT_BACKEND_URL
 
     @field_validator("profiles", mode="before")
     @classmethod
@@ -49,6 +57,16 @@ class EvalConfig(BaseModel):
         if not isinstance(v, dict):
             return v
         return {k: val for k, val in v.items() if k in PROFILE_NAMES}
+
+    @field_validator("backend_url", mode="before")
+    @classmethod
+    def _fallback_backend_url(cls, v):
+        # Blank falls back to default rather than persisting: an empty base_url
+        # makes httpx raise on every call, and the TUI can't render past it to
+        # let the user fix it.
+        if isinstance(v, str):
+            v = v.strip()
+        return v or DEFAULT_BACKEND_URL
 
     @field_validator("language", mode="before")
     @classmethod
@@ -86,22 +104,17 @@ def save_eval_config(cfg: EvalConfig) -> None:
     os.replace(tmp, path)
 
 
-def resolve_profile(profile: str) -> AIConfig:
+def resolve_profile(profile: str) -> ProfileSnapshot | None:
+    """None = no override: requests omit the `llm` field and the backend
+    serves the call with its own configured LLM."""
     if profile not in PROFILE_NAMES:
         raise KeyError(f"Unknown eval profile '{profile}'. Valid: {list(PROFILE_NAMES)}")
 
-    entry = load_eval_config().get_profile(profile)
+    return load_eval_config().get_profile(profile)
 
-    if entry is None:
-        from bibilab.config import load_config
-        return load_config().ai
 
-    return AIConfig(
-        protocol=entry.protocol,
-        model=entry.model,
-        api_key=entry.api_key or "ollama",
-        base_url=entry.base_url,
-    )
+def get_backend_url() -> str:
+    return load_eval_config().backend_url
 
 
 def get_language() -> Language:

@@ -4,12 +4,10 @@ import asyncio
 import json
 import time
 
-from bibilab.pipeline._shared import _call_llm
-from bibilab.config import AIConfig
-
+from eval import api
 from eval._utils import now_iso, strip_json_fences
 from eval.dashboard import TaskDashboard
-from eval.models import GradeResult, GradedRun, ProfileSnapshot, RunCaseResult
+from eval.models import GradeResult, GradedRun, RunCaseResult
 from eval.storage import load_eval_set, load_eval_run, save_graded_run
 
 RUBRIC = """Rating scale:
@@ -131,17 +129,16 @@ def _chunks_text_from_case(case_result: RunCaseResult) -> str:
     return "\n\n".join(case_result.llm_context)
 
 
-async def _grade_one(prompt: str, ai_cfg: AIConfig) -> tuple[int | None, str, int]:
+async def _grade_one(prompt: str, llm: dict | None) -> tuple[int | None, str, int]:
     t0 = time.monotonic()
     try:
-        raw = await asyncio.to_thread(_call_llm, prompt, ai_cfg, llm_timeout=120)
+        raw = await asyncio.to_thread(api.call_llm, prompt, llm)
         score, reasoning = parse_grade_response(raw)
         if score is None:
             raw2 = await asyncio.to_thread(
-                _call_llm,
+                api.call_llm,
                 prompt + "\n\nYour previous response was invalid. Return ONLY valid JSON.",
-                ai_cfg,
-                llm_timeout=120,
+                llm,
             )
             score2, reasoning2 = parse_grade_response(raw2)
             llm_ms = int((time.monotonic() - t0) * 1000)
@@ -168,7 +165,7 @@ async def _grade_case(
     question: str,
     category: str,
     expected_answer_draft: str,
-    ai_cfg: AIConfig,
+    llm: dict | None,
     language: str = "zh",
     on_dim_done=None,
 ) -> GradeResult:
@@ -182,7 +179,7 @@ async def _grade_case(
         # dimensions, so the category-agnostic aggregate scores a correct abstention
         # as a PASS instead of penalizing absent context.
         score, reasoning, ms = await _grade_one(
-            build_abstention_prompt(question, expected_answer_draft, answer, language), ai_cfg
+            build_abstention_prompt(question, expected_answer_draft, answer, language), llm
         )
         _notify_all_dims(score, on_dim_done)
         reasoning = reasoning or "Failed to grade"
@@ -198,7 +195,7 @@ async def _grade_case(
         )
 
     async def _wrap(prompt, dim):
-        out = await _grade_one(prompt, ai_cfg)
+        out = await _grade_one(prompt, llm)
         if on_dim_done:
             on_dim_done(dim, out[0] is not None)
         return out
@@ -231,13 +228,12 @@ async def _grade_case(
 
 async def grade_run(
     run_id: str,
-    ai_cfg: AIConfig | None = None,
+    llm: dict | None = None,
     language: str = "zh",
 ) -> GradedRun:
-    if ai_cfg is None:
-        from bibilab.config import load_config
-
-        ai_cfg = load_config().ai
+    # Resolved up front: records what will judge the run, and fails fast when
+    # the backend is unreachable (every grading call would fail anyway).
+    grade_profile = api.effective_profile(llm)
 
     run = load_eval_run(run_id)
     eval_set = load_eval_set(run.eval_set_id)
@@ -262,7 +258,7 @@ async def grade_run(
             category = eval_case.category if eval_case else ""
             expected = eval_case.expected_answer_draft if eval_case else ""
             grade = await _grade_case(
-                case_result, question, category, expected, ai_cfg, language, on_dim_done=_dim_done
+                case_result, question, category, expected, llm, language, on_dim_done=_dim_done
             )
             scores = f"CR={grade.context_relevance} G={grade.groundedness} AR={grade.answer_relevance}"
             ok = grade.context_relevance is not None and grade.groundedness is not None and grade.answer_relevance is not None
@@ -276,11 +272,7 @@ async def grade_run(
 
     gr = GradedRun(
         run_id=run_id,
-        grade_profile=ProfileSnapshot(
-            model=ai_cfg.model,
-            protocol=ai_cfg.protocol,
-            base_url=ai_cfg.base_url,
-        ),
+        grade_profile=grade_profile,
         timestamp=now_iso(),
         grades=grades,
     )

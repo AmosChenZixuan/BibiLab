@@ -17,6 +17,20 @@ class EvalLLMOverride(BaseModel):
     max_output_tokens: int | None = None
 
 
+class EvalLLMRequest(BaseModel):
+    """Bare LLM call for the eval framework (case generation, LLM-as-judge).
+    No length cap on prompt — it carries whole transcripts; the provider's
+    context window is the real bound (enforced by _call_llm's budget check)."""
+
+    prompt: str
+    llm: EvalLLMOverride | None = None
+    timeout: int = Field(default=120, ge=1, le=600)
+
+
+class EvalLLMResponse(BaseModel):
+    text: str
+
+
 class EvalChatRequest(BaseModel):
     query: str = Field(..., max_length=10000)
     list_id: str
@@ -64,6 +78,11 @@ EvalToolCall = Annotated[EvalFindPassagesCall | EvalReadSectionCall, Field(discr
 class EvalChatResponse(BaseModel):
     answer: str
     tool_calls: list[EvalToolCall]
+    # Exact LLM-bound tool message per tool execution, in call order — fence
+    # headers, facet notes, resolution-error narratives and all. This is what
+    # a grader must judge groundedness against; sections[].full_text is the
+    # header-less per-section slice of it.
+    llm_context: list[str]
     iterations_used: int
     synthesis_forced: bool
     latency_ms: int
