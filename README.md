@@ -17,6 +17,41 @@
   <b>English</b> · <a href="README.zh-CN.md">中文</a>
 </p>
 
+<p align="center">
+  <img src="docs/assets/shots/chat.png" alt="Bibilab — ask your video sources, get answers with transcript citations" width="900" />
+</p>
+
+<p align="center">
+  <em>Turn a playlist into a private notebook, then ask questions across every transcript — answers cite their sources.</em>
+</p>
+
+<p align="center">
+  <img src="docs/assets/shots/demo.gif" alt="Bibilab chat demo — question, streamed answer, cited sources" width="900" />
+</p>
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/assets/shots/home.png" alt="Home — grid of video notebooks" /></td>
+    <td width="50%"><img src="docs/assets/shots/source.png" alt="Source view — synced transcript with per-section AI digest" /></td>
+  </tr>
+  <tr>
+    <td align="center"><b>Your notebooks</b> — one card per playlist</td>
+    <td align="center"><b>Every source</b> — synced transcript &amp; per-section digest</td>
+  </tr>
+</table>
+
+<p align="center"><em>The Lab turns your sources into artifacts — briefs, study guides, and interactive mind maps.</em></p>
+
+<p align="center">
+  <img src="docs/assets/shots/report.png" alt="AI report — a brief generated from the sources, beside the chat" width="900" />
+  <br /><sub><b>Reports</b> — briefs &amp; study guides generated from your sources</sub>
+</p>
+
+<p align="center">
+  <img src="docs/assets/shots/mindmap.png" alt="Interactive mind map generated from the sources, beside the chat" width="900" />
+  <br /><sub><b>Mind maps</b> — explore the ideas, click a node to ask about it in chat</sub>
+</p>
+
 Transform video content into searchable, AI-assisted **private notebooks**. A
 local FastAPI backend runs the full processing pipeline (download → transcribe →
 punctuate → chunk → digest ∥ embed) and a React + TypeScript SPA is the user

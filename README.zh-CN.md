@@ -17,6 +17,41 @@
   <a href="README.md">English</a> · <b>中文</b>
 </p>
 
+<p align="center">
+  <img src="docs/assets/shots/chat.png" alt="Bibilab —— 向视频合集提问,得到带转写引用的答案" width="900" />
+</p>
+
+<p align="center">
+  <em>把合集变成私人笔记本,然后对所有转写稿提问 —— 答案都会标注来源。</em>
+</p>
+
+<p align="center">
+  <img src="docs/assets/shots/demo.gif" alt="Bibilab 对话演示 —— 提问、流式答案、标注来源" width="900" />
+</p>
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/assets/shots/home.png" alt="首页 —— 视频笔记本网格" /></td>
+    <td width="50%"><img src="docs/assets/shots/source.png" alt="来源视图 —— 同步转写稿与分段 AI 摘要" /></td>
+  </tr>
+  <tr>
+    <td align="center"><b>你的笔记本</b> —— 每个合集一张卡片</td>
+    <td align="center"><b>每个来源</b> —— 同步转写稿与分段摘要</td>
+  </tr>
+</table>
+
+<p align="center"><em>在 Lab 面板里,一键把这些来源生成简报、学习指南和可交互的思维导图。</em></p>
+
+<p align="center">
+  <img src="docs/assets/shots/report.png" alt="AI 报告 —— 从来源生成的简报,与对话并列" width="900" />
+  <br /><sub><b>报告</b> —— 从来源生成简报与学习指南</sub>
+</p>
+
+<p align="center">
+  <img src="docs/assets/shots/mindmap.png" alt="从来源生成的可交互思维导图,与对话并列" width="900" />
+  <br /><sub><b>思维导图</b> —— 探索脉络,点节点即可在对话中追问</sub>
+</p>
+
 把视频内容转成可搜索、AI 辅助的 **私人笔记本**。本地的 FastAPI 后端跑完整处理流水线
 (download → transcribe → punctuate → chunk → digest ∥ embed),React + TypeScript
 SPA 作为用户界面。单用户、单机、无云端。
