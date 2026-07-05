@@ -258,7 +258,7 @@ function AssistantBubble({
   return (
     <div
       data-testid={TEST_IDS.bubbleAssistant}
-      className="bubble relative rounded-2xl rounded-bl-md border border-border bg-white/70"
+      className="bubble relative"
     >
       {children}
       {showDebugButton && onShowDebug && (
@@ -545,7 +545,7 @@ export function ChatPanel({
             </p>
           </div>
         ) : (
-          <div className="flex flex-col gap-3.5">
+          <div className="mx-auto flex w-full max-w-3xl flex-col gap-3.5">
             {messages.map((msg) => {
               const showLedger =
                 !msg.isStreaming ||
@@ -556,7 +556,7 @@ export function ChatPanel({
               return (
               <div
                 key={msg.id}
-                className={`flex max-w-2xl flex-col gap-1.5 ${
+                className={`flex flex-col gap-1.5 ${
                   msg.role === "user" ? "self-end items-end" : "self-start items-start"
                 }`}
               >
@@ -564,7 +564,7 @@ export function ChatPanel({
                   <>
                     <div
                       data-testid={TEST_IDS.bubbleUser}
-                      className="bubble rounded-2xl rounded-br-md border border-sky-35 bg-sky/10"
+                      className="bubble max-w-[85%] rounded-2xl rounded-br-md border border-sky-35 bg-sky/10 px-3.5 py-2.5"
                     >
                       {msg.content}
                     </div>
