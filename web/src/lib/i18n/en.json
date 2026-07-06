@@ -245,6 +245,8 @@
   },
   "chat": {
     "saveToNote": "Save to note",
+    "copy": "Copy",
+    "viewContext": "View LLM context",
     "header": {
       "title": "Chat"
     },

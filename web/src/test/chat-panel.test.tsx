@@ -1117,7 +1117,7 @@ describe("chat panel — save assistant message to artifact", () => {
     await waitFor(() => {
       expect(screen.getByTestId(TEST_IDS.chatSaveToArtifact)).toBeInTheDocument();
     });
-    expect(screen.getByText("Save to note")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Save to note" })).toBeInTheDocument();
   });
 
   test("clicking pin calls onSaveToArtifact with the message id", async () => {

@@ -215,6 +215,15 @@ export function stripLegacyTokens(text: string): string {
   return text.replace(LEGACY_CITATION_RE, "");
 }
 
+/** Plain-text reconstruction of an assistant answer for clipboard copy.
+ *  Text blocks concatenate; paragraph_break → blank line; citation chrome dropped. */
+export function contentBlocksToText(blocks: ContentBlock[]): string {
+  return blocks
+    .map((b) => (b.type === "text" ? b.text : b.type === "paragraph_break" ? "\n\n" : ""))
+    .join("")
+    .trim();
+}
+
 export function formatTimestamp(iso: string): string {
   const d = new Date(iso);
   return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });

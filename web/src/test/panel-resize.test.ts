@@ -1,7 +1,7 @@
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
-import { usePanelResize, COLLAPSED_PANEL, MIN_CHAT_PANEL, MIN_PANEL } from "@/components/lists/panel-resize";
+import { usePanelResize, COLLAPSED_PANEL, DEFAULT_CHAT, MIN_CHAT_PANEL, MIN_PANEL } from "@/components/lists/panel-resize";
 
 // ─── ResizeObserver mock ───────────────────────────────────────────────────
 
@@ -63,14 +63,15 @@ describe("usePanelResize", () => {
 
     triggerResize(div, 1440);
 
-    // workspaceWidth = 1440 - 32 = 1408. rebalanceRatioRefs sets
-    // sourcesRatio = labRatio = (1 - 720/1408) / 2 ≈ 0.244, giving
-    // sourcesWidth = labWidth = round(0.244 * 1408) = 344, chatW = 720.
+    // workspaceWidth = 1440 - 32 = 1408. rebalanceRatioRefs seeds the initial
+    // chat at DEFAULT_CHAT (768), not the drag floor (MIN_CHAT_PANEL=400):
+    // sourcesRatio = labRatio = (1 - 768/1408) / 2 ≈ 0.2273, giving
+    // sourcesWidth = labWidth = round(0.2273 * 1408) = 320, chatW = 768.
     expect(result.current.sourcesW).toBeGreaterThan(MIN_PANEL);
     expect(result.current.sourcesW).toBeLessThan(380);
     expect(result.current.labW).toBeGreaterThan(MIN_PANEL);
     expect(result.current.labW).toBeLessThan(380);
-    expect(result.current.chatW).toBe(MIN_CHAT_PANEL);
+    expect(result.current.chatW).toBe(DEFAULT_CHAT);
   });
 
   // ── AC3 & AC4: Ratio preserved on container resize — proportional scaling ───
@@ -83,7 +84,7 @@ describe("usePanelResize", () => {
 
     triggerResize(div, 1440);
 
-    // At 1440: workspaceWidth=1408; rebalance sets sourcesRatio ≈ 0.244 → sourcesW ≈ 344
+    // At 1440: workspaceWidth=1408; rebalance sets sourcesRatio ≈ 0.2273 → sourcesW ≈ 320
     const sourcesW_1440 = result.current.sourcesW;
     expect(sourcesW_1440).toBeLessThan(380);
 
@@ -91,8 +92,8 @@ describe("usePanelResize", () => {
     triggerResize(div, 800);
 
     // At 800px the rebalance from the 1440 measurement is preserved (one-shot gate).
-    // sourcesRatio=0.244, so sourcesW = round(0.244 * 768) = 187, then clamped to MIN_PANEL=280.
-    // chat = 768 - 280 - 280 = 208, below MIN_CHAT_PANEL=720 (layout infeasible, accepted).
+    // sourcesRatio=0.2273, so sourcesW = round(0.2273 * 768) = 175, then clamped to MIN_PANEL=280.
+    // chat = 768 - 280 - 280 = 208, below MIN_CHAT_PANEL=400 (layout infeasible, accepted).
     // Key test: sourcesW is smaller than at 1440px (proportional to workspace, not absolute)
     expect(result.current.sourcesW).toBeLessThan(sourcesW_1440);
 

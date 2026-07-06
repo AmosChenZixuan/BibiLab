@@ -97,9 +97,10 @@
 
   /* Chat bubble base — wraps ReactMarkdown output, so child selectors
      target <p>/<code>/<table>/etc. emitted by the markdown renderer. */
+  /* Pure typography — no padding. Assistant answers render flush to the column
+     edge; the user bubble carries its own padding via Tailwind (px-3.5 py-2.5). */
   .bubble {
     border-radius: 16px;
-    padding: 10px 14px;
     font-size: 14px;
     line-height: 1.55;
     color: var(--color-ink);

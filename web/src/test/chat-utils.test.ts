@@ -6,11 +6,13 @@ import {
   buildMindmapAskMessage,
   coerceCitationEvent,
   coerceContentBlock,
+  contentBlocksToText,
   facetNoMatchHint,
   formatDurationHuman,
   formatSubtitle,
   formatTimestamp,
   stripLegacyTokens,
+  type ContentBlock,
   type RetrievalCall,
 } from "@/lib/chat-utils";
 
@@ -71,6 +73,22 @@ describe("stripLegacyTokens", () => {
 
   test("handles empty string", () => {
     expect(stripLegacyTokens("")).toBe("");
+  });
+});
+
+describe("contentBlocksToText", () => {
+  test("joins text, maps paragraph_break to blank line, drops citations, trims", () => {
+    const blocks: ContentBlock[] = [
+      { type: "text", text: "First point." },
+      { type: "citation", index: 1, section_id: "s1", source_id: "v1", timestamp_start: 0, chunk_ids: ["c1"] },
+      { type: "paragraph_break" },
+      { type: "text", text: "Second point." },
+    ];
+    expect(contentBlocksToText(blocks)).toBe("First point.\n\nSecond point.");
+  });
+
+  test("returns empty string for no blocks", () => {
+    expect(contentBlocksToText([])).toBe("");
   });
 });
 
