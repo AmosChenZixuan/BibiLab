@@ -25,6 +25,8 @@ interface UseSSEStreamOptions {
   trackJobs?: (jobs: JobRegistration[]) => void;
   interruptedLabel?: string;
   stoppedLabel?: string;
+  lang?: "en" | "zh";
+  todayLabel?: string;
 }
 
 interface UseSSEStreamReturn {
@@ -43,6 +45,8 @@ export function useSSEStream({
   trackJobs,
   interruptedLabel = "Interrupted",
   stoppedLabel = "Stopped",
+  lang = "en",
+  todayLabel = "Today",
 }: UseSSEStreamOptions): UseSSEStreamReturn {
   const [isStreaming, setIsStreaming] = useState(false);
   const isStreamingRef = useRef(false);
@@ -316,7 +320,7 @@ export function useSSEStream({
       contentBlocks: [],
       rag: null,
       error: null,
-      timestamp: formatTimestamp(new Date().toISOString()),
+      timestamp: formatTimestamp(new Date().toISOString(), lang, todayLabel),
       pendingRagCalls: [],
       hasDump: false,
     };
@@ -328,7 +332,7 @@ export function useSSEStream({
       isStreaming: true,
       contentBlocks: [],
       error: null,
-      timestamp: formatTimestamp(new Date().toISOString()),
+      timestamp: formatTimestamp(new Date().toISOString(), lang, todayLabel),
       rag: null,
       pendingRagCalls: [],
       hasDump: false,

@@ -224,9 +224,20 @@ export function contentBlocksToText(blocks: ContentBlock[]): string {
     .trim();
 }
 
-export function formatTimestamp(iso: string): string {
+/** Format a chat message timestamp in the UI language (not the browser
+ *  locale). Today → `${todayLabel} HH:MM`; other days → `M月D日 HH:MM` /
+ *  `Mon D HH:MM`. 24h, no year. Pure: the caller passes `lang` +
+ *  `t("chat.time.today")` so no `useLanguage` leaks into a lib util. */
+export function formatTimestamp(iso: string, lang: "en" | "zh", todayLabel: string): string {
   const d = new Date(iso);
-  return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const loc = lang === "zh" ? "zh-CN" : "en-US";
+  const time = d.toLocaleTimeString(loc, { hour: "2-digit", minute: "2-digit", hour12: false });
+  const now = new Date();
+  const isToday = d.getFullYear() === now.getFullYear()
+    && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
+  if (isToday) return `${todayLabel} ${time}`;
+  const date = d.toLocaleDateString(loc, { month: lang === "zh" ? "long" : "short", day: "numeric" });
+  return `${date} ${time}`;
 }
 
 export function formatMediaTimestamp(seconds: number): string {
