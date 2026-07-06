@@ -245,6 +245,8 @@
   },
   "chat": {
     "saveToNote": "保存笔记",
+    "copy": "复制",
+    "viewContext": "查看模型上下文",
     "header": {
       "title": "聊天"
     },

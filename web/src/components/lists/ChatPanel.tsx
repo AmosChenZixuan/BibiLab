@@ -7,8 +7,10 @@ import remarkGfm from "remark-gfm";
 import type { Root, Element, Text, RootContent } from "hast";
 import {
   AlertCircle,
+  Check,
   ChevronDown,
   Code,
+  Copy,
   MessageSquare,
   MessageSquareOff,
   Pin,
@@ -31,6 +33,7 @@ import { usePendingDeletions } from "@/lib/hooks/usePendingDeletions";
 import { TEST_IDS } from "@/lib/test-ids";
 import {
   autoResize,
+  contentBlocksToText,
   formatSubtitle,
   getErrorLabel,
   type ContentBlock,
@@ -246,32 +249,10 @@ function renderParagraphs(
   );
 }
 
-function AssistantBubble({
-  children,
-  showDebugButton,
-  onShowDebug,
-}: {
-  children: ReactNode;
-  showDebugButton?: boolean;
-  onShowDebug?: () => void;
-}) {
+function AssistantBubble({ children }: { children: ReactNode }) {
   return (
-    <div
-      data-testid={TEST_IDS.bubbleAssistant}
-      className="bubble relative"
-    >
+    <div data-testid={TEST_IDS.bubbleAssistant} className="bubble">
       {children}
-      {showDebugButton && onShowDebug && (
-        <button
-          type="button"
-          onClick={onShowDebug}
-          title="View LLM context (debug)"
-          aria-label="View LLM context (debug)"
-          className="absolute bottom-2 right-2 flex h-6 w-6 items-center justify-center rounded-md border border-border bg-white text-muted shadow-sm hover:text-blue"
-        >
-          <Code size={12} />
-        </button>
-      )}
     </div>
   );
 }
@@ -317,6 +298,14 @@ export function ChatPanel({
   const openDebug = (id: string) => {
     resetDebugDump();
     setDebugMsgId(id);
+  };
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const handleCopy = (msg: MessageUI) => {
+    const text = msg.content || contentBlocksToText(msg.contentBlocks);
+    if (!text) return;
+    void navigator.clipboard?.writeText(text);
+    setCopiedId(msg.id);
+    window.setTimeout(() => setCopiedId((id) => (id === msg.id ? null : id)), 1500);
   };
   const { isPending, run } = usePendingDeletions();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -557,7 +546,7 @@ export function ChatPanel({
               <div
                 key={msg.id}
                 className={`flex flex-col gap-1.5 ${
-                  msg.role === "user" ? "self-end items-end" : "self-start items-start"
+                  msg.role === "user" ? "self-end items-end" : "group w-full min-w-0 items-start"
                 }`}
               >
                 {msg.role === "user" ? (
@@ -582,17 +571,11 @@ export function ChatPanel({
                     {msg.isStreaming && !msg.content && !msg.contentBlocks.length ? (
                       <PulseRing />
                     ) : msg.contentBlocks.length > 0 ? (
-                      <AssistantBubble
-                        showDebugButton={debugPrompts && msg.hasDump}
-                        onShowDebug={() => openDebug(msg.id)}
-                      >
+                      <AssistantBubble>
                         {renderParagraphs(msg.contentBlocks, sources, onOpenSource, msg.isStreaming)}
                       </AssistantBubble>
                     ) : msg.content ? (
-                      <AssistantBubble
-                        showDebugButton={debugPrompts && msg.hasDump}
-                        onShowDebug={() => openDebug(msg.id)}
-                      >
+                      <AssistantBubble>
                         <ReactMarkdown>{msg.content}</ReactMarkdown>
                       </AssistantBubble>
                     ) : null}
@@ -610,21 +593,42 @@ export function ChatPanel({
                       </div>
                     )}
                     {!msg.isStreaming && !msg.error && (
-                      <div className="flex items-center gap-1.5 px-1 text-2xs text-muted">
-                        {onSaveToArtifact && (
+                      <div className="flex h-6 items-center gap-0.5 px-1 text-2xs text-muted">
+                        <span className="font-mono">{msg.timestamp}</span>
+                        <div className="ml-1 flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
                           <button
                             type="button"
-                            className="inline-flex items-center gap-1 hover:text-blue
-                                       transition-colors"
-                            onClick={() => onSaveToArtifact(msg.id)}
-                            data-testid={TEST_IDS.chatSaveToArtifact}
+                            onClick={() => handleCopy(msg)}
+                            title={t("chat.copy")}
+                            aria-label={t("chat.copy")}
+                            className="flex h-6 w-6 items-center justify-center rounded-md transition-colors hover:bg-border hover:text-ink"
                           >
-                            <Pin size={11} />
-                            <span>{t("chat.saveToNote")}</span>
+                            {copiedId === msg.id ? <Check size={12} /> : <Copy size={12} />}
                           </button>
-                        )}
-                        {onSaveToArtifact && <span aria-hidden="true">·</span>}
-                        <span className="font-mono">{msg.timestamp}</span>
+                          {onSaveToArtifact && (
+                            <button
+                              type="button"
+                              onClick={() => onSaveToArtifact(msg.id)}
+                              title={t("chat.saveToNote")}
+                              aria-label={t("chat.saveToNote")}
+                              data-testid={TEST_IDS.chatSaveToArtifact}
+                              className="flex h-6 w-6 items-center justify-center rounded-md transition-colors hover:bg-border hover:text-ink"
+                            >
+                              <Pin size={12} />
+                            </button>
+                          )}
+                          {debugPrompts && msg.hasDump && (
+                            <button
+                              type="button"
+                              onClick={() => openDebug(msg.id)}
+                              title={t("chat.viewContext")}
+                              aria-label={t("chat.viewContext")}
+                              className="flex h-6 w-6 items-center justify-center rounded-md transition-colors hover:bg-border hover:text-ink"
+                            >
+                              <Code size={12} />
+                            </button>
+                          )}
+                        </div>
                       </div>
                     )}
                   </>
