@@ -302,10 +302,14 @@ export function ChatPanel({
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const handleCopy = (msg: MessageUI) => {
     const text = msg.content || contentBlocksToText(msg.contentBlocks);
-    if (!text) return;
-    void navigator.clipboard?.writeText(text);
-    setCopiedId(msg.id);
-    window.setTimeout(() => setCopiedId((id) => (id === msg.id ? null : id)), 1500);
+    if (!text || !navigator.clipboard) return;
+    navigator.clipboard
+      .writeText(text)
+      .then(() => {
+        setCopiedId(msg.id);
+        window.setTimeout(() => setCopiedId((id) => (id === msg.id ? null : id)), 1500);
+      })
+      .catch(() => {});
   };
   const { isPending, run } = usePendingDeletions();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -553,7 +557,7 @@ export function ChatPanel({
                   <>
                     <div
                       data-testid={TEST_IDS.bubbleUser}
-                      className="bubble max-w-[85%] rounded-2xl rounded-br-md border border-sky-35 bg-sky/10 px-3.5 py-2.5"
+                      className="bubble max-w-2xl rounded-2xl rounded-br-md border border-sky-35 bg-sky/10 px-3.5 py-2.5"
                     >
                       {msg.content}
                     </div>
