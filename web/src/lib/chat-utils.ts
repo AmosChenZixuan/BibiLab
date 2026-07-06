@@ -231,7 +231,9 @@ export function contentBlocksToText(blocks: ContentBlock[]): string {
 export function formatTimestamp(iso: string, lang: "en" | "zh", todayLabel: string): string {
   const d = new Date(iso);
   const loc = lang === "zh" ? "zh-CN" : "en-US";
-  const time = d.toLocaleTimeString(loc, { hour: "2-digit", minute: "2-digit", hour12: false });
+  // hourCycle:"h23" not hour12:false — en-US + hour12:false prints the
+  // midnight hour as "24:06" (V8/ICU h24 cycle); h23 forces 00–23 in both locales.
+  const time = d.toLocaleTimeString(loc, { hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
   const now = new Date();
   const isToday = d.getFullYear() === now.getFullYear()
     && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();

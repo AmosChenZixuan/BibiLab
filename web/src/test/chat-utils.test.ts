@@ -117,6 +117,12 @@ describe("formatTimestamp", () => {
     });
   });
 
+  test("midnight hour, en → 00:xx not 24:xx", () => {
+    withNow(() => {
+      expect(formatTimestamp("2026-07-06T00:06:00", "en", "Today")).toBe("Today 00:06");
+    });
+  });
+
   test("other day, en → Mon D HH:MM, no year (24h)", () => {
     withNow(() => {
       expect(formatTimestamp("2026-07-03T09:42:00", "en", "Today")).toBe("Jul 3 09:42");
