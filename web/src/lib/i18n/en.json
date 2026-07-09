@@ -280,6 +280,9 @@
     },
     "interrupted": "Response interrupted",
     "stopped": "Stopped",
+    "time": {
+      "today": "Today"
+    },
     "retry": "Retry",
     "stop": "Stop",
     "send": "Send",

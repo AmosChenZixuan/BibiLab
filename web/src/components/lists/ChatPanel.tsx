@@ -283,7 +283,7 @@ export function ChatPanel({
   onPendingMessageConsumed,
   onSaveToArtifact,
 }: ChatPanelProps) {
-  const { t } = useLanguage();
+  const { t, lang } = useLanguage();
   const { trackJobs } = useJobActivity();
   const [inputValue, setInputValue] = useState("");
   const [messages, setMessages] = useState<MessageUI[]>([]);
@@ -345,7 +345,7 @@ export function ChatPanel({
   }, [debugNotFound, debugMsgId]);
 
   const hasSources = selectedSourceIds.length > 0;
-  const { messages: historyMessages, isLoadingHistory, loadError, activeStreamMessageId } = useConversationHistory(listId, hasSources, t("chat.interrupted"), t("chat.stopped"));
+  const { messages: historyMessages, isLoadingHistory, loadError, activeStreamMessageId } = useConversationHistory(listId, hasSources, t("chat.interrupted"), t("chat.stopped"), lang, t("chat.time.today"));
 
   const { sendMessage, stopStreaming, retryMessage, reattach, isStreaming } = useSSEStream({
     listId,
@@ -355,6 +355,8 @@ export function ChatPanel({
     trackJobs,
     interruptedLabel: t("chat.interrupted"),
     stoppedLabel: t("chat.stopped"),
+    lang,
+    todayLabel: t("chat.time.today"),
   });
 
   // Shared "can we send right now?" gate. Used by both the manual

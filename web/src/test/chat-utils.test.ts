@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 
 import { FIND_PASSAGES_TOOL_NAME } from "@/lib/utils";
 import {
@@ -93,9 +93,46 @@ describe("contentBlocksToText", () => {
 });
 
 describe("formatTimestamp", () => {
-  test("formats ISO string to time", () => {
-    const result = formatTimestamp("2026-04-24T14:30:00Z");
-    expect(result).toMatch(/\d{1,2}:\d{2}/);
+  // Fixed "now" (local time, no Z) so the today/dated branch is deterministic
+  // regardless of the machine's timezone. Test ISO strings are likewise local.
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const withNow = (fn: () => void) => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 6, 6, 10, 0, 0)); // 2026-07-06 10:00 local
+    fn();
+  };
+
+  test("today, en → Today HH:MM (24h)", () => {
+    withNow(() => {
+      expect(formatTimestamp("2026-07-06T14:06:00", "en", "Today")).toBe("Today 14:06");
+    });
+  });
+
+  test("today, zh → 今日 HH:MM (24h)", () => {
+    withNow(() => {
+      expect(formatTimestamp("2026-07-06T14:06:00", "zh", "今日")).toBe("今日 14:06");
+    });
+  });
+
+  test("midnight hour, en → 00:xx not 24:xx", () => {
+    withNow(() => {
+      expect(formatTimestamp("2026-07-06T00:06:00", "en", "Today")).toBe("Today 00:06");
+    });
+  });
+
+  test("other day, en → Mon D HH:MM, no year (24h)", () => {
+    withNow(() => {
+      expect(formatTimestamp("2026-07-03T09:42:00", "en", "Today")).toBe("Jul 3 09:42");
+    });
+  });
+
+  test("other day, zh → M月D日 HH:MM, no year (24h)", () => {
+    withNow(() => {
+      expect(formatTimestamp("2026-07-03T09:42:00", "zh", "今日")).toBe("7月3日 09:42");
+    });
   });
 });
 

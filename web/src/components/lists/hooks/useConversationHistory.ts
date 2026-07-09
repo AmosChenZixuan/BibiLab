@@ -28,6 +28,8 @@ export function useConversationHistory(
   hasSources: boolean,
   interruptedLabel: string,
   stoppedLabel: string,
+  lang: "en" | "zh",
+  todayLabel: string,
 ) {
   const [messages, setMessages] = useState<MessageUI[]>([]);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
@@ -75,7 +77,7 @@ export function useConversationHistory(
             error:
               m.error ??
               (m.status === "failed" ? interruptedLabel : m.status === "cancelled" ? stoppedLabel : null),
-            timestamp: formatTimestamp(m.created_at),
+            timestamp: formatTimestamp(m.created_at, lang, todayLabel),
             rag,
             pendingRagCalls: [],
             hasDump: m.has_dump ?? false,
