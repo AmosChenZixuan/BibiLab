@@ -1,6 +1,6 @@
 """Tests for YouTubeAdapter resolve/metadata/download behavior (yt-dlp mocked)."""
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 import yt_dlp
