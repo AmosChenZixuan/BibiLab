@@ -612,6 +612,8 @@ class WorkerLoop:
         self._cancelled.add(job_id)
 
     def _get_adapter(self, platform: str) -> Any:
+        # ponytail: injected test seam wins regardless of platform; key the
+        # seam by platform if a test ever needs two adapters at once.
         if self._adapter is not None:
             return self._adapter
         from bibilab.adapters import get_adapter_for_platform
@@ -893,7 +895,9 @@ class WorkerLoop:
         video_meta = VideoMeta(
             video_id=video_id,
             title=meta_raw.get("title", ""),
-            platform=meta_raw.get("platform", ""),
+            # Jobs queued before multi-platform routing carry no platform; they
+            # can only have come from the bilibili-only ingest path.
+            platform=meta_raw.get("platform", "bilibili"),
             source_url=meta_raw.get("source_url", ""),
             cover_url=meta_raw.get("cover_url", ""),
             duration_seconds=meta_raw.get("duration_seconds", 0),
