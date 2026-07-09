@@ -160,7 +160,7 @@ describe("SourcesListMode preview flow", () => {
     };
     renderMode();
 
-    const input = screen.getByPlaceholderText(/paste a bilibili url/i);
+    const input = screen.getByPlaceholderText(/paste a video url/i);
     await userEvent.type(input, "https://bilibili.com/video/BV1");
     await userEvent.keyboard("{Enter}");
 
@@ -175,7 +175,7 @@ describe("SourcesListMode preview flow", () => {
     };
     renderMode();
 
-    const input = screen.getByPlaceholderText(/paste a bilibili url/i);
+    const input = screen.getByPlaceholderText(/paste a video url/i);
     await userEvent.type(input, "https://bilibili.com/video/BV1");
     await userEvent.keyboard("{Enter}");
 
@@ -198,7 +198,7 @@ describe("SourcesListMode preview flow", () => {
     };
     renderMode();
 
-    const input = screen.getByPlaceholderText(/paste a bilibili url/i);
+    const input = screen.getByPlaceholderText(/paste a video url/i);
     await userEvent.type(input, "https://bilibili.com/playlist/BVlist");
     await userEvent.keyboard("{Enter}");
 
@@ -216,7 +216,7 @@ describe("SourcesListMode preview flow", () => {
     };
     renderMode();
 
-    const input = screen.getByPlaceholderText(/paste a bilibili url/i);
+    const input = screen.getByPlaceholderText(/paste a video url/i);
     await userEvent.type(input, "https://bilibili.com/playlist/BVlist");
     await userEvent.keyboard("{Enter}");
 
@@ -234,7 +234,7 @@ describe("SourcesListMode preview flow", () => {
     };
     renderMode();
 
-    const input = screen.getByPlaceholderText(/paste a bilibili url/i);
+    const input = screen.getByPlaceholderText(/paste a video url/i);
     await userEvent.type(input, "https://bilibili.com/playlist/BVlist");
     await userEvent.keyboard("{Enter}");
 
@@ -249,7 +249,7 @@ describe("SourcesListMode preview flow", () => {
     );
     renderMode();
 
-    const input = screen.getByPlaceholderText(/paste a bilibili url/i);
+    const input = screen.getByPlaceholderText(/paste a video url/i);
     await userEvent.type(input, "https://space.bilibili.com/123/favlist?fid=456");
     await userEvent.keyboard("{Enter}");
 
@@ -268,7 +268,7 @@ describe("SourcesListMode preview flow", () => {
     };
     renderMode();
 
-    const input = screen.getByPlaceholderText(/paste a bilibili url/i);
+    const input = screen.getByPlaceholderText(/paste a video url/i);
     await userEvent.type(input, "https://bilibili.com/playlist/BVlist");
     await userEvent.keyboard("{Enter}");
 
@@ -299,7 +299,7 @@ describe("SourcesListMode preview flow", () => {
     };
     renderMode();
 
-    const input = screen.getByPlaceholderText(/paste a bilibili url/i);
+    const input = screen.getByPlaceholderText(/paste a video url/i);
     await userEvent.type(input, "https://bilibili.com/playlist/BVlist");
     await userEvent.keyboard("{Enter}");
 
@@ -326,7 +326,7 @@ describe("SourcesListMode preview flow", () => {
     state.ingestResult = { queued: ["job-1"], skipped: ["BV2"] };
     renderMode();
 
-    const input = screen.getByPlaceholderText(/paste a bilibili url/i);
+    const input = screen.getByPlaceholderText(/paste a video url/i);
     await userEvent.type(input, "https://bilibili.com/playlist/BVlist");
     await userEvent.keyboard("{Enter}");
 
@@ -358,7 +358,7 @@ describe("SourcesListMode preview flow", () => {
     };
     renderMode();
 
-    const input = screen.getByPlaceholderText(/paste a bilibili url/i);
+    const input = screen.getByPlaceholderText(/paste a video url/i);
     await userEvent.type(input, "https://bilibili.com/playlist/BVlist");
     await userEvent.keyboard("{Enter}");
 
@@ -391,7 +391,7 @@ describe("SourcesListMode preview flow", () => {
     };
     renderMode();
 
-    const input = screen.getByPlaceholderText(/paste a bilibili url/i);
+    const input = screen.getByPlaceholderText(/paste a video url/i);
     await userEvent.type(input, "https://bilibili.com/playlist/BVlist");
     await userEvent.keyboard("{Enter}");
 

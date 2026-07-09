@@ -164,7 +164,7 @@
     "sourceSingular": "%{count} source",
     "sourcePlural": "%{count} sources",
     "listWorkspace": "List workspace",
-    "pasteUrl": "Paste a Bilibili URL...",
+    "pasteUrl": "Paste a video URL...",
     "delete": "Delete",
     "rename": "Rename",
     "changeThumbnail": "Change thumbnail",

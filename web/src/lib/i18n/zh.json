@@ -164,7 +164,7 @@
     "sourceSingular": "%{count} 来源",
     "sourcePlural": "%{count} 来源",
     "listWorkspace": "列表工作区",
-    "pasteUrl": "粘贴 Bilibili 链接...",
+    "pasteUrl": "粘贴视频链接...",
     "delete": "删除",
     "rename": "重命名",
     "changeThumbnail": "更改封面",

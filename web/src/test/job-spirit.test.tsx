@@ -118,7 +118,7 @@ describe("job spirit", () => {
     expect(await screen.findByRole("heading", { name: /sources/i })).toBeInTheDocument();
     expect(await screen.findByRole("button", { name: /jobs/i })).toBeInTheDocument();
 
-    await userEvent.type(screen.getByPlaceholderText(/paste a bilibili url/i), "https://www.bilibili.com/video/BV1new");
+    await userEvent.type(screen.getByPlaceholderText(/paste a video url/i), "https://www.bilibili.com/video/BV1new");
     await userEvent.click(screen.getByRole("button", { name: /add source/i }));
 
     const spiritButton = await screen.findByRole("button", { name: /jobs/i });

@@ -269,7 +269,7 @@ describe("list detail page", () => {
       expect(screen.getByRole("button", { name: /open existing source/i })).toBeInTheDocument();
     });
 
-    const input = screen.getByPlaceholderText(/paste a bilibili url/i);
+    const input = screen.getByPlaceholderText(/paste a video url/i);
     expect(input).toBeInTheDocument();
 
     vi.mocked(api.previewPlaylist).mockResolvedValue({
