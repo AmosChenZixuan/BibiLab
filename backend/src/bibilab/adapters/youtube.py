@@ -2,7 +2,6 @@
 auth-walled videos surface as AuthRequiredError (cookie import is a separate issue)."""
 
 import asyncio
-import logging
 import re
 import shutil
 from pathlib import Path
@@ -18,8 +17,6 @@ from bibilab.adapters.base import (
 )
 from bibilab.config import bibilab_home
 
-logger = logging.getLogger(__name__)
-
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 # Messages that mean "an account could see this": bot-check, private, age gate,
 # members-only. Matched loosely against yt-dlp's DownloadError text.
@@ -32,10 +29,10 @@ _SOCKET_TIMEOUT = 60
 _WATCH_URL = "https://www.youtube.com/watch?v={}"
 
 
-def _raise_mapped(exc: yt_dlp.utils.DownloadError, resource_type: str) -> None:
+def _raise_mapped(exc: yt_dlp.utils.DownloadError) -> None:
     msg = str(exc)
     if _AUTH_RE.search(msg):
-        raise AuthRequiredError(resource_type) from exc
+        raise AuthRequiredError("video") from exc
     raise DownloadError(_ANSI_RE.sub("", msg)) from exc
 
 
@@ -66,24 +63,21 @@ class YouTubeAdapter(PlatformAdapter):
             with yt_dlp.YoutubeDL(opts) as ydl:
                 info = ydl.extract_info(url, download=False)
         except yt_dlp.utils.DownloadError as exc:
-            _raise_mapped(exc, "video")
+            _raise_mapped(exc)
 
         if info.get("_type") == "playlist":
-            entries = [e for e in (info.get("entries") or []) if e.get("id")]
-            return PlaylistMeta(
-                playlist_id=info.get("id", url),
-                title=info.get("title", "Untitled Playlist"),
-                platform="youtube",
-                source_url=url,
-                videos=[_entry_to_video_meta(e) for e in entries],
-            )
+            videos = [_entry_to_video_meta(e) for e in (info.get("entries") or []) if e.get("id")]
+            title = info.get("title", "Untitled Playlist")
+        else:
+            videos = [_entry_to_video_meta(info)]
+            title = info.get("title", "Untitled")
 
         return PlaylistMeta(
             playlist_id=info.get("id", url),
-            title=info.get("title", "Untitled"),
+            title=title,
             platform="youtube",
             source_url=url,
-            videos=[_entry_to_video_meta(info)],
+            videos=videos,
         )
 
     async def get_videos_metadata(self, video_ids: list[str]) -> tuple[dict[str, VideoMeta], dict[str, list[str]]]:
@@ -127,6 +121,6 @@ class YouTubeAdapter(PlatformAdapter):
             with yt_dlp.YoutubeDL(opts) as ydl:
                 info = ydl.extract_info(source_url, download=True)
         except yt_dlp.utils.DownloadError as exc:
-            _raise_mapped(exc, "video")
+            _raise_mapped(exc)
 
         return downloads_dir / f"{video_id}.{info.get('ext', 'mp4')}"
