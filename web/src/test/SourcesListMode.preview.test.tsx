@@ -79,7 +79,7 @@ vi.mock("@/lib/api", async () => {
   const mockPreviewPlaylist = vi.fn((listId: string, url: string) => {
     return Promise.resolve(state.previewResponse ?? { videos: [] });
   });
-  const mockPreviewPlaylistMetadata = vi.fn((videoIds: string[]) => {
+  const mockPreviewPlaylistMetadata = vi.fn((videoIds: string[], platform: string) => {
     return Promise.resolve(
       state.metadataResponse ?? { videos: {}, expanded: {} },
     );
@@ -371,7 +371,7 @@ describe("SourcesListMode preview flow", () => {
     });
 
     await waitFor(() => {
-      expect(api.previewPlaylistMetadata).toHaveBeenCalledWith(["BV1", "BV2"]);
+      expect(api.previewPlaylistMetadata).toHaveBeenCalledWith(["BV1", "BV2"], "bilibili");
     });
   });
 
@@ -400,7 +400,7 @@ describe("SourcesListMode preview flow", () => {
     });
 
     await waitFor(() => {
-      expect(api.previewPlaylistMetadata).toHaveBeenCalledWith(["BV1", "BV2"]);
+      expect(api.previewPlaylistMetadata).toHaveBeenCalledWith(["BV1", "BV2"], "bilibili");
     });
   });
 });

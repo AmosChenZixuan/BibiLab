@@ -386,7 +386,10 @@ export function SourcesListMode({
         setPreviewVideos(flatResponse.videos);
         setPreviewLoading(true);
 
-        const metadataResponse = await api.previewPlaylistMetadata(flatResponse.videos.map((v) => v.video_id));
+        const metadataResponse = await api.previewPlaylistMetadata(
+          flatResponse.videos.map((v) => v.video_id),
+          flatResponse.videos[0].platform,
+        );
         if (metadataResponse) {
           const enriched: PreviewVideo[] = [];
           for (const v of flatResponse.videos) {

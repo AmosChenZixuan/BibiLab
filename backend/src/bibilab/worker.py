@@ -611,13 +611,14 @@ class WorkerLoop:
     def cancel_job(self, job_id: str) -> None:
         self._cancelled.add(job_id)
 
-    def _get_adapter(self) -> Any:
+    def _get_adapter(self, platform: str) -> Any:
+        # ponytail: injected test seam wins regardless of platform; key the
+        # seam by platform if a test ever needs two adapters at once.
         if self._adapter is not None:
             return self._adapter
-        cfg = self._get_config()
-        from bibilab.adapters.bilibili import BilibiliAdapter
+        from bibilab.adapters import get_adapter_for_platform
 
-        return BilibiliAdapter(cookie=cfg.accounts.bilibili.cookie)
+        return get_adapter_for_platform(platform, self._get_config())
 
     def _get_config(self) -> BibilabConfig:
         if self._config is not None:
@@ -894,7 +895,9 @@ class WorkerLoop:
         video_meta = VideoMeta(
             video_id=video_id,
             title=meta_raw.get("title", ""),
-            platform=meta_raw.get("platform", ""),
+            # Jobs queued before multi-platform routing carry no platform; they
+            # can only have come from the bilibili-only ingest path.
+            platform=meta_raw.get("platform", "bilibili"),
             source_url=meta_raw.get("source_url", ""),
             cover_url=meta_raw.get("cover_url", ""),
             duration_seconds=meta_raw.get("duration_seconds", 0),
@@ -985,7 +988,7 @@ class WorkerLoop:
         if await self._abort_if_cancelled(job_id):
             return None
         video_path: Path = await asyncio.to_thread(
-            self._get_adapter().download,
+            self._get_adapter(video_meta.platform).download,
             video_meta.video_id,
             video_meta.source_url,
             self._get_config().backend.download_connections,

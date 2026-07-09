@@ -206,10 +206,10 @@ class IngestClient {
     });
   }
 
-  previewPlaylistMetadata(videoIds: string[]): Promise<VideoMetadataMap | undefined> {
+  previewPlaylistMetadata(videoIds: string[], platform: string): Promise<VideoMetadataMap | undefined> {
     return this.request<VideoMetadataMap>(this.baseUrl, "/ingest/preview/metadata", {
       method: "POST",
-      body: JSON.stringify({ video_ids: videoIds }),
+      body: JSON.stringify({ video_ids: videoIds, platform }),
     });
   }
 
@@ -369,7 +369,7 @@ export interface ApiClient {
   updateSourceFacets(sourceId: string, patch: SourceFacetsPatch): Promise<void | undefined>;
   getSourceSections(sourceId: string, opts?: { signal?: AbortSignal }): Promise<SourceSection[] | undefined>;
   previewPlaylist(listId: string, url: string): Promise<PreviewResponse | undefined>;
-  previewPlaylistMetadata(videoIds: string[]): Promise<VideoMetadataMap | undefined>;
+  previewPlaylistMetadata(videoIds: string[], platform: string): Promise<VideoMetadataMap | undefined>;
   ingestUrl(listId: string, videos: IngestVideoIn[]): Promise<IngestResult | undefined>;
   listArtifacts(listId: string, opts?: { signal?: AbortSignal }): Promise<Artifact[] | undefined>;
   getArtifactContent(artifactId: string, opts?: { signal?: AbortSignal }): Promise<{ content: string } | undefined>;
@@ -431,7 +431,7 @@ export function createApiClient(baseUrl?: string): ApiClient {
     updateSourceFacets: (id, patch) => sources.updateSourceFacets(id, patch),
     getSourceSections: (id, opts) => sources.getSourceSections(id, opts),
     previewPlaylist: (listId, url) => ingest.previewPlaylist(listId, url),
-    previewPlaylistMetadata: (videoIds) => ingest.previewPlaylistMetadata(videoIds),
+    previewPlaylistMetadata: (videoIds, platform) => ingest.previewPlaylistMetadata(videoIds, platform),
     ingestUrl: (listId, videos) => ingest.ingestUrl(listId, videos),
     listArtifacts: (id, opts) => artifacts.listArtifacts(id, opts),
     getArtifactContent: (id, opts) => artifacts.getArtifactContent(id, opts),

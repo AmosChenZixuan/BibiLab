@@ -36,6 +36,11 @@ class PlaylistMeta:
     videos: list[VideoMeta] = field(default_factory=list)
 
 
+class UnsupportedPlatformError(Exception):
+    def __init__(self, target: str) -> None:
+        super().__init__(f"No adapter registered for {target!r}")
+
+
 class AuthRequiredError(Exception):
     def __init__(self, resource_type: str) -> None:
         self.resource_type = resource_type

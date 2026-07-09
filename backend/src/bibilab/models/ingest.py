@@ -55,6 +55,7 @@ class VideoMetadata(BaseModel):
 
 class VideoMetadataRequest(BaseModel):
     video_ids: list[str]
+    platform: str = "bilibili"
 
 
 class VideoMetadataMapResponse(BaseModel):
