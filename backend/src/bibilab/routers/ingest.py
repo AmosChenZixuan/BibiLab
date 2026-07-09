@@ -2,8 +2,13 @@ import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 
-from bibilab.adapters.base import AuthRequiredError, DownloadError, VideoMeta
-from bibilab.adapters.bilibili import BilibiliAdapter
+from bibilab.adapters import get_adapter_for_platform, get_adapter_for_url
+from bibilab.adapters.base import (
+    AuthRequiredError,
+    DownloadError,
+    UnsupportedPlatformError,
+    VideoMeta,
+)
 from bibilab.config import BibilabConfig, get_config
 from bibilab.db import create_job, get_list
 from bibilab.models._enums import VideoStatus
@@ -34,7 +39,9 @@ async def ingest_preview(
         raise HTTPException(status_code=404, detail="List not found")
 
     try:
-        result = BilibiliAdapter(cookie=cfg.accounts.bilibili.cookie).resolve_flat(req.url)
+        result = get_adapter_for_url(req.url, cfg).resolve_flat(req.url)
+    except UnsupportedPlatformError as exc:
+        raise HTTPException(status_code=400, detail={"message": str(exc)}) from exc
     except AuthRequiredError as exc:
         raise HTTPException(
             status_code=401,
@@ -81,9 +88,12 @@ async def ingest_preview_metadata(
         return VideoMetadataMapResponse(videos={})
 
     try:
-        metadata_map, expanded = await BilibiliAdapter(cookie=cfg.accounts.bilibili.cookie).get_videos_metadata(
-            video_ids
-        )
+        adapter = get_adapter_for_platform(req.platform, cfg)
+    except UnsupportedPlatformError as exc:
+        raise HTTPException(status_code=400, detail={"message": str(exc)}) from exc
+
+    try:
+        metadata_map, expanded = await adapter.get_videos_metadata(video_ids)
     except DownloadError as exc:
         raise HTTPException(
             status_code=400,

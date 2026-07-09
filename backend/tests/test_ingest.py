@@ -63,6 +63,27 @@ async def test_ingest_dedup(client: httpx.AsyncClient, tmp_bibilab_home: Path):
 
 
 @pytest.mark.asyncio
+async def test_preview_unsupported_domain_400(client: httpx.AsyncClient):
+    list_id = (await client.post("/lists", json={"name": "Test"})).json()["id"]
+    resp = await client.post(
+        "/ingest/preview",
+        json={"list_id": list_id, "url": "https://example.com/watch"},
+    )
+    assert resp.status_code == 400
+    assert "example.com" in resp.json()["detail"]["message"]
+
+
+@pytest.mark.asyncio
+async def test_preview_metadata_unsupported_platform_400(client: httpx.AsyncClient):
+    resp = await client.post(
+        "/ingest/preview/metadata",
+        json={"video_ids": ["BV1abc123"], "platform": "nosuch"},
+    )
+    assert resp.status_code == 400
+    assert "nosuch" in resp.json()["detail"]["message"]
+
+
+@pytest.mark.asyncio
 async def test_ingest_unknown_list(client: httpx.AsyncClient):
     resp = await client.post(
         "/ingest/url",
