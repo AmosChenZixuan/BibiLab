@@ -1,20 +1,14 @@
 """Platform adapter registry: URL/platform → PlatformAdapter dispatch."""
 
-from collections.abc import Callable
 from urllib.parse import urlparse
 
 from bibilab.adapters.base import PlatformAdapter, UnsupportedPlatformError
 from bibilab.adapters.bilibili import BilibiliAdapter
 from bibilab.config import BibilabConfig
 
-
-def _bilibili(cfg: BibilabConfig) -> PlatformAdapter:
-    return BilibiliAdapter(cookie=cfg.accounts.bilibili.cookie)
-
-
 # platform key → (registered domains, adapter factory); subdomains match implicitly
-_REGISTRY: dict[str, tuple[tuple[str, ...], Callable[[BibilabConfig], PlatformAdapter]]] = {
-    "bilibili": (("bilibili.com", "b23.tv"), _bilibili),
+_REGISTRY = {
+    "bilibili": (("bilibili.com", "b23.tv"), lambda cfg: BilibiliAdapter(cookie=cfg.accounts.bilibili.cookie)),
 }
 
 

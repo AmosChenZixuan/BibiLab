@@ -38,7 +38,6 @@ class PlaylistMeta:
 
 class UnsupportedPlatformError(Exception):
     def __init__(self, target: str) -> None:
-        self.target = target
         super().__init__(f"No adapter registered for {target!r}")
 
 
