@@ -164,7 +164,7 @@
     "sourceSingular": "%{count} source",
     "sourcePlural": "%{count} sources",
     "listWorkspace": "List workspace",
-    "pasteUrl": "Paste a Bilibili URL...",
+    "pasteUrl": "Paste a video URL...",
     "delete": "Delete",
     "rename": "Rename",
     "changeThumbnail": "Change thumbnail",
@@ -195,7 +195,8 @@
       "playlistAllProcessed": "All %{count} videos are already in this list",
       "playlistAllQueuedNeedsAuth": "All %{count} videos already queued — %{authCount} need authentication. Check the jobs panel.",
       "playlistPartiallySkipped": "%{queued} of %{total} queued. %{skipped} already in list.",
-      "retrySkippedProcessed": "Already in this list — removed the stale failed entry."
+      "retrySkippedProcessed": "Already in this list — removed the stale failed entry.",
+      "authRequired": "This content requires signing in (%{platform} login is not supported yet)"
     },
     "preview": {
       "title": "Preview playlist",

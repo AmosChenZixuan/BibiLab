@@ -1,7 +1,7 @@
 import logging
 from typing import Any
 
-from bibilab.config import bibilab_home
+from bibilab.config import bibilab_home, downloads_dir
 from bibilab.db import parse_job_meta, source_exists_sync
 from bibilab.pipeline.embed import clear_embeddings_for_source, clear_fts_for_source_sync
 
@@ -14,7 +14,7 @@ def purge_download_files(video_id: str) -> None:
     Used as partial-failure cleanup and as pre-download hygiene, so a new
     download never resumes onto bytes left by a previous failed/corrupt attempt.
     """
-    for path in (bibilab_home() / "downloads").glob(f"{video_id}.*"):
+    for path in downloads_dir().glob(f"{video_id}.*"):
         path.unlink(missing_ok=True)
 
 

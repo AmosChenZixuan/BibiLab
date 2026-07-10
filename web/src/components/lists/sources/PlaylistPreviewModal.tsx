@@ -66,6 +66,8 @@ function VideoRow({
           )}
         </div>
         <div className="flex items-center gap-2 text-xs text-muted">
+          <span>{video.platform}</span>
+          <span>·</span>
           <span>{video.uploader}</span>
           <span>·</span>
           <span>{formatDuration(video.duration_seconds)}</span>

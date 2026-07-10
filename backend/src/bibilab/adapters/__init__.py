@@ -4,11 +4,13 @@ from urllib.parse import urlparse
 
 from bibilab.adapters.base import PlatformAdapter, UnsupportedPlatformError
 from bibilab.adapters.bilibili import BilibiliAdapter
+from bibilab.adapters.youtube import YouTubeAdapter
 from bibilab.config import BibilabConfig
 
 # platform key → (registered domains, adapter factory); subdomains match implicitly
 _REGISTRY = {
     "bilibili": (("bilibili.com", "b23.tv"), lambda cfg: BilibiliAdapter(cookie=cfg.accounts.bilibili.cookie)),
+    "youtube": (("youtube.com", "youtu.be"), lambda cfg: YouTubeAdapter()),
 }
 
 

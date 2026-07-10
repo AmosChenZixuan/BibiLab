@@ -3,6 +3,7 @@ import pytest
 from bibilab.adapters import get_adapter_for_platform, get_adapter_for_url
 from bibilab.adapters.base import UnsupportedPlatformError
 from bibilab.adapters.bilibili import BilibiliAdapter
+from bibilab.adapters.youtube import YouTubeAdapter
 from bibilab.config import BibilabConfig
 
 
@@ -22,6 +23,23 @@ def cfg() -> BibilabConfig:
 )
 def test_url_routes_bilibili_domains(url: str, cfg: BibilabConfig):
     assert isinstance(get_adapter_for_url(url, cfg), BilibiliAdapter)
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+        "https://youtube.com/playlist?list=PLabc",
+        "https://youtu.be/dQw4w9WgXcQ",
+        "https://music.youtube.com/watch?v=x",
+    ],
+)
+def test_url_routes_youtube_domains(url: str, cfg: BibilabConfig):
+    assert isinstance(get_adapter_for_url(url, cfg), YouTubeAdapter)
+
+
+def test_platform_youtube(cfg: BibilabConfig):
+    assert isinstance(get_adapter_for_platform("youtube", cfg), YouTubeAdapter)
 
 
 def test_url_unknown_host_raises(cfg: BibilabConfig):

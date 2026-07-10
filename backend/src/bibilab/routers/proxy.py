@@ -6,15 +6,26 @@ from fastapi.responses import Response
 
 router = APIRouter()
 
-ALLOWED_DOMAINS = {"hdslb.com"}
+ALLOWED_DOMAINS = {"hdslb.com", "ytimg.com"}
+# hdslb.com is referer-locked to bilibili; ytimg.com serves plainly (verified live)
+# and gets no Referer at all.
+_REFERER_BY_DOMAIN = {"hdslb.com": "https://www.bilibili.com/"}
 MAX_RESPONSE_SIZE = 5 * 1024 * 1024  # 5MB
+
+
+def _match_domain(host: str) -> str | None:
+    for d in ALLOWED_DOMAINS:
+        if host == d or host.endswith("." + d):
+            return d
+    return None
 
 
 @router.get("/proxy/cover")
 async def proxy_cover(url: str = Query(..., description="URL to proxy")):
     parsed = urlparse(url)
     host = parsed.netloc.lower().removeprefix("www.")
-    if host not in ALLOWED_DOMAINS and not any(host.endswith("." + d) for d in ALLOWED_DOMAINS):
+    domain = _match_domain(host)
+    if domain is None:
         raise HTTPException(status_code=400, detail="URL domain not allowed")
 
     headers = {
@@ -22,8 +33,10 @@ async def proxy_cover(url: str = Query(..., description="URL to proxy")):
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
             "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         ),
-        "Referer": "https://www.bilibili.com/",
     }
+    referer = _REFERER_BY_DOMAIN.get(domain)
+    if referer:
+        headers["Referer"] = referer
 
     async with httpx.AsyncClient(timeout=30, follow_redirects=False) as client:
         try:
