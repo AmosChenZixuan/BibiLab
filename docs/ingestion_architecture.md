@@ -4,10 +4,7 @@ How a video becomes a searchable source: URL resolution, platform adapters, the 
 
 ## Ingestion flow
 
-```
-POST /ingest/url → resolve → dedup check → create job(s)
-  → worker: download → audio → transcribe → punctuate → derive_sections → chunk (per-section) → digest ∥ embed → write_source + write_transcript_segments + write_sections (atomic)
-```
+Flow at a glance (ASCII) is in `backend/CLAUDE.md` § Ingestion Pipeline.
 
 - Dedup via `get_video_statuses` (sources + jobs); skip if processed or in-flight. `sources` is the dedup source of truth; `jobs` is ephemeral — a video is "processed" iff it has a `sources` row.
 - Full re-process: `DELETE /sources/:id` then re-ingest.
@@ -30,12 +27,7 @@ Stage failures surface on the job row as `[<stage>] <message>` — the worker wr
 
 ## Platform adapters
 
-```python
-class PlatformAdapter:
-    def resolve_flat(url) -> PlaylistMeta
-    async def get_videos_metadata(video_ids) -> tuple[dict[str, VideoMeta], dict[str, list[str]]]
-    def download(video_id, source_url, connections) -> Path
-```
+The `PlatformAdapter` interface (three methods: `resolve_flat`, `get_videos_metadata`, `download`) is pinned in `backend/CLAUDE.md` § Platform Adapters.
 
 ### Registry dispatch (`adapters/__init__.py`)
 
@@ -51,7 +43,7 @@ Shared yt-dlp plumbing lives in `adapters/_ytdlp_common.py`: `strip_ansi`, `appl
 
 - **bilibili** — single / multi-part (`?p=N`) / collection / favorite lists; courses raise `AuthRequiredError`. Cookie auth (QR login). 403/412 → `needs_auth`. Keeps its own inline error mapping — lowercased matching, 412 handling and cookie revalidation don't fit `raise_mapped`.
 - **youtube** — single videos + public playlists, no credentials; sign-in/age/private/members-only messages → `AuthRequiredError`. Flat playlist entries carry full metadata, so phase-2 enrichment is a light per-id refetch.
-- **tiktok** — single videos (incl. `vm.`/`vt.`/`/t/` short links) + collections, no credentials; **best-effort tier** (extraction breaks in waves; generic failures append an upgrade-yt-dlp hint). Captions are bounded to 120 chars as titles; image posts → a named `DownloadError`; the `yt-dlp[curl-cffi]` extra supplies the TLS impersonation the extractor requests. Download filters formats by `vcodec` (h264 preferred), never `acodec` — the extractor stamps a fabricated `acodec` on every format, and TikTok's HEVC (`bytevc1`) variants are silent files.
+- **tiktok** — single videos (incl. `vm.`/`vt.`/`/t/` short links) + collections, no credentials; **best-effort tier** (extraction breaks in waves; generic failures append an upgrade-yt-dlp hint). Captions are bounded to 120 chars as titles; image posts → a named `DownloadError`; the `yt-dlp[curl-cffi]` extra supplies the TLS impersonation the extractor requests. Format selection is vcodec-only (rule + rationale pinned in `backend/CLAUDE.md` § Platform Adapters).
 
 ### Two-phase resolve (bilibili)
 

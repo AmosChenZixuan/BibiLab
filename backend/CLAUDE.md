@@ -85,7 +85,7 @@ Column-level reference: `docs/data_model.md`; authoritative DDL: `db.py` (`boots
 - `jobs` — ephemeral queue (`queued → downloading → transcribing → processing → done | failed | needs_auth`); `sources` is the dedup source of truth, never `jobs`.
 - `sources` — no `summary`/`keywords` columns; sections are the sole digest store, `sources` carries only the LLM facet columns (`series_name`, `sequence_number`, `season_number`, nullable).
 - `messages.status` — both rows of a turn flip to the **same** terminal status atomically (`update_turn_terminal`); a turn is visible to LLM replay + compaction iff both are `"done"`; UI history is unfiltered, the LLM snapshot filters to `"done"` inline (not in `get_recent_messages`).
-- `messages.error` — machine-readable code (mapped by `_classify_llm_error()`), resolved by the frontend via `chat.errors.*` i18n keys; `messages.metadata` renders best-effort, no migration for legacy rows.
+- `messages.error` — machine-readable code (see SSE rules under Chat Pipeline); `messages.metadata` renders best-effort, no migration for legacy rows.
 - `conversations` — one per list (UNIQUE FK), auto-created on first message; `active_stream_message_id` must be cleared in the same transaction as the terminal flip.
 - `transcript_segments` / `sections` — written atomically with the source row (`write_source_with_segments`); `section_digests` is required whenever `sections` is provided, so every section row carries a summary; chunks nest physically in exactly one section.
 - `chunks_fts` — FTS5, populated by `populate_fts()` at embed, cleared per-source on re-ingest; query only via `query_fts_rows()` (which escapes MATCH input).
@@ -109,7 +109,7 @@ Stage-by-stage mechanism (fail-loud contracts, duration validation, two-phase re
 
 Full mechanism — request lifecycle, retrieval pipeline, tool loop, SSE semantics, compression, eval endpoint, prompt-trace — lives in `docs/chat_architecture.md`. The rules below are what an AI changing this code must not break:
 
-- `POST /lists/:id/chat` streams SSE via a producer/consumer split (`run_chat_turn` → `StreamBuffer` → `_sse_consumer`); both rows of a turn flip to the **same** terminal status atomically (`update_turn_terminal`) and `active_stream_message_id` clears in the same transaction — breaking that wedges the conversation at 409.
+- `POST /lists/:id/chat` streams SSE via a producer/consumer split (`run_chat_turn` → `StreamBuffer` → `_sse_consumer`); the turn's terminal flip is atomic (see Database Schema invariants) — breaking it wedges the conversation at 409.
 - SSE events: `meta`, `delta`, `citation`, `tool_call_start`, `tool_result`, `rag`, `done`, `error`, `cancelled`. `meta` is always first (carries `{message_id}` for cancel-by-id, constant `SSE_EVENT_META`); `error` events carry machine-readable codes (via `_classify_llm_error()`) for frontend i18n.
 - `stream_with_tools` is a bounded loop (max 3 iterations). Exhausted iterations keep tools **advertised** but unexecuted (gate is `is_synthesis_turn`) — withholding them makes native tool-call tokens leak into the visible answer. Any retrieve-family call disables all three tools for the rest of the turn. An empty synthesis gets one forced follow-up call; still no text → typed no-text error, never a blank persisted message.
 - Retrieval: facet scoping fails open to the full pool; rerank order is final (no relevance gate); rerank/embed consume raw `chunk.content` while the LLM sees speaker-turn reconstruction — keep that split (embedder parity).
