@@ -26,6 +26,10 @@ def cover_path(source_id: str) -> Path:
     return bibilab_home() / "covers" / f"{source_id}.jpg"
 
 
+def downloads_dir() -> Path:
+    return bibilab_home() / "downloads"
+
+
 def _config_path() -> Path:
     return bibilab_home() / "config.json"
 

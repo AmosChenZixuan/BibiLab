@@ -16,7 +16,7 @@ from bibilab.adapters.base import (
     PlaylistMeta,
     VideoMeta,
 )
-from bibilab.config import bibilab_home
+from bibilab.config import bibilab_home, downloads_dir
 
 logger = logging.getLogger(__name__)
 
@@ -241,8 +241,8 @@ class BilibiliAdapter(PlatformAdapter):
         )
 
     def download(self, video_id: str, source_url: str, connections: int) -> Path:
-        downloads_dir = bibilab_home() / "downloads"
-        output_template = str(downloads_dir / f"{video_id}.%(ext)s")
+        out_dir = downloads_dir()
+        output_template = str(out_dir / f"{video_id}.%(ext)s")
         opts = {
             **_ydl_opts(self._cookie, quiet=False),
             "outtmpl": output_template,
@@ -274,7 +274,7 @@ class BilibiliAdapter(PlatformAdapter):
                 raise AuthRequiredError("video") from exc
             raise DownloadError(_ANSI_RE.sub("", str(exc))) from exc
 
-        return downloads_dir / f"{video_id}.{info.get('ext', 'mp4')}"
+        return out_dir / f"{video_id}.{info.get('ext', 'mp4')}"
 
     async def get_videos_metadata(self, video_ids: list[str]) -> tuple[dict[str, VideoMeta], dict[str, list[str]]]:
         if not video_ids:

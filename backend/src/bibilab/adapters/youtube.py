@@ -15,7 +15,7 @@ from bibilab.adapters.base import (
     PlaylistMeta,
     VideoMeta,
 )
-from bibilab.config import bibilab_home
+from bibilab.config import downloads_dir
 
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 # Messages that mean "an account could see this": bot-check, private, age gate,
@@ -109,10 +109,10 @@ class YouTubeAdapter(PlatformAdapter):
         return ({vid: meta for vid, meta in zip(video_ids, results) if meta is not None}, {})
 
     def download(self, video_id: str, source_url: str, connections: int) -> Path:
-        downloads_dir = bibilab_home() / "downloads"
+        out_dir = downloads_dir()
         opts: dict = {
             "quiet": False,
-            "outtmpl": str(downloads_dir / f"{video_id}.%(ext)s"),
+            "outtmpl": str(out_dir / f"{video_id}.%(ext)s"),
             "format": "bestaudio/best",
             "retries": _HTTP_RETRIES,
             "socket_timeout": _SOCKET_TIMEOUT,
@@ -129,4 +129,4 @@ class YouTubeAdapter(PlatformAdapter):
         except yt_dlp.utils.DownloadError as exc:
             _raise_mapped(exc)
 
-        return downloads_dir / f"{video_id}.{info.get('ext', 'mp4')}"
+        return out_dir / f"{video_id}.{info.get('ext', 'mp4')}"
