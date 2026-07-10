@@ -43,8 +43,11 @@ def _flat_thumbnail(entry: dict) -> str:
     return (thumbnails[-1].get("url", "") or "") if thumbnails else ""
 
 
-def _entry_to_video_meta(entry: dict) -> VideoMeta:
-    vid = entry.get("id", "")
+def _entry_to_video_meta(entry: dict) -> VideoMeta | None:
+    """None when the entry carries no id — an id-less VideoMeta would corrupt dedup."""
+    vid = entry.get("id")
+    if not vid:
+        return None
     return VideoMeta(
         video_id=vid,
         title=entry.get("title") or "Untitled",
@@ -66,11 +69,12 @@ class YouTubeAdapter(PlatformAdapter):
             _raise_mapped(exc)
 
         if info.get("_type") == "playlist":
-            videos = [_entry_to_video_meta(e) for e in (info.get("entries") or []) if e.get("id")]
+            entries = info.get("entries") or []
             title = info.get("title", "Untitled Playlist")
         else:
-            videos = [_entry_to_video_meta(info)]
+            entries = [info]
             title = info.get("title", "Untitled")
+        videos = [vm for e in entries if (vm := _entry_to_video_meta(e)) is not None]
 
         return PlaylistMeta(
             playlist_id=info.get("id", url),
@@ -91,7 +95,9 @@ class YouTubeAdapter(PlatformAdapter):
             try:
                 with yt_dlp.YoutubeDL(opts) as ydl:
                     info = ydl.extract_info(_WATCH_URL.format(vid), download=False)
-            except yt_dlp.utils.DownloadError:
+            except Exception:
+                # One bad video must not sink the batch — the id is simply
+                # omitted from the result map (same contract as bilibili).
                 return None
             return _entry_to_video_meta(info)
 

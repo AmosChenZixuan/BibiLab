@@ -108,6 +108,37 @@ def test_resolve_other_error_is_download_error():
             YouTubeAdapter().resolve_flat("https://www.youtube.com/watch?v=x")
 
 
+def test_resolve_single_video_without_id_yields_no_videos():
+    info = _video_info()
+    del info["id"]
+    with patch("bibilab.adapters.youtube.yt_dlp.YoutubeDL", _mock_ydl(info=info)):
+        result = YouTubeAdapter().resolve_flat("https://www.youtube.com/watch?v=x")
+    assert result.videos == []
+
+
+@pytest.mark.asyncio
+async def test_metadata_batch_survives_unexpected_exception():
+    class MockYDL:
+        def __init__(self, opts):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+        def extract_info(self, url, download=False):
+            if "boom" in url:
+                raise OSError("connection reset")
+            return _video_info(vid=url.rsplit("=", 1)[1])
+
+    with patch("bibilab.adapters.youtube.yt_dlp.YoutubeDL", MockYDL):
+        metadata, _ = await YouTubeAdapter().get_videos_metadata(["ok1", "boom2", "ok3"])
+
+    assert set(metadata) == {"ok1", "ok3"}
+
+
 @pytest.mark.asyncio
 async def test_metadata_batch_omits_failed_ids():
     calls = {}
