@@ -168,3 +168,10 @@ def test_download_path_and_no_aria2c(tmp_path, monkeypatch):
     assert opts["format"] == "bestaudio/best"
     # small files — native downloader, no aria2c branch
     assert "external_downloader" not in opts
+
+
+def test_pick_thumbnail_dimensionless_falls_back_to_last():
+    from bibilab.adapters._ytdlp_common import pick_thumbnail
+
+    entry = {"thumbnails": [{"url": "https://cdn/first.jpg"}, {"url": "https://cdn/last.jpg"}]}
+    assert pick_thumbnail(entry) == "https://cdn/last.jpg"

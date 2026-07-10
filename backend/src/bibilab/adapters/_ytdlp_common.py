@@ -39,4 +39,9 @@ def pick_thumbnail(entry: dict) -> str:
     thumbs = [t for t in (entry.get("thumbnails") or []) if t.get("url")]
     if not thumbs:
         return ""
-    return max(thumbs, key=lambda t: (t.get("width") or 0) * (t.get("height") or 0))["url"]
+    best = max(thumbs, key=lambda t: (t.get("width") or 0) * (t.get("height") or 0))
+    if not (best.get("width") or best.get("height")):
+        # No entry carries dimensions — fall back to the last (yt-dlp sorts
+        # preference ascending where it sorts at all).
+        return thumbs[-1]["url"]
+    return best["url"]
