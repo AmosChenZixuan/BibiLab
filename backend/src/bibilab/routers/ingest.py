@@ -1,3 +1,4 @@
+import asyncio
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -39,7 +40,10 @@ async def ingest_preview(
         raise HTTPException(status_code=404, detail="List not found")
 
     try:
-        result = get_adapter_for_url(req.url, cfg).resolve_flat(req.url)
+        adapter = get_adapter_for_url(req.url, cfg)
+        # yt-dlp resolution is a multi-second blocking HTTP call — off the loop,
+        # or every concurrent handler (chat SSE, polls) stalls behind it.
+        result = await asyncio.to_thread(adapter.resolve_flat, req.url)
     except UnsupportedPlatformError as exc:
         raise HTTPException(status_code=400, detail={"message": str(exc)}) from exc
     except AuthRequiredError as exc:
