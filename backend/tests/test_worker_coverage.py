@@ -264,6 +264,28 @@ async def test_stage_transcribe_punctuates_and_returns_sentences(tmp_bibilab_hom
 
 
 @pytest.mark.asyncio
+async def test_stage_transcribe_no_speech_raises_pipeline_error(tmp_bibilab_home: Path, monkeypatch):
+    """A speech-less video (empty transcription) fails loud with a clear message
+    instead of crashing downstream with IndexError in digest."""
+    from bibilab.config import BibilabConfig
+    from bibilab.db import bootstrap_db, create_job
+    from bibilab.pipeline.audio import PipelineError
+
+    await bootstrap_db()
+    job_id = await create_job("ingest", {})
+
+    monkeypatch.setattr("bibilab.worker.transcribe", lambda *a, **k: ([], None))
+    monkeypatch.setattr("bibilab.worker.punctuate", lambda segs, language: [])
+
+    loop = WorkerLoop(config=BibilabConfig(), home=tmp_bibilab_home)
+    wav = tmp_bibilab_home / "a.wav"
+    wav.write_bytes(b"")
+
+    with pytest.raises(PipelineError, match="no speech detected"):
+        await loop._stage_transcribe(job_id, wav, "src-1", BibilabConfig())
+
+
+@pytest.mark.asyncio
 async def test_stage_process_chunks_sentence_segments(tmp_bibilab_home: Path, monkeypatch):
     """_stage_process chunks sentence_segments, not vad_segments."""
     from bibilab.config import BibilabConfig

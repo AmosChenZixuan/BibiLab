@@ -1041,6 +1041,10 @@ class WorkerLoop:
             cfg.transcription.language if cfg.transcription.language != "auto" else (detected_language or "en")
         )
         sentence_segments = await asyncio.to_thread(punctuate, vad_segments, effective_language)
+        if not sentence_segments:
+            # Music-only / speech-less video: fail loud here instead of an
+            # opaque IndexError in digest (sections would be empty).
+            raise PipelineError("no speech detected in audio")
 
         if job_id in self._cancelled:
             self._cancelled.discard(job_id)
