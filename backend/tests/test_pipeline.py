@@ -17,6 +17,8 @@ from bibilab.pipeline.transcribe import WhisperSegment
 
 
 def test_extract_audio_success(tmp_path: Path):
+    import ffmpeg
+
     video = tmp_path / "video.mp4"
     video.write_bytes(b"fake")
     wav = tmp_path / "video.wav"
@@ -27,6 +29,8 @@ def test_extract_audio_success(tmp_path: Path):
         mock_chain.output.return_value = mock_chain
         mock_chain.overwrite_output.return_value = mock_chain
         mock_chain.run.return_value = (b"", b"")
+        mock_ffmpeg.Error = ffmpeg.Error
+        mock_ffmpeg.probe.return_value = {"streams": [{"codec_type": "audio"}], "format": {"duration": "10.0"}}
         # Simulate wav being created by ffmpeg
         wav.write_bytes(b"wav")
 
@@ -49,10 +53,30 @@ def test_extract_audio_ffmpeg_error(tmp_path: Path):
         mock_chain.overwrite_output.return_value = mock_chain
         err = ffmpeg.Error("ffmpeg", b"", b"conversion failed")
         mock_ffmpeg.Error = ffmpeg.Error
+        mock_ffmpeg.probe.return_value = {"streams": [{"codec_type": "audio"}], "format": {"duration": "10.0"}}
         mock_chain.run.side_effect = err
 
         with pytest.raises(PipelineError, match="FFmpeg"):
             extract_audio(video)
+
+
+def test_extract_audio_raises_on_missing_audio_stream(tmp_path: Path):
+    # A video-only file (e.g. TikTok HEVC variant reached via the /best
+    # fallback) must fail with a clear message before FFmpeg extraction,
+    # not surface the raw FFmpeg "does not contain any stream" dump.
+    import ffmpeg
+
+    video = tmp_path / "video.mp4"
+    video.write_bytes(b"fake")
+
+    with patch("bibilab.pipeline.audio.ffmpeg") as mock_ffmpeg:
+        mock_ffmpeg.Error = ffmpeg.Error
+        mock_ffmpeg.probe.return_value = {"streams": [{"codec_type": "video"}]}
+
+        with pytest.raises(PipelineError, match="no audio track"):
+            extract_audio(video)
+
+    assert video.exists()  # source kept — nothing was extracted
 
 
 def _probe_by_suffix(durations: dict[str, float]):
