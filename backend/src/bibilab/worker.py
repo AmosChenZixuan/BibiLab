@@ -895,9 +895,10 @@ class WorkerLoop:
         video_meta = VideoMeta(
             video_id=video_id,
             title=meta_raw.get("title", ""),
-            # Jobs queued before multi-platform routing carry no platform; they
-            # can only have come from the bilibili-only ingest path.
-            platform=meta_raw.get("platform", "bilibili"),
+            # Jobs queued before multi-platform routing carry no platform (or an
+            # empty string from old UI retry payloads); they can only have come
+            # from the bilibili-only ingest path.
+            platform=meta_raw.get("platform") or "bilibili",
             source_url=meta_raw.get("source_url", ""),
             cover_url=meta_raw.get("cover_url", ""),
             duration_seconds=meta_raw.get("duration_seconds", 0),

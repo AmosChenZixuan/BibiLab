@@ -23,6 +23,17 @@ export const localCoverUrl = (sourceId: string): string => `/api/sources/${sourc
 export const proxyCoverUrl = (url: string): string =>
   `/api/proxy/cover?url=${encodeURIComponent(url)}`;
 
+const BILIBILI_DOMAINS = ["bilibili.com", "b23.tv"];
+
+export function isBilibiliUrl(url: string): boolean {
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    return BILIBILI_DOMAINS.some((d) => host === d || host.endsWith(`.${d}`));
+  } catch {
+    return false;
+  }
+}
+
 export function formatDuration(seconds: number): string {
   const m = Math.floor(seconds / 60);
   const s = seconds % 60;

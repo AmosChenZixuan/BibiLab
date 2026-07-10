@@ -10,6 +10,7 @@ import { useDismissOnDone } from "@/components/jobs/useDismissOnDone";
 import { api, ApiError, toErrorMessageWithT, notifyBilibiliAuthChanged } from "@/lib/api";
 import { usePendingDeletions } from "@/lib/hooks/usePendingDeletions";
 import type { IngestJob, IngestVideoIn, PreviewVideo, Source } from "@/lib/types";
+import { isBilibiliUrl } from "@/lib/utils";
 
 const PIPELINE_STAGES = [
   "queued",
@@ -263,7 +264,9 @@ export function SourcesListMode({
         cover_url: m.cover_url ?? "",
         duration_seconds: m.duration_seconds ?? 0,
         uploader: m.uploader ?? "",
-        platform: m.platform ?? "",
+        // Legacy jobs queued before multi-platform routing carry no platform;
+        // they can only have come from the bilibili-only ingest path.
+        platform: m.platform || "bilibili",
         source_url: m.source_url,
       };
       try {
@@ -288,7 +291,11 @@ export function SourcesListMode({
         await dismissJob(job.id);
       } catch (err) {
         if (err instanceof ApiError && err.status === 401) {
-          setShowQrModal(true);
+          if (payload.platform === "bilibili") {
+            setShowQrModal(true);
+          } else {
+            setError(t("lists.ingest.authRequired", { platform: payload.platform }));
+          }
         } else {
           setError(toErrorMessageWithT(err, t));
         }
@@ -328,7 +335,12 @@ export function SourcesListMode({
         setPreviewVideos(null);
       } catch (err) {
         if (err instanceof ApiError && err.status === 401) {
-          setShowQrModal(true);
+          const platform = selected[0].platform;
+          if (platform === "bilibili") {
+            setShowQrModal(true);
+          } else {
+            setError(t("lists.ingest.authRequired", { platform }));
+          }
         } else {
           setError(toErrorMessageWithT(err, t));
         }
@@ -431,7 +443,20 @@ export function SourcesListMode({
       } catch (err) {
         setPreviewLoading(false);
         if (err instanceof ApiError && err.status === 401) {
-          setShowQrModal(true);
+          // Pre-preview there is no platform field yet — gate the bilibili QR
+          // modal on the submitted URL's host.
+          if (isBilibiliUrl(trimmedUrl)) {
+            setShowQrModal(true);
+            return;
+          }
+          let host = trimmedUrl;
+          try {
+            host = new URL(trimmedUrl).hostname;
+          } catch {
+            // keep the raw input as the label
+          }
+          setUrl(trimmedUrl);
+          setError(t("lists.ingest.authRequired", { platform: host }));
           return;
         }
         setUrl(trimmedUrl);

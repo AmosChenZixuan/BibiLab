@@ -259,6 +259,22 @@ describe("SourcesListMode preview flow", () => {
     expect(screen.queryByText(/failed/i)).not.toBeInTheDocument();
   });
 
+  it("shows auth-required error instead of QR modal when a non-bilibili preview returns 401", async () => {
+    vi.mocked(api.previewPlaylist).mockRejectedValueOnce(
+      new ApiError(401, "Unauthorized")
+    );
+    renderMode();
+
+    const input = screen.getByPlaceholderText(/paste a video url/i);
+    await userEvent.type(input, "https://www.youtube.com/watch?v=abc123xyz00");
+    await userEvent.keyboard("{Enter}");
+
+    await waitFor(() => {
+      expect(screen.getByText(/requires signing in/i)).toBeInTheDocument();
+    });
+    expect(screen.queryByText("Sign in to Bilibili")).not.toBeInTheDocument();
+  });
+
   it("modal submit calls ingestUrl with selected videos", async () => {
     state.previewResponse = {
       videos: [
