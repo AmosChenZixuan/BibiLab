@@ -81,7 +81,7 @@ Bibilab trades that polish for full ownership of your data and models.
 | Runs fully local, no account                               |    ✓    |     ✗      |
 | Self-hosted / OpenAI-compatible models (Ollama, LM Studio) |    ✓    |     ✗      |
 | Open source                                                |    ✓    |     ✗      |
-| Bilibili & non-YouTube video ingest                        |    ✓    |     ✗      |
+| Video sources: Bilibili · YouTube · TikTok                 |    ✓    | YouTube only |
 | Speaker-attributed transcripts                             |    ✓    |     —      |
 | Inline citations back to the source                        |    ✓    |     ✓      |
 
@@ -119,7 +119,7 @@ content.
 | [`uv`](https://docs.astral.sh/uv/) | latest | Python package + venv manager |
 | FFmpeg | system | Audio extraction (`ffmpeg-python` shells out) |
 | `aria2` | system | Multi-connection downloader (`apt install aria2` / `brew install aria2`); bounds per-IP throttle tail via yt-dlp's `external_downloader` |
-| `yt-dlp` | auto-installed via `uv` | Bilibili / YouTube adapters |
+| `yt-dlp` | auto-installed via `uv` (`curl-cffi` extra for TikTok TLS impersonation) | Bilibili / YouTube / TikTok adapters |
 
 > CUDA is optional. The default ASR / embedding / reranker models run on CPU;
 > GPU acceleration is a one-line config change (`transcription.device=cuda`).
@@ -258,7 +258,12 @@ The CLI-friendly way to set config is the FastAPI endpoints; see
    "QR login" and scan with the app; the cookie is saved to `config.json`.
 2. **Create a list** — lists are top-level notebooks. Hit "New list" on the
    home grid.
-3. **Ingest videos** — paste a Bilibili / YouTube URL on the list detail page.
+3. **Ingest videos** — paste a Bilibili / YouTube / TikTok URL on the list
+   detail page. Bilibili: single & multi-part videos, collections, private
+   favorites (cookie login); YouTube: single videos & public playlists (no
+   login); TikTok: single videos incl. share short-links & public collections
+   (no login; best-effort — TikTok extraction breaks periodically upstream,
+   upgrading yt-dlp usually fixes it).
    The pipeline runs in the background:
    `download → audio → transcribe → punctuate → derive_sections → chunk
     (per-section) → digest ∥ embed → write_source + write_transcript_segments

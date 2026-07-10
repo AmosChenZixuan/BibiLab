@@ -19,7 +19,7 @@ npx vitest run --coverage          # Coverage (requires @vitest/coverage-v8)
 ```
 components/ui/    — primitive components (Button, Modal, Panel, Input, Select, SlotSlider, Spinner, StatusChip, SettingsField, Thumbnail, ContextMenu)
                     SlotSlider — 4-position segmented control (radiogroup, roving tabindex; keyboard nav moves focus + selection); used by LlmTab for context_window / max_output_tokens
-components/auth/  — platform auth modals (BilibiliQrModal)
+components/auth/  — platform auth modals (BilibiliQrModal — bilibili-only; a 401 opens it only when the platform/URL is bilibili (`isBilibiliUrl` in lib/utils), otherwise SourcesListMode shows the `lists.ingest.authRequired` i18n error)
 components/debug/ — prompt-trace reader: DebugDrawer + DebugHeader (opened from the assistant-bubble </> icon when debug_prompts + has_dump; Styled/Raw toggle over the per-turn dump)
 components/*/     — feature components (lists/, lists/sources/, lists/lab/, lists/hooks/, jobs/, layout/, settings/)
                     lists/hooks/ holds chat hooks: useConversationHistory (history load + reattach eligibility via active_stream_message_id), useSSEStream (send/stop/retryMessage(assistantId)/reattach), useAutoScroll

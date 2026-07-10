@@ -41,7 +41,7 @@ pipeline/         — one file per stage
   chat_summary.py   conversation compression (sliding window + LLM summary; summary is prose only — [N] markers not preserved)
   citation_parser.py incremental citation parser — strips [N] tokens from LLM deltas, emits citation SSE events with {index, section_id, source_id, timestamp_start, chunk_ids}
   chat_runs.py       StreamBuffer + ChatRunRegistry; in-memory buffer decouples LLM producer from HTTP request lifetime
-adapters/         — platform-specific download + resolution (base + bilibili)
+adapters/         — platform download + resolution; __init__ holds the registry (URL/platform dispatch) + CDN_DOMAINS; _ytdlp_common shared plumbing; bilibili / youtube / tiktok implementations
 db.py             — SQLite schema + query helpers
 video_status.py   — derive_video_statuses (status mapping extracted from db.py per Code Health Rule #4)
 config.py         — settings persisted to ~/.bibilab/config.json; includes models_dir() helper
@@ -261,12 +261,16 @@ Stateless one-shot JSON chat for eval frameworks. The engine is shared imported 
 class PlatformAdapter:
     def resolve_flat(url) -> PlaylistMeta
     async def get_videos_metadata(video_ids) -> tuple[dict[str, VideoMeta], dict[str, list[str]]]
-    def download(video_id, source_url) -> Path
+    def download(video_id, source_url, connections) -> Path
 ```
 
-`BilibiliAdapter` resolves single videos, multi-part videos (`?p=N`), and collection/favorite playlists; courses raise `AuthRequiredError`. Cookie-based auth in config. 403 → `AuthRequiredError` → job `needs_auth` → UI prompts user.
+**Registry dispatch** (`adapters/__init__.py`): `get_adapter_for_url` (domain suffix match, resolve path) and `get_adapter_for_platform` (metadata + worker paths; job meta carries `platform`; `VideoMetadataRequest.platform` is required, no default). Unknown target → `UnsupportedPlatformError` → 400. `CDN_DOMAINS` beside the registry maps each platform to its cover-CDN hosts + optional Referer; `routers/proxy.py` derives its allowlist and Referer policy from it (an import-time assert keeps the two key sets equal — a new platform can't land with working ingest but broken covers). Shared yt-dlp plumbing lives in `adapters/_ytdlp_common.py`: `strip_ansi`, `apply_aria2c`, `pick_thumbnail` (max-by-area, never list order), `safe_duration` (non-numeric → 0, never sinks the list), `gather_metadata` (thread-pool per-id fetch, failed ids omitted), `raise_mapped` (auth regex → `AuthRequiredError`, overrides, hint). `resolve_flat` is blocking yt-dlp — the router runs it via `asyncio.to_thread` so the event loop stays responsive.
 
-**Two-phase resolve**: `resolve_flat` enumerates fast via `extract_flat="in_playlist"` — keep it flat; a multi-part video comes back as a flat playlist of `?p=N` parts (no per-part title/duration), and non-flat extraction re-resolves every part's stream formats (~15× slower) for data phase 2 supplies anyway. `get_videos_metadata` then enriches each part from the bilibili view API (per-part title/duration) and expands a bare multi-part BVID into `_pN` parts. Part title is the composite `"<part> - <video>"` (part-first so it survives single-line truncation while the parent title trails as collection context).
+- **bilibili** — single / multi-part (`?p=N`) / collection / favorite lists; courses raise `AuthRequiredError`. Cookie auth (QR login). 403/412 → `needs_auth`. Keeps its own inline error mapping — lowercased matching, 412 handling and cookie revalidation don't fit `raise_mapped`.
+- **youtube** — single videos + public playlists, no credentials; sign-in/age/private/members-only messages → `AuthRequiredError`. Flat playlist entries carry full metadata, so phase-2 enrichment is a light per-id refetch.
+- **tiktok** — single videos (incl. `vm.`/`vt.`/`/t/` short links) + collections, no credentials; **best-effort tier** (extraction breaks in waves; generic failures append an upgrade-yt-dlp hint). Captions are bounded to 120 chars as titles; image posts → named `DownloadError`; the `yt-dlp[curl-cffi]` extra supplies the TLS impersonation the extractor requests.
+
+**Two-phase resolve** (bilibili): `resolve_flat` enumerates fast via `extract_flat="in_playlist"` — keep it flat; a multi-part video comes back as a flat playlist of `?p=N` parts (no per-part title/duration), and non-flat extraction re-resolves every part's stream formats (~15× slower) for data phase 2 supplies anyway. `get_videos_metadata` then enriches each part from the bilibili view API (per-part title/duration) and expands a bare multi-part BVID into `_pN` parts. Part title is the composite `"<part> - <video>"` (part-first so it survives single-line truncation while the parent title trails as collection context).
 
 **QR login flow**: `POST /auth/bilibili/qr` → get `{url, key}` → UI polls `GET /auth/bilibili/qr/status?key=...` (query param, not path param — avoids key in server logs) → on success, cookie saved to config.
 

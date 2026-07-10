@@ -174,7 +174,7 @@ def test_download_opts_and_path(tmp_path, monkeypatch):
     captured: list = []
     with (
         patch("bibilab.adapters.youtube.yt_dlp.YoutubeDL", _mock_ydl(info={"ext": "webm"}, captured_opts=captured)),
-        patch("bibilab.adapters.youtube.shutil.which", return_value=None),
+        patch("bibilab.adapters._ytdlp_common.shutil.which", return_value=None),
     ):
         path = YouTubeAdapter().download("vidX", "https://www.youtube.com/watch?v=vidX", connections=4)
     assert path == tmp_path / "downloads" / "vidX.webm"
@@ -188,7 +188,7 @@ def test_download_uses_aria2c_when_present(tmp_path, monkeypatch):
     captured: list = []
     with (
         patch("bibilab.adapters.youtube.yt_dlp.YoutubeDL", _mock_ydl(info={"ext": "m4a"}, captured_opts=captured)),
-        patch("bibilab.adapters.youtube.shutil.which", return_value="/usr/bin/aria2c"),
+        patch("bibilab.adapters._ytdlp_common.shutil.which", return_value="/usr/bin/aria2c"),
     ):
         YouTubeAdapter().download("vidX", "https://www.youtube.com/watch?v=vidX", connections=8)
     opts = captured[0]

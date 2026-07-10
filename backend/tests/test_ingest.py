@@ -63,6 +63,35 @@ async def test_ingest_dedup(client: httpx.AsyncClient, tmp_bibilab_home: Path):
 
 
 @pytest.mark.asyncio
+async def test_preview_does_not_block_event_loop(client: httpx.AsyncClient, monkeypatch):
+    """resolve_flat is a multi-second blocking yt-dlp call; the router must run
+    it in a thread so concurrent handlers (chat SSE etc.) keep making progress."""
+    import asyncio
+    import time as _time
+
+    from bibilab.adapters.base import PlaylistMeta
+    from bibilab.adapters.bilibili import BilibiliAdapter
+
+    def slow_resolve(self, url):
+        _time.sleep(0.5)
+        return PlaylistMeta(playlist_id="x", title="t", platform="bilibili", source_url=url, videos=[])
+
+    monkeypatch.setattr(BilibiliAdapter, "resolve_flat", slow_resolve)
+    list_id = (await client.post("/lists", json={"name": "T"})).json()["id"]
+
+    task = asyncio.create_task(
+        client.post("/ingest/preview", json={"list_id": list_id, "url": "https://bilibili.com/video/BV1"})
+    )
+    start = _time.monotonic()
+    await asyncio.sleep(0.05)
+    loop_stall = _time.monotonic() - start
+    resp = await task
+    assert resp.status_code == 200
+    # A blocked loop can't resume the 0.05s sleep until the 0.5s resolve ends.
+    assert loop_stall < 0.4
+
+
+@pytest.mark.asyncio
 async def test_preview_unsupported_domain_400(client: httpx.AsyncClient):
     list_id = (await client.post("/lists", json={"name": "Test"})).json()["id"]
     resp = await client.post(

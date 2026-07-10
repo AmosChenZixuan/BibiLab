@@ -96,6 +96,22 @@ async def test_proxy_cover_rejects_ytimg_suffix_spoof(client: httpx.AsyncClient)
 
 
 @pytest.mark.asyncio
+async def test_proxy_cover_allows_tiktokcdn_without_referer(client: httpx.AsyncClient):
+    with patch("bibilab.routers.proxy.httpx.AsyncClient") as mock_client:
+        mock_response = AsyncMock()
+        mock_response.status_code = 200
+        mock_response.headers = {"content-type": "image/jpeg"}
+        mock_response.content = b"fake-image-data"
+
+        mock_get = AsyncMock(return_value=mock_response)
+        mock_client.return_value.__aenter__.return_value.get = mock_get
+
+        response = await client.get("/proxy/cover?url=https://p16-common-sign.tiktokcdn-us.com/obj/thumb.jpg")
+        assert response.status_code == 200
+        assert "Referer" not in mock_get.call_args.kwargs["headers"]
+
+
+@pytest.mark.asyncio
 async def test_proxy_cover_rejects_oversized_response(client: httpx.AsyncClient):
     large_content = b"x" * (6 * 1024 * 1024)  # 6MB
     with patch("bibilab.routers.proxy.httpx.AsyncClient") as mock_client:
