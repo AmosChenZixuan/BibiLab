@@ -1048,6 +1048,12 @@ class WorkerLoop:
             await delete_job(job_id)
             return None
 
+        if not sentence_segments:
+            # Music-only / speech-less video: fail loud here instead of an
+            # opaque IndexError in digest (sections would be empty). Checked
+            # after the cancel gate so a user cancel wins over the failure.
+            raise PipelineError("no speech detected in audio")
+
         return detected_language, effective_language, sentence_segments
 
     async def _stage_process(

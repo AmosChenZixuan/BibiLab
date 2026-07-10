@@ -12,6 +12,8 @@ from bibilab.db import bootstrap_db, create_list, parse_job_meta
 from bibilab.worker import WorkerLoop, _download_cover
 from tests.factories import SourceFactory
 
+pytestmark = pytest.mark.integration
+
 # ---------------------------------------------------------------------------
 # _download_cover
 # ---------------------------------------------------------------------------
@@ -169,6 +171,52 @@ async def test_run_job_pipeline_error(tmp_bibilab_home: Path):
 
 
 @pytest.mark.asyncio
+async def test_run_job_no_speech_sets_stage_prefixed_error(tmp_bibilab_home: Path):
+    """A speech-less video ends FAILED with the user-visible stage-prefixed
+    message, exercising the guard through the real _run_job → _pipeline path."""
+    from bibilab.db import bootstrap_db, create_job, get_job
+
+    await bootstrap_db()
+    await create_list("list-ns", "NoSpeech", "2026-01-01T00:00:00")
+
+    (tmp_bibilab_home / "downloads").mkdir(parents=True, exist_ok=True)
+    tmp_video = tmp_bibilab_home / "downloads" / "BVnospeech.mp4"
+    tmp_video.write_bytes(b"fake video")
+    tmp_wav = tmp_bibilab_home / "downloads" / "BVnospeech.wav"
+    tmp_wav.write_bytes(b"fake wav")
+
+    meta = {
+        "source_id": str(uuid.uuid4()),
+        "video_id": "BVnospeech",
+        "list_id": "list-ns",
+        "title": "Music Only",
+        "platform": "bilibili",
+        "source_url": "https://bilibili.com/video/BVnospeech",
+        "cover_url": "",
+        "duration_seconds": 100,
+        "uploader": "u",
+        "ui_lang": "en",
+    }
+    job_id = await create_job("ingest", meta)
+    job = {"id": job_id, "type": "ingest", "meta": json.dumps(meta)}
+
+    mock_adapter = MagicMock()
+    mock_adapter.download = MagicMock(return_value=tmp_video)
+    worker = WorkerLoop(concurrency=1, adapter=mock_adapter, home=tmp_bibilab_home)
+    worker._in_flight.add(job_id)
+
+    with (
+        patch("bibilab.worker.extract_audio", MagicMock(return_value=tmp_wav)),
+        patch("bibilab.worker.transcribe", MagicMock(return_value=([], None))),
+    ):
+        await worker._run_job(job)
+
+    row = await get_job(job_id)
+    assert row["status"] == "failed"
+    assert row["error"] == "[transcribing] no speech detected in audio"
+
+
+@pytest.mark.asyncio
 async def test_run_job_generic_exception(tmp_bibilab_home: Path):
     from bibilab.db import bootstrap_db, create_job
 
@@ -261,6 +309,51 @@ async def test_stage_transcribe_punctuates_and_returns_sentences(tmp_bibilab_hom
     detected_language, effective_language, sentence_segments = result
     assert called["language"] == "zh"
     assert sentence_segments == sentences
+
+
+@pytest.mark.asyncio
+async def test_stage_transcribe_no_speech_raises_pipeline_error(tmp_bibilab_home: Path, monkeypatch):
+    """A speech-less video (empty transcription) fails loud with a clear message
+    instead of crashing downstream with IndexError in digest."""
+    from bibilab.config import BibilabConfig
+    from bibilab.db import bootstrap_db, create_job
+    from bibilab.pipeline.audio import PipelineError
+
+    await bootstrap_db()
+    job_id = await create_job("ingest", {})
+
+    monkeypatch.setattr("bibilab.worker.transcribe", lambda *a, **k: ([], None))
+    monkeypatch.setattr("bibilab.worker.punctuate", lambda segs, language: [])
+
+    loop = WorkerLoop(config=BibilabConfig(), home=tmp_bibilab_home)
+    wav = tmp_bibilab_home / "a.wav"
+    wav.write_bytes(b"")
+
+    with pytest.raises(PipelineError, match="no speech detected"):
+        await loop._stage_transcribe(job_id, wav, "src-1", BibilabConfig())
+
+
+@pytest.mark.asyncio
+async def test_stage_transcribe_cancel_wins_over_no_speech(tmp_bibilab_home: Path, monkeypatch):
+    """A job cancelled during transcription of a speech-less video ends as a
+    clean cancel (job deleted), not a FAILED no-speech error."""
+    from bibilab.config import BibilabConfig
+    from bibilab.db import bootstrap_db, create_job, get_job
+
+    await bootstrap_db()
+    job_id = await create_job("ingest", {})
+
+    monkeypatch.setattr("bibilab.worker.transcribe", lambda *a, **k: ([], None))
+
+    loop = WorkerLoop(config=BibilabConfig(), home=tmp_bibilab_home)
+    loop.cancel_job(job_id)
+    wav = tmp_bibilab_home / "a.wav"
+    wav.write_bytes(b"")
+
+    result = await loop._stage_transcribe(job_id, wav, "src-1", BibilabConfig())
+
+    assert result is None
+    assert await get_job(job_id) is None
 
 
 @pytest.mark.asyncio
