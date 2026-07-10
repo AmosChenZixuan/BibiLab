@@ -198,3 +198,13 @@ def test_metadata_fetch_uses_extract_flat(monkeypatch):
     with patch("bibilab.adapters.tiktok.yt_dlp.YoutubeDL", MockYDL):
         asyncio.run(TikTokAdapter().get_videos_metadata(["123"]))
     assert captured[0]["extract_flat"] is True
+
+
+def test_non_numeric_duration_does_not_sink_collection():
+    info = _collection_info(count=2)
+    info["entries"][0]["duration"] = "10:30"
+    with patch("bibilab.adapters.tiktok.yt_dlp.YoutubeDL", _mock_ydl(info=info)):
+        result = TikTokAdapter().resolve_flat("https://www.tiktok.com/@u/collection/x-1")
+    assert len(result.videos) == 2
+    assert result.videos[0].duration_seconds == 0
+    assert result.videos[1].duration_seconds == 20
