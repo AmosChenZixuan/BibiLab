@@ -95,7 +95,7 @@ class TikTokAdapter(PlatformAdapter):
 
     async def get_videos_metadata(self, video_ids: list[str]) -> tuple[dict[str, VideoMeta], dict[str, list[str]]]:
         def fetch_one(vid: str) -> VideoMeta | None:
-            opts = {"quiet": True, "no_warnings": True}
+            opts = {"quiet": True, "no_warnings": True, "extract_flat": True}
             try:
                 with yt_dlp.YoutubeDL(opts) as ydl:
                     info = ydl.extract_info(_VIDEO_URL.format(vid), download=False)

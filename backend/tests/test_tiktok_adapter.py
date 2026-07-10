@@ -175,3 +175,26 @@ def test_pick_thumbnail_dimensionless_falls_back_to_last():
 
     entry = {"thumbnails": [{"url": "https://cdn/first.jpg"}, {"url": "https://cdn/last.jpg"}]}
     assert pick_thumbnail(entry) == "https://cdn/last.jpg"
+
+
+def test_metadata_fetch_uses_extract_flat(monkeypatch):
+    captured: list = []
+
+    class MockYDL:
+        def __init__(self, opts):
+            captured.append(opts)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+        def extract_info(self, url, download=False):
+            return _video_info(vid=url.rsplit("/", 1)[1])
+
+    import asyncio
+
+    with patch("bibilab.adapters.tiktok.yt_dlp.YoutubeDL", MockYDL):
+        asyncio.run(TikTokAdapter().get_videos_metadata(["123"]))
+    assert captured[0]["extract_flat"] is True
