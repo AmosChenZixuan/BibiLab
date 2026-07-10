@@ -93,7 +93,7 @@ model_registry.py — Unified model dependency registry; all non-LLM downloads (
 | Column | Notes |
 |---|---|
 | `video_id` | Platform-native ID (e.g. `bvid`) |
-| `title`, `summary`, `keywords` | `title` is platform metadata; `summary`/`keywords` columns DROPPED post-#465 — sections are the sole digest store |
+| `title`, `summary`, `keywords` | `title` is platform metadata; `summary`/`keywords` columns DROPPED — sections are the sole digest store |
 | `language`, `uploader`, `duration_seconds` | Video metadata |
 | `whisper_model`, `ai_model` | Processing config at ingest time |
 | `cover_url`, `processed_at`, `settings_snapshot` | Ingest-time state |
@@ -129,7 +129,7 @@ model_registry.py — Unified model dependency registry; all non-LLM downloads (
 | `content` | Message text |
 | `status` | In-flight: user `"pending"`, assistant `"streaming"`. Terminal: `"done"` \| `"failed"` \| `"cancelled"`. Both rows of a turn flip to the **same** terminal status atomically (`update_turn_terminal`); a turn is visible to LLM replay + compaction iff both are `"done"`. UI history is unfiltered (renders 已停止/重试); the LLM snapshot filters to `"done"` inline (not in `get_recent_messages`). |
 | `error` | Error code (e.g. `llm_rate_limit_error`, `internal_error`), nullable; set on producer failure or server restart sweep; mapped by `classify_error()` from SDK exceptions; frontend resolves via `chat.errors.*` i18n keys |
-| `metadata` | JSON blob, nullable. Shape: `{"tool_calls": [...], "rag": {"calls": [{"tool_name", "query" \| null, "section_id"?, "source_id"?, "source_title"?, "section_coverage" (find_passages only, per section), "context" (find_passages only, reconstructed at terminal `rag` event from citation registry), "candidates_evaluated", "sources_with_hits", "sources_total", "reranked", "scoped_pool_size", "facet_scope"}]}}`. `tool_name` is `"find_passages"` or `"read_section"`; `read_section` rows have `query: null`, empty `context[]`, and `section_id`/`source_id`/`source_title` set. `scoped_pool_size` is the **full source pool**; `facet_scope.matched_count` carries the facet-narrowed count. Set by `run_chat_turn` post-stream from tool `tool_result` events. No migration for legacy persisted messages — the ledger renders best-effort from whatever fields exist. |
+| `metadata` | JSON blob, nullable: `{"tool_calls": [...], "rag": {"calls": [...]}}` — full field shape in `docs/chat_architecture.md`. Set by `run_chat_turn` post-stream. No migration for legacy rows — the ledger renders best-effort from whatever fields exist. |
 
 ### `transcript_segments` — punctuated sentence segments
 
@@ -144,7 +144,7 @@ model_registry.py — Unified model dependency registry; all non-LLM downloads (
 
 Index: `idx_segments_source` on `(source_id, seq)`. Replaces the on-disk `transcripts/{source_id}.txt` (P2).
 
-### `sections` — bounded sub-source spans (PR #458 / #452)
+### `sections` — bounded sub-source spans
 
 | Column | Notes |
 |---|---|
@@ -179,9 +179,9 @@ POST /ingest/url → resolve → dedup check → create job(s)
 ### Pipeline stages (per video)
 
 1. **download** → temp video file
-2. **audio** → strip to .wav via FFmpeg
+2. **audio** → strip to .wav via FFmpeg; probes streams first — a track-less video fails loud (`video has no audio track`), never the raw FFmpeg dump (probe failure fails open to FFmpeg's own error)
 3. **transcribe** → FunASR AutoModel (SenseVoice or Whisper via WhisperWarp) → raw VAD segments with timestamps + speaker labels
-4. **punctuate** → ct-punc (zh-gated) → punctuated sentence segments persisted to `transcript_segments`
+4. **punctuate** → ct-punc (zh-gated) → punctuated sentence segments persisted to `transcript_segments`; empty result (music-only / silent audio) fails loud (`no speech detected in audio`) — the cancel gate runs first, a user cancel wins over the failure
 5. **derive_sections** → token+pause boundary, target=12000 (zone [7200, 16800]). Short videos = 1 section spanning all. Produces `sections` rows.
 6. **chunk** → greedily merge consecutive **sentence** segments within each section to token target, split at trustworthy sentence boundary. Records `seg_start`/`seg_end` per chunk (source-global indices). Chunks physically nest in sections.
 7. **digest** → `digest_sections`: section 1 via `digest()` (summary, keywords, facets — extracted once), sections 2..N via a refine prompt with rolling context. Per-section summary/keywords land on each `sections` row; facets land on `sources` via `apply_digest_facets`. 1-section sources are byte-identical to the pre-section path. (parallel with embed)
@@ -190,66 +190,15 @@ POST /ingest/url → resolve → dedup check → create job(s)
 
 ## Chat Pipeline
 
-```
-POST /lists/:id/chat (SSE) — creates user(pending) + assistant(streaming) rows atomically, spawns async producer
-  → asyncio.Task: run_chat_turn writes events into StreamBuffer
-  → POST handler returns SSE stream consuming from buffer (late-subscriber-safe replay)
-  → producer's finally: update_turn_terminal flips BOTH rows to the same terminal status
-    AND clears active_stream_message_id in one transaction (fallback set_active_stream
-    clear if that transaction fails, else the conversation wedges at 409)
-  → producer fires fire-and-forget: evict buffer after grace, compress if done
+Full mechanism — request lifecycle, retrieval pipeline, tool loop, SSE semantics, compression, eval endpoint, prompt-trace — lives in `docs/chat_architecture.md`. The rules below are what an AI changing this code must not break:
 
-GET  /lists/:id/chat/{msg_id}/stream — reattach to an active stream (204 if evicted)
-POST /lists/:id/chat/{msg_id}/cancel — cancel producer task, flips turn to status='cancelled'
-
-Startup: sweep_orphaned_streams flips leftover in-flight rows (pending + streaming) to failed
-Shutdown: cancel all active tasks, drain with 5s timeout
-```
-
-### SSE event types
-
-`meta`, `delta`, `citation`, `tool_call_start`, `tool_result`, `rag`, `done`, `error`, `cancelled`
-
-`meta` is the first event of every stream, carrying `{message_id}` so the client can wire cancel-by-id before the first delta (constant `SSE_EVENT_META`). The other eight are also `stream_llm` discriminators; `meta` is emitted only by the HTTP handler.
-
-### System prompt context
-
-- **Grounding prompt**: `build_grounding_prompt(response_language)` produces a four-section markdown document: `## Workflow` (tool routing), `## Grounding` (excerpts-only), `## Citation` (`[N]` markers), `## Style` (direct, no follow-up). `response_language` is mapped to a native display name and interpolated once, as the tail directive (`Respond in X.`) governing all output including refusals. Teaches the LLM subject decomposition — one subject → one tool, multiple subjects (comparisons, multi-episode) → parallel calls, one per subject, picking the appropriate tool per subject.
-- **Source scoping**: No per-turn source list in the prompt. The system prompt is static-per-language, so Anthropic prompt caching covers the whole grounding prefix. Search scope is set solely by deterministic facet matching: the LLM passes `sequence_number` / `season_number` to `find_passages` / `read_section` only when the question references them; the backend matches them against `sources`. When facet matching finds no source (fail-open to the full pool), the tool result carries `_NO_MATCH_NOTE` as a fact-only LLM-visible prefix so the model states the degraded scope before answering.
-
-### Chat execution
-
-```
-stream_with_tools(stream_llm loop):
-    LLM yields tool_call (find_passages) → execute_find_passages() → hybrid_search (BM25 + vector RRF) → rerank → top-k (no gate) → section-keyed fence render
-    → tool_call_start emitted → tool_result (with citation-formatted _chunks) fed back to LLM → second turn yields text with [N] citations
-    → parse_delta strips [N] markers, emits citation SSE events ({index, section_id, source_id, timestamp_start, chunk_ids}) interleaved with delta events
-    LLM yields tool_call (read_section) → execute_read_section() → resolves to one section by [N] → bounded verbatim transcript
-    → tool_result fed back to LLM
-    LLM yields delta + done directly (no tool) → exit loop
-→ yield delta + tool_call_start + tool_result + citation + done events (SSE)
-→ persist assistant message with rag metadata → asyncio.create_task: maybe_compress_conversation
-```
-
-- **Producer/consumer split**: `run_chat_turn` (async Task) writes SSE events into `StreamBuffer`; `_sse_consumer` reads from buffer. Decouples LLM lifetime from HTTP request.
-- `stream_with_tools` wraps `stream_llm` in a bounded loop (max 3 iterations). Both tools are loopback: their results feed back for another LLM turn (allowing `find_passages → read_section` escalation). When iterations are exhausted, tools stay *advertised* but are no longer executed (a synthesis directive instructs the model to answer in prose). Keeping tools advertised keeps the serving layer's tool-call grammar active, so a stubborn tool attempt parses as an ignored structured tool_call instead of leaking native tool-call tokens as the user-visible answer; execution is gated by `is_synthesis_turn`, not by withholding tools. If tools were used but no text was generated, a forced follow-up LLM call (tools still advertised, not executed; stray tool_calls dropped) tries to produce an answer; if the turn *still* yields no visible text it raises a typed no-text error (never persists a blank message) — `LLMOutputBudgetExceededError`→`llm_output_budget_exceeded` when the terminal stop_reason is a length cutoff, else `LLMEmptyResponseError`→`llm_empty_response`. `parallel_retrieve` log records hedge-vs-decomposed rate when retrieve-family fires >1 call in one iteration, for offline analysis.
-- **Preamble streaming**: Text generated before a loopback tool call is streamed to the client immediately (parsed incrementally via `parse_delta`). Trade-off: short filler like "Let me look that up..." reaches the client before the retrieve runs.
-- **Subject decomposition + parallel retrieval**: The grounding prompt instructs the LLM to first decompose the user's message into distinct subjects (entities, episodes, items compared). One subject → one retrieval call. Multiple subjects (`'A 和 B 的区别'`, `'第一集 xxx 第三集 yyy'`) → parallel calls, one per subject, picking the appropriate tool per subject.
-- **Cross-turn reuse**: Prior-turn tool exchanges (find_passages, read_section) are dropped entirely from history replay by `expand_message_for_provider`; only synthesized prose survives into the next turn's LLM context. To answer from prior evidence the LLM must retrieve again this turn. The current turn's fresh tool calls are full-text (they go through `stream_with_tools`, not `expand_message_for_provider`).
-- **Speaker-turn reconstruction**: For the retained top-k only, `execute_find_passages` runs one batched `get_segments_for_ranges` query over each chunk's `(source_id, seg_start..seg_end)` and renders the LLM-facing fence body + `context[].preview` as grouped speaker turns via the shared `format_turns` helper (`[S{N}·SPK{k} @MM:SS]`). Speakers are namespaced per source by citation index `N`. Rerank + chroma/FTS still use raw `chunk.content` (embedder parity) — reconstruction is presentation-only.
-- Retrieve result `_chunks` are grouped per section under `===== [N] "title" · Section M =====` fences then formatted as citation-ready `[N]: "content"` strings for the LLM; stripped from the client-bound `tool_result` SSE payload by `strip_internal()`. Within a fence, fragments render in chronological (segment) order, not rerank order, with a `[…]` gap marker between non-seg-adjacent fragments to mark elided transcript.
-- `stream_llm` supports both OpenAI and Anthropic protocols via `AsyncOpenAI`/`AsyncAnthropic`
-- **Final `rag` event**: In the `finally` block, after `context[]` is reconstructed from the citation registry, `run_chat_turn` emits one `rag` SSE event carrying the authoritative persisted-shape `rag.calls` just before the terminal event. The client replaces its incrementally-built ledger so expand works post-stream without a manual reload (the streaming `tool_result` payload omits `context[]`).
-- **Lifecycle**: Startup sweep flips leftover in-flight rows (`'streaming'` + `'pending'`, via `IN_FLIGHT_MESSAGE_STATUSES`) to `failed`. Shutdown cancels all tasks, drains with 5s timeout. Buffer eviction fires 60s after terminal status.
-- Compression: triggered when message count > 30; keeps sliding window of 10; summarizes older messages via `_call_llm` in `asyncio.create_task`. The summary is prose only — the compression prompt does **not** preserve `[N]` markers (deliberate; see `docs/citation_system.md`). Only post-window messages retain live citations; the summary is injected into the system prompt on subsequent requests.
-
-### Eval endpoint (`POST /eval/run_chat`)
-
-Stateless one-shot JSON chat for eval frameworks. The engine is shared imported code (`build_grounding_prompt`, `stream_with_tools`, `execute_tool`, model gate, error classifier) — pipeline changes reach it automatically. Input differs by design: no history/summary replay (single bare message — prod's multi-turn assembly is never exercised here), `language` = request value or `"en"` (ignores `cfg.ai.output_language`), optional `llm` override field-merged onto `cfg.ai` (422 detail stays messages-only; `str(e)` would leak `api_key` via the merged dump). Output differs by design: full retrieved set per tool call with `cited` flags + `full_text` evidence and a response-level `llm_context` (the exact LLM-bound tool message per call, captured pre-strip — what a grader judges against), vs prod's cited-only + `preview`; rows snapshot at `tool_result` time since registry `full_text` is last-writer-wins across a turn. Mirrored literals to keep in sync when touching prod: the `"\n\n"` break around tool calls and the `"tool_error"` code. `CitationRegistryEntry.full_text` = post-dedup grounding text the LLM saw for a section; in-memory only, never persisted or SPA-visible.
-
-### Prompt-trace observability (opt-in)
-
-`rag.debug_prompts: true` writes one JSON per chat turn at `~/.bibilab/debug/{message_id}.json` capturing the final cumulative LLM state (system, tools, messages, response, model, timestamp). The chat frontend shows a `</>` icon on assistant bubbles when both `debug_prompts` and the per-message `has_dump` flag are true; clicking opens a right-side drawer with envelope-aware rendering (Styled/Raw toggle). Storage write site: end of `run_chat_turn`. Best-effort: write errors logged as `dump_turn_failed`, never propagated.
+- `POST /lists/:id/chat` streams SSE via a producer/consumer split (`run_chat_turn` → `StreamBuffer` → `_sse_consumer`); both rows of a turn flip to the **same** terminal status atomically (`update_turn_terminal`) and `active_stream_message_id` clears in the same transaction — breaking that wedges the conversation at 409.
+- SSE events: `meta`, `delta`, `citation`, `tool_call_start`, `tool_result`, `rag`, `done`, `error`, `cancelled`. `meta` is always first (carries `{message_id}` for cancel-by-id, constant `SSE_EVENT_META`); `error` events carry machine-readable codes (via `classify_error()`) for frontend i18n.
+- `stream_with_tools` is a bounded loop (max 3 iterations). Exhausted iterations keep tools **advertised** but unexecuted (gate is `is_synthesis_turn`) — withholding them makes native tool-call tokens leak into the visible answer. Any retrieve-family call disables all three tools for the rest of the turn. An empty synthesis gets one forced follow-up call; still no text → typed no-text error, never a blank persisted message.
+- Retrieval: facet scoping fails open to the full pool; rerank order is final (no relevance gate); rerank/embed consume raw `chunk.content` while the LLM sees speaker-turn reconstruction — keep that split (embedder parity).
+- Prior-turn tool exchanges are dropped from history replay (`expand_message_for_provider`); only synthesized prose survives — never assume prior evidence is still in LLM context.
+- Compression summary is prose only — `[N]` markers deliberately dropped (see `docs/citation_system.md`).
+- The eval endpoint (`POST /eval/run_chat`) shares the prod engine but mirrors two literals that must stay in sync when touching prod: the `"\n\n"` break around tool calls and the `"tool_error"` code. Its 422 detail stays messages-only — `str(e)` would leak `api_key` via the merged llm-override dump.
 
 ## Artifact pipeline
 
@@ -268,7 +217,7 @@ class PlatformAdapter:
 
 - **bilibili** — single / multi-part (`?p=N`) / collection / favorite lists; courses raise `AuthRequiredError`. Cookie auth (QR login). 403/412 → `needs_auth`. Keeps its own inline error mapping — lowercased matching, 412 handling and cookie revalidation don't fit `raise_mapped`.
 - **youtube** — single videos + public playlists, no credentials; sign-in/age/private/members-only messages → `AuthRequiredError`. Flat playlist entries carry full metadata, so phase-2 enrichment is a light per-id refetch.
-- **tiktok** — single videos (incl. `vm.`/`vt.`/`/t/` short links) + collections, no credentials; **best-effort tier** (extraction breaks in waves; generic failures append an upgrade-yt-dlp hint). Captions are bounded to 120 chars as titles; image posts → named `DownloadError`; the `yt-dlp[curl-cffi]` extra supplies the TLS impersonation the extractor requests.
+- **tiktok** — single videos (incl. `vm.`/`vt.`/`/t/` short links) + collections, no credentials; **best-effort tier** (extraction breaks in waves; generic failures append an upgrade-yt-dlp hint). Captions are bounded to 120 chars as titles; image posts → named `DownloadError`; the `yt-dlp[curl-cffi]` extra supplies the TLS impersonation the extractor requests. Download filters formats by `vcodec` (h264 preferred), never `acodec` — the extractor stamps a fabricated `acodec` on every format, and TikTok's HEVC (`bytevc1`) variants are silent files.
 
 **Two-phase resolve** (bilibili): `resolve_flat` enumerates fast via `extract_flat="in_playlist"` — keep it flat; a multi-part video comes back as a flat playlist of `?p=N` parts (no per-part title/duration), and non-flat extraction re-resolves every part's stream formats (~15× slower) for data phase 2 supplies anyway. `get_videos_metadata` then enriches each part from the bilibili view API (per-part title/duration) and expands a bare multi-part BVID into `_pN` parts. Part title is the composite `"<part> - <video>"` (part-first so it survives single-line truncation while the parent title trails as collection context).
 
@@ -287,4 +236,4 @@ class PlatformAdapter:
   "rag": { "max_distance": 0.8, "reranking_enabled": true, "hybrid_enabled": true, "debug_prompts": false }
 }
 ```
-Reranker is `Xenova/bge-reranker-base` int8 (XLM-RoBERTa, Chinese + English), a single spec `RERANKER_SPEC_ID = "bge-reranker-base-q"` (~4× smaller, ~1.85× faster on CPU than fp32; fp32 dropped in #573). Its ONNX session sources providers from `interpreting_providers()` (shared with embed), which excludes compiler-based EPs — on macOS that drops CoreML, whose per-input-shape JIT recompile otherwise hangs >90s / OOM-kills the reranker on first chat retrieve (#573, resolves #559). `FIND_PASSAGES_TOP_K = 8`. Opt-in prompt-trace dump writes one JSON per chat turn at `~/.bibilab/debug/{message_id}.json` capturing the final cumulative LLM state when `rag.debug_prompts` is true; off by default.
+Reranker is the single spec `RERANKER_SPEC_ID = "bge-reranker-base-q"` (int8, zh+en); its ONNX session must source providers from `interpreting_providers()` — on macOS that excludes CoreML, whose per-input-shape JIT recompile hangs >90s / OOM-kills the reranker on first chat retrieve. `FIND_PASSAGES_TOP_K = 8`. Model rationale and prompt-trace details: `docs/chat_architecture.md`.
