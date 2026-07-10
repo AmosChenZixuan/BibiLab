@@ -165,7 +165,7 @@ def test_download_path_and_no_aria2c(tmp_path, monkeypatch):
         path = TikTokAdapter().download("71x", "https://www.tiktok.com/@u/video/71x", connections=8)
     assert path == tmp_path / "downloads" / "71x.mp4"
     opts = captured[0]
-    assert opts["format"] == "bestaudio/best"
+    assert opts["format"] == "bestaudio/best[vcodec^=h264]/best"
     # small files — native downloader, no aria2c branch
     assert "external_downloader" not in opts
 

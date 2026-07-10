@@ -112,7 +112,11 @@ class TikTokAdapter(PlatformAdapter):
         opts: dict = {
             "quiet": False,
             "outtmpl": str(out_dir / f"{video_id}.%(ext)s"),
-            "format": "bestaudio/best",
+            # TikTok's HEVC (bytevc1) variants are silent files, and the
+            # extractor stamps a fabricated acodec on every format — so
+            # prefer h264 by vcodec (real, derived from the URL), with a
+            # plain-best fallback should TikTok ever drop h264.
+            "format": "bestaudio/best[vcodec^=h264]/best",
             "retries": HTTP_RETRIES,
             "socket_timeout": SOCKET_TIMEOUT,
         }

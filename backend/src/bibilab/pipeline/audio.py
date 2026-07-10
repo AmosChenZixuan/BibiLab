@@ -26,6 +26,17 @@ def _probe_duration(path: Path) -> float:
         return 0.0
 
 
+def _has_audio_stream(path: Path) -> bool:
+    """True if the file has an audio stream; True on probe failure too —
+    an unreadable file should fail in extraction with FFmpeg's own error,
+    not be misreported as audio-less."""
+    try:
+        streams = ffmpeg.probe(str(path))["streams"]
+    except (ffmpeg.Error, KeyError, TypeError):
+        return True
+    return any(s.get("codec_type") == "audio" for s in streams)
+
+
 def _validate_audio_duration(decoded: float, container: float, expected: float) -> None:
     """Fail loud when decoded audio is too short against a known reference.
 
@@ -70,6 +81,12 @@ def extract_audio(video_path: Path, expected_duration: float = 0.0) -> Path:
     raises ``PipelineError`` on a short/corrupt result instead of persisting a
     silently truncated transcript. Returns the path to the extracted WAV file.
     """
+    if not _has_audio_stream(video_path):
+        # e.g. a platform variant shipped without an audio track: fail with
+        # a clear message instead of FFmpeg's raw "does not contain any
+        # stream" dump from the extraction below.
+        raise PipelineError("video has no audio track")
+
     wav_path = video_path.with_suffix(".wav")
     try:
         (
