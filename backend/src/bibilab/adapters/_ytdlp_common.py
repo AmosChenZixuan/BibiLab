@@ -1,7 +1,12 @@
 """Shared yt-dlp plumbing for platform adapters (three consumers: bilibili, youtube, tiktok)."""
 
+import asyncio
 import re
 import shutil
+from collections.abc import Callable
+from typing import TypeVar
+
+_T = TypeVar("_T")
 
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 
@@ -28,6 +33,19 @@ def apply_aria2c(opts: dict, connections: int) -> None:
         opts["external_downloader_args"] = {
             "aria2c": [f"-x{connections}", f"-s{connections}", "-k1M", "--file-allocation=none"],
         }
+
+
+async def gather_metadata(video_ids: list[str], fetch_one: Callable[[str], _T | None]) -> dict[str, _T]:
+    """Run a blocking per-id fetch across a thread pool with bounded
+    concurrency; failed ids (fetch_one returns None) are omitted."""
+    semaphore = asyncio.Semaphore(METADATA_CONCURRENCY)
+
+    async def fetch_bounded(vid: str) -> _T | None:
+        async with semaphore:
+            return await asyncio.to_thread(fetch_one, vid)
+
+    results = await asyncio.gather(*[fetch_bounded(vid) for vid in video_ids])
+    return {vid: meta for vid, meta in zip(video_ids, results) if meta is not None}
 
 
 def pick_thumbnail(entry: dict) -> str:

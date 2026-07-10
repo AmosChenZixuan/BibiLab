@@ -1,7 +1,6 @@
 """YouTube platform adapter using yt-dlp. No credentials — public content only;
 auth-walled videos surface as AuthRequiredError (cookie import is a separate issue)."""
 
-import asyncio
 import re
 from pathlib import Path
 
@@ -9,9 +8,9 @@ import yt_dlp
 
 from bibilab.adapters._ytdlp_common import (
     HTTP_RETRIES,
-    METADATA_CONCURRENCY,
     SOCKET_TIMEOUT,
     apply_aria2c,
+    gather_metadata,
     pick_thumbnail,
     strip_ansi,
 )
@@ -80,11 +79,6 @@ class YouTubeAdapter(PlatformAdapter):
         )
 
     async def get_videos_metadata(self, video_ids: list[str]) -> tuple[dict[str, VideoMeta], dict[str, list[str]]]:
-        if not video_ids:
-            return ({}, {})
-
-        semaphore = asyncio.Semaphore(METADATA_CONCURRENCY)
-
         def fetch_one(vid: str) -> VideoMeta | None:
             opts = {"quiet": True, "no_warnings": True, "extract_flat": True}
             try:
@@ -96,12 +90,7 @@ class YouTubeAdapter(PlatformAdapter):
                 return None
             return _entry_to_video_meta(info)
 
-        async def fetch_bounded(vid: str) -> VideoMeta | None:
-            async with semaphore:
-                return await asyncio.to_thread(fetch_one, vid)
-
-        results = await asyncio.gather(*[fetch_bounded(vid) for vid in video_ids])
-        return ({vid: meta for vid, meta in zip(video_ids, results) if meta is not None}, {})
+        return (await gather_metadata(video_ids, fetch_one), {})
 
     def download(self, video_id: str, source_url: str, connections: int) -> Path:
         out_dir = downloads_dir()
