@@ -24,5 +24,5 @@
 
 ### v3
 
-14. **YouTube adapter** — Adapter interface is already defined; YouTube-specific resolver and downloader are not implemented. Open: OAuth vs API key vs cookie auth?
+14. ~~**YouTube adapter**~~ — Shipped as part of the multi-platform epic (#601): adapter registry (#602), YouTube single video + public playlist (#603), TikTok single video + collection, best-effort (#604). Auth question resolved as no-auth v1; cookie import deferred (#605), TikTok creator profiles deferred (#606).
 15. **Free-text resolver** — Natural language → platform search → user confirmation → bulk ingest. Open: LLM for intent extraction vs heuristic? How to handle ambiguous queries?
