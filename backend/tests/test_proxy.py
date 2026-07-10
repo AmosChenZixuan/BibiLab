@@ -56,6 +56,46 @@ async def test_proxy_cover_allows_subdomain(client: httpx.AsyncClient):
 
 
 @pytest.mark.asyncio
+async def test_proxy_cover_allows_ytimg_without_referer(client: httpx.AsyncClient):
+    with patch("bibilab.routers.proxy.httpx.AsyncClient") as mock_client:
+        mock_response = AsyncMock()
+        mock_response.status_code = 200
+        mock_response.headers = {"content-type": "image/jpeg"}
+        mock_response.content = b"fake-image-data"
+
+        mock_get = AsyncMock(return_value=mock_response)
+        mock_client.return_value.__aenter__.return_value.get = mock_get
+
+        response = await client.get("/proxy/cover?url=https://i.ytimg.com/vi/x/hqdefault.jpg")
+        assert response.status_code == 200
+        sent_headers = mock_get.call_args.kwargs["headers"]
+        assert "Referer" not in sent_headers
+
+
+@pytest.mark.asyncio
+async def test_proxy_cover_hdslb_sends_bilibili_referer(client: httpx.AsyncClient):
+    with patch("bibilab.routers.proxy.httpx.AsyncClient") as mock_client:
+        mock_response = AsyncMock()
+        mock_response.status_code = 200
+        mock_response.headers = {"content-type": "image/jpeg"}
+        mock_response.content = b"fake-image-data"
+
+        mock_get = AsyncMock(return_value=mock_response)
+        mock_client.return_value.__aenter__.return_value.get = mock_get
+
+        response = await client.get("/proxy/cover?url=https://i0.hdslb.com/bfs/archive/img.jpg")
+        assert response.status_code == 200
+        sent_headers = mock_get.call_args.kwargs["headers"]
+        assert sent_headers["Referer"] == "https://www.bilibili.com/"
+
+
+@pytest.mark.asyncio
+async def test_proxy_cover_rejects_ytimg_suffix_spoof(client: httpx.AsyncClient):
+    response = await client.get("/proxy/cover?url=https://evilytimg.com/img.jpg")
+    assert response.status_code == 400
+
+
+@pytest.mark.asyncio
 async def test_proxy_cover_rejects_oversized_response(client: httpx.AsyncClient):
     large_content = b"x" * (6 * 1024 * 1024)  # 6MB
     with patch("bibilab.routers.proxy.httpx.AsyncClient") as mock_client:
