@@ -8,7 +8,7 @@ from pathlib import Path
 import httpx
 import yt_dlp
 
-from bibilab.adapters._ytdlp_common import HTTP_RETRIES, SOCKET_TIMEOUT, apply_aria2c, strip_ansi
+from bibilab.adapters._ytdlp_common import HTTP_RETRIES, SOCKET_TIMEOUT, apply_aria2c, safe_duration, strip_ansi
 from bibilab.adapters.base import (
     AuthRequiredError,
     DownloadError,
@@ -94,7 +94,7 @@ def _info_to_video_meta(info: dict, platform: str = "bilibili", fallback_uploade
         platform=platform,
         source_url=info.get("webpage_url", info.get("url", "")),
         cover_url=info.get("thumbnail", ""),
-        duration_seconds=int(info.get("duration", 0) or 0),
+        duration_seconds=safe_duration(info.get("duration")),
         uploader=info.get("uploader", fallback_uploader),
     )
 

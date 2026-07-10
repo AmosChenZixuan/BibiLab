@@ -48,6 +48,16 @@ async def gather_metadata(video_ids: list[str], fetch_one: Callable[[str], _T | 
     return {vid: meta for vid, meta in zip(video_ids, results) if meta is not None}
 
 
+def safe_duration(value) -> int:
+    """yt-dlp durations are usually numeric, but the field contract allows
+    strings some extractors emit ('mm:ss' etc.); one bad value must not
+    sink the whole entry list — degrade to 0."""
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
 def pick_thumbnail(entry: dict) -> str:
     """Best thumbnail URL from a yt-dlp info dict. Prefers the singular
     `thumbnail`; falls back to the largest-area entry of `thumbnails` —

@@ -12,6 +12,7 @@ from bibilab.adapters._ytdlp_common import (
     SOCKET_TIMEOUT,
     gather_metadata,
     pick_thumbnail,
+    safe_duration,
     strip_ansi,
 )
 from bibilab.adapters.base import (
@@ -63,7 +64,7 @@ def _entry_to_video_meta(entry: dict) -> VideoMeta | None:
         platform="tiktok",
         source_url=entry.get("webpage_url") or entry.get("url") or _VIDEO_URL.format(vid),
         cover_url=pick_thumbnail(entry),
-        duration_seconds=int(entry.get("duration") or 0),
+        duration_seconds=safe_duration(entry.get("duration")),
         uploader=entry.get("uploader") or entry.get("channel") or "",
     )
 

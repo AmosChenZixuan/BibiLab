@@ -12,6 +12,7 @@ from bibilab.adapters._ytdlp_common import (
     apply_aria2c,
     gather_metadata,
     pick_thumbnail,
+    safe_duration,
     strip_ansi,
 )
 from bibilab.adapters.base import (
@@ -48,7 +49,7 @@ def _entry_to_video_meta(entry: dict) -> VideoMeta | None:
         platform="youtube",
         source_url=entry.get("webpage_url") or entry.get("url") or _WATCH_URL.format(vid),
         cover_url=pick_thumbnail(entry),
-        duration_seconds=int(entry.get("duration") or 0),
+        duration_seconds=safe_duration(entry.get("duration")),
         uploader=entry.get("uploader") or entry.get("channel") or "",
     )
 
