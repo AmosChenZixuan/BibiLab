@@ -12,12 +12,10 @@ from bibilab.adapters._ytdlp_common import (
     SOCKET_TIMEOUT,
     gather_metadata,
     pick_thumbnail,
+    raise_mapped,
     safe_duration,
-    strip_ansi,
 )
 from bibilab.adapters.base import (
-    AuthRequiredError,
-    DownloadError,
     PlatformAdapter,
     PlaylistMeta,
     VideoMeta,
@@ -36,12 +34,12 @@ _VIDEO_URL = "https://www.tiktok.com/@_/video/{}"
 
 
 def _raise_mapped(exc: yt_dlp.utils.DownloadError) -> None:
-    msg = str(exc)
-    if _AUTH_RE.search(msg):
-        raise AuthRequiredError("video") from exc
-    if _IMAGE_RE.search(msg):
-        raise DownloadError("This link is an image post, no video to transcribe.") from exc
-    raise DownloadError(strip_ansi(msg) + _UPGRADE_HINT) from exc
+    raise_mapped(
+        exc,
+        _AUTH_RE,
+        message_overrides=((_IMAGE_RE, "This link is an image post, no video to transcribe."),),
+        hint=_UPGRADE_HINT,
+    )
 
 
 def _truncate_caption(caption: str) -> str:

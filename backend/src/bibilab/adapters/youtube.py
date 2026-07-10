@@ -12,12 +12,10 @@ from bibilab.adapters._ytdlp_common import (
     apply_aria2c,
     gather_metadata,
     pick_thumbnail,
+    raise_mapped,
     safe_duration,
-    strip_ansi,
 )
 from bibilab.adapters.base import (
-    AuthRequiredError,
-    DownloadError,
     PlatformAdapter,
     PlaylistMeta,
     VideoMeta,
@@ -32,10 +30,7 @@ _WATCH_URL = "https://www.youtube.com/watch?v={}"
 
 
 def _raise_mapped(exc: yt_dlp.utils.DownloadError) -> None:
-    msg = str(exc)
-    if _AUTH_RE.search(msg):
-        raise AuthRequiredError("video") from exc
-    raise DownloadError(strip_ansi(msg)) from exc
+    raise_mapped(exc, _AUTH_RE)
 
 
 def _entry_to_video_meta(entry: dict) -> VideoMeta | None:

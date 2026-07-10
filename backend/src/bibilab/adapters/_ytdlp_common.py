@@ -4,7 +4,9 @@ import asyncio
 import re
 import shutil
 from collections.abc import Callable
-from typing import TypeVar
+from typing import NoReturn, TypeVar
+
+from bibilab.adapters.base import AuthRequiredError, DownloadError
 
 _T = TypeVar("_T")
 
@@ -46,6 +48,27 @@ async def gather_metadata(video_ids: list[str], fetch_one: Callable[[str], _T | 
 
     results = await asyncio.gather(*[fetch_bounded(vid) for vid in video_ids])
     return {vid: meta for vid, meta in zip(video_ids, results) if meta is not None}
+
+
+def raise_mapped(
+    exc: Exception,
+    auth_re: re.Pattern,
+    *,
+    message_overrides: tuple[tuple[re.Pattern, str], ...] = (),
+    hint: str = "",
+) -> NoReturn:
+    """Map a yt-dlp DownloadError to the domain errors: auth-family messages →
+    AuthRequiredError; an override pattern → DownloadError with its fixed
+    message; anything else → DownloadError (ANSI stripped, optional hint).
+    bilibili keeps its own inline mapping — its lowercased matching, 412
+    handling and cookie revalidation don't fit this shape."""
+    msg = str(exc)
+    if auth_re.search(msg):
+        raise AuthRequiredError("video") from exc
+    for pattern, override in message_overrides:
+        if pattern.search(msg):
+            raise DownloadError(override) from exc
+    raise DownloadError(strip_ansi(msg) + hint) from exc
 
 
 def safe_duration(value) -> int:
