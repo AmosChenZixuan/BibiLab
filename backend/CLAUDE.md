@@ -21,13 +21,19 @@ uv run python -m bibilab.main       # Start server (localhost:8765)
 ```
 routers/          — one APIRouter per module; aggregated in main.py
   auth.py           /auth/bilibili/* (QR login, cookie management)
-  chat.py           /lists/:id/chat (SSE streaming + cancel), /lists/:id/chat/:msg_id/stream (reattach), /lists/:id/conversation (CRUD), /debug/messages/:msg_id (prompt-trace dump read, debug_router); stream_with_tools loop; classify_error (SDK exception → i18n error code)
+  chat.py           /lists/:id/chat (SSE streaming + cancel), /lists/:id/chat/:msg_id/stream (reattach), /lists/:id/conversation (CRUD), /debug/messages/:msg_id (prompt-trace dump read, debug_router); stream_with_tools loop; _classify_llm_error (SDK exception → i18n error code)
   eval.py           /eval/run_chat (stateless one-shot JSON chat for eval frameworks; no persistence — see "Eval endpoint" below), /eval/llm (bare _call_llm passthrough with the same llm-override merge, so the eval package needs no LLM SDK)
   lists.py          /lists/* (CRUD)
-  ingest.py         /ingest/url (POST)
+  ingest.py         /ingest/url, /ingest/preview, /ingest/preview/metadata
   sources.py        /sources/* (source content, covers, sections list, rerun, PATCH facets manual edit)
-models/           — Pydantic request/response models + domain errors
-  chat.py           ChatRequest, MessageResponse, ConversationResponse
+  artifacts.py      /lists/:id/artifacts (list + create), /artifacts/:id (+ /content)
+  jobs.py           /jobs, /jobs/:id (GET + DELETE)
+  models.py         model registry API — unified listing + download for local model deps
+  config_router.py  /config (GET + PUT)
+  health.py         /health
+  proxy.py          /proxy/cover — cover-CDN proxy; allowlist + Referer derived from adapters CDN_DOMAINS
+  _model_gate.py    pre-flight 412 gate shared by ingest/chat/artifacts routers
+models/           — Pydantic request/response models + domain errors (chat.py, ingest.py, artifacts.py, jobs.py, models.py, _enums.py)
 pipeline/         — one file per stage
   _shared.py        sync _call_llm + async stream_llm (OpenAI/Anthropic), StreamEvent/ToolCall/ToolDefinition dataclasses
   audio.py          FFmpeg audio extraction (video → .wav)
@@ -41,7 +47,9 @@ pipeline/         — one file per stage
   chat_summary.py   conversation compression (sliding window + LLM summary; summary is prose only — [N] markers not preserved)
   citation_parser.py incremental citation parser — strips [N] tokens from LLM deltas, emits citation SSE events with {index, section_id, source_id, timestamp_start, chunk_ids}
   chat_runs.py       StreamBuffer + ChatRunRegistry; in-memory buffer decouples LLM producer from HTTP request lifetime
-adapters/         — platform download + resolution; __init__ holds the registry (URL/platform dispatch) + CDN_DOMAINS; _ytdlp_common shared plumbing; bilibili / youtube / tiktok implementations
+  chat_inference_pool.py dedicated ThreadPoolExecutor for chat-path inference (rerank + Chroma query), isolated from the default executor
+  punctuate.py      ct-punc zh-gated punctuation; alignment failure falls back to unpunctuated (never fatal)
+adapters/         — platform download + resolution; __init__ holds the registry (URL/platform dispatch) + CDN_DOMAINS; base.py dataclasses/interface; _ytdlp_common shared plumbing; bilibili / youtube / tiktok implementations
 db.py             — SQLite schema + query helpers
 video_status.py   — derive_video_statuses (status mapping extracted from db.py per Code Health Rule #4)
 config.py         — settings persisted to ~/.bibilab/config.json; includes models_dir() helper
@@ -128,7 +136,7 @@ model_registry.py — Unified model dependency registry; all non-LLM downloads (
 | `role` | `"user"` \| `"assistant"` \| `"tool"` |
 | `content` | Message text |
 | `status` | In-flight: user `"pending"`, assistant `"streaming"`. Terminal: `"done"` \| `"failed"` \| `"cancelled"`. Both rows of a turn flip to the **same** terminal status atomically (`update_turn_terminal`); a turn is visible to LLM replay + compaction iff both are `"done"`. UI history is unfiltered (renders 已停止/重试); the LLM snapshot filters to `"done"` inline (not in `get_recent_messages`). |
-| `error` | Error code (e.g. `llm_rate_limit_error`, `internal_error`), nullable; set on producer failure or server restart sweep; mapped by `classify_error()` from SDK exceptions; frontend resolves via `chat.errors.*` i18n keys |
+| `error` | Error code (e.g. `llm_rate_limit_error`, `internal_error`), nullable; set on producer failure or server restart sweep; mapped by `_classify_llm_error()` from SDK exceptions; frontend resolves via `chat.errors.*` i18n keys |
 | `metadata` | JSON blob, nullable: `{"tool_calls": [...], "rag": {"calls": [...]}}` — full field shape in `docs/chat_architecture.md`. Set by `run_chat_turn` post-stream. No migration for legacy rows — the ledger renders best-effort from whatever fields exist. |
 
 ### `transcript_segments` — punctuated sentence segments
@@ -171,29 +179,20 @@ POST /ingest/url → resolve → dedup check → create job(s)
   → worker: download → audio → transcribe → punctuate → derive_sections → chunk (per-section) → digest ∥ embed → write_source + write_transcript_segments + write_sections (atomic)
 ```
 
-- Dedup via `get_video_statuses` (sources + jobs); skip if processed or in-flight.
-- Full re-process: DELETE /sources/:id then re-ingest.
-- POST /sources/:id/rerun re-runs the digest section-by-section (`digest_sections` over the stored section rows; updates each section's summary/keywords + the source's facet columns); transcript and sections are reused, never re-derived. A source with 0 section rows fails loud (re-ingest).
-- Delete removes ChromaDB embeddings and `sources` row (transcript segments cascade via FK)
+Stage-by-stage mechanism (fail-loud contracts, duration validation, two-phase resolve) lives in `docs/ingestion_architecture.md`. Rules that must hold:
 
-### Pipeline stages (per video)
-
-1. **download** → temp video file
-2. **audio** → strip to .wav via FFmpeg; probes streams first — a track-less video fails loud (`video has no audio track`), never the raw FFmpeg dump (probe failure fails open to FFmpeg's own error)
-3. **transcribe** → FunASR AutoModel (SenseVoice or Whisper via WhisperWarp) → raw VAD segments with timestamps + speaker labels
-4. **punctuate** → ct-punc (zh-gated) → punctuated sentence segments persisted to `transcript_segments`; empty result (music-only / silent audio) fails loud (`no speech detected in audio`) — the cancel gate runs first, a user cancel wins over the failure
-5. **derive_sections** → token+pause boundary, target=12000 (zone [7200, 16800]). Short videos = 1 section spanning all. Produces `sections` rows.
-6. **chunk** → greedily merge consecutive **sentence** segments within each section to token target, split at trustworthy sentence boundary. Records `seg_start`/`seg_end` per chunk (source-global indices). Chunks physically nest in sections.
-7. **digest** → `digest_sections`: section 1 via `digest()` (summary, keywords, facets — extracted once), sections 2..N via a refine prompt with rolling context. Per-section summary/keywords land on each `sections` row; facets land on `sources` via `apply_digest_facets`. 1-section sources are byte-identical to the pre-section path. (parallel with embed)
-8. **embed** → store chunks in ChromaDB with per-source and per-list scope (parallel with digest). Chroma metadata keys on `source_id` (+ `seg_start`/`seg_end`), not `video_id`.
-9. **write_source** → upsert source row + transcript_segments + sections atomically in one transaction (via `write_source_with_segments`)
+- Dedup source of truth is `sources` (via `get_video_statuses`); a video is "processed" iff it has a `sources` row. Full re-process = DELETE + re-ingest.
+- Source + transcript_segments + sections land **atomically in one transaction** (`write_source_with_segments`); digest rerun reuses stored sections, never re-derives — 0 section rows fails loud.
+- Section/chunk invariants: sections target=12000 tokens (zone [7200, 16800]), ≥1 per source; chunk token target `zh=800` / `en=300`; a chunk's `[seg_start, seg_end]` nests in exactly one section (source-global indices).
+- Every stage failure surfaces on the job row as `[<stage>] <message>` — keep new failure paths behind clear messages, not raw tool dumps; the cancel gate runs before fail-loud guards (a user cancel wins).
+- punctuate is zh-gated and never fatal (alignment failure falls back to unpunctuated); digest ∥ embed run in parallel; Chroma metadata keys on `source_id`, not `video_id`.
 
 ## Chat Pipeline
 
 Full mechanism — request lifecycle, retrieval pipeline, tool loop, SSE semantics, compression, eval endpoint, prompt-trace — lives in `docs/chat_architecture.md`. The rules below are what an AI changing this code must not break:
 
 - `POST /lists/:id/chat` streams SSE via a producer/consumer split (`run_chat_turn` → `StreamBuffer` → `_sse_consumer`); both rows of a turn flip to the **same** terminal status atomically (`update_turn_terminal`) and `active_stream_message_id` clears in the same transaction — breaking that wedges the conversation at 409.
-- SSE events: `meta`, `delta`, `citation`, `tool_call_start`, `tool_result`, `rag`, `done`, `error`, `cancelled`. `meta` is always first (carries `{message_id}` for cancel-by-id, constant `SSE_EVENT_META`); `error` events carry machine-readable codes (via `classify_error()`) for frontend i18n.
+- SSE events: `meta`, `delta`, `citation`, `tool_call_start`, `tool_result`, `rag`, `done`, `error`, `cancelled`. `meta` is always first (carries `{message_id}` for cancel-by-id, constant `SSE_EVENT_META`); `error` events carry machine-readable codes (via `_classify_llm_error()`) for frontend i18n.
 - `stream_with_tools` is a bounded loop (max 3 iterations). Exhausted iterations keep tools **advertised** but unexecuted (gate is `is_synthesis_turn`) — withholding them makes native tool-call tokens leak into the visible answer. Any retrieve-family call disables all three tools for the rest of the turn. An empty synthesis gets one forced follow-up call; still no text → typed no-text error, never a blank persisted message.
 - Retrieval: facet scoping fails open to the full pool; rerank order is final (no relevance gate); rerank/embed consume raw `chunk.content` while the LLM sees speaker-turn reconstruction — keep that split (embedder parity).
 - Prior-turn tool exchanges are dropped from history replay (`expand_message_for_provider`); only synthesized prose survives — never assume prior evidence is still in LLM context.
@@ -202,7 +201,7 @@ Full mechanism — request lifecycle, retrieval pipeline, tool loop, SSE semanti
 
 ## Artifact pipeline
 
-`_run_artifact_job` (worker.py) loads each selected source's sections via `_build_section_views`, reconstructs verbatim text per section with `format_turns(include_time=False)`, and calls `_refine_artifact`. When all sections fit in one batch (the common case — a few short sources, each with 1 section), `_refine_artifact` calls `_call_llm` exactly once with a prompt byte-identical to the legacy single-call template (regression guard: `tests/test_artifact_refine.py::test_refine_artifact_single_batch_byte_identical_prompt`). When sections don't fit, the running-draft refine path calls `_call_llm` once per batch: batch 1 produces an initial draft; batch k>1 feeds the running draft + new sections with an "integrate this new material" directive. Per-section failure (`token_count > budget`) and missing-sections failure (no `sections` rows for a source) both fail loud via `PipelineError`. Soft cost note: `logger.warning` when batch count > 3 (no schema/UI change).
+Mechanism in `docs/ingestion_architecture.md`. Rules: the single-batch prompt stays **byte-identical** to the legacy template (regression guard `tests/test_artifact_refine.py::test_refine_artifact_single_batch_byte_identical_prompt`); over-budget sections and missing sections fail loud via `PipelineError` — no silent truncation.
 
 ## Platform Adapters
 
@@ -213,17 +212,12 @@ class PlatformAdapter:
     def download(video_id, source_url, connections) -> Path
 ```
 
-**Registry dispatch** (`adapters/__init__.py`): `get_adapter_for_url` (domain suffix match, resolve path) and `get_adapter_for_platform` (metadata + worker paths; job meta carries `platform`; `VideoMetadataRequest.platform` is required, no default). Unknown target → `UnsupportedPlatformError` → 400. `CDN_DOMAINS` beside the registry maps each platform to its cover-CDN hosts + optional Referer; `routers/proxy.py` derives its allowlist and Referer policy from it (an import-time assert keeps the two key sets equal — a new platform can't land with working ingest but broken covers). Shared yt-dlp plumbing lives in `adapters/_ytdlp_common.py`: `strip_ansi`, `apply_aria2c`, `pick_thumbnail` (max-by-area, never list order), `safe_duration` (non-numeric → 0, never sinks the list), `gather_metadata` (thread-pool per-id fetch, failed ids omitted), `raise_mapped` (auth regex → `AuthRequiredError`, overrides, hint). `resolve_flat` is blocking yt-dlp — the router runs it via `asyncio.to_thread` so the event loop stays responsive.
+Registry dispatch, per-platform behavior, two-phase resolve, and bilibili auth are documented in `docs/ingestion_architecture.md`. Rules that must hold:
 
-- **bilibili** — single / multi-part (`?p=N`) / collection / favorite lists; courses raise `AuthRequiredError`. Cookie auth (QR login). 403/412 → `needs_auth`. Keeps its own inline error mapping — lowercased matching, 412 handling and cookie revalidation don't fit `raise_mapped`.
-- **youtube** — single videos + public playlists, no credentials; sign-in/age/private/members-only messages → `AuthRequiredError`. Flat playlist entries carry full metadata, so phase-2 enrichment is a light per-id refetch.
-- **tiktok** — single videos (incl. `vm.`/`vt.`/`/t/` short links) + collections, no credentials; **best-effort tier** (extraction breaks in waves; generic failures append an upgrade-yt-dlp hint). Captions are bounded to 120 chars as titles; image posts → named `DownloadError`; the `yt-dlp[curl-cffi]` extra supplies the TLS impersonation the extractor requests. Download filters formats by `vcodec` (h264 preferred), never `acodec` — the extractor stamps a fabricated `acodec` on every format, and TikTok's HEVC (`bytevc1`) variants are silent files.
-
-**Two-phase resolve** (bilibili): `resolve_flat` enumerates fast via `extract_flat="in_playlist"` — keep it flat; a multi-part video comes back as a flat playlist of `?p=N` parts (no per-part title/duration), and non-flat extraction re-resolves every part's stream formats (~15× slower) for data phase 2 supplies anyway. `get_videos_metadata` then enriches each part from the bilibili view API (per-part title/duration) and expands a bare multi-part BVID into `_pN` parts. Part title is the composite `"<part> - <video>"` (part-first so it survives single-line truncation while the parent title trails as collection context).
-
-**QR login flow**: `POST /auth/bilibili/qr` → get `{url, key}` → UI polls `GET /auth/bilibili/qr/status?key=...` (query param, not path param — avoids key in server logs) → on success, cookie saved to config.
-
-**Cookie file**: `_cookie_file()` converts the raw cookie string to Netscape HTTP Cookie File format (yt-dlp requirement). A module-level `_cookie_file_cache` skips the disk write when the cookie string is unchanged.
+- Adding a platform: register the adapter **and** its `CDN_DOMAINS` entry — an import-time assert keeps the two key sets equal (ingest can't land with broken covers). `VideoMetadataRequest.platform` stays required, no default.
+- Reuse `adapters/_ytdlp_common.py` (`strip_ansi`, `apply_aria2c`, `pick_thumbnail`, `safe_duration`, `gather_metadata`, `raise_mapped`) before writing per-adapter plumbing; bilibili's inline error mapping is the sanctioned exception.
+- `resolve_flat` is blocking yt-dlp — call it via `asyncio.to_thread`, and keep it flat (`extract_flat="in_playlist"`): non-flat extraction is ~15× slower for data phase 2 supplies anyway.
+- tiktok download filters formats by `vcodec` (h264 preferred), never `acodec` — the extractor fabricates `acodec`, and TikTok's HEVC (`bytevc1`) variants are silent files.
 
 ## Configuration Schema
 

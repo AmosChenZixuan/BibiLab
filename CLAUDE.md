@@ -37,6 +37,7 @@ Single-port deployment: FastAPI serves the React build as static files in produc
 ├── covers/            cached cover images
 ├── artifacts/         generated artifact content
 ├── chroma/            ChromaDB vector data
+├── debug/             opt-in prompt-trace dumps, one JSON per chat turn (rag.debug_prompts)
 ├── models/            cached local models (embedding, reranker, ASR) — downloaded on first use
 └── downloads/         temp video files, cleaned after pipeline
 ```

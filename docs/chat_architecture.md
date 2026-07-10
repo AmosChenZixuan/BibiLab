@@ -31,7 +31,7 @@ Shutdown: cancel all active tasks, drain with 5s timeout
 
 - Preamble text generated before a loopback tool call is streamed to the client immediately (parsed incrementally via `parse_delta`), not buffered until stream end. Trade-off: short filler like "Let me look that up…" reaches the client before the retrieve runs.
 - `[N]` citations are streamed as `citation` SSE events: `parse_delta` strips the `[N]` markers from LLM deltas and emits `{index, section_id, source_id, timestamp_start, chunk_ids}` interleaved with `delta` events.
-- Error events carry a machine-readable code in the `message` field (e.g. `llm_rate_limit_error`) for frontend i18n, mapped by `classify_error()` from SDK exceptions.
+- Error events carry a machine-readable code in the `message` field (e.g. `llm_rate_limit_error`) for frontend i18n, mapped by `_classify_llm_error()` from SDK exceptions.
 - **Final `rag` event**: in the `finally` block, after `context[]` is reconstructed from the citation registry, `run_chat_turn` emits one `rag` SSE event carrying the authoritative persisted-shape `rag.calls` just before the terminal event. The client replaces its incrementally-built ledger so expand works post-stream without a manual reload (the streaming `tool_result` payload omits `context[]`).
 
 ## System prompt
