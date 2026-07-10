@@ -61,3 +61,18 @@ def test_platform_unknown_raises(cfg: BibilabConfig):
     with pytest.raises(UnsupportedPlatformError) as exc_info:
         get_adapter_for_platform("nosuch", cfg)
     assert "nosuch" in str(exc_info.value)
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://evil-youtube.com.attacker.org/watch?v=x",
+        "https://youtube.com.evil.com/watch?v=x",
+        "https://xn--youtube.com/watch?v=x",
+        "https://byoutu.be/x",
+        "https://tiktok.com.phish.io/@u/video/1",
+    ],
+)
+def test_url_rejects_lookalike_hosts(url: str, cfg: BibilabConfig):
+    with pytest.raises(UnsupportedPlatformError):
+        get_adapter_for_url(url, cfg)

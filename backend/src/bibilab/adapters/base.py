@@ -1,13 +1,18 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Literal
+
+# The registered platform keys. Annotation-level only — DB reads and request
+# models stay `str` so validation errors keep their existing shapes.
+Platform = Literal["bilibili", "youtube", "tiktok"]
 
 
 @dataclass
 class VideoMeta:
     video_id: str
     title: str
-    platform: str
+    platform: Platform
     source_url: str
     cover_url: str
     duration_seconds: int
@@ -31,7 +36,7 @@ class VideoMeta:
 class PlaylistMeta:
     playlist_id: str
     title: str
-    platform: str
+    platform: Platform
     source_url: str
     videos: list[VideoMeta] = field(default_factory=list)
 

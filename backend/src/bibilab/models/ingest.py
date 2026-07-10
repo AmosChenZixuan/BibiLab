@@ -55,7 +55,9 @@ class VideoMetadata(BaseModel):
 
 class VideoMetadataRequest(BaseModel):
     video_ids: list[str]
-    platform: str = "bilibili"
+    # No default: the client must say which platform's adapter to use — a
+    # silent bilibili assumption misroutes every other platform.
+    platform: str
 
 
 class VideoMetadataMapResponse(BaseModel):
