@@ -6,9 +6,9 @@ from fastapi.responses import Response
 
 router = APIRouter()
 
-ALLOWED_DOMAINS = {"hdslb.com", "ytimg.com"}
-# hdslb.com is referer-locked to bilibili; ytimg.com serves plainly (verified live)
-# and gets no Referer at all.
+ALLOWED_DOMAINS = {"hdslb.com", "ytimg.com", "tiktokcdn.com", "tiktokcdn-us.com"}
+# hdslb.com is referer-locked to bilibili; ytimg and tiktokcdn serve plainly
+# (verified live) and get no Referer at all.
 _REFERER_BY_DOMAIN = {"hdslb.com": "https://www.bilibili.com/"}
 MAX_RESPONSE_SIZE = 5 * 1024 * 1024  # 5MB
 

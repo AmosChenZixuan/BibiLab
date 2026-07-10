@@ -77,9 +77,7 @@ def test_resolve_single_video():
 
 def test_resolve_collection():
     with patch("bibilab.adapters.tiktok.yt_dlp.YoutubeDL", _mock_ydl(info=_collection_info())):
-        result = TikTokAdapter().resolve_flat(
-            "https://www.tiktok.com/@someuser/collection/x-7111887189571160875"
-        )
+        result = TikTokAdapter().resolve_flat("https://www.tiktok.com/@someuser/collection/x-7111887189571160875")
     assert result.playlist_id == "7111887189571160875"
     assert [v.video_id for v in result.videos] == ["711", "712", "713"]
     # largest-area thumbnail picked, not list order
