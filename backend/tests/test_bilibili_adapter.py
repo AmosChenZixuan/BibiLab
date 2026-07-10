@@ -88,21 +88,22 @@ class TestDownloadMultiPart:
     def test_download_sets_native_retry_opts(self, tmp_path):
         # Without these, yt-dlp's bare opts default to 0 internal retries
         # (RetryManager does _retries or 0), and transient CDN timeouts become fatal.
-        from bibilab.adapters.bilibili import _FRAGMENT_RETRIES, _HTTP_RETRIES, _SOCKET_TIMEOUT
+        from bibilab.adapters._ytdlp_common import HTTP_RETRIES, SOCKET_TIMEOUT
+        from bibilab.adapters.bilibili import _FRAGMENT_RETRIES
 
         adapter = BilibiliAdapter(cookie="test_cookie")
         captured_opts: list = []
 
         with patch("bibilab.adapters.bilibili.yt_dlp.YoutubeDL", _make_mock_ydl(captured_opts)):
             with patch("bibilab.adapters.bilibili.bibilab_home", return_value=tmp_path):
-                with patch("bibilab.adapters.bilibili.shutil.which", return_value="/usr/bin/aria2c"):
+                with patch("bibilab.adapters._ytdlp_common.shutil.which", return_value="/usr/bin/aria2c"):
                     adapter.download("BV1test", "https://www.bilibili.com/video/BV1test", 16)
 
-        assert captured_opts[0]["retries"] == _HTTP_RETRIES
+        assert captured_opts[0]["retries"] == HTTP_RETRIES
         assert captured_opts[0]["fragment_retries"] == _FRAGMENT_RETRIES
         # A stalled connection must become a retriable error, not an indefinite
         # hang that wedges the serialized download stage.
-        assert captured_opts[0]["socket_timeout"] == _SOCKET_TIMEOUT
+        assert captured_opts[0]["socket_timeout"] == SOCKET_TIMEOUT
 
 
 class TestDownloadAria2c:
@@ -116,7 +117,7 @@ class TestDownloadAria2c:
         with (
             patch("bibilab.adapters.bilibili.yt_dlp.YoutubeDL", _make_mock_ydl(captured_opts)),
             patch("bibilab.adapters.bilibili.bibilab_home", return_value=tmp_path),
-            patch("bibilab.adapters.bilibili.shutil.which", return_value=aria2c_path),
+            patch("bibilab.adapters._ytdlp_common.shutil.which", return_value=aria2c_path),
         ):
             adapter.download("BV1test", "https://www.bilibili.com/video/BV1test", 16)
         return captured_opts[0]
@@ -133,15 +134,16 @@ class TestDownloadAria2c:
         ]
 
     def test_download_falls_back_to_native_when_aria2c_absent(self, tmp_path):
-        from bibilab.adapters.bilibili import _FRAGMENT_RETRIES, _HTTP_RETRIES, _SOCKET_TIMEOUT
+        from bibilab.adapters._ytdlp_common import HTTP_RETRIES, SOCKET_TIMEOUT
+        from bibilab.adapters.bilibili import _FRAGMENT_RETRIES
 
         opts = self._patched_download(tmp_path, aria2c_path=None)
 
         assert "external_downloader" not in opts
         assert "external_downloader_args" not in opts
-        assert opts["retries"] == _HTTP_RETRIES
+        assert opts["retries"] == HTTP_RETRIES
         assert opts["fragment_retries"] == _FRAGMENT_RETRIES
-        assert opts["socket_timeout"] == _SOCKET_TIMEOUT
+        assert opts["socket_timeout"] == SOCKET_TIMEOUT
 
 
 class TestSplitVideoId:

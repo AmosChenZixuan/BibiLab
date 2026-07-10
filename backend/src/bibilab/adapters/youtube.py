@@ -3,11 +3,18 @@ auth-walled videos surface as AuthRequiredError (cookie import is a separate iss
 
 import asyncio
 import re
-import shutil
 from pathlib import Path
 
 import yt_dlp
 
+from bibilab.adapters._ytdlp_common import (
+    HTTP_RETRIES,
+    METADATA_CONCURRENCY,
+    SOCKET_TIMEOUT,
+    apply_aria2c,
+    pick_thumbnail,
+    strip_ansi,
+)
 from bibilab.adapters.base import (
     AuthRequiredError,
     DownloadError,
@@ -17,14 +24,9 @@ from bibilab.adapters.base import (
 )
 from bibilab.config import downloads_dir
 
-_ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 # Messages that mean "an account could see this": bot-check, private, age gate,
 # members-only. Matched loosely against yt-dlp's DownloadError text.
 _AUTH_RE = re.compile(r"sign\s*in|log\s*in|private|members[- ]only|confirm your age", re.IGNORECASE)
-
-_METADATA_CONCURRENCY = 8
-_HTTP_RETRIES = 10
-_SOCKET_TIMEOUT = 60
 
 _WATCH_URL = "https://www.youtube.com/watch?v={}"
 
@@ -33,14 +35,7 @@ def _raise_mapped(exc: yt_dlp.utils.DownloadError) -> None:
     msg = str(exc)
     if _AUTH_RE.search(msg):
         raise AuthRequiredError("video") from exc
-    raise DownloadError(_ANSI_RE.sub("", msg)) from exc
-
-
-def _flat_thumbnail(entry: dict) -> str:
-    if entry.get("thumbnail"):
-        return entry["thumbnail"]
-    thumbnails = entry.get("thumbnails") or []
-    return (thumbnails[-1].get("url", "") or "") if thumbnails else ""
+    raise DownloadError(strip_ansi(msg)) from exc
 
 
 def _entry_to_video_meta(entry: dict) -> VideoMeta | None:
@@ -53,7 +48,7 @@ def _entry_to_video_meta(entry: dict) -> VideoMeta | None:
         title=entry.get("title") or "Untitled",
         platform="youtube",
         source_url=entry.get("webpage_url") or entry.get("url") or _WATCH_URL.format(vid),
-        cover_url=_flat_thumbnail(entry),
+        cover_url=pick_thumbnail(entry),
         duration_seconds=int(entry.get("duration") or 0),
         uploader=entry.get("uploader") or entry.get("channel") or "",
     )
@@ -88,7 +83,7 @@ class YouTubeAdapter(PlatformAdapter):
         if not video_ids:
             return ({}, {})
 
-        semaphore = asyncio.Semaphore(_METADATA_CONCURRENCY)
+        semaphore = asyncio.Semaphore(METADATA_CONCURRENCY)
 
         def fetch_one(vid: str) -> VideoMeta | None:
             opts = {"quiet": True, "no_warnings": True, "extract_flat": True}
@@ -114,14 +109,10 @@ class YouTubeAdapter(PlatformAdapter):
             "quiet": False,
             "outtmpl": str(out_dir / f"{video_id}.%(ext)s"),
             "format": "bestaudio/best",
-            "retries": _HTTP_RETRIES,
-            "socket_timeout": _SOCKET_TIMEOUT,
+            "retries": HTTP_RETRIES,
+            "socket_timeout": SOCKET_TIMEOUT,
         }
-        if shutil.which("aria2c"):
-            opts["external_downloader"] = "aria2c"
-            opts["external_downloader_args"] = {
-                "aria2c": [f"-x{connections}", f"-s{connections}", "-k1M", "--file-allocation=none"],
-            }
+        apply_aria2c(opts, connections)
 
         try:
             with yt_dlp.YoutubeDL(opts) as ydl:

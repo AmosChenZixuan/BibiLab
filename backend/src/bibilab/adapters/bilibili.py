@@ -3,12 +3,12 @@
 import asyncio
 import logging
 import re
-import shutil
 from pathlib import Path
 
 import httpx
 import yt_dlp
 
+from bibilab.adapters._ytdlp_common import HTTP_RETRIES, SOCKET_TIMEOUT, apply_aria2c, strip_ansi
 from bibilab.adapters.base import (
     AuthRequiredError,
     DownloadError,
@@ -27,8 +27,6 @@ _PLAYLIST_RE = re.compile(
 )
 _COURSE_RE = re.compile(r"bilibili\.com/cheese", re.IGNORECASE)
 
-# Strip ANSI escape codes from yt_dlp output
-_ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 _AUTH_RE = re.compile(r"log\s*in|sign\s*in|403", re.IGNORECASE)
 # Multi-part page selector in a video '?p=N' url
 _PART_RE = re.compile(r"[?&]p=(\d+)")
@@ -40,14 +38,6 @@ _FRAGMENT_CONCURRENCY = 4
 # Per-fragment HTTP retries. yt-dlp's bare opts default to 0 (None → RetryManager
 # short-circuits), so transient CDN timeouts propagate as fatal DownloadError.
 _FRAGMENT_RETRIES = 5
-# Per-request retries for the contiguous audio download. Each retry resumes from
-# the .part via Range (no re-download, no sleep), so a high budget cheaply rides
-# out bilibili's per-IP throttle dropping long connections mid-stream.
-_HTTP_RETRIES = 10
-# Per-read socket timeout (s). Slow-but-progressing transfers reset it on each
-# read; it only trips on a true stall, turning a silent hang into a retriable
-# error that resumes from the .part instead of wedging the serialized stage.
-_SOCKET_TIMEOUT = 60
 _BILIBILI_NAV_URL = "https://api.bilibili.com/x/web-interface/nav"
 _cookie_file_cache: tuple[str, Path] | None = None
 
@@ -139,7 +129,7 @@ class BilibiliAdapter(PlatformAdapter):
                 msg = str(exc).lower()
                 if _AUTH_RE.search(msg):
                     raise AuthRequiredError("video") from exc
-                raise DownloadError(_ANSI_RE.sub("", str(exc))) from exc
+                raise DownloadError(strip_ansi(str(exc))) from exc
 
             if info.get("_type") == "playlist":
                 return self._resolve_playlist(info)
@@ -167,7 +157,7 @@ class BilibiliAdapter(PlatformAdapter):
             msg = str(exc).lower()
             if _AUTH_RE.search(msg):
                 raise AuthRequiredError("playlist") from exc
-            raise DownloadError(_ANSI_RE.sub("", str(exc))) from exc
+            raise DownloadError(strip_ansi(str(exc))) from exc
 
         playlist_id = info.get("id", url)
         title = info.get("title", "Untitled Playlist")
@@ -248,18 +238,11 @@ class BilibiliAdapter(PlatformAdapter):
             "outtmpl": output_template,
             "format": "bestaudio/best",
             "concurrent_fragment_downloads": _FRAGMENT_CONCURRENCY,
-            "retries": _HTTP_RETRIES,
+            "retries": HTTP_RETRIES,
             "fragment_retries": _FRAGMENT_RETRIES,
-            "socket_timeout": _SOCKET_TIMEOUT,
+            "socket_timeout": SOCKET_TIMEOUT,
         }
-        # aria2c sidesteps the per-IP throttle that clamps a single yt-dlp
-        # stream on contiguous DASH. Absent-aria2c falls back to native opts
-        # — ingest still works, just slower under throttle.
-        if shutil.which("aria2c"):
-            opts["external_downloader"] = "aria2c"
-            opts["external_downloader_args"] = {
-                "aria2c": [f"-x{connections}", f"-s{connections}", "-k1M", "--file-allocation=none"],
-            }
+        apply_aria2c(opts, connections)
 
         _, part_num = _split_video_id(video_id)
         if part_num is not None:
@@ -272,7 +255,7 @@ class BilibiliAdapter(PlatformAdapter):
             msg = str(exc).lower()
             if _AUTH_RE.search(msg) or "412" in msg:
                 raise AuthRequiredError("video") from exc
-            raise DownloadError(_ANSI_RE.sub("", str(exc))) from exc
+            raise DownloadError(strip_ansi(str(exc))) from exc
 
         return out_dir / f"{video_id}.{info.get('ext', 'mp4')}"
 
