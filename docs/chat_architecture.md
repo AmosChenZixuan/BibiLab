@@ -86,7 +86,7 @@ stream_with_tools(stream_llm loop):
 JSON blob, nullable. Shape:
 
 ```
-{"tool_calls": [...],
+{"content_blocks": [...],
  "rag": {"calls": [{"tool_name", "query" | null, "section_id"?, "source_id"?, "source_title"?,
                     "section_coverage" (find_passages only, per section),
                     "context" (find_passages only, reconstructed at terminal rag event from citation registry),

@@ -8,6 +8,7 @@ CLI tool for evaluating Bibilab RAG pipeline quality. Separate package at repo r
 cd eval && uv sync
 uv run bibilab-eval --help
 uv run bibilab-eval create <list-id>        # generate eval set + TUI review
+uv run bibilab-eval review <eval-set-id>    # resume TUI review for an existing set
 uv run bibilab-eval run <eval-set-id>       # run locked cases against test model
 uv run bibilab-eval grade <run-id>          # LLM-as-judge grading
 uv run bibilab-eval report <run-id>         # aggregate + per-question report
