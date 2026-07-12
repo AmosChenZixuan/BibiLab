@@ -119,10 +119,12 @@ export type ArtifactJob = {
   error: string | null;
   created_at: string;
   updated_at: string;
+  // meta.type is the artifact type ("brief", "mind_map", …) — the key the
+  // backend writes (routers/artifacts.py); distinct from the job's own type.
   meta: {
     list_id?: string;
     artifact_id?: string;
-    artifact_type?: string;
+    type?: string;
   };
 };
 

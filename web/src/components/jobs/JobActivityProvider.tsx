@@ -87,7 +87,7 @@ function createPlaceholderJob(id: string, meta: TrackedJobMeta): Job {
       meta: {
         list_id: meta.contextKey ?? undefined,
         artifact_id: id,
-        artifact_type: meta.label,
+        type: meta.label,
       },
     };
   }
@@ -146,7 +146,7 @@ function inferTrackedMeta(job: Job): TrackedJobMeta {
   }
 
   if (isArtifactJob(job)) {
-    const artifactType = typeof job.meta.artifact_type === "string" ? job.meta.artifact_type : "artifact";
+    const artifactType = typeof job.meta.type === "string" ? job.meta.type : "artifact";
     return {
       producer: "artifact",
       label: artifactType,
