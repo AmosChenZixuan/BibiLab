@@ -522,7 +522,9 @@ async def stream_with_tools(
                     result = await _execute_with_registry(tc.name, tc.arguments)
                 except Exception:
                     logger.exception("tool_execution_failed tool=%s", tc.name)
-                    yield StreamEvent(type=SSE_EVENT_ERROR, content=f"Tool {tc.name} failed")
+                    # Machine code, not prose: the frontend i18n-renders this
+                    # inline immediately; the terminal event repeats the code.
+                    yield StreamEvent(type=SSE_EVENT_ERROR, content="tool_error")
                     return
 
                 results[tc.id] = result

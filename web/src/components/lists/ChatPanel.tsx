@@ -27,7 +27,7 @@ import { ToolLedger } from "@/components/lists/ToolLedger";
 import { PulseRing } from "@/components/ui/PulseRing";
 import { DebugDrawer } from "@/components/debug/DebugDrawer";
 import type { Source } from "@/lib/types";
-import { api } from "@/lib/api";
+import { api, toErrorMessageWithT } from "@/lib/api";
 import { useDebugDump } from "@/lib/hooks/useDebugDump";
 import { usePendingDeletions } from "@/lib/hooks/usePendingDeletions";
 import { TEST_IDS } from "@/lib/test-ids";
@@ -288,6 +288,8 @@ export function ChatPanel({
   const [inputValue, setInputValue] = useState("");
   const [messages, setMessages] = useState<MessageUI[]>([]);
   const [showClearPopover, setShowClearPopover] = useState(false);
+  const [clearError, setClearError] = useState<unknown>(null);
+  const clearPopoverRef = useRef<HTMLDivElement>(null);
   const [debugPrompts, setDebugPrompts] = useState(false);
   const [debugMsgId, setDebugMsgId] = useState<string | null>(null);
   const { dump: debugDump, loading: debugLoading, notFound: debugNotFound, reset: resetDebugDump } = useDebugDump(debugMsgId);
@@ -337,6 +339,24 @@ export function ChatPanel({
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, [debugMsgId]);
+
+  useEffect(() => {
+    if (!showClearPopover) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setShowClearPopover(false);
+    };
+    const onPointerDown = (e: PointerEvent) => {
+      if (clearPopoverRef.current && !clearPopoverRef.current.contains(e.target as Node)) {
+        setShowClearPopover(false);
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.removeEventListener("pointerdown", onPointerDown);
+    };
+  }, [showClearPopover]);
 
   useEffect(() => {
     if (debugNotFound && debugMsgId) {
@@ -440,10 +460,12 @@ export function ChatPanel({
 
   async function handleClearConfirm() {
     setShowClearPopover(false);
+    setClearError(null);
     try {
       await run(listId, () => api.deleteConversation(listId));
-    } catch {
-      // non-fatal — keep messages, surface nothing
+    } catch (err) {
+      // keep the messages, but tell the user the clear didn't happen
+      setClearError(err);
       return;
     }
     setMessages([]);
@@ -455,7 +477,7 @@ export function ChatPanel({
       <div className="shrink-0 border-b border-border px-4 py-3.5">
         <div className="flex items-center">
           <h2 className="flex-1 font-serif text-lg text-ink">{t("chat.header.title")}</h2>
-          <div className="relative">
+          <div className="relative" ref={clearPopoverRef}>
             <button
               type="button"
               onClick={() => setShowClearPopover((v) => !v)}
@@ -501,6 +523,9 @@ export function ChatPanel({
             {formatSubtitle(t, selectedSourceIds.length, totalDuration)}
           </div>
         )}
+        {clearError != null && (
+          <p className="m-0 mt-1 text-xs text-pink">{toErrorMessageWithT(clearError, t)}</p>
+        )}
       </div>
 
       {/* Message list + scroll-to-bottom wrapper */}
@@ -527,7 +552,7 @@ export function ChatPanel({
             <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-surface text-muted">
               <AlertCircle size={26} />
             </div>
-            <p className="m-0 max-w-xs text-sm text-muted">{loadError}</p>
+            <p className="m-0 max-w-xs text-sm text-muted">{toErrorMessageWithT(loadError, t)}</p>
           </div>
         ) : !hasConversation && !isLoadingHistory ? (
           <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">

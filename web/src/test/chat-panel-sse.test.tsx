@@ -417,6 +417,104 @@ describe("chat panel — conversation history", () => {
     });
   });
 
+  test("conversation load failure renders a localized message, not the raw error", async () => {
+    mockFetch((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/conversation")) {
+        return Promise.reject(new TypeError("Failed to fetch"));
+      }
+      return Promise.resolve(new Response(JSON.stringify([])));
+    });
+
+    renderChatPanel(ChatPanel, { providers: [LanguageProvider, JobActivityProvider],
+      selectedSourceIds: ["src-1"],
+      sources: [SOURCE_1],
+      listId: "list-1",
+    });
+
+    // toErrorMessageWithT output — exact match rejects the raw `String(err)`
+    // form ("TypeError: Failed to fetch").
+    await waitFor(() => {
+      expect(screen.getByText("Failed to fetch")).toBeInTheDocument();
+    });
+  });
+
+  test("clear-conversation failure surfaces an error and keeps the messages", async () => {
+    mockFetch((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = init?.method ?? "GET";
+      if (url.includes("/conversation") && method === "DELETE") {
+        return Promise.resolve(new Response(JSON.stringify({ detail: "backend exploded" }), { status: 500 }));
+      }
+      if (url.includes("/conversation")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              conversation: { id: "conv-1", list_id: "list-1", summary: null, created_at: "2026-04-01T00:00:00Z", updated_at: "2026-04-01T00:00:00Z" },
+              messages: [
+                { id: USER_MSG_ID, role: "user", content: "Hello", metadata: null, created_at: "2026-04-01T10:00:00Z" },
+              ],
+            }),
+          ),
+        );
+      }
+      return Promise.resolve(new Response(JSON.stringify([])));
+    });
+
+    renderChatPanel(ChatPanel, { providers: [LanguageProvider, JobActivityProvider],
+      selectedSourceIds: ["src-1"],
+      sources: [SOURCE_1],
+      listId: "list-1",
+    });
+
+    await waitFor(() => screen.getByText("Hello"));
+    await userEvent.click(screen.getByRole("button", { name: /clear conversation/i }));
+    await userEvent.click(screen.getByRole("button", { name: /^clear$/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText("backend exploded")).toBeInTheDocument();
+    });
+    expect(screen.getByText("Hello")).toBeInTheDocument();
+  });
+
+  test("clear popover closes on Escape and on outside click", async () => {
+    mockFetch((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/conversation")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              conversation: { id: "conv-1", list_id: "list-1", summary: null, created_at: "2026-04-01T00:00:00Z", updated_at: "2026-04-01T00:00:00Z" },
+              messages: [
+                { id: USER_MSG_ID, role: "user", content: "Hello", metadata: null, created_at: "2026-04-01T10:00:00Z" },
+              ],
+            }),
+          ),
+        );
+      }
+      return Promise.resolve(new Response(JSON.stringify([])));
+    });
+
+    renderChatPanel(ChatPanel, { providers: [LanguageProvider, JobActivityProvider],
+      selectedSourceIds: ["src-1"],
+      sources: [SOURCE_1],
+      listId: "list-1",
+    });
+
+    await waitFor(() => screen.getByText("Hello"));
+    const popoverBody = /all messages in this chat will be removed/i;
+
+    await userEvent.click(screen.getByRole("button", { name: /clear conversation/i }));
+    expect(screen.getByText(popoverBody)).toBeInTheDocument();
+    await userEvent.keyboard("{Escape}");
+    expect(screen.queryByText(popoverBody)).toBeNull();
+
+    await userEvent.click(screen.getByRole("button", { name: /clear conversation/i }));
+    expect(screen.getByText(popoverBody)).toBeInTheDocument();
+    await userEvent.click(document.body);
+    expect(screen.queryByText(popoverBody)).toBeNull();
+  });
+
   test("message list dims to 50% opacity while clear popover is open", async () => {
     mockFetch((input: RequestInfo | URL) => {
       const url = String(input);

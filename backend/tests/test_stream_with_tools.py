@@ -139,6 +139,40 @@ async def test_stream_with_tools_passthrough_no_tool_calls(mock_stream_llm):
 
 
 @pytest.mark.asyncio
+async def test_tool_failure_inline_error_event_carries_machine_code(mock_stream_llm):
+    """The inline error event from a failed tool execution carries the
+    "tool_error" code, not English prose — the frontend renders the event's
+    message via i18n immediately, before the terminal event arrives."""
+    from bibilab.config import AIConfig
+    from bibilab.pipeline.chat_tools import FIND_PASSAGES_TOOL
+    from bibilab.routers.chat import stream_with_tools
+
+    cfg = AIConfig(protocol="openai", model="gpt-4o", api_key="test", base_url="")
+    find_tc = ToolCall(id="c1", name=FIND_PASSAGES_TOOL.name, arguments={"query": "q"})
+
+    async def stream(messages, cfg, tools=None, system=None):
+        yield StreamEvent(type="tool_call", tool_call=find_tc)
+        yield StreamEvent(type="done")
+
+    async def failing_tool(*args, **kwargs):
+        raise RuntimeError("boom")
+
+    mock_stream_llm.side_effect = stream
+    events = []
+    async for event in stream_with_tools(
+        messages=[{"role": "user", "content": "hi"}],
+        cfg=cfg,
+        tools=[FIND_PASSAGES_TOOL],
+        execute_tool_fn=failing_tool,
+    ):
+        events.append(event)
+
+    errors = [e for e in events if e.type == "error"]
+    assert errors, "expected an inline error event from the failed tool"
+    assert errors[0].content == "tool_error"
+
+
+@pytest.mark.asyncio
 async def test_stream_with_tools_no_text_length_cutoff_raises_budget_error(mock_stream_llm):
     """No text + a length cutoff (done.stop_reason in the length set) → budget
     error, so the frontend tells the user to raise max output tokens. Pins the

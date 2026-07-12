@@ -33,7 +33,8 @@ export function useConversationHistory(
 ) {
   const [messages, setMessages] = useState<MessageUI[]>([]);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  // Raw error — the consumer localizes at render time (toErrorMessageWithT).
+  const [loadError, setLoadError] = useState<unknown>(null);
   const [activeStreamMessageId, setActiveStreamMessageId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -86,7 +87,7 @@ export function useConversationHistory(
         setMessages(loaded);
       })
       .catch((err) => {
-        if (!cancelled) setLoadError(String(err));
+        if (!cancelled) setLoadError(err);
       })
       .finally(() => {
         if (!cancelled) setIsLoadingHistory(false);
