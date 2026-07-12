@@ -38,10 +38,10 @@ export function ListDetailPage() {
   const tRef = useRef(t);
   tRef.current = t;
 
+  // Default chat scope: all sources. Unconditional so deleting the last
+  // source also clears the selection (a stale id must never reach chat).
   useEffect(() => {
-    if (sources.length > 0) {
-      setSelectedSourceIds(sources.map((s) => s.id));
-    }
+    setSelectedSourceIds(sources.map((s) => s.id));
   }, [sources]);
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -232,6 +232,7 @@ export function ListDetailPage() {
                   sources={sources}
                   selectedSourceIds={selectedSourceIds}
                   onSelectedSourcesChange={setSelectedSourceIds}
+                  onRefresh={() => void load()}
                   onOpenSource={handleOpenSource}
                 />
               )}
