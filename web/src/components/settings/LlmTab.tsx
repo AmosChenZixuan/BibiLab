@@ -87,7 +87,7 @@ export function LlmTab({ config, onBlur }: LlmTabProps) {
         htmlFor={providerId}
       >
         <Select
-          aria-label="Provider"
+          aria-label={t("settings.provider")}
           id={providerId}
           onBlur={handleBlur}
           onChange={(event) =>
@@ -106,7 +106,7 @@ export function LlmTab({ config, onBlur }: LlmTabProps) {
         htmlFor={modelId}
       >
         <Input
-          aria-label="Model"
+          aria-label={t("settings.model")}
           id={modelId}
           onBlur={handleBlur}
           onChange={(event) =>
@@ -124,7 +124,7 @@ export function LlmTab({ config, onBlur }: LlmTabProps) {
       >
         <div className="relative">
           <Input
-            aria-label="API Key"
+            aria-label={t("settings.apiKey")}
             id={apiKeyId}
             onBlur={handleBlur}
             onChange={(event) =>
@@ -137,7 +137,7 @@ export function LlmTab({ config, onBlur }: LlmTabProps) {
           />
           <button
             type="button"
-            aria-label={showApiKey ? "Hide API key" : "Reveal API key"}
+            aria-label={showApiKey ? t("settings.hideApiKey") : t("settings.revealApiKey")}
             className="absolute right-0 top-0 flex h-full items-center justify-center px-3 text-ink/40 hover:text-ink"
             onClick={() => setShowApiKey((v) => !v)}
           >
@@ -152,7 +152,7 @@ export function LlmTab({ config, onBlur }: LlmTabProps) {
         htmlFor={baseUrlId}
       >
         <Input
-          aria-label="Base URL"
+          aria-label={t("settings.baseUrl")}
           id={baseUrlId}
           onBlur={handleBlur}
           onChange={(event) =>
@@ -171,7 +171,7 @@ export function LlmTab({ config, onBlur }: LlmTabProps) {
         htmlFor={outputLanguageId}
       >
         <Select
-          aria-label="Output Language"
+          aria-label={t("settings.outputLanguage")}
           id={outputLanguageId}
           onBlur={handleBlur}
           onChange={(event) =>

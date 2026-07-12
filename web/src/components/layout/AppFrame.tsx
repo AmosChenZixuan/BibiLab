@@ -105,7 +105,7 @@ export function AppFrame() {
           ref={setNavElement}
           className="fixed inset-x-0 top-0 z-nav flex h-14 items-center justify-between bg-white px-4 md:px-6 xl:px-12"
         >
-          <NavLink className="inline-flex items-center gap-2 text-muted" to="/" aria-label="Home">
+          <NavLink className="inline-flex items-center gap-2 text-muted" to="/" aria-label={t("navbar.home")}>
             <BrandMark className="h-7 w-7" />
           </NavLink>
 
@@ -114,7 +114,7 @@ export function AppFrame() {
               to="/settings"
               className="relative inline-flex h-9 w-9 items-center justify-center rounded-lg transition hover:bg-sky/10"
               title={t("health." + healthTier)}
-              aria-label="Settings"
+              aria-label={t("navbar.settings")}
             >
               <span className="inline-flex size-4.5 items-center justify-center text-blue/70" aria-hidden="true">
                 <Settings className="size-4.5" />
@@ -127,7 +127,7 @@ export function AppFrame() {
             <button
               type="button"
               className="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-transparent text-ink transition hover:bg-sky/10"
-              aria-label="Identity"
+              aria-label={t("navbar.identity")}
               aria-expanded={identityOpen}
               aria-haspopup="menu"
               onClick={() => setIdentityOpen((open) => !open)}

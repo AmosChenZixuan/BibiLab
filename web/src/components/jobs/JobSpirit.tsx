@@ -48,7 +48,7 @@ export function JobSpirit() {
         <button
           type="button"
           className="fixed inset-0 z-float border-0 bg-transparent"
-          aria-label="Close"
+          aria-label={t("common.close")}
           onClick={() => setPanelOpen(false)}
         />
       ) : null}
@@ -56,7 +56,7 @@ export function JobSpirit() {
         {isPanelOpen ? (
           <section
             className="w-80 overflow-hidden rounded-3xl border border-border bg-white/96 shadow-lg backdrop-blur-md"
-            aria-label="Jobs"
+            aria-label={t("jobs.jobs")}
           >
             <div className="flex items-center justify-between border-b border-border px-4 py-3">
               <span className="text-sm font-semibold text-ink">
@@ -130,7 +130,7 @@ export function JobSpirit() {
 
         <button
           type="button"
-          aria-label="Jobs"
+          aria-label={t("jobs.jobs")}
           className="inline-flex items-center gap-2 rounded-full border border-border bg-white/94 px-3 py-1.5 text-sm text-ink shadow-lg backdrop-blur-md transition-shadow hover:shadow-lg"
           onClick={() => setPanelOpen(!isPanelOpen)}
         >

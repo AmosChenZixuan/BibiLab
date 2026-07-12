@@ -65,7 +65,7 @@ export function TranscriptTab({ config, dependencies, onBlur }: TranscriptTabPro
       >
         <div className="grid gap-2">
           <Select
-            aria-label="Model"
+            aria-label={t("settings.model")}
             id={modelId}
             disabled={noInstalled}
             onBlur={handleBlur}
@@ -100,7 +100,7 @@ export function TranscriptTab({ config, dependencies, onBlur }: TranscriptTabPro
         htmlFor={deviceId}
       >
         <Select
-          aria-label="Device"
+          aria-label={t("settings.device")}
           id={deviceId}
           onBlur={handleBlur}
           onChange={(event) =>
@@ -119,7 +119,7 @@ export function TranscriptTab({ config, dependencies, onBlur }: TranscriptTabPro
         htmlFor={languageId}
       >
         <Select
-          aria-label="Transcription Language"
+          aria-label={t("settings.transcriptionLanguage")}
           id={languageId}
           onBlur={handleBlur}
           onChange={(event) =>

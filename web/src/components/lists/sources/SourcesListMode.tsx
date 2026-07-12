@@ -44,13 +44,13 @@ function SourceRow({
         type="checkbox"
         checked={selected}
         onChange={() => onToggle(source.id)}
-        aria-label={`Select ${source.title}`}
+        aria-label={t("lists.aria.selectSource", { title: source.title })}
         disabled={isDeleting}
         className="h-4 w-4 rounded border-border text-blue focus:ring-blue disabled:opacity-40"
       />
       <button
         type="button"
-        aria-label={`Open ${source.title}`}
+        aria-label={t("lists.aria.openSource", { title: source.title })}
         className="min-w-0 flex-1 border-0 bg-transparent text-left"
         onClick={onOpen}
         disabled={isDeleting}
@@ -66,7 +66,7 @@ function SourceRow({
           <button
             ref={triggerRef}
             type="button"
-            aria-label="Source options"
+            aria-label={t("lists.aria.sourceOptions")}
             onClick={toggle}
             className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-muted opacity-0 transition group-hover:opacity-100 hover:bg-border hover:text-ink"
           >
@@ -126,7 +126,7 @@ function IngestingSourceRow({
         <button
           type="button"
           onClick={onDismiss}
-          aria-label="Dismiss"
+          aria-label={t("jobs.dismiss")}
           className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-muted transition hover:bg-border hover:text-ink"
         >
           <X size={14} />
@@ -146,7 +146,7 @@ function IngestingSourceRow({
         <button
           type="button"
           onClick={onDismiss}
-          aria-label="Cancel ingestion"
+          aria-label={t("lists.aria.cancelIngestion")}
           className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-muted transition hover:bg-border hover:text-ink"
         >
           <X size={14} />
@@ -504,7 +504,7 @@ export function SourcesListMode({
             <button
               type="submit"
               disabled={!url.trim()}
-              aria-label="Add source"
+              aria-label={t("lists.aria.addSource")}
               className="absolute right-1.5 top-1/2 -translate-y-1/2 flex h-7 w-7 items-center justify-center rounded-full text-muted transition disabled:opacity-0 enabled:hover:bg-blue enabled:hover:text-white enabled:hover:shadow-sm"
             >
               <ArrowRight size={15} />
@@ -538,7 +538,7 @@ export function SourcesListMode({
                 ref={selectAllRef}
                 checked={allSelected}
                 onChange={handleSelectAll}
-                aria-label="Select all"
+                aria-label={t("lists.preview.selectAll")}
                 className="h-4 w-4 rounded border-border text-blue focus:ring-blue"
               />
               <span className="text-sm font-medium text-muted">{t("lists.preview.selectAll")}</span>

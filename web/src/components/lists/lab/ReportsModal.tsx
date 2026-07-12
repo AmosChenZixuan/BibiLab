@@ -119,7 +119,7 @@ export function ReportsModal({ open, listId, sourceIds, onClose }: ReportsModalP
             <button
               type="submit"
               disabled={!prompt.trim()}
-              aria-label="Submit"
+              aria-label={t("lab.reportsModal.submit")}
               className="absolute bottom-2.5 right-2.5 flex h-7 w-7 items-center justify-center rounded-full bg-blue text-white transition disabled:opacity-40 hover:bg-blue/80"
             >
               <ArrowRight size={15} />

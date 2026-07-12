@@ -116,7 +116,7 @@ export function DigestAccordion({
                 <button
                   ref={triggerRef}
                   type="button"
-                  aria-label="Digest options"
+                  aria-label={t("lists.aria.digestOptions")}
                   onClick={toggle}
                   className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-muted transition hover:bg-border hover:text-ink"
                 >
@@ -128,7 +128,7 @@ export function DigestAccordion({
           <button
             type="button"
             onClick={() => setExpanded((v) => !v)}
-            aria-label={expanded ? "Collapse" : "Expand"}
+            aria-label={expanded ? t("lab.header.collapse") : t("lab.header.expand")}
             className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-muted transition hover:bg-border hover:text-ink"
           >
             {expanded ? <ChevronUp size={18} /> : <ChevronDown size={18} />}

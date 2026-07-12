@@ -169,7 +169,7 @@ export function ArtifactViewer({ artifact, sources, onAskInChatFromMindmap, onOp
         {!isMindMap && (
           <button
             type="button"
-            aria-label="Copy markdown"
+            aria-label={t("lab.artifactViewer.copyMarkdown")}
             disabled={!content}
             onClick={handleCopy}
             className="flex h-7 w-7 items-center justify-center rounded-full text-muted transition hover:bg-border hover:text-ink disabled:opacity-40"
