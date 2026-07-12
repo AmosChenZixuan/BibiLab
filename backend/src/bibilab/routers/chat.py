@@ -613,7 +613,9 @@ def _serialize_event_for_buffer(event: StreamEvent) -> dict | None:
         return {
             "type": SSE_EVENT_CITATION,
             "index": data["index"],
+            "section_id": data.get("section_id", ""),
             "source_id": data["source_id"],
+            "timestamp_start": data.get("timestamp_start", 0.0),
             "chunk_ids": data.get("chunk_ids", []),
         }
     elif event.type == SSE_EVENT_TOOL_CALL_START:
