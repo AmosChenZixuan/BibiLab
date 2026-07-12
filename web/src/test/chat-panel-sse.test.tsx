@@ -1,4 +1,4 @@
-import { cleanup, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
@@ -415,6 +415,99 @@ describe("chat panel — conversation history", () => {
     await waitFor(() => {
       expect(screen.getByText("Ask your sources")).toBeInTheDocument();
     });
+  });
+
+  test("Enter while history is loading does not send; the draft is kept", async () => {
+    let chatPosted = false;
+    mockFetch((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes("/chat") && init?.method === "POST") {
+        chatPosted = true;
+        return Promise.resolve(makeSseStream(['data: {"type":"done"}\n\n']));
+      }
+      if (url.includes("/conversation")) {
+        return new Promise<Response>(() => {}); // history fetch never resolves
+      }
+      return Promise.resolve(new Response(JSON.stringify([])));
+    });
+
+    renderChatPanel(ChatPanel, { providers: [LanguageProvider, JobActivityProvider],
+      selectedSourceIds: ["src-1"],
+      sources: [SOURCE_1],
+      listId: "list-1",
+    });
+
+    const textarea = screen.getByRole("textbox");
+    await userEvent.type(textarea, "too early");
+    await userEvent.keyboard("{Enter}");
+
+    expect(chatPosted).toBe(false);
+    expect(textarea).toHaveValue("too early");
+  });
+
+  test("a late history load does not clobber an in-flight streamed message", async () => {
+    const { response, enqueue } = makeOpenSseStream();
+    let conversationCalls = 0;
+    let resolveSecond: ((r: Response) => void) | null = null;
+    mockFetch((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes("/chat") && init?.method === "POST") {
+        return Promise.resolve(response);
+      }
+      if (url.includes("/conversation")) {
+        conversationCalls += 1;
+        if (conversationCalls === 1) {
+          return Promise.resolve(new Response(JSON.stringify({ conversation: null, messages: [] })));
+        }
+        return new Promise<Response>((res) => {
+          resolveSecond = res;
+        });
+      }
+      return Promise.resolve(new Response(JSON.stringify([])));
+    });
+
+    const ui = (ids: string[]) => (
+      <LanguageProvider>
+        <JobActivityProvider>
+          <ChatPanel selectedSourceIds={ids} sources={[SOURCE_1]} listId="list-1" />
+        </JobActivityProvider>
+      </LanguageProvider>
+    );
+    const { rerender } = render(ui(["src-1"]));
+
+    // First (empty) history load settles → input enabled
+    const textarea = await waitFor(() => {
+      const el = screen.getByRole("textbox");
+      expect(el).not.toBeDisabled();
+      return el;
+    });
+    await userEvent.type(textarea, "live question");
+    await userEvent.keyboard("{Enter}");
+    enqueue('data: {"type":"meta","message_id":"srv-1"}\n\n');
+    enqueue('data: {"type":"delta","content":"streaming answer"}\n\n');
+    await waitFor(() => expect(screen.getByText("streaming answer")).toBeInTheDocument());
+
+    // Deselect-all → reselect mid-stream re-fires the history effect
+    rerender(ui([]));
+    rerender(ui(["src-1"]));
+    await waitFor(() => expect(resolveSecond).not.toBeNull());
+    // Stale snapshot (fetched before the live turn persisted) resolves now
+    resolveSecond!(
+      new Response(
+        JSON.stringify({
+          conversation: { id: "conv-1", list_id: "list-1", summary: null, created_at: "2026-04-01T00:00:00Z", updated_at: "2026-04-01T00:00:00Z" },
+          messages: [
+            { id: "old-1", role: "user", content: "old question", metadata: null, created_at: "2026-04-01T10:00:00Z" },
+            { id: "old-2", role: "assistant", content: "old answer", metadata: null, created_at: "2026-04-01T10:01:00Z" },
+          ],
+        }),
+      ),
+    );
+
+    // The live stream survives and keeps receiving deltas
+    enqueue('data: {"type":"delta","content":" continues"}\n\n');
+    await waitFor(() => expect(screen.getByText("streaming answer continues")).toBeInTheDocument());
+    expect(screen.getByText("live question")).toBeInTheDocument();
   });
 
   test("message list dims to 50% opacity while clear popover is open", async () => {

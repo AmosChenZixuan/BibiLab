@@ -361,8 +361,9 @@ export function ChatPanel({
 
   // Shared "can we send right now?" gate. Used by both the manual
   // `handleSend` path and the auto-send effect (chip click) — keeps
-  // the two in lockstep.
-  const canSend = hasSources && !isStreaming;
+  // the two in lockstep. Blocked while history loads: a send racing the
+  // fetch would be wiped when the (stale) snapshot replaces messages.
+  const canSend = hasSources && !isStreaming && !isLoadingHistory;
 
   const reattachedRef = useRef<string | null>(null);
 
@@ -392,7 +393,11 @@ export function ChatPanel({
 
   useEffect(() => {
     if (historyMessages.length > 0) {
-      setMessages(historyMessages);
+      // Never clobber an in-flight stream: a history snapshot resolving
+      // mid-stream (e.g. deselect-all → reselect re-fires the fetch) predates
+      // the live turn — drop it; the turn persists server-side and the next
+      // load includes it.
+      setMessages((prev) => (prev.some((m) => m.isStreaming) ? prev : historyMessages));
     }
   }, [historyMessages]);
 
