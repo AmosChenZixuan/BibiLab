@@ -907,7 +907,7 @@ class WorkerLoop:
 
         # Stage 1: Download
         try:
-            video_path = await self._stage_download(job_id, video_meta, source_id)
+            video_path = await self._stage_download(job, video_meta, source_id)
         except Exception as exc:
             raise PipelineError(f"[downloading] {exc}") from exc
         if video_path is None:
@@ -915,7 +915,7 @@ class WorkerLoop:
 
         # Stage 2: Audio extraction
         try:
-            wav_path = await self._stage_extract_audio(job_id, video_path, video_meta.duration_seconds)
+            wav_path = await self._stage_extract_audio(job, video_path, video_meta.duration_seconds)
         except Exception as exc:
             raise PipelineError(f"[transcribing] {exc}") from exc
         if wav_path is None:
@@ -923,7 +923,7 @@ class WorkerLoop:
 
         # Stage 3: Transcription
         try:
-            result = await self._stage_transcribe(job_id, wav_path, source_id, cfg)
+            result = await self._stage_transcribe(job, wav_path, source_id, cfg)
         except Exception as exc:
             raise PipelineError(f"[transcribing] {exc}") from exc
         if result is None:
@@ -933,7 +933,7 @@ class WorkerLoop:
         # Stage 4: Derive sections, chunk per-section, digest + embed in parallel
         try:
             result = await self._stage_process(
-                job_id, job, sentence_segments, source_id, video_meta, list_id, cfg, effective_language
+                job, sentence_segments, source_id, video_meta, list_id, cfg, effective_language
             )
         except Exception as exc:
             raise PipelineError(f"[processing] {exc}") from exc
@@ -961,32 +961,36 @@ class WorkerLoop:
         await update_job_status(job_id, JobStatus.DONE.value, progress=100)
         logger.info("Job %s completed for video %s", job_id, video_id)
 
-    async def _abort_if_cancelled(self, job_id: str) -> bool:
+    async def _abort_if_cancelled(self, job: dict) -> bool:
         """If the job is cancelled, purge its artifacts, delete it, and report
-        True so the caller stops. Safe to call more than once within a stage."""
+        True so the caller stops. Safe to call more than once within a stage.
+
+        Takes the full job dict — cleanup_job_artifacts early-returns on a
+        dict without type/meta, so an id-only snapshot would purge nothing."""
+        job_id = job["id"]
         if job_id not in self._cancelled:
             return False
         self._cancelled.discard(job_id)
-        await asyncio.to_thread(cleanup_job_artifacts, {"id": job_id})
+        await asyncio.to_thread(cleanup_job_artifacts, job)
         await delete_job(job_id)
         return True
 
     async def _stage_download(
         self,
-        job_id: str,
+        job: dict,
         video_meta: VideoMeta,
         source_id: str,
     ) -> Path | None:
         """Stage 1: Download video file and cover image."""
-        await update_job_status(job_id, JobStatus.DOWNLOADING.value, progress=10)
-        if await self._abort_if_cancelled(job_id):
+        await update_job_status(job["id"], JobStatus.DOWNLOADING.value, progress=10)
+        if await self._abort_if_cancelled(job):
             return None
 
         # .part hygiene: purge any downloads/{id}.* left by a prior failed/corrupt
         # attempt so this download starts clean and never resumes onto stale bytes.
         await asyncio.to_thread(purge_download_files, video_meta.video_id)
 
-        if await self._abort_if_cancelled(job_id):
+        if await self._abort_if_cancelled(job):
             return None
         video_path: Path = await asyncio.to_thread(
             self._get_adapter(video_meta.platform).download,
@@ -1005,12 +1009,12 @@ class WorkerLoop:
 
     async def _stage_extract_audio(
         self,
-        job_id: str,
+        job: dict,
         video_path: Path,
         expected_duration: float = 0.0,
     ) -> Path | None:
         """Stage 2: Extract audio from downloaded video."""
-        await update_job_status(job_id, JobStatus.TRANSCRIBING.value, progress=25)
+        await update_job_status(job["id"], JobStatus.TRANSCRIBING.value, progress=25)
         try:
             wav_path = await asyncio.to_thread(extract_audio, video_path, expected_duration)
         except Exception:
@@ -1018,23 +1022,20 @@ class WorkerLoop:
             # by cancel_or_delete_job using the full job dict from DB
             raise
 
-        if job_id in self._cancelled:
-            self._cancelled.discard(job_id)
-            await asyncio.to_thread(cleanup_job_artifacts, {"id": job_id})
-            await delete_job(job_id)
+        if await self._abort_if_cancelled(job):
             return None
 
         return wav_path
 
     async def _stage_transcribe(
         self,
-        job_id: str,
+        job: dict,
         wav_path: Path,
         source_id: str,
         cfg: BibilabConfig,
     ) -> tuple | None:
         """Stage 3: Transcribe audio, punctuate (zh-gated) into sentence segments."""
-        await update_job_status(job_id, JobStatus.TRANSCRIBING.value, progress=30)
+        await update_job_status(job["id"], JobStatus.TRANSCRIBING.value, progress=30)
         vad_segments, detected_language = await asyncio.to_thread(transcribe, wav_path, cfg.transcription)
         wav_path.unlink(missing_ok=True)  # clean up early — punctuate only needs text
         effective_language = (
@@ -1042,10 +1043,7 @@ class WorkerLoop:
         )
         sentence_segments = await asyncio.to_thread(punctuate, vad_segments, effective_language)
 
-        if job_id in self._cancelled:
-            self._cancelled.discard(job_id)
-            await asyncio.to_thread(cleanup_job_artifacts, {"id": job_id})
-            await delete_job(job_id)
+        if await self._abort_if_cancelled(job):
             return None
 
         if not sentence_segments:
@@ -1058,7 +1056,6 @@ class WorkerLoop:
 
     async def _stage_process(
         self,
-        job_id: str,
         job: dict,
         sentence_segments: list[WhisperSegment],
         source_id: str,
@@ -1081,7 +1078,7 @@ class WorkerLoop:
         optimization; today the chunk→section containment is a structural
         property of chunk_by_sections, not a stored relationship).
         """
-        await update_job_status(job_id, JobStatus.PROCESSING.value, progress=40)
+        await update_job_status(job["id"], JobStatus.PROCESSING.value, progress=40)
         sections = derive_sections(sentence_segments)
         chunks = chunk_by_sections(sentence_segments, sections, language=effective_language)
         section_texts_list = section_texts(sentence_segments, sections)
@@ -1105,10 +1102,7 @@ class WorkerLoop:
             raise embed_raw
         extraction, section_digests = digest_raw
 
-        if job_id in self._cancelled:
-            self._cancelled.discard(job_id)
-            await asyncio.to_thread(cleanup_job_artifacts, job)
-            await delete_job(job_id)
+        if await self._abort_if_cancelled(job):
             return None
 
         return extraction, sections, section_digests
