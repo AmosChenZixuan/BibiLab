@@ -875,6 +875,24 @@ async def get_pending_jobs() -> list[aiosqlite.Row]:
         return await cursor.fetchall()
 
 
+async def has_active_jobs(list_id: str, video_id: str | None = None) -> bool:
+    """True if any non-terminal job targets this list (optionally narrowed to a
+    specific video within it). Backs the list/source delete guards."""
+    conditions = ["json_extract(meta, '$.list_id') = ?"]
+    params: list[Any] = [list_id]
+    if video_id is not None:
+        conditions.append("json_extract(meta, '$.video_id') = ?")
+        params.append(video_id)
+    conditions.append(f"status IN ({_in_placeholders(list(ACTIVE_JOB_STATUSES))})")
+    params.extend(ACTIVE_JOB_STATUSES)
+    async with get_db() as db:
+        rows = await db.execute_fetchall(
+            f"SELECT 1 FROM jobs WHERE {' AND '.join(conditions)} LIMIT 1",
+            tuple(params),
+        )
+    return len(rows) > 0
+
+
 async def get_conversation_by_list(list_id: str) -> aiosqlite.Row | None:
     async with get_db() as db:
         cursor = await db.execute(

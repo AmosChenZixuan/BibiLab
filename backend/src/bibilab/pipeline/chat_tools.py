@@ -142,7 +142,9 @@ def _build_fenced_sections(
 def _chunk_id(chunk) -> str:
     """Canonical chunk_id used by citation tracking, raw_chunks, and intra-turn
     dedup. Centralizing the formula here guarantees the dedup key can never
-    drift from the citation key."""
+    drift from the citation key. Int-truncates timestamps to match the emitted
+    citation chunk_ids; distinct from embed._chunk_key, which keeps raw float
+    precision for retrieve-side dedup."""
     return f"{chunk.source_id}_{int(chunk.timestamp_start)}_{int(chunk.timestamp_end)}"
 
 

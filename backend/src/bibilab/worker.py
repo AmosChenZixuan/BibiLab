@@ -41,6 +41,7 @@ from bibilab.pipeline._shared import (
     _LANG_INSTRUCTION,
     _lang_output_directive,
     _parse_llm_json_response,
+    format_mmss,
     resolve_response_language,
 )
 from bibilab.pipeline.audio import PipelineError, extract_audio
@@ -152,11 +153,20 @@ def _pack_sections(
     return batches
 
 
-def _format_duration(seconds: float) -> str:
-    """mm:ss formatter for section headers. Past 1h, keeps counting minutes
-    (no H:MM:SS) — the header is for orientation, not parsing."""
-    s = int(seconds)
-    return f"{s // 60:02d}:{s % 60:02d}"
+def _reraise_gathered_failures(digest_raw: Any, embed_raw: Any) -> None:
+    """Re-raise failures from the parallel digest∥embed gather in priority order.
+
+    Digest is the primary error the job surfaces. When both failed, embed is
+    logged as secondary and digest is raised; when only embed failed it
+    propagates as the primary error with no misleading 'secondary' log."""
+    digest_failed = isinstance(digest_raw, BaseException)
+    embed_failed = isinstance(embed_raw, BaseException)
+    if digest_failed and embed_failed:
+        logger.error("embed_chunks also failed (secondary to the digest error)", exc_info=embed_raw)
+    if digest_failed:
+        raise digest_raw
+    if embed_failed:
+        raise embed_raw
 
 
 def _render_single_batch_text(sections: list[_SectionView]) -> str:
@@ -194,8 +204,8 @@ def _render_multi_batch_section(sec: _SectionView) -> str:
     joins sections)."""
     header = (
         f"=== Source: {sec.source_title} · "
-        f"Section {sec.seq} ({_format_duration(sec.timestamp_start)}-"
-        f"{_format_duration(sec.timestamp_end)}) ==="
+        f"Section {sec.seq} ({format_mmss(sec.timestamp_start)}-"
+        f"{format_mmss(sec.timestamp_end)}) ==="
     )
     return f"{header}\n{sec.text}"
 
@@ -1018,12 +1028,9 @@ class WorkerLoop:
     ) -> Path | None:
         """Stage 2: Extract audio from downloaded video."""
         await update_job_status(job["id"], JobStatus.TRANSCRIBING.value, progress=25)
-        try:
-            wav_path = await asyncio.to_thread(extract_audio, video_path, expected_duration)
-        except Exception:
-            # video_path exists but audio extraction failed - video will be cleaned up
-            # by cancel_or_delete_job using the full job dict from DB
-            raise
+        # On failure video_path is left on disk; cancel_or_delete_job cleans it up
+        # later from the full job dict in the DB.
+        wav_path = await asyncio.to_thread(extract_audio, video_path, expected_duration)
 
         if await self._abort_if_cancelled(job):
             return None
@@ -1097,12 +1104,7 @@ class WorkerLoop:
 
         gather_results = await asyncio.gather(_digest(), _embed(), return_exceptions=True)
         digest_raw, embed_raw = gather_results
-        if isinstance(embed_raw, BaseException):
-            logger.error("embed_chunks raised but was not the primary error", exc_info=embed_raw)
-        if isinstance(digest_raw, BaseException):
-            raise digest_raw
-        if isinstance(embed_raw, BaseException):
-            raise embed_raw
+        _reraise_gathered_failures(digest_raw, embed_raw)
         extraction, section_digests = digest_raw
 
         if await self._abort_if_cancelled(job):
@@ -1149,5 +1151,5 @@ class WorkerLoop:
             season_number=extraction.season_number,
         )
 
-        # Cleanup downloads
-        purge_download_files(video_id)
+        # Cleanup downloads (off the loop — unlinking multi-GB files blocks on WSL)
+        await asyncio.to_thread(purge_download_files, video_id)

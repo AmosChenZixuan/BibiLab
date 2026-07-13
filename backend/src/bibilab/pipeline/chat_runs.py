@@ -156,9 +156,6 @@ async def create_user_and_assistant_atomic(
                 (assistant_msg_id, conversation_id),
             )
             await db.commit()
-        except ActiveStreamConflict:
-            await db.execute("ROLLBACK")
-            raise
         except Exception:
             await db.execute("ROLLBACK")
             raise
