@@ -2,9 +2,9 @@ import React, { useEffect, useMemo, useRef, useState, type ReactNode } from "rea
 
 import { useAutoScroll } from "@/components/lists/hooks/useAutoScroll";
 import { useSSEStream } from "@/components/lists/hooks/useSSEStream";
-import ReactMarkdown from "react-markdown";
+import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
-import type { Root, Element, Text, RootContent } from "hast";
+import type { Root, Element, Text, RootContent, Properties } from "hast";
 import {
   AlertCircle,
   Check,
@@ -21,7 +21,6 @@ import {
 } from "lucide-react";
 
 import { useLanguage } from "@/app/LanguageContext";
-import { useJobActivity } from "@/components/jobs/JobActivityProvider";
 import { useConversationHistory, type MessageUI } from "@/components/lists/hooks/useConversationHistory";
 import { ToolLedger } from "@/components/lists/ToolLedger";
 import { PulseRing } from "@/components/ui/PulseRing";
@@ -114,8 +113,8 @@ type CiteData = {
   onOpenSource?: (source: Source, opts?: OpenSourceOpts) => void;
 };
 
-function CiteEl(props: Record<string, any>) {
-  const cite: CiteData | undefined = props["_cite"] as any;
+function CiteEl(props: { _cite?: CiteData }) {
+  const cite = props._cite;
   if (!cite) {
     console.warn("CiteEl: missing _cite prop — possible citation index mismatch");
     return null;
@@ -133,10 +132,12 @@ function CiteEl(props: Record<string, any>) {
   );
 }
 
-const MARKDOWN_COMPONENTS: Record<string, any> = {
-  p: ({ children }: any) => <>{children}</>,
+const MARKDOWN_COMPONENTS = {
+  p: ({ children }: { children?: ReactNode }) => <>{children}</>,
+  // react-markdown's Components type only knows intrinsic HTML tags; the custom
+  // citation-el element (injected by makeRehypeCitePlugin) needs the assertion.
   "citation-el": CiteEl,
-};
+} as Components;
 
 function makeRehypeCitePlugin(citations: CiteData[]) {
   // Attacher called by unified.use(); returns the actual transformer.
@@ -164,7 +165,9 @@ function makeRehypeCitePlugin(citations: CiteData[]) {
                 replacements.push({
                   type: "element",
                   tagName: "citation-el",
-                  properties: { _cite: citations[idx] as any },
+                  // hast property values are primitives; the CiteData object
+                  // rides through as an opaque prop to CiteEl, hence the cast.
+                  properties: { _cite: citations[idx] } as unknown as Properties,
                   children: [],
                 });
               }
@@ -284,7 +287,6 @@ export function ChatPanel({
   onSaveToArtifact,
 }: ChatPanelProps) {
   const { t, lang } = useLanguage();
-  const { trackJobs } = useJobActivity();
   const [inputValue, setInputValue] = useState("");
   const [messages, setMessages] = useState<MessageUI[]>([]);
   const [showClearPopover, setShowClearPopover] = useState(false);
@@ -380,8 +382,6 @@ export function ChatPanel({
     selectedSourceIds,
     messages,
     setMessages,
-    trackJobs,
-    interruptedLabel: t("chat.interrupted"),
     stoppedLabel: t("chat.stopped"),
     lang,
     todayLabel: t("chat.time.today"),

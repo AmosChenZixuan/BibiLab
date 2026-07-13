@@ -8,3 +8,8 @@ export const ARTIFACT_TYPE_KEYS: Record<ArtifactType, string> = {
   chat_message: "lab.artifactType.chatMessage",
   mind_map: "lab.artifactType.mindMap",
 };
+
+export function formatArtifactTypeLabel(type: ArtifactType, t: (key: string) => string): string {
+  const key = ARTIFACT_TYPE_KEYS[type];
+  return key ? t(key) : type; // Fallback to type itself for custom types
+}

@@ -64,6 +64,12 @@ describe("PlaylistPreviewModal", () => {
     expect(rows.every((cb) => cb.checked)).toBe(true);
   });
 
+  it("renders a >1h duration as h:mm:ss", () => {
+    // 2h05m30s — the old formatDuration had no hours branch and showed 125:30.
+    renderModal([makeVideo({ video_id: "v1", duration_seconds: 7530 })]);
+    expect(screen.getByText("2:05:30")).toBeInTheDocument();
+  });
+
   // ── 2. Tri-state master checkbox ───────────────────────────────────────────
   it("master: all checked → checked=true, indeterminate=false", () => {
     const videos = [makeVideo({ video_id: "v1" }), makeVideo({ video_id: "v2" })];

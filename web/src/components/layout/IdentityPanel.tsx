@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { QrCode, LogOut } from "lucide-react";
 
 import { useLanguage } from "@/app/LanguageContext";
+import { proxyCoverUrl } from "@/lib/utils";
 
 type IdentityPanelProps = {
   bilibiliCookie: string;
@@ -56,7 +57,7 @@ export default function IdentityPanel({
                 <div className="relative flex shrink-0">
                   {hasAvatar ? (
                     <img
-                      src={`/api/proxy/cover?url=${encodeURIComponent(bilibiliAvatarUrl)}`}
+                      src={proxyCoverUrl(bilibiliAvatarUrl)}
                       alt={bilibiliUsername || "Bilibili avatar"}
                       className="size-9 rounded-full object-cover"
                       onError={() => setAvatarError(true)}

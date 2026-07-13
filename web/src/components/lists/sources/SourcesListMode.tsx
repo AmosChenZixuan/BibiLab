@@ -249,6 +249,23 @@ export function SourcesListMode({
     onDone: () => onRefresh(),
   });
 
+  // A 401 from an ingest call means the platform needs auth: open the bilibili
+  // QR modal when the platform is bilibili, otherwise surface the localized
+  // auth-required error. Returns true when it consumed a 401, false to let the
+  // caller fall through to its generic error handling.
+  const handleAuthError = useCallback(
+    (err: unknown, platform: string): boolean => {
+      if (!(err instanceof ApiError) || err.status !== 401) return false;
+      if (platform === "bilibili") {
+        setShowQrModal(true);
+      } else {
+        setError(t("lists.ingest.authRequired", { platform }));
+      }
+      return true;
+    },
+    [t],
+  );
+
   const handleRetry = useCallback(
     async (job: IngestJob) => {
       const m = job.meta;
@@ -285,18 +302,12 @@ export function SourcesListMode({
         );
         await dismissJob(job.id);
       } catch (err) {
-        if (err instanceof ApiError && err.status === 401) {
-          if (payload.platform === "bilibili") {
-            setShowQrModal(true);
-          } else {
-            setError(t("lists.ingest.authRequired", { platform: payload.platform }));
-          }
-        } else {
+        if (!handleAuthError(err, payload.platform)) {
           setError(toErrorMessageWithT(err, t));
         }
       }
     },
-    [listId, trackJobs, dismissJob, t],
+    [listId, trackJobs, dismissJob, t, handleAuthError],
   );
 
   const submitSelection = useCallback(
@@ -329,21 +340,14 @@ export function SourcesListMode({
         }
         setPreviewVideos(null);
       } catch (err) {
-        if (err instanceof ApiError && err.status === 401) {
-          const platform = selected[0].platform;
-          if (platform === "bilibili") {
-            setShowQrModal(true);
-          } else {
-            setError(t("lists.ingest.authRequired", { platform }));
-          }
-        } else {
+        if (!handleAuthError(err, selected[0].platform)) {
           setError(toErrorMessageWithT(err, t));
         }
       } finally {
         setSubmitting(false);
       }
     },
-    [listId, t, trackJobs],
+    [listId, t, trackJobs, handleAuthError],
   );
 
   const doSubmit = useCallback(
@@ -437,28 +441,27 @@ export function SourcesListMode({
         setPreviewLoading(false);
       } catch (err) {
         setPreviewLoading(false);
-        if (err instanceof ApiError && err.status === 401) {
-          // Pre-preview there is no platform field yet — gate the bilibili QR
-          // modal on the submitted URL's host.
-          if (isBilibiliUrl(trimmedUrl)) {
-            setShowQrModal(true);
-            return;
-          }
-          let host = trimmedUrl;
-          try {
-            host = new URL(trimmedUrl).hostname;
-          } catch {
-            // keep the raw input as the label
-          }
-          setUrl(trimmedUrl);
-          setError(t("lists.ingest.authRequired", { platform: host }));
+        // Pre-preview there is no platform field yet — derive the auth
+        // "platform" from the submitted URL's host so the shared handler routes
+        // bilibili to the QR modal and any other host to a localized error.
+        const isBili = isBilibiliUrl(trimmedUrl);
+        let host = trimmedUrl;
+        try {
+          host = new URL(trimmedUrl).hostname;
+        } catch {
+          // keep the raw input as the label
+        }
+        if (handleAuthError(err, isBili ? "bilibili" : host)) {
+          // The QR path leaves the input untouched; the inline-error path
+          // restores the trimmed URL so the user can retry.
+          if (!isBili) setUrl(trimmedUrl);
           return;
         }
         setUrl(trimmedUrl);
         setError(toErrorMessageWithT(err, t));
       }
     },
-    [listId, submitSelection, t],
+    [listId, submitSelection, t, handleAuthError],
   );
 
   const handleSubmit = useCallback(

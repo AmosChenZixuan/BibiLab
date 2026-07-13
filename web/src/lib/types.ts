@@ -37,10 +37,9 @@ export type SourceContent = {
   duration_seconds: number;
   uploader: string;
   language: string | null;
-  processed_at: string;
+  processed_at: string | null;
   cover_url: string | null;
   transcript: string;
-  settings_snapshot: Record<string, unknown>;
   series_name?: string | null;
   sequence_number?: number | null;
   season_number?: number | null;
@@ -148,7 +147,7 @@ export type ArtifactStatus = "generating" | "completed" | "failed";
 
 export type Artifact = {
   id: string;
-  name: string;
+  name: string | null;
   type: ArtifactType;
   prompt: string;
   source_ids: string[];

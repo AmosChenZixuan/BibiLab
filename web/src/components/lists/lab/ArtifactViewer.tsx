@@ -6,6 +6,7 @@ import { Copy, FileText, X } from "lucide-react";
 import { useLanguage } from "@/app/LanguageContext";
 import { api } from "@/lib/api";
 import type { Artifact, Source } from "@/lib/types";
+import { formatArtifactTypeLabel } from "@/lib/artifact-types";
 import type { MindMapAskInChat, OpenSourceOpts } from "@/lib/chat-utils";
 import { TEST_IDS } from "@/lib/test-ids";
 import { MindMapBlock } from "./MindMapBlock";
@@ -85,7 +86,7 @@ export function ArtifactViewer({ artifact, sources, onAskInChatFromMindmap, onOp
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
       <div className="flex shrink-0 items-center gap-2 border-b border-border px-4 py-3">
         <div className="min-w-0 flex-1">
-          <p className="m-0 truncate font-serif text-base font-bold text-ink">{artifact.name}</p>
+          <p className="m-0 truncate font-serif text-base font-bold text-ink">{artifact.name || formatArtifactTypeLabel(artifact.type, t)}</p>
           {isMindMap ? (
             sourceCount > 0 && (
               <div ref={sourcesRef} className="relative mt-1.5">

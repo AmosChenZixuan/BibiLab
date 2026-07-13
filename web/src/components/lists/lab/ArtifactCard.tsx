@@ -3,13 +3,8 @@ import { useRef, useState } from "react";
 
 import { useLanguage } from "@/app/LanguageContext";
 import { ContextMenu } from "@/components/ui/ContextMenu";
-import { ARTIFACT_TYPE_KEYS } from "@/lib/artifact-types";
+import { formatArtifactTypeLabel } from "@/lib/artifact-types";
 import type { Artifact } from "@/lib/types";
-
-function formatArtifactTypeLabel(type: Artifact["type"], t: (key: string) => string): string {
-  const key = ARTIFACT_TYPE_KEYS[type];
-  return key ? t(key) : type; // Fallback to type itself for custom types
-}
 
 function formatDate(iso: string): string {
   const date = new Date(iso);
@@ -39,8 +34,11 @@ export function ArtifactCard({
 }: ArtifactCardProps) {
   const { t } = useLanguage();
   const [isRenaming, setIsRenaming] = useState(false);
-  const [renameValue, setRenameValue] = useState(artifact.name);
+  const [renameValue, setRenameValue] = useState(artifact.name ?? "");
   const inputRef = useRef<HTMLInputElement>(null);
+  // Names can be empty (blank LLM title) or null (API contract) — fall back to
+  // the type label so failed and completed cards never render an empty line.
+  const displayName = artifact.name || formatArtifactTypeLabel(artifact.type, t);
 
   if (artifact.status === "generating") {
     return (
@@ -67,7 +65,7 @@ export function ArtifactCard({
       <div className="flex items-start gap-3 rounded-2xl border border-pink/30 bg-pink/6 px-4 py-3">
         <AlertCircle data-testid="alert-icon" size={16} className="mt-0.5 shrink-0 text-pink" />
         <div className="min-w-0 flex-1">
-          <p className="m-0 truncate text-sm font-medium text-ink">{artifact.name}</p>
+          <p className="m-0 truncate text-sm font-medium text-ink">{displayName}</p>
           {artifact.error && (
             <p className="m-0 mt-0.5 text-xs text-pink">{artifact.error}</p>
           )}
@@ -102,7 +100,7 @@ export function ArtifactCard({
       label: t("lab.artifactCard.rename"),
       icon: <Pencil size={14} />,
       onClick: () => {
-        setRenameValue(artifact.name);
+        setRenameValue(artifact.name ?? "");
         setIsRenaming(true);
         setTimeout(() => inputRef.current?.select(), 0);
       },
@@ -132,7 +130,7 @@ export function ArtifactCard({
       handleRenameSubmit();
     } else if (e.key === "Escape") {
       setIsRenaming(false);
-      setRenameValue(artifact.name);
+      setRenameValue(artifact.name ?? "");
     }
   }
 
@@ -170,7 +168,7 @@ export function ArtifactCard({
             onClick={(e) => e.stopPropagation()}
           />
         ) : (
-          <p className="m-0 truncate text-sm font-bold text-ink">{artifact.name}</p>
+          <p className="m-0 truncate text-sm font-bold text-ink">{displayName}</p>
         )}
         <p className="m-0 mt-0.5 text-xs text-muted">
           {subtitle}

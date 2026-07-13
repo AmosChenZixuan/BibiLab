@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 
-import type { JobRegistration } from "@/components/jobs/JobActivityProvider";
 import type { MessageUI } from "@/components/lists/hooks/useConversationHistory";
 import { formatTimestamp, coerceCitationEvent, type ContentBlock, type PendingRagCall, type RetrievalCall } from "@/lib/chat-utils";
 import { FIND_PASSAGES_TOOL_NAME, READ_SECTION_TOOL_NAME } from "@/lib/utils";
@@ -22,8 +21,6 @@ interface UseSSEStreamOptions {
   selectedSourceIds: string[];
   messages: MessageUI[];
   setMessages: React.Dispatch<React.SetStateAction<MessageUI[]>>;
-  trackJobs?: (jobs: JobRegistration[]) => void;
-  interruptedLabel?: string;
   stoppedLabel?: string;
   lang?: "en" | "zh";
   todayLabel?: string;
@@ -42,8 +39,6 @@ export function useSSEStream({
   selectedSourceIds,
   messages,
   setMessages,
-  trackJobs,
-  interruptedLabel = "Interrupted",
   stoppedLabel = "Stopped",
   lang = "en",
   todayLabel = "Today",
@@ -167,31 +162,17 @@ export function useSSEStream({
         }
       } else if (event.type === SSE_EVENT_TOOL_RESULT) {
         const toolName = event.name as string;
-        if (!toolName) return;
-        if (toolName === FIND_PASSAGES_TOOL_NAME) {
-          const call = event.result as unknown as RetrievalCall;
-          const callId = event.id as string;
-          updateAssistantMsg(assistantMsgId, (m) => ({
-            rag: { calls: [...(m.rag?.calls ?? []), call] },
-            pendingRagCalls: callId
-              ? m.pendingRagCalls.filter((p) => p.id !== callId)
-              : m.pendingRagCalls,
-          }));
-          if (!callId) {
-            console.warn("find_passages tool_result missing id, pending chip not cleared");
-          }
-        } else if (toolName === READ_SECTION_TOOL_NAME) {
-          const call = event.result as unknown as RetrievalCall;
-          const callId = event.id as string;
-          updateAssistantMsg(assistantMsgId, (m) => ({
-            rag: { calls: [...(m.rag?.calls ?? []), call] },
-            pendingRagCalls: callId
-              ? m.pendingRagCalls.filter((p) => p.id !== callId)
-              : m.pendingRagCalls,
-          }));
-          if (!callId) {
-            console.warn("read_section tool_result missing id, pending chip not cleared");
-          }
+        if (toolName !== FIND_PASSAGES_TOOL_NAME && toolName !== READ_SECTION_TOOL_NAME) return;
+        const call = event.result as unknown as RetrievalCall;
+        const callId = event.id as string;
+        updateAssistantMsg(assistantMsgId, (m) => ({
+          rag: { calls: [...(m.rag?.calls ?? []), call] },
+          pendingRagCalls: callId
+            ? m.pendingRagCalls.filter((p) => p.id !== callId)
+            : m.pendingRagCalls,
+        }));
+        if (!callId) {
+          console.warn(`${toolName} tool_result missing id, pending chip not cleared`);
         }
       } else if (event.type === SSE_EVENT_RAG) {
         // Final authoritative ledger (persisted shape, with context[]).

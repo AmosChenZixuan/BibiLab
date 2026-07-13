@@ -9,6 +9,7 @@ import {
   contentBlocksToText,
   facetNoMatchHint,
   formatDurationHuman,
+  formatMediaTimestamp,
   formatSubtitle,
   formatTimestamp,
   stripLegacyTokens,
@@ -35,6 +36,18 @@ describe("formatDurationHuman", () => {
 
   test("zero", () => {
     expect(formatDurationHuman(0)).toBe("0s");
+  });
+});
+
+describe("formatMediaTimestamp", () => {
+  test("sub-hour renders m:ss", () => {
+    expect(formatMediaTimestamp(180)).toBe("3:00");
+    expect(formatMediaTimestamp(65)).toBe("1:05");
+  });
+
+  test("past 1h renders h:mm:ss (regression: formatDuration had no hours branch)", () => {
+    expect(formatMediaTimestamp(7530)).toBe("2:05:30");
+    expect(formatMediaTimestamp(3600)).toBe("1:00:00");
   });
 });
 
