@@ -283,6 +283,7 @@ const TreeNode: React.FC<{
   onAskInChat?: MindMapAskHandler;
   nodeRefs: React.MutableRefObject<Map<string, HTMLElement>>;
 }> = ({ node, path, depth, parentLabel, isCollapsed, onToggle, onAskInChat, nodeRefs }) => {
+  const { t } = useLanguage();
   const children = node.children ?? [];
   const hasChildren = children.length > 0;
   const collapsed = isCollapsed(path);
@@ -349,7 +350,7 @@ const TreeNode: React.FC<{
         <button
           type="button"
           onClick={() => onToggle(path)}
-          aria-label={collapsed ? `Expand ${node.label}` : `Collapse ${node.label}`}
+          aria-label={collapsed ? t("lab.mindMapViewer.expandNode", { label: node.label }) : t("lab.mindMapViewer.collapseNode", { label: node.label })}
           aria-expanded={!collapsed}
           className={`relative z-10 ml-2 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-blue/30 bg-white text-blue shadow-sm transition hover:bg-blue hover:text-white ${
             collapsed ? "" : "bg-blue/10"

@@ -101,7 +101,9 @@
     "mindMapViewer": {
       "zoomIn": "放大",
       "zoomOut": "缩小",
-      "resetView": "重置视图"
+      "resetView": "重置视图",
+      "expandNode": "展开 %{label}",
+      "collapseNode": "折叠 %{label}"
     },
     "mindMap": {
       "discuss": "讨论 %{topic}",

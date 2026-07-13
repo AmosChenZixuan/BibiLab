@@ -13,6 +13,7 @@ const HARDCODED_ARIA = [
   /aria-label="[A-Za-z]/, // aria-label="Close"
   /aria-label=\{`/, // aria-label={`Open ${title}`}
   /aria-label=\{[^}]*"(?:[A-Z][^"]*|[^"]* [^"]*)"/, // English string literal inside the expression
+  /aria-label=\{[^}]*`[A-Z]/, // English template literal in a ternary body: {cond ? `Dismiss ${x}` : ...}
 ];
 
 describe("aria-label i18n", () => {

@@ -98,7 +98,7 @@ export function JobSpirit() {
                         <button
                           type="button"
                           className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-muted transition-colors hover:bg-border hover:text-ink disabled:opacity-30"
-                          aria-label={item.isTerminal ? `Dismiss ${title}` : `Cancel ${title}`}
+                          aria-label={item.isTerminal ? t("jobs.dismissTitle", { title }) : t("jobs.cancelTitle", { title })}
                           disabled={isJobPending(item.job.id)}
                           onClick={() =>
                             item.isTerminal

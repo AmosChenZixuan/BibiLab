@@ -101,7 +101,9 @@
     "mindMapViewer": {
       "zoomIn": "Zoom in",
       "zoomOut": "Zoom out",
-      "resetView": "Reset view"
+      "resetView": "Reset view",
+      "expandNode": "Expand %{label}",
+      "collapseNode": "Collapse %{label}"
     },
     "mindMap": {
       "discuss": "Discuss %{topic}",
