@@ -361,8 +361,9 @@ export function ChatPanel({
 
   // Shared "can we send right now?" gate. Used by both the manual
   // `handleSend` path and the auto-send effect (chip click) — keeps
-  // the two in lockstep.
-  const canSend = hasSources && !isStreaming;
+  // the two in lockstep. Blocked while history loads: a send racing the
+  // fetch would be wiped when the (stale) snapshot replaces messages.
+  const canSend = hasSources && !isStreaming && !isLoadingHistory;
 
   const reattachedRef = useRef<string | null>(null);
 
@@ -392,9 +393,21 @@ export function ChatPanel({
 
   useEffect(() => {
     if (historyMessages.length > 0) {
-      setMessages(historyMessages);
+      setMessages((prev) => {
+        // Never clobber an in-flight stream: a history snapshot resolving
+        // mid-stream (e.g. deselect-all → reselect re-fires the fetch) predates
+        // the live turn — drop it; the turn persists server-side and the next
+        // load includes it.
+        if (prev.some((m) => m.isStreaming)) return prev;
+        // Same race, but the stream finished before the stale fetch resolved:
+        // the snapshot still carries the just-active stream id yet predates the
+        // persisted turn. If we already hold that turn (its id was swapped to
+        // the server id on `meta`), keep it rather than reverting.
+        if (activeStreamMessageId && prev.some((m) => m.id === activeStreamMessageId)) return prev;
+        return historyMessages;
+      });
     }
-  }, [historyMessages]);
+  }, [historyMessages, activeStreamMessageId]);
 
   useEffect(() => {
     if (
@@ -407,17 +420,19 @@ export function ChatPanel({
     }
   }, [activeStreamMessageId, isStreaming, reattach]);
 
-  // Drain a pending keyword-driven message from the page. Chat owns
-  // the accept/reject decision and always acks via
-  // onPendingMessageConsumed so the page's slot never accumulates
-  // clicks. `sendMessage` and `onPendingMessageConsumed` are
-  // unstable closures — omitting them from deps avoids a feedback
-  // loop.
+  // Drain a pending keyword-driven message from the page. Chat owns the
+  // accept/reject decision and acks via onPendingMessageConsumed so the page's
+  // (single-valued) slot clears. Exception: while history is still loading, a
+  // chip click would otherwise be acked-and-dropped before it can be sent —
+  // hold it (no ack) until loading settles, then this effect re-fires and
+  // either sends (canSend) or acks-and-drops as before (e.g. no sources).
+  // `sendMessage` and `onPendingMessageConsumed` are unstable closures —
+  // omitting them from deps avoids a feedback loop.
   useEffect(() => {
-    if (!pendingMessage) return;
+    if (!pendingMessage || isLoadingHistory) return;
     if (canSend) void sendMessage(pendingMessage.text, { sourceIds: pendingMessage.sourceIds });
     onPendingMessageConsumed?.();
-  }, [pendingMessage, canSend]);
+  }, [pendingMessage, canSend, isLoadingHistory]);
 
 
   function handleSend() {
