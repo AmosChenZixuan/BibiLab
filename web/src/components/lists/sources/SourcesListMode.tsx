@@ -184,12 +184,14 @@ export function SourcesListMode({
   sources,
   selectedSourceIds,
   onSelectedSourcesChange,
+  onRefresh,
   onOpenSource,
 }: {
   listId: string;
   sources: Source[];
   selectedSourceIds: string[];
   onSelectedSourcesChange: (ids: string[]) => void;
+  onRefresh: () => void | Promise<void>;
   onOpenSource: (source: Source) => void;
 }) {
   const { t } = useLanguage();
@@ -203,14 +205,9 @@ export function SourcesListMode({
   const [showQrModal, setShowQrModal] = useState(false);
   const { isPending, run } = usePendingDeletions();
 
-  const [currentSources, setCurrentSources] = useState<Source[]>(sources);
   const selectAllRef = useRef<HTMLInputElement>(null);
-  // Sync currentSources when sources prop changes (e.g., after initial load)
-  useEffect(() => {
-    setCurrentSources(sources);
-  }, [sources]);
 
-  const allSelected = currentSources.length > 0 && selectedSourceIds.length === currentSources.length;
+  const allSelected = sources.length > 0 && selectedSourceIds.length === sources.length;
   const someSelected = selectedSourceIds.length > 0 && !allSelected;
 
   useEffect(() => {
@@ -236,22 +233,20 @@ export function SourcesListMode({
     if (allSelected) {
       onSelectedSourcesChange([]);
     } else {
-      onSelectedSourcesChange(currentSources.map((s) => s.id));
+      onSelectedSourcesChange(sources.map((s) => s.id));
     }
-  }, [allSelected, currentSources, onSelectedSourcesChange]);
+  }, [allSelected, sources, onSelectedSourcesChange]);
 
   const handleCancelPreview = useCallback(() => {
     setPreviewVideos(null);
     setPreviewLoading(false);
   }, []);
 
-  // When an ingest job flips to done, refetch the source list and dismiss.
+  // When an ingest job flips to done, let the parent reload the source list
+  // (parent owns the state — chat/lab must see the new source too).
   useDismissOnDone({
     jobs: ingestJobs,
-    onDone: async () => {
-      const next = await api.listSources(listId);
-      if (next) setCurrentSources(next);
-    },
+    onDone: () => onRefresh(),
   });
 
   const handleRetry = useCallback(
@@ -475,9 +470,14 @@ export function SourcesListMode({
   );
 
   const handleDelete = useCallback(async (source: Source) => {
-    await run(source.id, () => api.deleteSource(listId, source.id));
-    setCurrentSources((prev) => prev.filter((s) => s.id !== source.id));
-  }, [listId, run]);
+    // Refresh inside the pending window so the row stays dimmed until the
+    // reload drops it — otherwise it flashes back to full opacity (still
+    // present in `sources`) between the delete resolving and the reload landing.
+    await run(source.id, async () => {
+      await api.deleteSource(listId, source.id);
+      await onRefresh();
+    });
+  }, [listId, run, onRefresh]);
 
   const handleQrModalSuccess = useCallback(() => {
     setShowQrModal(false);
@@ -531,7 +531,7 @@ export function SourcesListMode({
                 t={t}
               />
             ))}
-          {currentSources.length > 0 && (
+          {sources.length > 0 && (
             <div className="flex items-center gap-2 px-4">
               <input
                 type="checkbox"
@@ -544,7 +544,7 @@ export function SourcesListMode({
               <span className="text-sm font-medium text-muted">{t("lists.preview.selectAll")}</span>
             </div>
           )}
-          {currentSources.map((source) => (
+          {sources.map((source) => (
             <SourceRow
               key={source.id}
               source={source}

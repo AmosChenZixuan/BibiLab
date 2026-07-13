@@ -124,8 +124,11 @@ vi.mock("../lib/api", () => {
     }),
     previewPlaylist: vi.fn().mockResolvedValue({ videos: [] }),
     previewPlaylistMetadata: vi.fn().mockResolvedValue({ videos: {} }),
+    // Stateful fake: forget the deleted source so a post-delete reload
+    // reflects the deletion, like the real backend.
     deleteSource: vi.fn().mockImplementation((_listId: string, sourceId: string) => {
       state.deletedIds.push(sourceId);
+      state.sources = state.sources.filter((s) => s.id !== sourceId);
       return Promise.resolve();
     }),
     updateList: vi.fn().mockImplementation((_listId: string, _patch: object) =>
@@ -168,6 +171,13 @@ vi.mock("../lib/api", () => {
 });
 
 import { api } from "@/lib/api";
+
+// Restore the factory's stateful listSources after tests stomp it with
+// mockResolvedValue snapshots — vi.clearAllMocks() clears calls but not the
+// stomped implementation.
+function pinStatefulListSources() {
+  vi.mocked(api.listSources).mockImplementation(() => Promise.resolve([...state.sources]));
+}
 
 afterEach(() => {
   cleanup();
@@ -258,7 +268,7 @@ describe("list detail page", () => {
       },
     ];
     makeMockFetch();
-    vi.mocked(api.listSources).mockResolvedValue([...state.sources]);
+    pinStatefulListSources();
 
     const router = createMemoryRouter(routes, { initialEntries: ["/lists/list-1"] });
     render(withRouter(router));
@@ -394,6 +404,103 @@ describe("list detail page", () => {
     // 9. Close button returns to list mode
     await userEvent.click(screen.getByRole("button", { name: /close viewer/i }));
     expect(screen.getByRole("button", { name: /open existing source/i })).toBeInTheDocument();
+  });
+
+  test("deleting a source removes it from the chat scope", async () => {
+    state.sources = [
+      {
+        id: "src-1",
+        video_id: "BV1first",
+        platform: "bilibili",
+        title: "Source One",
+        cover_url: null,
+        source_url: "https://www.bilibili.com/video/BV1first",
+        duration_seconds: 600,
+        uploader: "",
+        language: null,
+        processed_at: "2026-03-31T20:00:00Z",
+      },
+      {
+        id: "src-2",
+        video_id: "BV1second",
+        platform: "bilibili",
+        title: "Source Two",
+        cover_url: null,
+        source_url: "https://www.bilibili.com/video/BV1second",
+        duration_seconds: 300,
+        uploader: "",
+        language: null,
+        processed_at: "2026-03-31T20:00:00Z",
+      },
+    ];
+    makeMockFetch();
+    pinStatefulListSources();
+
+    const router = createMemoryRouter(routes, { initialEntries: ["/lists/list-1"] });
+    render(withRouter(router));
+
+    await screen.findByRole("heading", { name: /sources/i });
+    await waitFor(() => {
+      expect(screen.getByText(/2 sources ·/i)).toBeInTheDocument();
+    });
+
+    const sourceRow = screen
+      .getByRole("button", { name: /open source one/i })
+      .closest("[class*='group']") as HTMLElement;
+    await userEvent.hover(sourceRow);
+    await userEvent.click(within(sourceRow).getByRole("button", { name: /source options/i }));
+    await userEvent.click(screen.getByText(/^delete$/i));
+
+    // Chat scope follows the deletion: subtitle recounts, deleted id pruned
+    await waitFor(() => {
+      expect(screen.getByText(/1 source ·/i)).toBeInTheDocument();
+    });
+    expect(screen.queryByRole("button", { name: /open source one/i })).toBeNull();
+    expect(screen.getByRole("button", { name: /open source two/i })).toBeInTheDocument();
+  });
+
+  test("a partial chat selection survives a source-list refresh", async () => {
+    const mk = (id: string, title: string) => ({
+      id,
+      video_id: `BV${id}`,
+      platform: "bilibili",
+      title,
+      cover_url: null,
+      source_url: `https://www.bilibili.com/video/BV${id}`,
+      duration_seconds: 0,
+      uploader: "",
+      language: null,
+      processed_at: "2026-03-31T20:00:00Z",
+    });
+    state.sources = [mk("src-1", "Source One"), mk("src-2", "Source Two"), mk("src-3", "Source Three")];
+    makeMockFetch();
+    pinStatefulListSources();
+
+    const router = createMemoryRouter(routes, { initialEntries: ["/lists/list-1"] });
+    render(withRouter(router));
+
+    await screen.findByRole("heading", { name: /sources/i });
+    await waitFor(() => expect(screen.getByText(/3 sources ·/i)).toBeInTheDocument());
+
+    // Deselect Source Two (checkbox 0 = select-all, 1 = src-1, 2 = src-2).
+    const srcTwo = document.querySelectorAll('input[type="checkbox"]')[2];
+    expect(srcTwo).toBeChecked();
+    await userEvent.click(srcTwo);
+    expect(srcTwo).not.toBeChecked();
+
+    // Deleting a different source refreshes the list; the deselection must not
+    // reset to select-all (the old unconditional effect re-checked Source Two).
+    const row = screen
+      .getByRole("button", { name: /open source three/i })
+      .closest("[class*='group']") as HTMLElement;
+    await userEvent.hover(row);
+    await userEvent.click(within(row).getByRole("button", { name: /source options/i }));
+    await userEvent.click(screen.getByText(/^delete$/i));
+
+    await waitFor(() => expect(screen.queryByRole("button", { name: /open source three/i })).toBeNull());
+    const after = document.querySelectorAll('input[type="checkbox"]');
+    expect(after[1]).toBeChecked(); // Source One still selected
+    expect(after[2]).not.toBeChecked(); // Source Two deselection survived (not reset to select-all)
   });
 
   test("deselection persists after language switch", async () => {

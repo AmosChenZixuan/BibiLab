@@ -49,10 +49,12 @@ function makeArtifactJob(overrides: Partial<ArtifactJob> = {}): Job {
     error: null,
     created_at: "2026-04-08T12:00:00Z",
     updated_at: "2026-04-08T12:00:00Z",
+    // Wire shape of GET /jobs: the artifact type lives under meta.type
+    // (routers/artifacts.py), NOT meta.artifact_type.
     meta: {
       list_id: "list-1",
       artifact_id: "artifact-1",
-      artifact_type: "brief",
+      type: "brief",
     },
     ...overrides,
   };
@@ -73,6 +75,16 @@ describe("artifact job support in JobActivityProvider", () => {
       expect(screen.getByLabelText("artifact-job-count")).toHaveTextContent("1");
     });
     expect(screen.getByLabelText("artifact-job-artifact-job-1")).toHaveTextContent("generating");
+  });
+
+  test("a job rehydrated from GET /jobs labels with its artifact type, not the generic fallback", async () => {
+    vi.mocked(api.listJobs).mockResolvedValue([makeArtifactJob()]);
+
+    renderProvider();
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("artifact-job-artifact-job-1")).toHaveTextContent("brief - generating");
+    });
   });
 
   test("getJobs with artifact producer filters correctly", async () => {
