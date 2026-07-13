@@ -43,6 +43,15 @@ def format_hms(seconds: float | None) -> str:
     return f"{h}:{m:02d}:{sec:02d}" if h else f"{m}:{sec:02d}"
 
 
+def format_mmss(seconds: float) -> str:
+    """Format seconds as zero-padded MM:SS, counting minutes past 1h (63:04, not
+    1:03:04). For orientation-only labels — artifact section headers and the
+    `[N] @ MM:SS` reference tags — where a parseable H:MM:SS isn't needed.
+    Distinct from format_hms, which rolls into hours."""
+    s = int(seconds)
+    return f"{s // 60:02d}:{s % 60:02d}"
+
+
 def interpreting_providers() -> list[str]:
     """ONNX kernel-based execution providers — no compiler-based EP.
 

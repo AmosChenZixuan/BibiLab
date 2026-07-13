@@ -46,6 +46,7 @@ from bibilab.pipeline._shared import (
     ToolDefinition,
     _classify_llm_error,
     _no_text_error,
+    format_mmss,
     resolve_response_language,
     stream_llm,
 )
@@ -693,7 +694,6 @@ async def run_chat_turn(
     *,
     message_id: str,
     conversation_id: str,
-    list_id: str,
     user_message_text: str,
     history: list[dict],
     summary: str | None,
@@ -1050,7 +1050,6 @@ async def chat_endpoint(
         run_chat_turn(
             message_id=assistant_msg_id,
             conversation_id=conversation_id,
-            list_id=list_id,
             user_message_text=request.message,
             history=history,
             summary=existing_summary,
@@ -1109,12 +1108,6 @@ async def cancel_stream(
     run_registry.cancel(message_id)
 
 
-def _format_duration(seconds: float) -> str:
-    """mm:ss formatter for [N] @ MM:SS in references."""
-    s = int(seconds)
-    return f"{s // 60:02d}:{s % 60:02d}"
-
-
 _REFERENCES_HEADER = {"en": "## References", "zh": "## 引用来源"}
 
 
@@ -1157,7 +1150,7 @@ def _build_chat_message_markdown(
         if source is None:
             continue
         ts = c.get("timestamp_start")
-        ts_str = f" @ {_format_duration(ts)}" if ts is not None else ""
+        ts_str = f" @ {format_mmss(ts)}" if ts is not None else ""
         lines.append(f"[{idx}] {source['title']}{ts_str}")
 
     header = _REFERENCES_HEADER.get(lang, _REFERENCES_HEADER["en"])

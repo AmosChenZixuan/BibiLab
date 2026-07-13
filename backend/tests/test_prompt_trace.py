@@ -328,7 +328,6 @@ async def test_end_of_turn_dump_captures_cumulative_state_after_tool_use(
     await chat_module.run_chat_turn(
         message_id=msg_id,
         conversation_id="c1",
-        list_id="l1",
         user_message_text="q",
         history=[],
         summary=None,

@@ -77,7 +77,10 @@ def _chunk_score(chunk: RetrievedChunk) -> float:
 
 
 def _chunk_key(chunk: RetrievedChunk) -> str:
-    """Stable dedup key for a RetrievedChunk."""
+    """Stable dedup key for a RetrievedChunk, on RAW float timestamps — retrieve
+    dedup must keep full precision so it never collapses sub-second-distinct
+    chunks. Deliberately distinct from chat_tools._chunk_id, which int-truncates
+    to match the emitted citation chunk_id format; do not unify the two."""
     return f"{chunk.source_id}_{chunk.timestamp_start}_{chunk.timestamp_end}"
 
 

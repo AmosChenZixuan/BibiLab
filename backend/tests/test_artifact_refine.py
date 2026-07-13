@@ -16,6 +16,7 @@ import pytest
 
 from bibilab.config import BibilabConfig
 from bibilab.db import bootstrap_db, create_list, get_artifact
+from bibilab.pipeline._shared import format_mmss
 from bibilab.pipeline.audio import PipelineError
 from bibilab.pipeline.section import Section
 from bibilab.pipeline.transcribe import WhisperSegment
@@ -25,7 +26,6 @@ from bibilab.worker import (
     _build_initial_prompt,
     _build_refine_prompt,
     _build_section_views,
-    _format_duration,
     _pack_sections,
     _refine_artifact,
     _render_multi_batch_section,
@@ -103,10 +103,10 @@ def test_pack_sections_preserves_source_order():
 
 
 def test_format_duration_minutes_seconds():
-    assert _format_duration(0) == "00:00"
-    assert _format_duration(5) == "00:05"
-    assert _format_duration(65) == "01:05"
-    assert _format_duration(3661) == "61:01"  # past 1h: keep counting minutes (no H:MM:SS)
+    assert format_mmss(0) == "00:00"
+    assert format_mmss(5) == "00:05"
+    assert format_mmss(65) == "01:05"
+    assert format_mmss(3661) == "61:01"  # past 1h: keep counting minutes (no H:MM:SS)
 
 
 def test_render_single_batch_text_groups_by_source_with_no_section_header():

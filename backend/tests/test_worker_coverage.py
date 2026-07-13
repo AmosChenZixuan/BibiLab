@@ -694,3 +694,33 @@ class TestDownloadHygieneAndCap:
             )
 
         assert peak == 3
+
+
+# ---------------------------------------------------------------------------
+# _reraise_gathered_failures — accurate logging for the digest∥embed gather
+# ---------------------------------------------------------------------------
+
+
+class TestReraiseGatheredFailures:
+    def test_no_failures_is_noop(self):
+        from bibilab.worker import _reraise_gathered_failures
+
+        _reraise_gathered_failures(("digest", []), None)
+
+    def test_embed_only_reraises_without_secondary_log(self, caplog):
+        from bibilab.worker import _reraise_gathered_failures
+
+        err = RuntimeError("embed boom")
+        with caplog.at_level("ERROR"):
+            with pytest.raises(RuntimeError, match="embed boom"):
+                _reraise_gathered_failures(("digest", []), err)
+        # Embed is the primary (only) error — no misleading "secondary" log.
+        assert "secondary" not in caplog.text
+
+    def test_both_failed_logs_secondary_and_raises_digest(self, caplog):
+        from bibilab.worker import _reraise_gathered_failures
+
+        with caplog.at_level("ERROR"):
+            with pytest.raises(ValueError, match="digest boom"):
+                _reraise_gathered_failures(ValueError("digest boom"), RuntimeError("embed boom"))
+        assert "secondary" in caplog.text

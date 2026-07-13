@@ -4,9 +4,9 @@ from datetime import datetime, timezone
 from urllib.parse import quote
 
 import aiosqlite
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, HTTPException
 
-from bibilab.config import BibilabConfig, bibilab_home, cover_path, get_config
+from bibilab.config import bibilab_home, cover_path
 from bibilab.db import (
     clear_fts_for_list,
     delete_artifacts_for_list,
@@ -14,11 +14,11 @@ from bibilab.db import (
     delete_sources_for_list,
     get_all_lists,
     get_artifacts_for_list,
-    get_db,
     get_list,
     get_list_with_display,
     get_source,
     get_sources_for_list,
+    has_active_jobs,
     update_list_name,
     update_list_thumbnail,
 )
@@ -28,7 +28,6 @@ from bibilab.db import (
 from bibilab.db import (
     delete_list as db_delete_list,
 )
-from bibilab.models.jobs import ACTIVE_JOB_STATUSES
 from bibilab.models.lists import (
     ListCreateRequest,
     ListResponse,
@@ -124,24 +123,13 @@ async def update_list(list_id: str, req: ListUpdateRequest) -> ListResponse:
 
 
 @router.delete("/lists/{list_id}", status_code=204)
-async def delete_list(list_id: str, cfg: BibilabConfig = Depends(get_config)) -> None:
+async def delete_list(list_id: str) -> None:
     row = await get_list(list_id)
     if row is None:
         raise HTTPException(status_code=404, detail="List not found")
 
-    placeholders = ",".join("?" * len(ACTIVE_JOB_STATUSES))
-    async with get_db() as db:
-        cursor = await db.execute_fetchall(
-            f"""
-            SELECT 1 FROM jobs
-            WHERE json_extract(meta, '$.list_id') = ?
-              AND status IN ({placeholders})
-            LIMIT 1
-            """,
-            (list_id, *ACTIVE_JOB_STATUSES),
-        )
-        if len(cursor) > 0:
-            raise HTTPException(status_code=409, detail="Cannot delete a list with active jobs")
+    if await has_active_jobs(list_id):
+        raise HTTPException(status_code=409, detail="Cannot delete a list with active jobs")
 
     artifacts = await get_artifacts_for_list(list_id)
     for artifact in artifacts:
@@ -182,25 +170,13 @@ async def get_list_sources(list_id: str) -> list[SourceResponse]:
 
 
 @router.delete("/lists/{list_id}/sources/{source_id}", status_code=204)
-async def delete_list_source(list_id: str, source_id: str, cfg: BibilabConfig = Depends(get_config)) -> None:
+async def delete_list_source(list_id: str, source_id: str) -> None:
     source = await get_source(source_id)
     if source is None or source["list_id"] != list_id:
         raise HTTPException(status_code=404, detail="Source not found")
 
-    placeholders = ",".join("?" * len(ACTIVE_JOB_STATUSES))
-    async with get_db() as db:
-        cursor = await db.execute_fetchall(
-            f"""
-            SELECT 1 FROM jobs
-            WHERE json_extract(meta, '$.video_id') = ?
-              AND json_extract(meta, '$.list_id') = ?
-              AND status IN ({placeholders})
-            LIMIT 1
-            """,
-            (source["video_id"], list_id, *ACTIVE_JOB_STATUSES),
-        )
-        if len(cursor) > 0:
-            raise HTTPException(status_code=409, detail="Cannot delete a source with active jobs")
+    if await has_active_jobs(list_id, source["video_id"]):
+        raise HTTPException(status_code=409, detail="Cannot delete a source with active jobs")
 
     row = await get_list(list_id)
     if row is not None and row["thumbnail_source_id"] == source_id:

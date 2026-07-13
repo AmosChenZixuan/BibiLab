@@ -734,7 +734,6 @@ async def test_run_chat_turn_persists_tool_blocks(monkeypatch, tmp_path, mock_st
     await chat_module.run_chat_turn(
         message_id=msg_id,
         conversation_id="c1",
-        list_id="l1",
         user_message_text="q",
         history=[],
         summary=None,
@@ -788,7 +787,6 @@ async def test_system_message_is_stable_across_turns(monkeypatch, mock_stream_ll
         await chat_module.run_chat_turn(
             message_id=msg_id,
             conversation_id="c1",
-            list_id="l1",
             user_message_text="q",
             history=[],
             summary=None,
@@ -1035,7 +1033,6 @@ async def test_run_chat_turn_drops_tool_blocks_on_turn_2(monkeypatch, mock_strea
     await chat_module.run_chat_turn(
         message_id=msg_id,
         conversation_id="c1",
-        list_id="l1",
         user_message_text="tell me more about quantum mechanics",
         history=history,
         summary=None,
@@ -1103,7 +1100,6 @@ async def test_chat_uses_resolved_response_language_in_system_prompt(monkeypatch
     await chat_module.run_chat_turn(
         message_id=msg_id,
         conversation_id="conv-1",
-        list_id="list-1",
         user_message_text="hi",
         history=[],
         summary=None,
@@ -1204,7 +1200,6 @@ async def test_run_chat_turn_reseeds_citation_registry_from_history_tool_blocks(
     await chat_module.run_chat_turn(
         message_id=msg_id,
         conversation_id="c1",
-        list_id="l1",
         user_message_text="tell me more about quantum mechanics",
         history=history,
         summary=None,
@@ -1464,7 +1459,6 @@ async def test_run_chat_turn_transitions_user_to_terminal_status(
     kwargs = dict(
         message_id=asst_msg_id,
         conversation_id=conv_id,
-        list_id="list-1",
         user_message_text="hi",
         history=[],
         summary=None,
