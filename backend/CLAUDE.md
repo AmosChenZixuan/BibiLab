@@ -42,6 +42,7 @@ pipeline/         — one file per stage
   section.py        Section dataclass + derive_sections (token+pause boundary, target=12000) + chunk_by_sections (per-section chunking with source-global re-stamp)
   digest.py         LLM digest: per-section summary/keywords → sections table; facets → sources
   embed.py          ChromaDB embed + retrieve() (hybrid search → rerank → aggregation), FTS5 populate
+  fts_tokens.py     CJK unigram/bigram + toneless-pinyin tokenizers and escape_fts_query — shared by the FTS5 index (embed) and query (db.query_fts_rows) sides
   rerank.py         lazy ONNX cross-encoder reranker (single spec RERANKER_SPEC_ID; providers via interpreting_providers(), CoreML excluded)
   chat_tools.py     find_passages + read_section definitions, execution dispatcher, section fencing, CitationRegistry, `_NO_MATCH_NOTE`
   chat_summary.py   conversation compression (sliding window + LLM summary; summary is prose only — [N] markers not preserved)
@@ -67,7 +68,7 @@ model_registry.py — all non-LLM model downloads via ensure() (per-model locks,
 - **Imports**: stdlib → third-party → local, with blank lines between groups
 - **Errors**: `HTTPException(status_code=N, detail=...)` for HTTP errors; `AuthRequiredError`, `DownloadError`, `PipelineError` for domain errors
 - **LLM content blocks**: Never assume `msg.content[0]` is a TextBlock. Filter by `block.type == "text"` — some providers return ThinkingBlock or other types first. Use `next((b for b in msg.content if b.type == "text"), None)` with a None default to avoid StopIteration in async contexts.
-- **FTS5 input**: Always pass user query strings through `_escape_fts_query()` (db.py) before MATCH evaluation. FTS5 treats bare `OR`, `*`, `:`, `^` as operators — unescaped user input raises `OperationalError`.
+- **FTS5 input**: Always pass user query strings through `escape_fts_query()` (pipeline/fts_tokens.py) before MATCH evaluation. FTS5 treats bare `OR`, `*`, `:`, `^` as operators — unescaped user input raises `OperationalError`.
 - **ChromaDB client**: Only reach the vector store via `_get_collection()` (embed.py), which serializes lazy construction behind a lock. chromadb 1.x corrupts its global client state under concurrent cold-init (`RustBindingsAPI` / `tenant default_tenant` errors that wedge Chroma for the whole process); constructing a `PersistentClient` directly elsewhere reintroduces that race. Note `chunks_fts.content` is tokenized for BM25 — the FTS arm back-fills raw text from Chroma so rerank/render never see token-soup.
 
 ## Testing
