@@ -98,6 +98,12 @@ SSE_EVENT_RAG = "rag"
 # cancel-by-id before the first delta arrives (see web useSSEStream reattach path).
 SSE_EVENT_META = "meta"
 
+# Machine-readable error codes carried as SSE `error` content and persisted as
+# the terminal ledger's error_reason; the frontend i18n-renders them. The eval
+# endpoint imports ERROR_CODE_TOOL to keep the eval↔prod contract on one literal.
+ERROR_CODE_TOOL = "tool_error"
+ERROR_CODE_PERSISTENCE = "persistence_error"
+
 # All tools in v2 loop back (no terminal tool — the v1 `generate_report` was
 # retired). Tool-call-start events + the LLM feed-back path therefore fire for
 # every tool call when reached.
@@ -522,7 +528,9 @@ async def stream_with_tools(
                     result = await _execute_with_registry(tc.name, tc.arguments)
                 except Exception:
                     logger.exception("tool_execution_failed tool=%s", tc.name)
-                    yield StreamEvent(type=SSE_EVENT_ERROR, content=f"Tool {tc.name} failed")
+                    # Machine code, not prose: the frontend i18n-renders this
+                    # inline immediately; the terminal event repeats the code.
+                    yield StreamEvent(type=SSE_EVENT_ERROR, content=ERROR_CODE_TOOL)
                     return
 
                 results[tc.id] = result
@@ -823,7 +831,7 @@ async def run_chat_turn(
                         )
             elif event.type == "error":
                 logger.error("stream_with_tools error: %s", event.content)
-                error_reason = "tool_error"
+                error_reason = ERROR_CODE_TOOL
                 final_status = "failed"
                 return
 
@@ -948,7 +956,7 @@ async def run_chat_turn(
             if final_status != "cancelled":
                 final_status = "failed"
             if error_reason is None:
-                error_reason = "persistence_error"
+                error_reason = ERROR_CODE_PERSISTENCE
             # update_turn_terminal's transaction rolled back, so active_stream_message_id
             # was never cleared. Clear it independently or the conversation wedges at
             # HTTP 409 (the guard checks only pointer-not-null) until the next restart.
