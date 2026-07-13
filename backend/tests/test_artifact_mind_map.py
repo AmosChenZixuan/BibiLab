@@ -15,14 +15,11 @@ import pytest
 
 from bibilab.config import BibilabConfig
 from bibilab.db import bootstrap_db, create_list, get_artifact, get_job
+from bibilab.pipeline.artifact_refine import _MIND_MAP_PROMPT, _refine_mind_map
 from bibilab.pipeline.audio import PipelineError
 from bibilab.pipeline.section import Section
 from bibilab.pipeline.transcribe import WhisperSegment
-from bibilab.worker import (
-    _MIND_MAP_PROMPT,
-    WorkerLoop,
-    _refine_mind_map,
-)
+from bibilab.worker import WorkerLoop
 from tests.factories import SourceFactory
 
 pytestmark = pytest.mark.integration
@@ -35,7 +32,7 @@ def test_mind_map_result_rejects_missing_root():
     """Missing `root` is a contract violation; Pydantic must raise."""
     from pydantic import ValidationError
 
-    from bibilab.worker import MindMapResult
+    from bibilab.pipeline.artifact_refine import MindMapResult
 
     with pytest.raises(ValidationError):
         MindMapResult(name="Topic")  # type: ignore[call-arg]
@@ -45,7 +42,7 @@ def test_mind_map_result_rejects_non_dict_root():
     """`root` must be a dict (recursive tree); a string is rejected."""
     from pydantic import ValidationError
 
-    from bibilab.worker import MindMapResult
+    from bibilab.pipeline.artifact_refine import MindMapResult
 
     with pytest.raises(ValidationError):
         MindMapResult(name="Topic", root="not a dict")  # type: ignore[arg-type]
@@ -65,7 +62,7 @@ def _parse_rendered_fence(content: str) -> dict:
 def test_render_mind_map_markdown_roundtrips():
     """`_render_mind_map_markdown(mm)` writes a single ```json fence that
     re-parses to `{"root": mm.root}` — the write-side symmetry check."""
-    from bibilab.worker import MindMapResult, _render_mind_map_markdown
+    from bibilab.pipeline.artifact_refine import MindMapResult, _render_mind_map_markdown
 
     root = {"label": "Topic", "children": [{"label": "Branch"}]}
     mm = MindMapResult(name="Topic Map", root=root)
@@ -86,7 +83,7 @@ def test_render_mind_map_markdown_preserves_node_evidence():
     """AC1: a node's `evidence` quote survives rendering verbatim. The
     untyped `root` dict carries `evidence` through with no model/render
     change; absent `evidence` renders identically to today."""
-    from bibilab.worker import MindMapResult, _render_mind_map_markdown
+    from bibilab.pipeline.artifact_refine import MindMapResult, _render_mind_map_markdown
 
     quote = "这就是众神纪元开始之前的近古时代。"
     root = {
@@ -105,7 +102,7 @@ def test_mind_map_directives_instruct_evidence():
     """AC2: the generation prompt and both refine directives must name
     `evidence` and require it be a verbatim quote, so the multi-batch
     refine loop preserves it instead of paraphrasing the BM25 anchor away."""
-    from bibilab.worker import (
+    from bibilab.pipeline.artifact_refine import (
         _MIND_MAP_INTEGRATE_DIRECTIVE,
         _MIND_MAP_SCHEMA_DIRECTIVE,
     )
@@ -127,7 +124,7 @@ async def test_run_artifact_job_mind_map_dispatches_and_validates(tmp_bibilab_ho
     markdown file body via `_render_mind_map_markdown`, and the artifact
     row + content file land. End-to-end: this is the single test that
     proves the new path works."""
-    from bibilab.worker import MindMapResult
+    from bibilab.pipeline.artifact_refine import MindMapResult
 
     await bootstrap_db()
     await create_list("list-1", "L", "2026-01-01T00:00:00")
@@ -249,7 +246,7 @@ async def test_run_artifact_job_mind_map_bad_output_fails_job(tmp_bibilab_home):
 
 
 def _section_view(source_id: str, title: str, seq: int, tokens: int) -> object:
-    from bibilab.worker import _SectionView
+    from bibilab.pipeline.artifact_refine import _SectionView
 
     return _SectionView(
         source_id=source_id,
@@ -278,7 +275,7 @@ async def test_refine_mind_map_single_batch_parses_mind_map_result(mock_call_llm
 
     result = await _refine_mind_map(sections=sections, cfg=cfg, ui_lang="en")
 
-    from bibilab.worker import MindMapResult
+    from bibilab.pipeline.artifact_refine import MindMapResult
 
     assert isinstance(result, MindMapResult)
     assert result.name == "Topic Map"
