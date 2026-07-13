@@ -364,6 +364,14 @@ export function ChatPanel({
     }
   }, [debugNotFound, debugMsgId]);
 
+  // ChatPanel is always-mounted and reused across list navigations, so a Clear
+  // failure on one list would otherwise leave its error banner (and popover)
+  // showing under the next list's chat. Reset both when the list changes.
+  useEffect(() => {
+    setClearError(null);
+    setShowClearPopover(false);
+  }, [listId]);
+
   const hasSources = selectedSourceIds.length > 0;
   const { messages: historyMessages, isLoadingHistory, loadError, activeStreamMessageId } = useConversationHistory(listId, hasSources, t("chat.interrupted"), t("chat.stopped"), lang, t("chat.time.today"));
 

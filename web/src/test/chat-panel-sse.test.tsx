@@ -1,4 +1,4 @@
-import { cleanup, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
@@ -475,6 +475,47 @@ describe("chat panel — conversation history", () => {
       expect(screen.getByText("backend exploded")).toBeInTheDocument();
     });
     expect(screen.getByText("Hello")).toBeInTheDocument();
+  });
+
+  test("clear error clears when the list changes (panel is reused across lists)", async () => {
+    mockFetch((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = init?.method ?? "GET";
+      if (url.includes("/conversation") && method === "DELETE") {
+        return Promise.resolve(new Response(JSON.stringify({ detail: "backend exploded" }), { status: 500 }));
+      }
+      if (url.includes("/conversation")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              conversation: { id: "conv-1", list_id: "list-1", summary: null, created_at: "2026-04-01T00:00:00Z", updated_at: "2026-04-01T00:00:00Z" },
+              messages: [
+                { id: USER_MSG_ID, role: "user", content: "Hello", metadata: null, created_at: "2026-04-01T10:00:00Z" },
+              ],
+            }),
+          ),
+        );
+      }
+      return Promise.resolve(new Response(JSON.stringify([])));
+    });
+
+    const panel = (listId: string) => (
+      <LanguageProvider>
+        <JobActivityProvider>
+          <ChatPanel selectedSourceIds={["src-1"]} sources={[SOURCE_1]} listId={listId} />
+        </JobActivityProvider>
+      </LanguageProvider>
+    );
+
+    const { rerender } = render(panel("list-1"));
+    await waitFor(() => screen.getByText("Hello"));
+    await userEvent.click(screen.getByRole("button", { name: /clear conversation/i }));
+    await userEvent.click(screen.getByRole("button", { name: /^clear$/i }));
+    await waitFor(() => expect(screen.getByText("backend exploded")).toBeInTheDocument());
+
+    // Same ChatPanel instance, new list: the stale error must not follow.
+    rerender(panel("list-2"));
+    await waitFor(() => expect(screen.queryByText("backend exploded")).toBeNull());
   });
 
   test("clear popover closes on Escape and on outside click", async () => {

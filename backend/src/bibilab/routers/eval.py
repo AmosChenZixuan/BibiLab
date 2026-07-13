@@ -34,6 +34,7 @@ from bibilab.pipeline.chat_tools import (
 )
 from bibilab.routers._model_gate import require_models_present
 from bibilab.routers.chat import (
+    ERROR_CODE_TOOL,
     SSE_EVENT_CITATION,
     SSE_EVENT_DELTA,
     SSE_EVENT_ERROR,
@@ -213,7 +214,7 @@ async def run_chat_eval(
                 # records this turn as "tool_error" — keep the codes aligned
                 # so an eval harness can tell a retrieval failure (or a
                 # model-emitted malformed tool call) from a backend bug.
-                raise HTTPException(status_code=500, detail={"error": "tool_error"})
+                raise HTTPException(status_code=500, detail={"error": ERROR_CODE_TOOL})
     except HTTPException:
         raise
     except Exception as e:  # noqa: BLE001 — classified below, mirrors run_chat_turn's producer catch
