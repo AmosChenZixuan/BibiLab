@@ -32,7 +32,7 @@ from bibilab.db import (
     write_source_with_segments,
 )
 from bibilab.model_registry import ensure
-from bibilab.models.jobs import JobStatus
+from bibilab.models.jobs import JobStatus, JobType
 
 # Aliased module import for _call_llm_with_retry (long signature; kept off the explicit
 # import list to avoid dragging every kwarg onto a bare-name import line).
@@ -646,15 +646,15 @@ class WorkerLoop:
                 await delete_job(job_id)
                 return
 
-            if job["type"] == "artifact":
+            if job["type"] == JobType.ARTIFACT:
                 await self._run_artifact_job(job)
                 return
 
-            if job["type"] == "model_download":
+            if job["type"] == JobType.MODEL_DOWNLOAD:
                 await self._download_model_job(job)
                 return
 
-            if job["type"] == "digest":
+            if job["type"] == JobType.DIGEST:
                 await self._run_digest_job(job)
                 return
 
@@ -672,7 +672,7 @@ class WorkerLoop:
             await update_job_status(job_id, JobStatus.FAILED.value, error=str(exc))
         except Exception as exc:
             logger.exception("Job %s (type=%s) failed", job_id, job.get("type", "unknown"))
-            if job.get("type") in (None, "ingest"):
+            if job.get("type") in (None, JobType.INGEST):
                 await asyncio.to_thread(cleanup_job_artifacts, job)
             await update_job_status(job_id, JobStatus.FAILED.value, error=str(exc))
         finally:

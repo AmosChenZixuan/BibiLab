@@ -11,7 +11,9 @@ from bibilab.db import (
     source_has_segments,
     update_source_facets,
 )
+from bibilab.models.jobs import JobType
 from bibilab.models.sources import SectionListItem, SourceContentResponse, SourceFacetsUpdate
+from bibilab.pipeline._shared import UI_LANG_HEADER
 from bibilab.pipeline.transcribe import load_transcript_text
 
 router = APIRouter()
@@ -60,14 +62,14 @@ async def rerun_source(source_id: str, request: Request) -> dict:
     # Dedup: reject if a non-terminal digest job already exists for this source
     pending = await get_pending_jobs()
     for job in pending:
-        if job["type"] == "digest":
+        if job["type"] == JobType.DIGEST:
             meta = parse_job_meta(job)
             if meta.get("source_id") == source_id:
                 raise HTTPException(status_code=409, detail="Digest already in progress")
 
-    ui_lang = request.headers.get("X-UI-Lang")
+    ui_lang = request.headers.get(UI_LANG_HEADER)
     job_id = await create_job(
-        type="digest",
+        type=JobType.DIGEST,
         meta={
             "source_id": source_id,
             "list_id": source["list_id"],

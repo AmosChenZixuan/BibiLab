@@ -197,11 +197,16 @@ def _lang_output_directive(lang: str) -> str:
     return f"All output fields MUST be written in {_LANG_NATIVE_NAME.get(lang, 'English')}."
 
 
+# HTTP header the SPA sends its active UI language in; read by every router that
+# resolves LLM output language and passed into resolve_response_language below.
+UI_LANG_HEADER = "X-UI-Lang"
+
+
 def resolve_response_language(cfg: AIConfig, ui_lang: str | None) -> str:
     """Return the language string to use in LLM-generated output.
 
     AIConfig.output_language wins when explicitly set; "ui" means follow
-    the UI's X-UI-Lang header (passed in as ui_lang). Falls back to "en"
+    the UI's language header (UI_LANG_HEADER, passed in as ui_lang). Falls back to "en"
     when "ui" is selected but no ui_lang was provided, so the resolver
     never returns None/empty for downstream prompt interpolation.
     """

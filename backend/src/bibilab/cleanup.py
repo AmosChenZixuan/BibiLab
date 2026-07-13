@@ -3,6 +3,7 @@ from typing import Any
 
 from bibilab.config import bibilab_home, downloads_dir
 from bibilab.db import parse_job_meta, source_exists_sync
+from bibilab.models.jobs import JobType
 from bibilab.pipeline.embed import clear_embeddings_for_source, clear_fts_for_source_sync
 
 logger = logging.getLogger(__name__)
@@ -19,7 +20,7 @@ def purge_download_files(video_id: str) -> None:
 
 
 def cleanup_job_artifacts(job: dict[str, Any]) -> None:
-    if job.get("type") != "ingest" or job.get("status") == "done":
+    if job.get("type") != JobType.INGEST or job.get("status") == "done":
         return
 
     meta = parse_job_meta(job)
