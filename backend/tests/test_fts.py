@@ -9,13 +9,6 @@ import pytest
 from bibilab.adapters.base import VideoMeta
 from bibilab.config import BibilabConfig, _reset_cache
 from bibilab.db import (
-    _cjk_bigram_tokens,
-    _cjk_query_tokens,
-    _cjk_runs,
-    _escape_fts_query,
-    _pinyin_index_tokens,
-    _pinyin_tokens,
-    _tokenize_cjk,
     bootstrap_db,
     clear_fts_for_list,
     get_db,
@@ -23,6 +16,15 @@ from bibilab.db import (
 )
 from bibilab.pipeline.chunk import RagChunk
 from bibilab.pipeline.embed import clear_fts_for_source_sync, populate_fts, query_fts
+from bibilab.pipeline.fts_tokens import (
+    cjk_bigram_tokens,
+    cjk_query_tokens,
+    cjk_runs,
+    escape_fts_query,
+    pinyin_index_tokens,
+    pinyin_tokens,
+    tokenize_cjk,
+)
 
 pytestmark = pytest.mark.integration
 
@@ -215,170 +217,170 @@ async def test_query_fts_returns_raw_text_not_tokenized(tmp_bibilab_home: Path, 
 
 
 def test_escape_fts_query_empty_string():
-    assert _escape_fts_query("") == ""
+    assert escape_fts_query("") == ""
 
 
 def test_escape_fts_query_only_whitespace():
-    assert _escape_fts_query("   \t  ") == ""
+    assert escape_fts_query("   \t  ") == ""
 
 
 def test_escape_fts_query_fts_operators():
-    escaped = _escape_fts_query("AND OR NOT * ^")
+    escaped = escape_fts_query("AND OR NOT * ^")
     assert escaped == 'content : ("AND" OR "OR" OR "NOT" OR "*" OR "^")'
 
 
 def test_escape_fts_query_preserves_normal_tokens():
-    escaped = _escape_fts_query("machine learning")
+    escaped = escape_fts_query("machine learning")
     assert escaped == 'content : ("machine" OR "learning")'
 
 
 def test_escape_fts_query_embedded_quotes():
-    escaped = _escape_fts_query('say "hello world"')
+    escaped = escape_fts_query('say "hello world"')
     assert escaped == 'content : ("say" OR """hello" OR "world""")'
 
 
-# --- _cjk_runs ---
+# --- cjk_runs ---
 
 
 def test_cjk_runs_all_cjk():
-    runs = list(_cjk_runs("面食做法"))
+    runs = list(cjk_runs("面食做法"))
     assert runs == [(True, "面食做法")]
 
 
 def test_cjk_runs_all_non_cjk():
-    runs = list(_cjk_runs("hello world"))
+    runs = list(cjk_runs("hello world"))
     assert runs == [(False, "hello world")]
 
 
 def test_cjk_runs_mixed():
-    runs = list(_cjk_runs("103岁生日这天"))
+    runs = list(cjk_runs("103岁生日这天"))
     assert runs == [(False, "103"), (True, "岁生日这天")]
 
 
 def test_cjk_runs_multiple_cjk_segments():
-    runs = list(_cjk_runs("第5集 中文"))
+    runs = list(cjk_runs("第5集 中文"))
     assert runs == [(True, "第"), (False, "5"), (True, "集"), (False, " "), (True, "中文")]
 
 
-# --- _cjk_bigram_tokens ---
+# --- cjk_bigram_tokens ---
 
 
 def test_cjk_bigram_tokens_cjk_only():
-    assert _cjk_bigram_tokens("面食做法") == ["面", "食", "做", "法", "面食", "食做", "做法"]
+    assert cjk_bigram_tokens("面食做法") == ["面", "食", "做", "法", "面食", "食做", "做法"]
 
 
 def test_cjk_bigram_tokens_two_chars():
-    assert _cjk_bigram_tokens("面食") == ["面", "食", "面食"]
+    assert cjk_bigram_tokens("面食") == ["面", "食", "面食"]
 
 
 def test_cjk_bigram_tokens_single_cjk_char():
-    assert _cjk_bigram_tokens("面") == ["面"]
+    assert cjk_bigram_tokens("面") == ["面"]
 
 
 def test_cjk_bigram_tokens_mixed():
-    assert _cjk_bigram_tokens("103岁生日这天") == ["103", "岁", "生", "日", "这", "天", "岁生", "生日", "日这", "这天"]
+    assert cjk_bigram_tokens("103岁生日这天") == ["103", "岁", "生", "日", "这", "天", "岁生", "生日", "日这", "这天"]
 
 
 def test_cjk_bigram_tokens_non_cjk():
-    assert _cjk_bigram_tokens("hello world") == ["hello", "world"]
+    assert cjk_bigram_tokens("hello world") == ["hello", "world"]
 
 
-# --- _cjk_query_tokens (bigrams-only for multi-char, unigrams for single-char) ---
+# --- cjk_query_tokens (bigrams-only for multi-char, unigrams for single-char) ---
 
 
 def test_cjk_query_tokens_multi_char_cjk():
-    assert _cjk_query_tokens("面食做法") == ["面食", "食做", "做法"]
+    assert cjk_query_tokens("面食做法") == ["面食", "食做", "做法"]
 
 
 def test_cjk_query_tokens_two_chars():
-    assert _cjk_query_tokens("面食") == ["面食"]
+    assert cjk_query_tokens("面食") == ["面食"]
 
 
 def test_cjk_query_tokens_single_cjk_char():
-    assert _cjk_query_tokens("面") == ["面"]
+    assert cjk_query_tokens("面") == ["面"]
 
 
 def test_cjk_query_tokens_mixed():
-    assert _cjk_query_tokens("103岁生日这天") == ["103", "岁生", "生日", "日这", "这天"]
+    assert cjk_query_tokens("103岁生日这天") == ["103", "岁生", "生日", "日这", "这天"]
 
 
 def test_cjk_query_tokens_non_cjk():
-    assert _cjk_query_tokens("hello world") == ["hello", "world"]
+    assert cjk_query_tokens("hello world") == ["hello", "world"]
 
 
-# --- _pinyin_index_tokens (toneless syllable bigrams for FTS5 index) ---
+# --- pinyin_index_tokens (toneless syllable bigrams for FTS5 index) ---
 
 
 def test_pinyin_index_tokens_two_char_cjk():
     """眼睛 → 'yanjing' (toneless syllable bigram)."""
-    assert _pinyin_index_tokens("眼睛") == "yanjing"
+    assert pinyin_index_tokens("眼睛") == "yanjing"
 
 
 def test_pinyin_index_tokens_three_chars_two_bigrams():
     """学校 → two syllables → one bigram."""
-    assert _pinyin_index_tokens("学校") == "xuexiao"
+    assert pinyin_index_tokens("学校") == "xuexiao"
 
 
 def test_pinyin_index_tokens_four_chars_three_bigrams():
     """中国上海 → [zhongguo, guoshang, shanghai]."""
-    assert _pinyin_index_tokens("中国上海") == "zhongguo guoshang shanghai"
+    assert pinyin_index_tokens("中国上海") == "zhongguo guoshang shanghai"
 
 
 def test_pinyin_index_tokens_single_cjk_char_returns_empty():
     """Single-char CJK: no bigram possible → empty string."""
-    assert _pinyin_index_tokens("死") == ""
+    assert pinyin_index_tokens("死") == ""
 
 
 def test_pinyin_index_tokens_non_cjk_returns_empty():
     """English text: no CJK runs → empty string."""
-    assert _pinyin_index_tokens("hello world") == ""
+    assert pinyin_index_tokens("hello world") == ""
 
 
 def test_pinyin_index_tokens_mixed_cjk_and_english():
     """CJK runs get pinyin; English skipped: 测试abc数据 → ceshi shuju."""
-    assert _pinyin_index_tokens("测试abc数据") == "ceshi shuju"
+    assert pinyin_index_tokens("测试abc数据") == "ceshi shuju"
 
 
 def test_pinyin_index_tokens_neutral_tone_collapse():
     """地方(fang5 neutral) vs 敌方(fang1): toneless collapses both to difang."""
-    assert _pinyin_index_tokens("地方") == "difang"
-    assert _pinyin_index_tokens("敌方") == "difang"
+    assert pinyin_index_tokens("地方") == "difang"
+    assert pinyin_index_tokens("敌方") == "difang"
 
 
 def test_pinyin_index_tokens_spans_segment_join_whitespace():
     """CJK-CJK whitespace (segment-join artifact) is collapsed so pinyin bigrams
-    span the gap — parity with _tokenize_cjk. '中文 学习' must yield 'wenxue'."""
-    assert "wenxue" in _pinyin_index_tokens("中文 学习").split()
+    span the gap — parity with tokenize_cjk. '中文 学习' must yield 'wenxue'."""
+    assert "wenxue" in pinyin_index_tokens("中文 学习").split()
 
 
-# --- _pinyin_tokens (toneless syllable bigrams, shared by index + query) ---
+# --- pinyin_tokens (toneless syllable bigrams, shared by index + query) ---
 
 
 def test_pinyin_tokens_multi_char_cjk():
     """Query '苹果' → ['pingguo']."""
-    assert _pinyin_tokens("苹果") == ["pingguo"]
+    assert pinyin_tokens("苹果") == ["pingguo"]
 
 
 def test_pinyin_tokens_two_chars():
-    assert _pinyin_tokens("敌方") == ["difang"]
+    assert pinyin_tokens("敌方") == ["difang"]
 
 
 def test_pinyin_tokens_three_chars():
-    assert _pinyin_tokens("中国上海") == ["zhongguo", "guoshang", "shanghai"]
+    assert pinyin_tokens("中国上海") == ["zhongguo", "guoshang", "shanghai"]
 
 
 def test_pinyin_tokens_single_char_returns_empty():
     """Single-char CJK: no pinyin bigram → [] (falls back to char unigram)."""
-    assert _pinyin_tokens("死") == []
+    assert pinyin_tokens("死") == []
 
 
 def test_pinyin_tokens_non_cjk_returns_empty():
-    assert _pinyin_tokens("hello world") == []
+    assert pinyin_tokens("hello world") == []
 
 
 def test_pinyin_tokens_mixed():
     """Mixed CJK/English: only CJK runs produce pinyin."""
-    assert _pinyin_tokens("测试abc数据") == ["ceshi", "shuju"]
+    assert pinyin_tokens("测试abc数据") == ["ceshi", "shuju"]
 
 
 @pytest.mark.asyncio
@@ -455,81 +457,81 @@ async def test_escape_fts_query_content_arm_no_column_leak(tmp_bibilab_home: Pat
     assert rows == [], "content arm leaked into the pinyin column (unparenthesized scope)"
 
 
-# --- _tokenize_cjk (unigram + bigram) ---
+# --- tokenize_cjk (unigram + bigram) ---
 
 
 def test_tokenize_cjk_unigram_bigram_cjk_phrase():
-    assert _tokenize_cjk("面食做法") == "面 食 做 法 面食 食做 做法"
+    assert tokenize_cjk("面食做法") == "面 食 做 法 面食 食做 做法"
 
 
 def test_tokenize_cjk_unigram_bigram_two_chars():
-    assert _tokenize_cjk("面食") == "面 食 面食"
+    assert tokenize_cjk("面食") == "面 食 面食"
 
 
 def test_tokenize_cjk_preserves_non_cjk():
-    assert _tokenize_cjk("ABC 123 hello") == "ABC 123 hello"
+    assert tokenize_cjk("ABC 123 hello") == "ABC 123 hello"
 
 
 def test_tokenize_cjk_mixed_text():
-    assert _tokenize_cjk("103岁生日这天") == "103 岁 生 日 这 天 岁生 生日 日这 这天"
+    assert tokenize_cjk("103岁生日这天") == "103 岁 生 日 这 天 岁生 生日 日这 这天"
 
 
 def test_tokenize_cjk_normalizes_segment_boundary_spaces():
     # chunk.py:51 joins segments with " " → CJK-adjacent spaces must be
     # collapsed so bigrams can span the boundary
-    assert _tokenize_cjk("第五 集") == "第 五 集 第五 五集"
+    assert tokenize_cjk("第五 集") == "第 五 集 第五 五集"
 
 
 def test_tokenize_cjk_empty_string():
-    assert _tokenize_cjk("") == ""
+    assert tokenize_cjk("") == ""
 
 
-# --- _escape_fts_query with CJK unigram + bigram ---
+# --- escape_fts_query with CJK unigram + bigram ---
 
 
 def test_escape_fts_query_chinese_phrase():
     # Multi-char CJK → bigrams only (no unigrams); OR-joined within each arm
-    escaped = _escape_fts_query("面食做法")
+    escaped = escape_fts_query("面食做法")
     assert escaped == 'content : ("面食" OR "食做" OR "做法") OR pinyin : ("mianshi" OR "shizuo" OR "zuofa")'
 
 
 def test_escape_fts_query_chinese_two_words():
     # Per-word bigram: "中文" + "生日" → no cross-boundary "文生"
-    escaped = _escape_fts_query("中文 生日")
+    escaped = escape_fts_query("中文 生日")
     assert escaped == 'content : ("中文" OR "生日") OR pinyin : ("zhongwen" OR "shengri")'
 
 
 def test_escape_fts_query_chinese_no_whitespace_single_word():
     # No space → one word → bigrams across the whole string
-    escaped = _escape_fts_query("中文生日")
+    escaped = escape_fts_query("中文生日")
     assert escaped == 'content : ("中文" OR "文生" OR "生日") OR pinyin : ("zhongwen" OR "wensheng" OR "shengri")'
 
 
 def test_escape_fts_query_single_cjk_word_three_chars():
-    escaped = _escape_fts_query("多少岁")
+    escaped = escape_fts_query("多少岁")
     assert escaped == 'content : ("多少" OR "少岁") OR pinyin : ("duoshao" OR "shaosui")'
 
 
 def test_escape_fts_query_single_cjk_char_preserved():
     # "茶" is a single-char word → unigram preserved
-    escaped = _escape_fts_query("中文 茶")
+    escaped = escape_fts_query("中文 茶")
     assert escaped == 'content : ("中文" OR "茶") OR pinyin : ("zhongwen")'
 
 
 def test_escape_fts_query_mixed_language():
     # Half English, half CJK: char arm carries both, pinyin arm only the CJK part
-    escaped = _escape_fts_query("machine 学习")
+    escaped = escape_fts_query("machine 学习")
     assert escaped == 'content : ("machine" OR "学习") OR pinyin : ("xuexi")'
 
 
 def test_escape_fts_query_single_cjk_char_alone():
-    escaped = _escape_fts_query("茶")
+    escaped = escape_fts_query("茶")
     assert escaped == 'content : ("茶")'
 
 
 def test_escape_fts_query_high_idf_single_char():
     # 死 (death) — single-char word with critical semantic weight
-    escaped = _escape_fts_query("死")
+    escaped = escape_fts_query("死")
     assert escaped == 'content : ("死")'
 
 

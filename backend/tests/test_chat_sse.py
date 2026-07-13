@@ -321,6 +321,40 @@ async def test_chat_sse_emits_citation_events(client):
 
 
 @pytest.mark.asyncio
+async def test_chat_sse_citation_event_carries_section_jump_fields(client):
+    """The wire citation event keeps section_id + timestamp_start — the
+    frontend's section-tab jump target during a live stream (not just on
+    history reload)."""
+    list_id = (await client.post("/lists", json={"name": "T"})).json()["id"]
+
+    async def fake_stream(*args, **kwargs):
+        async for ev in an_async_generator(
+            [
+                StreamEvent(type="delta", content="See "),
+                StreamEvent(
+                    type="citation",
+                    content='{"index":1,"section_id":"sec-9","source_id":"s1",'
+                    '"timestamp_start":42.5,"chunk_ids":["c1"]}',
+                ),
+                StreamEvent(type="done"),
+            ]
+        ):
+            yield ev
+
+    with patch("bibilab.routers.chat.stream_with_tools", side_effect=fake_stream):
+        resp = await client.post(f"/lists/{list_id}/chat", json={"message": "hi"})
+
+    assert resp.status_code == 200
+    events = _parse_sse(resp.text)
+    citation = next(e for e in events if e["type"] == "citation")
+    assert citation["index"] == 1
+    assert citation["source_id"] == "s1"
+    assert citation["section_id"] == "sec-9"
+    assert citation["timestamp_start"] == 42.5
+    assert citation["chunk_ids"] == ["c1"]
+
+
+@pytest.mark.asyncio
 async def test_chat_persists_content_blocks_in_metadata(client):
     """Assistant message metadata includes content_blocks after citation stream."""
     list_id = (await client.post("/lists", json={"name": "T"})).json()["id"]

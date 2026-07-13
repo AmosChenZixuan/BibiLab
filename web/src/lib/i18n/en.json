@@ -338,7 +338,7 @@
     "discussKeyword": "Discuss %{keyword}",
     "errors": {
       "tool_error": "Tool execution failed",
-      "stream_timeout": "Stream timed out",
+      "persistence_error": "Failed to save the response — refresh and try again",
       "llm_connection_error": "Unable to reach AI provider",
       "llm_auth_error": "AI provider authentication failed",
       "llm_rate_limit_error": "AI provider rate limit exceeded",

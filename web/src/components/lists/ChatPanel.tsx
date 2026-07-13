@@ -27,7 +27,7 @@ import { ToolLedger } from "@/components/lists/ToolLedger";
 import { PulseRing } from "@/components/ui/PulseRing";
 import { DebugDrawer } from "@/components/debug/DebugDrawer";
 import type { Source } from "@/lib/types";
-import { api } from "@/lib/api";
+import { api, toErrorMessageWithT } from "@/lib/api";
 import { useDebugDump } from "@/lib/hooks/useDebugDump";
 import { usePendingDeletions } from "@/lib/hooks/usePendingDeletions";
 import { TEST_IDS } from "@/lib/test-ids";
@@ -288,6 +288,8 @@ export function ChatPanel({
   const [inputValue, setInputValue] = useState("");
   const [messages, setMessages] = useState<MessageUI[]>([]);
   const [showClearPopover, setShowClearPopover] = useState(false);
+  const [clearError, setClearError] = useState<unknown>(null);
+  const clearPopoverRef = useRef<HTMLDivElement>(null);
   const [debugPrompts, setDebugPrompts] = useState(false);
   const [debugMsgId, setDebugMsgId] = useState<string | null>(null);
   const { dump: debugDump, loading: debugLoading, notFound: debugNotFound, reset: resetDebugDump } = useDebugDump(debugMsgId);
@@ -339,10 +341,36 @@ export function ChatPanel({
   }, [debugMsgId]);
 
   useEffect(() => {
+    if (!showClearPopover) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setShowClearPopover(false);
+    };
+    const onPointerDown = (e: PointerEvent) => {
+      if (clearPopoverRef.current && !clearPopoverRef.current.contains(e.target as Node)) {
+        setShowClearPopover(false);
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.removeEventListener("pointerdown", onPointerDown);
+    };
+  }, [showClearPopover]);
+
+  useEffect(() => {
     if (debugNotFound && debugMsgId) {
       console.warn("debug dump not found", debugMsgId);
     }
   }, [debugNotFound, debugMsgId]);
+
+  // ChatPanel is always-mounted and reused across list navigations, so a Clear
+  // failure on one list would otherwise leave its error banner (and popover)
+  // showing under the next list's chat. Reset both when the list changes.
+  useEffect(() => {
+    setClearError(null);
+    setShowClearPopover(false);
+  }, [listId]);
 
   const hasSources = selectedSourceIds.length > 0;
   const { messages: historyMessages, isLoadingHistory, loadError, activeStreamMessageId } = useConversationHistory(listId, hasSources, t("chat.interrupted"), t("chat.stopped"), lang, t("chat.time.today"));
@@ -361,8 +389,9 @@ export function ChatPanel({
 
   // Shared "can we send right now?" gate. Used by both the manual
   // `handleSend` path and the auto-send effect (chip click) — keeps
-  // the two in lockstep.
-  const canSend = hasSources && !isStreaming;
+  // the two in lockstep. Blocked while history loads: a send racing the
+  // fetch would be wiped when the (stale) snapshot replaces messages.
+  const canSend = hasSources && !isStreaming && !isLoadingHistory;
 
   const reattachedRef = useRef<string | null>(null);
 
@@ -392,9 +421,21 @@ export function ChatPanel({
 
   useEffect(() => {
     if (historyMessages.length > 0) {
-      setMessages(historyMessages);
+      setMessages((prev) => {
+        // Never clobber an in-flight stream: a history snapshot resolving
+        // mid-stream (e.g. deselect-all → reselect re-fires the fetch) predates
+        // the live turn — drop it; the turn persists server-side and the next
+        // load includes it.
+        if (prev.some((m) => m.isStreaming)) return prev;
+        // Same race, but the stream finished before the stale fetch resolved:
+        // the snapshot still carries the just-active stream id yet predates the
+        // persisted turn. If we already hold that turn (its id was swapped to
+        // the server id on `meta`), keep it rather than reverting.
+        if (activeStreamMessageId && prev.some((m) => m.id === activeStreamMessageId)) return prev;
+        return historyMessages;
+      });
     }
-  }, [historyMessages]);
+  }, [historyMessages, activeStreamMessageId]);
 
   useEffect(() => {
     if (
@@ -407,17 +448,19 @@ export function ChatPanel({
     }
   }, [activeStreamMessageId, isStreaming, reattach]);
 
-  // Drain a pending keyword-driven message from the page. Chat owns
-  // the accept/reject decision and always acks via
-  // onPendingMessageConsumed so the page's slot never accumulates
-  // clicks. `sendMessage` and `onPendingMessageConsumed` are
-  // unstable closures — omitting them from deps avoids a feedback
-  // loop.
+  // Drain a pending keyword-driven message from the page. Chat owns the
+  // accept/reject decision and acks via onPendingMessageConsumed so the page's
+  // (single-valued) slot clears. Exception: while history is still loading, a
+  // chip click would otherwise be acked-and-dropped before it can be sent —
+  // hold it (no ack) until loading settles, then this effect re-fires and
+  // either sends (canSend) or acks-and-drops as before (e.g. no sources).
+  // `sendMessage` and `onPendingMessageConsumed` are unstable closures —
+  // omitting them from deps avoids a feedback loop.
   useEffect(() => {
-    if (!pendingMessage) return;
+    if (!pendingMessage || isLoadingHistory) return;
     if (canSend) void sendMessage(pendingMessage.text, { sourceIds: pendingMessage.sourceIds });
     onPendingMessageConsumed?.();
-  }, [pendingMessage, canSend]);
+  }, [pendingMessage, canSend, isLoadingHistory]);
 
 
   function handleSend() {
@@ -440,10 +483,12 @@ export function ChatPanel({
 
   async function handleClearConfirm() {
     setShowClearPopover(false);
+    setClearError(null);
     try {
       await run(listId, () => api.deleteConversation(listId));
-    } catch {
-      // non-fatal — keep messages, surface nothing
+    } catch (err) {
+      // keep the messages, but tell the user the clear didn't happen
+      setClearError(err);
       return;
     }
     setMessages([]);
@@ -455,7 +500,7 @@ export function ChatPanel({
       <div className="shrink-0 border-b border-border px-4 py-3.5">
         <div className="flex items-center">
           <h2 className="flex-1 font-serif text-lg text-ink">{t("chat.header.title")}</h2>
-          <div className="relative">
+          <div className="relative" ref={clearPopoverRef}>
             <button
               type="button"
               onClick={() => setShowClearPopover((v) => !v)}
@@ -501,6 +546,9 @@ export function ChatPanel({
             {formatSubtitle(t, selectedSourceIds.length, totalDuration)}
           </div>
         )}
+        {clearError != null && (
+          <p className="m-0 mt-1 text-xs text-pink">{toErrorMessageWithT(clearError, t)}</p>
+        )}
       </div>
 
       {/* Message list + scroll-to-bottom wrapper */}
@@ -527,7 +575,7 @@ export function ChatPanel({
             <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-surface text-muted">
               <AlertCircle size={26} />
             </div>
-            <p className="m-0 max-w-xs text-sm text-muted">{loadError}</p>
+            <p className="m-0 max-w-xs text-sm text-muted">{toErrorMessageWithT(loadError, t)}</p>
           </div>
         ) : !hasConversation && !isLoadingHistory ? (
           <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">

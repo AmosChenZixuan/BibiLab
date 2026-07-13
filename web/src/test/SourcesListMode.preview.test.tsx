@@ -128,6 +128,7 @@ function renderMode(
   sources: Parameters<typeof SourcesListMode>[0]["sources"] = [],
   selectedSourceIds: string[] = [],
   onSelectedSourcesChange: (ids: string[]) => void = vi.fn(),
+  onRefresh: () => void = vi.fn(),
 ) {
   return renderWithProviders(
     <SourcesListMode
@@ -135,6 +136,7 @@ function renderMode(
       sources={sources}
       selectedSourceIds={selectedSourceIds}
       onSelectedSourcesChange={onSelectedSourcesChange}
+      onRefresh={onRefresh}
       onOpenSource={vi.fn()}
     />,
     { providers: [LanguageProvider, JobActivityProvider] },
@@ -453,6 +455,21 @@ describe("SourcesListMode retry of a failed job", () => {
       );
     });
     expect(api.deleteJob).toHaveBeenCalledWith("job-failed-1");
+  });
+});
+
+describe("SourcesListMode parent notification", () => {
+  it("notifies the parent after a source is deleted", async () => {
+    const onRefresh = vi.fn();
+    renderMode([makeSource()], [], vi.fn(), onRefresh);
+
+    await userEvent.click(screen.getByRole("button", { name: /source options/i }));
+    await userEvent.click(screen.getByText(/^delete$/i));
+
+    expect(api.deleteSource).toHaveBeenCalledWith("list-1", "src-1");
+    await waitFor(() => {
+      expect(onRefresh).toHaveBeenCalled();
+    });
   });
 });
 

@@ -304,7 +304,7 @@ async def test_stage_transcribe_punctuates_and_returns_sentences(tmp_bibilab_hom
     loop = WorkerLoop(config=BibilabConfig(), home=tmp_bibilab_home)
     wav = tmp_bibilab_home / "a.wav"
     wav.write_bytes(b"")
-    result = await loop._stage_transcribe(job_id, wav, "src-1", BibilabConfig())
+    result = await loop._stage_transcribe({"id": job_id, "type": "ingest", "meta": {}}, wav, "src-1", BibilabConfig())
 
     detected_language, effective_language, sentence_segments = result
     assert called["language"] == "zh"
@@ -330,7 +330,7 @@ async def test_stage_transcribe_no_speech_raises_pipeline_error(tmp_bibilab_home
     wav.write_bytes(b"")
 
     with pytest.raises(PipelineError, match="no speech detected"):
-        await loop._stage_transcribe(job_id, wav, "src-1", BibilabConfig())
+        await loop._stage_transcribe({"id": job_id, "type": "ingest", "meta": {}}, wav, "src-1", BibilabConfig())
 
 
 @pytest.mark.asyncio
@@ -350,7 +350,7 @@ async def test_stage_transcribe_cancel_wins_over_no_speech(tmp_bibilab_home: Pat
     wav = tmp_bibilab_home / "a.wav"
     wav.write_bytes(b"")
 
-    result = await loop._stage_transcribe(job_id, wav, "src-1", BibilabConfig())
+    result = await loop._stage_transcribe({"id": job_id, "type": "ingest", "meta": {}}, wav, "src-1", BibilabConfig())
 
     assert result is None
     assert await get_job(job_id) is None
@@ -386,8 +386,7 @@ async def test_stage_process_chunks_sentence_segments(tmp_bibilab_home: Path, mo
     )
     loop = WorkerLoop(config=BibilabConfig(), home=tmp_bibilab_home)
     result = await loop._stage_process(
-        job_id="j",
-        job={"meta": {}},
+        job={"id": "j", "meta": {}},
         sentence_segments=sentences,
         source_id="src-1",
         video_meta=__import__("unittest.mock", fromlist=["MagicMock"]).MagicMock(),
@@ -653,7 +652,7 @@ class TestDownloadHygieneAndCap:
         worker = WorkerLoop(adapter=adapter, home=tmp_bibilab_home)
 
         with patch("bibilab.worker._download_cover", MagicMock(return_value=True)):
-            result = await worker._stage_download("job-x", _video_meta("BVstale"), "src-1")
+            result = await worker._stage_download({"id": "job-x"}, _video_meta("BVstale"), "src-1")
 
         assert seen["stale_existed_at_download"] is False
         assert result == final
@@ -691,7 +690,7 @@ class TestDownloadHygieneAndCap:
 
         with patch("bibilab.worker._download_cover", MagicMock(return_value=True)):
             await asyncio.gather(
-                *(worker._stage_download(f"job-{i}", _video_meta(f"BV{i}"), f"src-{i}") for i in range(3))
+                *(worker._stage_download({"id": f"job-{i}"}, _video_meta(f"BV{i}"), f"src-{i}") for i in range(3))
             )
 
         assert peak == 3
