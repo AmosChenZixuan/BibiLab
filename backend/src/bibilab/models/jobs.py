@@ -4,6 +4,13 @@ from typing import Any
 from pydantic import BaseModel
 
 
+class JobType(StrEnum):
+    INGEST = "ingest"
+    DIGEST = "digest"
+    ARTIFACT = "artifact"
+    MODEL_DOWNLOAD = "model_download"
+
+
 class JobStatus(StrEnum):
     QUEUED = "queued"
     DOWNLOADING = "downloading"

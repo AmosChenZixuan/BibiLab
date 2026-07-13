@@ -41,6 +41,7 @@ from bibilab.models.chat import (
 )
 from bibilab.pipeline._shared import (
     _LANG_NATIVE_NAME,
+    UI_LANG_HEADER,
     StreamEvent,
     ToolCall,
     ToolDefinition,
@@ -800,7 +801,7 @@ async def run_chat_turn(
                     pending_text = ""
                 if content_blocks and content_blocks[-1].get("type") != "paragraph_break":
                     content_blocks.append({"type": "paragraph_break"})
-            elif event.type == "tool_result":
+            elif event.type == SSE_EVENT_TOOL_RESULT:
                 parsed = json.loads(event.content)
                 if parsed["name"] in RETRIEVE_TOOL_NAMES:
                     result = parsed["result"]
@@ -829,7 +830,7 @@ async def run_chat_turn(
                                 "source_title": parsed["result"].get("source_title", ""),
                             }
                         )
-            elif event.type == "error":
+            elif event.type == SSE_EVENT_ERROR:
                 logger.error("stream_with_tools error: %s", event.content)
                 error_reason = ERROR_CODE_TOOL
                 final_status = "failed"
@@ -1043,7 +1044,7 @@ async def chat_endpoint(
     except ActiveStreamConflict:
         raise HTTPException(409, "Conversation already has an active stream")
 
-    ui_lang = http_request.headers.get("X-UI-Lang", "en")
+    ui_lang = http_request.headers.get(UI_LANG_HEADER, "en")
 
     # Spawn producer
     task = asyncio.create_task(
@@ -1186,7 +1187,7 @@ async def save_chat_message_to_artifact(
         raise HTTPException(status_code=404, detail="Message not found")
     if msg_row["role"] != "assistant":
         raise HTTPException(status_code=422, detail="Only assistant messages can be saved")
-    if msg_row["status"] != "done":
+    if msg_row["status"] != VISIBLE_MESSAGE_STATUS:
         raise HTTPException(status_code=422, detail=f"Message must be done (status={msg_row['status']})")
 
     msg = dict(msg_row)
@@ -1195,7 +1196,7 @@ async def save_chat_message_to_artifact(
         msg["metadata"] = json.loads(raw_meta)
 
     sources_by_id = await _load_sources_for_message(msg)
-    ui_lang = http_request.headers.get("X-UI-Lang", "en")
+    ui_lang = http_request.headers.get(UI_LANG_HEADER, "en")
     content = _build_chat_message_markdown(msg, sources_by_id, lang=ui_lang)
 
     user_prompt = (await get_user_prompt_for_assistant(req.message_id)) or ""

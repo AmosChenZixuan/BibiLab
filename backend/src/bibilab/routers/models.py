@@ -14,6 +14,7 @@ from bibilab.model_registry import (
     missing_required_models,
     required_models,
 )
+from bibilab.models.jobs import JobType
 from bibilab.models.models import ModelDownloadResponse, ModelInfo, SyncResponse
 
 router = APIRouter()
@@ -48,7 +49,7 @@ async def download_model(spec_id: str) -> ModelDownloadResponse:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     job_id = await create_job(
-        type="model_download",
+        type=JobType.MODEL_DOWNLOAD,
         meta={"model_name": spec_id},
     )
     return ModelDownloadResponse(job_id=job_id, status="queued", spec_id=spec_id)
@@ -64,7 +65,7 @@ async def sync_models(cfg: BibilabConfig = Depends(get_config)) -> SyncResponse:
     for spec in required_models(cfg):
         if spec.id in missing:
             try:
-                job_id = await create_job(type="model_download", meta={"model_name": spec.id})
+                job_id = await create_job(type=JobType.MODEL_DOWNLOAD, meta={"model_name": spec.id})
                 job_ids.append(job_id)
                 synced.append(spec.id)
             except Exception:
