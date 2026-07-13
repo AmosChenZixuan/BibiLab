@@ -105,6 +105,45 @@ async def test_extract_audio_cancellation_stops_pipeline(setup_pipeline_test: Pa
     )
 
 
+def _make_cancel_job(home: Path, job_id: str, video_id: str) -> tuple[dict, "WorkerLoop", Path]:
+    """Ingest job dict + worker wired to a mock adapter, plus fake video/wav files."""
+    job = {
+        "id": job_id,
+        "type": "ingest",
+        "meta": {
+            "source_id": str(uuid.uuid4()),
+            "video_id": video_id,
+            "list_id": "list-1",
+            "title": "Cancel Test",
+            "platform": "bilibili",
+            "source_url": f"https://bilibili.com/video/{video_id}",
+            "cover_url": "https://example.com/cover.jpg",
+            "duration_seconds": 100,
+            "uploader": "TestUser",
+            "ui_lang": "en",
+        },
+    }
+    (home / "downloads").mkdir(parents=True, exist_ok=True)
+    (home / "covers").mkdir(parents=True, exist_ok=True)
+    tmp_video = home / "downloads" / f"{video_id}.mp4"
+    tmp_video.write_bytes(b"fake video")
+    tmp_wav = home / "downloads" / f"{video_id}.wav"
+    tmp_wav.write_bytes(b"fake wav")
+    adapter = MagicMock()
+    adapter.download = MagicMock(return_value=tmp_video)
+    worker = WorkerLoop(concurrency=1, adapter=adapter, home=home)
+    return job, worker, tmp_wav
+
+
+def _assert_cleanup_received_full_job(cleanup_calls: list, video_id: str) -> None:
+    # cleanup_job_artifacts must receive a dict it can act on: a type-less
+    # dict makes it early-return and purge nothing.
+    assert len(cleanup_calls) > 0, "cleanup_job_artifacts should have been called when job was cancelled"
+    for received in cleanup_calls:
+        assert received.get("type") == "ingest", f"cleanup received an uncleanable job dict: {received}"
+        assert received.get("meta", {}).get("video_id") == video_id
+
+
 @pytest.mark.asyncio
 async def test_pipeline_stage_process_cleanup_called_on_cancellation(setup_pipeline_test: Path):
     """
@@ -114,63 +153,51 @@ async def test_pipeline_stage_process_cleanup_called_on_cancellation(setup_pipel
     await bootstrap_db()
     await create_list("list-1", "Test", "2026-01-01T00:00:00")
 
-    job_id = "job-cleanup-test"
-    source_id = str(uuid.uuid4())
-
-    job = {
-        "id": job_id,
-        "type": "ingest",
-        "meta": {
-            "source_id": source_id,
-            "video_id": "BVcleanup123",
-            "list_id": "list-1",
-            "title": "Cleanup Test",
-            "platform": "bilibili",
-            "source_url": "https://bilibili.com/video/BVcleanup123",
-            "cover_url": "https://example.com/cover.jpg",
-            "duration_seconds": 100,
-            "uploader": "TestUser",
-            "ui_lang": "en",
-        },
-    }
-
-    (setup_pipeline_test / "downloads").mkdir(parents=True, exist_ok=True)
-    (setup_pipeline_test / "covers").mkdir(parents=True, exist_ok=True)
-
-    tmp_video = setup_pipeline_test / "downloads" / "BVcleanup123.mp4"
-    tmp_video.write_bytes(b"fake video")
-    tmp_wav = setup_pipeline_test / "downloads" / "BVcleanup123.wav"
-    tmp_wav.write_bytes(b"fake wav")
-
-    mock_adapter = MagicMock()
-    mock_adapter.download = MagicMock(return_value=tmp_video)
-
-    worker = WorkerLoop(concurrency=1, adapter=mock_adapter, home=setup_pipeline_test)
-
-    mock_extract_audio = MagicMock(return_value=tmp_wav)
-    mock_transcribe = MagicMock(return_value=([], None))
-    mock_embed = MagicMock()
+    job, worker, tmp_wav = _make_cancel_job(setup_pipeline_test, "job-cleanup-test", "BVcleanup123")
     mock_dl_cover = MagicMock(side_effect=lambda url, dest: dest.write_bytes(b"fake cover") or True)
-
-    cleanup_calls = []
-
-    def mock_cleanup(artifact_job):
-        cleanup_calls.append(artifact_job)
+    cleanup_calls: list = []
 
     # Cancel BEFORE any stage runs
-    worker.cancel_job(job_id)
+    worker.cancel_job("job-cleanup-test")
 
     with (
-        patch("bibilab.worker.extract_audio", mock_extract_audio),
-        patch("bibilab.worker.transcribe", mock_transcribe),
+        patch("bibilab.worker.extract_audio", MagicMock(return_value=tmp_wav)),
+        patch("bibilab.worker.transcribe", MagicMock(return_value=([], None))),
         patch("bibilab.worker._download_cover", mock_dl_cover),
-        patch("bibilab.worker.embed_chunks", mock_embed),
-        patch("bibilab.worker.cleanup_job_artifacts", mock_cleanup),
+        patch("bibilab.worker.embed_chunks", MagicMock()),
+        patch("bibilab.worker.cleanup_job_artifacts", cleanup_calls.append),
     ):
         await worker._pipeline(job)
 
-    # Cleanup should have been called when job was cancelled
-    assert len(cleanup_calls) > 0, "cleanup_job_artifacts should have been called when job was cancelled"
+    _assert_cleanup_received_full_job(cleanup_calls, "BVcleanup123")
+
+
+@pytest.mark.asyncio
+async def test_pipeline_mid_stage_cancel_cleanup_receives_full_job(setup_pipeline_test: Path):
+    """Cancelling while a stage runs (transcribe gate) must purge with the full job dict."""
+
+    await bootstrap_db()
+    await create_list("list-1", "Test", "2026-01-01T00:00:00")
+
+    job, worker, tmp_wav = _make_cancel_job(setup_pipeline_test, "job-midcancel-test", "BVmidcancel1")
+    mock_dl_cover = MagicMock(side_effect=lambda url, dest: dest.write_bytes(b"fake cover") or True)
+    cleanup_calls: list = []
+
+    def mock_transcribe(*args, **kwargs):
+        # Cancel arrives while transcription is running
+        worker.cancel_job("job-midcancel-test")
+        return ([], None)
+
+    with (
+        patch("bibilab.worker.extract_audio", MagicMock(return_value=tmp_wav)),
+        patch("bibilab.worker.transcribe", mock_transcribe),
+        patch("bibilab.worker._download_cover", mock_dl_cover),
+        patch("bibilab.worker.embed_chunks", MagicMock()),
+        patch("bibilab.worker.cleanup_job_artifacts", cleanup_calls.append),
+    ):
+        await worker._pipeline(job)
+
+    _assert_cleanup_received_full_job(cleanup_calls, "BVmidcancel1")
 
 
 async def _seed_source(source_id: str) -> None:

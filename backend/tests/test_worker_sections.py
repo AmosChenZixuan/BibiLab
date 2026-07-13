@@ -84,7 +84,6 @@ async def test_stage_process_returns_sections_for_long_source(tmp_bibilab_home: 
         patch("bibilab.worker.embed_chunks", side_effect=fake_embed_chunks),
     ):
         extraction, sections, _section_digests = await worker._stage_process(
-            job_id="job-1",
             job={"id": "job-1", "meta": "{}"},
             sentence_segments=segs,
             source_id=source_id,
@@ -131,7 +130,6 @@ async def test_stage_process_short_video_returns_one_section(tmp_bibilab_home: P
         patch("bibilab.worker.embed_chunks", side_effect=fake_embed_chunks),
     ):
         extraction, sections, _section_digests = await worker._stage_process(
-            job_id="job-2",
             job={"id": "job-2", "meta": "{}"},
             sentence_segments=segs,
             source_id=source_id,
@@ -188,7 +186,6 @@ async def test_ingest_one_section_byte_identical(tmp_bibilab_home: Path, mock_ca
 
     with patch("bibilab.worker.embed_chunks", side_effect=lambda *a, **kw: None):
         result = await worker._stage_process(
-            job_id="job-byte",
             job={"id": "job-byte", "meta": "{}"},
             sentence_segments=segs,
             source_id=source_id,
@@ -243,7 +240,6 @@ async def test_ingest_n_sections_produces_ordered_section_digests(tmp_bibilab_ho
 
     with patch("bibilab.worker.embed_chunks", side_effect=lambda *a, **kw: None):
         result = await worker._stage_process(
-            job_id="job-n",
             job={"id": "job-n", "meta": "{}"},
             sentence_segments=segs,
             source_id="src-n",
