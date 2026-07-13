@@ -17,12 +17,8 @@ import pytest
 from bibilab.config import BibilabConfig
 from bibilab.db import bootstrap_db, create_list, get_artifact
 from bibilab.pipeline._shared import format_mmss
-from bibilab.pipeline.audio import PipelineError
-from bibilab.pipeline.section import Section
-from bibilab.pipeline.transcribe import WhisperSegment
-from bibilab.worker import (
+from bibilab.pipeline.artifact_refine import (
     ArtifactResult,
-    WorkerLoop,
     _build_initial_prompt,
     _build_refine_prompt,
     _build_section_views,
@@ -32,6 +28,10 @@ from bibilab.worker import (
     _render_single_batch_text,
     _SectionView,
 )
+from bibilab.pipeline.audio import PipelineError
+from bibilab.pipeline.section import Section
+from bibilab.pipeline.transcribe import WhisperSegment
+from bibilab.worker import WorkerLoop
 from tests.factories import SourceFactory
 
 pytestmark = pytest.mark.integration
