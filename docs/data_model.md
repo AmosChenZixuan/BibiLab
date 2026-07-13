@@ -59,7 +59,8 @@ Column-level reference for every SQLite table in `~/.bibilab/bibilab.db`. Author
 | `content` | Message text |
 | `status` | In-flight: user `"pending"`, assistant `"streaming"`. Terminal: `"done"` \| `"failed"` \| `"cancelled"`. Both rows of a turn flip to the **same** terminal status atomically (`update_turn_terminal`); a turn is visible to LLM replay + compaction iff both are `"done"`. UI history is unfiltered (renders 已停止/重试); the LLM snapshot filters to `"done"` inline (not in `get_recent_messages`). |
 | `error` | Error code (e.g. `llm_rate_limit_error`, `internal_error`), nullable; set on producer failure or server restart sweep; mapped by `_classify_llm_error()` from SDK exceptions; frontend resolves via `chat.errors.*` i18n keys |
-| `metadata` | JSON blob, nullable: `{"tool_calls": [...], "rag": {"calls": [...]}}` — full field shape in `docs/chat_architecture.md`. Set by `run_chat_turn` post-stream. No migration for legacy rows — the ledger renders best-effort from whatever fields exist. |
+| `metadata` | JSON blob, nullable: `{"content_blocks": [...], "rag": {"calls": [...]}}` — full field shape in `docs/chat_architecture.md`. Set by `run_chat_turn` post-stream. No migration for legacy rows — the ledger renders best-effort from whatever fields exist. |
+| `tool_blocks` | JSON array of the assistant turn's tool-use/tool-result blocks, nullable; written with the terminal flip (`update_turn_terminal`). Consumed by `expand_message_for_provider` (provider replay) and `reseed_citation_registry` (cross-turn `[N]` reseed). Tool-call data lives here, **not** in `metadata`. |
 
 ### `transcript_segments` — punctuated sentence segments
 
@@ -92,4 +93,4 @@ Index: `idx_sections_source` on `(source_id, seq)`. Chunks produced per-section 
 
 ### `chunks_fts` — FTS5 virtual table
 
-BM25-ranked full-text index over transcript chunks. Populated by `populate_fts()` during the embed stage; cleared per-source on re-ingest. Columns: `content`, `source_id`, `video_title`, `timestamp_start`, `timestamp_end`, `chunk_id`, `seg_start`, `seg_end`. Query via `query_fts_rows()` in `db.py`.
+BM25-ranked full-text index over transcript chunks. Populated by `populate_fts()` during the embed stage; cleared per-source on re-ingest. Columns: `content`, `pinyin` (toneless-pinyin syllable-bigram index for CJK, built by `_pinyin_index_tokens`), `source_id`, `video_title`, `timestamp_start`, `timestamp_end`, `chunk_id`, `seg_start`, `seg_end`. Query via `query_fts_rows()` in `db.py`.
