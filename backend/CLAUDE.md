@@ -112,7 +112,7 @@ Full mechanism — request lifecycle, retrieval pipeline, tool loop, SSE semanti
 
 - `POST /lists/:id/chat` streams SSE via a producer/consumer split (`run_chat_turn` → `StreamBuffer` → `_sse_consumer`); the turn's terminal flip is atomic (see Database Schema invariants) — breaking it wedges the conversation at 409.
 - SSE events: `meta`, `delta`, `citation`, `tool_call_start`, `tool_result`, `rag`, `done`, `error`, `cancelled`. `meta` is always first (carries `{message_id}` for cancel-by-id, constant `SSE_EVENT_META`); `error` events carry machine-readable codes (via `_classify_llm_error()`) for frontend i18n.
-- `stream_with_tools` is a bounded loop (max 3 iterations). Exhausted iterations keep tools **advertised** but unexecuted (gate is `is_synthesis_turn`) — withholding them makes native tool-call tokens leak into the visible answer. Any retrieve-family call disables all three tools for the rest of the turn. An empty synthesis gets one forced follow-up call; still no text → typed no-text error, never a blank persisted message.
+- `stream_with_tools` is a bounded loop (max 3 iterations). Exhausted iterations keep tools **advertised** but unexecuted (gate is `is_synthesis_turn`) — withholding them makes native tool-call tokens leak into the visible answer. Both tools stay advertised on every iteration; nothing disables them mid-turn — only the 3-iteration bound stops the loop. An empty synthesis gets one forced follow-up call; still no text → typed no-text error, never a blank persisted message.
 - Retrieval: facet scoping fails open to the full pool; rerank order is final (no relevance gate); rerank/embed consume raw `chunk.content` while the LLM sees speaker-turn reconstruction — keep that split (embedder parity).
 - Prior-turn tool exchanges are dropped from history replay (`expand_message_for_provider`); only synthesized prose survives — never assume prior evidence is still in LLM context.
 - Compression summary is prose only — `[N]` markers deliberately dropped (see `docs/citation_system.md`).
@@ -143,7 +143,7 @@ Registry dispatch, per-platform behavior, two-phase resolve, and bilibili auth a
 ```json
 {
   "accounts": { "bilibili": { "cookie": "", "username": "", "avatar_url": "" } },
-  "ai": { "protocol": "openai|anthropic", "model": "", "api_key": "", "base_url": null, "output_language": "ui", "context_window": 128000, "max_output_tokens": 16384 },
+  "ai": { "protocol": "openai|anthropic", "model": "", "api_key": "", "base_url": "https://api.openai.com/v1", "output_language": "ui", "context_window": 128000, "max_output_tokens": 16384 },
   "transcription": { "model": "sensevoice-small|large-v3", "device": "cuda|cpu", "language": "auto" },
   "backend": { "port": 8765, "max_concurrent_jobs": 4, "cors_origins": [...] },
   "rag": { "max_distance": 0.8, "reranking_enabled": true, "hybrid_enabled": true, "debug_prompts": false }

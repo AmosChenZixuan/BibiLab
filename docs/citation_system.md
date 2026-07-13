@@ -44,7 +44,7 @@ LLM delta stream
 
 ## Data flow
 
-1. User sends message → `chat_endpoint` resolves facet, builds `source_pool` + `facet_scope`
+1. User sends message → `chat_endpoint` streams the turn; facet scoping is not resolved here but per-call inside `execute_find_passages` (`_filter_sources_by_facets`), which returns `facet_scope` in the tool result
 2. `stream_with_tools` starts with empty `registry: dict[section_id, CitationRegistryEntry]`
 3. LLM calls `find_passages` (locator) or `read_section(section_id="[N]")` (drill) → `execute_find_passages` / `execute_read_section` assign indices, format body
 4. `find_passages` tool result: chunks grouped by section under per-section `===== [N] "Title" · Section M (mm:ss–mm:ss) =====` fences; within a fence, fragments render in chronological (segment) order — not rerank order — with a `[…]` gap marker between non-seg-adjacent fragments to mark elided transcript; on facet match, full section OUTLINE (every section, summaries only, non-citable) is emitted instead
