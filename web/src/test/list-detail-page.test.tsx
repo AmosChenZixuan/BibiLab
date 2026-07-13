@@ -1,7 +1,7 @@
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { RouterProvider, createMemoryRouter } from "react-router-dom";
-import { Suspense } from "react";
+import { Suspense, act } from "react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
 import { LanguageProvider, useLanguage } from "@/app/LanguageContext";
@@ -146,7 +146,6 @@ vi.mock("../lib/api", () => {
       processed_at: "2026-03-31T20:00:00Z",
       cover_url: null,
       transcript: "This is the transcript text...",
-      settings_snapshot: {},
     }),
     rerunDigest: vi.fn(),
     deleteJob: vi.fn(),
@@ -348,7 +347,6 @@ describe("list detail page", () => {
       processed_at: "2026-03-31T20:00:00Z",
       cover_url: null,
       transcript: "hello transcript",
-      settings_snapshot: {},
     });
     vi.mocked(api.getSourceSections).mockResolvedValue([
       {
@@ -404,6 +402,101 @@ describe("list detail page", () => {
     // 9. Close button returns to list mode
     await userEvent.click(screen.getByRole("button", { name: /close viewer/i }));
     expect(screen.getByRole("button", { name: /open existing source/i })).toBeInTheDocument();
+  });
+
+  test("a late-rejecting load for a superseded source leaves the current source's content intact", async () => {
+    const mkSource = (id: string, title: string) => ({
+      id,
+      video_id: `BV${id}`,
+      platform: "bilibili",
+      title,
+      cover_url: null,
+      source_url: `https://www.bilibili.com/video/BV${id}`,
+      duration_seconds: 600,
+      uploader: "",
+      language: null,
+      processed_at: "2026-03-31T20:00:00Z",
+    });
+    state.sources = [mkSource("src-A", "Source A"), mkSource("src-B", "Source B")];
+    makeMockFetch();
+    vi.mocked(api.listSources).mockResolvedValue([...state.sources]);
+    vi.mocked(api.getSourceSections).mockResolvedValue([]);
+
+    // Source A's content never resolves until we reject it late; Source B resolves.
+    let rejectA!: (e: unknown) => void;
+    const aPending = new Promise((_resolve, reject) => {
+      rejectA = reject;
+    });
+    vi.mocked(api.getSource).mockImplementation((id: string) => {
+      if (id === "src-A") return aPending as ReturnType<typeof api.getSource>;
+      return Promise.resolve({
+        ...mkSource("src-B", "Source B"),
+        transcript: "content of B",
+      }) as ReturnType<typeof api.getSource>;
+    });
+
+    const router = createMemoryRouter(routes, { initialEntries: ["/lists/list-1"] });
+    render(withRouter(router));
+    await screen.findByRole("heading", { name: /sources/i });
+
+    // Open A (content pending), close back to the list, then open B (resolves).
+    await userEvent.click(await screen.findByRole("button", { name: /open source a/i }));
+    await userEvent.click(await screen.findByRole("button", { name: /close viewer/i }));
+    await userEvent.click(await screen.findByRole("button", { name: /open source b/i }));
+    expect(await screen.findByText("content of B")).toBeInTheDocument();
+
+    // A's superseded request rejects late — it must not clobber B's content.
+    rejectA(new Error("A failed after being superseded"));
+    await Promise.resolve();
+    expect(screen.getByText("content of B")).toBeInTheDocument();
+  });
+
+  test("closing the viewer discards a late-rejecting content fetch instead of writing a stale error over the source list", async () => {
+    const mkSource = (id: string, title: string) => ({
+      id,
+      video_id: `BV${id}`,
+      platform: "bilibili",
+      title,
+      cover_url: null,
+      source_url: `https://www.bilibili.com/video/BV${id}`,
+      duration_seconds: 600,
+      uploader: "",
+      language: null,
+      processed_at: "2026-03-31T20:00:00Z",
+    });
+    state.sources = [mkSource("src-A", "Source A"), mkSource("src-B", "Source B")];
+    makeMockFetch();
+    vi.mocked(api.listSources).mockResolvedValue([...state.sources]);
+    vi.mocked(api.getSourceSections).mockResolvedValue([]);
+
+    // Source A's content stays pending until we reject it after the close.
+    let rejectA!: (e: unknown) => void;
+    const aPending = new Promise((_resolve, reject) => {
+      rejectA = reject;
+    });
+    vi.mocked(api.getSource).mockImplementation(
+      (id: string) => aPending as ReturnType<typeof api.getSource>,
+    );
+
+    const router = createMemoryRouter(routes, { initialEntries: ["/lists/list-1"] });
+    render(withRouter(router));
+    await screen.findByRole("heading", { name: /sources/i });
+
+    // Open A (content pending), then close back to the source list.
+    await userEvent.click(await screen.findByRole("button", { name: /open source a/i }));
+    await userEvent.click(await screen.findByRole("button", { name: /close viewer/i }));
+    expect(await screen.findByRole("button", { name: /open source a/i })).toBeInTheDocument();
+
+    // A's abandoned request rejects late (network error, not an abort). The
+    // obsolete failure must not replace the reloaded list with a page error.
+    rejectA(new Error("A failed after the viewer was closed"));
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(screen.getByRole("button", { name: /open source a/i })).toBeInTheDocument();
+    expect(screen.queryByText("A failed after the viewer was closed")).not.toBeInTheDocument();
   });
 
   test("deleting a source removes it from the chat scope", async () => {

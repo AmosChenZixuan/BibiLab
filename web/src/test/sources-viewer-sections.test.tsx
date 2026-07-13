@@ -41,7 +41,6 @@ function makeContent(id: string, title: string): SourceContent {
     processed_at: "2026-01-01T00:00:00Z",
     cover_url: null,
     transcript: "transcript text",
-    settings_snapshot: {},
   };
 }
 

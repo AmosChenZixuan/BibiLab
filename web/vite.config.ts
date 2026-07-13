@@ -19,10 +19,6 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api/, ""),
       },
-      "/proxy": {
-        target: "http://127.0.0.1:8765",
-        changeOrigin: true,
-      },
     },
   },
 });

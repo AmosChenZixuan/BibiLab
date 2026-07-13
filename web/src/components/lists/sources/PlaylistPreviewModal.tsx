@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { IngestVideoIn, PreviewVideo, VideoStatus } from "@/lib/types";
-import { formatDuration, proxyCoverUrl } from "@/lib/utils";
+import { proxyCoverUrl } from "@/lib/utils";
+import { formatMediaTimestamp } from "@/lib/chat-utils";
 import { Modal } from "@/components/ui/Modal";
 import { Spinner } from "@/components/ui/Spinner";
 import { StatusChip } from "@/components/ui/StatusChip";
@@ -70,7 +71,7 @@ function VideoRow({
           <span>·</span>
           <span>{video.uploader}</span>
           <span>·</span>
-          <span>{formatDuration(video.duration_seconds)}</span>
+          <span>{formatMediaTimestamp(video.duration_seconds)}</span>
           {isProcessed && (
             <StatusChip status={STATUS_CHIP_MAP[video.status as Exclude<VideoStatus, "new">]}>
               {t(STATUS_LABEL_KEY[video.status as Exclude<VideoStatus, "new">])}

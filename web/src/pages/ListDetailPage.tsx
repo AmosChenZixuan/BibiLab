@@ -121,6 +121,9 @@ export function ListDetailPage() {
     currentSourceIdRef.current = source.id;
     setDetailSource(source);
     setSourceContent(null);
+    // Opening a source is a fresh attempt — drop any stale page error (a prior
+    // source's load failure, a save failure) so it can't hide the new viewer.
+    setLoadError(null);
     setTargetSection(
       opts?.sectionId || opts?.timestampStart != null
         ? { sectionId: opts.sectionId, timestampStart: opts.timestampStart }
@@ -134,9 +137,25 @@ export function ListDetailPage() {
     void api.getSource(source.id, { signal: controller.signal }).then((content) => {
       if (currentSourceIdRef.current !== source.id) return;
       setSourceContent(content ?? null);
-    }).catch(() => {
+    }).catch((err) => {
+      // A superseded (aborted) load rejecting late must not null the content
+      // the current source just set — guard on the ref like the success path.
+      if (err instanceof Error && err.name === "AbortError") return;
+      if (currentSourceIdRef.current !== source.id) return;
       setSourceContent(null);
+      setLoadError(toErrorMessageWithT(err, tRef.current));
     });
+  }
+
+  function handleCloseSource() {
+    // Abandon any in-flight content fetch and drop the ref so a late rejection
+    // can't write a stale error over the source list the close reloads.
+    openSourceControllerRef.current?.abort();
+    currentSourceIdRef.current = null;
+    setDetailSource(null);
+    // Clear the citation jump target so the next open (e.g. via the sources
+    // list) lands on section 0 instead of the previous click's cited section.
+    setTargetSection(null);
   }
 
   // Buffer a chat message from the digest chip; ChatPanel picks it up
@@ -209,13 +228,7 @@ export function ListDetailPage() {
               type="button"
               onClick={
                 detailSource
-                  ? () => {
-                      setDetailSource(null);
-                      // Clear the citation jump target so the next open
-                      // (e.g. via the sources list) lands on section 0
-                      // instead of the previous click's cited section.
-                      setTargetSection(null);
-                    }
+                  ? handleCloseSource
                   : () => setSourcesCollapsed((v) => !v)
               }
               aria-label={detailSource ? t("lists.aria.closeViewer") : sourcesCollapsed ? t("lists.aria.expandSources") : t("lists.aria.collapseSources")}

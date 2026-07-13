@@ -81,7 +81,7 @@ export function ArtifactList({ listId, artifacts, onArtifactsChange, onViewArtif
       const result = await api.getArtifactContent(artifactId);
       if (!result) return;
       const artifact = artifacts.find((a) => a.id === artifactId);
-      const filename = artifact ? `${artifact.name}.md` : "artifact.md";
+      const filename = artifact ? `${artifact.name || artifact.type}.md` : "artifact.md";
       downloadTextFile(filename, result.content);
     } catch {
       // Silent failure - card stays
@@ -89,7 +89,7 @@ export function ArtifactList({ listId, artifacts, onArtifactsChange, onViewArtif
   }, [artifacts]);
 
   const handleRename = useCallback((artifactId: string, name: string) => {
-    let previousName: string | undefined;
+    let previousName: string | null | undefined;
     onArtifactsChange((prev) => {
       const artifact = prev.find((a) => a.id === artifactId);
       if (!artifact) return prev;
@@ -98,7 +98,7 @@ export function ArtifactList({ listId, artifacts, onArtifactsChange, onViewArtif
     });
     void api.updateArtifact(artifactId, { name }).catch(() => {
       onArtifactsChange((prev) =>
-        prev.map((a) => (a.id === artifactId ? { ...a, name: previousName ?? a.name } : a)),
+        prev.map((a) => (a.id === artifactId ? { ...a, name: previousName !== undefined ? previousName : a.name } : a)),
       );
     });
   }, [onArtifactsChange]);

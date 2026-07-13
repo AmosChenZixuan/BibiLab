@@ -1,5 +1,6 @@
 import { Thumbnail } from "@/components/ui/Thumbnail";
-import { formatDuration, localCoverUrl, proxyCoverUrl } from "@/lib/utils";
+import { localCoverUrl, proxyCoverUrl } from "@/lib/utils";
+import { formatMediaTimestamp } from "@/lib/chat-utils";
 
 export function Banner({
   source,
@@ -12,7 +13,7 @@ export function Banner({
   uploader: string;
   durationSeconds: number;
 }) {
-  const durationLabel = formatDuration(durationSeconds);
+  const durationLabel = formatMediaTimestamp(durationSeconds);
 
   const thumbnail = (
     <div className="relative h-64 w-full overflow-hidden rounded-xl bg-border">
