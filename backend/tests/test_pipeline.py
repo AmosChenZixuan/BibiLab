@@ -628,7 +628,7 @@ def test_build_initial_prompt_includes_zh_lang_instruction():
     from unittest.mock import MagicMock
 
     from bibilab.config import AIConfig
-    from bibilab.worker import _build_initial_prompt
+    from bibilab.pipeline.artifact_refine import _build_initial_prompt
 
     cfg = MagicMock()
     cfg.ai = AIConfig(
@@ -655,7 +655,7 @@ def test_build_initial_prompt_includes_en_lang_instruction():
     from unittest.mock import MagicMock
 
     from bibilab.config import AIConfig
-    from bibilab.worker import _build_initial_prompt
+    from bibilab.pipeline.artifact_refine import _build_initial_prompt
 
     cfg = MagicMock()
     cfg.ai = AIConfig(
@@ -682,7 +682,7 @@ def test_build_initial_prompt_unknown_lang_falls_back_to_english():
     from unittest.mock import MagicMock
 
     from bibilab.config import AIConfig
-    from bibilab.worker import _build_initial_prompt
+    from bibilab.pipeline.artifact_refine import _build_initial_prompt
 
     cfg = MagicMock()
     cfg.ai = AIConfig(
