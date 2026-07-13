@@ -1,5 +1,6 @@
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { useState } from "react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
 import { LanguageProvider } from "@/app/LanguageContext";
@@ -508,6 +509,124 @@ describe("chat panel — conversation history", () => {
     enqueue('data: {"type":"delta","content":" continues"}\n\n');
     await waitFor(() => expect(screen.getByText("streaming answer continues")).toBeInTheDocument());
     expect(screen.getByText("live question")).toBeInTheDocument();
+  });
+
+  test("a history load resolving after stream completion does not clobber the finished turn", async () => {
+    const { response, enqueue, close } = makeOpenSseStream();
+    let conversationCalls = 0;
+    let resolveSecond: ((r: Response) => void) | null = null;
+    mockFetch((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes("/chat") && init?.method === "POST") {
+        return Promise.resolve(response);
+      }
+      if (url.includes("/conversation")) {
+        conversationCalls += 1;
+        if (conversationCalls === 1) {
+          return Promise.resolve(new Response(JSON.stringify({ conversation: null, messages: [] })));
+        }
+        return new Promise<Response>((res) => {
+          resolveSecond = res;
+        });
+      }
+      return Promise.resolve(new Response(JSON.stringify([])));
+    });
+
+    const ui = (ids: string[]) => (
+      <LanguageProvider>
+        <JobActivityProvider>
+          <ChatPanel selectedSourceIds={ids} sources={[SOURCE_1]} listId="list-1" />
+        </JobActivityProvider>
+      </LanguageProvider>
+    );
+    const { rerender } = render(ui(["src-1"]));
+
+    const textarea = await waitFor(() => {
+      const el = screen.getByRole("textbox");
+      expect(el).not.toBeDisabled();
+      return el;
+    });
+    await userEvent.type(textarea, "live question");
+    await userEvent.keyboard("{Enter}");
+    enqueue('data: {"type":"meta","message_id":"srv-1"}\n\n');
+    enqueue('data: {"type":"delta","content":"final answer"}\n\n');
+    await waitFor(() => expect(screen.getByText("final answer")).toBeInTheDocument());
+
+    // Deselect-all → reselect mid-stream issues a stale fetch (server still
+    // has srv-1 active), then the stream COMPLETES before that fetch resolves.
+    rerender(ui([]));
+    rerender(ui(["src-1"]));
+    await waitFor(() => expect(resolveSecond).not.toBeNull());
+    enqueue('data: {"type":"done"}\n\n');
+    close();
+    await waitFor(() => expect(screen.getByRole("button", { name: /send/i })).toBeInTheDocument());
+
+    // The stale snapshot predates the persisted turn but still carries the
+    // active stream id — it must not replace the finished turn we hold.
+    resolveSecond!(
+      new Response(
+        JSON.stringify({
+          conversation: { id: "conv-1", list_id: "list-1", summary: null, active_stream_message_id: "srv-1", created_at: "2026-04-01T00:00:00Z", updated_at: "2026-04-01T00:00:00Z" },
+          messages: [
+            { id: "old-1", role: "user", content: "old question", metadata: null, created_at: "2026-04-01T10:00:00Z" },
+          ],
+        }),
+      ),
+    );
+
+    await waitFor(() => expect(screen.queryByText("old question")).toBeNull());
+    expect(screen.getByText("final answer")).toBeInTheDocument();
+    expect(screen.getByText("live question")).toBeInTheDocument();
+  });
+
+  test("a chip message queued during history load is sent after load, not dropped", async () => {
+    let chatPosted = false;
+    let resolveHistory: ((r: Response) => void) | null = null;
+    mockFetch((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes("/chat") && init?.method === "POST") {
+        chatPosted = true;
+        return Promise.resolve(makeSseStream(['data: {"type":"done"}\n\n']));
+      }
+      if (url.includes("/conversation")) {
+        return new Promise<Response>((res) => {
+          resolveHistory = res;
+        });
+      }
+      return Promise.resolve(new Response(JSON.stringify([])));
+    });
+
+    function Harness() {
+      const [pending, setPending] = useState<{ text: string; nonce: number; sourceIds: string[] } | null>(null);
+      return (
+        <LanguageProvider>
+          <JobActivityProvider>
+            <button type="button" onClick={() => setPending({ text: "discuss X", nonce: 1, sourceIds: ["src-1"] })}>
+              queue chip
+            </button>
+            <ChatPanel
+              selectedSourceIds={["src-1"]}
+              sources={[SOURCE_1]}
+              listId="list-1"
+              pendingMessage={pending}
+              onPendingMessageConsumed={() => setPending(null)}
+            />
+          </JobActivityProvider>
+        </LanguageProvider>
+      );
+    }
+    render(<Harness />);
+
+    // Wait until the history fetch is in flight (isLoadingHistory is true), then
+    // queue the chip message — the real sequence is chip-click during load.
+    await waitFor(() => expect(resolveHistory).not.toBeNull());
+    await userEvent.click(screen.getByRole("button", { name: /queue chip/i }));
+    // Must not post while loading…
+    expect(chatPosted).toBe(false);
+
+    // …and must not be silently dropped: once load settles it auto-sends.
+    resolveHistory!(new Response(JSON.stringify({ conversation: null, messages: [] })));
+    await waitFor(() => expect(chatPosted).toBe(true));
   });
 
   test("message list dims to 50% opacity while clear popover is open", async () => {
