@@ -38,10 +38,22 @@ export function ListDetailPage() {
   const tRef = useRef(t);
   tRef.current = t;
 
-  // Default chat scope: all sources. Unconditional so deleting the last
-  // source also clears the selection (a stale id must never reach chat).
+  // Reconcile chat scope with the current sources instead of resetting to all:
+  // prune deleted ids (a stale id must never reach chat, and deleting the last
+  // source clears the selection), keep the user's selection of survivors (so an
+  // ingest or a poll doesn't wipe a partial selection), and default genuinely
+  // new sources into scope (matching "new content is chattable by default").
+  const knownSourceIdsRef = useRef<Set<string>>(new Set());
   useEffect(() => {
-    setSelectedSourceIds(sources.map((s) => s.id));
+    const currentIds = sources.map((s) => s.id);
+    const currentIdSet = new Set(currentIds);
+    const known = knownSourceIdsRef.current;
+    knownSourceIdsRef.current = currentIdSet;
+    setSelectedSourceIds((prev) => {
+      const kept = prev.filter((id) => currentIdSet.has(id));
+      const added = currentIds.filter((id) => !known.has(id) && !kept.includes(id));
+      return added.length === 0 && kept.length === prev.length ? prev : [...kept, ...added];
+    });
   }, [sources]);
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -54,8 +66,16 @@ export function ListDetailPage() {
 
   const currentSourceIdRef = useRef<string | null>(null);
   const openSourceControllerRef = useRef<AbortController | null>(null);
+  const loadControllerRef = useRef<AbortController | null>(null);
 
-  const load = useCallback(async (signal?: AbortSignal) => {
+  const load = useCallback(async () => {
+    // Coordinate concurrent refreshes (mount, delete, ingest-done, viewer
+    // close): each load aborts the in-flight one, so an out-of-order response
+    // can't clobber fresh state with a stale (or transiently empty) snapshot.
+    loadControllerRef.current?.abort();
+    const controller = new AbortController();
+    loadControllerRef.current = controller;
+    const { signal } = controller;
     try {
       const [lists, nextSources, nextArtifacts] = await Promise.all([
         api.listLists({ signal }),
@@ -74,9 +94,8 @@ export function ListDetailPage() {
   }, [listId]);
 
   useEffect(() => {
-    const controller = new AbortController();
-    void load(controller.signal);
-    return () => controller.abort();
+    void load();
+    return () => loadControllerRef.current?.abort();
   }, [load]);
 
   const prevDetailSourceRef = useRef<Source | null>(null);
@@ -232,7 +251,7 @@ export function ListDetailPage() {
                   sources={sources}
                   selectedSourceIds={selectedSourceIds}
                   onSelectedSourcesChange={setSelectedSourceIds}
-                  onRefresh={() => void load()}
+                  onRefresh={load}
                   onOpenSource={handleOpenSource}
                 />
               )}

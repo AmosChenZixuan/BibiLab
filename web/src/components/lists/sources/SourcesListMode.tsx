@@ -191,7 +191,7 @@ export function SourcesListMode({
   sources: Source[];
   selectedSourceIds: string[];
   onSelectedSourcesChange: (ids: string[]) => void;
-  onRefresh: () => void;
+  onRefresh: () => void | Promise<void>;
   onOpenSource: (source: Source) => void;
 }) {
   const { t } = useLanguage();
@@ -470,8 +470,13 @@ export function SourcesListMode({
   );
 
   const handleDelete = useCallback(async (source: Source) => {
-    await run(source.id, () => api.deleteSource(listId, source.id));
-    onRefresh();
+    // Refresh inside the pending window so the row stays dimmed until the
+    // reload drops it — otherwise it flashes back to full opacity (still
+    // present in `sources`) between the delete resolving and the reload landing.
+    await run(source.id, async () => {
+      await api.deleteSource(listId, source.id);
+      await onRefresh();
+    });
   }, [listId, run, onRefresh]);
 
   const handleQrModalSuccess = useCallback(() => {
