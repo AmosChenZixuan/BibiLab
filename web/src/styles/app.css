@@ -107,7 +107,7 @@
   }
 
   /* Inter-paragraph gap inside a streamed answer. Each .citation-paragraph is
-     emitted by renderParagraphs() (ChatPanel.tsx); the + adjacent-sibling
+     emitted by renderParagraphs() (ChatMarkdown.tsx); the + adjacent-sibling
      combinator matches all but the first, restoring the 0.75em rhythm. */
   .citation-paragraph + .citation-paragraph {
     margin-top: 0.75em;

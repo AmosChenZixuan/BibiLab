@@ -412,7 +412,7 @@ describe("chat panel", () => {
   });
 
   test("CITE_TOKEN_RE split handles edge cases", async () => {
-    const { CITE_TOKEN_RE: RE } = await import("@/components/lists/ChatPanel");
+    const { CITE_TOKEN_RE: RE } = await import("@/components/lists/ChatMarkdown");
 
     // Adjacent tokens
     expect("​⁣CITE0⁣​​⁣CITE1⁣​".split(RE)).toEqual(["", "0", "", "1", ""]);
