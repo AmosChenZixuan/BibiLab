@@ -965,14 +965,17 @@ class WorkerLoop:
         """If the job is cancelled, purge its artifacts, delete it, and report
         True so the caller stops. Safe to call more than once within a stage.
 
-        Takes the full job dict — cleanup_job_artifacts early-returns on a
-        dict without type/meta, so an id-only snapshot would purge nothing."""
+        Caller must pass the full job dict: cleanup_job_artifacts is a no-op
+        unless the job has type "ingest" and a parseable meta.video_id, so an
+        id-only snapshot would purge nothing. Discard the tracking flag only
+        after the delete lands — if cleanup or delete raises, the flag stays
+        set and the row is still marked failed by _run_job's handler."""
         job_id = job["id"]
         if job_id not in self._cancelled:
             return False
-        self._cancelled.discard(job_id)
         await asyncio.to_thread(cleanup_job_artifacts, job)
         await delete_job(job_id)
+        self._cancelled.discard(job_id)
         return True
 
     async def _stage_download(
