@@ -87,7 +87,7 @@ describe("ReportsModal", () => {
     await userEvent.click(briefBtn);
 
     // Submit
-    const submitBtn = screen.getByRole("button", { name: /submit/i });
+    const submitBtn = screen.getByRole("button", { name: /generate/i });
     await userEvent.click(submitBtn);
 
     await waitFor(() => {
@@ -112,7 +112,7 @@ describe("ReportsModal", () => {
     await userEvent.type(textarea, "Give me a detailed analysis");
 
     // Submit
-    const submitBtn = screen.getByRole("button", { name: /submit/i });
+    const submitBtn = screen.getByRole("button", { name: /generate/i });
     await userEvent.click(submitBtn);
 
     await waitFor(() => {

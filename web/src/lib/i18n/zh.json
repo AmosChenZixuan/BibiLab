@@ -38,6 +38,8 @@
     "modelRequired": "必填。未选择模型会导致摘要和聊天生成失败。",
     "apiKey": "API 密钥",
     "apiKeyRequired": "托管提供商必填。凭据缺失会导致远程推理失败。",
+    "hideApiKey": "隐藏 API 密钥",
+    "revealApiKey": "显示 API 密钥",
     "baseUrl": "基础 URL",
     "protocolOpenai": "OpenAI 兼容",
     "protocolAnthropic": "Anthropic 兼容",
@@ -99,7 +101,9 @@
     "mindMapViewer": {
       "zoomIn": "放大",
       "zoomOut": "缩小",
-      "resetView": "重置视图"
+      "resetView": "重置视图",
+      "expandNode": "展开 %{label}",
+      "collapseNode": "折叠 %{label}"
     },
     "mindMap": {
       "discuss": "讨论 %{topic}",
@@ -117,10 +121,12 @@
       "viewSources": "查看 %{count} 个来源",
       "sources": "来源",
       "deletedSource": "已删除的来源",
-      "close": "关闭"
+      "close": "关闭",
+      "copyMarkdown": "复制 Markdown"
     },
     "artifactCard": {
       "open": "打开",
+      "options": "报告选项",
       "rename": "重命名",
       "download": "下载",
       "viewPrompt": "查看提示词",
@@ -209,6 +215,19 @@
         "inProgress": "处理中",
         "needsAuth": "需要认证"
       }
+    },
+    "aria": {
+      "selectSource": "选择%{title}",
+      "openSource": "打开%{title}",
+      "sourceOptions": "来源选项",
+      "cancelIngestion": "取消导入",
+      "addSource": "添加来源",
+      "closeViewer": "关闭查看器",
+      "expandSources": "展开来源面板",
+      "collapseSources": "收起来源面板",
+      "digestOptions": "摘要选项",
+      "listActions": "列表 %{name} 的操作",
+      "openList": "打开%{name}"
     }
   },
   "jobs": {
@@ -332,6 +351,7 @@
   },
   "common": {
     "cancel": "取消",
+    "close": "关闭",
     "delete": "删除",
     "deleting": "删除中...",
     "save": "保存",

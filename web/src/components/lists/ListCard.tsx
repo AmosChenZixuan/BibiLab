@@ -71,7 +71,7 @@ export function ListCard({ list, onRename, onChangeThumbnail, onDelete }: Props)
         trigger={({ open, toggle, triggerRef }) => (
           <button
             aria-expanded={open}
-            aria-label={`List actions for ${list.name}`}
+            aria-label={t("lists.aria.listActions", { name: list.name })}
             className={`absolute top-2 right-2 z-10 inline-flex h-7 w-7 items-center justify-center rounded-full border-0 text-white transition ${
               open ? "bg-white/90 text-ink" : "bg-white/20 opacity-100 md:opacity-0 md:group-hover:opacity-100"
             }`}
@@ -89,7 +89,7 @@ export function ListCard({ list, onRename, onChangeThumbnail, onDelete }: Props)
       />
 
       <button
-        aria-label={`Open ${list.name}`}
+        aria-label={t("lists.aria.openList", { name: list.name })}
         className="absolute inset-0 border-0 bg-transparent p-0 text-left"
         onClick={() => navigate(`/lists/${list.id}`)}
         type="button"

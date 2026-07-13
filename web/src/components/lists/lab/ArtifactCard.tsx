@@ -76,7 +76,7 @@ export function ArtifactCard({
           <button
             type="button"
             onClick={() => onDismiss(artifact.id)}
-            aria-label="Dismiss"
+            aria-label={t("jobs.dismiss")}
             className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-muted transition hover:bg-border hover:text-ink"
           >
             <X size={14} />
@@ -184,7 +184,7 @@ export function ArtifactCard({
           <button
             ref={triggerRef}
             type="button"
-            aria-label="Artifact options"
+            aria-label={t("lab.artifactCard.options")}
             onClick={toggle}
             disabled={isDeleting}
             className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-muted transition ${isDeleting ? "opacity-40" : "opacity-0 group-hover:opacity-100 hover:bg-border hover:text-ink"}`}

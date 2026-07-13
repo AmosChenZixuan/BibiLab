@@ -218,7 +218,7 @@ export function ListDetailPage() {
                     }
                   : () => setSourcesCollapsed((v) => !v)
               }
-              aria-label={detailSource ? "Close viewer" : sourcesCollapsed ? "Expand sources" : "Collapse sources"}
+              aria-label={detailSource ? t("lists.aria.closeViewer") : sourcesCollapsed ? t("lists.aria.expandSources") : t("lists.aria.collapseSources")}
               className={`flex h-7 w-7 items-center justify-center rounded-full text-muted transition hover:bg-border hover:text-ink ${sourcesCollapsed ? "mx-auto" : ""}`}
             >
               {detailSource ? <Minimize2 size={16} /> : (sourcesCollapsed ? <ArrowRightToLine size={16} /> : <ArrowLeftToLine size={16} />)}

@@ -36,13 +36,13 @@ export default function IdentityPanel({
       <button
         type="button"
         className="fixed inset-0 z-float border-0 bg-transparent"
-        aria-label="Close"
+        aria-label={t("common.close")}
         onClick={onClose}
       />
       <div
         className="fixed right-4 top-14 z-float min-w-56 rounded-xl border border-border bg-white/96 p-3 shadow-lg backdrop-blur-md md:right-6 xl:right-12"
         role="menu"
-        aria-label="Identity"
+        aria-label={t("navbar.identity")}
       >
         <div className="flex flex-col gap-1">
           {PLATFORMS.map((platform) => {
@@ -73,7 +73,7 @@ export default function IdentityPanel({
                     className={`absolute -bottom-0.5 -right-0.5 size-3 rounded-full border-2 border-white ${
                       isSignedIn ? "bg-green-400" : "bg-gray-300"
                     }`}
-                    aria-label={isSignedIn ? "Signed in" : "Not signed in"}
+                    aria-label={isSignedIn ? t("navbar.signedIn") : t("navbar.signedOut")}
                   />
                 </div>
 

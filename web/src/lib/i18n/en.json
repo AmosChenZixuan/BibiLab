@@ -38,6 +38,8 @@
     "modelRequired": "Required. Missing model selection breaks summary and chat generation.",
     "apiKey": "API Key",
     "apiKeyRequired": "Required for hosted providers. Missing credentials break remote inference.",
+    "hideApiKey": "Hide API key",
+    "revealApiKey": "Reveal API key",
     "baseUrl": "Base URL",
     "protocolOpenai": "OpenAI-compatible",
     "protocolAnthropic": "Anthropic-compatible",
@@ -99,7 +101,9 @@
     "mindMapViewer": {
       "zoomIn": "Zoom in",
       "zoomOut": "Zoom out",
-      "resetView": "Reset view"
+      "resetView": "Reset view",
+      "expandNode": "Expand %{label}",
+      "collapseNode": "Collapse %{label}"
     },
     "mindMap": {
       "discuss": "Discuss %{topic}",
@@ -117,10 +121,12 @@
       "viewSources": "View %{count} sources",
       "sources": "Sources",
       "deletedSource": "Deleted source",
-      "close": "Close"
+      "close": "Close",
+      "copyMarkdown": "Copy markdown"
     },
     "artifactCard": {
       "open": "Open",
+      "options": "Artifact options",
       "rename": "Rename",
       "download": "Download",
       "viewPrompt": "View Prompt",
@@ -209,6 +215,19 @@
         "inProgress": "In progress",
         "needsAuth": "Needs auth"
       }
+    },
+    "aria": {
+      "selectSource": "Select %{title}",
+      "openSource": "Open %{title}",
+      "sourceOptions": "Source options",
+      "cancelIngestion": "Cancel ingestion",
+      "addSource": "Add source",
+      "closeViewer": "Close viewer",
+      "expandSources": "Expand sources",
+      "collapseSources": "Collapse sources",
+      "digestOptions": "Digest options",
+      "listActions": "List actions for %{name}",
+      "openList": "Open %{name}"
     }
   },
   "jobs": {
@@ -332,6 +351,7 @@
   },
   "common": {
     "cancel": "Cancel",
+    "close": "Close",
     "delete": "Delete",
     "deleting": "Deleting...",
     "save": "Save",
