@@ -142,7 +142,7 @@ cd ..
 
 # 3. Web (dev mode — picks up HMR)
 cd web
-npm install
+npm ci                            # strict install from package-lock.json, same as CI
 npm run dev                       # Vite on :5173, proxies /api & /proxy → :8765
 ```
 

@@ -134,7 +134,7 @@ cd ..
 
 # 3. Web(开发模式 —— 支持热更新 HMR)
 cd web
-npm install
+npm ci                            # 严格按 package-lock.json 安装,与 CI 一致
 npm run dev                       # Vite 跑在 :5173,把 /api 与 /proxy 代理到 :8765
 ```
 

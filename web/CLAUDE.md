@@ -5,7 +5,8 @@ React + TypeScript SPA. Managed with `npm`.
 ## Commands
 
 ```bash
-npm install              # Install frontend dependencies
+npm ci                   # Install frontend dependencies (strict, from lockfile — same as CI)
+npm install <pkg>        # Add/upgrade a dep; commit the updated package-lock.json
 npm run dev              # Start Vite dev server on :5173
 npm run build            # Production build to web/dist
 npm run test             # Frontend test suite
