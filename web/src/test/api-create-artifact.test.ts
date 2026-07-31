@@ -48,7 +48,7 @@ describe("ListsClient.createArtifact", () => {
   });
 
   test("createArtifact returns Promise<Job>", async () => {
-    const fetchMock = mockFetch(async () =>
+    mockFetch(async () =>
       Response.json(
         {
           id: "job-456",

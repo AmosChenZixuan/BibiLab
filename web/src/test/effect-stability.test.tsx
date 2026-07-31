@@ -6,7 +6,7 @@
  * re-fire unnecessarily (including data fetches).
  */
 import { render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, test, vi } from "vitest";
+import { afterEach, expect, test, vi } from "vitest";
 
 import { MemoryRouter } from "react-router-dom";
 

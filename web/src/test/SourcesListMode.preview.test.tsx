@@ -76,10 +76,10 @@ function makeFailedIngestJob(overrides: Partial<IngestJob> = {}): IngestJob {
 
 vi.mock("@/lib/api", async () => {
   const { createMockApi } = await import("@/test/utils");
-  const mockPreviewPlaylist = vi.fn((listId: string, url: string) => {
+  const mockPreviewPlaylist = vi.fn((_listId: string, _url: string) => {
     return Promise.resolve(state.previewResponse ?? { videos: [] });
   });
-  const mockPreviewPlaylistMetadata = vi.fn((videoIds: string[], platform: string) => {
+  const mockPreviewPlaylistMetadata = vi.fn((_videoIds: string[], _platform: string) => {
     return Promise.resolve(
       state.metadataResponse ?? { videos: {}, expanded: {} },
     );

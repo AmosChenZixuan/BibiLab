@@ -1,7 +1,7 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, test } from "vitest";
-import { nameToPastelIndex, PASTEL_COLORS, ListCard } from "@/components/lists/ListCard";
+import { nameToPastelIndex, ListCard } from "@/components/lists/ListCard";
 import { LanguageProvider } from "@/app/LanguageContext";
 import { LANG_STORAGE_KEY } from "@/lib/utils";
 import { BibilabList } from "@/lib/types";

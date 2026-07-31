@@ -2,7 +2,7 @@ import { act, render, screen, fireEvent, cleanup } from "@testing-library/react"
 import { afterEach, describe, expect, test, vi } from "vitest";
 
 import { DigestAccordion } from "@/components/lists/DigestAccordion";
-import { JobActivityProvider, useJobActivity } from "@/components/jobs/JobActivityProvider";
+import { JobActivityProvider } from "@/components/jobs/JobActivityProvider";
 import { LanguageProvider } from "@/app/LanguageContext";
 import { api } from "@/lib/api";
 import { TEST_IDS } from "@/lib/test-ids";
@@ -36,21 +36,6 @@ const DONE_DIGEST_JOB: Job = {
   updated_at: "2026-01-01T00:00:00Z",
   meta: { source_id: "src-1", list_id: "list-1" },
 };
-
-// Forces JobActivityProvider to re-render (via setPanelOpen), which forces
-// DigestAccordion to re-render and re-run its useEffect — same shape as a poll.
-function PanelToggle() {
-  const { setPanelOpen, isPanelOpen } = useJobActivity();
-  return (
-    <button
-      type="button"
-      data-testid="panel-toggle"
-      onClick={() => setPanelOpen(!isPanelOpen)}
-    >
-      toggle
-    </button>
-  );
-}
 
 function withApiMocked() {
   vi.spyOn(api, "listJobs").mockResolvedValue([DONE_DIGEST_JOB]);

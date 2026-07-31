@@ -1,7 +1,7 @@
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
-import { usePanelResize, COLLAPSED_PANEL, DEFAULT_CHAT, MIN_CHAT_PANEL, MIN_PANEL } from "@/components/lists/panel-resize";
+import { usePanelResize, COLLAPSED_PANEL, DEFAULT_CHAT, MIN_PANEL } from "@/components/lists/panel-resize";
 
 // ─── ResizeObserver mock ───────────────────────────────────────────────────
 

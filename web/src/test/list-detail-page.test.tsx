@@ -475,7 +475,7 @@ describe("list detail page", () => {
       rejectA = reject;
     });
     vi.mocked(api.getSource).mockImplementation(
-      (id: string) => aPending as ReturnType<typeof api.getSource>,
+      (_id: string) => aPending as ReturnType<typeof api.getSource>,
     );
 
     const router = createMemoryRouter(routes, { initialEntries: ["/lists/list-1"] });

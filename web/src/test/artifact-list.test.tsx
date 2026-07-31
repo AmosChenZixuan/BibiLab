@@ -1,5 +1,4 @@
 import { screen, waitFor } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
 import { LanguageProvider } from "@/app/LanguageContext";
@@ -40,8 +39,6 @@ vi.mock("@/lib/api", async () => {
     createApiClient: () => mockApi,
   };
 });
-
-import { api } from "@/lib/api";
 
 function renderArtifactList(props?: Partial<React.ComponentProps<typeof ArtifactList>>) {
   return renderWithProviders(
