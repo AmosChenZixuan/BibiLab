@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import type { MessageUI } from "@/components/lists/hooks/useConversationHistory";
-import { formatTimestamp, coerceCitationEvent, type ContentBlock, type PendingRagCall, type RetrievalCall } from "@/lib/chat-utils";
+import { formatTimestamp, coerceCitationEvent, type ContentBlock, type RetrievalCall } from "@/lib/chat-utils";
 import { FIND_PASSAGES_TOOL_NAME, READ_SECTION_TOOL_NAME } from "@/lib/utils";
 import {
   SSE_EVENT_CANCELLED,

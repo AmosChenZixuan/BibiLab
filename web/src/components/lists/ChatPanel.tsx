@@ -34,7 +34,6 @@ import {
   contentBlocksToText,
   formatSubtitle,
   getErrorLabel,
-  type ContentBlock,
   type OpenSourceOpts,
   type PendingChatMessage,
 } from "@/lib/chat-utils";
