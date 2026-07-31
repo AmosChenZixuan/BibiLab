@@ -50,7 +50,7 @@ jobs:
           node-version: "20"
       - name: Install dependencies
         working-directory: web
-        run: npm install
+        run: npm ci
       - name: Build
         working-directory: web
         run: npm run build
@@ -65,7 +65,7 @@ jobs:
           node-version: "20"
       - name: Install dependencies
         working-directory: web
-        run: npm install
+        run: npm ci
       - name: Run tests
         working-directory: web
         run: npm test -- --reporter=default
