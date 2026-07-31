@@ -37,10 +37,9 @@ def build_rag_ledger(
                     s for s in call["section_coverage"] if s.get("section_id") in emitted_section_ids
                 ]
             # One context entry per section left in section_coverage, narrowed or full.
-            # dict.fromkeys de-duplicates in first-appearance order: section_coverage
-            # arrives in rerank order and narrowing preserves it, so context[] — which
-            # is persisted and rendered in array order — stays ranked. A set here would
-            # order by string hash, which Python randomizes per process.
+            # dict.fromkeys de-duplicates in first-appearance order, so context[] keeps
+            # the rerank order section_coverage arrived in (narrowing above preserves it).
+            # A set would order by string hash, which Python randomizes per process.
             section_ids_in_call = dict.fromkeys(s["section_id"] for s in call["section_coverage"])
             context_entries = []
             for sid in section_ids_in_call:
