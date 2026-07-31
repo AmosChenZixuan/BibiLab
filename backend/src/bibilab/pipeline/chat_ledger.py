@@ -17,14 +17,12 @@ def build_rag_ledger(
 ) -> list[dict]:
     """Narrow retrieve coverage to cited sections and rebuild context[] from the registry.
 
-    Mutates the call dicts in place and returns the concatenated ledger
-    (retrieve calls first) in the shape persisted on the message and emitted as
-    the final `rag` SSE event.
+    Call once per turn, after the last delta: `content_blocks` must already
+    hold every citation block the turn emitted, since those are what decides
+    which sections survive. Mutates the call dicts in place and returns the
+    concatenated ledger (retrieve calls first) in the shape persisted on the
+    message and emitted as the final `rag` SSE event.
     """
-    # Narrow section_coverage to only sections whose [N] actually appeared
-    # in assistant text. content_blocks (type: "citation") is fully populated
-    # at this point. Reconstruct context[] from the section-keyed citation
-    # registry for each retrieve call.
     if retrieve_calls:
         emitted_indices = {cb["index"] for cb in content_blocks if cb.get("type") == "citation"}
         if emitted_indices:
@@ -32,13 +30,13 @@ def build_rag_ledger(
         else:
             emitted_section_ids = set()
         for call in retrieve_calls:
-            # Narrow section_coverage only when citations were emitted.
+            # A turn that cited nothing keeps its coverage un-narrowed: filtering
+            # by an empty set would erase a ledger the user can still inspect.
             if emitted_section_ids:
                 call["section_coverage"] = [
                     s for s in call["section_coverage"] if s.get("section_id") in emitted_section_ids
                 ]
-            # Always reconstruct context[] from citation registry.
-            # One entry per section in section_coverage (narrowed or full).
+            # One context entry per section left in section_coverage, narrowed or full.
             section_ids_in_call = {s["section_id"] for s in call["section_coverage"]}
             context_entries = []
             for sid in section_ids_in_call:

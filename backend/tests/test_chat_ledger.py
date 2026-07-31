@@ -8,6 +8,8 @@ that transformation directly, without driving an SSE turn.
 
 from __future__ import annotations
 
+import pytest
+
 from bibilab.pipeline.chat_ledger import build_rag_ledger
 from bibilab.pipeline.chat_tools import CitationRegistryEntry
 
@@ -41,33 +43,24 @@ def _citation_block(index: int) -> dict:
     return {"type": "citation", "index": index}
 
 
-def test_no_citations_leaves_coverage_intact_and_still_rebuilds_context():
+@pytest.mark.parametrize(
+    "content_blocks",
+    [[], [{"type": "text", "text": "no citations here"}]],
+    ids=["no-blocks", "text-only-blocks"],
+)
+def test_no_citations_leaves_coverage_intact_and_still_rebuilds_context(content_blocks):
     call = _retrieve_call("1", "2", "3")
     registry = {"1": _entry("1", 1), "2": _entry("2", 2), "3": _entry("3", 3)}
 
     calls = build_rag_ledger(
         retrieve_calls=[call],
         read_section_calls=[],
-        content_blocks=[{"type": "text", "text": "no citations here"}],
+        content_blocks=content_blocks,
         citation_registry=registry,
     )
 
     assert [s["section_id"] for s in calls[0]["section_coverage"]] == ["1", "2", "3"]
     assert {c["section_id"] for c in calls[0]["context"]} == {"1", "2", "3"}
-
-
-def test_empty_content_blocks_leaves_coverage_intact():
-    call = _retrieve_call("1", "2")
-
-    calls = build_rag_ledger(
-        retrieve_calls=[call],
-        read_section_calls=[],
-        content_blocks=[],
-        citation_registry={"1": _entry("1", 1), "2": _entry("2", 2)},
-    )
-
-    assert [s["section_id"] for s in calls[0]["section_coverage"]] == ["1", "2"]
-    assert len(calls[0]["context"]) == 2
 
 
 def test_partial_citations_narrow_coverage_to_the_cited_subset():
@@ -110,6 +103,27 @@ def test_all_cited_keeps_coverage_and_rebuilds_every_registry_field():
         "rerank_score": 2.5,
         "preview": "preview 2",
     }
+
+
+def test_parallel_retrieve_calls_share_one_emitted_set():
+    # Subject decomposition issues several find_passages calls in one turn. A
+    # citation earned by one call still narrows every other call's coverage —
+    # the emitted set is turn-wide, not per-call.
+    call_a = _retrieve_call("1", "2")
+    call_b = _retrieve_call("3", "4")
+    registry = {str(i): _entry(str(i), i) for i in (1, 2, 3, 4)}
+
+    calls = build_rag_ledger(
+        retrieve_calls=[call_a, call_b],
+        read_section_calls=[],
+        content_blocks=[_citation_block(2)],
+        citation_registry=registry,
+    )
+
+    assert [s["section_id"] for s in calls[0]["section_coverage"]] == ["2"]
+    assert calls[1]["section_coverage"] == []
+    assert [c["section_id"] for c in calls[0]["context"]] == ["2"]
+    assert calls[1]["context"] == []
 
 
 def test_covered_section_absent_from_registry_is_skipped_in_context():
