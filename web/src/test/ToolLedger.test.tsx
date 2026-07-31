@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, test } from "vitest";
 import { cleanup, screen } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 
 import { LanguageProvider } from "@/app/LanguageContext";
 import { ToolLedger } from "@/components/lists/ToolLedger";

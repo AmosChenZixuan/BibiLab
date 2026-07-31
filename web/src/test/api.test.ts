@@ -126,7 +126,7 @@ describe("toErrorMessageWithT", () => {
 
 describe("api.getConfig", () => {
   test("getConfig returns username and avatar_url for bilibili account", async () => {
-    const fetchMock = mockFetch(async () =>
+    mockFetch(async () =>
       Response.json({
         accounts: {
           bilibili: {

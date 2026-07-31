@@ -1,4 +1,4 @@
-import { ReactNode, Ref, useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { ReactNode, Ref, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 type ContextMenuItem = {
@@ -41,7 +41,6 @@ function closeAllOtherMenus(currentClose: () => void) {
 }
 
 export function ContextMenu({ items, trigger }: ContextMenuProps) {
-  const menuId = useId();
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
   const [open, setOpen] = useState(false);

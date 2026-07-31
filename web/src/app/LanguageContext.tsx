@@ -39,7 +39,7 @@ function interpolate(template: string, params?: Record<string, string | number>)
 const LanguageContext = createContext<LanguageContextValue>({
   lang: "en",
   setLang: () => {},
-  t: (key: string, params?: Record<string, string | number>) => key,
+  t: (key: string, _params?: Record<string, string | number>) => key,
 });
 
 export function LanguageProvider({ children }: { children: ReactNode }) {

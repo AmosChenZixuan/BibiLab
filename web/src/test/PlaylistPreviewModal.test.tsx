@@ -197,7 +197,6 @@ describe("PlaylistPreviewModal", () => {
 
   // ── 7. Submit disabled ────────────────────────────────────────────────────
   it("submit disabled when zero selected", async () => {
-    const user = userEvent.setup();
     const videos = [makeVideo({ video_id: "v1" })];
     renderModal(videos);
     const master = masterCheckbox();

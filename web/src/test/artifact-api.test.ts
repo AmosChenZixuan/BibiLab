@@ -32,7 +32,7 @@ describe("api.listArtifacts", () => {
   });
 
   test("returns array of artifacts", async () => {
-    const fetchMock = mockFetch(async () =>
+    mockFetch(async () =>
       Response.json([
         {
           id: "artifact-1",
