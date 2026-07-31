@@ -9,9 +9,9 @@ type ContextMenuItem = {
   disabled?: boolean;
 };
 
-// Everything the trigger button needs to describe the menu it controls. Spread as a whole so a
-// caller cannot wire the ref without the ARIA attributes, or announce an expanded state without
-// naming what expanded. `aria-controls` is omitted while closed because the menu is unmounted.
+// One bag rather than a bare id, so a caller cannot take the ref and skip the ARIA attributes —
+// a half-described trigger is what this replaced. `aria-controls` is dropped while closed
+// because the portal menu is unmounted then, and a dangling IDREF is worse than none.
 type TriggerProps = {
   ref: Ref<HTMLButtonElement>;
   "aria-haspopup": "menu";
