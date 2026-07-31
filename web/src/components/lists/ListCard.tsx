@@ -68,9 +68,9 @@ export function ListCard({ list, onRename, onChangeThumbnail, onDelete }: Props)
 
       <ContextMenu
         items={menuItems}
-        trigger={({ open, toggle, triggerRef }) => (
+        trigger={({ open, toggle, triggerProps }) => (
           <button
-            aria-expanded={open}
+            {...triggerProps}
             aria-label={t("lists.aria.listActions", { name: list.name })}
             className={`absolute top-2 right-2 z-10 inline-flex h-7 w-7 items-center justify-center rounded-full border-0 text-white transition ${
               open ? "bg-white/90 text-ink" : "bg-white/20 opacity-100 md:opacity-0 md:group-hover:opacity-100"
@@ -80,7 +80,6 @@ export function ListCard({ list, onRename, onChangeThumbnail, onDelete }: Props)
               event.stopPropagation();
               toggle();
             }}
-            ref={triggerRef}
             type="button"
           >
             <MoreVertical />

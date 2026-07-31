@@ -112,9 +112,9 @@ export function DigestAccordion({
                   onClick: () => void onRerun(source.id),
                 },
               ]}
-              trigger={({ toggle, triggerRef }) => (
+              trigger={({ toggle, triggerProps }) => (
                 <button
-                  ref={triggerRef}
+                  {...triggerProps}
                   type="button"
                   aria-label={t("lists.aria.digestOptions")}
                   onClick={toggle}

@@ -149,13 +149,8 @@ describe("ContextMenu", () => {
           { label: "Rename", onClick: () => {} },
           { label: "Delete", onClick: onDelete, variant: "danger" },
         ]}
-        trigger={({ open, toggle, triggerRef }) => (
-          <button
-            ref={triggerRef}
-            aria-expanded={open}
-            onClick={toggle}
-            type="button"
-          >
+        trigger={({ toggle, triggerProps }) => (
+          <button {...triggerProps} onClick={toggle} type="button">
             Menu
           </button>
         )}
@@ -175,8 +170,8 @@ describe("ContextMenu", () => {
       return (
         <ContextMenu
           items={[{ label: "Rename", onClick: () => {} }]}
-          trigger={({ open, toggle, triggerRef }) => (
-            <button ref={triggerRef} aria-expanded={open} onClick={toggle} type="button">
+          trigger={({ toggle, triggerProps }) => (
+            <button {...triggerProps} onClick={toggle} type="button">
               {label}
             </button>
           )}
@@ -198,5 +193,68 @@ describe("ContextMenu", () => {
     expect(screen.getAllByRole("menu")).toHaveLength(1);
     expect(screen.getByRole("button", { name: "Menu A" })).toHaveAttribute("aria-expanded", "false");
     expect(screen.getByRole("button", { name: "Menu B" })).toHaveAttribute("aria-expanded", "true");
+  });
+
+  test("trigger points at the open menu via aria-controls", async () => {
+    render(
+      <ContextMenu
+        items={[{ label: "Rename", onClick: () => {} }]}
+        trigger={({ toggle, triggerProps }) => (
+          <button {...triggerProps} onClick={toggle} type="button">
+            Menu
+          </button>
+        )}
+      />,
+    );
+
+    const trigger = screen.getByRole("button", { name: "Menu" });
+    expect(trigger).toHaveAttribute("aria-haspopup", "menu");
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
+    expect(trigger).not.toHaveAttribute("aria-controls");
+
+    await userEvent.click(trigger);
+
+    const menu = screen.getByRole("menu");
+    expect(menu.id).toBeTruthy();
+    expect(trigger).toHaveAttribute("aria-expanded", "true");
+    expect(trigger).toHaveAttribute("aria-controls", menu.id);
+  });
+
+  test("menu id is stable across re-renders and unique per instance", async () => {
+    function TwoMenus({ tick }: { tick: number }) {
+      return (
+        <>
+          <span>tick {tick}</span>
+          {["Menu A", "Menu B"].map((label) => (
+            <ContextMenu
+              items={[{ label: "Rename", onClick: () => {} }]}
+              key={label}
+              trigger={({ toggle, triggerProps }) => (
+                <button {...triggerProps} onClick={toggle} type="button">
+                  {label}
+                </button>
+              )}
+            />
+          ))}
+        </>
+      );
+    }
+
+    const { rerender } = render(<TwoMenus tick={1} />);
+
+    const triggerA = screen.getByRole("button", { name: "Menu A" });
+    await userEvent.click(triggerA);
+    const idA = screen.getByRole("menu").id;
+    expect(triggerA).toHaveAttribute("aria-controls", idA);
+
+    rerender(<TwoMenus tick={2} />);
+    expect(screen.getByRole("menu").id).toBe(idA);
+    expect(screen.getByRole("button", { name: "Menu A" })).toHaveAttribute("aria-controls", idA);
+
+    await userEvent.click(screen.getByRole("button", { name: "Menu B" }));
+    const idB = screen.getByRole("menu").id;
+    expect(idB).not.toBe(idA);
+    expect(screen.getByRole("button", { name: "Menu B" })).toHaveAttribute("aria-controls", idB);
+    expect(screen.getByRole("button", { name: "Menu A" })).not.toHaveAttribute("aria-controls");
   });
 });

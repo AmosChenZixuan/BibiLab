@@ -178,9 +178,9 @@ export function ArtifactCard({
       {/* Options button */}
       <ContextMenu
         items={doneItems}
-        trigger={({ toggle, triggerRef }) => (
+        trigger={({ toggle, triggerProps }) => (
           <button
-            ref={triggerRef}
+            {...triggerProps}
             type="button"
             aria-label={t("lab.artifactCard.options")}
             onClick={toggle}

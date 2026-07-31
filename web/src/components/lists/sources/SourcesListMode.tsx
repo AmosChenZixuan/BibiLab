@@ -62,9 +62,9 @@ function SourceRow({
         items={[
           { label: t("lists.delete"), icon: <Trash2 />, onClick: onDelete, variant: "danger", disabled: isDeleting },
         ]}
-        trigger={({ toggle, triggerRef }) => (
+        trigger={({ toggle, triggerProps }) => (
           <button
-            ref={triggerRef}
+            {...triggerProps}
             type="button"
             aria-label={t("lists.aria.sourceOptions")}
             onClick={toggle}
