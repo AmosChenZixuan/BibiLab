@@ -51,6 +51,7 @@ from bibilab.pipeline._shared import (
     resolve_response_language,
     stream_llm,
 )
+from bibilab.pipeline.chat_ledger import build_rag_ledger
 from bibilab.pipeline.chat_runs import (
     STREAM_BUFFER_GRACE_SECONDS,
     ActiveStreamConflict,
@@ -805,7 +806,7 @@ async def run_chat_turn(
                 parsed = json.loads(event.content)
                 if parsed["name"] in RETRIEVE_TOOL_NAMES:
                     result = parsed["result"]
-                    # Store raw section_coverage for now; narrow by emitted citations in finally.
+                    # Store raw section_coverage for now; narrowed by emitted citations in build_rag_ledger.
                     retrieve_calls.append(
                         {
                             "query": result.get("query", ""),
@@ -867,63 +868,12 @@ async def run_chat_turn(
                 _flush_pending_text(content_blocks, pending_text)
                 pending_text = ""
 
-            # Narrow section_coverage to only sections whose [N] actually appeared
-            # in assistant text. content_blocks (type: "citation") is fully populated
-            # at this point. Reconstruct context[] from the section-keyed citation
-            # registry for each retrieve call.
-            if retrieve_calls:
-                emitted_indices = {cb["index"] for cb in content_blocks if cb.get("type") == "citation"}
-                if emitted_indices:
-                    emitted_section_ids = {
-                        sid for sid, entry in citation_registry.items() if entry.index in emitted_indices
-                    }
-                else:
-                    emitted_section_ids = set()
-                for call in retrieve_calls:
-                    # Narrow section_coverage only when citations were emitted.
-                    if emitted_section_ids:
-                        call["section_coverage"] = [
-                            s for s in call["section_coverage"] if s.get("section_id") in emitted_section_ids
-                        ]
-                    # Always reconstruct context[] from citation registry.
-                    # One entry per section in section_coverage (narrowed or full).
-                    section_ids_in_call = {s["section_id"] for s in call["section_coverage"]}
-                    context_entries = []
-                    for sid in section_ids_in_call:
-                        entry = citation_registry.get(sid)
-                        if entry is not None:
-                            context_entries.append(
-                                {
-                                    "section_id": sid,
-                                    "section_seq": entry.seq,
-                                    "chunk_id": entry.first_chunk_id,
-                                    "citation_index": entry.index,
-                                    "source_id": entry.source_id,
-                                    "source_title": entry.title,
-                                    "timestamp_start": entry.timestamp_start,
-                                    "timestamp_end": entry.timestamp_end,
-                                    "rerank_score": entry.rerank_score,
-                                    "preview": entry.preview,
-                                }
-                            )
-                    call["context"] = context_entries
-
-            for rs in read_section_calls:
-                # registry is keyed by section_id; look up by section_id first, fall
-                # back to source_id for legacy messages persisted before the section-granularity migration.
-                section_id = rs.get("section_id", "")
-                entry = citation_registry.get(section_id) if section_id else None
-                if entry is None:
-                    entry = citation_registry.get(rs["source_id"])
-                if entry is not None and not rs.get("source_title"):
-                    rs["source_title"] = entry.title or ""
-                # read_section rows carry no chunk context — the read is bounded
-                # verbatim transcript, not a fenced locator result. A synthetic entry
-                # with zeroed fields would render as "0:00 / 0.00" in the frontend
-                # ledger; an empty array lets the renderer branch on tool_name and
-                # show a "read in full" affordance instead.
-                rs["context"] = []
-            all_calls = retrieve_calls + read_section_calls
+            all_calls = build_rag_ledger(
+                retrieve_calls=retrieve_calls,
+                read_section_calls=read_section_calls,
+                content_blocks=content_blocks,
+                citation_registry=citation_registry,
+            )
 
             meta: dict[str, Any] = {}
 

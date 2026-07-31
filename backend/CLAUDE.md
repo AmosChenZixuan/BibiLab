@@ -45,6 +45,7 @@ pipeline/         — one file per stage
   fts_tokens.py     CJK unigram/bigram + toneless-pinyin tokenizers and escape_fts_query — shared by the FTS5 index (embed) and query (db.query_fts_rows) sides
   rerank.py         lazy ONNX cross-encoder reranker (single spec RERANKER_SPEC_ID; providers via interpreting_providers(), CoreML excluded)
   chat_tools.py     find_passages + read_section definitions, execution dispatcher, section fencing, CitationRegistry, `_NO_MATCH_NOTE`
+  chat_ledger.py    build_rag_ledger — narrows retrieve section_coverage to cited sections + rebuilds context[] from the citation registry (pure; called from run_chat_turn's finalize)
   chat_summary.py   conversation compression (sliding window + LLM summary; summary is prose only — [N] markers not preserved)
   citation_parser.py incremental citation parser — strips [N] tokens from LLM deltas, emits citation SSE events with {index, section_id, source_id, timestamp_start, chunk_ids}
   chat_runs.py       StreamBuffer + ChatRunRegistry; in-memory buffer decouples LLM producer from HTTP request lifetime
