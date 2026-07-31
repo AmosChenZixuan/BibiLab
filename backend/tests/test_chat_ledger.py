@@ -140,6 +140,42 @@ def test_covered_section_absent_from_registry_is_skipped_in_context():
     assert [c["section_id"] for c in calls[0]["context"]] == ["1"]
 
 
+# A rerank order that is neither alphabetical nor sorted, and long enough that
+# hash-ordered iteration cannot reproduce it by chance under any hash seed.
+_RERANK_ORDER = ("s5", "s2", "s9", "s1", "s7", "s3", "s8", "s4")
+
+
+def _rerank_registry() -> dict[str, CitationRegistryEntry]:
+    return {sid: _entry(sid, i + 1) for i, sid in enumerate(_RERANK_ORDER)}
+
+
+def test_context_preserves_rerank_order_when_nothing_is_narrowed():
+    # section_coverage arrives most-relevant-first; context[] is persisted and
+    # rendered in array order, so it has to carry that same order out.
+    calls = build_rag_ledger(
+        retrieve_calls=[_retrieve_call(*_RERANK_ORDER)],
+        read_section_calls=[],
+        content_blocks=[],
+        citation_registry=_rerank_registry(),
+    )
+
+    assert [c["section_id"] for c in calls[0]["context"]] == list(_RERANK_ORDER)
+
+
+def test_context_preserves_rerank_order_through_narrowing():
+    registry = _rerank_registry()
+    cited = ("s9", "s1", "s3", "s8", "s5", "s7")
+
+    calls = build_rag_ledger(
+        retrieve_calls=[_retrieve_call(*_RERANK_ORDER)],
+        read_section_calls=[],
+        content_blocks=[_citation_block(registry[sid].index) for sid in cited],
+        citation_registry=registry,
+    )
+
+    assert [c["section_id"] for c in calls[0]["context"]] == ["s5", "s9", "s1", "s7", "s3", "s8"]
+
+
 def test_read_section_title_backfilled_via_section_id():
     rs = {"tool_name": "read_section", "section_id": "7", "source_id": "src-other", "source_title": ""}
 
