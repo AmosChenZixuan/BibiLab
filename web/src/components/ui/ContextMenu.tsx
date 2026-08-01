@@ -9,9 +9,9 @@ type ContextMenuItem = {
   disabled?: boolean;
 };
 
-// One bag rather than a bare id, so a caller cannot take the ref and skip the ARIA attributes —
-// a half-described trigger is what this replaced. `aria-controls` is dropped while closed
-// because the portal menu is unmounted then, and a dangling IDREF is worse than none.
+// One bag rather than a bare id, so a caller cannot take the ref and skip the ARIA attributes.
+// `aria-controls` is dropped while closed because the portal menu is unmounted then, and a
+// dangling IDREF is worse than none.
 type TriggerProps = {
   ref: Ref<HTMLButtonElement>;
   "aria-haspopup": "menu";
