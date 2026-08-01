@@ -1,4 +1,4 @@
-import { ReactNode, Ref, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { ReactNode, Ref, useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 type ContextMenuItem = {
@@ -9,10 +9,20 @@ type ContextMenuItem = {
   disabled?: boolean;
 };
 
+// One bag rather than a bare id, so a caller cannot take the ref and skip the ARIA attributes.
+// `aria-controls` is dropped while closed because the portal menu is unmounted then, and a
+// dangling IDREF is worse than none.
+type TriggerProps = {
+  ref: Ref<HTMLButtonElement>;
+  "aria-haspopup": "menu";
+  "aria-expanded": boolean;
+  "aria-controls": string | undefined;
+};
+
 type TriggerArgs = {
   open: boolean;
   toggle: () => void;
-  triggerRef: Ref<HTMLButtonElement>;
+  triggerProps: TriggerProps;
 };
 
 type ContextMenuProps = {
@@ -41,6 +51,7 @@ function closeAllOtherMenus(currentClose: () => void) {
 }
 
 export function ContextMenu({ items, trigger }: ContextMenuProps) {
+  const menuId = useId();
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
   const [open, setOpen] = useState(false);
@@ -108,11 +119,21 @@ export function ContextMenu({ items, trigger }: ContextMenuProps) {
 
   return (
     <>
-      {trigger({ open, toggle, triggerRef })}
+      {trigger({
+        open,
+        toggle,
+        triggerProps: {
+          ref: triggerRef,
+          "aria-haspopup": "menu",
+          "aria-expanded": open,
+          "aria-controls": open ? menuId : undefined,
+        },
+      })}
       {open
         ? createPortal(
             <div
               className="fixed z-float min-w-40 rounded-lg border border-border bg-white p-1 shadow-lg"
+              id={menuId}
               ref={menuRef}
               role="menu"
               style={{ top: `${position.top}px`, left: `${position.left}px` }}
