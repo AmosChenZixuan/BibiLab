@@ -3,7 +3,7 @@ from unittest.mock import patch
 
 import pytest
 
-from bibilab.routers.chat import _client_tool_result
+from bibilab.pipeline.chat_loop import _client_tool_result
 from tests.factories import ConversationFactory, MessageFactory
 
 pytestmark = pytest.mark.integration

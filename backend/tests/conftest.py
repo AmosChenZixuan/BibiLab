@@ -31,7 +31,7 @@ _DEFAULT_LLM_RESPONSE = "{}"
 
 @pytest.fixture()
 def mock_stream_llm():
-    """Patch the canonical `bibilab.routers.chat.stream_llm` seam with a configurable fake.
+    """Patch the canonical `bibilab.pipeline.chat_loop.stream_llm` seam with a configurable fake.
 
     Default behavior: yields a single `StreamEvent(type="done")` (no-op stream).
 
@@ -41,7 +41,7 @@ def mock_stream_llm():
         mock_stream_llm.side_effect = [ev1, ev2, ev3]      # sequence of return values
     """
     mock = MagicMock(side_effect=_default_stream_llm)
-    with patch("bibilab.routers.chat.stream_llm", mock):
+    with patch("bibilab.pipeline.chat_loop.stream_llm", mock):
         yield mock
 
 

@@ -111,7 +111,7 @@ async def test_stream_llm_passes_openai_tool_messages():
 async def test_stream_with_tools_passthrough_no_tool_calls(mock_stream_llm):
     """When LLM returns no tool_calls, events pass through and function returns."""
     from bibilab.config import AIConfig
-    from bibilab.routers.chat import stream_with_tools
+    from bibilab.pipeline.chat_loop import stream_with_tools
 
     cfg = AIConfig(protocol="openai", model="gpt-4o", api_key="test", base_url="")
 
@@ -144,8 +144,8 @@ async def test_tool_failure_inline_error_event_carries_machine_code(mock_stream_
     "tool_error" code, not English prose — the frontend renders the event's
     message via i18n immediately, before the terminal event arrives."""
     from bibilab.config import AIConfig
+    from bibilab.pipeline.chat_loop import stream_with_tools
     from bibilab.pipeline.chat_tools import FIND_PASSAGES_TOOL
-    from bibilab.routers.chat import stream_with_tools
 
     cfg = AIConfig(protocol="openai", model="gpt-4o", api_key="test", base_url="")
     find_tc = ToolCall(id="c1", name=FIND_PASSAGES_TOOL.name, arguments={"query": "q"})
@@ -178,7 +178,7 @@ async def test_stream_with_tools_no_text_length_cutoff_raises_budget_error(mock_
     error, so the frontend tells the user to raise max output tokens. Pins the
     stop_reason-based branch added to de-coarsen the no-text error."""
     from bibilab.config import AIConfig
-    from bibilab.routers.chat import stream_with_tools
+    from bibilab.pipeline.chat_loop import stream_with_tools
 
     cfg = AIConfig(protocol="openai", model="gpt-4o", api_key="test", base_url="")
 
@@ -207,7 +207,7 @@ async def test_stream_with_tools_no_text_normal_stop_raises_empty_error(mock_str
     'raise max output tokens' advice for a refusal or transient blank."""
     from bibilab.config import AIConfig
     from bibilab.pipeline._shared import LLMEmptyResponseError
-    from bibilab.routers.chat import stream_with_tools
+    from bibilab.pipeline.chat_loop import stream_with_tools
 
     cfg = AIConfig(protocol="openai", model="gpt-4o", api_key="test", base_url="")
 
@@ -233,8 +233,8 @@ async def test_stream_with_tools_no_text_normal_stop_raises_empty_error(mock_str
 async def test_stream_with_tools_loopback_find_passages(mock_stream_llm):
     """LLM calls find_passages -> execute -> feed result -> second LLM turn."""
     from bibilab.config import AIConfig
+    from bibilab.pipeline.chat_loop import stream_with_tools
     from bibilab.pipeline.chat_tools import FIND_PASSAGES_TOOL
-    from bibilab.routers.chat import stream_with_tools
 
     cfg = AIConfig(protocol="openai", model="gpt-4o", api_key="test", base_url="")
 
@@ -290,8 +290,8 @@ async def test_preamble_trigger_attached_per_decision_point(mock_stream_llm):
     """Trigger is persisted at the initial question AND each tool result (one per decision point, no accumulation).
     The round's preamble text lands in the assistant message's content so the prompt-trace dump shows it."""
     from bibilab.config import AIConfig
+    from bibilab.pipeline.chat_loop import _build_preamble_trigger, stream_with_tools
     from bibilab.pipeline.chat_tools import FIND_PASSAGES_TOOL
-    from bibilab.routers.chat import _build_preamble_trigger, stream_with_tools
 
     trigger = _build_preamble_trigger("en")
     cfg = AIConfig(protocol="openai", model="gpt-4o", api_key="test", base_url="")
@@ -336,8 +336,8 @@ async def test_preamble_trigger_attached_per_decision_point(mock_stream_llm):
 async def test_preamble_trigger_folds_into_anthropic_tool_result_round(mock_stream_llm):
     """Anthropic: trigger folds into the trailing user message (round 1 question; round 2 tool_result)."""
     from bibilab.config import AIConfig
+    from bibilab.pipeline.chat_loop import _build_preamble_trigger, stream_with_tools
     from bibilab.pipeline.chat_tools import FIND_PASSAGES_TOOL
-    from bibilab.routers.chat import _build_preamble_trigger, stream_with_tools
 
     trigger = _build_preamble_trigger("en")
     cfg = AIConfig(protocol="anthropic", model="claude", api_key="test", base_url="")
@@ -385,8 +385,8 @@ async def test_whitespace_only_preamble_emits_no_text_block(mock_stream_llm):
     fed-back assistant message — Anthropic rejects whitespace-only text blocks, and the
     OpenAI content must be None, not a blank string."""
     from bibilab.config import AIConfig
+    from bibilab.pipeline.chat_loop import stream_with_tools
     from bibilab.pipeline.chat_tools import FIND_PASSAGES_TOOL
-    from bibilab.routers.chat import stream_with_tools
 
     find_tc = ToolCall(id="c1", name=FIND_PASSAGES_TOOL.name, arguments={"query": "q"})
 
@@ -433,13 +433,13 @@ async def test_whitespace_only_preamble_emits_no_text_block(mock_stream_llm):
 async def test_preamble_trigger_skipped_before_forced_synthesis(mock_stream_llm):
     """Forced synthesis turn gets no trigger (synthesis directive follows the last tool result directly)."""
     from bibilab.config import AIConfig
-    from bibilab.pipeline.chat_tools import FIND_PASSAGES_TOOL
-    from bibilab.routers.chat import (
+    from bibilab.pipeline.chat_loop import (
         MAX_TOOL_ITERATIONS,
         _build_preamble_trigger,
         _build_synthesis_directive,
         stream_with_tools,
     )
+    from bibilab.pipeline.chat_tools import FIND_PASSAGES_TOOL
 
     trigger = _build_preamble_trigger("en")
     synthesis = _build_synthesis_directive("en")
@@ -482,8 +482,8 @@ async def test_stream_with_tools_max_iterations_graceful(mock_stream_llm):
     tool attempt parses as an ignored structured tool_call instead of leaking
     native tool-call tokens as the answer."""
     from bibilab.config import AIConfig
+    from bibilab.pipeline.chat_loop import MAX_TOOL_ITERATIONS, stream_with_tools
     from bibilab.pipeline.chat_tools import FIND_PASSAGES_TOOL
-    from bibilab.routers.chat import MAX_TOOL_ITERATIONS, stream_with_tools
 
     cfg = AIConfig(protocol="openai", model="gpt-4o", api_key="test", base_url="")
 
@@ -537,7 +537,7 @@ async def test_stream_with_tools_stats_out_param_one_round(mock_stream_llm):
     """stats out-param (mirrors messages_sink) reports iterations=1,
     synthesis_forced=False for a plain one-round answer with no tool calls."""
     from bibilab.config import AIConfig
-    from bibilab.routers.chat import stream_with_tools
+    from bibilab.pipeline.chat_loop import stream_with_tools
 
     cfg = AIConfig(protocol="openai", model="gpt-4o", api_key="test", base_url="")
 
@@ -569,8 +569,8 @@ async def test_stream_with_tools_stats_out_param_synthesis_forced(mock_stream_ll
     no-text exception path — the finally block runs before the raise
     propagates, same guarantee messages_sink already relies on."""
     from bibilab.config import AIConfig
+    from bibilab.pipeline.chat_loop import MAX_TOOL_ITERATIONS, stream_with_tools
     from bibilab.pipeline.chat_tools import FIND_PASSAGES_TOOL
-    from bibilab.routers.chat import MAX_TOOL_ITERATIONS, stream_with_tools
 
     cfg = AIConfig(protocol="openai", model="gpt-4o", api_key="test", base_url="")
     tc = ToolCall(id="c1", name=FIND_PASSAGES_TOOL.name, arguments={"query": "test"})
@@ -603,8 +603,8 @@ async def test_stream_with_tools_stats_out_param_synthesis_forced(mock_stream_ll
 async def test_stream_with_tools_forces_synthesis_when_exhausted_turn_returns_empty(mock_stream_llm):
     """When the synthesis turn produces no text, force one more LLM call so the user always gets an answer."""
     from bibilab.config import AIConfig
+    from bibilab.pipeline.chat_loop import MAX_TOOL_ITERATIONS, stream_with_tools
     from bibilab.pipeline.chat_tools import FIND_PASSAGES_TOOL
-    from bibilab.routers.chat import MAX_TOOL_ITERATIONS, stream_with_tools
 
     cfg = AIConfig(protocol="openai", model="gpt-4o", api_key="test", base_url="")
 
@@ -662,8 +662,8 @@ async def test_forced_synthesis_forwards_error_events(mock_stream_llm):
     """If the forced-synthesis LLM call yields an error event, it must be forwarded
     so run_chat_turn can mark the message failed instead of silently dropping it."""
     from bibilab.config import AIConfig
+    from bibilab.pipeline.chat_loop import MAX_TOOL_ITERATIONS, stream_with_tools
     from bibilab.pipeline.chat_tools import FIND_PASSAGES_TOOL
-    from bibilab.routers.chat import MAX_TOOL_ITERATIONS, stream_with_tools
 
     cfg = AIConfig(protocol="openai", model="gpt-4o", api_key="test", base_url="")
     find_tc = ToolCall(id="c1", name=FIND_PASSAGES_TOOL.name, arguments={"query": "q"})
@@ -710,8 +710,8 @@ async def test_forced_synthesis_forwards_error_events(mock_stream_llm):
 async def test_stream_with_tools_populates_tool_block_sink(mock_stream_llm):
     """tool_block_sink collects normalized entries for each tool call executed."""
     from bibilab.config import AIConfig
+    from bibilab.pipeline.chat_loop import stream_with_tools
     from bibilab.pipeline.chat_tools import FIND_PASSAGES_TOOL
-    from bibilab.routers.chat import stream_with_tools
 
     cfg = AIConfig(protocol="openai", model="gpt-4o", api_key="test", base_url="")
 
@@ -883,7 +883,7 @@ class TestClassifyError:
 async def test_stream_with_tools_default_sink_none_does_not_crash(mock_stream_llm):
     """Calling stream_with_tools without tool_block_sink must not crash (defaults to None)."""
     from bibilab.config import AIConfig
-    from bibilab.routers.chat import stream_with_tools
+    from bibilab.pipeline.chat_loop import stream_with_tools
 
     cfg = AIConfig(protocol="openai", model="gpt-4o", api_key="test", base_url="")
 
@@ -915,8 +915,8 @@ async def test_second_retrieval_allowed_no_sequential_guard(mock_stream_llm):
     The sequential guard is deleted; multi-hop is bounded only by the iter cap."""
     from bibilab.config import AIConfig
     from bibilab.pipeline._shared import StreamEvent, ToolCall
+    from bibilab.pipeline.chat_loop import stream_with_tools
     from bibilab.pipeline.chat_tools import FIND_PASSAGES_TOOL, READ_SECTION_TOOL
-    from bibilab.routers.chat import stream_with_tools
 
     cfg = AIConfig(protocol="openai", model="gpt-4o", api_key="test", base_url="")
 
@@ -962,7 +962,7 @@ async def test_stream_with_tools_shares_one_seen_set_across_calls():
     """The turn-scoped seen_chunk_ids set is created once and passed to every
     execute_tool call so parallel/multi-hop find_passages share dedup state."""
     from bibilab.config import AIConfig
-    from bibilab.routers.chat import stream_with_tools
+    from bibilab.pipeline.chat_loop import stream_with_tools
 
     seen_sets = []
 
@@ -985,7 +985,7 @@ async def test_stream_with_tools_shares_one_seen_set_across_calls():
             yield ev
 
     cfg = AIConfig(protocol="openai", model="m", api_key="k", base_url="")
-    with patch("bibilab.routers.chat.stream_llm", fake_stream_llm):
+    with patch("bibilab.pipeline.chat_loop.stream_llm", fake_stream_llm):
         async for _ in stream_with_tools(
             messages=[{"role": "user", "content": "hi"}],
             cfg=cfg,

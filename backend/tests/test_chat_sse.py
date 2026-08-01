@@ -9,7 +9,7 @@ import openai
 import pytest
 
 from bibilab.pipeline._shared import StreamEvent, ToolCall
-from bibilab.routers.chat import (
+from bibilab.pipeline.chat_loop import (
     SSE_EVENT_DELTA,
     SSE_EVENT_DONE,
     SSE_EVENT_TOOL_RESULT,

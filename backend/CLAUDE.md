@@ -21,7 +21,7 @@ uv run python -m bibilab.main       # Start server (localhost:8765)
 ```
 routers/          — one APIRouter per module; aggregated in main.py
   auth.py           /auth/bilibili/* (QR login, cookie management)
-  chat.py           /lists/:id/chat (SSE + cancel + reattach), /lists/:id/conversation, /debug/messages/:msg_id (debug_router); stream_with_tools loop; _classify_llm_error
+  chat.py           /lists/:id/chat (SSE + cancel + reattach), /lists/:id/conversation, /debug/messages/:msg_id (debug_router); run_chat_turn orchestration + SSE serialization (the tool loop itself lives in pipeline/chat_loop.py)
   eval.py           /eval/run_chat (stateless one-shot chat for eval frameworks), /eval/llm (bare _call_llm passthrough) — see docs/chat_architecture.md
   lists.py          /lists/* (CRUD)
   ingest.py         /ingest/url, /ingest/preview, /ingest/preview/metadata
@@ -46,6 +46,7 @@ pipeline/         — one file per stage
   rerank.py         lazy ONNX cross-encoder reranker (single spec RERANKER_SPEC_ID; providers via interpreting_providers(), CoreML excluded)
   chat_tools.py     find_passages + read_section definitions, execution dispatcher, section fencing, CitationRegistry, `_NO_MATCH_NOTE`
   chat_ledger.py    build_rag_ledger — narrows retrieve section_coverage to cited sections + rebuilds context[] from the citation registry (pure; called from run_chat_turn's finalize)
+  chat_loop.py      stream_with_tools bounded tool loop + grounding/preamble/synthesis prompt builders + the SSE event-name and error-code constants; imported by routers/chat.py and routers/eval.py
   chat_summary.py   conversation compression (sliding window + LLM summary; summary is prose only — [N] markers not preserved)
   citation_parser.py incremental citation parser — strips [N] tokens from LLM deltas, emits citation SSE events with {index, section_id, source_id, timestamp_start, chunk_ids}
   chat_runs.py       StreamBuffer + ChatRunRegistry; in-memory buffer decouples LLM producer from HTTP request lifetime

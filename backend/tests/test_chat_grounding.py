@@ -1,6 +1,6 @@
 """Tests for build_grounding_prompt content — four-section structure."""
 
-from bibilab.routers.chat import build_grounding_prompt
+from bibilab.pipeline.chat_loop import build_grounding_prompt
 
 
 class TestBuildGroundingPrompt:
@@ -186,7 +186,7 @@ class TestBuildGroundingPrompt:
         message tail by stream_with_tools), NOT in the cached system prompt — the
         system prompt is static for the turn and can't sit beside a later round's
         action. The system prompt keeps only the narration STYLE."""
-        from bibilab.routers.chat import _PREAMBLE_TRIGGER
+        from bibilab.pipeline.chat_loop import _PREAMBLE_TRIGGER
 
         prompt = build_grounding_prompt("en")
         # the operative trigger is NOT baked into the (cached) system prompt
@@ -213,7 +213,7 @@ class TestBuildGroundingPrompt:
         prompt's own language (English) while the final answer stays in the
         configured language — the split-language symptom. Assert the attached
         trigger names the native language so the preamble matches the answer."""
-        from bibilab.routers.chat import _attach_preamble_trigger
+        from bibilab.pipeline.chat_loop import _attach_preamble_trigger
 
         zh = _attach_preamble_trigger([{"role": "user", "content": "你好"}], "openai", "zh")
         assert "简体中文" in zh[-1]["content"], zh[-1]["content"]
@@ -225,7 +225,7 @@ class TestBuildGroundingPrompt:
         iteration-exhausted path and is injected at the message tail, so — like
         the preamble trigger — it out-competes the system prompt's language
         directive and must name the response language itself."""
-        from bibilab.routers.chat import _build_synthesis_directive
+        from bibilab.pipeline.chat_loop import _build_synthesis_directive
 
         assert "简体中文" in _build_synthesis_directive("zh")
         assert "English" in _build_synthesis_directive("en")
