@@ -151,8 +151,11 @@ class _SectionId(str):
     without the test ever going red. Pinning the hash makes the unordered path
     emit one known-wrong order on every run, whatever PYTHONHASHSEED is.
 
-    Equality stays str's, so these compare and look up interchangeably with the
-    plain strings used elsewhere in this module.
+    Equality stays str's, so `==` and assertion output read as plain strings.
+    The hash deliberately does not, which breaks the hash/eq contract: a
+    `_SectionId` and an equal plain str land in different dict and set buckets.
+    Within one fixture always build ids through `_sid`, never mix in a bare
+    literal — a lookup by the wrong kind fails silently rather than raising.
     """
 
     _hash: int
