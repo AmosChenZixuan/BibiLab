@@ -20,6 +20,7 @@ npx vitest run --coverage          # Coverage (requires @vitest/coverage-v8)
 ```
 components/ui/    — primitive components (Button, Modal, Panel, Input, Select, SlotSlider, Spinner, StatusChip, SettingsField, Thumbnail, ContextMenu, BrandMark, PulseRing)
                     SlotSlider — 4-position segmented control (radiogroup, roving tabindex; keyboard nav moves focus + selection); used by LlmTab for context_window / max_output_tokens
+                    ContextMenu — `trigger` render prop receives `{ open, toggle, triggerProps }`; **spread `triggerProps` onto the trigger button**. It carries the ref plus `aria-haspopup`/`aria-expanded`/`aria-controls`, so skipping the spread loses menu positioning, not just the ARIA wiring. `aria-controls` is present only while open (the portal menu unmounts when closed)
 components/auth/  — platform auth modals (BilibiliQrModal — bilibili-only; a 401 opens it only when the platform/URL is bilibili (`isBilibiliUrl` in lib/utils), otherwise SourcesListMode shows the `lists.ingest.authRequired` i18n error)
 components/debug/ — prompt-trace reader: DebugDrawer + DebugHeader (opened from the assistant-bubble </> icon when debug_prompts + has_dump; Styled/Raw toggle over the per-turn dump)
 components/*/     — feature components (lists/, lists/sources/, lists/lab/, lists/hooks/, jobs/, layout/, settings/)
