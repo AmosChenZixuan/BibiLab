@@ -1,9 +1,15 @@
 """Bounded tool-calling loop and the prompt text that steers it.
 
-Extracted from routers/chat.py, which stays the HTTP + SSE surface. Nothing
-here touches an HTTP concept: `stream_with_tools` wraps `stream_llm` in a
-bounded Plan → Act → Reflect loop, and the prompt builders assemble the
-system prompt plus the tail-injected directives the loop appends.
+`stream_with_tools` wraps `stream_llm` in a bounded Plan → Act → Reflect loop;
+the prompt builders assemble the system prompt plus the tail-injected directives
+the loop appends. The SSE event names and error codes sit here because the loop
+emits some of them directly (tool_call_start, tool_result, error); the remainder
+are defined alongside them and consumed by the routers.
+
+Note the two distinct vocabularies: `StreamEvent.type` values ("delta", "done",
+"tool_call") come from `_shared.stream_llm` and describe the LLM stream, while
+`SSE_EVENT_*` names the wire protocol the browser sees. Their values coincide
+today; they are not the same contract.
 """
 
 import json
