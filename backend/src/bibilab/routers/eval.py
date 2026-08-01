@@ -26,14 +26,7 @@ from bibilab.models.eval import (
     EvalSection,
 )
 from bibilab.pipeline._shared import _call_llm, _classify_llm_error
-from bibilab.pipeline.chat_tools import (
-    FIND_PASSAGES_TOOL,
-    READ_SECTION_TOOL,
-    CitationRegistryEntry,
-    execute_tool,
-)
-from bibilab.routers._model_gate import require_models_present
-from bibilab.routers.chat import (
+from bibilab.pipeline.chat_loop import (
     ERROR_CODE_TOOL,
     SSE_EVENT_CITATION,
     SSE_EVENT_DELTA,
@@ -44,6 +37,13 @@ from bibilab.routers.chat import (
     build_grounding_prompt,
     stream_with_tools,
 )
+from bibilab.pipeline.chat_tools import (
+    FIND_PASSAGES_TOOL,
+    READ_SECTION_TOOL,
+    CitationRegistryEntry,
+    execute_tool,
+)
+from bibilab.routers._model_gate import require_models_present
 
 logger = logging.getLogger(__name__)
 
