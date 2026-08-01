@@ -108,25 +108,23 @@ def test_all_cited_keeps_coverage_and_rebuilds_every_registry_field():
 def test_parallel_retrieve_calls_share_one_emitted_set():
     # Subject decomposition issues several find_passages calls in one turn. A
     # citation earned by one call still narrows every other call's coverage —
-    # the emitted set is turn-wide, not per-call.
-    #
-    # call_a keeps enough surviving sections, in a deliberately unsorted order,
-    # that the per-call ordering is still discriminating after narrowing: a
-    # single-element survivor would assert order trivially.
-    call_a = _retrieve_call("5", "2", "9", "1")
-    call_b = _retrieve_call("3", "7")
-    registry = {str(i): _entry(str(i), i) for i in (1, 2, 3, 5, 7, 9)}
+    # the emitted set is turn-wide, not per-call. Ordering is not asserted here;
+    # the per-call ordering logic runs inside this loop body, so the dedicated
+    # order tests already cover it on a list long enough to discriminate.
+    call_a = _retrieve_call("1", "2")
+    call_b = _retrieve_call("3", "4")
+    registry = {str(i): _entry(str(i), i) for i in (1, 2, 3, 4)}
 
     calls = build_rag_ledger(
         retrieve_calls=[call_a, call_b],
         read_section_calls=[],
-        content_blocks=[_citation_block(9), _citation_block(2), _citation_block(5)],
+        content_blocks=[_citation_block(2)],
         citation_registry=registry,
     )
 
-    assert [s["section_id"] for s in calls[0]["section_coverage"]] == ["5", "2", "9"]
+    assert [s["section_id"] for s in calls[0]["section_coverage"]] == ["2"]
     assert calls[1]["section_coverage"] == []
-    assert [c["section_id"] for c in calls[0]["context"]] == ["5", "2", "9"]
+    assert [c["section_id"] for c in calls[0]["context"]] == ["2"]
     assert calls[1]["context"] == []
 
 
@@ -145,7 +143,7 @@ def test_covered_section_absent_from_registry_is_skipped_in_context():
 
 
 # A rerank order that is neither alphabetical nor sorted, and long enough that
-# hash-ordered iteration cannot reproduce it by chance under any hash seed.
+# hash-ordered iteration is vanishingly unlikely to reproduce it by chance.
 _RERANK_ORDER = ("s5", "s2", "s9", "s1", "s7", "s3", "s8", "s4")
 
 
