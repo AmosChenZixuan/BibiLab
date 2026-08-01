@@ -37,7 +37,9 @@ def build_rag_ledger(
                     s for s in call["section_coverage"] if s.get("section_id") in emitted_section_ids
                 ]
             # One context entry per section left in section_coverage, narrowed or full.
-            section_ids_in_call = {s["section_id"] for s in call["section_coverage"]}
+            # Ordered, not a set: set iteration follows string hash order, which Python
+            # randomizes per process, so context[] would reshuffle between restarts.
+            section_ids_in_call = dict.fromkeys(s["section_id"] for s in call["section_coverage"])
             context_entries = []
             for sid in section_ids_in_call:
                 entry = citation_registry.get(sid)
