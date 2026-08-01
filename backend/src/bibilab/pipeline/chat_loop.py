@@ -8,8 +8,8 @@ are defined alongside them and consumed by the routers.
 
 Note the two distinct vocabularies: `StreamEvent.type` values ("delta", "done",
 "tool_call") come from `_shared.stream_llm` and describe the LLM stream, while
-`SSE_EVENT_*` names the wire protocol the browser sees. Their values coincide
-today; they are not the same contract.
+`SSE_EVENT_*` names the wire protocol the browser sees. Some of their values
+coincide today; they are not the same contract.
 """
 
 import json
