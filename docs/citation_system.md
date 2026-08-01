@@ -33,7 +33,8 @@ LLM delta stream
 |---|---|
 | `backend/src/bibilab/pipeline/chat_tools.py` | `CitationRegistryEntry` (section-keyed, `citable` flag), `format_hms` (re-exported from `pipeline/_shared.py`), `_build_section_fence_header`, `_build_fenced_sections`, `_join_section_fragments` (chronological + gap marker, #464), `_section_for_seg` containment mapper, `execute_find_passages` (section-grouped + facet→outline), `execute_read_section`, `reseed_citation_registry` |
 | `backend/src/bibilab/pipeline/citation_parser.py` | `parse_delta`, `_expand_indices` — incremental regex parser; emits citation event only for citable entries |
-| `backend/src/bibilab/routers/chat.py` | `SSE_EVENT_CITATION`, `stream_with_tools` registry+parser integration, `chat_endpoint` content_blocks persistence, `build_grounding_prompt` (section-grained, with #396 coverage-exemption) |
+| `backend/src/bibilab/pipeline/chat_loop.py` | `SSE_EVENT_CITATION`, `stream_with_tools` registry+parser integration, `build_grounding_prompt` (section-grained, with #396 coverage-exemption) |
+| `backend/src/bibilab/routers/chat.py` | `run_chat_turn` content_blocks accumulation + persistence, SSE serialization |
 | `backend/src/bibilab/pipeline/chat_summary.py` | Compression prompt (citation preservation removed) |
 | `web/src/lib/chat-utils.ts` | `ContentBlock` (citation has `section_id` + `timestamp_start`), `SectionCoverage` (replaces `RagSource`), `stripLegacyTokens` |
 | `web/src/components/lists/hooks/useSSEStream.ts` | SSE consumer — accumulates `ContentBlock[]`, dispatches `find_passages` + `read_section` `tool_result` events |
