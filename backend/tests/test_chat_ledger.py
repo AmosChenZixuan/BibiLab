@@ -142,9 +142,42 @@ def test_covered_section_absent_from_registry_is_skipped_in_context():
     assert [c["section_id"] for c in calls[0]["context"]] == ["1"]
 
 
-# A rerank order that is neither alphabetical nor sorted, and long enough that
-# hash-ordered iteration is vanishingly unlikely to reproduce it by chance.
-_RERANK_ORDER = ("s5", "s2", "s9", "s1", "s7", "s3", "s8", "s4")
+class _SectionId(str):
+    """A section id whose hash is pinned.
+
+    Set iteration follows hash order, and CPython randomizes string hashing per
+    process. With ordinary ids an unordered implementation reproduces the
+    expected order under some seeds, so the regression stops being caught
+    without the test ever going red. Pinning the hash makes the unordered path
+    emit one known-wrong order on every run, whatever PYTHONHASHSEED is.
+
+    Equality stays str's, so these compare and look up interchangeably with the
+    plain strings used elsewhere in this module.
+    """
+
+    _hash: int
+
+    def __new__(cls, value: str, hash_: int) -> "_SectionId":
+        obj = super().__new__(cls, value)
+        obj._hash = hash_
+        return obj
+
+    def __hash__(self) -> int:
+        return self._hash
+
+
+# Hashes ascend in lexicographic order, which the rerank order below
+# deliberately is not: an unordered implementation can only emit
+# s1, s2, s3, … so producing the rerank order cannot happen by chance.
+_SECTION_HASH = {"s1": 0, "s2": 1, "s3": 2, "s4": 3, "s5": 4, "s7": 5, "s8": 6, "s9": 7}
+
+
+def _sid(value: str) -> _SectionId:
+    return _SectionId(value, _SECTION_HASH[value])
+
+
+# A rerank order that is neither alphabetical nor sorted.
+_RERANK_ORDER = tuple(_sid(v) for v in ("s5", "s2", "s9", "s1", "s7", "s3", "s8", "s4"))
 
 
 def _rerank_registry() -> dict[str, CitationRegistryEntry]:
@@ -166,7 +199,7 @@ def test_context_preserves_rerank_order_when_nothing_is_narrowed():
 
 def test_context_preserves_rerank_order_through_narrowing():
     registry = _rerank_registry()
-    cited = ("s9", "s1", "s3", "s8", "s5", "s7")
+    cited = tuple(_sid(v) for v in ("s9", "s1", "s3", "s8", "s5", "s7"))
 
     calls = build_rag_ledger(
         retrieve_calls=[_retrieve_call(*_RERANK_ORDER)],
