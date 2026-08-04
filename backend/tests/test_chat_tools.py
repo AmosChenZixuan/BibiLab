@@ -800,6 +800,59 @@ class TestReseedCitationRegistry:
         assert "sec-2" in registry
         assert registry["sec-2"].index == 2
 
+    @pytest.mark.parametrize(
+        "bad_section",
+        [{"section_id": ""}, {"section_id": None}, {}],
+        ids=["empty-string", "none", "key-absent"],
+    )
+    def test_reseed_skips_chunks_with_falsy_section_id(self, bad_section):
+        """A chunk with no usable section id must not enter the registry. The
+        registry is keyed by section_id, so a falsy key is one no reader can
+        resolve — the chunk is dropped rather than stored under it. The bad
+        chunk carries a valid citation_index so only the section_id guard can
+        account for its absence."""
+        from bibilab.pipeline.chat_tools import reseed_citation_registry
+
+        registry: dict = {}
+        history = [
+            {
+                "role": "assistant",
+                "content": "Answer",
+                "tool_blocks": [
+                    {
+                        "tool_use_id": "t1",
+                        "name": "find_passages",
+                        "arguments": {"query": "q"},
+                        "result": {
+                            "chunks": [
+                                {
+                                    "source_id": "s1",
+                                    "section_seq": 1,
+                                    "citation_index": 1,
+                                    "chunk_id": "v1_0_10",
+                                    "video_title": "V1",
+                                    **bad_section,
+                                },
+                                {
+                                    "source_id": "s2",
+                                    "section_id": "sec-2",
+                                    "section_seq": 1,
+                                    "citation_index": 2,
+                                    "chunk_id": "v2_0_10",
+                                    "video_title": "V2",
+                                },
+                            ],
+                            "summary": {"sources_total": 2},
+                        },
+                    }
+                ],
+            }
+        ]
+
+        reseed_citation_registry(registry, history)
+
+        assert list(registry) == ["sec-2"]
+
     def test_reseed_empty_history(self):
         from bibilab.pipeline.chat_tools import CitationRegistryEntry, reseed_citation_registry
 
