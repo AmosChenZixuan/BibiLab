@@ -11,7 +11,7 @@ npm run dev              # Start Vite dev server on :5173
 npm run build            # Production build to web/dist
 npm run test             # Frontend test suite
 npm run test -- list-detail-page   # Focused frontend tests
-npm run lint             # Type-check the frontend
+npm run lint             # eslint (react-hooks) + type-check the frontend
 npx vitest run --coverage          # Coverage (requires @vitest/coverage-v8)
 ```
 

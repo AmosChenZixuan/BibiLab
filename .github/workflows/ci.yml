@@ -40,6 +40,21 @@ jobs:
         working-directory: backend
         run: uv run pytest
 
+  frontend-lint:
+    name: Frontend lint (eslint + tsc)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install dependencies
+        working-directory: web
+        run: npm ci
+      - name: Lint
+        working-directory: web
+        run: npm run lint
+
   frontend-build:
     name: Frontend build
     runs-on: ubuntu-latest

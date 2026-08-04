@@ -276,7 +276,7 @@ uv run pytest -m "not integration"  # 快速单测通道
 # Web
 cd ../web
 npm test                            # vitest
-npm run lint                        # tsc --noEmit
+npm run lint                        # eslint . && tsc --noEmit
 
 # Eval
 cd ../eval

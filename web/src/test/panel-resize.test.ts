@@ -10,7 +10,6 @@ let originalResizeObserver: typeof ResizeObserver;
 
 beforeEach(() => {
   callbackMap.clear();
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   originalResizeObserver = global.ResizeObserver as any;
   const MockRO = function (callback: ResizeObserverCallback) {
     return {
@@ -23,12 +22,10 @@ beforeEach(() => {
       unobserve: vi.fn(),
     };
   };
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   global.ResizeObserver = MockRO as any;
 });
 
 afterEach(() => {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   global.ResizeObserver = originalResizeObserver as any;
 });
 
