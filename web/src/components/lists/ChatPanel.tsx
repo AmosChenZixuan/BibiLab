@@ -247,6 +247,7 @@ export function ChatPanel({
     if (!pendingMessage || isLoadingHistory) return;
     if (canSend) void sendMessage(pendingMessage.text, { sourceIds: pendingMessage.sourceIds });
     onPendingMessageConsumed?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendingMessage, canSend, isLoadingHistory]);
 
 

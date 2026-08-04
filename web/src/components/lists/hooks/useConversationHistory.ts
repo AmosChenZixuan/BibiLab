@@ -96,6 +96,10 @@ export function useConversationHistory(
     return () => {
       cancelled = true;
     };
+    // The localization labels above are baked into each message as it loads.
+    // Depending on them would refetch the whole conversation on every language
+    // switch; stale labels until the next load are the lesser cost.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [listId, hasSources]);
 
   return { messages, isLoadingHistory, loadError, activeStreamMessageId };
