@@ -61,7 +61,8 @@ def build_rag_ledger(
             call["context"] = context_entries
 
     for rs in read_section_calls:
-        # The registry is keyed by section_id only — a row's source_id names nothing in it.
+        # Registry keyed by section_id only, never a falsy key (chat_tools write
+        # sites key on sections.id / skip falsy) — a source_id, or "", is a sure miss.
         entry = citation_registry.get(rs.get("section_id", ""))
         if entry is not None and not rs.get("source_title"):
             rs["source_title"] = entry.title or ""

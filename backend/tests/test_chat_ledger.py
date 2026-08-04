@@ -227,10 +227,12 @@ def test_read_section_title_backfilled_via_section_id():
     assert calls[0]["source_title"] == "Section Seven"
 
 
-def test_read_section_title_ignores_source_id_keyed_entry():
+@pytest.mark.parametrize("section_id", ["", "sec-absent"])
+def test_read_section_title_ignores_source_id_keyed_entry(section_id):
     """The lookup is section-keyed only — a registry entry that happens to sit
-    under a source id is not a match, even for a row carrying no section id."""
-    rs = {"tool_name": "read_section", "section_id": "", "source_id": "legacy-src", "source_title": ""}
+    under a source id is not a match, whether the row's section id is missing
+    or merely absent from the registry."""
+    rs = {"tool_name": "read_section", "section_id": section_id, "source_id": "legacy-src", "source_title": ""}
     legacy = _entry("legacy-src", 1, source_id="legacy-src", title="Legacy Source")
 
     calls = build_rag_ledger(
