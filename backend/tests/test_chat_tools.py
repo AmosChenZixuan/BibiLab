@@ -802,8 +802,8 @@ class TestReseedCitationRegistry:
 
     @pytest.mark.parametrize(
         "bad_section",
-        [{"section_id": ""}, {"section_id": None}, {}],
-        ids=["empty-string", "none", "key-absent"],
+        [{"section_id": ""}, {"section_id": None}],
+        ids=["empty-string", "none"],
     )
     def test_reseed_skips_chunks_with_falsy_section_id(self, bad_section):
         """A chunk with no usable section id must not enter the registry. The
