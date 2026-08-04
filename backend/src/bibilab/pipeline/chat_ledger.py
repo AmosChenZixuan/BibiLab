@@ -61,12 +61,10 @@ def build_rag_ledger(
             call["context"] = context_entries
 
     for rs in read_section_calls:
-        # registry is keyed by section_id; look up by section_id first, fall
-        # back to source_id for legacy messages persisted before the section-granularity migration.
+        # The registry is keyed by section_id and nothing else, so that is the
+        # only lookup: a source_id can never name an entry.
         section_id = rs.get("section_id", "")
         entry = citation_registry.get(section_id) if section_id else None
-        if entry is None:
-            entry = citation_registry.get(rs["source_id"])
         if entry is not None and not rs.get("source_title"):
             rs["source_title"] = entry.title or ""
         # read_section rows carry no chunk context — the read is bounded

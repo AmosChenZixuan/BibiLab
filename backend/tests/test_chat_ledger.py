@@ -227,7 +227,9 @@ def test_read_section_title_backfilled_via_section_id():
     assert calls[0]["source_title"] == "Section Seven"
 
 
-def test_read_section_title_falls_back_to_source_id_lookup():
+def test_read_section_title_ignores_source_id_keyed_entry():
+    """The lookup is section-keyed only — a registry entry that happens to sit
+    under a source id is not a match, even for a row carrying no section id."""
     rs = {"tool_name": "read_section", "section_id": "", "source_id": "legacy-src", "source_title": ""}
     legacy = _entry("legacy-src", 1, source_id="legacy-src", title="Legacy Source")
 
@@ -238,7 +240,7 @@ def test_read_section_title_falls_back_to_source_id_lookup():
         citation_registry={"legacy-src": legacy},
     )
 
-    assert calls[0]["source_title"] == "Legacy Source"
+    assert calls[0]["source_title"] == ""
 
 
 def test_read_section_title_unresolvable_is_left_alone():
