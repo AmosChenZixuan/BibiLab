@@ -61,9 +61,10 @@ def build_rag_ledger(
             call["context"] = context_entries
 
     for rs in read_section_calls:
-        # Registry keyed by section_id only, never a falsy key (chat_tools write
-        # sites key on sections.id / skip falsy) — a source_id, or "", is a sure miss.
-        entry = citation_registry.get(rs.get("section_id", ""))
+        # The registry is keyed by section_id and nothing else — a row's
+        # source_id names nothing in it.
+        section_id = rs.get("section_id", "")
+        entry = citation_registry.get(section_id) if section_id else None
         if entry is not None and not rs.get("source_title"):
             rs["source_title"] = entry.title or ""
         # read_section rows carry no chunk context — the read is bounded
