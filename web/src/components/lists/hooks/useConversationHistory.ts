@@ -98,9 +98,7 @@ export function useConversationHistory(
     };
     // The localization labels above are baked into each message as it loads.
     // Depending on them would refetch the whole conversation on every language
-    // switch, and a history snapshot resolving mid-stream clobbers the live
-    // turn. Stale labels until the next load are the lesser cost; the real fix
-    // is to store these fields raw and localize at render, as loadError does.
+    // switch; stale labels until the next load are the lesser cost.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [listId, hasSources]);
 
