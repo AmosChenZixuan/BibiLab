@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import type { MessageUI } from "@/components/lists/hooks/useConversationHistory";
-import { formatTimestamp, coerceCitationEvent, type ContentBlock, type RetrievalCall } from "@/lib/chat-utils";
+import { coerceCitationEvent, type ContentBlock, type RetrievalCall } from "@/lib/chat-utils";
 import { FIND_PASSAGES_TOOL_NAME, READ_SECTION_TOOL_NAME } from "@/lib/utils";
 import {
   SSE_EVENT_CANCELLED,
@@ -21,9 +21,6 @@ interface UseSSEStreamOptions {
   selectedSourceIds: string[];
   messages: MessageUI[];
   setMessages: React.Dispatch<React.SetStateAction<MessageUI[]>>;
-  stoppedLabel?: string;
-  lang?: "en" | "zh";
-  todayLabel?: string;
 }
 
 interface UseSSEStreamReturn {
@@ -39,9 +36,6 @@ export function useSSEStream({
   selectedSourceIds,
   messages,
   setMessages,
-  stoppedLabel = "Stopped",
-  lang = "en",
-  todayLabel = "Today",
 }: UseSSEStreamOptions): UseSSEStreamReturn {
   const [isStreaming, setIsStreaming] = useState(false);
   const isStreamingRef = useRef(false);
@@ -211,7 +205,7 @@ export function useSSEStream({
         flushText();
         updateAssistantMsg(assistantMsgId, {
           isStreaming: false,
-          error: stoppedLabel,
+          error: "stopped",
           contentBlocks: [...accBlocks],
           pendingRagCalls: [],
         });
@@ -301,7 +295,7 @@ export function useSSEStream({
       contentBlocks: [],
       rag: null,
       error: null,
-      timestamp: formatTimestamp(new Date().toISOString(), lang, todayLabel),
+      createdAt: new Date().toISOString(),
       pendingRagCalls: [],
       hasDump: false,
     };
@@ -313,7 +307,7 @@ export function useSSEStream({
       isStreaming: true,
       contentBlocks: [],
       error: null,
-      timestamp: formatTimestamp(new Date().toISOString(), lang, todayLabel),
+      createdAt: new Date().toISOString(),
       rag: null,
       pendingRagCalls: [],
       hasDump: false,
@@ -387,7 +381,7 @@ export function useSSEStream({
         isStreaming: true,
         contentBlocks: [],
         error: null,
-        timestamp: "",
+        createdAt: "",
         rag: null,
         pendingRagCalls: [],
         hasDump: false,
