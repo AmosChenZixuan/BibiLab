@@ -33,6 +33,7 @@ import {
   autoResize,
   contentBlocksToText,
   formatSubtitle,
+  formatTimestamp,
   getErrorLabel,
   type OpenSourceOpts,
   type PendingChatMessage,
@@ -162,16 +163,13 @@ export function ChatPanel({
   }, [listId]);
 
   const hasSources = selectedSourceIds.length > 0;
-  const { messages: historyMessages, isLoadingHistory, loadError, activeStreamMessageId } = useConversationHistory(listId, hasSources, t("chat.interrupted"), t("chat.stopped"), lang, t("chat.time.today"));
+  const { messages: historyMessages, isLoadingHistory, loadError, activeStreamMessageId } = useConversationHistory(listId, hasSources);
 
   const { sendMessage, stopStreaming, retryMessage, reattach, isStreaming } = useSSEStream({
     listId,
     selectedSourceIds,
     messages,
     setMessages,
-    stoppedLabel: t("chat.stopped"),
-    lang,
-    todayLabel: t("chat.time.today"),
   });
 
   // Shared "can we send right now?" gate. Used by both the manual
@@ -197,6 +195,10 @@ export function ChatPanel({
         .reduce((acc, s) => acc + (s.duration_seconds ?? 0), 0),
     [sources, selectedSourceIdsSet],
   );
+
+  // Empty on the reattach placeholder (useSSEStream), which renders the
+  // timestamp row once its stream ends — formatTimestamp("") is "Invalid Date".
+  const renderTimestamp = (iso: string) => (iso ? formatTimestamp(iso, lang, t("chat.time.today")) : "");
 
   const placeholder = !hasSources
     ? t("chat.input.placeholder.noSources")
@@ -399,7 +401,7 @@ export function ChatPanel({
                     >
                       {msg.content}
                     </div>
-                    <span className="text-2xs text-muted font-mono px-1">{msg.timestamp}</span>
+                    <span className="text-2xs text-muted font-mono px-1">{renderTimestamp(msg.createdAt)}</span>
                   </>
                 ) : (
                   <>
@@ -436,7 +438,7 @@ export function ChatPanel({
                     )}
                     {!msg.isStreaming && !msg.error && (
                       <div className="flex h-6 items-center gap-0.5 px-1 text-2xs text-muted">
-                        <span className="font-mono">{msg.timestamp}</span>
+                        <span className="font-mono">{renderTimestamp(msg.createdAt)}</span>
                         <div className="ml-1 flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
                           <button
                             type="button"

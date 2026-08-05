@@ -3,7 +3,6 @@ import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import {
   coerceContentBlock,
-  formatTimestamp,
   stripLegacyTokens,
   type ContentBlock,
   type PendingRagCall,
@@ -16,21 +15,19 @@ export interface MessageUI {
   content: string;
   isStreaming: boolean;
   contentBlocks: ContentBlock[];
+  /** Machine-readable error code — the consumer localizes at render time via
+   *  `getErrorLabel`, which falls back to rendering the string as-is when no
+   *  `chat.errors.<code>` key exists (network failures land here as raw text). */
   error: string | null;
-  timestamp: string;
+  /** Raw ISO timestamp — the consumer formats at render time via
+   *  `formatTimestamp`. Empty only on the reattach placeholder. */
+  createdAt: string;
   rag: RagMetadata | null;
   pendingRagCalls: PendingRagCall[];
   hasDump: boolean;
 }
 
-export function useConversationHistory(
-  listId: string | undefined,
-  hasSources: boolean,
-  interruptedLabel: string,
-  stoppedLabel: string,
-  lang: "en" | "zh",
-  todayLabel: string,
-) {
+export function useConversationHistory(listId: string | undefined, hasSources: boolean) {
   const [messages, setMessages] = useState<MessageUI[]>([]);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   // Raw error — the consumer localizes at render time (toErrorMessageWithT).
@@ -77,8 +74,8 @@ export function useConversationHistory(
             contentBlocks,
             error:
               m.error ??
-              (m.status === "failed" ? interruptedLabel : m.status === "cancelled" ? stoppedLabel : null),
-            timestamp: formatTimestamp(m.created_at, lang, todayLabel),
+              (m.status === "failed" ? "interrupted" : m.status === "cancelled" ? "stopped" : null),
+            createdAt: m.created_at,
             rag,
             pendingRagCalls: [],
             hasDump: m.has_dump ?? false,
@@ -96,10 +93,6 @@ export function useConversationHistory(
     return () => {
       cancelled = true;
     };
-    // The localization labels above are baked into each message as it loads.
-    // Depending on them would refetch the whole conversation on every language
-    // switch; stale labels until the next load are the lesser cost.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [listId, hasSources]);
 
   return { messages, isLoadingHistory, loadError, activeStreamMessageId };

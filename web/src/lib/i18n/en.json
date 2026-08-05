@@ -298,8 +298,6 @@
       "cancel": "Cancel",
       "clear": "Clear"
     },
-    "interrupted": "Response interrupted",
-    "stopped": "Stopped",
     "time": {
       "today": "Today"
     },
@@ -337,6 +335,8 @@
     "citationMissing": "Source no longer in list",
     "discussKeyword": "Discuss %{keyword}",
     "errors": {
+      "interrupted": "Response interrupted",
+      "stopped": "Stopped",
       "tool_error": "Tool execution failed",
       "persistence_error": "Failed to save the response — refresh and try again",
       "llm_connection_error": "Unable to reach AI provider",

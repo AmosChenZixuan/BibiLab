@@ -298,8 +298,6 @@
       "cancel": "取消",
       "clear": "清空"
     },
-    "interrupted": "回答被中断",
-    "stopped": "已停止",
     "time": {
       "today": "今日"
     },
@@ -337,6 +335,8 @@
     "citationMissing": "来源已不在列表中",
     "discussKeyword": "聊一聊%{keyword}",
     "errors": {
+      "interrupted": "回答被中断",
+      "stopped": "已停止",
       "tool_error": "工具执行失败",
       "persistence_error": "回复保存失败——请刷新后重试",
       "llm_connection_error": "无法连接到 AI 提供商",
