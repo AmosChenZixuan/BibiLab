@@ -135,6 +135,36 @@ async def test_run_job_cancelled_before_start(tmp_bibilab_home: Path):
 
 
 @pytest.mark.asyncio
+async def test_cancel_frees_slot_without_waiting_for_stage(tmp_bibilab_home: Path):
+    """cancel_job frees the slot without waiting for the running stage."""
+    import asyncio
+
+    from bibilab.db import bootstrap_db, create_job
+
+    await bootstrap_db()
+    job_id = await create_job("ingest", {})
+
+    worker = WorkerLoop(home=tmp_bibilab_home)
+    started, release = asyncio.Event(), asyncio.Event()
+
+    async def _long_stage(job):
+        started.set()
+        await release.wait()  # stands in for a long asyncio.to_thread stage
+
+    job = {"id": job_id, "type": "ingest", "meta": "{}"}
+    with patch.object(worker, "_pipeline", _long_stage):
+        worker._in_flight.add(job_id)
+        task = asyncio.create_task(worker._run_job(job))
+        await started.wait()
+
+        worker.cancel_job(job_id)
+        assert job_id not in worker._in_flight
+
+        release.set()
+        await task
+
+
+@pytest.mark.asyncio
 async def test_run_job_auth_required_error(tmp_bibilab_home: Path):
     from bibilab.adapters.base import AuthRequiredError
     from bibilab.db import bootstrap_db, create_job
