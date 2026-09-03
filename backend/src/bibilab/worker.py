@@ -130,6 +130,9 @@ class WorkerLoop:
 
     def cancel_job(self, job_id: str) -> None:
         self._cancelled.add(job_id)
+        # Free the slot now; the job winds down to its next
+        # _abort_if_cancelled checkpoint without holding up the queue.
+        self._in_flight.discard(job_id)
 
     def _get_adapter(self, platform: str) -> Any:
         # ponytail: injected test seam wins regardless of platform; key the
@@ -521,6 +524,11 @@ class WorkerLoop:
             video_meta.source_url,
             self._get_config().backend.download_connections,
         )
+
+        # Longest uninterruptible stretch — stop here rather than after the
+        # cover fetch and the ffmpeg pass.
+        if await self._abort_if_cancelled(job):
+            return None
 
         # Download cover
         covers_dir = self._bibilab_home / "covers"
