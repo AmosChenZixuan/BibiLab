@@ -19,7 +19,7 @@ from bibilab.config import BibilabConfig, bibilab_home, models_dir
 logger = logging.getLogger(__name__)
 
 ModelKind = Literal["transcription", "vad", "diarization", "embedding", "reranker", "punctuation"]
-Backend = Literal["http_files", "modelscope", "whisper_warp", "http_archive"]
+Backend = Literal["http_files", "modelscope", "http_archive"]
 
 
 @dataclass(frozen=True)
@@ -44,15 +44,6 @@ class ModelSpec:
 _SHERPA_RELEASE = "https://github.com/k2-fsa/sherpa-onnx/releases/download"
 
 _SPECS: dict[str, ModelSpec] = {
-    "large-v3": ModelSpec(
-        id="large-v3",
-        display_name="Faster Whisper large-v3",
-        kind="transcription",
-        backend="whisper_warp",
-        size_mb=3000,
-        integrity_files=["large-v3.pt"],
-        local_subdir="asr/whisper",
-    ),
     "sensevoice-small": ModelSpec(
         id="sensevoice-small",
         display_name="SenseVoice Small",
@@ -369,22 +360,6 @@ def _download_http_archive(spec: ModelSpec, target: Path) -> None:
     logger.info("Model extracted to %s", target)
 
 
-def _download_whisper_warp(spec: ModelSpec, target: Path) -> None:
-    # funasr 1.3.7's openai branch hardcodes whisper.load_model(name) with no
-    # download_root, so it always writes to ~/.cache/whisper. Bypass it and call
-    # openai-whisper's documented public API directly so the checkpoint lands in
-    # our models dir alongside the rest of the ASR cache.
-    import whisper  # noqa: PLC0415  # openai-whisper (lazy: pulls in torch)
-
-    logger.info("Downloading Whisper large-v3 (~3 GB) via WhisperWarp — this may take several minutes")
-    try:
-        whisper.load_model(spec.id, download_root=str(target))
-    except Exception:
-        logger.exception("Whisper large-v3 download failed")
-        raise
-    logger.info("Whisper large-v3 download complete → %s", target)
-
-
 # ---- Unified download entry point ------------------------------------
 
 
@@ -412,8 +387,6 @@ def ensure(spec_id: str) -> Path:
             _download_modelscope(spec, target)
         elif spec.backend == "http_files":
             _download_http_files(spec, target)
-        elif spec.backend == "whisper_warp":
-            _download_whisper_warp(spec, target)
         elif spec.backend == "http_archive":
             _download_http_archive(spec, target)
         else:

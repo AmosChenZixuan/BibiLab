@@ -1,9 +1,8 @@
 """Tests for bibilab.model_registry."""
 
-import sys
 import tarfile
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -11,7 +10,6 @@ from bibilab.model_registry import (
     ModelSpec,
     _download_http_archive,
     _download_http_files,
-    _target_dir,
     ensure,
     get_spec,
     list_specs,
@@ -332,48 +330,32 @@ def test_http_archive_specs_have_exactly_one_url():
         assert len(spec.http_files) == 1
 
 
-def test_existing_pytorch_specs_unchanged():
-    """AC6 regression: the five pre-existing PyTorch specs still resolve
-    with their original backend, untouched by the new sherpa specs."""
-    assert get_spec("large-v3").backend == "whisper_warp"
+def test_existing_modelscope_specs_unchanged():
+    """The four pre-existing modelscope specs still resolve with their
+    original backend, untouched by the new sherpa specs."""
     assert get_spec("sensevoice-small").backend == "modelscope"
     assert get_spec("cam++").backend == "modelscope"
     assert get_spec("fsmn-vad").backend == "modelscope"
     assert get_spec("ct-punc").backend == "modelscope"
 
 
-def test_target_dir_routes_whisper_through_models_dir(tmp_bibilab_home: Path):
-    """_target_dir must use the spec's local_subdir for whisper too (no special-case)."""
-    spec = get_spec("large-v3")
-    from bibilab.model_registry import _target_dir
+def test_no_torch_or_funasr_anywhere():
+    """Repo-wide guard for #687: no torch/funasr import survives anywhere
+    under backend/src/ (except the one deliberate exclusion below), and
+    neither package appears in the resolved lock."""
+    backend_dir = Path(__file__).resolve().parents[1]
+    banned_imports = ("import torch", "from torch", "import funasr", "from funasr")
+    # routers/health.py's _check_cuda() keeps a try/except-guarded `import torch`
+    # on purpose (degrades to "unavailable" when the package is absent) until
+    # #688 removes the device-selection surface — out of scope for #687.
+    excluded = {backend_dir / "src" / "bibilab" / "routers" / "health.py"}
+    for py_file in (backend_dir / "src").rglob("*.py"):
+        if py_file in excluded:
+            continue
+        source = py_file.read_text()
+        for banned in banned_imports:
+            assert banned not in source, f"{py_file} still contains {banned!r}"
 
-    expected = _target_dir(spec)
-    assert _target_dir(spec) == expected
-
-
-def test_ensure_whisper_calls_load_model_with_download_root(tmp_bibilab_home: Path):
-    """Bypass funasr's openai path: whisper.load_model(name, download_root=target) is
-    the documented public API that writes the .pt to the caller's directory."""
-    spec = get_spec("large-v3")
-    expected_target = _target_dir(spec)
-
-    def fake_load_model(name, download_root=None, **kwargs):
-        assert name == "large-v3"
-        # Mirror what openai-whisper does: write the .pt to <download_root>/<name>.pt
-        Path(download_root).mkdir(parents=True, exist_ok=True)
-        (Path(download_root) / f"{name}.pt").write_bytes(b"fake-checkpoint")
-        # Return value is discarded by _download_whisper_warp
-        return MagicMock()
-
-    whisper_stub = MagicMock()
-    whisper_stub.load_model = MagicMock(side_effect=fake_load_model)
-    with patch.dict(sys.modules, {"whisper": whisper_stub}):
-        mock = whisper_stub.load_model
-        result = ensure(spec.id)
-
-    assert result == expected_target
-    assert (expected_target / "large-v3.pt").read_bytes() == b"fake-checkpoint"
-    mock.assert_called_once()
-    call = mock.call_args
-    assert call.args[0] == "large-v3"
-    assert call.kwargs.get("download_root") == str(expected_target)
+    lock_text = (backend_dir / "uv.lock").read_text()
+    for banned in ('name = "torch"', 'name = "torchaudio"', 'name = "funasr"'):
+        assert banned not in lock_text, f"uv.lock still contains {banned!r}"
