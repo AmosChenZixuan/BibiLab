@@ -96,7 +96,10 @@ def interpreting_provider() -> str:
     """The single provider string sherpa-onnx sessions should use — the first
     (highest-priority) entry of interpreting_providers(), translated to sherpa-onnx's
     naming. The only provider-selection path for ASR; see interpreting_providers()."""
-    return _SHERPA_PROVIDER_NAMES.get(interpreting_providers()[0], "cpu")
+    providers = interpreting_providers()
+    if not providers:
+        return "cpu"
+    return _SHERPA_PROVIDER_NAMES.get(providers[0], "cpu")
 
 
 # Input-side margin. Absorbs tokenizer drift (cl100k vs. provider-native) and

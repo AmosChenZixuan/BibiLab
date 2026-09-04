@@ -156,7 +156,7 @@ def _vad_spans(vad_cfg: Any, samples: Any, rate: int) -> list[tuple[float, float
             spans.append((seg.start / rate, (seg.start + len(seg.samples)) / rate))
             vad.pop()
 
-    for i in range(0, len(samples) - window, window):
+    for i in range(0, len(samples), window):
         vad.accept_waveform(samples[i : i + window])
         drain()
     vad.flush()
@@ -236,10 +236,14 @@ def _transcribe_sherpa(audio_path: Path, cfg: TranscriptionConfig) -> tuple[list
         logger.warning("sherpa-onnx returned no segments for %s", audio_path)
         return [], None
 
-    if cfg.language and cfg.language != "auto":
+    if cfg.model == "large-v3":
+        # Wins over an explicit cfg.language: the recognizer is always constructed
+        # with language="en" (see _load_sherpa), so the decoded text is English
+        # regardless of what cfg.language asked for — reporting cfg.language here
+        # would send genuinely English text into the wrong-language punctuation model.
+        detected_lang = "en"
+    elif cfg.language and cfg.language != "auto":
         detected_lang = cfg.language
-    elif cfg.model == "large-v3":
-        detected_lang = "en"  # only int8 large-v3 English was validated
     return segments, detected_lang
 
 

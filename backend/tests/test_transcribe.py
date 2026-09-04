@@ -350,6 +350,21 @@ def test_transcribe_sherpa_whisper_detected_language_forced_english(tmp_path: Pa
     assert lang == "en"
 
 
+def test_transcribe_sherpa_whisper_forces_english_even_with_mismatched_explicit_cfg_language(tmp_path: Path):
+    """The model-forced language must win over an explicit-but-wrong cfg.language —
+    large-v3 always decodes English regardless of cfg.language (see _load_sherpa), so
+    reporting cfg.language='zh' here would send genuinely English text into zh ct-punc
+    downstream and produce garbled punctuation."""
+    from bibilab.pipeline.transcribe import _transcribe_sherpa
+
+    engine = _fake_engine(recognized=[("hello", None)], embeddings=[[1.0, 0.0]])
+    p1, p2, p3 = _patch_transcribe_sherpa(engine, spans=[(0.0, 1.0)])
+    with p1, p2, p3:
+        _, lang = _transcribe_sherpa(tmp_path / "a.wav", TranscriptionConfig(model="large-v3", language="zh"))
+
+    assert lang == "en"
+
+
 def test_transcribe_sherpa_sensevoice_auto_uses_first_seen_recognizer_language(tmp_path: Path):
     from bibilab.pipeline.transcribe import _transcribe_sherpa
 
@@ -408,6 +423,61 @@ def test_vad_spans_flushes_trailing_span_at_end_of_audio():
         spans = _vad_spans(vad_cfg, [0.0] * 2000, 16000)
 
     assert spans == [(1600 / 16000, (1600 + 3200) / 16000)]
+
+
+class _FakeVadRecorder:
+    """Records the total sample count it's ever fed via accept_waveform — used to
+    catch the windowing loop silently dropping a trailing (or, for very short
+    clips, the entire) chunk."""
+
+    def __init__(self, _config, buffer_size_in_seconds=100) -> None:
+        self.fed = 0
+
+    def accept_waveform(self, chunk) -> None:
+        self.fed += len(chunk)
+
+    def empty(self) -> bool:
+        return True
+
+    def pop(self) -> None:
+        pass
+
+    def flush(self) -> None:
+        pass
+
+
+def test_vad_spans_feeds_every_sample_including_a_trailing_partial_window():
+    from bibilab.pipeline.transcribe import _vad_spans
+
+    recorder = _FakeVadRecorder(None)
+    fake_so = MagicMock()
+    fake_so.VoiceActivityDetector = MagicMock(return_value=recorder)
+    vad_cfg = MagicMock()
+    vad_cfg.silero_vad.window_size = 512
+
+    # 1536 = exactly 3 windows; +100 = one more short trailing chunk. Neither the
+    # exact multiple's last window nor the trailing partial window may be dropped.
+    samples = [0.0] * 1636
+    with patch.dict(sys.modules, {"sherpa_onnx": fake_so}):
+        _vad_spans(vad_cfg, samples, 16000)
+
+    assert recorder.fed == len(samples)
+
+
+def test_vad_spans_feeds_a_clip_shorter_than_one_window():
+    from bibilab.pipeline.transcribe import _vad_spans
+
+    recorder = _FakeVadRecorder(None)
+    fake_so = MagicMock()
+    fake_so.VoiceActivityDetector = MagicMock(return_value=recorder)
+    vad_cfg = MagicMock()
+    vad_cfg.silero_vad.window_size = 512
+
+    samples = [0.0] * 200  # shorter than one window
+    with patch.dict(sys.modules, {"sherpa_onnx": fake_so}):
+        _vad_spans(vad_cfg, samples, 16000)
+
+    assert recorder.fed == len(samples)
 
 
 def test_transcribe_unknown_model_raises_pipeline_error():

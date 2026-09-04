@@ -55,3 +55,10 @@ def test_interpreting_provider_unrecognized_ep_falls_back_to_cpu(monkeypatch):
     # has no distinct "rocm" provider string — fall back to cpu rather than guessing.
     monkeypatch.setattr(ort, "get_available_providers", lambda: ["ROCMExecutionProvider"])
     assert interpreting_provider() == "cpu"
+
+
+def test_interpreting_provider_empty_providers_falls_back_to_cpu(monkeypatch):
+    # A slim/custom onnxruntime build could report no CUDA/ROCm/CPU provider at all —
+    # must not crash with an IndexError on the first ASR call.
+    monkeypatch.setattr(ort, "get_available_providers", lambda: [])
+    assert interpreting_provider() == "cpu"
