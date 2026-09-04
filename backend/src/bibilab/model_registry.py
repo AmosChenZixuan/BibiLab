@@ -214,10 +214,6 @@ _SPECS: dict[str, ModelSpec] = {
 
 EMBEDDING_SPEC_ID = "multilingual-e5"
 RERANKER_SPEC_ID = "bge-reranker-base-q"
-DIARIZATION_SPEC_ID = "cam++"
-VAD_SPEC_ID = "fsmn-vad"
-PUNC_SPEC_ID = "ct-punc"
-WHISPER_SPEC_ID = "large-v3"
 
 # sherpa-onnx equivalents (#685: transcribe.py/punctuate.py run on these now).
 SHERPA_SENSEVOICE_SPEC_ID = "sherpa-sensevoice"
@@ -456,19 +452,15 @@ def missing_required_models(cfg: BibilabConfig) -> list[str]:
 
 
 __all__ = [
-    "DIARIZATION_SPEC_ID",
     "EMBEDDING_SPEC_ID",
     "ModelKind",
     "ModelSpec",
-    "PUNC_SPEC_ID",
     "RERANKER_SPEC_ID",
     "SHERPA_DIARIZATION_SPEC_ID",
     "SHERPA_PUNC_SPEC_ID",
     "SHERPA_SENSEVOICE_SPEC_ID",
     "SHERPA_VAD_SPEC_ID",
     "SHERPA_WHISPER_SPEC_ID",
-    "VAD_SPEC_ID",
-    "WHISPER_SPEC_ID",
     "ensure",
     "get_spec",
     "list_specs",

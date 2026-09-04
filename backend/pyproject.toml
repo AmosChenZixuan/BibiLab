@@ -37,9 +37,10 @@ dependencies = [
     "soundfile>=0.13.1",
 ]
 
-# torch is the only production GPU consumer (FunASR ASR in pipeline/transcribe.py;
-# routers/health.py probes but allocates nothing). cpu, cuda and rocm are conflicting
-# dependency groups pinning torch/torchaudio to different PyTorch wheel indices;
+# torch stays installed (funasr still depends on it; removal is #687) but no longer
+# runs on the transcription path as of #685 — routers/health.py's CUDA probe is its
+# only remaining production consumer, and allocates nothing. cpu, cuda and rocm are
+# conflicting dependency groups pinning torch/torchaudio to different PyTorch wheel indices;
 # uv.lock covers all three; cpu is a default group, so bare `uv sync` installs cpu.
 # rocm torch drives AMD GPUs through the same `cuda` device API (HIP under the hood).
 [tool.uv]
