@@ -221,36 +221,39 @@ class Sherpa:
 
 
 class Funasr:
-    """The current path, unmodified, as the baseline."""
+    """The current path as the baseline -- the production functions themselves.
+
+    Calling `_transcribe_funasr` + `punctuate` rather than reimplementing them is
+    what makes this a baseline: a reimplementation would be measuring my copy of
+    the pipeline, and it drifts (FunASR emits no `sentence_info` without a
+    `punc_model`, which production handles by falling back to `segments` and
+    punctuating separately). Requires the backend env.
+    """
 
     def __init__(self, device: str) -> None:
-        from funasr import AutoModel
+        from bibilab.config import TranscriptionConfig
+        from bibilab.pipeline.punctuate import punctuate
+        from bibilab.pipeline.transcribe import _transcribe_funasr
 
-        base = Path.home() / ".bibilab" / "models" / "asr"
-        self.model = AutoModel(
-            model=str(base / "sensevoice-small"), device=device,
-            vad_model=str(base / "fsmn-vad"),
-            vad_kwargs={"max_single_segment_time": 15000, "max_end_silence_time": 500,
-                        "speech_2_noise_ratio": 0.7},
-            spk_model=str(base / "cam++"),
-            disable_update=True, disable_pbar=True,
-        )
+        self.cfg = TranscriptionConfig(model="sensevoice-small", device=device, language="zh")
+        self._transcribe = _transcribe_funasr
+        self._punctuate = punctuate
 
     def transcribe(self, wav: Path) -> tuple[list[dict], dict]:
         t = time.perf_counter()
-        res = self.model.generate(input=str(wav), use_itn=True, merge_vad=False, language="zh")
-        elapsed = round(time.perf_counter() - t, 2)
-        raw = (res[0].get("sentence_info") or []) if res else []
-        segments = [
-            {"start_s": float(s.get("start", 0)) / 1000.0,
-             "end_s": float(s.get("end", 0)) / 1000.0,
-             "speaker": f"SPK_{s.get('spk')}" if s.get("spk") is not None else None,
-             "text": str(s.get("text") or "").strip()}
-            for s in raw
-            if str(s.get("text") or "").strip()
-        ]
-        # generate() is monolithic; it cannot report per-stage time.
-        return segments, {"generate_s": elapsed}
+        raw, language = self._transcribe(wav, self.cfg)
+        asr_s = round(time.perf_counter() - t, 2)
+
+        t = time.perf_counter()
+        segments = self._punctuate(raw, language)
+        punct_s = round(time.perf_counter() - t, 2)
+
+        # generate() is monolithic -- VAD, ASR and speaker cannot be split apart.
+        return (
+            [{"start_s": s.start, "end_s": s.end, "speaker": s.speaker, "text": s.text}
+             for s in segments if s.text.strip()],
+            {"generate_s": asr_s, "punct_s": punct_s},
+        )
 
 
 # Mirrors pipeline/chunk.py's _SENT_END, which punctuate.py splits on.
