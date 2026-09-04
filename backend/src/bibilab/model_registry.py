@@ -214,10 +214,25 @@ _SPECS: dict[str, ModelSpec] = {
 
 EMBEDDING_SPEC_ID = "multilingual-e5"
 RERANKER_SPEC_ID = "bge-reranker-base-q"
-DIARIZATION_SPEC_ID = "cam++"
-VAD_SPEC_ID = "fsmn-vad"
-PUNC_SPEC_ID = "ct-punc"
-WHISPER_SPEC_ID = "large-v3"
+
+# sherpa-onnx spec ids — the ones transcribe.py and punctuate.py actually run on.
+SHERPA_SENSEVOICE_SPEC_ID = "sherpa-sensevoice"
+SHERPA_WHISPER_SPEC_ID = "sherpa-whisper-large-v3"
+SHERPA_PUNC_SPEC_ID = "sherpa-ct-punc"
+SHERPA_VAD_SPEC_ID = "sherpa-silero-vad"
+SHERPA_DIARIZATION_SPEC_ID = "sherpa-campplus"
+
+# TranscriptionConfig.model values ("large-v3", "sensevoice-small") are stable public
+# config strings; which concrete spec backs them is an implementation detail resolved
+# once here, shared by required_models() below and transcribe.py's engine loader.
+_TRANSCRIPTION_SPEC_BY_MODEL = {
+    "large-v3": SHERPA_WHISPER_SPEC_ID,
+    "sensevoice-small": SHERPA_SENSEVOICE_SPEC_ID,
+}
+
+
+def resolve_transcription_spec_id(model: str) -> str:
+    return _TRANSCRIPTION_SPEC_BY_MODEL.get(model, model)
 
 
 def list_specs() -> list[ModelSpec]:
@@ -419,12 +434,12 @@ def required_models(cfg: BibilabConfig) -> list[ModelSpec]:
     model = cfg.transcription.model
     if model is not None:
         try:
-            specs.append(get_spec(model))
+            specs.append(get_spec(resolve_transcription_spec_id(model)))
         except ValueError:
             logger.warning("Unknown transcription model %r — skipping in required-models check", model)
-    specs.append(get_spec(VAD_SPEC_ID))
-    specs.append(get_spec(DIARIZATION_SPEC_ID))
-    specs.append(get_spec(PUNC_SPEC_ID))
+    specs.append(get_spec(SHERPA_VAD_SPEC_ID))
+    specs.append(get_spec(SHERPA_DIARIZATION_SPEC_ID))
+    specs.append(get_spec(SHERPA_PUNC_SPEC_ID))
     specs.append(get_spec(EMBEDDING_SPEC_ID))
     if cfg.rag.reranking_enabled:
         specs.append(get_spec(RERANKER_SPEC_ID))
@@ -437,17 +452,19 @@ def missing_required_models(cfg: BibilabConfig) -> list[str]:
 
 
 __all__ = [
-    "DIARIZATION_SPEC_ID",
     "EMBEDDING_SPEC_ID",
     "ModelKind",
     "ModelSpec",
-    "PUNC_SPEC_ID",
     "RERANKER_SPEC_ID",
-    "VAD_SPEC_ID",
-    "WHISPER_SPEC_ID",
+    "SHERPA_DIARIZATION_SPEC_ID",
+    "SHERPA_PUNC_SPEC_ID",
+    "SHERPA_SENSEVOICE_SPEC_ID",
+    "SHERPA_VAD_SPEC_ID",
+    "SHERPA_WHISPER_SPEC_ID",
     "ensure",
     "get_spec",
     "list_specs",
     "missing_required_models",
+    "resolve_transcription_spec_id",
     "required_models",
 ]

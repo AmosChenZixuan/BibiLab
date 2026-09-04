@@ -86,6 +86,22 @@ def interpreting_providers() -> list[str]:
     ]
 
 
+# sherpa-onnx takes one provider string per session (its own vocabulary), not
+# onnxruntime's ordered EP-class-name fallback list. ROCm has no distinct sherpa-onnx
+# provider string, so it falls back to cpu rather than guessing.
+_SHERPA_PROVIDER_NAMES = {"CPUExecutionProvider": "cpu", "CUDAExecutionProvider": "cuda"}
+
+
+def interpreting_provider() -> str:
+    """The single provider string sherpa-onnx sessions should use — the first
+    (highest-priority) entry of interpreting_providers(), translated to sherpa-onnx's
+    naming. The only provider-selection path for ASR; see interpreting_providers()."""
+    providers = interpreting_providers()
+    if not providers:
+        return "cpu"
+    return _SHERPA_PROVIDER_NAMES.get(providers[0], "cpu")
+
+
 # Input-side margin. Absorbs tokenizer drift (cl100k vs. provider-native) and
 # per-message framing overhead. Single-knob; no per-tier ceiling.
 _INPUT_MARGIN = 2048

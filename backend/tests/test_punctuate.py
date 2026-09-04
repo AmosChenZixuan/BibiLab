@@ -1,7 +1,12 @@
 """Tests for bibilab.pipeline.punctuate — char-offset alignment is model-free."""
 
+import sys
+from pathlib import Path
+from unittest.mock import MagicMock, patch
+
 import pytest
 
+from bibilab.model_registry import get_spec
 from bibilab.pipeline.chunk import _SENT_END
 from bibilab.pipeline.punctuate import _align, _strip_punc
 from bibilab.pipeline.transcribe import WhisperSegment
@@ -124,3 +129,65 @@ def test_punctuate_degrades_to_passthrough_on_alignment_failure(caplog):
             out = punctuate(segs, language="zh")
     assert out is segs
     assert "ct-punc alignment failed" in caplog.text
+
+
+# ---- _run_ctpunc construction (mocked sherpa_onnx) ----
+
+
+def _reset_ctpunc_singleton() -> None:
+    from bibilab.pipeline import punctuate as punctuate_mod
+
+    punctuate_mod._ctpunc_model = None
+
+
+def _stub_ensure(models_root: Path, spec_id: str) -> Path:
+    return models_root / get_spec(spec_id).local_subdir
+
+
+def test_run_ctpunc_builds_from_sherpa_ct_punc_spec_and_calls_add_punctuation(tmp_bibilab_home: Path):
+    _reset_ctpunc_singleton()
+
+    models_root = tmp_bibilab_home / "models"
+    stub = MagicMock()
+    fake_punct = MagicMock()
+    fake_punct.add_punctuation.return_value = "天花板。"
+    stub.OfflinePunctuation.return_value = fake_punct
+
+    with (
+        patch.dict(sys.modules, {"sherpa_onnx": stub}),
+        patch("bibilab.pipeline.punctuate.ensure", side_effect=lambda sid: _stub_ensure(models_root, sid)),
+        patch("bibilab.pipeline.punctuate.interpreting_provider", return_value="cpu"),
+    ):
+        from bibilab.pipeline.punctuate import _run_ctpunc
+
+        result = _run_ctpunc("天花板")
+
+    assert result == "天花板。"
+    fake_punct.add_punctuation.assert_called_once_with("天花板")
+
+    model_kwargs = stub.OfflinePunctuationModelConfig.call_args.kwargs
+    ct_punc_dir = models_root / get_spec("sherpa-ct-punc").local_subdir
+    assert model_kwargs["ct_transformer"] == str(ct_punc_dir / "model.onnx")
+    assert model_kwargs["provider"] == "cpu"
+
+
+def test_run_ctpunc_reuses_singleton_across_calls(tmp_bibilab_home: Path):
+    _reset_ctpunc_singleton()
+
+    models_root = tmp_bibilab_home / "models"
+    stub = MagicMock()
+    fake_punct = MagicMock()
+    fake_punct.add_punctuation.side_effect = lambda raw: raw + "。"
+    stub.OfflinePunctuation.return_value = fake_punct
+
+    with (
+        patch.dict(sys.modules, {"sherpa_onnx": stub}),
+        patch("bibilab.pipeline.punctuate.ensure", side_effect=lambda sid: _stub_ensure(models_root, sid)),
+        patch("bibilab.pipeline.punctuate.interpreting_provider", return_value="cpu"),
+    ):
+        from bibilab.pipeline.punctuate import _run_ctpunc
+
+        _run_ctpunc("a")
+        _run_ctpunc("b")
+
+    assert stub.OfflinePunctuation.call_count == 1

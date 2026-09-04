@@ -1,61 +1,54 @@
 """Transcription stage.
 
-All ASR models flow through FunASR's AutoModel — SenseVoice natively, Whisper
-via FunASR's WhisperWarp wrapper. Speaker diarization (CAM++) is mandatory for
-both paths.
+All ASR models run on sherpa-onnx, CPU-only (see docs/decisions/0001-asr-runtime.md):
+Silero VAD for segmentation, SenseVoice or Whisper (large-v3, int8) for recognition,
+CAM++ speaker embeddings clustered over the same VAD spans ASR decodes.
 
-ASR output is raw VAD-segment text: SenseVoice emits `，。？！` from its
-training transcripts and Whisper-large-v3 emits English punctuation, but
-the punctuation is sentence-level only and the worker re-runs ct-punc on
-zh segments downstream (see `pipeline/punctuate.py`) before persisting to
-`transcript_segments`.
+Diarization is embedding + greedy clustering (_cluster_speakers), not sherpa-onnx's
+own OfflineSpeakerDiarization — that class runs its own independent internal VAD,
+which would decouple speaker regions from the ASR text segments they need to line
+up with. This mirrors bench/asr/bench.py's Sherpa engine, the implementation that
+measured the CER/speaker-agreement numbers behind this design.
 
-When punc_model is absent, FunASR auto-falls-back to vad_segment for speaker
-segmentation (auto_model.py:810-812), so each `sentence_info` entry carries
-an `spk` label inline.
+ASR output is raw VAD-segment text (SenseVoice's own ITN, Whisper's own English
+punctuation); the worker re-runs ct-punc on zh segments downstream
+(see `pipeline/punctuate.py`) before persisting to `transcript_segments`.
 
-VAD is tuned (`max_single_segment_time=15000`, `max_end_silence_time=500`)
-to keep VAD chunks ≤15s — bounds segment length, gives finer speaker
-granularity, and prevents the 60s hard-cap that used to slice through words
-on continuous BGM-laden audio.
+VAD threshold/min_silence_duration (0.3 / 0.25) are a measured config — better
+CER *and* speaker agreement than sherpa's own defaults (0.5 / 0.50) at once.
+max_speech_duration=15s matches the pre-migration VAD chunk cap.
 
-CAM++ auto-downloads on first ingest, same pattern as the embedding/reranker
-models.
+sherpa-onnx model assets auto-download on first ingest via model_registry.ensure(),
+same pattern as the embedding/reranker models.
 """
 
 from __future__ import annotations
 
 import logging
-import re
 import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from bibilab.config import TranscriptionConfig
-from bibilab.model_registry import DIARIZATION_SPEC_ID, VAD_SPEC_ID, WHISPER_SPEC_ID, ensure, get_spec
-from bibilab.pipeline._shared import format_hms
+from bibilab.model_registry import (
+    SHERPA_DIARIZATION_SPEC_ID,
+    SHERPA_VAD_SPEC_ID,
+    ensure,
+    get_spec,
+    resolve_transcription_spec_id,
+)
+from bibilab.pipeline._shared import format_hms, interpreting_provider
 from bibilab.pipeline.audio import PipelineError
 
 logger = logging.getLogger(__name__)
 
-# SenseVoice emits per-segment tags: <|zh|>, <|NEUTRAL|>, <|BGM|>, <|withitn|>, etc.
-_FUNASR_TAG_RE = re.compile(r"<\|[^|]*\|>\s*")
-
-
-def _strip_funasr_tags(text: str) -> str:
-    return _FUNASR_TAG_RE.sub("", text)
-
-
-_funasr_pipeline: Any = None
-_funasr_key: tuple[str, str] | None = None  # (model, device)
-
-# Serializes the shared FunASR instance (load + generate). generate() mutates
-# internal state, so concurrent calls (worker max_concurrent_jobs > 1) race and
-# corrupt output. Transcription is also CPU/GIL-bound with the GPU only ~17%
-# busy, so parallel transcribes give no throughput gain anyway — serializing
-# costs nothing and is safe.
-_transcribe_lock = threading.Lock()
+# Matches bench/asr/bench.py's proven configuration.
+_SHERPA_NUM_THREADS = 4
+_VAD_THRESHOLD = 0.3
+_VAD_MIN_SILENCE_DURATION = 0.25
+_VAD_MAX_SPEECH_DURATION = 15.0  # equivalent to the pre-migration 15s VAD chunk cap
+_SPEAKER_CLUSTER_THRESHOLD = 0.5
 
 
 @dataclass
@@ -66,151 +59,205 @@ class WhisperSegment:
     speaker: str | None = None
 
 
-def _resolve_device(cfg: TranscriptionConfig) -> str:
-    # config defaults device to "cuda"; in a cpu-only container (or a host where GPU
-    # passthrough isn't wired) torch.cuda.is_available() is False, so FunASR would
-    # trip on `device='cuda'` during tensor allocation. Clamp to cpu instead —
-    # the single device decision point. Logged so an operator can tell why a
-    # `cuda` config silently fell back (cf. /health `cuda` field for the same).
-    if cfg.device != "cuda":
-        return "cpu"
-    import torch  # noqa: PLC0415
-
-    if torch.cuda.is_available():
-        return "cuda:0"
-    logger.warning("transcription.device='cuda' requested but torch.cuda.is_available() is False; clamping to cpu")
-    return "cpu"
+@dataclass
+class _SherpaEngine:
+    vad_cfg: Any
+    recognizer: Any
+    spk_extractor: Any
 
 
-def _load_funasr(cfg: TranscriptionConfig) -> Any:
-    global _funasr_pipeline, _funasr_key
-    from funasr import AutoModel  # noqa: PLC0415
+_sherpa_engine: _SherpaEngine | None = None
+_sherpa_engine_key: tuple[str, str] | None = None  # (model, language)
 
-    # Key on the resolved device, not cfg.device — otherwise a config that
-    # requests "cuda" hits the CPU-loaded pipeline on a subsequent call when
-    # the host gains a working GPU (or vice versa).
-    device = _resolve_device(cfg)
-    key = (cfg.model, device)
-    if _funasr_pipeline is not None and _funasr_key == key:
-        return _funasr_pipeline
+# Serializes the shared sherpa-onnx engine (load + inference). One shared sherpa
+# model was measured safely serving four concurrent workers with bit-identical
+# output, but resizing this lock against that is a separate, throughput-focused
+# change (out of scope here) — keep today's serialized default.
+_transcribe_lock = threading.Lock()
 
-    spk_path = ensure(DIARIZATION_SPEC_ID)
-    vad_path = ensure(VAD_SPEC_ID)
 
+def _load_sherpa(cfg: TranscriptionConfig) -> _SherpaEngine:
+    global _sherpa_engine, _sherpa_engine_key
+
+    # Both cfg.model and cfg.language are real construction-time inputs to the
+    # recognizer (VAD/speaker never vary by either) — one cache, keyed on both,
+    # reuses the existing single-keyed-singleton shape rather than splitting it.
+    key = (cfg.model, cfg.language)
+    if _sherpa_engine is not None and _sherpa_engine_key == key:
+        return _sherpa_engine
+
+    import sherpa_onnx as so  # noqa: PLC0415
+
+    provider = interpreting_provider()
+
+    vad_spec = get_spec(SHERPA_VAD_SPEC_ID)
+    vad_dir = ensure(SHERPA_VAD_SPEC_ID)
+    vad_cfg = so.VadModelConfig()
+    vad_cfg.silero_vad.model = str(vad_dir / vad_spec.integrity_files[0])
+    vad_cfg.silero_vad.threshold = _VAD_THRESHOLD
+    vad_cfg.silero_vad.min_silence_duration = _VAD_MIN_SILENCE_DURATION
+    vad_cfg.silero_vad.max_speech_duration = _VAD_MAX_SPEECH_DURATION
+    vad_cfg.sample_rate = 16000
+    vad_cfg.provider = provider
+    vad_cfg.num_threads = _SHERPA_NUM_THREADS
+
+    spec_id = resolve_transcription_spec_id(cfg.model)
+    spec = get_spec(spec_id)
+    model_dir = ensure(spec_id)
     if cfg.model == "large-v3":
-        # Whisper checkpoint is pre-downloaded to ~/.bibilab/models/asr/whisper/
-        # by model_registry.ensure(WHISPER_SPEC_ID). funasr's openai branch takes the
-        # checkpoint as `model`: when that's an existing path it local-loads (deriving
-        # model_path + WhisperWarp internally) instead of fetching to ~/.cache/whisper.
-        # A bare name would download; passing model_path with no model trips its assert.
-        model_dir = ensure(WHISPER_SPEC_ID)
-        spec = get_spec(WHISPER_SPEC_ID)
-        automodel_kwargs = {"model": str(model_dir / spec.integrity_files[0]), "hub": "openai"}
+        encoder, decoder, tokens = spec.integrity_files
+        # language is fixed 'en' regardless of cfg.language: only int8 large-v3 on
+        # English was validated (0.40 CER on Chinese — untested elsewhere).
+        recognizer = so.OfflineRecognizer.from_whisper(
+            encoder=str(model_dir / encoder),
+            decoder=str(model_dir / decoder),
+            tokens=str(model_dir / tokens),
+            num_threads=_SHERPA_NUM_THREADS,
+            provider=provider,
+            language="en",
+            task="transcribe",
+        )
     else:
-        model_path = ensure(cfg.model)
-        automodel_kwargs = {"model": str(model_path)}
-
-    logger.info("Loading FunASR model %s on %s (+CAM++)", cfg.model, device)
-    try:
-        _funasr_pipeline = AutoModel(
-            device=device,
-            vad_model=str(vad_path),
-            # speech_2_noise_ratio < default 1.0 down-weights speech vs noise so
-            # BGM-filled pauses (audio-drama background music) score as silence and
-            # VAD cuts there. Without it, a speaker change mid-segment over continuous
-            # BGM stays one VAD segment → one CAM++ label (intra-segment conflation).
-            # 0.7 splits the change, keeps speaker count stable, ~99% transcription
-            # parity. Pairs with merge_vad=False above.
-            vad_kwargs={
-                "max_single_segment_time": 15000,
-                "max_end_silence_time": 500,
-                "speech_2_noise_ratio": 0.7,
-            },
-            spk_model=str(spk_path),
-            disable_update=True,
-            disable_pbar=True,
-            **automodel_kwargs,
+        model, tokens = spec.integrity_files
+        recognizer = so.OfflineRecognizer.from_sense_voice(
+            model=str(model_dir / model),
+            tokens=str(model_dir / tokens),
+            num_threads=_SHERPA_NUM_THREADS,
+            provider=provider,
+            language=cfg.language,
+            use_itn=True,
         )
-    except Exception:
-        logger.exception(
-            "Failed to load ASR model %s on %s — check device compatibility and available memory",
-            cfg.model,
-            device,
+
+    spk_spec = get_spec(SHERPA_DIARIZATION_SPEC_ID)
+    spk_dir = ensure(SHERPA_DIARIZATION_SPEC_ID)
+    spk_extractor = so.SpeakerEmbeddingExtractor(
+        so.SpeakerEmbeddingExtractorConfig(
+            model=str(spk_dir / spk_spec.integrity_files[0]),
+            provider=provider,
+            num_threads=_SHERPA_NUM_THREADS,
         )
-        raise
-    _funasr_key = key
-    return _funasr_pipeline
+    )
+
+    _sherpa_engine = _SherpaEngine(vad_cfg=vad_cfg, recognizer=recognizer, spk_extractor=spk_extractor)
+    _sherpa_engine_key = key
+    return _sherpa_engine
 
 
-def _coerce_seconds(value: float) -> float:
-    # FunASR reports ms when spk model is active, seconds otherwise.
-    # CAM++ is always loaded, so values are always ms.
-    return value / 1000.0
+def _vad_spans(vad_cfg: Any, samples: Any, rate: int) -> list[tuple[float, float]]:
+    import sherpa_onnx as so  # noqa: PLC0415
+
+    vad = so.VoiceActivityDetector(vad_cfg, buffer_size_in_seconds=100)
+    window = vad_cfg.silero_vad.window_size
+    spans: list[tuple[float, float]] = []
+
+    def drain() -> None:
+        while not vad.empty():
+            seg = vad.front
+            spans.append((seg.start / rate, (seg.start + len(seg.samples)) / rate))
+            vad.pop()
+
+    for i in range(0, len(samples), window):
+        vad.accept_waveform(samples[i : i + window])
+        drain()
+    vad.flush()
+    drain()
+    return spans
 
 
-def _transcribe_funasr(audio_path: Path, cfg: TranscriptionConfig) -> tuple[list[WhisperSegment], str | None]:
-    gen_kwargs: dict[str, Any] = {
-        "input": str(audio_path),
-        "use_itn": True,
-        # merge_vad glues adjacent VAD segments into ~merge_length_s windows
-        # REGARDLESS of speaker, before CAM++ embeds. A multi-speaker window then
-        # collapses to one speaker label (under-clustering). Disabling it keeps
-        # VAD's silence-bounded segments — finer, speaker-aligned — with no ASR
-        # quality loss (measured ~98% transcription parity).
-        "merge_vad": False,
-    }
-    if cfg.language and cfg.language != "auto":
-        gen_kwargs["language"] = cfg.language
+def _cluster_speakers(embeddings: list) -> list[int]:
+    """Greedy cosine agglomeration over an unknown speaker count. sherpa-onnx ships
+    SpeakerEmbeddingManager for matching against *enrolled* speakers, not this —
+    unsupervised clustering has no built-in sherpa-onnx equivalent."""
+    import numpy as np  # noqa: PLC0415
 
-    # Lock spans load + generate: the first concurrent burst would otherwise
-    # each build the singleton (~3.8GB transient), and generate() mutates
-    # shared state. Holding it across both serializes the whole shared-model
-    # critical section.
+    if not embeddings:
+        return []
+    embs = np.asarray(embeddings, dtype="float32")
+    embs = embs / (np.linalg.norm(embs, axis=1, keepdims=True) + 1e-9)
+    centroids: list = []
+    counts: list[int] = []
+    labels: list[int] = []
+    for e in embs:
+        if centroids:
+            sims = np.asarray(centroids) @ e
+            best = int(sims.argmax())
+            if sims[best] >= _SPEAKER_CLUSTER_THRESHOLD:
+                labels.append(best)
+                centroids[best] = (centroids[best] * counts[best] + e) / (counts[best] + 1)
+                centroids[best] /= np.linalg.norm(centroids[best]) + 1e-9
+                counts[best] += 1
+                continue
+        centroids.append(e.copy())
+        counts.append(1)
+        labels.append(len(centroids) - 1)
+    return labels
+
+
+def _transcribe_sherpa(audio_path: Path, cfg: TranscriptionConfig) -> tuple[list[WhisperSegment], str | None]:
+    import soundfile as sf  # noqa: PLC0415
+
+    # Lock spans load + inference: the first concurrent burst would otherwise each
+    # build the singleton, and sherpa-onnx streams are not safe to decode from
+    # multiple threads against the same recognizer without external serialization.
     try:
         with _transcribe_lock:
-            model = _load_funasr(cfg)
-            res = model.generate(**gen_kwargs)
-    except Exception:
-        logger.exception("FunASR generate failed for %s (model=%s)", audio_path, cfg.model)
-        raise
-    if not res:
-        logger.warning("FunASR returned no results for %s", audio_path)
-        return [], None
+            engine = _load_sherpa(cfg)
+            samples, rate = sf.read(str(audio_path), dtype="float32", always_2d=False)
+            spans = _vad_spans(engine.vad_cfg, samples, rate)
 
-    first = res[0]
-    raw = first.get("sentence_info") or first.get("segments") or []
-    if not raw:
-        logger.warning("FunASR returned result with no segments for %s: %s", audio_path, list(first.keys()))
-        return [], None
+            recognized: list[tuple[str, str | None]] = []
+            for start, end in spans:
+                stream = engine.recognizer.create_stream()
+                stream.accept_waveform(rate, samples[int(start * rate) : int(end * rate)])
+                engine.recognizer.decode_stream(stream)
+                recognized.append((stream.result.text.strip(), stream.result.lang or None))
+
+            embeddings = []
+            for start, end in spans:
+                stream = engine.spk_extractor.create_stream()
+                stream.accept_waveform(rate, samples[int(start * rate) : int(end * rate)])
+                stream.input_finished()
+                embeddings.append(engine.spk_extractor.compute(stream))
+            labels = _cluster_speakers(embeddings) if embeddings else []
+    except Exception:
+        logger.exception("sherpa-onnx transcription failed for %s (model=%s)", audio_path, cfg.model)
+        raise
+
     segments: list[WhisperSegment] = []
-    for s in raw:
-        text = _strip_funasr_tags(str(s.get("text") or s.get("sentence") or "")).strip()
+    detected_lang: str | None = None
+    for (start, end), (text, lang), label in zip(spans, recognized, labels, strict=True):
         if not text:
             continue
-        start = _coerce_seconds(float(s.get("start", 0.0)))
-        end = _coerce_seconds(float(s.get("end", 0.0)))
-        spk = s.get("spk")
-        speaker = f"SPK_{spk}" if spk is not None else None
-        segments.append(WhisperSegment(start=start, end=end, text=text, speaker=speaker))
+        segments.append(WhisperSegment(start=start, end=end, text=text, speaker=f"SPK_{label}"))
+        if detected_lang is None and lang:
+            detected_lang = lang
 
-    detected = first.get("language")
-    if cfg.language and cfg.language != "auto":
-        detected = cfg.language
-    elif detected == "auto":
-        detected = None
-    return segments, detected
+    if not segments:
+        logger.warning("sherpa-onnx returned no segments for %s", audio_path)
+        return [], None
+
+    if cfg.model == "large-v3":
+        # Wins over an explicit cfg.language: the recognizer is always constructed
+        # with language="en" (see _load_sherpa), so the decoded text is English
+        # regardless of what cfg.language asked for — reporting cfg.language here
+        # would send genuinely English text into the wrong-language punctuation model.
+        detected_lang = "en"
+    elif cfg.language and cfg.language != "auto":
+        detected_lang = cfg.language
+    return segments, detected_lang
 
 
 def transcribe(audio_path: Path, cfg: TranscriptionConfig) -> tuple[list[WhisperSegment], str | None]:
     """Transcribe audio. Returns (segments, detected_language).
 
-    Segments carry speaker labels inline from FunASR's CAM++ diarization.
+    Segments carry speaker labels from CAM++ embeddings clustered over the same
+    VAD spans the ASR recognizer decodes.
     """
     try:
-        get_spec(cfg.model)  # raises ValueError on unknown model
+        get_spec(resolve_transcription_spec_id(cfg.model))  # raises ValueError on unknown model
     except ValueError as exc:
         raise PipelineError(str(exc)) from exc
-    return _transcribe_funasr(audio_path, cfg)
+    return _transcribe_sherpa(audio_path, cfg)
 
 
 def build_speaker_namespace(segments: list[WhisperSegment]) -> dict[str | None, int]:

@@ -127,6 +127,32 @@ def test_asr_health_reports_unconfigured_model_as_error():
     assert result == {"status": "error", "message": "Transcription model not configured"}
 
 
+def test_asr_health_resolves_public_model_name_to_sherpa_spec():
+    """A known transcription.model value must resolve through
+    resolve_transcription_spec_id to the sherpa-onnx spec that's actually used,
+    not get_spec(model) directly."""
+    from bibilab.model_registry import SHERPA_SENSEVOICE_SPEC_ID, get_spec
+
+    cfg = type("Cfg", (), {"transcription": TranscriptionConfig(model="sensevoice-small")})()
+
+    with patch("bibilab.routers.health.get_spec", wraps=get_spec) as mock_get_spec:
+        result = _check_asr(cfg)
+
+    mock_get_spec.assert_called_once_with(SHERPA_SENSEVOICE_SPEC_ID)
+    assert result["status"] == "error"  # not downloaded in the test env — resolution is what's under test
+
+
+def test_diarization_health_checks_sherpa_spec():
+    """The diarization health probe must check the sherpa-onnx CAM++ spec."""
+    from bibilab.model_registry import SHERPA_DIARIZATION_SPEC_ID, get_spec
+    from bibilab.routers.health import _check_diarization_model
+
+    with patch("bibilab.routers.health.get_spec", wraps=get_spec) as mock_get_spec:
+        _check_diarization_model()
+
+    mock_get_spec.assert_called_once_with(SHERPA_DIARIZATION_SPEC_ID)
+
+
 @pytest.mark.asyncio
 async def test_config_defaults(client: httpx.AsyncClient):
     resp = await client.get("/config")
