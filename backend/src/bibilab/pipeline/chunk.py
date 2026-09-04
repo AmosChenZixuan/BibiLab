@@ -63,7 +63,7 @@ def chunk_segments(
     segments: list[WhisperSegment],
     target_tokens: int | None = None,
     chunk_max_tokens: int | None = None,
-    language: str = "en",
+    language: str | None = "en",
     pause_threshold_seconds: float = 1.5,
 ) -> list[RagChunk]:
     resolved_target = (

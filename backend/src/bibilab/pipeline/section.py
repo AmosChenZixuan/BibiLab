@@ -133,7 +133,7 @@ def derive_sections(
 def chunk_by_sections(
     segments: list[WhisperSegment],
     sections: list[Section],
-    language: str = "en",
+    language: str | None = "en",
 ) -> list[RagChunk]:
     """Run `chunk_segments` independently inside each section's segment slice,
     re-stamping `sequence_index` and `seg_start`/`seg_end` to source-global
