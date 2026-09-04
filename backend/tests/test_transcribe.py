@@ -227,11 +227,14 @@ def test_load_sherpa_caches_by_model_and_language(tmp_bibilab_home: Path):
 
 
 def test_load_sherpa_builds_singleton_exactly_once_under_concurrent_entry(tmp_bibilab_home: Path):
-    """N threads racing to build the sherpa singleton for the same cfg must
-    construct it exactly once. The lock is narrowed to guard construction
-    only, not removed — a shared model is safe for concurrent inference, but
-    two threads racing to build it for the first time is not."""
-    from concurrent.futures import ThreadPoolExecutor
+    """Two threads racing to build the sherpa singleton for the same cfg must
+    construct it exactly once. Thread A is deliberately held mid-build (via an
+    Event, patched into interpreting_provider — called right after the cache
+    check, inside the lock) while thread B is given time to attempt entry.
+    This deterministically exercises the exact race the lock exists to
+    prevent, rather than hoping enough concurrent threads collide by luck."""
+    import threading
+    import time
 
     _reset_sherpa_engine_cache()
     from bibilab.pipeline import transcribe as transcribe_mod
@@ -240,16 +243,34 @@ def test_load_sherpa_builds_singleton_exactly_once_under_concurrent_entry(tmp_bi
     models_root = tmp_bibilab_home / "models"
     stub = _sherpa_stub()
 
+    build_started = threading.Event()
+    release_build = threading.Event()
+
+    def blocking_provider() -> str:
+        build_started.set()
+        release_build.wait(timeout=2)
+        return "cpu"
+
+    results: list = []
     with (
         patch.dict(sys.modules, {"sherpa_onnx": stub}),
         patch("bibilab.pipeline.transcribe.ensure", side_effect=lambda sid: _stub_ensure(models_root, sid)),
-        patch("bibilab.pipeline.transcribe.interpreting_provider", return_value="cpu"),
+        patch("bibilab.pipeline.transcribe.interpreting_provider", side_effect=blocking_provider),
     ):
-        with ThreadPoolExecutor(max_workers=8) as pool:
-            engines = list(pool.map(lambda _: transcribe_mod._load_sherpa(cfg), range(8)))
+        thread_a = threading.Thread(target=lambda: results.append(transcribe_mod._load_sherpa(cfg)))
+        thread_a.start()
+        assert build_started.wait(timeout=2), "thread A never reached construction"
+
+        thread_b = threading.Thread(target=lambda: results.append(transcribe_mod._load_sherpa(cfg)))
+        thread_b.start()
+        time.sleep(0.2)  # give thread B a real chance to attempt entry while A is still mid-build
+        release_build.set()
+
+        thread_a.join(timeout=2)
+        thread_b.join(timeout=2)
 
     assert stub.OfflineRecognizer.from_sense_voice.call_count == 1
-    assert all(e is engines[0] for e in engines)
+    assert results[0] is results[1]
 
 
 def _fake_engine(recognized: list[tuple[str, str | None]], embeddings: list[list[float]]):
