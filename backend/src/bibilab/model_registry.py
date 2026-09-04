@@ -93,7 +93,7 @@ _SPECS: dict[str, ModelSpec] = {
         local_subdir="asr/ct-punc",
         modelscope_id="iic/punc_ct-transformer_cn-en-common-vocab471067-large",
     ),
-    # -- sherpa-onnx assets (#684). Additive: land beside the PyTorch specs above,
+    # -- sherpa-onnx assets. Additive: land beside the PyTorch specs above,
     # nothing consumes these yet. RELEASE/local_subdir mirror bench/asr/bench.py,
     # already proven to fetch and extract these exact URLs.
     "sherpa-sensevoice": ModelSpec(

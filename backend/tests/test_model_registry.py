@@ -35,11 +35,14 @@ def _make_http_spec(target: Path) -> ModelSpec:
 
 
 class _FakeStreamResp:
+    def __init__(self, data: bytes = b"hello") -> None:
+        self._data = data
+
     def raise_for_status(self) -> None:
         pass
 
     def iter_bytes(self, _chunk_size: int):
-        yield b"hello"
+        yield self._data
 
     def __enter__(self):
         return self
@@ -77,23 +80,6 @@ def _build_tar_bz2(tmp_path: Path, top_dir: str, files: dict[str, bytes]) -> byt
     return archive_path.read_bytes()
 
 
-class _FakeArchiveResp:
-    def __init__(self, data: bytes) -> None:
-        self._data = data
-
-    def raise_for_status(self) -> None:
-        pass
-
-    def iter_bytes(self, _chunk_size: int):
-        yield self._data
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *args):
-        return False
-
-
 def test_download_http_files_writes_integrity_files_and_renames_to_target(tmp_bibilab_home: Path):
     """Regression: prior `finally: shutil.rmtree(tmp)` wiped tmp before rename,
     making every http_files download raise 'atomic rename failed'.
@@ -119,7 +105,7 @@ def test_download_http_archive_extracts_flattens_and_renames_to_target(tmp_path:
     target = tmp_bibilab_home / "models" / "test-archive"
     spec = _make_archive_spec()
 
-    with patch("httpx.stream", return_value=_FakeArchiveResp(archive_bytes)):
+    with patch("httpx.stream", return_value=_FakeStreamResp(archive_bytes)):
         _download_http_archive(spec, target)
 
     assert (target / "model.onnx").read_bytes() == b"weights"
@@ -133,7 +119,7 @@ def test_download_http_archive_failure_leaves_no_partial_or_target(tmp_path: Pat
     target = tmp_bibilab_home / "models" / "test-archive"
     spec = _make_archive_spec()
 
-    with patch("httpx.stream", return_value=_FakeArchiveResp(b"not a real tar.bz2")):
+    with patch("httpx.stream", return_value=_FakeStreamResp(b"not a real tar.bz2")):
         with pytest.raises(tarfile.ReadError):
             _download_http_archive(spec, target)
 
@@ -157,7 +143,7 @@ def test_download_http_archive_requires_single_top_level_dir(tmp_path: Path, tmp
     target = tmp_bibilab_home / "models" / "test-archive"
     spec = _make_archive_spec()
 
-    with patch("httpx.stream", return_value=_FakeArchiveResp(archive_bytes)):
+    with patch("httpx.stream", return_value=_FakeStreamResp(archive_bytes)):
         with pytest.raises(AssertionError):
             _download_http_archive(spec, target)
 
