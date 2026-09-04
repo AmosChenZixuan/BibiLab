@@ -312,6 +312,88 @@ async def test_stage_transcribe_punctuates_and_returns_sentences(tmp_bibilab_hom
 
 
 @pytest.mark.asyncio
+async def test_stage_transcribe_trusts_detected_language_over_config(tmp_bibilab_home: Path, monkeypatch):
+    """large-v3 always decodes English regardless of cfg.transcription.language
+    (see transcribe.py), so transcribe() reports detected_language="en" even when
+    the user explicitly configured "zh". _stage_transcribe must not re-derive
+    effective_language from cfg — that would route English text through the
+    zh-gated ct-punc path. Regression for #692."""
+    from bibilab.config import BibilabConfig
+    from bibilab.db import bootstrap_db, create_job
+    from bibilab.pipeline.transcribe import WhisperSegment
+
+    await bootstrap_db()
+    job_id = await create_job("ingest", {})
+
+    vad = [WhisperSegment(start=0.0, end=5.0, text="hello world", speaker="SPK_0")]
+    monkeypatch.setattr("bibilab.worker.transcribe", lambda *a, **k: (vad, "en"))
+    called = {}
+
+    def _fake_punctuate(segs, language):
+        called["language"] = language
+        return segs
+
+    monkeypatch.setattr("bibilab.worker.punctuate", _fake_punctuate)
+
+    cfg = BibilabConfig()
+    cfg.transcription.model = "large-v3"
+    cfg.transcription.language = "zh"
+
+    loop = WorkerLoop(config=cfg, home=tmp_bibilab_home)
+    wav = tmp_bibilab_home / "a.wav"
+    wav.write_bytes(b"")
+    result = await loop._stage_transcribe({"id": job_id, "type": "ingest", "meta": {}}, wav, "src-1", cfg)
+
+    detected_language, effective_language, _sentence_segments = result
+    assert detected_language == "en"
+    assert effective_language == "en"
+    assert called["language"] == "en"
+
+
+@pytest.mark.asyncio
+async def test_stage_transcribe_none_detected_language_degrades_safely(tmp_bibilab_home: Path, monkeypatch):
+    """auto mode + failed detection (detected_language=None) must not crash:
+    effective_language stays None, punctuate() skips (non-"zh" gate) instead
+    of receiving a fabricated "en". Regression coverage for #692's other
+    suspected failure mode (verified as behaviorally inert, not a fix)."""
+    from bibilab.config import BibilabConfig
+    from bibilab.db import bootstrap_db, create_job
+    from bibilab.pipeline.chunk import chunk_segments
+    from bibilab.pipeline.transcribe import WhisperSegment
+
+    await bootstrap_db()
+    job_id = await create_job("ingest", {})
+
+    vad = [WhisperSegment(start=0.0, end=5.0, text="unrecognized", speaker="SPK_0")]
+    monkeypatch.setattr("bibilab.worker.transcribe", lambda *a, **k: (vad, None))
+    called = {}
+
+    def _fake_punctuate(segs, language):
+        called["language"] = language
+        return segs
+
+    monkeypatch.setattr("bibilab.worker.punctuate", _fake_punctuate)
+
+    loop = WorkerLoop(config=BibilabConfig(), home=tmp_bibilab_home)
+    wav = tmp_bibilab_home / "a.wav"
+    wav.write_bytes(b"")
+    result = await loop._stage_transcribe({"id": job_id, "type": "ingest", "meta": {}}, wav, "src-1", BibilabConfig())
+
+    detected_language, effective_language, _sentence_segments = result
+    assert detected_language is None
+    assert effective_language is None
+    assert called["language"] is None
+
+    # chunk_segments(language=None) must fall back to the same English (300
+    # token) target as language="en" — dict.get(None, default) degrades
+    # identically, so this is pinning existing behavior, not new code.
+    long_text = " ".join(["word"] * 500)
+    none_chunks = chunk_segments([WhisperSegment(start=0.0, end=1.0, text=long_text, speaker=None)], language=None)
+    en_chunks = chunk_segments([WhisperSegment(start=0.0, end=1.0, text=long_text, speaker=None)], language="en")
+    assert [c.text for c in none_chunks] == [c.text for c in en_chunks]
+
+
+@pytest.mark.asyncio
 async def test_stage_transcribe_no_speech_raises_pipeline_error(tmp_bibilab_home: Path, monkeypatch):
     """A speech-less video (empty transcription) fails loud with a clear message
     instead of crashing downstream with IndexError in digest."""
