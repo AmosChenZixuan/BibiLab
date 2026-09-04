@@ -212,12 +212,10 @@ class Sherpa:
         stage["spk_s"] = round(time.perf_counter() - t, 2)
 
         t = time.perf_counter()
-        segments = [
-            {"start_s": s, "end_s": e, "speaker": f"SPK_{lbl}",
-             "text": self.punct.add_punctuation(txt) if txt else ""}
-            for (s, e), txt, lbl in zip(spans, texts, labels, strict=True)
-            if txt
-        ]
+        kept = [(s, e, normalize(txt), f"SPK_{lbl}")
+                for (s, e), txt, lbl in zip(spans, texts, labels, strict=True) if txt]
+        raw = "".join(k[2] for k in kept)
+        segments = align_punctuation(kept, self.punct.add_punctuation(raw)) if raw else []
         stage["punct_s"] = round(time.perf_counter() - t, 2)
         return segments, stage
 
@@ -253,6 +251,60 @@ class Funasr:
         ]
         # generate() is monolithic; it cannot report per-stage time.
         return segments, {"generate_s": elapsed}
+
+
+# Mirrors pipeline/chunk.py's _SENT_END, which punctuate.py splits on.
+SENT_END = ("。", "！", "？", "．", "…", "!", "?")
+
+
+def align_punctuation(spans: list[tuple], punctuated: str) -> list[dict]:
+    """Map one whole-transcript punctuation pass back onto the VAD spans.
+
+    Mirrors pipeline/punctuate.py: the reference in the fixture is post-ct-punc
+    *sentence* segments cut from a single punctuation call over the whole
+    transcript. Punctuating each VAD span separately instead gives a very
+    different sentence density, so the comparison only means something if this
+    side is shaped the same way. Splits on sentence-final punctuation and on
+    speaker change; each segment's time comes from the spans its characters
+    came from.
+    """
+    out: list[dict] = []
+    idx = 0            # which span the next raw char belongs to
+    consumed = 0       # raw chars already taken from that span
+    buf = ""
+    first, last = idx, idx
+
+    def flush() -> None:
+        nonlocal buf, first
+        if buf.strip():
+            out.append({"start_s": spans[first][0], "end_s": spans[last][1],
+                        "speaker": spans[first][3], "text": buf})
+        buf = ""
+        first = idx
+
+    for ch in punctuated:
+        if ch in PUNC:
+            buf += ch
+            if ch in SENT_END:
+                flush()
+            continue
+        while idx < len(spans) and consumed >= len(spans[idx][2]):
+            idx += 1
+            consumed = 0
+        if idx >= len(spans):
+            raise ValueError("punctuation model emitted more content than it was given")
+        if buf and spans[idx][3] != spans[first][3]:
+            flush()
+        buf += ch
+        last = idx
+        consumed += 1
+    flush()
+
+    taken = sum(len(s[2]) for s in spans[:idx]) + consumed
+    total = sum(len(s[2]) for s in spans)
+    if taken != total:
+        raise ValueError(f"punctuation dropped content: consumed {taken}/{total} chars")
+    return out
 
 
 def cluster(embs, threshold: float = 0.5) -> list[int]:
