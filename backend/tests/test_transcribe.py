@@ -230,11 +230,10 @@ def test_load_sherpa_builds_singleton_exactly_once_under_concurrent_entry(tmp_bi
     """Two threads racing to build the sherpa singleton for the same cfg must
     construct it exactly once. Thread A is deliberately held mid-build (via an
     Event, patched into interpreting_provider — called right after the cache
-    check, inside the lock) while thread B is given time to attempt entry.
-    This deterministically exercises the exact race the lock exists to
-    prevent, rather than hoping enough concurrent threads collide by luck."""
+    check, inside the lock) while thread B signals the instant it starts
+    attempting entry, so the main thread releases A only once B is genuinely
+    contending — no sleep, so this can't false-pass under scheduler load."""
     import threading
-    import time
 
     _reset_sherpa_engine_cache()
     from bibilab.pipeline import transcribe as transcribe_mod
@@ -245,11 +244,16 @@ def test_load_sherpa_builds_singleton_exactly_once_under_concurrent_entry(tmp_bi
 
     build_started = threading.Event()
     release_build = threading.Event()
+    b_entered = threading.Event()
 
     def blocking_provider() -> str:
         build_started.set()
         release_build.wait(timeout=2)
         return "cpu"
+
+    def run_b() -> None:
+        b_entered.set()
+        results.append(transcribe_mod._load_sherpa(cfg))
 
     results: list = []
     with (
@@ -261,9 +265,9 @@ def test_load_sherpa_builds_singleton_exactly_once_under_concurrent_entry(tmp_bi
         thread_a.start()
         assert build_started.wait(timeout=2), "thread A never reached construction"
 
-        thread_b = threading.Thread(target=lambda: results.append(transcribe_mod._load_sherpa(cfg)))
+        thread_b = threading.Thread(target=run_b)
         thread_b.start()
-        time.sleep(0.2)  # give thread B a real chance to attempt entry while A is still mid-build
+        assert b_entered.wait(timeout=2), "thread B never started"
         release_build.set()
 
         thread_a.join(timeout=2)

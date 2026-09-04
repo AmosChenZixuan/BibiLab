@@ -198,6 +198,10 @@ def _transcribe_sherpa(audio_path: Path, cfg: TranscriptionConfig) -> tuple[list
 
     try:
         engine = _load_sherpa(cfg)
+        # Everything below runs outside _transcribe_lock: concurrent decode/embed
+        # calls against the same shared recognizer/extractor were measured to
+        # produce bit-identical output, so no external serialization is needed
+        # here (only building the singleton above needs the lock).
         samples, rate = sf.read(str(audio_path), dtype="float32", always_2d=False)
         spans = _vad_spans(engine.vad_cfg, samples, rate)
 
