@@ -134,8 +134,7 @@ git clone <repo-url> bibilab && cd bibilab
 
 # 2. Backend
 cd backend
-uv sync --dev                     # creates .venv, installs everything (cpu torch by default)
-# On an NVIDIA box, for GPU transcription: uv sync --no-default-groups --group dev --group cuda
+uv sync --dev                     # creates .venv, installs everything
 uv run python -m bibilab.main     # serves API on :8765 + SPA in prod
 # In dev, run the SPA separately — see step 3.
 cd ..
@@ -158,35 +157,14 @@ first use — expect ~1–3 GB the first time you ingest a video.
 
 Build and run everything in a container — no local Python/Node setup.
 
-**Prerequisites:** Docker (with Compose). For GPU-accelerated transcription you
-need the NVIDIA driver plus GPU-enabled Docker — **Docker Desktop (WSL2 backend)
-has this built in**, while a native Docker Engine needs the
-[NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html).
-For an **AMD GPU**, install the host `amdgpu`/ROCm kernel driver and make sure your
-user is in the `render`/`video` groups — `install.sh` wires the container device
-flags but cannot install host drivers. Without GPU support (or on non-NVIDIA/AMD
-hosts) the container runs on CPU.
+**Prerequisites:** Docker (with Compose). The image is CPU-only.
 
 ```bash
 git clone <repo-url> bibilab && cd bibilab
-./install.sh        # detects GPU once, builds the matching image, starts the container
+./install.sh        # builds the image, starts the container
 ```
 
-Open `http://localhost:8765`. `install.sh` probes for working GPU passthrough and
-picks the `cpu`, `cuda`, or `rocm` torch variant automatically — GPU only accelerates
-ASR transcription, so the CPU image is fully functional, just slower to transcribe.
-
-| Host | Variant |
-|---|---|
-| NVIDIA + GPU-enabled Docker (Docker Desktop WSL2, or Linux + Toolkit) | `cuda` — GPU transcription |
-| AMD + host ROCm driver (Linux, `rocminfo` works) | `rocm` — GPU transcription |
-| No GPU, macOS, Intel GPU | `cpu` — everything on CPU |
-| Windows native (no WSL) | run `install.sh` from WSL/Git Bash; no GPU passthrough |
-
-A wrong `cuda` guess can't crash you — the app clamps back to CPU at runtime if the
-GPU isn't really there. If your AMD card isn't on ROCm's official support list (most
-consumer Radeon cards), set `HSA_OVERRIDE_GFX_VERSION` in `.env` to the nearest
-supported arch (e.g. `11.0.0` for RDNA3) before re-running `install.sh`.
+Open `http://localhost:8765`.
 
 Data lives in `~/.bibilab` on the host (bind-mounted to `/data`), **shared with a
 native install** — the same DB, models, and config. The container runs as your
