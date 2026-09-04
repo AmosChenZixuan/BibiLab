@@ -226,6 +226,32 @@ def test_load_sherpa_caches_by_model_and_language(tmp_bibilab_home: Path):
     assert stub.OfflineRecognizer.from_sense_voice.call_count == 2
 
 
+def test_load_sherpa_builds_singleton_exactly_once_under_concurrent_entry(tmp_bibilab_home: Path):
+    """N threads racing to build the sherpa singleton for the same cfg must
+    construct it exactly once. The lock is narrowed to guard construction
+    only, not removed — a shared model is safe for concurrent inference, but
+    two threads racing to build it for the first time is not."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    _reset_sherpa_engine_cache()
+    from bibilab.pipeline import transcribe as transcribe_mod
+
+    cfg = TranscriptionConfig(model="sensevoice-small", language="auto")
+    models_root = tmp_bibilab_home / "models"
+    stub = _sherpa_stub()
+
+    with (
+        patch.dict(sys.modules, {"sherpa_onnx": stub}),
+        patch("bibilab.pipeline.transcribe.ensure", side_effect=lambda sid: _stub_ensure(models_root, sid)),
+        patch("bibilab.pipeline.transcribe.interpreting_provider", return_value="cpu"),
+    ):
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            engines = list(pool.map(lambda _: transcribe_mod._load_sherpa(cfg), range(8)))
+
+    assert stub.OfflineRecognizer.from_sense_voice.call_count == 1
+    assert all(e is engines[0] for e in engines)
+
+
 def _fake_engine(recognized: list[tuple[str, str | None]], embeddings: list[list[float]]):
     """A fake _SherpaEngine whose recognizer/spk_extractor streams return the given
     per-span (text, lang) pairs and embeddings, in call order."""
@@ -257,6 +283,31 @@ def _patch_transcribe_sherpa(engine, spans):
         patch("bibilab.pipeline.transcribe._vad_spans", return_value=spans),
         patch("soundfile.read", return_value=([0.0], 16000)),
     )
+
+
+def test_transcribe_sherpa_does_not_hold_lock_during_inference(tmp_path: Path):
+    """_transcribe_lock guards singleton construction only — decode must run
+    with the lock free so concurrent callers actually overlap, matching the
+    measured throughput gain from a shared model."""
+    from bibilab.pipeline import transcribe as transcribe_mod
+    from bibilab.pipeline.transcribe import _transcribe_sherpa
+
+    engine = _fake_engine(recognized=[("你好", None)], embeddings=[[1.0, 0.0]])
+    lock_states_during_decode = []
+    real_create_stream = engine.recognizer.create_stream
+
+    def spying_create_stream():
+        lock_states_during_decode.append(transcribe_mod._transcribe_lock.locked())
+        return real_create_stream()
+
+    engine.recognizer.create_stream = spying_create_stream
+
+    spans = [(0.0, 1.0)]
+    p1, p2, p3 = _patch_transcribe_sherpa(engine, spans)
+    with p1, p2, p3:
+        _transcribe_sherpa(tmp_path / "a.wav", TranscriptionConfig(model="sensevoice-small"))
+
+    assert lock_states_during_decode == [False]
 
 
 def test_cluster_speakers_splits_dissimilar_and_merges_similar_embeddings():

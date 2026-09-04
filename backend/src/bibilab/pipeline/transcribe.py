@@ -69,10 +69,9 @@ class _SherpaEngine:
 _sherpa_engine: _SherpaEngine | None = None
 _sherpa_engine_key: tuple[str, str] | None = None  # (model, language)
 
-# Serializes the shared sherpa-onnx engine (load + inference). One shared sherpa
-# model was measured safely serving four concurrent workers with bit-identical
-# output, but resizing this lock against that is a separate, throughput-focused
-# change (out of scope here) — keep today's serialized default.
+# Guards singleton construction only, not inference. A shared sherpa model was
+# measured safely serving concurrent workers with bit-identical output, so
+# only the race to build the singleton needs serializing.
 _transcribe_lock = threading.Lock()
 
 
@@ -83,64 +82,65 @@ def _load_sherpa(cfg: TranscriptionConfig) -> _SherpaEngine:
     # recognizer (VAD/speaker never vary by either) — one cache, keyed on both,
     # reuses the existing single-keyed-singleton shape rather than splitting it.
     key = (cfg.model, cfg.language)
-    if _sherpa_engine is not None and _sherpa_engine_key == key:
+    with _transcribe_lock:
+        if _sherpa_engine is not None and _sherpa_engine_key == key:
+            return _sherpa_engine
+
+        import sherpa_onnx as so  # noqa: PLC0415
+
+        provider = interpreting_provider()
+
+        vad_spec = get_spec(SHERPA_VAD_SPEC_ID)
+        vad_dir = ensure(SHERPA_VAD_SPEC_ID)
+        vad_cfg = so.VadModelConfig()
+        vad_cfg.silero_vad.model = str(vad_dir / vad_spec.integrity_files[0])
+        vad_cfg.silero_vad.threshold = _VAD_THRESHOLD
+        vad_cfg.silero_vad.min_silence_duration = _VAD_MIN_SILENCE_DURATION
+        vad_cfg.silero_vad.max_speech_duration = _VAD_MAX_SPEECH_DURATION
+        vad_cfg.sample_rate = 16000
+        vad_cfg.provider = provider
+        vad_cfg.num_threads = _SHERPA_NUM_THREADS
+
+        spec_id = resolve_transcription_spec_id(cfg.model)
+        spec = get_spec(spec_id)
+        model_dir = ensure(spec_id)
+        if cfg.model == "large-v3":
+            encoder, decoder, tokens = spec.integrity_files
+            # language is fixed 'en' regardless of cfg.language: only int8 large-v3 on
+            # English was validated (0.40 CER on Chinese — untested elsewhere).
+            recognizer = so.OfflineRecognizer.from_whisper(
+                encoder=str(model_dir / encoder),
+                decoder=str(model_dir / decoder),
+                tokens=str(model_dir / tokens),
+                num_threads=_SHERPA_NUM_THREADS,
+                provider=provider,
+                language="en",
+                task="transcribe",
+            )
+        else:
+            model, tokens = spec.integrity_files
+            recognizer = so.OfflineRecognizer.from_sense_voice(
+                model=str(model_dir / model),
+                tokens=str(model_dir / tokens),
+                num_threads=_SHERPA_NUM_THREADS,
+                provider=provider,
+                language=cfg.language,
+                use_itn=True,
+            )
+
+        spk_spec = get_spec(SHERPA_DIARIZATION_SPEC_ID)
+        spk_dir = ensure(SHERPA_DIARIZATION_SPEC_ID)
+        spk_extractor = so.SpeakerEmbeddingExtractor(
+            so.SpeakerEmbeddingExtractorConfig(
+                model=str(spk_dir / spk_spec.integrity_files[0]),
+                provider=provider,
+                num_threads=_SHERPA_NUM_THREADS,
+            )
+        )
+
+        _sherpa_engine = _SherpaEngine(vad_cfg=vad_cfg, recognizer=recognizer, spk_extractor=spk_extractor)
+        _sherpa_engine_key = key
         return _sherpa_engine
-
-    import sherpa_onnx as so  # noqa: PLC0415
-
-    provider = interpreting_provider()
-
-    vad_spec = get_spec(SHERPA_VAD_SPEC_ID)
-    vad_dir = ensure(SHERPA_VAD_SPEC_ID)
-    vad_cfg = so.VadModelConfig()
-    vad_cfg.silero_vad.model = str(vad_dir / vad_spec.integrity_files[0])
-    vad_cfg.silero_vad.threshold = _VAD_THRESHOLD
-    vad_cfg.silero_vad.min_silence_duration = _VAD_MIN_SILENCE_DURATION
-    vad_cfg.silero_vad.max_speech_duration = _VAD_MAX_SPEECH_DURATION
-    vad_cfg.sample_rate = 16000
-    vad_cfg.provider = provider
-    vad_cfg.num_threads = _SHERPA_NUM_THREADS
-
-    spec_id = resolve_transcription_spec_id(cfg.model)
-    spec = get_spec(spec_id)
-    model_dir = ensure(spec_id)
-    if cfg.model == "large-v3":
-        encoder, decoder, tokens = spec.integrity_files
-        # language is fixed 'en' regardless of cfg.language: only int8 large-v3 on
-        # English was validated (0.40 CER on Chinese — untested elsewhere).
-        recognizer = so.OfflineRecognizer.from_whisper(
-            encoder=str(model_dir / encoder),
-            decoder=str(model_dir / decoder),
-            tokens=str(model_dir / tokens),
-            num_threads=_SHERPA_NUM_THREADS,
-            provider=provider,
-            language="en",
-            task="transcribe",
-        )
-    else:
-        model, tokens = spec.integrity_files
-        recognizer = so.OfflineRecognizer.from_sense_voice(
-            model=str(model_dir / model),
-            tokens=str(model_dir / tokens),
-            num_threads=_SHERPA_NUM_THREADS,
-            provider=provider,
-            language=cfg.language,
-            use_itn=True,
-        )
-
-    spk_spec = get_spec(SHERPA_DIARIZATION_SPEC_ID)
-    spk_dir = ensure(SHERPA_DIARIZATION_SPEC_ID)
-    spk_extractor = so.SpeakerEmbeddingExtractor(
-        so.SpeakerEmbeddingExtractorConfig(
-            model=str(spk_dir / spk_spec.integrity_files[0]),
-            provider=provider,
-            num_threads=_SHERPA_NUM_THREADS,
-        )
-    )
-
-    _sherpa_engine = _SherpaEngine(vad_cfg=vad_cfg, recognizer=recognizer, spk_extractor=spk_extractor)
-    _sherpa_engine_key = key
-    return _sherpa_engine
 
 
 def _vad_spans(vad_cfg: Any, samples: Any, rate: int) -> list[tuple[float, float]]:
@@ -196,29 +196,25 @@ def _cluster_speakers(embeddings: list) -> list[int]:
 def _transcribe_sherpa(audio_path: Path, cfg: TranscriptionConfig) -> tuple[list[WhisperSegment], str | None]:
     import soundfile as sf  # noqa: PLC0415
 
-    # Lock spans load + inference: the first concurrent burst would otherwise each
-    # build the singleton, and sherpa-onnx streams are not safe to decode from
-    # multiple threads against the same recognizer without external serialization.
     try:
-        with _transcribe_lock:
-            engine = _load_sherpa(cfg)
-            samples, rate = sf.read(str(audio_path), dtype="float32", always_2d=False)
-            spans = _vad_spans(engine.vad_cfg, samples, rate)
+        engine = _load_sherpa(cfg)
+        samples, rate = sf.read(str(audio_path), dtype="float32", always_2d=False)
+        spans = _vad_spans(engine.vad_cfg, samples, rate)
 
-            recognized: list[tuple[str, str | None]] = []
-            for start, end in spans:
-                stream = engine.recognizer.create_stream()
-                stream.accept_waveform(rate, samples[int(start * rate) : int(end * rate)])
-                engine.recognizer.decode_stream(stream)
-                recognized.append((stream.result.text.strip(), stream.result.lang or None))
+        recognized: list[tuple[str, str | None]] = []
+        for start, end in spans:
+            stream = engine.recognizer.create_stream()
+            stream.accept_waveform(rate, samples[int(start * rate) : int(end * rate)])
+            engine.recognizer.decode_stream(stream)
+            recognized.append((stream.result.text.strip(), stream.result.lang or None))
 
-            embeddings = []
-            for start, end in spans:
-                stream = engine.spk_extractor.create_stream()
-                stream.accept_waveform(rate, samples[int(start * rate) : int(end * rate)])
-                stream.input_finished()
-                embeddings.append(engine.spk_extractor.compute(stream))
-            labels = _cluster_speakers(embeddings) if embeddings else []
+        embeddings = []
+        for start, end in spans:
+            stream = engine.spk_extractor.create_stream()
+            stream.accept_waveform(rate, samples[int(start * rate) : int(end * rate)])
+            stream.input_finished()
+            embeddings.append(engine.spk_extractor.compute(stream))
+        labels = _cluster_speakers(embeddings) if embeddings else []
     except Exception:
         logger.exception("sherpa-onnx transcription failed for %s (model=%s)", audio_path, cfg.model)
         raise
