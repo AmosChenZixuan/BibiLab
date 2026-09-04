@@ -56,10 +56,10 @@ function renderTab(config: BibilabConfig = baseConfig) {
 }
 
 describe("transcript tab", () => {
-  test("renders transcription device dropdown", () => {
+  test("does not render a device dropdown", () => {
     renderTab();
 
-    expect(screen.getByLabelText(/device/i)).toBeInTheDocument();
+    expect(screen.queryByLabelText(/^device$/i)).not.toBeInTheDocument();
   });
 
   test("model dropdown only lists installed transcription models", async () => {
@@ -73,18 +73,6 @@ describe("transcript tab", () => {
     renderTab();
 
     expect(screen.queryByText(/speaker diarization/i)).not.toBeInTheDocument();
-  });
-
-  test("disables cuda when health reports it unavailable", () => {
-    renderTab();
-
-    expect(screen.getByRole("option", { name: "CUDA" })).toBeDisabled();
-  });
-
-  test("shows impact messaging for cuda", () => {
-    renderTab();
-
-    expect(screen.getByText(/cuda is unavailable, so transcription will run on cpu/i)).toBeInTheDocument();
   });
 
   test("renames language label to transcription language", () => {

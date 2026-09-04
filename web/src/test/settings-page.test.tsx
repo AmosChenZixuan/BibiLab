@@ -90,11 +90,12 @@ describe("settings page", () => {
     expect(await screen.findByLabelText(/provider/i)).toBeInTheDocument();
   });
 
-  test("clicking Transcript tab shows device dropdown", async () => {
+  test("clicking Transcript tab does not show a device dropdown", async () => {
     renderPage();
 
     fireEvent.click(await screen.findByRole("tab", { name: /transcript/i }));
-    expect(await screen.findByLabelText(/device/i)).toBeInTheDocument();
+    expect(await screen.findByLabelText(/transcription language/i)).toBeInTheDocument();
+    expect(screen.queryByLabelText(/^device$/i)).not.toBeInTheDocument();
   });
 
   test("clicking System tab shows backend api section", async () => {
@@ -115,7 +116,7 @@ describe("settings page", () => {
   test("reads active tab from the url query", async () => {
     renderPageAt("/settings?tab=transcript");
 
-    expect(await screen.findByLabelText(/device/i)).toBeInTheDocument();
+    expect(await screen.findByLabelText(/transcription language/i)).toBeInTheDocument();
     expect(screen.getByTestId("location")).toHaveTextContent("/settings?tab=transcript");
   });
 
