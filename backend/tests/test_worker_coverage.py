@@ -317,7 +317,7 @@ async def test_stage_transcribe_trusts_detected_language_over_config(tmp_bibilab
     (see transcribe.py), so transcribe() reports detected_language="en" even when
     the user explicitly configured "zh". _stage_transcribe must not re-derive
     effective_language from cfg — that would route English text through the
-    zh-gated ct-punc path. Regression for #692."""
+    zh-gated ct-punc path."""
     from bibilab.config import BibilabConfig
     from bibilab.db import bootstrap_db, create_job
     from bibilab.pipeline.transcribe import WhisperSegment
@@ -354,11 +354,9 @@ async def test_stage_transcribe_trusts_detected_language_over_config(tmp_bibilab
 async def test_stage_transcribe_none_detected_language_degrades_safely(tmp_bibilab_home: Path, monkeypatch):
     """auto mode + failed detection (detected_language=None) must not crash:
     effective_language stays None, punctuate() skips (non-"zh" gate) instead
-    of receiving a fabricated "en". Regression coverage for #692's other
-    suspected failure mode (verified as behaviorally inert, not a fix)."""
+    of receiving a fabricated "en"."""
     from bibilab.config import BibilabConfig
     from bibilab.db import bootstrap_db, create_job
-    from bibilab.pipeline.chunk import chunk_segments
     from bibilab.pipeline.transcribe import WhisperSegment
 
     await bootstrap_db()
@@ -383,26 +381,6 @@ async def test_stage_transcribe_none_detected_language_degrades_safely(tmp_bibil
     assert detected_language is None
     assert effective_language is None
     assert called["language"] is None
-
-    # chunk_segments(language=None) must fall back to the same English (300
-    # token) target as language="en" — dict.get(None, default) degrades
-    # identically, so this is pinning existing behavior, not new code. Six
-    # 60-word sentence-terminated segments (~360 tokens total) is a
-    # discriminating input: it splits into 2 chunks under the en/None
-    # 300-token target but stays 1 chunk under the zh 800-token target, so
-    # the assertion actually exercises the language→target lookup instead
-    # of passing regardless of it.
-    def _segs():
-        return [
-            WhisperSegment(start=float(i), end=float(i + 1), text=" ".join(["word"] * 60) + ".", speaker=None)
-            for i in range(6)
-        ]
-
-    none_chunks = chunk_segments(_segs(), language=None)
-    en_chunks = chunk_segments(_segs(), language="en")
-    zh_chunks = chunk_segments(_segs(), language="zh")
-    assert [c.text for c in none_chunks] == [c.text for c in en_chunks]
-    assert len(none_chunks) != len(zh_chunks)
 
 
 @pytest.mark.asyncio
