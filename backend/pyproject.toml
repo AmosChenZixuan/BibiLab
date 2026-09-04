@@ -26,6 +26,15 @@ dependencies = [
     "tokenizers>=0.22.0",
     "yt-dlp[curl-cffi]>=2026.3.17",
     "pypinyin>=0.55.0",
+    "sherpa-onnx>=1.13.7",
+    # sherpa-onnx's wheel is a thin Python binding; the actual libonnxruntime.so it
+    # dlopens ships in this separate, per-platform sherpa-onnx-core wheel (not the
+    # unrelated PyPI `onnxruntime` package above — a different build, ABI-incompatible).
+    # sherpa-onnx's own metadata declares it as a transitive dependency, but uv doesn't
+    # reliably resolve it (a known issue with sherpa-onnx's dynamic METADATA), so it's
+    # pinned here explicitly — exact version match required.
+    "sherpa-onnx-core==1.13.7",
+    "soundfile>=0.13.1",
 ]
 
 # torch is the only production GPU consumer (FunASR ASR in pipeline/transcribe.py;
