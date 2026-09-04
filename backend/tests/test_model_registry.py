@@ -206,15 +206,6 @@ def test_fp32_reranker_spec_removed():
         get_spec("bge-reranker-base")
 
 
-def test_ctpunc_spec_registered():
-    spec = get_spec("ct-punc")
-    assert spec.kind == "punctuation"
-    assert spec.backend == "modelscope"
-    assert spec.modelscope_id == "iic/punc_ct-transformer_cn-en-common-vocab471067-large"
-    assert spec.integrity_files == ["configuration.json"]
-    assert spec.local_subdir == "asr/ct-punc"
-
-
 def test_reranker_spec_id_constant_is_quantized():
     """The reranker is a single module constant (mirrors EMBEDDING_SPEC_ID) instead
     of a config knob — it must name the registered int8 spec, the single source of
@@ -328,15 +319,6 @@ def test_http_archive_specs_have_exactly_one_url():
     for spec in archive_specs:
         assert spec.http_files is not None
         assert len(spec.http_files) == 1
-
-
-def test_existing_modelscope_specs_unchanged():
-    """The four pre-existing modelscope specs still resolve with their
-    original backend, untouched by the new sherpa specs."""
-    assert get_spec("sensevoice-small").backend == "modelscope"
-    assert get_spec("cam++").backend == "modelscope"
-    assert get_spec("fsmn-vad").backend == "modelscope"
-    assert get_spec("ct-punc").backend == "modelscope"
 
 
 def test_no_torch_or_funasr_anywhere():

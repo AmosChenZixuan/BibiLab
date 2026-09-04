@@ -14,12 +14,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
-from bibilab.config import BibilabConfig, bibilab_home, models_dir
+from bibilab.config import BibilabConfig, models_dir
 
 logger = logging.getLogger(__name__)
 
 ModelKind = Literal["transcription", "vad", "diarization", "embedding", "reranker", "punctuation"]
-Backend = Literal["http_files", "modelscope", "http_archive"]
+Backend = Literal["http_files", "http_archive"]
 
 
 @dataclass(frozen=True)
@@ -31,7 +31,6 @@ class ModelSpec:
     size_mb: int
     integrity_files: list[str]  # rel paths within target dir that must exist post-download
     local_subdir: str  # relative to models_dir()
-    modelscope_id: str | None = None
     http_files: list[tuple[str, str]] | None = None  # [(url, rel_path), ...]
 
     def __post_init__(self) -> None:
@@ -44,49 +43,6 @@ class ModelSpec:
 _SHERPA_RELEASE = "https://github.com/k2-fsa/sherpa-onnx/releases/download"
 
 _SPECS: dict[str, ModelSpec] = {
-    "sensevoice-small": ModelSpec(
-        id="sensevoice-small",
-        display_name="SenseVoice Small",
-        kind="transcription",
-        backend="modelscope",
-        size_mb=936,
-        integrity_files=["configuration.json"],
-        local_subdir="asr/sensevoice-small",
-        modelscope_id="iic/SenseVoiceSmall",
-    ),
-    "cam++": ModelSpec(
-        id="cam++",
-        display_name="CAM++ (Speaker Diarization)",
-        kind="diarization",
-        backend="modelscope",
-        size_mb=28,
-        integrity_files=["configuration.json"],
-        local_subdir="asr/cam++",
-        modelscope_id="iic/speech_campplus_sv_zh-cn_16k-common",
-    ),
-    "fsmn-vad": ModelSpec(
-        id="fsmn-vad",
-        display_name="FSMN-VAD (Voice Activity Detection)",
-        kind="vad",
-        backend="modelscope",
-        size_mb=4,
-        integrity_files=["configuration.json"],
-        local_subdir="asr/fsmn-vad",
-        modelscope_id="iic/speech_fsmn_vad_zh-cn-16k-common-pytorch",
-    ),
-    "ct-punc": ModelSpec(
-        id="ct-punc",
-        display_name="CT-Transformer Punctuation (zh-en)",
-        kind="punctuation",
-        backend="modelscope",
-        size_mb=1050,
-        integrity_files=["configuration.json"],
-        local_subdir="asr/ct-punc",
-        modelscope_id="iic/punc_ct-transformer_cn-en-common-vocab471067-large",
-    ),
-    # -- sherpa-onnx assets. Additive: land beside the PyTorch specs above,
-    # nothing consumes these yet. RELEASE/local_subdir mirror bench/asr/bench.py,
-    # already proven to fetch and extract these exact URLs.
     "sherpa-sensevoice": ModelSpec(
         id="sherpa-sensevoice",
         display_name="sherpa-onnx SenseVoice",
@@ -254,31 +210,6 @@ def _integrity_ok(spec: ModelSpec) -> bool:
 # ---- Download backends -----------------------------------------------
 
 
-def _download_modelscope(spec: ModelSpec, target: Path) -> None:
-    assert spec.modelscope_id is not None
-    target.parent.mkdir(parents=True, exist_ok=True)
-    tmp = target.parent / f".{target.name}.partial"
-    shutil.rmtree(tmp, ignore_errors=True)
-    from modelscope.hub.snapshot_download import snapshot_download  # noqa: PLC0415
-
-    # cache_dir keeps ModelScope's lock/metadata cache inside ~/.bibilab (default: ~/.cache/modelscope/hub).
-    ms_cache = str(bibilab_home() / "models" / ".ms_cache")
-    logger.info("Downloading model from ModelScope: %s", spec.modelscope_id)
-    try:
-        snapshot_download(spec.modelscope_id, local_dir=str(tmp), cache_dir=ms_cache)
-    except Exception:
-        logger.exception("ModelScope download failed for %s", spec.modelscope_id)
-        shutil.rmtree(tmp, ignore_errors=True)
-        raise
-    shutil.rmtree(target, ignore_errors=True)
-    try:
-        tmp.rename(target)
-    except OSError as exc:
-        shutil.rmtree(tmp, ignore_errors=True)
-        raise RuntimeError(f"atomic rename failed for {spec.id}: {exc}") from exc
-    logger.info("Model downloaded to %s", target)
-
-
 def _download_http_files(spec: ModelSpec, target: Path) -> None:
     assert spec.http_files is not None
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -383,9 +314,7 @@ def ensure(spec_id: str) -> Path:
         if _integrity_ok(spec):
             return target
 
-        if spec.backend == "modelscope":
-            _download_modelscope(spec, target)
-        elif spec.backend == "http_files":
+        if spec.backend == "http_files":
             _download_http_files(spec, target)
         elif spec.backend == "http_archive":
             _download_http_archive(spec, target)
