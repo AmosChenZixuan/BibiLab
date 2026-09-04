@@ -87,8 +87,9 @@ class TranscriptionConfig(BaseModel):
 class BackendConfig(BaseModel):
     port: int = 8765
     # Max ingest jobs in flight. Governs IO-stage (download + digest LLM call)
-    # parallelism only — transcription is serialized by a lock regardless, since
-    # it is GPU-compute/GIL-bound and gains nothing from concurrency.
+    # parallelism and how many workers concurrently transcribe against the one
+    # shared sherpa-onnx model — measured safe and faster, not serialized (see
+    # pipeline/transcribe.py's _transcribe_lock).
     max_concurrent_jobs: int = 4
     cors_origins: list[str] = [
         "http://localhost",
