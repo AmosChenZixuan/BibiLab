@@ -4,12 +4,13 @@ from fastapi import APIRouter, Depends
 
 from bibilab.config import BibilabConfig, get_config
 from bibilab.model_registry import (
-    DIARIZATION_SPEC_ID,
     EMBEDDING_SPEC_ID,
     RERANKER_SPEC_ID,
+    SHERPA_DIARIZATION_SPEC_ID,
     _integrity_ok,
     _target_dir,
     get_spec,
+    resolve_transcription_spec_id,
 )
 
 router = APIRouter()
@@ -30,7 +31,7 @@ def _check_asr(cfg: BibilabConfig) -> dict:
     if not model:
         return {"status": "error", "message": "Transcription model not configured"}
     try:
-        spec = get_spec(model)
+        spec = get_spec(resolve_transcription_spec_id(model))
     except ValueError:
         return {"status": "error", "message": f"Unknown transcription model {model!r}"}
     if not _integrity_ok(spec):
@@ -57,7 +58,7 @@ def _check_cuda() -> dict:
 
 
 def _check_diarization_model() -> dict:
-    spec = get_spec(DIARIZATION_SPEC_ID)
+    spec = get_spec(SHERPA_DIARIZATION_SPEC_ID)
     if _integrity_ok(spec):
         return {"status": "ok", "message": str(_target_dir(spec))}
     return {

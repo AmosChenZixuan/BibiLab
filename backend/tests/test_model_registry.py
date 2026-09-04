@@ -241,14 +241,49 @@ def test_required_models_includes_reranker_when_enabled():
     assert RERANKER_SPEC_ID not in [s.id for s in required_models(cfg)]
 
 
-def test_ctpunc_is_required_unconditionally():
+def test_ctpunc_vad_and_diarization_are_required_unconditionally():
+    """The gate must require the sherpa specs transcribe.py/punctuate.py actually
+    run on — not the FunASR ones of the same kind."""
     from bibilab.config import BibilabConfig
-    from bibilab.model_registry import PUNC_SPEC_ID, required_models
+    from bibilab.model_registry import (
+        SHERPA_DIARIZATION_SPEC_ID,
+        SHERPA_PUNC_SPEC_ID,
+        SHERPA_VAD_SPEC_ID,
+        required_models,
+    )
+
+    ids = [s.id for s in required_models(BibilabConfig())]
+    assert SHERPA_PUNC_SPEC_ID in ids
+    assert SHERPA_PUNC_SPEC_ID == "sherpa-ct-punc"
+    assert SHERPA_VAD_SPEC_ID in ids
+    assert SHERPA_DIARIZATION_SPEC_ID in ids
+
+
+def test_resolve_transcription_spec_id_maps_public_model_names():
+    """cfg.transcription.model values ("large-v3", "sensevoice-small") are stable
+    public config strings; which concrete sherpa-onnx spec backs them is an
+    implementation detail resolved here, in one place, shared by required_models()
+    and transcribe.py's engine loader."""
+    from bibilab.model_registry import (
+        SHERPA_SENSEVOICE_SPEC_ID,
+        SHERPA_WHISPER_SPEC_ID,
+        resolve_transcription_spec_id,
+    )
+
+    assert resolve_transcription_spec_id("sensevoice-small") == SHERPA_SENSEVOICE_SPEC_ID
+    assert resolve_transcription_spec_id("large-v3") == SHERPA_WHISPER_SPEC_ID
+
+
+def test_required_models_transcription_model_resolves_to_sherpa_spec():
+    from bibilab.config import BibilabConfig
+    from bibilab.model_registry import SHERPA_SENSEVOICE_SPEC_ID, SHERPA_WHISPER_SPEC_ID, required_models
 
     cfg = BibilabConfig()
-    ids = [s.id for s in required_models(cfg)]
-    assert "ct-punc" in ids
-    assert PUNC_SPEC_ID == "ct-punc"
+    cfg.transcription.model = "sensevoice-small"
+    assert SHERPA_SENSEVOICE_SPEC_ID in [s.id for s in required_models(cfg)]
+
+    cfg.transcription.model = "large-v3"
+    assert SHERPA_WHISPER_SPEC_ID in [s.id for s in required_models(cfg)]
 
 
 def test_ensure_dispatches_http_archive_backend(tmp_bibilab_home: Path):
