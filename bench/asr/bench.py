@@ -191,6 +191,14 @@ class Sherpa:
         t = time.perf_counter()
         spans = self._vad(samples, rate)
         stage["vad_s"] = round(time.perf_counter() - t, 2)
+        # Reported separately from the segment count: segments are sentences cut
+        # after punctuation, so they say little about VAD. Whether a single span
+        # straddles a speaker change is the conflation risk, and that is a
+        # property of these spans.
+        stage["vad_spans"] = len(spans)
+        if spans:
+            widths = sorted(e - s for s, e in spans)
+            stage["vad_span_p95_s"] = round(widths[min(int(len(widths) * 0.95), len(widths) - 1)], 2)
 
         t = time.perf_counter()
         texts = []
