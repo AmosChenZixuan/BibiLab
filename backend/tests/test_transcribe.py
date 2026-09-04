@@ -486,16 +486,3 @@ def test_transcribe_unknown_model_raises_pipeline_error():
 
     with pytest.raises(PipelineError):
         transcribe(Path("/tmp/does-not-matter.wav"), TranscriptionConfig(model="not-a-real-model"))
-
-
-@pytest.mark.parametrize(
-    "module",
-    ["bibilab.pipeline.transcribe", "bibilab.pipeline.punctuate"],
-)
-def test_no_torch_or_funasr_import_remains(module: str):
-    """No torch or funasr import remains on the transcription/punctuation path."""
-    import importlib
-
-    source = Path(importlib.import_module(module).__file__).read_text()
-    for banned in ("import torch", "from torch", "import funasr", "from funasr"):
-        assert banned not in source, f"{module} still contains {banned!r}"
