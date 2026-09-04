@@ -1,6 +1,7 @@
 """Tests for bibilab.model_registry."""
 
 import sys
+import tarfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -8,6 +9,7 @@ import pytest
 
 from bibilab.model_registry import (
     ModelSpec,
+    _download_http_archive,
     _download_http_files,
     _target_dir,
     ensure,
@@ -46,6 +48,52 @@ class _FakeStreamResp:
         return False
 
 
+def _make_archive_spec() -> ModelSpec:
+    return ModelSpec(
+        id="test-archive-spec",
+        display_name="Test Archive",
+        kind="transcription",
+        backend="http_archive",
+        size_mb=1,
+        integrity_files=["model.onnx"],
+        local_subdir="test-archive",
+        http_files=[("http://example.invalid/model.tar.bz2", "model.tar.bz2")],
+    )
+
+
+def _build_tar_bz2(tmp_path: Path, top_dir: str, files: dict[str, bytes]) -> bytes:
+    """Build a real .tar.bz2 with a single top-level directory, mirroring how
+    every k2-fsa release archive is shaped."""
+    src = tmp_path / "src"
+    (src / top_dir).mkdir(parents=True)
+    for rel, content in files.items():
+        path = src / top_dir / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(content)
+
+    archive_path = tmp_path / "built.tar.bz2"
+    with tarfile.open(archive_path, "w:bz2") as tf:
+        tf.add(src / top_dir, arcname=top_dir)
+    return archive_path.read_bytes()
+
+
+class _FakeArchiveResp:
+    def __init__(self, data: bytes) -> None:
+        self._data = data
+
+    def raise_for_status(self) -> None:
+        pass
+
+    def iter_bytes(self, _chunk_size: int):
+        yield self._data
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return False
+
+
 def test_download_http_files_writes_integrity_files_and_renames_to_target(tmp_bibilab_home: Path):
     """Regression: prior `finally: shutil.rmtree(tmp)` wiped tmp before rename,
     making every http_files download raise 'atomic rename failed'.
@@ -58,6 +106,63 @@ def test_download_http_files_writes_integrity_files_and_renames_to_target(tmp_bi
 
     assert (target / "a.txt").read_bytes() == b"hello"
     assert (target / "sub" / "b.txt").read_bytes() == b"hello"
+
+
+def test_download_http_archive_extracts_flattens_and_renames_to_target(tmp_path: Path, tmp_bibilab_home: Path):
+    """AC2: a real single-top-dir .tar.bz2 (the shape of every k2-fsa release
+    archive) extracts, flattens the wrapper dir away, and lands atomically."""
+    archive_bytes = _build_tar_bz2(
+        tmp_path,
+        top_dir="sherpa-onnx-test-2024-01-01",
+        files={"model.onnx": b"weights", "tokens.txt": b"a\nb\n"},
+    )
+    target = tmp_bibilab_home / "models" / "test-archive"
+    spec = _make_archive_spec()
+
+    with patch("httpx.stream", return_value=_FakeArchiveResp(archive_bytes)):
+        _download_http_archive(spec, target)
+
+    assert (target / "model.onnx").read_bytes() == b"weights"
+    assert (target / "tokens.txt").read_bytes() == b"a\nb\n"
+    assert not (target.parent / f".{target.name}.partial").exists()
+
+
+def test_download_http_archive_failure_leaves_no_partial_or_target(tmp_path: Path, tmp_bibilab_home: Path):
+    """AC3: a broken archive (extraction raises) must not leave a .partial dir
+    or a partially populated target — same guarantee _download_http_files gives."""
+    target = tmp_bibilab_home / "models" / "test-archive"
+    spec = _make_archive_spec()
+
+    with patch("httpx.stream", return_value=_FakeArchiveResp(b"not a real tar.bz2")):
+        with pytest.raises(tarfile.ReadError):
+            _download_http_archive(spec, target)
+
+    assert not target.exists()
+    assert not (target.parent / f".{target.name}.partial").exists()
+
+
+def test_download_http_archive_requires_single_top_level_dir(tmp_path: Path, tmp_bibilab_home: Path):
+    """Every known k2-fsa archive has exactly one top-level dir; a violation
+    fails loud instead of silently nesting the wrong layout into target."""
+    archive_path = tmp_path / "flat.tar.bz2"
+    with tarfile.open(archive_path, "w:bz2") as tf:
+        info = tarfile.TarInfo("loose_file.onnx")
+        data = b"weights"
+        info.size = len(data)
+        import io
+
+        tf.addfile(info, io.BytesIO(data))
+    archive_bytes = archive_path.read_bytes()
+
+    target = tmp_bibilab_home / "models" / "test-archive"
+    spec = _make_archive_spec()
+
+    with patch("httpx.stream", return_value=_FakeArchiveResp(archive_bytes)):
+        with pytest.raises(AssertionError):
+            _download_http_archive(spec, target)
+
+    assert not target.exists()
+    assert not (target.parent / f".{target.name}.partial").exists()
 
 
 def test_ensure_raises_when_download_completes_but_integrity_fails(tmp_bibilab_home: Path):
@@ -158,6 +263,62 @@ def test_ctpunc_is_required_unconditionally():
     ids = [s.id for s in required_models(cfg)]
     assert "ct-punc" in ids
     assert PUNC_SPEC_ID == "ct-punc"
+
+
+def test_ensure_dispatches_http_archive_backend(tmp_bibilab_home: Path):
+    """AC1: ensure() must route an http_archive-backend spec to
+    _download_http_archive, not silently fall through to another backend."""
+    spec = get_spec("sherpa-ct-punc")
+    assert spec.backend == "http_archive"
+
+    def fake_download(_spec, target):
+        target.mkdir(parents=True, exist_ok=True)
+        for f in _spec.integrity_files:
+            (target / f).write_bytes(b"x")
+
+    with patch("bibilab.model_registry._download_http_archive", side_effect=fake_download) as mock:
+        ensure(spec.id)
+    mock.assert_called_once()
+
+
+@pytest.mark.parametrize(
+    ("spec_id", "backend", "kind"),
+    [
+        ("sherpa-sensevoice", "http_archive", "transcription"),
+        ("sherpa-whisper-large-v3", "http_archive", "transcription"),
+        ("sherpa-ct-punc", "http_archive", "punctuation"),
+        ("sherpa-silero-vad", "http_files", "vad"),
+        ("sherpa-campplus", "http_files", "diarization"),
+    ],
+)
+def test_sherpa_specs_registered(spec_id: str, backend: str, kind: str):
+    """AC4: the five new sherpa-onnx specs resolve with the right backend/kind,
+    and land beside (not over) the existing PyTorch specs' local_subdir."""
+    spec = get_spec(spec_id)
+    assert spec.backend == backend
+    assert spec.kind == kind
+    assert spec.local_subdir.startswith("asr/")
+    assert spec.http_files is not None
+
+
+def test_http_archive_specs_have_exactly_one_url():
+    """Structural guard: _download_http_archive assumes a single (url, name)
+    tuple — a spec with zero or multiple would silently mis-flatten."""
+    archive_specs = [s for s in list_specs() if s.backend == "http_archive"]
+    assert archive_specs, "expected at least one http_archive spec"
+    for spec in archive_specs:
+        assert spec.http_files is not None
+        assert len(spec.http_files) == 1
+
+
+def test_existing_pytorch_specs_unchanged():
+    """AC6 regression: the five pre-existing PyTorch specs still resolve
+    with their original backend, untouched by the new sherpa specs."""
+    assert get_spec("large-v3").backend == "whisper_warp"
+    assert get_spec("sensevoice-small").backend == "modelscope"
+    assert get_spec("cam++").backend == "modelscope"
+    assert get_spec("fsmn-vad").backend == "modelscope"
+    assert get_spec("ct-punc").backend == "modelscope"
 
 
 def test_target_dir_routes_whisper_through_models_dir(tmp_bibilab_home: Path):
