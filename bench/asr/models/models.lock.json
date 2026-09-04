@@ -1,0 +1,7 @@
+{
+ "silero_vad.onnx": "9e2449e1087496d8d4caba907f23e0bd3f78d91fa552479bb9c23ac09cbb1fd6",
+ "campplus_zh.onnx": "f682b514c05d947ee3fa91cd6ec6c5c7543479a128373fa29b1faedccd21fd11",
+ "sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17.tar.bz2": "f6b2a72ebcb1ac7a764d4cfccd886e6bcb2a95c4657c2199d0ba95ed4b9ea71a",
+ "sherpa-onnx-whisper-large-v3.tar.bz2": "2d0e134b3b5fc4a0533baf24a0c9d473b629aa47f030af0a165a05f461df7a03",
+ "sherpa-onnx-punct-ct-transformer-zh-en-vocab272727-2024-04-12.tar.bz2": "50f73f8cccffc2303999fda28b785ffcffbd7ea442c47385c30b9d045ee6afc3"
+}
