@@ -196,15 +196,15 @@ def test_run_ctpunc_reuses_singleton_across_calls(tmp_bibilab_home: Path):
 
 class _HookedLock:
     """threading.Lock wrapper that runs a callback on every acquire — lets a
-    test force a deterministic acquisition order across threads (#693)."""
+    test force a deterministic acquisition order across threads."""
 
     def __init__(self, on_acquire) -> None:
         self._lock = threading.Lock()
         self._on_acquire = on_acquire
 
-    def acquire(self, *args, **kwargs):
+    def acquire(self) -> bool:
         self._on_acquire()
-        return self._lock.acquire(*args, **kwargs)
+        return self._lock.acquire()
 
     def release(self) -> None:
         self._lock.release()
@@ -219,7 +219,7 @@ class _HookedLock:
 
 def test_run_ctpunc_concurrent_cold_build_constructs_once(tmp_bibilab_home: Path):
     # Two threads racing the double-checked-locking build from cold: only one
-    # construction, regardless of interleaving (AC3).
+    # construction, regardless of interleaving.
     _reset_ctpunc_singleton()
 
     models_root = tmp_bibilab_home / "models"
@@ -245,11 +245,11 @@ def test_run_ctpunc_concurrent_cold_build_constructs_once(tmp_bibilab_home: Path
 
 
 def test_run_ctpunc_race_after_failure_does_not_leak_attributeerror(tmp_bibilab_home: Path):
-    # Regression for #693: thread A builds the model then fails inference,
-    # resetting _ctpunc_model to None. Thread B's outer unlocked "already
-    # built?" check must not go stale — B is forced to check it while A still
-    # holds the model non-None, then must re-check once it gets the lock
-    # (post A's reset) instead of calling .add_punctuation() on None (AC2, AC4).
+    # Thread A builds the model then fails inference, resetting _ctpunc_model
+    # to None. Thread B's outer unlocked "already built?" check must not go
+    # stale — B is forced to check it while A still holds the model non-None,
+    # then must re-check once it gets the lock (post A's reset) instead of
+    # calling .add_punctuation() on None.
     _reset_ctpunc_singleton()
 
     models_root = tmp_bibilab_home / "models"
