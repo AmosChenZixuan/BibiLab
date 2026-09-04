@@ -213,14 +213,26 @@ the same configuration measured 15.85× cold and 8.15× on the next run, recover
 21.88× later. That is chassis temperature interacting with run order. Only three facts
 from that host survive: CER stability, flat RSS, and CoreML working.
 
-### Whisper — runs, fails on quality
+### Whisper — runs, and was measured against the wrong language
 
-All four stages produce output, so the branch is wired correctly. The transcript is not:
-**CER 0.40**, characters dropped throughout, junk tokens, at rtf 0.81 — **26× slower
-than SenseVoice**. Cause: the k2-fsa release ships large-v3 **int8 only**, and int8
-large-v3 degrades badly on Chinese. Two ways out: export a non-quantized large-v3, or
-substitute a smaller Whisper that ships fp32. Blocks nothing today — all 55 library
-sources are SenseVoice.
+All four stages produce output, so the branch is wired correctly. On the Chinese
+fixture it scores **CER 0.40** with characters dropped throughout, at rtf 0.81 —
+**26× slower than SenseVoice**. The k2-fsa release ships large-v3 **int8 only**, and
+int8 large-v3 degrades badly on Chinese.
+
+**That number does not bear on the decision.** The two ASR models exist as a division
+of labour: SenseVoice for Chinese, Whisper for English. Measuring Whisper on Chinese
+tests the language it is not there to serve, and a degradation there was predictable.
+
+The number that matters — **int8 large-v3 on English** — does not exist, because the
+library holds no non-`zh` audio and the fixture was drawn from the library. This is the
+one open question that gates removing `torch`: sherpa-onnx has
+`OfflineRecognizer.from_whisper`, so if int8 is acceptable on English the whole
+PyTorch dependency goes; if it is not, either a non-quantized large-v3 must be exported
+or FunASR's `whisper_warp` path stays and drags `torch` with it.
+
+Unlike the Chinese side, English has public sets with real transcripts, so this one can
+be measured as **accuracy rather than divergence**.
 
 ## The decision
 
@@ -228,7 +240,16 @@ sources are SenseVoice.
 path.**
 
 The accelerator question is settled by two hosts agreeing from opposite directions:
-CUDA buys 1.60× for ~2 GB, CoreML buys nothing at all. Declining both collapses the
+CUDA buys 1.60× for ~2 GB, CoreML buys nothing at all. It is also the third independent
+arrival at the same conclusion in this codebase — `pipeline/_shared.py`'s
+`interpreting_providers()` already allowlists kernel-based execution providers and
+excludes CoreML for the embedder and reranker, measured at ~48× slower on ingest with
+OOMs and a concurrent-session deadlock. Compiler-based providers keep losing here.
+Whatever selects providers for ASR should extend that helper, not grow a second policy
+beside it.
+
+This decision is scoped to SenseVoice. **The Whisper branch is not settled** — see
+above; removing `torch` depends on it. Declining both collapses the
 `cpu` / `cuda` / `rocm` conflicting dependency groups in `pyproject.toml` into a single
 107 MB wheel, and removes `torch` + `torchaudio` from production entirely.
 
@@ -266,7 +287,12 @@ Consequences that follow, and must not be re-litigated against the old numbers:
    fan.
 7. **Two "install size" numbers can both be right.** The 43 MB / 374 MB figures above
    are wheel sizes; 107 MB / 1.1 GB are resolved venvs. Say which one is being quoted.
-8. **Do not attribute an effect to the nearest plausible knob without turning it.**
+8. **Sample the language a model is there to serve.** Whisper was scored on the Chinese
+   fixture and written up as a quality failure. Whisper's job in this system is
+   English; SenseVoice handles Chinese. The measurement was real and the conclusion
+   drawn from it was worthless, because the fixture was built from a library that
+   happens to be monolingual and nobody checked that against what each model is *for*.
+9. **Do not attribute an effect to the nearest plausible knob without turning it.**
    Segment density was blamed on VAD parameters and written into this document as a
    tuning suggestion. Nine settings later, density had not moved at all — the cause is
    downstream, in sentence splitting. The guess cost nothing to write and would have
@@ -282,7 +308,9 @@ Consequences that follow, and must not be re-litigated against the old numbers:
   chunking, is unexamined.
 - **Hand adjudication** of the divergent windows — the 4.8% is known to contain cases
   where sherpa is correct, but the split has not been counted.
-- **Any non-`zh` audio.** The library has none.
+- **Any non-`zh` audio** — and therefore the entire Whisper/English half of the
+  system. The library has none, so the fixture has none. This is not a footnote: it
+  gates whether `torch` can be removed.
 - **A FunASR baseline on macOS.** The 3.1× and 0.39× figures are Linux-only. Measuring
   it on the Air would need interleaved runs with forced cooldowns, reporting the ratio
   and never the absolutes — judged not worth a machine, since ONNX-CPU beating
