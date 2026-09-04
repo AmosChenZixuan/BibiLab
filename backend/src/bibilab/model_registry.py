@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import shutil
+import tarfile
 import threading
 from dataclasses import dataclass
 from pathlib import Path
@@ -18,7 +19,7 @@ from bibilab.config import BibilabConfig, bibilab_home, models_dir
 logger = logging.getLogger(__name__)
 
 ModelKind = Literal["transcription", "vad", "diarization", "embedding", "reranker", "punctuation"]
-Backend = Literal["http_files", "modelscope", "whisper_warp"]
+Backend = Literal["http_files", "modelscope", "whisper_warp", "http_archive"]
 
 
 @dataclass(frozen=True)
@@ -39,6 +40,8 @@ class ModelSpec:
 
 
 # ---- Spec definitions ------------------------------------------------
+
+_SHERPA_RELEASE = "https://github.com/k2-fsa/sherpa-onnx/releases/download"
 
 _SPECS: dict[str, ModelSpec] = {
     "large-v3": ModelSpec(
@@ -89,6 +92,79 @@ _SPECS: dict[str, ModelSpec] = {
         integrity_files=["configuration.json"],
         local_subdir="asr/ct-punc",
         modelscope_id="iic/punc_ct-transformer_cn-en-common-vocab471067-large",
+    ),
+    # -- sherpa-onnx assets. Additive: land beside the PyTorch specs above,
+    # nothing consumes these yet. RELEASE/local_subdir mirror bench/asr/bench.py,
+    # already proven to fetch and extract these exact URLs.
+    "sherpa-sensevoice": ModelSpec(
+        id="sherpa-sensevoice",
+        display_name="sherpa-onnx SenseVoice",
+        kind="transcription",
+        backend="http_archive",
+        size_mb=1048,
+        integrity_files=["model.int8.onnx", "tokens.txt"],
+        local_subdir="asr/sherpa-sensevoice",
+        http_files=[
+            (
+                f"{_SHERPA_RELEASE}/asr-models/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17.tar.bz2",
+                "sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17.tar.bz2",
+            )
+        ],
+    ),
+    "sherpa-whisper-large-v3": ModelSpec(
+        id="sherpa-whisper-large-v3",
+        display_name="sherpa-onnx Whisper large-v3 (int8)",
+        kind="transcription",
+        backend="http_archive",
+        size_mb=1068,
+        integrity_files=["large-v3-encoder.int8.onnx", "large-v3-decoder.int8.onnx", "large-v3-tokens.txt"],
+        local_subdir="asr/sherpa-whisper-large-v3",
+        http_files=[
+            (
+                f"{_SHERPA_RELEASE}/asr-models/sherpa-onnx-whisper-large-v3.tar.bz2",
+                "sherpa-onnx-whisper-large-v3.tar.bz2",
+            )
+        ],
+    ),
+    "sherpa-ct-punc": ModelSpec(
+        id="sherpa-ct-punc",
+        display_name="sherpa-onnx CT-Transformer Punctuation (zh-en)",
+        kind="punctuation",
+        backend="http_archive",
+        size_mb=279,
+        integrity_files=["model.onnx", "tokens.json"],
+        local_subdir="asr/sherpa-ct-punc",
+        http_files=[
+            (
+                f"{_SHERPA_RELEASE}/punctuation-models/sherpa-onnx-punct-ct-transformer-zh-en-vocab272727-2024-04-12.tar.bz2",
+                "sherpa-onnx-punct-ct-transformer-zh-en-vocab272727-2024-04-12.tar.bz2",
+            )
+        ],
+    ),
+    "sherpa-silero-vad": ModelSpec(
+        id="sherpa-silero-vad",
+        display_name="Silero VAD",
+        kind="vad",
+        backend="http_files",
+        size_mb=1,
+        integrity_files=["silero_vad.onnx"],
+        local_subdir="asr/sherpa-silero-vad",
+        http_files=[(f"{_SHERPA_RELEASE}/asr-models/silero_vad.onnx", "silero_vad.onnx")],
+    ),
+    "sherpa-campplus": ModelSpec(
+        id="sherpa-campplus",
+        display_name="CAM++ (sherpa-onnx, Speaker Diarization)",
+        kind="diarization",
+        backend="http_files",
+        size_mb=28,
+        integrity_files=["3dspeaker_speech_campplus_sv_zh-cn_16k-common.onnx"],
+        local_subdir="asr/sherpa-campplus",
+        http_files=[
+            (
+                f"{_SHERPA_RELEASE}/speaker-recongition-models/3dspeaker_speech_campplus_sv_zh-cn_16k-common.onnx",
+                "3dspeaker_speech_campplus_sv_zh-cn_16k-common.onnx",
+            )
+        ],
     ),
     "multilingual-e5": ModelSpec(
         id="multilingual-e5",
@@ -228,6 +304,56 @@ def _download_http_files(spec: ModelSpec, target: Path) -> None:
     logger.info("Model downloaded to %s", target)
 
 
+def _download_http_archive(spec: ModelSpec, target: Path) -> None:
+    """Stream a .tar.bz2, extract it, and flatten its single top-level directory
+    into target. Every k2-fsa release archive ships exactly one top-level dir;
+    a violation fails loud rather than silently nesting the wrong layout."""
+    assert spec.http_files is not None and len(spec.http_files) == 1
+    url, archive_name = spec.http_files[0]
+
+    target.parent.mkdir(parents=True, exist_ok=True)
+    tmp = target.parent / f".{target.name}.partial"
+    shutil.rmtree(tmp, ignore_errors=True)
+    tmp.mkdir(parents=True, exist_ok=True)
+    import httpx  # noqa: PLC0415
+
+    try:
+        archive_path = tmp / archive_name
+        logger.info("Downloading %s → %s", url, archive_path)
+        # Archives run into the hundreds of MB; httpx's 5s default (connect/read/write/
+        # pool) is tuned for API calls, not large streamed downloads.
+        timeout = httpx.Timeout(10.0, read=60.0)
+        with httpx.stream("GET", url, follow_redirects=True, timeout=timeout) as resp:
+            resp.raise_for_status()
+            with open(archive_path, "wb") as f:
+                for chunk in resp.iter_bytes(1024 * 1024):
+                    f.write(chunk)
+
+        with tarfile.open(archive_path) as tf:
+            tf.extractall(tmp, filter="data")
+        archive_path.unlink()
+
+        entries = list(tmp.iterdir())
+        assert len(entries) == 1 and entries[0].is_dir(), (
+            f"{spec.id}: expected exactly one top-level directory in the archive, got {entries}"
+        )
+        extracted = entries[0]
+        for item in extracted.iterdir():
+            item.rename(tmp / item.name)
+        extracted.rmdir()
+    except Exception:
+        logger.exception("Archive download/extraction failed for %s", spec.id)
+        shutil.rmtree(tmp, ignore_errors=True)
+        raise
+    shutil.rmtree(target, ignore_errors=True)
+    try:
+        tmp.rename(target)
+    except OSError as exc:
+        shutil.rmtree(tmp, ignore_errors=True)
+        raise RuntimeError(f"atomic rename failed for {spec.id}: {exc}") from exc
+    logger.info("Model extracted to %s", target)
+
+
 def _download_whisper_warp(spec: ModelSpec, target: Path) -> None:
     # funasr 1.3.7's openai branch hardcodes whisper.load_model(name) with no
     # download_root, so it always writes to ~/.cache/whisper. Bypass it and call
@@ -273,6 +399,8 @@ def ensure(spec_id: str) -> Path:
             _download_http_files(spec, target)
         elif spec.backend == "whisper_warp":
             _download_whisper_warp(spec, target)
+        elif spec.backend == "http_archive":
+            _download_http_archive(spec, target)
         else:
             raise ValueError(f"Unknown backend {spec.backend!r} for {spec_id!r}")
 
