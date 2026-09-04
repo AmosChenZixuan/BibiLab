@@ -14,9 +14,9 @@ ASR output is raw VAD-segment text (SenseVoice's own ITN, Whisper's own English
 punctuation); the worker re-runs ct-punc on zh segments downstream
 (see `pipeline/punctuate.py`) before persisting to `transcript_segments`.
 
-VAD threshold/min_silence_duration are the #679-measured config (0.3 / 0.25) —
-better CER *and* speaker agreement than sherpa's own defaults (0.5 / 0.50) at
-once. max_speech_duration=15s matches the pre-migration VAD chunk cap.
+VAD threshold/min_silence_duration (0.3 / 0.25) are a measured config — better
+CER *and* speaker agreement than sherpa's own defaults (0.5 / 0.50) at once.
+max_speech_duration=15s matches the pre-migration VAD chunk cap.
 
 sherpa-onnx model assets auto-download on first ingest via model_registry.ensure(),
 same pattern as the embedding/reranker models.
@@ -69,8 +69,8 @@ class _SherpaEngine:
 _sherpa_engine: _SherpaEngine | None = None
 _sherpa_engine_key: tuple[str, str] | None = None  # (model, language)
 
-# Serializes the shared sherpa-onnx engine (load + inference). #679 measured one
-# shared sherpa model safely serving four concurrent workers with bit-identical
+# Serializes the shared sherpa-onnx engine (load + inference). One shared sherpa
+# model was measured safely serving four concurrent workers with bit-identical
 # output, but resizing this lock against that is a separate, throughput-focused
 # change (out of scope here) — keep today's serialized default.
 _transcribe_lock = threading.Lock()
@@ -102,12 +102,12 @@ def _load_sherpa(cfg: TranscriptionConfig) -> _SherpaEngine:
     vad_cfg.num_threads = _SHERPA_NUM_THREADS
 
     spec_id = resolve_transcription_spec_id(cfg.model)
+    spec = get_spec(spec_id)
     model_dir = ensure(spec_id)
     if cfg.model == "large-v3":
-        spec = get_spec(spec_id)
         encoder, decoder, tokens = spec.integrity_files
-        # language is fixed 'en' regardless of cfg.language: #683's spike validated
-        # only int8 large-v3 on English (0.40 CER on Chinese — untested elsewhere).
+        # language is fixed 'en' regardless of cfg.language: only int8 large-v3 on
+        # English was validated (0.40 CER on Chinese — untested elsewhere).
         recognizer = so.OfflineRecognizer.from_whisper(
             encoder=str(model_dir / encoder),
             decoder=str(model_dir / decoder),
@@ -118,7 +118,6 @@ def _load_sherpa(cfg: TranscriptionConfig) -> _SherpaEngine:
             task="transcribe",
         )
     else:
-        spec = get_spec(spec_id)
         model, tokens = spec.integrity_files
         recognizer = so.OfflineRecognizer.from_sense_voice(
             model=str(model_dir / model),
@@ -165,7 +164,7 @@ def _vad_spans(vad_cfg: Any, samples: Any, rate: int) -> list[tuple[float, float
     return spans
 
 
-def _cluster_speakers(embeddings: list, threshold: float = _SPEAKER_CLUSTER_THRESHOLD) -> list[int]:
+def _cluster_speakers(embeddings: list) -> list[int]:
     """Greedy cosine agglomeration over an unknown speaker count. sherpa-onnx ships
     SpeakerEmbeddingManager for matching against *enrolled* speakers, not this —
     unsupervised clustering has no built-in sherpa-onnx equivalent."""
@@ -182,7 +181,7 @@ def _cluster_speakers(embeddings: list, threshold: float = _SPEAKER_CLUSTER_THRE
         if centroids:
             sims = np.asarray(centroids) @ e
             best = int(sims.argmax())
-            if sims[best] >= threshold:
+            if sims[best] >= _SPEAKER_CLUSTER_THRESHOLD:
                 labels.append(best)
                 centroids[best] = (centroids[best] * counts[best] + e) / (counts[best] + 1)
                 centroids[best] /= np.linalg.norm(centroids[best]) + 1e-9
@@ -240,7 +239,7 @@ def _transcribe_sherpa(audio_path: Path, cfg: TranscriptionConfig) -> tuple[list
     if cfg.language and cfg.language != "auto":
         detected_lang = cfg.language
     elif cfg.model == "large-v3":
-        detected_lang = "en"  # #683: only int8 large-v3 English was validated
+        detected_lang = "en"  # only int8 large-v3 English was validated
     return segments, detected_lang
 
 

@@ -215,7 +215,7 @@ _SPECS: dict[str, ModelSpec] = {
 EMBEDDING_SPEC_ID = "multilingual-e5"
 RERANKER_SPEC_ID = "bge-reranker-base-q"
 
-# sherpa-onnx equivalents (#685: transcribe.py/punctuate.py run on these now).
+# sherpa-onnx spec ids — the ones transcribe.py and punctuate.py actually run on.
 SHERPA_SENSEVOICE_SPEC_ID = "sherpa-sensevoice"
 SHERPA_WHISPER_SPEC_ID = "sherpa-whisper-large-v3"
 SHERPA_PUNC_SPEC_ID = "sherpa-ct-punc"

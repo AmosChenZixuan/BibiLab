@@ -128,9 +128,9 @@ def test_asr_health_reports_unconfigured_model_as_error():
 
 
 def test_asr_health_resolves_public_model_name_to_sherpa_spec():
-    """#685: a known transcription.model value must resolve through
-    resolve_transcription_spec_id to the sherpa-onnx spec that's actually used —
-    not the now-unused FunASR spec of the same id."""
+    """A known transcription.model value must resolve through
+    resolve_transcription_spec_id to the sherpa-onnx spec that's actually used,
+    not get_spec(model) directly."""
     from bibilab.model_registry import SHERPA_SENSEVOICE_SPEC_ID, get_spec
 
     cfg = type("Cfg", (), {"transcription": TranscriptionConfig(model="sensevoice-small")})()
@@ -143,8 +143,7 @@ def test_asr_health_resolves_public_model_name_to_sherpa_spec():
 
 
 def test_diarization_health_checks_sherpa_spec():
-    """#685: the diarization health probe must check the sherpa-onnx CAM++ spec —
-    not the now-unused FunASR one."""
+    """The diarization health probe must check the sherpa-onnx CAM++ spec."""
     from bibilab.model_registry import SHERPA_DIARIZATION_SPEC_ID, get_spec
     from bibilab.routers.health import _check_diarization_model
 

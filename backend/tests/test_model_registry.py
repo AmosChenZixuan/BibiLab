@@ -241,16 +241,22 @@ def test_required_models_includes_reranker_when_enabled():
     assert RERANKER_SPEC_ID not in [s.id for s in required_models(cfg)]
 
 
-def test_ctpunc_is_required_unconditionally():
-    """#685: transcribe.py/punctuate.py run on sherpa-onnx now, so the gate must
-    require the sherpa ct-punc spec — not the now-unused FunASR one."""
+def test_ctpunc_vad_and_diarization_are_required_unconditionally():
+    """The gate must require the sherpa specs transcribe.py/punctuate.py actually
+    run on — not the FunASR ones of the same kind."""
     from bibilab.config import BibilabConfig
-    from bibilab.model_registry import SHERPA_PUNC_SPEC_ID, required_models
+    from bibilab.model_registry import (
+        SHERPA_DIARIZATION_SPEC_ID,
+        SHERPA_PUNC_SPEC_ID,
+        SHERPA_VAD_SPEC_ID,
+        required_models,
+    )
 
-    cfg = BibilabConfig()
-    ids = [s.id for s in required_models(cfg)]
+    ids = [s.id for s in required_models(BibilabConfig())]
     assert SHERPA_PUNC_SPEC_ID in ids
     assert SHERPA_PUNC_SPEC_ID == "sherpa-ct-punc"
+    assert SHERPA_VAD_SPEC_ID in ids
+    assert SHERPA_DIARIZATION_SPEC_ID in ids
 
 
 def test_resolve_transcription_spec_id_maps_public_model_names():
@@ -266,15 +272,6 @@ def test_resolve_transcription_spec_id_maps_public_model_names():
 
     assert resolve_transcription_spec_id("sensevoice-small") == SHERPA_SENSEVOICE_SPEC_ID
     assert resolve_transcription_spec_id("large-v3") == SHERPA_WHISPER_SPEC_ID
-
-
-def test_required_models_uses_sherpa_vad_and_diarization_specs():
-    from bibilab.config import BibilabConfig
-    from bibilab.model_registry import SHERPA_DIARIZATION_SPEC_ID, SHERPA_VAD_SPEC_ID, required_models
-
-    ids = [s.id for s in required_models(BibilabConfig())]
-    assert SHERPA_VAD_SPEC_ID in ids
-    assert SHERPA_DIARIZATION_SPEC_ID in ids
 
 
 def test_required_models_transcription_model_resolves_to_sherpa_spec():

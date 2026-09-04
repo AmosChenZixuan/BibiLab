@@ -132,7 +132,7 @@ def test_load_sherpa_sensevoice_resolves_spec_paths_and_provider(tmp_bibilab_hom
 
 def test_load_sherpa_whisper_forces_english_regardless_of_cfg_language(tmp_bibilab_home: Path):
     """cfg.model='large-v3' must build from the sherpa Whisper spec and always
-    construct with language='en' — #683's spike validated English only; any
+    construct with language='en' — English is the only validated case; any
     other language is untested and known-bad (0.40 CER on Chinese)."""
     _reset_sherpa_engine_cache()
     from bibilab.pipeline import transcribe as transcribe_mod
@@ -158,9 +158,9 @@ def test_load_sherpa_whisper_forces_english_regardless_of_cfg_language(tmp_bibil
     stub.OfflineRecognizer.from_sense_voice.assert_not_called()
 
 
-def test_load_sherpa_vad_uses_679_defaults(tmp_bibilab_home: Path):
-    """AC4: VAD threshold=0.3, min_silence_duration=0.25 — the #679-measured
-    config, not sherpa's own defaults (0.5 / 0.50)."""
+def test_load_sherpa_vad_uses_measured_defaults(tmp_bibilab_home: Path):
+    """VAD threshold=0.3, min_silence_duration=0.25 — a measured config that beats
+    sherpa's own defaults (0.5 / 0.50) on CER and speaker agreement."""
     _reset_sherpa_engine_cache()
     from bibilab.pipeline import transcribe as transcribe_mod
 
@@ -179,6 +179,27 @@ def test_load_sherpa_vad_uses_679_defaults(tmp_bibilab_home: Path):
     assert engine.vad_cfg.silero_vad.min_silence_duration == 0.25
     assert engine.vad_cfg.silero_vad.max_speech_duration == 15.0
     assert engine.vad_cfg.provider == "cpu"
+
+
+def test_load_sherpa_speaker_extractor_resolves_spec_path_and_provider(tmp_bibilab_home: Path):
+    _reset_sherpa_engine_cache()
+    from bibilab.pipeline import transcribe as transcribe_mod
+
+    cfg = TranscriptionConfig(model="sensevoice-small")
+    models_root = tmp_bibilab_home / "models"
+    stub = _sherpa_stub()
+
+    with (
+        patch.dict(sys.modules, {"sherpa_onnx": stub}),
+        patch("bibilab.pipeline.transcribe.ensure", side_effect=lambda sid: _stub_ensure(models_root, sid)),
+        patch("bibilab.pipeline.transcribe.interpreting_provider", return_value="cpu"),
+    ):
+        transcribe_mod._load_sherpa(cfg)
+
+    kwargs = stub.SpeakerEmbeddingExtractorConfig.call_args.kwargs
+    spk_dir = models_root / get_spec("sherpa-campplus").local_subdir
+    assert kwargs["model"] == str(spk_dir / "3dspeaker_speech_campplus_sv_zh-cn_16k-common.onnx")
+    assert kwargs["provider"] == "cpu"
 
 
 def test_load_sherpa_caches_by_model_and_language(tmp_bibilab_home: Path):
@@ -236,6 +257,14 @@ def _patch_transcribe_sherpa(engine, spans):
         patch("bibilab.pipeline.transcribe._vad_spans", return_value=spans),
         patch("soundfile.read", return_value=([0.0], 16000)),
     )
+
+
+def test_cluster_speakers_splits_dissimilar_and_merges_similar_embeddings():
+    from bibilab.pipeline.transcribe import _cluster_speakers
+
+    assert _cluster_speakers([]) == []
+    assert _cluster_speakers([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]) == [0, 1]  # orthogonal
+    assert _cluster_speakers([[1.0, 0.0, 0.0], [1.0, 0.0, 0.0]]) == [0, 0]  # identical
 
 
 def test_transcribe_sherpa_assembles_segments_and_clusters_distinct_speakers(tmp_path: Path):
@@ -394,7 +423,7 @@ def test_transcribe_unknown_model_raises_pipeline_error():
     ["bibilab.pipeline.transcribe", "bibilab.pipeline.punctuate"],
 )
 def test_no_torch_or_funasr_import_remains(module: str):
-    """AC2: no torch or funasr import remains on the transcription/punctuation path."""
+    """No torch or funasr import remains on the transcription/punctuation path."""
     import importlib
 
     source = Path(importlib.import_module(module).__file__).read_text()
