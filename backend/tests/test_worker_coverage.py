@@ -386,11 +386,23 @@ async def test_stage_transcribe_none_detected_language_degrades_safely(tmp_bibil
 
     # chunk_segments(language=None) must fall back to the same English (300
     # token) target as language="en" — dict.get(None, default) degrades
-    # identically, so this is pinning existing behavior, not new code.
-    long_text = " ".join(["word"] * 500)
-    none_chunks = chunk_segments([WhisperSegment(start=0.0, end=1.0, text=long_text, speaker=None)], language=None)
-    en_chunks = chunk_segments([WhisperSegment(start=0.0, end=1.0, text=long_text, speaker=None)], language="en")
+    # identically, so this is pinning existing behavior, not new code. Six
+    # 60-word sentence-terminated segments (~360 tokens total) is a
+    # discriminating input: it splits into 2 chunks under the en/None
+    # 300-token target but stays 1 chunk under the zh 800-token target, so
+    # the assertion actually exercises the language→target lookup instead
+    # of passing regardless of it.
+    def _segs():
+        return [
+            WhisperSegment(start=float(i), end=float(i + 1), text=" ".join(["word"] * 60) + ".", speaker=None)
+            for i in range(6)
+        ]
+
+    none_chunks = chunk_segments(_segs(), language=None)
+    en_chunks = chunk_segments(_segs(), language="en")
+    zh_chunks = chunk_segments(_segs(), language="zh")
     assert [c.text for c in none_chunks] == [c.text for c in en_chunks]
+    assert len(none_chunks) != len(zh_chunks)
 
 
 @pytest.mark.asyncio
