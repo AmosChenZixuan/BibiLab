@@ -57,6 +57,15 @@ python bench.py --provider cuda --provider-vad cpu --provider-spk cpu --provider
 
 On macOS substitute `--provider coreml`.
 
+## Whisper
+
+`--asr whisper` runs all four stages, but the k2-fsa release ships large-v3 as
+int8 only, and int8 large-v3 drops characters throughout on Chinese: CER 0.40
+against the SenseVoice reference, at 26× the cost (rtf 0.81 vs 0.031). Treat the
+Whisper branch as unmeasured until either a non-quantized large-v3 is exported or
+a smaller Whisper that ships fp32 is substituted. Nothing in the library uses
+Whisper today — all 55 sources are SenseVoice — so this blocks nothing yet.
+
 ## Requirements
 
 - sherpa path: `sherpa-onnx==1.13.7`, `numpy`, `soundfile`
