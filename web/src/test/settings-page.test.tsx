@@ -17,7 +17,6 @@ vi.mock("../lib/api", () => {
       ai: { protocol: "openai", model: "gpt-4o", api_key: "", base_url: "", context_window: 128000, max_output_tokens: 16384 },
       transcription: {
         model: "large-v3",
-        device: "cpu",
         language: "auto",
       },
       backend: { port: 8765, max_concurrent_jobs: 2, cors_origins: ["http://localhost", "http://localhost:5173", "http://127.0.0.1", "http://127.0.0.1:5173"] },
@@ -158,7 +157,6 @@ describe("settings page", () => {
       ai: { protocol: "openai", model: "gpt-4o", api_key: "", base_url: "", context_window: 128000, max_output_tokens: 16384 },
       transcription: {
         model: "large-v3",
-        device: "cpu",
         language: "auto",
       },
       backend: { port: 8765, max_concurrent_jobs: 2, cors_origins: ["http://localhost", "http://localhost:5173", "http://127.0.0.1", "http://127.0.0.1:5173"] },
@@ -191,7 +189,6 @@ describe("settings page", () => {
       ai: { protocol: "openai", model: "gpt-4o", api_key: "", base_url: "", context_window: 128000, max_output_tokens: 16384 },
       transcription: {
         model: "large-v3",
-        device: "cpu",
         language: "auto",
       },
       backend: { port: 8765, max_concurrent_jobs: 3, cors_origins: ["http://localhost", "http://localhost:5173", "http://127.0.0.1", "http://127.0.0.1:5173"] },

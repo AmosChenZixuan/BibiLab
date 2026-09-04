@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Settings, User } from "lucide-react";
 import { NavLink, Outlet } from "react-router-dom";
 
@@ -22,17 +22,14 @@ export function AppFrame() {
   const [qrModalOpen, setQrModalOpen] = useState(false);
   const [navElement, setNavElement] = useState<HTMLElement | null>(null);
 
-  const deviceRef = useRef<string | undefined>();
-
   useEffect(() => {
     let cancelled = false;
 
     async function loadHealth() {
       try {
-        const [next, config] = await Promise.all([api.getHealth(), api.getConfig()]);
-        if (!cancelled) {
-          deviceRef.current = config?.transcription.device;
-          if (next) setHealthTier(deriveOverallHealthTier(next, deviceRef.current));
+        const next = await api.getHealth();
+        if (!cancelled && next) {
+          setHealthTier(deriveOverallHealthTier(next));
         }
       } catch {
         if (!cancelled) {
@@ -42,9 +39,8 @@ export function AppFrame() {
     }
 
     function handleHealthRefresh(event: Event) {
-      const { device, ...next } = (event as CustomEvent<HealthRefreshDetail>).detail;
-      if (device !== undefined) deviceRef.current = device;
-      setHealthTier(deriveOverallHealthTier(next, deviceRef.current));
+      const next = (event as CustomEvent<HealthRefreshDetail>).detail;
+      setHealthTier(deriveOverallHealthTier(next));
     }
 
     void loadHealth();

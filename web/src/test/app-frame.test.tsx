@@ -43,7 +43,7 @@ function renderFrame(healthPayload: HealthResponse, configPayload?: BibilabConfi
     configPayload ?? ({
       accounts: { bilibili: { cookie: "", username: "", avatar_url: "" } },
       ai: { protocol: "", model: "", api_key: "", base_url: "", context_window: 128000, max_output_tokens: 16384 },
-      transcription: { model: "large-v3", device: "cuda", language: "" },
+      transcription: { model: "large-v3", language: "" },
       backend: { port: 8765, max_concurrent_jobs: 1, cors_origins: ["http://localhost", "http://localhost:5173", "http://127.0.0.1", "http://127.0.0.1:5173"] },
       rag: { max_distance: 0.8, reranking_enabled: true, hybrid_enabled: true, debug_prompts: false },
     }),
@@ -86,23 +86,13 @@ describe("app frame", () => {
     expect(await screen.findByTitle("Healthy")).toBeInTheDocument();
   });
 
-  test("shows degraded badge when cuda available but device is cpu", async () => {
-    renderFrame(
-      {
-        overall: "ok",
-        dependencies: {
-          cuda: { status: "ok", message: "" },
-          embedding_model: { status: "ok", message: "" },
-        },
+  test("shows throttled badge when embedding model is not ready", async () => {
+    renderFrame({
+      overall: "ok",
+      dependencies: {
+        embedding_model: { status: "error", message: "" },
       },
-      {
-        accounts: { bilibili: { cookie: "", username: "", avatar_url: "" } },
-        ai: { protocol: "", model: "", api_key: "", base_url: "", context_window: 128000, max_output_tokens: 16384 },
-        transcription: { model: "large-v3", device: "cpu", language: "" },
-        backend: { port: 8765, max_concurrent_jobs: 1, cors_origins: ["http://localhost", "http://localhost:5173", "http://127.0.0.1", "http://127.0.0.1:5173"] },
-        rag: { max_distance: 0.8, reranking_enabled: true, hybrid_enabled: true, debug_prompts: false },
-      },
-    );
+    });
 
     expect(await screen.findByTitle("Throttled")).toBeInTheDocument();
   });
@@ -209,7 +199,7 @@ describe("app frame", () => {
           },
         },
         ai: { protocol: "openai", model: "gpt-4o", api_key: "", base_url: "", context_window: 128000, max_output_tokens: 16384 },
-        transcription: { model: "large-v3", device: "cpu", language: "auto" },
+        transcription: { model: "large-v3", language: "auto" },
         backend: { port: 8765, max_concurrent_jobs: 1, cors_origins: ["http://localhost", "http://localhost:5173", "http://127.0.0.1", "http://127.0.0.1:5173"] },
         rag: { max_distance: 0.8, reranking_enabled: true, hybrid_enabled: true, debug_prompts: false },
       },

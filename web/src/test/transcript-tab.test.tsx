@@ -27,7 +27,6 @@ const baseConfig: BibilabConfig = {
   ai: { protocol: "openai", model: "", api_key: "", base_url: "", context_window: 128000, max_output_tokens: 16384 },
   transcription: {
     model: "large-v3",
-    device: "cpu",
     language: "auto",
   },
   backend: { port: 8765, max_concurrent_jobs: 2, cors_origins: ["http://localhost", "http://localhost:5173", "http://127.0.0.1", "http://127.0.0.1:5173"] },
