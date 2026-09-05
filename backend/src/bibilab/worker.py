@@ -110,7 +110,6 @@ class WorkerLoop:
         self._concurrency = concurrency
         self._task: asyncio.Task | None = None
         self._running = False
-        self._cancelled: set[str] = set()
         self._in_flight: set[str] = set()
         self._tasks: dict[str, asyncio.Task] = {}
 
@@ -131,7 +130,6 @@ class WorkerLoop:
         logger.info("Worker loop stopped")
 
     def cancel_job(self, job_id: str) -> None:
-        self._cancelled.add(job_id)
         # Free the slot now rather than waiting for the task to unwind.
         self._in_flight.discard(job_id)
         task = self._tasks.get(job_id)
@@ -176,11 +174,6 @@ class WorkerLoop:
     async def _run_job(self, job: dict) -> None:
         job_id = job["id"]
         try:
-            if job_id in self._cancelled:
-                self._cancelled.discard(job_id)
-                await delete_job(job_id)
-                return
-
             if job["type"] == JobType.ARTIFACT:
                 await self._run_artifact_job(job)
                 return
@@ -227,7 +220,6 @@ class WorkerLoop:
             await update_job_status(job_id, JobStatus.FAILED.value, error=str(exc))
         finally:
             self._in_flight.discard(job_id)
-            self._cancelled.discard(job_id)
             self._tasks.pop(job_id, None)
 
     async def _download_model_job(self, job: dict) -> None:
@@ -268,13 +260,6 @@ class WorkerLoop:
 
         try:
             await update_job_status(job_id, JobStatus.PROCESSING.value, progress=10)
-
-            # Cancellation check before LLM work.
-            if job_id in self._cancelled:
-                self._cancelled.discard(job_id)
-                await delete_job(job_id)
-                return
-
             await update_job_status(job_id, JobStatus.PROCESSING.value, progress=30)
 
             # _build_section_views handles source existence + no-sections
@@ -297,12 +282,6 @@ class WorkerLoop:
                 )
                 content = artifact_result.content
                 artifact_name = artifact_result.name
-
-            # Check for cancellation before writing file
-            if job_id in self._cancelled:
-                self._cancelled.discard(job_id)
-                await delete_job(job_id)
-                return
 
             await update_job_status(job_id, JobStatus.PROCESSING.value, progress=80)
 

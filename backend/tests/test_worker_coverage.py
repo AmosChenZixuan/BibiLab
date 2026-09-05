@@ -118,23 +118,6 @@ async def test_download_model_job_unknown_model(tmp_bibilab_home: Path):
 
 
 @pytest.mark.asyncio
-async def test_run_job_cancelled_before_start(tmp_bibilab_home: Path):
-    from bibilab.db import bootstrap_db, create_job
-
-    await bootstrap_db()
-    job_id = await create_job("ingest", {})
-
-    worker = WorkerLoop(home=tmp_bibilab_home)
-    worker.cancel_job(job_id)
-
-    job = {"id": job_id, "type": "ingest", "meta": "{}"}
-    await worker._run_job(job)
-
-    assert job_id not in worker._cancelled
-    assert job_id not in worker._in_flight
-
-
-@pytest.mark.asyncio
 async def test_cancel_frees_slot_without_waiting_for_stage(tmp_bibilab_home: Path):
     """cancel_job frees the slot without waiting for the running stage.
 
@@ -209,7 +192,6 @@ async def test_cancel_job_cancels_running_task_mid_stage(tmp_bibilab_home: Path)
     assert cleanup_calls == [job]
     assert await get_job(job_id) is None
     assert job_id not in worker._in_flight
-    assert job_id not in worker._cancelled
     assert job_id not in worker._tasks
 
 
@@ -251,7 +233,6 @@ async def test_cancel_handler_reraises_even_if_cleanup_fails(tmp_bibilab_home: P
             await task
 
     assert job_id not in worker._in_flight
-    assert job_id not in worker._cancelled
     assert job_id not in worker._tasks
     assert await get_job(job_id) is None
 
@@ -294,7 +275,6 @@ async def test_cancel_handler_reraises_even_if_delete_fails(tmp_bibilab_home: Pa
 
     mock_cleanup.assert_called_once_with(job)
     assert job_id not in worker._in_flight
-    assert job_id not in worker._cancelled
     assert job_id not in worker._tasks
 
 
@@ -307,7 +287,6 @@ async def test_cancel_job_is_idempotent_and_safe_for_unknown_jobs(tmp_bibilab_ho
     worker.cancel_job("never-existed")
     worker.cancel_job("never-existed")  # double-cancel
 
-    assert "never-existed" in worker._cancelled
     assert "never-existed" not in worker._tasks
 
 
@@ -424,6 +403,57 @@ async def test_cancel_job_on_digest_job_leaves_sections_unwritten(tmp_bibilab_ho
     assert await get_job(job_id) is None
     rows = await get_sections(source_id)
     assert rows[0]["summary"] == "old section"
+
+
+@pytest.mark.asyncio
+async def test_cancel_job_cancels_running_artifact_job_mid_section_view(tmp_bibilab_home: Path):
+    """Real task.cancel() mid-_run_artifact_job (blocked inside
+    _build_section_views) unwinds through the same collapsed CancelledError
+    handler as ingest/digest/model_download."""
+    import asyncio
+
+    from bibilab.db import bootstrap_db, create_job, get_job
+
+    await bootstrap_db()
+    await create_list("list-artifact-cancel", "Artifact Cancel Test", "2025-01-01T00:00:00Z")
+    artifact_id = str(uuid.uuid4())
+    meta = {
+        "artifact_id": artifact_id,
+        "list_id": "list-artifact-cancel",
+        "type": "brief",
+        "prompt": "Summarize",
+        "source_ids": ["some-source"],
+    }
+    job_id = await create_job("artifact", meta)
+    job = {"id": job_id, "type": "artifact", "meta": json.dumps(meta)}
+
+    started = asyncio.Event()
+    never_set = asyncio.Event()
+
+    async def _blocked_section_views(source_ids):
+        started.set()
+        await never_set.wait()
+
+    worker = WorkerLoop(config=MagicMock(), home=tmp_bibilab_home)
+    worker._in_flight.add(job_id)
+
+    with (
+        patch("bibilab.worker._build_section_views", _blocked_section_views),
+        patch("bibilab.worker.cleanup_job_artifacts") as mock_cleanup,
+    ):
+        task = asyncio.create_task(worker._run_job(job))
+        worker._tasks[job_id] = task
+        await started.wait()
+
+        worker.cancel_job(job_id)
+
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    mock_cleanup.assert_called_once_with(job)
+    assert await get_job(job_id) is None
+    assert job_id not in worker._in_flight
+    assert job_id not in worker._tasks
 
 
 @pytest.mark.asyncio
