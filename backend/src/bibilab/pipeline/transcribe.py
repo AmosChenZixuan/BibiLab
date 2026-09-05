@@ -207,15 +207,12 @@ def _transcribe_sherpa(audio_path: Path, cfg: TranscriptionConfig) -> tuple[list
         samples, rate = sf.read(str(audio_path), dtype="float32", always_2d=False)
         spans = _vad_spans(engine.vad_cfg, samples, rate)
 
-        recognized: list[tuple[str, str | None]] = []
+        recognized: list[str] = []
         for start, end in spans:
             stream = engine.recognizer.create_stream()
             stream.accept_waveform(rate, samples[int(start * rate) : int(end * rate)])
             engine.recognizer.decode_stream(stream)
-            # #706: strip the `<|lang|>` brackets SenseVoice wraps per-segment lang in
-            # (Bug B) — without this the raw token leaks downstream into sources.language
-            # and bypasses the `language != "zh"` ct-punc gate.
-            recognized.append((stream.result.text.strip(), _strip_sense_voice_lang(stream.result.lang)))
+            recognized.append(stream.result.text.strip())
 
         embeddings = []
         for start, end in spans:
@@ -229,7 +226,7 @@ def _transcribe_sherpa(audio_path: Path, cfg: TranscriptionConfig) -> tuple[list
         raise
 
     segments: list[WhisperSegment] = []
-    for (start, end), (text, lang), label in zip(spans, recognized, labels, strict=True):
+    for (start, end), text, label in zip(spans, recognized, labels, strict=True):
         if not text:
             continue
         segments.append(WhisperSegment(start=start, end=end, text=text, speaker=f"SPK_{label}"))
@@ -338,17 +335,3 @@ __all__ = [
     "load_transcript_text",
     "transcribe",
 ]
-
-
-def _strip_sense_voice_lang(raw: str | None) -> str | None:
-    """Strip `<|...|>` brackets from a SenseVoice per-segment lang token.
-
-    SenseVoice returns the per-segment language wrapped in angle-bracket pipes
-    (`<|zh|>`, `<|ja|>`, `<|nospeech|>`, …). Without stripping, the raw token
-    lands in `sources.language` and breaks the ct-punc gate (`<|zh|>` ≠ `zh`).
-    Returns the inner string for bracketed tokens; pass-through for None / empty
-    / already-clean values so a downstream None still flows as None.
-    """
-    if raw and len(raw) >= 4 and raw.startswith("<|") and raw.endswith("|>"):
-        return raw[2:-2]
-    return raw

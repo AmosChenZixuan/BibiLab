@@ -277,9 +277,10 @@ def test_load_sherpa_builds_singleton_exactly_once_under_concurrent_entry(tmp_bi
     assert results[0] is results[1]
 
 
-def _fake_engine(recognized: list[tuple[str, str | None]], embeddings: list[list[float]]):
+def _fake_engine(recognized: list[str], embeddings: list[list[float]]):
     """A fake _SherpaEngine whose recognizer/spk_extractor streams return the given
-    per-span (text, lang) pairs and embeddings, in call order."""
+    per-span texts and embeddings, in call order. `stream.result.lang` is set to a
+    placeholder — production no longer reads it after #706."""
     from bibilab.pipeline.transcribe import _SherpaEngine
 
     recognizer = MagicMock()
@@ -287,9 +288,8 @@ def _fake_engine(recognized: list[tuple[str, str | None]], embeddings: list[list
 
     def make_asr_stream():
         stream = MagicMock()
-        text, lang = next(texts_iter)
-        stream.result.text = text
-        stream.result.lang = lang
+        stream.result.text = next(texts_iter)
+        stream.result.lang = "<|zh|>"  # placeholder; ignored by transcribe.py
         return stream
 
     recognizer.create_stream.side_effect = make_asr_stream
@@ -317,7 +317,7 @@ def test_transcribe_sherpa_does_not_hold_lock_during_inference(tmp_path: Path):
     from bibilab.pipeline import transcribe as transcribe_mod
     from bibilab.pipeline.transcribe import _transcribe_sherpa
 
-    engine = _fake_engine(recognized=[("你好", None)], embeddings=[[1.0, 0.0]])
+    engine = _fake_engine(recognized=["你好"], embeddings=[[1.0, 0.0]])
     lock_states_during_decode = []
     real_create_stream = engine.recognizer.create_stream
 
@@ -347,7 +347,7 @@ def test_transcribe_sherpa_assembles_segments_and_clusters_distinct_speakers(tmp
     from bibilab.pipeline.transcribe import _transcribe_sherpa
 
     engine = _fake_engine(
-        recognized=[("你好", None), ("再见", None)],
+        recognized=["你好", "再见"],
         embeddings=[[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],  # orthogonal -> distinct clusters
     )
     spans = [(0.0, 1.0), (1.0, 2.0)]
@@ -363,7 +363,7 @@ def test_transcribe_sherpa_clusters_similar_embeddings_as_one_speaker(tmp_path: 
     from bibilab.pipeline.transcribe import _transcribe_sherpa
 
     engine = _fake_engine(
-        recognized=[("你好", None), ("再见", None)],
+        recognized=["你好", "再见"],
         embeddings=[[1.0, 0.0, 0.0], [1.0, 0.0, 0.0]],  # identical -> same cluster
     )
     spans = [(0.0, 1.0), (1.0, 2.0)]
@@ -378,7 +378,7 @@ def test_transcribe_sherpa_skips_empty_text_spans(tmp_path: Path):
     from bibilab.pipeline.transcribe import _transcribe_sherpa
 
     engine = _fake_engine(
-        recognized=[("", None), ("你好", None)],
+        recognized=["", "你好"],
         embeddings=[[1.0, 0.0], [0.0, 1.0]],
     )
     spans = [(0.0, 1.0), (1.0, 2.0)]
@@ -404,7 +404,7 @@ def test_transcribe_sherpa_no_segments_returns_empty_and_none(tmp_path: Path):
 def test_transcribe_sherpa_detected_language_explicit_cfg_wins(tmp_path: Path):
     from bibilab.pipeline.transcribe import _transcribe_sherpa
 
-    engine = _fake_engine(recognized=[("你好", "en")], embeddings=[[1.0, 0.0]])
+    engine = _fake_engine(recognized=["你好"], embeddings=[[1.0, 0.0]])
     p1, p2, p3 = _patch_transcribe_sherpa(engine, spans=[(0.0, 1.0)])
     with p1, p2, p3:
         _, lang = _transcribe_sherpa(tmp_path / "a.wav", TranscriptionConfig(model="sensevoice-small", language="zh"))
@@ -418,7 +418,7 @@ def test_transcribe_sherpa_whisper_detected_language_forced_english(tmp_path: Pa
     non-English audio) stream result reports."""
     from bibilab.pipeline.transcribe import _transcribe_sherpa
 
-    engine = _fake_engine(recognized=[("hello", None)], embeddings=[[1.0, 0.0]])
+    engine = _fake_engine(recognized=["hello"], embeddings=[[1.0, 0.0]])
     p1, p2, p3 = _patch_transcribe_sherpa(engine, spans=[(0.0, 1.0)])
     with p1, p2, p3:
         _, lang = _transcribe_sherpa(tmp_path / "a.wav", TranscriptionConfig(model="large-v3", language="en"))
@@ -433,7 +433,7 @@ def test_transcribe_sherpa_whisper_forces_english_even_with_mismatched_explicit_
     downstream and produce garbled punctuation."""
     from bibilab.pipeline.transcribe import _transcribe_sherpa
 
-    engine = _fake_engine(recognized=[("hello", None)], embeddings=[[1.0, 0.0]])
+    engine = _fake_engine(recognized=["hello"], embeddings=[[1.0, 0.0]])
     p1, p2, p3 = _patch_transcribe_sherpa(engine, spans=[(0.0, 1.0)])
     with p1, p2, p3:
         _, lang = _transcribe_sherpa(tmp_path / "a.wav", TranscriptionConfig(model="large-v3", language="zh"))
@@ -441,17 +441,13 @@ def test_transcribe_sherpa_whisper_forces_english_even_with_mismatched_explicit_
     assert lang == "en"
 
 
-def test_transcribe_sherpa_sensevoice_explicit_cfg_wins_over_segment_lang(tmp_path: Path):
-    """#706: 'auto' mode is gone — SenseVoice per-segment lang-id is unreliable
-    on short/silent spans (Bug A). Explicit cfg.language now always wins over
-    whatever the recognizer's per-segment `stream.result.lang` reports. The
-    recognizer is constructed with the forced language, so the per-segment
-    output is the same family but reported as raw `<|...|>` tokens — after
-    stripping, it's the forced language or noise."""
+def test_transcribe_sherpa_sensevoice_cfg_language_wins(tmp_path: Path):
+    """#706: auto mode is gone — explicit cfg.language is the only source of
+    detected_lang for sensevoice; the recognizer is forced to that language."""
     from bibilab.pipeline.transcribe import _transcribe_sherpa
 
     engine = _fake_engine(
-        recognized=[("你好", "<|zh|>"), ("hi", "<|en|>")],
+        recognized=["你好", "hi"],
         embeddings=[[1.0, 0.0], [0.0, 1.0]],
     )
     spans = [(0.0, 1.0), (1.0, 2.0)]
@@ -560,32 +556,6 @@ def test_vad_spans_feeds_a_clip_shorter_than_one_window():
         _vad_spans(vad_cfg, samples, 16000)
 
     assert recorder.fed == len(samples)
-
-
-def test_strip_sense_voice_lang_extracts_brackets() -> None:
-    """#706 Bug B: per-segment lang tokens come wrapped as `<|zh|>`, `<|ja|>`,
-    `<|nospeech|>`, etc. Strip the brackets so detected_lang flows downstream
-    as a clean language string — to the `sources.language` column, the ct-punc
-    gate, and chat rerank-side lang hints."""
-    from bibilab.pipeline.transcribe import _strip_sense_voice_lang
-
-    assert _strip_sense_voice_lang("<|zh|>") == "zh"
-    assert _strip_sense_voice_lang("<|ja|>") == "ja"
-    assert _strip_sense_voice_lang("<|ko|>") == "ko"
-    assert _strip_sense_voice_lang("<|yue|>") == "yue"
-    assert _strip_sense_voice_lang("<|en|>") == "en"
-    assert _strip_sense_voice_lang("<|nospeech|>") == "nospeech"
-
-
-def test_strip_sense_voice_lang_passes_through_non_bracketed() -> None:
-    """Non-bracketed input (None / empty / already-stripped plain string)
-    flows through unchanged — defensive against missing or already-clean
-    sherpa-onnx outputs."""
-    from bibilab.pipeline.transcribe import _strip_sense_voice_lang
-
-    assert _strip_sense_voice_lang(None) is None
-    assert _strip_sense_voice_lang("") == ""
-    assert _strip_sense_voice_lang("zh") == "zh"
 
 
 def test_transcribe_unknown_model_raises_pipeline_error():
