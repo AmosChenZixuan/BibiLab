@@ -1,3 +1,0 @@
-services:
-  bibilab:
-    gpus: all

@@ -16,7 +16,6 @@ dependencies = [
     "chromadb>=1.5.5",
     "fastapi>=0.135.2",
     "ffmpeg-python>=0.2.0",
-    "funasr>=1.2",
     "httpx>=0.28.1",
     "openai>=1.0.0",
     "tiktoken>=0.12.0",
@@ -26,71 +25,25 @@ dependencies = [
     "tokenizers>=0.22.0",
     "yt-dlp[curl-cffi]>=2026.3.17",
     "pypinyin>=0.55.0",
+    "sherpa-onnx>=1.13.7",
+    # sherpa-onnx's wheel is a thin Python binding; the actual libonnxruntime.so it
+    # dlopens ships in this separate, per-platform sherpa-onnx-core wheel (not the
+    # unrelated PyPI `onnxruntime` package above — a different build, ABI-incompatible).
+    # sherpa-onnx's own metadata declares it as a transitive dependency, but uv doesn't
+    # reliably resolve it (a known issue with sherpa-onnx's dynamic METADATA), so it's
+    # pinned here explicitly — exact version match required.
+    "sherpa-onnx-core==1.13.7",
+    "soundfile>=0.13.1",
 ]
 
-# torch is the only production GPU consumer (FunASR ASR in pipeline/transcribe.py;
-# routers/health.py probes but allocates nothing). cpu, cuda and rocm are conflicting
-# dependency groups pinning torch/torchaudio to different PyTorch wheel indices;
-# uv.lock covers all three; cpu is a default group, so bare `uv sync` installs cpu.
-# rocm torch drives AMD GPUs through the same `cuda` device API (HIP under the hood).
 [tool.uv]
-default-groups = ["dev", "cpu"]
-conflicts = [
-    [{ group = "cpu" }, { group = "cuda" }, { group = "rocm" }],
-]
-
-[tool.uv.sources]
-torch = [
-    { index = "pytorch-cpu", group = "cpu" },
-    { index = "pytorch-cuda", group = "cuda" },
-    { index = "pytorch-rocm", group = "rocm" },
-]
-torchaudio = [
-    { index = "pytorch-cpu", group = "cpu" },
-    { index = "pytorch-cuda", group = "cuda" },
-    { index = "pytorch-rocm", group = "rocm" },
-]
-# rocm torch pulls pytorch-triton-rocm, published only on the rocm wheel index
-# (not PyPI). uv requires a group-scoped source's package to also appear in that
-# group's dependency list (below), so it's listed there too; torch pins the version.
-pytorch-triton-rocm = [
-    { index = "pytorch-rocm", group = "rocm" },
-]
-
-[[tool.uv.index]]
-name = "pytorch-cpu"
-url = "https://download.pytorch.org/whl/cpu"
-explicit = true
-
-[[tool.uv.index]]
-name = "pytorch-cuda"
-url = "https://download.pytorch.org/whl/cu124"
-explicit = true
-
-[[tool.uv.index]]
-name = "pytorch-rocm"
-url = "https://download.pytorch.org/whl/rocm6.2.4"
-explicit = true
-
+default-groups = ["dev"]
 
 [dependency-groups]
 dev = [
     "pytest>=9.0.2",
     "pytest-asyncio>=1.3.0",
     "ruff>=0.15.8",
-]
-cpu = [
-    "torch>=2.0",
-    "torchaudio>=2.0",
-]
-cuda = [
-    "torch>=2.0",
-    "torchaudio>=2.0",
-]
-rocm = [
-    "torch>=2.0",
-    "torchaudio>=2.0",
-    "pytorch-triton-rocm",
 ]
 
 [tool.ruff]

@@ -17,7 +17,6 @@ vi.mock("../lib/api", () => {
       ai: { protocol: "openai", model: "gpt-4o", api_key: "", base_url: "", context_window: 128000, max_output_tokens: 16384 },
       transcription: {
         model: "large-v3",
-        device: "cpu",
         language: "auto",
       },
       backend: { port: 8765, max_concurrent_jobs: 2, cors_origins: ["http://localhost", "http://localhost:5173", "http://127.0.0.1", "http://127.0.0.1:5173"] },
@@ -31,7 +30,6 @@ vi.mock("../lib/api", () => {
         llm: { status: "ok", message: "" },
         asr_model: { status: "ok", message: "" },
         ffmpeg: { status: "ok", message: "" },
-        cuda: { status: "unavailable", message: "CPU only" },
         embedding_model: { status: "ok", message: "" },
       },
     }),
@@ -90,11 +88,12 @@ describe("settings page", () => {
     expect(await screen.findByLabelText(/provider/i)).toBeInTheDocument();
   });
 
-  test("clicking Transcript tab shows device dropdown", async () => {
+  test("clicking Transcript tab does not show a device dropdown", async () => {
     renderPage();
 
     fireEvent.click(await screen.findByRole("tab", { name: /transcript/i }));
-    expect(await screen.findByLabelText(/device/i)).toBeInTheDocument();
+    expect(await screen.findByLabelText(/transcription language/i)).toBeInTheDocument();
+    expect(screen.queryByLabelText(/^device$/i)).not.toBeInTheDocument();
   });
 
   test("clicking System tab shows backend api section", async () => {
@@ -115,7 +114,7 @@ describe("settings page", () => {
   test("reads active tab from the url query", async () => {
     renderPageAt("/settings?tab=transcript");
 
-    expect(await screen.findByLabelText(/device/i)).toBeInTheDocument();
+    expect(await screen.findByLabelText(/transcription language/i)).toBeInTheDocument();
     expect(screen.getByTestId("location")).toHaveTextContent("/settings?tab=transcript");
   });
 
@@ -137,7 +136,6 @@ describe("settings page", () => {
           llm: { status: "ok", message: "" },
           asr_model: { status: "ok", message: "" },
           ffmpeg: { status: "ok", message: "" },
-          cuda: { status: "unavailable", message: "CPU only" },
           embedding_model: { status: "ok", message: "" },
         },
       })
@@ -148,7 +146,6 @@ describe("settings page", () => {
           llm: { status: "error", message: "base_url not configured" },
           asr_model: { status: "ok", message: "" },
           ffmpeg: { status: "ok", message: "" },
-          cuda: { status: "unavailable", message: "CPU only" },
           embedding_model: { status: "ok", message: "" },
         },
       });
@@ -157,7 +154,6 @@ describe("settings page", () => {
       ai: { protocol: "openai", model: "gpt-4o", api_key: "", base_url: "", context_window: 128000, max_output_tokens: 16384 },
       transcription: {
         model: "large-v3",
-        device: "cpu",
         language: "auto",
       },
       backend: { port: 8765, max_concurrent_jobs: 2, cors_origins: ["http://localhost", "http://localhost:5173", "http://127.0.0.1", "http://127.0.0.1:5173"] },
@@ -190,7 +186,6 @@ describe("settings page", () => {
       ai: { protocol: "openai", model: "gpt-4o", api_key: "", base_url: "", context_window: 128000, max_output_tokens: 16384 },
       transcription: {
         model: "large-v3",
-        device: "cpu",
         language: "auto",
       },
       backend: { port: 8765, max_concurrent_jobs: 3, cors_origins: ["http://localhost", "http://localhost:5173", "http://127.0.0.1", "http://127.0.0.1:5173"] },

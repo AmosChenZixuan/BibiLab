@@ -1,9 +1,10 @@
 """Standalone ct-punc punctuation + char-offset alignment.
 
 Turns VAD `WhisperSegment`s into punctuated sentence `WhisperSegment`s for `zh`.
-ct-punc runs OUTSIDE FunASR's AutoModel (decoupled) — it only inserts punctuation,
-so a char-offset map back to the source segments recovers per-sentence speaker +
-time exactly. Non-`zh` passes through unchanged (ASR punctuates other languages).
+ct-punc (sherpa-onnx OfflinePunctuation) runs standalone, decoupled from ASR
+recognition — it only inserts punctuation, so a char-offset map back to the
+source segments recovers per-sentence speaker + time exactly. Non-`zh` passes
+through unchanged (ASR punctuates other languages).
 """
 
 from __future__ import annotations
@@ -12,7 +13,8 @@ import logging
 import threading
 from typing import Any
 
-from bibilab.model_registry import PUNC_SPEC_ID, ensure
+from bibilab.model_registry import SHERPA_PUNC_SPEC_ID, ensure, get_spec
+from bibilab.pipeline._shared import interpreting_provider
 from bibilab.pipeline.chunk import _SENT_END  # reuse — Code Health #3, correctness coupling
 from bibilab.pipeline.transcribe import WhisperSegment
 
@@ -108,26 +110,32 @@ _ctpunc_lock = threading.Lock()
 
 
 def _run_ctpunc(raw: str) -> str:
-    """Run standalone ct-punc on a raw (unpunctuated) char stream. Lazy singleton.
-
-    Serialised via _ctpunc_lock: FunASR AutoModel.generate() mutates internal
-    state (same class of bug as the ASR model — transcribe.py:47-51), so
-    concurrent calls corrupt output.
+    """Run standalone ct-punc (sherpa-onnx OfflinePunctuation) on a raw
+    (unpunctuated) char stream. Lazy singleton, serialised via _ctpunc_lock —
+    concurrent calls into one sherpa-onnx punctuation session are not safe
+    without external serialization (same reasoning as transcribe.py's engine lock).
     """
     global _ctpunc_model
-    from funasr import AutoModel  # noqa: PLC0415
 
-    if _ctpunc_model is None:
-        with _ctpunc_lock:
-            if _ctpunc_model is None:
-                model_path = ensure(PUNC_SPEC_ID)
-                logger.info("Loading ct-punc (standalone) from %s", model_path)
-                _ctpunc_model = AutoModel(model=str(model_path), disable_update=True, disable_pbar=True)
     with _ctpunc_lock:
+        if _ctpunc_model is None:
+            import sherpa_onnx as so  # noqa: PLC0415
+
+            spec = get_spec(SHERPA_PUNC_SPEC_ID)
+            model_dir = ensure(SHERPA_PUNC_SPEC_ID)
+            logger.info("Loading ct-punc (sherpa-onnx) from %s", model_dir)
+            _ctpunc_model = so.OfflinePunctuation(
+                so.OfflinePunctuationConfig(
+                    model=so.OfflinePunctuationModelConfig(
+                        ct_transformer=str(model_dir / spec.integrity_files[0]),
+                        provider=interpreting_provider(),
+                    )
+                )
+            )
         try:
-            return _ctpunc_model.generate(input=raw)[0]["text"]
+            return _ctpunc_model.add_punctuation(raw)
         except Exception:
-            logger.exception("ct-punc generate failed — resetting model for next attempt")
+            logger.exception("ct-punc add_punctuation failed — resetting model for next attempt")
             _ctpunc_model = None
             raise
 

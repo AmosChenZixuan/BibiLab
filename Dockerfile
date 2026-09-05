@@ -19,8 +19,8 @@ RUN apt-get update \
 COPY --from=ghcr.io/astral-sh/uv:0.9.27 /uv /uvx /bin/
 
 # The container runs as the host uid (compose `user:`), which has no /etc/passwd
-# entry and thus no writable $HOME. Point HOME at the bind mount so torch/HF/funasr
-# caches land under /data, not a read-only /.
+# entry and thus no writable $HOME. Point HOME at the bind mount so the sherpa-onnx
+# model cache lands under /data, not a read-only /.
 ENV HOME=/data \
     PATH=/app/backend/.venv/bin:$PATH
 
@@ -29,10 +29,8 @@ WORKDIR /app/backend
 COPY backend/ /app/backend/
 COPY --from=web /web/dist /app/web/dist
 
-# torch variant chosen per host at install time (cpu default, cuda on NVIDIA boxes).
-# --no-default-groups drops dev + the cpu default, leaving only the picked variant.
-ARG TORCH_VARIANT=cpu
-RUN uv sync --no-default-groups --group ${TORCH_VARIANT} --frozen
+# --no-default-groups excludes the dev group (test deps) from the production image.
+RUN uv sync --no-default-groups --frozen
 
 EXPOSE 8765
 CMD ["python", "-m", "bibilab.main"]

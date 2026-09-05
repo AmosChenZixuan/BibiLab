@@ -2,7 +2,7 @@
 
 import onnxruntime as ort
 
-from bibilab.pipeline._shared import interpreting_providers
+from bibilab.pipeline._shared import interpreting_provider, interpreting_providers
 
 
 def test_interpreting_providers_drops_compiling_eps(monkeypatch):
@@ -38,3 +38,27 @@ def test_interpreting_providers_macos_falls_back_to_cpu(monkeypatch):
         ],
     )
     assert interpreting_providers() == ["CPUExecutionProvider"]
+
+
+def test_interpreting_provider_translates_cpu_ep(monkeypatch):
+    monkeypatch.setattr(ort, "get_available_providers", lambda: ["CPUExecutionProvider"])
+    assert interpreting_provider() == "cpu"
+
+
+def test_interpreting_provider_translates_cuda_ep(monkeypatch):
+    monkeypatch.setattr(ort, "get_available_providers", lambda: ["CUDAExecutionProvider", "CPUExecutionProvider"])
+    assert interpreting_provider() == "cuda"
+
+
+def test_interpreting_provider_unrecognized_ep_falls_back_to_cpu(monkeypatch):
+    # ROCm is kernel-based and allowlisted by interpreting_providers(), but sherpa-onnx
+    # has no distinct "rocm" provider string — fall back to cpu rather than guessing.
+    monkeypatch.setattr(ort, "get_available_providers", lambda: ["ROCMExecutionProvider"])
+    assert interpreting_provider() == "cpu"
+
+
+def test_interpreting_provider_empty_providers_falls_back_to_cpu(monkeypatch):
+    # A slim/custom onnxruntime build could report no CUDA/ROCm/CPU provider at all —
+    # must not crash with an IndexError on the first ASR call.
+    monkeypatch.setattr(ort, "get_available_providers", lambda: [])
+    assert interpreting_provider() == "cpu"

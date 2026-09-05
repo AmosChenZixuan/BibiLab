@@ -5,7 +5,7 @@ import threading
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, field_validator, model_validator
+from pydantic import BaseModel, model_validator
 
 logger = logging.getLogger(__name__)
 
@@ -73,22 +73,15 @@ class AIConfig(BaseModel):
 
 class TranscriptionConfig(BaseModel):
     model: str = "sensevoice-small"
-    device: str = "cuda"  # cuda | cpu
     language: str = "auto"  # auto | zh | en
-
-    @field_validator("device")
-    @classmethod
-    def _check_device(cls, v: str) -> str:
-        if v not in ("cuda", "cpu"):
-            raise ValueError(f"device must be 'cuda' or 'cpu', got {v!r}")
-        return v
 
 
 class BackendConfig(BaseModel):
     port: int = 8765
     # Max ingest jobs in flight. Governs IO-stage (download + digest LLM call)
-    # parallelism only — transcription is serialized by a lock regardless, since
-    # it is GPU-compute/GIL-bound and gains nothing from concurrency.
+    # parallelism and how many workers concurrently transcribe against the one
+    # shared sherpa-onnx model — measured safe and faster, not serialized (see
+    # pipeline/transcribe.py's _transcribe_lock).
     max_concurrent_jobs: int = 4
     cors_origins: list[str] = [
         "http://localhost",

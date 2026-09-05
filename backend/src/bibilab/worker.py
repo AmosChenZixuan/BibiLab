@@ -558,9 +558,12 @@ class WorkerLoop:
         await update_job_status(job["id"], JobStatus.TRANSCRIBING.value, progress=30)
         vad_segments, detected_language = await asyncio.to_thread(transcribe, wav_path, cfg.transcription)
         wav_path.unlink(missing_ok=True)  # clean up early — punctuate only needs text
-        effective_language = (
-            cfg.transcription.language if cfg.transcription.language != "auto" else (detected_language or "en")
-        )
+        # transcribe() already resolves the effective language (large-v3 forces "en"
+        # regardless of cfg.transcription.language; sensevoice honors an explicit
+        # config value or its own per-segment detection) — re-deriving from
+        # cfg.transcription.language here would override that resolution and route
+        # large-v3's English-only output through zh-gated punctuation/chunking.
+        effective_language = detected_language
         sentence_segments = await asyncio.to_thread(punctuate, vad_segments, effective_language)
 
         if await self._abort_if_cancelled(job):
@@ -582,7 +585,7 @@ class WorkerLoop:
         video_meta: VideoMeta,
         list_id: str,
         cfg: BibilabConfig,
-        effective_language: str,
+        effective_language: str | None,
     ) -> tuple[DigestResult, list[Section], list[SectionDigest]] | None:
         """Stage 4: Derive sections, chunk per-section, run digest + embed in parallel.
 

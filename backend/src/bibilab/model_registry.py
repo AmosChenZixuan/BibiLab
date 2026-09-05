@@ -8,17 +8,18 @@ from __future__ import annotations
 
 import logging
 import shutil
+import tarfile
 import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
-from bibilab.config import BibilabConfig, bibilab_home, models_dir
+from bibilab.config import BibilabConfig, models_dir
 
 logger = logging.getLogger(__name__)
 
 ModelKind = Literal["transcription", "vad", "diarization", "embedding", "reranker", "punctuation"]
-Backend = Literal["http_files", "modelscope", "whisper_warp"]
+Backend = Literal["http_files", "http_archive"]
 
 
 @dataclass(frozen=True)
@@ -30,7 +31,6 @@ class ModelSpec:
     size_mb: int
     integrity_files: list[str]  # rel paths within target dir that must exist post-download
     local_subdir: str  # relative to models_dir()
-    modelscope_id: str | None = None
     http_files: list[tuple[str, str]] | None = None  # [(url, rel_path), ...]
 
     def __post_init__(self) -> None:
@@ -40,55 +40,78 @@ class ModelSpec:
 
 # ---- Spec definitions ------------------------------------------------
 
+_SHERPA_RELEASE = "https://github.com/k2-fsa/sherpa-onnx/releases/download"
+
 _SPECS: dict[str, ModelSpec] = {
-    "large-v3": ModelSpec(
-        id="large-v3",
-        display_name="Faster Whisper large-v3",
+    "sherpa-sensevoice": ModelSpec(
+        id="sherpa-sensevoice",
+        display_name="sherpa-onnx SenseVoice",
         kind="transcription",
-        backend="whisper_warp",
-        size_mb=3000,
-        integrity_files=["large-v3.pt"],
-        local_subdir="asr/whisper",
+        backend="http_archive",
+        size_mb=1048,
+        integrity_files=["model.int8.onnx", "tokens.txt"],
+        local_subdir="asr/sherpa-sensevoice",
+        http_files=[
+            (
+                f"{_SHERPA_RELEASE}/asr-models/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17.tar.bz2",
+                "sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17.tar.bz2",
+            )
+        ],
     ),
-    "sensevoice-small": ModelSpec(
-        id="sensevoice-small",
-        display_name="SenseVoice Small",
+    "sherpa-whisper-large-v3": ModelSpec(
+        id="sherpa-whisper-large-v3",
+        display_name="sherpa-onnx Whisper large-v3 (int8)",
         kind="transcription",
-        backend="modelscope",
-        size_mb=936,
-        integrity_files=["configuration.json"],
-        local_subdir="asr/sensevoice-small",
-        modelscope_id="iic/SenseVoiceSmall",
+        backend="http_archive",
+        size_mb=1068,
+        integrity_files=["large-v3-encoder.int8.onnx", "large-v3-decoder.int8.onnx", "large-v3-tokens.txt"],
+        local_subdir="asr/sherpa-whisper-large-v3",
+        http_files=[
+            (
+                f"{_SHERPA_RELEASE}/asr-models/sherpa-onnx-whisper-large-v3.tar.bz2",
+                "sherpa-onnx-whisper-large-v3.tar.bz2",
+            )
+        ],
     ),
-    "cam++": ModelSpec(
-        id="cam++",
-        display_name="CAM++ (Speaker Diarization)",
-        kind="diarization",
-        backend="modelscope",
-        size_mb=28,
-        integrity_files=["configuration.json"],
-        local_subdir="asr/cam++",
-        modelscope_id="iic/speech_campplus_sv_zh-cn_16k-common",
-    ),
-    "fsmn-vad": ModelSpec(
-        id="fsmn-vad",
-        display_name="FSMN-VAD (Voice Activity Detection)",
-        kind="vad",
-        backend="modelscope",
-        size_mb=4,
-        integrity_files=["configuration.json"],
-        local_subdir="asr/fsmn-vad",
-        modelscope_id="iic/speech_fsmn_vad_zh-cn-16k-common-pytorch",
-    ),
-    "ct-punc": ModelSpec(
-        id="ct-punc",
-        display_name="CT-Transformer Punctuation (zh-en)",
+    "sherpa-ct-punc": ModelSpec(
+        id="sherpa-ct-punc",
+        display_name="sherpa-onnx CT-Transformer Punctuation (zh-en)",
         kind="punctuation",
-        backend="modelscope",
-        size_mb=1050,
-        integrity_files=["configuration.json"],
-        local_subdir="asr/ct-punc",
-        modelscope_id="iic/punc_ct-transformer_cn-en-common-vocab471067-large",
+        backend="http_archive",
+        size_mb=279,
+        integrity_files=["model.onnx", "tokens.json"],
+        local_subdir="asr/sherpa-ct-punc",
+        http_files=[
+            (
+                f"{_SHERPA_RELEASE}/punctuation-models/sherpa-onnx-punct-ct-transformer-zh-en-vocab272727-2024-04-12.tar.bz2",
+                "sherpa-onnx-punct-ct-transformer-zh-en-vocab272727-2024-04-12.tar.bz2",
+            )
+        ],
+    ),
+    "sherpa-silero-vad": ModelSpec(
+        id="sherpa-silero-vad",
+        display_name="Silero VAD",
+        kind="vad",
+        backend="http_files",
+        size_mb=1,
+        integrity_files=["silero_vad.onnx"],
+        local_subdir="asr/sherpa-silero-vad",
+        http_files=[(f"{_SHERPA_RELEASE}/asr-models/silero_vad.onnx", "silero_vad.onnx")],
+    ),
+    "sherpa-campplus": ModelSpec(
+        id="sherpa-campplus",
+        display_name="CAM++ (sherpa-onnx, Speaker Diarization)",
+        kind="diarization",
+        backend="http_files",
+        size_mb=28,
+        integrity_files=["3dspeaker_speech_campplus_sv_zh-cn_16k-common.onnx"],
+        local_subdir="asr/sherpa-campplus",
+        http_files=[
+            (
+                f"{_SHERPA_RELEASE}/speaker-recongition-models/3dspeaker_speech_campplus_sv_zh-cn_16k-common.onnx",
+                "3dspeaker_speech_campplus_sv_zh-cn_16k-common.onnx",
+            )
+        ],
     ),
     "multilingual-e5": ModelSpec(
         id="multilingual-e5",
@@ -138,10 +161,25 @@ _SPECS: dict[str, ModelSpec] = {
 
 EMBEDDING_SPEC_ID = "multilingual-e5"
 RERANKER_SPEC_ID = "bge-reranker-base-q"
-DIARIZATION_SPEC_ID = "cam++"
-VAD_SPEC_ID = "fsmn-vad"
-PUNC_SPEC_ID = "ct-punc"
-WHISPER_SPEC_ID = "large-v3"
+
+# sherpa-onnx spec ids — the ones transcribe.py and punctuate.py actually run on.
+SHERPA_SENSEVOICE_SPEC_ID = "sherpa-sensevoice"
+SHERPA_WHISPER_SPEC_ID = "sherpa-whisper-large-v3"
+SHERPA_PUNC_SPEC_ID = "sherpa-ct-punc"
+SHERPA_VAD_SPEC_ID = "sherpa-silero-vad"
+SHERPA_DIARIZATION_SPEC_ID = "sherpa-campplus"
+
+# TranscriptionConfig.model values ("large-v3", "sensevoice-small") are stable public
+# config strings; which concrete spec backs them is an implementation detail resolved
+# once here, shared by required_models() below and transcribe.py's engine loader.
+_TRANSCRIPTION_SPEC_BY_MODEL = {
+    "large-v3": SHERPA_WHISPER_SPEC_ID,
+    "sensevoice-small": SHERPA_SENSEVOICE_SPEC_ID,
+}
+
+
+def resolve_transcription_spec_id(model: str) -> str:
+    return _TRANSCRIPTION_SPEC_BY_MODEL.get(model, model)
 
 
 def list_specs() -> list[ModelSpec]:
@@ -170,31 +208,6 @@ def _integrity_ok(spec: ModelSpec) -> bool:
 
 
 # ---- Download backends -----------------------------------------------
-
-
-def _download_modelscope(spec: ModelSpec, target: Path) -> None:
-    assert spec.modelscope_id is not None
-    target.parent.mkdir(parents=True, exist_ok=True)
-    tmp = target.parent / f".{target.name}.partial"
-    shutil.rmtree(tmp, ignore_errors=True)
-    from modelscope.hub.snapshot_download import snapshot_download  # noqa: PLC0415
-
-    # cache_dir keeps ModelScope's lock/metadata cache inside ~/.bibilab (default: ~/.cache/modelscope/hub).
-    ms_cache = str(bibilab_home() / "models" / ".ms_cache")
-    logger.info("Downloading model from ModelScope: %s", spec.modelscope_id)
-    try:
-        snapshot_download(spec.modelscope_id, local_dir=str(tmp), cache_dir=ms_cache)
-    except Exception:
-        logger.exception("ModelScope download failed for %s", spec.modelscope_id)
-        shutil.rmtree(tmp, ignore_errors=True)
-        raise
-    shutil.rmtree(target, ignore_errors=True)
-    try:
-        tmp.rename(target)
-    except OSError as exc:
-        shutil.rmtree(tmp, ignore_errors=True)
-        raise RuntimeError(f"atomic rename failed for {spec.id}: {exc}") from exc
-    logger.info("Model downloaded to %s", target)
 
 
 def _download_http_files(spec: ModelSpec, target: Path) -> None:
@@ -228,20 +241,54 @@ def _download_http_files(spec: ModelSpec, target: Path) -> None:
     logger.info("Model downloaded to %s", target)
 
 
-def _download_whisper_warp(spec: ModelSpec, target: Path) -> None:
-    # funasr 1.3.7's openai branch hardcodes whisper.load_model(name) with no
-    # download_root, so it always writes to ~/.cache/whisper. Bypass it and call
-    # openai-whisper's documented public API directly so the checkpoint lands in
-    # our models dir alongside the rest of the ASR cache.
-    import whisper  # noqa: PLC0415  # openai-whisper (lazy: pulls in torch)
+def _download_http_archive(spec: ModelSpec, target: Path) -> None:
+    """Stream a .tar.bz2, extract it, and flatten its single top-level directory
+    into target. Every k2-fsa release archive ships exactly one top-level dir;
+    a violation fails loud rather than silently nesting the wrong layout."""
+    assert spec.http_files is not None and len(spec.http_files) == 1
+    url, archive_name = spec.http_files[0]
 
-    logger.info("Downloading Whisper large-v3 (~3 GB) via WhisperWarp — this may take several minutes")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    tmp = target.parent / f".{target.name}.partial"
+    shutil.rmtree(tmp, ignore_errors=True)
+    tmp.mkdir(parents=True, exist_ok=True)
+    import httpx  # noqa: PLC0415
+
     try:
-        whisper.load_model(spec.id, download_root=str(target))
+        archive_path = tmp / archive_name
+        logger.info("Downloading %s → %s", url, archive_path)
+        # Archives run into the hundreds of MB; httpx's 5s default (connect/read/write/
+        # pool) is tuned for API calls, not large streamed downloads.
+        timeout = httpx.Timeout(10.0, read=60.0)
+        with httpx.stream("GET", url, follow_redirects=True, timeout=timeout) as resp:
+            resp.raise_for_status()
+            with open(archive_path, "wb") as f:
+                for chunk in resp.iter_bytes(1024 * 1024):
+                    f.write(chunk)
+
+        with tarfile.open(archive_path) as tf:
+            tf.extractall(tmp, filter="data")
+        archive_path.unlink()
+
+        entries = list(tmp.iterdir())
+        assert len(entries) == 1 and entries[0].is_dir(), (
+            f"{spec.id}: expected exactly one top-level directory in the archive, got {entries}"
+        )
+        extracted = entries[0]
+        for item in extracted.iterdir():
+            item.rename(tmp / item.name)
+        extracted.rmdir()
     except Exception:
-        logger.exception("Whisper large-v3 download failed")
+        logger.exception("Archive download/extraction failed for %s", spec.id)
+        shutil.rmtree(tmp, ignore_errors=True)
         raise
-    logger.info("Whisper large-v3 download complete → %s", target)
+    shutil.rmtree(target, ignore_errors=True)
+    try:
+        tmp.rename(target)
+    except OSError as exc:
+        shutil.rmtree(tmp, ignore_errors=True)
+        raise RuntimeError(f"atomic rename failed for {spec.id}: {exc}") from exc
+    logger.info("Model extracted to %s", target)
 
 
 # ---- Unified download entry point ------------------------------------
@@ -267,12 +314,10 @@ def ensure(spec_id: str) -> Path:
         if _integrity_ok(spec):
             return target
 
-        if spec.backend == "modelscope":
-            _download_modelscope(spec, target)
-        elif spec.backend == "http_files":
+        if spec.backend == "http_files":
             _download_http_files(spec, target)
-        elif spec.backend == "whisper_warp":
-            _download_whisper_warp(spec, target)
+        elif spec.backend == "http_archive":
+            _download_http_archive(spec, target)
         else:
             raise ValueError(f"Unknown backend {spec.backend!r} for {spec_id!r}")
 
@@ -291,12 +336,12 @@ def required_models(cfg: BibilabConfig) -> list[ModelSpec]:
     model = cfg.transcription.model
     if model is not None:
         try:
-            specs.append(get_spec(model))
+            specs.append(get_spec(resolve_transcription_spec_id(model)))
         except ValueError:
             logger.warning("Unknown transcription model %r — skipping in required-models check", model)
-    specs.append(get_spec(VAD_SPEC_ID))
-    specs.append(get_spec(DIARIZATION_SPEC_ID))
-    specs.append(get_spec(PUNC_SPEC_ID))
+    specs.append(get_spec(SHERPA_VAD_SPEC_ID))
+    specs.append(get_spec(SHERPA_DIARIZATION_SPEC_ID))
+    specs.append(get_spec(SHERPA_PUNC_SPEC_ID))
     specs.append(get_spec(EMBEDDING_SPEC_ID))
     if cfg.rag.reranking_enabled:
         specs.append(get_spec(RERANKER_SPEC_ID))
@@ -309,17 +354,19 @@ def missing_required_models(cfg: BibilabConfig) -> list[str]:
 
 
 __all__ = [
-    "DIARIZATION_SPEC_ID",
     "EMBEDDING_SPEC_ID",
     "ModelKind",
     "ModelSpec",
-    "PUNC_SPEC_ID",
     "RERANKER_SPEC_ID",
-    "VAD_SPEC_ID",
-    "WHISPER_SPEC_ID",
+    "SHERPA_DIARIZATION_SPEC_ID",
+    "SHERPA_PUNC_SPEC_ID",
+    "SHERPA_SENSEVOICE_SPEC_ID",
+    "SHERPA_VAD_SPEC_ID",
+    "SHERPA_WHISPER_SPEC_ID",
     "ensure",
     "get_spec",
     "list_specs",
     "missing_required_models",
+    "resolve_transcription_spec_id",
     "required_models",
 ]

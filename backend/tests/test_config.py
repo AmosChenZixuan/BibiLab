@@ -18,6 +18,9 @@ from bibilab.config import BibilabConfig
         (("rag",), "chunk_pause_threshold"),
         ((), "transcript_collection_name"),
         (("transcription",), "llm_timeout"),
+        # device removed — transcription runs on sherpa-onnx CPU-only, so a
+        # device choice controls nothing.
+        (("transcription",), "device"),
         (("backend",), "max_concurrent_downloads"),
         # download_connections is a derived @property, never a stored field —
         # this guards against it being re-added as a configurable knob.
@@ -42,6 +45,13 @@ def test_legacy_reranker_spec_id_in_config_is_ignored() -> None:
     on load or silently re-persists a dead knob."""
     cfg = BibilabConfig.model_validate({"rag": {"reranker_spec_id": "bge-reranker-base"}})
     assert "reranker_spec_id" not in cfg.rag.model_dump()
+
+
+def test_legacy_device_in_config_is_ignored() -> None:
+    """An existing config.json written before the field was dropped still carries
+    transcription.device. Loading such a file must NOT brick (Pydantic extra='ignore')."""
+    cfg = BibilabConfig.model_validate({"transcription": {"device": "cuda"}})
+    assert "device" not in cfg.transcription.model_dump()
 
 
 def test_backend_download_connections_default() -> None:

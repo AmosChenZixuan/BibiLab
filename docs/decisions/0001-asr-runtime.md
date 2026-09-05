@@ -1,9 +1,14 @@
-# 0001 — ASR runtime: FunASR + PyTorch
+# 0001 — ASR runtime
 
-**Status:** Contested — the decision stands, both of its stated reasons measured false.
-**Decided:** 2026-05-28 (PR #374). **Measured:** 2026-09-03.
+**Status:** Reversed 2026-09-04. FunASR + PyTorch → **sherpa-onnx, CPU-only on every
+platform.** Migration tracked in #679.
+**Originally decided:** 2026-05-28 (PR #374). **Re-measured:** 2026-09-03 (Linux),
+2026-09-04 (macOS).
 
-## The decision as it stands
+This document keeps the original decision and the argument that overturned it. The
+reversal is only legible next to what it replaced.
+
+## The original decision (2026-05-28)
 
 `pipeline/transcribe.py` runs every ASR stage through one `funasr.AutoModel`:
 SenseVoice or Whisper for recognition, FSMN-VAD for segmentation, CAM++ for speaker
@@ -16,7 +21,7 @@ Two reasons were carried for keeping it:
 1. Whisper depends on torch, so torch cannot be removed.
 2. CUDA is worth its install cost because the GPU is much faster at transcription.
 
-## What the measurements say
+## Why it was reopened — both reasons measured false
 
 Test bed: 43.1 min 16 kHz mono, three alternating speakers. Host: i9-14900F (16P/32T),
 RTX 5070 Ti (sm_120), WSL2. Same audio, same pipeline stages, every row.
@@ -74,24 +79,278 @@ hardcoded `ncpu=4` (`auto_model.py:569-572`) while `batch_size = 0` leaves the t
 nothing to batch — raising `ncpu` to 32 makes it **0.42×**, not faster. sherpa-onnx has
 neither defect and reaches 16.1 effective cores at 16 threads.
 
-## Consequences held open
+Those numbers killed the two stated reasons but not the decision: a 43-minute single
+sample on one host says nothing about transcript quality or about the platforms this
+runs on. Everything above is a *runtime* comparison. #679 was opened to answer whether
+the output survives the swap, and whether it survives it everywhere.
 
-- **cu130 bump.** `uv.lock` pins `torch 2.6.0+cu124`; sm_120 entered the toolchain in
-  CUDA 12.8, so no cu124 wheel can drive Blackwell — the `cuda` group is simply broken
-  on RTX 50-series. Verified working under `torch 2.14.0+cu130`. Real bug, but it
-  repairs a path that may not survive.
-- **Transcribe lock and worker concurrency.** Both were sized against a 3.2 GB
-  resident model. At 1.4 GB the arithmetic changes; do not re-litigate concurrency
-  against the old number.
+## The re-evaluation (#679)
 
-## Not measured
+### The measuring instrument came first
 
-WER, speaker-labelling accuracy, and the Whisper branch (SenseVoice only). Silero's
-default VAD parameters produce coarser segments than FSMN-VAD tuned with
-`speech_2_noise_ratio=0.7` — 76 vs 138 segments on a 10.8 min sample, with an observed
-9 s segment spanning a speaker change, the exact conflation #384 fixed. A sweep lands
-`threshold=0.70, min_silence_duration=0.10` at 142 segments, so it is a tuning knob
-rather than a wall, but it is untuned and unvalidated.
+9 sources sampled from the local library, 82.7 min, stratified over speaker count
+(1–10), duration (40 s – 20 min) and content type. All `zh` — the library holds no
+other language, so none of this speaks to the non-`zh` path.
 
-Nothing here decides the migration. It records that the reasons on file no longer hold.
-Re-evaluation tracked in #679.
+The pipeline deletes its audio after transcription, so the wavs were re-fetched through
+the production adapter and `extract_audio` and sha256-pinned, making them byte-identical
+to what the pipeline originally fed the model. Model weights are pinned the same way, so
+a silently-redeployed release is a hard stop rather than a drifting number.
+
+**The reference transcripts are the library's own** — produced by the current FunASR +
+FSMN-VAD + CAM++ + ct-punc path. `cer` therefore measures **divergence from what we
+ship today, not accuracy.** There are confirmed diffs where sherpa is the correct side:
+the reference reads `搅拌均均匀`, sherpa emits `搅拌均匀`.
+
+Before trusting a single comparison, the harness was pointed at the incumbent: FunASR,
+run through the production functions themselves, scored **CER 0.0000** against its own
+reference. That one number validates audio identity, reference extraction and the
+scoring function simultaneously, and it is the reason the rest of the table is worth
+reading.
+
+### Throughput, whole fixture, busy pipeline
+
+| config | wall | throughput | peak RSS |
+|---|---:|---:|---:|
+| FunASR c=1 (today) | 300.9 s | 16.5× realtime | 6.08 GB |
+| FunASR c=2 | 289.8 s | 17.1× | 6.27 GB |
+| sherpa CPU c=1 | 151.8 s | 32.7× | 2.22 GB |
+| sherpa CPU c=4, shared model | 96.9 s | **51.2×** | **2.38 GB** |
+
+FunASR gains 3.8% from concurrency because `_transcribe_lock` serialises it. That is
+today's real behaviour, lock included, so it is the honest baseline.
+
+sherpa runs four workers off **one shared model for +0.16 GB**, and CER is
+bit-identical across all four concurrency levels — which is the evidence that sharing
+is not corrupting state. FunASR cannot do this: each instance is +3.2 GB, and c=4 would
+OOM a 16 GB host, so the baseline was capped at c=2 rather than risking the machine.
+
+**sherpa at c=4 is 3.1× today's throughput at 0.39× the memory.**
+
+These are the spike harness's own sherpa driver, not the code that shipped — see
+*Post-migration verification*, which re-measured the shipped path and found it faster.
+
+### Quality
+
+Weighted CER **0.048** over 82.7 min. Clean speech lands at 1.7–5.0%. The only
+systematic weakness is two cooking videos with music under the speech, at 12.8% and
+14.7%.
+
+Segment density mostly lands at 0.82–1.06× the reference, with two outliers — 2.11×
+over-split and 0.41× under-split. Both reproduce identically on macOS, so they are the
+untuned Silero VAD, not a platform artifact.
+
+Speaker labelling is unresolved **on both sides**: sherpa over-splits (11 vs 10, 4 vs
+2), but the reference itself claims 10 speakers on a single anime recap. Neither side
+is a credible target. This needs ground truth, not a comparison.
+
+### Silero VAD tuning — measured, and it is not the lever
+
+Two 3×3 sweeps, `threshold` ∈ {0.3, 0.5, 0.7} × `min_silence_duration` ∈ {0.10,
+0.25, 0.50}. Default is `0.5 / 0.50`.
+
+On the three multi-speaker sources, **threshold 0.3 dominates 0.5 on CER at every
+min_silence** (0.0444 / 0.0428 / 0.0423 against 0.0519 / 0.0515 / 0.0498), and 0.7 is
+worst everywhere (0.0656 / 0.0640 / 0.0606). A higher threshold gates out real speech.
+`0.3 / 0.25` beats the default on CER *and* speaker agreement at once — 0.0428 vs
+0.0498 and 0.795 vs 0.745 — which is the only non-trade in the grid.
+
+**The density outliers do not move.** Across all nine settings `310eeb03` stays at
+2.11–2.27× the reference and `bf36b4f0` at 0.40–0.43×. Segment count is set by ct-punc
+sentence splitting, not by VAD: at `0.3 / 0.50` the tech talk is cut into **23 VAD spans
+with a p95 width of 37 s**, which punctuation then splits into 101 sentences. The
+earlier guess on file — that `threshold=0.70, min_silence_duration=0.10` fixes segment
+density — was inferred from segment counts alone and is wrong in both direction and
+mechanism.
+
+**Speaker labelling is not fixable here either.** Count and pairwise agreement point
+opposite ways: `0.3 / 0.50` gets two sources exactly right (7:7, 2:2) with the *worst*
+agreement (0.682), while `0.7 / 0.10` has the best agreement (0.840) at 29 speakers
+against a reference 10. The mechanism is visible in the span columns — `min_silence
+0.50` collapses 569 spans to 222 and pushes p95 span width to 17.3 s, so it reaches the
+right count by merging, including across speaker changes. That is the conflation #384
+fixed, reintroduced through a different knob.
+
+One setting, `0.7 / 0.10` on the density pair, aborted the run: ct-punc consumed
+3174 of 3178 characters, tripping the harness's content-preservation check. Production
+already handles this — `_align` raises and `punctuate` catches it, degrading to
+unpunctuated segments with a warning — but it means that setting would silently cost a
+whole source its punctuation. Another mark against high thresholds.
+
+**Conclusion: adopt `threshold=0.3, min_silence_duration=0.25`** for the ~0.007 absolute
+CER gain and the speaker-agreement gain, and treat segment density and speaker
+labelling as open problems that live downstream of VAD.
+
+### GPU — measured, then declined
+
+| config | wall | throughput | VRAM | CER |
+|---|---:|---:|---:|---:|
+| CPU c=4 | 96.9 s | 51.2× | — | 0.0482 |
+| **CUDA mixed c=2** | **60.7 s** | **81.7×** | 4.3 GB | 0.0482 |
+| CUDA mixed c=4 | 60.8 s | 81.6× | 4.4 GB | 0.0482 |
+| **all-CUDA c=1** | **284.7 s** | **17.4×** | 5.4 GB | 0.0483 |
+
+Mixed = ASR on CUDA, VAD + speaker + punctuation on CPU. All-CUDA is not merely
+suboptimal, it is **4.7× slower than mixed and slower than CPU-only** — the same
+kernel-launch story as above, now at fixture scale. Mixed saturates at c=2.
+
+Install cost, measured rather than assumed: sherpa CPU-only is a **107 MB** venv. The
+CUDA path adds a **1.1 GB** transitive closure (cublas, cublasLt, cudart, cufft, curand,
+nvrtc, cudnn) plus ~900 MB of cuDNN engine libraries loaded at runtime.
+
+So the GPU trade is **~2 GB of install and a per-platform dependency matrix for 1.60×**,
+on top of a CPU path already running at 3.1× today's throughput.
+
+### macOS — Apple M1 (4P+4E), 16 GB, fanless MacBook Air
+
+CoreML initialises cleanly and all four stages run. **CER came back 0.0482, identical to
+Linux**, at every CPU concurrency level and in the CoreML-mixed config. Same weights →
+same transcript across OS, architecture and provider. The lone shift is all-CoreML on
+one source (0.0410 → 0.0404), i.e. ANE half-precision numerics on one stage.
+
+CoreML buys nothing: 12.73× vs 15.85× for CPU c=1, and mixed c=2 at 21.23× against CPU
+c=4 at 21.88×. Peak RSS stayed 1.8–3.0 GB, matching Linux.
+
+**The macOS throughput column is thermally confounded and unusable as a scaling curve** —
+the same configuration measured 15.85× cold and 8.15× on the next run, recovering to
+21.88× later. That is chassis temperature interacting with run order. Only three facts
+from that host survive: CER stability, flat RSS, and CoreML working.
+
+### Whisper — runs, and was measured against the wrong language
+
+All four stages produce output, so the branch is wired correctly. On the Chinese
+fixture it scores **CER 0.40** with characters dropped throughout, at rtf 0.81 —
+**26× slower than SenseVoice**. The k2-fsa release ships large-v3 **int8 only**, and
+int8 large-v3 degrades badly on Chinese.
+
+**That number does not bear on the decision.** The two ASR models exist as a division
+of labour: SenseVoice for Chinese, Whisper for English. Measuring Whisper on Chinese
+tests the language it is not there to serve, and a degradation there was predictable.
+
+The number that matters — **int8 large-v3 on English** — does not exist, because the
+library holds no non-`zh` audio and the fixture was drawn from the library. This is the
+one open question that gates removing `torch`: sherpa-onnx has
+`OfflineRecognizer.from_whisper`, so if int8 is acceptable on English the whole
+PyTorch dependency goes; if it is not, either a non-quantized large-v3 must be exported
+or FunASR's `whisper_warp` path stays and drags `torch` with it.
+
+Unlike the Chinese side, English has public sets with real transcripts, so this one can
+be measured as **accuracy rather than divergence**.
+
+## The decision
+
+**Adopt sherpa-onnx. Ship the CPU build on every platform. Do not ship an accelerator
+path.**
+
+The accelerator question is settled by two hosts agreeing from opposite directions:
+CUDA buys 1.60× for ~2 GB, CoreML buys nothing at all. It is also the third independent
+arrival at the same conclusion in this codebase — `pipeline/_shared.py`'s
+`interpreting_providers()` already allowlists kernel-based execution providers and
+excludes CoreML for the embedder and reranker, measured at ~48× slower on ingest with
+OOMs and a concurrent-session deadlock. Compiler-based providers keep losing here.
+Whatever selects providers for ASR should extend that helper, not grow a second policy
+beside it.
+
+This decision is scoped to SenseVoice. **The Whisper branch is not settled** — see
+above; removing `torch` depends on it. Declining both collapses the
+`cpu` / `cuda` / `rocm` conflicting dependency groups in `pyproject.toml` into a single
+107 MB wheel, and removes `torch` + `torchaudio` from production entirely.
+
+Consequences that follow, and must not be re-litigated against the old numbers:
+
+- **`_transcribe_lock` and `max_concurrent_jobs`** were both sized against a 3.2 GB
+  resident model that mutates shared state on `generate()`. Neither premise survives:
+  the model is 1.4 GB and is safely shared across four workers.
+- **The cu130 bump** — `uv.lock` pins `torch 2.6.0+cu124` while sm_120 needs CUDA 12.8,
+  so the `cuda` group is broken on RTX 50-series. It was a real bug in a path that
+  "may not survive". It did not survive; do not fix it.
+
+## Post-migration verification (2026-09-05)
+
+Every sherpa number above came from the harness's own driver, written before
+`pipeline/transcribe.py` existed. Only the FunASR arm called production functions. So
+the throughput this document argued the migration on was a property of the harness, and
+the shipped `_SherpaEngine` had never been measured. Re-measured on the same fixture,
+same host, adding a production arm that calls `transcribe()` + `punctuate()` directly:
+
+| config | wall | throughput | peak RSS | CER |
+|---|---:|---:|---:|---:|
+| FunASR c=1 (pre-migration) | 300.9 s | 16.5× realtime | 6.08 GB | — |
+| harness driver c=1 | 151.8 s | 32.7× | 2.22 GB | 0.0482 |
+| **production c=1** | **118.3 s** | **41.9×** | **1.19 GB** | 0.0487 |
+| harness driver c=4 | 96.9 s | 51.2× | 2.38 GB | 0.0482 |
+| **production c=4** | **71.6 s** | **69.3×** | **1.52 GB** | 0.0487 |
+
+**Production is 4.2× the pre-migration throughput at 0.25× the memory** — better than
+the 3.1× / 0.39× this document decided on. CER moves by 0.0005, which is noise.
+
+The gap is two deliberate post-spike changes that had never been measured together:
+
+- **int8 SenseVoice.** `model_registry.py` pins `model.int8.onnx`; every run above it
+  used fp32 `model.onnx` (`"int8": false` in each recorded result).
+- **VAD 0.3 / 0.25**, hardcoded in `transcribe.py`, against 0.5 / 0.5 in the harness.
+  The VAD sweep priced this at ~11% slower (30.46× vs 34.38× on a 3-source subset)
+  for better CER (0.0428 vs 0.0498). int8 more than repaid it.
+
+They compose favourably, but that was luck, not design — nothing checked. The general
+lesson is the same one the FunASR arm was built to avoid: **a benchmark arm that
+reimplements the thing measures the reimplementation.** The sherpa arm got the exemption
+the incumbent did not, because when it was written there was no production path to call.
+Once one existed, nobody went back.
+
+Concurrency also confirms the `_transcribe_lock` resize: c=1 → c=4 scales 1.65×
+(effective cores 4.58 → 9.45), so the shared engine is not serialising inference.
+
+## Traps, so they are not stepped in twice
+
+1. **Never benchmark a runtime's GPU branch against its own CPU branch.** FunASR forces
+   `batch_size = 0` on CPU only (`auto_model.py:935-936`) and hardcodes `ncpu=4`. The
+   "1.84× GPU win" was measuring a deliberate handicap, and it survived on file for
+   three months.
+2. **All-accelerator is a trap in a multi-stage pipeline.** VAD and speaker embedding
+   are tiny models on short windows; kernel launch dominates and they run *slower* on
+   the device. Only ASR pays for it. A runtime with one global `device` cannot express
+   this, which is itself an argument against such a runtime.
+3. **Windowed CER is a lie when two paths segment differently.** Bucketing by time
+   scored 0.5542 where the true divergence was 0.0542 — a sentence straddling a bucket
+   edge lands on opposite sides and reads as a total mismatch when the text is
+   identical. Score whole-transcript with anchored alignment, or not at all.
+4. **A reference produced by your own current pipeline measures divergence, never
+   accuracy.** Label it that way in the harness, or someone will quote it as a quality
+   number.
+5. **Segment counts are post-punctuation sentences, not VAD spans.** ct-punc runs once
+   over the whole concatenated transcript, outside the ASR model; punctuating per-span
+   instead gives a completely different sentence density and an invented regression.
+6. **Throughput from a fanless laptop under sustained load is thermal state, not
+   scaling.** Cross-machine comparisons need either cooldown gaps or a chassis with a
+   fan.
+7. **Two "install size" numbers can both be right.** The 43 MB / 374 MB figures above
+   are wheel sizes; 107 MB / 1.1 GB are resolved venvs. Say which one is being quoted.
+8. **Sample the language a model is there to serve.** Whisper was scored on the Chinese
+   fixture and written up as a quality failure. Whisper's job in this system is
+   English; SenseVoice handles Chinese. The measurement was real and the conclusion
+   drawn from it was worthless, because the fixture was built from a library that
+   happens to be monolingual and nobody checked that against what each model is *for*.
+9. **Do not attribute an effect to the nearest plausible knob without turning it.**
+   Segment density was blamed on VAD parameters and written into this document as a
+   tuning suggestion. Nine settings later, density had not moved at all — the cause is
+   downstream, in sentence splitting. The guess cost nothing to write and would have
+   cost a migration to believe.
+
+## Still not measured
+
+- **Speaker-labelling accuracy** against real ground truth. Both sides are suspect; the
+  comparison cannot resolve it, and the VAD sweep showed the two available metrics
+  disagreeing about which direction is better.
+- **Segment density.** Now known *not* to be a VAD problem. Where ct-punc sentence
+  splitting diverges from the incumbent, and whether that matters downstream of
+  chunking, is unexamined.
+- **Hand adjudication** of the divergent windows — the 4.8% is known to contain cases
+  where sherpa is correct, but the split has not been counted.
+- **Any non-`zh` audio** — and therefore the entire Whisper/English half of the
+  system. The library has none, so the fixture has none. This is not a footnote: it
+  gates whether `torch` can be removed.
+- **A FunASR baseline on macOS.** The throughput and memory ratios are Linux-only. Measuring
+  it on the Air would need interleaved runs with forced cooldowns, reporting the ratio
+  and never the absolutes — judged not worth a machine, since ONNX-CPU beating
+  PyTorch-CPU is not in doubt and the memory delta is architectural.

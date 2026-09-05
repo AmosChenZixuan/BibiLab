@@ -181,7 +181,6 @@ export type BibilabConfig = {
   };
   transcription: {
     model: string;
-    device: string;
     language: string;
   };
   backend: {

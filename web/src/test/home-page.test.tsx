@@ -226,7 +226,6 @@ describe("home page", () => {
             llm: { status: "ok", message: "" },
             asr_model: { status: "ok", message: "" },
             ffmpeg: { status: "ok", message: "" },
-            cuda: { status: "ok", message: "" },
             bilibili_session: { status: "ok", message: "" },
             embedding_model: { status: "ok", message: "" },
           },
@@ -257,7 +256,6 @@ describe("home page", () => {
           ai: { protocol: "openai", model: "gpt-4o", api_key: "***", base_url: "" },
           transcription: {
             model: "large-v3",
-            device: "cuda",
             language: "auto",
           },
           backend: { port: 8765, max_concurrent_jobs: 1, cors_origins: ["http://localhost", "http://localhost:5173", "http://127.0.0.1", "http://127.0.0.1:5173"] },

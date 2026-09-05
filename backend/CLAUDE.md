@@ -5,8 +5,7 @@ Python/FastAPI backend. Managed with `uv`.
 ## Commands
 
 ```bash
-uv sync --dev                        # Install all deps (cpu torch by default; NVIDIA GPU: uv sync --no-default-groups --group dev --group cuda)
-uv run python -c "import torch; print(torch.cuda.is_available())"  # Verify CUDA
+uv sync --dev                        # Install all deps
 uv run ruff check .                  # Lint
 uv run ruff format .                 # Format
 uv run pytest                        # All tests
@@ -37,7 +36,7 @@ models/           — Pydantic request/response models + domain errors (chat.py,
 pipeline/         — one file per stage
   _shared.py        sync _call_llm + async stream_llm (OpenAI/Anthropic), StreamEvent/ToolCall/ToolDefinition dataclasses
   audio.py          FFmpeg audio extraction (video → .wav)
-  transcribe.py     FunASR AutoModel (SenseVoice/Whisper) + CAM++ diarization → VAD segments w/ speaker labels
+  transcribe.py     sherpa-onnx, CPU-only: Silero VAD + SenseVoice/Whisper recognition + CAM++ embedding clustering → VAD segments w/ speaker labels
   chunk.py          per-section greedy segment merger → token target (`zh=800`, `en=300`); physical chunk `[seg_start, seg_end]` is fully contained in one section's range
   section.py        Section dataclass + derive_sections (token+pause boundary, target=12000) + chunk_by_sections (per-section chunking with source-global re-stamp)
   digest.py         LLM digest: per-section summary/keywords → sections table; facets → sources
@@ -146,7 +145,7 @@ Registry dispatch, per-platform behavior, two-phase resolve, and bilibili auth a
 {
   "accounts": { "bilibili": { "cookie": "", "username": "", "avatar_url": "" } },
   "ai": { "protocol": "openai|anthropic", "model": "", "api_key": "", "base_url": "https://api.openai.com/v1", "output_language": "ui", "context_window": 128000, "max_output_tokens": 16384 },
-  "transcription": { "model": "sensevoice-small|large-v3", "device": "cuda|cpu", "language": "auto" },
+  "transcription": { "model": "sensevoice-small|large-v3", "language": "auto" },
   "backend": { "port": 8765, "max_concurrent_jobs": 4, "cors_origins": [...] },
   "rag": { "max_distance": 0.8, "reranking_enabled": true, "hybrid_enabled": true, "debug_prompts": false }
 }
