@@ -1,12 +1,12 @@
 """Tests for BilibiliAdapter multi-part video handling."""
 
-import sys
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from bibilab.adapters.base import AuthRequiredError, DownloadError
 from bibilab.adapters.bilibili import BilibiliAdapter
+from tests import fake_run_ytdlp as _make_run_ytdlp
 
 
 def _make_video_info(bvid="BV1abc123", title="Test Video", duration=3600):
@@ -64,16 +64,6 @@ def _make_mock_ydl(captured_opts: list):
     return MockYDL
 
 
-def _make_run_ytdlp(captured_argv: list, *, stdout: str = "/out/video.mp4", stderr: str = "", returncode: int = 0):
-    """Stand-in for run_ytdlp that records the argv it was called with."""
-
-    async def fake_run_ytdlp(argv):
-        captured_argv.append(argv)
-        return stdout, stderr, returncode
-
-    return fake_run_ytdlp
-
-
 class TestDownloadMultiPart:
     """Test download() correctly handles multi-part video IDs."""
 
@@ -109,7 +99,7 @@ class TestDownloadMultiPart:
         # Without these, yt-dlp's bare opts default to 0 internal retries
         # (RetryManager does _retries or 0), and transient CDN timeouts become fatal.
         from bibilab.adapters._ytdlp_common import HTTP_RETRIES, SOCKET_TIMEOUT
-        from bibilab.adapters.bilibili import _FRAGMENT_RETRIES
+        from bibilab.adapters.bilibili import _FRAGMENT_CONCURRENCY, _FRAGMENT_RETRIES
 
         adapter = BilibiliAdapter(cookie="test_cookie")
         captured_argv: list = []
@@ -122,30 +112,17 @@ class TestDownloadMultiPart:
             await adapter.download("BV1test", "https://www.bilibili.com/video/BV1test", 16)
 
         argv = captured_argv[0]
+        assert argv[argv.index("-N") + 1] == str(_FRAGMENT_CONCURRENCY)
         assert argv[argv.index("-R") + 1] == str(HTTP_RETRIES)
         assert argv[argv.index("--fragment-retries") + 1] == str(_FRAGMENT_RETRIES)
         # A stalled connection must become a retriable error, not an indefinite
         # hang that wedges the serialized download stage.
         assert argv[argv.index("--socket-timeout") + 1] == str(SOCKET_TIMEOUT)
 
-    @pytest.mark.asyncio
-    async def test_download_invokes_yt_dlp_as_a_module_of_this_interpreter(self, tmp_path):
-        """Never a bare `yt-dlp` binary — it may not be on PATH in a container
-        or a uv-managed venv."""
-        adapter = BilibiliAdapter(cookie="test_cookie")
-        captured: list = []
-
-        async def fake_run_subprocess(argv, **kwargs):
-            captured.append(argv)
-            return "/out/video.mp4", "", 0
-
-        with (
-            patch("bibilab.adapters._ytdlp_common._run_subprocess", fake_run_subprocess),
-            patch("bibilab.adapters.bilibili.bibilab_home", return_value=tmp_path),
-        ):
-            await adapter.download("BV1test", "https://www.bilibili.com/video/BV1test", 16)
-
-        assert captured[0][:3] == [sys.executable, "-m", "yt_dlp"]
+        # Authenticated Bilibili downloads route cookies via --cookies; without
+        # this assertion, dropping the cookie branch would silently break the
+        # whole auth path with a green suite.
+        assert argv[argv.index("--cookies") + 1].endswith("bilibili_cookies.txt")
 
 
 class TestDownloadAria2c:

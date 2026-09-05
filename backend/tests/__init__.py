@@ -12,6 +12,19 @@ def an_async_generator(items: list[Any]) -> AsyncGenerator:
     return gen()
 
 
+def fake_run_ytdlp(captured_argv: list, *, stdout: str = "/out/video.mp4", stderr: str = "", returncode: int = 0):
+    """Stand-in for the adapter's run_ytdlp that records the argv it was called
+    with and returns canned stdout/stderr/returncode. The cosmetic default
+    stdout is overridden by every path-asserting caller; keeping it as a sane
+    "looks like a real output path" string is more useful than ""."""
+
+    async def _fake(argv):
+        captured_argv.append(argv)
+        return stdout, stderr, returncode
+
+    return _fake
+
+
 def thread_signal() -> tuple[asyncio.Event, threading.Event, Callable[[], None]]:
     """(started, release, signal_started) for blocking a sync function run
     via asyncio.to_thread and cancelling it mid-flight from the test coroutine.

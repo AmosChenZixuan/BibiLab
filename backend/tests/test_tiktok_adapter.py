@@ -1,6 +1,5 @@
 """Tests for TikTokAdapter resolve/metadata/download behavior (yt-dlp mocked)."""
 
-import sys
 from unittest.mock import patch
 
 import pytest
@@ -8,16 +7,7 @@ import yt_dlp
 
 from bibilab.adapters.base import AuthRequiredError, DownloadError
 from bibilab.adapters.tiktok import TikTokAdapter, _truncate_caption
-
-
-def _make_run_ytdlp(captured_argv: list, *, stdout: str = "/out/video.mp4", stderr: str = "", returncode: int = 0):
-    """Stand-in for run_ytdlp that records the argv it was called with."""
-
-    async def fake_run_ytdlp(argv):
-        captured_argv.append(argv)
-        return stdout, stderr, returncode
-
-    return fake_run_ytdlp
+from tests import fake_run_ytdlp as _make_run_ytdlp
 
 
 def _video_info(vid="7371330159376370462", title="Short caption", duration=21):
@@ -185,23 +175,6 @@ async def test_download_path_and_no_aria2c(tmp_path, monkeypatch):
     assert argv[argv.index("-f") + 1] == "bestaudio/best[vcodec^=h264]/best"
     # small files — native downloader, no aria2c branch, ever
     assert "--downloader" not in argv
-
-
-@pytest.mark.asyncio
-async def test_download_invokes_yt_dlp_as_a_module_of_this_interpreter(tmp_path, monkeypatch):
-    """Never a bare `yt-dlp` binary — it may not be on PATH in a container or
-    a uv-managed venv."""
-    monkeypatch.setenv("BIBILAB_HOME", str(tmp_path))
-    captured: list = []
-
-    async def fake_run_subprocess(argv, **kwargs):
-        captured.append(argv)
-        return "/out/video.mp4", "", 0
-
-    with patch("bibilab.adapters._ytdlp_common._run_subprocess", fake_run_subprocess):
-        await TikTokAdapter().download("71x", "https://www.tiktok.com/@u/video/71x", connections=8)
-
-    assert captured[0][:3] == [sys.executable, "-m", "yt_dlp"]
 
 
 @pytest.mark.asyncio

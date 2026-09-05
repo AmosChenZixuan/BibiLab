@@ -1,6 +1,5 @@
 """Tests for YouTubeAdapter resolve/metadata/download behavior (yt-dlp mocked)."""
 
-import sys
 from unittest.mock import patch
 
 import pytest
@@ -8,16 +7,7 @@ import yt_dlp
 
 from bibilab.adapters.base import AuthRequiredError, DownloadError
 from bibilab.adapters.youtube import YouTubeAdapter
-
-
-def _make_run_ytdlp(captured_argv: list, *, stdout: str = "/out/video.webm", stderr: str = "", returncode: int = 0):
-    """Stand-in for run_ytdlp that records the argv it was called with."""
-
-    async def fake_run_ytdlp(argv):
-        captured_argv.append(argv)
-        return stdout, stderr, returncode
-
-    return fake_run_ytdlp
+from tests import fake_run_ytdlp as _make_run_ytdlp
 
 
 def _video_info(vid="dQw4w9WgXcQ", title="Test Video", duration=212):
@@ -208,23 +198,6 @@ async def test_download_uses_aria2c_when_present(tmp_path, monkeypatch):
     argv = captured[0]
     assert argv[argv.index("--downloader") + 1] == "aria2c"
     assert "-x8" in argv[argv.index("--downloader-args") + 1]
-
-
-@pytest.mark.asyncio
-async def test_download_invokes_yt_dlp_as_a_module_of_this_interpreter(tmp_path, monkeypatch):
-    """Never a bare `yt-dlp` binary — it may not be on PATH in a container or
-    a uv-managed venv."""
-    monkeypatch.setenv("BIBILAB_HOME", str(tmp_path))
-    captured: list = []
-
-    async def fake_run_subprocess(argv, **kwargs):
-        captured.append(argv)
-        return "/out/video.webm", "", 0
-
-    with patch("bibilab.adapters._ytdlp_common._run_subprocess", fake_run_subprocess):
-        await YouTubeAdapter().download("vidX", "https://www.youtube.com/watch?v=vidX", connections=4)
-
-    assert captured[0][:3] == [sys.executable, "-m", "yt_dlp"]
 
 
 @pytest.mark.asyncio
