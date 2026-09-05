@@ -2,8 +2,10 @@
 
 import asyncio
 import contextlib
+import os
 import re
 import shutil
+import signal
 import sys
 from collections.abc import Callable
 from pathlib import Path
@@ -46,41 +48,48 @@ def aria2c_argv(connections: int) -> list[str]:
     ]
 
 
-async def _run_subprocess(argv: list[str], *, terminate_timeout: float = TERMINATE_TIMEOUT) -> tuple[str, str, int]:
+async def _run_subprocess(argv: list[str]) -> tuple[str, str, int]:
     """Run argv as a child process and return (stdout, stderr, returncode).
 
     A cancel while awaiting the child's exit terminates it (SIGTERM) and
     re-raises CancelledError without reading the child's exit status — a
     non-zero exit caused by our own termination must never be mistaken for a
-    real failure. A child that doesn't exit within terminate_timeout is
+    real failure. A child that doesn't exit within TERMINATE_TIMEOUT is
     escalated to SIGKILL so a wedged or SIGTERM-ignoring process can't outlive
     the cancel.
+
+    The child is started in its own session (start_new_session=True) and
+    signalled via os.killpg so the whole subtree — yt-dlp *and* the aria2c
+    grandchild it spawns via --external-downloader — dies together. Without
+    this, SIGTERM only kills yt-dlp; aria2c gets reparented to PID 1 and
+    keeps the connection open, which is the headline bug #673 fixes.
     """
     proc = await asyncio.create_subprocess_exec(
         *argv,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
+        start_new_session=True,
     )
     try:
         stdout, stderr = await proc.communicate()
     except asyncio.CancelledError:
         with contextlib.suppress(ProcessLookupError):
-            proc.terminate()
+            os.killpg(proc.pid, signal.SIGTERM)
         try:
-            await asyncio.wait_for(proc.wait(), timeout=terminate_timeout)
+            await asyncio.wait_for(proc.wait(), timeout=TERMINATE_TIMEOUT)
         except TimeoutError:
             with contextlib.suppress(ProcessLookupError):
-                proc.kill()
+                os.killpg(proc.pid, signal.SIGKILL)
             await proc.wait()
         raise
     return stdout.decode(errors="replace"), stderr.decode(errors="replace"), proc.returncode
 
 
-async def run_ytdlp(args: list[str], *, terminate_timeout: float = TERMINATE_TIMEOUT) -> tuple[str, str, int]:
+async def run_ytdlp(args: list[str]) -> tuple[str, str, int]:
     """Run yt-dlp as a child of this interpreter (never a bare `yt-dlp` binary,
     which may not be on PATH in a container or a uv-managed venv) and return
     (stdout, stderr, returncode)."""
-    return await _run_subprocess([sys.executable, "-m", "yt_dlp", *args], terminate_timeout=terminate_timeout)
+    return await _run_subprocess([sys.executable, "-m", "yt_dlp", *args])
 
 
 def parse_download_path(stdout: str) -> Path:

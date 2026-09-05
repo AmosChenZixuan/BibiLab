@@ -1,8 +1,9 @@
 """Tests for the shared yt-dlp subprocess runner (_run_subprocess/run_ytdlp)
-and the small helpers around it (aria2c_argv, parse_download_path, raise_mapped)."""
+and the small helpers around it (parse_download_path). The aria2c_argv and
+raise_mapped branches are covered by the adapter-level download tests, where
+they're exercised end-to-end with the real argv and real error patterns."""
 
 import asyncio
-import re
 import sys
 import time
 from pathlib import Path
@@ -10,7 +11,7 @@ from pathlib import Path
 import pytest
 
 from bibilab.adapters import _ytdlp_common
-from bibilab.adapters.base import AuthRequiredError, DownloadError
+from bibilab.adapters.base import DownloadError
 
 
 @pytest.mark.asyncio
@@ -43,8 +44,11 @@ async def test_cancel_terminates_long_lived_child_within_one_second(monkeypatch)
 
 @pytest.mark.asyncio
 async def test_cancel_escalates_to_sigkill_when_child_ignores_sigterm(monkeypatch):
-    """A child that traps SIGTERM must still die: terminate() alone won't
-    stop it, so the runner has to escalate to kill() after the grace period."""
+    """A child that traps SIGTERM must still die: killpg-SIGTERM alone won't
+    stop it, so the runner has to escalate to killpg-SIGKILL after the grace
+    period. monkeypatch the timeout so the test runs in well under a second."""
+    monkeypatch.setattr(_ytdlp_common, "TERMINATE_TIMEOUT", 0.3)
+
     captured: dict = {}
     orig_create = asyncio.create_subprocess_exec
 
@@ -56,7 +60,7 @@ async def test_cancel_escalates_to_sigkill_when_child_ignores_sigterm(monkeypatc
     monkeypatch.setattr(asyncio, "create_subprocess_exec", spying_create)
 
     script = "import signal, time; signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(60)"
-    task = asyncio.create_task(_ytdlp_common._run_subprocess([sys.executable, "-c", script], terminate_timeout=0.3))
+    task = asyncio.create_task(_ytdlp_common._run_subprocess([sys.executable, "-c", script]))
     await asyncio.sleep(0.2)
 
     task.cancel()
@@ -68,31 +72,38 @@ async def test_cancel_escalates_to_sigkill_when_child_ignores_sigterm(monkeypatc
 
 @pytest.mark.asyncio
 async def test_cancel_swallows_process_lookup_error_on_already_exited_child(monkeypatch):
-    """terminate() on a process that already exited raises ProcessLookupError;
+    """killpg on a process that already exited raises ProcessLookupError;
     that must be swallowed, not surface in place of the CancelledError."""
 
     class FakeProc:
+        pid = 12345
         returncode = 0
 
         async def communicate(self):
             raise asyncio.CancelledError()
 
-        def terminate(self):
-            raise ProcessLookupError()
-
-        def kill(self):
-            raise AssertionError("kill() should not run — wait() already returned")
-
         async def wait(self):
             return 0
+
+    captured: dict = {}
 
     async def fake_create(*args, **kwargs):
         return FakeProc()
 
     monkeypatch.setattr(asyncio, "create_subprocess_exec", fake_create)
 
+    def fake_killpg(pid, sig):
+        captured["sig"] = sig
+        raise ProcessLookupError()
+
+    monkeypatch.setattr(_ytdlp_common.os, "killpg", fake_killpg)
+
     with pytest.raises(asyncio.CancelledError):
         await _ytdlp_common._run_subprocess(["irrelevant"])
+
+    # killpg was attempted with SIGTERM (the first escalation step);
+    # the SIGKILL escalation is skipped because wait() already returned.
+    assert captured["sig"] == _ytdlp_common.signal.SIGTERM
 
 
 @pytest.mark.asyncio
@@ -101,7 +112,7 @@ async def test_run_ytdlp_invokes_module_never_bare_binary(monkeypatch):
     binary that may not be on PATH in a container or uv-managed venv."""
     captured = {}
 
-    async def fake_run_subprocess(argv, *, terminate_timeout=_ytdlp_common.TERMINATE_TIMEOUT):
+    async def fake_run_subprocess(argv):
         captured["argv"] = argv
         return "out", "err", 0
 
@@ -121,46 +132,3 @@ def test_parse_download_path_returns_last_nonempty_line():
 def test_parse_download_path_raises_when_no_path_printed():
     with pytest.raises(DownloadError):
         _ytdlp_common.parse_download_path("   \n\n")
-
-
-def test_aria2c_argv_present_when_available(monkeypatch):
-    monkeypatch.setattr(_ytdlp_common.shutil, "which", lambda name: "/usr/bin/aria2c")
-    assert _ytdlp_common.aria2c_argv(16) == [
-        "--downloader",
-        "aria2c",
-        "--downloader-args",
-        "aria2c:-x16 -s16 -k1M --file-allocation=none",
-    ]
-
-
-def test_aria2c_argv_empty_when_absent(monkeypatch):
-    monkeypatch.setattr(_ytdlp_common.shutil, "which", lambda name: None)
-    assert _ytdlp_common.aria2c_argv(16) == []
-
-
-def test_raise_mapped_auth_family_raises_auth_required():
-    with pytest.raises(AuthRequiredError):
-        _ytdlp_common.raise_mapped("Sign in to confirm you're not a bot", re.compile("sign in", re.IGNORECASE))
-
-
-def test_raise_mapped_override_pattern_uses_fixed_message():
-    with pytest.raises(DownloadError) as exc_info:
-        _ytdlp_common.raise_mapped(
-            "no video formats found",
-            re.compile("nope", re.IGNORECASE),
-            message_overrides=((re.compile("no video formats"), "image post"),),
-        )
-    assert exc_info.value.message == "image post"
-
-
-def test_raise_mapped_default_strips_ansi_and_appends_hint():
-    with pytest.raises(DownloadError) as exc_info:
-        _ytdlp_common.raise_mapped("\x1b[31mboom\x1b[0m", re.compile("nope", re.IGNORECASE), hint=" hint text")
-    assert exc_info.value.message == "boom hint text"
-
-
-def test_raise_mapped_preserves_cause_chain():
-    cause = ValueError("orig")
-    with pytest.raises(DownloadError) as exc_info:
-        _ytdlp_common.raise_mapped("boom", re.compile("nope", re.IGNORECASE), cause=cause)
-    assert exc_info.value.__cause__ is cause

@@ -105,11 +105,10 @@ class TikTokAdapter(PlatformAdapter):
         return (await gather_metadata(video_ids, fetch_one), {})
 
     async def download(self, video_id: str, source_url: str, connections: int) -> Path:
-        out_dir = downloads_dir()
         # TikTok files are small; the native downloader suffices — no aria2c branch.
         argv = [
             "-o",
-            str(out_dir / f"{video_id}.%(ext)s"),
+            str(downloads_dir() / f"{video_id}.%(ext)s"),
             # TikTok's HEVC (bytevc1) variants are silent files, and the
             # extractor stamps a fabricated acodec on every format — so
             # prefer h264 by vcodec (real, derived from the URL), with a

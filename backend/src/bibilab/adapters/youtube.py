@@ -91,10 +91,9 @@ class YouTubeAdapter(PlatformAdapter):
         return (await gather_metadata(video_ids, fetch_one), {})
 
     async def download(self, video_id: str, source_url: str, connections: int) -> Path:
-        out_dir = downloads_dir()
         argv = [
             "-o",
-            str(out_dir / f"{video_id}.%(ext)s"),
+            str(downloads_dir() / f"{video_id}.%(ext)s"),
             "-f",
             "bestaudio/best",
             "-R",

@@ -239,8 +239,7 @@ class BilibiliAdapter(PlatformAdapter):
         )
 
     async def download(self, video_id: str, source_url: str, connections: int) -> Path:
-        out_dir = downloads_dir()
-        output_template = str(out_dir / f"{video_id}.%(ext)s")
+        output_template = str(downloads_dir() / f"{video_id}.%(ext)s")
         argv = [
             "-o",
             output_template,
