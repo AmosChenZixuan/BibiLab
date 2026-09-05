@@ -341,3 +341,17 @@ __all__ = [
     "load_transcript_text",
     "transcribe",
 ]
+
+
+def _strip_sense_voice_lang(raw: str | None) -> str | None:
+    """Strip `<|...|>` brackets from a SenseVoice per-segment lang token.
+
+    SenseVoice returns the per-segment language wrapped in angle-bracket pipes
+    (`<|zh|>`, `<|ja|>`, `<|nospeech|>`, …). Without stripping, the raw token
+    lands in `sources.language` and breaks the ct-punc gate (`<|zh|>` ≠ `zh`).
+    Returns the inner string for bracketed tokens; pass-through for None / empty
+    / already-clean values so a downstream None still flows as None.
+    """
+    if raw and len(raw) >= 4 and raw.startswith("<|") and raw.endswith("|>"):
+        return raw[2:-2]
+    return raw

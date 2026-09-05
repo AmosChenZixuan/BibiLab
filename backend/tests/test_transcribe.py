@@ -562,6 +562,32 @@ def test_vad_spans_feeds_a_clip_shorter_than_one_window():
     assert recorder.fed == len(samples)
 
 
+def test_strip_sense_voice_lang_extracts_brackets() -> None:
+    """#706 Bug B: per-segment lang tokens come wrapped as `<|zh|>`, `<|ja|>`,
+    `<|nospeech|>`, etc. Strip the brackets so detected_lang flows downstream
+    as a clean language string — to the `sources.language` column, the ct-punc
+    gate, and chat rerank-side lang hints."""
+    from bibilab.pipeline.transcribe import _strip_sense_voice_lang
+
+    assert _strip_sense_voice_lang("<|zh|>") == "zh"
+    assert _strip_sense_voice_lang("<|ja|>") == "ja"
+    assert _strip_sense_voice_lang("<|ko|>") == "ko"
+    assert _strip_sense_voice_lang("<|yue|>") == "yue"
+    assert _strip_sense_voice_lang("<|en|>") == "en"
+    assert _strip_sense_voice_lang("<|nospeech|>") == "nospeech"
+
+
+def test_strip_sense_voice_lang_passes_through_non_bracketed() -> None:
+    """Non-bracketed input (None / empty / already-stripped plain string)
+    flows through unchanged — defensive against missing or already-clean
+    sherpa-onnx outputs."""
+    from bibilab.pipeline.transcribe import _strip_sense_voice_lang
+
+    assert _strip_sense_voice_lang(None) is None
+    assert _strip_sense_voice_lang("") == ""
+    assert _strip_sense_voice_lang("zh") == "zh"
+
+
 def test_transcribe_unknown_model_raises_pipeline_error():
     from bibilab.pipeline.audio import PipelineError
     from bibilab.pipeline.transcribe import transcribe
