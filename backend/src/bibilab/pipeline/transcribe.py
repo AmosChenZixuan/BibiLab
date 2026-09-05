@@ -43,7 +43,9 @@ from bibilab.pipeline.audio import PipelineError
 
 logger = logging.getLogger(__name__)
 
-# Matches bench/asr/bench.py's proven configuration.
+# VAD is tuned for transcript quality, not speed: 0.3/0.25 measured ~11% slower than
+# a laxer 0.5/0.5 and won it back in CER. int8 SenseVoice (pinned by the model spec)
+# more than covers that cost — measured end to end at 69× realtime, c=4.
 _SHERPA_NUM_THREADS = 4
 _VAD_THRESHOLD = 0.3
 _VAD_MIN_SILENCE_DURATION = 0.25

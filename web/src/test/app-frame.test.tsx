@@ -66,19 +66,6 @@ describe("app frame", () => {
     renderFrame({
       overall: "ok",
       dependencies: {
-        cuda: { status: "ok", message: "" },
-        embedding_model: { status: "ok", message: "" },
-      },
-    });
-
-    expect(await screen.findByTitle("Healthy")).toBeInTheDocument();
-  });
-
-  test("shows healthy badge when cuda unavailable (no GPU hardware)", async () => {
-    renderFrame({
-      overall: "ok",
-      dependencies: {
-        cuda: { status: "unavailable", message: "" },
         embedding_model: { status: "ok", message: "" },
       },
     });
@@ -101,7 +88,6 @@ describe("app frame", () => {
     renderFrame({
       overall: "error",
       dependencies: {
-        cuda: { status: "ok", message: "" },
         embedding_model: { status: "ok", message: "" },
       },
     });
@@ -113,7 +99,6 @@ describe("app frame", () => {
     renderFrame({
       overall: "ok",
       dependencies: {
-        cuda: { status: "ok", message: "" },
         embedding_model: { status: "ok", message: "" },
       },
     });
@@ -126,7 +111,6 @@ describe("app frame", () => {
     renderFrame({
       overall: "ok",
       dependencies: {
-        cuda: { status: "ok", message: "" },
         embedding_model: { status: "ok", message: "" },
       },
     });
@@ -140,7 +124,6 @@ describe("app frame", () => {
     renderFrame({
       overall: "ok",
       dependencies: {
-        cuda: { status: "ok", message: "" },
         embedding_model: { status: "ok", message: "" },
       },
     });
@@ -152,7 +135,6 @@ describe("app frame", () => {
         detail: {
           overall: "error",
           dependencies: {
-            cuda: { status: "ok", message: "" },
             embedding_model: { status: "ok", message: "" },
           },
         } satisfies HealthResponse,
@@ -168,7 +150,6 @@ describe("app frame", () => {
     const { container } = renderFrame({
       overall: "ok",
       dependencies: {
-        cuda: { status: "ok", message: "" },
         embedding_model: { status: "ok", message: "" },
       },
     });
@@ -186,7 +167,6 @@ describe("app frame", () => {
       {
         overall: "ok",
         dependencies: {
-          cuda: { status: "ok", message: "" },
           embedding_model: { status: "ok", message: "" },
         },
       },
@@ -217,7 +197,6 @@ describe("app frame", () => {
     renderFrame({
       overall: "ok",
       dependencies: {
-        cuda: { status: "ok", message: "" },
         embedding_model: { status: "ok", message: "" },
       },
     });

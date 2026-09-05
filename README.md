@@ -200,7 +200,6 @@ Config lives at `~/.bibilab/config.json` (created on first run). The full schema
   },
   "transcription": {
     "model": "sensevoice-small|large-v3",
-    "device": "cuda|cpu",
     "language": "auto"
   },
   "backend": { "port": 8765, "max_concurrent_jobs": 1, "cors_origins": ["*"] },

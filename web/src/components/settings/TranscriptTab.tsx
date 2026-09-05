@@ -10,10 +10,15 @@ import { Select, SettingsField } from "@/components/ui";
 
 // ponytail: no consumer now that transcription runs on sherpa-onnx CPU-only. Kept — not
 // deleted — so the markup/ids/i18n copy don't need rebuilding if GPU acceleration
-// returns for embedding/reranker. Its local state is intentionally NOT wired to
-// persistence: there's no backend field to save to, and a future GPU config would
-// likely be a different shape anyway — reactivating this means adding that field
-// and rewiring save/load, not just flipping this flag.
+// returns for embedding/reranker.
+//
+// Flipping this to true is NOT enough to reactivate it, in two ways:
+//   - the local state is not wired to persistence — there is no backend field to save
+//     to, and a future GPU config would likely be a different shape anyway;
+//   - `dependencies.cuda` no longer exists (the backend's CUDA health probe went with
+//     the config field), so `cudaSupported` is permanently false — the hint would read
+//     "unavailable" and the CUDA option stay disabled no matter what the host has.
+// Reactivating means restoring a health signal and a config field, then rewiring both.
 const SHOW_DEVICE_SETTING = false;
 
 type TranscriptTabProps = {

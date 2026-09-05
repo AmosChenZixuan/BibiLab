@@ -128,7 +128,7 @@ def test_asr_health_reports_unconfigured_model_as_error():
     assert result == {"status": "error", "message": "Transcription model not configured"}
 
 
-def test_asr_health_resolves_public_model_name_to_sherpa_spec():
+def test_asr_health_resolves_public_model_name_to_sherpa_spec(tmp_bibilab_home):
     """A known transcription.model value must resolve through
     resolve_transcription_spec_id to the sherpa-onnx spec that's actually used,
     not get_spec(model) directly."""
@@ -140,7 +140,10 @@ def test_asr_health_resolves_public_model_name_to_sherpa_spec():
         result = _check_asr(cfg)
 
     mock_get_spec.assert_called_once_with(SHERPA_SENSEVOICE_SPEC_ID)
-    assert result["status"] == "error"  # not downloaded in the test env — resolution is what's under test
+    # tmp_bibilab_home makes "absent" a property of the empty temp home rather than of
+    # whether the developer happens to have the model on disk. Without it this asserts
+    # the machine, and flips to "ok" the moment anyone downloads the model.
+    assert result["status"] == "error"
 
 
 def test_diarization_health_checks_sherpa_spec():
