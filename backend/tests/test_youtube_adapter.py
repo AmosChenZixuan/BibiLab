@@ -1,5 +1,6 @@
 """Tests for YouTubeAdapter resolve/metadata/download behavior (yt-dlp mocked)."""
 
+import sys
 from unittest.mock import patch
 
 import pytest
@@ -7,6 +8,16 @@ import yt_dlp
 
 from bibilab.adapters.base import AuthRequiredError, DownloadError
 from bibilab.adapters.youtube import YouTubeAdapter
+
+
+def _make_run_ytdlp(captured_argv: list, *, stdout: str = "/out/video.webm", stderr: str = "", returncode: int = 0):
+    """Stand-in for run_ytdlp that records the argv it was called with."""
+
+    async def fake_run_ytdlp(argv):
+        captured_argv.append(argv)
+        return stdout, stderr, returncode
+
+    return fake_run_ytdlp
 
 
 def _video_info(vid="dQw4w9WgXcQ", title="Test Video", duration=212):
@@ -169,28 +180,73 @@ async def test_metadata_batch_omits_failed_ids():
     assert len(calls) == 3
 
 
-def test_download_opts_and_path(tmp_path, monkeypatch):
+@pytest.mark.asyncio
+async def test_download_opts_and_path(tmp_path, monkeypatch):
     monkeypatch.setenv("BIBILAB_HOME", str(tmp_path))
     captured: list = []
+    expected_path = tmp_path / "downloads" / "vidX.webm"
     with (
-        patch("bibilab.adapters.youtube.yt_dlp.YoutubeDL", _mock_ydl(info={"ext": "webm"}, captured_opts=captured)),
+        patch("bibilab.adapters.youtube.run_ytdlp", _make_run_ytdlp(captured, stdout=str(expected_path))),
         patch("bibilab.adapters._ytdlp_common.shutil.which", return_value=None),
     ):
-        path = YouTubeAdapter().download("vidX", "https://www.youtube.com/watch?v=vidX", connections=4)
+        path = await YouTubeAdapter().download("vidX", "https://www.youtube.com/watch?v=vidX", connections=4)
     assert path == tmp_path / "downloads" / "vidX.webm"
-    opts = captured[0]
-    assert opts["format"] == "bestaudio/best"
-    assert "external_downloader" not in opts
+    argv = captured[0]
+    assert argv[argv.index("-f") + 1] == "bestaudio/best"
+    assert "--downloader" not in argv
 
 
-def test_download_uses_aria2c_when_present(tmp_path, monkeypatch):
+@pytest.mark.asyncio
+async def test_download_uses_aria2c_when_present(tmp_path, monkeypatch):
     monkeypatch.setenv("BIBILAB_HOME", str(tmp_path))
     captured: list = []
     with (
-        patch("bibilab.adapters.youtube.yt_dlp.YoutubeDL", _mock_ydl(info={"ext": "m4a"}, captured_opts=captured)),
+        patch("bibilab.adapters.youtube.run_ytdlp", _make_run_ytdlp(captured)),
         patch("bibilab.adapters._ytdlp_common.shutil.which", return_value="/usr/bin/aria2c"),
     ):
-        YouTubeAdapter().download("vidX", "https://www.youtube.com/watch?v=vidX", connections=8)
-    opts = captured[0]
-    assert opts["external_downloader"] == "aria2c"
-    assert "-x8" in opts["external_downloader_args"]["aria2c"]
+        await YouTubeAdapter().download("vidX", "https://www.youtube.com/watch?v=vidX", connections=8)
+    argv = captured[0]
+    assert argv[argv.index("--downloader") + 1] == "aria2c"
+    assert "-x8" in argv[argv.index("--downloader-args") + 1]
+
+
+@pytest.mark.asyncio
+async def test_download_invokes_yt_dlp_as_a_module_of_this_interpreter(tmp_path, monkeypatch):
+    """Never a bare `yt-dlp` binary — it may not be on PATH in a container or
+    a uv-managed venv."""
+    monkeypatch.setenv("BIBILAB_HOME", str(tmp_path))
+    captured: list = []
+
+    async def fake_run_subprocess(argv, **kwargs):
+        captured.append(argv)
+        return "/out/video.webm", "", 0
+
+    with patch("bibilab.adapters._ytdlp_common._run_subprocess", fake_run_subprocess):
+        await YouTubeAdapter().download("vidX", "https://www.youtube.com/watch?v=vidX", connections=4)
+
+    assert captured[0][:3] == [sys.executable, "-m", "yt_dlp"]
+
+
+@pytest.mark.asyncio
+async def test_download_auth_family_stderr_raises_auth_required(tmp_path, monkeypatch):
+    monkeypatch.setenv("BIBILAB_HOME", str(tmp_path))
+    captured: list = []
+    with patch(
+        "bibilab.adapters.youtube.run_ytdlp",
+        _make_run_ytdlp(captured, stderr="Sign in to confirm you're not a bot", returncode=1),
+    ):
+        with pytest.raises(AuthRequiredError):
+            await YouTubeAdapter().download("vidX", "https://www.youtube.com/watch?v=vidX", connections=4)
+
+
+@pytest.mark.asyncio
+async def test_download_other_stderr_raises_download_error_with_ansi_stripped(tmp_path, monkeypatch):
+    monkeypatch.setenv("BIBILAB_HOME", str(tmp_path))
+    captured: list = []
+    with patch(
+        "bibilab.adapters.youtube.run_ytdlp",
+        _make_run_ytdlp(captured, stderr="\x1b[31mERROR: video unavailable\x1b[0m", returncode=1),
+    ):
+        with pytest.raises(DownloadError) as exc_info:
+            await YouTubeAdapter().download("vidX", "https://www.youtube.com/watch?v=vidX", connections=4)
+    assert exc_info.value.message == "ERROR: video unavailable"

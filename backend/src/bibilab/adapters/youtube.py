@@ -9,10 +9,12 @@ import yt_dlp
 from bibilab.adapters._ytdlp_common import (
     HTTP_RETRIES,
     SOCKET_TIMEOUT,
-    apply_aria2c,
+    aria2c_argv,
     gather_metadata,
+    parse_download_path,
     pick_thumbnail,
     raise_mapped,
+    run_ytdlp,
     safe_duration,
 )
 from bibilab.adapters.base import (
@@ -30,7 +32,7 @@ _WATCH_URL = "https://www.youtube.com/watch?v={}"
 
 
 def _raise_mapped(exc: yt_dlp.utils.DownloadError) -> None:
-    raise_mapped(exc, _AUTH_RE)
+    raise_mapped(str(exc), _AUTH_RE, cause=exc)
 
 
 def _entry_to_video_meta(entry: dict) -> VideoMeta | None:
@@ -88,21 +90,26 @@ class YouTubeAdapter(PlatformAdapter):
 
         return (await gather_metadata(video_ids, fetch_one), {})
 
-    def download(self, video_id: str, source_url: str, connections: int) -> Path:
+    async def download(self, video_id: str, source_url: str, connections: int) -> Path:
         out_dir = downloads_dir()
-        opts: dict = {
-            "quiet": False,
-            "outtmpl": str(out_dir / f"{video_id}.%(ext)s"),
-            "format": "bestaudio/best",
-            "retries": HTTP_RETRIES,
-            "socket_timeout": SOCKET_TIMEOUT,
-        }
-        apply_aria2c(opts, connections)
+        argv = [
+            "-o",
+            str(out_dir / f"{video_id}.%(ext)s"),
+            "-f",
+            "bestaudio/best",
+            "-R",
+            str(HTTP_RETRIES),
+            "--socket-timeout",
+            str(SOCKET_TIMEOUT),
+            "--print",
+            "after_move:filepath",
+            "--no-simulate",
+        ]
+        argv += aria2c_argv(connections)
+        argv.append(source_url)
 
-        try:
-            with yt_dlp.YoutubeDL(opts) as ydl:
-                info = ydl.extract_info(source_url, download=True)
-        except yt_dlp.utils.DownloadError as exc:
-            _raise_mapped(exc)
+        stdout, stderr, returncode = await run_ytdlp(argv)
+        if returncode != 0:
+            raise_mapped(stderr, _AUTH_RE)
 
-        return out_dir / f"{video_id}.{info.get('ext', 'mp4')}"
+        return parse_download_path(stdout)

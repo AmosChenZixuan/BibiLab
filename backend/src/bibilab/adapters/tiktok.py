@@ -11,8 +11,10 @@ from bibilab.adapters._ytdlp_common import (
     HTTP_RETRIES,
     SOCKET_TIMEOUT,
     gather_metadata,
+    parse_download_path,
     pick_thumbnail,
     raise_mapped,
+    run_ytdlp,
     safe_duration,
 )
 from bibilab.adapters.base import (
@@ -28,18 +30,14 @@ _IMAGE_RE = re.compile(r"no video formats", re.IGNORECASE)
 
 _CAPTION_LIMIT = 120
 _UPGRADE_HINT = " — TikTok extraction breaks frequently; upgrading yt-dlp usually fixes it."
+_MESSAGE_OVERRIDES = ((_IMAGE_RE, "This link is an image post, no video to transcribe."),)
 
 # Author handle is irrelevant for lookup; yt-dlp itself uses '@_' for id-only URLs.
 _VIDEO_URL = "https://www.tiktok.com/@_/video/{}"
 
 
 def _raise_mapped(exc: yt_dlp.utils.DownloadError) -> None:
-    raise_mapped(
-        exc,
-        _AUTH_RE,
-        message_overrides=((_IMAGE_RE, "This link is an image post, no video to transcribe."),),
-        hint=_UPGRADE_HINT,
-    )
+    raise_mapped(str(exc), _AUTH_RE, message_overrides=_MESSAGE_OVERRIDES, hint=_UPGRADE_HINT, cause=exc)
 
 
 def _truncate_caption(caption: str) -> str:
@@ -106,25 +104,30 @@ class TikTokAdapter(PlatformAdapter):
 
         return (await gather_metadata(video_ids, fetch_one), {})
 
-    def download(self, video_id: str, source_url: str, connections: int) -> Path:
+    async def download(self, video_id: str, source_url: str, connections: int) -> Path:
         out_dir = downloads_dir()
         # TikTok files are small; the native downloader suffices — no aria2c branch.
-        opts: dict = {
-            "quiet": False,
-            "outtmpl": str(out_dir / f"{video_id}.%(ext)s"),
+        argv = [
+            "-o",
+            str(out_dir / f"{video_id}.%(ext)s"),
             # TikTok's HEVC (bytevc1) variants are silent files, and the
             # extractor stamps a fabricated acodec on every format — so
             # prefer h264 by vcodec (real, derived from the URL), with a
             # plain-best fallback should TikTok ever drop h264.
-            "format": "bestaudio/best[vcodec^=h264]/best",
-            "retries": HTTP_RETRIES,
-            "socket_timeout": SOCKET_TIMEOUT,
-        }
+            "-f",
+            "bestaudio/best[vcodec^=h264]/best",
+            "-R",
+            str(HTTP_RETRIES),
+            "--socket-timeout",
+            str(SOCKET_TIMEOUT),
+            "--print",
+            "after_move:filepath",
+            "--no-simulate",
+            source_url,
+        ]
 
-        try:
-            with yt_dlp.YoutubeDL(opts) as ydl:
-                info = ydl.extract_info(source_url, download=True)
-        except yt_dlp.utils.DownloadError as exc:
-            _raise_mapped(exc)
+        stdout, stderr, returncode = await run_ytdlp(argv)
+        if returncode != 0:
+            raise_mapped(stderr, _AUTH_RE, message_overrides=_MESSAGE_OVERRIDES, hint=_UPGRADE_HINT)
 
-        return out_dir / f"{video_id}.{info.get('ext', 'mp4')}"
+        return parse_download_path(stdout)
