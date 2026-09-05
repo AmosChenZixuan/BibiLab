@@ -5,8 +5,9 @@ BibilabConfig instance, so a future re-introduction is caught.
 """
 
 import pytest
+from pydantic import ValidationError
 
-from bibilab.config import BibilabConfig
+from bibilab.config import BibilabConfig, TranscriptionConfig
 
 
 @pytest.mark.parametrize(
@@ -70,3 +71,37 @@ def test_backend_download_connections_derived_from_jobs() -> None:
     assert BackendConfig(max_concurrent_jobs=1).download_connections == 16
     assert BackendConfig(max_concurrent_jobs=8).download_connections == 8
     assert BackendConfig(max_concurrent_jobs=128).download_connections == 1
+
+
+# --- #706: transcription.language no longer accepts "auto" -----------------
+
+
+def test_transcription_language_default_is_zh() -> None:
+    """#706: 'auto' was dropped — SenseVoice's per-segment lang-id is unreliable
+    on short/silent spans (Bug A). New installs default to 'zh', the primary
+    supported language, so no config edit is required for the common case."""
+    assert TranscriptionConfig().language == "zh"
+
+
+def test_transcription_language_accepts_zh_and_en() -> None:
+    """#706: explicit zh/en remain valid; recognizer is forced to that language."""
+    assert TranscriptionConfig(language="zh").language == "zh"
+    assert TranscriptionConfig(language="en").language == "en"
+
+
+def test_transcription_language_rejects_auto() -> None:
+    """#706: 'auto' is no longer a valid value. Pydantic Literal['zh','en']
+    rejects it at construction time, so a config.json carrying the legacy key
+    fails loudly at BibilabConfig.model_validate() (called by load_config)."""
+    with pytest.raises(ValidationError):
+        TranscriptionConfig(language="auto")
+
+
+def test_legacy_auto_in_config_raises_on_bibilab_validate() -> None:
+    """#706: an existing ~/.bibilab/config.json with transcription.language='auto'
+    must raise at BibilabConfig.model_validate() — the entry point load_config()
+    uses. The first FastAPI request that needs config then returns 500 with a
+    Pydantic ValidationError pointing at the field; user edits config.json
+    ('auto' → 'zh'/'en') and restarts."""
+    with pytest.raises(ValidationError):
+        BibilabConfig.model_validate({"transcription": {"language": "auto"}})

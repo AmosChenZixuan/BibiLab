@@ -110,7 +110,7 @@ def test_load_sherpa_sensevoice_resolves_spec_paths_and_provider(tmp_bibilab_hom
     _reset_sherpa_engine_cache()
     from bibilab.pipeline import transcribe as transcribe_mod
 
-    cfg = TranscriptionConfig(model="sensevoice-small", language="auto")
+    cfg = TranscriptionConfig(model="sensevoice-small", language="zh")
     models_root = tmp_bibilab_home / "models"
     stub = _sherpa_stub()
 
@@ -126,7 +126,7 @@ def test_load_sherpa_sensevoice_resolves_spec_paths_and_provider(tmp_bibilab_hom
     assert kwargs["model"] == str(sensevoice_dir / "model.int8.onnx")
     assert kwargs["tokens"] == str(sensevoice_dir / "tokens.txt")
     assert kwargs["provider"] == "cpu"
-    assert kwargs["language"] == "auto"
+    assert kwargs["language"] == "zh"
     stub.OfflineRecognizer.from_whisper.assert_not_called()
 
 
@@ -217,9 +217,9 @@ def test_load_sherpa_caches_by_model_and_language(tmp_bibilab_home: Path):
         patch("bibilab.pipeline.transcribe.ensure", side_effect=lambda sid: _stub_ensure(models_root, sid)),
         patch("bibilab.pipeline.transcribe.interpreting_provider", return_value="cpu"),
     ):
-        e1 = transcribe_mod._load_sherpa(TranscriptionConfig(model="sensevoice-small", language="auto"))
-        e2 = transcribe_mod._load_sherpa(TranscriptionConfig(model="sensevoice-small", language="auto"))
-        e3 = transcribe_mod._load_sherpa(TranscriptionConfig(model="sensevoice-small", language="zh"))
+        e1 = transcribe_mod._load_sherpa(TranscriptionConfig(model="sensevoice-small", language="zh"))
+        e2 = transcribe_mod._load_sherpa(TranscriptionConfig(model="sensevoice-small", language="zh"))
+        e3 = transcribe_mod._load_sherpa(TranscriptionConfig(model="sensevoice-small", language="en"))
 
     assert e1 is e2
     assert e1 is not e3
@@ -238,7 +238,7 @@ def test_load_sherpa_builds_singleton_exactly_once_under_concurrent_entry(tmp_bi
     _reset_sherpa_engine_cache()
     from bibilab.pipeline import transcribe as transcribe_mod
 
-    cfg = TranscriptionConfig(model="sensevoice-small", language="auto")
+    cfg = TranscriptionConfig(model="sensevoice-small", language="zh")
     models_root = tmp_bibilab_home / "models"
     stub = _sherpa_stub()
 
@@ -421,7 +421,7 @@ def test_transcribe_sherpa_whisper_detected_language_forced_english(tmp_path: Pa
     engine = _fake_engine(recognized=[("hello", None)], embeddings=[[1.0, 0.0]])
     p1, p2, p3 = _patch_transcribe_sherpa(engine, spans=[(0.0, 1.0)])
     with p1, p2, p3:
-        _, lang = _transcribe_sherpa(tmp_path / "a.wav", TranscriptionConfig(model="large-v3", language="auto"))
+        _, lang = _transcribe_sherpa(tmp_path / "a.wav", TranscriptionConfig(model="large-v3", language="en"))
 
     assert lang == "en"
 
@@ -441,19 +441,25 @@ def test_transcribe_sherpa_whisper_forces_english_even_with_mismatched_explicit_
     assert lang == "en"
 
 
-def test_transcribe_sherpa_sensevoice_auto_uses_first_seen_recognizer_language(tmp_path: Path):
+def test_transcribe_sherpa_sensevoice_explicit_cfg_wins_over_segment_lang(tmp_path: Path):
+    """#706: 'auto' mode is gone — SenseVoice per-segment lang-id is unreliable
+    on short/silent spans (Bug A). Explicit cfg.language now always wins over
+    whatever the recognizer's per-segment `stream.result.lang` reports. The
+    recognizer is constructed with the forced language, so the per-segment
+    output is the same family but reported as raw `<|...|>` tokens — after
+    stripping, it's the forced language or noise."""
     from bibilab.pipeline.transcribe import _transcribe_sherpa
 
     engine = _fake_engine(
-        recognized=[("你好", "zh"), ("hi", "en")],
+        recognized=[("你好", "<|zh|>"), ("hi", "<|en|>")],
         embeddings=[[1.0, 0.0], [0.0, 1.0]],
     )
     spans = [(0.0, 1.0), (1.0, 2.0)]
     p1, p2, p3 = _patch_transcribe_sherpa(engine, spans)
     with p1, p2, p3:
-        _, lang = _transcribe_sherpa(tmp_path / "a.wav", TranscriptionConfig(model="sensevoice-small", language="auto"))
+        _, lang = _transcribe_sherpa(tmp_path / "a.wav", TranscriptionConfig(model="sensevoice-small", language="zh"))
 
-    assert lang == "zh"  # first segment's reported language
+    assert lang == "zh"
 
 
 class _FakeVadSegment:
