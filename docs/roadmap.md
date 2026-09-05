@@ -2,7 +2,7 @@
 
 ### v0
 
-1. ~~Whisper language detection~~ — UI dropdown (`auto / zh / en`), stored in config, applied globally.
+1. ~~Whisper language detection~~ — #706 dropped `auto`; user declares `zh` / `en` explicitly in config (default `zh`). Per-segment lang-id from SenseVoice was unreliable on short/silent spans (kana contamination on zh audio).
 2. ~~Note deduplication~~ — `sources` table as dedup source; `?rerun=true` to re-process in-place.
 3. ~~List assignment~~ — User always selects a list before ingesting.
 4. ~~Digest sync model~~ — Backend writes digest to sources table; web UI is read-only.
