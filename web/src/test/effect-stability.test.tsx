@@ -47,9 +47,7 @@ const baseConfig: BibilabConfig = {
   rag: { max_distance: 0.8, reranking_enabled: true, hybrid_enabled: true, debug_prompts: false },
 };
 
-const healthDeps: Record<string, HealthDependency> = {
-  cuda: { status: "unavailable", message: "CUDA not available; CPU will be used" },
-};
+const healthDeps: Record<string, HealthDependency> = {};
 
 afterEach(() => {
   vi.clearAllMocks();

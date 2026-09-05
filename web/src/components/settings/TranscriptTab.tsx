@@ -8,9 +8,12 @@ import type { BibilabConfig, HealthDependency, ModelInfo } from "@/lib/types";
 
 import { Select, SettingsField } from "@/components/ui";
 
-// ponytail: no consumer since #687 dropped torch/CUDA transcription; the widget stays
-// wired to local-only state so it can be flipped back on without rebuilding it if GPU
-// acceleration returns for embedding/reranker.
+// ponytail: no consumer since #687 dropped torch/CUDA transcription. Kept — not
+// deleted — so the markup/ids/i18n copy don't need rebuilding if GPU acceleration
+// returns for embedding/reranker. Its local state is intentionally NOT wired to
+// persistence: there's no backend field to save to, and a future GPU config would
+// likely be a different shape anyway — reactivating this means adding that field
+// and rewiring save/load, not just flipping this flag.
 const SHOW_DEVICE_SETTING = false;
 
 type TranscriptTabProps = {
