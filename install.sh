@@ -5,9 +5,15 @@ cd "$(dirname "$0")"
 
 # Preserve any developer-set keys (BIBILAB_PORT, HF_ENDPOINT, etc.); only the keys
 # we manage here are written. Re-runs are idempotent.
+#
+# The strip list also purges keys this installer no longer writes. A box that ran the
+# GPU-probing installer has COMPOSE_FILE=compose.yml:compose.cuda.yml in .env, and
+# those overlay files are gone — leaving the key would make `docker compose up` fail
+# to open a file that no longer exists. Dropping them lets compose fall back to
+# compose.yml, so an upgrade from a GPU install lands on the CPU image.
 existing_env=""
 if [[ -f .env ]]; then
-  existing_env=$(grep -v -E '^(UID|GID)=' .env || true)
+  existing_env=$(grep -v -E '^(TORCH_VARIANT|COMPOSE_FILE|UID|GID|RENDER_GID|VIDEO_GID)=' .env || true)
 fi
 {
   if [[ -n "$existing_env" ]]; then
