@@ -113,8 +113,7 @@ ASR / embedding / reranker 模型,`artifacts/{id}.md` 存生成的 artifact 内�
 | `aria2` | 系统级 | 多连接下载器(`apt install aria2` / `brew install aria2`);接入 yt-dlp 的 `external_downloader` 抑制单 IP 限速 |
 | `yt-dlp` | 经 `uv` 自动安装(含 `curl-cffi`,供 TikTok TLS 伪装) | B 站 / YouTube / TikTok 适配器 |
 
-> CUDA 可选。默认的 ASR / embedding / reranker 模型在 CPU 上运行;开启 GPU 加速只需
-> 改一行配置(`transcription.device=cuda`)。
+> ASR / embedding / reranker 模型均仅在 CPU 上运行,不支持 GPU 加速。
 
 ---
 
