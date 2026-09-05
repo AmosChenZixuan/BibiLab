@@ -51,12 +51,9 @@ async def cancel_or_delete_job(job_id: str, request: Request) -> None:
     job = dict(row)
     status = JobStatus(job["status"])
 
-    if status not in TERMINAL_STATUSES:
+    if status not in TERMINAL_STATUSES and status != JobStatus.QUEUED:
         worker = request.app.state.worker
         if worker:
-            # Also marks a still-queued job cancelled: _loop() may have already
-            # dequeued it into a running task between this read and the delete
-            # below, and only the worker's own bookkeeping can catch that race.
             worker.cancel_job(job_id)
 
     try:

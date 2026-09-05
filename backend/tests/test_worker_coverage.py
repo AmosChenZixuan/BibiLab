@@ -168,7 +168,7 @@ async def test_cancel_frees_slot_without_waiting_for_stage(tmp_bibilab_home: Pat
 async def test_cancel_job_cancels_running_task_mid_stage(tmp_bibilab_home: Path):
     """cancel_job now cancels the tracked task itself, unwinding an await
     that lands inside a stage — not just at an old between-stage checkpoint,
-    which is the behaviour _abort_if_cancelled's polling could never provide.
+    which is the behaviour the old polling mechanism could never provide.
     Verifies the collapsed CancelledError handler purges with the full job
     dict, deletes the row, and clears every bookkeeping set."""
     import asyncio
@@ -230,8 +230,13 @@ async def test_cancel_job_on_non_ingest_job_purges_nothing(tmp_bibilab_home: Pat
 
     from bibilab.db import bootstrap_db, create_job, get_job
 
+    # video_id is deliberately present in meta: if the JobType gate in
+    # cleanup_job_artifacts were ever removed, this would give purge_download_files
+    # something to act on — proving the gate (not an absent video_id) is what
+    # keeps this test's purge_calls empty.
+    meta = {"model_name": "x", "video_id": "BVshouldnotpurge"}
     await bootstrap_db()
-    job_id = await create_job("model_download", {"model_name": "x"})
+    job_id = await create_job("model_download", meta)
 
     never_set = asyncio.Event()
     purge_calls = []
@@ -241,11 +246,11 @@ async def test_cancel_job_on_non_ingest_job_purges_nothing(tmp_bibilab_home: Pat
 
     worker = WorkerLoop(home=tmp_bibilab_home)
     worker._in_flight.add(job_id)
-    job = {"id": job_id, "type": "model_download", "meta": json.dumps({"model_name": "x"})}
+    job = {"id": job_id, "type": "model_download", "meta": json.dumps(meta)}
 
     with (
         patch.object(worker, "_download_model_job", _blocked_download),
-        patch("bibilab.worker.purge_download_files", side_effect=purge_calls.append),
+        patch("bibilab.cleanup.purge_download_files", side_effect=purge_calls.append),
     ):
         task = asyncio.create_task(worker._run_job(job))
         worker._tasks[job_id] = task
@@ -535,7 +540,7 @@ async def test_stage_transcribe_no_speech_raises_pipeline_error(tmp_bibilab_home
 async def test_stage_transcribe_cancel_wins_over_no_speech(tmp_bibilab_home: Path, monkeypatch):
     """A job cancelled while decoding ends as a clean cancel (job deleted), not
     a FAILED no-speech error — even though the segments would come back empty.
-    The old `_abort_if_cancelled` checkpoint that made this true is gone; the
+    The old between-stage checkpoint that made this true is gone; the
     property now holds because task.cancel() unwinds the await before the
     no-speech raise ever runs."""
     import asyncio
