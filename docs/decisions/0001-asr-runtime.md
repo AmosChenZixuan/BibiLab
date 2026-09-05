@@ -127,6 +127,9 @@ OOM a 16 GB host, so the baseline was capped at c=2 rather than risking the mach
 
 **sherpa at c=4 is 3.1× today's throughput at 0.39× the memory.**
 
+These are the spike harness's own sherpa driver, not the code that shipped — see
+*Post-migration verification*, which re-measured the shipped path and found it faster.
+
 ### Quality
 
 Weighted CER **0.048** over 82.7 min. Clean speech lands at 1.7–5.0%. The only
@@ -262,6 +265,42 @@ Consequences that follow, and must not be re-litigated against the old numbers:
   so the `cuda` group is broken on RTX 50-series. It was a real bug in a path that
   "may not survive". It did not survive; do not fix it.
 
+## Post-migration verification (2026-09-05)
+
+Every sherpa number above came from the harness's own driver, written before
+`pipeline/transcribe.py` existed. Only the FunASR arm called production functions. So
+the throughput this document argued the migration on was a property of the harness, and
+the shipped `_SherpaEngine` had never been measured. Re-measured on the same fixture,
+same host, adding a production arm that calls `transcribe()` + `punctuate()` directly:
+
+| config | wall | throughput | peak RSS | CER |
+|---|---:|---:|---:|---:|
+| FunASR c=1 (pre-migration) | 300.9 s | 16.5× realtime | 6.08 GB | — |
+| harness driver c=1 | 151.8 s | 32.7× | 2.22 GB | 0.0482 |
+| **production c=1** | **118.3 s** | **41.9×** | **1.19 GB** | 0.0487 |
+| harness driver c=4 | 96.9 s | 51.2× | 2.38 GB | 0.0482 |
+| **production c=4** | **71.6 s** | **69.3×** | **1.52 GB** | 0.0487 |
+
+**Production is 4.2× the pre-migration throughput at 0.25× the memory** — better than
+the 3.1× / 0.39× this document decided on. CER moves by 0.0005, which is noise.
+
+The gap is two deliberate post-spike changes that had never been measured together:
+
+- **int8 SenseVoice.** `model_registry.py` pins `model.int8.onnx`; every run above it
+  used fp32 `model.onnx` (`"int8": false` in each recorded result).
+- **VAD 0.3 / 0.25**, hardcoded in `transcribe.py`, against 0.5 / 0.5 in the harness.
+  The VAD sweep priced this at ~11% slower (30.46× vs 34.38× on a 3-source subset)
+  for better CER (0.0428 vs 0.0498). int8 more than repaid it.
+
+They compose favourably, but that was luck, not design — nothing checked. The general
+lesson is the same one the FunASR arm was built to avoid: **a benchmark arm that
+reimplements the thing measures the reimplementation.** The sherpa arm got the exemption
+the incumbent did not, because when it was written there was no production path to call.
+Once one existed, nobody went back.
+
+Concurrency also confirms the `_transcribe_lock` resize: c=1 → c=4 scales 1.65×
+(effective cores 4.58 → 9.45), so the shared engine is not serialising inference.
+
 ## Traps, so they are not stepped in twice
 
 1. **Never benchmark a runtime's GPU branch against its own CPU branch.** FunASR forces
@@ -311,7 +350,7 @@ Consequences that follow, and must not be re-litigated against the old numbers:
 - **Any non-`zh` audio** — and therefore the entire Whisper/English half of the
   system. The library has none, so the fixture has none. This is not a footnote: it
   gates whether `torch` can be removed.
-- **A FunASR baseline on macOS.** The 3.1× and 0.39× figures are Linux-only. Measuring
+- **A FunASR baseline on macOS.** The throughput and memory ratios are Linux-only. Measuring
   it on the Air would need interleaved runs with forced cooldowns, reporting the ratio
   and never the absolutes — judged not worth a machine, since ONNX-CPU beating
   PyTorch-CPU is not in doubt and the memory delta is architectural.
