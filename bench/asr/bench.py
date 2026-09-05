@@ -276,6 +276,11 @@ class Production:
     reach it: those are hardcoded in `transcribe.py`, and honouring them here
     would mean measuring a config production cannot be in. Requires the
     backend env.
+
+    `language="zh"` is this harness's choice, not production's — production reads
+    it from user config. The `Sherpa` arm pins it the same way, because the
+    fixture is all-Chinese; there is no non-`zh` audio here to select with.
+    `effective_config` reports it so the result file says which it ran.
     """
 
     def __init__(self) -> None:
@@ -497,6 +502,7 @@ def effective_config(engine: str) -> dict:
 
     return {
         "int8": True,  # spec pins model.int8.onnx
+        "language": "zh",
         "vad_threshold": tr._VAD_THRESHOLD,
         "vad_min_silence": tr._VAD_MIN_SILENCE_DURATION,
         "threads": tr._SHERPA_NUM_THREADS,
