@@ -1,6 +1,6 @@
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
@@ -204,7 +204,7 @@ async def test_pipeline_creates_covers_and_segments(tmp_bibilab_home: Path, mock
 
     # Set up mocks before the patch block
     mock_adapter = MagicMock()
-    mock_adapter.download = MagicMock(return_value=tmp_video)
+    mock_adapter.download = AsyncMock(return_value=tmp_video)
 
     worker = WorkerLoop(concurrency=1, adapter=mock_adapter, home=tmp_bibilab_home)
 

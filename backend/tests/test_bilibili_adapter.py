@@ -4,7 +4,9 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from bibilab.adapters.base import AuthRequiredError, DownloadError
 from bibilab.adapters.bilibili import BilibiliAdapter
+from tests import fake_run_ytdlp as _make_run_ytdlp
 
 
 def _make_video_info(bvid="BV1abc123", title="Test Video", duration=3600):
@@ -65,45 +67,62 @@ def _make_mock_ydl(captured_opts: list):
 class TestDownloadMultiPart:
     """Test download() correctly handles multi-part video IDs."""
 
-    def test_download_multipart_passes_playlist_items(self, tmp_path):
+    @pytest.mark.asyncio
+    async def test_download_multipart_passes_playlist_items(self, tmp_path):
         adapter = BilibiliAdapter(cookie="test_cookie")
-        captured_opts: list = []
+        captured_argv: list = []
 
-        with patch("bibilab.adapters.bilibili.yt_dlp.YoutubeDL", _make_mock_ydl(captured_opts)):
-            with patch("bibilab.adapters.bilibili.bibilab_home", return_value=tmp_path):
-                adapter.download("BV1test_p3", "https://www.bilibili.com/video/BV1test", 16)
+        with (
+            patch("bibilab.adapters.bilibili.run_ytdlp", _make_run_ytdlp(captured_argv)),
+            patch("bibilab.adapters.bilibili.bibilab_home", return_value=tmp_path),
+        ):
+            await adapter.download("BV1test_p3", "https://www.bilibili.com/video/BV1test", 16)
 
-        assert captured_opts[0]["playlist_items"] == "3"
+        argv = captured_argv[0]
+        assert argv[argv.index("--playlist-items") + 1] == "3"
 
-    def test_download_regular_video_no_playlist_items(self, tmp_path):
+    @pytest.mark.asyncio
+    async def test_download_regular_video_no_playlist_items(self, tmp_path):
         adapter = BilibiliAdapter(cookie="test_cookie")
-        captured_opts: list = []
+        captured_argv: list = []
 
-        with patch("bibilab.adapters.bilibili.yt_dlp.YoutubeDL", _make_mock_ydl(captured_opts)):
-            with patch("bibilab.adapters.bilibili.bibilab_home", return_value=tmp_path):
-                adapter.download("BV1test", "https://www.bilibili.com/video/BV1test", 16)
+        with (
+            patch("bibilab.adapters.bilibili.run_ytdlp", _make_run_ytdlp(captured_argv)),
+            patch("bibilab.adapters.bilibili.bibilab_home", return_value=tmp_path),
+        ):
+            await adapter.download("BV1test", "https://www.bilibili.com/video/BV1test", 16)
 
-        assert "playlist_items" not in captured_opts[0]
+        assert "--playlist-items" not in captured_argv[0]
 
-    def test_download_sets_native_retry_opts(self, tmp_path):
+    @pytest.mark.asyncio
+    async def test_download_sets_native_retry_opts(self, tmp_path):
         # Without these, yt-dlp's bare opts default to 0 internal retries
         # (RetryManager does _retries or 0), and transient CDN timeouts become fatal.
         from bibilab.adapters._ytdlp_common import HTTP_RETRIES, SOCKET_TIMEOUT
-        from bibilab.adapters.bilibili import _FRAGMENT_RETRIES
+        from bibilab.adapters.bilibili import _FRAGMENT_CONCURRENCY, _FRAGMENT_RETRIES
 
         adapter = BilibiliAdapter(cookie="test_cookie")
-        captured_opts: list = []
+        captured_argv: list = []
 
-        with patch("bibilab.adapters.bilibili.yt_dlp.YoutubeDL", _make_mock_ydl(captured_opts)):
-            with patch("bibilab.adapters.bilibili.bibilab_home", return_value=tmp_path):
-                with patch("bibilab.adapters._ytdlp_common.shutil.which", return_value="/usr/bin/aria2c"):
-                    adapter.download("BV1test", "https://www.bilibili.com/video/BV1test", 16)
+        with (
+            patch("bibilab.adapters.bilibili.run_ytdlp", _make_run_ytdlp(captured_argv)),
+            patch("bibilab.adapters.bilibili.bibilab_home", return_value=tmp_path),
+            patch("bibilab.adapters._ytdlp_common.shutil.which", return_value="/usr/bin/aria2c"),
+        ):
+            await adapter.download("BV1test", "https://www.bilibili.com/video/BV1test", 16)
 
-        assert captured_opts[0]["retries"] == HTTP_RETRIES
-        assert captured_opts[0]["fragment_retries"] == _FRAGMENT_RETRIES
+        argv = captured_argv[0]
+        assert argv[argv.index("-N") + 1] == str(_FRAGMENT_CONCURRENCY)
+        assert argv[argv.index("-R") + 1] == str(HTTP_RETRIES)
+        assert argv[argv.index("--fragment-retries") + 1] == str(_FRAGMENT_RETRIES)
         # A stalled connection must become a retriable error, not an indefinite
         # hang that wedges the serialized download stage.
-        assert captured_opts[0]["socket_timeout"] == SOCKET_TIMEOUT
+        assert argv[argv.index("--socket-timeout") + 1] == str(SOCKET_TIMEOUT)
+
+        # Authenticated Bilibili downloads route cookies via --cookies; without
+        # this assertion, dropping the cookie branch would silently break the
+        # whole auth path with a green suite.
+        assert argv[argv.index("--cookies") + 1].endswith("bilibili_cookies.txt")
 
 
 class TestDownloadAria2c:
@@ -111,39 +130,106 @@ class TestDownloadAria2c:
     to native yt-dlp when not."""
 
     @staticmethod
-    def _patched_download(tmp_path, *, aria2c_path):
+    async def _patched_download(tmp_path, *, aria2c_path):
         adapter = BilibiliAdapter(cookie="test_cookie")
-        captured_opts: list = []
+        captured_argv: list = []
         with (
-            patch("bibilab.adapters.bilibili.yt_dlp.YoutubeDL", _make_mock_ydl(captured_opts)),
+            patch("bibilab.adapters.bilibili.run_ytdlp", _make_run_ytdlp(captured_argv)),
             patch("bibilab.adapters.bilibili.bibilab_home", return_value=tmp_path),
             patch("bibilab.adapters._ytdlp_common.shutil.which", return_value=aria2c_path),
         ):
-            adapter.download("BV1test", "https://www.bilibili.com/video/BV1test", 16)
-        return captured_opts[0]
+            await adapter.download("BV1test", "https://www.bilibili.com/video/BV1test", 16)
+        return captured_argv[0]
 
-    def test_download_uses_aria2c_when_available(self, tmp_path):
-        opts = self._patched_download(tmp_path, aria2c_path="/usr/bin/aria2c")
+    @pytest.mark.asyncio
+    async def test_download_uses_aria2c_when_available(self, tmp_path):
+        argv = await self._patched_download(tmp_path, aria2c_path="/usr/bin/aria2c")
 
-        assert opts["external_downloader"] == "aria2c"
-        assert opts["external_downloader_args"]["aria2c"] == [
-            "-x16",
-            "-s16",
-            "-k1M",
-            "--file-allocation=none",
-        ]
+        assert argv[argv.index("--downloader") + 1] == "aria2c"
+        assert argv[argv.index("--downloader-args") + 1] == "aria2c:-x16 -s16 -k1M --file-allocation=none"
 
-    def test_download_falls_back_to_native_when_aria2c_absent(self, tmp_path):
-        from bibilab.adapters._ytdlp_common import HTTP_RETRIES, SOCKET_TIMEOUT
-        from bibilab.adapters.bilibili import _FRAGMENT_RETRIES
+    @pytest.mark.asyncio
+    async def test_download_falls_back_to_native_when_aria2c_absent(self, tmp_path):
+        argv = await self._patched_download(tmp_path, aria2c_path=None)
 
-        opts = self._patched_download(tmp_path, aria2c_path=None)
+        assert "--downloader" not in argv
+        assert "--downloader-args" not in argv
 
-        assert "external_downloader" not in opts
-        assert "external_downloader_args" not in opts
-        assert opts["retries"] == HTTP_RETRIES
-        assert opts["fragment_retries"] == _FRAGMENT_RETRIES
-        assert opts["socket_timeout"] == SOCKET_TIMEOUT
+
+class TestDownloadOutputPath:
+    """download() resolves its return value from `--print after_move:filepath`,
+    never by globbing the downloads directory."""
+
+    @pytest.mark.asyncio
+    async def test_download_returns_path_printed_by_yt_dlp(self, tmp_path):
+        adapter = BilibiliAdapter(cookie="test_cookie")
+        captured_argv: list = []
+
+        with (
+            patch(
+                "bibilab.adapters.bilibili.run_ytdlp",
+                _make_run_ytdlp(captured_argv, stdout="/home/u/.bibilab/downloads/BV1test.mp4\n"),
+            ),
+            patch("bibilab.adapters.bilibili.bibilab_home", return_value=tmp_path),
+        ):
+            path = await adapter.download("BV1test", "https://www.bilibili.com/video/BV1test", 16)
+
+        assert str(path) == "/home/u/.bibilab/downloads/BV1test.mp4"
+        assert "--print" in captured_argv[0]
+        assert captured_argv[0][captured_argv[0].index("--print") + 1] == "after_move:filepath"
+        assert "--no-simulate" in captured_argv[0]
+
+
+class TestDownloadErrorMapping:
+    """A non-zero yt-dlp exit maps stderr to the domain errors, the same way
+    the in-process DownloadError text used to be matched."""
+
+    @pytest.mark.asyncio
+    async def test_auth_family_stderr_raises_auth_required(self, tmp_path):
+        adapter = BilibiliAdapter(cookie="")
+        captured_argv: list = []
+
+        with (
+            patch(
+                "bibilab.adapters.bilibili.run_ytdlp",
+                _make_run_ytdlp(captured_argv, stderr="This video is private. Please login to access", returncode=1),
+            ),
+            patch("bibilab.adapters.bilibili.bibilab_home", return_value=tmp_path),
+        ):
+            with pytest.raises(AuthRequiredError):
+                await adapter.download("BV1test", "https://www.bilibili.com/video/BV1test", 16)
+
+    @pytest.mark.asyncio
+    async def test_412_stderr_raises_auth_required(self, tmp_path):
+        adapter = BilibiliAdapter(cookie="")
+        captured_argv: list = []
+
+        with (
+            patch(
+                "bibilab.adapters.bilibili.run_ytdlp",
+                _make_run_ytdlp(captured_argv, stderr="ERROR: [Bilibili] 412 Precondition Failed", returncode=1),
+            ),
+            patch("bibilab.adapters.bilibili.bibilab_home", return_value=tmp_path),
+        ):
+            with pytest.raises(AuthRequiredError):
+                await adapter.download("BV1test", "https://www.bilibili.com/video/BV1test", 16)
+
+    @pytest.mark.asyncio
+    async def test_other_stderr_raises_download_error_with_ansi_stripped(self, tmp_path):
+        adapter = BilibiliAdapter(cookie="")
+        captured_argv: list = []
+
+        with (
+            patch(
+                "bibilab.adapters.bilibili.run_ytdlp",
+                _make_run_ytdlp(captured_argv, stderr="\x1b[31mERROR: network unreachable\x1b[0m", returncode=1),
+            ),
+            patch("bibilab.adapters.bilibili.bibilab_home", return_value=tmp_path),
+        ):
+            with pytest.raises(DownloadError) as exc_info:
+                await adapter.download("BV1test", "https://www.bilibili.com/video/BV1test", 16)
+
+        assert exc_info.value.message == "ERROR: network unreachable"
 
 
 class TestSplitVideoId:

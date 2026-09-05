@@ -7,6 +7,7 @@ import yt_dlp
 
 from bibilab.adapters.base import AuthRequiredError, DownloadError
 from bibilab.adapters.tiktok import TikTokAdapter, _truncate_caption
+from tests import fake_run_ytdlp as _make_run_ytdlp
 
 
 def _video_info(vid="7371330159376370462", title="Short caption", duration=21):
@@ -158,16 +159,47 @@ async def test_metadata_batch_omits_failed_and_survives_unexpected():
     assert expanded == {}
 
 
-def test_download_path_and_no_aria2c(tmp_path, monkeypatch):
+@pytest.mark.asyncio
+async def test_download_path_and_no_aria2c(tmp_path, monkeypatch):
     monkeypatch.setenv("BIBILAB_HOME", str(tmp_path))
     captured: list = []
-    with patch("bibilab.adapters.tiktok.yt_dlp.YoutubeDL", _mock_ydl(info={"ext": "mp4"}, captured_opts=captured)):
-        path = TikTokAdapter().download("71x", "https://www.tiktok.com/@u/video/71x", connections=8)
-    assert path == tmp_path / "downloads" / "71x.mp4"
-    opts = captured[0]
-    assert opts["format"] == "bestaudio/best[vcodec^=h264]/best"
-    # small files — native downloader, no aria2c branch
-    assert "external_downloader" not in opts
+    expected_path = tmp_path / "downloads" / "71x.mp4"
+    with (
+        patch("bibilab.adapters.tiktok.run_ytdlp", _make_run_ytdlp(captured, stdout=str(expected_path))),
+        # Even with aria2c present, TikTok never routes through it.
+        patch("bibilab.adapters._ytdlp_common.shutil.which", return_value="/usr/bin/aria2c"),
+    ):
+        path = await TikTokAdapter().download("71x", "https://www.tiktok.com/@u/video/71x", connections=8)
+    assert path == expected_path
+    argv = captured[0]
+    assert argv[argv.index("-f") + 1] == "bestaudio/best[vcodec^=h264]/best"
+    # small files — native downloader, no aria2c branch, ever
+    assert "--downloader" not in argv
+
+
+@pytest.mark.asyncio
+async def test_download_login_wall_stderr_maps_to_auth_required(tmp_path, monkeypatch):
+    monkeypatch.setenv("BIBILAB_HOME", str(tmp_path))
+    captured: list = []
+    with patch(
+        "bibilab.adapters.tiktok.run_ytdlp",
+        _make_run_ytdlp(captured, stderr="TikTok is requiring login for access to this content", returncode=1),
+    ):
+        with pytest.raises(AuthRequiredError):
+            await TikTokAdapter().download("71x", "https://www.tiktok.com/@u/video/71x", connections=8)
+
+
+@pytest.mark.asyncio
+async def test_download_generic_stderr_carries_upgrade_hint(tmp_path, monkeypatch):
+    monkeypatch.setenv("BIBILAB_HOME", str(tmp_path))
+    captured: list = []
+    with patch(
+        "bibilab.adapters.tiktok.run_ytdlp",
+        _make_run_ytdlp(captured, stderr="Unable to extract webpage video data", returncode=1),
+    ):
+        with pytest.raises(DownloadError) as exc_info:
+            await TikTokAdapter().download("71x", "https://www.tiktok.com/@u/video/71x", connections=8)
+    assert "upgrading yt-dlp" in str(exc_info.value)
 
 
 def test_pick_thumbnail_dimensionless_falls_back_to_last():
