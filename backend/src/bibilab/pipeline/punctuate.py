@@ -117,23 +117,21 @@ def _run_ctpunc(raw: str) -> str:
     """
     global _ctpunc_model
 
-    if _ctpunc_model is None:
-        with _ctpunc_lock:
-            if _ctpunc_model is None:
-                import sherpa_onnx as so  # noqa: PLC0415
+    with _ctpunc_lock:
+        if _ctpunc_model is None:
+            import sherpa_onnx as so  # noqa: PLC0415
 
-                spec = get_spec(SHERPA_PUNC_SPEC_ID)
-                model_dir = ensure(SHERPA_PUNC_SPEC_ID)
-                logger.info("Loading ct-punc (sherpa-onnx) from %s", model_dir)
-                _ctpunc_model = so.OfflinePunctuation(
-                    so.OfflinePunctuationConfig(
-                        model=so.OfflinePunctuationModelConfig(
-                            ct_transformer=str(model_dir / spec.integrity_files[0]),
-                            provider=interpreting_provider(),
-                        )
+            spec = get_spec(SHERPA_PUNC_SPEC_ID)
+            model_dir = ensure(SHERPA_PUNC_SPEC_ID)
+            logger.info("Loading ct-punc (sherpa-onnx) from %s", model_dir)
+            _ctpunc_model = so.OfflinePunctuation(
+                so.OfflinePunctuationConfig(
+                    model=so.OfflinePunctuationModelConfig(
+                        ct_transformer=str(model_dir / spec.integrity_files[0]),
+                        provider=interpreting_provider(),
                     )
                 )
-    with _ctpunc_lock:
+            )
         try:
             return _ctpunc_model.add_punctuation(raw)
         except Exception:
