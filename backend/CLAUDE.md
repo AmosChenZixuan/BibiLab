@@ -36,7 +36,7 @@ models/           — Pydantic request/response models + domain errors (chat.py,
 pipeline/         — one file per stage
   _shared.py        sync _call_llm + async stream_llm (OpenAI/Anthropic), StreamEvent/ToolCall/ToolDefinition dataclasses
   audio.py          FFmpeg audio extraction (video → .wav)
-  transcribe.py     FunASR AutoModel (SenseVoice/Whisper) + CAM++ diarization → VAD segments w/ speaker labels
+  transcribe.py     sherpa-onnx, CPU-only: Silero VAD + SenseVoice/Whisper recognition + CAM++ embedding clustering → VAD segments w/ speaker labels
   chunk.py          per-section greedy segment merger → token target (`zh=800`, `en=300`); physical chunk `[seg_start, seg_end]` is fully contained in one section's range
   section.py        Section dataclass + derive_sections (token+pause boundary, target=12000) + chunk_by_sections (per-section chunking with source-global re-stamp)
   digest.py         LLM digest: per-section summary/keywords → sections table; facets → sources

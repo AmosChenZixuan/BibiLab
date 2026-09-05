@@ -121,8 +121,8 @@ content.
 | `aria2` | system | Multi-connection downloader (`apt install aria2` / `brew install aria2`); bounds per-IP throttle tail via yt-dlp's `external_downloader` |
 | `yt-dlp` | auto-installed via `uv` (`curl-cffi` extra for TikTok TLS impersonation) | Bilibili / YouTube / TikTok adapters |
 
-> CUDA is optional. The default ASR / embedding / reranker models run on CPU;
-> GPU acceleration is a one-line config change (`transcription.device=cuda`).
+> ASR / embedding / reranker models all run on CPU only — there is no GPU
+> acceleration path.
 
 ---
 
