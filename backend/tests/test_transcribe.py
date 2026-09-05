@@ -514,7 +514,7 @@ def test_transcribe_bystander_job_unaffected_by_sibling_cancel(tmp_bibilab_home:
 
     models_root = tmp_bibilab_home / "models"
     stub = _sherpa_stub()
-    cfg = TranscriptionConfig(model="sensevoice-small", language="auto")
+    cfg = TranscriptionConfig(model="sensevoice-small", language="zh")
     spans = [(0.0, 1.0), (1.0, 2.0), (2.0, 3.0)]
 
     a_started = threading.Event()
