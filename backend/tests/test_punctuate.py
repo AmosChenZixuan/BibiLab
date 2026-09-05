@@ -228,14 +228,20 @@ def test_run_ctpunc_concurrent_cold_build_constructs_once(tmp_bibilab_home: Path
     fake_punct.add_punctuation.side_effect = lambda raw: raw + "。"
     stub.OfflinePunctuation.return_value = fake_punct
 
+    barrier = threading.Barrier(2)
+
+    def call(raw: str) -> None:
+        barrier.wait(timeout=5)
+        from bibilab.pipeline.punctuate import _run_ctpunc
+
+        _run_ctpunc(raw)
+
     with (
         patch.dict(sys.modules, {"sherpa_onnx": stub}),
         patch("bibilab.pipeline.punctuate.ensure", side_effect=lambda sid: _stub_ensure(models_root, sid)),
         patch("bibilab.pipeline.punctuate.interpreting_provider", return_value="cpu"),
     ):
-        from bibilab.pipeline.punctuate import _run_ctpunc
-
-        threads = [threading.Thread(target=_run_ctpunc, args=(f"raw{i}",)) for i in range(2)]
+        threads = [threading.Thread(target=call, args=(f"raw{i}",)) for i in range(2)]
         for t in threads:
             t.start()
         for t in threads:
@@ -295,9 +301,9 @@ def test_run_ctpunc_race_after_failure_does_not_leak_attributeerror(tmp_bibilab_
     thread_b = threading.Thread(target=run_b)
 
     def on_acquire() -> None:
-        # fires once B (identified by thread identity, not a lock-count magic
-        # number) attempts to enter the lock — independent of how many times
-        # A acquires it internally on either side of the fix.
+        # Gating by thread identity (rather than an acquire-count) is necessary
+        # because A may acquire and release the lock several times within a
+        # single _run_ctpunc call — only B's first attempt matters here.
         if threading.current_thread() is thread_b:
             b_reached_lock.set()
 
