@@ -8,7 +8,7 @@ import { JobActivityProvider } from "@/components/jobs/JobActivityProvider";
 import { JobSpirit } from "@/components/jobs/JobSpirit";
 import { BrandMark } from "@/components/ui/BrandMark";
 import { api, HEALTH_REFRESH_EVENT, BILIBILI_AUTH_REFRESH_EVENT, notifyBilibiliAuthChanged } from "@/lib/api";
-import type { HealthRefreshDetail } from "@/lib/api";
+import type { HealthResponse } from "@/lib/types";
 import { deriveOverallHealthTier, HEALTH_META } from "@/lib/health";
 import { NavTitleContext } from "./NavTitleContext";
 import IdentityPanel from "./IdentityPanel";
@@ -39,7 +39,7 @@ export function AppFrame() {
     }
 
     function handleHealthRefresh(event: Event) {
-      const next = (event as CustomEvent<HealthRefreshDetail>).detail;
+      const next = (event as CustomEvent<HealthResponse>).detail;
       setHealthTier(deriveOverallHealthTier(next));
     }
 

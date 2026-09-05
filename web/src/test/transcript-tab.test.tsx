@@ -38,9 +38,7 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-const healthDeps: Record<string, HealthDependency> = {
-  cuda: { status: "unavailable", message: "CUDA not available; CPU will be used" },
-};
+const healthDeps: Record<string, HealthDependency> = {};
 
 function renderTab(config: BibilabConfig = baseConfig) {
   return render(

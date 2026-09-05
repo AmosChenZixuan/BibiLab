@@ -30,7 +30,6 @@ vi.mock("../lib/api", () => {
         llm: { status: "ok", message: "" },
         asr_model: { status: "ok", message: "" },
         ffmpeg: { status: "ok", message: "" },
-        cuda: { status: "unavailable", message: "CPU only" },
         embedding_model: { status: "ok", message: "" },
       },
     }),
@@ -137,7 +136,6 @@ describe("settings page", () => {
           llm: { status: "ok", message: "" },
           asr_model: { status: "ok", message: "" },
           ffmpeg: { status: "ok", message: "" },
-          cuda: { status: "unavailable", message: "CPU only" },
           embedding_model: { status: "ok", message: "" },
         },
       })
@@ -148,7 +146,6 @@ describe("settings page", () => {
           llm: { status: "error", message: "base_url not configured" },
           asr_model: { status: "ok", message: "" },
           ffmpeg: { status: "ok", message: "" },
-          cuda: { status: "unavailable", message: "CPU only" },
           embedding_model: { status: "ok", message: "" },
         },
       });
