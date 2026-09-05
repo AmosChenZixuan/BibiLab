@@ -496,8 +496,7 @@ class WorkerLoop:
         # attempt so this download starts clean and never resumes onto stale bytes.
         await asyncio.to_thread(purge_download_files, video_meta.video_id)
 
-        video_path: Path = await asyncio.to_thread(
-            self._get_adapter(video_meta.platform).download,
+        video_path: Path = await self._get_adapter(video_meta.platform).download(
             video_meta.video_id,
             video_meta.source_url,
             self._get_config().backend.download_connections,

@@ -2,7 +2,7 @@
 
 import uuid
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -49,7 +49,7 @@ def _make_cancel_job(home: Path, job_id: str, video_id: str) -> tuple[dict, "Wor
     tmp_wav = home / "downloads" / f"{video_id}.wav"
     tmp_wav.write_bytes(b"fake wav")
     adapter = MagicMock()
-    adapter.download = MagicMock(return_value=tmp_video)
+    adapter.download = AsyncMock(return_value=tmp_video)
     worker = WorkerLoop(concurrency=1, adapter=adapter, home=home)
     return job, worker, tmp_wav, tmp_video
 
@@ -67,10 +67,10 @@ def _assert_cleanup_received_full_job(cleanup_calls: list, video_id: str) -> Non
 async def test_pipeline_cancel_during_download_cleanup_receives_full_job(setup_pipeline_test: Path):
     """Cancelling while the download stage is in flight — before extract_audio
     or transcribe ever run — still purges with the full job dict via the
-    collapsed CancelledError handler in _run_job."""
+    collapsed CancelledError handler in _run_job. download() is awaited
+    directly now (no asyncio.to_thread), so the block is a plain asyncio.Event
+    rather than the threading.Event thread_signal() needs."""
     import asyncio
-
-    from tests import thread_signal
 
     await bootstrap_db()
     await create_list("list-1", "Test", "2026-01-01T00:00:00")
@@ -78,12 +78,12 @@ async def test_pipeline_cancel_during_download_cleanup_receives_full_job(setup_p
     job, worker, tmp_wav, tmp_video = _make_cancel_job(setup_pipeline_test, "job-cleanup-test", "BVcleanup123")
     cleanup_calls: list = []
 
-    started, release, signal_started = thread_signal()
+    started = asyncio.Event()
+    never_set = asyncio.Event()
 
-    def _blocking_download(video_id, source_url, connections):
-        signal_started()
-        release.wait()
-        return tmp_video
+    async def _blocking_download(video_id, source_url, connections):
+        started.set()
+        await never_set.wait()
 
     worker._adapter.download.side_effect = _blocking_download
 
@@ -97,7 +97,6 @@ async def test_pipeline_cancel_during_download_cleanup_receives_full_job(setup_p
         await started.wait()
 
         worker.cancel_job(job["id"])
-        release.set()
 
         with pytest.raises(asyncio.CancelledError):
             await task

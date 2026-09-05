@@ -4,7 +4,7 @@ _run_job dispatch/exception handling, _run_artifact_job error paths, start/stop.
 import json
 import uuid
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -523,7 +523,7 @@ async def test_run_job_no_speech_sets_stage_prefixed_error(tmp_bibilab_home: Pat
     job = {"id": job_id, "type": "ingest", "meta": json.dumps(meta)}
 
     mock_adapter = MagicMock()
-    mock_adapter.download = MagicMock(return_value=tmp_video)
+    mock_adapter.download = AsyncMock(return_value=tmp_video)
     worker = WorkerLoop(concurrency=1, adapter=mock_adapter, home=tmp_bibilab_home)
     worker._in_flight.add(job_id)
 
@@ -1158,13 +1158,13 @@ class TestDownloadHygieneAndCap:
         seen = {}
         final = downloads_dir / "BVstale.m4a"
 
-        def fake_download(video_id: str, source_url: str, connections: int):
+        async def fake_download(video_id: str, source_url: str, connections: int):
             seen["stale_existed_at_download"] = stale.exists()
             final.write_bytes(b"new audio")
             return final
 
         adapter = MagicMock()
-        adapter.download = MagicMock(side_effect=fake_download)
+        adapter.download = fake_download
         worker = WorkerLoop(adapter=adapter, home=tmp_bibilab_home)
 
         with patch("bibilab.worker._download_cover", MagicMock(return_value=True)):
@@ -1179,29 +1179,24 @@ class TestDownloadHygieneAndCap:
         _stage_download are bounded only by the outer job-concurrency gate
         (which this test bypasses by calling _stage_download directly)."""
         import asyncio
-        import threading
-        import time
 
         await bootstrap_db()
 
-        lock = threading.Lock()
         active = 0
         peak = 0
 
-        def fake_download(video_id: str, source_url: str, connections: int):
+        async def fake_download(video_id: str, source_url: str, connections: int):
             nonlocal active, peak
-            with lock:
-                active += 1
-                peak = max(peak, active)
-            time.sleep(0.05)
-            with lock:
-                active -= 1
+            active += 1
+            peak = max(peak, active)
+            await asyncio.sleep(0.05)
+            active -= 1
             p = downloads_dir / f"{video_id}.m4a"
             p.write_bytes(b"a")
             return p
 
         adapter = MagicMock()
-        adapter.download = MagicMock(side_effect=fake_download)
+        adapter.download = fake_download
         worker = WorkerLoop(adapter=adapter, home=tmp_bibilab_home, concurrency=1)
 
         with patch("bibilab.worker._download_cover", MagicMock(return_value=True)):
