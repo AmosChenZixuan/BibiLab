@@ -266,6 +266,79 @@ async def test_cancel_job_on_non_ingest_job_purges_nothing(tmp_bibilab_home: Pat
 
 
 @pytest.mark.asyncio
+async def test_cancel_job_on_digest_job_leaves_sections_unwritten(tmp_bibilab_home: Path, mock_call_llm):
+    """A digest (rerun) job cancelled mid-LLM-call goes through the same
+    collapsed CancelledError handler as ingest: the row is deleted, and since
+    the cancel lands before either of the two post-LLM writes, the section's
+    prior summary/keywords are left exactly as they were — no partial write."""
+    import asyncio
+    import threading
+
+    from bibilab.db import bootstrap_db, create_job, create_list, get_job, get_sections, write_source_with_segments
+    from bibilab.pipeline.digest import SectionDigest
+    from bibilab.pipeline.section import Section
+    from bibilab.pipeline.transcribe import WhisperSegment
+
+    await bootstrap_db()
+    await create_list("list-digest-cancel", "Digest Cancel Test", "2025-01-01T00:00:00Z")
+    source_id = "src-digest-cancel-001"
+    segs = [WhisperSegment(start=0.0, end=5.0, text="test transcript text", speaker=None)]
+    secs = [Section(seg_start=0, seg_end=0, token_count=5, timestamp_start=0.0, timestamp_end=5.0)]
+    await write_source_with_segments(
+        segments=segs,
+        sections=secs,
+        section_digests=[SectionDigest(summary="old section", keywords=["old"])],
+        source_id=source_id,
+        video_id="BVdigestcancel001",
+        platform="bilibili",
+        list_id="list-digest-cancel",
+        title="Digest Cancel Test",
+        cover_url=None,
+        source_url="https://bilibili.com/video/BVdigestcancel001",
+        duration_seconds=60,
+        uploader="TestUser",
+        language="en",
+        whisper_model="base",
+        ai_model="gpt-4o",
+        settings_snapshot={},
+    )
+
+    job_id = await create_job("digest", {"source_id": source_id, "list_id": "list-digest-cancel", "ui_lang": None})
+    job = {"id": job_id, "type": "digest", "meta": json.dumps({"source_id": source_id, "ui_lang": None})}
+
+    started = threading.Event()
+    release = threading.Event()
+
+    def _blocking_llm(*a, **k):
+        started.set()
+        release.wait()
+        return (
+            '{"summary": "new summary", "keywords": ["new"], '
+            '"series_name": null, "sequence_number": null, "season_number": null}'
+        )
+
+    mock_call_llm.side_effect = _blocking_llm
+
+    worker = WorkerLoop(home=tmp_bibilab_home)
+    worker._in_flight.add(job_id)
+
+    task = asyncio.create_task(worker._run_job(job))
+    worker._tasks[job_id] = task
+    while not started.is_set():
+        await asyncio.sleep(0.01)
+
+    worker.cancel_job(job_id)
+    release.set()
+
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert await get_job(job_id) is None
+    rows = await get_sections(source_id)
+    assert rows[0]["summary"] == "old section"
+
+
+@pytest.mark.asyncio
 async def test_run_job_auth_required_error(tmp_bibilab_home: Path):
     from bibilab.adapters.base import AuthRequiredError
     from bibilab.db import bootstrap_db, create_job

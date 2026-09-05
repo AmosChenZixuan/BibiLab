@@ -190,9 +190,9 @@ class WorkerLoop:
             logger.warning("Job %s needs auth (%s)", job_id, exc.resource_type)
             await update_job_status(job_id, JobStatus.NEEDS_AUTH.value, error=exc.resource_type)
         except asyncio.CancelledError:
-            # A cancel unwinds here from wherever the job was actually awaiting
-            # (not just at the old between-stage checkpoints), so the full
-            # purge-then-delete has to happen in this one place.
+            # A cancel unwinds here from wherever the job was actually
+            # awaiting, so the full purge-then-delete has to happen in this
+            # one place regardless of which stage was in flight.
             await asyncio.to_thread(cleanup_job_artifacts, job)
             await delete_job(job_id)
             raise

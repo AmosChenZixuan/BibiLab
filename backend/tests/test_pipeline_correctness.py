@@ -93,8 +93,7 @@ async def test_extract_audio_cancellation_stops_pipeline(setup_pipeline_test: Pa
         patch("bibilab.worker._download_cover", mock_dl_cover),
         patch("bibilab.worker.embed_chunks", mock_embed),
     ):
-        # _run_job (not _pipeline) so the pre-dispatch cancel check runs —
-        # that's the one _cancelled reader that survives #677.
+        # _run_job (not _pipeline) so the pre-dispatch cancel check runs.
         await worker._run_job(job)
 
     # Cancel was set before any stage ran, so no stage should be called
