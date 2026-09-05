@@ -111,7 +111,7 @@ def test_load_sherpa_sensevoice_resolves_spec_paths_and_provider(tmp_bibilab_hom
     _reset_sherpa_engine_cache()
     from bibilab.pipeline import transcribe as transcribe_mod
 
-    cfg = TranscriptionConfig(model="sensevoice-small", language="auto")
+    cfg = TranscriptionConfig(model="sensevoice-small", language="zh")
     models_root = tmp_bibilab_home / "models"
     stub = _sherpa_stub()
 
@@ -127,7 +127,7 @@ def test_load_sherpa_sensevoice_resolves_spec_paths_and_provider(tmp_bibilab_hom
     assert kwargs["model"] == str(sensevoice_dir / "model.int8.onnx")
     assert kwargs["tokens"] == str(sensevoice_dir / "tokens.txt")
     assert kwargs["provider"] == "cpu"
-    assert kwargs["language"] == "auto"
+    assert kwargs["language"] == "zh"
     stub.OfflineRecognizer.from_whisper.assert_not_called()
 
 
@@ -157,6 +157,29 @@ def test_load_sherpa_whisper_forces_english_regardless_of_cfg_language(tmp_bibil
     assert kwargs["language"] == "en"
     assert kwargs["task"] == "transcribe"
     stub.OfflineRecognizer.from_sense_voice.assert_not_called()
+
+
+def test_load_sherpa_large_v3_cache_collapses_zh_and_en(tmp_bibilab_home: Path) -> None:
+    """large-v3 always constructs with language='en' regardless of cfg.language
+    (see _load_sherpa). The cache key must drop language when it has no effect on
+    construction, so alternating large-v3 zh/en reuses the same engine instead of
+    rebuilding an identical one."""
+    _reset_sherpa_engine_cache()
+    from bibilab.pipeline import transcribe as transcribe_mod
+
+    models_root = tmp_bibilab_home / "models"
+    stub = _sherpa_stub()
+
+    with (
+        patch.dict(sys.modules, {"sherpa_onnx": stub}),
+        patch("bibilab.pipeline.transcribe.ensure", side_effect=lambda sid: _stub_ensure(models_root, sid)),
+        patch("bibilab.pipeline.transcribe.interpreting_provider", return_value="cpu"),
+    ):
+        e_zh = transcribe_mod._load_sherpa(TranscriptionConfig(model="large-v3", language="zh"))
+        e_en = transcribe_mod._load_sherpa(TranscriptionConfig(model="large-v3", language="en"))
+
+    assert e_zh is e_en
+    assert stub.OfflineRecognizer.from_whisper.call_count == 1
 
 
 def test_load_sherpa_vad_uses_measured_defaults(tmp_bibilab_home: Path):
@@ -218,9 +241,9 @@ def test_load_sherpa_caches_by_model_and_language(tmp_bibilab_home: Path):
         patch("bibilab.pipeline.transcribe.ensure", side_effect=lambda sid: _stub_ensure(models_root, sid)),
         patch("bibilab.pipeline.transcribe.interpreting_provider", return_value="cpu"),
     ):
-        e1 = transcribe_mod._load_sherpa(TranscriptionConfig(model="sensevoice-small", language="auto"))
-        e2 = transcribe_mod._load_sherpa(TranscriptionConfig(model="sensevoice-small", language="auto"))
-        e3 = transcribe_mod._load_sherpa(TranscriptionConfig(model="sensevoice-small", language="zh"))
+        e1 = transcribe_mod._load_sherpa(TranscriptionConfig(model="sensevoice-small", language="zh"))
+        e2 = transcribe_mod._load_sherpa(TranscriptionConfig(model="sensevoice-small", language="zh"))
+        e3 = transcribe_mod._load_sherpa(TranscriptionConfig(model="sensevoice-small", language="en"))
 
     assert e1 is e2
     assert e1 is not e3
@@ -239,7 +262,7 @@ def test_load_sherpa_builds_singleton_exactly_once_under_concurrent_entry(tmp_bi
     _reset_sherpa_engine_cache()
     from bibilab.pipeline import transcribe as transcribe_mod
 
-    cfg = TranscriptionConfig(model="sensevoice-small", language="auto")
+    cfg = TranscriptionConfig(model="sensevoice-small", language="zh")
     models_root = tmp_bibilab_home / "models"
     stub = _sherpa_stub()
 
@@ -278,9 +301,10 @@ def test_load_sherpa_builds_singleton_exactly_once_under_concurrent_entry(tmp_bi
     assert results[0] is results[1]
 
 
-def _fake_engine(recognized: list[tuple[str, str | None]], embeddings: list[list[float]]):
+def _fake_engine(recognized: list[str], embeddings: list[list[float]]):
     """A fake _SherpaEngine whose recognizer/spk_extractor streams return the given
-    per-span (text, lang) pairs and embeddings, in call order."""
+    per-span texts and embeddings, in call order. `stream.result.lang` is set to a
+    placeholder — production no longer reads it after #706."""
     from bibilab.pipeline.transcribe import _SherpaEngine
 
     recognizer = MagicMock()
@@ -288,9 +312,8 @@ def _fake_engine(recognized: list[tuple[str, str | None]], embeddings: list[list
 
     def make_asr_stream():
         stream = MagicMock()
-        text, lang = next(texts_iter)
-        stream.result.text = text
-        stream.result.lang = lang
+        stream.result.text = next(texts_iter)
+        stream.result.lang = "<|zh|>"  # placeholder; ignored by transcribe.py
         return stream
 
     recognizer.create_stream.side_effect = make_asr_stream
@@ -318,7 +341,7 @@ def test_transcribe_sherpa_does_not_hold_lock_during_inference(tmp_path: Path):
     from bibilab.pipeline import transcribe as transcribe_mod
     from bibilab.pipeline.transcribe import _transcribe_sherpa
 
-    engine = _fake_engine(recognized=[("你好", None)], embeddings=[[1.0, 0.0]])
+    engine = _fake_engine(recognized=["你好"], embeddings=[[1.0, 0.0]])
     lock_states_during_decode = []
     real_create_stream = engine.recognizer.create_stream
 
@@ -348,7 +371,7 @@ def test_transcribe_sherpa_assembles_segments_and_clusters_distinct_speakers(tmp
     from bibilab.pipeline.transcribe import _transcribe_sherpa
 
     engine = _fake_engine(
-        recognized=[("你好", None), ("再见", None)],
+        recognized=["你好", "再见"],
         embeddings=[[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],  # orthogonal -> distinct clusters
     )
     spans = [(0.0, 1.0), (1.0, 2.0)]
@@ -364,7 +387,7 @@ def test_transcribe_sherpa_clusters_similar_embeddings_as_one_speaker(tmp_path: 
     from bibilab.pipeline.transcribe import _transcribe_sherpa
 
     engine = _fake_engine(
-        recognized=[("你好", None), ("再见", None)],
+        recognized=["你好", "再见"],
         embeddings=[[1.0, 0.0, 0.0], [1.0, 0.0, 0.0]],  # identical -> same cluster
     )
     spans = [(0.0, 1.0), (1.0, 2.0)]
@@ -379,7 +402,7 @@ def test_transcribe_sherpa_skips_empty_text_spans(tmp_path: Path):
     from bibilab.pipeline.transcribe import _transcribe_sherpa
 
     engine = _fake_engine(
-        recognized=[("", None), ("你好", None)],
+        recognized=["", "你好"],
         embeddings=[[1.0, 0.0], [0.0, 1.0]],
     )
     spans = [(0.0, 1.0), (1.0, 2.0)]
@@ -405,7 +428,7 @@ def test_transcribe_sherpa_no_segments_returns_empty_and_none(tmp_path: Path):
 def test_transcribe_sherpa_detected_language_explicit_cfg_wins(tmp_path: Path):
     from bibilab.pipeline.transcribe import _transcribe_sherpa
 
-    engine = _fake_engine(recognized=[("你好", "en")], embeddings=[[1.0, 0.0]])
+    engine = _fake_engine(recognized=["你好"], embeddings=[[1.0, 0.0]])
     p1, p2, p3 = _patch_transcribe_sherpa(engine, spans=[(0.0, 1.0)])
     with p1, p2, p3:
         _, lang = _transcribe_sherpa(tmp_path / "a.wav", TranscriptionConfig(model="sensevoice-small", language="zh"))
@@ -419,10 +442,10 @@ def test_transcribe_sherpa_whisper_detected_language_forced_english(tmp_path: Pa
     non-English audio) stream result reports."""
     from bibilab.pipeline.transcribe import _transcribe_sherpa
 
-    engine = _fake_engine(recognized=[("hello", None)], embeddings=[[1.0, 0.0]])
+    engine = _fake_engine(recognized=["hello"], embeddings=[[1.0, 0.0]])
     p1, p2, p3 = _patch_transcribe_sherpa(engine, spans=[(0.0, 1.0)])
     with p1, p2, p3:
-        _, lang = _transcribe_sherpa(tmp_path / "a.wav", TranscriptionConfig(model="large-v3", language="auto"))
+        _, lang = _transcribe_sherpa(tmp_path / "a.wav", TranscriptionConfig(model="large-v3", language="en"))
 
     assert lang == "en"
 
@@ -434,7 +457,7 @@ def test_transcribe_sherpa_whisper_forces_english_even_with_mismatched_explicit_
     downstream and produce garbled punctuation."""
     from bibilab.pipeline.transcribe import _transcribe_sherpa
 
-    engine = _fake_engine(recognized=[("hello", None)], embeddings=[[1.0, 0.0]])
+    engine = _fake_engine(recognized=["hello"], embeddings=[[1.0, 0.0]])
     p1, p2, p3 = _patch_transcribe_sherpa(engine, spans=[(0.0, 1.0)])
     with p1, p2, p3:
         _, lang = _transcribe_sherpa(tmp_path / "a.wav", TranscriptionConfig(model="large-v3", language="zh"))
@@ -442,19 +465,21 @@ def test_transcribe_sherpa_whisper_forces_english_even_with_mismatched_explicit_
     assert lang == "en"
 
 
-def test_transcribe_sherpa_sensevoice_auto_uses_first_seen_recognizer_language(tmp_path: Path):
+def test_transcribe_sherpa_sensevoice_cfg_language_wins(tmp_path: Path):
+    """#706: auto mode is gone — explicit cfg.language is the only source of
+    detected_lang for sensevoice; the recognizer is forced to that language."""
     from bibilab.pipeline.transcribe import _transcribe_sherpa
 
     engine = _fake_engine(
-        recognized=[("你好", "zh"), ("hi", "en")],
+        recognized=["你好", "hi"],
         embeddings=[[1.0, 0.0], [0.0, 1.0]],
     )
     spans = [(0.0, 1.0), (1.0, 2.0)]
     p1, p2, p3 = _patch_transcribe_sherpa(engine, spans)
     with p1, p2, p3:
-        _, lang = _transcribe_sherpa(tmp_path / "a.wav", TranscriptionConfig(model="sensevoice-small", language="auto"))
+        _, lang = _transcribe_sherpa(tmp_path / "a.wav", TranscriptionConfig(model="sensevoice-small", language="zh"))
 
-    assert lang == "zh"  # first segment's reported language
+    assert lang == "zh"
 
 
 def test_transcribe_sherpa_cancel_flag_stops_decode_loop_promptly(tmp_path: Path):

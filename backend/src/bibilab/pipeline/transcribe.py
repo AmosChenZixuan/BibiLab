@@ -69,7 +69,7 @@ class _SherpaEngine:
 
 
 _sherpa_engine: _SherpaEngine | None = None
-_sherpa_engine_key: tuple[str, str] | None = None  # (model, language)
+_sherpa_engine_key: tuple[str, ...] | None = None  # (model,) for large-v3, (model, language) for sensevoice
 
 # Guards singleton construction only, not inference. A shared sherpa model was
 # measured safely serving concurrent workers with bit-identical output, so
@@ -80,10 +80,11 @@ _transcribe_lock = threading.Lock()
 def _load_sherpa(cfg: TranscriptionConfig) -> _SherpaEngine:
     global _sherpa_engine, _sherpa_engine_key
 
-    # Both cfg.model and cfg.language are real construction-time inputs to the
-    # recognizer (VAD/speaker never vary by either) — one cache, keyed on both,
-    # reuses the existing single-keyed-singleton shape rather than splitting it.
-    key = (cfg.model, cfg.language)
+    # cfg.model is a real construction-time input for both engines; cfg.language
+    # matters for SenseVoice (passed to the recognizer) but is forced to "en" for
+    # large-v3 (see below) — drop language from the key when it has no effect so
+    # alternating large-v3 zh/en doesn't rebuild an identical engine.
+    key = (cfg.model,) if cfg.model == "large-v3" else (cfg.model, cfg.language)
     with _transcribe_lock:
         if _sherpa_engine is not None and _sherpa_engine_key == key:
             return _sherpa_engine
@@ -209,14 +210,14 @@ def _transcribe_sherpa(
         samples, rate = sf.read(str(audio_path), dtype="float32", always_2d=False)
         spans = _vad_spans(engine.vad_cfg, samples, rate)
 
-        recognized: list[tuple[str, str | None]] = []
+        recognized: list[str] = []
         for start, end in spans:
             if cancel is not None and cancel.is_set():
                 raise PipelineError("transcription cancelled")
             stream = engine.recognizer.create_stream()
             stream.accept_waveform(rate, samples[int(start * rate) : int(end * rate)])
             engine.recognizer.decode_stream(stream)
-            recognized.append((stream.result.text.strip(), stream.result.lang or None))
+            recognized.append(stream.result.text.strip())
 
         embeddings = []
         for start, end in spans:
@@ -232,25 +233,19 @@ def _transcribe_sherpa(
         raise
 
     segments: list[WhisperSegment] = []
-    detected_lang: str | None = None
-    for (start, end), (text, lang), label in zip(spans, recognized, labels, strict=True):
+    for (start, end), text, label in zip(spans, recognized, labels, strict=True):
         if not text:
             continue
         segments.append(WhisperSegment(start=start, end=end, text=text, speaker=f"SPK_{label}"))
-        if detected_lang is None and lang:
-            detected_lang = lang
 
     if not segments:
         logger.warning("sherpa-onnx returned no segments for %s", audio_path)
         return [], None
 
+    # large-v3 wins because its recognizer is hard-coded to "en" (see _load_sherpa).
     if cfg.model == "large-v3":
-        # Wins over an explicit cfg.language: the recognizer is always constructed
-        # with language="en" (see _load_sherpa), so the decoded text is English
-        # regardless of what cfg.language asked for — reporting cfg.language here
-        # would send genuinely English text into the wrong-language punctuation model.
         detected_lang = "en"
-    elif cfg.language and cfg.language != "auto":
+    else:
         detected_lang = cfg.language
     return segments, detected_lang
 

@@ -3,7 +3,7 @@ import logging
 import os
 import threading
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, model_validator
 
@@ -73,7 +73,9 @@ class AIConfig(BaseModel):
 
 class TranscriptionConfig(BaseModel):
     model: str = "sensevoice-small"
-    language: str = "auto"  # auto | zh | en
+    # SenseVoice's per-segment lang-id is unreliable on short/silent spans —
+    # user declares the audio language explicitly so the recognizer is forced.
+    language: Literal["zh", "en"] = "zh"
 
 
 class BackendConfig(BaseModel):

@@ -146,7 +146,7 @@ Registry dispatch, per-platform behavior, two-phase resolve, and bilibili auth a
 {
   "accounts": { "bilibili": { "cookie": "", "username": "", "avatar_url": "" } },
   "ai": { "protocol": "openai|anthropic", "model": "", "api_key": "", "base_url": "https://api.openai.com/v1", "output_language": "ui", "context_window": 128000, "max_output_tokens": 16384 },
-  "transcription": { "model": "sensevoice-small|large-v3", "language": "auto" },
+  "transcription": { "model": "sensevoice-small|large-v3", "language": "zh" },
   "backend": { "port": 8765, "max_concurrent_jobs": 4, "cors_origins": [...] },
   "rag": { "max_distance": 0.8, "reranking_enabled": true, "hybrid_enabled": true, "debug_prompts": false }
 }
