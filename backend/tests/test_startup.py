@@ -19,7 +19,8 @@ async def test_health_returns_200(client: httpx.AsyncClient):
     deps = data["dependencies"]
     assert "backend" in deps
     assert deps["backend"]["status"] == "ok"
-    assert all(k in deps for k in ("llm", "asr_model", "ffmpeg", "cuda", "embedding_model", "diarization_model"))
+    assert all(k in deps for k in ("llm", "asr_model", "ffmpeg", "embedding_model", "diarization_model"))
+    assert "cuda" not in deps
     assert "bilibili_session" not in deps
 
 

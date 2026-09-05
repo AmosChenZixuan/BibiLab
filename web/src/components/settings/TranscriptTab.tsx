@@ -8,6 +8,14 @@ import type { BibilabConfig, HealthDependency, ModelInfo } from "@/lib/types";
 
 import { Select, SettingsField } from "@/components/ui";
 
+// ponytail: no consumer now that transcription runs on sherpa-onnx CPU-only. Kept — not
+// deleted — so the markup/ids/i18n copy don't need rebuilding if GPU acceleration
+// returns for embedding/reranker. Its local state is intentionally NOT wired to
+// persistence: there's no backend field to save to, and a future GPU config would
+// likely be a different shape anyway — reactivating this means adding that field
+// and rewiring save/load, not just flipping this flag.
+const SHOW_DEVICE_SETTING = false;
+
 type TranscriptTabProps = {
   config: BibilabConfig;
   dependencies: Record<string, HealthDependency>;
@@ -17,6 +25,7 @@ type TranscriptTabProps = {
 export function TranscriptTab({ config, dependencies, onBlur }: TranscriptTabProps) {
   const { t } = useLanguage();
   const [localTranscription, setLocalTranscription] = useState(config.transcription);
+  const [device, setDevice] = useState("cpu");
   const [models, setModels] = useState<ModelInfo[]>([]);
   const modelId = useId();
   const deviceId = useId();
@@ -94,24 +103,23 @@ export function TranscriptTab({ config, dependencies, onBlur }: TranscriptTabPro
         </div>
       </SettingsField>
 
-      <SettingsField
-        label={t("settings.device")}
-        hint={cudaSupported ? t("settings.cudaAvailable") : t("settings.cudaUnavailable")}
-        htmlFor={deviceId}
-      >
-        <Select
-          aria-label={t("settings.device")}
-          id={deviceId}
-          onBlur={handleBlur}
-          onChange={(event) =>
-            setLocalTranscription((current) => ({ ...current, device: event.target.value }))
-          }
-          value={localTranscription.device}
+      {SHOW_DEVICE_SETTING && (
+        <SettingsField
+          label={t("settings.device")}
+          hint={cudaSupported ? t("settings.cudaAvailable") : t("settings.cudaUnavailable")}
+          htmlFor={deviceId}
         >
-          <option value="cpu">CPU</option>
-          <option value="cuda" disabled={!cudaSupported}>CUDA</option>
-        </Select>
-      </SettingsField>
+          <Select
+            aria-label={t("settings.device")}
+            id={deviceId}
+            onChange={(event) => setDevice(event.target.value)}
+            value={device}
+          >
+            <option value="cpu">CPU</option>
+            <option value="cuda" disabled={!cudaSupported}>CUDA</option>
+          </Select>
+        </SettingsField>
+      )}
 
       <SettingsField
         label={t("settings.transcriptionLanguage")}

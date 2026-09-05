@@ -101,7 +101,6 @@ vi.mock("../lib/api", () => {
     getHealth: vi.fn().mockResolvedValue({
       overall: "ok",
       dependencies: {
-        cuda: { status: "ok", message: "" },
         embedding_model: { status: "ok", message: "" },
       },
     }),

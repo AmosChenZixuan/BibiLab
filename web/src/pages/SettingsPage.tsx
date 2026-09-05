@@ -27,8 +27,7 @@ function shouldRefreshHealth(current: BibilabConfig, next: BibilabConfig) {
     current.ai.model !== next.ai.model ||
     current.ai.api_key !== next.ai.api_key ||
     current.ai.base_url !== next.ai.base_url ||
-    current.transcription.model !== next.transcription.model ||
-    current.transcription.device !== next.transcription.device
+    current.transcription.model !== next.transcription.model
   );
 }
 
@@ -95,7 +94,7 @@ export function SettingsPage() {
       const nextHealth = await api.getHealth();
       if (nextHealth) {
         setDependencies(nextHealth.dependencies ?? {});
-        notifyHealthChanged(nextHealth, savedConfig.transcription.device);
+        notifyHealthChanged(nextHealth);
       }
     }
   }
@@ -126,15 +125,7 @@ export function SettingsPage() {
       <section className="grid items-start gap-5 md:grid-cols-5">
         <div className="flex flex-col gap-1 md:col-span-1">
           {TABS.map((tab) => {
-            let healthTier = deriveDependencyHealthTier(dependencies, tab.dependencyKeys);
-            if (
-              tab.key === "transcript" &&
-              healthTier === "healthy" &&
-              dependencies.cuda?.status === "ok" &&
-              config?.transcription.device !== "cuda"
-            ) {
-              healthTier = "throttled";
-            }
+            const healthTier = deriveDependencyHealthTier(dependencies, tab.dependencyKeys);
             const isActive = activeTab === tab.key;
 
             return (

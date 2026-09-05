@@ -5,7 +5,7 @@ import threading
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, field_validator, model_validator
+from pydantic import BaseModel, model_validator
 
 logger = logging.getLogger(__name__)
 
@@ -73,15 +73,7 @@ class AIConfig(BaseModel):
 
 class TranscriptionConfig(BaseModel):
     model: str = "sensevoice-small"
-    device: str = "cuda"  # cuda | cpu
     language: str = "auto"  # auto | zh | en
-
-    @field_validator("device")
-    @classmethod
-    def _check_device(cls, v: str) -> str:
-        if v not in ("cuda", "cpu"):
-            raise ValueError(f"device must be 'cuda' or 'cpu', got {v!r}")
-        return v
 
 
 class BackendConfig(BaseModel):

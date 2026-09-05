@@ -41,16 +41,13 @@ const baseConfig: BibilabConfig = {
   ai: { protocol: "openai", model: "gpt-4o", api_key: "", base_url: "", context_window: 128000, max_output_tokens: 16384 },
   transcription: {
     model: "large-v3",
-    device: "cpu",
     language: "auto",
   },
   backend: { port: 8765, max_concurrent_jobs: 2, cors_origins: ["http://localhost", "http://localhost:5173", "http://127.0.0.1", "http://127.0.0.1:5173"] },
   rag: { max_distance: 0.8, reranking_enabled: true, hybrid_enabled: true, debug_prompts: false },
 };
 
-const healthDeps: Record<string, HealthDependency> = {
-  cuda: { status: "unavailable", message: "CUDA not available; CPU will be used" },
-};
+const healthDeps: Record<string, HealthDependency> = {};
 
 afterEach(() => {
   vi.clearAllMocks();

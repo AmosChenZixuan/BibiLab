@@ -10,19 +10,12 @@ export const HEALTH_META: Record<HealthTier, { label: string; className: string 
 
 const HEALTHY_STATUSES = new Set(["ok", "configured"]);
 
-export function deriveOverallHealthTier(
-  health: HealthResponse,
-  device?: string,
-): HealthTier {
+export function deriveOverallHealthTier(health: HealthResponse): HealthTier {
   if (health.overall === "error") {
     return "unavailable";
   }
 
-  const cudaAvailable = health.dependencies.cuda?.status === "ok";
-  if (
-    (cudaAvailable && device !== "cuda") ||
-    health.dependencies.embedding_model?.status !== "ok"
-  ) {
+  if (health.dependencies.embedding_model?.status !== "ok") {
     return "throttled";
   }
 
