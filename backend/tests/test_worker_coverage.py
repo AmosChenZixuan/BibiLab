@@ -136,7 +136,12 @@ async def test_run_job_cancelled_before_start(tmp_bibilab_home: Path):
 
 @pytest.mark.asyncio
 async def test_cancel_frees_slot_without_waiting_for_stage(tmp_bibilab_home: Path):
-    """cancel_job frees the slot without waiting for the running stage."""
+    """cancel_job frees the slot without waiting for the running stage.
+
+    Deliberately does not register the task in worker._tasks, so cancel_job
+    only exercises the _in_flight-discard path here (the #675 behaviour this
+    test pins), not the task.cancel() path added later — that one has its
+    own coverage in test_cancel_job_cancels_running_task_mid_stage."""
     import asyncio
 
     from bibilab.db import bootstrap_db, create_job
@@ -209,6 +214,48 @@ async def test_cancel_job_cancels_running_task_mid_stage(tmp_bibilab_home: Path)
 
 
 @pytest.mark.asyncio
+async def test_cancel_handler_reraises_even_if_cleanup_fails(tmp_bibilab_home: Path):
+    """A disk or DB hiccup while cleaning up a cancelled job (Windows file
+    lock, a busy SQLite connection) must not swallow the CancelledError —
+    that would leave `raise` unreachable and the row stuck in a
+    non-terminal status until reset_stuck_jobs() requeues it. The task must
+    still end up cancelled, and bookkeeping still gets cleared, even though
+    cleanup itself failed."""
+    import asyncio
+
+    from bibilab.db import bootstrap_db, create_job
+
+    await bootstrap_db()
+    job_id = await create_job("ingest", {})
+
+    never_set = asyncio.Event()
+
+    async def _blocked_pipeline(job):
+        await never_set.wait()
+
+    worker = WorkerLoop(home=tmp_bibilab_home)
+    worker._in_flight.add(job_id)
+    job = {"id": job_id, "type": "ingest", "meta": "{}"}
+
+    with (
+        patch.object(worker, "_pipeline", _blocked_pipeline),
+        patch("bibilab.worker.cleanup_job_artifacts", side_effect=OSError("mock EBUSY")),
+    ):
+        task = asyncio.create_task(worker._run_job(job))
+        worker._tasks[job_id] = task
+        await asyncio.sleep(0)
+
+        worker.cancel_job(job_id)
+
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    assert job_id not in worker._in_flight
+    assert job_id not in worker._cancelled
+    assert job_id not in worker._tasks
+
+
+@pytest.mark.asyncio
 async def test_cancel_job_is_idempotent_and_safe_for_unknown_jobs(tmp_bibilab_home: Path):
     """Cancelling a job with no tracked task (never started, or already
     finished) is a no-op — no KeyError. Covers double-cancel too."""
@@ -272,12 +319,12 @@ async def test_cancel_job_on_digest_job_leaves_sections_unwritten(tmp_bibilab_ho
     the cancel lands before either of the two post-LLM writes, the section's
     prior summary/keywords are left exactly as they were — no partial write."""
     import asyncio
-    import threading
 
     from bibilab.db import bootstrap_db, create_job, create_list, get_job, get_sections, write_source_with_segments
     from bibilab.pipeline.digest import SectionDigest
     from bibilab.pipeline.section import Section
     from bibilab.pipeline.transcribe import WhisperSegment
+    from tests import thread_signal
 
     await bootstrap_db()
     await create_list("list-digest-cancel", "Digest Cancel Test", "2025-01-01T00:00:00Z")
@@ -306,11 +353,10 @@ async def test_cancel_job_on_digest_job_leaves_sections_unwritten(tmp_bibilab_ho
     job_id = await create_job("digest", {"source_id": source_id, "list_id": "list-digest-cancel", "ui_lang": None})
     job = {"id": job_id, "type": "digest", "meta": json.dumps({"source_id": source_id, "ui_lang": None})}
 
-    started = threading.Event()
-    release = threading.Event()
+    started, release, signal_started = thread_signal()
 
     def _blocking_llm(*a, **k):
-        started.set()
+        signal_started()
         release.wait()
         return (
             '{"summary": "new summary", "keywords": ["new"], '
@@ -324,8 +370,7 @@ async def test_cancel_job_on_digest_job_leaves_sections_unwritten(tmp_bibilab_ho
 
     task = asyncio.create_task(worker._run_job(job))
     worker._tasks[job_id] = task
-    while not started.is_set():
-        await asyncio.sleep(0.01)
+    await started.wait()
 
     worker.cancel_job(job_id)
     release.set()
@@ -617,19 +662,18 @@ async def test_stage_transcribe_cancel_wins_over_no_speech(tmp_bibilab_home: Pat
     property now holds because task.cancel() unwinds the await before the
     no-speech raise ever runs."""
     import asyncio
-    import threading
 
     from bibilab.config import BibilabConfig
     from bibilab.db import bootstrap_db, create_job, get_job
+    from tests import thread_signal
 
     await bootstrap_db()
     job_id = await create_job("ingest", {})
 
-    started = threading.Event()
-    release = threading.Event()
+    started, release, signal_started = thread_signal()
 
     def _blocking_transcribe(*a, **k):
-        started.set()
+        signal_started()
         release.wait()
         return [], None
 
@@ -645,8 +689,60 @@ async def test_stage_transcribe_cancel_wins_over_no_speech(tmp_bibilab_home: Pat
 
     with patch.object(loop, "_pipeline", _pipeline_stub):
         task = asyncio.create_task(loop._run_job(job))
-        while not started.is_set():
-            await asyncio.sleep(0.01)
+        await started.wait()
+        task.cancel()
+        release.set()
+
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    assert await get_job(job_id) is None
+
+
+@pytest.mark.asyncio
+async def test_stage_transcribe_cancel_wins_while_punctuate_runs(tmp_bibilab_home: Path, monkeypatch):
+    """Same guarantee as the test above, extended past transcribe(): a cancel
+    while punctuate() is still in flight also wins over the no-speech raise.
+
+    This does not by itself prove the narrower gap the awaiting `asyncio.sleep(0)`
+    in _stage_transcribe exists to close — a cancel requested strictly after
+    punctuate() has already returned, in the zero-width synchronous stretch
+    before the no-speech check, unwinds at that sleep(0) rather than here.
+    That specific window has no yield point to hang a deterministic test off
+    of without faking asyncio's own scheduling; its correctness rests on
+    asyncio's documented guarantee that a pending cancellation is delivered
+    at the very next checkpoint, which the sleep(0) provides."""
+    import asyncio
+
+    from bibilab.config import BibilabConfig
+    from bibilab.db import bootstrap_db, create_job, get_job
+    from tests import thread_signal
+
+    await bootstrap_db()
+    job_id = await create_job("ingest", {})
+
+    started, release, signal_started = thread_signal()
+
+    monkeypatch.setattr("bibilab.worker.transcribe", lambda *a, **k: ([object()], None))
+
+    def _blocking_punctuate(*a, **k):
+        signal_started()
+        release.wait()
+        return []
+
+    monkeypatch.setattr("bibilab.worker.punctuate", _blocking_punctuate)
+
+    loop = WorkerLoop(config=BibilabConfig(), home=tmp_bibilab_home)
+    wav = tmp_bibilab_home / "a.wav"
+    wav.write_bytes(b"")
+    job = {"id": job_id, "type": "ingest", "meta": "{}"}
+
+    async def _pipeline_stub(_job):
+        await loop._stage_transcribe(_job, wav, "src-1", BibilabConfig())
+
+    with patch.object(loop, "_pipeline", _pipeline_stub):
+        task = asyncio.create_task(loop._run_job(job))
+        await started.wait()
         task.cancel()
         release.set()
 
@@ -755,6 +851,53 @@ async def test_worker_start_stop(tmp_bibilab_home: Path):
     assert worker._task is not None
     await worker.stop()
     assert worker._running is False
+
+
+# ---------------------------------------------------------------------------
+# _dispatch_pending — the queued-job dispatch race
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_dispatch_pending_claims_and_runs_a_real_queued_job(tmp_bibilab_home: Path):
+    """The ordinary path: a genuinely still-queued job is claimed and gets a
+    tracked task."""
+    from bibilab.db import bootstrap_db, create_job
+
+    await bootstrap_db()
+    job_id = await create_job("ingest", {})
+
+    worker = WorkerLoop(home=tmp_bibilab_home)
+    ran = []
+
+    async def _fake_run_job(job):
+        ran.append(job["id"])
+
+    with patch.object(worker, "_run_job", _fake_run_job):
+        await worker._dispatch_pending()
+        assert job_id in worker._tasks
+        await worker._tasks[job_id]
+
+    assert ran == [job_id]
+
+
+@pytest.mark.asyncio
+async def test_dispatch_pending_skips_a_job_deleted_between_read_and_claim(tmp_bibilab_home: Path):
+    """A job the router already deleted (cancelled while still queued)
+    between _dispatch_pending's read and its claim step must not be
+    dispatched — this is the race claim_queued_job exists to close.
+    Simulated directly: the pending snapshot names a job id that was never
+    actually written to the DB, standing in for one deleted out from under
+    the loop after the read but before the claim."""
+    await bootstrap_db()
+    worker = WorkerLoop(home=tmp_bibilab_home)
+    ghost_job = {"id": "job-ghost", "status": "queued", "type": "ingest", "meta": "{}"}
+
+    with patch("bibilab.worker.get_pending_jobs", return_value=[ghost_job]):
+        await worker._dispatch_pending()
+
+    assert "job-ghost" not in worker._in_flight
+    assert "job-ghost" not in worker._tasks
 
 
 # ---------------------------------------------------------------------------

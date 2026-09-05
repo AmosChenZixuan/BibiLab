@@ -13,6 +13,7 @@ from bibilab.cleanup import cleanup_job_artifacts, purge_download_files
 from bibilab.config import BibilabConfig, bibilab_home, load_config
 from bibilab.db import (
     apply_digest_facets,
+    claim_queued_job,
     create_artifact,
     delete_job,
     get_list,
@@ -154,15 +155,23 @@ class WorkerLoop:
     async def _loop(self) -> None:
         while self._running:
             if len(self._in_flight) < self._concurrency:
-                pending = [dict(j) for j in await get_pending_jobs()]
-                queued = [
-                    j for j in pending if j["status"] == JobStatus.QUEUED.value and j["id"] not in self._in_flight
-                ]
-                slots = self._concurrency - len(self._in_flight)
-                for job in queued[:slots]:
-                    self._in_flight.add(job["id"])
-                    self._tasks[job["id"]] = asyncio.create_task(self._run_job(job))
+                await self._dispatch_pending()
             await asyncio.sleep(2)
+
+    async def _dispatch_pending(self) -> None:
+        pending = [dict(j) for j in await get_pending_jobs()]
+        queued = [j for j in pending if j["status"] == JobStatus.QUEUED.value and j["id"] not in self._in_flight]
+        slots = self._concurrency - len(self._in_flight)
+        for job in queued[:slots]:
+            # A cancel can land between this read and here (the router
+            # deletes a queued job's row directly, with no task yet to
+            # cancel). Re-confirming the row is still queued right before
+            # creating the task closes that race atomically — no flag to
+            # set in advance and never clean up.
+            if not await claim_queued_job(job["id"]):
+                continue
+            self._in_flight.add(job["id"])
+            self._tasks[job["id"]] = asyncio.create_task(self._run_job(job))
 
     async def _run_job(self, job: dict) -> None:
         job_id = job["id"]
@@ -192,9 +201,20 @@ class WorkerLoop:
         except asyncio.CancelledError:
             # A cancel unwinds here from wherever the job was actually
             # awaiting, so the full purge-then-delete has to happen in this
-            # one place regardless of which stage was in flight.
-            await asyncio.to_thread(cleanup_job_artifacts, job)
-            await delete_job(job_id)
+            # one place regardless of which stage was in flight. Each step
+            # is its own try/except: a disk or DB hiccup here must never
+            # replace the CancelledError below (raise would become
+            # unreachable, leaving the row stuck in a non-terminal status
+            # forever) and must never stop the other step from at least
+            # being attempted.
+            try:
+                await asyncio.to_thread(cleanup_job_artifacts, job)
+            except Exception:
+                logger.exception("Job %s: cleanup_job_artifacts failed during cancel", job_id)
+            try:
+                await delete_job(job_id)
+            except Exception:
+                logger.exception("Job %s: delete_job failed during cancel", job_id)
             raise
         except PipelineError as exc:
             logger.exception("Job %s pipeline error: %s", job_id, exc)
@@ -542,6 +562,14 @@ class WorkerLoop:
         # large-v3's English-only output through zh-gated punctuation/chunking.
         effective_language = detected_language
         sentence_segments = await asyncio.to_thread(punctuate, vad_segments, effective_language)
+
+        # A cancel requested while punctuate was running is delivered at the
+        # next await — without one here, a cancel landing in the gap between
+        # punctuate returning and the raise below has no checkpoint to land
+        # on, and would surface as a FAILED no-speech job instead of a clean
+        # cancel. asyncio guarantees a pending cancellation is thrown into
+        # this exact yield if one is already pending.
+        await asyncio.sleep(0)
 
         if not sentence_segments:
             # Music-only / speech-less video: fail loud here instead of an

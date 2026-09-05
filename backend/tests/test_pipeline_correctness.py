@@ -151,7 +151,8 @@ async def test_pipeline_cancel_during_download_cleanup_receives_full_job(setup_p
     or transcribe ever run — still purges with the full job dict via the
     collapsed CancelledError handler in _run_job."""
     import asyncio
-    import threading
+
+    from tests import thread_signal
 
     await bootstrap_db()
     await create_list("list-1", "Test", "2026-01-01T00:00:00")
@@ -159,11 +160,10 @@ async def test_pipeline_cancel_during_download_cleanup_receives_full_job(setup_p
     job, worker, tmp_wav, tmp_video = _make_cancel_job(setup_pipeline_test, "job-cleanup-test", "BVcleanup123")
     cleanup_calls: list = []
 
-    started = threading.Event()
-    release = threading.Event()
+    started, release, signal_started = thread_signal()
 
     def _blocking_download(video_id, source_url, connections):
-        started.set()
+        signal_started()
         release.wait()
         return tmp_video
 
@@ -176,8 +176,7 @@ async def test_pipeline_cancel_during_download_cleanup_receives_full_job(setup_p
     ):
         task = asyncio.create_task(worker._run_job(job))
         worker._tasks[job["id"]] = task
-        while not started.is_set():
-            await asyncio.sleep(0.01)
+        await started.wait()
 
         worker.cancel_job(job["id"])
         release.set()
@@ -193,7 +192,8 @@ async def test_pipeline_mid_stage_cancel_cleanup_receives_full_job(setup_pipelin
     """Cancelling while transcribe is running (mid-stage, not a stage boundary)
     must purge with the full job dict."""
     import asyncio
-    import threading
+
+    from tests import thread_signal
 
     await bootstrap_db()
     await create_list("list-1", "Test", "2026-01-01T00:00:00")
@@ -201,11 +201,10 @@ async def test_pipeline_mid_stage_cancel_cleanup_receives_full_job(setup_pipelin
     job, worker, tmp_wav, _tmp_video = _make_cancel_job(setup_pipeline_test, "job-midcancel-test", "BVmidcancel1")
     cleanup_calls: list = []
 
-    started = threading.Event()
-    release = threading.Event()
+    started, release, signal_started = thread_signal()
 
     def _blocking_transcribe(*args, **kwargs):
-        started.set()
+        signal_started()
         release.wait()
         return [], None
 
@@ -216,8 +215,7 @@ async def test_pipeline_mid_stage_cancel_cleanup_receives_full_job(setup_pipelin
     ):
         task = asyncio.create_task(worker._run_job(job))
         worker._tasks[job["id"]] = task
-        while not started.is_set():
-            await asyncio.sleep(0.01)
+        await started.wait()
 
         worker.cancel_job(job["id"])
         release.set()
