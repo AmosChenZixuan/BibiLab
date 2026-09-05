@@ -165,6 +165,102 @@ async def test_cancel_frees_slot_without_waiting_for_stage(tmp_bibilab_home: Pat
 
 
 @pytest.mark.asyncio
+async def test_cancel_job_cancels_running_task_mid_stage(tmp_bibilab_home: Path):
+    """cancel_job now cancels the tracked task itself, unwinding an await
+    that lands inside a stage — not just at an old between-stage checkpoint,
+    which is the behaviour _abort_if_cancelled's polling could never provide.
+    Verifies the collapsed CancelledError handler purges with the full job
+    dict, deletes the row, and clears every bookkeeping set."""
+    import asyncio
+
+    from bibilab.db import bootstrap_db, create_job, get_job
+
+    await bootstrap_db()
+    job_id = await create_job("ingest", {})
+
+    never_set = asyncio.Event()
+    cleanup_calls = []
+
+    async def _blocked_pipeline(job):
+        await never_set.wait()
+
+    worker = WorkerLoop(home=tmp_bibilab_home)
+    worker._in_flight.add(job_id)
+    job = {"id": job_id, "type": "ingest", "meta": "{}"}
+
+    with (
+        patch.object(worker, "_pipeline", _blocked_pipeline),
+        patch("bibilab.worker.cleanup_job_artifacts", side_effect=cleanup_calls.append),
+    ):
+        task = asyncio.create_task(worker._run_job(job))
+        worker._tasks[job_id] = task
+        await asyncio.sleep(0)  # let _run_job reach the blocked await
+
+        worker.cancel_job(job_id)
+
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    assert cleanup_calls == [job]
+    assert await get_job(job_id) is None
+    assert job_id not in worker._in_flight
+    assert job_id not in worker._cancelled
+    assert job_id not in worker._tasks
+
+
+@pytest.mark.asyncio
+async def test_cancel_job_is_idempotent_and_safe_for_unknown_jobs(tmp_bibilab_home: Path):
+    """Cancelling a job with no tracked task (never started, or already
+    finished) is a no-op — no KeyError. Covers double-cancel too."""
+    worker = WorkerLoop(home=tmp_bibilab_home)
+
+    worker.cancel_job("never-existed")
+    worker.cancel_job("never-existed")  # double-cancel
+
+    assert "never-existed" in worker._cancelled
+    assert "never-existed" not in worker._tasks
+
+
+@pytest.mark.asyncio
+async def test_cancel_job_on_non_ingest_job_purges_nothing(tmp_bibilab_home: Path):
+    """Cancelling a model_download/artifact/digest job goes through the same
+    collapsed CancelledError handler; cleanup_job_artifacts no-ops for
+    non-ingest types, so nothing gets purged."""
+    import asyncio
+
+    from bibilab.db import bootstrap_db, create_job, get_job
+
+    await bootstrap_db()
+    job_id = await create_job("model_download", {"model_name": "x"})
+
+    never_set = asyncio.Event()
+    purge_calls = []
+
+    async def _blocked_download(job):
+        await never_set.wait()
+
+    worker = WorkerLoop(home=tmp_bibilab_home)
+    worker._in_flight.add(job_id)
+    job = {"id": job_id, "type": "model_download", "meta": json.dumps({"model_name": "x"})}
+
+    with (
+        patch.object(worker, "_download_model_job", _blocked_download),
+        patch("bibilab.worker.purge_download_files", side_effect=purge_calls.append),
+    ):
+        task = asyncio.create_task(worker._run_job(job))
+        worker._tasks[job_id] = task
+        await asyncio.sleep(0)
+
+        worker.cancel_job(job_id)
+
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    assert purge_calls == []
+    assert await get_job(job_id) is None
+
+
+@pytest.mark.asyncio
 async def test_run_job_auth_required_error(tmp_bibilab_home: Path):
     from bibilab.adapters.base import AuthRequiredError
     from bibilab.db import bootstrap_db, create_job
@@ -437,24 +533,48 @@ async def test_stage_transcribe_no_speech_raises_pipeline_error(tmp_bibilab_home
 
 @pytest.mark.asyncio
 async def test_stage_transcribe_cancel_wins_over_no_speech(tmp_bibilab_home: Path, monkeypatch):
-    """A job cancelled during transcription of a speech-less video ends as a
-    clean cancel (job deleted), not a FAILED no-speech error."""
+    """A job cancelled while decoding ends as a clean cancel (job deleted), not
+    a FAILED no-speech error — even though the segments would come back empty.
+    The old `_abort_if_cancelled` checkpoint that made this true is gone; the
+    property now holds because task.cancel() unwinds the await before the
+    no-speech raise ever runs."""
+    import asyncio
+    import threading
+
     from bibilab.config import BibilabConfig
     from bibilab.db import bootstrap_db, create_job, get_job
 
     await bootstrap_db()
     job_id = await create_job("ingest", {})
 
-    monkeypatch.setattr("bibilab.worker.transcribe", lambda *a, **k: ([], None))
+    started = threading.Event()
+    release = threading.Event()
+
+    def _blocking_transcribe(*a, **k):
+        started.set()
+        release.wait()
+        return [], None
+
+    monkeypatch.setattr("bibilab.worker.transcribe", _blocking_transcribe)
 
     loop = WorkerLoop(config=BibilabConfig(), home=tmp_bibilab_home)
-    loop.cancel_job(job_id)
     wav = tmp_bibilab_home / "a.wav"
     wav.write_bytes(b"")
+    job = {"id": job_id, "type": "ingest", "meta": "{}"}
 
-    result = await loop._stage_transcribe({"id": job_id, "type": "ingest", "meta": {}}, wav, "src-1", BibilabConfig())
+    async def _pipeline_stub(_job):
+        await loop._stage_transcribe(_job, wav, "src-1", BibilabConfig())
 
-    assert result is None
+    with patch.object(loop, "_pipeline", _pipeline_stub):
+        task = asyncio.create_task(loop._run_job(job))
+        while not started.is_set():
+            await asyncio.sleep(0.01)
+        task.cancel()
+        release.set()
+
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
     assert await get_job(job_id) is None
 
 

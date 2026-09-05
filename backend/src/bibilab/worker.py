@@ -111,6 +111,7 @@ class WorkerLoop:
         self._running = False
         self._cancelled: set[str] = set()
         self._in_flight: set[str] = set()
+        self._tasks: dict[str, asyncio.Task] = {}
 
     async def start(self) -> None:
         await reset_stuck_jobs()
@@ -130,9 +131,11 @@ class WorkerLoop:
 
     def cancel_job(self, job_id: str) -> None:
         self._cancelled.add(job_id)
-        # Free the slot now; the job winds down to its next
-        # _abort_if_cancelled checkpoint without holding up the queue.
+        # Free the slot now rather than waiting for the task to unwind.
         self._in_flight.discard(job_id)
+        task = self._tasks.get(job_id)
+        if task is not None:
+            task.cancel()
 
     def _get_adapter(self, platform: str) -> Any:
         # ponytail: injected test seam wins regardless of platform; key the
@@ -158,7 +161,7 @@ class WorkerLoop:
                 slots = self._concurrency - len(self._in_flight)
                 for job in queued[:slots]:
                     self._in_flight.add(job["id"])
-                    asyncio.create_task(self._run_job(job))
+                    self._tasks[job["id"]] = asyncio.create_task(self._run_job(job))
             await asyncio.sleep(2)
 
     async def _run_job(self, job: dict) -> None:
@@ -187,7 +190,11 @@ class WorkerLoop:
             logger.warning("Job %s needs auth (%s)", job_id, exc.resource_type)
             await update_job_status(job_id, JobStatus.NEEDS_AUTH.value, error=exc.resource_type)
         except asyncio.CancelledError:
-            # Re-raise CancelledError - don't swallow it as a job failure
+            # A cancel unwinds here from wherever the job was actually awaiting
+            # (not just at the old between-stage checkpoints), so the full
+            # purge-then-delete has to happen in this one place.
+            await asyncio.to_thread(cleanup_job_artifacts, job)
+            await delete_job(job_id)
             raise
         except PipelineError as exc:
             logger.exception("Job %s pipeline error: %s", job_id, exc)
@@ -201,6 +208,7 @@ class WorkerLoop:
         finally:
             self._in_flight.discard(job_id)
             self._cancelled.discard(job_id)
+            self._tasks.pop(job_id, None)
 
     async def _download_model_job(self, job: dict) -> None:
         job_id = job["id"]
@@ -433,24 +441,18 @@ class WorkerLoop:
             video_path = await self._stage_download(job, video_meta, source_id)
         except Exception as exc:
             raise PipelineError(f"[downloading] {exc}") from exc
-        if video_path is None:
-            return  # cancelled
 
         # Stage 2: Audio extraction
         try:
             wav_path = await self._stage_extract_audio(job, video_path, video_meta.duration_seconds)
         except Exception as exc:
             raise PipelineError(f"[transcribing] {exc}") from exc
-        if wav_path is None:
-            return  # cancelled
 
         # Stage 3: Transcription
         try:
             result = await self._stage_transcribe(job, wav_path, source_id, cfg)
         except Exception as exc:
             raise PipelineError(f"[transcribing] {exc}") from exc
-        if result is None:
-            return  # cancelled
         detected_language, effective_language, sentence_segments = result
 
         # Stage 4: Derive sections, chunk per-section, digest + embed in parallel
@@ -460,8 +462,6 @@ class WorkerLoop:
             )
         except Exception as exc:
             raise PipelineError(f"[processing] {exc}") from exc
-        if result is None:
-            return  # cancelled
         extraction, sections, section_digests = result
 
         # Stage 5: Persist source + segments + sections atomically, then cleanup
@@ -484,51 +484,25 @@ class WorkerLoop:
         await update_job_status(job_id, JobStatus.DONE.value, progress=100)
         logger.info("Job %s completed for video %s", job_id, video_id)
 
-    async def _abort_if_cancelled(self, job: dict) -> bool:
-        """If the job is cancelled, purge its artifacts, delete it, and report
-        True so the caller stops. Safe to call more than once within a stage.
-
-        Caller must pass the full job dict: cleanup_job_artifacts is a no-op
-        unless the job has type "ingest" and a parseable meta.video_id, so an
-        id-only snapshot would purge nothing. Discard the tracking flag only
-        after the delete lands — if cleanup or delete raises, the flag stays
-        set and the row is still marked failed by _run_job's handler."""
-        job_id = job["id"]
-        if job_id not in self._cancelled:
-            return False
-        await asyncio.to_thread(cleanup_job_artifacts, job)
-        await delete_job(job_id)
-        self._cancelled.discard(job_id)
-        return True
-
     async def _stage_download(
         self,
         job: dict,
         video_meta: VideoMeta,
         source_id: str,
-    ) -> Path | None:
+    ) -> Path:
         """Stage 1: Download video file and cover image."""
         await update_job_status(job["id"], JobStatus.DOWNLOADING.value, progress=10)
-        if await self._abort_if_cancelled(job):
-            return None
 
         # .part hygiene: purge any downloads/{id}.* left by a prior failed/corrupt
         # attempt so this download starts clean and never resumes onto stale bytes.
         await asyncio.to_thread(purge_download_files, video_meta.video_id)
 
-        if await self._abort_if_cancelled(job):
-            return None
         video_path: Path = await asyncio.to_thread(
             self._get_adapter(video_meta.platform).download,
             video_meta.video_id,
             video_meta.source_url,
             self._get_config().backend.download_connections,
         )
-
-        # Longest uninterruptible stretch — stop here rather than after the
-        # cover fetch and the ffmpeg pass.
-        if await self._abort_if_cancelled(job):
-            return None
 
         # Download cover
         covers_dir = self._bibilab_home / "covers"
@@ -543,17 +517,12 @@ class WorkerLoop:
         job: dict,
         video_path: Path,
         expected_duration: float = 0.0,
-    ) -> Path | None:
+    ) -> Path:
         """Stage 2: Extract audio from downloaded video."""
         await update_job_status(job["id"], JobStatus.TRANSCRIBING.value, progress=25)
         # On failure video_path is left on disk; cancel_or_delete_job cleans it up
         # later from the full job dict in the DB.
-        wav_path = await asyncio.to_thread(extract_audio, video_path, expected_duration)
-
-        if await self._abort_if_cancelled(job):
-            return None
-
-        return wav_path
+        return await asyncio.to_thread(extract_audio, video_path, expected_duration)
 
     async def _stage_transcribe(
         self,
@@ -561,7 +530,7 @@ class WorkerLoop:
         wav_path: Path,
         source_id: str,
         cfg: BibilabConfig,
-    ) -> tuple | None:
+    ) -> tuple:
         """Stage 3: Transcribe audio, punctuate (zh-gated) into sentence segments."""
         await update_job_status(job["id"], JobStatus.TRANSCRIBING.value, progress=30)
         vad_segments, detected_language = await asyncio.to_thread(transcribe, wav_path, cfg.transcription)
@@ -574,13 +543,9 @@ class WorkerLoop:
         effective_language = detected_language
         sentence_segments = await asyncio.to_thread(punctuate, vad_segments, effective_language)
 
-        if await self._abort_if_cancelled(job):
-            return None
-
         if not sentence_segments:
             # Music-only / speech-less video: fail loud here instead of an
-            # opaque IndexError in digest (sections would be empty). Checked
-            # after the cancel gate so a user cancel wins over the failure.
+            # opaque IndexError in digest (sections would be empty).
             raise PipelineError("no speech detected in audio")
 
         return detected_language, effective_language, sentence_segments
@@ -594,7 +559,7 @@ class WorkerLoop:
         list_id: str,
         cfg: BibilabConfig,
         effective_language: str | None,
-    ) -> tuple[DigestResult, list[Section], list[SectionDigest]] | None:
+    ) -> tuple[DigestResult, list[Section], list[SectionDigest]]:
         """Stage 4: Derive sections, chunk per-section, run digest + embed in parallel.
 
         Returns (extraction, sections, section_digests). The 1-section case
@@ -627,9 +592,6 @@ class WorkerLoop:
         digest_raw, embed_raw = gather_results
         _reraise_gathered_failures(digest_raw, embed_raw)
         extraction, section_digests = digest_raw
-
-        if await self._abort_if_cancelled(job):
-            return None
 
         return extraction, sections, section_digests
 
