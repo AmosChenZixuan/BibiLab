@@ -15,6 +15,8 @@ npm run lint             # eslint (react-hooks) + type-check the frontend
 npx vitest run --coverage          # Coverage (requires @vitest/coverage-v8)
 ```
 
+`package-lock.json` is tracked deliberately — `lockfileVersion` 3 records every platform's optional native bindings (darwin/linux/win32), so one lockfile installs correctly on macOS, Linux, and Windows alike. A "Cannot find native binding" error means a stale `node_modules` from a platform or npm-version switch — fix it with `rm -rf node_modules && npm ci`, never by untracking the lockfile.
+
 ## Code Layout — `src/`
 
 ```
