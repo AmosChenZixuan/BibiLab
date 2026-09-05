@@ -238,11 +238,7 @@ def _transcribe_sherpa(audio_path: Path, cfg: TranscriptionConfig) -> tuple[list
         logger.warning("sherpa-onnx returned no segments for %s", audio_path)
         return [], None
 
-    # #706: auto mode is gone (cfg.language is Literal["zh","en"], always set).
-    # The recognizer is forced to the declared language, so per-segment lang
-    # reporting is unreliable (Bug A) and stripped-but-not-consulted. The
-    # explicit cfg.language is the only source of truth; large-v3 still wins
-    # because its recognizer is hard-coded to "en".
+    # large-v3 wins because its recognizer is hard-coded to "en" (see _load_sherpa).
     if cfg.model == "large-v3":
         detected_lang = "en"
     else:

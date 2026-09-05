@@ -73,10 +73,8 @@ class AIConfig(BaseModel):
 
 class TranscriptionConfig(BaseModel):
     model: str = "sensevoice-small"
-    # #706: dropped "auto" — SenseVoice's per-segment lang-id is unreliable on
-    # short/silent spans (Bug A). User declares the audio language explicitly;
-    # recognizer is forced, no per-segment lang-id. Default "zh" matches the
-    # primary supported language; new installs need no config edit.
+    # SenseVoice's per-segment lang-id is unreliable on short/silent spans —
+    # user declares the audio language explicitly so the recognizer is forced.
     language: Literal["zh", "en"] = "zh"
 
 
