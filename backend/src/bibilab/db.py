@@ -11,7 +11,7 @@ from typing import Any
 import aiosqlite
 
 import bibilab.config
-from bibilab.models.jobs import ACTIVE_JOB_STATUSES
+from bibilab.models.jobs import ACTIVE_JOB_STATUSES, JobStatus
 from bibilab.pipeline.digest import SectionDigest
 from bibilab.pipeline.fts_tokens import escape_fts_query
 from bibilab.pipeline.section import Section
@@ -859,6 +859,25 @@ async def delete_job(job_id: str) -> None:
     async with get_db() as db:
         await db.execute("DELETE FROM jobs WHERE id=?", (job_id,))
         await db.commit()
+
+
+async def claim_queued_job(job_id: str) -> bool:
+    """Atomically confirm a job is still queued right before dispatching it.
+
+    A poll-then-dispatch loop can read a job as queued and then, before it
+    gets around to creating a task for it, race against a concurrent cancel
+    that deletes the row. Gating the row's existence-and-status check and
+    the dispatch decision in one UPDATE closes that window: either both
+    happen together (this returns True) or neither does (False, meaning the
+    row is gone or its status already moved on — don't dispatch).
+    """
+    async with get_db() as db:
+        cursor = await db.execute(
+            "UPDATE jobs SET updated_at=? WHERE id=? AND status=?",
+            (_now(), job_id, JobStatus.QUEUED),
+        )
+        await db.commit()
+        return cursor.rowcount > 0
 
 
 async def get_pending_jobs() -> list[aiosqlite.Row]:

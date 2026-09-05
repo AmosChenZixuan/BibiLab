@@ -618,6 +618,39 @@ async def test_update_job_meta_noops_on_missing_job(tmp_bibilab_home: Path):
 
 
 @pytest.mark.asyncio
+async def test_claim_queued_job_succeeds_while_still_queued(tmp_bibilab_home: Path):
+    from bibilab.db import bootstrap_db, claim_queued_job, create_job
+
+    await bootstrap_db()
+    job_id = await create_job("ingest", {})
+
+    assert await claim_queued_job(job_id) is True
+
+
+@pytest.mark.asyncio
+async def test_claim_queued_job_fails_on_missing_row(tmp_bibilab_home: Path):
+    from bibilab.db import bootstrap_db, claim_queued_job
+
+    await bootstrap_db()
+    assert await claim_queued_job("nonexistent-id") is False
+
+
+@pytest.mark.asyncio
+async def test_claim_queued_job_fails_once_status_moves_on(tmp_bibilab_home: Path):
+    """A job already dispatched (status no longer queued) can't be claimed
+    again — closes the window where a poll-then-dispatch loop would
+    otherwise trust a snapshot the row has since moved past."""
+    from bibilab.db import bootstrap_db, claim_queued_job, create_job, update_job_status
+    from bibilab.models.jobs import JobStatus
+
+    await bootstrap_db()
+    job_id = await create_job("ingest", {})
+    await update_job_status(job_id, JobStatus.DOWNLOADING.value)
+
+    assert await claim_queued_job(job_id) is False
+
+
+@pytest.mark.asyncio
 async def test_message_tool_blocks_round_trip(tmp_bibilab_home: Path):
     """update_turn_terminal + get_recent_messages round-trip the tool_blocks JSON."""
     from bibilab.db import (
