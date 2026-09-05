@@ -46,17 +46,6 @@ def _check_ffmpeg() -> dict:
     return {"status": "error", "message": "ffmpeg not found on PATH"}
 
 
-def _check_cuda() -> dict:
-    try:
-        import torch  # noqa: PLC0415
-
-        if torch.cuda.is_available():
-            return {"status": "ok", "message": f"CUDA available ({torch.cuda.get_device_name(0)})"}
-        return {"status": "unavailable", "message": "CUDA not available on this device"}
-    except Exception as exc:  # noqa: BLE001
-        return {"status": "unavailable", "message": f"CUDA probe failed: {exc}"}
-
-
 def _check_diarization_model() -> dict:
     spec = get_spec(SHERPA_DIARIZATION_SPEC_ID)
     if _integrity_ok(spec):
@@ -101,7 +90,6 @@ async def health(cfg: BibilabConfig = Depends(get_config)) -> dict:
         "llm": await _check_llm(cfg),
         "asr_model": _check_asr(cfg),
         "ffmpeg": _check_ffmpeg(),
-        "cuda": _check_cuda(),
         "embedding_model": _check_embedding_model(),
         "reranker_model": _check_reranker_model(),
         "diarization_model": _check_diarization_model(),
