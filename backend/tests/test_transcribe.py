@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+import threading
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -454,6 +455,100 @@ def test_transcribe_sherpa_sensevoice_auto_uses_first_seen_recognizer_language(t
         _, lang = _transcribe_sherpa(tmp_path / "a.wav", TranscriptionConfig(model="sensevoice-small", language="auto"))
 
     assert lang == "zh"  # first segment's reported language
+
+
+def test_transcribe_sherpa_cancel_flag_stops_decode_loop_promptly(tmp_path: Path):
+    """A cancel event pre-set before the call must stop the decode loop at the
+    first span it checks, not after every span has been decoded."""
+    from bibilab.pipeline.audio import PipelineError
+    from bibilab.pipeline.transcribe import _transcribe_sherpa
+
+    engine = _fake_engine(
+        recognized=[("a", None), ("b", None), ("c", None)],
+        embeddings=[[1.0, 0.0], [0.0, 1.0], [1.0, 1.0]],
+    )
+    spans = [(0.0, 1.0), (1.0, 2.0), (2.0, 3.0)]
+    cancel = threading.Event()
+    cancel.set()
+    p1, p2, p3 = _patch_transcribe_sherpa(engine, spans)
+    with p1, p2, p3, pytest.raises(PipelineError, match="cancelled"):
+        _transcribe_sherpa(tmp_path / "a.wav", TranscriptionConfig(model="sensevoice-small"), cancel)
+
+    assert engine.recognizer.decode_stream.call_count <= 1
+
+
+def test_transcribe_bystander_job_unaffected_by_sibling_cancel(tmp_bibilab_home: Path):
+    """Two concurrent transcribe() calls sharing the engine singleton, each with
+    its own cancel event: setting one job's flag while the other is mid-decode
+    must not stop the other job or force a rebuild of the singleton — the case
+    a kill-the-process design would get wrong now that the engine is shared
+    across concurrent decodes."""
+    _reset_sherpa_engine_cache()
+    from bibilab.pipeline.audio import PipelineError
+    from bibilab.pipeline.transcribe import transcribe
+
+    models_root = tmp_bibilab_home / "models"
+    stub = _sherpa_stub()
+    cfg = TranscriptionConfig(model="sensevoice-small", language="auto")
+    spans = [(0.0, 1.0), (1.0, 2.0), (2.0, 3.0)]
+
+    a_started = threading.Event()
+
+    def make_asr_stream():
+        if threading.current_thread().name == "job-a":
+            a_started.set()
+        stream = MagicMock()
+        stream.result.text = "hello"
+        stream.result.lang = None
+        return stream
+
+    recognizer = MagicMock()
+    recognizer.create_stream.side_effect = make_asr_stream
+    stub.OfflineRecognizer.from_sense_voice.return_value = recognizer
+
+    spk = MagicMock()
+    spk.create_stream.side_effect = lambda: MagicMock()
+    spk.compute.side_effect = lambda _stream: [1.0, 0.0]
+    stub.SpeakerEmbeddingExtractor.return_value = spk
+
+    cancel_a = threading.Event()
+    cancel_b = threading.Event()
+    results: dict[str, list] = {}
+    errors: dict[str, Exception] = {}
+
+    def run_a():
+        try:
+            segs, _ = transcribe(tmp_bibilab_home / "a.wav", cfg, cancel_a)
+            results["a"] = segs
+        except Exception as exc:  # noqa: BLE001
+            errors["a"] = exc
+
+    def run_b():
+        assert a_started.wait(timeout=2), "job A never started decoding"
+        cancel_b.set()
+        try:
+            transcribe(tmp_bibilab_home / "b.wav", cfg, cancel_b)
+        except Exception as exc:  # noqa: BLE001
+            errors["b"] = exc
+
+    with (
+        patch.dict(sys.modules, {"sherpa_onnx": stub}),
+        patch("bibilab.pipeline.transcribe.ensure", side_effect=lambda sid: _stub_ensure(models_root, sid)),
+        patch("bibilab.pipeline.transcribe.interpreting_provider", return_value="cpu"),
+        patch("bibilab.pipeline.transcribe._vad_spans", return_value=spans),
+        patch("soundfile.read", return_value=([0.0], 16000)),
+    ):
+        thread_a = threading.Thread(target=run_a, name="job-a")
+        thread_b = threading.Thread(target=run_b, name="job-b")
+        thread_a.start()
+        thread_b.start()
+        thread_a.join(timeout=2)
+        thread_b.join(timeout=2)
+
+    assert "a" not in errors
+    assert len(results["a"]) == 3
+    assert isinstance(errors.get("b"), PipelineError)
+    assert stub.OfflineRecognizer.from_sense_voice.call_count == 1
 
 
 class _FakeVadSegment:

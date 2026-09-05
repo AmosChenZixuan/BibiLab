@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import threading
 import uuid
 from pathlib import Path
 from typing import Any
@@ -532,7 +533,16 @@ class WorkerLoop:
     ) -> tuple:
         """Stage 3: Transcribe audio, punctuate (zh-gated) into sentence segments."""
         await update_job_status(job["id"], JobStatus.TRANSCRIBING.value, progress=30)
-        vad_segments, detected_language = await asyncio.to_thread(transcribe, wav_path, cfg.transcription)
+        cancel = threading.Event()
+        try:
+            vad_segments, detected_language = await asyncio.to_thread(transcribe, wav_path, cfg.transcription, cancel)
+        except asyncio.CancelledError:
+            # The awaiting future is already cancelled here, so
+            # asyncio.futures._copy_future_state drops the thread's eventual
+            # PipelineError instead of surfacing or logging it — this only
+            # sets the flag to stop the decode loop before unwinding.
+            cancel.set()
+            raise
         wav_path.unlink(missing_ok=True)  # clean up early — punctuate only needs text
         # transcribe() already resolves the effective language (large-v3 forces "en"
         # regardless of cfg.transcription.language; sensevoice honors an explicit
