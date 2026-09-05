@@ -327,13 +327,7 @@ def test_no_torch_or_funasr_anywhere():
     neither package appears in the resolved lock."""
     backend_dir = Path(__file__).resolve().parents[1]
     banned_imports = ("import torch", "from torch", "import funasr", "from funasr")
-    # routers/health.py's _check_cuda() keeps a try/except-guarded `import torch`
-    # on purpose (degrades to "unavailable" when the package is absent) until
-    # #688 removes the device-selection surface — out of scope for #687.
-    excluded = {backend_dir / "src" / "bibilab" / "routers" / "health.py"}
     for py_file in (backend_dir / "src").rglob("*.py"):
-        if py_file in excluded:
-            continue
         source = py_file.read_text()
         for banned in banned_imports:
             assert banned not in source, f"{py_file} still contains {banned!r}"
