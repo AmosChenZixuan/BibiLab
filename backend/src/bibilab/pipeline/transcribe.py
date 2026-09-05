@@ -212,7 +212,10 @@ def _transcribe_sherpa(audio_path: Path, cfg: TranscriptionConfig) -> tuple[list
             stream = engine.recognizer.create_stream()
             stream.accept_waveform(rate, samples[int(start * rate) : int(end * rate)])
             engine.recognizer.decode_stream(stream)
-            recognized.append((stream.result.text.strip(), stream.result.lang or None))
+            # #706: strip the `<|lang|>` brackets SenseVoice wraps per-segment lang in
+            # (Bug B) — without this the raw token leaks downstream into sources.language
+            # and bypasses the `language != "zh"` ct-punc gate.
+            recognized.append((stream.result.text.strip(), _strip_sense_voice_lang(stream.result.lang)))
 
         embeddings = []
         for start, end in spans:
@@ -226,25 +229,23 @@ def _transcribe_sherpa(audio_path: Path, cfg: TranscriptionConfig) -> tuple[list
         raise
 
     segments: list[WhisperSegment] = []
-    detected_lang: str | None = None
     for (start, end), (text, lang), label in zip(spans, recognized, labels, strict=True):
         if not text:
             continue
         segments.append(WhisperSegment(start=start, end=end, text=text, speaker=f"SPK_{label}"))
-        if detected_lang is None and lang:
-            detected_lang = lang
 
     if not segments:
         logger.warning("sherpa-onnx returned no segments for %s", audio_path)
         return [], None
 
+    # #706: auto mode is gone (cfg.language is Literal["zh","en"], always set).
+    # The recognizer is forced to the declared language, so per-segment lang
+    # reporting is unreliable (Bug A) and stripped-but-not-consulted. The
+    # explicit cfg.language is the only source of truth; large-v3 still wins
+    # because its recognizer is hard-coded to "en".
     if cfg.model == "large-v3":
-        # Wins over an explicit cfg.language: the recognizer is always constructed
-        # with language="en" (see _load_sherpa), so the decoded text is English
-        # regardless of what cfg.language asked for — reporting cfg.language here
-        # would send genuinely English text into the wrong-language punctuation model.
         detected_lang = "en"
-    elif cfg.language and cfg.language != "auto":
+    else:
         detected_lang = cfg.language
     return segments, detected_lang
 
