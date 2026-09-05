@@ -139,9 +139,9 @@ async def test_cancel_frees_slot_without_waiting_for_stage(tmp_bibilab_home: Pat
     """cancel_job frees the slot without waiting for the running stage.
 
     Deliberately does not register the task in worker._tasks, so cancel_job
-    only exercises the _in_flight-discard path here (the #675 behaviour this
-    test pins), not the task.cancel() path added later — that one has its
-    own coverage in test_cancel_job_cancels_running_task_mid_stage."""
+    only exercises the _in_flight-discard path here, not the task.cancel()
+    path added later — that one has its own coverage in
+    test_cancel_job_cancels_running_task_mid_stage."""
     import asyncio
 
     from bibilab.db import bootstrap_db, create_job
@@ -223,7 +223,7 @@ async def test_cancel_handler_reraises_even_if_cleanup_fails(tmp_bibilab_home: P
     cleanup itself failed."""
     import asyncio
 
-    from bibilab.db import bootstrap_db, create_job
+    from bibilab.db import bootstrap_db, create_job, get_job
 
     await bootstrap_db()
     job_id = await create_job("ingest", {})
@@ -250,6 +250,49 @@ async def test_cancel_handler_reraises_even_if_cleanup_fails(tmp_bibilab_home: P
         with pytest.raises(asyncio.CancelledError):
             await task
 
+    assert job_id not in worker._in_flight
+    assert job_id not in worker._cancelled
+    assert job_id not in worker._tasks
+    assert await get_job(job_id) is None
+
+
+@pytest.mark.asyncio
+async def test_cancel_handler_reraises_even_if_delete_fails(tmp_bibilab_home: Path):
+    """Mirror of test_cancel_handler_reraises_even_if_cleanup_fails: the
+    handler's two cleanup steps are independent try/excepts, so a failure in
+    delete_job (the second step) must not swallow the CancelledError either,
+    and cleanup_job_artifacts must still have been attempted."""
+    import asyncio
+
+    from bibilab.db import bootstrap_db, create_job
+
+    await bootstrap_db()
+    job_id = await create_job("ingest", {})
+
+    never_set = asyncio.Event()
+
+    async def _blocked_pipeline(job):
+        await never_set.wait()
+
+    worker = WorkerLoop(home=tmp_bibilab_home)
+    worker._in_flight.add(job_id)
+    job = {"id": job_id, "type": "ingest", "meta": "{}"}
+
+    with (
+        patch.object(worker, "_pipeline", _blocked_pipeline),
+        patch("bibilab.worker.cleanup_job_artifacts") as mock_cleanup,
+        patch("bibilab.worker.delete_job", side_effect=OSError("mock db busy")),
+    ):
+        task = asyncio.create_task(worker._run_job(job))
+        worker._tasks[job_id] = task
+        await asyncio.sleep(0)
+
+        worker.cancel_job(job_id)
+
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    mock_cleanup.assert_called_once_with(job)
     assert job_id not in worker._in_flight
     assert job_id not in worker._cancelled
     assert job_id not in worker._tasks
