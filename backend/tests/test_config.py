@@ -18,8 +18,8 @@ from bibilab.config import BibilabConfig
         (("rag",), "chunk_pause_threshold"),
         ((), "transcript_collection_name"),
         (("transcription",), "llm_timeout"),
-        # device removed — #687 dropped torch/CUDA, so a transcription device
-        # choice controls nothing (sherpa-onnx runs CPU-only).
+        # device removed — transcription runs on sherpa-onnx CPU-only, so a
+        # device choice controls nothing.
         (("transcription",), "device"),
         (("backend",), "max_concurrent_downloads"),
         # download_connections is a derived @property, never a stored field —

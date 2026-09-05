@@ -8,7 +8,7 @@ import type { BibilabConfig, HealthDependency, ModelInfo } from "@/lib/types";
 
 import { Select, SettingsField } from "@/components/ui";
 
-// ponytail: no consumer since #687 dropped torch/CUDA transcription. Kept — not
+// ponytail: no consumer now that transcription runs on sherpa-onnx CPU-only. Kept — not
 // deleted — so the markup/ids/i18n copy don't need rebuilding if GPU acceleration
 // returns for embedding/reranker. Its local state is intentionally NOT wired to
 // persistence: there's no backend field to save to, and a future GPU config would
