@@ -1,7 +1,0 @@
-# Binary artifacts travel by copy, not by git. models.lock.json is the pin that
-# makes a copy verifiable, so it is the one thing here that is tracked.
-fixture/
-fixture.tar
-models/*
-!models/models.lock.json
-results/
