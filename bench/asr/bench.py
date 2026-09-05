@@ -264,6 +264,51 @@ class Funasr:
         )
 
 
+class Production:
+    """What actually ships: `transcribe()` + `punctuate()` from the package.
+
+    The `Sherpa` arm above is a reimplementation written before
+    `pipeline/transcribe.py` existed, so its numbers are a property of this
+    file. This arm calls the shipped functions instead, for the same reason
+    `Funasr` does — and it is the only arm that picks up production's own
+    constants (int8 SenseVoice, VAD 0.3/0.25), which differ from this harness's
+    defaults. `--threads`, `--provider`, `--int8` and the VAD flags do not
+    reach it: those are hardcoded in `transcribe.py`, and honouring them here
+    would mean measuring a config production cannot be in. Requires the
+    backend env.
+    """
+
+    def __init__(self) -> None:
+        from bibilab.config import TranscriptionConfig
+        from bibilab.pipeline.punctuate import punctuate
+        from bibilab.pipeline.transcribe import transcribe
+
+        self.cfg = TranscriptionConfig(model="sensevoice-small", language="zh")
+        self._transcribe = transcribe
+        self._punctuate = punctuate
+        # transcribe.py caches its engine in a module global, so the first call
+        # pays model load. Force it here so load time lands in model_load_s
+        # rather than being charged to whichever source ran first.
+        from bibilab.pipeline.transcribe import _load_sherpa
+
+        _load_sherpa(self.cfg)
+
+    def transcribe(self, wav: Path) -> tuple[list[dict], dict]:
+        t = time.perf_counter()
+        raw, language = self._transcribe(wav, self.cfg)
+        asr_s = round(time.perf_counter() - t, 2)
+
+        t = time.perf_counter()
+        segments = self._punctuate(raw, language)
+        punct_s = round(time.perf_counter() - t, 2)
+
+        return (
+            [{"start_s": s.start, "end_s": s.end, "speaker": s.speaker, "text": s.text}
+             for s in segments if s.text.strip()],
+            {"transcribe_s": asr_s, "punct_s": punct_s},
+        )
+
+
 # Mirrors pipeline/chunk.py's _SENT_END, which punctuate.py splits on.
 SENT_END = ("。", "！", "？", "．", "…", "!", "?")
 
@@ -438,10 +483,31 @@ def score_speakers(ref: list[dict], hyp: list[dict], duration: float, step: floa
 # ----------------------------------------------------------------------- driver
 
 
+def effective_config(engine: str) -> dict:
+    """Production ignores this harness's knobs; report what it really ran with.
+
+    Recording `args.int8` / `args.vad_*` for the production arm would file the
+    harness defaults against a run that never used them — the exact way a
+    benchmark result stops being comparable to the next one.
+    """
+    if engine != "production":
+        return {}
+    from bibilab.pipeline import transcribe as tr
+    from bibilab.pipeline._shared import interpreting_provider
+
+    return {
+        "int8": True,  # spec pins model.int8.onnx
+        "vad_threshold": tr._VAD_THRESHOLD,
+        "vad_min_silence": tr._VAD_MIN_SILENCE_DURATION,
+        "threads": tr._SHERPA_NUM_THREADS,
+        "providers": dict.fromkeys(("vad", "asr", "spk", "punct"), interpreting_provider()),
+    }
+
+
 def main() -> None:
     p = argparse.ArgumentParser()
     p.add_argument("--fetch-models", action="store_true")
-    p.add_argument("--engine", choices=["sherpa", "funasr"], default="sherpa")
+    p.add_argument("--engine", choices=["sherpa", "funasr", "production"], default="sherpa")
     p.add_argument("--asr", choices=["sensevoice", "whisper"], default="sensevoice")
     p.add_argument("--provider", default="cpu", help="sherpa: cpu|cuda|coreml")
     p.add_argument("--provider-vad", help="override, e.g. cpu while --provider=cuda")
@@ -490,11 +556,15 @@ def main() -> None:
     def build():
         if args.engine == "funasr":
             return Funasr(args.device)
+        if args.engine == "production":
+            return Production()
         return Sherpa(args.asr, providers, args.threads, args.vad_threshold,
                       args.vad_min_silence, args.int8)
 
+    # production always shares: transcribe.py holds its engine in a module
+    # global, so a per-thread instance would alias the same models anyway.
     t = time.perf_counter()
-    shared = build() if (args.share_model and args.engine == "sherpa") else None
+    shared = build() if (args.share_model and args.engine == "sherpa") or args.engine == "production" else None
     local = None if shared else __import__("threading").local()
     load_s = round(time.perf_counter() - t, 2)
 
@@ -540,7 +610,8 @@ def main() -> None:
                    "device": args.device, "threads": args.threads,
                    "concurrency": args.concurrency, "share_model": bool(shared),
                    "int8": args.int8, "vad_threshold": args.vad_threshold,
-                   "vad_min_silence": args.vad_min_silence},
+                   "vad_min_silence": args.vad_min_silence,
+                   **effective_config(args.engine)},
         "totals": {
             "sources": len(picks), "audio_s": audio_s,
             "model_load_s": load_s, "wall_s": round(wall, 1),
