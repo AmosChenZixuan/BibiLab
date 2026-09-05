@@ -80,10 +80,11 @@ _transcribe_lock = threading.Lock()
 def _load_sherpa(cfg: TranscriptionConfig) -> _SherpaEngine:
     global _sherpa_engine, _sherpa_engine_key
 
-    # Both cfg.model and cfg.language are real construction-time inputs to the
-    # recognizer (VAD/speaker never vary by either) — one cache, keyed on both,
-    # reuses the existing single-keyed-singleton shape rather than splitting it.
-    key = (cfg.model, cfg.language)
+    # cfg.model is a real construction-time input for both engines; cfg.language
+    # matters for SenseVoice (passed to the recognizer) but is forced to "en" for
+    # large-v3 (see below) — drop language from the key when it has no effect so
+    # alternating large-v3 zh/en doesn't rebuild an identical engine.
+    key = (cfg.model,) if cfg.model == "large-v3" else (cfg.model, cfg.language)
     with _transcribe_lock:
         if _sherpa_engine is not None and _sherpa_engine_key == key:
             return _sherpa_engine

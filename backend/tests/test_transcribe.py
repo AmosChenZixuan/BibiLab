@@ -158,6 +158,29 @@ def test_load_sherpa_whisper_forces_english_regardless_of_cfg_language(tmp_bibil
     stub.OfflineRecognizer.from_sense_voice.assert_not_called()
 
 
+def test_load_sherpa_large_v3_cache_collapses_zh_and_en(tmp_bibilab_home: Path) -> None:
+    """large-v3 always constructs with language='en' regardless of cfg.language
+    (see _load_sherpa). The cache key must drop language when it has no effect on
+    construction, so alternating large-v3 zh/en reuses the same engine instead of
+    rebuilding an identical one."""
+    _reset_sherpa_engine_cache()
+    from bibilab.pipeline import transcribe as transcribe_mod
+
+    models_root = tmp_bibilab_home / "models"
+    stub = _sherpa_stub()
+
+    with (
+        patch.dict(sys.modules, {"sherpa_onnx": stub}),
+        patch("bibilab.pipeline.transcribe.ensure", side_effect=lambda sid: _stub_ensure(models_root, sid)),
+        patch("bibilab.pipeline.transcribe.interpreting_provider", return_value="cpu"),
+    ):
+        e_zh = transcribe_mod._load_sherpa(TranscriptionConfig(model="large-v3", language="zh"))
+        e_en = transcribe_mod._load_sherpa(TranscriptionConfig(model="large-v3", language="en"))
+
+    assert e_zh is e_en
+    assert stub.OfflineRecognizer.from_whisper.call_count == 1
+
+
 def test_load_sherpa_vad_uses_measured_defaults(tmp_bibilab_home: Path):
     """VAD threshold=0.3, min_silence_duration=0.25 — a measured config that beats
     sherpa's own defaults (0.5 / 0.50) on CER and speaker agreement."""
