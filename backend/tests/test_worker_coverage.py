@@ -826,6 +826,52 @@ async def test_stage_transcribe_cancel_wins_while_punctuate_runs(tmp_bibilab_hom
 
 
 @pytest.mark.asyncio
+async def test_stage_transcribe_sets_cancel_flag_on_task_cancel(tmp_bibilab_home: Path, monkeypatch):
+    """_stage_transcribe must set the cancel Event it passes to transcribe()
+    when the awaiting task is cancelled, so the orphaned decode thread's span
+    loop can stop promptly instead of running to the end of the audio."""
+    import asyncio
+
+    from bibilab.config import BibilabConfig
+    from bibilab.db import bootstrap_db, create_job
+    from tests import thread_signal
+
+    await bootstrap_db()
+    job_id = await create_job("ingest", {})
+
+    started, release, signal_started = thread_signal()
+    recorded = {}
+
+    def _blocking_transcribe(wav_path, cfg, cancel=None):
+        recorded["cancel"] = cancel
+        signal_started()
+        release.wait()
+        return [], None
+
+    monkeypatch.setattr("bibilab.worker.transcribe", _blocking_transcribe)
+
+    loop = WorkerLoop(config=BibilabConfig(), home=tmp_bibilab_home)
+    wav = tmp_bibilab_home / "a.wav"
+    wav.write_bytes(b"")
+    job = {"id": job_id, "type": "ingest", "meta": "{}"}
+
+    async def _pipeline_stub(_job):
+        await loop._stage_transcribe(_job, wav, "src-1", BibilabConfig())
+
+    with patch.object(loop, "_pipeline", _pipeline_stub):
+        task = asyncio.create_task(loop._run_job(job))
+        await started.wait()
+        task.cancel()
+        release.set()
+
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    assert recorded["cancel"] is not None
+    assert recorded["cancel"].is_set()
+
+
+@pytest.mark.asyncio
 async def test_stage_process_chunks_sentence_segments(tmp_bibilab_home: Path, monkeypatch):
     """_stage_process chunks sentence_segments, not vad_segments."""
     from bibilab.config import BibilabConfig

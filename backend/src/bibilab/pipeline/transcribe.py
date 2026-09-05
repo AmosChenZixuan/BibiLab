@@ -195,7 +195,9 @@ def _cluster_speakers(embeddings: list) -> list[int]:
     return labels
 
 
-def _transcribe_sherpa(audio_path: Path, cfg: TranscriptionConfig) -> tuple[list[WhisperSegment], str | None]:
+def _transcribe_sherpa(
+    audio_path: Path, cfg: TranscriptionConfig, cancel: threading.Event | None = None
+) -> tuple[list[WhisperSegment], str | None]:
     import soundfile as sf  # noqa: PLC0415
 
     try:
@@ -209,6 +211,8 @@ def _transcribe_sherpa(audio_path: Path, cfg: TranscriptionConfig) -> tuple[list
 
         recognized: list[tuple[str, str | None]] = []
         for start, end in spans:
+            if cancel is not None and cancel.is_set():
+                raise PipelineError("transcription cancelled")
             stream = engine.recognizer.create_stream()
             stream.accept_waveform(rate, samples[int(start * rate) : int(end * rate)])
             engine.recognizer.decode_stream(stream)
@@ -216,6 +220,8 @@ def _transcribe_sherpa(audio_path: Path, cfg: TranscriptionConfig) -> tuple[list
 
         embeddings = []
         for start, end in spans:
+            if cancel is not None and cancel.is_set():
+                raise PipelineError("transcription cancelled")
             stream = engine.spk_extractor.create_stream()
             stream.accept_waveform(rate, samples[int(start * rate) : int(end * rate)])
             stream.input_finished()
@@ -249,17 +255,20 @@ def _transcribe_sherpa(audio_path: Path, cfg: TranscriptionConfig) -> tuple[list
     return segments, detected_lang
 
 
-def transcribe(audio_path: Path, cfg: TranscriptionConfig) -> tuple[list[WhisperSegment], str | None]:
+def transcribe(
+    audio_path: Path, cfg: TranscriptionConfig, cancel: threading.Event | None = None
+) -> tuple[list[WhisperSegment], str | None]:
     """Transcribe audio. Returns (segments, detected_language).
 
     Segments carry speaker labels from CAM++ embeddings clustered over the same
-    VAD spans the ASR recognizer decodes.
+    VAD spans the ASR recognizer decodes. ``cancel``, when set before or during
+    a span loop, stops decoding at the next span with a ``PipelineError``.
     """
     try:
         get_spec(resolve_transcription_spec_id(cfg.model))  # raises ValueError on unknown model
     except ValueError as exc:
         raise PipelineError(str(exc)) from exc
-    return _transcribe_sherpa(audio_path, cfg)
+    return _transcribe_sherpa(audio_path, cfg, cancel)
 
 
 def build_speaker_namespace(segments: list[WhisperSegment]) -> dict[str | None, int]:
