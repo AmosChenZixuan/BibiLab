@@ -135,7 +135,8 @@ class PlatformAdapter:
 Registry dispatch, per-platform behavior, two-phase resolve, and bilibili auth are documented in `docs/ingestion_architecture.md`. Rules that must hold:
 
 - Adding a platform: register the adapter **and** its `CDN_DOMAINS` entry — an import-time assert keeps the two key sets equal (ingest can't land with broken covers). `VideoMetadataRequest.platform` stays required, no default.
-- Reuse `adapters/_ytdlp_common.py` (`strip_ansi`, `apply_aria2c`, `pick_thumbnail`, `safe_duration`, `gather_metadata`, `raise_mapped`) before writing per-adapter plumbing; bilibili's inline error mapping is the sanctioned exception.
+- Reuse `adapters/_ytdlp_common.py` (`strip_ansi`, `aria2c_argv`, `parse_download_path`, `run_ytdlp`, `pick_thumbnail`, `safe_duration`, `gather_metadata`, `raise_mapped`) before writing per-adapter plumbing; bilibili's inline error mapping is the sanctioned exception.
+- `PlatformAdapter.download` is `async def` — it runs yt-dlp as a subprocess via `run_ytdlp` so cancellation propagates and the child + aria2c die with the job. Map non-zero exits through `raise_mapped` (or bilibili's inline mapping); never convert our own `terminate()` exit code into a `DownloadError`.
 - `resolve_flat` is blocking yt-dlp — call it via `asyncio.to_thread`, and keep it flat (`extract_flat="in_playlist"`): non-flat extraction is ~15× slower for data phase 2 supplies anyway.
 - tiktok download filters formats by `vcodec` (h264 preferred), never `acodec` — the extractor fabricates `acodec`, and TikTok's HEVC (`bytevc1`) variants are silent files.
 

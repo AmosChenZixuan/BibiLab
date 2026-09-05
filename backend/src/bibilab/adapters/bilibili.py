@@ -8,7 +8,15 @@ from pathlib import Path
 import httpx
 import yt_dlp
 
-from bibilab.adapters._ytdlp_common import HTTP_RETRIES, SOCKET_TIMEOUT, apply_aria2c, safe_duration, strip_ansi
+from bibilab.adapters._ytdlp_common import (
+    HTTP_RETRIES,
+    SOCKET_TIMEOUT,
+    aria2c_argv,
+    parse_download_path,
+    run_ytdlp,
+    safe_duration,
+    strip_ansi,
+)
 from bibilab.adapters.base import (
     AuthRequiredError,
     DownloadError,
@@ -230,34 +238,45 @@ class BilibiliAdapter(PlatformAdapter):
             videos=videos,
         )
 
-    def download(self, video_id: str, source_url: str, connections: int) -> Path:
-        out_dir = downloads_dir()
-        output_template = str(out_dir / f"{video_id}.%(ext)s")
-        opts = {
-            **_ydl_opts(self._cookie, quiet=False),
-            "outtmpl": output_template,
-            "format": "bestaudio/best",
-            "concurrent_fragment_downloads": _FRAGMENT_CONCURRENCY,
-            "retries": HTTP_RETRIES,
-            "fragment_retries": _FRAGMENT_RETRIES,
-            "socket_timeout": SOCKET_TIMEOUT,
-        }
-        apply_aria2c(opts, connections)
+    async def download(self, video_id: str, source_url: str, connections: int) -> Path:
+        output_template = str(downloads_dir() / f"{video_id}.%(ext)s")
+        argv = [
+            "-o",
+            output_template,
+            "-f",
+            "bestaudio/best",
+            "-N",
+            str(_FRAGMENT_CONCURRENCY),
+            "-R",
+            str(HTTP_RETRIES),
+            "--fragment-retries",
+            str(_FRAGMENT_RETRIES),
+            "--socket-timeout",
+            str(SOCKET_TIMEOUT),
+            "--print",
+            "after_move:filepath",
+            "--no-simulate",
+        ]
+
+        cf = _cookie_file(self._cookie)
+        if cf:
+            argv += ["--cookies", cf]
 
         _, part_num = _split_video_id(video_id)
         if part_num is not None:
-            opts["playlist_items"] = str(part_num)
+            argv += ["--playlist-items", str(part_num)]
 
-        try:
-            with yt_dlp.YoutubeDL(opts) as ydl:
-                info = ydl.extract_info(source_url, download=True)
-        except yt_dlp.utils.DownloadError as exc:
-            msg = str(exc).lower()
+        argv += aria2c_argv(connections)
+        argv.append(source_url)
+
+        stdout, stderr, returncode = await run_ytdlp(argv)
+        if returncode != 0:
+            msg = stderr.lower()
             if _AUTH_RE.search(msg) or "412" in msg:
-                raise AuthRequiredError("video") from exc
-            raise DownloadError(strip_ansi(str(exc))) from exc
+                raise AuthRequiredError("video") from None
+            raise DownloadError(strip_ansi(stderr)) from None
 
-        return out_dir / f"{video_id}.{info.get('ext', 'mp4')}"
+        return parse_download_path(stdout)
 
     async def get_videos_metadata(self, video_ids: list[str]) -> tuple[dict[str, VideoMeta], dict[str, list[str]]]:
         if not video_ids:
