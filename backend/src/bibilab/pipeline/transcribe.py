@@ -69,7 +69,7 @@ class _SherpaEngine:
 
 
 _sherpa_engine: _SherpaEngine | None = None
-_sherpa_engine_key: tuple[str, str] | None = None  # (model, language)
+_sherpa_engine_key: tuple[str, ...] | None = None  # (model,) for large-v3, (model, language) for sensevoice
 
 # Guards singleton construction only, not inference. A shared sherpa model was
 # measured safely serving concurrent workers with bit-identical output, so
