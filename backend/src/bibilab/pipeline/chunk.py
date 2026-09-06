@@ -3,24 +3,14 @@
 import logging
 from dataclasses import dataclass
 
-from bibilab.pipeline._shared import count_tokens
+from bibilab.pipeline._shared import DOC_TOKEN_BUDGET, count_tokens_xlmr
 from bibilab.pipeline.transcribe import WhisperSegment
 
 logger = logging.getLogger(__name__)
 
-# Token targets by language.  Chinese encodes at roughly 1 token per character
-# in cl100k_base, while English encodes at roughly 1 token per 4 characters.
-# To keep the semantic span comparable, Chinese gets a proportionally larger
-# target.  Unknown languages fall back to the English default.
-_DEFAULT_TARGET_TOKENS = 300
-_LANG_TARGET_TOKENS: dict[str, int] = {
-    "zh": 800,
-    "en": _DEFAULT_TARGET_TOKENS,
-}
-_MAX_TOKEN_RATIO = 4 / 3
-
-# Minimum fraction of target_tokens before a pause or token flush fires.
-# Prevents flushing near-empty buffers.
+# Minimum fraction of DOC_TOKEN_BUDGET before a pause flush fires. Prevents
+# flushing near-empty buffers on a pause; the token-forced flush below has no
+# such guard — the ceiling is a hard invariant, so it flushes regardless of size.
 _MIN_TARGET_RATIO = 0.5
 
 # Sentence-ending punctuation — token flush splits on the latest occurrence.
@@ -61,16 +51,9 @@ def _find_sentence_split(
 
 def chunk_segments(
     segments: list[WhisperSegment],
-    target_tokens: int | None = None,
-    chunk_max_tokens: int | None = None,
-    language: str | None = "en",
     pause_threshold_seconds: float = 1.5,
 ) -> list[RagChunk]:
-    resolved_target = (
-        target_tokens if target_tokens is not None else _LANG_TARGET_TOKENS.get(language, _DEFAULT_TARGET_TOKENS)
-    )
-    resolved_max = chunk_max_tokens if chunk_max_tokens is not None else int(resolved_target * _MAX_TOKEN_RATIO)
-    min_flush_tokens = resolved_target * _MIN_TARGET_RATIO
+    min_flush_tokens = DOC_TOKEN_BUDGET * _MIN_TARGET_RATIO
 
     chunks: list[RagChunk] = []
     buf_segs: list[WhisperSegment] = []
@@ -98,9 +81,9 @@ def chunk_segments(
 
     chunk_idx = 0
     for seg_i, seg in enumerate(segments):
-        seg_tokens = count_tokens(seg.text)
+        seg_tokens = count_tokens_xlmr(seg.text)
 
-        if seg_tokens >= resolved_max:
+        if seg_tokens >= DOC_TOKEN_BUDGET:
             # Oversized segment — flush current buffer first, then emit as its own chunk
             if buf_segs:
                 emit(chunk_idx, buf_segs, buf_seg_idxs)
@@ -130,22 +113,19 @@ def chunk_segments(
                 chunk_idx += 1
                 buf_segs, buf_seg_idxs, buf_seg_tokens, buf_tokens = [], [], [], 0
 
-        # Token-target flush. Considers buf + incoming seg together. Prefers
-        # the latest sentence boundary anywhere in that window; if none,
-        # flushes the buffer at target to bound chunk size.
-        if buf_tokens + seg_tokens > resolved_target and buf_segs:
-            split_idx = _find_sentence_split(
-                buf_segs + [seg],
-                buf_seg_tokens + [seg_tokens],
-                min_flush_tokens,
-            )
-            if split_idx == len(buf_segs):
-                # boundary is on the incoming seg — flush buf + seg together
-                emit(chunk_idx, buf_segs + [seg], buf_seg_idxs + [seg_i])
-                sentence_flushes += 1
-                chunk_idx += 1
-                buf_segs, buf_seg_idxs, buf_seg_tokens, buf_tokens = [], [], [], 0
-                continue  # seg already consumed
+        # Ceiling-forced flush. Merging seg into buf as-is would exceed
+        # DOC_TOKEN_BUDGET, so free up room before appending it below. The
+        # search never includes seg itself — a split has to land inside buf,
+        # because any split point at or past buf's end embeds seg in the
+        # flushed chunk, which by this branch's own guard already overflows.
+        # Loops (not single-shot) because freeing room via one sentence split
+        # can still leave a tail too big for seg — each iteration is a
+        # sentence-bounded flush when one exists, else a forced cut; either
+        # way buf_segs strictly shrinks, so the loop terminates. Afterward
+        # buf_tokens + seg_tokens <= DOC_TOKEN_BUDGET always holds, so the
+        # unconditional append below can never overshoot.
+        while buf_segs and buf_tokens + seg_tokens > DOC_TOKEN_BUDGET:
+            split_idx = _find_sentence_split(buf_segs, buf_seg_tokens, min_flush_tokens)
             if split_idx is not None:
                 # boundary inside buf — flush head, keep tail
                 head_count = split_idx + 1
@@ -157,8 +137,8 @@ def chunk_segments(
                 buf_seg_idxs = buf_seg_idxs[head_count:]
                 buf_seg_tokens = buf_seg_tokens[head_count:]
                 buf_tokens -= head_tokens
-            elif buf_tokens >= min_flush_tokens:
-                # no boundary visible — bound chunk size at target
+            else:
+                # no boundary visible — forced cut, ceiling wins over avoiding a small chunk
                 emit(chunk_idx, buf_segs, buf_seg_idxs)
                 token_flushes += 1
                 chunk_idx += 1
@@ -172,10 +152,10 @@ def chunk_segments(
     emit(chunk_idx, buf_segs, buf_seg_idxs)
 
     logger.info(
-        "chunk_segments: %d chunks from %d segments (target=%d tokens)",
+        "chunk_segments: %d chunks from %d segments (ceiling=%d tokens)",
         len(chunks),
         len(segments),
-        resolved_target,
+        DOC_TOKEN_BUDGET,
     )
     # Only forced cuts are actionable: a token/oversized flush means no trustworthy
     # sentence boundary was available, so the chunk was cut mid-meaning. Pause and

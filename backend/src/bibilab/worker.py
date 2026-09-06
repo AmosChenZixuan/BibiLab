@@ -42,6 +42,7 @@ from bibilab.pipeline.artifact_refine import (
 from bibilab.pipeline.audio import PipelineError, extract_audio
 from bibilab.pipeline.digest import DigestResult, SectionDigest, digest_sections
 from bibilab.pipeline.embed import embed_chunks
+from bibilab.pipeline.fts_tokens import cjk_runs
 from bibilab.pipeline.punctuate import punctuate
 from bibilab.pipeline.section import Section, chunk_by_sections, derive_sections, section_texts
 from bibilab.pipeline.transcribe import (
@@ -95,6 +96,24 @@ def _download_cover(cover_url: str, dest: Path) -> bool:
     except (httpx.HTTPError, OSError) as exc:
         logger.warning("Job: failed to download cover from %s: %s", cover_url, exc)
         return False
+
+
+# CJK character ratio above which a transcript is classified "zh". Measured
+# margin on the corpus is wide (zh 0.844-0.920, en 0.000-0.010), so any
+# threshold comfortably inside that gap separates it cleanly.
+_ZH_CJK_RATIO_THRESHOLD = 0.3
+
+
+def _classify_transcript_language(segments: list[WhisperSegment]) -> str:
+    """Derive `sources.language` from the transcript text itself, not the
+    ASR-resolved config value. A forced ASR language config (e.g. "zh" on
+    English audio) makes `detected_language` an echo of the config, not a
+    fact about the transcript — this reads the actual text instead."""
+    text = "".join(s.text for s in segments)
+    if not text:
+        return "en"
+    cjk_chars = sum(len(seg) for is_cjk, seg in cjk_runs(text) if is_cjk)
+    return "zh" if cjk_chars / len(text) > _ZH_CJK_RATIO_THRESHOLD else "en"
 
 
 class WorkerLoop:
@@ -450,16 +469,13 @@ class WorkerLoop:
 
         # Stage 3: Transcription
         try:
-            result = await self._stage_transcribe(job, wav_path, source_id, cfg)
+            sentence_segments = await self._stage_transcribe(job, wav_path, source_id, cfg)
         except Exception as exc:
             raise PipelineError(f"[transcribing] {exc}") from exc
-        detected_language, effective_language, sentence_segments = result
 
         # Stage 4: Derive sections, chunk per-section, digest + embed in parallel
         try:
-            result = await self._stage_process(
-                job, sentence_segments, source_id, video_meta, list_id, cfg, effective_language
-            )
+            result = await self._stage_process(job, sentence_segments, source_id, video_meta, list_id, cfg)
         except Exception as exc:
             raise PipelineError(f"[processing] {exc}") from exc
         extraction, sections, section_digests = result
@@ -475,7 +491,6 @@ class WorkerLoop:
                 extraction,
                 sections,
                 section_digests,
-                detected_language,
                 cfg,
                 sentence_segments,
             )
@@ -529,7 +544,7 @@ class WorkerLoop:
         wav_path: Path,
         source_id: str,
         cfg: BibilabConfig,
-    ) -> tuple:
+    ) -> list[WhisperSegment]:
         """Stage 3: Transcribe audio, punctuate (zh-gated) into sentence segments."""
         await update_job_status(job["id"], JobStatus.TRANSCRIBING.value, progress=30)
         cancel = threading.Event()
@@ -564,7 +579,7 @@ class WorkerLoop:
             # opaque IndexError in digest (sections would be empty).
             raise PipelineError("no speech detected in audio")
 
-        return detected_language, effective_language, sentence_segments
+        return sentence_segments
 
     async def _stage_process(
         self,
@@ -574,7 +589,6 @@ class WorkerLoop:
         video_meta: VideoMeta,
         list_id: str,
         cfg: BibilabConfig,
-        effective_language: str | None,
     ) -> tuple[DigestResult, list[Section], list[SectionDigest]]:
         """Stage 4: Derive sections, chunk per-section, run digest + embed in parallel.
 
@@ -592,7 +606,7 @@ class WorkerLoop:
         """
         await update_job_status(job["id"], JobStatus.PROCESSING.value, progress=40)
         sections = derive_sections(sentence_segments)
-        chunks = chunk_by_sections(sentence_segments, sections, language=effective_language)
+        chunks = chunk_by_sections(sentence_segments, sections)
         section_texts_list = section_texts(sentence_segments, sections)
 
         meta_raw = parse_job_meta(job)
@@ -621,7 +635,6 @@ class WorkerLoop:
         extraction: DigestResult,
         sections: list[Section],
         section_digests: list[SectionDigest],
-        detected_language: str,
         cfg: BibilabConfig,
         sentence_segments: list[WhisperSegment],
     ) -> None:
@@ -641,7 +654,7 @@ class WorkerLoop:
             source_url=video_meta.source_url,
             duration_seconds=video_meta.duration_seconds,
             uploader=video_meta.uploader,
-            language=detected_language,
+            language=_classify_transcript_language(sentence_segments),
             whisper_model=cfg.transcription.model,
             ai_model=cfg.ai.model,
             settings_snapshot=cfg.model_dump(),

@@ -1,8 +1,49 @@
 """Unit tests for pipeline._shared helpers."""
 
+from unittest.mock import patch
+
 import onnxruntime as ort
 
-from bibilab.pipeline._shared import interpreting_provider, interpreting_providers
+import bibilab.pipeline._shared as shared
+from bibilab.pipeline._shared import count_tokens_xlmr, interpreting_provider, interpreting_providers
+
+
+def _toy_xlmr_tokenizer():
+    """Real (non-mocked) tokenizers.Tokenizer, toy vocab — same hermetic
+    pattern test_rerank.py uses to exercise real tokenizer library code
+    without downloading the actual XLM-R model file."""
+    from tokenizers import Tokenizer
+    from tokenizers.models import WordLevel
+    from tokenizers.pre_tokenizers import Whitespace
+
+    vocab = {"<unk>": 0}
+    vocab.update({f"w{i}": i + 1 for i in range(200)})
+    tok = Tokenizer(WordLevel(vocab=vocab, unk_token="<unk>"))
+    tok.pre_tokenizer = Whitespace()
+    return tok
+
+
+def test_count_tokens_xlmr_uses_cached_singleton(monkeypatch):
+    """Once loaded, count_tokens_xlmr reuses the module-level singleton — same
+    double-checked-lock pattern as rerank.py's _get_reranker()."""
+    monkeypatch.setattr(shared, "_xlmr_tokenizer", _toy_xlmr_tokenizer())
+    assert count_tokens_xlmr("w0 w1 w2") == 3
+
+
+def test_count_tokens_xlmr_loads_tokenizer_file_via_ensure(tmp_path, monkeypatch):
+    """First call loads onnx/tokenizer.json from ensure(EMBEDDING_SPEC_ID) — the
+    same file embed.py's ONNXMultilingualEmbedding reads — with no ONNX
+    session construction."""
+    monkeypatch.setattr(shared, "_xlmr_tokenizer", None)
+    model_dir = tmp_path / "embedding"
+    (model_dir / "onnx").mkdir(parents=True)
+    _toy_xlmr_tokenizer().save(str(model_dir / "onnx" / "tokenizer.json"))
+
+    with patch("bibilab.model_registry.ensure", return_value=model_dir) as mock_ensure:
+        count = count_tokens_xlmr("w0 w1 w2 w3")
+
+    mock_ensure.assert_called_once()
+    assert count == 4
 
 
 def test_interpreting_providers_drops_compiling_eps(monkeypatch):

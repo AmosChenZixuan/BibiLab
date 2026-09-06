@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+import bibilab.pipeline.chunk as chunk_module
 from bibilab.pipeline._shared import resolve_response_language
 from bibilab.pipeline.audio import PipelineError, extract_audio
 from bibilab.pipeline.chunk import _SENT_END, RagChunk, chunk_segments
@@ -202,16 +203,17 @@ def test_chunk_single_short_segment():
     assert chunks[0].sequence_index == 0
 
 
-def test_chunk_merges_short_segments():
+def test_chunk_merges_short_segments(monkeypatch):
+    monkeypatch.setattr(chunk_module, "DOC_TOKEN_BUDGET", 50)
     segs = [_seg(f"word {i}", start=float(i), end=float(i + 1)) for i in range(10)]
-    chunks = chunk_segments(segs, target_tokens=50)
+    chunks = chunk_segments(segs)
     # All short segments should merge into one or two chunks
     assert len(chunks) < 10
     assert all(isinstance(c, RagChunk) for c in chunks)
 
 
 def test_chunk_oversized_segment_is_own_chunk():
-    # Create a segment that clearly exceeds MAX_TOKENS (400)
+    # Create a segment that clearly exceeds the production DOC_TOKEN_BUDGET
     big_text = " ".join(["word"] * 500)
     segs = [_seg(big_text)]
     chunks = chunk_segments(segs)
@@ -219,9 +221,10 @@ def test_chunk_oversized_segment_is_own_chunk():
     assert chunks[0].text == big_text
 
 
-def test_chunk_sequence_indices_are_consecutive():
+def test_chunk_sequence_indices_are_consecutive(monkeypatch):
+    monkeypatch.setattr(chunk_module, "DOC_TOKEN_BUDGET", 20)
     segs = [_seg(f"sentence number {i} in the test", start=float(i), end=float(i + 1)) for i in range(30)]
-    chunks = chunk_segments(segs, target_tokens=20)
+    chunks = chunk_segments(segs)
     indices = [c.sequence_index for c in chunks]
     assert indices == list(range(len(chunks)))
 
@@ -231,37 +234,16 @@ def test_chunk_timestamps_correct():
         WhisperSegment(start=10.0, end=20.0, text="first"),
         WhisperSegment(start=20.0, end=30.0, text="second"),
     ]
-    chunks = chunk_segments(segs, target_tokens=1000)
+    chunks = chunk_segments(segs)
     assert chunks[0].timestamp_start == 10.0
     assert chunks[0].timestamp_end == 30.0
 
 
-def test_chunk_language_zh_reduces_fragmentation():
-    """Chinese gets higher target_tokens, producing fewer chunks than English."""
-    seg = _seg("this sentence has approximately twenty tokens in cl100k base encoding")
-    segs = [seg for _ in range(50)]
-    chunks_en = chunk_segments(segs, language="en")
-    chunks_zh = chunk_segments(segs, language="zh")
-    assert len(chunks_zh) < len(chunks_en)
-
-
-def test_chunk_explicit_target_overrides_language():
-    """Explicit target_tokens bypasses the language lookup table."""
-    seg = _seg("this sentence has approximately twenty tokens in cl100k base encoding")
-    segs = [seg for _ in range(50)]
-    chunks_a = chunk_segments(segs, target_tokens=500, language="en")
-    chunks_b = chunk_segments(segs, target_tokens=500, language="zh")
-    assert len(chunks_a) == len(chunks_b)
-
-
-def test_chunk_unknown_language_falls_back_to_default():
-    """Unrecognized language code uses _DEFAULT_TARGET_TOKENS (300)."""
-    seg = _seg("this sentence has approximately twenty tokens in cl100k base encoding")
-    segs = [seg for _ in range(50)]
-    chunks_fr = chunk_segments(segs, language="fr")
-    chunks_en = chunk_segments(segs, language="en")
-    # French is unknown, falls back to default (same as English)
-    assert len(chunks_fr) == len(chunks_en)
+def test_chunk_segments_rejects_language_kwarg():
+    """Language-dependent sizing is gone entirely — no parameter is left to
+    route through, so there's no way to make output vary by language."""
+    with pytest.raises(TypeError):
+        chunk_segments([_seg("x")], language="en")
 
 
 # ---------------------------------------------------------------------------
@@ -274,8 +256,9 @@ def _word_seg(count: int, start: float, end: float) -> WhisperSegment:
     return _seg("word " * count, start=start, end=end)
 
 
-def test_chunk_pause_boundary_splits_at_long_gap():
+def test_chunk_pause_boundary_splits_at_long_gap(monkeypatch):
     """3s gap between groups produces chunk boundary when buffer past min_target."""
+    monkeypatch.setattr(chunk_module, "DOC_TOKEN_BUDGET", 100)
     group1 = [
         _word_seg(30, start=0.0, end=5.0),
         _word_seg(30, start=5.0, end=10.0),
@@ -285,38 +268,41 @@ def test_chunk_pause_boundary_splits_at_long_gap():
         _word_seg(30, start=13.0, end=18.0),
         _word_seg(30, start=18.0, end=23.0),
     ]
-    chunks = chunk_segments(group1 + group2, target_tokens=100)
+    chunks = chunk_segments(group1 + group2)
     assert len(chunks) == 2
     assert chunks[0].timestamp_end == 10.0
     assert chunks[1].timestamp_start == 13.0
 
 
-def test_chunk_small_gap_no_pause_split():
-    """Gaps under default threshold fall back to token-target flush only."""
+def test_chunk_small_gap_no_pause_split(monkeypatch):
+    """Gaps under default threshold fall back to token-ceiling flush only."""
+    monkeypatch.setattr(chunk_module, "DOC_TOKEN_BUDGET", 200)
     segs = [
         _word_seg(30, start=0.0, end=5.0),
         _word_seg(30, start=5.5, end=10.0),  # 0.5s gap
         _word_seg(30, start=10.8, end=15.0),  # 0.8s gap
         _word_seg(30, start=15.0, end=20.0),
     ]
-    # All gaps < 1.5s, buffer accumulates to ~120 tokens, target=200 → one chunk
-    chunks = chunk_segments(segs, target_tokens=200)
+    # All gaps < 1.5s, buffer accumulates to 120 tokens, budget=200 → one chunk
+    chunks = chunk_segments(segs)
     assert len(chunks) == 1
 
 
-def test_chunk_pause_below_min_target_no_split():
-    """Long pause with buffer below min_target_ratio does not trigger flush."""
+def test_chunk_pause_below_min_target_no_split(monkeypatch):
+    """Long pause with buffer below min_target_ratio does not trigger a pause flush."""
+    monkeypatch.setattr(chunk_module, "DOC_TOKEN_BUDGET", 200)
     segs = [
         _seg("tiny buffer", start=0.0, end=2.0),
-        # 3s gap but buffer too small (~2 tokens vs min 100 for target=200)
+        # 3s gap but buffer too small (2 tokens vs min 100 for budget=200)
         _word_seg(30, start=5.0, end=10.0),
     ]
-    chunks = chunk_segments(segs, target_tokens=200)
+    chunks = chunk_segments(segs)
     assert len(chunks) == 1
 
 
-def test_chunk_pause_threshold_configurable():
+def test_chunk_pause_threshold_configurable(monkeypatch):
     """Lower pause_threshold_seconds triggers split on smaller gaps."""
+    monkeypatch.setattr(chunk_module, "DOC_TOKEN_BUDGET", 100)
     group1 = [
         _word_seg(30, start=0.0, end=5.0),
         _word_seg(30, start=5.0, end=10.0),
@@ -326,50 +312,54 @@ def test_chunk_pause_threshold_configurable():
     segs = group1 + group2
 
     # Default 1.5s threshold: 1.0s gap → no split
-    chunks_default = chunk_segments(segs, target_tokens=100)
+    chunks_default = chunk_segments(segs)
     assert len(chunks_default) == 1
 
     # Custom 0.5s threshold: 1.0s gap → split
-    chunks_low = chunk_segments(segs, target_tokens=100, pause_threshold_seconds=0.5)
+    chunks_low = chunk_segments(segs, pause_threshold_seconds=0.5)
     assert len(chunks_low) == 2
 
 
-def test_chunk_token_flush_skipped_when_buffer_below_min_target():
-    """Token-target flush skips when buffer < min_target_ratio to avoid orphans.
-
-    After a pause flush empties the buffer, a single small segment may sit
-    alone. When the next segment would overflow, the min_target guard skips
-    the flush, letting the small buffer merge into a larger chunk instead.
+def test_chunk_ceiling_forces_flush_even_below_min_target(monkeypatch):
+    """The ceiling is a hard invariant — unlike the old target/max split, it
+    flushes a tiny buffer rather than let it merge past the ceiling with an
+    incoming segment. This is the swallow-path bug #716 fixes: previously a
+    buffer under min_target_ratio was allowed to silently absorb an incoming
+    segment even when the combined size broke the declared bound.
     """
-    # _word_seg(10) ≈ 11 tokens, _word_seg(30) ≈ 31 tokens
-    # target=50, min=25 (50*0.5), max=66 (50*4/3)
+    monkeypatch.setattr(chunk_module, "DOC_TOKEN_BUDGET", 45)
+    # buffer = 20 tokens (2 * 10, well under min_flush=22.5), incoming = 30
+    # tokens. 20+30=50 > 45 — the ceiling forces a flush of the small buffer
+    # instead of absorbing the incoming segment into one 50-token chunk.
     segs = [
         _word_seg(10, start=0.0, end=2.0),
-        _word_seg(10, start=2.0, end=4.0),  # buffer ~22t (< 25 min)
-        _word_seg(30, start=4.0, end=6.0),  # 22+31=53 > 50, but 22<25 → skip
+        _word_seg(10, start=2.0, end=4.0),
+        _word_seg(30, start=4.0, end=6.0),
     ]
-    chunks = chunk_segments(segs, target_tokens=50)
-    assert len(chunks) == 1
+    chunks = chunk_segments(segs)
+    assert len(chunks) == 2
+    assert [c.seg_end for c in chunks] == [1, 2]
 
 
-def test_chunk_pause_flush_before_oversized_segment():
+def test_chunk_pause_flush_before_oversized_segment(monkeypatch):
     """Oversized branch flushes buffer; pause block never reached for it.
 
     The oversized check runs first in the loop body. When an oversized
     segment arrives, its precursor path flushes any accumulated buffer
     before emitting the oversized segment as its own chunk. This holds
     regardless of pause gaps — the pause-aware block is unreachable
-    for oversized segments due to the continue on line 89.
+    for oversized segments due to the continue right after it.
     """
-    # _word_seg(30) ≈ 31 tokens × 2 = ~62 tokens buffer (>= 50 min for target=100)
-    # _word_seg(140) ≈ 141 tokens (> 133 max) → oversized
+    monkeypatch.setattr(chunk_module, "DOC_TOKEN_BUDGET", 100)
+    # _word_seg(30) = 30 tokens x 2 = 60 tokens buffer (>= 50 min for budget=100)
+    # _word_seg(140) = 140 tokens (exceeds the 100-token ceiling) → oversized
     group1 = [
         _word_seg(30, start=0.0, end=5.0),
         _word_seg(30, start=5.0, end=10.0),
     ]
     # 3s gap (10.0 → 13.0) — oversized path flushes buffer, not pause path
     oversized = _word_seg(140, start=13.0, end=18.0)
-    chunks = chunk_segments(group1 + [oversized], target_tokens=100)
+    chunks = chunk_segments(group1 + [oversized])
     assert len(chunks) == 2
     assert chunks[0].timestamp_end == 10.0
     assert chunks[1].timestamp_start == 13.0
@@ -380,15 +370,16 @@ def test_chunk_pause_flush_before_oversized_segment():
 # ---------------------------------------------------------------------------
 
 
-def test_chunk_sentence_end_triggers_flush(caplog):
-    """Segment ending with 。triggers flush at sentence boundary when past target."""
-    filler = "word " * 25  # 26 tokens/seg with cl100k
+def test_chunk_sentence_end_triggers_flush(caplog, monkeypatch):
+    """Segment ending with 。triggers flush at sentence boundary when past the ceiling."""
+    monkeypatch.setattr(chunk_module, "DOC_TOKEN_BUDGET", 300)
+    filler = "word " * 25  # 25 tokens/seg (word-count)
     segs = [_seg(filler, start=float(i), end=float(i + 1)) for i in range(11)]
-    segs.append(_seg(filler + "。", start=11.0, end=12.0))
+    segs.append(_seg(filler.rstrip() + "。", start=11.0, end=12.0))
     segs.append(_seg(filler, start=12.0, end=13.0))
 
     with caplog.at_level("INFO", logger="bibilab.pipeline.chunk"):
-        chunks = chunk_segments(segs, target_tokens=300)
+        chunks = chunk_segments(segs)
 
     assert len(chunks) == 2
     assert chunks[0].text.endswith("。")
@@ -396,13 +387,14 @@ def test_chunk_sentence_end_triggers_flush(caplog):
     assert "non-sentence boundary" not in caplog.text
 
 
-def test_chunk_no_sentence_end_flushes_at_target(caplog):
-    """Without any sentence-end in buffer, token-flush bounds chunk at target."""
+def test_chunk_no_sentence_end_flushes_at_ceiling(caplog, monkeypatch):
+    """Without any sentence-end in buffer, token-flush bounds chunk at the ceiling."""
+    monkeypatch.setattr(chunk_module, "DOC_TOKEN_BUDGET", 300)
     filler = "word " * 25
     segs = [_seg(filler, start=float(i), end=float(i + 1)) for i in range(14)]
 
     with caplog.at_level("INFO", logger="bibilab.pipeline.chunk"):
-        chunks = chunk_segments(segs, target_tokens=300)
+        chunks = chunk_segments(segs)
 
     assert len(chunks) == 2
     # No sentence boundary anywhere → token-forced cut warns.
@@ -411,44 +403,52 @@ def test_chunk_no_sentence_end_flushes_at_target(caplog):
 
 
 @pytest.mark.parametrize("punct", ["!", "?", "．", "…", "。", "！", "？"])
-def test_chunk_punctuation_variants_trigger_sentence_flush(punct):
+def test_chunk_punctuation_variants_trigger_sentence_flush(punct, monkeypatch):
     """Each entry in _SENT_END acts as a sentence boundary when scan finds it."""
+    monkeypatch.setattr(chunk_module, "DOC_TOKEN_BUDGET", 300)
     filler = "word " * 25
     segs = [_seg(filler, start=float(i), end=float(i + 1)) for i in range(11)]
-    segs.append(_seg(filler + punct, start=11.0, end=12.0))
+    segs.append(_seg(filler.rstrip() + punct, start=11.0, end=12.0))
     segs.append(_seg(filler, start=12.0, end=13.0))
 
-    chunks = chunk_segments(segs, target_tokens=300)
+    chunks = chunk_segments(segs)
     assert len(chunks) == 2, f"punct={punct!r} should trigger flush"
     assert chunks[0].text.endswith(punct)
 
 
 @pytest.mark.parametrize("ambiguous", [".", ";"])
-def test_chunk_ascii_period_semicolon_not_sentence_end(ambiguous):
-    """ASCII '.' and ';' are excluded — decimals, abbreviations, list separators."""
+def test_chunk_ascii_period_semicolon_not_sentence_end(ambiguous, caplog, monkeypatch):
+    """ASCII '.' and ';' are excluded — decimals, abbreviations, list separators.
+    A segment ending in one of these doesn't count as a sentence boundary, so
+    the eventual flush is token-forced rather than sentence-recognized (the
+    resulting chunk may still incidentally *contain* the ambiguous segment —
+    what matters is that it was never treated as a valid cut point)."""
+    monkeypatch.setattr(chunk_module, "DOC_TOKEN_BUDGET", 300)
     filler = "word " * 25
     segs = [_seg(filler, start=float(i), end=float(i + 1)) for i in range(11)]
-    segs.append(_seg(filler + ambiguous, start=11.0, end=12.0))
+    segs.append(_seg(filler.rstrip() + ambiguous, start=11.0, end=12.0))
     segs.append(_seg(filler, start=12.0, end=13.0))
 
-    chunks = chunk_segments(segs, target_tokens=300)
-    # Buffer flushes at target (token branch), not on the ambiguous character.
+    with caplog.at_level("INFO", logger="bibilab.pipeline.chunk"):
+        chunks = chunk_segments(segs)
+
     assert len(chunks) == 2
-    assert not chunks[0].text.endswith(ambiguous)
+    assert "token-forced=1" in caplog.text
 
 
-def test_chunk_sentence_boundary_in_middle_of_buffer(caplog):
+def test_chunk_sentence_boundary_in_middle_of_buffer(caplog, monkeypatch):
     """Sentence boundary at buf[i<-1] still triggers split (scan, not last-only)."""
+    monkeypatch.setattr(chunk_module, "DOC_TOKEN_BUDGET", 300)
     filler = "word " * 25
-    # s0..s9 = 10 segs no punct (260 tokens). s10 = filler+"。" (26). s11..s14 no punct (104).
-    # Incoming s15 (26) → buf = 390 > 300. Scan finds s10 as boundary;
-    # head s0..s10 (286 tokens, >= 150) flushes; tail s11..s14 retained.
+    # s0..s9 = 10 segs no punct (250 tokens). s10 = filler+"。" (25). s11..s14 no punct (100).
+    # Incoming s15 (25) → buf = 375 > 300. Scan finds s10 as boundary;
+    # head s0..s10 (275 tokens, >= 150) flushes; tail s11..s14 retained.
     segs = [_seg(filler, start=float(i), end=float(i + 1)) for i in range(10)]
-    segs.append(_seg(filler + "。", start=10.0, end=11.0))
+    segs.append(_seg(filler.rstrip() + "。", start=10.0, end=11.0))
     segs.extend(_seg(filler, start=float(i), end=float(i + 1)) for i in range(11, 16))
 
     with caplog.at_level("INFO", logger="bibilab.pipeline.chunk"):
-        chunks = chunk_segments(segs, target_tokens=300)
+        chunks = chunk_segments(segs)
 
     assert len(chunks) >= 2
     assert chunks[0].text.endswith("。"), "split must land on the boundary, not after it"
@@ -456,16 +456,81 @@ def test_chunk_sentence_boundary_in_middle_of_buffer(caplog):
     assert "non-sentence boundary" not in caplog.text
 
 
-def test_chunk_sentence_flush_below_min_target_skips():
-    """Buffer ends at 。but is below min_target_ratio → boundary not qualifying, segment merged in."""
+def test_chunk_sentence_flush_forces_tiny_chunk_below_min_target(monkeypatch):
+    """The ceiling forces a flush even when the sentence-ended buffer is far
+    below min_target_ratio — the old target/max headroom that let this merge
+    into one oversized chunk is gone; the ceiling wins over chunk-size
+    uniformity (same invariant as test_chunk_ceiling_forces_flush_even_below_min_target,
+    exercised via the sentence-boundary path instead of the plain forced-cut path).
+    """
+    monkeypatch.setattr(chunk_module, "DOC_TOKEN_BUDGET", 200)
     segs = [
         _seg("hello world this ends。", start=0.0, end=1.0),
         _seg("word " * 220, start=1.0, end=2.0),
     ]
 
-    chunks = chunk_segments(segs, target_tokens=200)
-    assert len(chunks) == 1
-    assert chunks[0].text.endswith(("word", "word "))
+    chunks = chunk_segments(segs)
+    assert len(chunks) == 2
+    assert chunks[0].text.endswith("。")
+
+
+# ---------------------------------------------------------------------------
+# chunk.py — ceiling invariant (#716)
+# ---------------------------------------------------------------------------
+
+
+def test_chunk_no_emitted_chunk_ever_exceeds_ceiling(monkeypatch):
+    """Property: for a swept range of segment sizes and sentence-ending
+    placements — exercising the pause, sentence, forced-token, oversized, and
+    multi-flush-per-segment paths — no emitted chunk's token count exceeds
+    DOC_TOKEN_BUDGET. A deterministic sweep (every segment size 1..budget+5,
+    alternating sentence-ended/not), not a random sample, so the check can't
+    pass by luck on a few sampled sizes.
+    """
+    budget = 20
+    monkeypatch.setattr(chunk_module, "DOC_TOKEN_BUDGET", budget)
+    segs = []
+    # Sizes stay under budget — a lone oversized segment is a documented,
+    # separate exception (atomic, unsplittable); this sweep targets the
+    # merge/split logic's ceiling, not the oversized-segment path.
+    for i, size in enumerate(range(1, budget)):
+        text = " ".join(f"w{i}_{j}" for j in range(size))
+        if size % 2 == 0:
+            text += "!"  # sentence-ended for even sizes, plain for odd
+        segs.append(_seg(text, start=float(i), end=float(i + 1)))
+
+    chunks = chunk_segments(segs)
+
+    assert len(chunks) > 1  # sanity: the sweep actually forces multiple chunks
+    for c in chunks:
+        assert chunk_module.count_tokens_xlmr(c.text) <= budget, (
+            f"chunk [{c.seg_start}..{c.seg_end}] exceeds the {budget}-token ceiling"
+        )
+
+
+def test_chunk_overshoot_shape_boundary_on_incoming_segment_stays_split(monkeypatch):
+    """Regression for the identified bug (issue #716): a short buffered
+    segment with no sentence boundary, followed by a segment that alone fits
+    under the ceiling but combined with the buffer would exceed it — and
+    which itself ends with sentence-ending punctuation. The old code searched
+    buf + [incoming] together and accepted a boundary landing on the incoming
+    segment with no upper-bound check, flushing buf+seg as one over-ceiling
+    chunk. The fix never considers the incoming segment part of the split
+    search, so the two must land in separate chunks, each under the ceiling.
+    """
+    monkeypatch.setattr(chunk_module, "DOC_TOKEN_BUDGET", 20)
+    small_buffered = _seg("w0 w1 w2 w3 w4", start=0.0, end=1.0)  # 5 tokens, no boundary
+    incoming = _seg(
+        "w5 w6 w7 w8 w9 w10 w11 w12 w13 w14 w15 w16 w17 w18 w19 w20!", start=1.0, end=2.0
+    )  # 16 tokens, sentence-ended; 5+16=21 > 20
+
+    chunks = chunk_segments([small_buffered, incoming])
+
+    assert len(chunks) == 2, "buffer and incoming segment must not be merged into one over-ceiling chunk"
+    for c in chunks:
+        assert chunk_module.count_tokens_xlmr(c.text) <= 20
+    assert chunks[0].seg_end == 0
+    assert chunks[1].seg_start == 1
 
 
 # ---------------------------------------------------------------------------
@@ -474,21 +539,22 @@ def test_chunk_sentence_flush_below_min_target_skips():
 
 
 def test_chunk_seg_range_covers_every_segment_contiguously():
-    """3 short zh sentences → one chunk; seg-range spans 0..2."""
+    """3 short sentences, well under the ceiling → one chunk; seg-range spans 0..2."""
     segs = [
         _seg("第一句。", start=0.0, end=1.0),
         _seg("第二句。", start=1.0, end=2.0),
         _seg("第三句。", start=2.0, end=3.0),
     ]
-    chunks = chunk_segments(segs, target_tokens=1000, language="zh")
+    chunks = chunk_segments(segs)
     assert len(chunks) == 1
     assert (chunks[0].seg_start, chunks[0].seg_end) == (0, 2)
 
 
-def test_chunk_seg_range_partitions_input_with_no_gap_or_overlap():
-    """Force multiple chunks via tiny token target; ranges tile [0, N-1] exactly."""
+def test_chunk_seg_range_partitions_input_with_no_gap_or_overlap(monkeypatch):
+    """Force multiple chunks via a tiny ceiling; ranges tile [0, N-1] exactly."""
+    monkeypatch.setattr(chunk_module, "DOC_TOKEN_BUDGET", 3)
     segs = [_seg(f"句子{i}。", start=float(i), end=float(i) + 1) for i in range(10)]
-    chunks = chunk_segments(segs, target_tokens=2, chunk_max_tokens=3, language="zh")
+    chunks = chunk_segments(segs)
     # contiguous, ascending, no gap, no overlap across the whole input
     assert chunks[0].seg_start == 0
     assert chunks[-1].seg_end == 9
@@ -496,11 +562,12 @@ def test_chunk_seg_range_partitions_input_with_no_gap_or_overlap():
         assert nxt.seg_start == prev.seg_end + 1
 
 
-def test_chunk_seg_range_oversized_segment_is_its_own_range():
+def test_chunk_seg_range_oversized_segment_is_its_own_range(monkeypatch):
     """Oversized segment (index 1) is a standalone chunk with its own range."""
-    big = _seg("超长" * 500, start=0.0, end=5.0)  # exceeds max → own chunk
+    monkeypatch.setattr(chunk_module, "DOC_TOKEN_BUDGET", 50)
+    big = _seg("超长 " * 500, start=0.0, end=5.0)  # exceeds the ceiling → own chunk
     segs = [_seg("短句。", start=5.0, end=6.0), big, _seg("另一句。", start=6.0, end=7.0)]
-    chunks = chunk_segments(segs, target_tokens=50, language="zh")
+    chunks = chunk_segments(segs)
     oversized = [c for c in chunks if c.seg_start == 1 and c.seg_end == 1]
     assert len(oversized) == 1
 
