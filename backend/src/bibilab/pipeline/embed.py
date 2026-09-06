@@ -230,6 +230,14 @@ class ONNXMultilingualEmbedding:
         counts = mask.sum(axis=1, keepdims=True)
         embeddings = summed / counts
 
+        # e5 is trained for cosine similarity, so the raw mean-pooled vector's
+        # magnitude carries no relevance signal. The collection is queried in
+        # Chroma's default L2 space, where L2² = 2 - 2·cos once both sides are
+        # unit length — so normalizing here is what makes L2 rank by angle and
+        # puts distances on the bounded [0, 2] scale query_chunks' floor assumes.
+        norms = self._np.linalg.norm(embeddings, axis=1, keepdims=True)
+        embeddings = embeddings / self._np.maximum(norms, 1e-12)
+
         return [emb.tolist() for emb in embeddings]
 
 
