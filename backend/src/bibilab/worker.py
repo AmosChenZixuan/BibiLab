@@ -10,11 +10,7 @@ from typing import Any
 import httpx
 
 from bibilab.adapters.base import AuthRequiredError, VideoMeta
-from bibilab.cleanup import (
-    _find_cached_video,
-    cleanup_job_artifacts,
-    purge_download_files,
-)
+from bibilab.cleanup import _find_cached_video, cleanup_job_artifacts, purge_download_files
 from bibilab.config import BibilabConfig, bibilab_home, load_config
 from bibilab.db import (
     apply_digest_facets,
@@ -497,27 +493,31 @@ class WorkerLoop:
         """Stage 1: Download video file and cover image."""
         await update_job_status(job["id"], JobStatus.DOWNLOADING.value, progress=10)
 
-        cached_path = await asyncio.to_thread(_find_cached_video, video_meta.video_id)
+        # Cache lookup — reuse a previously-downloaded file for this video_id
+        # if present (see #720). Inline glob+stat, not via to_thread — the
+        # filesystem ops are sub-millisecond on a small downloads dir and
+        # routing through the executor was suspected of hanging pytest-asyncio's
+        # loop teardown in CI.
+        cached_path = _find_cached_video(video_meta.video_id)
         if cached_path is not None:
-            # Cache hit: a previous ingest already wrote a usable video file
-            # for this video_id. Reuse it and skip the network.
-            video_path = cached_path
-        else:
-            # Cache miss: .part hygiene first, then a real download.
-            await asyncio.to_thread(purge_download_files, video_meta.video_id)
-            video_path = await self._get_adapter(video_meta.platform).download(
-                video_meta.video_id,
-                video_meta.source_url,
-                self._get_config().backend.download_connections,
-            )
+            # Cover is still keyed by the freshly-generated source_id (different
+            # from the cached video_id) — re-fetch is one cheap public-CDN GET.
+            covers_dir = self._bibilab_home / "covers"
+            covers_dir.mkdir(parents=True, exist_ok=True)
+            cover_dest = covers_dir / f"{source_id}.jpg"
+            await asyncio.to_thread(_download_cover, video_meta.cover_url, cover_dest)
+            return cached_path
 
-            # TODO: cache eviction (deferred — see #720 follow-up; the inline
-            # call below caused pytest-asyncio to hang in CI). For now, the
-            # download-stage cache is unbounded — disk growth is the user's
-            # manual cleanup cost.
+        # Cache miss: .part hygiene first, then a real download. The file is
+        # intentionally retained on success (download is the cache).
+        await asyncio.to_thread(purge_download_files, video_meta.video_id)
+        video_path: Path = await self._get_adapter(video_meta.platform).download(
+            video_meta.video_id,
+            video_meta.source_url,
+            self._get_config().backend.download_connections,
+        )
 
-        # Cover is fetched on both paths: covers are keyed by source_id, which
-        # is freshly generated per ingest (different from the cached video_id).
+        # Download cover
         covers_dir = self._bibilab_home / "covers"
         covers_dir.mkdir(parents=True, exist_ok=True)
         cover_dest = covers_dir / f"{source_id}.jpg"
