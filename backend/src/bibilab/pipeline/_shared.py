@@ -51,7 +51,7 @@ def count_tokens_xlmr(text: str) -> int:
     """Estimate token count with the XLM-R sentencepiece tokenizer shared by the
     embedder (embed.py) and reranker (rerank.py). Used by the chunker
     (pipeline/chunk.py) so chunk sizing matches the unit both retrieval
-    consumers actually tokenize with — chunk.py:101 was previously sized with
+    consumers actually tokenize with — chunk sizing was previously done with
     cl100k, which drifts from XLM-R by a language-dependent ratio.
 
     Lazily loads only the tokenizer file (not the ONNX session) via

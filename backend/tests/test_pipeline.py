@@ -323,9 +323,9 @@ def test_chunk_pause_threshold_configurable(monkeypatch):
 def test_chunk_ceiling_forces_flush_even_below_min_target(monkeypatch):
     """The ceiling is a hard invariant — unlike the old target/max split, it
     flushes a tiny buffer rather than let it merge past the ceiling with an
-    incoming segment. This is the swallow-path bug #716 fixes: previously a
-    buffer under min_target_ratio was allowed to silently absorb an incoming
-    segment even when the combined size broke the declared bound.
+    incoming segment. Previously a buffer under min_target_ratio was allowed
+    to silently absorb an incoming segment even when the combined size broke
+    the declared bound.
     """
     monkeypatch.setattr(chunk_module, "DOC_TOKEN_BUDGET", 45)
     # buffer = 20 tokens (2 * 10, well under min_flush=22.5), incoming = 30
@@ -475,17 +475,20 @@ def test_chunk_sentence_flush_forces_tiny_chunk_below_min_target(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# chunk.py — ceiling invariant (#716)
+# chunk.py — ceiling invariant
 # ---------------------------------------------------------------------------
 
 
 def test_chunk_no_emitted_chunk_ever_exceeds_ceiling(monkeypatch):
     """Property: for a swept range of segment sizes and sentence-ending
-    placements — exercising the pause, sentence, forced-token, oversized, and
-    multi-flush-per-segment paths — no emitted chunk's token count exceeds
-    DOC_TOKEN_BUDGET. A deterministic sweep (every segment size 1..budget+5,
+    placements — exercising the sentence and forced-token flush paths at
+    every buffer-fill level — no emitted chunk's token count exceeds
+    DOC_TOKEN_BUDGET. A deterministic sweep (every segment size 1..budget-1,
     alternating sentence-ended/not), not a random sample, so the check can't
-    pass by luck on a few sampled sizes.
+    pass by luck on a few sampled sizes. Pause-flush is covered by the
+    dedicated pause-boundary tests above; the multi-flush-per-segment case
+    (one incoming segment forcing two flushes in the same pass) is covered
+    by test_chunk_multi_flush_per_segment_stays_under_ceiling below.
     """
     budget = 20
     monkeypatch.setattr(chunk_module, "DOC_TOKEN_BUDGET", budget)
@@ -508,9 +511,35 @@ def test_chunk_no_emitted_chunk_ever_exceeds_ceiling(monkeypatch):
         )
 
 
+def test_chunk_multi_flush_per_segment_stays_under_ceiling(monkeypatch):
+    """One incoming segment can force more than one flush off the buffer in
+    the same pass: a sentence-bounded head split first, then — if the
+    remaining tail is still too big alongside the incoming segment — a
+    forced cut of that tail too. Both flushed pieces, and the final buffer,
+    must stay under the ceiling.
+    """
+    monkeypatch.setattr(chunk_module, "DOC_TOKEN_BUDGET", 20)
+    # buf = [a(11 tok, sentence-ended), b(8 tok, no boundary)] = 19 tokens.
+    # incoming c = 15 tokens. 19+15=34>20 forces the loop; the first pass
+    # splits at a (cum=11 >= min_flush=10), leaving tail=[b](8). 8+15=23>20
+    # still doesn't fit, forcing a second pass: no boundary in [b] alone, so
+    # it's flushed as a forced cut. Only then does c start a fresh buffer.
+    segs = [
+        _seg("a0 a1 a2 a3 a4 a5 a6 a7 a8 a9 a10!", start=0.0, end=1.0),
+        _seg("b0 b1 b2 b3 b4 b5 b6 b7", start=1.0, end=2.0),
+        _seg(" ".join(f"c{i}" for i in range(15)), start=2.0, end=3.0),
+    ]
+
+    chunks = chunk_segments(segs)
+
+    assert [(c.seg_start, c.seg_end) for c in chunks] == [(0, 0), (1, 1), (2, 2)]
+    for c in chunks:
+        assert chunk_module.count_tokens_xlmr(c.text) <= 20
+
+
 def test_chunk_overshoot_shape_boundary_on_incoming_segment_stays_split(monkeypatch):
-    """Regression for the identified bug (issue #716): a short buffered
-    segment with no sentence boundary, followed by a segment that alone fits
+    """Regression: a short buffered segment with no sentence boundary,
+    followed by a segment that alone fits
     under the ceiling but combined with the buffer would exceed it — and
     which itself ends with sentence-ending punctuation. The old code searched
     buf + [incoming] together and accepted a boundary landing on the incoming

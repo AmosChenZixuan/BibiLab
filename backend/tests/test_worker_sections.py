@@ -258,7 +258,7 @@ async def test_ingest_n_sections_produces_ordered_section_digests(tmp_bibilab_ho
 
 
 # ---------------------------------------------------------------------------
-# sources.language derived from transcript text (#716 folds in #703)
+# sources.language derived from transcript text, not the ASR-forced config
 # ---------------------------------------------------------------------------
 
 
@@ -279,9 +279,9 @@ def test_classify_transcript_language_en():
 @pytest.mark.asyncio
 async def test_stage_persist_writes_classified_language_not_detected(tmp_bibilab_home: Path):
     """_stage_persist must write sources.language from the transcript text
-    (CJK-ratio classifier), not the ASR-forced detected_language — the whole
-    point of folding #703 in: a forced ASR config on non-matching audio made
-    the old value an echo of the config, not a fact about the transcript."""
+    (CJK-ratio classifier), not the ASR-forced detected_language: a forced ASR
+    config on non-matching audio made the old value an echo of the config,
+    not a fact about the transcript."""
     from bibilab.db import bootstrap_db, create_list
     from bibilab.worker import WorkerLoop
 
