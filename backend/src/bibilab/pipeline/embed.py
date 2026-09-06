@@ -552,9 +552,8 @@ async def retrieve(
     """
     sources_total = len(source_ids)
     search_pool = scoped_source_ids if scoped_source_ids is not None else source_ids
-    # Pool sizing follows search_pool: sections are the retrieval unit (EPIC #457),
-    # and Chroma/FTS only scan search_pool, so provisioning against the unscoped
-    # source_ids would burn rerank budget on candidates that can never be returned.
+    # Pool sizing follows search_pool: sections are the retrieval unit, so the
+    # pool tracks the scoped set the search actually sees.
     sections_total = await count_sections_for_sources(search_pool)
     effective_top_k = min(max(sections_total * 3, top_k, 10), 60)
 

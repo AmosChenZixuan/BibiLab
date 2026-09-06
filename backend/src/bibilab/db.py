@@ -636,11 +636,9 @@ async def get_section_ranges(source_id: str) -> list[aiosqlite.Row]:
 async def count_sections_for_sources(source_ids: list[str]) -> int:
     """Total section count across the given sources in one roundtrip.
 
-    Sections are the retrieval and citation unit (EPIC #457); pool
-    sizing uses this count rather than the source count so multi-section
-    lists (audiobook chapters, long interviews) are not under-provisioned.
     Empty input returns 0 without issuing SQL (the ``IN ()`` shape would
-    be a syntax error).
+    be a syntax error); the caller's other IN-clause helpers use the same
+    guard, so we don't diverge.
     """
     if not source_ids:
         return 0
