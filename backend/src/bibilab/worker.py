@@ -512,15 +512,12 @@ class WorkerLoop:
                 self._get_config().backend.download_connections,
             )
 
-            # Background LRU eviction — fire-and-forget. A slow eviction never
-            # blocks ingest; a crash inside is logged and never surfaces.
-            async def _evict_bg() -> None:
-                try:
-                    await asyncio.to_thread(_evict_cache_if_needed)
-                except Exception:
-                    logger.exception("Background cache eviction failed")
-
-            asyncio.create_task(_evict_bg())
+            # Inline LRU eviction — runs in a worker thread, never blocks
+            # ingest. The hang investigation showed that fire-and-forget
+            # asyncio.create_task evictions were blocking pytest-asyncio's
+            # loop teardown in CI; inline-await keeps the task lifecycle
+            # owned by the same coroutine that scheduled it.
+            await asyncio.to_thread(_evict_cache_if_needed)
 
         # Cover is fetched on both paths: covers are keyed by source_id, which
         # is freshly generated per ingest (different from the cached video_id).
