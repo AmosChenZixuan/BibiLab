@@ -7,7 +7,7 @@ import logging
 import threading
 
 from bibilab.model_registry import RERANKER_SPEC_ID, ensure
-from bibilab.pipeline._shared import interpreting_providers
+from bibilab.pipeline._shared import PAIR_WINDOW_TOKENS, QUERY_TOKEN_CLAMP, interpreting_providers
 from bibilab.pipeline.chat_inference_pool import get_chat_pool
 from bibilab.pipeline.embed import RetrievedChunk
 
@@ -23,6 +23,26 @@ _TOKENIZER_FILENAME = "tokenizer.json"
 
 _reranker: ONNXCrossEncoder | None = None
 _reranker_lock = threading.Lock()
+
+
+def _clamp_query(length_tokenizer, query: str) -> str:
+    """Pre-clamp the query to QUERY_TOKEN_CLAMP tokens before pair-encoding.
+
+    `only_second` truncation only ever trims the document side, so without this
+    a query longer than the clamp (but still under the full pair window) would
+    silently eat into the document's guaranteed floor.
+
+    `length_tokenizer` must have no truncation config: encoding this query alone
+    on the pair tokenizer (which has `only_second` enabled) raises once the
+    query alone is long enough to need truncating, since `only_second` requires
+    a second sequence to trim. A dedicated untruncated instance also avoids
+    toggling shared truncation state on the pair tokenizer, which `predict()`
+    calls concurrently from a multi-worker thread pool.
+    """
+    ids = length_tokenizer.encode(query, add_special_tokens=False).ids
+    if len(ids) <= QUERY_TOKEN_CLAMP:
+        return query
+    return length_tokenizer.decode(ids[:QUERY_TOKEN_CLAMP])
 
 
 class ONNXCrossEncoder:
@@ -47,13 +67,18 @@ class ONNXCrossEncoder:
         from tokenizers import Tokenizer  # noqa: PLC0415
 
         self._tokenizer = Tokenizer.from_file(str(model_dir / _TOKENIZER_FILENAME))
-        self._tokenizer.enable_truncation(max_length=512)
+        self._tokenizer.enable_truncation(max_length=PAIR_WINDOW_TOKENS, strategy="only_second")
+        # Separate untruncated instance for _clamp_query's length check — see its
+        # docstring for why it can't share self._tokenizer.
+        self._length_tokenizer = Tokenizer.from_file(str(model_dir / _TOKENIZER_FILENAME))
 
     def predict(self, pairs: list[list[str]]) -> list[float]:
         onnx_input_names = {i.name for i in self._session.get_inputs()}
         has_token_type = "token_type_ids" in onnx_input_names
 
-        encoded_list = [self._tokenizer.encode(query, doc) for query, doc in pairs]
+        encoded_list = [
+            self._tokenizer.encode(_clamp_query(self._length_tokenizer, query), doc) for query, doc in pairs
+        ]
 
         max_len = max(len(e.ids) for e in encoded_list)
         pad_id = self._tokenizer.token_to_id("<pad>") or 0
