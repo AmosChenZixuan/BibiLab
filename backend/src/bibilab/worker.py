@@ -108,7 +108,11 @@ def _classify_transcript_language(segments: list[WhisperSegment]) -> str:
     """Derive `sources.language` from the transcript text itself, not the
     ASR-resolved config value. A forced ASR language config (e.g. "zh" on
     English audio) makes `detected_language` an echo of the config, not a
-    fact about the transcript — this reads the actual text instead."""
+    fact about the transcript — this reads the actual text instead.
+
+    Binary zh-vs-en classifier: matches `TranscriptionConfig.language`'s
+    `Literal["zh", "en"]`, the only two languages this pipeline transcribes
+    today. Text with no CJK runs (including any other script) falls to "en"."""
     text = "".join(s.text for s in segments)
     if not text:
         return "en"
@@ -563,8 +567,7 @@ class WorkerLoop:
         # config value or its own per-segment detection) — re-deriving from
         # cfg.transcription.language here would override that resolution and route
         # large-v3's English-only output through zh-gated punctuation/chunking.
-        effective_language = detected_language
-        sentence_segments = await asyncio.to_thread(punctuate, vad_segments, effective_language)
+        sentence_segments = await asyncio.to_thread(punctuate, vad_segments, detected_language)
 
         # A cancel requested while punctuate was running is delivered at the
         # next await — without one here, a cancel landing in the gap between

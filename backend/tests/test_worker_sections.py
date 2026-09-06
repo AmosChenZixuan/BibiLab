@@ -262,18 +262,26 @@ async def test_ingest_n_sections_produces_ordered_section_digests(tmp_bibilab_ho
 # ---------------------------------------------------------------------------
 
 
-def test_classify_transcript_language_zh():
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        pytest.param("这是一个测试文本用来验证语言分类器的准确性", "zh", id="pure-zh"),
+        pytest.param("this is a test transcript used to verify the language classifier works", "en", id="pure-en"),
+        pytest.param(
+            "这是中文 mixed with a good amount of English text describing the same idea", "en", id="mixed-dominant-en"
+        ),
+        pytest.param("这段视频主要是中文内容偶尔夹杂一些English words像这样说明问题", "zh", id="mixed-dominant-zh"),
+        # Threshold is a strict >, so exactly 0.3 must NOT classify as zh.
+        pytest.param("中文测" + "abcdefg", "en", id="ratio-exactly-0.3-is-en"),  # 3/10 = 0.30
+        pytest.param("中文测试" + "abcdef", "zh", id="ratio-just-above-0.3-is-zh"),  # 4/10 = 0.40
+        pytest.param("中文" + "abcdefgh", "en", id="ratio-just-below-0.3-is-en"),  # 2/10 = 0.20
+    ],
+)
+def test_classify_transcript_language(text, expected):
     from bibilab.worker import _classify_transcript_language
 
-    segs = [_seg(0.0, 1.0, "这是一个测试文本用来验证语言分类器的准确性")]
-    assert _classify_transcript_language(segs) == "zh"
-
-
-def test_classify_transcript_language_en():
-    from bibilab.worker import _classify_transcript_language
-
-    segs = [_seg(0.0, 1.0, "this is a test transcript used to verify the language classifier works")]
-    assert _classify_transcript_language(segs) == "en"
+    segs = [_seg(0.0, 1.0, text)]
+    assert _classify_transcript_language(segs) == expected
 
 
 def test_classify_transcript_language_empty_defaults_to_en():

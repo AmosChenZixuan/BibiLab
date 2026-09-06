@@ -144,6 +144,12 @@ def chunk_segments(
                 chunk_idx += 1
                 buf_segs, buf_seg_idxs, buf_seg_tokens, buf_tokens = [], [], [], 0
 
+        if buf_segs and buf_tokens + seg_tokens > DOC_TOKEN_BUDGET:
+            # Loop invariant violated — would silently emit an over-ceiling chunk.
+            raise ValueError(
+                f"chunk_segments: buffer ({buf_tokens} tok) + segment ({seg_tokens} tok) "
+                f"exceeds DOC_TOKEN_BUDGET ({DOC_TOKEN_BUDGET}) after the ceiling-forced flush"
+            )
         buf_segs.append(seg)
         buf_seg_idxs.append(seg_i)
         buf_seg_tokens.append(seg_tokens)
