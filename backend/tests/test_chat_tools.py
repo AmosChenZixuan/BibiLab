@@ -159,6 +159,32 @@ class TestExecuteFindPassages:
         assert "filter_miss" not in result
 
     @pytest.mark.asyncio
+    async def test_execute_find_passages_forwards_truncation_stats(self, monkeypatch):
+        """RetrievalResult's truncation counters must reach the tool result
+        dict unchanged — this is the only plumbing between them."""
+        from bibilab.pipeline import chat_tools
+        from bibilab.pipeline.embed import RetrievalResult
+
+        async def fake_retrieve(**kwargs):
+            return RetrievalResult(
+                chunks=[],
+                source_coverage=[],
+                candidates_evaluated=0,
+                sources_with_hits=0,
+                sources_total=1,
+                truncated_pairs=2,
+                tokens_dropped=30,
+                worst_drop=20,
+            )
+
+        monkeypatch.setattr(chat_tools, "retrieve", fake_retrieve)
+        result = await chat_tools.execute_find_passages(query="q", source_ids=["s1"], cfg=None)
+
+        assert result["truncated_pairs"] == 2
+        assert result["tokens_dropped"] == 30
+        assert result["worst_drop"] == 20
+
+    @pytest.mark.asyncio
     async def test_execute_find_passages_drops_gate_neighbors_keys(self, monkeypatch):
         """v2 RetrievalResult has no dropped_by_gate/gate_margin/neighbors_pulled
         — execute_find_passages result must not include them."""

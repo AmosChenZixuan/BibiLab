@@ -76,6 +76,9 @@ def _retrieve_result(chunks):
         sources_with_hits=len(sources),
         sources_total=len(sources),
         reranked=True,
+        truncated_pairs=0,
+        tokens_dropped=0,
+        worst_drop=0,
     )
 
 
