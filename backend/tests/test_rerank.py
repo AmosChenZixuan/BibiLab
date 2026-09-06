@@ -133,16 +133,53 @@ def test_embed_shares_doc_token_budget():
     assert len(enc.ids) == DOC_TOKEN_BUDGET
 
 
-def test_no_stray_enable_truncation_literal():
-    """Exactly the two known call sites configure truncation, and neither uses a
-    bare 512 literal — both must go through the shared budget constants."""
-    src_root = Path(__file__).resolve().parents[1] / "src" / "bibilab"
-    hits = []
-    for path in src_root.rglob("*.py"):
-        for lineno, line in enumerate(path.read_text().splitlines(), start=1):
-            if "enable_truncation(" in line:
-                hits.append((path, lineno, line))
+def test_predict_applies_query_clamp_before_encoding():
+    """predict()'s own wiring — not just the standalone _clamp_query helper —
+    must clamp the query before the pair encode. Without it, an over-long query
+    reaches self._tokenizer directly and only_second raises rather than trimming
+    down to the guaranteed floor."""
+    import numpy as np
 
-    assert len(hits) == 2, hits
-    assert {path.name for path, _, _ in hits} == {"rerank.py", "embed.py"}
+    from bibilab.pipeline.rerank import ONNXCrossEncoder
+
+    class _Input:
+        def __init__(self, name: str) -> None:
+            self.name = name
+
+    class _FakeSession:
+        def get_inputs(self):
+            return [_Input("input_ids"), _Input("attention_mask")]
+
+        def run(self, _output_names, onnx_input):
+            batch = onnx_input["input_ids"].shape[0]
+            return [np.zeros((batch, 1))]
+
+    encoder = ONNXCrossEncoder.__new__(ONNXCrossEncoder)
+    encoder._np = np
+    encoder._session = _FakeSession()
+    encoder._tokenizer = _pair_tokenizer()
+    encoder._tokenizer.enable_truncation(max_length=PAIR_WINDOW_TOKENS, strategy="only_second")
+    encoder._length_tokenizer = _pair_tokenizer()
+
+    # Query alone (2000 tokens) exceeds the pair window — only_second would raise
+    # without the clamp, since it can't trim the query and the document alone
+    # can't shrink enough to compensate.
+    scores = encoder.predict([[_words(2000), _words(500)]])
+
+    assert scores == [0.0]
+
+
+def test_no_bare_truncation_literal():
+    """Every `enable_truncation(` call site in src/bibilab must reference a shared
+    budget constant, not a bare 512 — the point of exporting the constants is one
+    source of truth, including for future consumers (e.g. chunk sizing)."""
+    src_root = Path(__file__).resolve().parents[1] / "src" / "bibilab"
+    hits = [
+        (path, lineno, line)
+        for path in src_root.rglob("*.py")
+        for lineno, line in enumerate(path.read_text().splitlines(), start=1)
+        if "enable_truncation(" in line
+    ]
+
+    assert hits, "expected at least the rerank.py and embed.py call sites"
     assert not any(re.search(r"\b512\b", line) for _, _, line in hits)

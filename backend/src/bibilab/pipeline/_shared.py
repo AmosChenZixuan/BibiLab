@@ -32,7 +32,7 @@ _enc = tiktoken.get_encoding("cl100k_base")
 # home to import from. DOC_TOKEN_BUDGET is derived, not a separate literal, so
 # the numbers can't drift out of sync.
 PAIR_WINDOW_TOKENS = 512  # model's max pair sequence length, specials included
-PAIR_SPECIAL_TOKENS = 4  # [CLS] q [SEP] [SEP] d [SEP]
+PAIR_SPECIAL_TOKENS = 4  # <s> q </s> </s> d </s>
 QUERY_TOKEN_CLAMP = 64  # covers real find_passages queries (p95=26, max=51) with headroom
 DOC_TOKEN_BUDGET = PAIR_WINDOW_TOKENS - PAIR_SPECIAL_TOKENS - QUERY_TOKEN_CLAMP  # 444, worst case
 
