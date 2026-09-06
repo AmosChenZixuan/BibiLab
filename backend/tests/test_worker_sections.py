@@ -276,6 +276,12 @@ def test_classify_transcript_language_en():
     assert _classify_transcript_language(segs) == "en"
 
 
+def test_classify_transcript_language_empty_defaults_to_en():
+    from bibilab.worker import _classify_transcript_language
+
+    assert _classify_transcript_language([]) == "en"
+
+
 @pytest.mark.asyncio
 async def test_stage_persist_writes_classified_language_not_detected(tmp_bibilab_home: Path):
     """_stage_persist must write sources.language from the transcript text

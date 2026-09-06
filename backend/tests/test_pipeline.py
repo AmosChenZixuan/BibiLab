@@ -499,7 +499,7 @@ def test_chunk_no_emitted_chunk_ever_exceeds_ceiling(monkeypatch):
     for i, size in enumerate(range(1, budget)):
         text = " ".join(f"w{i}_{j}" for j in range(size))
         if size % 2 == 0:
-            text += "!"  # sentence-ended for even sizes, plain for odd
+            text += "!"
         segs.append(_seg(text, start=float(i), end=float(i + 1)))
 
     chunks = chunk_segments(segs)
