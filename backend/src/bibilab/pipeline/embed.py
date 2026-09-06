@@ -565,8 +565,6 @@ async def retrieve(
             logger.warning("Reranking failed: %s", exc)
 
     result_chunks = chunks[:top_k]
-    # Post-slice only: a truncated pair that ranked outside top_k never reached
-    # the LLM, so counting it would report on evidence the answer never saw.
     result_dropped = [d for d in chunk_tokens_dropped[:top_k] if d > 0]
     truncated_pairs = len(result_dropped)
     tokens_dropped_total = sum(result_dropped)
