@@ -47,7 +47,7 @@ from bibilab.pipeline._shared import (
     format_mmss,
     resolve_response_language,
 )
-from bibilab.pipeline.chat_ledger import build_rag_ledger
+from bibilab.pipeline.chat_ledger import build_rag_ledger, sum_truncation
 from bibilab.pipeline.chat_loop import (
     ERROR_CODE_PERSISTENCE,
     ERROR_CODE_TOOL,
@@ -356,6 +356,9 @@ async def run_chat_turn(
                             "sources_total": result.get("sources_total"),
                             "section_coverage": result.get("section_coverage", []),
                             "reranked": result.get("reranked", False),
+                            "truncated_pairs": result.get("truncated_pairs", 0),
+                            "tokens_dropped": result.get("tokens_dropped", 0),
+                            "worst_drop": result.get("worst_drop", 0),
                             "scoped_pool_size": result.get("scoped_pool_size"),
                             "facet_scope": result.get("facet_scope"),
                         }
@@ -419,6 +422,9 @@ async def run_chat_turn(
 
             if all_calls:
                 meta["rag"] = {"calls": all_calls}
+                truncation = sum_truncation(retrieve_calls)
+                if truncation:
+                    meta["rag"]["truncation"] = truncation
             if content_blocks:
                 meta["content_blocks"] = content_blocks
 

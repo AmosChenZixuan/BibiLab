@@ -299,6 +299,91 @@ async def test_chat_persists_section_grained_rag(client, mock_stream_llm):
     assert all("section_id" in s for s in call["section_coverage"])
 
 
+async def _drive_find_passages_turn(client, mock_stream_llm, *, tool_result_extra: dict) -> dict:
+    """Shared driver for the truncation-rollup tests below: one find_passages
+    call, then a synthesis answer. Returns the persisted assistant message."""
+    from bibilab.pipeline._shared import StreamEvent, ToolCall
+    from bibilab.pipeline.chat_tools import FIND_PASSAGES_TOOL
+
+    list_id = (await client.post("/lists", json={"name": "TruncRollup"})).json()["id"]
+    iteration_count = 0
+
+    async def fake_stream_llm(messages, cfg, tools=None, system=None, **kwargs):
+        nonlocal iteration_count
+        iteration_count += 1
+        if iteration_count == 1:
+            yield StreamEvent(
+                type="tool_call",
+                tool_call=ToolCall(id="tc1", name=FIND_PASSAGES_TOOL.name, arguments={"query": "q"}),
+            )
+            yield StreamEvent(type="done")
+        else:
+            yield StreamEvent(type="delta", content="answer")
+            yield StreamEvent(type="done")
+
+    mock_stream_llm.side_effect = fake_stream_llm
+
+    async def fake_execute_tool(**kwargs):
+        return {
+            "query": kwargs.get("arguments", {}).get("query", ""),
+            "tool_name": FIND_PASSAGES_TOOL.name,
+            "candidates_evaluated": 1,
+            "sources_with_hits": 1,
+            "sources_total": 1,
+            "reranked": True,
+            "scoped_pool_size": 1,
+            "facet_scope": {
+                "sequence_number": None,
+                "season_number": None,
+                "matched_count": None,
+                "no_match": False,
+            },
+            "section_coverage": [],
+            "_chunks": "",
+            "_turn_indices": [],
+            **tool_result_extra,
+        }
+
+    with patch("bibilab.routers.chat.execute_tool", fake_execute_tool):
+        resp = await client.post(f"/lists/{list_id}/chat", json={"message": "q"})
+    assert resp.status_code == 200
+
+    conv = (await client.get(f"/lists/{list_id}/conversation")).json()
+    assistant_msgs = [m for m in conv["messages"] if m["role"] == "assistant"]
+    assert assistant_msgs, "no assistant message persisted"
+    return assistant_msgs[-1]
+
+
+@pytest.mark.asyncio
+async def test_chat_persists_turn_level_truncation_rollup(client, mock_stream_llm):
+    """A turn whose find_passages call truncated evidence persists the rollup
+    under metadata.rag.truncation, readable back via GET .../conversation."""
+    msg = await _drive_find_passages_turn(
+        client,
+        mock_stream_llm,
+        tool_result_extra={"truncated_pairs": 2, "tokens_dropped": 30, "worst_drop": 20},
+    )
+
+    assert msg["metadata"]["rag"]["truncation"] == {
+        "truncated_pairs": 2,
+        "tokens_dropped": 30,
+        "worst_drop": 20,
+    }
+
+
+@pytest.mark.asyncio
+async def test_chat_omits_truncation_key_when_nothing_truncated(client, mock_stream_llm):
+    """A clean turn (no truncation) writes no misleading value — the
+    truncation key is absent entirely, not a zeroed placeholder."""
+    msg = await _drive_find_passages_turn(
+        client,
+        mock_stream_llm,
+        tool_result_extra={"truncated_pairs": 0, "tokens_dropped": 0, "worst_drop": 0},
+    )
+
+    assert "truncation" not in msg["metadata"]["rag"]
+
+
 @pytest.mark.asyncio
 async def test_chat_citation_block_carries_section_id_and_timestamp(client, mock_stream_llm):
     """Citation content_blocks include section_id + timestamp_start (T7 → T9 wiring)."""
