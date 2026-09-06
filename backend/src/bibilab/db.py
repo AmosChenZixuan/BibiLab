@@ -179,6 +179,12 @@ CREATE TABLE IF NOT EXISTS sections (
 _CREATE_SECTIONS_INDEX = "CREATE INDEX IF NOT EXISTS idx_sections_source ON sections(source_id, seq)"
 
 
+# Module-level cache for count_sections_for_sources. Sections are written
+# once per source and rarely change (re-ingest is a full source delete +
+# rewrite); the writer invalidates here so the cache stays correct.
+_section_count_cache: dict[str, int] = {}
+
+
 async def bootstrap_db() -> None:
     async with get_db() as db:
         await db.execute(_CREATE_LISTS)
@@ -438,6 +444,8 @@ async def write_source_with_segments(
         if sections is not None:
             await _exec_write_sections(db, source_fields["source_id"], sections, section_digests)
         await db.commit()
+        if sections is not None:
+            _invalidate_section_count_cache(source_fields["source_id"])
 
 
 async def apply_digest_facets(
@@ -634,22 +642,47 @@ async def get_section_ranges(source_id: str) -> list[aiosqlite.Row]:
 
 
 async def count_sections_for_sources(source_ids: list[str]) -> int:
-    """Total section count across the given sources in one roundtrip.
+    """Total section count across the given sources.
 
-    Empty input returns 0 without issuing SQL (the ``IN ()`` shape would
-    be a syntax error); the caller's other IN-clause helpers use the same
-    guard, so we don't diverge.
+    Cache-first: hits skip SQL entirely; misses fall through to a single
+    GROUP BY query and populate the cache. Sections are written once per
+    source and rarely change, so the cache stays hot on the chat hot
+    path. ``_invalidate_section_count_cache`` is called from the section
+    writer, which is the single path that mutates section rows.
     """
     if not source_ids:
         return 0
-    placeholders = _in_placeholders(source_ids)
-    async with get_db() as db:
-        cursor = await db.execute(
-            f"SELECT COUNT(*) FROM sections WHERE source_id IN ({placeholders})",
-            tuple(source_ids),
-        )
-        row = await cursor.fetchone()
-        return int(row[0])
+    counts: list[int] = []
+    miss: list[str] = []
+    for sid in source_ids:
+        cached = _section_count_cache.get(sid)
+        if cached is None:
+            miss.append(sid)
+        else:
+            counts.append(cached)
+    if miss:
+        placeholders = _in_placeholders(miss)
+        async with get_db() as db:
+            cursor = await db.execute(
+                f"SELECT source_id, COUNT(*) FROM sections WHERE source_id IN ({placeholders}) GROUP BY source_id",
+                tuple(miss),
+            )
+            seen: set[str] = set()
+            for row in await cursor.fetchall():
+                n = int(row[1])
+                _section_count_cache[row[0]] = n
+                counts.append(n)
+                seen.add(row[0])
+            for sid in miss:
+                if sid not in seen:
+                    _section_count_cache[sid] = 0
+                    counts.append(0)
+    return sum(counts)
+
+
+def _invalidate_section_count_cache(source_id: str) -> None:
+    """Drop the cached count for one source. Called by the section writer."""
+    _section_count_cache.pop(source_id, None)
 
 
 async def get_segments_for_ranges(ranges: list[tuple[str, int, int]]) -> list[aiosqlite.Row]:
