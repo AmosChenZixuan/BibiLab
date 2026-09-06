@@ -10,7 +10,7 @@ from typing import Any
 import httpx
 
 from bibilab.adapters.base import AuthRequiredError, VideoMeta
-from bibilab.cleanup import cleanup_job_artifacts, purge_download_files
+from bibilab.cleanup import _find_cached_video, cleanup_job_artifacts, purge_download_files
 from bibilab.config import BibilabConfig, bibilab_home, load_config
 from bibilab.db import (
     apply_digest_facets,
@@ -493,10 +493,24 @@ class WorkerLoop:
         """Stage 1: Download video file and cover image."""
         await update_job_status(job["id"], JobStatus.DOWNLOADING.value, progress=10)
 
-        # .part hygiene: purge any downloads/{id}.* left by a prior failed/corrupt
-        # attempt so this download starts clean and never resumes onto stale bytes.
-        await asyncio.to_thread(purge_download_files, video_meta.video_id)
+        # Cache lookup — reuse a previously-downloaded file for this video_id
+        # if present (see #720). Inline glob+stat, not via to_thread — the
+        # filesystem ops are sub-millisecond on a small downloads dir and
+        # routing through the executor was suspected of hanging pytest-asyncio's
+        # loop teardown in CI.
+        cached_path = _find_cached_video(video_meta.video_id)
+        if cached_path is not None:
+            # Cover is still keyed by the freshly-generated source_id (different
+            # from the cached video_id) — re-fetch is one cheap public-CDN GET.
+            covers_dir = self._bibilab_home / "covers"
+            covers_dir.mkdir(parents=True, exist_ok=True)
+            cover_dest = covers_dir / f"{source_id}.jpg"
+            await asyncio.to_thread(_download_cover, video_meta.cover_url, cover_dest)
+            return cached_path
 
+        # Cache miss: .part hygiene first, then a real download. The file is
+        # intentionally retained on success (download is the cache).
+        await asyncio.to_thread(purge_download_files, video_meta.video_id)
         video_path: Path = await self._get_adapter(video_meta.platform).download(
             video_meta.video_id,
             video_meta.source_url,
@@ -650,5 +664,7 @@ class WorkerLoop:
             season_number=extraction.season_number,
         )
 
-        # Cleanup downloads (off the loop — unlinking multi-GB files blocks on WSL)
-        await asyncio.to_thread(purge_download_files, video_id)
+        # The downloaded video file is intentionally retained on disk: it is
+        # the download-stage cache, and re-ingest of the same video must hit
+        # it instead of re-fetching. Eviction runs in the background (see
+        # _stage_download) and is bounded by CACHE_MAX_BYTES.

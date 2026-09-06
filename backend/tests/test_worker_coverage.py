@@ -1254,6 +1254,70 @@ class TestDownloadHygieneAndCap:
 
 
 # ---------------------------------------------------------------------------
+# Cache hit path — adapter.download is skipped, cover still fetched
+# ---------------------------------------------------------------------------
+
+
+class TestStageDownloadCacheHit:
+    @pytest.mark.asyncio
+    async def test_cache_hit_skips_adapter_download(self, tmp_bibilab_home: Path, downloads_dir: Path):
+        """AC13 — a non-empty downloads/{video_id}.* file short-circuits the adapter."""
+        from bibilab.db import bootstrap_db
+
+        await bootstrap_db()
+        cached = downloads_dir / "BVcached.mp4"
+        cached.write_bytes(b"previously downloaded video")
+
+        download_calls: list = []
+        cover_calls: list = []
+
+        async def fake_download(video_id: str, source_url: str, connections: int):
+            download_calls.append(video_id)
+            return downloads_dir / "should-not-be-used.mp4"
+
+        adapter = MagicMock()
+        adapter.download = fake_download
+        worker = WorkerLoop(adapter=adapter, home=tmp_bibilab_home)
+
+        with patch(
+            "bibilab.worker._download_cover",
+            MagicMock(side_effect=lambda url, dest: cover_calls.append((url, dest)) or True),
+        ):
+            result = await worker._stage_download({"id": "job-cache-hit"}, _video_meta("BVcached"), "src-cache-1")
+
+        assert download_calls == [], "adapter.download must NOT be called on cache hit"
+        assert result == cached, "returned Path must be the cached file"
+        assert len(cover_calls) == 1, "AC14 — cover must still be fetched on cache hit"
+        assert cover_calls[0][1] == tmp_bibilab_home / "covers" / "src-cache-1.jpg"
+
+    @pytest.mark.asyncio
+    async def test_cache_miss_still_purges_part_residue_and_downloads(
+        self, tmp_bibilab_home: Path, downloads_dir: Path
+    ):
+        """AC12 — on miss: .part purge runs, real download runs."""
+        from bibilab.db import bootstrap_db
+
+        await bootstrap_db()
+        stale = downloads_dir / "BVmiss.mp4.part"
+        stale.write_bytes(b"old partial")
+
+        final = downloads_dir / "BVmiss.mp4"
+
+        async def fake_download(video_id: str, source_url: str, connections: int):
+            return final
+
+        adapter = MagicMock()
+        adapter.download = fake_download
+        worker = WorkerLoop(adapter=adapter, home=tmp_bibilab_home)
+
+        with patch("bibilab.worker._download_cover", MagicMock(return_value=True)):
+            result = await worker._stage_download({"id": "job-cache-miss"}, _video_meta("BVmiss"), "src-miss-1")
+
+        assert result == final
+        assert not stale.exists(), "AC12 — .part hygiene purge runs on miss"
+
+
+# ---------------------------------------------------------------------------
 # _reraise_gathered_failures — accurate logging for the digest∥embed gather
 # ---------------------------------------------------------------------------
 
