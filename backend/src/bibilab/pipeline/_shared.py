@@ -2,6 +2,7 @@
 
 import json
 import logging
+import threading
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, AsyncGenerator, Callable, TypeVar
 
@@ -21,8 +22,10 @@ logger = logging.getLogger(__name__)
 
 # Shared cl100k_base token estimator. It's OpenAI's tokenizer — an approximation
 # for other providers, but its drift only matters when input nears the window,
-# which _INPUT_MARGIN absorbs. Used here for the input budget and by the chunker
-# (pipeline/chunk.py) for chunk sizing.
+# which _INPUT_MARGIN absorbs. Used here for the input budget and by every other
+# LLM-facing consumer (section.py, resolve_max_tokens); artifact packing doesn't
+# call this directly, but consumes sections.token_count under the invariant that
+# it equals count_tokens(text) (see artifact_refine.py).
 _enc = tiktoken.get_encoding("cl100k_base")
 
 # XLM-R pair budget for the reranker (rerank.py) and embedder (embed.py). Both
@@ -40,6 +43,36 @@ DOC_TOKEN_BUDGET = PAIR_WINDOW_TOKENS - PAIR_SPECIAL_TOKENS - QUERY_TOKEN_CLAMP 
 def count_tokens(text: str) -> int:
     """Estimate token count with the shared cl100k_base encoder."""
     return len(_enc.encode(text))
+
+
+_xlmr_tokenizer = None
+_xlmr_tokenizer_lock = threading.Lock()
+
+
+def count_tokens_xlmr(text: str) -> int:
+    """Estimate token count with the XLM-R sentencepiece tokenizer shared by the
+    embedder (embed.py) and reranker (rerank.py). Used by the chunker
+    (pipeline/chunk.py) so chunk sizing matches the unit both retrieval
+    consumers actually tokenize with — chunk sizing was previously done with
+    cl100k, which drifts from XLM-R by a language-dependent ratio.
+
+    Lazily loads only the tokenizer file (not the ONNX session) via
+    ensure(EMBEDDING_SPEC_ID) — counting tokens doesn't need the embedding
+    model loaded, mirroring rerank.py's separate untruncated _length_tokenizer
+    instance. Double-checked lock: ingest runs with worker concurrency > 1
+    (asyncio.to_thread), so first-call construction is a real race.
+    """
+    global _xlmr_tokenizer
+    if _xlmr_tokenizer is None:
+        with _xlmr_tokenizer_lock:
+            if _xlmr_tokenizer is None:
+                from tokenizers import Tokenizer  # noqa: PLC0415
+
+                from bibilab.model_registry import EMBEDDING_SPEC_ID, ensure  # noqa: PLC0415
+
+                model_dir = ensure(EMBEDDING_SPEC_ID)
+                _xlmr_tokenizer = Tokenizer.from_file(str(model_dir / "onnx" / "tokenizer.json"))
+    return len(_xlmr_tokenizer.encode(text).ids)
 
 
 def format_hms(seconds: float | None) -> str:

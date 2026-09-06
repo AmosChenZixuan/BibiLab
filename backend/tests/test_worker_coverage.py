@@ -626,9 +626,10 @@ async def test_stage_transcribe_punctuates_and_returns_sentences(tmp_bibilab_hom
     loop = WorkerLoop(config=BibilabConfig(), home=tmp_bibilab_home)
     wav = tmp_bibilab_home / "a.wav"
     wav.write_bytes(b"")
-    result = await loop._stage_transcribe({"id": job_id, "type": "ingest", "meta": {}}, wav, "src-1", BibilabConfig())
+    sentence_segments = await loop._stage_transcribe(
+        {"id": job_id, "type": "ingest", "meta": {}}, wav, "src-1", BibilabConfig()
+    )
 
-    detected_language, effective_language, sentence_segments = result
     assert called["language"] == "zh"
     assert sentence_segments == sentences
 
@@ -639,7 +640,8 @@ async def test_stage_transcribe_trusts_detected_language_over_config(tmp_bibilab
     (see transcribe.py), so transcribe() reports detected_language="en" even when
     the user explicitly configured "zh". _stage_transcribe must not re-derive
     effective_language from cfg — that would route English text through the
-    zh-gated ct-punc path."""
+    zh-gated ct-punc path. Observable only via what punctuate() receives —
+    effective_language isn't part of the return value."""
     from bibilab.config import BibilabConfig
     from bibilab.db import bootstrap_db, create_job
     from bibilab.pipeline.transcribe import WhisperSegment
@@ -664,11 +666,8 @@ async def test_stage_transcribe_trusts_detected_language_over_config(tmp_bibilab
     loop = WorkerLoop(config=cfg, home=tmp_bibilab_home)
     wav = tmp_bibilab_home / "a.wav"
     wav.write_bytes(b"")
-    result = await loop._stage_transcribe({"id": job_id, "type": "ingest", "meta": {}}, wav, "src-1", cfg)
+    await loop._stage_transcribe({"id": job_id, "type": "ingest", "meta": {}}, wav, "src-1", cfg)
 
-    detected_language, effective_language, _sentence_segments = result
-    assert detected_language == "en"
-    assert effective_language == "en"
     assert called["language"] == "en"
 
 
@@ -676,7 +675,7 @@ async def test_stage_transcribe_trusts_detected_language_over_config(tmp_bibilab
 async def test_stage_transcribe_none_detected_language_degrades_safely(tmp_bibilab_home: Path, monkeypatch):
     """auto mode + failed detection (detected_language=None) must not crash:
     effective_language stays None, punctuate() skips (non-"zh" gate) instead
-    of receiving a fabricated "en"."""
+    of receiving a fabricated "en". Observable via what punctuate() receives."""
     from bibilab.config import BibilabConfig
     from bibilab.db import bootstrap_db, create_job
     from bibilab.pipeline.transcribe import WhisperSegment
@@ -697,11 +696,8 @@ async def test_stage_transcribe_none_detected_language_degrades_safely(tmp_bibil
     loop = WorkerLoop(config=BibilabConfig(), home=tmp_bibilab_home)
     wav = tmp_bibilab_home / "a.wav"
     wav.write_bytes(b"")
-    result = await loop._stage_transcribe({"id": job_id, "type": "ingest", "meta": {}}, wav, "src-1", BibilabConfig())
+    await loop._stage_transcribe({"id": job_id, "type": "ingest", "meta": {}}, wav, "src-1", BibilabConfig())
 
-    detected_language, effective_language, _sentence_segments = result
-    assert detected_language is None
-    assert effective_language is None
     assert called["language"] is None
 
 
@@ -907,7 +903,6 @@ async def test_stage_process_chunks_sentence_segments(tmp_bibilab_home: Path, mo
         video_meta=__import__("unittest.mock", fromlist=["MagicMock"]).MagicMock(),
         list_id="l",
         cfg=BibilabConfig(),
-        effective_language="zh",
     )
     assert captured["segs"] is sentences
     assert result is not None and len(result) == 3  # (extraction, sections, section_digests) tuple
@@ -948,7 +943,6 @@ async def test_stage_persist_atomic_no_orphan_on_segment_write_failure(tmp_bibil
                 ),
                 sections=[],
                 section_digests=[],
-                detected_language="en",
                 cfg=MagicMock(
                     transcription=MagicMock(model="base"),
                     ai=MagicMock(model="gpt"),

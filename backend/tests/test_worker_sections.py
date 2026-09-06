@@ -90,7 +90,6 @@ async def test_stage_process_returns_sections_for_long_source(tmp_bibilab_home: 
             video_meta=_video_meta(),
             list_id="list-1",
             cfg=cfg,
-            effective_language="en",
         )
 
     assert isinstance(sections, list)
@@ -136,7 +135,6 @@ async def test_stage_process_short_video_returns_one_section(tmp_bibilab_home: P
             video_meta=_video_meta(),
             list_id="list-1",
             cfg=cfg,
-            effective_language="en",
         )
 
     assert len(sections) == 1
@@ -192,7 +190,6 @@ async def test_ingest_one_section_byte_identical(tmp_bibilab_home: Path, mock_ca
             video_meta=_video_meta(),
             list_id="list-1",
             cfg=cfg,
-            effective_language="en",
         )
 
     # 3-tuple: (extraction, sections, section_digests).
@@ -246,7 +243,6 @@ async def test_ingest_n_sections_produces_ordered_section_digests(tmp_bibilab_ho
             video_meta=_video_meta(),
             list_id="list-1",
             cfg=cfg,
-            effective_language="en",
         )
 
     assert result is not None
@@ -259,6 +255,78 @@ async def test_ingest_n_sections_produces_ordered_section_digests(tmp_bibilab_ho
     assert extraction.keywords == ["k0"]
     assert extraction.series_name == "S0"
     assert extraction.sequence_number == 1
+
+
+# ---------------------------------------------------------------------------
+# sources.language derived from transcript text, not the ASR-forced config
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        pytest.param("这是一个测试文本用来验证语言分类器的准确性", "zh", id="pure-zh"),
+        pytest.param("this is a test transcript used to verify the language classifier works", "en", id="pure-en"),
+        pytest.param(
+            "这是中文 mixed with a good amount of English text describing the same idea", "en", id="mixed-dominant-en"
+        ),
+        pytest.param("这段视频主要是中文内容偶尔夹杂一些English words像这样说明问题", "zh", id="mixed-dominant-zh"),
+        # Threshold is a strict >, so exactly 0.3 must NOT classify as zh.
+        pytest.param("中文测" + "abcdefg", "en", id="ratio-exactly-0.3-is-en"),  # 3/10 = 0.30
+        pytest.param("中文测试" + "abcdef", "zh", id="ratio-just-above-0.3-is-zh"),  # 4/10 = 0.40
+        pytest.param("中文" + "abcdefgh", "en", id="ratio-just-below-0.3-is-en"),  # 2/10 = 0.20
+    ],
+)
+def test_classify_transcript_language(text, expected):
+    from bibilab.worker import _classify_transcript_language
+
+    segs = [_seg(0.0, 1.0, text)]
+    assert _classify_transcript_language(segs) == expected
+
+
+def test_classify_transcript_language_empty_defaults_to_en():
+    from bibilab.worker import _classify_transcript_language
+
+    assert _classify_transcript_language([]) == "en"
+
+
+@pytest.mark.asyncio
+async def test_stage_persist_writes_classified_language_not_detected(tmp_bibilab_home: Path):
+    """_stage_persist must write sources.language from the transcript text
+    (CJK-ratio classifier), not the ASR-forced detected_language: a forced ASR
+    config on non-matching audio made the old value an echo of the config,
+    not a fact about the transcript."""
+    from bibilab.db import bootstrap_db, create_list
+    from bibilab.worker import WorkerLoop
+
+    await bootstrap_db()
+    await create_list("list-1", "L", "2026-01-01T00:00:00")
+
+    # zh transcript text — a config that forced "en" (or any other stale
+    # value) must not leak through, since _stage_persist takes no language arg.
+    segs = [_seg(0.0, 1.0, "这是中文的转录文本内容")]
+    cfg = BibilabConfig()
+    worker = WorkerLoop(home=tmp_bibilab_home, config=cfg, adapter=None)
+
+    await worker._stage_persist(
+        job_id="job-lang",
+        source_id="src-lang",
+        video_id="BVlang",
+        video_meta=_video_meta(),
+        list_id="list-1",
+        extraction=SimpleNamespace(
+            summary="s", keywords=[], series_name=None, sequence_number=None, season_number=None
+        ),
+        sections=[Section(seg_start=0, seg_end=0, token_count=1, timestamp_start=0.0, timestamp_end=1.0)],
+        section_digests=[SectionDigest(summary="s", keywords=[])],
+        cfg=cfg,
+        sentence_segments=segs,
+    )
+
+    from bibilab.db import get_source
+
+    row = await get_source("src-lang")
+    assert row["language"] == "zh"
 
 
 # ---------------------------------------------------------------------------
