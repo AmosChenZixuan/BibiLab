@@ -12,10 +12,9 @@ if TYPE_CHECKING:
     import chromadb
 
 import sqlite3
-from pathlib import Path
 
 from bibilab.adapters.base import VideoMeta
-from bibilab.config import BibilabConfig, bibilab_home, models_dir
+from bibilab.config import BibilabConfig, bibilab_home
 from bibilab.db import get_db_path, query_fts_rows
 from bibilab.model_registry import EMBEDDING_SPEC_ID, ensure
 from bibilab.pipeline._shared import DOC_TOKEN_BUDGET, interpreting_providers
@@ -162,14 +161,13 @@ class ONNXMultilingualEmbedding:
         return "onnx_multilingual_embedding"
 
     def embed_query(self, input: list[str]) -> list[list[float]]:
-        """Embed query strings. Same as __call__ for this model."""
-        return self(input)
+        """Embed query strings with the e5 'query: ' instruction prefix."""
+        return self._embed([f"query: {text}" for text in input])
 
     def __init__(self) -> None:
         import numpy as np  # noqa: PLC0415
 
-        ensure(EMBEDDING_SPEC_ID)
-        model_dir = _embedding_model_dir()
+        model_dir = ensure(EMBEDDING_SPEC_ID)
         import onnxruntime as ort  # noqa: PLC0415
 
         so = ort.SessionOptions()
@@ -190,7 +188,11 @@ class ONNXMultilingualEmbedding:
         self._np = np
 
     def __call__(self, input: list[str]) -> list[list[float]]:
-        """Encode texts to embedding vectors. Mean-pooled."""
+        """Encode passages to embedding vectors with the e5 'passage: ' prefix."""
+        return self._embed([f"passage: {text}" for text in input])
+
+    def _embed(self, input: list[str]) -> list[list[float]]:
+        """Tokenize (already-prefixed) texts, mean-pool the ONNX forward pass."""
         if not input:
             return []
 
@@ -222,10 +224,6 @@ class ONNXMultilingualEmbedding:
         embeddings = summed / counts
 
         return [emb.tolist() for emb in embeddings]
-
-
-def _embedding_model_dir() -> Path:
-    return models_dir("embedding")
 
 
 def _default_embedding_function() -> ONNXMultilingualEmbedding:
