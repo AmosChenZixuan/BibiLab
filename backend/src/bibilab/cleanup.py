@@ -29,12 +29,17 @@ def _find_cached_video(video_id: str) -> Path | None:
     """Locate a usable cached download for `video_id`, or None on miss.
 
     A cache entry is any `downloads/{video_id}.{ext}` file with size > 0,
-    excluding yt-dlp `.part` residue from in-flight downloads.
+    excluding yt-dlp `.part` residue from in-flight downloads. `OSError`
+    (file disappeared between glob and stat) is treated as a miss.
     """
     for path in downloads_dir().glob(f"{video_id}.*"):
         if path.name.endswith(".part"):
             continue
-        if path.stat().st_size <= 0:
+        try:
+            size = path.stat().st_size
+        except OSError:
+            continue
+        if size <= 0:
             continue
         return path
     return None
@@ -44,9 +49,10 @@ def _evict_cache_if_needed() -> None:
     """Trim `~/.bibilab/downloads/` to `CACHE_MAX_BYTES` via mtime-LRU.
 
     Skips `*.part` files entirely — those belong to in-flight downloads and
-    must never be evicted. Idempotent: a no-op when already under cap, and
-    safe to run concurrently with other eviction tasks (each walk converges
-    to the same end state).
+    must never be evicted. Skips any single file larger than the cap
+    (deleting it would throw away a paid-for download that nothing else can
+    evict). Idempotent: a no-op when already under cap; safe to run
+    concurrently with other eviction tasks.
     """
     entries: list[tuple[float, int, Path]] = []
     total = 0
@@ -56,7 +62,8 @@ def _evict_cache_if_needed() -> None:
         try:
             stat = path.stat()
         except OSError:
-            # File disappeared between iterdir and stat (concurrent evict).
+            continue
+        if stat.st_size > CACHE_MAX_BYTES:
             continue
         entries.append((stat.st_mtime, stat.st_size, path))
         total += stat.st_size

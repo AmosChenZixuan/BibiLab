@@ -127,3 +127,21 @@ def test_evict_skips_part_files(downloads_dir: Path, monkeypatch):
 
     assert real.exists(), "real file should not be evicted (under cap without .part)"
     assert part.exists(), ".part files must never be evicted — an in-flight download depends on them"
+
+
+def test_evict_keeps_oversize_files(downloads_dir: Path, monkeypatch):
+    """A single file larger than the cap is left alone — deleting it would
+    throw away a paid-for download that nothing else can evict."""
+    monkeypatch.setattr("bibilab.cleanup.CACHE_MAX_BYTES", 100)
+    huge = downloads_dir / "BVhuge.mp4"
+    huge.write_bytes(b"x" * 1_000)  # 10× cap
+    _set_mtime(huge, 1_000_000)
+    small_old = downloads_dir / "BVsmall.mp4"
+    small_old.write_bytes(b"x" * 50)
+    _set_mtime(small_old, 999_999)
+
+    _evict_cache_if_needed()
+
+    # total under cap once huge is excluded → no eviction
+    assert huge.exists()
+    assert small_old.exists()

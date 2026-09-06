@@ -34,7 +34,7 @@ def test_extract_audio_success(tmp_path: Path):
         result = extract_audio(video)
 
     assert result == wav
-    assert not video.exists()  # source deleted
+    assert video.exists(), "source video is the cache — must survive a successful extract"
 
 
 def test_extract_audio_ffmpeg_error(tmp_path: Path):
@@ -55,6 +55,8 @@ def test_extract_audio_ffmpeg_error(tmp_path: Path):
 
         with pytest.raises(PipelineError, match="FFmpeg"):
             extract_audio(video)
+
+    assert not video.exists(), "corrupt video must be unlinked so the next retry re-downloads"
 
 
 def test_extract_audio_raises_on_missing_audio_stream(tmp_path: Path):
@@ -134,7 +136,7 @@ def test_extract_audio_raises_on_truncated_faststart(tmp_path: Path):
         with pytest.raises(PipelineError, match="audio_truncated"):
             extract_audio(video)
 
-    assert video.exists()  # source NOT deleted on validation failure
+    assert not video.exists(), "truncated video must be unlinked (corrupt cache)"
 
 
 def test_extract_audio_raises_below_expected_duration(tmp_path: Path):
@@ -148,6 +150,8 @@ def test_extract_audio_raises_below_expected_duration(tmp_path: Path):
         _mock_extract(mock_ffmpeg, wav, {".m4a": 30.0, ".wav": 30.0})
         with pytest.raises(PipelineError, match="audio_truncated"):
             extract_audio(video, expected_duration=60.0)
+
+    assert not video.exists(), "short video must be unlinked (corrupt cache)"
 
 
 def test_extract_audio_warns_when_no_reference_available(tmp_path: Path, caplog):
@@ -164,12 +168,12 @@ def test_extract_audio_warns_when_no_reference_available(tmp_path: Path, caplog)
             result = extract_audio(video, expected_duration=0.0)
 
     assert result == wav
-    assert not video.exists()
+    assert video.exists(), "source video is the cache — must survive a successful extract"
     assert "unverified" in caplog.text
 
 
-def test_extract_audio_healthy_passes_and_deletes_source(tmp_path: Path):
-    # ~0.97 coverage against both signals → passes, source deleted.
+def test_extract_audio_healthy_passes_and_keeps_source_as_cache(tmp_path: Path):
+    # ~0.97 coverage against both signals → passes, source kept as the cache.
     video = tmp_path / "video.m4a"
     video.write_bytes(b"fake")
     wav = tmp_path / "video.wav"
@@ -179,7 +183,7 @@ def test_extract_audio_healthy_passes_and_deletes_source(tmp_path: Path):
         result = extract_audio(video, expected_duration=60.0)
 
     assert result == wav
-    assert not video.exists()
+    assert video.exists()
 
 
 # ---------------------------------------------------------------------------
