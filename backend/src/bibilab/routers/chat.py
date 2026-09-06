@@ -422,7 +422,14 @@ async def run_chat_turn(
 
             if all_calls:
                 meta["rag"] = {"calls": all_calls}
-                truncation = sum_truncation(retrieve_calls)
+                try:
+                    truncation = sum_truncation(retrieve_calls)
+                except Exception:
+                    # A bug in this rollup must not fail the whole turn or roll
+                    # back the persisted answer — it's a metadata add-on, not
+                    # load-bearing (unlike build_rag_ledger just above).
+                    logger.exception("sum_truncation failed message_id=%s", message_id)
+                    truncation = {}
                 if truncation:
                     meta["rag"]["truncation"] = truncation
             if content_blocks:

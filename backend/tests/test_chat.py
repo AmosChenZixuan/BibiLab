@@ -385,6 +385,29 @@ async def test_chat_omits_truncation_key_when_nothing_truncated(client, mock_str
 
 
 @pytest.mark.asyncio
+async def test_chat_survives_sum_truncation_failure(client, mock_stream_llm, monkeypatch):
+    """A bug in the truncation rollup helper must not fail the whole turn or
+    roll back the persisted answer — it's a metadata add-on, not load-bearing
+    like build_rag_ledger."""
+    from bibilab.routers import chat as chat_module
+
+    def boom(_retrieve_calls):
+        raise TypeError("boom")
+
+    monkeypatch.setattr(chat_module, "sum_truncation", boom)
+
+    msg = await _drive_find_passages_turn(
+        client,
+        mock_stream_llm,
+        tool_result_extra={"truncated_pairs": 1, "tokens_dropped": 5, "worst_drop": 5},
+    )
+
+    assert msg["status"] == "done"
+    assert msg["content"] == "answer"
+    assert "truncation" not in msg["metadata"]["rag"]
+
+
+@pytest.mark.asyncio
 async def test_chat_citation_block_carries_section_id_and_timestamp(client, mock_stream_llm):
     """Citation content_blocks include section_id + timestamp_start (T7 → T9 wiring)."""
     from bibilab.pipeline._shared import StreamEvent, ToolCall

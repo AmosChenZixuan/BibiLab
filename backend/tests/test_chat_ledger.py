@@ -313,6 +313,19 @@ def test_sum_truncation_sums_pairs_and_tokens_but_maxes_worst_drop():
     assert result == {"truncated_pairs": 3, "tokens_dropped": 45, "worst_drop": 20}
 
 
+def test_sum_truncation_worst_drop_max_survives_a_clean_call_in_the_mix():
+    """A call that truncated nothing (worst_drop=0) must not pull the turn-level
+    max down — max() over [20, 0] must still pick 20."""
+    calls = [
+        {"truncated_pairs": 2, "tokens_dropped": 30, "worst_drop": 20},
+        {"truncated_pairs": 0, "tokens_dropped": 0, "worst_drop": 0},
+    ]
+
+    result = sum_truncation(calls)
+
+    assert result == {"truncated_pairs": 2, "tokens_dropped": 30, "worst_drop": 20}
+
+
 @pytest.mark.parametrize(
     "calls",
     [
