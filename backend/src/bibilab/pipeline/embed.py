@@ -18,7 +18,7 @@ from bibilab.adapters.base import VideoMeta
 from bibilab.config import BibilabConfig, bibilab_home, models_dir
 from bibilab.db import get_db_path, query_fts_rows
 from bibilab.model_registry import EMBEDDING_SPEC_ID, ensure
-from bibilab.pipeline._shared import interpreting_providers
+from bibilab.pipeline._shared import DOC_TOKEN_BUDGET, interpreting_providers
 from bibilab.pipeline.chat_inference_pool import get_chat_pool
 from bibilab.pipeline.chunk import RagChunk
 from bibilab.pipeline.fts_tokens import pinyin_index_tokens, tokenize_cjk
@@ -183,7 +183,7 @@ class ONNXMultilingualEmbedding:
         from tokenizers import Tokenizer  # noqa: PLC0415
 
         self._tokenizer = Tokenizer.from_file(str(model_dir / "onnx" / "tokenizer.json"))
-        self._tokenizer.enable_truncation(max_length=512)
+        self._tokenizer.enable_truncation(max_length=DOC_TOKEN_BUDGET)
 
         # pad_token_id from BERT config (0), not tokenizer's <pad> id (1)
         self._pad_id = 0
