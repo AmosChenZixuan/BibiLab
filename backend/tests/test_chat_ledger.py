@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 
-from bibilab.pipeline.chat_ledger import build_rag_ledger
+from bibilab.pipeline.chat_ledger import build_rag_ledger, sum_truncation
 from bibilab.pipeline.chat_tools import CitationRegistryEntry
 
 
@@ -297,3 +297,30 @@ def test_retrieve_calls_precede_read_section_calls():
     )
 
     assert [c["tool_name"] for c in calls] == ["find_passages", "read_section"]
+
+
+def test_sum_truncation_sums_pairs_and_tokens_but_maxes_worst_drop():
+    """Two find_passages calls in one turn: truncated_pairs/tokens_dropped sum
+    across calls, but worst_drop takes the max — not last-write-wins, and not a
+    literal sum (which would no longer mean "largest single-pair loss")."""
+    calls = [
+        {"truncated_pairs": 2, "tokens_dropped": 30, "worst_drop": 20},
+        {"truncated_pairs": 1, "tokens_dropped": 15, "worst_drop": 15},
+    ]
+
+    result = sum_truncation(calls)
+
+    assert result == {"truncated_pairs": 3, "tokens_dropped": 45, "worst_drop": 20}
+
+
+@pytest.mark.parametrize(
+    "calls",
+    [
+        [],
+        [{"truncated_pairs": 0, "tokens_dropped": 0, "worst_drop": 0}],
+        [{}],
+    ],
+    ids=["no-calls", "zeroed-call", "missing-keys"],
+)
+def test_sum_truncation_reports_nothing_when_no_truncation(calls):
+    assert sum_truncation(calls) == {}
