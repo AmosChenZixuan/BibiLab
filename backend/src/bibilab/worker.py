@@ -11,7 +11,6 @@ import httpx
 
 from bibilab.adapters.base import AuthRequiredError, VideoMeta
 from bibilab.cleanup import (
-    _evict_cache_if_needed,
     _find_cached_video,
     cleanup_job_artifacts,
     purge_download_files,
@@ -512,12 +511,10 @@ class WorkerLoop:
                 self._get_config().backend.download_connections,
             )
 
-            # Inline LRU eviction — runs in a worker thread, never blocks
-            # ingest. The hang investigation showed that fire-and-forget
-            # asyncio.create_task evictions were blocking pytest-asyncio's
-            # loop teardown in CI; inline-await keeps the task lifecycle
-            # owned by the same coroutine that scheduled it.
-            await asyncio.to_thread(_evict_cache_if_needed)
+            # TODO: cache eviction (deferred — see #720 follow-up; the inline
+            # call below caused pytest-asyncio to hang in CI). For now, the
+            # download-stage cache is unbounded — disk growth is the user's
+            # manual cleanup cost.
 
         # Cover is fetched on both paths: covers are keyed by source_id, which
         # is freshly generated per ingest (different from the cached video_id).
