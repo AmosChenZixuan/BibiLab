@@ -633,6 +633,27 @@ async def get_section_ranges(source_id: str) -> list[aiosqlite.Row]:
         return await cursor.fetchall()
 
 
+async def count_sections_for_sources(source_ids: list[str]) -> int:
+    """Total section count across the given sources in one roundtrip.
+
+    Sections are the retrieval and citation unit (EPIC #457); pool
+    sizing uses this count rather than the source count so multi-section
+    lists (audiobook chapters, long interviews) are not under-provisioned.
+    Empty input returns 0 without issuing SQL (the ``IN ()`` shape would
+    be a syntax error).
+    """
+    if not source_ids:
+        return 0
+    placeholders = _in_placeholders(source_ids)
+    async with get_db() as db:
+        cursor = await db.execute(
+            f"SELECT COUNT(*) FROM sections WHERE source_id IN ({placeholders})",
+            tuple(source_ids),
+        )
+        row = await cursor.fetchone()
+        return int(row[0])
+
+
 async def get_segments_for_ranges(ranges: list[tuple[str, int, int]]) -> list[aiosqlite.Row]:
     """Fetch transcript segments for many (source_id, seq_start, seq_end) ranges in one query.
 

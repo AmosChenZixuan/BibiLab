@@ -15,7 +15,7 @@ import sqlite3
 
 from bibilab.adapters.base import VideoMeta
 from bibilab.config import BibilabConfig, bibilab_home
-from bibilab.db import get_db_path, query_fts_rows
+from bibilab.db import count_sections_for_sources, get_db_path, query_fts_rows
 from bibilab.model_registry import EMBEDDING_SPEC_ID, ensure
 from bibilab.pipeline._shared import DOC_TOKEN_BUDGET, interpreting_providers
 from bibilab.pipeline.chat_inference_pool import get_chat_pool
@@ -552,7 +552,11 @@ async def retrieve(
     """
     sources_total = len(source_ids)
     search_pool = scoped_source_ids if scoped_source_ids is not None else source_ids
-    effective_top_k = min(max(sources_total * 3, top_k, 10), 60)
+    # Pool sizing follows search_pool: sections are the retrieval unit (EPIC #457),
+    # and Chroma/FTS only scan search_pool, so provisioning against the unscoped
+    # source_ids would burn rerank budget on candidates that can never be returned.
+    sections_total = await count_sections_for_sources(search_pool)
+    effective_top_k = min(max(sections_total * 3, top_k, 10), 60)
 
     if cfg.rag.hybrid_enabled:
         chunks = await hybrid_search(query_text, search_pool, cfg, effective_top_k=effective_top_k)
