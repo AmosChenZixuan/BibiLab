@@ -144,7 +144,10 @@ async def test_delete_job_cleans_up_ingest_artifacts(client: httpx.AsyncClient, 
 
     assert resp.status_code == 204
     assert await get_job(job_id) is None
-    assert not download_path.exists()
+    # Download is the cache; intentionally survives DELETE /jobs/:id so a
+    # within-window re-ingest hits it instead of re-fetching. Eviction is the
+    # only path that deletes cache entries (see CACHE_MAX_BYTES in cleanup.py).
+    assert download_path.exists(), "cache download must survive job delete"
     mock_clear_embed.assert_called_once()
     assert mock_clear_embed.call_args[0][0] == source_id
     mock_clear_fts.assert_called_once()
