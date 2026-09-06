@@ -29,11 +29,12 @@ def _find_cached_video(video_id: str) -> Path | None:
     """Locate a usable cached download for `video_id`, or None on miss.
 
     A cache entry is any `downloads/{video_id}.{ext}` file with size > 0,
-    excluding yt-dlp `.part` residue from in-flight downloads. `OSError`
-    (file disappeared between glob and stat) is treated as a miss.
+    excluding yt-dlp `.part` residue (in-flight) and `.wav` outputs (audio
+    extraction output, not a video). `OSError` (file disappeared between
+    glob and stat) is treated as a miss.
     """
     for path in downloads_dir().glob(f"{video_id}.*"):
-        if path.name.endswith(".part"):
+        if path.suffix == ".wav" or path.name.endswith(".part"):
             continue
         try:
             size = path.stat().st_size

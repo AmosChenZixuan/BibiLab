@@ -31,6 +31,16 @@ def test_find_cached_video_returns_none_on_miss(downloads_dir: Path):
     assert _find_cached_video("BVnomatch") is None
 
 
+def test_find_cached_video_skips_wav_outputs(downloads_dir: Path):
+    """A `.wav` at the video_id path is the audio-extraction output, not a
+    video. Treating it as a cache hit would feed an audio file into the
+    pipeline as if it were the source video — see the test_pipeline_correctness
+    hang that this guard exists to prevent."""
+    wav = downloads_dir / "BVwav.mp4.wav"
+    wav.write_bytes(b"fake wav")
+    assert _find_cached_video("BVwav") is None
+
+
 def test_find_cached_video_returns_path_on_hit(downloads_dir: Path):
     """AC2 — a non-empty, non-.part file matching video_id is returned."""
     cached = downloads_dir / "BVhit.mp4"
