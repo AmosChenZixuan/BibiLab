@@ -10,7 +10,12 @@ from typing import Any
 import httpx
 
 from bibilab.adapters.base import AuthRequiredError, VideoMeta
-from bibilab.cleanup import cleanup_job_artifacts, purge_download_files
+from bibilab.cleanup import (
+    _evict_cache_if_needed,
+    _find_cached_video,
+    cleanup_job_artifacts,
+    purge_download_files,
+)
 from bibilab.config import BibilabConfig, bibilab_home, load_config
 from bibilab.db import (
     apply_digest_facets,
@@ -493,8 +498,19 @@ class WorkerLoop:
         """Stage 1: Download video file and cover image."""
         await update_job_status(job["id"], JobStatus.DOWNLOADING.value, progress=10)
 
-        # .part hygiene: purge any downloads/{id}.* left by a prior failed/corrupt
-        # attempt so this download starts clean and never resumes onto stale bytes.
+        # Cache hit: a previous ingest already wrote a usable video file for
+        # this video_id. Reuse it and skip the network. Cover is still fetched
+        # because covers are keyed by the freshly-generated source_id, not the
+        # cached video_id (see out-of-scope note in the issue).
+        cached_path = await asyncio.to_thread(_find_cached_video, video_meta.video_id)
+        if cached_path is not None:
+            covers_dir = self._bibilab_home / "covers"
+            covers_dir.mkdir(parents=True, exist_ok=True)
+            cover_dest = covers_dir / f"{source_id}.jpg"
+            await asyncio.to_thread(_download_cover, video_meta.cover_url, cover_dest)
+            return cached_path
+
+        # Cache miss: .part hygiene first, then a real download.
         await asyncio.to_thread(purge_download_files, video_meta.video_id)
 
         video_path: Path = await self._get_adapter(video_meta.platform).download(
@@ -502,6 +518,17 @@ class WorkerLoop:
             video_meta.source_url,
             self._get_config().backend.download_connections,
         )
+
+        # Background LRU eviction — fire-and-forget. The pipeline does not
+        # await this; a slow eviction never blocks ingest. Wrapped so a
+        # crash inside eviction is logged but never surfaces to the job.
+        async def _evict_bg() -> None:
+            try:
+                await asyncio.to_thread(_evict_cache_if_needed)
+            except Exception:
+                logger.exception("Background cache eviction failed")
+
+        asyncio.create_task(_evict_bg())
 
         # Download cover
         covers_dir = self._bibilab_home / "covers"
@@ -650,5 +677,7 @@ class WorkerLoop:
             season_number=extraction.season_number,
         )
 
-        # Cleanup downloads (off the loop — unlinking multi-GB files blocks on WSL)
-        await asyncio.to_thread(purge_download_files, video_id)
+        # The downloaded video file is intentionally retained on disk: it is
+        # the download-stage cache, and re-ingest of the same video must hit
+        # it instead of re-fetching. Eviction runs in the background (see
+        # _stage_download) and is bounded by CACHE_MAX_BYTES.

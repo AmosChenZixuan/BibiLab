@@ -40,6 +40,42 @@ def _find_cached_video(video_id: str) -> Path | None:
     return None
 
 
+def _evict_cache_if_needed() -> None:
+    """Trim `~/.bibilab/downloads/` to `CACHE_MAX_BYTES` via mtime-LRU.
+
+    Skips `*.part` files entirely — those belong to in-flight downloads and
+    must never be evicted. Idempotent: a no-op when already under cap, and
+    safe to run concurrently with other eviction tasks (each walk converges
+    to the same end state).
+    """
+    entries: list[tuple[float, int, Path]] = []
+    total = 0
+    for path in downloads_dir().iterdir():
+        if path.name.endswith(".part"):
+            continue
+        try:
+            stat = path.stat()
+        except OSError:
+            # File disappeared between iterdir and stat (concurrent evict).
+            continue
+        entries.append((stat.st_mtime, stat.st_size, path))
+        total += stat.st_size
+
+    if total <= CACHE_MAX_BYTES:
+        return
+
+    entries.sort()  # oldest first
+    for _mtime, size, path in entries:
+        if total <= CACHE_MAX_BYTES:
+            break
+        try:
+            path.unlink()
+            total -= size
+        except OSError:
+            # Another concurrent evict already removed it; recompute total next run.
+            continue
+
+
 def cleanup_job_artifacts(job: dict[str, Any]) -> None:
     if job.get("type") != JobType.INGEST or job.get("status") == "done":
         return
