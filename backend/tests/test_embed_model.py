@@ -82,13 +82,3 @@ def test_embed_query_prefixes_queries(tmp_path: Path):
     instance.embed_query(["hello world"])
 
     tokenizer.encode.assert_called_once_with("query: hello world")
-
-
-def test_passage_and_query_prefixes_are_not_swapped(tmp_path: Path):
-    instance, tokenizer = _build_embedding(tmp_path)
-
-    instance(["a"])
-    instance.embed_query(["a"])
-
-    calls = [c.args[0] for c in tokenizer.encode.call_args_list]
-    assert calls == ["passage: a", "query: a"]

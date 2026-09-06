@@ -153,8 +153,9 @@ class ONNXMultilingualEmbedding:
 
     Mirrors the ONNXCrossEncoder pattern from rerank.py:
     - onnxruntime + tokenizers only (no torch / sentence-transformers)
-    - Mean-pooled ONNX forward pass (no query instruction needed)
-    - Downloads model files to ~/.bibilab/models/embedding/
+    - Mean-pooled ONNX forward pass, e5's "query: "/"passage: " prefixes applied
+      per-path in __call__/embed_query before pooling
+    - Downloads model files via ensure(EMBEDDING_SPEC_ID)
     """
 
     def name(self) -> str:

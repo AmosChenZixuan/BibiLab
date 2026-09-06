@@ -184,7 +184,7 @@ def test_registry_sizes_corrected():
 
 
 def test_embedding_spec_is_e5_small_not_minilm():
-    """#715: the spec id lied about the model (id said e5, download was MiniLM,
+    """The spec id lied about the model (id said e5, download was MiniLM,
     whose native max_seq_length=128 contradicted the 512-token truncation embed.py
     ran it at). The spec must now actually point at multilingual-e5-small, in a
     subdir the old MiniLM download never occupied — ensure() only checks file
