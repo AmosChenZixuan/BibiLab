@@ -3,6 +3,8 @@
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 
 def _fake_encoding(ids: list[int]):
     enc = MagicMock()
@@ -92,3 +94,15 @@ def test_embed_query_prefixes_queries(tmp_path: Path):
     instance.embed_query(["hello world"])
 
     tokenizer.encode.assert_called_once_with("query: hello world")
+
+
+def test_embeddings_are_unit_norm(tmp_path: Path):
+    """Vectors must leave the embedder L2-normalized, on both the passage and the
+    query side. The collection is queried in Chroma's default L2 space, so an
+    unnormalized vector ranks by magnitude rather than angle and lands far
+    outside the [0, 2] range query_chunks' max_distance floor assumes — which
+    silently drops every vector hit and degrades hybrid search to BM25-only."""
+    instance, _, _, _ = _build_embedding(tmp_path)
+
+    for vec in (instance(["hello world"])[0], instance.embed_query(["hello world"])[0]):
+        assert sum(x * x for x in vec) == pytest.approx(1.0)
