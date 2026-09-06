@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from bibilab.db import bootstrap_db, create_list, get_section_ranges
+from bibilab.db import bootstrap_db, count_sections_for_sources, create_list, get_section_ranges
 from bibilab.pipeline.section import Section
 from tests.factories import SourceFactory
 
@@ -56,3 +56,28 @@ async def test_get_section_ranges_empty_when_no_sections(tmp_bibilab_home: Path)
     rows = await get_section_ranges(source_id)
 
     assert rows == []
+
+
+@pytest.mark.asyncio
+async def test_count_sections_for_sources_sums_and_handles_empty(tmp_bibilab_home: Path):
+    """Pins the helper directly: 2 sources × 3 sections = 6; subset 1 source = 3;
+    unknown source = 0; empty list short-circuits to 0 without raising.
+    """
+    await bootstrap_db()
+    await create_list("list-1", "L", "2026-01-01T00:00:00")
+    three = [
+        Section(seg_start=0, seg_end=3, token_count=100, timestamp_start=0.0, timestamp_end=60.0),
+        Section(seg_start=4, seg_end=7, token_count=110, timestamp_start=60.0, timestamp_end=120.0),
+        Section(seg_start=8, seg_end=9, token_count=80, timestamp_start=120.0, timestamp_end=150.0),
+    ]
+    src_a = await SourceFactory.build(
+        "list-1", video_id="BVa", title="A", uploader="u", language="en", source_url="https://a", sections=three
+    )
+    src_b = await SourceFactory.build(
+        "list-1", video_id="BVb", title="B", uploader="u", language="en", source_url="https://b", sections=three
+    )
+
+    assert await count_sections_for_sources([src_a, src_b]) == 6
+    assert await count_sections_for_sources([src_a]) == 3
+    assert await count_sections_for_sources(["unknown"]) == 0
+    assert await count_sections_for_sources([]) == 0
