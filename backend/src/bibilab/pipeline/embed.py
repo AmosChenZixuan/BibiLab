@@ -68,6 +68,12 @@ class RetrievalResult:
     # True when rerank ran successfully; useful for offline quality analysis
     # (rerank score != distance, so callers can disambiguate the two regimes).
     reranked: bool = False
+    # Truncation stats over the FINAL top_k chunks only (post-slice) — a pair
+    # truncated but ranked out of top_k never reached the LLM, so it doesn't
+    # count. All zero (and absent downstream) when reranking didn't run.
+    truncated_pairs: int = 0
+    tokens_dropped: int = 0
+    worst_drop: int = 0
 
 
 def _chunk_score(chunk: RetrievedChunk) -> float:
@@ -548,16 +554,23 @@ async def retrieve(
     candidates_evaluated = len(chunks)
 
     reranked = False
+    chunk_tokens_dropped: list[int] = []
     if cfg.rag.reranking_enabled and chunks:
         from bibilab.pipeline.rerank import rerank  # noqa: PLC0415
 
         try:
-            chunks = await rerank(query_text, chunks, top_k=len(chunks))
+            chunks, chunk_tokens_dropped = await rerank(query_text, chunks, top_k=len(chunks))
             reranked = True
         except Exception as exc:  # noqa: BLE001 - model load can fail in many ways
             logger.warning("Reranking failed: %s", exc)
 
     result_chunks = chunks[:top_k]
+    # Post-slice only: a truncated pair that ranked outside top_k never reached
+    # the LLM, so counting it would report on evidence the answer never saw.
+    result_dropped = [d for d in chunk_tokens_dropped[:top_k] if d > 0]
+    truncated_pairs = len(result_dropped)
+    tokens_dropped_total = sum(result_dropped)
+    worst_drop = max(result_dropped, default=0)
 
     final_src_counts: dict[str, int] = {}
     for c in result_chunks:
@@ -592,4 +605,7 @@ async def retrieve(
         sources_total=sources_total,
         source_coverage=source_coverage,
         reranked=reranked,
+        truncated_pairs=truncated_pairs,
+        tokens_dropped=tokens_dropped_total,
+        worst_drop=worst_drop,
     )

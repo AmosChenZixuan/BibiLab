@@ -164,9 +164,54 @@ def test_predict_applies_query_clamp_before_encoding():
     # Query alone (2000 tokens) exceeds the pair window — only_second would raise
     # without the clamp, since it can't trim the query and the document alone
     # can't shrink enough to compensate.
-    scores = encoder.predict([[_words(2000), _words(500)]])
+    scores, _ = encoder.predict([[_words(2000), _words(500)]])
 
     assert scores == [0.0]
+
+
+def test_predict_reports_tokens_dropped_per_pair():
+    """predict() reports per-pair document token loss from only_second truncation:
+    0 when the pair fits, and the real token-count diff when it doesn't."""
+    import numpy as np
+
+    from bibilab.pipeline.rerank import ONNXCrossEncoder
+
+    class _Input:
+        def __init__(self, name: str) -> None:
+            self.name = name
+
+    class _FakeSession:
+        def get_inputs(self):
+            return [_Input("input_ids"), _Input("attention_mask")]
+
+        def run(self, _output_names, onnx_input):
+            batch = onnx_input["input_ids"].shape[0]
+            return [np.zeros((batch, 1))]
+
+    encoder = ONNXCrossEncoder.__new__(ONNXCrossEncoder)
+    encoder._np = np
+    encoder._session = _FakeSession()
+    encoder._tokenizer = _pair_tokenizer()
+    encoder._tokenizer.enable_truncation(max_length=PAIR_WINDOW_TOKENS, strategy="only_second")
+    encoder._length_tokenizer = _pair_tokenizer()
+
+    query = _words(10)
+    fitting_doc = _words(50)
+    oversized_doc = _words(1000)
+
+    # Ground truth for the oversized pair: how many doc tokens only_second actually
+    # keeps, derived independently the same way test_document_floor_guaranteed does.
+    truncating_tok = _pair_tokenizer()
+    truncating_tok.enable_truncation(max_length=PAIR_WINDOW_TOKENS, strategy="only_second")
+    kept_enc = truncating_tok.encode(query, oversized_doc)
+    doc_side_kept = sum(1 for sid in kept_enc.sequence_ids if sid == 1)
+    expected_dropped = 1000 - doc_side_kept
+    assert expected_dropped > 0  # sanity: this pair really does get truncated
+
+    _, tokens_dropped = encoder.predict([[query, fitting_doc], [query, oversized_doc]])
+
+    assert tokens_dropped[0] == 0
+    assert tokens_dropped[1] == expected_dropped
 
 
 def test_no_bare_truncation_literal():
