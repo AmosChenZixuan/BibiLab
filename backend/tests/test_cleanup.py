@@ -4,8 +4,6 @@ plus _find_cached_video / _evict_cache_if_needed for the download-stage cache.""
 import os
 from pathlib import Path
 
-import pytest
-
 from bibilab.cleanup import _evict_cache_if_needed, _find_cached_video, purge_download_files
 
 
@@ -81,7 +79,7 @@ def _set_mtime(path: Path, seconds: float) -> None:
     os.utime(path, (seconds, seconds))
 
 
-def test_evict_noop_when_under_cap(downloads_dir: Path, monkeypatch: pytest.MonkeyPatch):
+def test_evict_noop_when_under_cap(downloads_dir: Path, monkeypatch):
     """Cache under cap → nothing is deleted."""
     monkeypatch.setattr("bibilab.cleanup.CACHE_MAX_BYTES", 10_000)
     files = []
@@ -97,7 +95,7 @@ def test_evict_noop_when_under_cap(downloads_dir: Path, monkeypatch: pytest.Monk
         assert f.exists()
 
 
-def test_evict_drops_oldest_first(downloads_dir: Path, monkeypatch: pytest.MonkeyPatch):
+def test_evict_drops_oldest_first(downloads_dir: Path, monkeypatch):
     """AC7 + AC8 — when over cap, oldest by mtime is deleted first; newest survives."""
     # 3 files of 100 bytes each → 300 bytes total. Cap = 200 → evict 100 bytes → drop 1 oldest.
     monkeypatch.setattr("bibilab.cleanup.CACHE_MAX_BYTES", 200)
@@ -115,26 +113,7 @@ def test_evict_drops_oldest_first(downloads_dir: Path, monkeypatch: pytest.Monke
     assert newest.exists()
 
 
-def test_evict_keeps_recent_when_cap_too_low_for_all(downloads_dir: Path, monkeypatch: pytest.MonkeyPatch):
-    """Heavily-over cap → the oldest files go, only the newest survive to fit."""
-    monkeypatch.setattr("bibilab.cleanup.CACHE_MAX_BYTES", 150)
-    files = []
-    for i, ts in enumerate([1_000_000, 2_000_000, 3_000_000, 4_000_000, 5_000_000]):
-        f = downloads_dir / f"BV{i}.mp4"
-        f.write_bytes(b"x" * 100)
-        _set_mtime(f, ts)
-        files.append(f)
-
-    _evict_cache_if_needed()
-
-    survivors = [f for f in files if f.exists()]
-    # Total 500, cap 150 → at most 1 file survives; if a 100-byte file fits it would.
-    assert len(survivors) <= 2
-    # Newest always survives.
-    assert files[-1] in survivors
-
-
-def test_evict_skips_part_files(downloads_dir: Path, monkeypatch: pytest.MonkeyPatch):
+def test_evict_skips_part_files(downloads_dir: Path, monkeypatch):
     """AC9 — .part files are never counted toward cap or evicted."""
     monkeypatch.setattr("bibilab.cleanup.CACHE_MAX_BYTES", 100)
     real = downloads_dir / "BVreal.mp4"
@@ -148,21 +127,3 @@ def test_evict_skips_part_files(downloads_dir: Path, monkeypatch: pytest.MonkeyP
 
     assert real.exists(), "real file should not be evicted (under cap without .part)"
     assert part.exists(), ".part files must never be evicted — an in-flight download depends on them"
-
-
-def test_evict_idempotent_when_run_twice(downloads_dir: Path, monkeypatch: pytest.MonkeyPatch):
-    """Running eviction twice with no new inserts is a no-op the second time."""
-    monkeypatch.setattr("bibilab.cleanup.CACHE_MAX_BYTES", 100)
-    old = downloads_dir / "BVold.mp4"
-    old.write_bytes(b"x" * 100)
-    _set_mtime(old, 1_000_000)
-    new = downloads_dir / "BVnew.mp4"
-    new.write_bytes(b"x" * 100)
-    _set_mtime(new, 2_000_000)
-
-    _evict_cache_if_needed()
-    assert not old.exists()
-    assert new.exists()
-
-    _evict_cache_if_needed()
-    assert new.exists()

@@ -72,7 +72,8 @@ def _evict_cache_if_needed() -> None:
             path.unlink()
             total -= size
         except OSError:
-            # Another concurrent evict already removed it; recompute total next run.
+            # Another concurrent evict already removed it; total is slightly
+            # inflated for this run so we may over-evict by one — harmless.
             continue
 
 

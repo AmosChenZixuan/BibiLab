@@ -498,39 +498,32 @@ class WorkerLoop:
         """Stage 1: Download video file and cover image."""
         await update_job_status(job["id"], JobStatus.DOWNLOADING.value, progress=10)
 
-        # Cache hit: a previous ingest already wrote a usable video file for
-        # this video_id. Reuse it and skip the network. Cover is still fetched
-        # because covers are keyed by the freshly-generated source_id, not the
-        # cached video_id (see out-of-scope note in the issue).
         cached_path = await asyncio.to_thread(_find_cached_video, video_meta.video_id)
         if cached_path is not None:
-            covers_dir = self._bibilab_home / "covers"
-            covers_dir.mkdir(parents=True, exist_ok=True)
-            cover_dest = covers_dir / f"{source_id}.jpg"
-            await asyncio.to_thread(_download_cover, video_meta.cover_url, cover_dest)
-            return cached_path
+            # Cache hit: a previous ingest already wrote a usable video file
+            # for this video_id. Reuse it and skip the network.
+            video_path = cached_path
+        else:
+            # Cache miss: .part hygiene first, then a real download.
+            await asyncio.to_thread(purge_download_files, video_meta.video_id)
+            video_path = await self._get_adapter(video_meta.platform).download(
+                video_meta.video_id,
+                video_meta.source_url,
+                self._get_config().backend.download_connections,
+            )
 
-        # Cache miss: .part hygiene first, then a real download.
-        await asyncio.to_thread(purge_download_files, video_meta.video_id)
+            # Background LRU eviction — fire-and-forget. A slow eviction never
+            # blocks ingest; a crash inside is logged and never surfaces.
+            async def _evict_bg() -> None:
+                try:
+                    await asyncio.to_thread(_evict_cache_if_needed)
+                except Exception:
+                    logger.exception("Background cache eviction failed")
 
-        video_path: Path = await self._get_adapter(video_meta.platform).download(
-            video_meta.video_id,
-            video_meta.source_url,
-            self._get_config().backend.download_connections,
-        )
+            asyncio.create_task(_evict_bg())
 
-        # Background LRU eviction — fire-and-forget. The pipeline does not
-        # await this; a slow eviction never blocks ingest. Wrapped so a
-        # crash inside eviction is logged but never surfaces to the job.
-        async def _evict_bg() -> None:
-            try:
-                await asyncio.to_thread(_evict_cache_if_needed)
-            except Exception:
-                logger.exception("Background cache eviction failed")
-
-        asyncio.create_task(_evict_bg())
-
-        # Download cover
+        # Cover is fetched on both paths: covers are keyed by source_id, which
+        # is freshly generated per ingest (different from the cached video_id).
         covers_dir = self._bibilab_home / "covers"
         covers_dir.mkdir(parents=True, exist_ok=True)
         cover_dest = covers_dir / f"{source_id}.jpg"
