@@ -615,6 +615,9 @@ async def execute_find_passages(
         "sources_with_hits": result.sources_with_hits,
         "sources_total": result.sources_total,
         "reranked": result.reranked,
+        "truncated_pairs": result.truncated_pairs,
+        "tokens_dropped": result.tokens_dropped,
+        "worst_drop": result.worst_drop,
         "scoped_pool_size": pool_size,
         "facet_scope": {
             "sequence_number": sequence_number,

@@ -989,7 +989,7 @@ async def test_long_source_chunks_nest_in_sections(tmp_bibilab_home: Path):
 
     # Manually run the per-stage pipeline: derive + chunk + persist
     sections = derive_sections(segs)
-    chunks = chunk_by_sections(segs, sections, language="en")
+    chunks = chunk_by_sections(segs, sections)
 
     # Write sections + segments atomically (extraction mocked)
     extraction = SimpleNamespace(
@@ -1027,7 +1027,6 @@ async def test_long_source_chunks_nest_in_sections(tmp_bibilab_home: Path):
         extraction=extraction,
         sections=sections,
         section_digests=section_digests,
-        detected_language="en",
         cfg=cfg,
         sentence_segments=segs,
     )
@@ -1060,10 +1059,10 @@ async def test_short_source_one_section_byte_identical_chunks(tmp_bibilab_home: 
         for i in range(40)
     ]
 
-    pre = chunk_segments(segs, language="en")
+    pre = chunk_segments(segs)
     sections = derive_sections(segs)
     assert len(sections) == 1  # pre-condition for byte-identical
-    post = chunk_by_sections(segs, sections, language="en")
+    post = chunk_by_sections(segs, sections)
 
     # Compare the observable chunk fields
     assert len(pre) == len(post)

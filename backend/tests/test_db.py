@@ -450,7 +450,7 @@ def test_clear_embeddings_for_source_does_not_raise(tmp_path: Path):
     mock_col.delete.assert_called_once_with(where={"source_id": "src-1"})
 
 
-def test_seg_range_exact_at_token_cap_boundary():
+def test_seg_range_exact_at_token_cap_boundary(monkeypatch):
     """Seg-range exactly covers chunks at token-cap boundary (timestamp-trap).
 
     Adjacent chunks at a token-cap split are timestamp-contiguous — a
@@ -459,11 +459,15 @@ def test_seg_range_exact_at_token_cap_boundary():
     Verified by driving chunk_segments directly — the stored range is tested
     in T4 manual smoke (fresh-DB re-ingest).
     """
+    import bibilab.pipeline.chunk as chunk_module
     from bibilab.pipeline.chunk import chunk_segments
     from bibilab.pipeline.transcribe import WhisperSegment
 
-    segs = [WhisperSegment(start=float(i), end=float(i) + 1, text=f"句{i}。", speaker="S") for i in range(8)]
-    chunks = chunk_segments(segs, target_tokens=2, chunk_max_tokens=3, language="zh")
+    # No sentence-ending punctuation, so every cap-forced flush is a plain
+    # token cut — 2 tokens/segment, budget=5 forces a flush every 2 segments.
+    monkeypatch.setattr(chunk_module, "DOC_TOKEN_BUDGET", 5)
+    segs = [WhisperSegment(start=float(i), end=float(i) + 1, text=f"w{i}a w{i}b", speaker="S") for i in range(8)]
+    chunks = chunk_segments(segs)
     ranges = [(c.seg_start, c.seg_end) for c in chunks]
     assert ranges[0][0] == 0 and ranges[-1][1] == 7
     for (_, prev_end), (nxt_start, _) in zip(ranges, ranges[1:]):

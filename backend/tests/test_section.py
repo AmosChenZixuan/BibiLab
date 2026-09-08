@@ -154,7 +154,7 @@ def test_chunk_by_sections_long_video_chunks_never_cross_section_boundary():
     sections = derive_sections(segs)
     assert len(sections) >= 2  # pre-condition
 
-    chunks = chunk_by_sections(segs, sections, language="en")
+    chunks = chunk_by_sections(segs, sections)
     for c in chunks:
         containing = [s for s in sections if s.seg_start <= c.seg_start and c.seg_end <= s.seg_end]
         assert len(containing) == 1, (
@@ -167,7 +167,7 @@ def test_chunk_by_sections_timestamps_remain_absolute():
     # timestamps must equal the first/last segment's absolute times.
     segs = [_seg(float(i * 10), float(i * 10 + 5), "x.") for i in range(100)]
     sections = derive_sections(segs, target_tokens=80)
-    chunks = chunk_by_sections(segs, sections, language="en")
+    chunks = chunk_by_sections(segs, sections)
     for c in chunks:
         assert c.timestamp_start == segs[c.seg_start].start
         assert c.timestamp_end == segs[c.seg_end].end
@@ -178,7 +178,7 @@ def test_chunk_by_sections_per_section_seq_index_is_source_global():
     # by the running chunk count so the final chunks have dense 0..N seqs.
     segs = [_seg(float(i), float(i + 1), ("word " * 100).strip() + ".") for i in range(180)]
     sections = derive_sections(segs)
-    chunks = chunk_by_sections(segs, sections, language="en")
+    chunks = chunk_by_sections(segs, sections)
     seqs = sorted(c.sequence_index for c in chunks)
     assert seqs == list(range(len(chunks)))
 

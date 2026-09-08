@@ -91,10 +91,14 @@ JSON blob, nullable. Shape:
                     "section_coverage" (find_passages only, per section),
                     "context" (find_passages only, reconstructed at terminal rag event from citation registry),
                     "candidates_evaluated", "sources_with_hits", "sources_total", "reranked",
-                    "scoped_pool_size", "facet_scope"}]}}
+                    "truncated_pairs", "tokens_dropped", "worst_drop",
+                    "scoped_pool_size", "facet_scope"}],
+         "truncation"?: {"truncated_pairs", "tokens_dropped", "worst_drop"}}}
 ```
 
 `tool_name` is `"find_passages"` or `"read_section"`; `read_section` rows have `query: null`, empty `context[]`, and `section_id`/`source_id`/`source_title` set. `scoped_pool_size` is the **full source pool**; `facet_scope.matched_count` carries the facet-narrowed count. Set by `run_chat_turn` post-stream from tool `tool_result` events. No migration for legacy persisted messages — the ledger renders best-effort from whatever fields exist.
+
+`truncated_pairs`/`tokens_dropped`/`worst_drop` (per call, from `rerank.py`'s pair-encoding truncation) count only the chunks that survive `retrieve()`'s final top-k slice — a pair truncated but ranked out of top-k never reached the LLM, so it doesn't count. `rag.truncation` is the turn-level rollup across every `find_passages` call this turn (`chat_ledger.sum_truncation`): `truncated_pairs`/`tokens_dropped` sum across calls, `worst_drop` takes the max (it's the single largest pair loss in the turn, not a running total). The key is **omitted entirely** on a turn with no truncation — never a zeroed placeholder — and a bug in the rollup itself is swallowed and logged rather than failing the turn (it's a metadata add-on, not load-bearing).
 
 ## Conversation compression
 

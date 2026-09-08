@@ -151,7 +151,7 @@ def test_download_http_archive_requires_single_top_level_dir(tmp_path: Path, tmp
 
 def test_ensure_raises_when_download_completes_but_integrity_fails(tmp_bibilab_home: Path):
     """Locks the post-download integrity verify added in 3af33e9."""
-    spec = get_spec("multilingual-e5")
+    spec = get_spec("multilingual-e5-small")
 
     def empty_download(_spec, target):
         target.mkdir(parents=True, exist_ok=True)
@@ -178,9 +178,31 @@ def test_modelspec_rejects_empty_integrity_files():
 
 def test_registry_sizes_corrected():
     """size_mb drives download UI/estimates; the int8 reranker (266.4 MiB) and the
-    e5 embedder (448.5 MiB) must round to their real on-disk sizes."""
+    e5-small embedder (448.5 MiB) must round to their real on-disk sizes."""
     assert get_spec("bge-reranker-base-q").size_mb == 266
-    assert get_spec("multilingual-e5").size_mb == 449
+    assert get_spec("multilingual-e5-small").size_mb == 448
+
+
+def test_embedding_spec_is_e5_small_not_minilm():
+    """The spec id lied about the model (id said e5, download was MiniLM,
+    whose native max_seq_length=128 contradicted the 512-token truncation embed.py
+    ran it at). The spec must now actually point at multilingual-e5-small, in a
+    subdir the old MiniLM download never occupied — ensure() only checks file
+    *existence*, so reusing the old subdir/filenames would let an install that
+    already has MiniLM's weights keep serving them, silently, forever."""
+    from bibilab.model_registry import EMBEDDING_SPEC_ID
+
+    assert EMBEDDING_SPEC_ID == "multilingual-e5-small"
+    spec = get_spec(EMBEDDING_SPEC_ID)
+    assert spec.local_subdir == "embedding/intfloat_multilingual-e5-small"
+    assert spec.integrity_files == ["onnx/model.onnx", "onnx/tokenizer.json"]
+    assert spec.http_files is not None
+    url_by_rel = {rel: url for url, rel in spec.http_files}
+    for url in url_by_rel.values():
+        assert "intfloat/multilingual-e5-small" in url
+
+    with pytest.raises(ValueError):
+        get_spec("multilingual-e5")
 
 
 def test_quantized_reranker_is_sole_reranker_spec():

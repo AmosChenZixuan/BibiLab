@@ -7,7 +7,7 @@ import logging
 import threading
 
 from bibilab.model_registry import RERANKER_SPEC_ID, ensure
-from bibilab.pipeline._shared import interpreting_providers
+from bibilab.pipeline._shared import PAIR_WINDOW_TOKENS, QUERY_TOKEN_CLAMP, interpreting_providers
 from bibilab.pipeline.chat_inference_pool import get_chat_pool
 from bibilab.pipeline.embed import RetrievedChunk
 
@@ -23,6 +23,26 @@ _TOKENIZER_FILENAME = "tokenizer.json"
 
 _reranker: ONNXCrossEncoder | None = None
 _reranker_lock = threading.Lock()
+
+
+def _clamp_query(length_tokenizer, query: str) -> str:
+    """Pre-clamp the query to QUERY_TOKEN_CLAMP tokens before pair-encoding.
+
+    `only_second` truncation only ever trims the document side, so without this
+    a query longer than the clamp (but still under the full pair window) would
+    silently eat into the document's guaranteed floor.
+
+    `length_tokenizer` must have no truncation config: encoding this query alone
+    on the pair tokenizer (which has `only_second` enabled) raises once the
+    query alone is long enough to need truncating, since `only_second` requires
+    a second sequence to trim. A dedicated untruncated instance also avoids
+    toggling shared truncation state on the pair tokenizer, which `predict()`
+    calls concurrently from a multi-worker thread pool.
+    """
+    ids = length_tokenizer.encode(query, add_special_tokens=False).ids
+    if len(ids) <= QUERY_TOKEN_CLAMP:
+        return query
+    return length_tokenizer.decode(ids[:QUERY_TOKEN_CLAMP])
 
 
 class ONNXCrossEncoder:
@@ -47,13 +67,28 @@ class ONNXCrossEncoder:
         from tokenizers import Tokenizer  # noqa: PLC0415
 
         self._tokenizer = Tokenizer.from_file(str(model_dir / _TOKENIZER_FILENAME))
-        self._tokenizer.enable_truncation(max_length=512)
+        self._tokenizer.enable_truncation(max_length=PAIR_WINDOW_TOKENS, strategy="only_second")
+        # Separate untruncated instance for _clamp_query's length check — see its
+        # docstring for why it can't share self._tokenizer.
+        self._length_tokenizer = Tokenizer.from_file(str(model_dir / _TOKENIZER_FILENAME))
 
-    def predict(self, pairs: list[list[str]]) -> list[float]:
+    def predict(self, pairs: list[list[str]]) -> tuple[list[float], list[int]]:
         onnx_input_names = {i.name for i in self._session.get_inputs()}
         has_token_type = "token_type_ids" in onnx_input_names
 
-        encoded_list = [self._tokenizer.encode(query, doc) for query, doc in pairs]
+        encoded_list = [
+            self._tokenizer.encode(_clamp_query(self._length_tokenizer, query), doc) for query, doc in pairs
+        ]
+        # Per-pair document token loss: true doc length (untruncated, no specials)
+        # minus how many doc tokens (sequence_id == 1) only_second actually kept.
+        tokens_dropped = [
+            max(
+                0,
+                len(self._length_tokenizer.encode(doc, add_special_tokens=False).ids)
+                - sum(1 for sid in enc.sequence_ids if sid == 1),
+            )
+            for (_, doc), enc in zip(pairs, encoded_list)
+        ]
 
         max_len = max(len(e.ids) for e in encoded_list)
         pad_id = self._tokenizer.token_to_id("<pad>") or 0
@@ -77,7 +112,7 @@ class ONNXCrossEncoder:
             onnx_input["token_type_ids"] = self._np.array(batch_type_ids, dtype=self._np.int64)
 
         logits = self._session.run(None, onnx_input)[0]
-        return [float(logits[i][0]) for i in range(len(pairs))]
+        return [float(logits[i][0]) for i in range(len(pairs))], tokens_dropped
 
 
 def _get_reranker() -> ONNXCrossEncoder:
@@ -93,7 +128,7 @@ async def rerank(
     query: str,
     chunks: list[RetrievedChunk],
     top_k: int = 5,
-) -> list[RetrievedChunk]:
+) -> tuple[list[RetrievedChunk], list[int]]:
     """Rerank chunks using a cross-encoder model.
 
     Args:
@@ -102,21 +137,22 @@ async def rerank(
         top_k: Number of top-scoring chunks to return.
 
     Returns:
-        Top-k chunks sorted by cross-encoder score (most relevant first).
+        Top-k chunks sorted by cross-encoder score (most relevant first), and the
+        per-chunk document token loss from pair-encoding truncation, same order.
     """
     if not chunks:
-        return []
+        return [], []
 
     pairs = [[query, chunk.content] for chunk in chunks]
     reranker = _get_reranker()
 
     loop = asyncio.get_running_loop()
-    scores = await loop.run_in_executor(get_chat_pool(), reranker.predict, pairs)
+    scores, tokens_dropped = await loop.run_in_executor(get_chat_pool(), reranker.predict, pairs)
 
-    scored = list(zip(chunks, scores))
+    scored = list(zip(chunks, scores, tokens_dropped))
     scored.sort(key=lambda x: x[1], reverse=True)
 
-    for chunk, score in scored:
+    for chunk, score, _ in scored:
         chunk.score = float(score)
 
-    return [chunk for chunk, _ in scored[:top_k]]
+    return [chunk for chunk, _, _ in scored[:top_k]], [dropped for _, _, dropped in scored[:top_k]]

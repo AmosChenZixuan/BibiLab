@@ -37,7 +37,7 @@ pipeline/         — one file per stage
   _shared.py        sync _call_llm + async stream_llm (OpenAI/Anthropic), StreamEvent/ToolCall/ToolDefinition dataclasses
   audio.py          FFmpeg audio extraction (video → .wav)
   transcribe.py     sherpa-onnx, CPU-only: Silero VAD + SenseVoice/Whisper recognition + CAM++ embedding clustering → VAD segments w/ speaker labels
-  chunk.py          per-section greedy segment merger → token target (`zh=800`, `en=300`); physical chunk `[seg_start, seg_end]` is fully contained in one section's range
+  chunk.py          per-section greedy segment merger → hard ceiling `DOC_TOKEN_BUDGET` (444 XLM-R tokens, the reranker's unit); physical chunk `[seg_start, seg_end]` is fully contained in one section's range
   section.py        Section dataclass + derive_sections (token+pause boundary, target=12000) + chunk_by_sections (per-section chunking with source-global re-stamp)
   digest.py         LLM digest: per-section summary/keywords → sections table; facets → sources
   embed.py          ChromaDB embed + retrieve() (hybrid search → rerank → aggregation), FTS5 populate
@@ -103,7 +103,7 @@ Stage-by-stage mechanism (fail-loud contracts, duration validation, two-phase re
 
 - Dedup source of truth is `sources` (via `get_video_statuses`); a video is "processed" iff it has a `sources` row. Full re-process = DELETE + re-ingest.
 - Source + transcript_segments + sections land **atomically in one transaction** (`write_source_with_segments`); digest rerun reuses stored sections, never re-derives — 0 section rows fails loud.
-- Section/chunk invariants: sections target=12000 tokens (zone [7200, 16800]), ≥1 per source; chunk token target `zh=800` / `en=300`; a chunk's `[seg_start, seg_end]` nests in exactly one section (source-global indices).
+- Section/chunk invariants: sections target=12000 tokens (zone [7200, 16800], cl100k — the LLM's unit), ≥1 per source; chunks are ceiling-bounded at `DOC_TOKEN_BUDGET` (444 XLM-R tokens — the embedder/reranker's unit, so no chunk is silently truncated at retrieval time), the one exception being a single segment already over the ceiling, which is emitted verbatim; a chunk's `[seg_start, seg_end]` nests in exactly one section (source-global indices).
 - Every stage failure surfaces on the job row as `[<stage>] <message>` — keep new failure paths behind clear messages, not raw tool dumps; the cancel gate runs before fail-loud guards (a user cancel wins).
 - punctuate is zh-gated and never fatal (alignment failure falls back to unpunctuated); digest ∥ embed run in parallel; Chroma metadata keys on `source_id`, not `video_id`.
 
@@ -151,4 +151,4 @@ Registry dispatch, per-platform behavior, two-phase resolve, and bilibili auth a
   "rag": { "max_distance": 0.8, "reranking_enabled": true, "hybrid_enabled": true, "debug_prompts": false }
 }
 ```
-Reranker is the single spec `RERANKER_SPEC_ID = "bge-reranker-base-q"` (int8, zh+en); its ONNX session must source providers from `interpreting_providers()` — on macOS that excludes CoreML, whose per-input-shape JIT recompile hangs >90s / OOM-kills the reranker on first chat retrieve. `FIND_PASSAGES_TOP_K = 8`. Model rationale and prompt-trace details: `docs/chat_architecture.md`.
+Embedder is `EMBEDDING_SPEC_ID = "multilingual-e5-small"` (intfloat, 384-dim, `query: `/`passage: ` prefixes required); reranker is the single spec `RERANKER_SPEC_ID = "bge-reranker-base-q"` (int8, zh+en). Both are XLM-R sentencepiece on a 512-token window — that shared unit is what `DOC_TOKEN_BUDGET` sizes chunks in. The reranker's ONNX session must source providers from `interpreting_providers()` — on macOS that excludes CoreML, whose per-input-shape JIT recompile hangs >90s / OOM-kills the reranker on first chat retrieve. `FIND_PASSAGES_TOP_K = 8`. Model rationale and prompt-trace details: `docs/chat_architecture.md`.

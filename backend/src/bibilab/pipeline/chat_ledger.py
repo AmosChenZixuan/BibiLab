@@ -75,3 +75,20 @@ def build_rag_ledger(
         rs["context"] = []
 
     return retrieve_calls + read_section_calls
+
+
+def sum_truncation(retrieve_calls: list[dict]) -> dict:
+    """Roll up per-call rerank truncation stats into one turn-level summary.
+
+    truncated_pairs and tokens_dropped sum across calls; worst_drop takes the
+    max (it's the single largest pair loss in the turn, not a running total —
+    summing per-call maxima would grow with call count and stop meaning that).
+    Returns {} when there's nothing to report, so a clean turn omits the key
+    entirely rather than persisting a zeroed placeholder.
+    """
+    truncated_pairs = sum(c.get("truncated_pairs", 0) for c in retrieve_calls)
+    tokens_dropped = sum(c.get("tokens_dropped", 0) for c in retrieve_calls)
+    worst_drop = max((c.get("worst_drop", 0) for c in retrieve_calls), default=0)
+    if not truncated_pairs and not tokens_dropped and not worst_drop:
+        return {}
+    return {"truncated_pairs": truncated_pairs, "tokens_dropped": tokens_dropped, "worst_drop": worst_drop}

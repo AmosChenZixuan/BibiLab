@@ -13,7 +13,7 @@ Whisper 把音频转成一堆带时间戳的小 segment（5–15 秒一段）。
 4. 双轨入库 (embed.py: embed_chunks)
 每个 chunk 同时写两份索引：
 
-    - 向量库（ChromaDB）：用本地 ONNX MiniLM 模型把文本变成向量，存进 ~/.bibilab/chroma/，metadata 带 source_id / list_id / video_title / seg_start / seg_end / 时间戳。
+    - 向量库（ChromaDB）：用本地 ONNX e5-small 模型把文本变成向量，存进 ~/.bibilab/chroma/，metadata 带 source_id / list_id / video_title / seg_start / seg_end / 时间戳。
     - 关键词库（SQLite FTS5）：populate_fts() 把同一批 chunk 文本插入 chunks_fts 虚拟表，让 SQLite 的 BM25 能直接打分。
 
 两份都按 source_id 幂等，重新跑会先 delete 老数据再插。

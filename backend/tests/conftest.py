@@ -85,6 +85,19 @@ def _mock_model_gate():
         yield
 
 
+@pytest.fixture(autouse=True)
+def _mock_xlmr_token_counter():
+    """Prevent chunk_segments (pipeline/chunk.py) from downloading the real
+    XLM-R tokenizer file — models are never downloaded in CI, same rule as
+    _mock_model_gate. Approximates token count as word count: deterministic,
+    hermetic, and keeps chunk-test fixture math (`_word_seg(N)` ~ N tokens)
+    simple. chunk.py re-imports count_tokens_xlmr by name at module load, so
+    the patch must target that re-import site — patching the _shared.py
+    source alone doesn't reach it (same lesson as mock_call_llm above)."""
+    with patch("bibilab.pipeline.chunk.count_tokens_xlmr", lambda text: len(text.split())):
+        yield
+
+
 class _MockEmbeddingFunction:
     def __call__(self, input):
         return [[0.0] * 384 for _ in input]

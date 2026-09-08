@@ -15,10 +15,10 @@ fired and cut 20-min videos into 2 sections). Tuned to 12000: keeps the
 20-min corpus median as 1 section, cuts 30+ min videos. Re-tune if 30+
 min videos stop cutting.
 
-Why the section cap is **flat** (not language-scaled like chunk.py): the
-constraint here is the LLM token budget (one section feeds one read_section
-/ refine-summarizer call), not chunk readability. Language scaling makes sense
-for chunk size; it does not apply here.
+Why the section cap is **flat**: the constraint here is the LLM token budget
+(one section feeds one read_section / refine-summarizer call), not the
+retrieval-window ceiling chunk.py enforces — two different consumers, two
+different bounds.
 """
 
 import logging
@@ -133,7 +133,6 @@ def derive_sections(
 def chunk_by_sections(
     segments: list[WhisperSegment],
     sections: list[Section],
-    language: str | None = "en",
 ) -> list[RagChunk]:
     """Run `chunk_segments` independently inside each section's segment slice,
     re-stamping `sequence_index` and `seg_start`/`seg_end` to source-global
@@ -141,8 +140,8 @@ def chunk_by_sections(
     chain, `get_segments_for_ranges`).
 
     Short video (1 section spanning all) → byte-identical output to calling
-    `chunk_segments(segments, language=...)` directly (modulo the dataclass
-    `replace`, which is value-preserving).
+    `chunk_segments(segments)` directly (modulo the dataclass `replace`, which
+    is value-preserving).
 
     Parameters
     ----------
@@ -150,15 +149,12 @@ def chunk_by_sections(
         The full source-global segments list (same one `derive_sections` saw).
     sections
         The output of `derive_sections(segments)`.
-    language
-        Forwarded to `chunk_segments` for per-section token-target selection
-        (zh → 800 tok target, en → 300 tok target, etc.).
     """
     out: list[RagChunk] = []
     chunk_offset = 0
     for sec in sections:
         slice_ = segments[sec.seg_start : sec.seg_end + 1]
-        per_section = chunk_segments(slice_, language=language)
+        per_section = chunk_segments(slice_)
         for c in per_section:
             out.append(
                 replace(

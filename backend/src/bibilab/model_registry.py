@@ -113,21 +113,21 @@ _SPECS: dict[str, ModelSpec] = {
             )
         ],
     ),
-    "multilingual-e5": ModelSpec(
-        id="multilingual-e5",
-        display_name="Multilingual Embedding (MiniLM-L12-v2)",
+    "multilingual-e5-small": ModelSpec(
+        id="multilingual-e5-small",
+        display_name="Multilingual Embedding (e5-small)",
         kind="embedding",
         backend="http_files",
-        size_mb=449,
+        size_mb=448,
         integrity_files=["onnx/model.onnx", "onnx/tokenizer.json"],
-        local_subdir="embedding",
+        local_subdir="embedding/intfloat_multilingual-e5-small",
         http_files=[
             (
-                "https://huggingface.co/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2/resolve/main/onnx/model.onnx",
+                "https://huggingface.co/intfloat/multilingual-e5-small/resolve/main/onnx/model.onnx",
                 "onnx/model.onnx",
             ),
             (
-                "https://huggingface.co/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2/resolve/main/tokenizer.json",
+                "https://huggingface.co/intfloat/multilingual-e5-small/resolve/main/onnx/tokenizer.json",
                 "onnx/tokenizer.json",
             ),
         ],
@@ -159,7 +159,7 @@ _SPECS: dict[str, ModelSpec] = {
     ),
 }
 
-EMBEDDING_SPEC_ID = "multilingual-e5"
+EMBEDDING_SPEC_ID = "multilingual-e5-small"
 RERANKER_SPEC_ID = "bge-reranker-base-q"
 
 # sherpa-onnx spec ids — the ones transcribe.py and punctuate.py actually run on.

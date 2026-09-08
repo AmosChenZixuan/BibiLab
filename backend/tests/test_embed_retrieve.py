@@ -73,7 +73,8 @@ async def test_retrieve_returns_topk_by_rerank_no_gate(monkeypatch):
         return list(pool)
 
     async def fake_rerank(query, chunks, top_k):  # noqa: ANN001
-        return sorted(chunks, key=lambda c: c.score, reverse=True)
+        ordered = sorted(chunks, key=lambda c: c.score, reverse=True)
+        return ordered, [0] * len(ordered)
 
     monkeypatch.setattr(embed, "hybrid_search", fake_hybrid)
     monkeypatch.setattr("bibilab.pipeline.rerank.rerank", fake_rerank)
@@ -118,7 +119,8 @@ async def test_retrieve_keeps_multiple_sources_no_diversity_cap(monkeypatch):
         return list(pool)
 
     async def fake_rerank(query, chunks, top_k):  # noqa: ANN001
-        return sorted(chunks, key=lambda c: c.score, reverse=True)
+        ordered = sorted(chunks, key=lambda c: c.score, reverse=True)
+        return ordered, [0] * len(ordered)
 
     monkeypatch.setattr(embed, "hybrid_search", fake_hybrid)
     monkeypatch.setattr("bibilab.pipeline.rerank.rerank", fake_rerank)
@@ -128,6 +130,47 @@ async def test_retrieve_keeps_multiple_sources_no_diversity_cap(monkeypatch):
     # No diversity cap → all 6 'sa' chunks present (v1 would cap at depth=2).
     assert sum(c.source_id == "sa" for c in result.chunks) == 6
     assert any(c.source_id == "sb" for c in result.chunks)
+
+
+@pytest.mark.asyncio
+async def test_retrieve_truncation_stats_only_count_final_topk(monkeypatch):
+    """A pair truncated during rerank but ranked outside top_k never reached the
+    LLM — it must not contribute to RetrievalResult's truncation counters."""
+    pool = [
+        RetrievedChunk(
+            content=f"c{i}",
+            video_title="t",
+            timestamp_start=float(i),
+            timestamp_end=float(i) + 1,
+            source_id="s1",
+            distance=0.0,
+            score=10.0 - i,
+            sequence_index=i,
+        )
+        for i in range(10)
+    ]
+
+    async def fake_hybrid(*a, **k):  # noqa: ANN001
+        return list(pool)
+
+    # c2 (within top_k=8) drops 5 tokens; c9 (ranked outside top_k) drops 99 —
+    # only the in-window drop should reach RetrievalResult.
+    dropped_by_content = {"c2": 5, "c9": 99}
+
+    async def fake_rerank(query, chunks, top_k):  # noqa: ANN001
+        ordered = sorted(chunks, key=lambda c: c.score, reverse=True)
+        dropped = [dropped_by_content.get(c.content, 0) for c in ordered]
+        return ordered, dropped
+
+    monkeypatch.setattr(embed, "hybrid_search", fake_hybrid)
+    monkeypatch.setattr("bibilab.pipeline.rerank.rerank", fake_rerank)
+
+    result = await retrieve("q", ["s1"], _cfg(), top_k=8)
+
+    assert len(result.chunks) == 8
+    assert result.truncated_pairs == 1
+    assert result.tokens_dropped == 5
+    assert result.worst_drop == 5
 
 
 @pytest.mark.asyncio

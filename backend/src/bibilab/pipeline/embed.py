@@ -12,10 +12,9 @@ if TYPE_CHECKING:
     import chromadb
 
 import sqlite3
-from pathlib import Path
 
 from bibilab.adapters.base import VideoMeta
-from bibilab.config import BibilabConfig, bibilab_home, models_dir
+from bibilab.config import BibilabConfig, bibilab_home
 from bibilab.db import get_db_path, query_fts_rows
 from bibilab.model_registry import EMBEDDING_SPEC_ID, ensure
 from bibilab.pipeline._shared import interpreting_providers
@@ -24,6 +23,14 @@ from bibilab.pipeline.chunk import RagChunk
 from bibilab.pipeline.fts_tokens import pinyin_index_tokens, tokenize_cjk
 
 logger = logging.getLogger(__name__)
+
+# e5-small's max sequence length, specials included — its graph hard-fails at 513.
+# Deliberately not DOC_TOKEN_BUDGET: that budget reserves room for the reranker's
+# query, and there is no query in this single-sequence input. Capping at the pair
+# budget would also clip the tail off a chunk sized at the chunker's ceiling, since
+# the "passage: " prefix is prepended after the chunker measured the text. A chunk
+# over this window still truncates here — chunk.py emits an oversized segment verbatim.
+EMBED_WINDOW_TOKENS = 512
 
 
 _chroma_collections: dict[str, "chromadb.Collection"] = {}
@@ -69,6 +76,12 @@ class RetrievalResult:
     # True when rerank ran successfully; useful for offline quality analysis
     # (rerank score != distance, so callers can disambiguate the two regimes).
     reranked: bool = False
+    # Truncation stats over the FINAL top_k chunks only (post-slice) — a pair
+    # truncated but ranked out of top_k never reached the LLM, so it doesn't
+    # count. All zero (and absent downstream) when reranking didn't run.
+    truncated_pairs: int = 0
+    tokens_dropped: int = 0
+    worst_drop: int = 0
 
 
 def _chunk_score(chunk: RetrievedChunk) -> float:
@@ -154,22 +167,22 @@ class ONNXMultilingualEmbedding:
 
     Mirrors the ONNXCrossEncoder pattern from rerank.py:
     - onnxruntime + tokenizers only (no torch / sentence-transformers)
-    - Mean-pooled ONNX forward pass (no query instruction needed)
-    - Downloads model files to ~/.bibilab/models/embedding/
+    - Mean-pooled ONNX forward pass, e5's "query: "/"passage: " prefixes applied
+      per-path in __call__/embed_query before pooling
+    - Downloads model files via ensure(EMBEDDING_SPEC_ID)
     """
 
     def name(self) -> str:
         return "onnx_multilingual_embedding"
 
     def embed_query(self, input: list[str]) -> list[list[float]]:
-        """Embed query strings. Same as __call__ for this model."""
-        return self(input)
+        """Embed query strings with the e5 'query: ' instruction prefix."""
+        return self._embed([f"query: {text}" for text in input])
 
     def __init__(self) -> None:
         import numpy as np  # noqa: PLC0415
 
-        ensure(EMBEDDING_SPEC_ID)
-        model_dir = _embedding_model_dir()
+        model_dir = ensure(EMBEDDING_SPEC_ID)
         import onnxruntime as ort  # noqa: PLC0415
 
         so = ort.SessionOptions()
@@ -183,14 +196,18 @@ class ONNXMultilingualEmbedding:
         from tokenizers import Tokenizer  # noqa: PLC0415
 
         self._tokenizer = Tokenizer.from_file(str(model_dir / "onnx" / "tokenizer.json"))
-        self._tokenizer.enable_truncation(max_length=512)
+        self._tokenizer.enable_truncation(max_length=EMBED_WINDOW_TOKENS)
 
         # pad_token_id from BERT config (0), not tokenizer's <pad> id (1)
         self._pad_id = 0
         self._np = np
 
     def __call__(self, input: list[str]) -> list[list[float]]:
-        """Encode texts to embedding vectors. Mean-pooled."""
+        """Encode passages to embedding vectors with the e5 'passage: ' prefix."""
+        return self._embed([f"passage: {text}" for text in input])
+
+    def _embed(self, input: list[str]) -> list[list[float]]:
+        """Tokenize (already-prefixed) texts, mean-pool the ONNX forward pass."""
         if not input:
             return []
 
@@ -221,11 +238,15 @@ class ONNXMultilingualEmbedding:
         counts = mask.sum(axis=1, keepdims=True)
         embeddings = summed / counts
 
+        # e5 is trained for cosine similarity, so the raw mean-pooled vector's
+        # magnitude carries no relevance signal. The collection is queried in
+        # Chroma's default L2 space, where L2² = 2 - 2·cos once both sides are
+        # unit length — so normalizing here is what makes L2 rank by angle and
+        # puts distances on the bounded [0, 2] scale query_chunks' floor assumes.
+        norms = self._np.linalg.norm(embeddings, axis=1, keepdims=True)
+        embeddings = embeddings / self._np.maximum(norms, 1e-12)
+
         return [emb.tolist() for emb in embeddings]
-
-
-def _embedding_model_dir() -> Path:
-    return models_dir("embedding")
 
 
 def _default_embedding_function() -> ONNXMultilingualEmbedding:
@@ -549,16 +570,21 @@ async def retrieve(
     candidates_evaluated = len(chunks)
 
     reranked = False
+    chunk_tokens_dropped: list[int] = []
     if cfg.rag.reranking_enabled and chunks:
         from bibilab.pipeline.rerank import rerank  # noqa: PLC0415
 
         try:
-            chunks = await rerank(query_text, chunks, top_k=len(chunks))
+            chunks, chunk_tokens_dropped = await rerank(query_text, chunks, top_k=len(chunks))
             reranked = True
         except Exception as exc:  # noqa: BLE001 - model load can fail in many ways
             logger.warning("Reranking failed: %s", exc)
 
     result_chunks = chunks[:top_k]
+    result_dropped = [d for d in chunk_tokens_dropped[:top_k] if d > 0]
+    truncated_pairs = len(result_dropped)
+    tokens_dropped_total = sum(result_dropped)
+    worst_drop = max(result_dropped, default=0)
 
     final_src_counts: dict[str, int] = {}
     for c in result_chunks:
@@ -593,4 +619,7 @@ async def retrieve(
         sources_total=sources_total,
         source_coverage=source_coverage,
         reranked=reranked,
+        truncated_pairs=truncated_pairs,
+        tokens_dropped=tokens_dropped_total,
+        worst_drop=worst_drop,
     )
