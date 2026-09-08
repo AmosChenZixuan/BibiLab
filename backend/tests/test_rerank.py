@@ -122,15 +122,25 @@ def test_short_query_byte_identical_to_pre_fix_encoding():
     assert ids_post_fix == ids_pre_fix
 
 
-def test_embed_shares_doc_token_budget():
-    """embed.py's single-sequence truncation cap is exactly DOC_TOKEN_BUDGET — the
-    same constant rerank.py consumes, not a second literal."""
+def test_embed_truncates_at_its_own_window_not_the_pair_budget(tmp_path: Path):
+    """embed.py must cap single-sequence truncation at EMBED_WINDOW_TOKENS, not at
+    DOC_TOKEN_BUDGET — that budget reserves room for the reranker's query, and there
+    is no query in the embedder's input. Reads the cap back off the constructed
+    encoder's tokenizer rather than asserting on a mock call shape, so a positional
+    or otherwise-refactored call still passes and only a changed cap fails."""
     tok = _pair_tokenizer()
-    tok.enable_truncation(max_length=DOC_TOKEN_BUDGET)
+    with (
+        patch("bibilab.pipeline.embed.ensure", return_value=tmp_path),
+        patch("bibilab.pipeline.embed.interpreting_providers", return_value=["CPUExecutionProvider"]),
+        patch("onnxruntime.InferenceSession", MagicMock()),
+        patch("tokenizers.Tokenizer.from_file", return_value=tok),
+    ):
+        from bibilab.pipeline.embed import EMBED_WINDOW_TOKENS, ONNXMultilingualEmbedding
 
-    enc = tok.encode(_words(2000))
+        encoder = ONNXMultilingualEmbedding()
 
-    assert len(enc.ids) == DOC_TOKEN_BUDGET
+    assert encoder._tokenizer.truncation["max_length"] == EMBED_WINDOW_TOKENS
+    assert EMBED_WINDOW_TOKENS > DOC_TOKEN_BUDGET
 
 
 def test_predict_applies_query_clamp_before_encoding():

@@ -17,12 +17,20 @@ from bibilab.adapters.base import VideoMeta
 from bibilab.config import BibilabConfig, bibilab_home
 from bibilab.db import get_db_path, query_fts_rows
 from bibilab.model_registry import EMBEDDING_SPEC_ID, ensure
-from bibilab.pipeline._shared import DOC_TOKEN_BUDGET, interpreting_providers
+from bibilab.pipeline._shared import interpreting_providers
 from bibilab.pipeline.chat_inference_pool import get_chat_pool
 from bibilab.pipeline.chunk import RagChunk
 from bibilab.pipeline.fts_tokens import pinyin_index_tokens, tokenize_cjk
 
 logger = logging.getLogger(__name__)
+
+# e5-small's max sequence length, specials included — its graph hard-fails at 513.
+# Deliberately not DOC_TOKEN_BUDGET: that budget reserves room for the reranker's
+# query, and there is no query in this single-sequence input. Capping at the pair
+# budget would also clip the tail off a chunk sized at the chunker's ceiling, since
+# the "passage: " prefix is prepended after the chunker measured the text. A chunk
+# over this window still truncates here — chunk.py emits an oversized segment verbatim.
+EMBED_WINDOW_TOKENS = 512
 
 
 _chroma_collections: dict[str, "chromadb.Collection"] = {}
@@ -188,7 +196,7 @@ class ONNXMultilingualEmbedding:
         from tokenizers import Tokenizer  # noqa: PLC0415
 
         self._tokenizer = Tokenizer.from_file(str(model_dir / "onnx" / "tokenizer.json"))
-        self._tokenizer.enable_truncation(max_length=DOC_TOKEN_BUDGET)
+        self._tokenizer.enable_truncation(max_length=EMBED_WINDOW_TOKENS)
 
         # pad_token_id from BERT config (0), not tokenizer's <pad> id (1)
         self._pad_id = 0

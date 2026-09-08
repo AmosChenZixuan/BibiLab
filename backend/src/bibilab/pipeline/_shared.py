@@ -28,12 +28,11 @@ logger = logging.getLogger(__name__)
 # it equals count_tokens(text) (see artifact_refine.py).
 _enc = tiktoken.get_encoding("cl100k_base")
 
-# XLM-R pair budget for the reranker (rerank.py) and embedder (embed.py). Both
-# tokenizers are XLM-R sentencepiece with the same 512-token window. Defined
-# here rather than in either consumer to avoid a circular import (rerank.py
-# already imports from embed.py) and so a later consumer (chunk sizing) has one
-# home to import from. DOC_TOKEN_BUDGET is derived, not a separate literal, so
-# the numbers can't drift out of sync.
+# XLM-R pair budget for the reranker (rerank.py). Defined here rather than in
+# the consumer to avoid a circular import (rerank.py already imports from
+# embed.py) and so the chunk sizer has one home to import from.
+# DOC_TOKEN_BUDGET is derived, not a separate literal, so the numbers can't
+# drift out of sync.
 PAIR_WINDOW_TOKENS = 512  # model's max pair sequence length, specials included
 PAIR_SPECIAL_TOKENS = 4  # <s> q </s> </s> d </s>
 QUERY_TOKEN_CLAMP = 64  # covers real find_passages queries (p95=26, max=51) with headroom
