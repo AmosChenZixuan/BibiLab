@@ -74,12 +74,17 @@ def _validate_audio_duration(decoded: float, container: float, expected: float) 
 
 
 def extract_audio(video_path: Path, expected_duration: float = 0.0) -> Path:
-    """Extract 16kHz mono WAV from video_path; delete source video on success.
+    """Extract 16kHz mono WAV from video_path; keep the source video as cache.
 
     Validates the decoded duration against the input container and the
     platform-reported ``expected_duration`` (seconds, ``0`` = unknown) and
     raises ``PipelineError`` on a short/corrupt result instead of persisting a
     silently truncated transcript. Returns the path to the extracted WAV file.
+
+    The video file is intentionally NOT deleted on success: it is the
+    download-stage cache and re-ingest of the same video must hit it.
+    On a corrupt-video failure, the file IS unlinked so the next retry
+    re-downloads rather than replaying the same bad bytes.
     """
     if not _has_audio_stream(video_path):
         # e.g. a platform variant shipped without an audio track: fail with
@@ -102,14 +107,20 @@ def extract_audio(video_path: Path, expected_duration: float = 0.0) -> Path:
         )
     except ffmpeg.Error as exc:
         msg = f"FFmpeg audio extraction failed: {exc.stderr.decode()!r}"
+        # Corrupt file: drop it so the next attempt re-downloads instead of
+        # looping on the same bad bytes via the cache.
+        video_path.unlink(missing_ok=True)
         raise PipelineError(msg) from exc
 
-    _validate_audio_duration(
-        decoded=_probe_duration(wav_path),
-        container=_probe_duration(video_path),
-        expected=expected_duration,
-    )
+    try:
+        _validate_audio_duration(
+            decoded=_probe_duration(wav_path),
+            container=_probe_duration(video_path),
+            expected=expected_duration,
+        )
+    except PipelineError:
+        video_path.unlink(missing_ok=True)
+        raise
 
-    video_path.unlink(missing_ok=True)
     logger.info("Extracted audio to %s", wav_path)
     return wav_path

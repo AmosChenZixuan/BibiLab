@@ -25,7 +25,14 @@ def setup_pipeline_test(tmp_path: Path):
 
 
 def _make_cancel_job(home: Path, job_id: str, video_id: str) -> tuple[dict, "WorkerLoop", Path, Path]:
-    """Ingest job dict + worker wired to a mock adapter, plus fake video/wav files."""
+    """Ingest job dict + worker wired to a mock adapter, plus a fake wav file.
+
+    No `tmp_video` file is pre-created: the cache lookup would otherwise
+    short-circuit to a hit on the test fixture, skipping the
+    `_blocking_download` side effect the cancel tests depend on. The mock
+    adapter is set up here; each test overrides its side effect to control
+    the blocking behavior.
+    """
     job = {
         "id": job_id,
         "type": "ingest",
@@ -44,8 +51,7 @@ def _make_cancel_job(home: Path, job_id: str, video_id: str) -> tuple[dict, "Wor
     }
     (home / "downloads").mkdir(parents=True, exist_ok=True)
     (home / "covers").mkdir(parents=True, exist_ok=True)
-    tmp_video = home / "downloads" / f"{video_id}.mp4"
-    tmp_video.write_bytes(b"fake video")
+    tmp_video = home / "downloads" / f"{video_id}.mp4"  # path only — file is NOT created
     tmp_wav = home / "downloads" / f"{video_id}.wav"
     tmp_wav.write_bytes(b"fake wav")
     adapter = MagicMock()
